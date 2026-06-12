@@ -6,6 +6,22 @@ use axum::{
 };
 use serde::Deserialize;
 
+#[derive(Deserialize)]
+pub(crate) struct ProjectGrantPath {
+    #[allow(dead_code)]
+    pub(crate) ws: String,
+    #[allow(dead_code)]
+    pub(crate) project_slug: String,
+    pub(crate) grant_id: uuid::Uuid,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct WorkspaceGrantPath {
+    #[allow(dead_code)]
+    pub(crate) ws: String,
+    pub(crate) grant_id: uuid::Uuid,
+}
+
 use atlas_api::{
     dtos::{CreateGrantRequest, GrantDto, GrantPrincipal},
     pagination::{Cursor, Page},
@@ -32,6 +48,22 @@ pub(crate) struct PaginationQuery {
     limit: Option<u32>,
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/workspaces/{ws}/projects/{project_slug}/grants",
+    tag = "grants",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+        ("project_slug" = String, Path, description = "Project slug"),
+    ),
+    request_body = CreateGrantRequest,
+    responses(
+        (status = 201, description = "Grant created", body = GrantDto),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Insufficient permissions or guardrail violation"),
+    )
+)]
 pub(crate) async fn create_project_grant(
     auth: Authorized<ProjectRes, EditorMin>,
     State(state): State<AppState>,
@@ -84,6 +116,23 @@ pub(crate) async fn create_project_grant(
     ))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/workspaces/{ws}/projects/{project_slug}/grants",
+    tag = "grants",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+        ("project_slug" = String, Path, description = "Project slug"),
+        ("cursor" = Option<String>, Query, description = "Pagination cursor"),
+        ("limit" = Option<u32>, Query, description = "Page size (max 200)"),
+    ),
+    responses(
+        (status = 200, description = "Paginated grant list"),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Insufficient permissions"),
+    )
+)]
 pub(crate) async fn list_project_grants(
     auth: Authorized<ProjectRes, EditorMin>,
     State(state): State<AppState>,
@@ -118,15 +167,24 @@ pub(crate) async fn list_project_grants(
     Ok(Json(Page::new(dtos, next_cursor, has_more)))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/v1/workspaces/{ws}/projects/{project_slug}/grants/{grant_id}",
+    tag = "grants",
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 204, description = "Grant deleted"),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Insufficient permissions"),
+        (status = 404, description = "Grant not found"),
+    )
+)]
 pub(crate) async fn delete_project_grant(
     auth: Authorized<ProjectRes, EditorMin>,
     State(state): State<AppState>,
-    Path(params): Path<std::collections::HashMap<String, String>>,
+    Path(params): Path<ProjectGrantPath>,
 ) -> Result<StatusCode, ApiError> {
-    let grant_id_str = params.get("grant_id").ok_or(ApiError::NotFound)?;
-    let grant_uuid = grant_id_str
-        .parse::<uuid::Uuid>()
-        .map_err(|_| ApiError::NotFound)?;
+    let grant_uuid = params.grant_id;
     let grant_id = atlas_domain::entities::permissions::PermissionGrantId(grant_uuid);
 
     let grant_repo = PgPermissionGrantRepo {
@@ -166,6 +224,19 @@ pub(crate) async fn delete_project_grant(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/workspaces/{ws}/grants",
+    tag = "grants",
+    security(("bearer_auth" = [])),
+    params(("ws" = String, Path, description = "Workspace slug")),
+    request_body = CreateGrantRequest,
+    responses(
+        (status = 201, description = "Workspace grant created", body = GrantDto),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Insufficient permissions or guardrail violation"),
+    )
+)]
 pub(crate) async fn create_workspace_grant(
     auth: Authorized<WorkspaceRes, EditorMin>,
     State(state): State<AppState>,
@@ -218,6 +289,22 @@ pub(crate) async fn create_workspace_grant(
     ))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/workspaces/{ws}/grants",
+    tag = "grants",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+        ("cursor" = Option<String>, Query, description = "Pagination cursor"),
+        ("limit" = Option<u32>, Query, description = "Page size (max 200)"),
+    ),
+    responses(
+        (status = 200, description = "Paginated workspace grant list"),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Insufficient permissions"),
+    )
+)]
 pub(crate) async fn list_workspace_grants(
     auth: Authorized<WorkspaceRes, EditorMin>,
     State(state): State<AppState>,
@@ -256,15 +343,24 @@ pub(crate) async fn list_workspace_grants(
     Ok(Json(Page::new(dtos, next_cursor, has_more)))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/v1/workspaces/{ws}/grants/{grant_id}",
+    tag = "grants",
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 204, description = "Workspace grant deleted"),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Insufficient permissions"),
+        (status = 404, description = "Grant not found"),
+    )
+)]
 pub(crate) async fn delete_workspace_grant(
     auth: Authorized<WorkspaceRes, EditorMin>,
     State(state): State<AppState>,
-    Path(params): Path<std::collections::HashMap<String, String>>,
+    Path(params): Path<WorkspaceGrantPath>,
 ) -> Result<StatusCode, ApiError> {
-    let grant_id_str = params.get("grant_id").ok_or(ApiError::NotFound)?;
-    let grant_uuid = grant_id_str
-        .parse::<uuid::Uuid>()
-        .map_err(|_| ApiError::NotFound)?;
+    let grant_uuid = params.grant_id;
     let grant_id = atlas_domain::entities::permissions::PermissionGrantId(grant_uuid);
 
     let grant_repo = PgPermissionGrantRepo {

@@ -16,6 +16,18 @@ use crate::{
     state::AppState,
 };
 
+#[utoipa::path(
+    post,
+    path = "/v1/users",
+    tag = "users",
+    security(("bearer_auth" = [])),
+    request_body = CreateUserRequest,
+    responses(
+        (status = 201, description = "User created", body = UserDto),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Not a root/admin user"),
+    )
+)]
 pub(crate) async fn create_user(
     _admin: RequireUserAdmin,
     State(state): State<AppState>,
@@ -47,6 +59,18 @@ pub(crate) async fn create_user(
     Ok((StatusCode::CREATED, Json(dto)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/users/{user_id}/disable",
+    tag = "users",
+    security(("bearer_auth" = [])),
+    params(("user_id" = uuid::Uuid, Path, description = "User ID")),
+    responses(
+        (status = 204, description = "User disabled"),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Not a root/admin user"),
+    )
+)]
 pub(crate) async fn disable_user(
     _admin: RequireUserAdmin,
     State(state): State<AppState>,
@@ -77,6 +101,18 @@ pub(crate) async fn disable_user(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/users/{user_id}/enable",
+    tag = "users",
+    security(("bearer_auth" = [])),
+    params(("user_id" = uuid::Uuid, Path, description = "User ID")),
+    responses(
+        (status = 204, description = "User enabled"),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Not a root/admin user"),
+    )
+)]
 pub(crate) async fn enable_user(
     _admin: RequireUserAdmin,
     State(state): State<AppState>,

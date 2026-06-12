@@ -24,6 +24,17 @@ use crate::{
     state::AppState,
 };
 
+#[utoipa::path(
+    post,
+    path = "/v1/auth/login",
+    tag = "auth",
+    request_body = LoginRequest,
+    responses(
+        (status = 200, description = "Login successful", body = LoginResponse),
+        (status = 401, description = "Invalid credentials"),
+        (status = 429, description = "Rate limit exceeded"),
+    )
+)]
 pub(crate) async fn login(
     State(state): State<AppState>,
     jar: CookieJar,
@@ -85,6 +96,16 @@ pub(crate) async fn login(
     ))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/auth/logout",
+    tag = "auth",
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 204, description = "Logged out"),
+        (status = 401, description = "Unauthenticated"),
+    )
+)]
 pub(crate) async fn logout(
     State(state): State<AppState>,
     Extension(principal): Extension<Principal>,
@@ -125,6 +146,16 @@ pub(crate) async fn logout(
     Ok((jar.remove(removal_cookie), StatusCode::NO_CONTENT))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/auth/me",
+    tag = "auth",
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Current principal", body = MeResponse),
+        (status = 401, description = "Unauthenticated"),
+    )
+)]
 pub(crate) async fn me(
     State(state): State<AppState>,
     Extension(principal): Extension<Principal>,

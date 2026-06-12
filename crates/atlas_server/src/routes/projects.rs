@@ -30,6 +30,19 @@ pub(crate) struct PaginationQuery {
     limit: Option<u32>,
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/workspaces/{ws}/projects",
+    tag = "projects",
+    security(("bearer_auth" = [])),
+    params(("ws" = String, Path, description = "Workspace slug")),
+    request_body = CreateProjectRequest,
+    responses(
+        (status = 201, description = "Project created", body = ProjectDto),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Insufficient permissions"),
+    )
+)]
 pub(crate) async fn create_project(
     auth: Authorized<crate::authz::authorized::WorkspaceRes, EditorMin>,
     State(state): State<AppState>,
@@ -95,6 +108,21 @@ pub(crate) async fn create_project(
     Ok((StatusCode::CREATED, Json(project_to_dto(&project))))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/workspaces/{ws}/projects",
+    tag = "projects",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+        ("cursor" = Option<String>, Query, description = "Pagination cursor"),
+        ("limit" = Option<u32>, Query, description = "Page size (max 200)"),
+    ),
+    responses(
+        (status = 200, description = "Paginated project list"),
+        (status = 401, description = "Unauthenticated"),
+    )
+)]
 pub(crate) async fn list_projects(
     member: WorkspaceMember,
     State(state): State<AppState>,
@@ -137,6 +165,22 @@ pub(crate) async fn list_projects(
     Ok(Json(Page::new(dtos, next_cursor, has_more)))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/workspaces/{ws}/projects/{project_slug}",
+    tag = "projects",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+        ("project_slug" = String, Path, description = "Project slug"),
+    ),
+    responses(
+        (status = 200, description = "Project details", body = ProjectDto),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Insufficient permissions"),
+        (status = 404, description = "Project not found"),
+    )
+)]
 pub(crate) async fn get_project(
     auth: Authorized<ProjectRes, ViewerMin>,
     State(_state): State<AppState>,
@@ -144,6 +188,23 @@ pub(crate) async fn get_project(
     Ok(Json(project_to_dto(&auth.resource.0)))
 }
 
+#[utoipa::path(
+    patch,
+    path = "/v1/workspaces/{ws}/projects/{project_slug}",
+    tag = "projects",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+        ("project_slug" = String, Path, description = "Project slug"),
+    ),
+    request_body = UpdateProjectRequest,
+    responses(
+        (status = 200, description = "Project updated", body = ProjectDto),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Insufficient permissions"),
+        (status = 404, description = "Project not found"),
+    )
+)]
 pub(crate) async fn update_project(
     auth: Authorized<ProjectRes, EditorMin>,
     State(state): State<AppState>,
@@ -192,6 +253,22 @@ pub(crate) async fn update_project(
     Ok(Json(project_to_dto(&updated)))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/v1/workspaces/{ws}/projects/{project_slug}",
+    tag = "projects",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+        ("project_slug" = String, Path, description = "Project slug"),
+    ),
+    responses(
+        (status = 204, description = "Project deleted"),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Insufficient permissions"),
+        (status = 404, description = "Project not found"),
+    )
+)]
 pub(crate) async fn delete_project(
     auth: Authorized<ProjectRes, EditorMin>,
     State(state): State<AppState>,

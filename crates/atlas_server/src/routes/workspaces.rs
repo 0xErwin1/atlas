@@ -4,6 +4,18 @@ use atlas_api::dtos::WorkspaceDto;
 
 use crate::{authz::WorkspaceMember, error::ApiError, state::AppState};
 
+#[utoipa::path(
+    get,
+    path = "/v1/workspaces/{ws}",
+    tag = "workspaces",
+    security(("bearer_auth" = [])),
+    params(("ws" = String, Path, description = "Workspace slug")),
+    responses(
+        (status = 200, description = "Workspace details", body = WorkspaceDto),
+        (status = 401, description = "Unauthenticated"),
+        (status = 404, description = "Workspace not found or not a member"),
+    )
+)]
 pub(crate) async fn get_workspace(
     member: WorkspaceMember,
     State(_state): State<AppState>,

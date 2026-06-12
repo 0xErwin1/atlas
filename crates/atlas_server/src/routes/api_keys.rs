@@ -6,6 +6,13 @@ use axum::{
 };
 use serde::Deserialize;
 
+#[derive(Deserialize)]
+pub(crate) struct RevokeKeyPath {
+    #[allow(dead_code)]
+    pub(crate) ws: String,
+    pub(crate) key_id: uuid::Uuid,
+}
+
 use atlas_api::{
     dtos::{ApiKeyCreated, ApiKeyDto, CreateApiKeyRequest},
     pagination::{Cursor, Page},
@@ -26,6 +33,19 @@ pub(crate) struct PaginationQuery {
     limit: Option<u32>,
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/workspaces/{ws}/api-keys",
+    tag = "api-keys",
+    security(("bearer_auth" = [])),
+    params(("ws" = String, Path, description = "Workspace slug")),
+    request_body = CreateApiKeyRequest,
+    responses(
+        (status = 201, description = "API key created (secret shown once)", body = ApiKeyCreated),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Insufficient permissions"),
+    )
+)]
 pub(crate) async fn create_api_key(
     auth: Authorized<WorkspaceRes, AdminMin>,
     State(state): State<AppState>,
@@ -68,6 +88,22 @@ pub(crate) async fn create_api_key(
     ))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/workspaces/{ws}/api-keys",
+    tag = "api-keys",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+        ("cursor" = Option<String>, Query, description = "Pagination cursor"),
+        ("limit" = Option<u32>, Query, description = "Page size (max 200)"),
+    ),
+    responses(
+        (status = 200, description = "Paginated API key list"),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Insufficient permissions"),
+    )
+)]
 pub(crate) async fn list_api_keys(
     auth: Authorized<WorkspaceRes, AdminMin>,
     State(state): State<AppState>,
@@ -120,16 +156,23 @@ pub(crate) async fn list_api_keys(
     Ok(Json(Page::new(dtos, next_cursor, has_more)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/workspaces/{ws}/api-keys/{key_id}/revoke",
+    tag = "api-keys",
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 204, description = "API key revoked"),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Insufficient permissions"),
+    )
+)]
 pub(crate) async fn revoke_api_key(
     auth: Authorized<WorkspaceRes, AdminMin>,
     State(state): State<AppState>,
-    Path(params): Path<std::collections::HashMap<String, String>>,
+    Path(params): Path<RevokeKeyPath>,
 ) -> Result<StatusCode, ApiError> {
-    let key_id_str = params.get("key_id").ok_or(ApiError::NotFound)?;
-    let key_uuid = key_id_str
-        .parse::<uuid::Uuid>()
-        .map_err(|_| ApiError::NotFound)?;
-    let key_id = atlas_domain::ids::ApiKeyId(key_uuid);
+    let key_id = atlas_domain::ids::ApiKeyId(params.key_id);
 
     let actor = match &auth.principal {
         atlas_domain::permissions::Principal::User(uid) => Actor::User(*uid),
