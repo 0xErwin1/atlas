@@ -1,6 +1,6 @@
 # CLAUDE.md — Atlas
 
-Guidance for AI agents working in this repository. Atlas is an AI-first knowledge + project-management platform (markdown documents + kanban tasks) exposed through one REST API consumed by a web UI, an MCP server, and a CLI.
+Guidance for AI agents working in this repository. Atlas is an AI-first knowledge + project-management platform (markdown documents + kanban tasks) exposed through one REST API consumed by a web UI, an MCP server, and a CLI. For the canonical structure (crate map, request lifecycle, data model, permission model), see `ARCHITECTURE.md`.
 
 ## Environment (read first)
 
