@@ -6,7 +6,7 @@ use atlas_domain::ports::permission_grant_repo::ResolutionQuery;
 use atlas_domain::{
     entities::permissions::NewPermissionGrant,
     entities::workspace_core::NewProject,
-    permissions::{ResourceRef, ResourceRole},
+    permissions::{ResourceRef, ResourceRole, Visibility, VisibilityRole},
 };
 use atlas_server::persistence::repos::{PermissionGrantRepo, PgPermissionGrantRepo, ProjectRepo};
 
@@ -28,6 +28,7 @@ async fn upsert_creates_and_updates_on_conflict() {
                 name: "Alpha".into(),
                 slug: "alpha".into(),
                 task_prefix: "ALP".into(),
+                visibility: Visibility::Workspace(VisibilityRole::Editor),
             },
         )
         .await
@@ -84,6 +85,7 @@ async fn load_grants_for_resolution_returns_matching_grants() {
                 name: "Beta".into(),
                 slug: "beta".into(),
                 task_prefix: "BET".into(),
+                visibility: Visibility::Workspace(VisibilityRole::Editor),
             },
         )
         .await

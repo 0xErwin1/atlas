@@ -3,8 +3,10 @@ use atlas_domain::{
     Actor, DomainError, WorkspaceCtx,
     entities::workspace_core::{
         Folder, NewFolder, NewProject, NewPropertyDefinition, Project, PropertyDefinition,
+        UpdateProject,
     },
     ids::{FolderId, ProjectId, PropertyDefinitionId},
+    permissions::{Principal, Visibility, VisibilityRole},
 };
 use chrono::Utc;
 use sea_orm::{
@@ -14,9 +16,28 @@ use sea_orm::{
 
 use crate::persistence::entities::workspace_core::{
     folder, folder_from, project, project_from, property_definition, property_definition_from,
+    visibility_from_cols,
 };
 
 pub use atlas_domain::ports::workspace_core::{FolderRepo, ProjectRepo, PropertyDefinitionRepo};
+
+fn visibility_to_str(v: &Visibility) -> (&'static str, Option<&'static str>) {
+    match v {
+        Visibility::Private => ("private", None),
+        Visibility::Workspace(r) | Visibility::Public(r) => {
+            let vis_str = if matches!(v, Visibility::Workspace(_)) {
+                "workspace"
+            } else {
+                "public"
+            };
+            let role_str = match r {
+                VisibilityRole::Viewer => "viewer",
+                VisibilityRole::Editor => "editor",
+            };
+            (vis_str, Some(role_str))
+        }
+    }
+}
 
 pub struct PgPropertyDefinitionRepo {
     pub conn: DatabaseConnection,
@@ -111,6 +132,7 @@ pub struct PgProjectRepo {
 impl ProjectRepo for PgProjectRepo {
     async fn create(&self, ctx: &WorkspaceCtx, new: NewProject) -> Result<Project, DomainError> {
         let created_by_user_id = user_id_from_actor(&ctx.actor);
+        let (vis_str, vis_role_str) = visibility_to_str(&new.visibility);
         let model = project::ActiveModel {
             id: Set(ProjectId::new().0),
             workspace_id: Set(ctx.workspace_id.0),
@@ -118,6 +140,8 @@ impl ProjectRepo for PgProjectRepo {
             slug: Set(new.slug),
             task_prefix: Set(new.task_prefix),
             next_task_number: Set(0),
+            visibility: Set(vis_str.to_string()),
+            visibility_role: Set(vis_role_str.map(|s| s.to_string())),
             created_by_user_id: Set(created_by_user_id),
             created_by_api_key_id: Set(None),
             created_at: Set(Utc::now()),
@@ -129,6 +153,138 @@ impl ProjectRepo for PgProjectRepo {
             .await
             .map(project_from)
             .map_err(db_err)
+    }
+
+    async fn list_visible(
+        &self,
+        ctx: &WorkspaceCtx,
+        principal: &Principal,
+        after_id: Option<uuid::Uuid>,
+        limit: u64,
+    ) -> Result<Vec<Project>, DomainError> {
+        use sea_orm::FromQueryResult;
+
+        #[derive(Debug, FromQueryResult)]
+        struct Row {
+            id: uuid::Uuid,
+            workspace_id: uuid::Uuid,
+            name: String,
+            slug: String,
+            task_prefix: String,
+            next_task_number: i32,
+            visibility: String,
+            visibility_role: Option<String>,
+            created_by_user_id: Option<uuid::Uuid>,
+            created_at: chrono::DateTime<chrono::Utc>,
+            updated_at: chrono::DateTime<chrono::Utc>,
+            deleted_at: Option<chrono::DateTime<chrono::Utc>>,
+        }
+
+        let (principal_cond, has_grant_cond) = match principal {
+            Principal::User(uid) => (
+                format!("user_id = '{}'", uid.0),
+                format!(
+                    "EXISTS (SELECT 1 FROM permission_grants WHERE workspace_id = '{}' AND user_id = '{}' AND project_id = p.id)",
+                    ctx.workspace_id.0, uid.0
+                ),
+            ),
+            Principal::ApiKey(kid) => (
+                format!("api_key_id = '{}'", kid.0),
+                format!(
+                    "EXISTS (SELECT 1 FROM permission_grants WHERE workspace_id = '{}' AND api_key_id = '{}' AND project_id = p.id)",
+                    ctx.workspace_id.0, kid.0
+                ),
+            ),
+        };
+
+        let cursor_cond = if let Some(cursor) = after_id {
+            format!("AND p.id > '{cursor}'")
+        } else {
+            String::new()
+        };
+
+        let sql = format!(
+            r#"
+            SELECT p.id, p.workspace_id, p.name, p.slug, p.task_prefix, p.next_task_number,
+                   p.visibility, p.visibility_role,
+                   p.created_by_user_id, p.created_at, p.updated_at, p.deleted_at
+            FROM projects p
+            WHERE p.workspace_id = '{ws_id}'
+              AND p.deleted_at IS NULL
+              AND (
+                    p.visibility != 'private'
+                    OR {has_grant_cond}
+              )
+              {cursor_cond}
+            ORDER BY p.id
+            LIMIT {limit}
+            "#,
+            ws_id = ctx.workspace_id.0,
+        );
+
+        let rows = Row::find_by_statement(sea_orm::Statement::from_string(
+            sea_orm::DatabaseBackend::Postgres,
+            sql,
+        ))
+        .all(&self.conn)
+        .await
+        .map_err(db_err)?;
+
+        let _ = principal_cond;
+
+        Ok(rows
+            .into_iter()
+            .map(|r| {
+                let visibility = visibility_from_cols(&r.visibility, r.visibility_role.as_deref());
+                Project {
+                    id: atlas_domain::ids::ProjectId(r.id),
+                    workspace_id: atlas_domain::ids::WorkspaceId(r.workspace_id),
+                    name: r.name,
+                    slug: r.slug,
+                    task_prefix: r.task_prefix,
+                    next_task_number: r.next_task_number,
+                    visibility,
+                    created_by_user_id: r.created_by_user_id.map(atlas_domain::ids::UserId),
+                    created_at: r.created_at,
+                    updated_at: r.updated_at,
+                    deleted_at: r.deleted_at,
+                }
+            })
+            .collect())
+    }
+
+    async fn update(
+        &self,
+        ctx: &WorkspaceCtx,
+        id: ProjectId,
+        update: UpdateProject,
+    ) -> Result<Project, DomainError> {
+        let row = project::Entity::find_by_id(id.0)
+            .filter(project::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(project::Column::DeletedAt.is_null())
+            .one(&self.conn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "project",
+                id: id.0,
+            })?;
+
+        let mut active = row.into_active_model();
+
+        if let Some(name) = update.name {
+            active.name = Set(name);
+        }
+
+        if let Some(vis) = update.visibility {
+            let (vis_str, vis_role_str) = visibility_to_str(&vis);
+            active.visibility = Set(vis_str.to_string());
+            active.visibility_role = Set(vis_role_str.map(|s| s.to_string()));
+        }
+
+        active.updated_at = Set(Utc::now());
+        let updated = active.update(&self.conn).await.map_err(db_err)?;
+        Ok(project_from(updated))
     }
 
     async fn find(

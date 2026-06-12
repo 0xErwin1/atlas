@@ -109,6 +109,9 @@ pub async fn run_dev_seed(cfg: &BootstrapConfig, conn: &DatabaseConnection) -> R
                     name: "Sandbox".to_string(),
                     slug: "sandbox".to_string(),
                     task_prefix: "SBX".to_string(),
+                    visibility: atlas_domain::permissions::Visibility::Workspace(
+                        atlas_domain::permissions::VisibilityRole::Editor,
+                    ),
                 },
             )
             .await

@@ -2,6 +2,7 @@ use crate::entities::boards_tasks::ReferenceKind;
 use crate::entities::identity::MemberRole;
 use crate::error::DomainError;
 use crate::ids::{ApiKeyId, BoardId, DocumentId, FolderId, ProjectId, TaskId, UserId};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ResourceRole {
@@ -25,13 +26,13 @@ pub enum ResourceRef {
     Board(BoardId),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum VisibilityRole {
     Viewer,
     Editor,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Visibility {
     Private,
     Workspace(VisibilityRole),

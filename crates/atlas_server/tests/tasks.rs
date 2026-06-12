@@ -4,6 +4,7 @@ mod support;
 
 use atlas_domain::entities::boards_tasks::{NewBoard, NewTask, PositionBetween};
 use atlas_domain::entities::workspace_core::NewProject;
+use atlas_domain::permissions::{Visibility, VisibilityRole};
 use atlas_server::persistence::repos::{
     BoardRepo, PgBoardRepo, PgProjectRepo, PgTaskRepo, ProjectRepo, TaskRepo,
 };
@@ -31,6 +32,7 @@ async fn seed_project(
             name: format!("Project {slug}"),
             slug: slug.into(),
             task_prefix: prefix.into(),
+            visibility: Visibility::Workspace(VisibilityRole::Editor),
         },
     )
     .await

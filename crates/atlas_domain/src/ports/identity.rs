@@ -22,6 +22,8 @@ pub trait UserRepo: Send + Sync {
     async fn find_by_username(&self, username: &str) -> Result<Option<User>, DomainError>;
     async fn find_by_id(&self, id: UserId) -> Result<Option<User>, DomainError>;
     async fn find_root(&self) -> Result<Option<User>, DomainError>;
+    async fn disable(&self, id: UserId) -> Result<(), DomainError>;
+    async fn enable(&self, id: UserId) -> Result<(), DomainError>;
 }
 
 #[async_trait]
@@ -32,6 +34,8 @@ pub trait SessionRepo: Send + Sync {
         token_hash: &str,
     ) -> Result<Option<Session>, DomainError>;
     async fn revoke(&self, id: SessionId) -> Result<(), DomainError>;
+    /// Revoke all active sessions for a user (used when disabling a user).
+    async fn revoke_all_for_user(&self, user_id: UserId) -> Result<(), DomainError>;
     /// Update last_used_at and slide expires_at by ttl_hours, capped at created_at + max_ttl_hours.
     /// Throttled: only writes if last_used_at is older than 60 seconds.
     async fn touch(

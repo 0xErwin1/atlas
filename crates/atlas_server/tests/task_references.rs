@@ -7,6 +7,7 @@ use atlas_domain::{
     entities::boards_tasks::{NewBoard, NewTask, NewTaskReference, PositionBetween, ReferenceKind},
     entities::workspace_core::NewProject,
     ids::{DocumentId, TaskId},
+    permissions::{Visibility, VisibilityRole},
 };
 use atlas_server::persistence::repos::{
     BoardRepo, PgBoardRepo, PgProjectRepo, PgTaskReferenceRepo, PgTaskRepo, ProjectRepo,
@@ -32,6 +33,7 @@ async fn seed_project_board_task(
             name: format!("Project {slug}"),
             slug: slug.into(),
             task_prefix: prefix.into(),
+            visibility: Visibility::Workspace(VisibilityRole::Editor),
         },
     )
     .await

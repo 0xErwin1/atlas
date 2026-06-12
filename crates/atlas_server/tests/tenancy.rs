@@ -4,6 +4,7 @@ mod support;
 
 use atlas_domain::entities::boards_tasks::{NewBoard, NewTask, PositionBetween};
 use atlas_domain::entities::workspace_core::NewProject;
+use atlas_domain::permissions::{Visibility, VisibilityRole};
 use atlas_server::persistence::repos::{
     ApiKeyRepo, BoardRepo, PgBoardRepo, PgTaskRepo, ProjectRepo, TaskRepo,
 };
@@ -43,6 +44,7 @@ async fn project_repo_workspace_isolation() {
             name: "Bob's Project".into(),
             slug: "bobs-project".into(),
             task_prefix: "BP".into(),
+            visibility: Visibility::Workspace(VisibilityRole::Editor),
         },
     )
     .await
@@ -77,6 +79,7 @@ async fn task_repo_workspace_isolation() {
                 name: "Bob Project".into(),
                 slug: "bob-task-proj".into(),
                 task_prefix: "BTKP".into(),
+                visibility: Visibility::Workspace(VisibilityRole::Editor),
             },
         )
         .await

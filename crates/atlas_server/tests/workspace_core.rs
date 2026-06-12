@@ -2,8 +2,11 @@
 
 mod support;
 
-use atlas_domain::entities::workspace_core::{
-    AppliesTo, NewFolder, NewProject, NewPropertyDefinition, PropertyKind,
+use atlas_domain::{
+    entities::workspace_core::{
+        AppliesTo, NewFolder, NewProject, NewPropertyDefinition, PropertyKind,
+    },
+    permissions::{Visibility, VisibilityRole},
 };
 use atlas_server::persistence::repos::{FolderRepo, ProjectRepo, PropertyDefinitionRepo};
 
@@ -20,6 +23,7 @@ async fn project_slug_unique_per_workspace() {
             name: "Alpha".into(),
             slug: "alpha".into(),
             task_prefix: "ALPHA".into(),
+            visibility: Visibility::Workspace(VisibilityRole::Editor),
         },
     )
     .await
@@ -32,6 +36,7 @@ async fn project_slug_unique_per_workspace() {
                 name: "Alpha Duplicate".into(),
                 slug: "alpha".into(),
                 task_prefix: "ALPHA2".into(),
+                visibility: Visibility::Workspace(VisibilityRole::Editor),
             },
         )
         .await;
@@ -54,6 +59,7 @@ async fn project_task_prefix_unique_per_workspace() {
             name: "Beta".into(),
             slug: "beta".into(),
             task_prefix: "BT".into(),
+            visibility: Visibility::Workspace(VisibilityRole::Editor),
         },
     )
     .await
@@ -66,6 +72,7 @@ async fn project_task_prefix_unique_per_workspace() {
                 name: "Beta2".into(),
                 slug: "beta2".into(),
                 task_prefix: "BT".into(),
+                visibility: Visibility::Workspace(VisibilityRole::Editor),
             },
         )
         .await;
@@ -89,6 +96,7 @@ async fn project_soft_delete_frees_slug_for_reuse() {
                 name: "Gamma".into(),
                 slug: "gamma".into(),
                 task_prefix: "GM".into(),
+                visibility: Visibility::Workspace(VisibilityRole::Editor),
             },
         )
         .await
@@ -102,6 +110,7 @@ async fn project_soft_delete_frees_slug_for_reuse() {
             name: "Gamma Reborn".into(),
             slug: "gamma".into(),
             task_prefix: "GMR".into(),
+            visibility: Visibility::Workspace(VisibilityRole::Editor),
         },
     )
     .await

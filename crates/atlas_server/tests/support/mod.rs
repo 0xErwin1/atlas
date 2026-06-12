@@ -315,6 +315,42 @@ pub(crate) async fn login_user_with_workspace(
     (client, ws, user)
 }
 
+/// Creates a root user, hashes their password, and logs in via the test server.
+///
+/// Returns an authenticated `AtlasClient` with root privileges.
+pub(crate) async fn login_root_user(server: &TestServer, db: &TestDb) -> AtlasClient {
+    use atlas_api::dtos::LoginRequest;
+    use atlas_server::auth::password;
+
+    let username = format!("root-{}", uuid::Uuid::now_v7().as_simple());
+    let password_plaintext = "RootPassword1!";
+    let password_hash = password::hash(password_plaintext.to_string())
+        .await
+        .expect("hash password");
+
+    let user_repo = db.user_repo();
+    user_repo
+        .create(NewUser {
+            username: username.clone(),
+            display_name: "Root".to_string(),
+            password_hash,
+            is_root: true,
+        })
+        .await
+        .expect("create root user");
+
+    let mut client = AtlasClient::new(server.base_url().to_string());
+    client
+        .login(LoginRequest {
+            username,
+            password: password_plaintext.to_string(),
+        })
+        .await
+        .expect("root login");
+
+    client
+}
+
 /// Expires all sessions in the test database immediately.
 pub(crate) async fn expire_all_sessions(db: &TestDb) {
     db.conn()

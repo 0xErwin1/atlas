@@ -164,6 +164,40 @@ impl UserRepo for PgUserRepo {
             .map(|opt| opt.map(user_from))
             .map_err(db_err)
     }
+
+    async fn disable(&self, id: UserId) -> Result<(), DomainError> {
+        use sea_orm::IntoActiveModel;
+        let row = user::Entity::find_by_id(id.0)
+            .one(&self.conn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "user",
+                id: id.0,
+            })?;
+        let mut active = row.into_active_model();
+        active.disabled_at = Set(Some(Utc::now()));
+        active.updated_at = Set(Utc::now());
+        active.update(&self.conn).await.map_err(db_err)?;
+        Ok(())
+    }
+
+    async fn enable(&self, id: UserId) -> Result<(), DomainError> {
+        use sea_orm::IntoActiveModel;
+        let row = user::Entity::find_by_id(id.0)
+            .one(&self.conn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "user",
+                id: id.0,
+            })?;
+        let mut active = row.into_active_model();
+        active.disabled_at = Set(None);
+        active.updated_at = Set(Utc::now());
+        active.update(&self.conn).await.map_err(db_err)?;
+        Ok(())
+    }
 }
 
 pub struct PgSessionRepo {
@@ -216,6 +250,20 @@ impl SessionRepo for PgSessionRepo {
         let mut active = row.into_active_model();
         active.revoked_at = Set(Some(Utc::now()));
         active.update(&self.conn).await.map_err(db_err)?;
+        Ok(())
+    }
+
+    async fn revoke_all_for_user(&self, user_id: UserId) -> Result<(), DomainError> {
+        use sea_orm::ConnectionTrait;
+        self.conn
+            .execute_raw(sea_orm::Statement::from_sql_and_values(
+                sea_orm::DatabaseBackend::Postgres,
+                "UPDATE sessions SET revoked_at = now()
+                 WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > now()",
+                [user_id.0.into()],
+            ))
+            .await
+            .map_err(db_err)?;
         Ok(())
     }
 

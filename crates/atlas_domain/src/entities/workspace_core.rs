@@ -1,4 +1,7 @@
-use crate::ids::{FolderId, ProjectId, PropertyDefinitionId, UserId, WorkspaceId};
+use crate::{
+    ids::{FolderId, ProjectId, PropertyDefinitionId, UserId, WorkspaceId},
+    permissions::{Visibility, VisibilityRole},
+};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -76,6 +79,7 @@ pub struct Project {
     pub slug: String,
     pub task_prefix: String,
     pub next_task_number: i32,
+    pub visibility: Visibility,
     pub created_by_user_id: Option<UserId>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -87,6 +91,39 @@ pub struct NewProject {
     pub name: String,
     pub slug: String,
     pub task_prefix: String,
+    pub visibility: Visibility,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct UpdateProject {
+    pub name: Option<String>,
+    pub visibility: Option<Visibility>,
+}
+
+impl Visibility {
+    pub fn visibility_str(&self) -> &'static str {
+        match self {
+            Visibility::Private => "private",
+            Visibility::Workspace(_) => "workspace",
+            Visibility::Public(_) => "public",
+        }
+    }
+
+    pub fn visibility_role_str(&self) -> Option<&'static str> {
+        match self {
+            Visibility::Private => None,
+            Visibility::Workspace(r) | Visibility::Public(r) => Some(r.as_str()),
+        }
+    }
+}
+
+impl VisibilityRole {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            VisibilityRole::Viewer => "viewer",
+            VisibilityRole::Editor => "editor",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

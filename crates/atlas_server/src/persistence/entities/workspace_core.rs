@@ -2,6 +2,7 @@ use atlas_domain::entities::workspace_core::{
     AppliesTo, Folder, Project, PropertyDefinition, PropertyKind,
 };
 use atlas_domain::ids::{FolderId, ProjectId, PropertyDefinitionId, UserId, WorkspaceId};
+use atlas_domain::permissions::{Visibility, VisibilityRole};
 use chrono::{DateTime, Utc};
 use sea_orm::entity::prelude::*;
 
@@ -45,6 +46,8 @@ pub mod project {
         pub slug: String,
         pub task_prefix: String,
         pub next_task_number: i32,
+        pub visibility: String,
+        pub visibility_role: Option<String>,
         pub created_by_user_id: Option<Uuid>,
         pub created_by_api_key_id: Option<Uuid>,
         pub created_at: DateTime<Utc>,
@@ -119,6 +122,7 @@ pub fn property_definition_from(
 }
 
 pub fn project_from(m: project::Model) -> Project {
+    let visibility = visibility_from_cols(&m.visibility, m.visibility_role.as_deref());
     Project {
         id: ProjectId(m.id),
         workspace_id: WorkspaceId(m.workspace_id),
@@ -126,10 +130,23 @@ pub fn project_from(m: project::Model) -> Project {
         slug: m.slug,
         task_prefix: m.task_prefix,
         next_task_number: m.next_task_number,
+        visibility,
         created_by_user_id: m.created_by_user_id.map(UserId),
         created_at: m.created_at,
         updated_at: m.updated_at,
         deleted_at: m.deleted_at,
+    }
+}
+
+pub fn visibility_from_cols(visibility: &str, visibility_role: Option<&str>) -> Visibility {
+    let role = match visibility_role {
+        Some("viewer") => VisibilityRole::Viewer,
+        _ => VisibilityRole::Editor,
+    };
+    match visibility {
+        "private" => Visibility::Private,
+        "public" => Visibility::Public(role),
+        _ => Visibility::Workspace(role),
     }
 }
 

@@ -36,6 +36,57 @@ pub fn app(state: AppState) -> Router {
         .route("/v1/auth/logout", axum::routing::post(routes::auth::logout))
         .route("/v1/auth/me", get(routes::auth::me))
         .route("/v1/workspaces/{ws}/probe", get(routes::probe::probe))
+        // Users (root-only)
+        .route("/v1/users", axum::routing::post(routes::users::create_user))
+        .route(
+            "/v1/users/{user_id}/disable",
+            axum::routing::post(routes::users::disable_user),
+        )
+        .route(
+            "/v1/users/{user_id}/enable",
+            axum::routing::post(routes::users::enable_user),
+        )
+        // Workspace
+        .route(
+            "/v1/workspaces/{ws}",
+            get(routes::workspaces::get_workspace),
+        )
+        // API keys
+        .route(
+            "/v1/workspaces/{ws}/api-keys",
+            axum::routing::post(routes::api_keys::create_api_key)
+                .get(routes::api_keys::list_api_keys),
+        )
+        .route(
+            "/v1/workspaces/{ws}/api-keys/{key_id}/revoke",
+            axum::routing::post(routes::api_keys::revoke_api_key),
+        )
+        // Projects
+        .route(
+            "/v1/workspaces/{ws}/projects",
+            axum::routing::post(routes::projects::create_project)
+                .get(routes::projects::list_projects),
+        )
+        .route(
+            "/v1/workspaces/{ws}/projects/{project_slug}",
+            get(routes::projects::get_project)
+                .patch(routes::projects::update_project)
+                .delete(routes::projects::delete_project),
+        )
+        // Project grants
+        .route(
+            "/v1/workspaces/{ws}/projects/{project_slug}/grants",
+            axum::routing::post(routes::grants::create_project_grant)
+                .get(routes::grants::list_project_grants)
+                .delete(routes::grants::delete_project_grant),
+        )
+        // Workspace grants
+        .route(
+            "/v1/workspaces/{ws}/grants",
+            axum::routing::post(routes::grants::create_workspace_grant)
+                .get(routes::grants::list_workspace_grants)
+                .delete(routes::grants::delete_workspace_grant),
+        )
         .layer(axum_middleware::from_fn_with_state(
             state.clone(),
             crate::auth::middleware::require_authn,
