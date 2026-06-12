@@ -4,6 +4,7 @@ mod support;
 
 use atlas_domain::entities::documents::{DocumentFilter, NewDocument};
 use atlas_server::persistence::repos::{DocumentRepo, PgDocumentRepo};
+use serde_json::json;
 
 fn make_doc_repo(db: &support::TestDb, anchor_interval: u32) -> PgDocumentRepo {
     PgDocumentRepo::new(db.conn().clone(), anchor_interval)
@@ -168,6 +169,36 @@ async fn document_list_returns_summaries_without_content() {
     assert_eq!(summaries.len(), 1);
     let first = summaries.first().expect("summaries must not be empty");
     assert_eq!(first.title, "Summary Test");
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn document_frontmatter_defaults_to_empty_object() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "doc-user-fm").await;
+    let ctx = support::ctx(&ws, &user);
+    let repo = make_doc_repo(&db, 50);
+
+    let doc = repo
+        .create(
+            &ctx,
+            NewDocument {
+                title: "FM Default".into(),
+                content: "content".into(),
+                folder_id: None,
+                project_id: None,
+                frontmatter: None,
+            },
+        )
+        .await
+        .expect("create document without explicit frontmatter");
+
+    assert_eq!(
+        doc.frontmatter,
+        json!({}),
+        "frontmatter must default to an empty JSON object when not provided"
+    );
 
     db.teardown().await;
 }

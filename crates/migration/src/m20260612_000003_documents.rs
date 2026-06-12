@@ -22,7 +22,7 @@ impl MigrationTrait for Migration {
                 folder_id UUID REFERENCES folders(id),
                 title TEXT NOT NULL,
                 content TEXT NOT NULL DEFAULT '',
-                frontmatter JSONB,
+                frontmatter JSONB NOT NULL DEFAULT '{}',
                 current_revision_id UUID,
                 current_revision_seq BIGINT NOT NULL DEFAULT 0,
                 search_vector TSVECTOR GENERATED ALWAYS AS (

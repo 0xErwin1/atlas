@@ -216,6 +216,36 @@ async fn folder_requires_exactly_one_actor() {
     db.teardown().await;
 }
 
+/// Inserting a document with NULL frontmatter must be rejected by the DB.
+/// The column must be NOT NULL with DEFAULT '{}'.
+#[tokio::test]
+async fn document_frontmatter_is_not_null() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "fm-null-check").await;
+
+    let ws_id = ws.id.0;
+    let user_id = user.id.0;
+
+    let result = db
+        .conn()
+        .execute_unprepared(&format!(
+            r#"INSERT INTO documents
+               (id, workspace_id, title, content, frontmatter, current_revision_seq,
+                created_by_user_id, created_at, updated_at)
+               VALUES
+               (gen_random_uuid(), '{ws_id}', 'NULL FM', '', NULL, 0,
+                '{user_id}', now(), now())"#
+        ))
+        .await;
+
+    assert!(
+        result.is_err(),
+        "inserting a document with NULL frontmatter must be rejected by the DB"
+    );
+
+    db.teardown().await;
+}
+
 /// `boards` requires exactly one actor (created_by_user_id NOT NULL).
 #[tokio::test]
 async fn board_requires_actor() {

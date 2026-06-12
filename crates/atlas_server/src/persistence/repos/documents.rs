@@ -13,6 +13,7 @@ use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait,
     IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
 };
+use serde_json::json;
 use uuid::Uuid;
 
 use crate::persistence::entities::documents::{
@@ -46,6 +47,8 @@ impl DocumentRepo for PgDocumentRepo {
         let created_by_user_id = user_id_from_actor(&ctx.actor);
         let now = Utc::now();
 
+        let frontmatter = new.frontmatter.unwrap_or_else(|| json!({}));
+
         let doc_model = document::ActiveModel {
             id: Set(doc_id.0),
             workspace_id: Set(ctx.workspace_id.0),
@@ -53,7 +56,7 @@ impl DocumentRepo for PgDocumentRepo {
             folder_id: Set(new.folder_id.map(|id| id.0)),
             title: Set(new.title),
             content: Set(new.content.clone()),
-            frontmatter: Set(new.frontmatter),
+            frontmatter: Set(frontmatter),
             current_revision_id: Set(None),
             current_revision_seq: Set(0),
             created_by_user_id: Set(created_by_user_id),
@@ -234,7 +237,7 @@ impl DocumentRepo for PgDocumentRepo {
             })?;
 
         let mut active = row.into_active_model();
-        active.frontmatter = Set(Some(fm));
+        active.frontmatter = Set(fm);
         active.updated_at = Set(Utc::now());
         let updated = active.update(&self.conn).await.map_err(db_err)?;
 
