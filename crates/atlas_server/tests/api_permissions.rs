@@ -403,6 +403,161 @@ async fn agent_with_grant_sees_private_project_in_list() {
     db.teardown().await;
 }
 
+/// An API key with NO explicit grant must NOT see workspace-visibility projects.
+/// Visibility only contributes for user principals; agents are grant-only.
+#[tokio::test]
+async fn agent_without_grant_cannot_see_workspace_visibility_project() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+
+    let (owner, ws, _) =
+        support::login_user_with_workspace(&server, &db, "perm-agentnogrant-owner").await;
+
+    let project = owner
+        .create_project(
+            &ws.slug,
+            CreateProjectRequest {
+                name: "Workspace Visible Project".to_string(),
+                slug: "ws-vis-proj".to_string(),
+                task_prefix: "WVP".to_string(),
+                visibility: Some("workspace".to_string()),
+                visibility_role: Some("viewer".to_string()),
+            },
+        )
+        .await
+        .expect("create workspace-visibility project");
+
+    let key_created = owner
+        .create_api_key(
+            &ws.slug,
+            CreateApiKeyRequest {
+                name: "no-grant-agent-key".to_string(),
+                expires_at: None,
+            },
+        )
+        .await
+        .expect("create api key");
+
+    let agent_client =
+        atlas_client::AtlasClient::new(server.base_url()).with_token(key_created.secret.clone());
+
+    let page = agent_client
+        .list_projects(&ws.slug, None, None)
+        .await
+        .expect("agent list request must succeed");
+
+    let found = page.items.iter().any(|p| p.id == project.id);
+    assert!(
+        !found,
+        "agent with no grant must NOT see workspace-visibility project in the list"
+    );
+
+    db.teardown().await;
+}
+
+/// A non-creator workspace admin must see private projects owned by other users.
+/// Implicit admin (Rule 1 of resolve()) applies to the list query.
+#[tokio::test]
+async fn workspace_admin_sees_other_users_private_project_in_list() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+
+    let (owner, ws, _) =
+        support::login_user_with_workspace(&server, &db, "perm-adminvis-owner").await;
+
+    let project = owner
+        .create_project(
+            &ws.slug,
+            private_proj_req("Admin Can See This", "admin-visible-priv"),
+        )
+        .await
+        .expect("create private project");
+
+    let (admin, _) = add_member(
+        &db,
+        &server,
+        ws.id,
+        "perm-adminvis-admin",
+        MemberRole::Admin,
+    )
+    .await;
+
+    let page = admin
+        .list_projects(&ws.slug, None, None)
+        .await
+        .expect("admin list request must succeed");
+
+    let found = page.items.iter().any(|p| p.id == project.id);
+    assert!(
+        found,
+        "workspace admin must see private projects created by other members"
+    );
+
+    db.teardown().await;
+}
+
+/// A user holding only a workspace-scoped viewer grant (no direct project grant)
+/// must see private projects — workspace-scope grants give access to everything in
+/// the workspace per the grant resolution chain.
+#[tokio::test]
+async fn user_with_workspace_scoped_grant_sees_private_projects_in_list() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+
+    let (owner, ws, owner_user) =
+        support::login_user_with_workspace(&server, &db, "perm-wsgrant-owner").await;
+
+    let project = owner
+        .create_project(
+            &ws.slug,
+            private_proj_req("WS-Grant Visible", "ws-grant-priv"),
+        )
+        .await
+        .expect("create private project");
+
+    let (grantee, grantee_user) = add_member(
+        &db,
+        &server,
+        ws.id,
+        "perm-wsgrant-viewer",
+        MemberRole::Member,
+    )
+    .await;
+
+    use atlas_domain::entities::permissions::NewPermissionGrant;
+    let grant_repo = atlas_server::persistence::repos::PgPermissionGrantRepo {
+        conn: db.conn().clone(),
+    };
+    grant_repo
+        .upsert(NewPermissionGrant {
+            workspace_id: ws.id,
+            user_id: Some(grantee_user.id),
+            api_key_id: None,
+            project_id: None,
+            folder_id: None,
+            document_id: None,
+            board_id: None,
+            role: atlas_domain::permissions::ResourceRole::Viewer,
+            created_by_user_id: Some(owner_user.id),
+            created_by_api_key_id: None,
+        })
+        .await
+        .expect("seed workspace-scoped viewer grant");
+
+    let page = grantee
+        .list_projects(&ws.slug, None, None)
+        .await
+        .expect("grantee list request must succeed");
+
+    let found = page.items.iter().any(|p| p.id == project.id);
+    assert!(
+        found,
+        "user with workspace-scoped viewer grant must see private projects in the list"
+    );
+
+    db.teardown().await;
+}
+
 /// A 403 returned because of a ShareDenied guardrail must not expose the internal
 /// variant name in the response body.
 #[tokio::test]

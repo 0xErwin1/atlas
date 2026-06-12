@@ -182,22 +182,47 @@ impl ProjectRepo for PgProjectRepo {
 
         let mut values: Vec<sea_orm::Value> = Vec::new();
 
-        // $1 — workspace_id
+        // $1 — workspace_id (appears in every sub-clause)
         values.push(ctx.workspace_id.0.into());
 
-        // $2 — workspace_id repeated for the EXISTS sub-query
-        values.push(ctx.workspace_id.0.into());
-
-        // $3 — principal column value (user_id or api_key_id)
+        // Build principal-type-specific clauses that mirror the domain resolve() rules:
+        //
+        // Users get:
+        //   - visibility contribution (non-private projects)
+        //   - implicit admin via workspace_memberships
+        //   - workspace-scope grant (all target columns NULL)
+        //   - project-scope grant
+        //
+        // ApiKeys get only:
+        //   - workspace-scope grant
+        //   - project-scope grant
+        //
+        // Visibility NEVER contributes for api keys (mirrors permissions.rs:~94).
+        let visibility_clause;
+        let membership_clause;
         let principal_col;
+
         match principal {
             Principal::User(uid) => {
                 principal_col = "user_id";
-                values.push(uid.0.into());
+                values.push(uid.0.into()); // $2 — user_id
+
+                // $2 already pushed; re-use for membership sub-query
+                visibility_clause = "p.visibility != 'private'".to_string();
+                membership_clause = "EXISTS (
+                        SELECT 1 FROM workspace_memberships
+                        WHERE workspace_id = $1
+                          AND user_id = $2
+                          AND role IN ('owner', 'admin')
+                    )"
+                .to_string();
             }
             Principal::ApiKey(kid) => {
                 principal_col = "api_key_id";
-                values.push(kid.0.into());
+                values.push(kid.0.into()); // $2 — api_key_id
+
+                visibility_clause = "FALSE".to_string();
+                membership_clause = "FALSE".to_string();
             }
         }
 
@@ -208,8 +233,7 @@ impl ProjectRepo for PgProjectRepo {
             String::new()
         };
 
-        // limit and offset are not user-supplied (they come from pagination config),
-        // so it is safe to interpolate them directly.
+        // limit is pagination config (not user-supplied), safe to interpolate directly.
         let sql = format!(
             r#"
             SELECT p.id, p.workspace_id, p.name, p.slug, p.task_prefix, p.next_task_number,
@@ -219,11 +243,21 @@ impl ProjectRepo for PgProjectRepo {
             WHERE p.workspace_id = $1
               AND p.deleted_at IS NULL
               AND (
-                    p.visibility != 'private'
+                    {visibility_clause}
+                    OR {membership_clause}
                     OR EXISTS (
                         SELECT 1 FROM permission_grants
-                        WHERE workspace_id = $2
-                          AND {principal_col} = $3
+                        WHERE workspace_id = $1
+                          AND {principal_col} = $2
+                          AND project_id IS NULL
+                          AND folder_id IS NULL
+                          AND document_id IS NULL
+                          AND board_id IS NULL
+                    )
+                    OR EXISTS (
+                        SELECT 1 FROM permission_grants
+                        WHERE workspace_id = $1
+                          AND {principal_col} = $2
                           AND project_id = p.id
                     )
               )

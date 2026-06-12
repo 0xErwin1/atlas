@@ -14,7 +14,9 @@ use atlas_domain::{
     Actor, WorkspaceCtx,
     entities::permissions::NewPermissionGrant,
     entities::workspace_core::{NewProject, UpdateProject},
-    permissions::{Principal, ResourceRole, ShareDenied, Visibility, VisibilityRole, authorize_share},
+    permissions::{
+        Principal, ResourceRole, ShareDenied, Visibility, VisibilityRole, authorize_share,
+    },
 };
 
 use crate::{
