@@ -23,6 +23,9 @@ pub enum DomainError {
 
     #[error("internal error: {message}")]
     Internal { message: String },
+
+    #[error("forbidden: {message}")]
+    Forbidden { message: String },
 }
 
 #[cfg(test)]

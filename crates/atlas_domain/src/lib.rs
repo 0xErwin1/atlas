@@ -4,6 +4,7 @@ pub mod actor;
 pub mod entities;
 pub mod error;
 pub mod ids;
+pub mod permissions;
 pub mod ports;
 pub mod position;
 pub mod revision;
