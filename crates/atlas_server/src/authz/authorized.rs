@@ -224,12 +224,13 @@ where
             }
         };
 
-        let params: R::PathParams =
-            serde_json::from_value(serde_json::to_value(&path_params.0).map_err(|e| {
-                ApiError::Internal {
-                    message: e.to_string(),
-                }
-            })?)
+        let path_map_value =
+            serde_json::to_value(&path_params.0).map_err(|e| ApiError::Internal {
+                message: e.to_string(),
+            })?;
+
+        let params: R::PathParams = serde_json::from_value(path_map_value.clone())
+            .or_else(|_| serde_json::from_value(serde_json::Value::Null))
             .map_err(|e| ApiError::Internal {
                 message: e.to_string(),
             })?;
