@@ -1,0 +1,208 @@
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+mod support;
+
+use atlas_domain::{
+    DomainError,
+    entities::boards_tasks::{NewBoard, NewTask, NewTaskReference, PositionBetween, ReferenceKind},
+    entities::workspace_core::NewProject,
+    ids::{DocumentId, TaskId},
+};
+use atlas_server::persistence::repos::{
+    BoardRepo, PgBoardRepo, PgProjectRepo, PgTaskReferenceRepo, PgTaskRepo, ProjectRepo,
+    TaskReferenceRepo, TaskRepo,
+};
+
+async fn seed_project_board_task(
+    db: &support::TestDb,
+    ctx: &atlas_domain::WorkspaceCtx,
+    slug: &str,
+    prefix: &str,
+) -> (
+    atlas_domain::entities::workspace_core::Project,
+    atlas_domain::entities::boards_tasks::Board,
+    atlas_domain::entities::boards_tasks::Task,
+) {
+    let project = PgProjectRepo {
+        conn: db.conn().clone(),
+    }
+    .create(
+        ctx,
+        NewProject {
+            name: format!("Project {slug}"),
+            slug: slug.into(),
+            task_prefix: prefix.into(),
+        },
+    )
+    .await
+    .expect("seed project");
+
+    let board = PgBoardRepo::new(db.conn().clone())
+        .create_board(
+            ctx,
+            NewBoard {
+                project_id: project.id,
+                name: "Main".into(),
+            },
+        )
+        .await
+        .expect("seed board");
+
+    let col = PgBoardRepo::new(db.conn().clone())
+        .add_column(
+            ctx,
+            board.id,
+            "Backlog".into(),
+            PositionBetween {
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("seed column");
+
+    let task = PgTaskRepo::new(db.conn().clone())
+        .create(
+            ctx,
+            NewTask {
+                project_id: project.id,
+                board_id: board.id,
+                column_id: col.id,
+                title: "Task A".into(),
+                description: String::new(),
+                position: PositionBetween {
+                    before: None,
+                    after: None,
+                },
+            },
+        )
+        .await
+        .expect("seed task");
+
+    (project, board, task)
+}
+
+#[tokio::test]
+async fn invalid_task_reference_kind_target_mismatch_is_rejected() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "ref-invalid-user").await;
+    let ctx = support::ctx(&ws, &user);
+
+    let (_, _, task_a) = seed_project_board_task(&db, &ctx, "ref-proj", "REF").await;
+
+    let ref_repo = PgTaskReferenceRepo::new(db.conn().clone());
+
+    let result = ref_repo
+        .create(
+            &ctx,
+            NewTaskReference {
+                source_task_id: task_a.id,
+                kind: ReferenceKind::Blocks,
+                target_task_id: None,
+                target_document_id: Some(DocumentId(uuid::Uuid::new_v4())),
+            },
+        )
+        .await;
+
+    assert!(
+        result.is_err(),
+        "Blocks reference with a document_id must be rejected"
+    );
+
+    match result.unwrap_err() {
+        DomainError::InvalidInput { message } => {
+            assert!(
+                message.contains("task target"),
+                "error must mention 'task target'; got: {message}"
+            );
+        }
+        other => panic!("expected InvalidInput, got: {other:?}"),
+    }
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn valid_blocks_reference_with_task_target_is_accepted() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "ref-valid-user").await;
+    let ctx = support::ctx(&ws, &user);
+
+    let (_, _, task_a) = seed_project_board_task(&db, &ctx, "ref-valid", "RVL").await;
+
+    let task_b = PgTaskRepo::new(db.conn().clone())
+        .create(
+            &ctx,
+            NewTask {
+                project_id: task_a.project_id,
+                board_id: task_a.board_id,
+                column_id: task_a.column_id,
+                title: "Task B".into(),
+                description: String::new(),
+                position: PositionBetween {
+                    before: None,
+                    after: None,
+                },
+            },
+        )
+        .await
+        .expect("seed task B");
+
+    let ref_repo = PgTaskReferenceRepo::new(db.conn().clone());
+
+    let reference = ref_repo
+        .create(
+            &ctx,
+            NewTaskReference {
+                source_task_id: task_a.id,
+                kind: ReferenceKind::Blocks,
+                target_task_id: Some(task_b.id),
+                target_document_id: None,
+            },
+        )
+        .await
+        .expect("valid Blocks reference must be created");
+
+    assert_eq!(reference.kind, ReferenceKind::Blocks);
+    assert_eq!(reference.target_task_id, Some(task_b.id));
+    assert_eq!(reference.target_document_id, None);
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn spec_reference_with_task_id_is_rejected() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "ref-spec-bad-user").await;
+    let ctx = support::ctx(&ws, &user);
+
+    let (_, _, task_a) = seed_project_board_task(&db, &ctx, "ref-spec-bad", "RSB").await;
+
+    let task_b_id = TaskId::new();
+
+    let ref_repo = PgTaskReferenceRepo::new(db.conn().clone());
+
+    let result = ref_repo
+        .create(
+            &ctx,
+            NewTaskReference {
+                source_task_id: task_a.id,
+                kind: ReferenceKind::Spec,
+                target_task_id: Some(task_b_id),
+                target_document_id: None,
+            },
+        )
+        .await;
+
+    assert!(
+        result.is_err(),
+        "Spec reference with task_id must be rejected"
+    );
+
+    match result.unwrap_err() {
+        DomainError::InvalidInput { .. } => {}
+        other => panic!("expected InvalidInput, got: {other:?}"),
+    }
+
+    db.teardown().await;
+}

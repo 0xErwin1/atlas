@@ -1,4 +1,5 @@
-use crate::ids::{BoardId, ColumnId, DocumentId, ProjectId, TaskId, UserId, WorkspaceId};
+use crate::actor::Actor;
+use crate::ids::{BoardId, ColumnId, DocumentId, ProjectId, TaskId, WorkspaceId};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -8,7 +9,7 @@ pub struct Board {
     pub workspace_id: WorkspaceId,
     pub project_id: ProjectId,
     pub name: String,
-    pub created_by_user_id: Option<UserId>,
+    pub created_by: Actor,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub deleted_at: Option<DateTime<Utc>>,
@@ -27,7 +28,7 @@ pub struct BoardColumn {
     pub board_id: BoardId,
     pub name: String,
     pub position_key: String,
-    pub created_by_user_id: Option<UserId>,
+    pub created_by: Actor,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub deleted_at: Option<DateTime<Utc>>,
@@ -52,7 +53,7 @@ pub struct Task {
     pub description: String,
     pub properties: Option<serde_json::Value>,
     pub position_key: String,
-    pub created_by_user_id: Option<UserId>,
+    pub created_by: Actor,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub deleted_at: Option<DateTime<Utc>>,
@@ -109,7 +110,7 @@ pub struct TaskReference {
     pub kind: ReferenceKind,
     pub target_task_id: Option<TaskId>,
     pub target_document_id: Option<DocumentId>,
-    pub created_by_user_id: Option<UserId>,
+    pub created_by: Actor,
     pub created_at: DateTime<Utc>,
 }
 

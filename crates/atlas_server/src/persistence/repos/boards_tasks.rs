@@ -383,6 +383,9 @@ impl TaskReferenceRepo for PgTaskReferenceRepo {
         new: NewTaskReference,
     ) -> Result<TaskReference, DomainError> {
         use atlas_domain::ids::TaskId as TRefId;
+        use atlas_domain::permissions::validate_reference;
+
+        validate_reference(new.kind.clone(), new.target_task_id, new.target_document_id)?;
 
         let created_by_user_id = user_id_from_actor(&ctx.actor);
         let model = task_reference::ActiveModel {

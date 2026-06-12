@@ -1,6 +1,7 @@
 use crate::ids::{ApiKeyId, UserId, WorkspaceId};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Actor {
     User(UserId),
     ApiKey(ApiKeyId),

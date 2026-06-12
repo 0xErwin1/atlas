@@ -1,7 +1,3 @@
-use argon2::{
-    Argon2, PasswordHasher,
-    password_hash::{SaltString, rand_core::OsRng},
-};
 use atlas_domain::{
     Actor, WorkspaceCtx,
     entities::identity::{MemberRole, NewUser, NewWorkspace},
@@ -10,6 +6,7 @@ use atlas_domain::{
 };
 use sea_orm::DatabaseConnection;
 
+use crate::auth::password;
 use crate::persistence::repos::{
     MembershipRepo, PgMembershipRepo, PgProjectRepo, PgUserRepo, PgWorkspaceRepo, ProjectRepo,
     UserRepo, WorkspaceRepo,
@@ -37,7 +34,9 @@ pub async fn run_bootstrap(cfg: &BootstrapConfig, conn: &DatabaseConnection) -> 
         "ATLAS_ROOT_PASSWORD is required on first boot but was not set".to_string()
     })?;
 
-    let password_hash = hash_password(password)?;
+    let password_hash = password::hash(password.to_string())
+        .await
+        .map_err(|e| e.to_string())?;
 
     let workspace_id = WorkspaceId::new();
     let root_user_id = UserId::new();
@@ -117,13 +116,4 @@ pub async fn run_dev_seed(cfg: &BootstrapConfig, conn: &DatabaseConnection) -> R
     }
 
     Ok(())
-}
-
-fn hash_password(password: &str) -> Result<String, String> {
-    let salt = SaltString::generate(&mut OsRng);
-    let argon2 = Argon2::default();
-    argon2
-        .hash_password(password.as_bytes(), &salt)
-        .map(|h| h.to_string())
-        .map_err(|e| format!("password hashing failed: {e}"))
 }

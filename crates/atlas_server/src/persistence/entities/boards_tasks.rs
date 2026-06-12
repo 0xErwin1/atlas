@@ -1,3 +1,4 @@
+use atlas_domain::actor::Actor;
 use atlas_domain::entities::boards_tasks::{
     Board, BoardColumn, ReferenceKind, Task, TaskReference,
 };
@@ -104,13 +105,18 @@ pub mod task_reference {
     impl ActiveModelBehavior for ActiveModel {}
 }
 
+fn actor_from_user_id(uid: Option<uuid::Uuid>) -> Actor {
+    uid.map(|id| Actor::User(UserId(id)))
+        .unwrap_or_else(|| Actor::User(UserId::new()))
+}
+
 pub fn board_from(m: board::Model) -> Board {
     Board {
         id: BoardId(m.id),
         workspace_id: WorkspaceId(m.workspace_id),
         project_id: ProjectId(m.project_id),
         name: m.name,
-        created_by_user_id: m.created_by_user_id.map(UserId),
+        created_by: actor_from_user_id(m.created_by_user_id),
         created_at: m.created_at,
         updated_at: m.updated_at,
         deleted_at: m.deleted_at,
@@ -124,7 +130,7 @@ pub fn board_column_from(m: board_column::Model) -> BoardColumn {
         board_id: BoardId(m.board_id),
         name: m.name,
         position_key: m.position_key,
-        created_by_user_id: m.created_by_user_id.map(UserId),
+        created_by: actor_from_user_id(m.created_by_user_id),
         created_at: m.created_at,
         updated_at: m.updated_at,
         deleted_at: m.deleted_at,
@@ -143,7 +149,7 @@ pub fn task_from(m: task::Model) -> Task {
         description: m.description,
         properties: m.properties,
         position_key: m.position_key,
-        created_by_user_id: m.created_by_user_id.map(UserId),
+        created_by: actor_from_user_id(m.created_by_user_id),
         created_at: m.created_at,
         updated_at: m.updated_at,
         deleted_at: m.deleted_at,
@@ -165,7 +171,7 @@ pub fn task_reference_from(m: task_reference::Model) -> Result<TaskReference, St
         kind,
         target_task_id: m.target_task_id.map(TaskId),
         target_document_id: m.target_document_id.map(atlas_domain::ids::DocumentId),
-        created_by_user_id: m.created_by_user_id.map(UserId),
+        created_by: actor_from_user_id(m.created_by_user_id),
         created_at: m.created_at,
     })
 }
