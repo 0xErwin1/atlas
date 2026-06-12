@@ -93,3 +93,46 @@ async fn expired_session_returns_401() {
 
     db.teardown().await;
 }
+
+#[tokio::test]
+async fn nonexistent_user_login_returns_401() {
+    // Behavioral test for timing-oracle fix: both "user not found" and "wrong password"
+    // paths must return 401 with the same shape. Timing itself is not unit-asserted.
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+
+    let result = atlas_client::AtlasClient::new(server.base_url())
+        .login(LoginRequest {
+            username: "does-not-exist-at-all".into(),
+            password: "anypassword".into(),
+        })
+        .await;
+
+    assert!(
+        matches!(result, Err(atlas_client::ClientError::Api(ref p)) if p.status == 401),
+        "nonexistent user login must return 401, got: {result:?}"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn wrong_password_returns_401() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (_client, user) = support::login_user(&server, &db, "auth-wrongpw-user").await;
+
+    let result = atlas_client::AtlasClient::new(server.base_url())
+        .login(LoginRequest {
+            username: user.username.clone(),
+            password: "definitelywrong".into(),
+        })
+        .await;
+
+    assert!(
+        matches!(result, Err(atlas_client::ClientError::Api(ref p)) if p.status == 401),
+        "wrong password must return 401, got: {result:?}"
+    );
+
+    db.teardown().await;
+}

@@ -159,28 +159,33 @@ async fn login_rate_limit_returns_429_after_quota_exceeded() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;
 
+    let base_url = server.base_url().to_string();
     let http = reqwest::Client::new();
-    let mut last_status = 0u16;
 
-    for _ in 0..10 {
-        let resp = http
-            .post(format!("{}/v1/auth/login", server.base_url()))
-            .json(&LoginRequest {
-                username: "nonexistent".to_string(),
-                password: "wrong".to_string(),
-            })
-            .send()
-            .await
-            .expect("login attempt");
-        last_status = resp.status().as_u16();
-        if last_status == 429 {
-            break;
-        }
-    }
+    // Send all requests concurrently so they all hit the rate-limiter gate
+    // before any handler has time to complete. With burst_size(5) the first 5
+    // pass and the rest are rejected with 429 without waiting for argon2.
+    let futures: Vec<_> = (0..10)
+        .map(|_| {
+            http.post(format!("{base_url}/v1/auth/login"))
+                .json(&LoginRequest {
+                    username: "nonexistent".to_string(),
+                    password: "wrong".to_string(),
+                })
+                .send()
+        })
+        .collect();
 
-    assert_eq!(
-        last_status, 429,
-        "after repeated login attempts the rate limiter must return 429"
+    let statuses: Vec<u16> = futures::future::join_all(futures)
+        .await
+        .into_iter()
+        .map(|r| r.expect("login attempt").status().as_u16())
+        .collect();
+
+    let saw_429 = statuses.iter().any(|&s| s == 429);
+    assert!(
+        saw_429,
+        "at least one response must be 429 after burst exhausted; got: {statuses:?}"
     );
 
     db.teardown().await;

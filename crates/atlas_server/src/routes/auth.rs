@@ -9,6 +9,7 @@ use axum_extra::extract::{
     cookie::{Cookie, SameSite},
 };
 use chrono::Utc;
+use std::sync::LazyLock;
 
 use atlas_api::dtos::{LoginRequest, LoginResponse, MeResponse, UserDto};
 use atlas_domain::ids::{SessionId, UserId};
@@ -23,6 +24,25 @@ use crate::{
     persistence::repos::{NewSession, PgSessionRepo, PgUserRepo, SessionRepo, UserRepo},
     state::AppState,
 };
+
+/// A pre-computed argon2 hash of a throwaway password used to equalise timing
+/// when the submitted username does not exist. Without this, an attacker could
+/// distinguish "unknown user" from "wrong password" by measuring response latency.
+///
+/// The value is a valid PHC-format hash; producing it cannot fail under normal
+/// circumstances. If it somehow does, the server panics at startup rather than
+/// silently shipping a timing oracle — a deliberate fail-fast choice.
+#[allow(clippy::expect_used)]
+static DUMMY_HASH: LazyLock<String> = LazyLock::new(|| {
+    use argon2::{
+        Argon2, PasswordHasher, password_hash::SaltString, password_hash::rand_core::OsRng,
+    };
+    let salt = SaltString::generate(&mut OsRng);
+    Argon2::default()
+        .hash_password(b"atlas_dummy_password_for_timing", &salt)
+        .expect("argon2 dummy hash initialisation failed")
+        .to_string()
+});
 
 #[utoipa::path(
     post,
@@ -47,11 +67,16 @@ pub(crate) async fn login(
         conn: (*state.db).clone(),
     };
 
-    let user = user_repo
+    let maybe_user = user_repo
         .find_by_username(&body.username)
         .await
-        .map_err(|_| ApiError::Unauthorized)?
-        .ok_or(ApiError::Unauthorized)?;
+        .map_err(|_| ApiError::Unauthorized)?;
+
+    let Some(user) = maybe_user else {
+        // Run a dummy verify so both branches pay the same argon2 cost.
+        let _ = password::verify(body.password, DUMMY_HASH.clone()).await;
+        return Err(ApiError::Unauthorized);
+    };
 
     if user.disabled_at.is_some() {
         return Err(ApiError::Unauthorized);
