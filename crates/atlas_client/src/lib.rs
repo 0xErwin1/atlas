@@ -189,11 +189,7 @@ impl AtlasClient {
         cursor: Option<&str>,
         limit: Option<u32>,
     ) -> Result<Page<ApiKeyDto>, ClientError> {
-        let path = build_paginated_path(
-            &format!("/v1/workspaces/{ws}/api-keys"),
-            cursor,
-            limit,
-        );
+        let path = build_paginated_path(&format!("/v1/workspaces/{ws}/api-keys"), cursor, limit);
         let response = self.get(&path).send().await?;
         self.decode_response(response, "list_api_keys").await
     }
@@ -237,11 +233,7 @@ impl AtlasClient {
         cursor: Option<&str>,
         limit: Option<u32>,
     ) -> Result<Page<ProjectDto>, ClientError> {
-        let path = build_paginated_path(
-            &format!("/v1/workspaces/{ws}/projects"),
-            cursor,
-            limit,
-        );
+        let path = build_paginated_path(&format!("/v1/workspaces/{ws}/projects"), cursor, limit);
         let response = self.get(&path).send().await?;
         self.decode_response(response, "list_projects").await
     }
@@ -357,7 +349,8 @@ impl AtlasClient {
             .json(&body)
             .send()
             .await?;
-        self.decode_response(response, "create_workspace_grant").await
+        self.decode_response(response, "create_workspace_grant")
+            .await
     }
 
     /// `GET /v1/workspaces/{ws}/grants`
@@ -367,13 +360,10 @@ impl AtlasClient {
         cursor: Option<&str>,
         limit: Option<u32>,
     ) -> Result<Page<GrantDto>, ClientError> {
-        let path = build_paginated_path(
-            &format!("/v1/workspaces/{ws}/grants"),
-            cursor,
-            limit,
-        );
+        let path = build_paginated_path(&format!("/v1/workspaces/{ws}/grants"), cursor, limit);
         let response = self.get(&path).send().await?;
-        self.decode_response(response, "list_workspace_grants").await
+        self.decode_response(response, "list_workspace_grants")
+            .await
     }
 
     /// `DELETE /v1/workspaces/{ws}/grants/{grant_id}`
@@ -399,27 +389,8 @@ impl AtlasClient {
 
     /// `GET /v1/workspaces/{ws}`
     pub async fn get_workspace(&self, ws: &str) -> Result<WorkspaceDto, ClientError> {
-        let response = self
-            .get(&format!("/v1/workspaces/{ws}"))
-            .send()
-            .await?;
+        let response = self.get(&format!("/v1/workspaces/{ws}")).send().await?;
         self.decode_response(response, "get_workspace").await
-    }
-
-    /// `GET /v1/workspaces/{ws}/probe`
-    pub async fn get_probe(&self, ws: &str) -> Result<(), ClientError> {
-        let response = self
-            .get(&format!("/v1/workspaces/{ws}/probe"))
-            .send()
-            .await?;
-        if !response.status().is_success() {
-            let problem: ProblemDetails = response
-                .json()
-                .await
-                .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
-            return Err(ClientError::Api(problem));
-        }
-        Ok(())
     }
 
     /// `POST /v1/auth/logout`

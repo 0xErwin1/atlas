@@ -13,7 +13,7 @@ pub mod config;
 pub mod error;
 pub mod middleware;
 pub mod persistence;
-mod routes;
+pub mod routes;
 pub mod state;
 
 use crate::state::AppState;
@@ -35,7 +35,6 @@ pub fn app(state: AppState) -> Router {
     let protected = Router::new()
         .route("/v1/auth/logout", axum::routing::post(routes::auth::logout))
         .route("/v1/auth/me", get(routes::auth::me))
-        .route("/v1/workspaces/{ws}/probe", get(routes::probe::probe))
         // Users (root-only)
         .route("/v1/users", axum::routing::post(routes::users::create_user))
         .route(
@@ -106,6 +105,8 @@ pub fn app(state: AppState) -> Router {
             "/v1/auth/login",
             axum::routing::post(routes::auth::login).layer(GovernorLayer::new(login_config)),
         )
+        .route("/openapi.json", get(routes::openapi::openapi_json))
+        .merge(routes::openapi::scalar_router())
         .with_state(state.clone());
 
     let router = public.merge(protected);
