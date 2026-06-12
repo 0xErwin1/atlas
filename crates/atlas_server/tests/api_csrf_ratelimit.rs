@@ -182,7 +182,7 @@ async fn login_rate_limit_returns_429_after_quota_exceeded() {
         .map(|r| r.expect("login attempt").status().as_u16())
         .collect();
 
-    let saw_429 = statuses.iter().any(|&s| s == 429);
+    let saw_429 = statuses.contains(&429);
     assert!(
         saw_429,
         "at least one response must be 429 after burst exhausted; got: {statuses:?}"
