@@ -58,10 +58,10 @@ fn openapi_document_contains_required_schemas() {
 /// the OpenAPI document. The set of unique OpenAPI paths in ROUTE_REGISTRY must
 /// exactly match the set of paths in the generated document.
 ///
-/// This test is router-derived: ROUTE_REGISTRY is the source of truth shared with
-/// `lib.rs`. Adding a route to `lib.rs` without a ROUTE_REGISTRY entry causes the
-/// 401 sweep to miss it; adding a ROUTE_REGISTRY entry without an OpenAPI annotation
-/// causes this test to fail. Both directions are covered.
+/// Coverage: ROUTE_REGISTRY → router is enforced by `all_registry_entries_are_wired_in_router`.
+/// ROUTE_REGISTRY → OpenAPI doc is enforced here. The reverse direction (a route or
+/// annotation added without a ROUTE_REGISTRY entry) is not automatically caught —
+/// ROUTE_REGISTRY is the authoritative list developers must update when adding routes.
 #[test]
 fn openapi_document_paths_match_router() {
     let doc = openapi();

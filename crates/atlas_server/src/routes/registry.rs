@@ -9,12 +9,20 @@ pub enum RouteKind {
     WorkspaceMember,
 }
 
-/// A single route entry — the shared registry that links the router, the protection
-/// audit, and the OpenAPI drift test.
+/// A single route entry — the shared registry that links the protection audit and
+/// the OpenAPI drift test.
 ///
-/// Every route that appears in `lib.rs` MUST have a corresponding entry here.
-/// Every entry here MUST be routed in `lib.rs`. The `route_covers_all_registry_entries`
-/// test enforces the second direction at runtime.
+/// This registry is the single source of truth developers must keep in sync with
+/// `lib.rs`. Two directions are enforced by tests:
+/// - Registry → router: `all_registry_entries_are_wired_in_router` calls every
+///   entry and asserts the response is not 404.
+/// - Registry → OpenAPI doc: `openapi_document_paths_match_router` asserts every
+///   declared `openapi_path` is present in the generated document.
+///
+/// The reverse directions are NOT automatically enforced: a route added to `lib.rs`
+/// without a registry entry is not caught, and an OpenAPI annotation without a
+/// registry entry is not caught. axum 0.8 exposes no Router introspection, so a
+/// fully router-derived check is not feasible within axum's type system.
 pub struct RouteEntry {
     pub method: &'static str,
     /// Path template using `{param}` placeholders. Workspace-scoped paths use `{ws}`.
