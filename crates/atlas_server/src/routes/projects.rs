@@ -132,13 +132,8 @@ pub(crate) async fn list_projects(
     let after_id = q.cursor.as_deref().and_then(Cursor::decode).map(|c| c.0);
 
     let principal = workspace_member_to_principal(&member);
-    let ctx = WorkspaceCtx::new(
-        member.workspace.id,
-        member.user.as_ref().map_or_else(
-            || atlas_domain::Actor::User(atlas_domain::ids::UserId::new()),
-            |u| atlas_domain::Actor::User(u.id),
-        ),
-    );
+    let actor = member_to_actor(&member);
+    let ctx = WorkspaceCtx::new(member.workspace.id, actor);
     let repo = PgProjectRepo {
         conn: (*state.db).clone(),
     };
@@ -349,7 +344,19 @@ fn principal_to_actor(principal: &Principal) -> Actor {
 fn workspace_member_to_principal(member: &WorkspaceMember) -> Principal {
     if let Some(user) = &member.user {
         Principal::User(user.id)
+    } else if let Some(kid) = member.api_key_id {
+        Principal::ApiKey(kid)
     } else {
         Principal::ApiKey(atlas_domain::ids::ApiKeyId::new())
+    }
+}
+
+fn member_to_actor(member: &WorkspaceMember) -> atlas_domain::Actor {
+    if let Some(user) = &member.user {
+        atlas_domain::Actor::User(user.id)
+    } else if let Some(kid) = member.api_key_id {
+        atlas_domain::Actor::ApiKey(kid)
+    } else {
+        atlas_domain::Actor::User(atlas_domain::ids::UserId::new())
     }
 }

@@ -159,16 +159,9 @@ async fn agent_cannot_share_project() {
         .await;
 
     assert!(
-        result.is_err(),
-        "agent must not be allowed to create grants"
+        matches!(result, Err(atlas_client::ClientError::Api(ref p)) if p.status == 403),
+        "agent grant attempt must return 403, got: {result:?}"
     );
-
-    if let Err(atlas_client::ClientError::Api(problem)) = result {
-        assert_eq!(
-            problem.status, 403,
-            "agent grant attempt must return 403, got: {problem:?}"
-        );
-    }
 
     db.teardown().await;
 }
@@ -243,16 +236,9 @@ async fn editor_cannot_grant_admin() {
         .await;
 
     assert!(
-        result.is_err(),
-        "editor must not be allowed to grant admin (above own level)"
+        matches!(result, Err(atlas_client::ClientError::Api(ref p)) if p.status == 403),
+        "editor granting admin must return 403, got: {result:?}"
     );
-
-    if let Err(atlas_client::ClientError::Api(problem)) = result {
-        assert_eq!(
-            problem.status, 403,
-            "editor granting admin must return 403, got: {problem:?}"
-        );
-    }
 
     db.teardown().await;
 }
@@ -315,16 +301,9 @@ async fn viewer_cannot_update_project() {
         .await;
 
     assert!(
-        result.is_err(),
-        "viewer must not be allowed to update a project (editor-min route)"
+        matches!(result, Err(atlas_client::ClientError::Api(ref p)) if p.status == 403),
+        "viewer updating project must return 403, got: {result:?}"
     );
-
-    if let Err(atlas_client::ClientError::Api(problem)) = result {
-        assert_eq!(
-            problem.status, 403,
-            "viewer updating project must return 403, got: {problem:?}"
-        );
-    }
 
     db.teardown().await;
 }
@@ -351,16 +330,105 @@ async fn non_member_cannot_access_workspace_resource() {
     let result = non_member.get_project(&ws.slug, "nonmember-proj").await;
 
     assert!(
-        result.is_err(),
-        "non-member must not be able to access another workspace's project"
+        matches!(result, Err(atlas_client::ClientError::Api(ref p)) if p.status == 403 || p.status == 404),
+        "non-member accessing workspace resource must return 403 or 404, got: {result:?}"
     );
 
-    if let Err(atlas_client::ClientError::Api(problem)) = result {
-        assert!(
-            problem.status == 403 || problem.status == 404,
-            "non-member accessing workspace resource must return 403 or 404, got: {problem:?}"
-        );
-    }
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn agent_with_grant_sees_private_project_in_list() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+
+    let (owner, ws, owner_user) =
+        support::login_user_with_workspace(&server, &db, "perm-agentvis-owner").await;
+
+    let project = owner
+        .create_project(
+            &ws.slug,
+            private_proj_req("Agent Visible Private", "agent-visible-priv"),
+        )
+        .await
+        .expect("create private project");
+
+    let key_created = owner
+        .create_api_key(
+            &ws.slug,
+            CreateApiKeyRequest {
+                name: "agent-visibility-key".to_string(),
+                expires_at: None,
+            },
+        )
+        .await
+        .expect("create api key");
+
+    let key_created_id = key_created.id;
+    let agent_client =
+        atlas_client::AtlasClient::new(server.base_url()).with_token(key_created.secret.clone());
+
+    use atlas_domain::entities::permissions::NewPermissionGrant;
+    use atlas_domain::ids::{ApiKeyId, ProjectId};
+    let grant_repo = atlas_server::persistence::repos::PgPermissionGrantRepo {
+        conn: db.conn().clone(),
+    };
+    grant_repo
+        .upsert(NewPermissionGrant {
+            workspace_id: ws.id,
+            user_id: None,
+            api_key_id: Some(ApiKeyId(key_created_id)),
+            project_id: Some(ProjectId(project.id)),
+            folder_id: None,
+            document_id: None,
+            board_id: None,
+            role: atlas_domain::permissions::ResourceRole::Viewer,
+            created_by_user_id: Some(owner_user.id),
+            created_by_api_key_id: None,
+        })
+        .await
+        .expect("seed agent grant on private project");
+
+    let page = agent_client
+        .list_projects(&ws.slug, None, None)
+        .await
+        .expect("agent with grant must be able to list projects");
+
+    let found = page.items.iter().any(|p| p.id == project.id);
+    assert!(
+        found,
+        "agent with explicit grant must see the private project in the list"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn owner_sees_own_private_project_in_list() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+
+    let (owner, ws, _) =
+        support::login_user_with_workspace(&server, &db, "perm-ownpriv-owner").await;
+
+    let project = owner
+        .create_project(
+            &ws.slug,
+            private_proj_req("Owner Private", "owner-private-proj"),
+        )
+        .await
+        .expect("create private project");
+
+    let page = owner
+        .list_projects(&ws.slug, None, None)
+        .await
+        .expect("owner must be able to list projects");
+
+    let found = page.items.iter().any(|p| p.id == project.id);
+    assert!(
+        found,
+        "owner must see their own private project in the list"
+    );
 
     db.teardown().await;
 }

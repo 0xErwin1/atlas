@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use atlas_domain::{
     entities::identity::{User, WorkspaceMembership},
-    ids::UserId,
+    ids::{ApiKeyId, UserId},
 };
 
 use crate::{
@@ -22,11 +22,12 @@ use crate::{
 /// Proof that the request's principal is an authenticated, non-disabled workspace member.
 ///
 /// Extracts the workspace from the `{ws}` path segment and verifies the principal
-/// belongs to it. Resolves to the workspace row and the associated user (if the
-/// principal is a user).
+/// belongs to it. Resolves to the workspace row, the associated user (if a user
+/// principal), and the api key id (if an api key principal).
 pub struct WorkspaceMember {
     pub workspace: Workspace,
     pub user: Option<User>,
+    pub api_key_id: Option<ApiKeyId>,
     pub membership: Option<WorkspaceMembership>,
 }
 
@@ -99,6 +100,7 @@ impl FromRequestParts<AppState> for WorkspaceMember {
                 Ok(WorkspaceMember {
                     workspace,
                     user: Some(user),
+                    api_key_id: None,
                     membership,
                 })
             }
@@ -124,6 +126,7 @@ impl FromRequestParts<AppState> for WorkspaceMember {
                 Ok(WorkspaceMember {
                     workspace,
                     user: None,
+                    api_key_id: Some(key_id),
                     membership: None,
                 })
             }
