@@ -1,0 +1,69 @@
+[workspace]
+members = []
+default-members = []
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.96"
+authors = ["Ignacio Perez <ignacio@feuer.me>"]
+repository = "https://github.com/0xErwin1/atlas"
+
+[workspace.dependencies]
+# Internal crates (path deps)
+atlas_domain = { path = "crates/atlas_domain" }
+atlas_client = { path = "crates/atlas_client" }
+migration    = { path = "crates/migration" }
+
+# Domain layer (pure)
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror  = "2"
+uuid       = { version = "1", features = ["v4", "v7", "serde"] }
+chrono     = { version = "0.4", features = ["serde"] }
+
+# Server layer
+axum       = "0.8"
+tokio      = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
+sea-orm    = { version = "1.1", features = ["sqlx-postgres", "runtime-tokio-rustls", "macros"] }
+sea-orm-migration = { version = "1.1", features = ["sqlx-postgres", "runtime-tokio-rustls"] }
+utoipa     = { version = "5", features = ["axum_extras"] }
+tower      = "0.5"
+tower-http = { version = "0.6", features = ["trace"] }
+
+# Client layer
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-tls"] }
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# MCP — pinned exact version confirmed at scaffold time
+rmcp = { version = "=1.7.0", features = ["server", "transport-io", "macros"] }
+
+# Shared infra
+tracing            = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+anyhow             = "1"
+async-trait        = "0.1"
+schemars           = "0.8"
+
+[workspace.lints.rust]
+unsafe_code     = "forbid"
+unused_must_use = "deny"
+unreachable_pub = "warn"
+
+[workspace.lints.clippy]
+unwrap_used      = "deny"
+expect_used      = "deny"
+panic            = "deny"
+unwrap_in_result = "deny"
+todo             = "warn"
+unimplemented    = "warn"
+dbg_macro        = "deny"
+indexing_slicing = "warn"
+
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
