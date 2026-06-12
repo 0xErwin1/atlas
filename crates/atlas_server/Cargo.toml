@@ -35,6 +35,11 @@ chrono.workspace = true
 
 [dev-dependencies]
 tower.workspace = true
+tokio = { workspace = true }
+sea-orm.workspace = true
+sea-orm-migration.workspace = true
+migration.workspace = true
+uuid.workspace = true
 
 [lints]
 workspace = true
