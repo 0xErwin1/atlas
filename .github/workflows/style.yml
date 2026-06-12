@@ -32,3 +32,15 @@ jobs:
           cache-targets: true
           cache-on-failure: true
       - run: cargo clippy --workspace --all-targets -- -D warnings
+
+  biome:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec biome ci .
