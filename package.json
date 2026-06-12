@@ -1,0 +1,17 @@
+{
+  "name": "atlas",
+  "private": true,
+  "scripts": {
+    "lint": "biome ci .",
+    "format": "biome format --write .",
+    "web:dev": "pnpm --filter @atlas/web dev",
+    "web:build": "pnpm --filter @atlas/web build"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2"
+  },
+  "packageManager": "pnpm@11.4.0",
+  "engines": {
+    "node": ">=22"
+  }
+}

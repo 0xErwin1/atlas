@@ -8,3 +8,8 @@ dist
 *.swp
 .idea/
 .vscode/
+*.vue.js
+*.vue.js.map
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts

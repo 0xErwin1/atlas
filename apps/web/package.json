@@ -1,0 +1,25 @@
+{
+  "name": "@atlas/web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc -b && vite build",
+    "preview": "vite preview",
+    "typecheck": "vue-tsc -b --noEmit"
+  },
+  "dependencies": {
+    "vue": "^3.5",
+    "vue-router": "^5",
+    "pinia": "^3"
+  },
+  "devDependencies": {
+    "vite": "^8",
+    "@vitejs/plugin-vue": "^6",
+    "vue-tsc": "^3",
+    "typescript": "~5.7",
+    "tailwindcss": "^4",
+    "@tailwindcss/vite": "^4",
+    "@types/node": "^22"
+  }
+}
