@@ -4,6 +4,7 @@ members = [
     "crates/atlas_client",
     "crates/atlas_server",
     "crates/atlas_cli",
+    "crates/atlas_mcp",
     "crates/migration",
 ]
 default-members = [
@@ -11,6 +12,7 @@ default-members = [
     "crates/atlas_client",
     "crates/atlas_server",
     "crates/atlas_cli",
+    "crates/atlas_mcp",
 ]
 resolver = "3"
 
