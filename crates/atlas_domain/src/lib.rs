@@ -1,6 +1,7 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
 pub mod actor;
+pub mod entities;
 pub mod error;
 pub mod ids;
 pub mod ports;

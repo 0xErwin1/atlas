@@ -13,6 +13,7 @@ uuid.workspace = true
 chrono.workspace = true
 diffy-imara.workspace = true
 fractional_index.workspace = true
+async-trait.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true

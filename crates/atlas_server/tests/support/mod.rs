@@ -1,5 +1,10 @@
 #![allow(dead_code)]
 
+use atlas_domain::{Actor, WorkspaceCtx, ids::WorkspaceId};
+use atlas_server::persistence::repos::{
+    MembershipRepo, NewUser, NewWorkspace, PgApiKeyRepo, PgMembershipRepo, PgSessionRepo,
+    PgUserRepo, PgWorkspaceRepo, User, UserRepo, Workspace, WorkspaceRepo,
+};
 use migration::Migrator;
 use sea_orm::{ConnectOptions, ConnectionTrait, Database, DatabaseConnection, DbErr};
 use sea_orm_migration::prelude::MigratorTrait;
@@ -42,6 +47,36 @@ impl TestDb {
         &self.conn
     }
 
+    pub(crate) fn user_repo(&self) -> PgUserRepo {
+        PgUserRepo {
+            conn: self.conn.clone(),
+        }
+    }
+
+    pub(crate) fn workspace_repo(&self) -> PgWorkspaceRepo {
+        PgWorkspaceRepo {
+            conn: self.conn.clone(),
+        }
+    }
+
+    pub(crate) fn session_repo(&self) -> PgSessionRepo {
+        PgSessionRepo {
+            conn: self.conn.clone(),
+        }
+    }
+
+    pub(crate) fn api_key_repo(&self) -> PgApiKeyRepo {
+        PgApiKeyRepo {
+            conn: self.conn.clone(),
+        }
+    }
+
+    pub(crate) fn membership_repo(&self) -> PgMembershipRepo {
+        PgMembershipRepo {
+            conn: self.conn.clone(),
+        }
+    }
+
     pub(crate) async fn teardown(self) {
         drop(self.conn);
 
@@ -54,6 +89,47 @@ impl TestDb {
                 .await;
         }
     }
+}
+
+pub(crate) async fn seed_workspace(db: &TestDb, username: &str) -> (Workspace, User) {
+    use atlas_domain::entities::identity::MemberRole;
+
+    let user_repo = db.user_repo();
+    let ws_repo = db.workspace_repo();
+    let membership_repo = db.membership_repo();
+
+    let user = user_repo
+        .create(NewUser {
+            username: username.to_string(),
+            display_name: username.to_string(),
+            password_hash: "$argon2id$v=19$m=19456,t=2,p=1$test$hash".into(),
+            is_root: false,
+        })
+        .await
+        .expect("seed user");
+
+    let slug = format!("ws-{username}");
+    let ws_id = WorkspaceId::new();
+    let ws = ws_repo
+        .create(NewWorkspace {
+            id: ws_id,
+            name: format!("Workspace {username}"),
+            slug: slug.clone(),
+        })
+        .await
+        .expect("seed workspace");
+
+    let ctx = WorkspaceCtx::new(ws_id, Actor::User(user.id));
+    membership_repo
+        .add(&ctx, user.id, MemberRole::Owner)
+        .await
+        .expect("seed membership");
+
+    (ws, user)
+}
+
+pub(crate) fn ctx(ws: &Workspace, user: &User) -> WorkspaceCtx {
+    WorkspaceCtx::new(ws.id, Actor::User(user.id))
 }
 
 fn admin_url_from(url: &str) -> String {
