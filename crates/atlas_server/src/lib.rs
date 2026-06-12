@@ -92,6 +92,9 @@ pub fn app(state: AppState) -> Router {
             "/v1/workspaces/{ws}/grants/{grant_id}",
             axum::routing::delete(routes::grants::delete_workspace_grant),
         )
+        .layer(axum_middleware::from_fn(
+            crate::auth::csrf::require_csrf_for_cookie_mutations,
+        ))
         .layer(axum_middleware::from_fn_with_state(
             state.clone(),
             crate::auth::middleware::require_authn,
