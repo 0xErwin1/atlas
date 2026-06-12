@@ -77,15 +77,21 @@ pub fn app(state: AppState) -> Router {
         .route(
             "/v1/workspaces/{ws}/projects/{project_slug}/grants",
             axum::routing::post(routes::grants::create_project_grant)
-                .get(routes::grants::list_project_grants)
-                .delete(routes::grants::delete_project_grant),
+                .get(routes::grants::list_project_grants),
+        )
+        .route(
+            "/v1/workspaces/{ws}/projects/{project_slug}/grants/{grant_id}",
+            axum::routing::delete(routes::grants::delete_project_grant),
         )
         // Workspace grants
         .route(
             "/v1/workspaces/{ws}/grants",
             axum::routing::post(routes::grants::create_workspace_grant)
-                .get(routes::grants::list_workspace_grants)
-                .delete(routes::grants::delete_workspace_grant),
+                .get(routes::grants::list_workspace_grants),
+        )
+        .route(
+            "/v1/workspaces/{ws}/grants/{grant_id}",
+            axum::routing::delete(routes::grants::delete_workspace_grant),
         )
         .layer(axum_middleware::from_fn_with_state(
             state.clone(),
