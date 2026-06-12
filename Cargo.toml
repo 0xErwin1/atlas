@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/atlas_domain",
+    "crates/atlas_api",
     "crates/atlas_client",
     "crates/atlas_server",
     "crates/atlas_cli",
@@ -9,6 +10,7 @@ members = [
 ]
 default-members = [
     "crates/atlas_domain",
+    "crates/atlas_api",
     "crates/atlas_client",
     "crates/atlas_server",
     "crates/atlas_cli",
@@ -25,6 +27,7 @@ repository = "https://github.com/0xErwin1/atlas"
 [workspace.dependencies]
 # Internal crates (path deps)
 atlas_domain = { path = "crates/atlas_domain" }
+atlas_api    = { path = "crates/atlas_api" }
 atlas_client = { path = "crates/atlas_client" }
 migration    = { path = "crates/migration" }
 
@@ -42,7 +45,11 @@ sea-orm    = { version = "2.0.0-rc.40", features = ["sqlx-postgres", "runtime-to
 sea-orm-migration = { version = "2.0.0-rc.40", features = ["sqlx-postgres", "runtime-tokio-rustls"] }
 utoipa     = { version = "5", features = ["axum_extras"] }
 tower      = "0.5"
-tower-http = { version = "0.6", features = ["trace"] }
+tower-http = { version = "0.6", features = ["trace", "request-id", "cors", "set-header"] }
+utoipa-axum   = "0.2"
+utoipa-scalar = { version = "0.3", features = ["axum"] }
+axum-extra    = { version = "0.9", features = ["cookie"] }
+tower_governor = "0.8"
 
 # Persistence deps
 argon2            = "0.5"
@@ -50,6 +57,7 @@ sha2              = "0.10"
 rand              = "0.8"
 fractional_index  = "2.0"
 diffy-imara       = "0.3"
+base64            = "0.22"
 
 # Client layer
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }

@@ -1,5 +1,5 @@
 [package]
-name = "atlas_client"
+name = "atlas_api"
 version = "0.0.0"
 edition.workspace = true
 rust-version.workspace = true
@@ -7,12 +7,14 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
-atlas_domain.workspace = true
-atlas_api.workspace = true
-reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-thiserror.workspace = true
+uuid.workspace = true
+base64 = "0.22"
+utoipa = { version = "5", optional = true }
+
+[features]
+openapi = ["dep:utoipa"]
 
 [lints]
 workspace = true
