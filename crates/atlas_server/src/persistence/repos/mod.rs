@@ -1,4 +1,6 @@
 #[allow(unreachable_pub)]
+mod documents;
+#[allow(unreachable_pub)]
 mod identity;
 #[allow(unreachable_pub)]
 mod workspace_core;
@@ -9,6 +11,10 @@ pub use identity::{
     UserRepo, Workspace, WorkspaceRepo,
 };
 
+pub use documents::{
+    AttachmentRepo, DocumentLinkRepo, DocumentRepo, PgAttachmentRepo, PgDocumentLinkRepo,
+    PgDocumentRepo,
+};
 pub use workspace_core::{
     FolderRepo, PgFolderRepo, PgProjectRepo, PgPropertyDefinitionRepo, ProjectRepo,
     PropertyDefinitionRepo,

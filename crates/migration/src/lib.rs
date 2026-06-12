@@ -2,6 +2,7 @@
 
 pub mod m20260612_000001_identity;
 pub mod m20260612_000002_workspace_core;
+pub mod m20260612_000003_documents;
 
 use sea_orm_migration::prelude::*;
 
@@ -13,6 +14,7 @@ impl MigratorTrait for Migrator {
         vec![
             Box::new(m20260612_000001_identity::Migration),
             Box::new(m20260612_000002_workspace_core::Migration),
+            Box::new(m20260612_000003_documents::Migration),
         ]
     }
 }
