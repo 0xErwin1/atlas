@@ -44,6 +44,49 @@ async fn all_non_public_routes_require_authentication() {
     db.teardown().await;
 }
 
+/// Every entry in ROUTE_REGISTRY must be wired in the router.
+///
+/// For public routes this checks we get a non-404. For protected routes the
+/// 401 response already proves the route exists (the router matched it and the
+/// authn middleware fired). A 404 means the route is in the registry but missing
+/// from the router — the test turns RED and forces the developer to wire the route.
+#[tokio::test]
+async fn all_registry_entries_are_wired_in_router() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+
+    let ws_slug = "no-such-workspace-for-audit";
+    let http = reqwest::Client::new();
+
+    for entry in ROUTE_MATRIX {
+        let path = entry.path_template.replace("{ws}", ws_slug);
+        let url = format!("{}{}", server.base_url(), path);
+
+        let req = match entry.method {
+            "GET" => http.get(&url),
+            "POST" => http.post(&url),
+            "PATCH" => http.patch(&url),
+            "DELETE" => http.delete(&url),
+            _ => http.get(&url),
+        };
+        let status = req
+            .send()
+            .await
+            .expect("request must not error")
+            .status()
+            .as_u16();
+
+        assert_ne!(
+            status, 404,
+            "route {} {} is in ROUTE_REGISTRY but returned 404 — it is NOT wired in the router. \
+             Add it to lib.rs.",
+            entry.method, path
+        );
+    }
+
+    db.teardown().await;
+}
+
 async fn reqwest_call_raw(_client: &AtlasClient, method: &str, url: &str) -> u16 {
     let http = reqwest::Client::new();
     let req = match method {

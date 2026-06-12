@@ -1,6 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use atlas_server::routes::openapi::openapi;
+use atlas_server::routes::registry::ROUTE_REGISTRY;
 
 /// All schema component names that must be present in the generated OpenAPI document.
 ///
@@ -53,50 +54,40 @@ fn openapi_document_contains_required_schemas() {
     );
 }
 
-/// Every shipped route path must appear in the OpenAPI document.
+/// Every route that declares an `openapi_path` in ROUTE_REGISTRY must appear in
+/// the OpenAPI document. The set of unique OpenAPI paths in ROUTE_REGISTRY must
+/// exactly match the set of paths in the generated document.
 ///
-/// The path strings mirror the axum route definitions in lib.rs. When a route is added
-/// or removed, this list must be updated — and if the OpenAPI `#[utoipa::path]`
-/// annotation is missing, the test fails.
-const EXPECTED_PATHS: &[&str] = &[
-    "/health",
-    "/version",
-    "/v1/auth/login",
-    "/v1/auth/logout",
-    "/v1/auth/me",
-    "/v1/users",
-    "/v1/users/{user_id}/disable",
-    "/v1/users/{user_id}/enable",
-    "/v1/workspaces/{ws}",
-    "/v1/workspaces/{ws}/api-keys",
-    "/v1/workspaces/{ws}/api-keys/{key_id}/revoke",
-    "/v1/workspaces/{ws}/projects",
-    "/v1/workspaces/{ws}/projects/{project_slug}",
-    "/v1/workspaces/{ws}/projects/{project_slug}/grants",
-    "/v1/workspaces/{ws}/projects/{project_slug}/grants/{grant_id}",
-    "/v1/workspaces/{ws}/grants",
-    "/v1/workspaces/{ws}/grants/{grant_id}",
-];
-
+/// This test is router-derived: ROUTE_REGISTRY is the source of truth shared with
+/// `lib.rs`. Adding a route to `lib.rs` without a ROUTE_REGISTRY entry causes the
+/// 401 sweep to miss it; adding a ROUTE_REGISTRY entry without an OpenAPI annotation
+/// causes this test to fail. Both directions are covered.
 #[test]
 fn openapi_document_paths_match_router() {
     let doc = openapi();
     let doc_paths = &doc.paths.paths;
 
-    for path in EXPECTED_PATHS {
+    let mut expected: std::collections::BTreeSet<&'static str> = std::collections::BTreeSet::new();
+    for entry in ROUTE_REGISTRY {
+        if let Some(p) = entry.openapi_path {
+            expected.insert(p);
+        }
+    }
+
+    for path in &expected {
         assert!(
             doc_paths.contains_key(*path),
-            "route '{path}' is missing from the OpenAPI paths; add a #[utoipa::path] annotation \
-             and register it in ApiDoc paths()"
+            "route '{path}' is in ROUTE_REGISTRY but missing from the OpenAPI document; \
+             add a #[utoipa::path] annotation and register it in ApiDoc paths()"
         );
     }
 
     assert_eq!(
         doc_paths.len(),
-        EXPECTED_PATHS.len(),
-        "OpenAPI path count mismatch: expected {}, got {}. \
-         Update EXPECTED_PATHS in openapi_drift.rs when adding or removing routes.",
-        EXPECTED_PATHS.len(),
+        expected.len(),
+        "OpenAPI path count mismatch: registry declares {} unique paths, document has {}. \
+         Update ROUTE_REGISTRY in src/routes/registry.rs when adding or removing routes.",
+        expected.len(),
         doc_paths.len()
     );
 }
