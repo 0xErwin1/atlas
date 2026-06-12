@@ -1,8 +1,15 @@
 #[allow(unreachable_pub)]
 mod identity;
+#[allow(unreachable_pub)]
+mod workspace_core;
 
 pub use identity::{
     ApiKey, ApiKeyRepo, MembershipRepo, NewApiKey, NewSession, NewUser, NewWorkspace, PgApiKeyRepo,
     PgMembershipRepo, PgSessionRepo, PgUserRepo, PgWorkspaceRepo, Session, SessionRepo, User,
     UserRepo, Workspace, WorkspaceRepo,
+};
+
+pub use workspace_core::{
+    FolderRepo, PgFolderRepo, PgProjectRepo, PgPropertyDefinitionRepo, ProjectRepo,
+    PropertyDefinitionRepo,
 };
