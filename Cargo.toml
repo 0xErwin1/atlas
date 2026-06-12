@@ -4,6 +4,7 @@ members = [
     "crates/atlas_client",
     "crates/atlas_server",
     "crates/atlas_cli",
+    "crates/migration",
 ]
 default-members = [
     "crates/atlas_domain",
