@@ -3,11 +3,13 @@ members = [
     "crates/atlas_domain",
     "crates/atlas_client",
     "crates/atlas_server",
+    "crates/atlas_cli",
 ]
 default-members = [
     "crates/atlas_domain",
     "crates/atlas_client",
     "crates/atlas_server",
+    "crates/atlas_cli",
 ]
 resolver = "3"
 
