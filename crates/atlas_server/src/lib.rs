@@ -1,6 +1,7 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
 use axum::{Router, middleware as axum_middleware, routing::get};
+use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
 use tower_http::{
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
     trace::TraceLayer,
@@ -12,13 +13,43 @@ pub mod error;
 pub mod middleware;
 pub mod persistence;
 mod routes;
+pub mod state;
 
-/// Builds the full application router with the complete middleware stack.
-pub fn app() -> Router {
-    let router = Router::new()
+use crate::state::AppState;
+
+/// Builds the full application router with all routes and the middleware stack.
+pub fn app(state: AppState) -> Router {
+    // burst_size(5) and per_second(1) are non-zero, so finish() always returns Some here.
+    #[allow(clippy::expect_used)]
+    let login_config = {
+        let mut b = GovernorConfigBuilder::default();
+        let cfg = b
+            .per_second(1)
+            .burst_size(5)
+            .finish()
+            .expect("governor config");
+        std::sync::Arc::new(cfg)
+    };
+
+    let protected = Router::new()
+        .route("/v1/auth/logout", axum::routing::post(routes::auth::logout))
+        .route("/v1/auth/me", get(routes::auth::me))
+        .layer(axum_middleware::from_fn_with_state(
+            state.clone(),
+            crate::auth::middleware::require_authn,
+        ))
+        .with_state(state.clone());
+
+    let public = Router::new()
         .route("/health", get(routes::health::health))
-        .route("/version", get(routes::health::version));
+        .route("/version", get(routes::health::version))
+        .route(
+            "/v1/auth/login",
+            axum::routing::post(routes::auth::login).layer(GovernorLayer::new(login_config)),
+        )
+        .with_state(state.clone());
 
+    let router = public.merge(protected);
     apply_layers(router)
 }
 
@@ -39,27 +70,4 @@ fn apply_layers(router: Router) -> Router {
 /// starting a real server.
 pub fn test_app_with_route(path: &str, handler: axum::routing::MethodRouter) -> Router {
     apply_layers(Router::new().route(path, handler))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use axum::body::Body;
-    use axum::http::{Request, StatusCode};
-    use tower::ServiceExt;
-
-    #[tokio::test]
-    async fn health_returns_200() {
-        let app = app();
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .uri("/health")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-    }
 }

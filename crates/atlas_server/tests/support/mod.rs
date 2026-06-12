@@ -2,10 +2,13 @@
 
 use atlas_client::AtlasClient;
 use atlas_domain::{Actor, WorkspaceCtx, ids::WorkspaceId};
-use atlas_server::persistence::repos::{
-    MembershipRepo, NewUser, NewWorkspace, PgApiKeyRepo, PgBoardRepo, PgFolderRepo,
-    PgMembershipRepo, PgProjectRepo, PgPropertyDefinitionRepo, PgSessionRepo, PgTaskRepo,
-    PgUserRepo, PgWorkspaceRepo, User, UserRepo, Workspace, WorkspaceRepo,
+use atlas_server::{
+    persistence::repos::{
+        MembershipRepo, NewUser, NewWorkspace, PgApiKeyRepo, PgBoardRepo, PgFolderRepo,
+        PgMembershipRepo, PgProjectRepo, PgPropertyDefinitionRepo, PgSessionRepo, PgTaskRepo,
+        PgUserRepo, PgWorkspaceRepo, User, UserRepo, Workspace, WorkspaceRepo,
+    },
+    state::AppState,
 };
 use migration::Migrator;
 use sea_orm::{ConnectOptions, ConnectionTrait, Database, DatabaseConnection, DbErr};
@@ -170,19 +173,17 @@ pub(crate) struct TestServer {
 }
 
 impl TestServer {
-    /// Spawns the application on a random available port.
-    ///
-    /// `_db` is accepted for API consistency with future callers that will pass
-    /// a database connection to the app state; it is unused here while `app()`
-    /// takes no arguments.
-    pub(crate) async fn spawn(_db: &TestDb) -> Self {
+    /// Spawns the application on a random available port using the test database.
+    pub(crate) async fn spawn(db: &TestDb) -> Self {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
             .expect("bind test port");
         let addr = listener.local_addr().expect("local addr");
         let base_url = format!("http://{addr}");
 
-        let app = atlas_server::app();
+        use std::net::SocketAddr;
+        let state = AppState::for_test(db.conn().clone());
+        let app = atlas_server::app(state).into_make_service_with_connect_info::<SocketAddr>();
         let handle = tokio::spawn(async move {
             axum::serve(listener, app).await.expect("serve");
         });
@@ -207,6 +208,52 @@ impl Drop for TestServer {
     fn drop(&mut self) {
         self._abort.abort();
     }
+}
+
+/// Creates a user with a real password hash, starts the server login flow, and
+/// returns an authenticated client plus the created user record.
+pub(crate) async fn login_user(
+    server: &TestServer,
+    db: &TestDb,
+    username: &str,
+) -> (AtlasClient, User) {
+    use atlas_api::dtos::LoginRequest;
+    use atlas_server::auth::password;
+
+    let password_plaintext = "TestPassword1!";
+    let password_hash = password::hash(password_plaintext.to_string())
+        .await
+        .expect("hash password");
+
+    let user_repo = db.user_repo();
+    let user = user_repo
+        .create(NewUser {
+            username: username.to_string(),
+            display_name: username.to_string(),
+            password_hash,
+            is_root: false,
+        })
+        .await
+        .expect("create user");
+
+    let mut client = AtlasClient::new(server.base_url().to_string());
+    client
+        .login(LoginRequest {
+            username: username.to_string(),
+            password: password_plaintext.to_string(),
+        })
+        .await
+        .expect("login");
+
+    (client, user)
+}
+
+/// Expires all sessions in the test database immediately.
+pub(crate) async fn expire_all_sessions(db: &TestDb) {
+    db.conn()
+        .execute_unprepared("UPDATE sessions SET expires_at = now() - interval '1 second'")
+        .await
+        .expect("expire sessions");
 }
 
 fn admin_url_from(url: &str) -> String {

@@ -9,9 +9,10 @@ repository.workspace = true
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
-uuid.workspace = true
+uuid = { workspace = true, features = ["serde"] }
+chrono = { workspace = true, features = ["serde"] }
 base64 = "0.22"
-utoipa = { version = "5", optional = true }
+utoipa = { version = "5", features = ["uuid", "chrono"], optional = true }
 
 [features]
 openapi = ["dep:utoipa"]

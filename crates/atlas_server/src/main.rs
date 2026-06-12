@@ -2,6 +2,7 @@ use anyhow::Result;
 use migration::Migrator;
 use sea_orm::Database;
 use sea_orm_migration::prelude::MigratorTrait;
+use std::net::SocketAddr;
 use tracing::info;
 
 #[tokio::main]
@@ -37,9 +38,13 @@ async fn main() -> Result<()> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
     info!("atlas_server listening on {addr}");
 
-    axum::serve(listener, atlas_server::app())
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
+    let state = atlas_server::state::AppState::new(db);
+    axum::serve(
+        listener,
+        atlas_server::app(state).into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await?;
 
     Ok(())
 }
