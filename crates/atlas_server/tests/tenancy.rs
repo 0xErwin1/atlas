@@ -3,10 +3,14 @@
 mod support;
 
 use atlas_domain::entities::boards_tasks::{NewBoard, NewTask, PositionBetween};
-use atlas_domain::entities::workspace_core::NewProject;
+use atlas_domain::entities::documents::NewDocument;
+use atlas_domain::entities::workspace_core::{
+    AppliesTo, NewFolder, NewProject, NewPropertyDefinition, PropertyKind,
+};
 use atlas_domain::permissions::{Visibility, VisibilityRole};
 use atlas_server::persistence::repos::{
-    ApiKeyRepo, BoardRepo, PgBoardRepo, PgTaskRepo, ProjectRepo, TaskRepo,
+    ApiKeyRepo, BoardRepo, DocumentRepo, FolderRepo, PgBoardRepo, PgDocumentRepo, PgFolderRepo,
+    PgPropertyDefinitionRepo, PgTaskRepo, ProjectRepo, PropertyDefinitionRepo, TaskRepo,
 };
 
 #[tokio::test]
@@ -135,6 +139,115 @@ async fn task_repo_workspace_isolation() {
     assert!(
         tasks_a.is_empty(),
         "workspace A must not see workspace B's tasks"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn folder_repo_workspace_isolation() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws_a, user_a) = support::seed_workspace(&db, "alice-folder").await;
+    let (ws_b, user_b) = support::seed_workspace(&db, "bob-folder").await;
+
+    let ctx_a = support::ctx(&ws_a, &user_a);
+    let ctx_b = support::ctx(&ws_b, &user_b);
+    let folder_repo = PgFolderRepo {
+        conn: db.conn().clone(),
+    };
+
+    folder_repo
+        .create(
+            &ctx_b,
+            NewFolder {
+                project_id: None,
+                parent_folder_id: None,
+                name: "Bob's Folder".into(),
+            },
+        )
+        .await
+        .expect("create folder in ws_b");
+
+    let folders_a = folder_repo
+        .list_children(&ctx_a, None)
+        .await
+        .expect("list children from ws_a");
+
+    assert!(
+        folders_a.is_empty(),
+        "workspace A must not see workspace B's folders"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn property_definition_repo_workspace_isolation() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws_a, user_a) = support::seed_workspace(&db, "alice-prop").await;
+    let (ws_b, user_b) = support::seed_workspace(&db, "bob-prop").await;
+
+    let ctx_a = support::ctx(&ws_a, &user_a);
+    let ctx_b = support::ctx(&ws_b, &user_b);
+    let repo = PgPropertyDefinitionRepo {
+        conn: db.conn().clone(),
+    };
+
+    repo.create(
+        &ctx_b,
+        NewPropertyDefinition {
+            key: "status".into(),
+            name: "Status".into(),
+            kind: PropertyKind::Select,
+            options: None,
+            applies_to: AppliesTo::Task,
+        },
+    )
+    .await
+    .expect("create property definition in ws_b");
+
+    let defs_a = repo.list(&ctx_a).await.expect("list from ws_a");
+
+    assert!(
+        defs_a.is_empty(),
+        "workspace A must not see workspace B's property definitions"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn document_repo_workspace_isolation() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws_a, user_a) = support::seed_workspace(&db, "alice-doc").await;
+    let (ws_b, user_b) = support::seed_workspace(&db, "bob-doc").await;
+
+    let ctx_a = support::ctx(&ws_a, &user_a);
+    let ctx_b = support::ctx(&ws_b, &user_b);
+    let doc_repo = PgDocumentRepo::new(db.conn().clone(), 10);
+
+    let doc_b = doc_repo
+        .create(
+            &ctx_b,
+            NewDocument {
+                title: "Bob's Doc".into(),
+                content: "hello".into(),
+                folder_id: None,
+                project_id: None,
+                frontmatter: None,
+            },
+        )
+        .await
+        .expect("create document in ws_b");
+
+    let found = doc_repo
+        .get(&ctx_a, doc_b.id)
+        .await
+        .expect("get from ws_a perspective");
+
+    assert!(
+        found.is_none(),
+        "workspace A must not see workspace B's document by ID"
     );
 
     db.teardown().await;
