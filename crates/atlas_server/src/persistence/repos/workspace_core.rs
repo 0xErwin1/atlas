@@ -180,57 +180,67 @@ impl ProjectRepo for PgProjectRepo {
             deleted_at: Option<chrono::DateTime<chrono::Utc>>,
         }
 
-        let (principal_cond, has_grant_cond) = match principal {
-            Principal::User(uid) => (
-                format!("user_id = '{}'", uid.0),
-                format!(
-                    "EXISTS (SELECT 1 FROM permission_grants WHERE workspace_id = '{}' AND user_id = '{}' AND project_id = p.id)",
-                    ctx.workspace_id.0, uid.0
-                ),
-            ),
-            Principal::ApiKey(kid) => (
-                format!("api_key_id = '{}'", kid.0),
-                format!(
-                    "EXISTS (SELECT 1 FROM permission_grants WHERE workspace_id = '{}' AND api_key_id = '{}' AND project_id = p.id)",
-                    ctx.workspace_id.0, kid.0
-                ),
-            ),
-        };
+        let mut values: Vec<sea_orm::Value> = Vec::new();
+
+        // $1 — workspace_id
+        values.push(ctx.workspace_id.0.into());
+
+        // $2 — workspace_id repeated for the EXISTS sub-query
+        values.push(ctx.workspace_id.0.into());
+
+        // $3 — principal column value (user_id or api_key_id)
+        let principal_col;
+        match principal {
+            Principal::User(uid) => {
+                principal_col = "user_id";
+                values.push(uid.0.into());
+            }
+            Principal::ApiKey(kid) => {
+                principal_col = "api_key_id";
+                values.push(kid.0.into());
+            }
+        }
 
         let cursor_cond = if let Some(cursor) = after_id {
-            format!("AND p.id > '{cursor}'")
+            values.push(cursor.into());
+            format!("AND p.id > ${}", values.len())
         } else {
             String::new()
         };
 
+        // limit and offset are not user-supplied (they come from pagination config),
+        // so it is safe to interpolate them directly.
         let sql = format!(
             r#"
             SELECT p.id, p.workspace_id, p.name, p.slug, p.task_prefix, p.next_task_number,
                    p.visibility, p.visibility_role,
                    p.created_by_user_id, p.created_at, p.updated_at, p.deleted_at
             FROM projects p
-            WHERE p.workspace_id = '{ws_id}'
+            WHERE p.workspace_id = $1
               AND p.deleted_at IS NULL
               AND (
                     p.visibility != 'private'
-                    OR {has_grant_cond}
+                    OR EXISTS (
+                        SELECT 1 FROM permission_grants
+                        WHERE workspace_id = $2
+                          AND {principal_col} = $3
+                          AND project_id = p.id
+                    )
               )
               {cursor_cond}
             ORDER BY p.id
             LIMIT {limit}
             "#,
-            ws_id = ctx.workspace_id.0,
         );
 
-        let rows = Row::find_by_statement(sea_orm::Statement::from_string(
+        let rows = Row::find_by_statement(sea_orm::Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
             sql,
+            values,
         ))
         .all(&self.conn)
         .await
         .map_err(db_err)?;
-
-        let _ = principal_cond;
 
         Ok(rows
             .into_iter()

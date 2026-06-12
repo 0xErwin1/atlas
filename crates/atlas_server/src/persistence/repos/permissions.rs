@@ -155,56 +155,73 @@ impl PermissionGrantRepo for PgPermissionGrantRepo {
             role: String,
         }
 
+        // Build the parameterised query.  Each dynamic value becomes a $N binding
+        // so the driver handles quoting and the query is immune to value-injection.
+        let mut values: Vec<sea_orm::Value> = Vec::new();
+
+        // $1 — workspace_id
+        values.push(query.workspace_id.0.into());
+        let ws_param = values.len();
+
         let principal_condition = if let Some(uid) = query.user_id {
-            format!("user_id = '{uid}'")
+            values.push(uid.into());
+            format!("user_id = ${}", values.len())
         } else if let Some(kid) = query.api_key_id {
-            format!("api_key_id = '{kid}'")
+            values.push(kid.into());
+            format!("api_key_id = ${}", values.len())
         } else {
             return Ok(vec![]);
         };
 
-        let chain_projects_list = query
-            .chain_projects
-            .iter()
-            .map(|id| format!("'{id}'"))
-            .collect::<Vec<_>>()
-            .join(",");
-
-        let chain_folders_list = query
-            .chain_folders
-            .iter()
-            .map(|id| format!("'{id}'"))
-            .collect::<Vec<_>>()
-            .join(",");
-
-        let doc_cond = query
-            .doc_id
-            .map(|id| format!("OR document_id = '{id}'"))
-            .unwrap_or_default();
-
-        let board_cond = query
-            .board_id
-            .map(|id| format!("OR board_id = '{id}'"))
-            .unwrap_or_default();
-
         let projects_cond = if query.chain_projects.is_empty() {
             String::new()
         } else {
-            format!("OR project_id = ANY(ARRAY[{chain_projects_list}]::uuid[])")
+            let placeholders: String = query
+                .chain_projects
+                .iter()
+                .map(|id| {
+                    values.push((*id).into());
+                    format!("${}", values.len())
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("OR project_id = ANY(ARRAY[{placeholders}]::uuid[])")
         };
 
         let folders_cond = if query.chain_folders.is_empty() {
             String::new()
         } else {
-            format!("OR folder_id = ANY(ARRAY[{chain_folders_list}]::uuid[])")
+            let placeholders: String = query
+                .chain_folders
+                .iter()
+                .map(|id| {
+                    values.push((*id).into());
+                    format!("${}", values.len())
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("OR folder_id = ANY(ARRAY[{placeholders}]::uuid[])")
         };
 
-        let workspace_id = query.workspace_id;
+        let doc_cond = if let Some(id) = query.doc_id {
+            values.push(id.into());
+            format!("OR document_id = ${}", values.len())
+        } else {
+            String::new()
+        };
+
+        let board_cond = if let Some(id) = query.board_id {
+            values.push(id.into());
+            format!("OR board_id = ${}", values.len())
+        } else {
+            String::new()
+        };
+
         let sql = format!(
             r#"
             SELECT project_id, folder_id, document_id, board_id, role
             FROM permission_grants
-            WHERE workspace_id = '{workspace_id}'
+            WHERE workspace_id = ${ws_param}
               AND {principal_condition}
               AND ( num_nonnulls(project_id, folder_id, document_id, board_id) = 0
                    {projects_cond}
@@ -212,12 +229,12 @@ impl PermissionGrantRepo for PgPermissionGrantRepo {
                    {doc_cond}
                    {board_cond} )
             "#,
-            workspace_id = workspace_id.0,
         );
 
-        let rows = Row::find_by_statement(sea_orm::Statement::from_string(
+        let rows = Row::find_by_statement(sea_orm::Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
             sql,
+            values,
         ))
         .all(&self.conn)
         .await
