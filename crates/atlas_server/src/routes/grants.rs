@@ -29,7 +29,7 @@ use atlas_api::{
 use atlas_domain::{
     entities::permissions::NewPermissionGrant,
     ids::{ApiKeyId, UserId},
-    permissions::{Principal, ResourceRef, ResourceRole, authorize_share},
+    permissions::{Principal, ResourceRef, ResourceRole, ShareDenied, authorize_share},
 };
 
 use crate::{
@@ -71,11 +71,8 @@ pub(crate) async fn create_project_grant(
 ) -> Result<impl IntoResponse, ApiError> {
     let role_in_play = parse_role(&body.role)?;
 
-    authorize_share(&auth.principal, auth.effective, role_in_play).map_err(|d| {
-        ApiError::Forbidden {
-            message: format!("{d:?}"),
-        }
-    })?;
+    authorize_share(&auth.principal, auth.effective, role_in_play)
+        .map_err(share_denied_to_api_error)?;
 
     let (user_id, api_key_id) =
         parse_principal(&body.principal, &auth.workspace.id, &state).await?;
@@ -208,11 +205,8 @@ pub(crate) async fn delete_project_grant(
         .find(|g| g.id.0 == grant_uuid)
         .ok_or(ApiError::NotFound)?;
 
-    authorize_share(&auth.principal, auth.effective, target_grant.role).map_err(|d| {
-        ApiError::Forbidden {
-            message: format!("{d:?}"),
-        }
-    })?;
+    authorize_share(&auth.principal, auth.effective, target_grant.role)
+        .map_err(share_denied_to_api_error)?;
 
     grant_repo
         .delete(grant_id, auth.workspace.id)
@@ -244,11 +238,8 @@ pub(crate) async fn create_workspace_grant(
 ) -> Result<impl IntoResponse, ApiError> {
     let role_in_play = parse_role(&body.role)?;
 
-    authorize_share(&auth.principal, auth.effective, role_in_play).map_err(|d| {
-        ApiError::Forbidden {
-            message: format!("{d:?}"),
-        }
-    })?;
+    authorize_share(&auth.principal, auth.effective, role_in_play)
+        .map_err(share_denied_to_api_error)?;
 
     let (user_id, api_key_id) =
         parse_principal(&body.principal, &auth.workspace.id, &state).await?;
@@ -379,11 +370,8 @@ pub(crate) async fn delete_workspace_grant(
         .find(|g| g.id.0 == grant_uuid)
         .ok_or(ApiError::NotFound)?;
 
-    authorize_share(&auth.principal, auth.effective, target_grant.role).map_err(|d| {
-        ApiError::Forbidden {
-            message: format!("{d:?}"),
-        }
-    })?;
+    authorize_share(&auth.principal, auth.effective, target_grant.role)
+        .map_err(share_denied_to_api_error)?;
 
     grant_repo
         .delete(grant_id, auth.workspace.id)
@@ -478,6 +466,12 @@ fn grant_to_dto(
         },
         role: role_str(grant.role),
         created_at: grant.created_at,
+    }
+}
+
+fn share_denied_to_api_error(_: ShareDenied) -> ApiError {
+    ApiError::Forbidden {
+        message: "insufficient permissions to manage grants".into(),
     }
 }
 

@@ -403,6 +403,101 @@ async fn agent_with_grant_sees_private_project_in_list() {
     db.teardown().await;
 }
 
+/// A 403 returned because of a ShareDenied guardrail must not expose the internal
+/// variant name in the response body.
+#[tokio::test]
+async fn share_denied_403_does_not_leak_variant_name() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+
+    let (owner, ws, owner_user) =
+        support::login_user_with_workspace(&server, &db, "perm-sharedeny-owner").await;
+
+    let project = owner
+        .create_project(&ws.slug, proj_req("ShareDeny Project", "sharedeny-proj"))
+        .await
+        .expect("create project");
+
+    let key_created = owner
+        .create_api_key(
+            &ws.slug,
+            CreateApiKeyRequest {
+                name: "sharedeny-key".to_string(),
+                expires_at: None,
+            },
+        )
+        .await
+        .expect("create api key");
+
+    use atlas_domain::entities::permissions::NewPermissionGrant;
+    use atlas_domain::ids::{ApiKeyId, ProjectId};
+    let grant_repo = atlas_server::persistence::repos::PgPermissionGrantRepo {
+        conn: db.conn().clone(),
+    };
+    grant_repo
+        .upsert(NewPermissionGrant {
+            workspace_id: ws.id,
+            user_id: None,
+            api_key_id: Some(ApiKeyId(key_created.id)),
+            project_id: Some(ProjectId(project.id)),
+            folder_id: None,
+            document_id: None,
+            board_id: None,
+            role: atlas_domain::permissions::ResourceRole::Editor,
+            created_by_user_id: Some(owner_user.id),
+            created_by_api_key_id: None,
+        })
+        .await
+        .expect("seed agent editor grant");
+
+    let (_, grantee_user) = add_member(
+        &db,
+        &server,
+        ws.id,
+        "perm-sharedeny-grantee",
+        MemberRole::Member,
+    )
+    .await;
+
+    let http = reqwest::Client::new();
+    let resp = http
+        .post(format!(
+            "{}/v1/workspaces/{}/projects/sharedeny-proj/grants",
+            server.base_url(),
+            ws.slug
+        ))
+        .bearer_auth(key_created.secret.clone())
+        .json(&CreateGrantRequest {
+            principal: GrantPrincipal {
+                r#type: "user".to_string(),
+                id: grantee_user.id.0,
+            },
+            role: "viewer".to_string(),
+        })
+        .send()
+        .await
+        .expect("send request");
+
+    assert_eq!(resp.status().as_u16(), 403, "must be 403");
+
+    let body = resp.text().await.expect("read body");
+
+    assert!(
+        !body.contains("AgentsNeverManageGrants"),
+        "403 body must not contain internal variant name 'AgentsNeverManageGrants'; got: {body}"
+    );
+    assert!(
+        !body.contains("RoleExceedsGrantors"),
+        "403 body must not contain internal variant name 'RoleExceedsGrantors'; got: {body}"
+    );
+    assert!(
+        !body.contains("InsufficientRoleToShare"),
+        "403 body must not contain internal variant name 'InsufficientRoleToShare'; got: {body}"
+    );
+
+    db.teardown().await;
+}
+
 #[tokio::test]
 async fn owner_sees_own_private_project_in_list() {
     let db = support::TestDb::create().await.expect("TestDb::create");

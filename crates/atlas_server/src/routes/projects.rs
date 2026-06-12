@@ -14,7 +14,7 @@ use atlas_domain::{
     Actor, WorkspaceCtx,
     entities::permissions::NewPermissionGrant,
     entities::workspace_core::{NewProject, UpdateProject},
-    permissions::{Principal, ResourceRole, Visibility, VisibilityRole, authorize_share},
+    permissions::{Principal, ResourceRole, ShareDenied, Visibility, VisibilityRole, authorize_share},
 };
 
 use crate::{
@@ -216,11 +216,8 @@ pub(crate) async fn update_project(
             Visibility::Private => ResourceRole::Viewer,
         };
 
-        authorize_share(&auth.principal, auth.effective, role_in_play).map_err(|d| {
-            ApiError::Forbidden {
-                message: format!("{d:?}"),
-            }
-        })?;
+        authorize_share(&auth.principal, auth.effective, role_in_play)
+            .map_err(share_denied_to_api_error)?;
 
         Some(vis)
     } else {
@@ -358,5 +355,11 @@ fn member_to_actor(member: &WorkspaceMember) -> atlas_domain::Actor {
         atlas_domain::Actor::ApiKey(kid)
     } else {
         atlas_domain::Actor::User(atlas_domain::ids::UserId::new())
+    }
+}
+
+fn share_denied_to_api_error(_: ShareDenied) -> ApiError {
+    ApiError::Forbidden {
+        message: "insufficient permissions to manage grants".into(),
     }
 }
