@@ -381,6 +381,7 @@ dependencies = [
  "chrono",
  "diffy-imara",
  "fractional_index",
+ "futures",
  "migration",
  "rand 0.8.6",
  "sea-orm",

@@ -1,4 +1,6 @@
 #[allow(unreachable_pub)]
+mod boards_tasks;
+#[allow(unreachable_pub)]
 mod documents;
 #[allow(unreachable_pub)]
 mod identity;
@@ -11,6 +13,9 @@ pub use identity::{
     UserRepo, Workspace, WorkspaceRepo,
 };
 
+pub use boards_tasks::{
+    BoardRepo, PgBoardRepo, PgTaskReferenceRepo, PgTaskRepo, TaskReferenceRepo, TaskRepo,
+};
 pub use documents::{
     AttachmentRepo, DocumentLinkRepo, DocumentRepo, PgAttachmentRepo, PgDocumentLinkRepo,
     PgDocumentRepo,

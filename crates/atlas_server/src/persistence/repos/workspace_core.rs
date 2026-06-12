@@ -117,7 +117,7 @@ impl ProjectRepo for PgProjectRepo {
             name: Set(new.name),
             slug: Set(new.slug),
             task_prefix: Set(new.task_prefix),
-            next_task_number: Set(1),
+            next_task_number: Set(0),
             created_by_user_id: Set(created_by_user_id),
             created_by_api_key_id: Set(None),
             created_at: Set(Utc::now()),

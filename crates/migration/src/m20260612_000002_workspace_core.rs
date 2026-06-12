@@ -71,7 +71,7 @@ impl MigrationTrait for Migration {
                 name TEXT NOT NULL,
                 slug TEXT NOT NULL,
                 task_prefix TEXT NOT NULL,
-                next_task_number INTEGER NOT NULL DEFAULT 1,
+                next_task_number INTEGER NOT NULL DEFAULT 0,
                 created_by_user_id UUID REFERENCES users(id),
                 created_by_api_key_id UUID REFERENCES api_keys(id),
                 created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -80,7 +80,7 @@ impl MigrationTrait for Migration {
                 CONSTRAINT projects_num_actors_check
                     CHECK (num_nonnulls(created_by_user_id, created_by_api_key_id) <= 1),
                 CONSTRAINT projects_next_task_number_check
-                    CHECK (next_task_number >= 1)
+                    CHECK (next_task_number >= 0)
             )
             "#,
         )

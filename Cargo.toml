@@ -66,6 +66,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 anyhow             = "1"
 async-trait        = "0.1"
 schemars           = "0.8"
+futures            = "0.3"
 
 [workspace.lints.rust]
 unsafe_code     = "forbid"

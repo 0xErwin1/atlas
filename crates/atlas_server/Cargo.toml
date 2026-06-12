@@ -41,6 +41,7 @@ sea-orm.workspace = true
 sea-orm-migration.workspace = true
 migration.workspace = true
 uuid.workspace = true
+futures.workspace = true
 
 [lints]
 workspace = true

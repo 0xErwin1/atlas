@@ -2,9 +2,9 @@
 
 use atlas_domain::{Actor, WorkspaceCtx, ids::WorkspaceId};
 use atlas_server::persistence::repos::{
-    MembershipRepo, NewUser, NewWorkspace, PgApiKeyRepo, PgFolderRepo, PgMembershipRepo,
-    PgProjectRepo, PgPropertyDefinitionRepo, PgSessionRepo, PgUserRepo, PgWorkspaceRepo, User,
-    UserRepo, Workspace, WorkspaceRepo,
+    MembershipRepo, NewUser, NewWorkspace, PgApiKeyRepo, PgBoardRepo, PgFolderRepo,
+    PgMembershipRepo, PgProjectRepo, PgPropertyDefinitionRepo, PgSessionRepo, PgTaskRepo,
+    PgUserRepo, PgWorkspaceRepo, User, UserRepo, Workspace, WorkspaceRepo,
 };
 use migration::Migrator;
 use sea_orm::{ConnectOptions, ConnectionTrait, Database, DatabaseConnection, DbErr};
@@ -94,6 +94,14 @@ impl TestDb {
         PgPropertyDefinitionRepo {
             conn: self.conn.clone(),
         }
+    }
+
+    pub(crate) fn board_repo(&self) -> PgBoardRepo {
+        PgBoardRepo::new(self.conn.clone())
+    }
+
+    pub(crate) fn task_repo(&self) -> PgTaskRepo {
+        PgTaskRepo::new(self.conn.clone())
     }
 
     pub(crate) async fn teardown(self) {
