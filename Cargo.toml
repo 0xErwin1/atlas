@@ -1,6 +1,10 @@
 [workspace]
-members = []
-default-members = []
+members = [
+    "crates/atlas_domain",
+]
+default-members = [
+    "crates/atlas_domain",
+]
 resolver = "3"
 
 [workspace.package]
