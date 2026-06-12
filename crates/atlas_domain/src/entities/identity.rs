@@ -73,6 +73,7 @@ pub struct ApiKey {
 pub struct NewApiKey {
     pub name: String,
     pub token_hash: String,
+    pub expires_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

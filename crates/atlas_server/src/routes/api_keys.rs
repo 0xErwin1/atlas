@@ -69,6 +69,7 @@ pub(crate) async fn create_api_key(
             NewApiKey {
                 name: body.name,
                 token_hash,
+                expires_at: body.expires_at,
             },
         )
         .await

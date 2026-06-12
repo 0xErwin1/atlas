@@ -311,7 +311,7 @@ impl ApiKeyRepo for PgApiKeyRepo {
             created_by_user_id: Set(created_by_user_id),
             name: Set(new.name),
             token_hash: Set(new.token_hash),
-            expires_at: Set(None),
+            expires_at: Set(new.expires_at),
             last_used_at: Set(None),
             revoked_at: Set(None),
             created_at: Set(Utc::now()),
@@ -327,13 +327,47 @@ impl ApiKeyRepo for PgApiKeyRepo {
         &self,
         token_hash: &str,
     ) -> Result<Option<ApiKey>, DomainError> {
-        api_key::Entity::find()
-            .filter(api_key::Column::TokenHash.eq(token_hash))
-            .filter(api_key::Column::RevokedAt.is_null())
-            .one(&self.conn)
-            .await
-            .map(|opt| opt.map(api_key_from))
-            .map_err(db_err)
+        #[derive(Debug, sea_orm::FromQueryResult)]
+        struct Row {
+            id: uuid::Uuid,
+            workspace_id: uuid::Uuid,
+            created_by_user_id: uuid::Uuid,
+            name: String,
+            token_hash: String,
+            expires_at: Option<chrono::DateTime<Utc>>,
+            last_used_at: Option<chrono::DateTime<Utc>>,
+            revoked_at: Option<chrono::DateTime<Utc>>,
+            created_at: chrono::DateTime<Utc>,
+        }
+
+        let rows = Row::find_by_statement(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT k.id, k.workspace_id, k.created_by_user_id, k.name, k.token_hash,
+                    k.expires_at, k.last_used_at, k.revoked_at, k.created_at
+             FROM api_keys k
+             JOIN users u ON u.id = k.created_by_user_id
+             WHERE k.token_hash = $1
+               AND k.revoked_at IS NULL
+               AND (k.expires_at IS NULL OR k.expires_at > now())
+               AND u.disabled_at IS NULL
+             LIMIT 1",
+            [token_hash.into()],
+        ))
+        .all(&self.conn)
+        .await
+        .map_err(db_err)?;
+
+        Ok(rows.into_iter().next().map(|r| ApiKey {
+            id: ApiKeyId(r.id),
+            workspace_id: crate::persistence::repos::identity::WorkspaceId(r.workspace_id),
+            created_by_user_id: crate::persistence::repos::identity::UserId(r.created_by_user_id),
+            name: r.name,
+            token_hash: r.token_hash,
+            expires_at: r.expires_at,
+            last_used_at: r.last_used_at,
+            revoked_at: r.revoked_at,
+            created_at: r.created_at,
+        }))
     }
 
     async fn revoke(&self, ctx: &WorkspaceCtx, id: ApiKeyId) -> Result<(), DomainError> {

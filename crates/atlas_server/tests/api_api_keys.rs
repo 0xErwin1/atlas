@@ -174,3 +174,123 @@ async fn create_api_key_rejects_non_member() {
 
     assert!(err.is_err(), "non-member should be rejected");
 }
+
+#[tokio::test]
+async fn expired_api_key_is_rejected() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner, ws, _) = login_user_with_workspace(&server, &db, "owner-ak-exp").await;
+
+    let past = chrono::Utc::now() - chrono::Duration::hours(1);
+    let created = owner
+        .create_api_key(
+            &ws.slug,
+            CreateApiKeyRequest {
+                name: "expired-key".to_string(),
+                expires_at: Some(past),
+            },
+        )
+        .await
+        .expect("create api key with past expiry");
+
+    let agent = atlas_client::AtlasClient::new(server.base_url()).with_token(created.secret);
+    let result = agent.me().await;
+    assert!(
+        result.is_err(),
+        "a key with a past expires_at must be rejected"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn unexpired_api_key_is_accepted() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner, ws, _) = login_user_with_workspace(&server, &db, "owner-ak-unexp").await;
+
+    let future = chrono::Utc::now() + chrono::Duration::hours(24);
+    let created = owner
+        .create_api_key(
+            &ws.slug,
+            CreateApiKeyRequest {
+                name: "future-key".to_string(),
+                expires_at: Some(future),
+            },
+        )
+        .await
+        .expect("create api key with future expiry");
+
+    let agent = atlas_client::AtlasClient::new(server.base_url()).with_token(created.secret);
+    let result = agent.me().await;
+    assert!(result.is_ok(), "a key with a future expires_at must work");
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn no_expiry_api_key_never_expires() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner, ws, _) = login_user_with_workspace(&server, &db, "owner-ak-noexp").await;
+
+    let created = owner
+        .create_api_key(&ws.slug, key_req("no-expiry-key"))
+        .await
+        .expect("create api key without expiry");
+
+    let agent = atlas_client::AtlasClient::new(server.base_url()).with_token(created.secret);
+    let result = agent.me().await;
+    assert!(result.is_ok(), "a key with no expiry must always work");
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn disabled_creator_blocks_api_key() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner, ws, owner_user) = login_user_with_workspace(&server, &db, "owner-ak-disable").await;
+
+    let created = owner
+        .create_api_key(&ws.slug, key_req("disable-test-key"))
+        .await
+        .expect("create api key");
+
+    let agent =
+        atlas_client::AtlasClient::new(server.base_url()).with_token(created.secret.clone());
+
+    let me_before = agent.me().await;
+    assert!(
+        me_before.is_ok(),
+        "key must work before creator is disabled"
+    );
+
+    db.user_repo()
+        .disable(owner_user.id)
+        .await
+        .expect("disable owner");
+
+    let me_after = agent.me().await;
+    assert!(
+        me_after.is_err(),
+        "key must be rejected after creator is disabled"
+    );
+
+    db.user_repo()
+        .enable(owner_user.id)
+        .await
+        .expect("re-enable owner");
+
+    let me_reenabled = agent.me().await;
+    assert!(
+        me_reenabled.is_ok(),
+        "key must work again after creator is re-enabled"
+    );
+
+    db.teardown().await;
+}
