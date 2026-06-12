@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+pub(crate) mod route_matrix;
+
 use atlas_client::AtlasClient;
 use atlas_domain::{Actor, WorkspaceCtx, ids::WorkspaceId};
 use atlas_server::{
@@ -246,6 +248,71 @@ pub(crate) async fn login_user(
         .expect("login");
 
     (client, user)
+}
+
+/// Seeds a workspace+membership for `username`, then logs in via the test server.
+///
+/// Returns (authenticated client, workspace, user). Unlike `login_user`, this
+/// helper guarantees the user is a workspace owner, making it suitable for tests
+/// that exercise workspace-scoped extractors.
+pub(crate) async fn login_user_with_workspace(
+    server: &TestServer,
+    db: &TestDb,
+    username: &str,
+) -> (AtlasClient, Workspace, User) {
+    use atlas_api::dtos::LoginRequest;
+    use atlas_server::auth::password;
+
+    let password_plaintext = "TestPassword1!";
+    let password_hash = password::hash(password_plaintext.to_string())
+        .await
+        .expect("hash password");
+
+    let user_repo = db.user_repo();
+    let ws_repo = db.workspace_repo();
+    let membership_repo = db.membership_repo();
+
+    let user = user_repo
+        .create(NewUser {
+            username: username.to_string(),
+            display_name: username.to_string(),
+            password_hash,
+            is_root: false,
+        })
+        .await
+        .expect("create user");
+
+    let ws_id = WorkspaceId::new();
+    let ws_slug = format!("ws-{username}");
+    let ws = ws_repo
+        .create(NewWorkspace {
+            id: ws_id,
+            name: format!("Workspace {username}"),
+            slug: ws_slug,
+        })
+        .await
+        .expect("create workspace");
+
+    let ctx = WorkspaceCtx::new(ws_id, Actor::User(user.id));
+    membership_repo
+        .add(
+            &ctx,
+            user.id,
+            atlas_domain::entities::identity::MemberRole::Owner,
+        )
+        .await
+        .expect("seed membership");
+
+    let mut client = AtlasClient::new(server.base_url().to_string());
+    client
+        .login(LoginRequest {
+            username: username.to_string(),
+            password: password_plaintext.to_string(),
+        })
+        .await
+        .expect("login");
+
+    (client, ws, user)
 }
 
 /// Expires all sessions in the test database immediately.

@@ -47,6 +47,7 @@ chrono.workspace = true
 
 [dev-dependencies]
 atlas_client.workspace = true
+reqwest = { workspace = true }
 tower.workspace = true
 tokio = { workspace = true }
 axum.workspace = true

@@ -8,6 +8,7 @@ use tower_http::{
 };
 
 pub mod auth;
+pub mod authz;
 pub mod config;
 pub mod error;
 pub mod middleware;
@@ -34,6 +35,7 @@ pub fn app(state: AppState) -> Router {
     let protected = Router::new()
         .route("/v1/auth/logout", axum::routing::post(routes::auth::logout))
         .route("/v1/auth/me", get(routes::auth::me))
+        .route("/v1/workspaces/{ws}/probe", get(routes::probe::probe))
         .layer(axum_middleware::from_fn_with_state(
             state.clone(),
             crate::auth::middleware::require_authn,

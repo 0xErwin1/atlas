@@ -401,6 +401,7 @@ dependencies = [
  "futures",
  "migration",
  "rand 0.8.6",
+ "reqwest",
  "sea-orm",
  "sea-orm-migration",
  "serde",

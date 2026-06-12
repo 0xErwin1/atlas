@@ -106,6 +106,22 @@ impl AtlasClient {
         self.decode_response(response, "me").await
     }
 
+    /// `GET /v1/workspaces/{ws}/probe`
+    pub async fn get_probe(&self, ws: &str) -> Result<(), ClientError> {
+        let response = self
+            .get(&format!("/v1/workspaces/{ws}/probe"))
+            .send()
+            .await?;
+        if !response.status().is_success() {
+            let problem: ProblemDetails = response
+                .json()
+                .await
+                .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
+            return Err(ClientError::Api(problem));
+        }
+        Ok(())
+    }
+
     /// `POST /v1/auth/logout`
     pub async fn logout(&self) -> Result<(), ClientError> {
         let response = self
