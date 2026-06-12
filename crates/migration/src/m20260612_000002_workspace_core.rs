@@ -29,7 +29,7 @@ impl MigrationTrait for Migration {
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                 deleted_at TIMESTAMPTZ,
                 CONSTRAINT property_definitions_num_actors_check
-                    CHECK (num_nonnulls(created_by_user_id, created_by_api_key_id) <= 1)
+                    CHECK (num_nonnulls(created_by_user_id, created_by_api_key_id) = 1)
             )
             "#,
         )
@@ -78,7 +78,7 @@ impl MigrationTrait for Migration {
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                 deleted_at TIMESTAMPTZ,
                 CONSTRAINT projects_num_actors_check
-                    CHECK (num_nonnulls(created_by_user_id, created_by_api_key_id) <= 1),
+                    CHECK (num_nonnulls(created_by_user_id, created_by_api_key_id) = 1),
                 CONSTRAINT projects_next_task_number_check
                     CHECK (next_task_number >= 0)
             )
@@ -121,7 +121,7 @@ impl MigrationTrait for Migration {
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                 deleted_at TIMESTAMPTZ,
                 CONSTRAINT folders_num_actors_check
-                    CHECK (num_nonnulls(created_by_user_id, created_by_api_key_id) <= 1)
+                    CHECK (num_nonnulls(created_by_user_id, created_by_api_key_id) = 1)
             )
             "#,
         )

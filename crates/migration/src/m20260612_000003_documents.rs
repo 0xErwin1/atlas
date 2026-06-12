@@ -35,7 +35,7 @@ impl MigrationTrait for Migration {
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                 deleted_at TIMESTAMPTZ,
                 CONSTRAINT documents_num_actors_check
-                    CHECK (num_nonnulls(created_by_user_id, created_by_api_key_id) <= 1)
+                    CHECK (num_nonnulls(created_by_user_id, created_by_api_key_id) = 1)
             )
             "#,
         )
@@ -82,7 +82,7 @@ impl MigrationTrait for Migration {
                         OR (NOT is_anchor AND patch IS NOT NULL AND snapshot IS NULL)
                     ),
                 CONSTRAINT document_revisions_num_actors_check
-                    CHECK (num_nonnulls(created_by_user_id, created_by_api_key_id) <= 1)
+                    CHECK (num_nonnulls(created_by_user_id, created_by_api_key_id) = 1)
             )
             "#,
         )
@@ -139,7 +139,7 @@ impl MigrationTrait for Migration {
                 CONSTRAINT attachments_owner_check
                     CHECK (num_nonnulls(document_id, task_id) = 1),
                 CONSTRAINT attachments_num_actors_check
-                    CHECK (num_nonnulls(created_by_user_id, created_by_api_key_id) <= 1)
+                    CHECK (num_nonnulls(created_by_user_id, created_by_api_key_id) = 1)
             )
             "#,
         )

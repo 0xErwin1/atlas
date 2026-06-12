@@ -20,7 +20,7 @@ impl MigrationTrait for Migration {
                 workspace_id UUID NOT NULL REFERENCES workspaces(id),
                 project_id UUID NOT NULL REFERENCES projects(id),
                 name TEXT NOT NULL,
-                created_by_user_id UUID REFERENCES users(id),
+                created_by_user_id UUID NOT NULL REFERENCES users(id),
                 created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                 deleted_at TIMESTAMPTZ
@@ -42,7 +42,7 @@ impl MigrationTrait for Migration {
                 board_id UUID NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
                 name TEXT NOT NULL,
                 position_key TEXT NOT NULL,
-                created_by_user_id UUID REFERENCES users(id),
+                created_by_user_id UUID NOT NULL REFERENCES users(id),
                 created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                 deleted_at TIMESTAMPTZ
@@ -73,7 +73,7 @@ impl MigrationTrait for Migration {
                     setweight(to_tsvector('simple', coalesce(title, '')), 'A') ||
                     setweight(to_tsvector('simple', coalesce(description, '')), 'B')
                 ) STORED,
-                created_by_user_id UUID REFERENCES users(id),
+                created_by_user_id UUID NOT NULL REFERENCES users(id),
                 created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                 deleted_at TIMESTAMPTZ,
@@ -116,7 +116,7 @@ impl MigrationTrait for Migration {
                 kind TEXT NOT NULL,
                 target_task_id UUID REFERENCES tasks(id) ON DELETE CASCADE,
                 target_document_id UUID REFERENCES documents(id) ON DELETE CASCADE,
-                created_by_user_id UUID REFERENCES users(id),
+                created_by_user_id UUID NOT NULL REFERENCES users(id),
                 created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                 CONSTRAINT task_references_kind_check
                     CHECK (kind IN ('relates', 'blocks', 'parent', 'spec')),
