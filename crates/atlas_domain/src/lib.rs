@@ -4,6 +4,8 @@ pub mod actor;
 pub mod error;
 pub mod ids;
 pub mod ports;
+pub mod position;
+pub mod revision;
 
 pub use actor::{Actor, WorkspaceCtx};
 pub use error::{DomainError, RevisionConflict};
