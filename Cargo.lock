@@ -347,7 +347,10 @@ dependencies = [
 name = "atlas_domain"
 version = "0.0.0"
 dependencies = [
+ "async-trait",
  "chrono",
+ "diffy-imara",
+ "fractional_index",
  "serde",
  "serde_json",
  "thiserror",
@@ -381,6 +384,7 @@ dependencies = [
  "migration",
  "rand 0.8.6",
  "sea-orm",
+ "sea-orm-migration",
  "serde",
  "serde_json",
  "sha2 0.10.9",

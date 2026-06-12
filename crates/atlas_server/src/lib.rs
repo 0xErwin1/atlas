@@ -2,6 +2,7 @@
 
 use axum::{Router, routing::get};
 
+pub mod config;
 pub mod persistence;
 mod routes;
 
