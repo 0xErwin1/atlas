@@ -44,8 +44,10 @@ uuid.workspace = true
 chrono.workspace = true
 
 [dev-dependencies]
+atlas_client.workspace = true
 tower.workspace = true
 tokio = { workspace = true }
+axum.workspace = true
 sea-orm.workspace = true
 sea-orm-migration.workspace = true
 migration.workspace = true

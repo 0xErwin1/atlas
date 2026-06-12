@@ -389,6 +389,7 @@ dependencies = [
  "argon2",
  "async-trait",
  "atlas_api",
+ "atlas_client",
  "atlas_domain",
  "axum 0.8.9",
  "axum-extra",

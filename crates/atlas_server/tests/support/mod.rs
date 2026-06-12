@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use atlas_client::AtlasClient;
 use atlas_domain::{Actor, WorkspaceCtx, ids::WorkspaceId};
 use atlas_server::persistence::repos::{
     MembershipRepo, NewUser, NewWorkspace, PgApiKeyRepo, PgBoardRepo, PgFolderRepo,
@@ -9,6 +10,7 @@ use atlas_server::persistence::repos::{
 use migration::Migrator;
 use sea_orm::{ConnectOptions, ConnectionTrait, Database, DatabaseConnection, DbErr};
 use sea_orm_migration::prelude::MigratorTrait;
+use tokio::task::AbortHandle;
 use uuid::Uuid;
 
 pub(crate) struct TestDb {
@@ -157,6 +159,54 @@ pub(crate) async fn seed_workspace(db: &TestDb, username: &str) -> (Workspace, U
 
 pub(crate) fn ctx(ws: &Workspace, user: &User) -> WorkspaceCtx {
     WorkspaceCtx::new(ws.id, Actor::User(user.id))
+}
+
+/// A live test server bound to a random port on 127.0.0.1.
+///
+/// The server task is aborted when `TestServer` is dropped.
+pub(crate) struct TestServer {
+    base_url: String,
+    _abort: AbortHandle,
+}
+
+impl TestServer {
+    /// Spawns the application on a random available port.
+    ///
+    /// `_db` is accepted for API consistency with future callers that will pass
+    /// a database connection to the app state; it is unused here while `app()`
+    /// takes no arguments.
+    pub(crate) async fn spawn(_db: &TestDb) -> Self {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind test port");
+        let addr = listener.local_addr().expect("local addr");
+        let base_url = format!("http://{addr}");
+
+        let app = atlas_server::app();
+        let handle = tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve");
+        });
+
+        Self {
+            base_url,
+            _abort: handle.abort_handle(),
+        }
+    }
+
+    /// Returns an unauthenticated `AtlasClient` pointed at this server.
+    pub(crate) fn client(&self) -> AtlasClient {
+        AtlasClient::new(self.base_url.clone())
+    }
+
+    pub(crate) fn base_url(&self) -> &str {
+        &self.base_url
+    }
+}
+
+impl Drop for TestServer {
+    fn drop(&mut self) {
+        self._abort.abort();
+    }
 }
 
 fn admin_url_from(url: &str) -> String {
