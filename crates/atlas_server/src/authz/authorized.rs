@@ -259,11 +259,7 @@ where
 
         if effective < M::ROLE {
             return Err(ApiError::Forbidden {
-                message: format!(
-                    "your effective role is {:?}; minimum required is {:?}",
-                    effective,
-                    M::ROLE
-                ),
+                message: "insufficient permissions for this resource".into(),
             });
         }
 
