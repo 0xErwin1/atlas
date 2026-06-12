@@ -4,6 +4,7 @@ pub mod m20260612_000001_identity;
 pub mod m20260612_000002_workspace_core;
 pub mod m20260612_000003_documents;
 pub mod m20260612_000004_boards_tasks;
+pub mod m20260612_000005_permissions;
 
 use sea_orm_migration::prelude::*;
 
@@ -17,6 +18,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260612_000002_workspace_core::Migration),
             Box::new(m20260612_000003_documents::Migration),
             Box::new(m20260612_000004_boards_tasks::Migration),
+            Box::new(m20260612_000005_permissions::Migration),
         ]
     }
 }

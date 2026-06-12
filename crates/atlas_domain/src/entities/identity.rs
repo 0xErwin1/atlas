@@ -25,6 +25,7 @@ pub struct User {
     pub display_name: String,
     pub password_hash: String,
     pub is_root: bool,
+    pub disabled_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -62,7 +63,6 @@ pub struct ApiKey {
     pub created_by_user_id: UserId,
     pub name: String,
     pub token_hash: String,
-    pub role: String,
     pub expires_at: Option<DateTime<Utc>>,
     pub last_used_at: Option<DateTime<Utc>>,
     pub revoked_at: Option<DateTime<Utc>>,

@@ -1,13 +1,14 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use atlas_domain::ids::{ApiKeyId, BoardId, DocumentId, ProjectId, TaskId, UserId};
+#[allow(dead_code)]
 use atlas_domain::entities::boards_tasks::ReferenceKind;
 use atlas_domain::entities::identity::MemberRole;
-use atlas_domain::permissions::{
-    ChainSegment, Principal, ResolutionInput, ResourceChain, ResourceRef, ResourceRole, ShareDenied,
-    Visibility, VisibilityRole, authorize_share, resolve, validate_reference,
-};
 use atlas_domain::error::DomainError;
+use atlas_domain::ids::{ApiKeyId, BoardId, DocumentId, ProjectId, TaskId, UserId};
+use atlas_domain::permissions::{
+    ChainSegment, Principal, ResolutionInput, ResourceChain, ResourceRef, ResourceRole,
+    ShareDenied, Visibility, VisibilityRole, authorize_share, resolve, validate_reference,
+};
 
 fn user_principal() -> Principal {
     Principal::User(UserId::new())
@@ -21,14 +22,6 @@ fn project_ref() -> ResourceRef {
     ResourceRef::Project(ProjectId::new())
 }
 
-fn board_ref() -> ResourceRef {
-    ResourceRef::Board(BoardId::new())
-}
-
-fn doc_ref() -> ResourceRef {
-    ResourceRef::Document(DocumentId::new())
-}
-
 // ——— resolve() tests ———
 
 #[test]
@@ -36,8 +29,14 @@ fn implicit_admin_owner_membership() {
     let pid = ProjectId::new();
     let chain = ResourceChain {
         segments: vec![
-            ChainSegment { resource: ResourceRef::Project(pid), visibility: None },
-            ChainSegment { resource: ResourceRef::Workspace, visibility: None },
+            ChainSegment {
+                resource: ResourceRef::Project(pid),
+                visibility: None,
+            },
+            ChainSegment {
+                resource: ResourceRef::Workspace,
+                visibility: None,
+            },
         ],
     };
     let input = ResolutionInput {
@@ -53,8 +52,14 @@ fn implicit_admin_owner_membership() {
 fn implicit_admin_admin_membership() {
     let chain = ResourceChain {
         segments: vec![
-            ChainSegment { resource: project_ref(), visibility: None },
-            ChainSegment { resource: ResourceRef::Workspace, visibility: None },
+            ChainSegment {
+                resource: project_ref(),
+                visibility: None,
+            },
+            ChainSegment {
+                resource: ResourceRef::Workspace,
+                visibility: None,
+            },
         ],
     };
     let input = ResolutionInput {
@@ -72,9 +77,18 @@ fn inheritance_down_chain() {
     let bid = BoardId::new();
     let chain = ResourceChain {
         segments: vec![
-            ChainSegment { resource: ResourceRef::Board(bid), visibility: None },
-            ChainSegment { resource: ResourceRef::Project(pid), visibility: None },
-            ChainSegment { resource: ResourceRef::Workspace, visibility: None },
+            ChainSegment {
+                resource: ResourceRef::Board(bid),
+                visibility: None,
+            },
+            ChainSegment {
+                resource: ResourceRef::Project(pid),
+                visibility: None,
+            },
+            ChainSegment {
+                resource: ResourceRef::Workspace,
+                visibility: None,
+            },
         ],
     };
     let input = ResolutionInput {
@@ -92,9 +106,18 @@ fn most_specific_wins() {
     let did = DocumentId::new();
     let chain = ResourceChain {
         segments: vec![
-            ChainSegment { resource: ResourceRef::Document(did), visibility: None },
-            ChainSegment { resource: ResourceRef::Project(pid), visibility: None },
-            ChainSegment { resource: ResourceRef::Workspace, visibility: None },
+            ChainSegment {
+                resource: ResourceRef::Document(did),
+                visibility: None,
+            },
+            ChainSegment {
+                resource: ResourceRef::Project(pid),
+                visibility: None,
+            },
+            ChainSegment {
+                resource: ResourceRef::Workspace,
+                visibility: None,
+            },
         ],
     };
     let input = ResolutionInput {
@@ -119,7 +142,10 @@ fn max_at_equal_specificity() {
                 resource: ResourceRef::Project(pid),
                 visibility: Some(Visibility::Workspace(VisibilityRole::Editor)),
             },
-            ChainSegment { resource: ResourceRef::Workspace, visibility: None },
+            ChainSegment {
+                resource: ResourceRef::Workspace,
+                visibility: None,
+            },
         ],
     };
     // explicit grant says Viewer, visibility says Editor (both same segment) → max = Editor
@@ -141,7 +167,10 @@ fn visibility_workspace_contributes_for_member_user() {
                 resource: ResourceRef::Project(pid),
                 visibility: Some(Visibility::Workspace(VisibilityRole::Editor)),
             },
-            ChainSegment { resource: ResourceRef::Workspace, visibility: None },
+            ChainSegment {
+                resource: ResourceRef::Workspace,
+                visibility: None,
+            },
         ],
     };
     let input = ResolutionInput {
@@ -162,7 +191,10 @@ fn visibility_does_not_contribute_for_api_key() {
                 resource: ResourceRef::Project(pid),
                 visibility: Some(Visibility::Workspace(VisibilityRole::Editor)),
             },
-            ChainSegment { resource: ResourceRef::Workspace, visibility: None },
+            ChainSegment {
+                resource: ResourceRef::Workspace,
+                visibility: None,
+            },
         ],
     };
     // ApiKey has no explicit grant, visibility doesn't apply to agents
@@ -184,7 +216,10 @@ fn private_visibility_gives_no_role() {
                 resource: ResourceRef::Project(pid),
                 visibility: Some(Visibility::Private),
             },
-            ChainSegment { resource: ResourceRef::Workspace, visibility: None },
+            ChainSegment {
+                resource: ResourceRef::Workspace,
+                visibility: None,
+            },
         ],
     };
     let input = ResolutionInput {
@@ -201,8 +236,14 @@ fn workspace_scope_grant_is_least_specific() {
     let pid = ProjectId::new();
     let chain = ResourceChain {
         segments: vec![
-            ChainSegment { resource: ResourceRef::Project(pid), visibility: None },
-            ChainSegment { resource: ResourceRef::Workspace, visibility: None },
+            ChainSegment {
+                resource: ResourceRef::Project(pid),
+                visibility: None,
+            },
+            ChainSegment {
+                resource: ResourceRef::Workspace,
+                visibility: None,
+            },
         ],
     };
     let input = ResolutionInput {
@@ -219,8 +260,14 @@ fn workspace_scope_grant_is_least_specific() {
 fn default_deny_no_applicable_grant() {
     let chain = ResourceChain {
         segments: vec![
-            ChainSegment { resource: project_ref(), visibility: None },
-            ChainSegment { resource: ResourceRef::Workspace, visibility: None },
+            ChainSegment {
+                resource: project_ref(),
+                visibility: None,
+            },
+            ChainSegment {
+                resource: ResourceRef::Workspace,
+                visibility: None,
+            },
         ],
     };
     let input = ResolutionInput {
@@ -237,8 +284,14 @@ fn agent_cap_admin_grant_capped_to_editor() {
     let pid = ProjectId::new();
     let chain = ResourceChain {
         segments: vec![
-            ChainSegment { resource: ResourceRef::Project(pid), visibility: None },
-            ChainSegment { resource: ResourceRef::Workspace, visibility: None },
+            ChainSegment {
+                resource: ResourceRef::Project(pid),
+                visibility: None,
+            },
+            ChainSegment {
+                resource: ResourceRef::Workspace,
+                visibility: None,
+            },
         ],
     };
     let input = ResolutionInput {
@@ -255,8 +308,14 @@ fn agent_cap_editor_grant_stays_editor() {
     let pid = ProjectId::new();
     let chain = ResourceChain {
         segments: vec![
-            ChainSegment { resource: ResourceRef::Project(pid), visibility: None },
-            ChainSegment { resource: ResourceRef::Workspace, visibility: None },
+            ChainSegment {
+                resource: ResourceRef::Project(pid),
+                visibility: None,
+            },
+            ChainSegment {
+                resource: ResourceRef::Workspace,
+                visibility: None,
+            },
         ],
     };
     let input = ResolutionInput {
@@ -292,21 +351,13 @@ fn editor_can_grant_editor() {
 
 #[test]
 fn editor_cannot_grant_admin() {
-    let result = authorize_share(
-        &user_principal(),
-        ResourceRole::Editor,
-        ResourceRole::Admin,
-    );
+    let result = authorize_share(&user_principal(), ResourceRole::Editor, ResourceRole::Admin);
     assert_eq!(result, Err(ShareDenied::RoleExceedsGrantors));
 }
 
 #[test]
 fn admin_can_grant_admin() {
-    let result = authorize_share(
-        &user_principal(),
-        ResourceRole::Admin,
-        ResourceRole::Admin,
-    );
+    let result = authorize_share(&user_principal(), ResourceRole::Admin, ResourceRole::Admin);
     assert!(result.is_ok());
 }
 

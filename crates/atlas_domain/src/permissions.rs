@@ -69,11 +69,13 @@ pub struct ResolutionInput<'a> {
 /// 5. Default deny: no candidates → None.
 pub fn resolve(input: &ResolutionInput<'_>) -> Option<ResourceRole> {
     // Rule 1: implicit admin for workspace owner/admin (users only).
-    if matches!(input.principal, Principal::User(_)) {
-        if let Some(MemberRole::Owner | MemberRole::Admin) = input.membership {
-            let result = Some(ResourceRole::Admin);
-            return apply_agent_cap(input.principal, result);
-        }
+    if matches!(input.principal, Principal::User(_))
+        && matches!(
+            input.membership,
+            Some(MemberRole::Owner | MemberRole::Admin)
+        )
+    {
+        return Some(ResourceRole::Admin);
     }
 
     // Rule 2-3: walk chain most-specific-first.
@@ -88,17 +90,15 @@ pub fn resolve(input: &ResolutionInput<'_>) -> Option<ResourceRole> {
         }
 
         // Visibility contribution: only for User principals with workspace membership.
-        if matches!(input.principal, Principal::User(_)) && input.membership.is_some() {
-            if let Some(vis) = &segment.visibility {
-                match vis {
-                    Visibility::Workspace(vis_role) => {
-                        candidates.push(visibility_role_to_resource_role(vis_role));
-                    }
-                    Visibility::Public(vis_role) => {
-                        candidates.push(visibility_role_to_resource_role(vis_role));
-                    }
-                    Visibility::Private => {}
+        if matches!(input.principal, Principal::User(_))
+            && input.membership.is_some()
+            && let Some(vis) = &segment.visibility
+        {
+            match vis {
+                Visibility::Workspace(vis_role) | Visibility::Public(vis_role) => {
+                    candidates.push(visibility_role_to_resource_role(vis_role));
                 }
+                Visibility::Private => {}
             }
         }
 

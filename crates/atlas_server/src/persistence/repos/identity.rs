@@ -101,6 +101,7 @@ impl UserRepo for PgUserRepo {
             display_name: Set(new.display_name),
             password_hash: Set(new.password_hash),
             is_root: Set(new.is_root),
+            disabled_at: Set(None),
             created_at: Set(Utc::now()),
             updated_at: Set(Utc::now()),
         };
@@ -119,6 +120,7 @@ impl UserRepo for PgUserRepo {
             display_name: String,
             password_hash: String,
             is_root: bool,
+            disabled_at: Option<chrono::DateTime<Utc>>,
             created_at: chrono::DateTime<Utc>,
             updated_at: chrono::DateTime<Utc>,
         }
@@ -126,7 +128,7 @@ impl UserRepo for PgUserRepo {
         let lower = username.to_lowercase();
         let rows = Row::find_by_statement(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT id, username, display_name, password_hash, is_root, created_at, updated_at
+            "SELECT id, username, display_name, password_hash, is_root, disabled_at, created_at, updated_at
              FROM users WHERE lower(username) = $1 LIMIT 1",
             [lower.into()],
         ))
@@ -140,6 +142,7 @@ impl UserRepo for PgUserRepo {
             display_name: r.display_name,
             password_hash: r.password_hash,
             is_root: r.is_root,
+            disabled_at: r.disabled_at,
             created_at: r.created_at,
             updated_at: r.updated_at,
         }))
@@ -216,19 +219,25 @@ impl SessionRepo for PgSessionRepo {
         Ok(())
     }
 
-    async fn touch_last_used(&self, id: SessionId) -> Result<(), DomainError> {
-        use sea_orm::IntoActiveModel;
-        let row = session::Entity::find_by_id(id.0)
-            .one(&self.conn)
+    async fn touch(
+        &self,
+        id: SessionId,
+        ttl_hours: i64,
+        max_ttl_hours: i64,
+    ) -> Result<(), DomainError> {
+        use sea_orm::ConnectionTrait;
+        self.conn
+            .execute_raw(sea_orm::Statement::from_sql_and_values(
+                sea_orm::DatabaseBackend::Postgres,
+                "UPDATE sessions
+                 SET last_used_at = now(),
+                     expires_at = LEAST(now() + ($2 * interval '1 hour'), created_at + ($3 * interval '1 hour'))
+                 WHERE id = $1
+                   AND (last_used_at IS NULL OR last_used_at < now() - interval '60 seconds')",
+                [id.0.into(), ttl_hours.into(), max_ttl_hours.into()],
+            ))
             .await
-            .map_err(db_err)?
-            .ok_or(DomainError::NotFound {
-                entity: "session",
-                id: id.0,
-            })?;
-        let mut active = row.into_active_model();
-        active.last_used_at = Set(Some(Utc::now()));
-        active.update(&self.conn).await.map_err(db_err)?;
+            .map_err(db_err)?;
         Ok(())
     }
 }
@@ -254,7 +263,6 @@ impl ApiKeyRepo for PgApiKeyRepo {
             created_by_user_id: Set(created_by_user_id),
             name: Set(new.name),
             token_hash: Set(new.token_hash),
-            role: Set("agent-standard".into()),
             expires_at: Set(None),
             last_used_at: Set(None),
             revoked_at: Set(None),

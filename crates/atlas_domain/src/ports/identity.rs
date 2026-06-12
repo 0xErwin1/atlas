@@ -32,7 +32,14 @@ pub trait SessionRepo: Send + Sync {
         token_hash: &str,
     ) -> Result<Option<Session>, DomainError>;
     async fn revoke(&self, id: SessionId) -> Result<(), DomainError>;
-    async fn touch_last_used(&self, id: SessionId) -> Result<(), DomainError>;
+    /// Update last_used_at and slide expires_at by ttl_hours, capped at created_at + max_ttl_hours.
+    /// Throttled: only writes if last_used_at is older than 60 seconds.
+    async fn touch(
+        &self,
+        id: SessionId,
+        ttl_hours: i64,
+        max_ttl_hours: i64,
+    ) -> Result<(), DomainError>;
 }
 
 #[async_trait]

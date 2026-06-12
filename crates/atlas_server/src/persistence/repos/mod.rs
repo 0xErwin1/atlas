@@ -5,6 +5,8 @@ mod documents;
 #[allow(unreachable_pub)]
 mod identity;
 #[allow(unreachable_pub)]
+mod permissions;
+#[allow(unreachable_pub)]
 mod workspace_core;
 
 pub use identity::{
@@ -24,3 +26,5 @@ pub use workspace_core::{
     FolderRepo, PgFolderRepo, PgProjectRepo, PgPropertyDefinitionRepo, ProjectRepo,
     PropertyDefinitionRepo,
 };
+
+pub use permissions::{PermissionGrantRepo, PgPermissionGrantRepo};

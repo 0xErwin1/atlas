@@ -37,6 +37,7 @@ pub mod user {
         pub display_name: String,
         pub password_hash: String,
         pub is_root: bool,
+        pub disabled_at: Option<DateTime<Utc>>,
         pub created_at: DateTime<Utc>,
         pub updated_at: DateTime<Utc>,
     }
@@ -81,7 +82,6 @@ pub mod api_key {
         pub created_by_user_id: Uuid,
         pub name: String,
         pub token_hash: String,
-        pub role: String,
         pub expires_at: Option<DateTime<Utc>>,
         pub last_used_at: Option<DateTime<Utc>>,
         pub revoked_at: Option<DateTime<Utc>>,
@@ -132,6 +132,7 @@ pub fn user_from(m: user::Model) -> User {
         display_name: m.display_name,
         password_hash: m.password_hash,
         is_root: m.is_root,
+        disabled_at: m.disabled_at,
         created_at: m.created_at,
         updated_at: m.updated_at,
     }
@@ -156,7 +157,6 @@ pub fn api_key_from(m: api_key::Model) -> ApiKey {
         created_by_user_id: UserId(m.created_by_user_id),
         name: m.name,
         token_hash: m.token_hash,
-        role: m.role,
         expires_at: m.expires_at,
         last_used_at: m.last_used_at,
         revoked_at: m.revoked_at,
