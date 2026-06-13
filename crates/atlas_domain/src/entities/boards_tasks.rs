@@ -1,5 +1,5 @@
 use crate::actor::Actor;
-use crate::ids::{BoardId, ColumnId, DocumentId, ProjectId, TaskId, WorkspaceId};
+use crate::ids::{BoardId, ColumnId, DocumentId, ProjectId, TaskId, TaskReferenceId, WorkspaceId};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -104,7 +104,7 @@ impl ReferenceKind {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskReference {
-    pub id: crate::ids::TaskId,
+    pub id: TaskReferenceId,
     pub workspace_id: WorkspaceId,
     pub source_task_id: TaskId,
     pub kind: ReferenceKind,

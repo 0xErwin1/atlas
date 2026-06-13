@@ -5,7 +5,7 @@ use atlas_domain::{
         Board, BoardColumn, NewBoard, NewTask, NewTaskReference, PositionBetween, Task, TaskPatch,
         TaskReference,
     },
-    ids::{BoardId, ColumnId, TaskId},
+    ids::{BoardId, ColumnId, TaskId, TaskReferenceId},
     position,
 };
 use chrono::Utc;
@@ -382,14 +382,13 @@ impl TaskReferenceRepo for PgTaskReferenceRepo {
         ctx: &WorkspaceCtx,
         new: NewTaskReference,
     ) -> Result<TaskReference, DomainError> {
-        use atlas_domain::ids::TaskId as TRefId;
         use atlas_domain::permissions::validate_reference;
 
         validate_reference(new.kind.clone(), new.target_task_id, new.target_document_id)?;
 
         let created_by_user_id = user_id_from_actor(&ctx.actor);
         let model = task_reference::ActiveModel {
-            id: Set(TRefId::new().0),
+            id: Set(TaskReferenceId::new().0),
             workspace_id: Set(ctx.workspace_id.0),
             source_task_id: Set(new.source_task_id.0),
             kind: Set(new.kind.as_str().to_string()),
@@ -422,7 +421,7 @@ impl TaskReferenceRepo for PgTaskReferenceRepo {
             .collect()
     }
 
-    async fn delete(&self, ctx: &WorkspaceCtx, id: TaskId) -> Result<(), DomainError> {
+    async fn delete(&self, ctx: &WorkspaceCtx, id: TaskReferenceId) -> Result<(), DomainError> {
         task_reference::Entity::delete_by_id(id.0)
             .filter(task_reference::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .exec(&self.conn)

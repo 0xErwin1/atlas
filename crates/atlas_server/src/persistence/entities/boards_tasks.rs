@@ -2,7 +2,7 @@ use atlas_domain::actor::Actor;
 use atlas_domain::entities::boards_tasks::{
     Board, BoardColumn, ReferenceKind, Task, TaskReference,
 };
-use atlas_domain::ids::{BoardId, ColumnId, ProjectId, TaskId, UserId, WorkspaceId};
+use atlas_domain::ids::{BoardId, ColumnId, ProjectId, TaskId, TaskReferenceId, UserId, WorkspaceId};
 use chrono::{DateTime, Utc};
 use sea_orm::entity::prelude::*;
 
@@ -165,7 +165,7 @@ pub fn task_reference_from(m: task_reference::Model) -> Result<TaskReference, St
         other => return Err(format!("unknown ReferenceKind: {other}")),
     };
     Ok(TaskReference {
-        id: TaskId(m.id),
+        id: TaskReferenceId(m.id),
         workspace_id: WorkspaceId(m.workspace_id),
         source_task_id: TaskId(m.source_task_id),
         kind,

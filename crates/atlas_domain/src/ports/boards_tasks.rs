@@ -4,7 +4,7 @@ use crate::{
         Board, BoardColumn, NewBoard, NewTask, NewTaskReference, PositionBetween, Task, TaskPatch,
         TaskReference,
     },
-    ids::{BoardId, ColumnId, TaskId},
+    ids::{BoardId, ColumnId, TaskId, TaskReferenceId},
 };
 use async_trait::async_trait;
 
@@ -91,5 +91,5 @@ pub trait TaskReferenceRepo: Send + Sync {
         task_id: TaskId,
     ) -> Result<Vec<TaskReference>, DomainError>;
 
-    async fn delete(&self, ctx: &WorkspaceCtx, id: TaskId) -> Result<(), DomainError>;
+    async fn delete(&self, ctx: &WorkspaceCtx, id: TaskReferenceId) -> Result<(), DomainError>;
 }
