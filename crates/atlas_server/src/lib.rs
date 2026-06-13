@@ -93,6 +93,80 @@ pub fn app(state: AppState) -> Router {
             "/v1/workspaces/{ws}/grants/{grant_id}",
             axum::routing::delete(routes::grants::delete_workspace_grant),
         )
+        // Boards
+        .route(
+            "/v1/workspaces/{ws}/projects/{project_slug}/boards",
+            axum::routing::post(routes::boards::create_board).get(routes::boards::list_boards),
+        )
+        .route(
+            "/v1/workspaces/{ws}/boards/{board_id}",
+            axum::routing::get(routes::boards::get_board)
+                .patch(routes::boards::update_board)
+                .delete(routes::boards::delete_board),
+        )
+        .route(
+            "/v1/workspaces/{ws}/boards/{board_id}/columns",
+            axum::routing::post(routes::boards::create_column).get(routes::boards::list_columns),
+        )
+        .route(
+            "/v1/workspaces/{ws}/boards/{board_id}/columns/{column_id}",
+            axum::routing::patch(routes::boards::update_column)
+                .delete(routes::boards::delete_column),
+        )
+        // Tasks
+        .route(
+            "/v1/workspaces/{ws}/boards/{board_id}/tasks",
+            axum::routing::post(routes::tasks::create_task).get(routes::tasks::list_tasks),
+        )
+        .route(
+            "/v1/workspaces/{ws}/tasks/{readable_id}",
+            axum::routing::get(routes::tasks::get_task)
+                .patch(routes::tasks::update_task)
+                .delete(routes::tasks::delete_task),
+        )
+        .route(
+            "/v1/workspaces/{ws}/tasks/{readable_id}/move",
+            axum::routing::post(routes::tasks::move_task),
+        )
+        .route(
+            "/v1/workspaces/{ws}/tasks/{readable_id}/assignees",
+            axum::routing::get(routes::tasks::list_assignees).post(routes::tasks::add_assignee),
+        )
+        .route(
+            "/v1/workspaces/{ws}/tasks/{readable_id}/assignees/{assignee_ref}",
+            axum::routing::delete(routes::tasks::remove_assignee),
+        )
+        .route(
+            "/v1/workspaces/{ws}/tasks/{readable_id}/references",
+            axum::routing::get(routes::tasks::list_references)
+                .post(routes::tasks::create_reference),
+        )
+        .route(
+            "/v1/workspaces/{ws}/tasks/{readable_id}/references/{reference_id}",
+            axum::routing::delete(routes::tasks::delete_reference),
+        )
+        .route(
+            "/v1/workspaces/{ws}/tasks/{readable_id}/backlinks",
+            axum::routing::get(routes::tasks::list_backlinks),
+        )
+        .route(
+            "/v1/workspaces/{ws}/tasks/{readable_id}/checklist",
+            axum::routing::get(routes::tasks::list_checklist)
+                .post(routes::tasks::create_checklist_item),
+        )
+        .route(
+            "/v1/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}",
+            axum::routing::patch(routes::tasks::update_checklist_item)
+                .delete(routes::tasks::delete_checklist_item),
+        )
+        .route(
+            "/v1/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}/promote",
+            axum::routing::post(routes::tasks::promote_checklist_item),
+        )
+        .route(
+            "/v1/workspaces/{ws}/tasks/{readable_id}/activity",
+            axum::routing::get(routes::tasks::list_activity),
+        )
         // Documents
         .route(
             "/v1/workspaces/{ws}/projects/{project_slug}/documents",

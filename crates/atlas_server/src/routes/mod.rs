@@ -1,10 +1,12 @@
 pub(crate) mod api_keys;
 pub(crate) mod auth;
+pub(crate) mod boards;
 pub(crate) mod documents;
 pub(crate) mod grants;
 pub(crate) mod health;
 pub mod openapi;
 pub(crate) mod projects;
 pub mod registry;
+pub(crate) mod tasks;
 pub(crate) mod users;
 pub(crate) mod workspaces;
