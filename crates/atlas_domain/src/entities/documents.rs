@@ -45,6 +45,7 @@ pub struct DocumentFilter {
 #[derive(Debug, Clone)]
 pub struct NewDocument {
     pub title: String,
+    pub slug: Option<String>,
     pub content: String,
     pub folder_id: Option<FolderId>,
     pub project_id: Option<ProjectId>,

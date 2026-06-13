@@ -55,6 +55,7 @@ async fn api_key_actor_create_sets_created_by_api_key_id() {
             &ctx,
             NewDocument {
                 title: "API Key Doc".into(),
+                slug: None,
                 content: "content".into(),
                 folder_id: None,
                 project_id: None,
@@ -89,6 +90,7 @@ async fn api_key_actor_update_content_sets_revision_api_key_id() {
             &user_ctx,
             NewDocument {
                 title: "Rev API Key Doc".into(),
+                slug: None,
                 content: "v1".into(),
                 folder_id: None,
                 project_id: None,
@@ -126,6 +128,7 @@ async fn api_key_actor_attachment_record_sets_created_by_api_key_id() {
             &user_ctx,
             NewDocument {
                 title: "Attachment Owner".into(),
+                slug: None,
                 content: "".into(),
                 folder_id: None,
                 project_id: None,
@@ -178,6 +181,7 @@ async fn document_create_and_get_roundtrip() {
             &ctx,
             NewDocument {
                 title: "My First Doc".into(),
+                slug: None,
                 content: "Hello, world!".into(),
                 folder_id: None,
                 project_id: None,
@@ -214,6 +218,7 @@ async fn cas_stale_revision_returns_conflict() {
             &ctx,
             NewDocument {
                 title: "CAS Doc".into(),
+                slug: None,
                 content: "version one".into(),
                 folder_id: None,
                 project_id: None,
@@ -256,6 +261,7 @@ async fn anchor_roundtrip_across_boundary() {
             &ctx,
             NewDocument {
                 title: "Anchor Doc".into(),
+                slug: None,
                 content: "v1".into(),
                 folder_id: None,
                 project_id: None,
@@ -308,6 +314,7 @@ async fn document_list_returns_summaries_without_content() {
         &ctx,
         NewDocument {
             title: "Summary Test".into(),
+            slug: None,
             content: "large content body".into(),
             folder_id: None,
             project_id: None,
@@ -341,6 +348,7 @@ async fn document_frontmatter_defaults_to_empty_object() {
             &ctx,
             NewDocument {
                 title: "FM Default".into(),
+                slug: None,
                 content: "content".into(),
                 folder_id: None,
                 project_id: None,

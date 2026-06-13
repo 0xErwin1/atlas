@@ -55,6 +55,7 @@ impl DocumentRepo for PgDocumentRepo {
             project_id: Set(new.project_id.map(|id| id.0)),
             folder_id: Set(new.folder_id.map(|id| id.0)),
             title: Set(new.title),
+            slug: Set(new.slug),
             content: Set(new.content.clone()),
             frontmatter: Set(frontmatter),
             current_revision_id: Set(None),

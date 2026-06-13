@@ -233,6 +233,7 @@ async fn document_repo_workspace_isolation() {
             &ctx_b,
             NewDocument {
                 title: "Bob's Doc".into(),
+                slug: None,
                 content: "hello".into(),
                 folder_id: None,
                 project_id: None,
@@ -441,6 +442,7 @@ async fn document_link_repo_workspace_isolation() {
             &ctx_b,
             NewDocument {
                 title: "Bob Source Doc".into(),
+                slug: None,
                 content: "hello".into(),
                 folder_id: None,
                 project_id: None,
@@ -455,6 +457,7 @@ async fn document_link_repo_workspace_isolation() {
             &ctx_b,
             NewDocument {
                 title: "Bob Target Doc".into(),
+                slug: None,
                 content: "world".into(),
                 folder_id: None,
                 project_id: None,
@@ -510,6 +513,7 @@ async fn attachment_repo_workspace_isolation() {
             &ctx_b,
             NewDocument {
                 title: "Attach Host Doc".into(),
+                slug: None,
                 content: String::new(),
                 folder_id: None,
                 project_id: None,

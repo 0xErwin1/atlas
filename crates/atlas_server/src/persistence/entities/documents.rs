@@ -20,6 +20,7 @@ pub mod document {
         pub project_id: Option<Uuid>,
         pub folder_id: Option<Uuid>,
         pub title: String,
+        pub slug: Option<String>,
         pub content: String,
         pub frontmatter: Json,
         pub current_revision_id: Option<Uuid>,
