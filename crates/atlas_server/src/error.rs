@@ -1,5 +1,5 @@
-use atlas_api::problem::ProblemDetails;
-use atlas_domain::error::DomainError;
+use atlas_api::{dtos::documents::ConflictProblemDto, problem::ProblemDetails};
+use atlas_domain::error::{DomainError, RevisionConflict};
 use axum::{
     http::{HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
@@ -15,11 +15,20 @@ pub enum ApiError {
     Domain(DomainError),
     Unauthorized,
     CsrfRequired,
-    InvalidInput { message: String },
+    InvalidInput {
+        message: String,
+    },
     NotFound,
-    Forbidden { message: String },
+    Forbidden {
+        message: String,
+    },
+    /// Generic conflict (no payload). Prefer `RevisionConflict` for CAS failures.
     Conflict,
-    Internal { message: String },
+    /// CAS revision conflict with full patch payload for the 409 response body.
+    RevisionConflict(RevisionConflict),
+    Internal {
+        message: String,
+    },
 }
 
 impl IntoResponse for ApiError {
@@ -67,6 +76,20 @@ impl IntoResponse for ApiError {
                     409,
                 ),
             ),
+            ApiError::RevisionConflict(c) => {
+                let body = ConflictProblemDto::new(
+                    c.current_revision_id.0,
+                    c.current_seq,
+                    c.base_to_current_patch,
+                );
+                let bytes = serde_json::to_vec(&body).unwrap_or_else(|_| b"{}".to_vec());
+                let mut response = (StatusCode::CONFLICT, bytes).into_response();
+                response.headers_mut().insert(
+                    header::CONTENT_TYPE,
+                    HeaderValue::from_static("application/problem+json"),
+                );
+                return response;
+            }
             ApiError::Internal { message } => {
                 tracing::error!(error = %message, "internal error");
                 (
@@ -90,14 +113,20 @@ fn domain_error_response(err: DomainError) -> Response {
                 .with_hint("Check the identifier — it may not exist or you may not have access.")
                 .with_detail(format!("{entity} {id} not found")),
         ),
-        DomainError::Conflict(_) => (
-            StatusCode::CONFLICT,
-            ProblemDetails::new(
-                "urn:atlas:error:revision-conflict",
-                "Revision Conflict",
-                409,
-            ),
-        ),
+        DomainError::Conflict(c) => {
+            let body = ConflictProblemDto::new(
+                c.current_revision_id.0,
+                c.current_seq,
+                c.base_to_current_patch,
+            );
+            let bytes = serde_json::to_vec(&body).unwrap_or_else(|_| b"{}".to_vec());
+            let mut response = (StatusCode::CONFLICT, bytes).into_response();
+            response.headers_mut().insert(
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("application/problem+json"),
+            );
+            return response;
+        }
         DomainError::InvalidInput { message } => (
             StatusCode::UNPROCESSABLE_ENTITY,
             ProblemDetails::new("urn:atlas:error:invalid-input", "Invalid Input", 422)

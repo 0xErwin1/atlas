@@ -40,19 +40,23 @@ pub async fn problem_stamp(request: Request, next: Next) -> Response {
         Err(_) => return Response::from_parts(parts, Body::empty()),
     };
 
-    let mut problem: ProblemDetails = match serde_json::from_slice(&bytes) {
-        Ok(p) => p,
-        Err(_) => return Response::from_parts(parts, Body::from(bytes)),
+    // Stamp using a generic JSON object so extended problem bodies (e.g. ConflictProblemDto)
+    // keep their extra fields while still receiving request_id and instance.
+    let mut map: serde_json::Map<String, serde_json::Value> = match serde_json::from_slice(&bytes) {
+        Ok(serde_json::Value::Object(m)) => m,
+        _ => return Response::from_parts(parts, Body::from(bytes)),
     };
 
-    if problem.request_id.is_none() {
-        problem.request_id = request_id;
+    if !map.contains_key("request_id")
+        && let Some(rid) = request_id
+    {
+        map.insert("request_id".into(), serde_json::Value::String(rid));
     }
-    if problem.instance.is_none() {
-        problem.instance = Some(path);
+    if !map.contains_key("instance") {
+        map.insert("instance".into(), serde_json::Value::String(path));
     }
 
-    let stamped = serde_json::to_vec(&problem).unwrap_or_else(|_| bytes.to_vec());
+    let stamped = serde_json::to_vec(&map).unwrap_or_else(|_| bytes.to_vec());
     let mut response = Response::from_parts(parts, Body::from(stamped));
     response.headers_mut().insert(
         header::CONTENT_TYPE,
