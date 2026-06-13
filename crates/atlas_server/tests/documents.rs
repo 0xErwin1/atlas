@@ -2,12 +2,168 @@
 
 mod support;
 
-use atlas_domain::entities::documents::{DocumentFilter, NewDocument};
-use atlas_server::persistence::repos::{DocumentRepo, PgDocumentRepo};
+use atlas_domain::{
+    Actor,
+    entities::documents::{DocumentFilter, NewAttachment, NewDocument},
+    ids::ApiKeyId,
+};
+use atlas_server::persistence::repos::{
+    ApiKeyRepo, AttachmentRepo, DocumentRepo, NewApiKey, PgApiKeyRepo, PgAttachmentRepo,
+    PgDocumentRepo,
+};
 use serde_json::json;
 
 fn make_doc_repo(db: &support::TestDb, anchor_interval: u32) -> PgDocumentRepo {
     PgDocumentRepo::new(db.conn().clone(), anchor_interval)
+}
+
+async fn seed_api_key(
+    db: &support::TestDb,
+    ws: &atlas_server::persistence::repos::Workspace,
+    user: &atlas_server::persistence::repos::User,
+) -> ApiKeyId {
+    let api_key_repo = PgApiKeyRepo {
+        conn: db.conn().clone(),
+    };
+    let ctx = support::ctx(ws, user);
+
+    let key = api_key_repo
+        .create(
+            &ctx,
+            NewApiKey {
+                name: "test-key".into(),
+                token_hash: format!("hash-{}", uuid::Uuid::now_v7()),
+                expires_at: None,
+            },
+        )
+        .await
+        .expect("seed api key");
+
+    key.id
+}
+
+#[tokio::test]
+async fn api_key_actor_create_sets_created_by_api_key_id() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "doc-apikey-attr").await;
+    let key_id = seed_api_key(&db, &ws, &user).await;
+    let ctx = atlas_domain::WorkspaceCtx::new(ws.id, Actor::ApiKey(key_id));
+    let repo = make_doc_repo(&db, 50);
+
+    let doc = repo
+        .create(
+            &ctx,
+            NewDocument {
+                title: "API Key Doc".into(),
+                content: "content".into(),
+                folder_id: None,
+                project_id: None,
+                frontmatter: None,
+            },
+        )
+        .await
+        .expect("create with api-key actor");
+
+    assert_eq!(
+        doc.created_by_api_key_id,
+        Some(key_id),
+        "created_by_api_key_id must be set for ApiKey actor"
+    );
+    assert!(
+        doc.created_by_user_id.is_none(),
+        "created_by_user_id must be None for ApiKey actor"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn api_key_actor_update_content_sets_revision_api_key_id() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "doc-apikey-rev").await;
+    let user_ctx = support::ctx(&ws, &user);
+    let repo = make_doc_repo(&db, 50);
+
+    let doc = repo
+        .create(
+            &user_ctx,
+            NewDocument {
+                title: "Rev API Key Doc".into(),
+                content: "v1".into(),
+                folder_id: None,
+                project_id: None,
+                frontmatter: None,
+            },
+        )
+        .await
+        .expect("create document");
+
+    let key_id = seed_api_key(&db, &ws, &user).await;
+    let api_ctx = atlas_domain::WorkspaceCtx::new(ws.id, Actor::ApiKey(key_id));
+
+    let updated = repo
+        .update_content(&api_ctx, doc.id, doc.current_revision_id, "v2")
+        .await
+        .expect("update_content with api-key actor");
+
+    assert_eq!(updated.content, "v2");
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn api_key_actor_attachment_record_sets_created_by_api_key_id() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "doc-apikey-attach").await;
+    let user_ctx = support::ctx(&ws, &user);
+    let doc_repo = make_doc_repo(&db, 50);
+    let att_repo = PgAttachmentRepo {
+        conn: db.conn().clone(),
+    };
+
+    let doc = doc_repo
+        .create(
+            &user_ctx,
+            NewDocument {
+                title: "Attachment Owner".into(),
+                content: "".into(),
+                folder_id: None,
+                project_id: None,
+                frontmatter: None,
+            },
+        )
+        .await
+        .expect("create document");
+
+    let key_id = seed_api_key(&db, &ws, &user).await;
+    let api_ctx = atlas_domain::WorkspaceCtx::new(ws.id, Actor::ApiKey(key_id));
+
+    let att = att_repo
+        .record(
+            &api_ctx,
+            NewAttachment {
+                document_id: Some(doc.id),
+                task_id: None,
+                file_name: "file.txt".into(),
+                content_type: "text/plain".into(),
+                size_bytes: 4,
+                sha256: "abc123".into(),
+            },
+        )
+        .await
+        .expect("record attachment with api-key actor");
+
+    assert_eq!(
+        att.created_by_api_key_id,
+        Some(key_id),
+        "created_by_api_key_id must be set for ApiKey actor on attachment"
+    );
+    assert!(
+        att.created_by_user_id.is_none(),
+        "created_by_user_id must be None for ApiKey actor on attachment"
+    );
+
+    db.teardown().await;
 }
 
 #[tokio::test]

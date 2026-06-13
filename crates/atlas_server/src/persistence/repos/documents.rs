@@ -44,7 +44,7 @@ impl DocumentRepo for PgDocumentRepo {
 
         let doc_id = DocumentId::new();
         let rev_id = RevisionId::new();
-        let created_by_user_id = user_id_from_actor(&ctx.actor);
+        let (by_user, by_key) = actor_fields(&ctx.actor);
         let now = Utc::now();
 
         let frontmatter = new.frontmatter.unwrap_or_else(|| json!({}));
@@ -59,8 +59,8 @@ impl DocumentRepo for PgDocumentRepo {
             frontmatter: Set(frontmatter),
             current_revision_id: Set(None),
             current_revision_seq: Set(0),
-            created_by_user_id: Set(created_by_user_id),
-            created_by_api_key_id: Set(None),
+            created_by_user_id: Set(by_user),
+            created_by_api_key_id: Set(by_key),
             created_at: Set(now),
             updated_at: Set(now),
             deleted_at: Set(None),
@@ -75,8 +75,8 @@ impl DocumentRepo for PgDocumentRepo {
             patch: Set(None),
             snapshot: Set(Some(new.content.clone())),
             is_anchor: Set(true),
-            created_by_user_id: Set(created_by_user_id),
-            created_by_api_key_id: Set(None),
+            created_by_user_id: Set(by_user),
+            created_by_api_key_id: Set(by_key),
             created_at: Set(now),
         };
         rev_model.insert(&txn).await.map_err(db_err)?;
@@ -186,7 +186,7 @@ impl DocumentRepo for PgDocumentRepo {
         let next_seq = doc.current_revision_seq + 1;
         let is_anchor = is_anchor_seq(next_seq, self.anchor_interval);
         let rev_id = RevisionId::new();
-        let created_by_user_id = user_id_from_actor(&ctx.actor);
+        let (by_user, by_key) = actor_fields(&ctx.actor);
         let now = Utc::now();
 
         let rev_model = document_revision::ActiveModel {
@@ -201,8 +201,8 @@ impl DocumentRepo for PgDocumentRepo {
                 None
             }),
             is_anchor: Set(is_anchor),
-            created_by_user_id: Set(created_by_user_id),
-            created_by_api_key_id: Set(None),
+            created_by_user_id: Set(by_user),
+            created_by_api_key_id: Set(by_key),
             created_at: Set(now),
         };
         rev_model.insert(&txn).await.map_err(db_err)?;
@@ -457,7 +457,7 @@ impl AttachmentRepo for PgAttachmentRepo {
         ctx: &WorkspaceCtx,
         new: NewAttachment,
     ) -> Result<Attachment, DomainError> {
-        let created_by_user_id = user_id_from_actor(&ctx.actor);
+        let (by_user, by_key) = actor_fields(&ctx.actor);
         let model = attachment::ActiveModel {
             id: Set(AttachmentId::new().0),
             workspace_id: Set(ctx.workspace_id.0),
@@ -467,8 +467,8 @@ impl AttachmentRepo for PgAttachmentRepo {
             content_type: Set(new.content_type),
             size_bytes: Set(new.size_bytes),
             sha256: Set(new.sha256),
-            created_by_user_id: Set(created_by_user_id),
-            created_by_api_key_id: Set(None),
+            created_by_user_id: Set(by_user),
+            created_by_api_key_id: Set(by_key),
             created_at: Set(Utc::now()),
             updated_at: Set(Utc::now()),
             deleted_at: Set(None),
@@ -539,10 +539,10 @@ impl AttachmentRepo for PgAttachmentRepo {
     }
 }
 
-fn user_id_from_actor(actor: &Actor) -> Option<Uuid> {
+fn actor_fields(actor: &Actor) -> (Option<Uuid>, Option<Uuid>) {
     match actor {
-        Actor::User(uid) => Some(uid.0),
-        Actor::ApiKey(_) => None,
+        Actor::User(uid) => (Some(uid.0), None),
+        Actor::ApiKey(kid) => (None, Some(kid.0)),
     }
 }
 

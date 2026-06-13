@@ -2,7 +2,8 @@ use atlas_domain::entities::documents::{
     Attachment, Document, DocumentLink, DocumentRevision, DocumentSummary, RevisionMeta,
 };
 use atlas_domain::ids::{
-    AttachmentId, DocumentId, FolderId, ProjectId, RevisionId, TaskId, UserId, WorkspaceId,
+    ApiKeyId, AttachmentId, DocumentId, FolderId, ProjectId, RevisionId, TaskId, UserId,
+    WorkspaceId,
 };
 use chrono::{DateTime, Utc};
 use sea_orm::entity::prelude::*;
@@ -126,6 +127,7 @@ pub fn document_from(m: document::Model) -> Result<Document, String> {
         current_revision_id: RevisionId(current_revision_id),
         current_revision_seq: m.current_revision_seq,
         created_by_user_id: m.created_by_user_id.map(UserId),
+        created_by_api_key_id: m.created_by_api_key_id.map(ApiKeyId),
         created_at: m.created_at,
         updated_at: m.updated_at,
         deleted_at: m.deleted_at,
@@ -196,6 +198,7 @@ pub fn attachment_from(m: attachment::Model) -> Attachment {
         size_bytes: m.size_bytes,
         sha256: m.sha256,
         created_by_user_id: m.created_by_user_id.map(UserId),
+        created_by_api_key_id: m.created_by_api_key_id.map(ApiKeyId),
         created_at: m.created_at,
         updated_at: m.updated_at,
         deleted_at: m.deleted_at,

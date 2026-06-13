@@ -1,4 +1,6 @@
-use crate::ids::{AttachmentId, DocumentId, FolderId, ProjectId, RevisionId, UserId, WorkspaceId};
+use crate::ids::{
+    ApiKeyId, AttachmentId, DocumentId, FolderId, ProjectId, RevisionId, UserId, WorkspaceId,
+};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -14,6 +16,7 @@ pub struct Document {
     pub current_revision_id: RevisionId,
     pub current_revision_seq: i64,
     pub created_by_user_id: Option<UserId>,
+    pub created_by_api_key_id: Option<ApiKeyId>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub deleted_at: Option<DateTime<Utc>>,
@@ -96,6 +99,7 @@ pub struct Attachment {
     pub size_bytes: i64,
     pub sha256: String,
     pub created_by_user_id: Option<UserId>,
+    pub created_by_api_key_id: Option<ApiKeyId>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub deleted_at: Option<DateTime<Utc>>,
