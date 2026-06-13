@@ -55,7 +55,7 @@ async fn list_visible_returns_workspace_docs_for_member() {
 
     let principal = user_principal(&user);
     let docs = repo
-        .list_visible(&ctx, &principal, None, 10)
+        .list_visible(&ctx, &principal, None, None, 10)
         .await
         .expect("list_visible");
 
@@ -77,7 +77,7 @@ async fn list_visible_excludes_other_workspace_docs() {
     let ctx1 = support::ctx(&ws1, &user1);
     let principal1 = user_principal(&user1);
     let docs = repo
-        .list_visible(&ctx1, &principal1, None, 10)
+        .list_visible(&ctx1, &principal1, None, None, 10)
         .await
         .expect("list_visible ws1");
 
@@ -101,14 +101,14 @@ async fn list_visible_cursor_pagination_works() {
     let principal = user_principal(&user);
 
     let page1 = repo
-        .list_visible(&ctx, &principal, None, 2)
+        .list_visible(&ctx, &principal, None, None, 2)
         .await
         .expect("page1");
     assert_eq!(page1.len(), 2, "first page must have 2 docs");
 
     let cursor = page1.last().map(|d| d.id.0);
     let page2 = repo
-        .list_visible(&ctx, &principal, cursor, 2)
+        .list_visible(&ctx, &principal, None, cursor, 2)
         .await
         .expect("page2");
     assert_eq!(page2.len(), 1, "second page must have the remaining doc");
@@ -177,12 +177,19 @@ async fn create_project(
         conn: db.conn().clone(),
     };
     let ctx = support::ctx(ws, user);
+
+    // task_prefix is globally unique and must match ^[A-Z][A-Z0-9]{1,9}$; derive
+    // a fresh one per call so a test can create several projects without
+    // colliding on projects_task_prefix_uq.
+    let simple = uuid::Uuid::now_v7().as_simple().to_string();
+    let task_prefix = format!("P{}", simple[simple.len() - 5..].to_uppercase());
+
     repo.create(
         &ctx,
         atlas_domain::entities::workspace_core::NewProject {
             name: slug.into(),
             slug: slug.into(),
-            task_prefix: "LVP".into(),
+            task_prefix,
             visibility: atlas_domain::permissions::Visibility::Private,
         },
     )
@@ -259,7 +266,7 @@ async fn list_visible_includes_doc_via_folder_scope_grant() {
     let ctx = support::ctx(&ws, &owner);
     let principal = Principal::ApiKey(key_id);
     let docs = repo
-        .list_visible(&ctx, &principal, None, 10)
+        .list_visible(&ctx, &principal, None, None, 10)
         .await
         .expect("list_visible");
 
@@ -289,7 +296,7 @@ async fn list_visible_includes_nested_doc_via_ancestor_folder_grant() {
     let ctx = support::ctx(&ws, &owner);
     let principal = Principal::ApiKey(key_id);
     let docs = repo
-        .list_visible(&ctx, &principal, None, 10)
+        .list_visible(&ctx, &principal, None, None, 10)
         .await
         .expect("list_visible");
 
@@ -320,7 +327,7 @@ async fn list_visible_includes_doc_via_project_scope_grant() {
     let ctx = support::ctx(&ws, &owner);
     let principal = Principal::ApiKey(key_id);
     let docs = repo
-        .list_visible(&ctx, &principal, None, 10)
+        .list_visible(&ctx, &principal, None, None, 10)
         .await
         .expect("list_visible");
 
@@ -348,7 +355,7 @@ async fn list_visible_excludes_doc_when_no_grant_for_non_member() {
     let ctx = support::ctx(&ws, &owner);
     let principal = Principal::ApiKey(key_id);
     let docs = repo
-        .list_visible(&ctx, &principal, None, 10)
+        .list_visible(&ctx, &principal, None, None, 10)
         .await
         .expect("list_visible");
 
@@ -393,7 +400,7 @@ async fn list_visible_terminates_on_folder_cycle() {
 
     let docs = tokio::time::timeout(
         std::time::Duration::from_secs(15),
-        repo.list_visible(&ctx, &principal, None, 10),
+        repo.list_visible(&ctx, &principal, None, None, 10),
     )
     .await
     .expect("list_visible must not hang on a folder cycle")
@@ -405,6 +412,105 @@ async fn list_visible_terminates_on_folder_cycle() {
         "folder-scope grant must still reveal the doc despite the cycle"
     );
     assert_eq!(docs[0].id, doc.id);
+
+    db.teardown().await;
+}
+
+// --- list_visible: project scoping ---
+
+#[tokio::test]
+async fn list_visible_scoped_to_project_excludes_other_and_projectless_docs() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let (ws, user) = support::seed_workspace(&db, "lv-proj-scope").await;
+    let repo = make_doc_repo(&db);
+
+    let project_a = create_project(&db, &ws, &user, "proj-a").await;
+    let project_b = create_project(&db, &ws, &user, "proj-b").await;
+
+    let in_a = create_doc_in_folder(&repo, &ws, &user, "In A", None, Some(project_a.id)).await;
+    create_doc_in_folder(&repo, &ws, &user, "In B", None, Some(project_b.id)).await;
+    create_doc_in_folder(&repo, &ws, &user, "No Project", None, None).await;
+
+    let ctx = support::ctx(&ws, &user);
+    let principal = user_principal(&user);
+
+    let docs = repo
+        .list_visible(&ctx, &principal, Some(project_a.id), None, 10)
+        .await
+        .expect("list_visible");
+
+    assert_eq!(
+        docs.len(),
+        1,
+        "project-scoped listing must return only that project's docs"
+    );
+    assert_eq!(docs[0].id, in_a.id);
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn list_visible_project_scope_pagination_works() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let (ws, user) = support::seed_workspace(&db, "lv-proj-page").await;
+    let repo = make_doc_repo(&db);
+
+    let project = create_project(&db, &ws, &user, "proj-page").await;
+
+    create_doc_in_folder(&repo, &ws, &user, "P1", None, Some(project.id)).await;
+    create_doc_in_folder(&repo, &ws, &user, "P2", None, Some(project.id)).await;
+    create_doc_in_folder(&repo, &ws, &user, "P3", None, Some(project.id)).await;
+    create_doc_in_folder(&repo, &ws, &user, "Other", None, None).await;
+
+    let ctx = support::ctx(&ws, &user);
+    let principal = user_principal(&user);
+
+    let page1 = repo
+        .list_visible(&ctx, &principal, Some(project.id), None, 2)
+        .await
+        .expect("page1");
+    assert_eq!(page1.len(), 2, "first page must have 2 project docs");
+
+    let cursor = page1.last().map(|d| d.id.0);
+    let page2 = repo
+        .list_visible(&ctx, &principal, Some(project.id), cursor, 2)
+        .await
+        .expect("page2");
+    assert_eq!(
+        page2.len(),
+        1,
+        "second page must have the remaining project doc"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn list_visible_project_scope_still_applies_permission_predicate() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let (ws, owner) = support::seed_workspace(&db, "lv-proj-perm").await;
+    let repo = make_doc_repo(&db);
+
+    let project = create_project(&db, &ws, &owner, "proj-perm").await;
+    create_doc_in_folder(&repo, &ws, &owner, "In Project", None, Some(project.id)).await;
+
+    // Non-member api key with no grant: the permission predicate must still
+    // exclude the doc even within the project scope.
+    let key_id = create_api_key(&db, &ws, &owner).await;
+
+    let ctx = support::ctx(&ws, &owner);
+    let principal = Principal::ApiKey(key_id);
+
+    let docs = repo
+        .list_visible(&ctx, &principal, Some(project.id), None, 10)
+        .await
+        .expect("list_visible");
+
+    assert!(
+        docs.is_empty(),
+        "project scope must not bypass the permission predicate, got {} docs",
+        docs.len()
+    );
 
     db.teardown().await;
 }

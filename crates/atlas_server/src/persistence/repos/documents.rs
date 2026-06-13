@@ -113,6 +113,7 @@ impl DocumentRepo for PgDocumentRepo {
         &self,
         ctx: &WorkspaceCtx,
         principal: &Principal,
+        project_filter: Option<ProjectId>,
         after_id: Option<uuid::Uuid>,
         limit: u64,
     ) -> Result<Vec<DocumentSummary>, DomainError> {
@@ -162,6 +163,13 @@ impl DocumentRepo for PgDocumentRepo {
         let cursor_cond = if let Some(cursor) = after_id {
             values.push(cursor.into());
             format!("AND d.id > ${}", values.len())
+        } else {
+            String::new()
+        };
+
+        let project_cond = if let Some(project_id) = project_filter {
+            values.push(project_id.0.into());
+            format!("AND d.project_id = ${}", values.len())
         } else {
             String::new()
         };
@@ -229,6 +237,7 @@ impl DocumentRepo for PgDocumentRepo {
                           )
                     )
               )
+              {project_cond}
               {cursor_cond}
             ORDER BY d.id
             LIMIT {limit}

@@ -327,7 +327,7 @@ async fn document_list_returns_summaries_without_content() {
 
     let principal = Principal::User(user.id);
     let summaries = repo
-        .list_visible(&ctx, &principal, None, 50)
+        .list_visible(&ctx, &principal, None, None, 50)
         .await
         .expect("list_visible documents");
 

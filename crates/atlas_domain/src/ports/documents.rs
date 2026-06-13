@@ -22,13 +22,16 @@ pub trait DocumentRepo: Send + Sync {
 
     /// Lists documents visible to `principal` within the workspace.
     ///
-    /// Replaces the former `list` method. Visibility rules mirror those of
-    /// `ProjectRepo::list_visible`: membership and explicit grants determine
-    /// access. `after_id` is an exclusive cursor (UUID of the last seen document).
+    /// Visibility rules mirror those of `ProjectRepo::list_visible`: membership
+    /// and explicit grants determine access. When `project_filter` is `Some`, the
+    /// listing is additionally scoped to documents belonging to that project;
+    /// `None` lists across the whole workspace. `after_id` is an exclusive cursor
+    /// (UUID of the last seen document).
     async fn list_visible(
         &self,
         ctx: &WorkspaceCtx,
         principal: &Principal,
+        project_filter: Option<ProjectId>,
         after_id: Option<Uuid>,
         limit: u64,
     ) -> Result<Vec<DocumentSummary>, DomainError>;

@@ -156,10 +156,12 @@ pub(crate) async fn list_documents(
 
     let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
 
+    let project_id = auth.resource.0.id;
+
     let doc_repo = PgDocumentRepo::new((*state.db).clone(), state.anchor_interval);
 
     let mut items = doc_repo
-        .list_visible(&ctx, &auth.principal, after_id, limit + 1)
+        .list_visible(&ctx, &auth.principal, Some(project_id), after_id, limit + 1)
         .await
         .map_err(ApiError::Domain)?;
 
