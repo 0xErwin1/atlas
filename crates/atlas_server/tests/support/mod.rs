@@ -184,7 +184,9 @@ impl TestServer {
         let base_url = format!("http://{addr}");
 
         use std::net::SocketAddr;
-        let state = AppState::for_test(db.conn().clone());
+        let state = AppState::for_test(db.conn().clone())
+            .await
+            .expect("AppState::for_test");
         let app = atlas_server::app(state).into_make_service_with_connect_info::<SocketAddr>();
         let handle = tokio::spawn(async move {
             axum::serve(listener, app).await.expect("serve");

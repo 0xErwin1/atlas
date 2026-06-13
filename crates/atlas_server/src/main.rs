@@ -38,7 +38,9 @@ async fn main() -> Result<()> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
     info!("atlas_server listening on {addr}");
 
-    let state = atlas_server::state::AppState::new(db);
+    let state = atlas_server::state::AppState::new(db)
+        .await
+        .map_err(|e| anyhow::anyhow!("AppState::new: {e}"))?;
     axum::serve(
         listener,
         atlas_server::app(state).into_make_service_with_connect_info::<SocketAddr>(),
