@@ -13,21 +13,17 @@ pub struct CreateDocumentRequest {
     pub title: String,
     pub folder_id: Option<uuid::Uuid>,
     pub content: Option<String>,
-    pub visibility: Option<String>,
-    pub visibility_role: Option<String>,
 }
 
 /// Request body for `PATCH /v1/workspaces/{ws}/documents/{slug}`.
 ///
-/// Updates document metadata (title, folder, visibility). Use `PUT .../content`
-/// to update content with CAS.
+/// Updates document metadata (title, folder). Use `PUT .../content` to update
+/// content with CAS.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct UpdateDocumentRequest {
     pub title: Option<String>,
     pub folder_id: Option<uuid::Uuid>,
-    pub visibility: Option<String>,
-    pub visibility_role: Option<String>,
 }
 
 /// Request body for `PUT /v1/workspaces/{ws}/documents/{slug}/content`.
@@ -75,9 +71,6 @@ pub struct DocumentDto {
     pub head_revision_id: uuid::Uuid,
     pub head_seq: i64,
     pub frontmatter: serde_json::Value,
-    pub visibility: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub visibility_role: Option<String>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }

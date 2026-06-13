@@ -39,7 +39,7 @@ use crate::{
     state::AppState,
 };
 
-const MAX_ATTACHMENT_BYTES: u64 = 20 * 1024 * 1024; // 20 MiB
+const MAX_ATTACHMENT_BYTES: u64 = 20 * 1024 * 1024;
 
 #[derive(Deserialize)]
 pub(crate) struct PaginationQuery {
@@ -998,8 +998,6 @@ fn document_to_dto(doc: atlas_domain::entities::documents::Document) -> Document
         head_revision_id: doc.current_revision_id.0,
         head_seq: doc.current_revision_seq,
         frontmatter: doc.frontmatter,
-        visibility: "private".to_string(),
-        visibility_role: None,
         created_at: doc.created_at,
         updated_at: doc.updated_at,
     }

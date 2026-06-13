@@ -22,8 +22,6 @@ fn doc_req(title: &str) -> CreateDocumentRequest {
         title: title.to_string(),
         folder_id: None,
         content: None,
-        visibility: None,
-        visibility_role: None,
     }
 }
 
@@ -90,8 +88,6 @@ async fn create_ignores_client_slug_field() {
         title: "My Doc".to_string(),
         folder_id: None,
         content: None,
-        visibility: None,
-        visibility_role: None,
     };
 
     let doc = client
@@ -232,8 +228,6 @@ async fn update_document_changes_title() {
             UpdateDocumentRequest {
                 title: Some("New Title".to_string()),
                 folder_id: None,
-                visibility: None,
-                visibility_role: None,
             },
         )
         .await
@@ -359,8 +353,6 @@ async fn rename_does_not_change_slug() {
             UpdateDocumentRequest {
                 title: Some("Completely Different Title".to_string()),
                 folder_id: None,
-                visibility: None,
-                visibility_role: None,
             },
         )
         .await
@@ -614,8 +606,6 @@ async fn get_revision_content_returns_historical_content() {
                 title: "Rev Doc".to_string(),
                 folder_id: None,
                 content: Some("initial content".to_string()),
-                visibility: None,
-                visibility_role: None,
             },
         )
         .await
@@ -680,8 +670,6 @@ async fn backlinks_appear_after_wikilink_write() {
                 title: "Source Doc".to_string(),
                 folder_id: None,
                 content: Some("See [[Target Doc]] for details.".to_string()),
-                visibility: None,
-                visibility_role: None,
             },
         )
         .await
@@ -732,8 +720,6 @@ async fn broken_wikilink_is_stored_without_target() {
                 title: "Broken Links Doc".to_string(),
                 folder_id: None,
                 content: Some("See [[Nonexistent Page]] here.".to_string()),
-                visibility: None,
-                visibility_role: None,
             },
         )
         .await
@@ -777,8 +763,6 @@ async fn frontmatter_extracted_from_yaml_block() {
                 title: "FM Doc".to_string(),
                 folder_id: None,
                 content: Some("---\nauthor: alice\ntags: [a, b]\n---\nBody text.".to_string()),
-                visibility: None,
-                visibility_role: None,
             },
         )
         .await
