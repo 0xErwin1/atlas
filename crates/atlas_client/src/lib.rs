@@ -5,6 +5,11 @@ use atlas_api::{
         ApiKeyCreated, ApiKeyDto, CreateApiKeyRequest, CreateGrantRequest, CreateProjectRequest,
         CreateUserRequest, GrantDto, HealthResponse, LoginRequest, LoginResponse, MeResponse,
         ProjectDto, UpdateProjectRequest, UserDto, WorkspaceDto,
+        documents::{
+            AttachmentDto, BacklinkDto, CreateDocumentRequest, DocumentDto, DocumentSummaryDto,
+            FrontmatterDto, MoveDocumentRequest, RevisionContentDto, RevisionMetaDto,
+            UpdateContentRequest, UpdateDocumentRequest,
+        },
     },
     pagination::Page,
     problem::ProblemDetails,
@@ -74,6 +79,14 @@ impl AtlasClient {
 
     fn patch(&self, path: &str) -> reqwest::RequestBuilder {
         let mut req = self.http.patch(format!("{}{}", self.base_url, path));
+        if let Some(token) = &self.token {
+            req = req.bearer_auth(token);
+        }
+        req
+    }
+
+    fn put(&self, path: &str) -> reqwest::RequestBuilder {
+        let mut req = self.http.put(format!("{}{}", self.base_url, path));
         if let Some(token) = &self.token {
             req = req.bearer_auth(token);
         }
@@ -391,6 +404,261 @@ impl AtlasClient {
     pub async fn get_workspace(&self, ws: &str) -> Result<WorkspaceDto, ClientError> {
         let response = self.get(&format!("/v1/workspaces/{ws}")).send().await?;
         self.decode_response(response, "get_workspace").await
+    }
+
+    /// `POST /v1/workspaces/{ws}/projects/{project_slug}/documents`
+    pub async fn create_document(
+        &self,
+        ws: &str,
+        project_slug: &str,
+        body: CreateDocumentRequest,
+    ) -> Result<DocumentDto, ClientError> {
+        let response = self
+            .post(&format!(
+                "/v1/workspaces/{ws}/projects/{project_slug}/documents"
+            ))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "create_document").await
+    }
+
+    /// `GET /v1/workspaces/{ws}/projects/{project_slug}/documents`
+    pub async fn list_documents(
+        &self,
+        ws: &str,
+        project_slug: &str,
+        cursor: Option<&str>,
+        limit: Option<u32>,
+    ) -> Result<Page<DocumentSummaryDto>, ClientError> {
+        let path = build_paginated_path(
+            &format!("/v1/workspaces/{ws}/projects/{project_slug}/documents"),
+            cursor,
+            limit,
+        );
+        let response = self.get(&path).send().await?;
+        self.decode_response(response, "list_documents").await
+    }
+
+    /// `GET /v1/workspaces/{ws}/documents/{slug}`
+    pub async fn get_document(&self, ws: &str, slug: &str) -> Result<DocumentDto, ClientError> {
+        let response = self
+            .get(&format!("/v1/workspaces/{ws}/documents/{slug}"))
+            .send()
+            .await?;
+        self.decode_response(response, "get_document").await
+    }
+
+    /// `PATCH /v1/workspaces/{ws}/documents/{slug}`
+    pub async fn update_document(
+        &self,
+        ws: &str,
+        slug: &str,
+        body: UpdateDocumentRequest,
+    ) -> Result<DocumentDto, ClientError> {
+        let response = self
+            .patch(&format!("/v1/workspaces/{ws}/documents/{slug}"))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "update_document").await
+    }
+
+    /// `PUT /v1/workspaces/{ws}/documents/{slug}/content`
+    pub async fn update_content(
+        &self,
+        ws: &str,
+        slug: &str,
+        body: UpdateContentRequest,
+    ) -> Result<DocumentDto, ClientError> {
+        let response = self
+            .put(&format!("/v1/workspaces/{ws}/documents/{slug}/content"))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "update_content").await
+    }
+
+    /// `DELETE /v1/workspaces/{ws}/documents/{slug}`
+    pub async fn delete_document(&self, ws: &str, slug: &str) -> Result<(), ClientError> {
+        let response = self
+            .delete(&format!("/v1/workspaces/{ws}/documents/{slug}"))
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        if response.status().is_success() {
+            return Ok(());
+        }
+        let problem: ProblemDetails = response
+            .json()
+            .await
+            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
+        Err(ClientError::Api(problem))
+    }
+
+    /// `GET /v1/workspaces/{ws}/documents/{slug}/history`
+    pub async fn list_document_history(
+        &self,
+        ws: &str,
+        slug: &str,
+        cursor: Option<&str>,
+        limit: Option<u32>,
+    ) -> Result<Page<RevisionMetaDto>, ClientError> {
+        let path = build_paginated_path(
+            &format!("/v1/workspaces/{ws}/documents/{slug}/history"),
+            cursor,
+            limit,
+        );
+        let response = self.get(&path).send().await?;
+        self.decode_response(response, "list_document_history")
+            .await
+    }
+
+    /// `GET /v1/workspaces/{ws}/documents/{slug}/revisions/{seq}`
+    pub async fn get_revision_content(
+        &self,
+        ws: &str,
+        slug: &str,
+        seq: i64,
+    ) -> Result<RevisionContentDto, ClientError> {
+        let response = self
+            .get(&format!(
+                "/v1/workspaces/{ws}/documents/{slug}/revisions/{seq}"
+            ))
+            .send()
+            .await?;
+        self.decode_response(response, "get_revision_content").await
+    }
+
+    /// `GET /v1/workspaces/{ws}/documents/{slug}/backlinks`
+    pub async fn list_backlinks(
+        &self,
+        ws: &str,
+        slug: &str,
+        cursor: Option<&str>,
+        limit: Option<u32>,
+    ) -> Result<Page<BacklinkDto>, ClientError> {
+        let path = build_paginated_path(
+            &format!("/v1/workspaces/{ws}/documents/{slug}/backlinks"),
+            cursor,
+            limit,
+        );
+        let response = self.get(&path).send().await?;
+        self.decode_response(response, "list_backlinks").await
+    }
+
+    /// `GET /v1/workspaces/{ws}/documents/{slug}/frontmatter`
+    pub async fn get_frontmatter(
+        &self,
+        ws: &str,
+        slug: &str,
+    ) -> Result<FrontmatterDto, ClientError> {
+        let response = self
+            .get(&format!("/v1/workspaces/{ws}/documents/{slug}/frontmatter"))
+            .send()
+            .await?;
+        self.decode_response(response, "get_frontmatter").await
+    }
+
+    /// `POST /v1/workspaces/{ws}/documents/{slug}/attachments`
+    ///
+    /// Uploads raw binary content. Pass `file_name` via the `X-File-Name` header
+    /// and the MIME type via `Content-Type`.
+    pub async fn upload_attachment(
+        &self,
+        ws: &str,
+        slug: &str,
+        file_name: &str,
+        content_type: &str,
+        data: Vec<u8>,
+    ) -> Result<AttachmentDto, ClientError> {
+        let response = self
+            .post(&format!("/v1/workspaces/{ws}/documents/{slug}/attachments"))
+            .header("x-atlas-csrf", "1")
+            .header("x-file-name", file_name)
+            .header("content-type", content_type)
+            .body(data)
+            .send()
+            .await?;
+        self.decode_response(response, "upload_attachment").await
+    }
+
+    /// `GET /v1/workspaces/{ws}/documents/{slug}/attachments`
+    pub async fn list_attachments(
+        &self,
+        ws: &str,
+        slug: &str,
+        cursor: Option<&str>,
+        limit: Option<u32>,
+    ) -> Result<Page<AttachmentDto>, ClientError> {
+        let path = build_paginated_path(
+            &format!("/v1/workspaces/{ws}/documents/{slug}/attachments"),
+            cursor,
+            limit,
+        );
+        let response = self.get(&path).send().await?;
+        self.decode_response(response, "list_attachments").await
+    }
+
+    /// `GET /v1/workspaces/{ws}/attachments/{attachment_id}`
+    pub async fn download_attachment(
+        &self,
+        ws: &str,
+        attachment_id: uuid::Uuid,
+    ) -> Result<Vec<u8>, ClientError> {
+        let response = self
+            .get(&format!("/v1/workspaces/{ws}/attachments/{attachment_id}"))
+            .send()
+            .await?;
+        if !response.status().is_success() {
+            let problem: ProblemDetails = response
+                .json()
+                .await
+                .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
+            return Err(ClientError::Api(problem));
+        }
+        let bytes = response.bytes().await?;
+        Ok(bytes.to_vec())
+    }
+
+    /// `DELETE /v1/workspaces/{ws}/attachments/{attachment_id}`
+    pub async fn delete_attachment(
+        &self,
+        ws: &str,
+        attachment_id: uuid::Uuid,
+    ) -> Result<(), ClientError> {
+        let response = self
+            .delete(&format!("/v1/workspaces/{ws}/attachments/{attachment_id}"))
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        if response.status().is_success() {
+            return Ok(());
+        }
+        let problem: ProblemDetails = response
+            .json()
+            .await
+            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
+        Err(ClientError::Api(problem))
+    }
+
+    /// `PATCH /v1/workspaces/{ws}/documents/{slug}/move`
+    pub async fn move_document(
+        &self,
+        ws: &str,
+        slug: &str,
+        body: MoveDocumentRequest,
+    ) -> Result<DocumentDto, ClientError> {
+        let response = self
+            .patch(&format!("/v1/workspaces/{ws}/documents/{slug}/move"))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "move_document").await
     }
 
     /// `POST /v1/auth/logout`
