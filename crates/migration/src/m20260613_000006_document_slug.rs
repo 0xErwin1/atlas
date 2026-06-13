@@ -1,5 +1,51 @@
 use sea_orm_migration::prelude::*;
 
+/// Backfills `slug` for rows that lack one, mirroring the application `slugify` +
+/// `resolve_collision`: empty normalizations coalesce to `untitled`, and live
+/// rows whose titles normalize to the same slug get deterministic `-2`, `-3`, …
+/// suffixes so the partial unique index `(workspace_id, slug) WHERE deleted_at IS
+/// NULL` cannot be violated. Idempotent: only touches rows where `slug IS NULL`.
+pub const BACKFILL_SLUG_SQL: &str = r#"WITH normalized AS (
+       SELECT
+           id,
+           COALESCE(
+               NULLIF(
+                   LOWER(
+                       REGEXP_REPLACE(
+                           REGEXP_REPLACE(title, '[^a-zA-Z0-9]+', '-', 'g'),
+                           '^-|-$',
+                           '',
+                           'g'
+                       )
+                   ),
+                   ''
+               ),
+               'untitled'
+           ) AS base_slug,
+           workspace_id,
+           created_at
+       FROM documents
+       WHERE slug IS NULL
+         AND deleted_at IS NULL
+   ),
+   ranked AS (
+       SELECT
+           id,
+           base_slug,
+           ROW_NUMBER() OVER (
+               PARTITION BY workspace_id, base_slug
+               ORDER BY created_at, id
+           ) AS rn
+       FROM normalized
+   )
+   UPDATE documents d
+   SET slug = CASE
+       WHEN r.rn = 1 THEN r.base_slug
+       ELSE r.base_slug || '-' || r.rn::text
+   END
+   FROM ranked r
+   WHERE d.id = r.id"#;
+
 pub struct Migration;
 
 impl MigrationName for Migration {
@@ -23,19 +69,7 @@ impl MigrationTrait for Migration {
         )
         .await?;
 
-        conn.execute_unprepared(
-            r#"UPDATE documents
-               SET slug = LOWER(
-                   REGEXP_REPLACE(
-                       REGEXP_REPLACE(title, '[^a-zA-Z0-9]+', '-', 'g'),
-                       '^-|-$',
-                       '',
-                       'g'
-                   )
-               )
-               WHERE slug IS NULL"#,
-        )
-        .await?;
+        conn.execute_unprepared(BACKFILL_SLUG_SQL).await?;
 
         Ok(())
     }
