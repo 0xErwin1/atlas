@@ -128,12 +128,13 @@ async fn replace_for_task_source_stores_and_replaces_links() {
         .expect("backlinks after first write");
 
     assert_eq!(backlinks.len(), 1, "one backlink after first write");
+    let link = backlinks.first().expect("one backlink");
     assert!(
-        backlinks[0].source_task_id.is_some(),
+        link.source_task_id.is_some(),
         "backlink must carry source_task_id"
     );
     assert!(
-        backlinks[0].source_document_id.is_none(),
+        link.source_document_id.is_none(),
         "backlink must NOT carry source_document_id"
     );
 
