@@ -560,8 +560,11 @@ pub(crate) async fn list_backlinks(
 
     let mut dtos: Vec<BacklinkDto> = Vec::with_capacity(links.len());
     for link in links {
+        let Some(src_doc_id) = link.source_document_id else {
+            continue;
+        };
         let source_doc = doc_repo
-            .get(&ctx, link.source_document_id)
+            .get(&ctx, src_doc_id)
             .await
             .map_err(ApiError::Domain)?;
 
@@ -569,7 +572,7 @@ pub(crate) async fn list_backlinks(
         let source_title = source_doc.map(|d| d.title).unwrap_or_default();
 
         dtos.push(BacklinkDto {
-            source_document_id: link.source_document_id.0,
+            source_document_id: src_doc_id.0,
             source_slug,
             source_title,
             display_title: link.target_title,

@@ -188,7 +188,8 @@ pub fn document_link_from(m: document_link::Model) -> DocumentLink {
     DocumentLink {
         id: DocumentId(m.id),
         workspace_id: WorkspaceId(m.workspace_id),
-        source_document_id: DocumentId(m.source_document_id),
+        source_document_id: Some(DocumentId(m.source_document_id)),
+        source_task_id: None,
         target_document_id: m.target_document_id.map(DocumentId),
         target_title: m.target_title,
         created_at: m.created_at,

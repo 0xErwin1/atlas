@@ -156,6 +156,15 @@ fn domain_error_response(err: DomainError) -> Response {
                     .with_detail("An internal error occurred."),
             )
         }
+        DomainError::PositionExhausted { .. } => (
+            StatusCode::CONFLICT,
+            ProblemDetails::new(
+                "urn:atlas:error:position-exhausted",
+                "Position Exhausted",
+                409,
+            )
+            .with_hint("Retry the move; the server attempted to rebalance column positions."),
+        ),
     };
 
     build_problem_response(status, problem)

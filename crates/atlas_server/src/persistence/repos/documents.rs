@@ -5,7 +5,7 @@ use atlas_domain::{
         Attachment, AttachmentOwner, Document, DocumentLink, DocumentSummary, ExtractedLink,
         NewAttachment, NewDocument, RevisionMeta,
     },
-    ids::{AttachmentId, DocumentId, FolderId, ProjectId, RevisionId},
+    ids::{AttachmentId, DocumentId, FolderId, ProjectId, RevisionId, TaskId},
     permissions::Principal,
     revision::{create_revision_patch, is_anchor_seq, reconstruct},
 };
@@ -653,6 +653,17 @@ impl DocumentLinkRepo for PgDocumentLinkRepo {
             model.insert(&self.conn).await.map_err(db_err)?;
         }
 
+        Ok(())
+    }
+
+    async fn replace_for_task_source(
+        &self,
+        _ctx: &WorkspaceCtx,
+        _source: TaskId,
+        _links: Vec<ExtractedLink>,
+    ) -> Result<(), DomainError> {
+        // Implemented fully in T8 after the T6 migration adds source_task_id.
+        // This stub keeps the trait object complete so the rest of the build compiles.
         Ok(())
     }
 

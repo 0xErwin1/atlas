@@ -80,11 +80,19 @@ pub struct RevisionMeta {
     pub created_at: DateTime<Utc>,
 }
 
+/// The owning source of a document link (polymorphic: doc or task).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LinkSource {
+    Document(DocumentId),
+    Task(crate::ids::TaskId),
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocumentLink {
     pub id: crate::ids::DocumentId,
     pub workspace_id: WorkspaceId,
-    pub source_document_id: DocumentId,
+    pub source_document_id: Option<DocumentId>,
+    pub source_task_id: Option<crate::ids::TaskId>,
     pub target_document_id: Option<DocumentId>,
     pub target_title: String,
     pub created_at: DateTime<Utc>,

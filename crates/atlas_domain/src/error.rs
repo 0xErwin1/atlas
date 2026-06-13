@@ -1,4 +1,4 @@
-use crate::ids::{DocumentId, RevisionId};
+use crate::ids::{ColumnId, DocumentId, RevisionId};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -26,6 +26,12 @@ pub enum DomainError {
 
     #[error("forbidden: {message}")]
     Forbidden { message: String },
+
+    /// Fractional position space in column `column_id` is exhausted: no midpoint
+    /// can be computed between the two anchors. The adapter must rebalance the
+    /// column's keys and retry, or surface a 409 to the caller.
+    #[error("position space exhausted in column {column_id}")]
+    PositionExhausted { column_id: ColumnId },
 }
 
 #[cfg(test)]

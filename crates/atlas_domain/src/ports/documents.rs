@@ -4,7 +4,7 @@ use crate::{
         Attachment, AttachmentOwner, Document, DocumentLink, DocumentSummary, ExtractedLink,
         NewAttachment, NewDocument, RevisionMeta,
     },
-    ids::{AttachmentId, DocumentId, FolderId, ProjectId, RevisionId},
+    ids::{AttachmentId, DocumentId, FolderId, ProjectId, RevisionId, TaskId},
     permissions::Principal,
 };
 use async_trait::async_trait;
@@ -98,6 +98,17 @@ pub trait DocumentLinkRepo: Send + Sync {
         &self,
         ctx: &WorkspaceCtx,
         source: DocumentId,
+        links: Vec<ExtractedLink>,
+    ) -> Result<(), DomainError>;
+
+    /// Replaces all wikilinks emitted from a task description.
+    ///
+    /// Analogous to `replace_for_source` but writes rows with `source_task_id`
+    /// instead of `source_document_id`. Called inside the task create/patch txn.
+    async fn replace_for_task_source(
+        &self,
+        ctx: &WorkspaceCtx,
+        source: TaskId,
         links: Vec<ExtractedLink>,
     ) -> Result<(), DomainError>;
 
