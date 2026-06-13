@@ -656,11 +656,22 @@ pub(crate) async fn upload_attachment(
         .unwrap_or("application/octet-stream")
         .to_string();
 
-    let body: Bytes = axum::body::to_bytes(request.into_body(), usize::MAX)
-        .await
-        .map_err(|e| ApiError::Internal {
-            message: e.to_string(),
-        })?;
+    // Bound the read at the cap (plus one byte to detect an exactly-at-cap+1 body)
+    // so an oversize upload is rejected during streaming instead of being fully
+    // buffered into memory first.
+    let read_limit = state.max_attachment_bytes.saturating_add(1) as usize;
+
+    let body: Bytes = match axum::body::to_bytes(request.into_body(), read_limit).await {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            return Err(ApiError::PayloadTooLarge {
+                message: format!(
+                    "attachment exceeds maximum size of {} bytes",
+                    state.max_attachment_bytes
+                ),
+            });
+        }
+    };
 
     if body.len() as u64 > state.max_attachment_bytes {
         return Err(ApiError::PayloadTooLarge {
