@@ -5,7 +5,7 @@ use atlas_domain::{
         Board, BoardColumn, NewBoard, NewTask, NewTaskReference, PositionBetween, Task, TaskPatch,
         TaskReference,
     },
-    ids::{BoardId, ColumnId, TaskId, TaskReferenceId},
+    ids::{BoardId, ColumnId, ProjectId, TaskId, TaskReferenceId},
     position,
 };
 use chrono::Utc;
@@ -19,7 +19,9 @@ use crate::persistence::entities::boards_tasks::{
     task_reference_from,
 };
 
-pub use atlas_domain::ports::boards_tasks::{BoardRepo, TaskReferenceRepo, TaskRepo};
+pub use atlas_domain::ports::boards_tasks::{
+    BoardRepo, TaskAssigneeRepo, TaskActivityRepo, TaskChecklistRepo, TaskReferenceRepo, TaskRepo,
+};
 
 pub struct PgBoardRepo {
     pub conn: DatabaseConnection,
@@ -66,9 +68,14 @@ impl BoardRepo for PgBoardRepo {
             .map_err(db_err)
     }
 
-    async fn list_boards(&self, ctx: &WorkspaceCtx) -> Result<Vec<Board>, DomainError> {
+    async fn list_boards(
+        &self,
+        ctx: &WorkspaceCtx,
+        project_id: ProjectId,
+    ) -> Result<Vec<Board>, DomainError> {
         board::Entity::find()
             .filter(board::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(board::Column::ProjectId.eq(project_id.0))
             .filter(board::Column::DeletedAt.is_null())
             .all(&self.conn)
             .await
@@ -264,6 +271,37 @@ impl TaskRepo for PgTaskRepo {
             .map_err(db_err)
     }
 
+    async fn find_by_readable_id(
+        &self,
+        ctx: &WorkspaceCtx,
+        readable_id: &str,
+    ) -> Result<Option<Task>, DomainError> {
+        task::Entity::find()
+            .filter(task::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(task::Column::ReadableId.eq(readable_id))
+            .filter(task::Column::DeletedAt.is_null())
+            .one(&self.conn)
+            .await
+            .map(|opt| opt.map(task_from))
+            .map_err(db_err)
+    }
+
+    async fn list_by_board(
+        &self,
+        ctx: &WorkspaceCtx,
+        board_id: BoardId,
+    ) -> Result<Vec<Task>, DomainError> {
+        task::Entity::find()
+            .filter(task::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(task::Column::BoardId.eq(board_id.0))
+            .filter(task::Column::DeletedAt.is_null())
+            .order_by_asc(task::Column::PositionKey)
+            .all(&self.conn)
+            .await
+            .map(|rows| rows.into_iter().map(task_from).collect())
+            .map_err(db_err)
+    }
+
     async fn list_by_column(
         &self,
         ctx: &WorkspaceCtx,
@@ -421,6 +459,23 @@ impl TaskReferenceRepo for PgTaskReferenceRepo {
             .collect()
     }
 
+    async fn list_inbound(
+        &self,
+        ctx: &WorkspaceCtx,
+        task_id: TaskId,
+    ) -> Result<Vec<TaskReference>, DomainError> {
+        let rows = task_reference::Entity::find()
+            .filter(task_reference::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(task_reference::Column::TargetTaskId.eq(task_id.0))
+            .all(&self.conn)
+            .await
+            .map_err(db_err)?;
+
+        rows.into_iter()
+            .map(|m| task_reference_from(m).map_err(internal_err))
+            .collect()
+    }
+
     async fn delete(&self, ctx: &WorkspaceCtx, id: TaskReferenceId) -> Result<(), DomainError> {
         task_reference::Entity::delete_by_id(id.0)
             .filter(task_reference::Column::WorkspaceId.eq(ctx.workspace_id.0))
@@ -428,6 +483,163 @@ impl TaskReferenceRepo for PgTaskReferenceRepo {
             .await
             .map_err(db_err)?;
         Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Stub repos for T9–T13 (Batch B). The port contracts are complete; these
+// structs will be fully implemented once the T6 migration adds the required tables.
+// ---------------------------------------------------------------------------
+
+#[allow(dead_code)]
+pub struct PgTaskAssigneeRepo {
+    pub conn: DatabaseConnection,
+}
+
+impl PgTaskAssigneeRepo {
+    #[allow(dead_code)]
+    pub fn new(conn: DatabaseConnection) -> Self {
+        Self { conn }
+    }
+}
+
+#[async_trait]
+impl TaskAssigneeRepo for PgTaskAssigneeRepo {
+    async fn add(
+        &self,
+        _ctx: &WorkspaceCtx,
+        _new: atlas_domain::entities::boards_tasks::NewTaskAssignee,
+    ) -> Result<atlas_domain::entities::boards_tasks::TaskAssignee, DomainError> {
+        Err(DomainError::Internal {
+            message: "PgTaskAssigneeRepo not yet implemented (pending T9)".into(),
+        })
+    }
+
+    async fn list_for_task(
+        &self,
+        _ctx: &WorkspaceCtx,
+        _task_id: TaskId,
+    ) -> Result<Vec<atlas_domain::entities::boards_tasks::TaskAssignee>, DomainError> {
+        Ok(vec![])
+    }
+
+    async fn remove(
+        &self,
+        _ctx: &WorkspaceCtx,
+        _task_id: TaskId,
+        _assignee: atlas_domain::entities::boards_tasks::AssigneeRef,
+    ) -> Result<(), DomainError> {
+        Err(DomainError::Internal {
+            message: "PgTaskAssigneeRepo not yet implemented (pending T9)".into(),
+        })
+    }
+}
+
+#[allow(dead_code)]
+pub struct PgTaskChecklistRepo {
+    pub conn: DatabaseConnection,
+}
+
+impl PgTaskChecklistRepo {
+    #[allow(dead_code)]
+    pub fn new(conn: DatabaseConnection) -> Self {
+        Self { conn }
+    }
+}
+
+#[async_trait]
+impl TaskChecklistRepo for PgTaskChecklistRepo {
+    async fn add_item(
+        &self,
+        _ctx: &WorkspaceCtx,
+        _new: atlas_domain::entities::boards_tasks::NewTaskChecklistItem,
+    ) -> Result<atlas_domain::entities::boards_tasks::TaskChecklistItem, DomainError> {
+        Err(DomainError::Internal {
+            message: "PgTaskChecklistRepo not yet implemented (pending T10)".into(),
+        })
+    }
+
+    async fn list_for_task(
+        &self,
+        _ctx: &WorkspaceCtx,
+        _task_id: TaskId,
+    ) -> Result<Vec<atlas_domain::entities::boards_tasks::TaskChecklistItem>, DomainError> {
+        Ok(vec![])
+    }
+
+    async fn patch_item(
+        &self,
+        _ctx: &WorkspaceCtx,
+        _item_id: atlas_domain::ids::ChecklistItemId,
+        _patch: atlas_domain::entities::boards_tasks::TaskChecklistItemPatch,
+    ) -> Result<atlas_domain::entities::boards_tasks::TaskChecklistItem, DomainError> {
+        Err(DomainError::Internal {
+            message: "PgTaskChecklistRepo not yet implemented (pending T10)".into(),
+        })
+    }
+
+    async fn soft_delete_item(
+        &self,
+        _ctx: &WorkspaceCtx,
+        _item_id: atlas_domain::ids::ChecklistItemId,
+    ) -> Result<(), DomainError> {
+        Err(DomainError::Internal {
+            message: "PgTaskChecklistRepo not yet implemented (pending T10)".into(),
+        })
+    }
+
+    async fn mark_promoted(
+        &self,
+        _ctx: &WorkspaceCtx,
+        _item_id: atlas_domain::ids::ChecklistItemId,
+        _promoted_task_id: TaskId,
+    ) -> Result<atlas_domain::entities::boards_tasks::TaskChecklistItem, DomainError> {
+        Err(DomainError::Internal {
+            message: "PgTaskChecklistRepo not yet implemented (pending T10)".into(),
+        })
+    }
+}
+
+#[allow(dead_code)]
+pub struct PgTaskActivityRepo {
+    pub conn: DatabaseConnection,
+}
+
+impl PgTaskActivityRepo {
+    #[allow(dead_code)]
+    pub fn new(conn: DatabaseConnection) -> Self {
+        Self { conn }
+    }
+}
+
+#[async_trait]
+impl TaskActivityRepo for PgTaskActivityRepo {
+    async fn append(
+        &self,
+        _ctx: &WorkspaceCtx,
+        _new: atlas_domain::entities::boards_tasks::NewTaskActivity,
+    ) -> Result<atlas_domain::entities::boards_tasks::TaskActivity, DomainError> {
+        Err(DomainError::Internal {
+            message: "PgTaskActivityRepo not yet implemented (pending T13)".into(),
+        })
+    }
+
+    async fn list_for_task(
+        &self,
+        _ctx: &WorkspaceCtx,
+        _task_id: TaskId,
+        _after_id: Option<atlas_domain::ids::TaskActivityId>,
+        _limit: u64,
+    ) -> Result<Vec<atlas_domain::entities::boards_tasks::TaskActivity>, DomainError> {
+        Ok(vec![])
+    }
+
+    async fn last_kind_for_task(
+        &self,
+        _ctx: &WorkspaceCtx,
+        _task_id: TaskId,
+    ) -> Result<Option<atlas_domain::entities::boards_tasks::ActivityKind>, DomainError> {
+        Ok(None)
     }
 }
 
