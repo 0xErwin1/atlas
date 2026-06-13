@@ -316,13 +316,16 @@ impl DocumentRepo for PgDocumentRepo {
                 .await
                 .map_err(db_err)?;
 
-            let base_content = if let Some(seq) = base_seq {
-                reconstruct_content_at(&txn, id.0, seq)
-                    .await
-                    .map_err(internal_err)?
-            } else {
-                String::new()
+            let Some(base_seq) = base_seq else {
+                txn.rollback().await.map_err(db_err)?;
+                return Err(DomainError::InvalidInput {
+                    message: "base_revision_id is not a revision of this document".to_string(),
+                });
             };
+
+            let base_content = reconstruct_content_at(&txn, id.0, base_seq)
+                .await
+                .map_err(internal_err)?;
 
             let patch = create_revision_patch(&base_content, &doc.content);
 

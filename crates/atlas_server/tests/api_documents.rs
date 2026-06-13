@@ -482,6 +482,58 @@ async fn update_content_stale_base_returns_409() {
 }
 
 #[tokio::test]
+async fn update_content_unknown_base_revision_is_rejected_not_conflict() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-cas-bogus").await;
+
+    let project = client
+        .create_project(
+            &ws.slug,
+            atlas_api::dtos::CreateProjectRequest {
+                name: "Proj".to_string(),
+                slug: "proj-cas-bogus".to_string(),
+                task_prefix: "PCG".to_string(),
+                visibility: None,
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create project");
+
+    let doc = client
+        .create_document(&ws.slug, &project.slug, doc_req("Bogus Base Doc"))
+        .await
+        .expect("create document");
+
+    let slug = doc.slug.as_deref().expect("slug");
+
+    let result = client
+        .update_content(
+            &ws.slug,
+            slug,
+            UpdateContentRequest {
+                content: "new content".to_string(),
+                base_revision_id: uuid::Uuid::now_v7(),
+            },
+        )
+        .await;
+
+    match result {
+        Err(ClientError::Api(p)) => assert!(
+            p.status == 422 || p.status == 404,
+            "unknown base revision must be rejected as 422/404, got: {}",
+            p.status
+        ),
+        other => panic!(
+            "unknown base revision must be a client/validation error, not a conflict, got: {other:?}"
+        ),
+    }
+
+    db.teardown().await;
+}
+
+#[tokio::test]
 async fn update_content_empty_string_is_valid() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;
