@@ -815,15 +815,12 @@ pub(crate) async fn download_attachment(
         })?;
 
     let content_type = attachment.content_type.clone();
-    let file_name = attachment.file_name.clone();
+    let content_disposition = content_disposition_attachment(&attachment.file_name);
 
     let response = Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, content_type)
-        .header(
-            header::CONTENT_DISPOSITION,
-            format!("attachment; filename=\"{file_name}\""),
-        )
+        .header(header::CONTENT_DISPOSITION, content_disposition)
         .body(Body::from(bytes))
         .map_err(|e| ApiError::Internal {
             message: e.to_string(),
@@ -1017,6 +1014,65 @@ fn attachment_to_dto(a: atlas_domain::entities::documents::Attachment) -> Attach
     }
 }
 
+/// Builds a `Content-Disposition: attachment` header value for a client-supplied
+/// file name without letting that name break out of the header.
+///
+/// The name is stored verbatim from the upload, so it can contain quotes, control
+/// characters, or non-ASCII bytes. We emit an ASCII `filename=` fallback (control
+/// chars stripped, quotes and backslashes escaped) plus an RFC 5987 `filename*`
+/// carrying the full UTF-8 name percent-encoded, which modern clients prefer.
+fn content_disposition_attachment(file_name: &str) -> String {
+    let ascii_fallback: String = file_name
+        .chars()
+        .filter(|c| !c.is_control())
+        .map(|c| match c {
+            '"' => "\\\"".to_string(),
+            '\\' => "\\\\".to_string(),
+            c if c.is_ascii() => c.to_string(),
+            _ => '_'.to_string(),
+        })
+        .collect();
+
+    let encoded = rfc5987_encode(file_name);
+
+    format!("attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{encoded}")
+}
+
+/// Percent-encodes `value` per RFC 5987 `value-chars`, keeping only the
+/// unreserved attr-char set and encoding every other byte as `%XX`.
+fn rfc5987_encode(value: &str) -> String {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+
+    let mut out = String::with_capacity(value.len());
+    for &byte in value.as_bytes() {
+        let is_attr_char = byte.is_ascii_alphanumeric()
+            || matches!(
+                byte,
+                b'!' | b'#'
+                    | b'$'
+                    | b'&'
+                    | b'+'
+                    | b'-'
+                    | b'.'
+                    | b'^'
+                    | b'_'
+                    | b'`'
+                    | b'|'
+                    | b'~'
+            );
+
+        if is_attr_char {
+            out.push(byte as char);
+        } else {
+            out.push('%');
+            out.push(HEX[(byte >> 4) as usize] as char);
+            out.push(HEX[(byte & 0x0f) as usize] as char);
+        }
+    }
+
+    out
+}
+
 fn make_actor_dto(user_id: Option<uuid::Uuid>, api_key_id: Option<uuid::Uuid>) -> Option<ActorDto> {
     if let Some(uid) = user_id {
         Some(ActorDto {
@@ -1047,5 +1103,50 @@ fn member_to_actor(member: &WorkspaceMember) -> Actor {
         Actor::ApiKey(kid)
     } else {
         Actor::User(UserId::new())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+    use super::*;
+
+    #[test]
+    fn content_disposition_escapes_quote_and_strips_control_chars() {
+        let malicious = "a\"; rm -rf /\r\nX-Evil: 1.txt";
+        let header = content_disposition_attachment(malicious);
+
+        assert!(
+            !header.contains('\r') && !header.contains('\n'),
+            "control chars must not appear in the header: {header}"
+        );
+
+        let ascii_part = header
+            .split("; filename*=")
+            .next()
+            .expect("ascii filename part");
+        assert!(
+            ascii_part.contains("\\\""),
+            "embedded quote must be escaped in the ASCII fallback: {header}"
+        );
+
+        assert!(
+            header.contains("filename*=UTF-8''"),
+            "header must carry an RFC 5987 filename*: {header}"
+        );
+        assert!(
+            header.contains("%0D%0A"),
+            "control bytes must be percent-encoded in filename*: {header}"
+        );
+    }
+
+    #[test]
+    fn content_disposition_percent_encodes_non_ascii() {
+        let header = content_disposition_attachment("résumé.pdf");
+        assert!(
+            header.contains("filename*=UTF-8''r%C3%A9sum%C3%A9.pdf"),
+            "non-ASCII name must be UTF-8 percent-encoded: {header}"
+        );
     }
 }
