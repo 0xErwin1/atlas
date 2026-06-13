@@ -181,3 +181,65 @@ async fn resequence_column_reorders_existing_keys() {
 
     db.teardown().await;
 }
+
+#[tokio::test]
+async fn add_column_returns_position_exhausted_when_anchors_are_equal() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "col-add-reseq-user").await;
+    let ctx = support::ctx(&ws, &user);
+
+    let proj = make_project(&db, &ctx, "col-add-reseq-proj", "CAR").await;
+    let board_repo = PgBoardRepo::new(db.conn().clone());
+
+    let board = board_repo
+        .create_board(
+            &ctx,
+            NewBoard {
+                project_id: proj.id,
+                name: "Exhaustion Board".into(),
+            },
+        )
+        .await
+        .expect("create board");
+
+    let anchor = board_repo
+        .add_column(
+            &ctx,
+            board.id,
+            "Anchor".into(),
+            PositionBetween {
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("anchor");
+
+    // Passing equal before and after exhausts the fractional space deterministically.
+    // try_between(k, k) returns None, triggering the resequence+retry path.
+    // The retry also produces None for equal keys, so PositionExhausted is returned.
+    // The old code would silently call position::between and return Ok with a wrong
+    // position instead.
+    let key = anchor.position_key.clone();
+    let result = board_repo
+        .add_column(
+            &ctx,
+            board.id,
+            "Should fail".into(),
+            PositionBetween {
+                before: Some(key.clone()),
+                after: Some(key.clone()),
+            },
+        )
+        .await;
+
+    assert!(
+        matches!(
+            result,
+            Err(atlas_domain::DomainError::PositionExhausted { .. })
+        ),
+        "expected PositionExhausted for equal anchors, got: {result:?}"
+    );
+
+    db.teardown().await;
+}

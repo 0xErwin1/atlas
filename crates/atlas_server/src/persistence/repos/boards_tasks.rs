@@ -102,7 +102,18 @@ impl BoardRepo for PgBoardRepo {
                 Some(key) => key,
                 None => {
                     resequence_column(&txn, ctx, board_id).await?;
-                    position::between(position.before.as_deref(), position.after.as_deref())
+                    match position::try_between(
+                        position.before.as_deref(),
+                        position.after.as_deref(),
+                    ) {
+                        Some(key) => key,
+                        None => {
+                            txn.rollback().await.map_err(db_err)?;
+                            return Err(DomainError::PositionExhausted {
+                                column_id: ColumnId(board_id.0),
+                            });
+                        }
+                    }
                 }
             };
 
