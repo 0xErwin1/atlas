@@ -14,7 +14,7 @@ use crate::persistence::entities::boards_tasks::{
 };
 use crate::persistence::repos::{
     PgTaskActivityRepo, PgTaskAssigneeRepo, PgTaskChecklistRepo, PgTaskReferenceRepo, PgTaskRepo,
-    TaskActivityRepo,
+    TaskActivityRepo as _,
 };
 
 /// Result of a checklist item promotion: the three records committed atomically.
@@ -36,14 +36,7 @@ pub struct TaskService {
 }
 
 impl TaskService {
-    pub fn new(
-        conn: DatabaseConnection,
-        _task_repo: PgTaskRepo,
-        _reference_repo: PgTaskReferenceRepo,
-        _assignee_repo: PgTaskAssigneeRepo,
-        _checklist_repo: PgTaskChecklistRepo,
-        _activity_repo: PgTaskActivityRepo,
-    ) -> Self {
+    pub fn new(conn: DatabaseConnection) -> Self {
         Self { conn }
     }
 

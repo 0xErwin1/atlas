@@ -421,10 +421,22 @@ impl PgTaskRepo {
         let task_prefix: String = row.try_get("", "task_prefix").map_err(db_err)?;
         let readable_id = format!("{task_prefix}-{task_number}");
 
-        let position_key = position::between(
+        let position_key = match position::try_between(
             new.position.before.as_deref(),
             new.position.after.as_deref(),
-        );
+        ) {
+            Some(key) => key,
+            None => {
+                resequence_tasks_in_column(conn, ctx, new.column_id).await?;
+                position::try_between(
+                    new.position.before.as_deref(),
+                    new.position.after.as_deref(),
+                )
+                .ok_or(DomainError::PositionExhausted {
+                    column_id: new.column_id,
+                })?
+            }
+        };
         let (by_user, by_key) = actor_columns(&ctx.actor);
         let now = Utc::now();
 
@@ -800,10 +812,22 @@ impl PgTaskChecklistRepo {
         ctx: &WorkspaceCtx,
         new: NewTaskChecklistItem,
     ) -> Result<TaskChecklistItem, DomainError> {
-        let position_key = position::between(
+        let position_key = match position::try_between(
             new.position.before.as_deref(),
             new.position.after.as_deref(),
-        );
+        ) {
+            Some(key) => key,
+            None => {
+                resequence_checklist_items(conn, ctx, new.task_id).await?;
+                position::try_between(
+                    new.position.before.as_deref(),
+                    new.position.after.as_deref(),
+                )
+                .ok_or(DomainError::PositionExhausted {
+                    column_id: ColumnId(new.task_id.0),
+                })?
+            }
+        };
         let (by_user, by_key) = actor_columns(&ctx.actor);
         let now = Utc::now();
 
@@ -846,6 +870,8 @@ impl PgTaskChecklistRepo {
                 id: item_id.0,
             })?;
 
+        let task_id = TaskId(row.task_id);
+
         let mut active = row.into_active_model();
         if let Some(title) = patch.title {
             active.title = Set(title);
@@ -854,10 +880,18 @@ impl PgTaskChecklistRepo {
             active.checked = Set(checked);
         }
         if let Some(pos) = patch.position {
-            active.position_key = Set(position::between(
-                pos.before.as_deref(),
-                pos.after.as_deref(),
-            ));
+            let new_key = match position::try_between(pos.before.as_deref(), pos.after.as_deref()) {
+                Some(key) => key,
+                None => {
+                    resequence_checklist_items(conn, ctx, task_id).await?;
+                    position::try_between(pos.before.as_deref(), pos.after.as_deref()).ok_or(
+                        DomainError::PositionExhausted {
+                            column_id: ColumnId(task_id.0),
+                        },
+                    )?
+                }
+            };
+            active.position_key = Set(new_key);
         }
         active.updated_at = Set(Utc::now());
         active
@@ -1162,6 +1196,36 @@ async fn resequence_tasks_in_column(
         active.position_key = Set(key.clone());
         active.updated_at = Set(Utc::now());
         active.update(txn).await.map_err(db_err)?;
+        prev = Some(key);
+    }
+
+    Ok(())
+}
+
+/// Resequences all non-deleted checklist items for `task_id` using evenly spaced fractional keys.
+///
+/// Must run inside an existing transaction.
+async fn resequence_checklist_items(
+    conn: &impl ConnectionTrait,
+    ctx: &WorkspaceCtx,
+    task_id: TaskId,
+) -> Result<(), DomainError> {
+    let rows = task_checklist_item::Entity::find()
+        .filter(task_checklist_item::Column::WorkspaceId.eq(ctx.workspace_id.0))
+        .filter(task_checklist_item::Column::TaskId.eq(task_id.0))
+        .filter(task_checklist_item::Column::DeletedAt.is_null())
+        .order_by(task_checklist_item::Column::PositionKey, Order::Asc)
+        .all(conn)
+        .await
+        .map_err(db_err)?;
+
+    let mut prev: Option<String> = None;
+    for row in rows {
+        let key = position::between(prev.as_deref(), None);
+        let mut active = row.into_active_model();
+        active.position_key = Set(key.clone());
+        active.updated_at = Set(Utc::now());
+        active.update(conn).await.map_err(db_err)?;
         prev = Some(key);
     }
 

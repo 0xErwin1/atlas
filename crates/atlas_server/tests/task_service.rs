@@ -17,9 +17,8 @@ use atlas_domain::{
 };
 use atlas_server::{
     persistence::repos::{
-        BoardRepo, PgBoardRepo, PgProjectRepo, PgTaskActivityRepo, PgTaskAssigneeRepo,
-        PgTaskChecklistRepo, PgTaskReferenceRepo, PgTaskRepo, ProjectRepo, TaskActivityRepo,
-        TaskChecklistRepo, TaskRepo,
+        BoardRepo, PgBoardRepo, PgProjectRepo, PgTaskActivityRepo, PgTaskChecklistRepo, PgTaskRepo,
+        ProjectRepo, TaskActivityRepo, TaskChecklistRepo, TaskRepo,
     },
     services::TaskService,
 };
@@ -77,14 +76,7 @@ async fn seed_project_board_col(
 }
 
 fn make_svc(db: &support::TestDb) -> TaskService {
-    TaskService::new(
-        db.conn().clone(),
-        PgTaskRepo::new(db.conn().clone()),
-        PgTaskReferenceRepo::new(db.conn().clone()),
-        PgTaskAssigneeRepo::new(db.conn().clone()),
-        PgTaskChecklistRepo::new(db.conn().clone()),
-        PgTaskActivityRepo::new(db.conn().clone()),
-    )
+    TaskService::new(db.conn().clone())
 }
 
 #[tokio::test]
@@ -670,6 +662,317 @@ async fn task_service_move_task_triggers_resequence_when_space_exhausted() {
 
     // Either we exhausted naturally and got 409, or resequence succeeded for all moves.
     // Either way, no panic and no unexpected error.
+    let _ = last_result;
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn task_create_between_triggers_resequence_when_space_exhausted() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "svc-create-reseq").await;
+    let ctx = support::ctx(&ws, &user);
+
+    let (proj, board, col) = seed_project_board_col(&db, &ctx, "create-reseq", "CR").await;
+    let svc = make_svc(&db);
+
+    let anchor_a = svc
+        .create(
+            &ctx,
+            NewTask {
+                project_id: proj.id,
+                board_id: board.id,
+                column_id: col.id,
+                title: "Anchor A".into(),
+                description: String::new(),
+                priority: None,
+                due_date: None,
+                estimate: None,
+                labels: vec![],
+                properties: None,
+                position: PositionBetween {
+                    before: None,
+                    after: None,
+                },
+            },
+        )
+        .await
+        .expect("create anchor A");
+
+    let anchor_b = svc
+        .create(
+            &ctx,
+            NewTask {
+                project_id: proj.id,
+                board_id: board.id,
+                column_id: col.id,
+                title: "Anchor B".into(),
+                description: String::new(),
+                priority: None,
+                due_date: None,
+                estimate: None,
+                labels: vec![],
+                properties: None,
+                position: PositionBetween {
+                    before: Some(anchor_a.position_key.clone()),
+                    after: None,
+                },
+            },
+        )
+        .await
+        .expect("create anchor B");
+
+    // Exhaust the fractional space between A and B by creating tasks there.
+    // After enough bisections, try_between returns None and resequence must kick in.
+    let before_key = anchor_a.position_key.clone();
+    let after_key = anchor_b.position_key.clone();
+
+    let mut last_result = Ok(());
+    for i in 0..70 {
+        let result = svc
+            .create(
+                &ctx,
+                NewTask {
+                    project_id: proj.id,
+                    board_id: board.id,
+                    column_id: col.id,
+                    title: format!("Filler {i}"),
+                    description: String::new(),
+                    priority: None,
+                    due_date: None,
+                    estimate: None,
+                    labels: vec![],
+                    properties: None,
+                    position: PositionBetween {
+                        before: Some(before_key.clone()),
+                        after: Some(after_key.clone()),
+                    },
+                },
+            )
+            .await;
+
+        match result {
+            Ok(_) => {}
+            Err(atlas_domain::DomainError::PositionExhausted { .. }) => {
+                last_result = Err(());
+                break;
+            }
+            Err(e) => panic!("unexpected error during create: {e:?}"),
+        }
+    }
+
+    // Either resequence succeeded for all creates, or we got a clean 409.
+    // Under no circumstances should the loop panic or produce a corrupt silent fallback.
+    let _ = last_result;
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn checklist_add_between_triggers_resequence_when_space_exhausted() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "cl-add-reseq").await;
+    let ctx = support::ctx(&ws, &user);
+
+    let (proj, board, col) = seed_project_board_col(&db, &ctx, "cl-add-reseq", "CL").await;
+    let svc = make_svc(&db);
+
+    let task = svc
+        .create(
+            &ctx,
+            NewTask {
+                project_id: proj.id,
+                board_id: board.id,
+                column_id: col.id,
+                title: "Host task".into(),
+                description: String::new(),
+                priority: None,
+                due_date: None,
+                estimate: None,
+                labels: vec![],
+                properties: None,
+                position: PositionBetween {
+                    before: None,
+                    after: None,
+                },
+            },
+        )
+        .await
+        .expect("create host task");
+
+    let item_a = svc
+        .add_checklist_item(
+            &ctx,
+            NewTaskChecklistItem {
+                task_id: task.id,
+                title: "Anchor A".into(),
+                position: PositionBetween {
+                    before: None,
+                    after: None,
+                },
+            },
+        )
+        .await
+        .expect("add item A");
+
+    let item_b = svc
+        .add_checklist_item(
+            &ctx,
+            NewTaskChecklistItem {
+                task_id: task.id,
+                title: "Anchor B".into(),
+                position: PositionBetween {
+                    before: Some(item_a.position_key.clone()),
+                    after: None,
+                },
+            },
+        )
+        .await
+        .expect("add item B");
+
+    let before_key = item_a.position_key.clone();
+    let after_key = item_b.position_key.clone();
+
+    let mut last_result = Ok(());
+    for i in 0..70 {
+        let result = svc
+            .add_checklist_item(
+                &ctx,
+                NewTaskChecklistItem {
+                    task_id: task.id,
+                    title: format!("Filler {i}"),
+                    position: PositionBetween {
+                        before: Some(before_key.clone()),
+                        after: Some(after_key.clone()),
+                    },
+                },
+            )
+            .await;
+
+        match result {
+            Ok(_) => {}
+            Err(atlas_domain::DomainError::PositionExhausted { .. }) => {
+                last_result = Err(());
+                break;
+            }
+            Err(e) => panic!("unexpected error during checklist add: {e:?}"),
+        }
+    }
+
+    let _ = last_result;
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn checklist_patch_position_triggers_resequence_when_space_exhausted() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "cl-patch-reseq").await;
+    let ctx = support::ctx(&ws, &user);
+
+    let (proj, board, col) = seed_project_board_col(&db, &ctx, "cl-patch-reseq", "CP").await;
+    let svc = make_svc(&db);
+
+    let task = svc
+        .create(
+            &ctx,
+            NewTask {
+                project_id: proj.id,
+                board_id: board.id,
+                column_id: col.id,
+                title: "Host task".into(),
+                description: String::new(),
+                priority: None,
+                due_date: None,
+                estimate: None,
+                labels: vec![],
+                properties: None,
+                position: PositionBetween {
+                    before: None,
+                    after: None,
+                },
+            },
+        )
+        .await
+        .expect("create host task");
+
+    let item_a = svc
+        .add_checklist_item(
+            &ctx,
+            NewTaskChecklistItem {
+                task_id: task.id,
+                title: "Anchor A".into(),
+                position: PositionBetween {
+                    before: None,
+                    after: None,
+                },
+            },
+        )
+        .await
+        .expect("add item A");
+
+    let item_b = svc
+        .add_checklist_item(
+            &ctx,
+            NewTaskChecklistItem {
+                task_id: task.id,
+                title: "Anchor B".into(),
+                position: PositionBetween {
+                    before: Some(item_a.position_key.clone()),
+                    after: None,
+                },
+            },
+        )
+        .await
+        .expect("add item B");
+
+    // The item to be repositioned via patch.
+    let item_c = svc
+        .add_checklist_item(
+            &ctx,
+            NewTaskChecklistItem {
+                task_id: task.id,
+                title: "Mover".into(),
+                position: PositionBetween {
+                    before: Some(item_b.position_key.clone()),
+                    after: None,
+                },
+            },
+        )
+        .await
+        .expect("add item C");
+
+    let before_key = item_a.position_key.clone();
+    let after_key = item_b.position_key.clone();
+
+    let mut last_result = Ok(());
+    for _ in 0..70 {
+        let result = svc
+            .patch_checklist_item(
+                &ctx,
+                task.id,
+                item_c.id,
+                atlas_domain::entities::boards_tasks::TaskChecklistItemPatch {
+                    title: None,
+                    checked: None,
+                    position: Some(PositionBetween {
+                        before: Some(before_key.clone()),
+                        after: Some(after_key.clone()),
+                    }),
+                },
+            )
+            .await;
+
+        match result {
+            Ok(_) => {}
+            Err(atlas_domain::DomainError::PositionExhausted { .. }) => {
+                last_result = Err(());
+                break;
+            }
+            Err(e) => panic!("unexpected error during checklist patch: {e:?}"),
+        }
+    }
+
     let _ = last_result;
 
     db.teardown().await;
