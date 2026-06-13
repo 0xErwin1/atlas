@@ -1,3 +1,5 @@
+pub mod documents;
+
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "openapi")]
