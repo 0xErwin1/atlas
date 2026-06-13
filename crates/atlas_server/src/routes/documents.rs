@@ -99,16 +99,19 @@ pub(crate) async fn create_document(
     let project_id = auth.resource.0.id;
     let folder_id = body.folder_id.map(FolderId);
 
+    let content = body.content.unwrap_or_default();
+    let frontmatter = derive_frontmatter(&content);
+
     let doc = doc_repo
         .create(
             &ctx,
             NewDocument {
                 title: body.title,
                 slug: Some(slug),
-                content: body.content.unwrap_or_default(),
+                content,
                 folder_id,
                 project_id: Some(project_id),
-                frontmatter: None,
+                frontmatter: Some(frontmatter),
             },
         )
         .await
@@ -119,22 +122,7 @@ pub(crate) async fn create_document(
     };
     update_document_links(&ctx, &doc_repo, &link_repo, doc.id, &doc.content).await?;
 
-    if !doc.content.is_empty() {
-        let (yaml, _body) = atlas_domain::frontmatter::strip_frontmatter(&doc.content);
-        let fm = atlas_domain::frontmatter::parse_frontmatter_yaml(yaml.unwrap_or(""));
-        let _ = doc_repo
-            .update_frontmatter(&ctx, doc.id, fm)
-            .await
-            .map_err(ApiError::Domain)?;
-    }
-
-    let final_doc = doc_repo
-        .get(&ctx, doc.id)
-        .await
-        .map_err(ApiError::Domain)?
-        .ok_or(ApiError::NotFound)?;
-
-    Ok((StatusCode::CREATED, Json(document_to_dto(final_doc))))
+    Ok((StatusCode::CREATED, Json(document_to_dto(doc))))
 }
 
 // ---------------------------------------------------------------------------
@@ -338,8 +326,7 @@ pub(crate) async fn update_content(
     };
     update_document_links(&ctx, &doc_repo, &link_repo, updated.id, &updated.content).await?;
 
-    let (yaml, _body) = atlas_domain::frontmatter::strip_frontmatter(&updated.content);
-    let fm = atlas_domain::frontmatter::parse_frontmatter_yaml(yaml.unwrap_or(""));
+    let fm = derive_frontmatter(&updated.content);
     let final_doc = doc_repo
         .update_frontmatter(&ctx, updated.id, fm)
         .await
@@ -960,6 +947,16 @@ async fn collect_existing_slugs_for_workspace(
     })?;
 
     Ok(rows.into_iter().map(|r| r.slug).collect())
+}
+
+/// Derives the frontmatter JSON object from document content by parsing the
+/// leading YAML block. Returns an empty object when there is no frontmatter.
+///
+/// Shared by create and content-update so both paths produce identical
+/// frontmatter from the same content.
+fn derive_frontmatter(content: &str) -> serde_json::Value {
+    let (yaml, _body) = atlas_domain::frontmatter::strip_frontmatter(content);
+    atlas_domain::frontmatter::parse_frontmatter_yaml(yaml.unwrap_or(""))
 }
 
 async fn update_document_links(

@@ -830,6 +830,16 @@ async fn frontmatter_extracted_from_yaml_block() {
         .await
         .expect("create document");
 
+    assert_eq!(
+        doc.updated_at, doc.created_at,
+        "a freshly created document must not have updated_at skewed past created_at"
+    );
+    assert_eq!(
+        doc.frontmatter["author"],
+        serde_json::json!("alice"),
+        "create response must already carry parsed frontmatter (single persist)"
+    );
+
     let slug = doc.slug.as_deref().expect("slug");
     let fm = client
         .get_frontmatter(&ws.slug, slug)
