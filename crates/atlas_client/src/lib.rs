@@ -5,6 +5,14 @@ use atlas_api::{
         ApiKeyCreated, ApiKeyDto, CreateApiKeyRequest, CreateGrantRequest, CreateProjectRequest,
         CreateUserRequest, GrantDto, HealthResponse, LoginRequest, LoginResponse, MeResponse,
         ProjectDto, UpdateProjectRequest, UserDto, WorkspaceDto,
+        boards_tasks::{
+            ActivityEntryDto, AddAssigneeRequest, AssigneeDto, BoardDto, BoardSummaryDto,
+            ChecklistItemDto, ColumnDto, CreateBoardRequest, CreateChecklistItemRequest,
+            CreateColumnRequest, CreateReferenceRequest, CreateTaskRequest, MoveTaskRequest,
+            PromoteChecklistItemRequest, PromotionDto, ReferenceDto, TaskBacklinkDto, TaskDto,
+            TaskSummaryDto, UpdateBoardRequest, UpdateChecklistItemRequest, UpdateColumnRequest,
+            UpdateTaskRequest,
+        },
         documents::{
             AttachmentDto, BacklinkDto, ConflictProblemDto, CreateDocumentRequest, DocumentDto,
             DocumentSummaryDto, FrontmatterDto, MoveDocumentRequest, RevisionContentDto,
@@ -675,6 +683,490 @@ impl AtlasClient {
             .send()
             .await?;
         self.decode_response(response, "move_document").await
+    }
+
+    // ---- Boards ----------------------------------------------------------------
+
+    /// `POST /v1/workspaces/{ws}/projects/{project_slug}/boards`
+    pub async fn create_board(
+        &self,
+        ws: &str,
+        project_slug: &str,
+        body: CreateBoardRequest,
+    ) -> Result<BoardDto, ClientError> {
+        let response = self
+            .post(&format!(
+                "/v1/workspaces/{ws}/projects/{project_slug}/boards"
+            ))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "create_board").await
+    }
+
+    /// `GET /v1/workspaces/{ws}/projects/{project_slug}/boards`
+    pub async fn list_boards(
+        &self,
+        ws: &str,
+        project_slug: &str,
+        cursor: Option<&str>,
+        limit: Option<u32>,
+    ) -> Result<Page<BoardSummaryDto>, ClientError> {
+        let path = build_paginated_path(
+            &format!("/v1/workspaces/{ws}/projects/{project_slug}/boards"),
+            cursor,
+            limit,
+        );
+        let response = self.get(&path).send().await?;
+        self.decode_response(response, "list_boards").await
+    }
+
+    /// `GET /v1/workspaces/{ws}/boards/{board_id}`
+    pub async fn get_board(&self, ws: &str, board_id: uuid::Uuid) -> Result<BoardDto, ClientError> {
+        let response = self
+            .get(&format!("/v1/workspaces/{ws}/boards/{board_id}"))
+            .send()
+            .await?;
+        self.decode_response(response, "get_board").await
+    }
+
+    /// `PATCH /v1/workspaces/{ws}/boards/{board_id}`
+    pub async fn update_board(
+        &self,
+        ws: &str,
+        board_id: uuid::Uuid,
+        body: UpdateBoardRequest,
+    ) -> Result<BoardDto, ClientError> {
+        let response = self
+            .patch(&format!("/v1/workspaces/{ws}/boards/{board_id}"))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "update_board").await
+    }
+
+    /// `DELETE /v1/workspaces/{ws}/boards/{board_id}`
+    pub async fn delete_board(&self, ws: &str, board_id: uuid::Uuid) -> Result<(), ClientError> {
+        let response = self
+            .delete(&format!("/v1/workspaces/{ws}/boards/{board_id}"))
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        if response.status().is_success() {
+            return Ok(());
+        }
+        let problem: ProblemDetails = response
+            .json()
+            .await
+            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
+        Err(ClientError::Api(problem))
+    }
+
+    /// `POST /v1/workspaces/{ws}/boards/{board_id}/columns`
+    pub async fn create_column(
+        &self,
+        ws: &str,
+        board_id: uuid::Uuid,
+        body: CreateColumnRequest,
+    ) -> Result<ColumnDto, ClientError> {
+        let response = self
+            .post(&format!("/v1/workspaces/{ws}/boards/{board_id}/columns"))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "create_column").await
+    }
+
+    /// `GET /v1/workspaces/{ws}/boards/{board_id}/columns`
+    pub async fn list_columns(
+        &self,
+        ws: &str,
+        board_id: uuid::Uuid,
+    ) -> Result<Vec<ColumnDto>, ClientError> {
+        let response = self
+            .get(&format!("/v1/workspaces/{ws}/boards/{board_id}/columns"))
+            .send()
+            .await?;
+        self.decode_response(response, "list_columns").await
+    }
+
+    /// `PATCH /v1/workspaces/{ws}/boards/{board_id}/columns/{column_id}`
+    pub async fn update_column(
+        &self,
+        ws: &str,
+        board_id: uuid::Uuid,
+        column_id: uuid::Uuid,
+        body: UpdateColumnRequest,
+    ) -> Result<ColumnDto, ClientError> {
+        let response = self
+            .patch(&format!(
+                "/v1/workspaces/{ws}/boards/{board_id}/columns/{column_id}"
+            ))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "update_column").await
+    }
+
+    /// `DELETE /v1/workspaces/{ws}/boards/{board_id}/columns/{column_id}`
+    pub async fn delete_column(
+        &self,
+        ws: &str,
+        board_id: uuid::Uuid,
+        column_id: uuid::Uuid,
+    ) -> Result<(), ClientError> {
+        let response = self
+            .delete(&format!(
+                "/v1/workspaces/{ws}/boards/{board_id}/columns/{column_id}"
+            ))
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        if response.status().is_success() {
+            return Ok(());
+        }
+        let problem: ProblemDetails = response
+            .json()
+            .await
+            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
+        Err(ClientError::Api(problem))
+    }
+
+    // ---- Tasks ----------------------------------------------------------------
+
+    /// `POST /v1/workspaces/{ws}/boards/{board_id}/tasks`
+    pub async fn create_task(
+        &self,
+        ws: &str,
+        board_id: uuid::Uuid,
+        body: CreateTaskRequest,
+    ) -> Result<TaskDto, ClientError> {
+        let response = self
+            .post(&format!("/v1/workspaces/{ws}/boards/{board_id}/tasks"))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "create_task").await
+    }
+
+    /// `GET /v1/workspaces/{ws}/boards/{board_id}/tasks`
+    pub async fn list_tasks(
+        &self,
+        ws: &str,
+        board_id: uuid::Uuid,
+        cursor: Option<&str>,
+        limit: Option<u32>,
+    ) -> Result<Page<TaskSummaryDto>, ClientError> {
+        let path = build_paginated_path(
+            &format!("/v1/workspaces/{ws}/boards/{board_id}/tasks"),
+            cursor,
+            limit,
+        );
+        let response = self.get(&path).send().await?;
+        self.decode_response(response, "list_tasks").await
+    }
+
+    /// `GET /v1/workspaces/{ws}/tasks/{readable_id}`
+    pub async fn get_task(&self, ws: &str, readable_id: &str) -> Result<TaskDto, ClientError> {
+        let response = self
+            .get(&format!("/v1/workspaces/{ws}/tasks/{readable_id}"))
+            .send()
+            .await?;
+        self.decode_response(response, "get_task").await
+    }
+
+    /// `PATCH /v1/workspaces/{ws}/tasks/{readable_id}`
+    pub async fn update_task(
+        &self,
+        ws: &str,
+        readable_id: &str,
+        body: UpdateTaskRequest,
+    ) -> Result<TaskDto, ClientError> {
+        let response = self
+            .patch(&format!("/v1/workspaces/{ws}/tasks/{readable_id}"))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "update_task").await
+    }
+
+    /// `DELETE /v1/workspaces/{ws}/tasks/{readable_id}`
+    pub async fn delete_task(&self, ws: &str, readable_id: &str) -> Result<(), ClientError> {
+        let response = self
+            .delete(&format!("/v1/workspaces/{ws}/tasks/{readable_id}"))
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        if response.status().is_success() {
+            return Ok(());
+        }
+        let problem: ProblemDetails = response
+            .json()
+            .await
+            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
+        Err(ClientError::Api(problem))
+    }
+
+    /// `POST /v1/workspaces/{ws}/tasks/{readable_id}/move`
+    pub async fn move_task(
+        &self,
+        ws: &str,
+        readable_id: &str,
+        body: MoveTaskRequest,
+    ) -> Result<TaskDto, ClientError> {
+        let response = self
+            .post(&format!("/v1/workspaces/{ws}/tasks/{readable_id}/move"))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "move_task").await
+    }
+
+    /// `GET /v1/workspaces/{ws}/tasks/{readable_id}/assignees`
+    pub async fn list_assignees(
+        &self,
+        ws: &str,
+        readable_id: &str,
+    ) -> Result<Vec<AssigneeDto>, ClientError> {
+        let response = self
+            .get(&format!(
+                "/v1/workspaces/{ws}/tasks/{readable_id}/assignees"
+            ))
+            .send()
+            .await?;
+        self.decode_response(response, "list_assignees").await
+    }
+
+    /// `POST /v1/workspaces/{ws}/tasks/{readable_id}/assignees`
+    pub async fn add_assignee(
+        &self,
+        ws: &str,
+        readable_id: &str,
+        body: AddAssigneeRequest,
+    ) -> Result<AssigneeDto, ClientError> {
+        let response = self
+            .post(&format!(
+                "/v1/workspaces/{ws}/tasks/{readable_id}/assignees"
+            ))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "add_assignee").await
+    }
+
+    /// `DELETE /v1/workspaces/{ws}/tasks/{readable_id}/assignees/{assignee_ref}`
+    pub async fn remove_assignee(
+        &self,
+        ws: &str,
+        readable_id: &str,
+        assignee_ref: &str,
+    ) -> Result<(), ClientError> {
+        let response = self
+            .delete(&format!(
+                "/v1/workspaces/{ws}/tasks/{readable_id}/assignees/{assignee_ref}"
+            ))
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        if response.status().is_success() {
+            return Ok(());
+        }
+        let problem: ProblemDetails = response
+            .json()
+            .await
+            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
+        Err(ClientError::Api(problem))
+    }
+
+    /// `GET /v1/workspaces/{ws}/tasks/{readable_id}/references`
+    pub async fn list_references(
+        &self,
+        ws: &str,
+        readable_id: &str,
+    ) -> Result<Vec<ReferenceDto>, ClientError> {
+        let response = self
+            .get(&format!(
+                "/v1/workspaces/{ws}/tasks/{readable_id}/references"
+            ))
+            .send()
+            .await?;
+        self.decode_response(response, "list_references").await
+    }
+
+    /// `POST /v1/workspaces/{ws}/tasks/{readable_id}/references`
+    pub async fn create_reference(
+        &self,
+        ws: &str,
+        readable_id: &str,
+        body: CreateReferenceRequest,
+    ) -> Result<ReferenceDto, ClientError> {
+        let response = self
+            .post(&format!(
+                "/v1/workspaces/{ws}/tasks/{readable_id}/references"
+            ))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "create_reference").await
+    }
+
+    /// `DELETE /v1/workspaces/{ws}/tasks/{readable_id}/references/{reference_id}`
+    pub async fn delete_reference(
+        &self,
+        ws: &str,
+        readable_id: &str,
+        reference_id: uuid::Uuid,
+    ) -> Result<(), ClientError> {
+        let response = self
+            .delete(&format!(
+                "/v1/workspaces/{ws}/tasks/{readable_id}/references/{reference_id}"
+            ))
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        if response.status().is_success() {
+            return Ok(());
+        }
+        let problem: ProblemDetails = response
+            .json()
+            .await
+            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
+        Err(ClientError::Api(problem))
+    }
+
+    /// `GET /v1/workspaces/{ws}/tasks/{readable_id}/backlinks`
+    pub async fn list_task_backlinks(
+        &self,
+        ws: &str,
+        readable_id: &str,
+    ) -> Result<Page<TaskBacklinkDto>, ClientError> {
+        let response = self
+            .get(&format!(
+                "/v1/workspaces/{ws}/tasks/{readable_id}/backlinks"
+            ))
+            .send()
+            .await?;
+        self.decode_response(response, "list_task_backlinks").await
+    }
+
+    /// `GET /v1/workspaces/{ws}/tasks/{readable_id}/checklist`
+    pub async fn list_checklist(
+        &self,
+        ws: &str,
+        readable_id: &str,
+    ) -> Result<Vec<ChecklistItemDto>, ClientError> {
+        let response = self
+            .get(&format!(
+                "/v1/workspaces/{ws}/tasks/{readable_id}/checklist"
+            ))
+            .send()
+            .await?;
+        self.decode_response(response, "list_checklist").await
+    }
+
+    /// `POST /v1/workspaces/{ws}/tasks/{readable_id}/checklist`
+    pub async fn create_checklist_item(
+        &self,
+        ws: &str,
+        readable_id: &str,
+        body: CreateChecklistItemRequest,
+    ) -> Result<ChecklistItemDto, ClientError> {
+        let response = self
+            .post(&format!(
+                "/v1/workspaces/{ws}/tasks/{readable_id}/checklist"
+            ))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "create_checklist_item")
+            .await
+    }
+
+    /// `PATCH /v1/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}`
+    pub async fn update_checklist_item(
+        &self,
+        ws: &str,
+        readable_id: &str,
+        item_id: uuid::Uuid,
+        body: UpdateChecklistItemRequest,
+    ) -> Result<ChecklistItemDto, ClientError> {
+        let response = self
+            .patch(&format!(
+                "/v1/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}"
+            ))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "update_checklist_item")
+            .await
+    }
+
+    /// `DELETE /v1/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}`
+    pub async fn delete_checklist_item(
+        &self,
+        ws: &str,
+        readable_id: &str,
+        item_id: uuid::Uuid,
+    ) -> Result<(), ClientError> {
+        let response = self
+            .delete(&format!(
+                "/v1/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}"
+            ))
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        if response.status().is_success() {
+            return Ok(());
+        }
+        let problem: ProblemDetails = response
+            .json()
+            .await
+            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
+        Err(ClientError::Api(problem))
+    }
+
+    /// `POST /v1/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}/promote`
+    pub async fn promote_checklist_item(
+        &self,
+        ws: &str,
+        readable_id: &str,
+        item_id: uuid::Uuid,
+        body: PromoteChecklistItemRequest,
+    ) -> Result<PromotionDto, ClientError> {
+        let response = self
+            .post(&format!(
+                "/v1/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}/promote"
+            ))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "promote_checklist_item")
+            .await
+    }
+
+    /// `GET /v1/workspaces/{ws}/tasks/{readable_id}/activity`
+    pub async fn list_activity(
+        &self,
+        ws: &str,
+        readable_id: &str,
+    ) -> Result<Page<ActivityEntryDto>, ClientError> {
+        let response = self
+            .get(&format!("/v1/workspaces/{ws}/tasks/{readable_id}/activity"))
+            .send()
+            .await?;
+        self.decode_response(response, "list_activity").await
     }
 
     /// `POST /v1/auth/logout`
