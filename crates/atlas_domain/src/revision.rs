@@ -38,7 +38,11 @@ pub fn reconstruct(snapshot: &str, patches: &[&str]) -> Result<String, DomainErr
 /// Seq 1 is always an anchor (initial content). For subsequent sequences, an anchor
 /// is created whenever `seq % interval == 0`. With default interval=50, anchors
 /// occur at seq 1, 50, 100, 150, ...
+///
+/// An `interval` of 0 is clamped to 1 so the modulo cannot divide by zero; with
+/// a clamped interval of 1 every sequence becomes an anchor.
 pub fn is_anchor_seq(seq: i64, interval: u32) -> bool {
+    let interval = interval.max(1);
     seq == 1 || seq % (interval as i64) == 0
 }
 
@@ -82,6 +86,13 @@ mod tests {
         assert!(is_anchor_seq(1, 2));
         assert!(is_anchor_seq(1, 50));
         assert!(is_anchor_seq(1, 100));
+    }
+
+    #[test]
+    fn interval_zero_does_not_panic_and_clamps_to_one() {
+        assert!(is_anchor_seq(1, 0));
+        assert!(is_anchor_seq(2, 0));
+        assert!(is_anchor_seq(7, 0));
     }
 
     #[test]

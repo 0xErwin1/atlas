@@ -28,7 +28,7 @@ impl AppState {
             .map(|s| s != "false" && s != "0")
             .unwrap_or(true);
 
-        let anchor_interval = read_env_u32("ATLAS_ANCHOR_INTERVAL", 50);
+        let anchor_interval = read_env_u32("ATLAS_ANCHOR_INTERVAL", 50).max(1);
 
         let attachment_root = std::env::var("ATLAS_ATTACHMENT_ROOT")
             .unwrap_or_else(|_| "./data/attachments".to_string());
@@ -55,7 +55,7 @@ impl AppState {
     /// The attachment store uses a temp directory unless `ATLAS_ATTACHMENT_ROOT` is set.
     /// Returns `Err` only if the attachment root directory cannot be created.
     pub async fn for_test(db: DatabaseConnection) -> Result<Self, anyhow::Error> {
-        let anchor_interval = read_env_u32("ATLAS_ANCHOR_INTERVAL", 50);
+        let anchor_interval = read_env_u32("ATLAS_ANCHOR_INTERVAL", 50).max(1);
 
         let attachment_root = std::env::var("ATLAS_ATTACHMENT_ROOT").unwrap_or_else(|_| {
             std::env::temp_dir()
