@@ -2,8 +2,8 @@ use crate::{
     DomainError, WorkspaceCtx,
     entities::boards_tasks::{
         ActivityKind, Board, BoardColumn, NewBoard, NewTask, NewTaskActivity, NewTaskAssignee,
-        NewTaskChecklistItem, NewTaskReference, PositionBetween, Task, TaskActivity,
-        TaskAssignee, TaskChecklistItem, TaskChecklistItemPatch, TaskPatch, TaskReference,
+        NewTaskChecklistItem, NewTaskReference, PositionBetween, Task, TaskActivity, TaskAssignee,
+        TaskChecklistItem, TaskChecklistItemPatch, TaskPatch, TaskReference,
     },
     ids::{BoardId, ChecklistItemId, ColumnId, ProjectId, TaskId, TaskReferenceId},
 };

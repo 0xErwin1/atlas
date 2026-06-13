@@ -82,10 +82,8 @@ impl MigrationTrait for Migration {
         )
         .await?;
 
-        conn.execute_unprepared(
-            r#"CREATE INDEX tasks_labels_gin ON tasks USING gin (labels)"#,
-        )
-        .await?;
+        conn.execute_unprepared(r#"CREATE INDEX tasks_labels_gin ON tasks USING gin (labels)"#)
+            .await?;
 
         // -------------------------------------------------------------------
         // task_assignees: principal XOR (user | api_key), unique per task.
@@ -254,15 +252,11 @@ impl MigrationTrait for Migration {
         let conn = manager.get_connection();
 
         // Undo document_links polymorphic changes.
-        conn.execute_unprepared(
-            r#"DROP INDEX IF EXISTS document_links_source_task_idx"#,
-        )
-        .await?;
+        conn.execute_unprepared(r#"DROP INDEX IF EXISTS document_links_source_task_idx"#)
+            .await?;
 
-        conn.execute_unprepared(
-            r#"DROP INDEX IF EXISTS document_links_source_title_uidx"#,
-        )
-        .await?;
+        conn.execute_unprepared(r#"DROP INDEX IF EXISTS document_links_source_title_uidx"#)
+            .await?;
 
         conn.execute_unprepared(
             r#"ALTER TABLE document_links DROP CONSTRAINT IF EXISTS document_links_source_check"#,

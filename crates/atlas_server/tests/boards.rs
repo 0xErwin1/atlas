@@ -15,18 +15,20 @@ async fn make_project(
     slug: &str,
     prefix: &str,
 ) -> atlas_domain::entities::workspace_core::Project {
-    PgProjectRepo { conn: db.conn().clone() }
-        .create(
-            ctx,
-            NewProject {
-                name: format!("Project {slug}"),
-                slug: slug.into(),
-                task_prefix: prefix.into(),
-                visibility: Visibility::Workspace(VisibilityRole::Viewer),
-            },
-        )
-        .await
-        .expect("seed project")
+    PgProjectRepo {
+        conn: db.conn().clone(),
+    }
+    .create(
+        ctx,
+        NewProject {
+            name: format!("Project {slug}"),
+            slug: slug.into(),
+            task_prefix: prefix.into(),
+            visibility: Visibility::Workspace(VisibilityRole::Viewer),
+        },
+    )
+    .await
+    .expect("seed project")
 }
 
 #[tokio::test]
@@ -40,18 +42,42 @@ async fn list_boards_is_scoped_to_project() {
 
     let repo = PgBoardRepo::new(db.conn().clone());
 
-    repo.create_board(&ctx, NewBoard { project_id: proj_a.id, name: "Board A1".into() })
-        .await
-        .expect("create board A1");
-    repo.create_board(&ctx, NewBoard { project_id: proj_a.id, name: "Board A2".into() })
-        .await
-        .expect("create board A2");
-    repo.create_board(&ctx, NewBoard { project_id: proj_b.id, name: "Board B1".into() })
-        .await
-        .expect("create board B1");
+    repo.create_board(
+        &ctx,
+        NewBoard {
+            project_id: proj_a.id,
+            name: "Board A1".into(),
+        },
+    )
+    .await
+    .expect("create board A1");
+    repo.create_board(
+        &ctx,
+        NewBoard {
+            project_id: proj_a.id,
+            name: "Board A2".into(),
+        },
+    )
+    .await
+    .expect("create board A2");
+    repo.create_board(
+        &ctx,
+        NewBoard {
+            project_id: proj_b.id,
+            name: "Board B1".into(),
+        },
+    )
+    .await
+    .expect("create board B1");
 
-    let boards_a = repo.list_boards(&ctx, proj_a.id).await.expect("list boards A");
-    let boards_b = repo.list_boards(&ctx, proj_b.id).await.expect("list boards B");
+    let boards_a = repo
+        .list_boards(&ctx, proj_a.id)
+        .await
+        .expect("list boards A");
+    let boards_b = repo
+        .list_boards(&ctx, proj_b.id)
+        .await
+        .expect("list boards B");
 
     assert_eq!(boards_a.len(), 2, "project A must have 2 boards");
     assert_eq!(boards_b.len(), 1, "project B must have 1 board");

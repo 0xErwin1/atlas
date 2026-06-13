@@ -20,7 +20,7 @@ use crate::persistence::entities::boards_tasks::{
 };
 
 pub use atlas_domain::ports::boards_tasks::{
-    BoardRepo, TaskAssigneeRepo, TaskActivityRepo, TaskChecklistRepo, TaskReferenceRepo, TaskRepo,
+    BoardRepo, TaskActivityRepo, TaskAssigneeRepo, TaskChecklistRepo, TaskReferenceRepo, TaskRepo,
 };
 
 pub struct PgBoardRepo {

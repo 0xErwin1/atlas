@@ -1,7 +1,7 @@
 use atlas_domain::actor::Actor;
 use atlas_domain::entities::boards_tasks::{
-    ActivityKind, AssigneeRef, Board, BoardColumn, ReferenceKind, Task, TaskActivity,
-    TaskAssignee, TaskChecklistItem, TaskReference,
+    ActivityKind, AssigneeRef, Board, BoardColumn, ReferenceKind, Task, TaskActivity, TaskAssignee,
+    TaskChecklistItem, TaskReference,
 };
 use atlas_domain::ids::{
     ApiKeyId, BoardId, ChecklistItemId, ColumnId, ProjectId, TaskActivityId, TaskId,
@@ -402,9 +402,18 @@ mod tests {
     #[test]
     fn activity_kind_round_trips() {
         let kinds = [
-            "created", "moved", "assigned", "unassigned", "field_changed",
-            "reference_added", "reference_removed", "checklist_added",
-            "checklist_updated", "checklist_removed", "checklist_promoted", "deleted",
+            "created",
+            "moved",
+            "assigned",
+            "unassigned",
+            "field_changed",
+            "reference_added",
+            "reference_removed",
+            "checklist_added",
+            "checklist_updated",
+            "checklist_removed",
+            "checklist_promoted",
+            "deleted",
         ];
         for k in &kinds {
             let parsed = activity_kind_from_str(k).expect("must parse");

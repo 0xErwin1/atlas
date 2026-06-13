@@ -17,26 +17,42 @@ async fn seed_project_board_task(
     db: &support::TestDb,
     ctx: &atlas_domain::WorkspaceCtx,
 ) -> atlas_domain::entities::boards_tasks::Task {
-    let project = PgProjectRepo { conn: db.conn().clone() }
-        .create(
-            ctx,
-            NewProject {
-                name: "DocLink Project".into(),
-                slug: "dl-proj".into(),
-                task_prefix: "DL".into(),
-                visibility: Visibility::Workspace(VisibilityRole::Viewer),
-            },
-        )
-        .await
-        .expect("seed project");
+    let project = PgProjectRepo {
+        conn: db.conn().clone(),
+    }
+    .create(
+        ctx,
+        NewProject {
+            name: "DocLink Project".into(),
+            slug: "dl-proj".into(),
+            task_prefix: "DL".into(),
+            visibility: Visibility::Workspace(VisibilityRole::Viewer),
+        },
+    )
+    .await
+    .expect("seed project");
 
     let board = PgBoardRepo::new(db.conn().clone())
-        .create_board(ctx, NewBoard { project_id: project.id, name: "Main".into() })
+        .create_board(
+            ctx,
+            NewBoard {
+                project_id: project.id,
+                name: "Main".into(),
+            },
+        )
         .await
         .expect("seed board");
 
     let col = PgBoardRepo::new(db.conn().clone())
-        .add_column(ctx, board.id, "Backlog".into(), PositionBetween { before: None, after: None })
+        .add_column(
+            ctx,
+            board.id,
+            "Backlog".into(),
+            PositionBetween {
+                before: None,
+                after: None,
+            },
+        )
         .await
         .expect("seed column");
 
@@ -54,7 +70,10 @@ async fn seed_project_board_task(
                 estimate: None,
                 labels: vec![],
                 properties: None,
-                position: PositionBetween { before: None, after: None },
+                position: PositionBetween {
+                    before: None,
+                    after: None,
+                },
             },
         )
         .await
@@ -68,7 +87,9 @@ async fn replace_for_task_source_stores_and_replaces_links() {
     let ctx = support::ctx(&ws, &user);
 
     let doc_repo = PgDocumentRepo::new(db.conn().clone(), 10);
-    let link_repo = PgDocumentLinkRepo { conn: db.conn().clone() };
+    let link_repo = PgDocumentLinkRepo {
+        conn: db.conn().clone(),
+    };
 
     let task = seed_project_board_task(&db, &ctx).await;
 
@@ -127,7 +148,10 @@ async fn replace_for_task_source_stores_and_replaces_links() {
         .await
         .expect("backlinks after clear");
 
-    assert!(backlinks_after_clear.is_empty(), "links must be removed on second write");
+    assert!(
+        backlinks_after_clear.is_empty(),
+        "links must be removed on second write"
+    );
 
     db.teardown().await;
 }

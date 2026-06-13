@@ -29,8 +29,8 @@ pub use actor::{Actor, WorkspaceCtx};
 pub use error::{DomainError, RevisionConflict};
 pub use ids::{
     ApiKeyId, AttachmentId, BoardId, ChecklistItemId, ColumnId, DocumentId, FolderId, MembershipId,
-    ProjectId, PropertyDefinitionId, RevisionId, SessionId, TaskActivityId, TaskId, TaskReferenceId,
-    UserId, WorkspaceId,
+    ProjectId, PropertyDefinitionId, RevisionId, SessionId, TaskActivityId, TaskId,
+    TaskReferenceId, UserId, WorkspaceId,
 };
 
 pub trait HealthProbe {

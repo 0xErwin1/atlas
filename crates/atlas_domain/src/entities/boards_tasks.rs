@@ -333,7 +333,12 @@ mod tests {
 
     #[test]
     fn priority_round_trips_through_str() {
-        for p in [Priority::Low, Priority::Medium, Priority::High, Priority::Urgent] {
+        for p in [
+            Priority::Low,
+            Priority::Medium,
+            Priority::High,
+            Priority::Urgent,
+        ] {
             let s = p.as_str();
             let back: Priority = s.parse().expect("must parse");
             assert_eq!(p, back);
@@ -349,7 +354,10 @@ mod tests {
     #[test]
     fn activity_kind_as_str_is_snake_case() {
         assert_eq!(ActivityKind::FieldChanged.as_str(), "field_changed");
-        assert_eq!(ActivityKind::ChecklistPromoted.as_str(), "checklist_promoted");
+        assert_eq!(
+            ActivityKind::ChecklistPromoted.as_str(),
+            "checklist_promoted"
+        );
     }
 
     #[test]
