@@ -8,6 +8,9 @@ pub mod permissions;
 pub mod ports;
 pub mod position;
 pub mod revision;
+pub mod wikilink;
+
+pub use wikilink::parse_wikilinks;
 
 pub use actor::{Actor, WorkspaceCtx};
 pub use error::{DomainError, RevisionConflict};
