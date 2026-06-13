@@ -6,17 +6,19 @@ use std::collections::HashMap;
 
 use atlas_domain::{
     entities::documents::NewDocument,
+    entities::identity::MemberRole,
     entities::permissions::NewPermissionGrant,
     entities::workspace_core::NewFolder,
     ids::{DocumentId, FolderId},
-    permissions::{ResourceRef, ResourceRole},
+    permissions::{Principal, ResolutionInput, ResourceRef, ResourceRole},
+    ports::permission_grant_repo::ResolutionQuery,
 };
 use atlas_server::{
     authz::authorized::{DocumentRes, FolderRes, ResolvedResource},
     error::ApiError,
     persistence::repos::{
-        DocumentRepo, FolderRepo, PermissionGrantRepo, PgDocumentRepo, PgFolderRepo,
-        PgPermissionGrantRepo,
+        DocumentRepo, FolderRepo, MembershipRepo, PermissionGrantRepo, PgDocumentRepo,
+        PgFolderRepo, PgMembershipRepo, PgPermissionGrantRepo, UserRepo,
     },
 };
 
@@ -276,6 +278,206 @@ async fn folder_scope_grant_resolves_for_document_in_that_folder() {
     assert!(
         has_folder_in_chain,
         "folder-scope grant must be reachable: folder must appear in chain"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn folder_scope_grant_yields_effective_access_on_document_in_that_folder() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let (ws, owner) = support::seed_workspace(&db, "docres-fg-eff").await;
+
+    let user_repo = db.user_repo();
+    let viewer = user_repo
+        .create(atlas_server::persistence::repos::NewUser {
+            username: "docres-fg-viewer".to_string(),
+            display_name: "Viewer".to_string(),
+            password_hash: "$argon2id$v=19$m=19456,t=2,p=1$test$hash".into(),
+            is_root: false,
+        })
+        .await
+        .expect("create viewer");
+
+    let membership_repo = PgMembershipRepo {
+        conn: db.conn().clone(),
+    };
+    let ctx = support::ctx(&ws, &owner);
+    membership_repo
+        .add(&ctx, viewer.id, MemberRole::Member)
+        .await
+        .expect("add viewer membership");
+
+    let folder = create_folder(&db, &ws, &owner, None).await;
+    let doc = create_doc_in_folder(&db, &ws, &owner, "Folder Effective", Some(folder.id)).await;
+
+    let grant_repo = PgPermissionGrantRepo {
+        conn: db.conn().clone(),
+    };
+    grant_repo
+        .upsert(NewPermissionGrant {
+            workspace_id: ws.id,
+            user_id: Some(viewer.id),
+            api_key_id: None,
+            project_id: None,
+            folder_id: Some(folder.id),
+            document_id: None,
+            board_id: None,
+            role: ResourceRole::Viewer,
+            created_by_user_id: Some(owner.id),
+            created_by_api_key_id: None,
+        })
+        .await
+        .expect("upsert folder grant");
+
+    let (_, chain) = DocumentRes::resolve(db.conn(), &ws, doc_params(doc.id))
+        .await
+        .expect("resolve must succeed");
+
+    let chain_folder_ids: Vec<uuid::Uuid> = chain
+        .segments
+        .iter()
+        .filter_map(|s| {
+            if let ResourceRef::Folder(fid) = &s.resource {
+                Some(fid.0)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    let grants = grant_repo
+        .load_grants_for_resolution(ResolutionQuery {
+            workspace_id: ws.id,
+            user_id: Some(viewer.id.0),
+            api_key_id: None,
+            chain_projects: vec![],
+            chain_folders: chain_folder_ids,
+            doc_id: None,
+            board_id: None,
+        })
+        .await
+        .expect("load_grants_for_resolution");
+
+    let principal = Principal::User(viewer.id);
+    let input = ResolutionInput {
+        principal: &principal,
+        membership: Some(MemberRole::Member),
+        chain: &chain,
+        grants: &grants,
+    };
+
+    let effective = atlas_domain::permissions::resolve(&input);
+
+    assert!(
+        effective.is_some(),
+        "folder-scope grant must yield effective access for a Member user, got None"
+    );
+    assert!(
+        effective.unwrap() >= ResourceRole::Viewer,
+        "effective role must be at least Viewer, got: {:?}",
+        effective
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn folder_scope_grant_on_ancestor_yields_effective_access_on_nested_document() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let (ws, owner) = support::seed_workspace(&db, "docres-fg-nested").await;
+
+    let user_repo = db.user_repo();
+    let viewer = user_repo
+        .create(atlas_server::persistence::repos::NewUser {
+            username: "docres-fg-nested-viewer".to_string(),
+            display_name: "NestedViewer".to_string(),
+            password_hash: "$argon2id$v=19$m=19456,t=2,p=1$test$hash".into(),
+            is_root: false,
+        })
+        .await
+        .expect("create viewer");
+
+    let membership_repo = PgMembershipRepo {
+        conn: db.conn().clone(),
+    };
+    let ctx = support::ctx(&ws, &owner);
+    membership_repo
+        .add(&ctx, viewer.id, MemberRole::Member)
+        .await
+        .expect("add viewer membership");
+
+    let parent_folder = create_folder(&db, &ws, &owner, None).await;
+    let child_folder = create_folder(&db, &ws, &owner, Some(parent_folder.id)).await;
+    let doc =
+        create_doc_in_folder(&db, &ws, &owner, "Nested Effective", Some(child_folder.id)).await;
+
+    let grant_repo = PgPermissionGrantRepo {
+        conn: db.conn().clone(),
+    };
+    grant_repo
+        .upsert(NewPermissionGrant {
+            workspace_id: ws.id,
+            user_id: Some(viewer.id),
+            api_key_id: None,
+            project_id: None,
+            folder_id: Some(parent_folder.id),
+            document_id: None,
+            board_id: None,
+            role: ResourceRole::Viewer,
+            created_by_user_id: Some(owner.id),
+            created_by_api_key_id: None,
+        })
+        .await
+        .expect("upsert ancestor folder grant");
+
+    let (_, chain) = DocumentRes::resolve(db.conn(), &ws, doc_params(doc.id))
+        .await
+        .expect("resolve must succeed");
+
+    let chain_folder_ids: Vec<uuid::Uuid> = chain
+        .segments
+        .iter()
+        .filter_map(|s| {
+            if let ResourceRef::Folder(fid) = &s.resource {
+                Some(fid.0)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    let grants = grant_repo
+        .load_grants_for_resolution(ResolutionQuery {
+            workspace_id: ws.id,
+            user_id: Some(viewer.id.0),
+            api_key_id: None,
+            chain_projects: vec![],
+            chain_folders: chain_folder_ids,
+            doc_id: None,
+            board_id: None,
+        })
+        .await
+        .expect("load_grants_for_resolution");
+
+    let principal = Principal::User(viewer.id);
+    let input = ResolutionInput {
+        principal: &principal,
+        membership: Some(MemberRole::Member),
+        chain: &chain,
+        grants: &grants,
+    };
+
+    let effective = atlas_domain::permissions::resolve(&input);
+
+    assert!(
+        effective.is_some(),
+        "ancestor folder-scope grant must yield effective access on a nested document, got None"
+    );
+    assert!(
+        effective.unwrap() >= ResourceRole::Viewer,
+        "effective role must be at least Viewer, got: {:?}",
+        effective
     );
 
     db.teardown().await;
