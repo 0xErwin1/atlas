@@ -15,7 +15,9 @@ use atlas_api::dtos::{
 };
 use atlas_client::ClientError;
 use atlas_domain::{Actor, WorkspaceCtx, entities::identity::MemberRole};
-use atlas_server::persistence::repos::{MembershipRepo, NewUser, PermissionGrantRepo, UserRepo};
+use atlas_server::persistence::repos::{
+    FolderRepo, MembershipRepo, NewUser, PermissionGrantRepo, UserRepo,
+};
 
 fn doc_req(title: &str) -> CreateDocumentRequest {
     CreateDocumentRequest {
@@ -1028,6 +1030,190 @@ async fn move_document_changes_folder() {
 
     assert_eq!(moved.id, doc.id);
     assert_eq!(moved.folder_id, None);
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn move_to_nonexistent_folder_is_rejected() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-move-bad").await;
+
+    let project = client
+        .create_project(
+            &ws.slug,
+            atlas_api::dtos::CreateProjectRequest {
+                name: "Proj".to_string(),
+                slug: "proj-move-bad".to_string(),
+                task_prefix: "PMB".to_string(),
+                visibility: None,
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create project");
+
+    let doc = client
+        .create_document(&ws.slug, &project.slug, doc_req("Move Bad"))
+        .await
+        .expect("create document");
+
+    let slug = doc.slug.as_deref().expect("slug");
+    let result = client
+        .move_document(
+            &ws.slug,
+            slug,
+            MoveDocumentRequest {
+                folder_id: Some(uuid::Uuid::now_v7()),
+            },
+        )
+        .await;
+
+    assert!(
+        matches!(result, Err(ClientError::Api(ref p)) if p.status == 422 || p.status == 404),
+        "moving to a nonexistent folder must be rejected, got: {result:?}"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn move_to_foreign_workspace_folder_is_rejected() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+
+    let (alice, ws_a, alice_user) =
+        support::login_user_with_workspace(&server, &db, "doc-move-fa").await;
+    let (_bob, ws_b, bob_user) =
+        support::login_user_with_workspace(&server, &db, "doc-move-fb").await;
+
+    let project = alice
+        .create_project(
+            &ws_a.slug,
+            atlas_api::dtos::CreateProjectRequest {
+                name: "Proj".to_string(),
+                slug: "proj-move-fa".to_string(),
+                task_prefix: "PMF".to_string(),
+                visibility: None,
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create project");
+
+    let doc = alice
+        .create_document(&ws_a.slug, &project.slug, doc_req("Move Foreign"))
+        .await
+        .expect("create document");
+
+    // A folder owned by Bob's workspace must not be a valid move target for Alice's doc.
+    let foreign_folder = db
+        .folder_repo()
+        .create(
+            &WorkspaceCtx::new(ws_b.id, Actor::User(bob_user.id)),
+            atlas_domain::entities::workspace_core::NewFolder {
+                project_id: None,
+                parent_folder_id: None,
+                name: "bob-folder".to_string(),
+            },
+        )
+        .await
+        .expect("create foreign folder");
+
+    let _ = alice_user;
+
+    let slug = doc.slug.as_deref().expect("slug");
+    let result = alice
+        .move_document(
+            &ws_a.slug,
+            slug,
+            MoveDocumentRequest {
+                folder_id: Some(foreign_folder.id.0),
+            },
+        )
+        .await;
+
+    assert!(
+        matches!(result, Err(ClientError::Api(ref p)) if p.status == 422 || p.status == 404),
+        "moving into a folder from another workspace must be rejected, got: {result:?}"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn move_into_folder_adopts_folder_project() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, user) = support::login_user_with_workspace(&server, &db, "doc-move-adopt").await;
+
+    let project_a = client
+        .create_project(
+            &ws.slug,
+            atlas_api::dtos::CreateProjectRequest {
+                name: "Proj A".to_string(),
+                slug: "proj-move-a".to_string(),
+                task_prefix: "PMA".to_string(),
+                visibility: None,
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create project a");
+
+    let project_b = client
+        .create_project(
+            &ws.slug,
+            atlas_api::dtos::CreateProjectRequest {
+                name: "Proj B".to_string(),
+                slug: "proj-move-b".to_string(),
+                task_prefix: "PMB2".to_string(),
+                visibility: None,
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create project b");
+
+    let doc = client
+        .create_document(&ws.slug, &project_a.slug, doc_req("Adopt Project"))
+        .await
+        .expect("create document");
+    assert_eq!(doc.project_id, Some(project_a.id));
+
+    // A folder belonging to project B; moving the doc into it must adopt project B.
+    let folder_b = db
+        .folder_repo()
+        .create(
+            &WorkspaceCtx::new(ws.id, Actor::User(user.id)),
+            atlas_domain::entities::workspace_core::NewFolder {
+                project_id: Some(atlas_domain::ids::ProjectId(project_b.id)),
+                parent_folder_id: None,
+                name: "folder-b".to_string(),
+            },
+        )
+        .await
+        .expect("create folder b");
+
+    let slug = doc.slug.as_deref().expect("slug");
+    let moved = client
+        .move_document(
+            &ws.slug,
+            slug,
+            MoveDocumentRequest {
+                folder_id: Some(folder_b.id.0),
+            },
+        )
+        .await
+        .expect("move document into folder b");
+
+    assert_eq!(moved.folder_id, Some(folder_b.id.0));
+    assert_eq!(
+        moved.project_id,
+        Some(project_b.id),
+        "document must adopt the destination folder's project"
+    );
 
     db.teardown().await;
 }

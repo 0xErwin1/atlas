@@ -408,6 +408,8 @@ impl DocumentRepo for PgDocumentRepo {
         folder: Option<FolderId>,
         project: Option<ProjectId>,
     ) -> Result<(), DomainError> {
+        use crate::persistence::entities::workspace_core::folder;
+
         let row = document::Entity::find_by_id(id.0)
             .filter(document::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(document::Column::DeletedAt.is_null())
@@ -419,9 +421,29 @@ impl DocumentRepo for PgDocumentRepo {
                 id: id.0,
             })?;
 
+        // When moving into a folder, the destination folder must exist in this
+        // workspace and dictates the document's project so the two cannot desync.
+        // Clearing the folder (None) drops the document to the workspace root.
+        let (target_folder_id, target_project_id) = match folder {
+            Some(folder_id) => {
+                let folder_row = folder::Entity::find_by_id(folder_id.0)
+                    .filter(folder::Column::WorkspaceId.eq(ctx.workspace_id.0))
+                    .filter(folder::Column::DeletedAt.is_null())
+                    .one(&self.conn)
+                    .await
+                    .map_err(db_err)?
+                    .ok_or(DomainError::InvalidInput {
+                        message: "target folder does not exist in this workspace".to_string(),
+                    })?;
+
+                (Some(folder_id.0), folder_row.project_id)
+            }
+            None => (None, project.map(|id| id.0)),
+        };
+
         let mut active = row.into_active_model();
-        active.folder_id = Set(folder.map(|id| id.0));
-        active.project_id = Set(project.map(|id| id.0));
+        active.folder_id = Set(target_folder_id);
+        active.project_id = Set(target_project_id);
         active.updated_at = Set(Utc::now());
         active.update(&self.conn).await.map_err(db_err)?;
         Ok(())
