@@ -28,7 +28,7 @@ use atlas_domain::{
 
 use crate::{
     authz::{
-        Authorized, EditorMin, ViewerMin, WorkspaceMember,
+        Authorized, EditorMin, MinRole, ViewerMin, WorkspaceMember,
         authorized::{DocumentSlugRes, ProjectRes},
     },
     error::ApiError,
@@ -801,6 +801,8 @@ pub(crate) async fn download_attachment(
         .map_err(ApiError::Domain)?
         .ok_or(ApiError::NotFound)?;
 
+    authorize_attachment_document(&state, &member, &attachment, ViewerMin::ROLE).await?;
+
     let bytes = state
         .attachments
         .get(&attachment.sha256)
@@ -861,11 +863,13 @@ pub(crate) async fn delete_attachment(
         conn: (*state.db).clone(),
     };
 
-    let _ = attachment_repo
+    let attachment = attachment_repo
         .find(&ctx, attachment_id)
         .await
         .map_err(ApiError::Domain)?
         .ok_or(ApiError::NotFound)?;
+
+    authorize_attachment_document(&state, &member, &attachment, EditorMin::ROLE).await?;
 
     attachment_repo
         .soft_delete(&ctx, attachment_id)
@@ -947,6 +951,47 @@ async fn collect_existing_slugs_for_workspace(
     })?;
 
     Ok(rows.into_iter().map(|r| r.slug).collect())
+}
+
+/// Authorizes the request principal against the document that owns `attachment`,
+/// requiring at least `min_role` on that document's permission chain.
+///
+/// Attachment binaries are reached by id without going through the document
+/// extractor, so this re-applies the same document-level resolution the rest of
+/// the document routes use. A principal lacking the role is rejected with
+/// `NotFound` to avoid disclosing the attachment's or document's existence.
+async fn authorize_attachment_document(
+    state: &AppState,
+    member: &WorkspaceMember,
+    attachment: &atlas_domain::entities::documents::Attachment,
+    min_role: atlas_domain::permissions::ResourceRole,
+) -> Result<(), ApiError> {
+    let document_id = attachment.document_id.ok_or(ApiError::NotFound)?;
+
+    let ctx = WorkspaceCtx::new(member.workspace.id, member_to_actor(member));
+    let doc_repo = PgDocumentRepo::new((*state.db).clone(), state.anchor_interval);
+
+    let doc = doc_repo
+        .get(&ctx, document_id)
+        .await
+        .map_err(ApiError::Domain)?
+        .ok_or(ApiError::NotFound)?;
+
+    let principal = member_to_principal(member);
+    let membership = member.membership.as_ref().map(|m| m.role.clone());
+
+    let chain = crate::authz::build_document_chain(&state.db, &member.workspace, &doc).await?;
+
+    let effective =
+        crate::authz::resolve_effective_role(&state.db, &principal, membership, &member.workspace, &chain)
+            .await?
+            .ok_or(ApiError::NotFound)?;
+
+    if effective < min_role {
+        return Err(ApiError::NotFound);
+    }
+
+    Ok(())
 }
 
 /// Derives the frontmatter JSON object from document content by parsing the
@@ -1111,6 +1156,16 @@ fn member_to_actor(member: &WorkspaceMember) -> Actor {
         Actor::ApiKey(kid)
     } else {
         Actor::User(UserId::new())
+    }
+}
+
+fn member_to_principal(member: &WorkspaceMember) -> Principal {
+    if let Some(user) = &member.user {
+        Principal::User(user.id)
+    } else if let Some(kid) = member.api_key_id {
+        Principal::ApiKey(kid)
+    } else {
+        Principal::User(UserId::new())
     }
 }
 

@@ -11,7 +11,7 @@ use atlas_domain::{
     entities::documents::Document,
     entities::identity::Workspace,
     entities::workspace_core::Project,
-    ids::{DocumentId, FolderId, UserId},
+    ids::{FolderId, UserId},
     permissions::{
         ChainSegment, Principal, ResolutionInput, ResourceChain, ResourceRef, ResourceRole,
         Visibility,
@@ -163,58 +163,7 @@ impl ResolvedResource for DocumentRes {
 
         let doc = document_from(row).map_err(|msg| ApiError::Internal { message: msg })?;
 
-        let mut segments = Vec::new();
-
-        segments.push(ChainSegment {
-            resource: ResourceRef::Document(DocumentId(doc_uuid)),
-            visibility: None,
-        });
-
-        // Walk folder ancestry most-specific-first, bounded to guard against cycles.
-        let mut inherited_project_id = None;
-        if let Some(leaf_folder_id) = doc.folder_id {
-            let folder_ancestors = resolve_folder_ancestry(db, ws.id, leaf_folder_id).await?;
-
-            // The last folder in the ancestry list carries the project_id that should
-            // act as the document's project when the document itself has no project_id.
-            if let Some(root) = folder_ancestors.last() {
-                inherited_project_id = root.project_id;
-            }
-
-            for f in folder_ancestors {
-                segments.push(ChainSegment {
-                    resource: ResourceRef::Folder(f.id),
-                    visibility: None,
-                });
-            }
-        }
-
-        let effective_project_id = doc.project_id.or(inherited_project_id);
-        if let Some(project_id) = effective_project_id {
-            let repo = PgProjectRepo { conn: db.clone() };
-            let ctx =
-                atlas_domain::WorkspaceCtx::new(ws.id, atlas_domain::Actor::User(UserId::new()));
-            let project = repo
-                .find(&ctx, project_id)
-                .await
-                .map_err(|e| ApiError::Internal {
-                    message: e.to_string(),
-                })?;
-
-            if let Some(p) = project {
-                segments.push(ChainSegment {
-                    resource: ResourceRef::Project(project_id),
-                    visibility: Some(project_visibility(&p.visibility)),
-                });
-            }
-        }
-
-        segments.push(ChainSegment {
-            resource: ResourceRef::Workspace,
-            visibility: None,
-        });
-
-        let chain = ResourceChain { segments };
+        let chain = build_document_chain(db, ws, &doc).await?;
         Ok((DocumentRes(doc), chain))
     }
 }
@@ -243,59 +192,71 @@ impl ResolvedResource for DocumentSlugRes {
             .ok_or(ApiError::NotFound)?;
 
         let doc = document_from(row).map_err(|msg| ApiError::Internal { message: msg })?;
-        let doc_id = doc.id;
 
-        let mut segments = Vec::new();
-
-        segments.push(ChainSegment {
-            resource: ResourceRef::Document(doc_id),
-            visibility: None,
-        });
-
-        let mut inherited_project_id = None;
-        if let Some(leaf_folder_id) = doc.folder_id {
-            let folder_ancestors = resolve_folder_ancestry(db, ws.id, leaf_folder_id).await?;
-
-            if let Some(root) = folder_ancestors.last() {
-                inherited_project_id = root.project_id;
-            }
-
-            for f in folder_ancestors {
-                segments.push(ChainSegment {
-                    resource: ResourceRef::Folder(f.id),
-                    visibility: None,
-                });
-            }
-        }
-
-        let effective_project_id = doc.project_id.or(inherited_project_id);
-        if let Some(project_id) = effective_project_id {
-            let repo = PgProjectRepo { conn: db.clone() };
-            let ctx =
-                atlas_domain::WorkspaceCtx::new(ws.id, atlas_domain::Actor::User(UserId::new()));
-            let project = repo
-                .find(&ctx, project_id)
-                .await
-                .map_err(|e| ApiError::Internal {
-                    message: e.to_string(),
-                })?;
-
-            if let Some(p) = project {
-                segments.push(ChainSegment {
-                    resource: ResourceRef::Project(project_id),
-                    visibility: Some(project_visibility(&p.visibility)),
-                });
-            }
-        }
-
-        segments.push(ChainSegment {
-            resource: ResourceRef::Workspace,
-            visibility: None,
-        });
-
-        let chain = ResourceChain { segments };
+        let chain = build_document_chain(db, ws, &doc).await?;
         Ok((DocumentSlugRes(doc), chain))
     }
+}
+
+/// Builds the full `document → folder ancestry → project → workspace` permission
+/// chain for a resolved document. Shared by `DocumentRes`, `DocumentSlugRes`, and
+/// the attachment routes, which authorize against the attachment's owning document.
+pub async fn build_document_chain(
+    db: &sea_orm::DatabaseConnection,
+    ws: &Workspace,
+    doc: &Document,
+) -> Result<ResourceChain, ApiError> {
+    let mut segments = Vec::new();
+
+    segments.push(ChainSegment {
+        resource: ResourceRef::Document(doc.id),
+        visibility: None,
+    });
+
+    // Walk folder ancestry most-specific-first, bounded to guard against cycles.
+    let mut inherited_project_id = None;
+    if let Some(leaf_folder_id) = doc.folder_id {
+        let folder_ancestors = resolve_folder_ancestry(db, ws.id, leaf_folder_id).await?;
+
+        // The last folder in the ancestry list carries the project_id that should
+        // act as the document's project when the document itself has no project_id.
+        if let Some(root) = folder_ancestors.last() {
+            inherited_project_id = root.project_id;
+        }
+
+        for f in folder_ancestors {
+            segments.push(ChainSegment {
+                resource: ResourceRef::Folder(f.id),
+                visibility: None,
+            });
+        }
+    }
+
+    let effective_project_id = doc.project_id.or(inherited_project_id);
+    if let Some(project_id) = effective_project_id {
+        let repo = PgProjectRepo { conn: db.clone() };
+        let ctx = atlas_domain::WorkspaceCtx::new(ws.id, atlas_domain::Actor::User(UserId::new()));
+        let project = repo
+            .find(&ctx, project_id)
+            .await
+            .map_err(|e| ApiError::Internal {
+                message: e.to_string(),
+            })?;
+
+        if let Some(p) = project {
+            segments.push(ChainSegment {
+                resource: ResourceRef::Project(project_id),
+                visibility: Some(project_visibility(&p.visibility)),
+            });
+        }
+    }
+
+    segments.push(ChainSegment {
+        resource: ResourceRef::Workspace,
+        visibility: None,
+    });
+
+    Ok(ResourceChain { segments })
 }
 
 /// Walks the folder hierarchy from `leaf_id` upward, returning folders in
@@ -462,25 +423,15 @@ where
 
         let (resource, chain) = R::resolve(&state.db, &workspace, params).await?;
 
-        let grant_query = build_resolution_query(&domain_principal, &workspace, &chain);
-        let grant_repo = PgPermissionGrantRepo {
-            conn: (*state.db).clone(),
-        };
-        let grants = grant_repo
-            .load_grants_for_resolution(grant_query)
-            .await
-            .map_err(|e| ApiError::Internal {
-                message: e.to_string(),
-            })?;
-
-        let input = ResolutionInput {
-            principal: &domain_principal,
-            membership: membership_role,
-            chain: &chain,
-            grants: &grants,
-        };
-
-        let effective = atlas_domain::permissions::resolve(&input).ok_or(ApiError::NotFound)?;
+        let effective = resolve_effective_role(
+            &state.db,
+            &domain_principal,
+            membership_role,
+            &workspace,
+            &chain,
+        )
+        .await?
+        .ok_or(ApiError::NotFound)?;
 
         if effective < M::ROLE {
             return Err(ApiError::Forbidden {
@@ -496,6 +447,37 @@ where
             _min: PhantomData,
         })
     }
+}
+
+/// Loads the principal's grants for the resource chain and resolves the effective
+/// role. Returns `None` when the principal has no access at all (default deny).
+///
+/// Shared between the `Authorized` extractor and the attachment routes so both
+/// honor the identical grant-resolution semantics.
+pub async fn resolve_effective_role(
+    db: &sea_orm::DatabaseConnection,
+    principal: &Principal,
+    membership: Option<atlas_domain::entities::identity::MemberRole>,
+    workspace: &Workspace,
+    chain: &ResourceChain,
+) -> Result<Option<ResourceRole>, ApiError> {
+    let grant_query = build_resolution_query(principal, workspace, chain);
+    let grant_repo = PgPermissionGrantRepo { conn: db.clone() };
+    let grants = grant_repo
+        .load_grants_for_resolution(grant_query)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?;
+
+    let input = ResolutionInput {
+        principal,
+        membership,
+        chain,
+        grants: &grants,
+    };
+
+    Ok(atlas_domain::permissions::resolve(&input))
 }
 
 fn build_resolution_query(

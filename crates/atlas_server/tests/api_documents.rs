@@ -1397,6 +1397,209 @@ async fn api_key_actor_write_sets_actor_type_api_key() {
     db.teardown().await;
 }
 
+// ---- Attachment authorization ----------------------------------------------
+
+/// Creates a member user with a password login, optionally granting a role on a
+/// project, and returns an authenticated client for that user.
+async fn member_client_with_optional_project_grant(
+    server: &support::TestServer,
+    db: &support::TestDb,
+    ws: &atlas_server::persistence::repos::Workspace,
+    username: &str,
+    project_id: Option<atlas_domain::ids::ProjectId>,
+    role: Option<atlas_domain::permissions::ResourceRole>,
+) -> atlas_client::AtlasClient {
+    use atlas_domain::entities::permissions::NewPermissionGrant;
+
+    let hash = atlas_server::auth::password::hash("TestPassword1!".to_string())
+        .await
+        .expect("hash");
+
+    let user = db
+        .user_repo()
+        .create(NewUser {
+            username: username.to_string(),
+            display_name: username.to_string(),
+            password_hash: hash,
+            is_root: false,
+        })
+        .await
+        .expect("create member");
+
+    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    db.membership_repo()
+        .add(&ctx, user.id, MemberRole::Member)
+        .await
+        .expect("add membership");
+
+    if let (Some(pid), Some(role)) = (project_id, role) {
+        let grant_repo = atlas_server::persistence::repos::PgPermissionGrantRepo {
+            conn: db.conn().clone(),
+        };
+        grant_repo
+            .upsert(NewPermissionGrant {
+                workspace_id: ws.id,
+                user_id: Some(user.id),
+                api_key_id: None,
+                project_id: Some(pid),
+                folder_id: None,
+                document_id: None,
+                board_id: None,
+                role,
+                created_by_user_id: None,
+                created_by_api_key_id: None,
+            })
+            .await
+            .expect("upsert grant");
+    }
+
+    let mut client = atlas_client::AtlasClient::new(server.base_url().to_string());
+    client
+        .login(atlas_api::dtos::LoginRequest {
+            username: username.to_string(),
+            password: "TestPassword1!".to_string(),
+        })
+        .await
+        .expect("member login");
+
+    client
+}
+
+async fn private_project_with_attachment(
+    server: &support::TestServer,
+    db: &support::TestDb,
+    owner: &atlas_client::AtlasClient,
+    ws: &atlas_server::persistence::repos::Workspace,
+    slug_prefix: &str,
+) -> (atlas_api::dtos::ProjectDto, uuid::Uuid) {
+    let _ = (server, db);
+    let project = owner
+        .create_project(
+            &ws.slug,
+            atlas_api::dtos::CreateProjectRequest {
+                name: "Restricted".to_string(),
+                slug: format!("{slug_prefix}-proj"),
+                task_prefix: "RST".to_string(),
+                visibility: Some("private".to_string()),
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create private project");
+
+    let doc = owner
+        .create_document(&ws.slug, &project.slug, doc_req("Restricted Doc"))
+        .await
+        .expect("create document");
+
+    let slug = doc.slug.as_deref().expect("slug");
+    let att = owner
+        .upload_attachment(
+            &ws.slug,
+            slug,
+            "secret.txt",
+            "text/plain",
+            b"top secret".to_vec(),
+        )
+        .await
+        .expect("upload attachment");
+
+    (project, att.id)
+}
+
+#[tokio::test]
+async fn member_without_grant_cannot_download_or_delete_restricted_attachment() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (owner, ws, _) = support::login_user_with_workspace(&server, &db, "att-az-owner-1").await;
+
+    let (_project, attachment_id) =
+        private_project_with_attachment(&server, &db, &owner, &ws, "att-az-nogrant").await;
+
+    let outsider =
+        member_client_with_optional_project_grant(&server, &db, &ws, "att-az-outsider", None, None)
+            .await;
+
+    let download = outsider.download_attachment(&ws.slug, attachment_id).await;
+    assert!(
+        matches!(download, Err(ClientError::Api(ref p)) if p.status == 403 || p.status == 404),
+        "member without a grant must not download a restricted attachment, got: {download:?}"
+    );
+
+    let delete = outsider.delete_attachment(&ws.slug, attachment_id).await;
+    assert!(
+        matches!(delete, Err(ClientError::Api(ref p)) if p.status == 403 || p.status == 404),
+        "member without a grant must not delete a restricted attachment, got: {delete:?}"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn viewer_can_download_but_not_delete_attachment() {
+    use atlas_domain::permissions::ResourceRole;
+
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (owner, ws, _) = support::login_user_with_workspace(&server, &db, "att-az-owner-2").await;
+
+    let (project, attachment_id) =
+        private_project_with_attachment(&server, &db, &owner, &ws, "att-az-viewer").await;
+
+    let viewer = member_client_with_optional_project_grant(
+        &server,
+        &db,
+        &ws,
+        "att-az-viewer-user",
+        Some(atlas_domain::ids::ProjectId(project.id)),
+        Some(ResourceRole::Viewer),
+    )
+    .await;
+
+    let bytes = viewer
+        .download_attachment(&ws.slug, attachment_id)
+        .await
+        .expect("viewer must be able to download");
+    assert_eq!(bytes, b"top secret");
+
+    let delete = viewer.delete_attachment(&ws.slug, attachment_id).await;
+    assert!(
+        matches!(delete, Err(ClientError::Api(ref p)) if p.status == 403 || p.status == 404),
+        "viewer must not delete an attachment, got: {delete:?}"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn editor_can_delete_attachment() {
+    use atlas_domain::permissions::ResourceRole;
+
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (owner, ws, _) = support::login_user_with_workspace(&server, &db, "att-az-owner-3").await;
+
+    let (project, attachment_id) =
+        private_project_with_attachment(&server, &db, &owner, &ws, "att-az-editor").await;
+
+    let editor = member_client_with_optional_project_grant(
+        &server,
+        &db,
+        &ws,
+        "att-az-editor-user",
+        Some(atlas_domain::ids::ProjectId(project.id)),
+        Some(ResourceRole::Editor),
+    )
+    .await;
+
+    editor
+        .delete_attachment(&ws.slug, attachment_id)
+        .await
+        .expect("editor must be able to delete");
+
+    db.teardown().await;
+}
+
 // ---- Cross-tenant isolation ------------------------------------------------
 
 #[tokio::test]
