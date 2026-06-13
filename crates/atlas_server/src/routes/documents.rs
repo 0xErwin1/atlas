@@ -982,10 +982,15 @@ async fn authorize_attachment_document(
 
     let chain = crate::authz::build_document_chain(&state.db, &member.workspace, &doc).await?;
 
-    let effective =
-        crate::authz::resolve_effective_role(&state.db, &principal, membership, &member.workspace, &chain)
-            .await?
-            .ok_or(ApiError::NotFound)?;
+    let effective = crate::authz::resolve_effective_role(
+        &state.db,
+        &principal,
+        membership,
+        &member.workspace,
+        &chain,
+    )
+    .await?
+    .ok_or(ApiError::NotFound)?;
 
     if effective < min_role {
         return Err(ApiError::NotFound);
@@ -1101,17 +1106,7 @@ fn rfc5987_encode(value: &str) -> String {
         let is_attr_char = byte.is_ascii_alphanumeric()
             || matches!(
                 byte,
-                b'!' | b'#'
-                    | b'$'
-                    | b'&'
-                    | b'+'
-                    | b'-'
-                    | b'.'
-                    | b'^'
-                    | b'_'
-                    | b'`'
-                    | b'|'
-                    | b'~'
+                b'!' | b'#' | b'$' | b'&' | b'+' | b'-' | b'.' | b'^' | b'_' | b'`' | b'|' | b'~'
             );
 
         if is_attr_char {

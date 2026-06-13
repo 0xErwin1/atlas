@@ -58,15 +58,30 @@ async fn backfill_dedupes_colliding_titles_and_coalesces_empty() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let (ws, user) = support::seed_workspace(&db, "slug-backfill").await;
 
-    let first =
-        insert_doc_without_slug(&db, ws.id.0, user.id.0, "Hello World", "2026-01-01T00:00:00Z")
-            .await;
-    let second =
-        insert_doc_without_slug(&db, ws.id.0, user.id.0, "hello  world!", "2026-01-02T00:00:00Z")
-            .await;
-    let third =
-        insert_doc_without_slug(&db, ws.id.0, user.id.0, "HELLO-WORLD", "2026-01-03T00:00:00Z")
-            .await;
+    let first = insert_doc_without_slug(
+        &db,
+        ws.id.0,
+        user.id.0,
+        "Hello World",
+        "2026-01-01T00:00:00Z",
+    )
+    .await;
+    let second = insert_doc_without_slug(
+        &db,
+        ws.id.0,
+        user.id.0,
+        "hello  world!",
+        "2026-01-02T00:00:00Z",
+    )
+    .await;
+    let third = insert_doc_without_slug(
+        &db,
+        ws.id.0,
+        user.id.0,
+        "HELLO-WORLD",
+        "2026-01-03T00:00:00Z",
+    )
+    .await;
     let symbols =
         insert_doc_without_slug(&db, ws.id.0, user.id.0, "!!!", "2026-01-04T00:00:00Z").await;
 
@@ -80,7 +95,10 @@ async fn backfill_dedupes_colliding_titles_and_coalesces_empty() {
     let s3 = slug_of(&db, third).await.expect("slug 3");
     let s_sym = slug_of(&db, symbols).await.expect("slug symbols");
 
-    assert_eq!(s1, "hello-world", "earliest colliding doc keeps the base slug");
+    assert_eq!(
+        s1, "hello-world",
+        "earliest colliding doc keeps the base slug"
+    );
 
     let mut colliding = vec![s1.clone(), s2.clone(), s3.clone()];
     colliding.sort();

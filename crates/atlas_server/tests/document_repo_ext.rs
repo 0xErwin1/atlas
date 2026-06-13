@@ -311,8 +311,7 @@ async fn list_visible_includes_doc_via_project_scope_grant() {
 
     let project = create_project(&db, &ws, &owner, "proj-lv").await;
 
-    let doc =
-        create_doc_in_folder(&repo, &ws, &owner, "In Project", None, Some(project.id)).await;
+    let doc = create_doc_in_folder(&repo, &ws, &owner, "In Project", None, Some(project.id)).await;
     create_doc_in_folder(&repo, &ws, &owner, "No Project", None, None).await;
 
     let key_id = create_api_key(&db, &ws, &owner).await;

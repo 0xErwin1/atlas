@@ -1146,7 +1146,8 @@ async fn move_to_foreign_workspace_folder_is_rejected() {
 async fn move_into_folder_adopts_folder_project() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;
-    let (client, ws, user) = support::login_user_with_workspace(&server, &db, "doc-move-adopt").await;
+    let (client, ws, user) =
+        support::login_user_with_workspace(&server, &db, "doc-move-adopt").await;
 
     let project_a = client
         .create_project(

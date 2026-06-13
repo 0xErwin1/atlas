@@ -39,8 +39,10 @@ impl DiskAttachmentStore {
     /// Rejecting anything else prevents path traversal (e.g. a `../` digest) and
     /// guards the slicing below from panicking on short input.
     fn object_path(&self, digest: &str) -> Result<PathBuf, DomainError> {
-        let is_valid_digest =
-            digest.len() == 64 && digest.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+        let is_valid_digest = digest.len() == 64
+            && digest
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
 
         if !is_valid_digest {
             return Err(DomainError::NotFound {
