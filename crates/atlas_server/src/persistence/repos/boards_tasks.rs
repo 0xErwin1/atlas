@@ -187,6 +187,60 @@ impl BoardRepo for PgBoardRepo {
         Ok(())
     }
 
+    async fn patch_board(
+        &self,
+        ctx: &WorkspaceCtx,
+        id: BoardId,
+        name: String,
+    ) -> Result<Board, DomainError> {
+        let row = board::Entity::find_by_id(id.0)
+            .filter(board::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(board::Column::DeletedAt.is_null())
+            .one(&self.conn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "board",
+                id: id.0,
+            })?;
+
+        let mut active = row.into_active_model();
+        active.name = Set(name);
+        active.updated_at = Set(Utc::now());
+        active
+            .update(&self.conn)
+            .await
+            .map(board_from)
+            .map_err(db_err)
+    }
+
+    async fn patch_column(
+        &self,
+        ctx: &WorkspaceCtx,
+        id: ColumnId,
+        name: String,
+    ) -> Result<BoardColumn, DomainError> {
+        let row = board_column::Entity::find_by_id(id.0)
+            .filter(board_column::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(board_column::Column::DeletedAt.is_null())
+            .one(&self.conn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "board_column",
+                id: id.0,
+            })?;
+
+        let mut active = row.into_active_model();
+        active.name = Set(name);
+        active.updated_at = Set(Utc::now());
+        active
+            .update(&self.conn)
+            .await
+            .map(board_column_from)
+            .map_err(db_err)
+    }
+
     async fn soft_delete_board(&self, ctx: &WorkspaceCtx, id: BoardId) -> Result<(), DomainError> {
         let row = board::Entity::find_by_id(id.0)
             .filter(board::Column::WorkspaceId.eq(ctx.workspace_id.0))

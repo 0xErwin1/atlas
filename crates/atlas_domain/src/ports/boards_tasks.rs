@@ -49,6 +49,20 @@ pub trait BoardRepo: Send + Sync {
         position: PositionBetween,
     ) -> Result<(), DomainError>;
 
+    async fn patch_board(
+        &self,
+        ctx: &WorkspaceCtx,
+        id: BoardId,
+        name: String,
+    ) -> Result<Board, DomainError>;
+
+    async fn patch_column(
+        &self,
+        ctx: &WorkspaceCtx,
+        id: ColumnId,
+        name: String,
+    ) -> Result<BoardColumn, DomainError>;
+
     async fn soft_delete_board(&self, ctx: &WorkspaceCtx, id: BoardId) -> Result<(), DomainError>;
 
     async fn soft_delete_column(&self, ctx: &WorkspaceCtx, id: ColumnId)

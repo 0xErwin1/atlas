@@ -8,6 +8,7 @@ use axum::{
 use serde::de::DeserializeOwned;
 
 use atlas_domain::{
+    entities::boards_tasks::{Board, Task},
     entities::documents::Document,
     entities::identity::Workspace,
     entities::workspace_core::Project,
@@ -24,6 +25,7 @@ use crate::{
     error::ApiError,
     persistence::{
         entities::{
+            boards_tasks::{board, board_from, task, task_from},
             documents::{document, document_from},
             workspace_core::folder,
         },
@@ -125,6 +127,114 @@ impl ResolvedResource for WorkspaceRes {
 
 /// Stub for folder-scope grants (no visibility column on folders).
 pub struct FolderRes;
+
+/// Proof of identity for a board resource, resolved via `{board_id}` path param.
+///
+/// Resolves the board → project → workspace permission chain. Cross-tenant or
+/// deleted boards surface as `ApiError::NotFound` (no existence disclosure).
+pub struct BoardRes(pub Board);
+
+/// Proof of identity for a task resource, resolved via `{readable_id}` path param.
+///
+/// Resolves the task → board → project → workspace permission chain via the
+/// task's owning board. Cross-tenant or deleted tasks surface as `ApiError::NotFound`.
+pub struct TaskRes(pub Task);
+
+impl ResolvedResource for BoardRes {
+    type PathParams = HashMap<String, String>;
+
+    async fn resolve(
+        db: &sea_orm::DatabaseConnection,
+        ws: &Workspace,
+        params: Self::PathParams,
+    ) -> Result<(Self, ResourceChain), ApiError> {
+        use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+
+        let board_id_str = params.get("board_id").ok_or(ApiError::NotFound)?;
+        let board_uuid = board_id_str
+            .parse::<uuid::Uuid>()
+            .map_err(|_| ApiError::NotFound)?;
+
+        let row = board::Entity::find_by_id(board_uuid)
+            .filter(board::Column::WorkspaceId.eq(ws.id.0))
+            .filter(board::Column::DeletedAt.is_null())
+            .one(db)
+            .await
+            .map_err(|e| ApiError::Internal {
+                message: e.to_string(),
+            })?
+            .ok_or(ApiError::NotFound)?;
+
+        let board = board_from(row);
+        let chain = build_board_chain(db, ws, board.project_id).await?;
+        Ok((BoardRes(board), chain))
+    }
+}
+
+impl ResolvedResource for TaskRes {
+    type PathParams = HashMap<String, String>;
+
+    async fn resolve(
+        db: &sea_orm::DatabaseConnection,
+        ws: &Workspace,
+        params: Self::PathParams,
+    ) -> Result<(Self, ResourceChain), ApiError> {
+        use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+
+        let readable_id = params.get("readable_id").ok_or(ApiError::NotFound)?;
+
+        let row = task::Entity::find()
+            .filter(task::Column::WorkspaceId.eq(ws.id.0))
+            .filter(task::Column::ReadableId.eq(readable_id.as_str()))
+            .filter(task::Column::DeletedAt.is_null())
+            .one(db)
+            .await
+            .map_err(|e| ApiError::Internal {
+                message: e.to_string(),
+            })?
+            .ok_or(ApiError::NotFound)?;
+
+        let task = task_from(row);
+        let chain = build_board_chain(db, ws, task.project_id).await?;
+        Ok((TaskRes(task), chain))
+    }
+}
+
+/// Builds the `board → project → workspace` permission chain for a board-scoped resource.
+///
+/// The board itself is not a grant target in the current permission model; grants live on
+/// the project and workspace. This chain gives the resolver the project's visibility so
+/// workspace-level visibility grants propagate correctly.
+pub async fn build_board_chain(
+    db: &sea_orm::DatabaseConnection,
+    ws: &Workspace,
+    project_id: atlas_domain::ids::ProjectId,
+) -> Result<ResourceChain, ApiError> {
+    let repo = PgProjectRepo { conn: db.clone() };
+    let ctx = atlas_domain::WorkspaceCtx::new(ws.id, atlas_domain::Actor::User(UserId::new()));
+    let project = repo
+        .find(&ctx, project_id)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?;
+
+    let mut segments = Vec::new();
+
+    if let Some(p) = project {
+        segments.push(ChainSegment {
+            resource: ResourceRef::Project(project_id),
+            visibility: Some(project_visibility(&p.visibility)),
+        });
+    }
+
+    segments.push(ChainSegment {
+        resource: ResourceRef::Workspace,
+        visibility: None,
+    });
+
+    Ok(ResourceChain { segments })
+}
 
 /// Proof of identity for a document resource, resolved via `{doc_id}` path param.
 pub struct DocumentRes(pub Document);
