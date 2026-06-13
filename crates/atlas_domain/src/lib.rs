@@ -3,6 +3,7 @@
 pub mod actor;
 pub mod entities;
 pub mod error;
+pub mod frontmatter;
 pub mod ids;
 pub mod permissions;
 pub mod ports;
@@ -10,6 +11,7 @@ pub mod position;
 pub mod revision;
 pub mod wikilink;
 
+pub use frontmatter::{parse_frontmatter_yaml, strip_frontmatter};
 pub use wikilink::parse_wikilinks;
 
 pub use actor::{Actor, WorkspaceCtx};
