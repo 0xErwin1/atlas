@@ -1,22 +1,36 @@
 use sea_orm_migration::prelude::*;
 
-/// Backfills `slug` for rows that lack one, mirroring the application `slugify` +
-/// `resolve_collision`: empty normalizations coalesce to `untitled`, and live
-/// rows whose titles normalize to the same slug get deterministic `-2`, `-3`, …
-/// suffixes so the partial unique index `(workspace_id, slug) WHERE deleted_at IS
-/// NULL` cannot be violated. Idempotent: only touches rows where `slug IS NULL`.
+/// Backfills `slug` for rows that lack one, approximating the application
+/// `slugify` + `resolve_collision`: empty normalizations coalesce to `untitled`,
+/// the result is capped at 80 characters, and live rows whose titles normalize to
+/// the same slug get deterministic `-2`, `-3`, … suffixes so the partial unique
+/// index `(workspace_id, slug) WHERE deleted_at IS NULL` cannot be violated.
+///
+/// Divergence from the application `slugify`: this normalization is ASCII-only
+/// (`[^a-zA-Z0-9]+` strips any non-ASCII character), whereas the application uses
+/// Unicode `char::is_alphanumeric()` and so preserves accented and non-Latin
+/// letters. Titles relying on those characters would yield a different slug here.
+/// This is accepted because the migration adds the `slug` column in the same `up`
+/// and the table is freshly all-NULL at backfill time; the "idempotent, only
+/// touches `slug IS NULL`" property holds only against such an all-NULL column.
 pub const BACKFILL_SLUG_SQL: &str = r#"WITH normalized AS (
        SELECT
            id,
            COALESCE(
                NULLIF(
-                   LOWER(
-                       REGEXP_REPLACE(
-                           REGEXP_REPLACE(title, '[^a-zA-Z0-9]+', '-', 'g'),
-                           '^-|-$',
-                           '',
-                           'g'
-                       )
+                   RTRIM(
+                       LEFT(
+                           LOWER(
+                               REGEXP_REPLACE(
+                                   REGEXP_REPLACE(title, '[^a-zA-Z0-9]+', '-', 'g'),
+                                   '^-|-$',
+                                   '',
+                                   'g'
+                               )
+                           ),
+                           80
+                       ),
+                       '-'
                    ),
                    ''
                ),

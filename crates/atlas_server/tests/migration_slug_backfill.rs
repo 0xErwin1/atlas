@@ -125,6 +125,39 @@ async fn backfill_dedupes_colliding_titles_and_coalesces_empty() {
 }
 
 #[tokio::test]
+async fn backfill_caps_slug_at_80_chars_without_trailing_hyphen() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "slug-cap").await;
+
+    // 79 'a' chars, then a space and more 'a': the 80th char of the normalized
+    // slug would be a hyphen, which must be trimmed after truncation.
+    let mut title = "a".repeat(79);
+    title.push(' ');
+    title.push_str(&"b".repeat(10));
+
+    let id = insert_doc_without_slug(&db, ws.id.0, user.id.0, &title, "2026-01-01T00:00:00Z").await;
+
+    db.conn()
+        .execute_unprepared(migration::m20260613_000006_document_slug::BACKFILL_SLUG_SQL)
+        .await
+        .expect("run backfill");
+
+    let slug = slug_of(&db, id).await.expect("slug");
+
+    assert!(
+        slug.len() <= 80,
+        "backfilled slug must be capped at 80 chars, got {}",
+        slug.len()
+    );
+    assert!(
+        !slug.ends_with('-'),
+        "backfilled slug must not end with a hyphen after truncation, got: {slug}"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
 async fn backfill_is_safe_on_empty_table() {
     let db = support::TestDb::create().await.expect("TestDb::create");
 
