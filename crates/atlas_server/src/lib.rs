@@ -14,6 +14,7 @@ pub mod error;
 pub mod middleware;
 pub mod persistence;
 pub mod routes;
+pub mod services;
 pub mod state;
 
 use crate::state::AppState;

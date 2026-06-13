@@ -3,7 +3,11 @@ use std::sync::Arc;
 
 use atlas_domain::AttachmentStore;
 
-use crate::persistence::repos::DiskAttachmentStore;
+use crate::persistence::repos::{
+    DiskAttachmentStore, PgTaskActivityRepo, PgTaskAssigneeRepo, PgTaskChecklistRepo,
+    PgTaskReferenceRepo, PgTaskRepo,
+};
+use crate::services::TaskService;
 
 const DEFAULT_MAX_ATTACHMENT_BYTES: u64 = 20 * 1024 * 1024; // 20 MiB
 
@@ -86,6 +90,19 @@ impl AppState {
     pub fn with_max_attachment_bytes(mut self, cap: u64) -> Self {
         self.max_attachment_bytes = cap;
         self
+    }
+
+    /// Builds a `TaskService` bound to this state's database connection.
+    pub fn task_service(&self) -> TaskService {
+        let conn = (*self.db).clone();
+        TaskService::new(
+            conn.clone(),
+            PgTaskRepo::new(conn.clone()),
+            PgTaskReferenceRepo::new(conn.clone()),
+            PgTaskAssigneeRepo::new(conn.clone()),
+            PgTaskChecklistRepo::new(conn.clone()),
+            PgTaskActivityRepo::new(conn),
+        )
     }
 }
 
