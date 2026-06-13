@@ -129,6 +129,13 @@ pub struct FolderRes;
 /// Proof of identity for a document resource, resolved via `{doc_id}` path param.
 pub struct DocumentRes(pub Document);
 
+/// Proof of identity for a document resource, resolved via `{slug}` path param.
+///
+/// This is the primary extractor for document routes that use the human-readable slug
+/// in the URL. The full folder→project→workspace permission chain is identical to
+/// `DocumentRes`; only the path param name differs.
+pub struct DocumentSlugRes(pub Document);
+
 impl ResolvedResource for DocumentRes {
     type PathParams = HashMap<String, String>;
 
@@ -209,6 +216,85 @@ impl ResolvedResource for DocumentRes {
 
         let chain = ResourceChain { segments };
         Ok((DocumentRes(doc), chain))
+    }
+}
+
+impl ResolvedResource for DocumentSlugRes {
+    type PathParams = HashMap<String, String>;
+
+    async fn resolve(
+        db: &sea_orm::DatabaseConnection,
+        ws: &Workspace,
+        params: Self::PathParams,
+    ) -> Result<(Self, ResourceChain), ApiError> {
+        use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+
+        let slug = params.get("slug").ok_or(ApiError::NotFound)?;
+
+        let row = document::Entity::find()
+            .filter(document::Column::WorkspaceId.eq(ws.id.0))
+            .filter(document::Column::Slug.eq(slug.as_str()))
+            .filter(document::Column::DeletedAt.is_null())
+            .one(db)
+            .await
+            .map_err(|e| ApiError::Internal {
+                message: e.to_string(),
+            })?
+            .ok_or(ApiError::NotFound)?;
+
+        let doc = document_from(row).map_err(|msg| ApiError::Internal { message: msg })?;
+        let doc_id = doc.id;
+
+        let mut segments = Vec::new();
+
+        segments.push(ChainSegment {
+            resource: ResourceRef::Document(doc_id),
+            visibility: None,
+        });
+
+        let mut inherited_project_id = None;
+        if let Some(leaf_folder_id) = doc.folder_id {
+            let folder_ancestors = resolve_folder_ancestry(db, ws.id, leaf_folder_id).await?;
+
+            if let Some(root) = folder_ancestors.last() {
+                inherited_project_id = root.project_id;
+            }
+
+            for f in folder_ancestors {
+                segments.push(ChainSegment {
+                    resource: ResourceRef::Folder(f.id),
+                    visibility: None,
+                });
+            }
+        }
+
+        let effective_project_id = doc.project_id.or(inherited_project_id);
+        if let Some(project_id) = effective_project_id {
+            let repo = PgProjectRepo { conn: db.clone() };
+            let ctx =
+                atlas_domain::WorkspaceCtx::new(ws.id, atlas_domain::Actor::User(UserId::new()));
+            let project = repo
+                .find(&ctx, project_id)
+                .await
+                .map_err(|e| ApiError::Internal {
+                    message: e.to_string(),
+                })?;
+
+            if let Some(p) = project {
+                segments.push(ChainSegment {
+                    resource: ResourceRef::Project(project_id),
+                    visibility: Some(project_visibility(&p.visibility)),
+                });
+            }
+        }
+
+        segments.push(ChainSegment {
+            resource: ResourceRef::Workspace,
+            visibility: None,
+        });
+
+        let chain = ResourceChain { segments };
+        Ok((DocumentSlugRes(doc), chain))
     }
 }
 

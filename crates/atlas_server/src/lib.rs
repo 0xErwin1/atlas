@@ -92,6 +92,52 @@ pub fn app(state: AppState) -> Router {
             "/v1/workspaces/{ws}/grants/{grant_id}",
             axum::routing::delete(routes::grants::delete_workspace_grant),
         )
+        // Documents
+        .route(
+            "/v1/workspaces/{ws}/projects/{project_slug}/documents",
+            axum::routing::post(routes::documents::create_document)
+                .get(routes::documents::list_documents),
+        )
+        .route(
+            "/v1/workspaces/{ws}/documents/{slug}",
+            get(routes::documents::get_document)
+                .patch(routes::documents::update_document)
+                .delete(routes::documents::delete_document),
+        )
+        .route(
+            "/v1/workspaces/{ws}/documents/{slug}/content",
+            axum::routing::put(routes::documents::update_content),
+        )
+        .route(
+            "/v1/workspaces/{ws}/documents/{slug}/history",
+            get(routes::documents::list_history),
+        )
+        .route(
+            "/v1/workspaces/{ws}/documents/{slug}/revisions/{seq}",
+            get(routes::documents::get_revision_content),
+        )
+        .route(
+            "/v1/workspaces/{ws}/documents/{slug}/backlinks",
+            get(routes::documents::list_backlinks),
+        )
+        .route(
+            "/v1/workspaces/{ws}/documents/{slug}/frontmatter",
+            get(routes::documents::get_frontmatter),
+        )
+        .route(
+            "/v1/workspaces/{ws}/documents/{slug}/attachments",
+            axum::routing::post(routes::documents::upload_attachment)
+                .get(routes::documents::list_attachments),
+        )
+        .route(
+            "/v1/workspaces/{ws}/attachments/{attachment_id}",
+            get(routes::documents::download_attachment)
+                .delete(routes::documents::delete_attachment),
+        )
+        .route(
+            "/v1/workspaces/{ws}/documents/{slug}/move",
+            axum::routing::patch(routes::documents::move_document),
+        )
         .layer(axum_middleware::from_fn(
             crate::auth::csrf::require_csrf_for_cookie_mutations,
         ))
