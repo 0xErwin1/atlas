@@ -645,7 +645,8 @@ impl DocumentLinkRepo for PgDocumentLinkRepo {
             let model = document_link::ActiveModel {
                 id: Set(Uuid::now_v7()),
                 workspace_id: Set(ctx.workspace_id.0),
-                source_document_id: Set(source.0),
+                source_document_id: Set(Some(source.0)),
+                source_task_id: Set(None),
                 target_document_id: Set(link.target_document_id.map(|id| id.0)),
                 target_title: Set(link.target_title),
                 created_at: Set(Utc::now()),
@@ -658,12 +659,30 @@ impl DocumentLinkRepo for PgDocumentLinkRepo {
 
     async fn replace_for_task_source(
         &self,
-        _ctx: &WorkspaceCtx,
-        _source: TaskId,
-        _links: Vec<ExtractedLink>,
+        ctx: &WorkspaceCtx,
+        source: TaskId,
+        links: Vec<ExtractedLink>,
     ) -> Result<(), DomainError> {
-        // Implemented fully in T8 after the T6 migration adds source_task_id.
-        // This stub keeps the trait object complete so the rest of the build compiles.
+        document_link::Entity::delete_many()
+            .filter(document_link::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(document_link::Column::SourceTaskId.eq(source.0))
+            .exec(&self.conn)
+            .await
+            .map_err(db_err)?;
+
+        for link in links {
+            let model = document_link::ActiveModel {
+                id: Set(Uuid::now_v7()),
+                workspace_id: Set(ctx.workspace_id.0),
+                source_document_id: Set(None),
+                source_task_id: Set(Some(source.0)),
+                target_document_id: Set(link.target_document_id.map(|id| id.0)),
+                target_title: Set(link.target_title),
+                created_at: Set(Utc::now()),
+            };
+            model.insert(&self.conn).await.map_err(db_err)?;
+        }
+
         Ok(())
     }
 

@@ -72,7 +72,8 @@ pub mod document_link {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: Uuid,
         pub workspace_id: Uuid,
-        pub source_document_id: Uuid,
+        pub source_document_id: Option<Uuid>,
+        pub source_task_id: Option<Uuid>,
         pub target_document_id: Option<Uuid>,
         pub target_title: String,
         pub created_at: DateTime<Utc>,
@@ -188,8 +189,8 @@ pub fn document_link_from(m: document_link::Model) -> DocumentLink {
     DocumentLink {
         id: DocumentId(m.id),
         workspace_id: WorkspaceId(m.workspace_id),
-        source_document_id: Some(DocumentId(m.source_document_id)),
-        source_task_id: None,
+        source_document_id: m.source_document_id.map(DocumentId),
+        source_task_id: m.source_task_id.map(TaskId),
         target_document_id: m.target_document_id.map(DocumentId),
         target_title: m.target_title,
         created_at: m.created_at,
