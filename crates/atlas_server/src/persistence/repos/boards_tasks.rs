@@ -36,13 +36,14 @@ impl PgBoardRepo {
 #[async_trait]
 impl BoardRepo for PgBoardRepo {
     async fn create_board(&self, ctx: &WorkspaceCtx, new: NewBoard) -> Result<Board, DomainError> {
-        let created_by_user_id = user_id_from_actor(&ctx.actor);
+        let (by_user, by_key) = actor_columns(&ctx.actor);
         let model = board::ActiveModel {
             id: Set(BoardId::new().0),
             workspace_id: Set(ctx.workspace_id.0),
             project_id: Set(new.project_id.0),
             name: Set(new.name),
-            created_by_user_id: Set(created_by_user_id),
+            created_by_user_id: Set(by_user),
+            created_by_api_key_id: Set(by_key),
             created_at: Set(Utc::now()),
             updated_at: Set(Utc::now()),
             deleted_at: Set(None),
@@ -91,14 +92,15 @@ impl BoardRepo for PgBoardRepo {
         position: PositionBetween,
     ) -> Result<BoardColumn, DomainError> {
         let position_key = position::between(position.before.as_deref(), position.after.as_deref());
-        let created_by_user_id = user_id_from_actor(&ctx.actor);
+        let (by_user, by_key) = actor_columns(&ctx.actor);
         let model = board_column::ActiveModel {
             id: Set(ColumnId::new().0),
             workspace_id: Set(ctx.workspace_id.0),
             board_id: Set(board_id.0),
             name: Set(name),
             position_key: Set(position_key),
-            created_by_user_id: Set(created_by_user_id),
+            created_by_user_id: Set(by_user),
+            created_by_api_key_id: Set(by_key),
             created_at: Set(Utc::now()),
             updated_at: Set(Utc::now()),
             deleted_at: Set(None),
@@ -235,7 +237,7 @@ impl TaskRepo for PgTaskRepo {
             new.position.before.as_deref(),
             new.position.after.as_deref(),
         );
-        let created_by_user_id = user_id_from_actor(&ctx.actor);
+        let (by_user, by_key) = actor_columns(&ctx.actor);
         let now = Utc::now();
 
         let model = task::ActiveModel {
@@ -247,9 +249,14 @@ impl TaskRepo for PgTaskRepo {
             readable_id: Set(readable_id),
             title: Set(new.title),
             description: Set(new.description),
-            properties: Set(None),
+            priority: Set(new.priority.map(|p| p.as_str().to_string())),
+            due_date: Set(new.due_date),
+            estimate: Set(new.estimate),
+            labels: Set(new.labels),
+            properties: Set(new.properties),
             position_key: Set(position_key),
-            created_by_user_id: Set(created_by_user_id),
+            created_by_user_id: Set(by_user),
+            created_by_api_key_id: Set(by_key),
             created_at: Set(now),
             updated_at: Set(now),
             deleted_at: Set(None),
@@ -342,6 +349,18 @@ impl TaskRepo for PgTaskRepo {
         if let Some(description) = patch.description {
             active.description = Set(description);
         }
+        if let Some(priority) = patch.priority {
+            active.priority = Set(priority.map(|p| p.as_str().to_string()));
+        }
+        if let Some(due_date) = patch.due_date {
+            active.due_date = Set(due_date);
+        }
+        if let Some(estimate) = patch.estimate {
+            active.estimate = Set(estimate);
+        }
+        if let Some(labels) = patch.labels {
+            active.labels = Set(labels);
+        }
         if let Some(props) = patch.properties {
             active.properties = Set(Some(props));
         }
@@ -424,7 +443,7 @@ impl TaskReferenceRepo for PgTaskReferenceRepo {
 
         validate_reference(new.kind.clone(), new.target_task_id, new.target_document_id)?;
 
-        let created_by_user_id = user_id_from_actor(&ctx.actor);
+        let (by_user, by_key) = actor_columns(&ctx.actor);
         let model = task_reference::ActiveModel {
             id: Set(TaskReferenceId::new().0),
             workspace_id: Set(ctx.workspace_id.0),
@@ -432,7 +451,8 @@ impl TaskReferenceRepo for PgTaskReferenceRepo {
             kind: Set(new.kind.as_str().to_string()),
             target_task_id: Set(new.target_task_id.map(|id| id.0)),
             target_document_id: Set(new.target_document_id.map(|id| id.0)),
-            created_by_user_id: Set(created_by_user_id),
+            created_by_user_id: Set(by_user),
+            created_by_api_key_id: Set(by_key),
             created_at: Set(Utc::now()),
         };
         model
@@ -643,10 +663,11 @@ impl TaskActivityRepo for PgTaskActivityRepo {
     }
 }
 
-fn user_id_from_actor(actor: &Actor) -> Option<uuid::Uuid> {
+/// Returns `(created_by_user_id, created_by_api_key_id)` for the XOR actor columns.
+fn actor_columns(actor: &Actor) -> (Option<uuid::Uuid>, Option<uuid::Uuid>) {
     match actor {
-        Actor::User(uid) => Some(uid.0),
-        Actor::ApiKey(_) => None,
+        Actor::User(uid) => (Some(uid.0), None),
+        Actor::ApiKey(kid) => (None, Some(kid.0)),
     }
 }
 
