@@ -463,9 +463,19 @@ async fn update_content_stale_base_returns_409() {
         )
         .await;
 
+    let conflict = match result {
+        Err(ClientError::Conflict(c)) => c,
+        other => panic!("stale base revision must surface ClientError::Conflict, got: {other:?}"),
+    };
+
+    assert_eq!(conflict.status, 409, "conflict status must be 409");
+    assert_eq!(
+        conflict.current_seq, 2,
+        "conflict must carry the current head seq"
+    );
     assert!(
-        matches!(result, Err(ClientError::Api(ref p)) if p.status == 409),
-        "stale base revision must return 409, got: {result:?}"
+        !conflict.base_to_current_patch.is_empty(),
+        "conflict must carry the base-to-current patch so the caller can rebase"
     );
 
     db.teardown().await;

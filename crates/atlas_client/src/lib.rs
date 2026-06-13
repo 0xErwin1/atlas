@@ -6,9 +6,9 @@ use atlas_api::{
         CreateUserRequest, GrantDto, HealthResponse, LoginRequest, LoginResponse, MeResponse,
         ProjectDto, UpdateProjectRequest, UserDto, WorkspaceDto,
         documents::{
-            AttachmentDto, BacklinkDto, CreateDocumentRequest, DocumentDto, DocumentSummaryDto,
-            FrontmatterDto, MoveDocumentRequest, RevisionContentDto, RevisionMetaDto,
-            UpdateContentRequest, UpdateDocumentRequest,
+            AttachmentDto, BacklinkDto, ConflictProblemDto, CreateDocumentRequest, DocumentDto,
+            DocumentSummaryDto, FrontmatterDto, MoveDocumentRequest, RevisionContentDto,
+            RevisionMetaDto, UpdateContentRequest, UpdateDocumentRequest,
         },
     },
     pagination::Page,
@@ -20,6 +20,11 @@ use thiserror::Error;
 pub enum ClientError {
     #[error("API error {}: {}", .0.status, .0.title)]
     Api(ProblemDetails),
+    /// CAS revision conflict (HTTP 409) carrying the head revision and the patch
+    /// from the client's stale base to the current content, so callers can apply
+    /// the patch and retry.
+    #[error("revision conflict: current_seq={}", .0.current_seq)]
+    Conflict(ConflictProblemDto),
     #[error("transport error: {0}")]
     Transport(#[from] reqwest::Error),
     #[error("decode error in {context}: {source}")]
@@ -479,6 +484,17 @@ impl AtlasClient {
             .json(&body)
             .send()
             .await?;
+
+        if response.status() == reqwest::StatusCode::CONFLICT {
+            let bytes = response.bytes().await?;
+            let conflict: ConflictProblemDto =
+                serde_json::from_slice(&bytes).map_err(|source| ClientError::Decode {
+                    context: "update_content_conflict",
+                    source,
+                })?;
+            return Err(ClientError::Conflict(conflict));
+        }
+
         self.decode_response(response, "update_content").await
     }
 
