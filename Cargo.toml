@@ -53,6 +53,7 @@ tower_governor = "0.8"
 
 # Persistence deps
 argon2            = "0.5"
+bytes             = "1"
 sha2              = "0.10"
 rand              = "0.8"
 fractional_index  = "2.0"
@@ -70,6 +71,7 @@ clap = { version = "4", features = ["derive"] }
 rmcp = { version = "=1.7.0", features = ["server", "transport-io", "macros"] }
 
 # Shared infra
+tempfile           = "3"
 tracing            = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 anyhow             = "1"

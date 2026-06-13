@@ -1,3 +1,4 @@
+pub mod attachment_store;
 pub mod boards_tasks;
 pub mod documents;
 pub mod identity;

@@ -21,6 +21,7 @@ pub mod slug;
 pub mod wikilink;
 
 pub use frontmatter::{parse_frontmatter_yaml, strip_frontmatter};
+pub use ports::attachment_store::AttachmentStore;
 pub use slug::{resolve_collision, slugify};
 pub use wikilink::parse_wikilinks;
 
