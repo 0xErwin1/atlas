@@ -1227,3 +1227,56 @@ async fn cross_tenant_download_attachment_returns_404() {
 
     db.teardown().await;
 }
+
+// ---- Oversized attachment returns 413 --------------------------------------
+
+#[tokio::test]
+async fn oversized_attachment_returns_413() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+
+    let base_state = atlas_server::state::AppState::for_test(db.conn().clone())
+        .await
+        .expect("AppState::for_test");
+    let state = base_state.with_max_attachment_bytes(16);
+    let server = support::TestServer::spawn_with_state(state).await;
+
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-att-413").await;
+
+    let project = client
+        .create_project(
+            &ws.slug,
+            atlas_api::dtos::CreateProjectRequest {
+                name: "Proj".to_string(),
+                slug: "proj-att-413".to_string(),
+                task_prefix: "P413".to_string(),
+                visibility: None,
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create project");
+
+    let doc = client
+        .create_document(&ws.slug, &project.slug, doc_req("Oversized Doc"))
+        .await
+        .expect("create document");
+
+    let slug = doc.slug.as_deref().expect("slug");
+
+    let result = client
+        .upload_attachment(
+            &ws.slug,
+            slug,
+            "big.bin",
+            "application/octet-stream",
+            vec![0u8; 32],
+        )
+        .await;
+
+    assert!(
+        matches!(result, Err(ClientError::Api(ref p)) if p.status == 413),
+        "oversized attachment must return 413, got: {result:?}"
+    );
+
+    db.teardown().await;
+}

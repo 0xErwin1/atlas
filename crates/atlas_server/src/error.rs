@@ -26,6 +26,9 @@ pub enum ApiError {
     Conflict,
     /// CAS revision conflict with full patch payload for the 409 response body.
     RevisionConflict(RevisionConflict),
+    PayloadTooLarge {
+        message: String,
+    },
     Internal {
         message: String,
     },
@@ -75,6 +78,15 @@ impl IntoResponse for ApiError {
                     "Revision Conflict",
                     409,
                 ),
+            ),
+            ApiError::PayloadTooLarge { message } => (
+                StatusCode::PAYLOAD_TOO_LARGE,
+                ProblemDetails::new(
+                    "urn:atlas:error:payload-too-large",
+                    "Payload Too Large",
+                    413,
+                )
+                .with_detail(message),
             ),
             ApiError::RevisionConflict(c) => {
                 let body = ConflictProblemDto::new(

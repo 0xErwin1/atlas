@@ -39,8 +39,6 @@ use crate::{
     state::AppState,
 };
 
-const MAX_ATTACHMENT_BYTES: u64 = 20 * 1024 * 1024;
-
 #[derive(Deserialize)]
 pub(crate) struct PaginationQuery {
     cursor: Option<String>,
@@ -664,11 +662,11 @@ pub(crate) async fn upload_attachment(
             message: e.to_string(),
         })?;
 
-    if body.len() as u64 > MAX_ATTACHMENT_BYTES {
-        return Err(ApiError::InvalidInput {
+    if body.len() as u64 > state.max_attachment_bytes {
+        return Err(ApiError::PayloadTooLarge {
             message: format!(
                 "attachment exceeds maximum size of {} bytes",
-                MAX_ATTACHMENT_BYTES
+                state.max_attachment_bytes
             ),
         });
     }

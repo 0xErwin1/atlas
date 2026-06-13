@@ -198,6 +198,27 @@ impl TestServer {
         }
     }
 
+    /// Spawns the application using a pre-built `AppState`, allowing tests to
+    /// customise fields such as `max_attachment_bytes`.
+    pub(crate) async fn spawn_with_state(state: atlas_server::state::AppState) -> Self {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind test port");
+        let addr = listener.local_addr().expect("local addr");
+        let base_url = format!("http://{addr}");
+
+        use std::net::SocketAddr;
+        let app = atlas_server::app(state).into_make_service_with_connect_info::<SocketAddr>();
+        let handle = tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve");
+        });
+
+        Self {
+            base_url,
+            _abort: handle.abort_handle(),
+        }
+    }
+
     /// Returns an unauthenticated `AtlasClient` pointed at this server.
     pub(crate) fn client(&self) -> AtlasClient {
         AtlasClient::new(self.base_url.clone())

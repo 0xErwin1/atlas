@@ -5,6 +5,8 @@ use atlas_domain::AttachmentStore;
 
 use crate::persistence::repos::DiskAttachmentStore;
 
+const DEFAULT_MAX_ATTACHMENT_BYTES: u64 = 20 * 1024 * 1024; // 20 MiB
+
 /// Shared application state injected into every route handler.
 #[derive(Clone)]
 pub struct AppState {
@@ -14,6 +16,7 @@ pub struct AppState {
     pub cookie_secure: bool,
     pub anchor_interval: u32,
     pub attachments: Arc<dyn AttachmentStore>,
+    pub max_attachment_bytes: u64,
 }
 
 impl AppState {
@@ -43,6 +46,7 @@ impl AppState {
             cookie_secure,
             anchor_interval,
             attachments: Arc::new(attachments),
+            max_attachment_bytes: DEFAULT_MAX_ATTACHMENT_BYTES,
         })
     }
 
@@ -71,7 +75,17 @@ impl AppState {
             cookie_secure: false,
             anchor_interval,
             attachments: Arc::new(attachments),
+            max_attachment_bytes: DEFAULT_MAX_ATTACHMENT_BYTES,
         })
+    }
+
+    /// Returns a clone of this state with a custom attachment size cap.
+    ///
+    /// Intended for integration tests that need to trigger the oversize path
+    /// without uploading a real 20 MiB body.
+    pub fn with_max_attachment_bytes(mut self, cap: u64) -> Self {
+        self.max_attachment_bytes = cap;
+        self
     }
 }
 
