@@ -239,6 +239,102 @@ impl PgTaskRepo {
         Self { conn }
     }
 
+    /// Patches a task inside an existing transaction.
+    ///
+    /// Used by `TaskService` to run the UPDATE on the same connection as the
+    /// activity append, so both either commit or roll back together.
+    pub async fn patch_in(
+        conn: &impl ConnectionTrait,
+        ctx: &WorkspaceCtx,
+        id: TaskId,
+        patch: TaskPatch,
+    ) -> Result<Task, DomainError> {
+        let row = task::Entity::find_by_id(id.0)
+            .filter(task::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(task::Column::DeletedAt.is_null())
+            .one(conn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "task",
+                id: id.0,
+            })?;
+
+        let mut active = row.into_active_model();
+        if let Some(title) = patch.title {
+            active.title = Set(title);
+        }
+        if let Some(description) = patch.description {
+            active.description = Set(description);
+        }
+        if let Some(priority) = patch.priority {
+            active.priority = Set(priority.map(|p| p.as_str().to_string()));
+        }
+        if let Some(due_date) = patch.due_date {
+            active.due_date = Set(due_date);
+        }
+        if let Some(estimate) = patch.estimate {
+            active.estimate = Set(estimate);
+        }
+        if let Some(labels) = patch.labels {
+            active.labels = Set(labels);
+        }
+        if let Some(props) = patch.properties {
+            active.properties = Set(Some(props));
+        }
+        active.updated_at = Set(Utc::now());
+        active.update(conn).await.map(task_from).map_err(db_err)
+    }
+
+    /// Soft-deletes a task inside an existing transaction or connection.
+    ///
+    /// Used by `TaskService` to run the UPDATE on the same connection as the
+    /// activity append, so both either commit or roll back together.
+    pub async fn soft_delete_in(
+        conn: &impl ConnectionTrait,
+        ctx: &WorkspaceCtx,
+        id: TaskId,
+    ) -> Result<(), DomainError> {
+        let row = task::Entity::find_by_id(id.0)
+            .filter(task::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(task::Column::DeletedAt.is_null())
+            .one(conn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "task",
+                id: id.0,
+            })?;
+
+        let mut active = row.into_active_model();
+        active.deleted_at = Set(Some(Utc::now()));
+        active.updated_at = Set(Utc::now());
+        active.update(conn).await.map_err(db_err)?;
+        Ok(())
+    }
+
+    /// Moves a task to a new column and position inside an existing transaction.
+    ///
+    /// Performs the single-statement atomic UPDATE (B1 fix) with resequence+retry
+    /// on `PositionExhausted`. The caller (TaskService) owns the transaction boundary
+    /// so the move and the activity append either both commit or both roll back.
+    pub async fn move_to_in(
+        conn: &impl ConnectionTrait,
+        ctx: &WorkspaceCtx,
+        id: TaskId,
+        column_id: ColumnId,
+        position: PositionBetween,
+    ) -> Result<Task, DomainError> {
+        match try_move_to_in(conn, ctx, id, column_id, &position).await {
+            Ok(task) => Ok(task),
+            Err(DomainError::PositionExhausted { .. }) => {
+                resequence_tasks_in_column(conn, ctx, column_id).await?;
+                try_move_to_in(conn, ctx, id, column_id, &position).await
+            }
+            Err(e) => Err(e),
+        }
+    }
+
     /// Creates a task inside an existing transaction.
     ///
     /// The readable-id counter update (`UPDATE projects SET next_task_number`)
@@ -377,45 +473,7 @@ impl TaskRepo for PgTaskRepo {
         id: TaskId,
         patch: TaskPatch,
     ) -> Result<Task, DomainError> {
-        let row = task::Entity::find_by_id(id.0)
-            .filter(task::Column::WorkspaceId.eq(ctx.workspace_id.0))
-            .filter(task::Column::DeletedAt.is_null())
-            .one(&self.conn)
-            .await
-            .map_err(db_err)?
-            .ok_or(DomainError::NotFound {
-                entity: "task",
-                id: id.0,
-            })?;
-
-        let mut active = row.into_active_model();
-        if let Some(title) = patch.title {
-            active.title = Set(title);
-        }
-        if let Some(description) = patch.description {
-            active.description = Set(description);
-        }
-        if let Some(priority) = patch.priority {
-            active.priority = Set(priority.map(|p| p.as_str().to_string()));
-        }
-        if let Some(due_date) = patch.due_date {
-            active.due_date = Set(due_date);
-        }
-        if let Some(estimate) = patch.estimate {
-            active.estimate = Set(estimate);
-        }
-        if let Some(labels) = patch.labels {
-            active.labels = Set(labels);
-        }
-        if let Some(props) = patch.properties {
-            active.properties = Set(Some(props));
-        }
-        active.updated_at = Set(Utc::now());
-        active
-            .update(&self.conn)
-            .await
-            .map(task_from)
-            .map_err(db_err)
+        PgTaskRepo::patch_in(&self.conn, ctx, id, patch).await
     }
 
     async fn move_to(
@@ -427,51 +485,18 @@ impl TaskRepo for PgTaskRepo {
     ) -> Result<Task, DomainError> {
         let txn = self.conn.begin().await.map_err(db_err)?;
 
-        let result = try_move_to_in(&txn, ctx, id, column_id, &position).await;
+        let result = PgTaskRepo::move_to_in(&txn, ctx, id, column_id, position).await;
 
-        match result {
-            Ok(task) => {
-                txn.commit().await.map_err(db_err)?;
-                Ok(task)
-            }
-            Err(DomainError::PositionExhausted { .. }) => {
-                resequence_tasks_in_column(&txn, ctx, column_id).await?;
-
-                match try_move_to_in(&txn, ctx, id, column_id, &position).await {
-                    Ok(task) => {
-                        txn.commit().await.map_err(db_err)?;
-                        Ok(task)
-                    }
-                    Err(e) => {
-                        txn.rollback().await.map_err(db_err)?;
-                        Err(e)
-                    }
-                }
-            }
-            Err(e) => {
-                txn.rollback().await.map_err(db_err)?;
-                Err(e)
-            }
+        match &result {
+            Ok(_) => txn.commit().await.map_err(db_err)?,
+            Err(_) => txn.rollback().await.map_err(db_err)?,
         }
+
+        result
     }
 
     async fn soft_delete(&self, ctx: &WorkspaceCtx, id: TaskId) -> Result<(), DomainError> {
-        let row = task::Entity::find_by_id(id.0)
-            .filter(task::Column::WorkspaceId.eq(ctx.workspace_id.0))
-            .filter(task::Column::DeletedAt.is_null())
-            .one(&self.conn)
-            .await
-            .map_err(db_err)?
-            .ok_or(DomainError::NotFound {
-                entity: "task",
-                id: id.0,
-            })?;
-
-        let mut active = row.into_active_model();
-        active.deleted_at = Set(Some(Utc::now()));
-        active.updated_at = Set(Utc::now());
-        active.update(&self.conn).await.map_err(db_err)?;
-        Ok(())
+        PgTaskRepo::soft_delete_in(&self.conn, ctx, id).await
     }
 }
 
@@ -582,9 +607,20 @@ impl TaskReferenceRepo for PgTaskReferenceRepo {
     }
 
     async fn delete(&self, ctx: &WorkspaceCtx, id: TaskReferenceId) -> Result<(), DomainError> {
+        PgTaskReferenceRepo::delete_in(&self.conn, ctx, id).await
+    }
+}
+
+impl PgTaskReferenceRepo {
+    /// Deletes a task reference inside an existing transaction.
+    pub async fn delete_in(
+        conn: &impl ConnectionTrait,
+        ctx: &WorkspaceCtx,
+        id: TaskReferenceId,
+    ) -> Result<(), DomainError> {
         task_reference::Entity::delete_by_id(id.0)
             .filter(task_reference::Column::WorkspaceId.eq(ctx.workspace_id.0))
-            .exec(&self.conn)
+            .exec(conn)
             .await
             .map_err(db_err)?;
         Ok(())
@@ -599,12 +635,10 @@ impl PgTaskAssigneeRepo {
     pub fn new(conn: DatabaseConnection) -> Self {
         Self { conn }
     }
-}
 
-#[async_trait]
-impl TaskAssigneeRepo for PgTaskAssigneeRepo {
-    async fn add(
-        &self,
+    /// Inserts a task assignee inside an existing transaction.
+    pub async fn add_in(
+        conn: &impl ConnectionTrait,
         ctx: &WorkspaceCtx,
         new: NewTaskAssignee,
     ) -> Result<TaskAssignee, DomainError> {
@@ -624,7 +658,7 @@ impl TaskAssigneeRepo for PgTaskAssigneeRepo {
             assigned_at: Set(Utc::now()),
         };
         model
-            .insert(&self.conn)
+            .insert(conn)
             .await
             .map_err(|e| {
                 let msg = e.to_string();
@@ -637,6 +671,37 @@ impl TaskAssigneeRepo for PgTaskAssigneeRepo {
                 }
             })
             .and_then(|m| task_assignee_from(m).map_err(internal_err))
+    }
+
+    /// Removes a task assignee inside an existing transaction.
+    pub async fn remove_in(
+        conn: &impl ConnectionTrait,
+        ctx: &WorkspaceCtx,
+        task_id: TaskId,
+        assignee: AssigneeRef,
+    ) -> Result<(), DomainError> {
+        let mut q = task_assignee::Entity::delete_many()
+            .filter(task_assignee::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(task_assignee::Column::TaskId.eq(task_id.0));
+
+        q = match assignee {
+            AssigneeRef::User(uid) => q.filter(task_assignee::Column::AssigneeUserId.eq(uid.0)),
+            AssigneeRef::ApiKey(kid) => q.filter(task_assignee::Column::AssigneeApiKeyId.eq(kid.0)),
+        };
+
+        q.exec(conn).await.map_err(db_err)?;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl TaskAssigneeRepo for PgTaskAssigneeRepo {
+    async fn add(
+        &self,
+        ctx: &WorkspaceCtx,
+        new: NewTaskAssignee,
+    ) -> Result<TaskAssignee, DomainError> {
+        PgTaskAssigneeRepo::add_in(&self.conn, ctx, new).await
     }
 
     async fn list_for_task(
@@ -662,17 +727,7 @@ impl TaskAssigneeRepo for PgTaskAssigneeRepo {
         task_id: TaskId,
         assignee: AssigneeRef,
     ) -> Result<(), DomainError> {
-        let mut q = task_assignee::Entity::delete_many()
-            .filter(task_assignee::Column::WorkspaceId.eq(ctx.workspace_id.0))
-            .filter(task_assignee::Column::TaskId.eq(task_id.0));
-
-        q = match assignee {
-            AssigneeRef::User(uid) => q.filter(task_assignee::Column::AssigneeUserId.eq(uid.0)),
-            AssigneeRef::ApiKey(kid) => q.filter(task_assignee::Column::AssigneeApiKeyId.eq(kid.0)),
-        };
-
-        q.exec(&self.conn).await.map_err(db_err)?;
-        Ok(())
+        PgTaskAssigneeRepo::remove_in(&self.conn, ctx, task_id, assignee).await
     }
 }
 
@@ -683,6 +738,103 @@ pub struct PgTaskChecklistRepo {
 impl PgTaskChecklistRepo {
     pub fn new(conn: DatabaseConnection) -> Self {
         Self { conn }
+    }
+
+    /// Inserts a checklist item inside an existing transaction.
+    pub async fn add_item_in(
+        conn: &impl ConnectionTrait,
+        ctx: &WorkspaceCtx,
+        new: NewTaskChecklistItem,
+    ) -> Result<TaskChecklistItem, DomainError> {
+        let position_key = position::between(
+            new.position.before.as_deref(),
+            new.position.after.as_deref(),
+        );
+        let (by_user, by_key) = actor_columns(&ctx.actor);
+        let now = Utc::now();
+
+        let model = task_checklist_item::ActiveModel {
+            id: Set(ChecklistItemId::new().0),
+            task_id: Set(new.task_id.0),
+            workspace_id: Set(ctx.workspace_id.0),
+            title: Set(new.title),
+            checked: Set(false),
+            position_key: Set(position_key),
+            promoted_task_id: Set(None),
+            created_by_user_id: Set(by_user),
+            created_by_api_key_id: Set(by_key),
+            created_at: Set(now),
+            updated_at: Set(now),
+            deleted_at: Set(None),
+        };
+        model
+            .insert(conn)
+            .await
+            .map(task_checklist_item_from)
+            .map_err(db_err)
+    }
+
+    /// Patches a checklist item inside an existing transaction.
+    pub async fn patch_item_in(
+        conn: &impl ConnectionTrait,
+        ctx: &WorkspaceCtx,
+        item_id: ChecklistItemId,
+        patch: TaskChecklistItemPatch,
+    ) -> Result<TaskChecklistItem, DomainError> {
+        let row = task_checklist_item::Entity::find_by_id(item_id.0)
+            .filter(task_checklist_item::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(task_checklist_item::Column::DeletedAt.is_null())
+            .one(conn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "task_checklist_item",
+                id: item_id.0,
+            })?;
+
+        let mut active = row.into_active_model();
+        if let Some(title) = patch.title {
+            active.title = Set(title);
+        }
+        if let Some(checked) = patch.checked {
+            active.checked = Set(checked);
+        }
+        if let Some(pos) = patch.position {
+            active.position_key = Set(position::between(
+                pos.before.as_deref(),
+                pos.after.as_deref(),
+            ));
+        }
+        active.updated_at = Set(Utc::now());
+        active
+            .update(conn)
+            .await
+            .map(task_checklist_item_from)
+            .map_err(db_err)
+    }
+
+    /// Soft-deletes a checklist item inside an existing transaction.
+    pub async fn soft_delete_item_in(
+        conn: &impl ConnectionTrait,
+        ctx: &WorkspaceCtx,
+        item_id: ChecklistItemId,
+    ) -> Result<(), DomainError> {
+        let row = task_checklist_item::Entity::find_by_id(item_id.0)
+            .filter(task_checklist_item::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(task_checklist_item::Column::DeletedAt.is_null())
+            .one(conn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "task_checklist_item",
+                id: item_id.0,
+            })?;
+
+        let mut active = row.into_active_model();
+        active.deleted_at = Set(Some(Utc::now()));
+        active.updated_at = Set(Utc::now());
+        active.update(conn).await.map_err(db_err)?;
+        Ok(())
     }
 
     /// Marks a checklist item as promoted inside an existing transaction.
@@ -732,32 +884,7 @@ impl TaskChecklistRepo for PgTaskChecklistRepo {
         ctx: &WorkspaceCtx,
         new: NewTaskChecklistItem,
     ) -> Result<TaskChecklistItem, DomainError> {
-        let position_key = position::between(
-            new.position.before.as_deref(),
-            new.position.after.as_deref(),
-        );
-        let (by_user, by_key) = actor_columns(&ctx.actor);
-        let now = Utc::now();
-
-        let model = task_checklist_item::ActiveModel {
-            id: Set(ChecklistItemId::new().0),
-            task_id: Set(new.task_id.0),
-            workspace_id: Set(ctx.workspace_id.0),
-            title: Set(new.title),
-            checked: Set(false),
-            position_key: Set(position_key),
-            promoted_task_id: Set(None),
-            created_by_user_id: Set(by_user),
-            created_by_api_key_id: Set(by_key),
-            created_at: Set(now),
-            updated_at: Set(now),
-            deleted_at: Set(None),
-        };
-        model
-            .insert(&self.conn)
-            .await
-            .map(task_checklist_item_from)
-            .map_err(db_err)
+        PgTaskChecklistRepo::add_item_in(&self.conn, ctx, new).await
     }
 
     async fn list_for_task(
@@ -782,36 +909,7 @@ impl TaskChecklistRepo for PgTaskChecklistRepo {
         item_id: ChecklistItemId,
         patch: TaskChecklistItemPatch,
     ) -> Result<TaskChecklistItem, DomainError> {
-        let row = task_checklist_item::Entity::find_by_id(item_id.0)
-            .filter(task_checklist_item::Column::WorkspaceId.eq(ctx.workspace_id.0))
-            .filter(task_checklist_item::Column::DeletedAt.is_null())
-            .one(&self.conn)
-            .await
-            .map_err(db_err)?
-            .ok_or(DomainError::NotFound {
-                entity: "task_checklist_item",
-                id: item_id.0,
-            })?;
-
-        let mut active = row.into_active_model();
-        if let Some(title) = patch.title {
-            active.title = Set(title);
-        }
-        if let Some(checked) = patch.checked {
-            active.checked = Set(checked);
-        }
-        if let Some(pos) = patch.position {
-            active.position_key = Set(position::between(
-                pos.before.as_deref(),
-                pos.after.as_deref(),
-            ));
-        }
-        active.updated_at = Set(Utc::now());
-        active
-            .update(&self.conn)
-            .await
-            .map(task_checklist_item_from)
-            .map_err(db_err)
+        PgTaskChecklistRepo::patch_item_in(&self.conn, ctx, item_id, patch).await
     }
 
     async fn soft_delete_item(
@@ -819,22 +917,7 @@ impl TaskChecklistRepo for PgTaskChecklistRepo {
         ctx: &WorkspaceCtx,
         item_id: ChecklistItemId,
     ) -> Result<(), DomainError> {
-        let row = task_checklist_item::Entity::find_by_id(item_id.0)
-            .filter(task_checklist_item::Column::WorkspaceId.eq(ctx.workspace_id.0))
-            .filter(task_checklist_item::Column::DeletedAt.is_null())
-            .one(&self.conn)
-            .await
-            .map_err(db_err)?
-            .ok_or(DomainError::NotFound {
-                entity: "task_checklist_item",
-                id: item_id.0,
-            })?;
-
-        let mut active = row.into_active_model();
-        active.deleted_at = Set(Some(Utc::now()));
-        active.updated_at = Set(Utc::now());
-        active.update(&self.conn).await.map_err(db_err)?;
-        Ok(())
+        PgTaskChecklistRepo::soft_delete_item_in(&self.conn, ctx, item_id).await
     }
 
     async fn mark_promoted(

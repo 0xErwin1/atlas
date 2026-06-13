@@ -7,12 +7,14 @@ use atlas_domain::{
     },
     ids::{BoardId, ChecklistItemId, ColumnId, ProjectId, TaskActivityId, TaskId, TaskReferenceId},
 };
-use sea_orm::{DatabaseConnection, TransactionTrait};
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, TransactionTrait};
 
-use crate::persistence::entities::boards_tasks::{task_checklist_item, task_checklist_item_from};
+use crate::persistence::entities::boards_tasks::{
+    task, task_checklist_item, task_checklist_item_from,
+};
 use crate::persistence::repos::{
     PgTaskActivityRepo, PgTaskAssigneeRepo, PgTaskChecklistRepo, PgTaskReferenceRepo, PgTaskRepo,
-    TaskActivityRepo, TaskAssigneeRepo, TaskChecklistRepo, TaskReferenceRepo, TaskRepo,
+    TaskActivityRepo,
 };
 
 /// Result of a checklist item promotion: the three records committed atomically.
@@ -24,36 +26,25 @@ pub struct PromotionResult {
 
 /// Coordinates multi-table transactions for task mutations.
 ///
-/// Each state-changing method executes the core mutation and appends the
-/// corresponding activity entry in a single `DatabaseTransaction`, so both
-/// either commit or roll back together. Single-table reads go directly through
-/// the underlying repos.
+/// Every state-changing method opens one `DatabaseTransaction`, runs the core
+/// mutation and the activity append on that same connection, then commits once.
+/// A failure at any step rolls back both the mutation and the activity, satisfying
+/// the "no tearing" requirement from spec Req 7 and the move↔activity atomicity
+/// guarantee from the design.
 pub struct TaskService {
     conn: DatabaseConnection,
-    task_repo: PgTaskRepo,
-    reference_repo: PgTaskReferenceRepo,
-    assignee_repo: PgTaskAssigneeRepo,
-    checklist_repo: PgTaskChecklistRepo,
-    activity_repo: PgTaskActivityRepo,
 }
 
 impl TaskService {
     pub fn new(
         conn: DatabaseConnection,
-        task_repo: PgTaskRepo,
-        reference_repo: PgTaskReferenceRepo,
-        assignee_repo: PgTaskAssigneeRepo,
-        checklist_repo: PgTaskChecklistRepo,
-        activity_repo: PgTaskActivityRepo,
+        _task_repo: PgTaskRepo,
+        _reference_repo: PgTaskReferenceRepo,
+        _assignee_repo: PgTaskAssigneeRepo,
+        _checklist_repo: PgTaskChecklistRepo,
+        _activity_repo: PgTaskActivityRepo,
     ) -> Self {
-        Self {
-            conn,
-            task_repo,
-            reference_repo,
-            assignee_repo,
-            checklist_repo,
-            activity_repo,
-        }
+        Self { conn }
     }
 
     /// Creates a task and appends a `Created` activity in the same transaction.
@@ -77,11 +68,8 @@ impl TaskService {
         Ok(task)
     }
 
-    /// Patches a task and appends one `FieldChanged` activity per changed field.
-    ///
-    /// All field changes in a single `patch` call are recorded as a single
-    /// activity entry carrying the first changed field.  The full diff is
-    /// captured in the payload.
+    /// Patches a task and appends one `FieldChanged` activity per changed field,
+    /// all in a single transaction.
     pub async fn patch(
         &self,
         ctx: &WorkspaceCtx,
@@ -90,19 +78,22 @@ impl TaskService {
     ) -> Result<Task, DomainError> {
         let txn = self.conn.begin().await.map_err(db_err)?;
 
-        let before = self
-            .task_repo
-            .find(ctx, id)
-            .await?
+        let before = task::Entity::find_by_id(id.0)
+            .filter(task::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(task::Column::DeletedAt.is_null())
+            .one(&txn)
+            .await
+            .map_err(db_err)?
             .ok_or(DomainError::NotFound {
                 entity: "task",
                 id: id.0,
-            })?;
+            })
+            .map(crate::persistence::entities::boards_tasks::task_from)?;
 
         let fields_changed: Vec<(String, serde_json::Value, serde_json::Value)> =
             collect_field_changes(&before, &patch);
 
-        let updated = self.task_repo.patch(ctx, id, patch).await?;
+        let updated = PgTaskRepo::patch_in(&txn, ctx, id, patch).await?;
 
         for (field, old_value, new_value) in fields_changed {
             PgTaskActivityRepo::append_in(
@@ -125,7 +116,11 @@ impl TaskService {
         Ok(updated)
     }
 
-    /// Moves a task to a new column and position, recording a `Moved` activity.
+    /// Moves a task to a new column and position, recording a `Moved` activity,
+    /// all in a single transaction.
+    ///
+    /// The move (including any resequence+retry) and the activity append run on the
+    /// same `DatabaseTransaction`, satisfying the move↔activity atomicity guarantee.
     pub async fn move_task(
         &self,
         ctx: &WorkspaceCtx,
@@ -135,16 +130,19 @@ impl TaskService {
     ) -> Result<Task, DomainError> {
         let txn = self.conn.begin().await.map_err(db_err)?;
 
-        let before = self
-            .task_repo
-            .find(ctx, id)
-            .await?
+        let before = task::Entity::find_by_id(id.0)
+            .filter(task::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(task::Column::DeletedAt.is_null())
+            .one(&txn)
+            .await
+            .map_err(db_err)?
             .ok_or(DomainError::NotFound {
                 entity: "task",
                 id: id.0,
-            })?;
+            })
+            .map(crate::persistence::entities::boards_tasks::task_from)?;
 
-        let moved = self.task_repo.move_to(ctx, id, column_id, position).await?;
+        let moved = PgTaskRepo::move_to_in(&txn, ctx, id, column_id, position).await?;
 
         PgTaskActivityRepo::append_in(
             &txn,
@@ -164,11 +162,11 @@ impl TaskService {
         Ok(moved)
     }
 
-    /// Soft-deletes a task and records a `Deleted` activity.
+    /// Soft-deletes a task and records a `Deleted` activity in the same transaction.
     pub async fn delete_task(&self, ctx: &WorkspaceCtx, id: TaskId) -> Result<(), DomainError> {
         let txn = self.conn.begin().await.map_err(db_err)?;
 
-        self.task_repo.soft_delete(ctx, id).await?;
+        PgTaskRepo::soft_delete_in(&txn, ctx, id).await?;
 
         PgTaskActivityRepo::append_in(
             &txn,
@@ -185,7 +183,8 @@ impl TaskService {
         Ok(())
     }
 
-    /// Assigns a user or API key to a task, recording an `Assigned` activity.
+    /// Assigns a user or API key to a task, recording an `Assigned` activity,
+    /// all in a single transaction.
     pub async fn assign(
         &self,
         ctx: &WorkspaceCtx,
@@ -194,10 +193,8 @@ impl TaskService {
     ) -> Result<TaskAssignee, DomainError> {
         let txn = self.conn.begin().await.map_err(db_err)?;
 
-        let result = self
-            .assignee_repo
-            .add(ctx, NewTaskAssignee { task_id, assignee })
-            .await?;
+        let result =
+            PgTaskAssigneeRepo::add_in(&txn, ctx, NewTaskAssignee { task_id, assignee }).await?;
 
         PgTaskActivityRepo::append_in(
             &txn,
@@ -214,7 +211,8 @@ impl TaskService {
         Ok(result)
     }
 
-    /// Removes an assignee from a task, recording an `Unassigned` activity.
+    /// Removes an assignee from a task, recording an `Unassigned` activity,
+    /// all in a single transaction.
     pub async fn unassign(
         &self,
         ctx: &WorkspaceCtx,
@@ -223,7 +221,7 @@ impl TaskService {
     ) -> Result<(), DomainError> {
         let txn = self.conn.begin().await.map_err(db_err)?;
 
-        self.assignee_repo.remove(ctx, task_id, assignee).await?;
+        PgTaskAssigneeRepo::remove_in(&txn, ctx, task_id, assignee).await?;
 
         PgTaskActivityRepo::append_in(
             &txn,
@@ -240,7 +238,8 @@ impl TaskService {
         Ok(())
     }
 
-    /// Adds a reference to a task, recording a `ReferenceAdded` activity.
+    /// Adds a reference to a task, recording a `ReferenceAdded` activity,
+    /// all in a single transaction.
     pub async fn add_reference(
         &self,
         ctx: &WorkspaceCtx,
@@ -249,7 +248,7 @@ impl TaskService {
         let txn = self.conn.begin().await.map_err(db_err)?;
         let source_task_id = new.source_task_id;
 
-        let reference = self.reference_repo.create(ctx, new).await?;
+        let reference = PgTaskReferenceRepo::create_in(&txn, ctx, new).await?;
 
         PgTaskActivityRepo::append_in(
             &txn,
@@ -269,17 +268,18 @@ impl TaskService {
         Ok(reference)
     }
 
-    /// Removes a reference by ID, recording a `ReferenceRemoved` activity.
+    /// Removes a reference by ID, recording a `ReferenceRemoved` activity,
+    /// all in a single transaction.
     pub async fn remove_reference(
         &self,
         ctx: &WorkspaceCtx,
         task_id: TaskId,
         reference_id: TaskReferenceId,
-        kind: atlas_domain::entities::boards_tasks::ReferenceKind,
+        kind: ReferenceKind,
     ) -> Result<(), DomainError> {
         let txn = self.conn.begin().await.map_err(db_err)?;
 
-        self.reference_repo.delete(ctx, reference_id).await?;
+        PgTaskReferenceRepo::delete_in(&txn, ctx, reference_id).await?;
 
         PgTaskActivityRepo::append_in(
             &txn,
@@ -296,7 +296,8 @@ impl TaskService {
         Ok(())
     }
 
-    /// Adds a checklist item to a task, recording a `ChecklistAdded` activity.
+    /// Adds a checklist item to a task, recording a `ChecklistAdded` activity,
+    /// all in a single transaction.
     pub async fn add_checklist_item(
         &self,
         ctx: &WorkspaceCtx,
@@ -306,7 +307,7 @@ impl TaskService {
         let task_id = new.task_id;
         let title = new.title.clone();
 
-        let item = self.checklist_repo.add_item(ctx, new).await?;
+        let item = PgTaskChecklistRepo::add_item_in(&txn, ctx, new).await?;
 
         PgTaskActivityRepo::append_in(
             &txn,
@@ -326,7 +327,8 @@ impl TaskService {
         Ok(item)
     }
 
-    /// Patches a checklist item, recording a `ChecklistUpdated` activity.
+    /// Patches a checklist item, recording a `ChecklistUpdated` activity,
+    /// all in a single transaction.
     pub async fn patch_checklist_item(
         &self,
         ctx: &WorkspaceCtx,
@@ -336,7 +338,7 @@ impl TaskService {
     ) -> Result<TaskChecklistItem, DomainError> {
         let txn = self.conn.begin().await.map_err(db_err)?;
 
-        let item = self.checklist_repo.patch_item(ctx, item_id, patch).await?;
+        let item = PgTaskChecklistRepo::patch_item_in(&txn, ctx, item_id, patch).await?;
 
         PgTaskActivityRepo::append_in(
             &txn,
@@ -353,7 +355,8 @@ impl TaskService {
         Ok(item)
     }
 
-    /// Soft-deletes a checklist item, recording a `ChecklistRemoved` activity.
+    /// Soft-deletes a checklist item, recording a `ChecklistRemoved` activity,
+    /// all in a single transaction.
     pub async fn remove_checklist_item(
         &self,
         ctx: &WorkspaceCtx,
@@ -362,7 +365,7 @@ impl TaskService {
     ) -> Result<(), DomainError> {
         let txn = self.conn.begin().await.map_err(db_err)?;
 
-        self.checklist_repo.soft_delete_item(ctx, item_id).await?;
+        PgTaskChecklistRepo::soft_delete_item_in(&txn, ctx, item_id).await?;
 
         PgTaskActivityRepo::append_in(
             &txn,
@@ -401,8 +404,6 @@ impl TaskService {
         // Fetch the item directly by ID so we can read its parent task_id and
         // guard against re-promotion, all within the open transaction.
         let item = {
-            use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
-
             task_checklist_item::Entity::find_by_id(item_id.0)
                 .filter(task_checklist_item::Column::WorkspaceId.eq(ctx.workspace_id.0))
                 .filter(task_checklist_item::Column::DeletedAt.is_null())
@@ -505,9 +506,8 @@ impl TaskService {
         after_id: Option<TaskActivityId>,
         limit: u64,
     ) -> Result<Vec<TaskActivity>, DomainError> {
-        self.activity_repo
-            .list_for_task(ctx, task_id, after_id, limit)
-            .await
+        let repo = PgTaskActivityRepo::new(self.conn.clone());
+        repo.list_for_task(ctx, task_id, after_id, limit).await
     }
 }
 
