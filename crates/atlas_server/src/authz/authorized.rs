@@ -8,9 +8,10 @@ use axum::{
 use serde::de::DeserializeOwned;
 
 use atlas_domain::{
+    entities::documents::Document,
     entities::identity::Workspace,
     entities::workspace_core::Project,
-    ids::UserId,
+    ids::{DocumentId, UserId},
     permissions::{
         ChainSegment, Principal, ResolutionInput, ResourceChain, ResourceRef, ResourceRole,
         Visibility,
@@ -21,10 +22,13 @@ use atlas_domain::{
 use crate::{
     auth::middleware::Principal as MiddlewarePrincipal,
     error::ApiError,
-    persistence::repos::{
-        ApiKeyRepo, MembershipRepo, PermissionGrantRepo, PgApiKeyRepo, PgMembershipRepo,
-        PgPermissionGrantRepo, PgProjectRepo, PgUserRepo, PgWorkspaceRepo, ProjectRepo, UserRepo,
-        WorkspaceRepo,
+    persistence::{
+        entities::documents::{document, document_from},
+        repos::{
+            ApiKeyRepo, MembershipRepo, PermissionGrantRepo, PgApiKeyRepo, PgMembershipRepo,
+            PgPermissionGrantRepo, PgProjectRepo, PgUserRepo, PgWorkspaceRepo, ProjectRepo,
+            UserRepo, WorkspaceRepo,
+        },
     },
     state::AppState,
 };
@@ -113,6 +117,75 @@ impl ResolvedResource for WorkspaceRes {
             }],
         };
         Ok((WorkspaceRes(ws.clone()), chain))
+    }
+}
+
+/// Stub for folder-scope grants (no visibility column on folders).
+pub struct FolderRes;
+
+/// Proof of identity for a document resource, resolved via `{doc_id}` path param.
+pub struct DocumentRes(pub Document);
+
+impl ResolvedResource for DocumentRes {
+    type PathParams = HashMap<String, String>;
+
+    async fn resolve(
+        db: &sea_orm::DatabaseConnection,
+        ws: &Workspace,
+        params: Self::PathParams,
+    ) -> Result<(Self, ResourceChain), ApiError> {
+        use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+
+        let doc_id_str = params.get("doc_id").ok_or(ApiError::NotFound)?;
+        let doc_uuid = doc_id_str
+            .parse::<uuid::Uuid>()
+            .map_err(|_| ApiError::NotFound)?;
+
+        let row = document::Entity::find_by_id(doc_uuid)
+            .filter(document::Column::WorkspaceId.eq(ws.id.0))
+            .filter(document::Column::DeletedAt.is_null())
+            .one(db)
+            .await
+            .map_err(|e| ApiError::Internal {
+                message: e.to_string(),
+            })?
+            .ok_or(ApiError::NotFound)?;
+
+        let doc = document_from(row).map_err(|msg| ApiError::Internal { message: msg })?;
+
+        let mut segments = Vec::new();
+
+        segments.push(ChainSegment {
+            resource: ResourceRef::Document(DocumentId(doc_uuid)),
+            visibility: None,
+        });
+
+        if let Some(project_id) = doc.project_id {
+            let repo = PgProjectRepo { conn: db.clone() };
+            let ctx =
+                atlas_domain::WorkspaceCtx::new(ws.id, atlas_domain::Actor::User(UserId::new()));
+            let project = repo
+                .find(&ctx, project_id)
+                .await
+                .map_err(|e| ApiError::Internal {
+                    message: e.to_string(),
+                })?;
+
+            if let Some(p) = project {
+                segments.push(ChainSegment {
+                    resource: ResourceRef::Project(project_id),
+                    visibility: Some(project_visibility(&p.visibility)),
+                });
+            }
+        }
+
+        segments.push(ChainSegment {
+            resource: ResourceRef::Workspace,
+            visibility: None,
+        });
+
+        let chain = ResourceChain { segments };
+        Ok((DocumentRes(doc), chain))
     }
 }
 
