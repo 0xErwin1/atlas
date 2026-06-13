@@ -72,6 +72,11 @@ async fn seed_project_board_task(
                 column_id: col.id,
                 title: "Task A".into(),
                 description: String::new(),
+                priority: None,
+                due_date: None,
+                estimate: None,
+                labels: vec![],
+                properties: None,
                 position: PositionBetween {
                     before: None,
                     after: None,
@@ -141,6 +146,11 @@ async fn valid_blocks_reference_with_task_target_is_accepted() {
                 column_id: task_a.column_id,
                 title: "Task B".into(),
                 description: String::new(),
+                priority: None,
+                due_date: None,
+                estimate: None,
+                labels: vec![],
+                properties: None,
                 position: PositionBetween {
                     before: None,
                     after: None,

@@ -50,6 +50,7 @@ define_id!(ColumnId);
 define_id!(TaskId);
 define_id!(TaskReferenceId);
 define_id!(ChecklistItemId);
+define_id!(TaskActivityId);
 define_id!(PropertyDefinitionId);
 define_id!(MembershipId);
 
