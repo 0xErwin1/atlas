@@ -1280,3 +1280,96 @@ async fn oversized_attachment_returns_413() {
 
     db.teardown().await;
 }
+
+// ---- 409 conflict body contains required fields ----------------------------
+
+#[tokio::test]
+async fn conflict_409_body_carries_conflict_fields() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-cas-body").await;
+
+    let project = client
+        .create_project(
+            &ws.slug,
+            atlas_api::dtos::CreateProjectRequest {
+                name: "Proj".to_string(),
+                slug: "proj-cas-body".to_string(),
+                task_prefix: "PCB".to_string(),
+                visibility: None,
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create project");
+
+    let doc = client
+        .create_document(&ws.slug, &project.slug, doc_req("CAS Body Doc"))
+        .await
+        .expect("create document");
+
+    let slug = doc.slug.as_deref().expect("slug");
+    let stale_revision_id = doc.head_revision_id;
+
+    client
+        .update_content(
+            &ws.slug,
+            slug,
+            UpdateContentRequest {
+                content: "first update".to_string(),
+                base_revision_id: stale_revision_id,
+            },
+        )
+        .await
+        .expect("first update succeeds");
+
+    let token = client.token().expect("session token").to_string();
+    let http = reqwest::Client::new();
+    let url = format!(
+        "{}/v1/workspaces/{}/documents/{}/content",
+        server.base_url(),
+        ws.slug,
+        slug
+    );
+    let body = serde_json::json!({
+        "content": "concurrent update",
+        "base_revision_id": stale_revision_id
+    });
+
+    let response = http
+        .put(&url)
+        .bearer_auth(&token)
+        .header("x-atlas-csrf", "1")
+        .json(&body)
+        .send()
+        .await
+        .expect("send request");
+
+    assert_eq!(response.status().as_u16(), 409, "stale CAS must return 409");
+    assert_eq!(
+        response
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or(""),
+        "application/problem+json",
+        "conflict response must be application/problem+json"
+    );
+
+    let body: serde_json::Value = response.json().await.expect("parse conflict body");
+
+    assert!(
+        body["current_revision_id"].is_string(),
+        "conflict body must carry current_revision_id, got: {body}"
+    );
+    assert!(
+        body["current_seq"].is_number(),
+        "conflict body must carry current_seq, got: {body}"
+    );
+    assert!(
+        body["base_to_current_patch"].is_string(),
+        "conflict body must carry base_to_current_patch, got: {body}"
+    );
+
+    db.teardown().await;
+}
