@@ -4,8 +4,9 @@ mod support;
 
 use atlas_domain::{
     Actor,
-    entities::documents::{DocumentFilter, NewAttachment, NewDocument},
+    entities::documents::{NewAttachment, NewDocument},
     ids::ApiKeyId,
+    permissions::Principal,
 };
 use atlas_server::persistence::repos::{
     ApiKeyRepo, AttachmentRepo, DocumentRepo, NewApiKey, PgApiKeyRepo, PgAttachmentRepo,
@@ -324,10 +325,11 @@ async fn document_list_returns_summaries_without_content() {
     .await
     .expect("create document");
 
+    let principal = Principal::User(user.id);
     let summaries = repo
-        .list(&ctx, DocumentFilter::default())
+        .list_visible(&ctx, &principal, None, 50)
         .await
-        .expect("list documents");
+        .expect("list_visible documents");
 
     assert_eq!(summaries.len(), 1);
     let first = summaries.first().expect("summaries must not be empty");

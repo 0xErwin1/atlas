@@ -1,12 +1,14 @@
 use crate::{
     DomainError, WorkspaceCtx,
     entities::documents::{
-        Attachment, AttachmentOwner, Document, DocumentFilter, DocumentLink, DocumentSummary,
-        ExtractedLink, NewAttachment, NewDocument, RevisionMeta,
+        Attachment, AttachmentOwner, Document, DocumentLink, DocumentSummary, ExtractedLink,
+        NewAttachment, NewDocument, RevisionMeta,
     },
     ids::{AttachmentId, DocumentId, FolderId, ProjectId, RevisionId},
+    permissions::Principal,
 };
 use async_trait::async_trait;
+use uuid::Uuid;
 
 #[async_trait]
 pub trait DocumentRepo: Send + Sync {
@@ -18,11 +20,35 @@ pub trait DocumentRepo: Send + Sync {
         id: DocumentId,
     ) -> Result<Option<Document>, DomainError>;
 
-    async fn list(
+    /// Lists documents visible to `principal` within the workspace.
+    ///
+    /// Replaces the former `list` method. Visibility rules mirror those of
+    /// `ProjectRepo::list_visible`: membership and explicit grants determine
+    /// access. `after_id` is an exclusive cursor (UUID of the last seen document).
+    async fn list_visible(
         &self,
         ctx: &WorkspaceCtx,
-        filter: DocumentFilter,
+        principal: &Principal,
+        after_id: Option<Uuid>,
+        limit: u64,
     ) -> Result<Vec<DocumentSummary>, DomainError>;
+
+    /// Returns the document whose slug matches within this workspace, if any.
+    async fn find_by_slug(
+        &self,
+        ctx: &WorkspaceCtx,
+        slug: &str,
+    ) -> Result<Option<Document>, DomainError>;
+
+    /// Renames a document: updates `title`, re-derives `slug` (with collision
+    /// resolution), and propagates the display title to any inbound
+    /// `document_links` rows that resolved to this document.
+    async fn rename(
+        &self,
+        ctx: &WorkspaceCtx,
+        id: DocumentId,
+        new_title: String,
+    ) -> Result<Document, DomainError>;
 
     async fn update_content(
         &self,

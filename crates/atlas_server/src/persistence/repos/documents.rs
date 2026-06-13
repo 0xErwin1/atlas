@@ -2,11 +2,14 @@ use async_trait::async_trait;
 use atlas_domain::{
     Actor, DomainError, RevisionConflict, WorkspaceCtx,
     entities::documents::{
-        Attachment, AttachmentOwner, Document, DocumentFilter, DocumentLink, DocumentSummary,
-        ExtractedLink, NewAttachment, NewDocument, RevisionMeta,
+        Attachment, AttachmentOwner, Document, DocumentLink, DocumentSummary, ExtractedLink,
+        NewAttachment, NewDocument, RevisionMeta,
     },
     ids::{AttachmentId, DocumentId, FolderId, ProjectId, RevisionId},
+    permissions::Principal,
+    resolve_collision,
     revision::{create_revision_patch, is_anchor_seq, reconstruct},
+    slugify,
 };
 use chrono::Utc;
 use sea_orm::{
@@ -18,7 +21,7 @@ use uuid::Uuid;
 
 use crate::persistence::entities::documents::{
     attachment, attachment_from, document, document_from, document_link, document_link_from,
-    document_revision, document_summary_from, revision_meta_from,
+    document_revision, revision_meta_from,
 };
 
 pub use atlas_domain::ports::documents::{AttachmentRepo, DocumentLinkRepo, DocumentRepo};
@@ -108,28 +111,191 @@ impl DocumentRepo for PgDocumentRepo {
             .map_err(internal_err)
     }
 
-    async fn list(
+    async fn list_visible(
         &self,
         ctx: &WorkspaceCtx,
-        filter: DocumentFilter,
+        principal: &Principal,
+        after_id: Option<uuid::Uuid>,
+        limit: u64,
     ) -> Result<Vec<DocumentSummary>, DomainError> {
-        let mut q = document::Entity::find()
-            .filter(document::Column::WorkspaceId.eq(ctx.workspace_id.0))
-            .filter(document::Column::DeletedAt.is_null());
+        use sea_orm::FromQueryResult;
 
-        if let Some(pid) = filter.project_id {
-            q = q.filter(document::Column::ProjectId.eq(pid.0));
+        #[derive(Debug, FromQueryResult)]
+        struct Row {
+            id: uuid::Uuid,
+            workspace_id: uuid::Uuid,
+            project_id: Option<uuid::Uuid>,
+            folder_id: Option<uuid::Uuid>,
+            title: String,
+            slug: Option<String>,
+            frontmatter: sea_orm::prelude::Json,
+            current_revision_id: Option<uuid::Uuid>,
+            current_revision_seq: i64,
+            created_by_user_id: Option<uuid::Uuid>,
+            created_by_api_key_id: Option<uuid::Uuid>,
+            created_at: chrono::DateTime<chrono::Utc>,
+            updated_at: chrono::DateTime<chrono::Utc>,
         }
 
-        if let Some(fid) = filter.folder_id {
-            q = q.filter(document::Column::FolderId.eq(fid.0));
+        let mut values: Vec<sea_orm::Value> = Vec::new();
+        values.push(ctx.workspace_id.0.into()); // $1
+
+        let membership_clause;
+        let principal_col;
+
+        match principal {
+            Principal::User(uid) => {
+                principal_col = "user_id";
+                values.push(uid.0.into()); // $2
+                membership_clause = "EXISTS (
+                        SELECT 1 FROM workspace_memberships
+                        WHERE workspace_id = $1
+                          AND user_id = $2
+                    )"
+                .to_string();
+            }
+            Principal::ApiKey(kid) => {
+                principal_col = "api_key_id";
+                values.push(kid.0.into()); // $2
+                membership_clause = "FALSE".to_string();
+            }
         }
 
-        let rows = q.all(&self.conn).await.map_err(db_err)?;
+        let cursor_cond = if let Some(cursor) = after_id {
+            values.push(cursor.into());
+            format!("AND d.id > ${}", values.len())
+        } else {
+            String::new()
+        };
+
+        let sql = format!(
+            r#"
+            SELECT d.id, d.workspace_id, d.project_id, d.folder_id, d.title, d.slug,
+                   d.frontmatter, d.current_revision_id, d.current_revision_seq,
+                   d.created_by_user_id, d.created_by_api_key_id, d.created_at, d.updated_at
+            FROM documents d
+            WHERE d.workspace_id = $1
+              AND d.deleted_at IS NULL
+              AND (
+                    {membership_clause}
+                    OR EXISTS (
+                        SELECT 1 FROM permission_grants
+                        WHERE workspace_id = $1
+                          AND {principal_col} = $2
+                          AND project_id IS NULL
+                          AND folder_id IS NULL
+                          AND document_id IS NULL
+                          AND board_id IS NULL
+                    )
+                    OR EXISTS (
+                        SELECT 1 FROM permission_grants
+                        WHERE workspace_id = $1
+                          AND {principal_col} = $2
+                          AND document_id = d.id
+                    )
+              )
+              {cursor_cond}
+            ORDER BY d.id
+            LIMIT {limit}
+            "#,
+        );
+
+        let rows = Row::find_by_statement(sea_orm::Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            sql,
+            values,
+        ))
+        .all(&self.conn)
+        .await
+        .map_err(db_err)?;
 
         rows.into_iter()
-            .map(|m| document_summary_from(m).map_err(internal_err))
-            .collect()
+            .map(|r| {
+                let current_revision_id = r
+                    .current_revision_id
+                    .ok_or_else(|| "document missing current_revision_id".to_string())?;
+
+                Ok(DocumentSummary {
+                    id: atlas_domain::ids::DocumentId(r.id),
+                    workspace_id: atlas_domain::ids::WorkspaceId(r.workspace_id),
+                    project_id: r.project_id.map(atlas_domain::ids::ProjectId),
+                    folder_id: r.folder_id.map(atlas_domain::ids::FolderId),
+                    title: r.title,
+                    slug: r.slug,
+                    frontmatter: r.frontmatter,
+                    current_revision_id: atlas_domain::ids::RevisionId(current_revision_id),
+                    current_revision_seq: r.current_revision_seq,
+                    created_by_user_id: r.created_by_user_id.map(atlas_domain::ids::UserId),
+                    created_by_api_key_id: r.created_by_api_key_id.map(atlas_domain::ids::ApiKeyId),
+                    created_at: r.created_at,
+                    updated_at: r.updated_at,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()
+            .map_err(internal_err)
+    }
+
+    async fn find_by_slug(
+        &self,
+        ctx: &WorkspaceCtx,
+        slug: &str,
+    ) -> Result<Option<Document>, DomainError> {
+        document::Entity::find()
+            .filter(document::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(document::Column::Slug.eq(slug))
+            .filter(document::Column::DeletedAt.is_null())
+            .one(&self.conn)
+            .await
+            .map_err(db_err)?
+            .map(document_from)
+            .transpose()
+            .map_err(internal_err)
+    }
+
+    async fn rename(
+        &self,
+        ctx: &WorkspaceCtx,
+        id: DocumentId,
+        new_title: String,
+    ) -> Result<Document, DomainError> {
+        let txn = self.conn.begin().await.map_err(db_err)?;
+
+        let row = document::Entity::find_by_id(id.0)
+            .filter(document::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(document::Column::DeletedAt.is_null())
+            .lock_exclusive()
+            .one(&txn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "document",
+                id: id.0,
+            })?;
+
+        let base_slug = slugify(&new_title);
+
+        // Collect existing slugs in the workspace to resolve collisions.
+        let existing_slugs = collect_existing_slugs(&txn, ctx.workspace_id.0, id.0)
+            .await
+            .map_err(db_err)?;
+
+        let taken: Vec<&str> = existing_slugs.iter().map(String::as_str).collect();
+        let new_slug = resolve_collision(&base_slug, &taken);
+
+        let mut active = row.into_active_model();
+        active.title = Set(new_title.clone());
+        active.slug = Set(Some(new_slug));
+        active.updated_at = Set(Utc::now());
+        let updated = active.update(&txn).await.map_err(db_err)?;
+
+        // Sweep document_links: update target_title for any link targeting this doc.
+        update_backlink_titles(&txn, ctx.workspace_id.0, id.0, &new_title)
+            .await
+            .map_err(db_err)?;
+
+        txn.commit().await.map_err(db_err)?;
+
+        document_from(updated).map_err(internal_err)
     }
 
     async fn update_content(
@@ -538,6 +704,45 @@ impl AttachmentRepo for PgAttachmentRepo {
         active.update(&self.conn).await.map_err(db_err)?;
         Ok(())
     }
+}
+
+async fn collect_existing_slugs(
+    conn: &impl sea_orm::ConnectionTrait,
+    workspace_id: Uuid,
+    exclude_id: Uuid,
+) -> Result<Vec<String>, sea_orm::DbErr> {
+    use sea_orm::FromQueryResult;
+
+    #[derive(FromQueryResult)]
+    struct SlugRow {
+        slug: String,
+    }
+
+    let rows = SlugRow::find_by_statement(sea_orm::Statement::from_sql_and_values(
+        sea_orm::DatabaseBackend::Postgres,
+        "SELECT slug FROM documents WHERE workspace_id = $1 AND id != $2 AND deleted_at IS NULL AND slug IS NOT NULL",
+        [workspace_id.into(), exclude_id.into()],
+    ))
+    .all(conn)
+    .await?;
+
+    Ok(rows.into_iter().map(|r| r.slug).collect())
+}
+
+async fn update_backlink_titles(
+    conn: &impl sea_orm::ConnectionTrait,
+    workspace_id: Uuid,
+    target_doc_id: Uuid,
+    new_title: &str,
+) -> Result<(), sea_orm::DbErr> {
+    conn.execute_raw(sea_orm::Statement::from_sql_and_values(
+        sea_orm::DatabaseBackend::Postgres,
+        "UPDATE document_links SET target_title = $1 WHERE workspace_id = $2 AND target_document_id = $3",
+        [new_title.into(), workspace_id.into(), target_doc_id.into()],
+    ))
+    .await?;
+
+    Ok(())
 }
 
 fn actor_fields(actor: &Actor) -> (Option<Uuid>, Option<Uuid>) {
