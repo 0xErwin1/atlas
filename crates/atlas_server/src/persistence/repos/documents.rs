@@ -191,6 +191,39 @@ impl DocumentRepo for PgDocumentRepo {
                           AND {principal_col} = $2
                           AND document_id = d.id
                     )
+                    OR EXISTS (
+                        SELECT 1 FROM permission_grants
+                        WHERE workspace_id = $1
+                          AND {principal_col} = $2
+                          AND project_id IS NOT NULL
+                          AND project_id = d.project_id
+                    )
+                    OR EXISTS (
+                        WITH RECURSIVE ancestors AS (
+                            SELECT f.id, f.parent_folder_id, f.project_id
+                            FROM folders f
+                            WHERE f.id = d.folder_id
+                              AND f.workspace_id = $1
+                            UNION ALL
+                            SELECT pf.id, pf.parent_folder_id, pf.project_id
+                            FROM folders pf
+                            JOIN ancestors a ON pf.id = a.parent_folder_id
+                            WHERE pf.workspace_id = $1
+                        )
+                        SELECT 1 FROM permission_grants pg
+                        WHERE pg.workspace_id = $1
+                          AND pg.{principal_col} = $2
+                          AND (
+                                pg.folder_id IN (SELECT id FROM ancestors)
+                                OR (
+                                    pg.project_id IS NOT NULL
+                                    AND pg.project_id IN (
+                                        SELECT project_id FROM ancestors
+                                        WHERE project_id IS NOT NULL
+                                    )
+                                )
+                          )
+                    )
               )
               {cursor_cond}
             ORDER BY d.id

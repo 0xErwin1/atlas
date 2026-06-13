@@ -116,6 +116,252 @@ async fn list_visible_cursor_pagination_works() {
     db.teardown().await;
 }
 
+// --- list_visible: scope grants for a non-member principal ---
+
+async fn create_folder(
+    db: &support::TestDb,
+    ws: &atlas_server::persistence::repos::Workspace,
+    user: &atlas_server::persistence::repos::User,
+    project_id: Option<atlas_domain::ids::ProjectId>,
+    parent: Option<atlas_domain::ids::FolderId>,
+) -> atlas_domain::entities::workspace_core::Folder {
+    use atlas_server::persistence::repos::{FolderRepo, PgFolderRepo};
+    let repo = PgFolderRepo {
+        conn: db.conn().clone(),
+    };
+    let ctx = support::ctx(ws, user);
+    repo.create(
+        &ctx,
+        atlas_domain::entities::workspace_core::NewFolder {
+            project_id,
+            parent_folder_id: parent,
+            name: "scope-folder".into(),
+        },
+    )
+    .await
+    .expect("create folder")
+}
+
+async fn create_doc_in_folder(
+    repo: &PgDocumentRepo,
+    ws: &atlas_server::persistence::repos::Workspace,
+    user: &atlas_server::persistence::repos::User,
+    title: &str,
+    folder_id: Option<atlas_domain::ids::FolderId>,
+    project_id: Option<atlas_domain::ids::ProjectId>,
+) -> atlas_domain::entities::documents::Document {
+    let ctx = support::ctx(ws, user);
+    repo.create(
+        &ctx,
+        NewDocument {
+            title: title.into(),
+            slug: Some(atlas_domain::slugify(title)),
+            content: "".into(),
+            folder_id,
+            project_id,
+            frontmatter: None,
+        },
+    )
+    .await
+    .expect("create doc in folder")
+}
+
+async fn create_project(
+    db: &support::TestDb,
+    ws: &atlas_server::persistence::repos::Workspace,
+    user: &atlas_server::persistence::repos::User,
+    slug: &str,
+) -> atlas_domain::entities::workspace_core::Project {
+    use atlas_server::persistence::repos::{PgProjectRepo, ProjectRepo};
+    let repo = PgProjectRepo {
+        conn: db.conn().clone(),
+    };
+    let ctx = support::ctx(ws, user);
+    repo.create(
+        &ctx,
+        atlas_domain::entities::workspace_core::NewProject {
+            name: slug.into(),
+            slug: slug.into(),
+            task_prefix: "LVP".into(),
+            visibility: atlas_domain::permissions::Visibility::Private,
+        },
+    )
+    .await
+    .expect("create project")
+}
+
+async fn create_api_key(
+    db: &support::TestDb,
+    ws: &atlas_server::persistence::repos::Workspace,
+    user: &atlas_server::persistence::repos::User,
+) -> atlas_domain::ids::ApiKeyId {
+    use atlas_server::persistence::repos::{ApiKeyRepo, NewApiKey, PgApiKeyRepo};
+    let repo = PgApiKeyRepo {
+        conn: db.conn().clone(),
+    };
+    let ctx = support::ctx(ws, user);
+    let created = repo
+        .create(
+            &ctx,
+            NewApiKey {
+                name: "scope-key".into(),
+                token_hash: format!("hash-{}", uuid::Uuid::now_v7()),
+                expires_at: None,
+            },
+        )
+        .await
+        .expect("create api key");
+    created.id
+}
+
+async fn grant_to_api_key(
+    db: &support::TestDb,
+    ws: &atlas_server::persistence::repos::Workspace,
+    api_key_id: atlas_domain::ids::ApiKeyId,
+    project_id: Option<atlas_domain::ids::ProjectId>,
+    folder_id: Option<atlas_domain::ids::FolderId>,
+) {
+    use atlas_domain::entities::permissions::NewPermissionGrant;
+    use atlas_domain::permissions::ResourceRole;
+    use atlas_server::persistence::repos::{PermissionGrantRepo, PgPermissionGrantRepo};
+    let repo = PgPermissionGrantRepo {
+        conn: db.conn().clone(),
+    };
+    repo.upsert(NewPermissionGrant {
+        workspace_id: ws.id,
+        user_id: None,
+        api_key_id: Some(api_key_id),
+        project_id,
+        folder_id,
+        document_id: None,
+        board_id: None,
+        role: ResourceRole::Viewer,
+        created_by_user_id: None,
+        created_by_api_key_id: None,
+    })
+    .await
+    .expect("grant to api key");
+}
+
+#[tokio::test]
+async fn list_visible_includes_doc_via_folder_scope_grant() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let (ws, owner) = support::seed_workspace(&db, "lv-folder-grant").await;
+    let repo = make_doc_repo(&db);
+
+    let folder = create_folder(&db, &ws, &owner, None, None).await;
+    let doc = create_doc_in_folder(&repo, &ws, &owner, "In Folder", Some(folder.id), None).await;
+    create_doc_in_folder(&repo, &ws, &owner, "Outside Folder", None, None).await;
+
+    let key_id = create_api_key(&db, &ws, &owner).await;
+    grant_to_api_key(&db, &ws, key_id, None, Some(folder.id)).await;
+
+    let ctx = support::ctx(&ws, &owner);
+    let principal = Principal::ApiKey(key_id);
+    let docs = repo
+        .list_visible(&ctx, &principal, None, 10)
+        .await
+        .expect("list_visible");
+
+    assert_eq!(
+        docs.len(),
+        1,
+        "api key with only a folder-scope grant must see exactly the doc in that folder"
+    );
+    assert_eq!(docs[0].id, doc.id);
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn list_visible_includes_nested_doc_via_ancestor_folder_grant() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let (ws, owner) = support::seed_workspace(&db, "lv-nested-grant").await;
+    let repo = make_doc_repo(&db);
+
+    let parent = create_folder(&db, &ws, &owner, None, None).await;
+    let child = create_folder(&db, &ws, &owner, None, Some(parent.id)).await;
+    let doc = create_doc_in_folder(&repo, &ws, &owner, "Nested Doc", Some(child.id), None).await;
+
+    let key_id = create_api_key(&db, &ws, &owner).await;
+    grant_to_api_key(&db, &ws, key_id, None, Some(parent.id)).await;
+
+    let ctx = support::ctx(&ws, &owner);
+    let principal = Principal::ApiKey(key_id);
+    let docs = repo
+        .list_visible(&ctx, &principal, None, 10)
+        .await
+        .expect("list_visible");
+
+    assert_eq!(
+        docs.len(),
+        1,
+        "ancestor folder-scope grant must reveal a doc in a nested folder"
+    );
+    assert_eq!(docs[0].id, doc.id);
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn list_visible_includes_doc_via_project_scope_grant() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let (ws, owner) = support::seed_workspace(&db, "lv-project-grant").await;
+    let repo = make_doc_repo(&db);
+
+    let project = create_project(&db, &ws, &owner, "proj-lv").await;
+
+    let doc =
+        create_doc_in_folder(&repo, &ws, &owner, "In Project", None, Some(project.id)).await;
+    create_doc_in_folder(&repo, &ws, &owner, "No Project", None, None).await;
+
+    let key_id = create_api_key(&db, &ws, &owner).await;
+    grant_to_api_key(&db, &ws, key_id, Some(project.id), None).await;
+
+    let ctx = support::ctx(&ws, &owner);
+    let principal = Principal::ApiKey(key_id);
+    let docs = repo
+        .list_visible(&ctx, &principal, None, 10)
+        .await
+        .expect("list_visible");
+
+    assert_eq!(
+        docs.len(),
+        1,
+        "api key with only a project-scope grant must see exactly the doc in that project"
+    );
+    assert_eq!(docs[0].id, doc.id);
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn list_visible_excludes_doc_when_no_grant_for_non_member() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let (ws, owner) = support::seed_workspace(&db, "lv-no-grant").await;
+    let repo = make_doc_repo(&db);
+
+    let folder = create_folder(&db, &ws, &owner, None, None).await;
+    create_doc_in_folder(&repo, &ws, &owner, "Hidden", Some(folder.id), None).await;
+
+    let key_id = create_api_key(&db, &ws, &owner).await;
+
+    let ctx = support::ctx(&ws, &owner);
+    let principal = Principal::ApiKey(key_id);
+    let docs = repo
+        .list_visible(&ctx, &principal, None, 10)
+        .await
+        .expect("list_visible");
+
+    assert!(
+        docs.is_empty(),
+        "api key without any grant must not see documents, got {} docs",
+        docs.len()
+    );
+
+    db.teardown().await;
+}
+
 // --- find_by_slug ---
 
 #[tokio::test]
