@@ -166,7 +166,7 @@ impl ResolvedResource for BoardRes {
             .ok_or(ApiError::NotFound)?;
 
         let board = board_from(row);
-        let chain = build_board_chain(db, ws, board.project_id).await?;
+        let chain = build_board_chain(db, ws, board.id, board.project_id).await?;
         Ok((BoardRes(board), chain))
     }
 }
@@ -195,19 +195,20 @@ impl ResolvedResource for TaskRes {
             .ok_or(ApiError::NotFound)?;
 
         let task = task_from(row);
-        let chain = build_board_chain(db, ws, task.project_id).await?;
+        let chain = build_board_chain(db, ws, task.board_id, task.project_id).await?;
         Ok((TaskRes(task), chain))
     }
 }
 
 /// Builds the `board → project → workspace` permission chain for a board-scoped resource.
 ///
-/// The board itself is not a grant target in the current permission model; grants live on
-/// the project and workspace. This chain gives the resolver the project's visibility so
-/// workspace-level visibility grants propagate correctly.
+/// Chain order is most-specific-first: Board → Project → Workspace. The Board segment
+/// enables explicit board-level grants (`permission_grants.board_id`) to be resolved by
+/// the permission engine and the grant-loader SQL.
 pub async fn build_board_chain(
     db: &sea_orm::DatabaseConnection,
     ws: &Workspace,
+    board_id: atlas_domain::ids::BoardId,
     project_id: atlas_domain::ids::ProjectId,
 ) -> Result<ResourceChain, ApiError> {
     let repo = PgProjectRepo { conn: db.clone() };
@@ -220,6 +221,11 @@ pub async fn build_board_chain(
         })?;
 
     let mut segments = Vec::new();
+
+    segments.push(ChainSegment {
+        resource: ResourceRef::Board(board_id),
+        visibility: None,
+    });
 
     if let Some(p) = project {
         segments.push(ChainSegment {

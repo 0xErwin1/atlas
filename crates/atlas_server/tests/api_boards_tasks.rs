@@ -16,8 +16,13 @@ use atlas_api::dtos::{
     },
 };
 use atlas_client::ClientError;
-use atlas_domain::{Actor, WorkspaceCtx, entities::identity::MemberRole};
-use atlas_server::persistence::repos::{MembershipRepo, NewUser, UserRepo};
+use atlas_domain::{
+    Actor, WorkspaceCtx, entities::identity::MemberRole, entities::permissions::NewPermissionGrant,
+    ids::BoardId, permissions::ResourceRole,
+};
+use atlas_server::persistence::repos::{
+    MembershipRepo, NewUser, PermissionGrantRepo, PgPermissionGrantRepo, UserRepo,
+};
 
 fn project_req(slug: &str, prefix: &str) -> CreateProjectRequest {
     CreateProjectRequest {
@@ -1800,6 +1805,243 @@ async fn create_task_with_negative_estimate_returns_422() {
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 422),
         "negative estimate must return 422, got: {result:?}"
+    );
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
+// Board-level grant resolution (Fix 1: build_board_chain Board segment)
+// ---------------------------------------------------------------------------
+
+/// A board-scoped grant (permission_grants.board_id = board.id) must be honored by
+/// the permission engine: the grantee can read the board at the granted role.
+#[tokio::test]
+async fn board_scoped_grant_is_honored_by_resolution() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+
+    let (owner, ws, _) = support::login_user_with_workspace(&server, &db, "bgrant-owner").await;
+
+    // Private project: no membership-derived visibility, so a non-owner needs an
+    // explicit grant to access the board.
+    owner
+        .create_project(
+            &ws.slug,
+            CreateProjectRequest {
+                name: "Grant Test Project".to_string(),
+                slug: "bgrant-proj".to_string(),
+                task_prefix: "BGT".to_string(),
+                visibility: Some("private".to_string()),
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create project");
+
+    let board = owner
+        .create_board(
+            &ws.slug,
+            "bgrant-proj",
+            CreateBoardRequest {
+                name: "Board".to_string(),
+            },
+        )
+        .await
+        .expect("create board");
+
+    let (grantee, grantee_user) =
+        add_member(&db, &server, ws.id, "bgrant-grantee", MemberRole::Member).await;
+
+    // Before any grant: grantee cannot access the board (private project, no grants).
+    // Private resources use existence concealment, so the response is 404, not 403.
+    let before = grantee.get_board(&ws.slug, board.id).await;
+    assert!(
+        before.is_err(),
+        "grantee must be denied before any grant, got: {before:?}"
+    );
+
+    // Insert a board-scoped grant directly — no HTTP route exists for board grants yet.
+    let grant_repo = PgPermissionGrantRepo {
+        conn: db.conn().clone(),
+    };
+    grant_repo
+        .upsert(NewPermissionGrant {
+            workspace_id: ws.id,
+            user_id: Some(grantee_user.id),
+            api_key_id: None,
+            project_id: None,
+            folder_id: None,
+            document_id: None,
+            board_id: Some(BoardId(board.id)),
+            role: ResourceRole::Viewer,
+            created_by_user_id: None,
+            created_by_api_key_id: None,
+        })
+        .await
+        .expect("upsert board grant");
+
+    // After the board grant: the grantee can read the board.
+    let after = grantee.get_board(&ws.slug, board.id).await;
+    assert!(
+        after.is_ok(),
+        "board-scoped grant must be honored, got: {after:?}"
+    );
+
+    db.teardown().await;
+}
+
+/// A board-scoped grant also grants access to tasks on that board (TaskRes resolves
+/// through the same build_board_chain).
+#[tokio::test]
+async fn board_scoped_grant_grants_task_access() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+
+    let (owner, ws, _) =
+        support::login_user_with_workspace(&server, &db, "bgrant-task-owner").await;
+
+    owner
+        .create_project(
+            &ws.slug,
+            CreateProjectRequest {
+                name: "Task Grant Project".to_string(),
+                slug: "bgrant-task-proj".to_string(),
+                task_prefix: "BGK".to_string(),
+                visibility: Some("private".to_string()),
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create project");
+
+    let board = owner
+        .create_board(
+            &ws.slug,
+            "bgrant-task-proj",
+            CreateBoardRequest {
+                name: "Board".to_string(),
+            },
+        )
+        .await
+        .expect("create board");
+
+    let col = owner
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "Todo".to_string(),
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create column");
+
+    let task = owner
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: col.id,
+                title: "Task".to_string(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create task");
+
+    let (grantee, grantee_user) = add_member(
+        &db,
+        &server,
+        ws.id,
+        "bgrant-task-grantee",
+        MemberRole::Member,
+    )
+    .await;
+
+    // No grant yet: task is inaccessible on the private project (existence concealment → 404).
+    let before = grantee.get_task(&ws.slug, &task.readable_id).await;
+    assert!(
+        before.is_err(),
+        "task must be denied before board grant, got: {before:?}"
+    );
+
+    let grant_repo = PgPermissionGrantRepo {
+        conn: db.conn().clone(),
+    };
+    grant_repo
+        .upsert(NewPermissionGrant {
+            workspace_id: ws.id,
+            user_id: Some(grantee_user.id),
+            api_key_id: None,
+            project_id: None,
+            folder_id: None,
+            document_id: None,
+            board_id: Some(BoardId(board.id)),
+            role: ResourceRole::Viewer,
+            created_by_user_id: None,
+            created_by_api_key_id: None,
+        })
+        .await
+        .expect("upsert board grant");
+
+    // After the board grant: the task on that board becomes accessible.
+    let after = grantee.get_task(&ws.slug, &task.readable_id).await;
+    assert!(
+        after.is_ok(),
+        "board-scoped grant must propagate to tasks, got: {after:?}"
+    );
+
+    db.teardown().await;
+}
+
+/// Existing behavior is unchanged: a member without any grant on a private board
+/// is still denied (regression guard).
+#[tokio::test]
+async fn no_board_grant_remains_denied() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+
+    let (owner, ws, _) = support::login_user_with_workspace(&server, &db, "no-bgrant-owner").await;
+
+    owner
+        .create_project(
+            &ws.slug,
+            CreateProjectRequest {
+                name: "No Grant Project".to_string(),
+                slug: "no-bgrant-proj".to_string(),
+                task_prefix: "NBG".to_string(),
+                visibility: Some("private".to_string()),
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create project");
+
+    let board = owner
+        .create_board(
+            &ws.slug,
+            "no-bgrant-proj",
+            CreateBoardRequest {
+                name: "Board".to_string(),
+            },
+        )
+        .await
+        .expect("create board");
+
+    let (non_grantee, _) =
+        add_member(&db, &server, ws.id, "no-bgrant-member", MemberRole::Member).await;
+
+    // Private project: existence concealment → 404 for members without any grant.
+    let result = non_grantee.get_board(&ws.slug, board.id).await;
+    assert!(
+        result.is_err(),
+        "member without any grant must be denied on private board, got: {result:?}"
     );
 
     db.teardown().await;
