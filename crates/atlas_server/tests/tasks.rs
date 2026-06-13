@@ -8,6 +8,7 @@ use atlas_domain::permissions::{Visibility, VisibilityRole};
 use atlas_server::persistence::repos::{
     BoardRepo, PgBoardRepo, PgProjectRepo, PgTaskRepo, ProjectRepo, TaskRepo,
 };
+use sea_orm::TransactionTrait;
 
 fn make_board_repo(db: &support::TestDb) -> PgBoardRepo {
     PgBoardRepo::new(db.conn().clone())
@@ -272,6 +273,140 @@ async fn task_position_key_ordering() {
     assert!(
         task_b.position_key > task_a.position_key,
         "task B (after A) must have a larger position_key"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn move_to_single_update_succeeds_and_changes_column() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "move-task-user").await;
+    let ctx = support::ctx(&ws, &user);
+
+    let project = seed_project(&db, &ctx, "move-task", "MT").await;
+    let board = seed_board(&db, &ctx, project.id, "Main").await;
+
+    let col_a = seed_column(
+        &db,
+        &ctx,
+        board.id,
+        "Todo",
+        PositionBetween {
+            before: None,
+            after: None,
+        },
+    )
+    .await;
+    let col_b = seed_column(
+        &db,
+        &ctx,
+        board.id,
+        "Done",
+        PositionBetween {
+            before: Some(col_a.position_key.clone()),
+            after: None,
+        },
+    )
+    .await;
+
+    let task_repo = make_task_repo(&db);
+
+    let task = task_repo
+        .create(
+            &ctx,
+            NewTask {
+                project_id: project.id,
+                board_id: board.id,
+                column_id: col_a.id,
+                title: "T".into(),
+                description: String::new(),
+                priority: None,
+                due_date: None,
+                estimate: None,
+                labels: vec![],
+                properties: None,
+                position: PositionBetween {
+                    before: None,
+                    after: None,
+                },
+            },
+        )
+        .await
+        .expect("create task");
+
+    let moved = task_repo
+        .move_to(
+            &ctx,
+            task.id,
+            col_b.id,
+            PositionBetween {
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("move task");
+
+    assert_eq!(
+        moved.column_id, col_b.id,
+        "task must be in col_b after move"
+    );
+    assert_eq!(moved.id, task.id, "id must not change");
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn create_in_readable_id_counter_is_monotonic_in_outer_txn() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "create-in-user").await;
+    let ctx = support::ctx(&ws, &user);
+
+    let project = seed_project(&db, &ctx, "create-in", "CI").await;
+    let board = seed_board(&db, &ctx, project.id, "Main").await;
+    let col = seed_column(
+        &db,
+        &ctx,
+        board.id,
+        "Backlog",
+        PositionBetween {
+            before: None,
+            after: None,
+        },
+    )
+    .await;
+
+    let txn = db.conn().begin().await.expect("begin outer txn");
+
+    let task = PgTaskRepo::create_in(
+        &txn,
+        &ctx,
+        NewTask {
+            project_id: project.id,
+            board_id: board.id,
+            column_id: col.id,
+            title: "Inner".into(),
+            description: String::new(),
+            priority: None,
+            due_date: None,
+            estimate: None,
+            labels: vec![],
+            properties: None,
+            position: PositionBetween {
+                before: None,
+                after: None,
+            },
+        },
+    )
+    .await
+    .expect("create_in");
+
+    txn.commit().await.expect("commit outer txn");
+
+    assert_eq!(
+        task.readable_id, "CI-1",
+        "first task in outer txn must be CI-1"
     );
 
     db.teardown().await;

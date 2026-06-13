@@ -1,13 +1,21 @@
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
 
 mod support;
 
 use atlas_domain::{
-    entities::boards_tasks::NewBoard,
+    entities::boards_tasks::{NewBoard, PositionBetween},
     entities::workspace_core::NewProject,
     permissions::{Visibility, VisibilityRole},
 };
-use atlas_server::persistence::repos::{BoardRepo, PgBoardRepo, PgProjectRepo, ProjectRepo};
+use atlas_server::persistence::repos::{
+    BoardRepo, PgBoardRepo, PgProjectRepo, ProjectRepo, resequence_column,
+};
+use sea_orm::TransactionTrait;
 
 async fn make_project(
     db: &support::TestDb,
@@ -89,6 +97,87 @@ async fn list_boards_is_scoped_to_project() {
         boards_b.iter().all(|b| b.project_id == proj_b.id),
         "all boards from list_boards(proj_b) must belong to proj_b"
     );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn resequence_column_reorders_existing_keys() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "resequence-user").await;
+    let ctx = support::ctx(&ws, &user);
+
+    let proj = make_project(&db, &ctx, "resequence-proj", "RS").await;
+    let board_repo = PgBoardRepo::new(db.conn().clone());
+
+    let board = board_repo
+        .create_board(
+            &ctx,
+            NewBoard {
+                project_id: proj.id,
+                name: "B".into(),
+            },
+        )
+        .await
+        .expect("create board");
+
+    // Create three columns in order.
+    let col_a = board_repo
+        .add_column(
+            &ctx,
+            board.id,
+            "A".into(),
+            PositionBetween {
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("col A");
+    let col_b = board_repo
+        .add_column(
+            &ctx,
+            board.id,
+            "B".into(),
+            PositionBetween {
+                before: Some(col_a.position_key.clone()),
+                after: None,
+            },
+        )
+        .await
+        .expect("col B");
+    let col_c = board_repo
+        .add_column(
+            &ctx,
+            board.id,
+            "C".into(),
+            PositionBetween {
+                before: Some(col_b.position_key.clone()),
+                after: None,
+            },
+        )
+        .await
+        .expect("col C");
+
+    // Resequence the column.
+    let txn = db.conn().begin().await.expect("begin txn");
+    resequence_column(&txn, &ctx, board.id)
+        .await
+        .expect("resequence");
+    txn.commit().await.expect("commit");
+
+    // After resequencing, list_columns must still return A < B < C by position.
+    let cols = board_repo
+        .list_columns(&ctx, board.id)
+        .await
+        .expect("list columns");
+
+    assert_eq!(cols.len(), 3);
+    assert_eq!(cols[0].id, col_a.id, "A must be first");
+    assert_eq!(cols[1].id, col_b.id, "B must be second");
+    assert_eq!(cols[2].id, col_c.id, "C must be third");
+    assert!(cols[0].position_key < cols[1].position_key, "A < B");
+    assert!(cols[1].position_key < cols[2].position_key, "B < C");
 
     db.teardown().await;
 }

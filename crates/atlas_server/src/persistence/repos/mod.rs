@@ -19,7 +19,9 @@ pub use identity::{
 
 pub use attachment_store::DiskAttachmentStore;
 pub use boards_tasks::{
-    BoardRepo, PgBoardRepo, PgTaskReferenceRepo, PgTaskRepo, TaskReferenceRepo, TaskRepo,
+    BoardRepo, PgBoardRepo, PgTaskActivityRepo, PgTaskAssigneeRepo, PgTaskChecklistRepo,
+    PgTaskReferenceRepo, PgTaskRepo, TaskActivityRepo, TaskAssigneeRepo, TaskChecklistRepo,
+    TaskReferenceRepo, TaskRepo, resequence_column,
 };
 pub use documents::{
     AttachmentRepo, DocumentLinkRepo, DocumentRepo, PgAttachmentRepo, PgDocumentLinkRepo,
