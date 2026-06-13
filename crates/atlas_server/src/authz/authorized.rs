@@ -11,7 +11,7 @@ use atlas_domain::{
     entities::documents::Document,
     entities::identity::Workspace,
     entities::workspace_core::Project,
-    ids::{DocumentId, UserId},
+    ids::{DocumentId, FolderId, UserId},
     permissions::{
         ChainSegment, Principal, ResolutionInput, ResourceChain, ResourceRef, ResourceRole,
         Visibility,
@@ -23,7 +23,10 @@ use crate::{
     auth::middleware::Principal as MiddlewarePrincipal,
     error::ApiError,
     persistence::{
-        entities::documents::{document, document_from},
+        entities::{
+            documents::{document, document_from},
+            workspace_core::folder,
+        },
         repos::{
             ApiKeyRepo, MembershipRepo, PermissionGrantRepo, PgApiKeyRepo, PgMembershipRepo,
             PgPermissionGrantRepo, PgProjectRepo, PgUserRepo, PgWorkspaceRepo, ProjectRepo,
@@ -160,7 +163,27 @@ impl ResolvedResource for DocumentRes {
             visibility: None,
         });
 
-        if let Some(project_id) = doc.project_id {
+        // Walk folder ancestry most-specific-first, bounded to guard against cycles.
+        let mut inherited_project_id = None;
+        if let Some(leaf_folder_id) = doc.folder_id {
+            let folder_ancestors = resolve_folder_ancestry(db, ws.id, leaf_folder_id).await?;
+
+            // The last folder in the ancestry list carries the project_id that should
+            // act as the document's project when the document itself has no project_id.
+            if let Some(root) = folder_ancestors.last() {
+                inherited_project_id = root.project_id;
+            }
+
+            for f in folder_ancestors {
+                segments.push(ChainSegment {
+                    resource: ResourceRef::Folder(f.id),
+                    visibility: None,
+                });
+            }
+        }
+
+        let effective_project_id = doc.project_id.or(inherited_project_id);
+        if let Some(project_id) = effective_project_id {
             let repo = PgProjectRepo { conn: db.clone() };
             let ctx =
                 atlas_domain::WorkspaceCtx::new(ws.id, atlas_domain::Actor::User(UserId::new()));
@@ -187,6 +210,49 @@ impl ResolvedResource for DocumentRes {
         let chain = ResourceChain { segments };
         Ok((DocumentRes(doc), chain))
     }
+}
+
+/// Walks the folder hierarchy from `leaf_id` upward, returning folders in
+/// most-specific-first order (leaf → root). Bounded at 32 levels to guard
+/// against cycles or pathologically deep trees.
+async fn resolve_folder_ancestry(
+    db: &sea_orm::DatabaseConnection,
+    workspace_id: atlas_domain::ids::WorkspaceId,
+    leaf_id: FolderId,
+) -> Result<Vec<atlas_domain::entities::workspace_core::Folder>, ApiError> {
+    use crate::persistence::entities::workspace_core::folder_from;
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+
+    const MAX_DEPTH: usize = 32;
+
+    let mut ancestry: Vec<atlas_domain::entities::workspace_core::Folder> = Vec::new();
+    let mut current_id = Some(leaf_id);
+
+    while let Some(fid) = current_id {
+        if ancestry.len() >= MAX_DEPTH {
+            break;
+        }
+
+        let row = folder::Entity::find_by_id(fid.0)
+            .filter(folder::Column::WorkspaceId.eq(workspace_id.0))
+            .filter(folder::Column::DeletedAt.is_null())
+            .one(db)
+            .await
+            .map_err(|e| ApiError::Internal {
+                message: e.to_string(),
+            })?;
+
+        match row {
+            None => break,
+            Some(m) => {
+                let f = folder_from(m);
+                current_id = f.parent_folder_id;
+                ancestry.push(f);
+            }
+        }
+    }
+
+    Ok(ancestry)
 }
 
 fn project_visibility(vis: &atlas_domain::permissions::Visibility) -> Visibility {
@@ -361,15 +427,17 @@ fn build_resolution_query(
     };
 
     let mut chain_projects = Vec::new();
+    let mut chain_folders = Vec::new();
     let mut doc_id = None;
     let mut board_id = None;
 
     for seg in &chain.segments {
         match &seg.resource {
             ResourceRef::Project(pid) => chain_projects.push(pid.0),
+            ResourceRef::Folder(fid) => chain_folders.push(fid.0),
             ResourceRef::Document(did) => doc_id = Some(did.0),
             ResourceRef::Board(bid) => board_id = Some(bid.0),
-            _ => {}
+            ResourceRef::Workspace => {}
         }
     }
 
@@ -378,7 +446,7 @@ fn build_resolution_query(
         user_id,
         api_key_id,
         chain_projects,
-        chain_folders: Vec::new(),
+        chain_folders,
         doc_id,
         board_id,
     }
