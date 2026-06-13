@@ -20,7 +20,8 @@ async fn attachments_field_is_arc_attachment_store() {
     let state = AppState::for_test(db.conn().clone())
         .await
         .expect("for_test");
-    let result = state.attachments.exists("nonexistent-digest").await;
+    let absent_digest = "0".repeat(64);
+    let result = state.attachments.exists(&absent_digest).await;
     assert!(result.is_ok(), "exists() on empty store must not error");
     assert!(
         !result.expect("exists"),
