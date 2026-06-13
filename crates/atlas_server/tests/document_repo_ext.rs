@@ -361,6 +361,54 @@ async fn list_visible_excludes_doc_when_no_grant_for_non_member() {
     db.teardown().await;
 }
 
+#[tokio::test]
+async fn list_visible_terminates_on_folder_cycle() {
+    use sea_orm::{ConnectionTrait, Statement};
+
+    let db = support::TestDb::create().await.expect("TestDb");
+    let (ws, owner) = support::seed_workspace(&db, "lv-folder-cycle").await;
+    let repo = make_doc_repo(&db);
+
+    let folder_a = create_folder(&db, &ws, &owner, None, None).await;
+    let folder_b = create_folder(&db, &ws, &owner, None, Some(folder_a.id)).await;
+
+    let doc = create_doc_in_folder(&repo, &ws, &owner, "In Cycle", Some(folder_b.id), None).await;
+
+    // Force a parent cycle A -> B -> A. No HTTP route can create this; the
+    // folder-ancestry CTE in list_visible must still terminate.
+    db.conn()
+        .execute_raw(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "UPDATE folders SET parent_folder_id = $1 WHERE id = $2",
+            [folder_b.id.0.into(), folder_a.id.0.into()],
+        ))
+        .await
+        .expect("induce folder cycle");
+
+    let key_id = create_api_key(&db, &ws, &owner).await;
+    grant_to_api_key(&db, &ws, key_id, None, Some(folder_a.id)).await;
+
+    let ctx = support::ctx(&ws, &owner);
+    let principal = Principal::ApiKey(key_id);
+
+    let docs = tokio::time::timeout(
+        std::time::Duration::from_secs(15),
+        repo.list_visible(&ctx, &principal, None, 10),
+    )
+    .await
+    .expect("list_visible must not hang on a folder cycle")
+    .expect("list_visible");
+
+    assert_eq!(
+        docs.len(),
+        1,
+        "folder-scope grant must still reveal the doc despite the cycle"
+    );
+    assert_eq!(docs[0].id, doc.id);
+
+    db.teardown().await;
+}
+
 // --- find_by_slug ---
 
 #[tokio::test]

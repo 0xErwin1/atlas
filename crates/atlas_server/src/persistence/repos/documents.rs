@@ -200,15 +200,19 @@ impl DocumentRepo for PgDocumentRepo {
                     )
                     OR EXISTS (
                         WITH RECURSIVE ancestors AS (
-                            SELECT f.id, f.parent_folder_id, f.project_id
+                            SELECT f.id, f.parent_folder_id, f.project_id,
+                                   ARRAY[f.id] AS path, 1 AS depth
                             FROM folders f
                             WHERE f.id = d.folder_id
                               AND f.workspace_id = $1
                             UNION ALL
-                            SELECT pf.id, pf.parent_folder_id, pf.project_id
+                            SELECT pf.id, pf.parent_folder_id, pf.project_id,
+                                   a.path || pf.id, a.depth + 1
                             FROM folders pf
                             JOIN ancestors a ON pf.id = a.parent_folder_id
                             WHERE pf.workspace_id = $1
+                              AND NOT pf.id = ANY(a.path)
+                              AND a.depth < 32
                         )
                         SELECT 1 FROM permission_grants pg
                         WHERE pg.workspace_id = $1
