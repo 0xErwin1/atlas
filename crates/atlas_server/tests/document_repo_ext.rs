@@ -182,7 +182,7 @@ async fn find_by_slug_is_cross_tenant_safe() {
 // --- rename ---
 
 #[tokio::test]
-async fn rename_updates_title_and_slug() {
+async fn rename_updates_title_but_preserves_slug() {
     let db = support::TestDb::create().await.expect("TestDb");
     let (ws, user) = support::seed_workspace(&db, "rename-basic").await;
     let repo = make_doc_repo(&db);
@@ -196,13 +196,17 @@ async fn rename_updates_title_and_slug() {
         .expect("rename");
 
     assert_eq!(renamed.title, "New Title");
-    assert_eq!(renamed.slug, Some("new-title".to_string()));
+    assert_eq!(
+        renamed.slug,
+        Some("old-title".to_string()),
+        "slug must be stable across title renames"
+    );
 
     db.teardown().await;
 }
 
 #[tokio::test]
-async fn rename_stable_slug_collision_appends_suffix() {
+async fn rename_to_colliding_title_preserves_slug() {
     let db = support::TestDb::create().await.expect("TestDb");
     let (ws, user) = support::seed_workspace(&db, "rename-collision").await;
     let repo = make_doc_repo(&db);
@@ -214,13 +218,13 @@ async fn rename_stable_slug_collision_appends_suffix() {
     let renamed = repo
         .rename(&ctx, doc2.id, "Already Exists".to_string())
         .await
-        .expect("rename with collision");
+        .expect("rename with colliding title");
 
     assert_eq!(renamed.title, "Already Exists");
     assert_eq!(
         renamed.slug,
-        Some("already-exists-2".to_string()),
-        "collision must add suffix"
+        Some("different".to_string()),
+        "slug must remain the original slug even when the title would collide"
     );
 
     db.teardown().await;

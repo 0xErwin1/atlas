@@ -7,9 +7,7 @@ use atlas_domain::{
     },
     ids::{AttachmentId, DocumentId, FolderId, ProjectId, RevisionId},
     permissions::Principal,
-    resolve_collision,
     revision::{create_revision_patch, is_anchor_seq, reconstruct},
-    slugify,
 };
 use chrono::Utc;
 use sea_orm::{
@@ -272,19 +270,8 @@ impl DocumentRepo for PgDocumentRepo {
                 id: id.0,
             })?;
 
-        let base_slug = slugify(&new_title);
-
-        // Collect existing slugs in the workspace to resolve collisions.
-        let existing_slugs = collect_existing_slugs(&txn, ctx.workspace_id.0, id.0)
-            .await
-            .map_err(db_err)?;
-
-        let taken: Vec<&str> = existing_slugs.iter().map(String::as_str).collect();
-        let new_slug = resolve_collision(&base_slug, &taken);
-
         let mut active = row.into_active_model();
         active.title = Set(new_title.clone());
-        active.slug = Set(Some(new_slug));
         active.updated_at = Set(Utc::now());
         let updated = active.update(&txn).await.map_err(db_err)?;
 
@@ -704,29 +691,6 @@ impl AttachmentRepo for PgAttachmentRepo {
         active.update(&self.conn).await.map_err(db_err)?;
         Ok(())
     }
-}
-
-async fn collect_existing_slugs(
-    conn: &impl sea_orm::ConnectionTrait,
-    workspace_id: Uuid,
-    exclude_id: Uuid,
-) -> Result<Vec<String>, sea_orm::DbErr> {
-    use sea_orm::FromQueryResult;
-
-    #[derive(FromQueryResult)]
-    struct SlugRow {
-        slug: String,
-    }
-
-    let rows = SlugRow::find_by_statement(sea_orm::Statement::from_sql_and_values(
-        sea_orm::DatabaseBackend::Postgres,
-        "SELECT slug FROM documents WHERE workspace_id = $1 AND id != $2 AND deleted_at IS NULL AND slug IS NOT NULL",
-        [workspace_id.into(), exclude_id.into()],
-    ))
-    .all(conn)
-    .await?;
-
-    Ok(rows.into_iter().map(|r| r.slug).collect())
 }
 
 async fn update_backlink_titles(
