@@ -9,9 +9,11 @@ pub mod permissions;
 pub mod ports;
 pub mod position;
 pub mod revision;
+pub mod slug;
 pub mod wikilink;
 
 pub use frontmatter::{parse_frontmatter_yaml, strip_frontmatter};
+pub use slug::{resolve_collision, slugify};
 pub use wikilink::parse_wikilinks;
 
 pub use actor::{Actor, WorkspaceCtx};
