@@ -123,6 +123,7 @@ pub fn document_from(m: document::Model) -> Result<Document, String> {
         project_id: m.project_id.map(ProjectId),
         folder_id: m.folder_id.map(FolderId),
         title: m.title,
+        slug: m.slug,
         content: m.content,
         frontmatter: m.frontmatter,
         current_revision_id: RevisionId(current_revision_id),
@@ -146,9 +147,12 @@ pub fn document_summary_from(m: document::Model) -> Result<DocumentSummary, Stri
         project_id: m.project_id.map(ProjectId),
         folder_id: m.folder_id.map(FolderId),
         title: m.title,
+        slug: m.slug,
         frontmatter: m.frontmatter,
         current_revision_id: RevisionId(current_revision_id),
         current_revision_seq: m.current_revision_seq,
+        created_by_user_id: m.created_by_user_id.map(UserId),
+        created_by_api_key_id: m.created_by_api_key_id.map(ApiKeyId),
         created_at: m.created_at,
         updated_at: m.updated_at,
     })
@@ -164,6 +168,7 @@ pub fn revision_from(m: document_revision::Model) -> DocumentRevision {
         snapshot: m.snapshot,
         is_anchor: m.is_anchor,
         created_by_user_id: m.created_by_user_id.map(UserId),
+        created_by_api_key_id: m.created_by_api_key_id.map(ApiKeyId),
         created_at: m.created_at,
     }
 }
@@ -173,6 +178,8 @@ pub fn revision_meta_from(m: document_revision::Model) -> RevisionMeta {
         id: RevisionId(m.id),
         seq: m.seq,
         is_anchor: m.is_anchor,
+        created_by_user_id: m.created_by_user_id.map(UserId),
+        created_by_api_key_id: m.created_by_api_key_id.map(ApiKeyId),
         created_at: m.created_at,
     }
 }
@@ -203,5 +210,85 @@ pub fn attachment_from(m: attachment::Model) -> Attachment {
         created_at: m.created_at,
         updated_at: m.updated_at,
         deleted_at: m.deleted_at,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+    use uuid::Uuid;
+
+    fn rev_id() -> Uuid {
+        Uuid::now_v7()
+    }
+
+    fn base_doc_model(rev: Uuid) -> document::Model {
+        document::Model {
+            id: Uuid::now_v7(),
+            workspace_id: Uuid::now_v7(),
+            project_id: None,
+            folder_id: None,
+            title: "Test".into(),
+            slug: Some("test".into()),
+            content: "body".into(),
+            frontmatter: serde_json::json!({}),
+            current_revision_id: Some(rev),
+            current_revision_seq: 1,
+            created_by_user_id: Some(Uuid::now_v7()),
+            created_by_api_key_id: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            deleted_at: None,
+        }
+    }
+
+    #[test]
+    fn document_from_roundtrips_slug() {
+        let rev = rev_id();
+        let m = base_doc_model(rev);
+        let slug = m.slug.clone();
+
+        let doc = document_from(m).expect("document_from must succeed");
+
+        assert_eq!(doc.slug, slug);
+    }
+
+    #[test]
+    fn document_from_roundtrips_created_by_api_key_id() {
+        let rev = rev_id();
+        let key_id = Uuid::now_v7();
+        let mut m = base_doc_model(rev);
+        m.created_by_user_id = None;
+        m.created_by_api_key_id = Some(key_id);
+
+        let doc = document_from(m).expect("document_from must succeed");
+
+        assert_eq!(doc.created_by_api_key_id.map(|k| k.0), Some(key_id));
+        assert!(doc.created_by_user_id.is_none());
+    }
+
+    #[test]
+    fn revision_meta_from_carries_actor_ids() {
+        let key_uuid = Uuid::now_v7();
+        let rev_model = document_revision::Model {
+            id: Uuid::now_v7(),
+            workspace_id: Uuid::now_v7(),
+            document_id: Uuid::now_v7(),
+            seq: 3,
+            patch: Some("patch".into()),
+            snapshot: None,
+            is_anchor: false,
+            created_by_user_id: None,
+            created_by_api_key_id: Some(key_uuid),
+            created_at: Utc::now(),
+        };
+
+        let meta = revision_meta_from(rev_model.clone());
+
+        assert_eq!(meta.id.0, rev_model.id);
+        assert_eq!(meta.seq, 3);
+        assert_eq!(meta.created_by_api_key_id.map(|k| k.0), Some(key_uuid));
+        assert!(meta.created_by_user_id.is_none());
     }
 }

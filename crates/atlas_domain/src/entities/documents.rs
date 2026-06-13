@@ -11,6 +11,7 @@ pub struct Document {
     pub project_id: Option<ProjectId>,
     pub folder_id: Option<FolderId>,
     pub title: String,
+    pub slug: Option<String>,
     pub content: String,
     pub frontmatter: serde_json::Value,
     pub current_revision_id: RevisionId,
@@ -29,9 +30,12 @@ pub struct DocumentSummary {
     pub project_id: Option<ProjectId>,
     pub folder_id: Option<FolderId>,
     pub title: String,
+    pub slug: Option<String>,
     pub frontmatter: serde_json::Value,
     pub current_revision_id: RevisionId,
     pub current_revision_seq: i64,
+    pub created_by_user_id: Option<UserId>,
+    pub created_by_api_key_id: Option<ApiKeyId>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -62,6 +66,7 @@ pub struct DocumentRevision {
     pub snapshot: Option<String>,
     pub is_anchor: bool,
     pub created_by_user_id: Option<UserId>,
+    pub created_by_api_key_id: Option<ApiKeyId>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -70,6 +75,8 @@ pub struct RevisionMeta {
     pub id: RevisionId,
     pub seq: i64,
     pub is_anchor: bool,
+    pub created_by_user_id: Option<UserId>,
+    pub created_by_api_key_id: Option<ApiKeyId>,
     pub created_at: DateTime<Utc>,
 }
 
