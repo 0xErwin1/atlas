@@ -28,7 +28,7 @@ use atlas_domain::{
 
 use crate::{
     authz::{
-        Authorized, EditorMin, MinRole, ViewerMin, WorkspaceMember,
+        Authorized, EditorMin, MinRole, ViewerMin, WorkspaceMember, authorize_folder_destination,
         authorized::{DocumentSlugRes, ProjectRes},
     },
     error::ApiError,
@@ -262,6 +262,18 @@ pub(crate) async fn update_document(
     };
 
     let doc = if body.folder_id.is_some() {
+        if let Some(fid) = body.folder_id {
+            authorize_folder_destination(
+                &state.db,
+                &auth.principal,
+                auth.membership.clone(),
+                &auth.workspace,
+                FolderId(fid),
+                EditorMin::ROLE,
+            )
+            .await?;
+        }
+
         let folder_id = body.folder_id.map(FolderId);
         doc_repo
             .move_to(&ctx, doc.id, folder_id, doc.project_id)
@@ -913,6 +925,18 @@ pub(crate) async fn move_document(
     let doc = auth.resource.0;
     let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
     let doc_repo = PgDocumentRepo::new((*state.db).clone(), state.anchor_interval);
+
+    if let Some(fid) = body.folder_id {
+        authorize_folder_destination(
+            &state.db,
+            &auth.principal,
+            auth.membership.clone(),
+            &auth.workspace,
+            FolderId(fid),
+            EditorMin::ROLE,
+        )
+        .await?;
+    }
 
     let folder_id = body.folder_id.map(FolderId);
     doc_repo

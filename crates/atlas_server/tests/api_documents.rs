@@ -1219,6 +1219,161 @@ async fn move_into_folder_adopts_folder_project() {
     db.teardown().await;
 }
 
+#[tokio::test]
+async fn move_into_other_project_folder_without_access_is_rejected() {
+    use atlas_domain::ids::ProjectId;
+    use atlas_domain::permissions::ResourceRole;
+
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (owner, ws, owner_user) =
+        support::login_user_with_workspace(&server, &db, "doc-mv-idor-owner").await;
+
+    let project_a = owner
+        .create_project(
+            &ws.slug,
+            atlas_api::dtos::CreateProjectRequest {
+                name: "Proj A".to_string(),
+                slug: "mv-idor-a".to_string(),
+                task_prefix: "MIA".to_string(),
+                visibility: Some("private".to_string()),
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create project a");
+
+    let project_b = owner
+        .create_project(
+            &ws.slug,
+            atlas_api::dtos::CreateProjectRequest {
+                name: "Proj B".to_string(),
+                slug: "mv-idor-b".to_string(),
+                task_prefix: "MIB".to_string(),
+                visibility: Some("private".to_string()),
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create project b");
+
+    let doc = owner
+        .create_document(&ws.slug, &project_a.slug, doc_req("Doc In A"))
+        .await
+        .expect("create document in a");
+
+    let folder_b = db
+        .folder_repo()
+        .create(
+            &WorkspaceCtx::new(ws.id, Actor::User(owner_user.id)),
+            atlas_domain::entities::workspace_core::NewFolder {
+                project_id: Some(ProjectId(project_b.id)),
+                parent_folder_id: None,
+                name: "folder-in-b".to_string(),
+            },
+        )
+        .await
+        .expect("create folder in b");
+
+    let bob = member_client_with_optional_project_grant(
+        &server,
+        &db,
+        &ws,
+        "doc-mv-idor-bob",
+        Some(ProjectId(project_a.id)),
+        Some(ResourceRole::Editor),
+    )
+    .await;
+
+    let slug = doc.slug.as_deref().expect("slug");
+    let result = bob
+        .move_document(
+            &ws.slug,
+            slug,
+            MoveDocumentRequest {
+                folder_id: Some(folder_b.id.0),
+            },
+        )
+        .await;
+
+    assert!(
+        matches!(result, Err(ClientError::Api(ref p)) if p.status == 403 || p.status == 404),
+        "editor on project A must not move the doc into project B's folder, got: {result:?}"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn move_within_authorized_project_folder_succeeds() {
+    use atlas_domain::ids::ProjectId;
+    use atlas_domain::permissions::ResourceRole;
+
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (owner, ws, owner_user) =
+        support::login_user_with_workspace(&server, &db, "doc-mv-ok-owner").await;
+
+    let project_a = owner
+        .create_project(
+            &ws.slug,
+            atlas_api::dtos::CreateProjectRequest {
+                name: "Proj A".to_string(),
+                slug: "mv-ok-a".to_string(),
+                task_prefix: "MOA".to_string(),
+                visibility: Some("private".to_string()),
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create project a");
+
+    let doc = owner
+        .create_document(&ws.slug, &project_a.slug, doc_req("Doc In A OK"))
+        .await
+        .expect("create document in a");
+
+    let folder_a = db
+        .folder_repo()
+        .create(
+            &WorkspaceCtx::new(ws.id, Actor::User(owner_user.id)),
+            atlas_domain::entities::workspace_core::NewFolder {
+                project_id: Some(ProjectId(project_a.id)),
+                parent_folder_id: None,
+                name: "folder-in-a".to_string(),
+            },
+        )
+        .await
+        .expect("create folder in a");
+
+    let bob = member_client_with_optional_project_grant(
+        &server,
+        &db,
+        &ws,
+        "doc-mv-ok-bob",
+        Some(ProjectId(project_a.id)),
+        Some(ResourceRole::Editor),
+    )
+    .await;
+
+    let slug = doc.slug.as_deref().expect("slug");
+    let moved = bob
+        .move_document(
+            &ws.slug,
+            slug,
+            MoveDocumentRequest {
+                folder_id: Some(folder_a.id.0),
+            },
+        )
+        .await
+        .expect("move within authorized project must succeed");
+
+    assert_eq!(moved.folder_id, Some(folder_a.id.0));
+    assert_eq!(moved.project_id, Some(project_a.id));
+
+    db.teardown().await;
+}
+
 // ---- Permissions -----------------------------------------------------------
 
 #[tokio::test]

@@ -418,6 +418,72 @@ async fn resolve_folder_ancestry(
     Ok(ancestry)
 }
 
+/// Authorizes `principal` for at least `min` on the destination `folder`'s
+/// permission chain (folder ancestry → project → workspace). Used by document
+/// move to prevent relocating a document into a folder the caller cannot edit.
+/// Rejects with NotFound when the folder is absent from the workspace or the
+/// principal lacks the role, to avoid disclosing the folder's existence.
+pub async fn authorize_folder_destination(
+    db: &sea_orm::DatabaseConnection,
+    principal: &Principal,
+    membership: Option<atlas_domain::entities::identity::MemberRole>,
+    workspace: &Workspace,
+    folder_id: FolderId,
+    min: ResourceRole,
+) -> Result<(), ApiError> {
+    let ancestry = resolve_folder_ancestry(db, workspace.id, folder_id).await?;
+
+    if ancestry.is_empty() {
+        return Err(ApiError::NotFound);
+    }
+
+    let mut segments = Vec::new();
+
+    for f in &ancestry {
+        segments.push(ChainSegment {
+            resource: ResourceRef::Folder(f.id),
+            visibility: None,
+        });
+    }
+
+    let effective_project_id = ancestry.last().and_then(|f| f.project_id);
+    if let Some(project_id) = effective_project_id {
+        let repo = PgProjectRepo { conn: db.clone() };
+        let ctx =
+            atlas_domain::WorkspaceCtx::new(workspace.id, atlas_domain::Actor::User(UserId::new()));
+        let project = repo
+            .find(&ctx, project_id)
+            .await
+            .map_err(|e| ApiError::Internal {
+                message: e.to_string(),
+            })?;
+
+        if let Some(p) = project {
+            segments.push(ChainSegment {
+                resource: ResourceRef::Project(project_id),
+                visibility: Some(project_visibility(&p.visibility)),
+            });
+        }
+    }
+
+    segments.push(ChainSegment {
+        resource: ResourceRef::Workspace,
+        visibility: None,
+    });
+
+    let chain = ResourceChain { segments };
+
+    let effective = resolve_effective_role(db, principal, membership, workspace, &chain)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+
+    if effective < min {
+        return Err(ApiError::NotFound);
+    }
+
+    Ok(())
+}
+
 fn project_visibility(vis: &atlas_domain::permissions::Visibility) -> Visibility {
     vis.clone()
 }
@@ -428,6 +494,7 @@ pub struct Authorized<R: ResolvedResource, M: MinRole> {
     pub workspace: Workspace,
     pub resource: R,
     pub effective: ResourceRole,
+    pub membership: Option<atlas_domain::entities::identity::MemberRole>,
     _min: PhantomData<M>,
 }
 
@@ -542,7 +609,7 @@ where
         let effective = resolve_effective_role(
             &state.db,
             &domain_principal,
-            membership_role,
+            membership_role.clone(),
             &workspace,
             &chain,
         )
@@ -560,6 +627,7 @@ where
             workspace,
             resource,
             effective,
+            membership: membership_role,
             _min: PhantomData,
         })
     }
