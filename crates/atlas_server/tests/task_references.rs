@@ -217,6 +217,43 @@ async fn reference_to_missing_target_task_returns_not_found() {
 }
 
 #[tokio::test]
+async fn self_reference_is_rejected() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "ref-self-user").await;
+    let ctx = support::ctx(&ws, &user);
+
+    let (_, _, task_a) = seed_project_board_task(&db, &ctx, "ref-self", "RSF").await;
+
+    let ref_repo = PgTaskReferenceRepo::new(db.conn().clone());
+
+    let result = ref_repo
+        .create(
+            &ctx,
+            NewTaskReference {
+                source_task_id: task_a.id,
+                kind: ReferenceKind::Parent,
+                target_task_id: Some(task_a.id),
+                target_document_id: None,
+            },
+        )
+        .await;
+
+    assert!(result.is_err(), "a task may not reference itself");
+
+    match result.unwrap_err() {
+        DomainError::InvalidInput { message } => {
+            assert!(
+                message.contains("itself"),
+                "error must mention 'itself'; got: {message}"
+            );
+        }
+        other => panic!("expected InvalidInput, got: {other:?}"),
+    }
+
+    db.teardown().await;
+}
+
+#[tokio::test]
 async fn spec_reference_with_task_id_is_rejected() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let (ws, user) = support::seed_workspace(&db, "ref-spec-bad-user").await;

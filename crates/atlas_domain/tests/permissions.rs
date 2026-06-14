@@ -385,56 +385,81 @@ fn insufficient_role_to_share_below_editor() {
 
 #[test]
 fn blocks_with_task_id_is_valid() {
-    let tid = TaskId::new();
-    let result = validate_reference(ReferenceKind::Blocks, Some(tid), None);
+    let source = TaskId::new();
+    let target = TaskId::new();
+    let result = validate_reference(source, ReferenceKind::Blocks, Some(target), None);
     assert!(result.is_ok());
 }
 
 #[test]
 fn spec_with_document_id_is_valid() {
+    let source = TaskId::new();
     let did = DocumentId::new();
-    let result = validate_reference(ReferenceKind::Spec, None, Some(did));
+    let result = validate_reference(source, ReferenceKind::Spec, None, Some(did));
     assert!(result.is_ok());
 }
 
 #[test]
 fn blocks_with_document_id_is_invalid() {
+    let source = TaskId::new();
     let did = DocumentId::new();
-    let result = validate_reference(ReferenceKind::Blocks, None, Some(did));
+    let result = validate_reference(source, ReferenceKind::Blocks, None, Some(did));
     assert!(matches!(result, Err(DomainError::InvalidInput { .. })));
 }
 
 #[test]
 fn spec_with_task_id_is_invalid() {
+    let source = TaskId::new();
     let tid = TaskId::new();
-    let result = validate_reference(ReferenceKind::Spec, Some(tid), None);
+    let result = validate_reference(source, ReferenceKind::Spec, Some(tid), None);
     assert!(matches!(result, Err(DomainError::InvalidInput { .. })));
 }
 
 #[test]
 fn both_targets_is_invalid() {
+    let source = TaskId::new();
     let tid = TaskId::new();
     let did = DocumentId::new();
-    let result = validate_reference(ReferenceKind::Blocks, Some(tid), Some(did));
+    let result = validate_reference(source, ReferenceKind::Blocks, Some(tid), Some(did));
     assert!(matches!(result, Err(DomainError::InvalidInput { .. })));
 }
 
 #[test]
 fn neither_target_is_invalid() {
-    let result = validate_reference(ReferenceKind::Relates, None, None);
+    let source = TaskId::new();
+    let result = validate_reference(source, ReferenceKind::Relates, None, None);
     assert!(matches!(result, Err(DomainError::InvalidInput { .. })));
 }
 
 #[test]
 fn relates_with_task_id_is_valid() {
-    let tid = TaskId::new();
-    let result = validate_reference(ReferenceKind::Relates, Some(tid), None);
+    let source = TaskId::new();
+    let target = TaskId::new();
+    let result = validate_reference(source, ReferenceKind::Relates, Some(target), None);
     assert!(result.is_ok());
 }
 
 #[test]
 fn parent_with_task_id_is_valid() {
-    let tid = TaskId::new();
-    let result = validate_reference(ReferenceKind::Parent, Some(tid), None);
+    let source = TaskId::new();
+    let target = TaskId::new();
+    let result = validate_reference(source, ReferenceKind::Parent, Some(target), None);
     assert!(result.is_ok());
+}
+
+#[test]
+fn self_referencing_parent_is_rejected() {
+    let tid = TaskId::new();
+    let result = validate_reference(tid, ReferenceKind::Parent, Some(tid), None);
+    assert!(
+        matches!(result, Err(DomainError::InvalidInput { .. })),
+        "a task may not reference itself"
+    );
+}
+
+#[test]
+fn self_referencing_blocks_is_rejected() {
+    let tid = TaskId::new();
+    let result = validate_reference(tid, ReferenceKind::Blocks, Some(tid), None);
+    assert!(matches!(result, Err(DomainError::InvalidInput { .. })));
 }

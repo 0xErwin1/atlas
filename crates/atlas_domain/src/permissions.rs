@@ -154,10 +154,14 @@ pub fn authorize_share(
     Ok(())
 }
 
-/// Validates that a task reference has exactly one target consistent with its kind.
+/// Validates that a task reference has exactly one target consistent with its kind,
+/// and that the source task does not reference itself.
 ///
 /// Spec → document target; Relates/Blocks/Parent → task target.
+/// Multi-node Parent cycles (A→B→A) are not detected here; they require DB
+/// ancestry traversal and are left as a follow-up.
 pub fn validate_reference(
+    source_task_id: TaskId,
     kind: ReferenceKind,
     target_task_id: Option<TaskId>,
     target_document_id: Option<DocumentId>,
@@ -174,6 +178,12 @@ pub fn validate_reference(
             });
         }
         _ => {}
+    }
+
+    if target_task_id == Some(source_task_id) {
+        return Err(DomainError::InvalidInput {
+            message: "a task cannot reference itself".into(),
+        });
     }
 
     match kind {

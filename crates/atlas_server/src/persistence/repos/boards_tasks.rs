@@ -640,7 +640,12 @@ impl PgTaskReferenceRepo {
     ) -> Result<TaskReference, DomainError> {
         use atlas_domain::permissions::validate_reference;
 
-        validate_reference(new.kind.clone(), new.target_task_id, new.target_document_id)?;
+        validate_reference(
+            new.source_task_id,
+            new.kind.clone(),
+            new.target_task_id,
+            new.target_document_id,
+        )?;
 
         let target_id = reference_target_id(&new);
         let (by_user, by_key) = actor_columns(&ctx.actor);
@@ -672,7 +677,12 @@ impl TaskReferenceRepo for PgTaskReferenceRepo {
     ) -> Result<TaskReference, DomainError> {
         use atlas_domain::permissions::validate_reference;
 
-        validate_reference(new.kind.clone(), new.target_task_id, new.target_document_id)?;
+        validate_reference(
+            new.source_task_id,
+            new.kind.clone(),
+            new.target_task_id,
+            new.target_document_id,
+        )?;
 
         let target_id = reference_target_id(&new);
         let (by_user, by_key) = actor_columns(&ctx.actor);
