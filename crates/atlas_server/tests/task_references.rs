@@ -183,6 +183,40 @@ async fn valid_blocks_reference_with_task_target_is_accepted() {
 }
 
 #[tokio::test]
+async fn reference_to_missing_target_task_returns_not_found() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "ref-missing-target").await;
+    let ctx = support::ctx(&ws, &user);
+
+    let (_, _, task_a) = seed_project_board_task(&db, &ctx, "ref-missing", "RMT").await;
+
+    let missing_task_id = TaskId::new();
+    let ref_repo = PgTaskReferenceRepo::new(db.conn().clone());
+
+    let result = ref_repo
+        .create(
+            &ctx,
+            NewTaskReference {
+                source_task_id: task_a.id,
+                kind: ReferenceKind::Blocks,
+                target_task_id: Some(missing_task_id),
+                target_document_id: None,
+            },
+        )
+        .await;
+
+    match result {
+        Err(DomainError::NotFound { entity, id }) => {
+            assert_eq!(entity, "reference target");
+            assert_eq!(id, missing_task_id.0);
+        }
+        other => panic!("expected NotFound for a missing target task, got: {other:?}"),
+    }
+
+    db.teardown().await;
+}
+
+#[tokio::test]
 async fn spec_reference_with_task_id_is_rejected() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let (ws, user) = support::seed_workspace(&db, "ref-spec-bad-user").await;

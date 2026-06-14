@@ -628,6 +628,7 @@ impl PgTaskReferenceRepo {
 
         validate_reference(new.kind.clone(), new.target_task_id, new.target_document_id)?;
 
+        let target_id = reference_target_id(&new);
         let (by_user, by_key) = actor_columns(&ctx.actor);
         let model = task_reference::ActiveModel {
             id: Set(TaskReferenceId::new().0),
@@ -643,7 +644,7 @@ impl PgTaskReferenceRepo {
         model
             .insert(conn)
             .await
-            .map_err(classify_reference_insert_err)
+            .map_err(|e| classify_reference_insert_err(e, target_id))
             .and_then(|m| task_reference_from(m).map_err(internal_err))
     }
 }
@@ -659,6 +660,7 @@ impl TaskReferenceRepo for PgTaskReferenceRepo {
 
         validate_reference(new.kind.clone(), new.target_task_id, new.target_document_id)?;
 
+        let target_id = reference_target_id(&new);
         let (by_user, by_key) = actor_columns(&ctx.actor);
         let model = task_reference::ActiveModel {
             id: Set(TaskReferenceId::new().0),
@@ -674,7 +676,7 @@ impl TaskReferenceRepo for PgTaskReferenceRepo {
         model
             .insert(&self.conn)
             .await
-            .map_err(classify_reference_insert_err)
+            .map_err(|e| classify_reference_insert_err(e, target_id))
             .and_then(|m| task_reference_from(m).map_err(internal_err))
     }
 
@@ -1619,13 +1621,32 @@ fn classify_insert_err(e: sea_orm::DbErr, principal_id: uuid::Uuid) -> DomainErr
 /// 23505 (unique_violation): an identical reference already exists — callers
 /// surface this as `Forbidden` (→ 409 Conflict).
 ///
+/// 23503 (foreign_key_violation): the referenced target task or document does
+/// not exist in this workspace — callers surface this as `NotFound` (→ 404).
+///
 /// Anything else falls through to `Internal` (→ 500) via the normal `db_err` path.
-fn classify_reference_insert_err(e: sea_orm::DbErr) -> DomainError {
+/// Resolves the reference's target id for error reporting.
+///
+/// `validate_reference` guarantees exactly one of the two targets is set before
+/// the insert; the nil fallback is therefore unreachable and only keeps the
+/// helper total.
+fn reference_target_id(new: &NewTaskReference) -> uuid::Uuid {
+    new.target_task_id
+        .map(|id| id.0)
+        .or_else(|| new.target_document_id.map(|id| id.0))
+        .unwrap_or(uuid::Uuid::nil())
+}
+
+fn classify_reference_insert_err(e: sea_orm::DbErr, target_id: uuid::Uuid) -> DomainError {
     use sea_orm::SqlErr;
 
     match e.sql_err() {
         Some(SqlErr::UniqueConstraintViolation(_)) => DomainError::Forbidden {
             message: "reference already exists".into(),
+        },
+        Some(SqlErr::ForeignKeyConstraintViolation(_)) => DomainError::NotFound {
+            entity: "reference target",
+            id: target_id,
         },
         _ => db_err(e),
     }
