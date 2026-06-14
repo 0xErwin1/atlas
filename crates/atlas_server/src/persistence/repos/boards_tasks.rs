@@ -456,15 +456,16 @@ impl PgTaskRepo {
         new: NewTask,
     ) -> Result<Task, DomainError> {
         let row = conn
-            .query_one_raw(Statement::from_string(
+            .query_one_raw(Statement::from_sql_and_values(
                 sea_orm::DatabaseBackend::Postgres,
-                format!(
-                    "UPDATE projects \
-                     SET next_task_number = next_task_number + 1 \
-                     WHERE id = '{}' \
-                     RETURNING next_task_number, task_prefix",
-                    new.project_id.0
-                ),
+                "UPDATE projects \
+                 SET next_task_number = next_task_number + 1 \
+                 WHERE id = $1 AND workspace_id = $2 \
+                 RETURNING next_task_number, task_prefix",
+                [
+                    new.project_id.0.into(),
+                    ctx.workspace_id.0.into(),
+                ],
             ))
             .await
             .map_err(db_err)?
@@ -1463,22 +1464,21 @@ async fn try_move_to_in(
     };
 
     let now = Utc::now();
-    let sql = format!(
-        "UPDATE tasks \
-         SET column_id = '{col}', position_key = '{key}', updated_at = '{ts}' \
-         WHERE id = '{id}' AND workspace_id = '{ws}' AND deleted_at IS NULL \
-         RETURNING *",
-        col = column_id.0,
-        key = new_key,
-        ts = now.to_rfc3339(),
-        id = id.0,
-        ws = ctx.workspace_id.0,
-    );
 
     let row = txn
-        .query_one_raw(Statement::from_string(
+        .query_one_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            sql,
+            "UPDATE tasks \
+             SET column_id = $1, position_key = $2, updated_at = $3 \
+             WHERE id = $4 AND workspace_id = $5 AND deleted_at IS NULL \
+             RETURNING *",
+            [
+                column_id.0.into(),
+                new_key.into(),
+                now.into(),
+                id.0.into(),
+                ctx.workspace_id.0.into(),
+            ],
         ))
         .await
         .map_err(db_err)?
