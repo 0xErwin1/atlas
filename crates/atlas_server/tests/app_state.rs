@@ -29,3 +29,19 @@ async fn attachments_field_is_arc_attachment_store() {
     );
     db.teardown().await;
 }
+
+#[tokio::test]
+async fn anchor_interval_is_at_least_2_with_default_env() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let state = AppState::for_test(db.conn().clone())
+        .await
+        .expect("for_test");
+
+    assert!(
+        state.anchor_interval >= 2,
+        "anchor_interval must be >= 2, got: {}",
+        state.anchor_interval
+    );
+
+    db.teardown().await;
+}
