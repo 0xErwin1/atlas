@@ -158,7 +158,9 @@ pub(crate) async fn logout(
             if let Ok(Some(session)) = session_repo.find_active_by_token_hash(&hash).await
                 && session.user_id == user_id
             {
-                session_repo.revoke(session.id).await.ok();
+                if let Err(e) = session_repo.revoke(session.id).await {
+                    tracing::warn!(error = %e, "logout: failed to revoke session");
+                }
             }
         }
     }
