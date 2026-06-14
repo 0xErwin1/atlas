@@ -462,10 +462,7 @@ impl PgTaskRepo {
                  SET next_task_number = next_task_number + 1 \
                  WHERE id = $1 AND workspace_id = $2 \
                  RETURNING next_task_number, task_prefix",
-                [
-                    new.project_id.0.into(),
-                    ctx.workspace_id.0.into(),
-                ],
+                [new.project_id.0.into(), ctx.workspace_id.0.into()],
             ))
             .await
             .map_err(db_err)?
