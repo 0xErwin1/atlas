@@ -1261,6 +1261,7 @@ pub async fn resequence_column(
         .filter(board_column::Column::DeletedAt.is_null())
         .order_by(board_column::Column::PositionKey, Order::Asc)
         .order_by(board_column::Column::Id, Order::Asc)
+        .lock_exclusive()
         .all(txn)
         .await
         .map_err(db_err)?;
@@ -1284,6 +1285,8 @@ pub async fn resequence_column(
 /// Resequences all non-deleted tasks in `column_id` using evenly spaced fractional keys.
 ///
 /// Analogous to `resequence_column` but operates on the `tasks` table.
+/// Selects with a `FOR UPDATE` lock for the same reason as `resequence_column`:
+/// to serialize concurrent resequencing of the same column.
 /// Must run inside an existing transaction.
 async fn resequence_tasks_in_column(
     txn: &impl ConnectionTrait,
@@ -1296,6 +1299,7 @@ async fn resequence_tasks_in_column(
         .filter(task::Column::DeletedAt.is_null())
         .order_by(task::Column::PositionKey, Order::Asc)
         .order_by(task::Column::Id, Order::Asc)
+        .lock_exclusive()
         .all(txn)
         .await
         .map_err(db_err)?;
@@ -1318,6 +1322,8 @@ async fn resequence_tasks_in_column(
 
 /// Resequences all non-deleted checklist items for `task_id` using evenly spaced fractional keys.
 ///
+/// Selects with a `FOR UPDATE` lock for the same reason as `resequence_column`:
+/// to serialize concurrent resequencing of the same task's checklist.
 /// Must run inside an existing transaction.
 async fn resequence_checklist_items(
     conn: &impl ConnectionTrait,
@@ -1330,6 +1336,7 @@ async fn resequence_checklist_items(
         .filter(task_checklist_item::Column::DeletedAt.is_null())
         .order_by(task_checklist_item::Column::PositionKey, Order::Asc)
         .order_by(task_checklist_item::Column::Id, Order::Asc)
+        .lock_exclusive()
         .all(conn)
         .await
         .map_err(db_err)?;
