@@ -378,7 +378,7 @@ pub async fn build_document_chain(
 /// Walks the folder hierarchy from `leaf_id` upward, returning folders in
 /// most-specific-first order (leaf → root). Bounded at 32 levels to guard
 /// against cycles or pathologically deep trees.
-async fn resolve_folder_ancestry(
+pub async fn resolve_folder_ancestry(
     db: &sea_orm::DatabaseConnection,
     workspace_id: atlas_domain::ids::WorkspaceId,
     leaf_id: FolderId,

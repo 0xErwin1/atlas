@@ -30,6 +30,7 @@ use crate::{
     authz::{
         Authorized, EditorMin, MinRole, ViewerMin, WorkspaceMember, authorize_folder_destination,
         authorized::{DocumentSlugRes, ProjectRes},
+        resolve_folder_ancestry,
     },
     error::ApiError,
     persistence::repos::{
@@ -98,6 +99,17 @@ pub(crate) async fn create_document(
 
     let project_id = auth.resource.0.id;
     let folder_id = body.folder_id.map(FolderId);
+
+    if let Some(fid) = folder_id {
+        let ancestry = resolve_folder_ancestry(&state.db, auth.workspace.id, fid).await?;
+
+        let folder_project = ancestry.last().and_then(|f| f.project_id);
+        if folder_project != Some(project_id) {
+            return Err(ApiError::InvalidInput {
+                message: "target folder does not exist in this workspace".to_string(),
+            });
+        }
+    }
 
     let content = body.content.unwrap_or_default();
     let frontmatter = derive_frontmatter(&content);

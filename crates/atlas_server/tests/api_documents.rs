@@ -1374,6 +1374,125 @@ async fn move_within_authorized_project_folder_succeeds() {
     db.teardown().await;
 }
 
+#[tokio::test]
+async fn create_into_foreign_project_folder_is_rejected() {
+    use atlas_domain::ids::ProjectId;
+
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (owner, ws, owner_user) =
+        support::login_user_with_workspace(&server, &db, "doc-cr-idor-owner").await;
+
+    let project_a = owner
+        .create_project(
+            &ws.slug,
+            atlas_api::dtos::CreateProjectRequest {
+                name: "Proj A".to_string(),
+                slug: "cr-idor-a".to_string(),
+                task_prefix: "CIA".to_string(),
+                visibility: None,
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create project a");
+
+    let project_b = owner
+        .create_project(
+            &ws.slug,
+            atlas_api::dtos::CreateProjectRequest {
+                name: "Proj B".to_string(),
+                slug: "cr-idor-b".to_string(),
+                task_prefix: "CIB".to_string(),
+                visibility: None,
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create project b");
+
+    let folder_b = db
+        .folder_repo()
+        .create(
+            &WorkspaceCtx::new(ws.id, Actor::User(owner_user.id)),
+            atlas_domain::entities::workspace_core::NewFolder {
+                project_id: Some(ProjectId(project_b.id)),
+                parent_folder_id: None,
+                name: "cr-folder-in-b".to_string(),
+            },
+        )
+        .await
+        .expect("create folder in b");
+
+    let req = CreateDocumentRequest {
+        title: "Cross Project Plant".to_string(),
+        folder_id: Some(folder_b.id.0),
+        content: None,
+    };
+
+    let result = owner.create_document(&ws.slug, &project_a.slug, req).await;
+
+    assert!(
+        matches!(result, Err(ClientError::Api(ref p)) if p.status == 422 || p.status == 404),
+        "creating a doc into project A with a project B folder must be rejected, got: {result:?}"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn create_into_same_project_folder_succeeds() {
+    use atlas_domain::ids::ProjectId;
+
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (owner, ws, owner_user) =
+        support::login_user_with_workspace(&server, &db, "doc-cr-ok-owner").await;
+
+    let project_a = owner
+        .create_project(
+            &ws.slug,
+            atlas_api::dtos::CreateProjectRequest {
+                name: "Proj A".to_string(),
+                slug: "cr-ok-a".to_string(),
+                task_prefix: "COA".to_string(),
+                visibility: None,
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create project a");
+
+    let folder_a = db
+        .folder_repo()
+        .create(
+            &WorkspaceCtx::new(ws.id, Actor::User(owner_user.id)),
+            atlas_domain::entities::workspace_core::NewFolder {
+                project_id: Some(ProjectId(project_a.id)),
+                parent_folder_id: None,
+                name: "cr-folder-in-a".to_string(),
+            },
+        )
+        .await
+        .expect("create folder in a");
+
+    let req = CreateDocumentRequest {
+        title: "Same Project Doc".to_string(),
+        folder_id: Some(folder_a.id.0),
+        content: None,
+    };
+
+    let created = owner
+        .create_document(&ws.slug, &project_a.slug, req)
+        .await
+        .expect("create into same-project folder must succeed");
+
+    assert_eq!(created.project_id, Some(project_a.id));
+    assert_eq!(created.folder_id, Some(folder_a.id.0));
+
+    db.teardown().await;
+}
+
 // ---- Permissions -----------------------------------------------------------
 
 #[tokio::test]
