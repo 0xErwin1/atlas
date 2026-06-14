@@ -95,18 +95,6 @@ impl AppState {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn anchor_interval_floor_clamps_1_to_2() {
-        // Simulates the raw value that `read_env_u32("ATLAS_ANCHOR_INTERVAL", 50)`
-        // would return when the env var is set to "1", then applies the same `.max(2)`.
-        let raw: u32 = 1;
-        let effective = raw.max(2);
-        assert_eq!(effective, 2, "interval of 1 must be clamped to floor of 2");
-    }
-}
-
 fn read_env_i64(var: &str, default: i64) -> i64 {
     std::env::var(var)
         .ok()
@@ -119,4 +107,16 @@ fn read_env_u32(var: &str, default: u32) -> u32 {
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(default)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn anchor_interval_floor_clamps_1_to_2() {
+        // Simulates the raw value that `read_env_u32("ATLAS_ANCHOR_INTERVAL", 50)`
+        // would return when the env var is set to "1", then applies the same `.max(2)`.
+        let raw: u32 = 1;
+        let effective = raw.max(2);
+        assert_eq!(effective, 2, "interval of 1 must be clamped to floor of 2");
+    }
 }

@@ -146,10 +146,7 @@ async fn disabled_user_with_correct_password_returns_401() {
     let server = support::TestServer::spawn(&db).await;
     let (_client, user) = support::login_user(&server, &db, "auth-disabled-user").await;
 
-    db.user_repo()
-        .disable(user.id)
-        .await
-        .expect("disable user");
+    db.user_repo().disable(user.id).await.expect("disable user");
 
     let result = atlas_client::AtlasClient::new(server.base_url())
         .login(LoginRequest {
