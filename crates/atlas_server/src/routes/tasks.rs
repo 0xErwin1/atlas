@@ -24,7 +24,10 @@ use atlas_domain::{
         AssigneeRef, NewTask, NewTaskChecklistItem, NewTaskReference, PositionBetween, Priority,
         Task, TaskActivity, TaskAssignee, TaskChecklistItem, TaskPatch, TaskReference,
     },
-    ids::{ApiKeyId, BoardId, ChecklistItemId, ColumnId, TaskActivityId, TaskReferenceId, UserId},
+    ids::{
+        ApiKeyId, BoardId, ChecklistItemId, ColumnId, DocumentId, TaskActivityId, TaskId,
+        TaskReferenceId, UserId,
+    },
     permissions::Principal,
 };
 
@@ -32,8 +35,9 @@ use crate::{
     authz::{Authorized, BoardRes, EditorMin, TaskRes, ViewerMin},
     error::ApiError,
     persistence::repos::{
-        DocumentRepo, PgDocumentRepo, PgTaskAssigneeRepo, PgTaskChecklistRepo, PgTaskReferenceRepo,
-        PgTaskRepo, TaskAssigneeRepo, TaskChecklistRepo, TaskReferenceRepo, TaskRepo,
+        ApiKeyRepo, DocumentRepo, MembershipRepo, PgApiKeyRepo, PgDocumentRepo, PgMembershipRepo,
+        PgTaskAssigneeRepo, PgTaskChecklistRepo, PgTaskReferenceRepo, PgTaskRepo, TaskAssigneeRepo,
+        TaskChecklistRepo, TaskReferenceRepo, TaskRepo,
     },
     state::AppState,
 };
@@ -123,14 +127,22 @@ fn task_to_dto(t: Task) -> TaskDto {
     }
 }
 
-fn reference_to_dto(r: TaskReference) -> ReferenceDto {
+/// Builds a `ReferenceDto` from a `TaskReference` and pre-resolved liveness info.
+///
+/// `target_resolved` and `target_readable_id` must be computed by the caller
+/// against the live DB state so that soft-deleted targets are treated as broken.
+fn reference_to_dto(
+    r: TaskReference,
+    target_resolved: bool,
+    target_readable_id: Option<String>,
+) -> ReferenceDto {
     ReferenceDto {
         id: r.id.0,
         kind: r.kind.as_str().to_string(),
         target_task_id: r.target_task_id.map(|id| id.0),
-        target_readable_id: None,
+        target_readable_id,
         target_document_id: r.target_document_id.map(|id| id.0),
-        target_resolved: r.target_task_id.is_some() || r.target_document_id.is_some(),
+        target_resolved,
         created_by: actor_to_dto(&r.created_by),
         created_at: r.created_at,
     }
@@ -186,6 +198,49 @@ fn parse_assignee_ref(s: &str) -> Result<AssigneeRef, ApiError> {
         return Ok(AssigneeRef::ApiKey(ApiKeyId(uuid)));
     }
     Err(ApiError::NotFound)
+}
+
+/// Checks that an `AssigneeRef` is a member of `ctx.workspace_id`.
+///
+/// A user must have a membership row; an api_key must belong to the workspace
+/// (not revoked). Either missing → 404 to conceal principal existence across
+/// workspaces.
+async fn validate_assignee_is_workspace_member(
+    assignee: &AssigneeRef,
+    ctx: &WorkspaceCtx,
+    state: &AppState,
+) -> Result<(), ApiError> {
+    match assignee {
+        AssigneeRef::User(uid) => {
+            let membership_repo = PgMembershipRepo {
+                conn: (*state.db).clone(),
+            };
+            let member = membership_repo
+                .find(ctx, *uid)
+                .await
+                .map_err(|e| ApiError::Internal {
+                    message: e.to_string(),
+                })?;
+            if member.is_none() {
+                return Err(ApiError::NotFound);
+            }
+        }
+        AssigneeRef::ApiKey(kid) => {
+            let api_key_repo = PgApiKeyRepo {
+                conn: (*state.db).clone(),
+            };
+            let keys = api_key_repo
+                .list(ctx)
+                .await
+                .map_err(|e| ApiError::Internal {
+                    message: e.to_string(),
+                })?;
+            if !keys.iter().any(|k| k.id == *kid) {
+                return Err(ApiError::NotFound);
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Parses `priority` from the wire representation (a nullable string).
@@ -639,6 +694,8 @@ pub(crate) async fn add_assignee(
         }
     };
 
+    validate_assignee_is_workspace_member(&assignee, &ctx, &state).await?;
+
     let result = state
         .task_service()
         .assign(&ctx, task_id, assignee)
@@ -716,6 +773,8 @@ pub(crate) async fn list_references(
     auth: Authorized<TaskRes, ViewerMin>,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<ReferenceDto>>, ApiError> {
+    use std::collections::{HashMap, HashSet};
+
     let actor = principal_to_actor(&auth.principal);
     let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
     let repo = PgTaskReferenceRepo::new((*state.db).clone());
@@ -725,7 +784,59 @@ pub(crate) async fn list_references(
         .await
         .map_err(ApiError::Domain)?;
 
-    Ok(Json(refs.into_iter().map(reference_to_dto).collect()))
+    let task_repo = PgTaskRepo::new((*state.db).clone());
+    let doc_repo = PgDocumentRepo::new((*state.db).clone(), 0);
+
+    let target_task_ids: Vec<TaskId> = refs
+        .iter()
+        .filter_map(|r| r.target_task_id)
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+
+    let target_doc_ids: Vec<DocumentId> = refs
+        .iter()
+        .filter_map(|r| r.target_document_id)
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+
+    let mut live_task_readable: HashMap<TaskId, String> = HashMap::new();
+    for tid in target_task_ids {
+        if let Some(t) = task_repo.find(&ctx, tid).await.map_err(ApiError::Domain)? {
+            live_task_readable.insert(tid, t.readable_id);
+        }
+    }
+
+    let mut live_doc_ids: HashSet<DocumentId> = HashSet::new();
+    for did in target_doc_ids {
+        if doc_repo
+            .get(&ctx, did)
+            .await
+            .map_err(ApiError::Domain)?
+            .is_some()
+        {
+            live_doc_ids.insert(did);
+        }
+    }
+
+    let dtos = refs
+        .into_iter()
+        .map(|r| {
+            let (target_resolved, target_readable_id) =
+                match (r.target_task_id, r.target_document_id) {
+                    (Some(tid), _) => {
+                        let readable = live_task_readable.get(&tid).cloned();
+                        (readable.is_some(), readable)
+                    }
+                    (_, Some(did)) => (live_doc_ids.contains(&did), None),
+                    _ => (false, None),
+                };
+            reference_to_dto(r, target_resolved, target_readable_id)
+        })
+        .collect();
+
+    Ok(Json(dtos))
 }
 
 // ---------------------------------------------------------------------------
@@ -763,7 +874,6 @@ pub(crate) async fn create_reference(
     Json(body): Json<CreateReferenceRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     use atlas_domain::entities::boards_tasks::ReferenceKind;
-    use atlas_domain::ids::DocumentId;
 
     let actor = principal_to_actor(&auth.principal);
     let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
@@ -800,6 +910,8 @@ pub(crate) async fn create_reference(
         });
     }
 
+    let mut target_readable_id: Option<String> = None;
+
     let target_task_id = if let Some(rid) = body.target_task_readable_id {
         let repo = PgTaskRepo::new((*state.db).clone());
         let found = repo
@@ -808,7 +920,10 @@ pub(crate) async fn create_reference(
             .map_err(ApiError::Domain)?;
 
         match found {
-            Some(t) => Some(t.id),
+            Some(t) => {
+                target_readable_id = Some(t.readable_id.clone());
+                Some(t.id)
+            }
             None => return Err(ApiError::NotFound),
         }
     } else {
@@ -850,7 +965,10 @@ pub(crate) async fn create_reference(
             other => ApiError::Domain(other),
         })?;
 
-    Ok((StatusCode::CREATED, Json(reference_to_dto(reference))))
+    Ok((
+        StatusCode::CREATED,
+        Json(reference_to_dto(reference, true, target_readable_id)),
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -1210,9 +1328,14 @@ pub(crate) async fn promote_checklist_item(
             other => ApiError::Domain(other),
         })?;
 
+    let promoted_readable_id = result.task.readable_id.clone();
     let dto = PromotionDto {
         task: task_to_dto(result.task),
-        parent_reference: Some(reference_to_dto(result.parent_reference)),
+        parent_reference: Some(reference_to_dto(
+            result.parent_reference,
+            true,
+            Some(promoted_readable_id),
+        )),
         checklist_item: checklist_item_to_dto(result.checklist_item),
     };
 

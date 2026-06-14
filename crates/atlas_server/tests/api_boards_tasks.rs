@@ -3790,3 +3790,248 @@ async fn promote_into_foreign_board_same_workspace_is_rejected_and_writes_no_tas
 
     db.teardown().await;
 }
+
+// ---------------------------------------------------------------------------
+// Fix 1 — target_resolved must reflect live target existence (Req 6)
+// ---------------------------------------------------------------------------
+
+/// Creating a reference to a live task must return target_resolved=true and
+/// populate target_readable_id. After soft-deleting the target task,
+/// list_references must return target_resolved=false for that reference.
+#[tokio::test]
+async fn reference_target_resolved_false_after_target_task_soft_deleted() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "ref-resolved-1").await;
+
+    client
+        .create_project(&ws.slug, project_req("ref-res-proj", "RR"))
+        .await
+        .expect("create project");
+
+    let board = client
+        .create_board(
+            &ws.slug,
+            "ref-res-proj",
+            CreateBoardRequest { name: "B".into() },
+        )
+        .await
+        .expect("board");
+
+    let col = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "C".into(),
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("col");
+
+    let source = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: col.id,
+                title: "Source".into(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("source task");
+
+    let target = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: col.id,
+                title: "Target".into(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("target task");
+
+    let created_ref = client
+        .create_reference(
+            &ws.slug,
+            &source.readable_id,
+            CreateReferenceRequest {
+                kind: "blocks".into(),
+                target_task_readable_id: Some(target.readable_id.clone()),
+                target_document_id: None,
+            },
+        )
+        .await
+        .expect("create reference");
+
+    assert!(
+        created_ref.target_resolved,
+        "create_reference must return target_resolved=true for a live target, got: {}",
+        created_ref.target_resolved
+    );
+    assert_eq!(
+        created_ref.target_readable_id.as_deref(),
+        Some(target.readable_id.as_str()),
+        "create_reference must populate target_readable_id with the live target's readable_id"
+    );
+
+    let refs_before = client
+        .list_references(&ws.slug, &source.readable_id)
+        .await
+        .expect("list references before delete");
+
+    let r = refs_before
+        .iter()
+        .find(|r| r.id == created_ref.id)
+        .expect("reference must appear in list");
+    assert!(
+        r.target_resolved,
+        "list_references must return target_resolved=true while target is live"
+    );
+    assert_eq!(
+        r.target_readable_id.as_deref(),
+        Some(target.readable_id.as_str()),
+        "list_references must populate target_readable_id for a live task target"
+    );
+
+    client
+        .delete_task(&ws.slug, &target.readable_id)
+        .await
+        .expect("delete target task");
+
+    let refs_after = client
+        .list_references(&ws.slug, &source.readable_id)
+        .await
+        .expect("list references after delete");
+
+    let r_after = refs_after
+        .iter()
+        .find(|r| r.id == created_ref.id)
+        .expect("reference must still appear in list after target is deleted");
+    assert!(
+        !r_after.target_resolved,
+        "list_references must return target_resolved=false after target task is soft-deleted, got: {}",
+        r_after.target_resolved
+    );
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
+// Fix 2 — Assignee must be a member of the workspace
+// ---------------------------------------------------------------------------
+
+/// Assigning a user who exists globally but is NOT a member of this workspace
+/// must return 404 and must NOT write any task_assignees row or activity.
+#[tokio::test]
+async fn assign_non_member_principal_returns_404() {
+    use sea_orm::{ConnectionTrait, Statement};
+
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+
+    let (client_a, ws_a, _) = support::login_user_with_workspace(&server, &db, "assign-nm-a").await;
+
+    let (_client_b, ws_b, user_b) =
+        support::login_user_with_workspace(&server, &db, "assign-nm-b").await;
+
+    assert!(
+        ws_a.id != ws_b.id,
+        "workspaces must be distinct for this test"
+    );
+
+    client_a
+        .create_project(&ws_a.slug, project_req("assign-nm-proj", "ANM"))
+        .await
+        .expect("create project");
+
+    let board = client_a
+        .create_board(
+            &ws_a.slug,
+            "assign-nm-proj",
+            CreateBoardRequest { name: "B".into() },
+        )
+        .await
+        .expect("board");
+
+    let col = client_a
+        .create_column(
+            &ws_a.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "C".into(),
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("col");
+
+    let task = client_a
+        .create_task(
+            &ws_a.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: col.id,
+                title: "T".into(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("task");
+
+    let result = client_a
+        .add_assignee(
+            &ws_a.slug,
+            &task.readable_id,
+            AddAssigneeRequest {
+                assignee_type: "user".into(),
+                assignee_id: user_b.id.0,
+            },
+        )
+        .await;
+
+    assert!(
+        matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
+        "assigning a non-member user must return 404, got: {result:?}"
+    );
+
+    let row = db
+        .conn()
+        .query_one_raw(Statement::from_string(
+            sea_orm::DatabaseBackend::Postgres,
+            format!(
+                "SELECT COUNT(*) AS cnt FROM task_assignees \
+                 WHERE task_id = '{}' AND assignee_user_id = '{}'",
+                task.id, user_b.id.0
+            ),
+        ))
+        .await
+        .expect("query")
+        .expect("row");
+    let cnt: i64 = row.try_get("", "cnt").expect("cnt");
+    assert_eq!(cnt, 0, "no task_assignees row must be written");
+
+    let assigned_count = count_activity_of_kind(&db, task.id, "assigned").await;
+    assert_eq!(
+        assigned_count, 0,
+        "no assigned activity must be written for the rejected non-member assign"
+    );
+
+    db.teardown().await;
+}
