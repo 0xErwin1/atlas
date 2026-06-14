@@ -352,13 +352,7 @@ pub(crate) async fn update_content(
     };
     update_document_links(&ctx, &doc_repo, &link_repo, updated.id, &updated.content).await?;
 
-    let fm = derive_frontmatter(&updated.content);
-    let final_doc = doc_repo
-        .update_frontmatter(&ctx, updated.id, fm)
-        .await
-        .map_err(ApiError::Domain)?;
-
-    Ok(Json(document_to_dto(final_doc)))
+    Ok(Json(document_to_dto(updated)))
 }
 
 // ---------------------------------------------------------------------------

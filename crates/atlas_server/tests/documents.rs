@@ -171,6 +171,57 @@ async fn api_key_actor_attachment_record_sets_created_by_api_key_id() {
 }
 
 #[tokio::test]
+async fn update_content_derives_frontmatter_atomically() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "doc-fm-atomic").await;
+    let ctx = support::ctx(&ws, &user);
+    let repo = make_doc_repo(&db, 50);
+
+    let doc = repo
+        .create(
+            &ctx,
+            NewDocument {
+                title: "FM Atomic".into(),
+                slug: None,
+                content: "no frontmatter here".into(),
+                folder_id: None,
+                project_id: None,
+                frontmatter: None,
+            },
+        )
+        .await
+        .expect("create document");
+
+    assert_eq!(doc.frontmatter, json!({}));
+
+    let new_content = "---\ntitle: Updated\npriority: 5\n---\nbody text";
+    let updated = repo
+        .update_content(&ctx, doc.id, doc.current_revision_id, new_content)
+        .await
+        .expect("update_content");
+
+    assert_eq!(
+        updated.frontmatter,
+        json!({"title": "Updated", "priority": 5}),
+        "the returned Document must carry frontmatter derived from the new content"
+    );
+
+    let fetched = repo
+        .get(&ctx, doc.id)
+        .await
+        .expect("get document")
+        .expect("document must exist");
+
+    assert_eq!(
+        fetched.frontmatter,
+        json!({"title": "Updated", "priority": 5}),
+        "the persisted Document must carry frontmatter committed with the content"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
 async fn document_create_and_get_roundtrip() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let (ws, user) = support::seed_workspace(&db, "doc-user-1").await;

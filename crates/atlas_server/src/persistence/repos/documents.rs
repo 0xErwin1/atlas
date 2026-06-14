@@ -410,8 +410,11 @@ impl DocumentRepo for PgDocumentRepo {
         };
         rev_model.insert(&txn).await.map_err(db_err)?;
 
+        let frontmatter = derive_frontmatter(new_content);
+
         let mut doc_active = doc.into_active_model();
         doc_active.content = Set(new_content.to_string());
+        doc_active.frontmatter = Set(frontmatter);
         doc_active.current_revision_id = Set(Some(rev_id.0));
         doc_active.current_revision_seq = Set(next_seq);
         doc_active.updated_at = Set(now);
@@ -864,6 +867,11 @@ async fn update_backlink_titles(
     .await?;
 
     Ok(())
+}
+
+fn derive_frontmatter(content: &str) -> serde_json::Value {
+    let (yaml, _body) = atlas_domain::frontmatter::strip_frontmatter(content);
+    atlas_domain::frontmatter::parse_frontmatter_yaml(yaml.unwrap_or(""))
 }
 
 fn actor_fields(actor: &Actor) -> (Option<Uuid>, Option<Uuid>) {
