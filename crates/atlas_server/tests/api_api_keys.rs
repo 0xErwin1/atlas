@@ -9,7 +9,10 @@ mod support;
 
 use atlas_api::dtos::CreateApiKeyRequest;
 use atlas_domain::{Actor, WorkspaceCtx, entities::identity::MemberRole};
-use atlas_server::persistence::repos::{MembershipRepo, NewUser, UserRepo};
+use atlas_server::{
+    auth::tokens::hash_token,
+    persistence::repos::{ApiKeyRepo, MembershipRepo, NewUser, UserRepo},
+};
 use support::{TestDb, TestServer, login_user_with_workspace};
 
 async fn add_member_with_role(
@@ -290,6 +293,53 @@ async fn disabled_creator_blocks_api_key() {
     assert!(
         me_reenabled.is_ok(),
         "key must work again after creator is re-enabled"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn api_key_last_used_at_is_set_after_authenticated_request() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner, ws, _) = login_user_with_workspace(&server, &db, "owner-ak-luat").await;
+
+    let created = owner
+        .create_api_key(&ws.slug, key_req("luat-key"))
+        .await
+        .expect("create api key");
+
+    let token_hash = hash_token(&created.secret);
+    let api_key_before = db
+        .api_key_repo()
+        .find_active_by_token_hash(&token_hash)
+        .await
+        .expect("find key before request")
+        .expect("key must exist");
+
+    assert!(
+        api_key_before.last_used_at.is_none(),
+        "last_used_at must be NULL before first use, got: {:?}",
+        api_key_before.last_used_at
+    );
+
+    let agent = atlas_client::AtlasClient::new(server.base_url()).with_token(created.secret);
+    agent
+        .me()
+        .await
+        .expect("authenticated request with api key");
+
+    let api_key_after = db
+        .api_key_repo()
+        .find_active_by_token_hash(&token_hash)
+        .await
+        .expect("find key after request")
+        .expect("key must exist");
+
+    assert!(
+        api_key_after.last_used_at.is_some(),
+        "last_used_at must be set after an authenticated api-key request"
     );
 
     db.teardown().await;

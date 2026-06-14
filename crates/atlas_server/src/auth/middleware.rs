@@ -73,6 +73,8 @@ async fn resolve_api_key(state: &AppState, token_hash: &str) -> Result<Principal
         .map_err(|_| ApiError::Unauthorized)?
         .ok_or(ApiError::Unauthorized)?;
 
+    repo.touch(key.id).await.ok();
+
     Ok(Principal::ApiKey(key.id))
 }
 

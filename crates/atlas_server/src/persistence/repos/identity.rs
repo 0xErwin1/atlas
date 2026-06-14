@@ -398,6 +398,26 @@ impl ApiKeyRepo for PgApiKeyRepo {
     }
 }
 
+impl PgApiKeyRepo {
+    /// Updates `last_used_at = now()` for the given api key, throttled to at most
+    /// once per 60 seconds (same debounce the session `touch` uses).
+    pub async fn touch(&self, id: ApiKeyId) -> Result<(), DomainError> {
+        use sea_orm::ConnectionTrait;
+        self.conn
+            .execute_raw(sea_orm::Statement::from_sql_and_values(
+                sea_orm::DatabaseBackend::Postgres,
+                "UPDATE api_keys
+                 SET last_used_at = now()
+                 WHERE id = $1
+                   AND (last_used_at IS NULL OR last_used_at < now() - interval '60 seconds')",
+                [id.0.into()],
+            ))
+            .await
+            .map_err(db_err)?;
+        Ok(())
+    }
+}
+
 pub struct PgMembershipRepo {
     pub conn: DatabaseConnection,
 }
