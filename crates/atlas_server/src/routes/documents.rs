@@ -851,6 +851,7 @@ pub(crate) async fn download_attachment(
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, content_type)
         .header(header::CONTENT_DISPOSITION, content_disposition)
+        .header("x-content-type-options", "nosniff")
         .body(Body::from(bytes))
         .map_err(|e| ApiError::Internal {
             message: e.to_string(),

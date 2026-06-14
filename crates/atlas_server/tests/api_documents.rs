@@ -2109,3 +2109,108 @@ async fn conflict_409_body_carries_conflict_fields() {
 
     db.teardown().await;
 }
+
+#[tokio::test]
+async fn download_attachment_sets_nosniff_header() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-att-nosniff").await;
+
+    let project = client
+        .create_project(
+            &ws.slug,
+            atlas_api::dtos::CreateProjectRequest {
+                name: "Proj".to_string(),
+                slug: "proj-att-nosniff".to_string(),
+                task_prefix: "PAN".to_string(),
+                visibility: None,
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create project");
+
+    let doc = client
+        .create_document(&ws.slug, &project.slug, doc_req("Nosniff Doc"))
+        .await
+        .expect("create document");
+
+    let slug = doc.slug.as_deref().expect("slug");
+    let att = client
+        .upload_attachment(&ws.slug, slug, "test.txt", "text/plain", b"data".to_vec())
+        .await
+        .expect("upload attachment");
+
+    let token = client.token().expect("session token").to_string();
+    let http = reqwest::Client::new();
+    let url = format!(
+        "{}/v1/workspaces/{}/attachments/{}",
+        server.base_url(),
+        ws.slug,
+        att.id
+    );
+
+    let response = http
+        .get(&url)
+        .bearer_auth(&token)
+        .send()
+        .await
+        .expect("send request");
+
+    assert_eq!(response.status().as_u16(), 200);
+    assert_eq!(
+        response
+            .headers()
+            .get("x-content-type-options")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or(""),
+        "nosniff",
+        "download response must carry x-content-type-options: nosniff"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn get_revision_content_nonexistent_seq_returns_404() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-rev-404").await;
+
+    let project = client
+        .create_project(
+            &ws.slug,
+            atlas_api::dtos::CreateProjectRequest {
+                name: "Proj".to_string(),
+                slug: "proj-rev-404".to_string(),
+                task_prefix: "PRV".to_string(),
+                visibility: None,
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create project");
+
+    let doc = client
+        .create_document(&ws.slug, &project.slug, doc_req("Rev 404 Doc"))
+        .await
+        .expect("create document");
+
+    let slug = doc.slug.as_deref().expect("slug");
+
+    let result = client.get_revision_content(&ws.slug, slug, 9999).await;
+
+    assert!(
+        matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
+        "non-existent revision seq must return 404, got: {result:?}"
+    );
+
+    let result_zero = client.get_revision_content(&ws.slug, slug, 0).await;
+
+    assert!(
+        matches!(result_zero, Err(ClientError::Api(ref p)) if p.status == 404),
+        "revision seq 0 must return 404, got: {result_zero:?}"
+    );
+
+    db.teardown().await;
+}
