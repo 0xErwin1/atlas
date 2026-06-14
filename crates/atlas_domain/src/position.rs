@@ -7,9 +7,9 @@ use fractional_index::FractionalIndex;
 /// if `after` is also `None`). When `after` is `None`, the result sorts after `before`.
 /// When both are `None`, a default midpoint key is returned.
 ///
-/// Callers that cannot handle exhaustion (e.g. column reordering where exhaustion is
-/// practically impossible) may fall back to `between`, which silently appends after
-/// `before` instead of returning `None`.
+/// Callers that need exhaustion-safety (e.g. insert-between paths) use this function
+/// and handle `None` by triggering a resequence and retrying, surfacing
+/// `PositionExhausted` to the caller if the resequence itself cannot free space.
 pub fn try_between(before: Option<&str>, after: Option<&str>) -> Option<String> {
     let before_idx = before.and_then(|s| FractionalIndex::from_string(s).ok());
     let after_idx = after.and_then(|s| FractionalIndex::from_string(s).ok());

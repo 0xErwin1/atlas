@@ -1505,6 +1505,16 @@ async fn promote_checklist_item_always_persists_parent_reference() {
         "parent reference must point at the originating task"
     );
 
+    // The promoted child task must land on the parent's board and project.
+    assert_eq!(
+        promotion.task.board_id, task.board_id,
+        "promoted child must share the parent task's board_id"
+    );
+    assert_eq!(
+        promotion.task.project_id, task.project_id,
+        "promoted child must share the parent task's project_id"
+    );
+
     // The reference is durable: it surfaces as an inbound backlink on the parent.
     let backlinks = client
         .list_task_backlinks(&ws.slug, &task.readable_id)
@@ -2236,13 +2246,16 @@ async fn grant_board_editor(
 
 struct IdorFixture {
     ws: atlas_domain::entities::identity::Workspace,
+    owner: atlas_client::AtlasClient,
     attacker: atlas_client::AtlasClient,
     board_a: uuid::Uuid,
     col_a: uuid::Uuid,
     task_a_readable: String,
+    item_a: uuid::Uuid,
     task_b_readable: String,
     item_b: uuid::Uuid,
     ref_b: uuid::Uuid,
+    board_b: uuid::Uuid,
     col_b: uuid::Uuid,
 }
 
@@ -2341,8 +2354,8 @@ async fn setup_idor(
         }
     };
 
-    let (board_a, col_a, task_a, _item_a, _ref_a) = make_board("Board A").await;
-    let (_board_b, col_b, task_b, item_b, ref_b) = make_board("Board B").await;
+    let (board_a, col_a, task_a, item_a, _ref_a) = make_board("Board A").await;
+    let (board_b, col_b, task_b, item_b, ref_b) = make_board("Board B").await;
 
     let (attacker, attacker_user) = add_member(
         db,
@@ -2358,13 +2371,16 @@ async fn setup_idor(
 
     IdorFixture {
         ws,
+        owner,
         attacker,
         board_a: board_a.id,
         col_a: col_a.id,
         task_a_readable: task_a.readable_id,
+        item_a: item_a.id,
         task_b_readable: task_b.readable_id,
         item_b: item_b.id,
         ref_b: ref_b.id,
+        board_b: board_b.id,
         col_b: col_b.id,
     }
 }
@@ -3694,6 +3710,82 @@ async fn unassign_non_existent_returns_404_and_no_activity() {
     assert_eq!(
         unassigned_count, 0,
         "no unassigned activity must be written when the assignment did not exist"
+    );
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
+// Cross-board promote IDOR (write-side escalation guard)
+// ---------------------------------------------------------------------------
+
+/// A promote request that names a destination board different from the parent
+/// task's board must be rejected with 422 and must write nothing: no task row
+/// on the target board and the checklist item remains unpromoted.
+#[tokio::test]
+async fn promote_into_foreign_board_same_workspace_is_rejected_and_writes_no_task() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let f = setup_idor(&db, &server, "idor-fprom").await;
+
+    // Board B's task count before the attempted promotion.
+    let before = f
+        .owner
+        .list_tasks(&f.ws.slug, f.board_b, None, None)
+        .await
+        .expect("list board B tasks before");
+    let count_before = before.items.len();
+
+    // Attacker holds editor on board A (task_a lives there) but submits
+    // board B as the destination — this is the write-side IDOR escalation.
+    let result = f
+        .attacker
+        .promote_checklist_item(
+            &f.ws.slug,
+            &f.task_a_readable,
+            f.item_a,
+            PromoteChecklistItemRequest {
+                board_id: f.board_b,
+                column_id: f.col_b,
+            },
+        )
+        .await;
+
+    assert!(
+        matches!(result, Err(ClientError::Api(ref p)) if p.status == 422),
+        "promote targeting a foreign board must return 422, got: {result:?}"
+    );
+
+    // Board B must be untouched: no task was written there.
+    let after = f
+        .owner
+        .list_tasks(&f.ws.slug, f.board_b, None, None)
+        .await
+        .expect("list board B tasks after");
+
+    assert_eq!(
+        after.items.len(),
+        count_before,
+        "board B task count must be unchanged after the rejected promote, got: {:?}",
+        after.items
+    );
+
+    // The checklist item on task A must still be unpromoted.
+    let checklist = f
+        .attacker
+        .list_checklist(&f.ws.slug, &f.task_a_readable)
+        .await
+        .expect("list checklist");
+
+    let item = checklist
+        .iter()
+        .find(|i| i.id == f.item_a)
+        .expect("item_a must still be in the checklist");
+
+    assert!(
+        item.promoted_task_id.is_none(),
+        "checklist item must remain unpromoted after the rejected call, got: {:?}",
+        item.promoted_task_id
     );
 
     db.teardown().await;

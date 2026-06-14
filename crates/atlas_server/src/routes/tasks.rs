@@ -1184,6 +1184,12 @@ pub(crate) async fn promote_checklist_item(
     let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
     let parent_task = &auth.resource.0;
 
+    if body.board_id != parent_task.board_id.0 {
+        return Err(ApiError::InvalidInput {
+            message: "promoted task must stay on the parent task's board".into(),
+        });
+    }
+
     let result = state
         .task_service()
         .promote_checklist_item(

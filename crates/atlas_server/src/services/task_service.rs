@@ -50,7 +50,15 @@ impl TaskService {
 
         let target_board_id = new.board_id;
         let target_column_id = new.column_id;
-        validate_column_in_board(&txn, ctx, target_board_id, target_column_id).await?;
+        let target_project_id = new.project_id;
+        validate_column_in_board(
+            &txn,
+            ctx,
+            target_board_id,
+            target_column_id,
+            target_project_id,
+        )
+        .await?;
 
         let task = PgTaskRepo::create_in(&txn, ctx, new).await?;
 
@@ -153,7 +161,7 @@ impl TaskService {
 
         // A task may only move between columns of its own board; the target
         // column must belong to that board and the caller's workspace.
-        validate_column_in_board(&txn, ctx, before.board_id, column_id).await?;
+        validate_column_in_board(&txn, ctx, before.board_id, column_id, before.project_id).await?;
 
         let moved = PgTaskRepo::move_to_in(&txn, ctx, id, column_id, position).await?;
 
@@ -461,9 +469,9 @@ impl TaskService {
         }
 
         // The target board+column come from the request body, so verify they
-        // live in the caller's workspace and that the column belongs to the
-        // target board before writing a task into them.
-        validate_column_in_board(&txn, ctx, board_id, column_id).await?;
+        // live in the caller's workspace, belong to the expected project, and
+        // that the column belongs to the target board before writing a task.
+        validate_column_in_board(&txn, ctx, board_id, column_id, project_id).await?;
 
         let child_task = PgTaskRepo::create_in(
             &txn,
@@ -561,30 +569,37 @@ fn db_err(e: sea_orm::DbErr) -> DomainError {
     }
 }
 
-/// Verifies that `board_id` lives in the caller's workspace and that `column_id`
-/// is a live column of that board.
+/// Verifies that `board_id` lives in the caller's workspace, that the board
+/// belongs to `project_id`, and that `column_id` is a live column of that board.
 ///
-/// Returns `NotFound` for an unknown board and `InvalidInput` (422) when the
-/// column does not belong to the board, preventing a task from being written
-/// into another board's column via a forged request body.
+/// The project_id check is defense-in-depth: the boards table has no composite
+/// FK on (board_id, project_id), so without this assertion a future caller path
+/// that regresses on the board constraint could silently write a task row that
+/// is inconsistent between its board and its project.
+///
+/// Returns `NotFound` for an unknown board, and `InvalidInput` (422) when the
+/// board's project does not match or the column does not belong to the board.
 async fn validate_column_in_board(
     conn: &impl ConnectionTrait,
     ctx: &WorkspaceCtx,
     board_id: BoardId,
     column_id: ColumnId,
+    project_id: ProjectId,
 ) -> Result<(), DomainError> {
-    let board_exists = board::Entity::find_by_id(board_id.0)
+    let board = board::Entity::find_by_id(board_id.0)
         .filter(board::Column::WorkspaceId.eq(ctx.workspace_id.0))
         .filter(board::Column::DeletedAt.is_null())
         .one(conn)
         .await
         .map_err(db_err)?
-        .is_some();
-
-    if !board_exists {
-        return Err(DomainError::NotFound {
+        .ok_or(DomainError::NotFound {
             entity: "board",
             id: board_id.0,
+        })?;
+
+    if board.project_id != project_id.0 {
+        return Err(DomainError::InvalidInput {
+            message: "board does not belong to the expected project".into(),
         });
     }
 
@@ -609,6 +624,8 @@ async fn validate_column_in_board(
 ///
 /// Mirrors E04's document wikilink flow: a title that resolves to no live
 /// document is stored as a pending link (target_document_id NULL), not dropped.
+/// This pending-link behavior applies to task description wikilinks (`document_links`)
+/// only; typed `task_references` reject non-existent targets outright.
 async fn sync_task_description_links(
     conn: &impl ConnectionTrait,
     ctx: &WorkspaceCtx,
