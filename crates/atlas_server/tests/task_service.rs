@@ -79,6 +79,35 @@ fn make_svc(db: &support::TestDb) -> TaskService {
     TaskService::new(db.conn().clone())
 }
 
+/// Forces a row's `position_key` directly, creating the exhausted (duplicate-key)
+/// state that only a resequence can break. `try_between` returns `None` for equal
+/// anchors, so this is the one scenario where the rebalance must actually help.
+async fn force_position_key(db: &support::TestDb, table: &str, id: uuid::Uuid, key: &str) {
+    use sea_orm::{ConnectionTrait, Statement};
+    db.conn()
+        .execute_raw(Statement::from_string(
+            sea_orm::DatabaseBackend::Postgres,
+            format!("UPDATE {table} SET position_key = '{key}' WHERE id = '{id}'"),
+        ))
+        .await
+        .expect("force position_key");
+}
+
+/// Reads a row's current `position_key`.
+async fn read_position_key(db: &support::TestDb, table: &str, id: uuid::Uuid) -> String {
+    use sea_orm::{ConnectionTrait, Statement};
+    let row = db
+        .conn()
+        .query_one_raw(Statement::from_string(
+            sea_orm::DatabaseBackend::Postgres,
+            format!("SELECT position_key FROM {table} WHERE id = '{id}'"),
+        ))
+        .await
+        .expect("query position_key")
+        .expect("row exists");
+    row.try_get("", "position_key").expect("position_key")
+}
+
 #[tokio::test]
 async fn task_service_create_emits_created_activity() {
     let db = support::TestDb::create().await.expect("TestDb::create");
@@ -230,15 +259,19 @@ async fn task_service_promote_checklist_item_is_atomic() {
         .expect("add checklist item");
 
     let result = svc
-        .promote_checklist_item(&ctx, item.id, proj.id, board.id, col.id)
+        .promote_checklist_item(&ctx, parent.id, item.id, proj.id, board.id, col.id)
         .await
         .expect("promote");
 
     assert_eq!(result.checklist_item.promoted_task_id, Some(result.task.id));
-    assert!(result.parent_reference.is_some(), "parent ref must exist");
+    assert_eq!(
+        result.parent_reference.target_task_id,
+        Some(parent.id),
+        "parent ref must point at the originating task"
+    );
 
     let re_promote = svc
-        .promote_checklist_item(&ctx, item.id, proj.id, board.id, col.id)
+        .promote_checklist_item(&ctx, parent.id, item.id, proj.id, board.id, col.id)
         .await;
     assert!(re_promote.is_err(), "re-promoting must fail");
 
@@ -566,8 +599,10 @@ async fn task_service_add_checklist_item_emits_checklist_added_activity() {
     db.teardown().await;
 }
 
+/// A move into an exhausted slot (two distinct neighbors sharing one key) must
+/// SUCCEED after the resequence re-derives live anchors — not return 409.
 #[tokio::test]
-async fn task_service_move_task_triggers_resequence_when_space_exhausted() {
+async fn task_service_move_task_recovers_after_resequence() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let (ws, user) = support::seed_workspace(&db, "svc-reseq-user").await;
     let ctx = support::ctx(&ws, &user);
@@ -576,10 +611,117 @@ async fn task_service_move_task_triggers_resequence_when_space_exhausted() {
     let task_repo = PgTaskRepo::new(db.conn().clone());
     let svc = make_svc(&db);
 
-    // Create a task and move it to the same column repeatedly, using the same
-    // before/after pair until the position space between adjacent equal keys
-    // would be exhausted, then verify a subsequent move still succeeds (resequence
-    // kicked in) or fails with PositionExhausted 409 (not a panic/crash).
+    let mover = svc
+        .create(
+            &ctx,
+            NewTask {
+                project_id: proj.id,
+                board_id: board.id,
+                column_id: col.id,
+                title: "Mover".into(),
+                description: String::new(),
+                priority: None,
+                due_date: None,
+                estimate: None,
+                labels: vec![],
+                properties: None,
+                position: PositionBetween {
+                    before: None,
+                    after: None,
+                },
+            },
+        )
+        .await
+        .expect("create mover");
+
+    let left = task_repo
+        .create(
+            &ctx,
+            NewTask {
+                project_id: proj.id,
+                board_id: board.id,
+                column_id: col.id,
+                title: "Left".into(),
+                description: String::new(),
+                priority: None,
+                due_date: None,
+                estimate: None,
+                labels: vec![],
+                properties: None,
+                position: PositionBetween {
+                    before: Some(mover.position_key.clone()),
+                    after: None,
+                },
+            },
+        )
+        .await
+        .expect("create left");
+
+    let right = task_repo
+        .create(
+            &ctx,
+            NewTask {
+                project_id: proj.id,
+                board_id: board.id,
+                column_id: col.id,
+                title: "Right".into(),
+                description: String::new(),
+                priority: None,
+                due_date: None,
+                estimate: None,
+                labels: vec![],
+                properties: None,
+                position: PositionBetween {
+                    before: Some(left.position_key.clone()),
+                    after: None,
+                },
+            },
+        )
+        .await
+        .expect("create right");
+
+    // Collapse Left and Right onto one shared key: the exhausted slot.
+    let collision = left.position_key.clone();
+    force_position_key(&db, "tasks", right.id.0, &collision).await;
+
+    // Move the mover "between" the two colliding neighbors. The first try_between
+    // sees equal anchors (None); the resequence splits Left/Right and re-derives
+    // the anchors so the retry lands the mover strictly between them.
+    let moved = svc
+        .move_task(
+            &ctx,
+            mover.id,
+            col.id,
+            PositionBetween {
+                before: Some(collision.clone()),
+                after: Some(collision.clone()),
+            },
+        )
+        .await
+        .expect("move must succeed after resequence");
+
+    let left_key = read_position_key(&db, "tasks", left.id.0).await;
+    let right_key = read_position_key(&db, "tasks", right.id.0).await;
+    assert!(
+        left_key < moved.position_key && moved.position_key < right_key,
+        "mover ({}) must land strictly between left ({left_key}) and right ({right_key})",
+        moved.position_key
+    );
+
+    db.teardown().await;
+}
+
+/// Genuinely unplaceable anchors (inverted order) must still surface
+/// PositionExhausted after the resequence cannot create room.
+#[tokio::test]
+async fn task_service_move_task_inverted_anchors_returns_exhausted() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "svc-inv-user").await;
+    let ctx = support::ctx(&ws, &user);
+
+    let (proj, board, col) = seed_project_board_col(&db, &ctx, "svc-inv", "IV").await;
+    let svc = make_svc(&db);
+
     let task = svc
         .create(
             &ctx,
@@ -587,7 +729,7 @@ async fn task_service_move_task_triggers_resequence_when_space_exhausted() {
                 project_id: proj.id,
                 board_id: board.id,
                 column_id: col.id,
-                title: "Resequence test".into(),
+                title: "Task".into(),
                 description: String::new(),
                 priority: None,
                 due_date: None,
@@ -603,72 +745,35 @@ async fn task_service_move_task_triggers_resequence_when_space_exhausted() {
         .await
         .expect("create task");
 
-    // Create a second task so we have two adjacent tasks with a known key gap.
-    let task2 = task_repo
-        .create(
+    // before > after: no real neighbors back these keys, so the resequence cannot
+    // help and the result is a clean PositionExhausted.
+    let result = svc
+        .move_task(
             &ctx,
-            NewTask {
-                project_id: proj.id,
-                board_id: board.id,
-                column_id: col.id,
-                title: "Anchor".into(),
-                description: String::new(),
-                priority: None,
-                due_date: None,
-                estimate: None,
-                labels: vec![],
-                properties: None,
-                position: PositionBetween {
-                    before: Some(task.position_key.clone()),
-                    after: None,
-                },
+            task.id,
+            col.id,
+            PositionBetween {
+                before: Some("ZZZZ".into()),
+                after: Some("AAAA".into()),
             },
         )
-        .await
-        .expect("create anchor task");
+        .await;
 
-    // Exhaust the space between task and task2 by repeatedly bisecting.
-    // After enough iterations try_between returns None, triggering resequence+retry.
-    // We drive the bisection via move_task so the resequence path is exercised.
-    let mut before = task.position_key.clone();
-    let after = task2.position_key.clone();
-
-    let mut last_result = Ok(());
-    for _ in 0..70 {
-        let result = svc
-            .move_task(
-                &ctx,
-                task.id,
-                col.id,
-                PositionBetween {
-                    before: Some(before.clone()),
-                    after: Some(after.clone()),
-                },
-            )
-            .await;
-
-        match result {
-            Ok(moved) => {
-                before = moved.position_key.clone();
-            }
-            Err(atlas_domain::DomainError::PositionExhausted { .. }) => {
-                // Retry-once also exhausted after resequence — acceptable 409.
-                last_result = Err(());
-                break;
-            }
-            Err(e) => panic!("unexpected error during move: {e:?}"),
-        }
-    }
-
-    // Either we exhausted naturally and got 409, or resequence succeeded for all moves.
-    // Either way, no panic and no unexpected error.
-    let _ = last_result;
+    assert!(
+        matches!(
+            result,
+            Err(atlas_domain::DomainError::PositionExhausted { .. })
+        ),
+        "inverted anchors must return PositionExhausted, got: {result:?}"
+    );
 
     db.teardown().await;
 }
 
+/// Creating a task into an exhausted slot (two distinct neighbors sharing one
+/// key) must SUCCEED after the resequence, landing strictly between them.
 #[tokio::test]
-async fn task_create_between_triggers_resequence_when_space_exhausted() {
+async fn task_create_between_recovers_after_resequence() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let (ws, user) = support::seed_workspace(&db, "svc-create-reseq").await;
     let ctx = support::ctx(&ws, &user);
@@ -722,54 +827,47 @@ async fn task_create_between_triggers_resequence_when_space_exhausted() {
         .await
         .expect("create anchor B");
 
-    // Exhaust the fractional space between A and B by creating tasks there.
-    // After enough bisections, try_between returns None and resequence must kick in.
-    let before_key = anchor_a.position_key.clone();
-    let after_key = anchor_b.position_key.clone();
+    // Collapse A and B onto one shared key: the exhausted slot.
+    let collision = anchor_a.position_key.clone();
+    force_position_key(&db, "tasks", anchor_b.id.0, &collision).await;
 
-    let mut last_result = Ok(());
-    for i in 0..70 {
-        let result = svc
-            .create(
-                &ctx,
-                NewTask {
-                    project_id: proj.id,
-                    board_id: board.id,
-                    column_id: col.id,
-                    title: format!("Filler {i}"),
-                    description: String::new(),
-                    priority: None,
-                    due_date: None,
-                    estimate: None,
-                    labels: vec![],
-                    properties: None,
-                    position: PositionBetween {
-                        before: Some(before_key.clone()),
-                        after: Some(after_key.clone()),
-                    },
+    let created = svc
+        .create(
+            &ctx,
+            NewTask {
+                project_id: proj.id,
+                board_id: board.id,
+                column_id: col.id,
+                title: "Inserted".into(),
+                description: String::new(),
+                priority: None,
+                due_date: None,
+                estimate: None,
+                labels: vec![],
+                properties: None,
+                position: PositionBetween {
+                    before: Some(collision.clone()),
+                    after: Some(collision.clone()),
                 },
-            )
-            .await;
+            },
+        )
+        .await
+        .expect("create must succeed after resequence");
 
-        match result {
-            Ok(_) => {}
-            Err(atlas_domain::DomainError::PositionExhausted { .. }) => {
-                last_result = Err(());
-                break;
-            }
-            Err(e) => panic!("unexpected error during create: {e:?}"),
-        }
-    }
-
-    // Either resequence succeeded for all creates, or we got a clean 409.
-    // Under no circumstances should the loop panic or produce a corrupt silent fallback.
-    let _ = last_result;
+    let a_key = read_position_key(&db, "tasks", anchor_a.id.0).await;
+    let b_key = read_position_key(&db, "tasks", anchor_b.id.0).await;
+    assert!(
+        a_key < created.position_key && created.position_key < b_key,
+        "inserted ({}) must land strictly between A ({a_key}) and B ({b_key})",
+        created.position_key
+    );
 
     db.teardown().await;
 }
 
+/// Adding a checklist item into an exhausted slot must SUCCEED after resequence.
 #[tokio::test]
-async fn checklist_add_between_triggers_resequence_when_space_exhausted() {
+async fn checklist_add_between_recovers_after_resequence() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let (ws, user) = support::seed_workspace(&db, "cl-add-reseq").await;
     let ctx = support::ctx(&ws, &user);
@@ -830,42 +928,39 @@ async fn checklist_add_between_triggers_resequence_when_space_exhausted() {
         .await
         .expect("add item B");
 
-    let before_key = item_a.position_key.clone();
-    let after_key = item_b.position_key.clone();
+    let collision = item_a.position_key.clone();
+    force_position_key(&db, "task_checklist_items", item_b.id.0, &collision).await;
 
-    let mut last_result = Ok(());
-    for i in 0..70 {
-        let result = svc
-            .add_checklist_item(
-                &ctx,
-                NewTaskChecklistItem {
-                    task_id: task.id,
-                    title: format!("Filler {i}"),
-                    position: PositionBetween {
-                        before: Some(before_key.clone()),
-                        after: Some(after_key.clone()),
-                    },
+    let inserted = svc
+        .add_checklist_item(
+            &ctx,
+            NewTaskChecklistItem {
+                task_id: task.id,
+                title: "Inserted".into(),
+                position: PositionBetween {
+                    before: Some(collision.clone()),
+                    after: Some(collision.clone()),
                 },
-            )
-            .await;
+            },
+        )
+        .await
+        .expect("add must succeed after resequence");
 
-        match result {
-            Ok(_) => {}
-            Err(atlas_domain::DomainError::PositionExhausted { .. }) => {
-                last_result = Err(());
-                break;
-            }
-            Err(e) => panic!("unexpected error during checklist add: {e:?}"),
-        }
-    }
-
-    let _ = last_result;
+    let a_key = read_position_key(&db, "task_checklist_items", item_a.id.0).await;
+    let b_key = read_position_key(&db, "task_checklist_items", item_b.id.0).await;
+    assert!(
+        a_key < inserted.position_key && inserted.position_key < b_key,
+        "inserted item ({}) must land strictly between A ({a_key}) and B ({b_key})",
+        inserted.position_key
+    );
 
     db.teardown().await;
 }
 
+/// Repositioning a checklist item into an exhausted slot must SUCCEED after
+/// resequence.
 #[tokio::test]
-async fn checklist_patch_position_triggers_resequence_when_space_exhausted() {
+async fn checklist_patch_position_recovers_after_resequence() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let (ws, user) = support::seed_workspace(&db, "cl-patch-reseq").await;
     let ctx = support::ctx(&ws, &user);
@@ -942,38 +1037,33 @@ async fn checklist_patch_position_triggers_resequence_when_space_exhausted() {
         .await
         .expect("add item C");
 
-    let before_key = item_a.position_key.clone();
-    let after_key = item_b.position_key.clone();
+    // Collapse A and B onto one shared key: the exhausted slot.
+    let collision = item_a.position_key.clone();
+    force_position_key(&db, "task_checklist_items", item_b.id.0, &collision).await;
 
-    let mut last_result = Ok(());
-    for _ in 0..70 {
-        let result = svc
-            .patch_checklist_item(
-                &ctx,
-                task.id,
-                item_c.id,
-                atlas_domain::entities::boards_tasks::TaskChecklistItemPatch {
-                    title: None,
-                    checked: None,
-                    position: Some(PositionBetween {
-                        before: Some(before_key.clone()),
-                        after: Some(after_key.clone()),
-                    }),
-                },
-            )
-            .await;
+    svc.patch_checklist_item(
+        &ctx,
+        task.id,
+        item_c.id,
+        atlas_domain::entities::boards_tasks::TaskChecklistItemPatch {
+            title: None,
+            checked: None,
+            position: Some(PositionBetween {
+                before: Some(collision.clone()),
+                after: Some(collision.clone()),
+            }),
+        },
+    )
+    .await
+    .expect("patch must succeed after resequence");
 
-        match result {
-            Ok(_) => {}
-            Err(atlas_domain::DomainError::PositionExhausted { .. }) => {
-                last_result = Err(());
-                break;
-            }
-            Err(e) => panic!("unexpected error during checklist patch: {e:?}"),
-        }
-    }
-
-    let _ = last_result;
+    let a_key = read_position_key(&db, "task_checklist_items", item_a.id.0).await;
+    let b_key = read_position_key(&db, "task_checklist_items", item_b.id.0).await;
+    let c_key = read_position_key(&db, "task_checklist_items", item_c.id.0).await;
+    assert!(
+        a_key < c_key && c_key < b_key,
+        "repositioned item ({c_key}) must land strictly between A ({a_key}) and B ({b_key})"
+    );
 
     db.teardown().await;
 }

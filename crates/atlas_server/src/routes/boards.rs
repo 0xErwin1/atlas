@@ -18,7 +18,7 @@ use atlas_api::{
 use atlas_domain::{
     Actor, WorkspaceCtx,
     entities::boards_tasks::{Board, BoardColumn, NewBoard, PositionBetween},
-    ids::{BoardId, ColumnId},
+    ids::ColumnId,
     permissions::Principal,
 };
 
@@ -39,6 +39,7 @@ pub(crate) struct PaginationQuery {
 pub(crate) struct ColumnPath {
     #[allow(dead_code)]
     ws: String,
+    #[allow(dead_code)]
     board_id: uuid::Uuid,
     column_id: uuid::Uuid,
 }
@@ -409,11 +410,13 @@ pub(crate) async fn update_column(
     let actor = principal_to_actor(&auth.principal);
     let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
     let repo = PgBoardRepo::new((*state.db).clone());
+    let board_id = auth.resource.0.id;
     let col_id = ColumnId(p.column_id);
 
     if body.before.is_some() || body.after.is_some() {
         repo.move_column(
             &ctx,
+            board_id,
             col_id,
             PositionBetween {
                 before: body.before,
@@ -425,12 +428,12 @@ pub(crate) async fn update_column(
     }
 
     let col = if let Some(name) = body.name {
-        repo.patch_column(&ctx, col_id, name)
+        repo.patch_column(&ctx, board_id, col_id, name)
             .await
             .map_err(ApiError::Domain)?
     } else {
         let cols = repo
-            .list_columns(&ctx, BoardId(p.board_id))
+            .list_columns(&ctx, board_id)
             .await
             .map_err(ApiError::Domain)?;
         cols.into_iter()
@@ -471,7 +474,7 @@ pub(crate) async fn delete_column(
     let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
     let repo = PgBoardRepo::new((*state.db).clone());
 
-    repo.soft_delete_column(&ctx, ColumnId(p.column_id))
+    repo.soft_delete_column(&ctx, auth.resource.0.id, ColumnId(p.column_id))
         .await
         .map_err(ApiError::Domain)?;
 

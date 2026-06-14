@@ -11,8 +11,8 @@ use atlas_domain::{
 };
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait,
-    IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection,
+    EntityTrait, IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -624,6 +624,62 @@ async fn reconstruct_content_at(
 
 pub struct PgDocumentLinkRepo {
     pub conn: DatabaseConnection,
+}
+
+impl PgDocumentLinkRepo {
+    /// Replaces the link set for a task source inside an existing transaction.
+    ///
+    /// The delete and the N inserts run on `conn`, which may be the caller's
+    /// `DatabaseTransaction`, so wikilink persistence joins the task write and
+    /// activity append in a single atomic unit (no torn link state).
+    pub async fn replace_for_task_source_in(
+        conn: &impl ConnectionTrait,
+        ctx: &WorkspaceCtx,
+        source: TaskId,
+        links: Vec<ExtractedLink>,
+    ) -> Result<(), DomainError> {
+        document_link::Entity::delete_many()
+            .filter(document_link::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(document_link::Column::SourceTaskId.eq(source.0))
+            .exec(conn)
+            .await
+            .map_err(db_err)?;
+
+        for link in links {
+            let model = document_link::ActiveModel {
+                id: Set(Uuid::now_v7()),
+                workspace_id: Set(ctx.workspace_id.0),
+                source_document_id: Set(None),
+                source_task_id: Set(Some(source.0)),
+                target_document_id: Set(link.target_document_id.map(|id| id.0)),
+                target_title: Set(link.target_title),
+                created_at: Set(Utc::now()),
+            };
+            model.insert(conn).await.map_err(db_err)?;
+        }
+
+        Ok(())
+    }
+
+    /// Resolves a document id by slug inside an existing transaction.
+    ///
+    /// Returns `None` when no live document matches the slug; callers store such
+    /// wikilinks as pending (target_document_id NULL), consistent with E04.
+    pub async fn find_document_id_by_slug_in(
+        conn: &impl ConnectionTrait,
+        ctx: &WorkspaceCtx,
+        slug: &str,
+    ) -> Result<Option<DocumentId>, DomainError> {
+        let row = document::Entity::find()
+            .filter(document::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(document::Column::Slug.eq(slug))
+            .filter(document::Column::DeletedAt.is_null())
+            .one(conn)
+            .await
+            .map_err(db_err)?;
+
+        Ok(row.map(|d| DocumentId(d.id)))
+    }
 }
 
 #[async_trait]

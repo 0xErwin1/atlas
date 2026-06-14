@@ -9,18 +9,22 @@ use atlas_domain::{
 };
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, TransactionTrait};
 
+use atlas_domain::entities::documents::ExtractedLink;
+use atlas_domain::{parse_wikilinks, slugify};
+use sea_orm::ConnectionTrait;
+
 use crate::persistence::entities::boards_tasks::{
-    task, task_checklist_item, task_checklist_item_from,
+    board, board_column, task, task_checklist_item, task_checklist_item_from,
 };
 use crate::persistence::repos::{
-    PgTaskActivityRepo, PgTaskAssigneeRepo, PgTaskChecklistRepo, PgTaskReferenceRepo, PgTaskRepo,
-    TaskActivityRepo as _,
+    PgDocumentLinkRepo, PgTaskActivityRepo, PgTaskAssigneeRepo, PgTaskChecklistRepo,
+    PgTaskReferenceRepo, PgTaskRepo, TaskActivityRepo as _,
 };
 
 /// Result of a checklist item promotion: the three records committed atomically.
 pub struct PromotionResult {
     pub task: Task,
-    pub parent_reference: Option<TaskReference>,
+    pub parent_reference: TaskReference,
     pub checklist_item: TaskChecklistItem,
 }
 
@@ -44,7 +48,13 @@ impl TaskService {
     pub async fn create(&self, ctx: &WorkspaceCtx, new: NewTask) -> Result<Task, DomainError> {
         let txn = self.conn.begin().await.map_err(db_err)?;
 
+        let target_board_id = new.board_id;
+        let target_column_id = new.column_id;
+        validate_column_in_board(&txn, ctx, target_board_id, target_column_id).await?;
+
         let task = PgTaskRepo::create_in(&txn, ctx, new).await?;
+
+        sync_task_description_links(&txn, ctx, task.id, &task.description).await?;
 
         PgTaskActivityRepo::append_in(
             &txn,
@@ -86,7 +96,13 @@ impl TaskService {
         let fields_changed: Vec<(String, serde_json::Value, serde_json::Value)> =
             collect_field_changes(&before, &patch);
 
+        let description_changed = patch.description.is_some();
+
         let updated = PgTaskRepo::patch_in(&txn, ctx, id, patch).await?;
+
+        if description_changed {
+            sync_task_description_links(&txn, ctx, id, &updated.description).await?;
+        }
 
         for (field, old_value, new_value) in fields_changed {
             PgTaskActivityRepo::append_in(
@@ -134,6 +150,10 @@ impl TaskService {
                 id: id.0,
             })
             .map(crate::persistence::entities::boards_tasks::task_from)?;
+
+        // A task may only move between columns of its own board; the target
+        // column must belong to that board and the caller's workspace.
+        validate_column_in_board(&txn, ctx, before.board_id, column_id).await?;
 
         let moved = PgTaskRepo::move_to_in(&txn, ctx, id, column_id, position).await?;
 
@@ -263,16 +283,36 @@ impl TaskService {
 
     /// Removes a reference by ID, recording a `ReferenceRemoved` activity,
     /// all in a single transaction.
+    ///
+    /// Loads the stored reference BEFORE deleting it so the activity payload
+    /// carries the real `kind`. The scoped load (`source_task_id = task_id`)
+    /// doubles as the existence + ownership check, so a missing or cross-task
+    /// reference produces `NotFound` without a separate round-trip.
     pub async fn remove_reference(
         &self,
         ctx: &WorkspaceCtx,
         task_id: TaskId,
         reference_id: TaskReferenceId,
-        kind: ReferenceKind,
     ) -> Result<(), DomainError> {
+        use crate::persistence::entities::boards_tasks::{task_reference, task_reference_from};
+
         let txn = self.conn.begin().await.map_err(db_err)?;
 
-        PgTaskReferenceRepo::delete_in(&txn, ctx, reference_id).await?;
+        let row = task_reference::Entity::find_by_id(reference_id.0)
+            .filter(task_reference::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(task_reference::Column::SourceTaskId.eq(task_id.0))
+            .one(&txn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "task_reference",
+                id: reference_id.0,
+            })?;
+
+        let stored = task_reference_from(row).map_err(|m| DomainError::Internal { message: m })?;
+        let kind = stored.kind.clone();
+
+        PgTaskReferenceRepo::delete_in(&txn, ctx, task_id, reference_id).await?;
 
         PgTaskActivityRepo::append_in(
             &txn,
@@ -331,7 +371,7 @@ impl TaskService {
     ) -> Result<TaskChecklistItem, DomainError> {
         let txn = self.conn.begin().await.map_err(db_err)?;
 
-        let item = PgTaskChecklistRepo::patch_item_in(&txn, ctx, item_id, patch).await?;
+        let item = PgTaskChecklistRepo::patch_item_in(&txn, ctx, task_id, item_id, patch).await?;
 
         PgTaskActivityRepo::append_in(
             &txn,
@@ -358,7 +398,7 @@ impl TaskService {
     ) -> Result<(), DomainError> {
         let txn = self.conn.begin().await.map_err(db_err)?;
 
-        PgTaskChecklistRepo::soft_delete_item_in(&txn, ctx, item_id).await?;
+        PgTaskChecklistRepo::soft_delete_item_in(&txn, ctx, task_id, item_id).await?;
 
         PgTaskActivityRepo::append_in(
             &txn,
@@ -387,6 +427,7 @@ impl TaskService {
     pub async fn promote_checklist_item(
         &self,
         ctx: &WorkspaceCtx,
+        parent_task_id: TaskId,
         item_id: ChecklistItemId,
         project_id: ProjectId,
         board_id: BoardId,
@@ -395,10 +436,12 @@ impl TaskService {
         let txn = self.conn.begin().await.map_err(db_err)?;
 
         // Fetch the item directly by ID so we can read its parent task_id and
-        // guard against re-promotion, all within the open transaction.
+        // guard against re-promotion, all within the open transaction. The item
+        // must belong to the authorized parent task (intra-workspace IDOR guard).
         let item = {
             task_checklist_item::Entity::find_by_id(item_id.0)
                 .filter(task_checklist_item::Column::WorkspaceId.eq(ctx.workspace_id.0))
+                .filter(task_checklist_item::Column::TaskId.eq(parent_task_id.0))
                 .filter(task_checklist_item::Column::DeletedAt.is_null())
                 .one(&txn)
                 .await
@@ -417,7 +460,10 @@ impl TaskService {
             });
         }
 
-        let parent_task_id = item.task_id;
+        // The target board+column come from the request body, so verify they
+        // live in the caller's workspace and that the column belongs to the
+        // target board before writing a task into them.
+        validate_column_in_board(&txn, ctx, board_id, column_id).await?;
 
         let child_task = PgTaskRepo::create_in(
             &txn,
@@ -451,11 +497,16 @@ impl TaskService {
                 target_document_id: None,
             },
         )
-        .await
-        .ok();
+        .await?;
 
-        let updated_item =
-            PgTaskChecklistRepo::mark_promoted_in(&txn, ctx, item_id, child_task.id).await?;
+        let updated_item = PgTaskChecklistRepo::mark_promoted_in(
+            &txn,
+            ctx,
+            parent_task_id,
+            item_id,
+            child_task.id,
+        )
+        .await?;
 
         PgTaskActivityRepo::append_in(
             &txn,
@@ -508,6 +559,76 @@ fn db_err(e: sea_orm::DbErr) -> DomainError {
     DomainError::Internal {
         message: e.to_string(),
     }
+}
+
+/// Verifies that `board_id` lives in the caller's workspace and that `column_id`
+/// is a live column of that board.
+///
+/// Returns `NotFound` for an unknown board and `InvalidInput` (422) when the
+/// column does not belong to the board, preventing a task from being written
+/// into another board's column via a forged request body.
+async fn validate_column_in_board(
+    conn: &impl ConnectionTrait,
+    ctx: &WorkspaceCtx,
+    board_id: BoardId,
+    column_id: ColumnId,
+) -> Result<(), DomainError> {
+    let board_exists = board::Entity::find_by_id(board_id.0)
+        .filter(board::Column::WorkspaceId.eq(ctx.workspace_id.0))
+        .filter(board::Column::DeletedAt.is_null())
+        .one(conn)
+        .await
+        .map_err(db_err)?
+        .is_some();
+
+    if !board_exists {
+        return Err(DomainError::NotFound {
+            entity: "board",
+            id: board_id.0,
+        });
+    }
+
+    let column = board_column::Entity::find_by_id(column_id.0)
+        .filter(board_column::Column::WorkspaceId.eq(ctx.workspace_id.0))
+        .filter(board_column::Column::DeletedAt.is_null())
+        .one(conn)
+        .await
+        .map_err(db_err)?;
+
+    match column {
+        Some(c) if c.board_id == board_id.0 => Ok(()),
+        _ => Err(DomainError::InvalidInput {
+            message: "column does not belong to the target board".into(),
+        }),
+    }
+}
+
+/// Parses wikilinks out of a task description, resolves each `[[Title]]` to a
+/// live document by slug, and replaces the task's link set — all on `conn`, so
+/// it joins the caller's transaction.
+///
+/// Mirrors E04's document wikilink flow: a title that resolves to no live
+/// document is stored as a pending link (target_document_id NULL), not dropped.
+async fn sync_task_description_links(
+    conn: &impl ConnectionTrait,
+    ctx: &WorkspaceCtx,
+    task_id: TaskId,
+    description: &str,
+) -> Result<(), DomainError> {
+    let titles = parse_wikilinks(description);
+
+    let mut extracted = Vec::with_capacity(titles.len());
+    for title in titles {
+        let target_document_id =
+            PgDocumentLinkRepo::find_document_id_by_slug_in(conn, ctx, &slugify(&title)).await?;
+
+        extracted.push(ExtractedLink {
+            target_title: title,
+            target_document_id,
+        });
+    }
+
+    PgDocumentLinkRepo::replace_for_task_source_in(conn, ctx, task_id, extracted).await
 }
 
 fn collect_field_changes(

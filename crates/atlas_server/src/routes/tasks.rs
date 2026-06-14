@@ -32,8 +32,8 @@ use crate::{
     authz::{Authorized, BoardRes, EditorMin, TaskRes, ViewerMin},
     error::ApiError,
     persistence::repos::{
-        PgTaskAssigneeRepo, PgTaskChecklistRepo, PgTaskReferenceRepo, PgTaskRepo, TaskAssigneeRepo,
-        TaskChecklistRepo, TaskReferenceRepo, TaskRepo,
+        DocumentRepo, PgDocumentRepo, PgTaskAssigneeRepo, PgTaskChecklistRepo, PgTaskReferenceRepo,
+        PgTaskRepo, TaskAssigneeRepo, TaskChecklistRepo, TaskReferenceRepo, TaskRepo,
     },
     state::AppState,
 };
@@ -751,12 +751,19 @@ pub(crate) async fn list_references(
         (status = 422, description = "Invalid reference kind"),
     )
 )]
+/// Creates a reference from the authorized source task to exactly one target.
+///
+/// `task_references` targets are backed by foreign-key columns: the row cannot
+/// be stored without a real target in this workspace. Both-null and both-set
+/// bodies are rejected here as 422 before reaching the DB, preventing a CHECK
+/// constraint violation or a silent both-null insert.
 pub(crate) async fn create_reference(
     auth: Authorized<TaskRes, EditorMin>,
     State(state): State<AppState>,
     Json(body): Json<CreateReferenceRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     use atlas_domain::entities::boards_tasks::ReferenceKind;
+    use atlas_domain::ids::DocumentId;
 
     let actor = principal_to_actor(&auth.principal);
     let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
@@ -775,12 +782,53 @@ pub(crate) async fn create_reference(
         }
     };
 
+    let has_task_target = body.target_task_readable_id.is_some();
+    let has_doc_target = body.target_document_id.is_some();
+
+    if !has_task_target && !has_doc_target {
+        return Err(ApiError::InvalidInput {
+            message:
+                "exactly one of target_task_readable_id or target_document_id must be provided"
+                    .into(),
+        });
+    }
+    if has_task_target && has_doc_target {
+        return Err(ApiError::InvalidInput {
+            message:
+                "exactly one of target_task_readable_id or target_document_id must be provided"
+                    .into(),
+        });
+    }
+
     let target_task_id = if let Some(rid) = body.target_task_readable_id {
         let repo = PgTaskRepo::new((*state.db).clone());
-        repo.find_by_readable_id(&ctx, &rid)
+        let found = repo
+            .find_by_readable_id(&ctx, &rid)
             .await
-            .map_err(ApiError::Domain)?
-            .map(|t| t.id)
+            .map_err(ApiError::Domain)?;
+
+        match found {
+            Some(t) => Some(t.id),
+            None => return Err(ApiError::NotFound),
+        }
+    } else {
+        None
+    };
+
+    let target_document_id = if let Some(raw_id) = body.target_document_id {
+        let doc_id = DocumentId(raw_id);
+        let doc_repo = PgDocumentRepo::new((*state.db).clone(), 0);
+        let found = doc_repo.get(&ctx, doc_id).await.map_err(ApiError::Domain)?;
+
+        match found {
+            Some(_) => Some(doc_id),
+            None => {
+                return Err(ApiError::Domain(atlas_domain::DomainError::NotFound {
+                    entity: "document",
+                    id: raw_id,
+                }));
+            }
+        }
     } else {
         None
     };
@@ -793,7 +841,7 @@ pub(crate) async fn create_reference(
                 source_task_id: auth.resource.0.id,
                 kind,
                 target_task_id,
-                target_document_id: body.target_document_id.map(atlas_domain::ids::DocumentId),
+                target_document_id,
             },
         )
         .await
@@ -831,15 +879,13 @@ pub(crate) async fn delete_reference(
     Path(p): Path<ReferencePath>,
     State(state): State<AppState>,
 ) -> Result<StatusCode, ApiError> {
-    use atlas_domain::entities::boards_tasks::ReferenceKind;
-
     let actor = principal_to_actor(&auth.principal);
     let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
     let ref_id = TaskReferenceId(p.reference_id);
 
     state
         .task_service()
-        .remove_reference(&ctx, auth.resource.0.id, ref_id, ReferenceKind::Relates)
+        .remove_reference(&ctx, auth.resource.0.id, ref_id)
         .await
         .map_err(ApiError::Domain)?;
 
@@ -1142,6 +1188,7 @@ pub(crate) async fn promote_checklist_item(
         .task_service()
         .promote_checklist_item(
             &ctx,
+            parent_task.id,
             ChecklistItemId(p.item_id),
             parent_task.project_id,
             BoardId(body.board_id),
@@ -1159,7 +1206,7 @@ pub(crate) async fn promote_checklist_item(
 
     let dto = PromotionDto {
         task: task_to_dto(result.task),
-        parent_reference: result.parent_reference.map(reference_to_dto),
+        parent_reference: Some(reference_to_dto(result.parent_reference)),
         checklist_item: checklist_item_to_dto(result.checklist_item),
     };
 

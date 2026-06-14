@@ -12,13 +12,14 @@ use atlas_api::dtos::{
     boards_tasks::{
         AddAssigneeRequest, CreateBoardRequest, CreateChecklistItemRequest, CreateColumnRequest,
         CreateReferenceRequest, CreateTaskRequest, MoveTaskRequest, PromoteChecklistItemRequest,
-        UpdateBoardRequest, UpdateColumnRequest, UpdateTaskRequest,
+        UpdateBoardRequest, UpdateChecklistItemRequest, UpdateColumnRequest, UpdateTaskRequest,
     },
+    documents::CreateDocumentRequest,
 };
 use atlas_client::ClientError;
 use atlas_domain::{
     Actor, WorkspaceCtx, entities::identity::MemberRole, entities::permissions::NewPermissionGrant,
-    ids::BoardId, permissions::ResourceRole,
+    ids::BoardId, ids::UserId, permissions::ResourceRole,
 };
 use atlas_server::persistence::repos::{
     MembershipRepo, NewUser, PermissionGrantRepo, PgPermissionGrantRepo, UserRepo,
@@ -79,6 +80,37 @@ async fn add_member(
         .expect("login");
 
     (client, user)
+}
+
+/// Returns the `(target_title, target_document_id)` rows of every document_link
+/// whose source is the given task, ordered by title.
+async fn task_links(
+    db: &support::TestDb,
+    task_id: uuid::Uuid,
+) -> Vec<(String, Option<uuid::Uuid>)> {
+    use sea_orm::{ConnectionTrait, Statement};
+
+    let rows = db
+        .conn()
+        .query_all_raw(Statement::from_string(
+            sea_orm::DatabaseBackend::Postgres,
+            format!(
+                "SELECT target_title, target_document_id FROM document_links \
+                 WHERE source_task_id = '{task_id}' ORDER BY target_title"
+            ),
+        ))
+        .await
+        .expect("query document_links");
+
+    rows.into_iter()
+        .map(|r| {
+            let title: String = r.try_get("", "target_title").expect("target_title");
+            let doc: Option<uuid::Uuid> = r
+                .try_get("", "target_document_id")
+                .expect("target_document_id");
+            (title, doc)
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -1382,6 +1414,362 @@ async fn promote_checklist_item_returns_409_on_second_promote() {
     db.teardown().await;
 }
 
+/// A successful promotion must always materialize the parent reference. The
+/// reference insert is part of the promotion transaction, so a `None`
+/// `parent_reference` would mean the insert silently failed yet the task and
+/// promoted-mark still committed — exactly the torn state FIX 1 forbids.
+#[tokio::test]
+async fn promote_checklist_item_always_persists_parent_reference() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "promote-ref-1").await;
+
+    client
+        .create_project(&ws.slug, project_req("promref-proj", "PRF"))
+        .await
+        .expect("create project");
+
+    let board = client
+        .create_board(
+            &ws.slug,
+            "promref-proj",
+            CreateBoardRequest {
+                name: "Board".to_string(),
+            },
+        )
+        .await
+        .expect("create board");
+
+    let col = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "Todo".to_string(),
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create column");
+
+    let task = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: col.id,
+                title: "Parent".to_string(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create task");
+
+    let item = client
+        .create_checklist_item(
+            &ws.slug,
+            &task.readable_id,
+            CreateChecklistItemRequest {
+                title: "Sub".to_string(),
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create checklist item");
+
+    let promotion = client
+        .promote_checklist_item(
+            &ws.slug,
+            &task.readable_id,
+            item.id,
+            PromoteChecklistItemRequest {
+                board_id: board.id,
+                column_id: col.id,
+            },
+        )
+        .await
+        .expect("promote");
+
+    let parent_ref = promotion
+        .parent_reference
+        .expect("promotion must always carry a parent reference");
+    assert_eq!(parent_ref.kind, "parent");
+    assert_eq!(
+        parent_ref.target_task_id,
+        Some(task.id),
+        "parent reference must point at the originating task"
+    );
+
+    // The reference is durable: it surfaces as an inbound backlink on the parent.
+    let backlinks = client
+        .list_task_backlinks(&ws.slug, &task.readable_id)
+        .await
+        .expect("list backlinks");
+    assert!(
+        backlinks
+            .items
+            .iter()
+            .any(|b| b.source_task_id == promotion.task.id && b.kind == "parent"),
+        "promoted task must back-link to its parent, got: {:?}",
+        backlinks.items
+    );
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
+// Task description wikilinks (FIX 3)
+// ---------------------------------------------------------------------------
+
+/// A `[[Existing Doc]]` wikilink in a task description must be persisted as a
+/// document_link whose source is the task and whose target resolves to the doc.
+#[tokio::test]
+async fn task_description_wikilink_persists_resolved_link() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "wikilink-1").await;
+
+    client
+        .create_project(&ws.slug, project_req("wiki-proj", "WK"))
+        .await
+        .expect("create project");
+
+    let doc = client
+        .create_document(
+            &ws.slug,
+            "wiki-proj",
+            CreateDocumentRequest {
+                title: "Existing Doc".to_string(),
+                folder_id: None,
+                content: Some("body".to_string()),
+            },
+        )
+        .await
+        .expect("create document");
+
+    let board = client
+        .create_board(
+            &ws.slug,
+            "wiki-proj",
+            CreateBoardRequest {
+                name: "Board".to_string(),
+            },
+        )
+        .await
+        .expect("create board");
+
+    let col = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "Todo".to_string(),
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create column");
+
+    let task = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: col.id,
+                title: "Task".to_string(),
+                description: Some("see [[Existing Doc]] for context".to_string()),
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create task");
+
+    let links = task_links(&db, task.id).await;
+    assert_eq!(
+        links,
+        vec![("Existing Doc".to_string(), Some(doc.id))],
+        "task description wikilink must persist as a resolved document_link"
+    );
+
+    db.teardown().await;
+}
+
+/// A `[[Nonexistent]]` wikilink is stored as a pending link (target NULL),
+/// consistent with E04 document behavior — not dropped, not an error.
+#[tokio::test]
+async fn task_description_wikilink_to_missing_doc_is_pending() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "wikilink-2").await;
+
+    client
+        .create_project(&ws.slug, project_req("wiki2-proj", "WB"))
+        .await
+        .expect("create project");
+
+    let board = client
+        .create_board(
+            &ws.slug,
+            "wiki2-proj",
+            CreateBoardRequest {
+                name: "Board".to_string(),
+            },
+        )
+        .await
+        .expect("create board");
+
+    let col = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "Todo".to_string(),
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create column");
+
+    let task = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: col.id,
+                title: "Task".to_string(),
+                description: Some("links to [[Nonexistent]]".to_string()),
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create task");
+
+    let links = task_links(&db, task.id).await;
+    assert_eq!(
+        links,
+        vec![("Nonexistent".to_string(), None)],
+        "unresolved wikilink must persist as a pending document_link"
+    );
+
+    db.teardown().await;
+}
+
+/// Patching the description replaces the task's link set: old links go, new
+/// links arrive, all in the same write.
+#[tokio::test]
+async fn task_description_patch_replaces_wikilinks() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "wikilink-3").await;
+
+    client
+        .create_project(&ws.slug, project_req("wiki3-proj", "WC"))
+        .await
+        .expect("create project");
+
+    let alpha = client
+        .create_document(
+            &ws.slug,
+            "wiki3-proj",
+            CreateDocumentRequest {
+                title: "Alpha".to_string(),
+                folder_id: None,
+                content: Some("a".to_string()),
+            },
+        )
+        .await
+        .expect("create alpha");
+
+    let beta = client
+        .create_document(
+            &ws.slug,
+            "wiki3-proj",
+            CreateDocumentRequest {
+                title: "Beta".to_string(),
+                folder_id: None,
+                content: Some("b".to_string()),
+            },
+        )
+        .await
+        .expect("create beta");
+
+    let board = client
+        .create_board(
+            &ws.slug,
+            "wiki3-proj",
+            CreateBoardRequest {
+                name: "Board".to_string(),
+            },
+        )
+        .await
+        .expect("create board");
+
+    let col = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "Todo".to_string(),
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create column");
+
+    let task = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: col.id,
+                title: "Task".to_string(),
+                description: Some("[[Alpha]]".to_string()),
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create task");
+
+    assert_eq!(
+        task_links(&db, task.id).await,
+        vec![("Alpha".to_string(), Some(alpha.id))]
+    );
+
+    client
+        .update_task(
+            &ws.slug,
+            &task.readable_id,
+            UpdateTaskRequest {
+                description: Some("now [[Beta]]".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("patch description");
+
+    assert_eq!(
+        task_links(&db, task.id).await,
+        vec![("Beta".to_string(), Some(beta.id))],
+        "patching the description must replace the old link set"
+    );
+
+    db.teardown().await;
+}
+
 // ---------------------------------------------------------------------------
 // Activity
 // ---------------------------------------------------------------------------
@@ -1811,6 +2199,441 @@ async fn create_task_with_negative_estimate_returns_422() {
 }
 
 // ---------------------------------------------------------------------------
+// Intra-workspace cross-resource authorization (FIX 2 — IDOR)
+//
+// A principal with an editor grant on board/task A and NO access to board/task B
+// (same workspace) must NOT mutate B's sub-resources by routing the request
+// through A's URL. The owning parent is now constrained in every sub-resource
+// op, so a mismatch resolves to 404 — never a silent cross-resource mutation.
+// ---------------------------------------------------------------------------
+
+/// Grants an editor board-scoped grant to `user` on `board_id`.
+async fn grant_board_editor(
+    db: &support::TestDb,
+    ws_id: atlas_domain::ids::WorkspaceId,
+    user_id: UserId,
+    board_id: uuid::Uuid,
+) {
+    let grant_repo = PgPermissionGrantRepo {
+        conn: db.conn().clone(),
+    };
+    grant_repo
+        .upsert(NewPermissionGrant {
+            workspace_id: ws_id,
+            user_id: Some(user_id),
+            api_key_id: None,
+            project_id: None,
+            folder_id: None,
+            document_id: None,
+            board_id: Some(BoardId(board_id)),
+            role: ResourceRole::Editor,
+            created_by_user_id: None,
+            created_by_api_key_id: None,
+        })
+        .await
+        .expect("upsert board grant");
+}
+
+struct IdorFixture {
+    ws: atlas_domain::entities::identity::Workspace,
+    attacker: atlas_client::AtlasClient,
+    board_a: uuid::Uuid,
+    col_a: uuid::Uuid,
+    task_a_readable: String,
+    task_b_readable: String,
+    item_b: uuid::Uuid,
+    ref_b: uuid::Uuid,
+    col_b: uuid::Uuid,
+}
+
+/// Builds two private boards A and B in one workspace, each with a column, a
+/// task, a checklist item and a reference. The attacker holds an editor grant on
+/// board A only (no access to B).
+async fn setup_idor(
+    db: &support::TestDb,
+    server: &support::TestServer,
+    prefix: &str,
+) -> IdorFixture {
+    let (owner, ws, _) =
+        support::login_user_with_workspace(server, db, &format!("{prefix}-owner")).await;
+
+    owner
+        .create_project(
+            &ws.slug,
+            CreateProjectRequest {
+                name: "IDOR Project".to_string(),
+                slug: format!("{prefix}-proj"),
+                task_prefix: "IDR".to_string(),
+                visibility: Some("private".to_string()),
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create project");
+
+    let make_board = |name: &'static str| {
+        let owner = &owner;
+        let ws = &ws;
+        let proj_slug = format!("{prefix}-proj");
+        async move {
+            let board = owner
+                .create_board(
+                    &ws.slug,
+                    &proj_slug,
+                    CreateBoardRequest {
+                        name: name.to_string(),
+                    },
+                )
+                .await
+                .expect("create board");
+            let col = owner
+                .create_column(
+                    &ws.slug,
+                    board.id,
+                    CreateColumnRequest {
+                        name: "Todo".to_string(),
+                        before: None,
+                        after: None,
+                    },
+                )
+                .await
+                .expect("create column");
+            let task = owner
+                .create_task(
+                    &ws.slug,
+                    board.id,
+                    CreateTaskRequest {
+                        column_id: col.id,
+                        title: format!("{name} Task"),
+                        description: None,
+                        properties: None,
+                        before: None,
+                        after: None,
+                    },
+                )
+                .await
+                .expect("create task");
+            let item = owner
+                .create_checklist_item(
+                    &ws.slug,
+                    &task.readable_id,
+                    CreateChecklistItemRequest {
+                        title: "Item".to_string(),
+                        before: None,
+                        after: None,
+                    },
+                )
+                .await
+                .expect("create checklist item");
+            let reference = owner
+                .create_reference(
+                    &ws.slug,
+                    &task.readable_id,
+                    CreateReferenceRequest {
+                        kind: "relates".to_string(),
+                        target_task_readable_id: Some(task.readable_id.clone()),
+                        target_document_id: None,
+                    },
+                )
+                .await
+                .expect("create reference");
+            (board, col, task, item, reference)
+        }
+    };
+
+    let (board_a, col_a, task_a, _item_a, _ref_a) = make_board("Board A").await;
+    let (_board_b, col_b, task_b, item_b, ref_b) = make_board("Board B").await;
+
+    let (attacker, attacker_user) = add_member(
+        db,
+        server,
+        ws.id,
+        &format!("{prefix}-attacker"),
+        MemberRole::Member,
+    )
+    .await;
+
+    // Attacker gets editor on board A only — nothing on board B.
+    grant_board_editor(db, ws.id, attacker_user.id, board_a.id).await;
+
+    IdorFixture {
+        ws,
+        attacker,
+        board_a: board_a.id,
+        col_a: col_a.id,
+        task_a_readable: task_a.readable_id,
+        task_b_readable: task_b.readable_id,
+        item_b: item_b.id,
+        ref_b: ref_b.id,
+        col_b: col_b.id,
+    }
+}
+
+fn is_404<T: std::fmt::Debug>(result: &Result<T, ClientError>) -> bool {
+    matches!(result, Err(ClientError::Api(p)) if p.status == 404)
+}
+
+/// Patching/deleting B's checklist item through A's authorized task URL → 404,
+/// while the same op on A's own item still works.
+#[tokio::test]
+async fn idor_checklist_item_cross_task_is_404() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let f = setup_idor(&db, &server, "idor-cl").await;
+
+    // Attacker authorizes task A (has editor on board A) but targets B's item.
+    let patch = f
+        .attacker
+        .update_checklist_item(
+            &f.ws.slug,
+            &f.task_a_readable,
+            f.item_b,
+            UpdateChecklistItemRequest {
+                title: Some("hijacked".to_string()),
+                ..Default::default()
+            },
+        )
+        .await;
+    assert!(
+        is_404(&patch),
+        "cross-task checklist patch must be 404, got: {patch:?}"
+    );
+
+    let delete = f
+        .attacker
+        .delete_checklist_item(&f.ws.slug, &f.task_a_readable, f.item_b)
+        .await;
+    assert!(
+        is_404(&delete),
+        "cross-task checklist delete must be 404, got: {delete:?}"
+    );
+
+    // Legitimate same-task op still works: create an item on A, then patch it.
+    let own_item = f
+        .attacker
+        .create_checklist_item(
+            &f.ws.slug,
+            &f.task_a_readable,
+            CreateChecklistItemRequest {
+                title: "mine".to_string(),
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create own item");
+    let ok = f
+        .attacker
+        .update_checklist_item(
+            &f.ws.slug,
+            &f.task_a_readable,
+            own_item.id,
+            UpdateChecklistItemRequest {
+                checked: Some(true),
+                ..Default::default()
+            },
+        )
+        .await;
+    assert!(
+        ok.is_ok(),
+        "same-task checklist patch must succeed, got: {ok:?}"
+    );
+
+    db.teardown().await;
+}
+
+/// Promoting B's checklist item through A's task URL → 404.
+#[tokio::test]
+async fn idor_promote_cross_task_is_404() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let f = setup_idor(&db, &server, "idor-prom").await;
+
+    let promote = f
+        .attacker
+        .promote_checklist_item(
+            &f.ws.slug,
+            &f.task_a_readable,
+            f.item_b,
+            PromoteChecklistItemRequest {
+                board_id: f.board_a,
+                column_id: f.col_a,
+            },
+        )
+        .await;
+    assert!(
+        is_404(&promote),
+        "cross-task promote must be 404, got: {promote:?}"
+    );
+
+    db.teardown().await;
+}
+
+/// Deleting B's reference through A's task URL → 404.
+#[tokio::test]
+async fn idor_reference_cross_task_is_404() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let f = setup_idor(&db, &server, "idor-ref").await;
+
+    let delete = f
+        .attacker
+        .delete_reference(&f.ws.slug, &f.task_a_readable, f.ref_b)
+        .await;
+    assert!(
+        is_404(&delete),
+        "cross-task reference delete must be 404, got: {delete:?}"
+    );
+
+    db.teardown().await;
+}
+
+/// Patching/moving/deleting B's column through A's board URL → 404, while the
+/// same op on A's own column still works.
+#[tokio::test]
+async fn idor_column_cross_board_is_404() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let f = setup_idor(&db, &server, "idor-col").await;
+
+    let patch = f
+        .attacker
+        .update_column(
+            &f.ws.slug,
+            f.board_a,
+            f.col_b,
+            UpdateColumnRequest {
+                name: Some("hijacked".to_string()),
+                before: None,
+                after: None,
+            },
+        )
+        .await;
+    assert!(
+        is_404(&patch),
+        "cross-board column patch must be 404, got: {patch:?}"
+    );
+
+    let delete = f
+        .attacker
+        .delete_column(&f.ws.slug, f.board_a, f.col_b)
+        .await;
+    assert!(
+        is_404(&delete),
+        "cross-board column delete must be 404, got: {delete:?}"
+    );
+
+    // Legitimate same-board op still works.
+    let ok = f
+        .attacker
+        .update_column(
+            &f.ws.slug,
+            f.board_a,
+            f.col_a,
+            UpdateColumnRequest {
+                name: Some("renamed".to_string()),
+                before: None,
+                after: None,
+            },
+        )
+        .await;
+    assert!(
+        ok.is_ok(),
+        "same-board column patch must succeed, got: {ok:?}"
+    );
+
+    db.teardown().await;
+}
+
+/// Creating a task into B's column through A's board URL → rejected (not written
+/// into another board's column).
+#[tokio::test]
+async fn idor_create_task_into_foreign_column_is_rejected() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let f = setup_idor(&db, &server, "idor-create").await;
+
+    let result = f
+        .attacker
+        .create_task(
+            &f.ws.slug,
+            f.board_a,
+            CreateTaskRequest {
+                column_id: f.col_b,
+                title: "smuggled".to_string(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await;
+    assert!(
+        matches!(result, Err(ClientError::Api(ref p)) if p.status == 404 || p.status == 422),
+        "creating a task into another board's column must be rejected, got: {result:?}"
+    );
+
+    db.teardown().await;
+}
+
+/// Moving A's task into B's column → rejected (a task cannot jump boards).
+#[tokio::test]
+async fn idor_move_task_into_foreign_column_is_rejected() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let f = setup_idor(&db, &server, "idor-move").await;
+
+    let result = f
+        .attacker
+        .move_task(
+            &f.ws.slug,
+            &f.task_a_readable,
+            MoveTaskRequest {
+                column_id: f.col_b,
+                before: None,
+                after: None,
+            },
+        )
+        .await;
+    assert!(
+        matches!(result, Err(ClientError::Api(ref p)) if p.status == 404 || p.status == 422),
+        "moving a task into another board's column must be rejected, got: {result:?}"
+    );
+
+    // Sanity: B's task is untouched and out of reach for the attacker.
+    let b = f.attacker.get_task(&f.ws.slug, &f.task_b_readable).await;
+    assert!(
+        is_404(&b),
+        "attacker must not see task B at all, got: {b:?}"
+    );
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
+// Helper: count task_activity rows for a task
+// ---------------------------------------------------------------------------
+
+async fn count_activity_of_kind(db: &support::TestDb, task_id: uuid::Uuid, kind: &str) -> i64 {
+    use sea_orm::{ConnectionTrait, Statement};
+
+    let row = db
+        .conn()
+        .query_one_raw(Statement::from_string(
+            sea_orm::DatabaseBackend::Postgres,
+            format!(
+                "SELECT COUNT(*) AS cnt FROM task_activity \
+                 WHERE task_id = '{task_id}' AND kind = '{kind}'"
+            ),
+        ))
+        .await
+        .expect("count_activity query")
+        .expect("count_activity row");
+
+    row.try_get::<i64>("", "cnt").expect("cnt")
+}
+
+// ---------------------------------------------------------------------------
 // Board-level grant resolution (Fix 1: build_board_chain Board segment)
 // ---------------------------------------------------------------------------
 
@@ -2042,6 +2865,835 @@ async fn no_board_grant_remains_denied() {
     assert!(
         result.is_err(),
         "member without any grant must be denied on private board, got: {result:?}"
+    );
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
+// Finding #5 — Duplicate reference → 409
+// ---------------------------------------------------------------------------
+
+/// Creating the same reference twice must return 409 on the second attempt.
+/// The `task_references_dedup_uidx` unique constraint triggers a 23505 which
+/// must be classified as Conflict, not Internal.
+#[tokio::test]
+async fn duplicate_reference_returns_409() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "dup-ref-409-1").await;
+
+    client
+        .create_project(&ws.slug, project_req("dup-ref-proj", "DR"))
+        .await
+        .expect("create project");
+
+    let board = client
+        .create_board(
+            &ws.slug,
+            "dup-ref-proj",
+            CreateBoardRequest { name: "B".into() },
+        )
+        .await
+        .expect("board");
+
+    let col = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "C".into(),
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("col");
+
+    let task_a = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: col.id,
+                title: "A".into(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("task A");
+
+    let task_b = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: col.id,
+                title: "B".into(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("task B");
+
+    client
+        .create_reference(
+            &ws.slug,
+            &task_a.readable_id,
+            CreateReferenceRequest {
+                kind: "relates".into(),
+                target_task_readable_id: Some(task_b.readable_id.clone()),
+                target_document_id: None,
+            },
+        )
+        .await
+        .expect("first reference");
+
+    let result = client
+        .create_reference(
+            &ws.slug,
+            &task_a.readable_id,
+            CreateReferenceRequest {
+                kind: "relates".into(),
+                target_task_readable_id: Some(task_b.readable_id.clone()),
+                target_document_id: None,
+            },
+        )
+        .await;
+
+    assert!(
+        matches!(result, Err(ClientError::Api(ref p)) if p.status == 409),
+        "duplicate reference must return 409, got: {result:?}"
+    );
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
+// Finding #6 — delete_reference records the REAL kind, not hardcoded relates
+// ---------------------------------------------------------------------------
+
+/// Deleting a `blocks` reference must record `blocks` in the activity payload,
+/// not the previously hardcoded `relates`.
+#[tokio::test]
+async fn delete_blocks_reference_records_correct_kind_in_activity() {
+    use sea_orm::{ConnectionTrait, Statement};
+
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "del-ref-kind-1").await;
+
+    client
+        .create_project(&ws.slug, project_req("del-ref-proj", "DRK"))
+        .await
+        .expect("create project");
+
+    let board = client
+        .create_board(
+            &ws.slug,
+            "del-ref-proj",
+            CreateBoardRequest { name: "B".into() },
+        )
+        .await
+        .expect("board");
+
+    let col = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "C".into(),
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("col");
+
+    let task_a = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: col.id,
+                title: "A".into(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("task A");
+
+    let task_b = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: col.id,
+                title: "B".into(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("task B");
+
+    let reference = client
+        .create_reference(
+            &ws.slug,
+            &task_a.readable_id,
+            CreateReferenceRequest {
+                kind: "blocks".into(),
+                target_task_readable_id: Some(task_b.readable_id.clone()),
+                target_document_id: None,
+            },
+        )
+        .await
+        .expect("create blocks reference");
+
+    client
+        .delete_reference(&ws.slug, &task_a.readable_id, reference.id)
+        .await
+        .expect("delete reference");
+
+    // Read the ReferenceRemoved activity row directly and assert the kind is blocks.
+    let row = db
+        .conn()
+        .query_one_raw(Statement::from_string(
+            sea_orm::DatabaseBackend::Postgres,
+            format!(
+                "SELECT payload FROM task_activity \
+                 WHERE task_id = '{}' AND kind = 'reference_removed'",
+                task_a.id
+            ),
+        ))
+        .await
+        .expect("query activity")
+        .expect("activity row");
+
+    let payload: serde_json::Value = row.try_get("", "payload").expect("payload");
+    let kind = payload["reference_removed"]["kind"]
+        .as_str()
+        .expect("kind in payload");
+    assert_eq!(
+        kind, "blocks",
+        "activity must record the real kind 'blocks', got: {kind}"
+    );
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
+// Finding #7 — Reference target validation
+// ---------------------------------------------------------------------------
+
+/// Providing neither target nor both targets must return 422.
+#[tokio::test]
+async fn create_reference_without_target_returns_422() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "ref-notarget-1").await;
+
+    client
+        .create_project(&ws.slug, project_req("ref-notarget-proj", "RNT"))
+        .await
+        .expect("create project");
+
+    let board = client
+        .create_board(
+            &ws.slug,
+            "ref-notarget-proj",
+            CreateBoardRequest { name: "B".into() },
+        )
+        .await
+        .expect("board");
+
+    let col = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "C".into(),
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("col");
+
+    let task = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: col.id,
+                title: "T".into(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("task");
+
+    let result = client
+        .create_reference(
+            &ws.slug,
+            &task.readable_id,
+            CreateReferenceRequest {
+                kind: "relates".into(),
+                target_task_readable_id: None,
+                target_document_id: None,
+            },
+        )
+        .await;
+    assert!(
+        matches!(result, Err(ClientError::Api(ref p)) if p.status == 422),
+        "no target must return 422, got: {result:?}"
+    );
+
+    db.teardown().await;
+}
+
+/// Providing both a task and a document target must return 422.
+#[tokio::test]
+async fn create_reference_with_both_targets_returns_422() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) =
+        support::login_user_with_workspace(&server, &db, "ref-bothtarget-1").await;
+
+    client
+        .create_project(&ws.slug, project_req("ref-bothtarget-proj", "RBT"))
+        .await
+        .expect("create project");
+
+    let board = client
+        .create_board(
+            &ws.slug,
+            "ref-bothtarget-proj",
+            CreateBoardRequest { name: "B".into() },
+        )
+        .await
+        .expect("board");
+
+    let col = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "C".into(),
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("col");
+
+    let task_a = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: col.id,
+                title: "A".into(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("task A");
+
+    let task_b = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: col.id,
+                title: "B".into(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("task B");
+
+    let doc = client
+        .create_document(
+            &ws.slug,
+            "ref-bothtarget-proj",
+            CreateDocumentRequest {
+                title: "Doc".into(),
+                folder_id: None,
+                content: None,
+            },
+        )
+        .await
+        .expect("doc");
+
+    let result = client
+        .create_reference(
+            &ws.slug,
+            &task_a.readable_id,
+            CreateReferenceRequest {
+                kind: "relates".into(),
+                target_task_readable_id: Some(task_b.readable_id.clone()),
+                target_document_id: Some(doc.id),
+            },
+        )
+        .await;
+    assert!(
+        matches!(result, Err(ClientError::Api(ref p)) if p.status == 422),
+        "both targets must return 422, got: {result:?}"
+    );
+
+    db.teardown().await;
+}
+
+/// A target_task_readable_id that resolves to nothing must return 404 and
+/// must NOT write any reference row.
+#[tokio::test]
+async fn create_reference_unknown_task_target_returns_404_and_no_row() {
+    use sea_orm::{ConnectionTrait, Statement};
+
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "ref-notask-1").await;
+
+    client
+        .create_project(&ws.slug, project_req("ref-notask-proj", "RNK"))
+        .await
+        .expect("create project");
+
+    let board = client
+        .create_board(
+            &ws.slug,
+            "ref-notask-proj",
+            CreateBoardRequest { name: "B".into() },
+        )
+        .await
+        .expect("board");
+
+    let col = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "C".into(),
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("col");
+
+    let task = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: col.id,
+                title: "Source".into(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("task");
+
+    let result = client
+        .create_reference(
+            &ws.slug,
+            &task.readable_id,
+            CreateReferenceRequest {
+                kind: "relates".into(),
+                target_task_readable_id: Some("NONEXISTENT-9999".into()),
+                target_document_id: None,
+            },
+        )
+        .await;
+    assert!(
+        matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
+        "unknown task target must return 404, got: {result:?}"
+    );
+
+    let count_row = db
+        .conn()
+        .query_one_raw(Statement::from_string(
+            sea_orm::DatabaseBackend::Postgres,
+            format!(
+                "SELECT COUNT(*) AS cnt FROM task_references WHERE source_task_id = '{}'",
+                task.id
+            ),
+        ))
+        .await
+        .expect("query")
+        .expect("row");
+    let cnt: i64 = count_row.try_get("", "cnt").expect("cnt");
+    assert_eq!(cnt, 0, "no reference row must be written on 404");
+
+    db.teardown().await;
+}
+
+/// A target_document_id that belongs to another workspace must return 404 and
+/// must NOT write any reference row (cross-tenant document target guard).
+#[tokio::test]
+async fn create_reference_cross_tenant_document_target_returns_404() {
+    use sea_orm::{ConnectionTrait, Statement};
+
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+
+    let (client_a, ws_a, _) =
+        support::login_user_with_workspace(&server, &db, "ref-ctdoc-alice").await;
+    let (client_b, ws_b, _) =
+        support::login_user_with_workspace(&server, &db, "ref-ctdoc-bob").await;
+
+    client_a
+        .create_project(&ws_a.slug, project_req("ref-ctdoc-proj-a", "RCA"))
+        .await
+        .expect("create project A");
+
+    client_b
+        .create_project(&ws_b.slug, project_req("ref-ctdoc-proj-b", "RCB"))
+        .await
+        .expect("create project B");
+
+    let board_a = client_a
+        .create_board(
+            &ws_a.slug,
+            "ref-ctdoc-proj-a",
+            CreateBoardRequest { name: "B".into() },
+        )
+        .await
+        .expect("board A");
+
+    let col_a = client_a
+        .create_column(
+            &ws_a.slug,
+            board_a.id,
+            CreateColumnRequest {
+                name: "C".into(),
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("col A");
+
+    let task_a = client_a
+        .create_task(
+            &ws_a.slug,
+            board_a.id,
+            CreateTaskRequest {
+                column_id: col_a.id,
+                title: "Source".into(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("task A");
+
+    // Bob creates a document in workspace B.
+    let doc_b = client_b
+        .create_document(
+            &ws_b.slug,
+            "ref-ctdoc-proj-b",
+            CreateDocumentRequest {
+                title: "Bob Doc".into(),
+                folder_id: None,
+                content: None,
+            },
+        )
+        .await
+        .expect("doc B");
+
+    // Alice tries to reference Bob's document — must be rejected.
+    let result = client_a
+        .create_reference(
+            &ws_a.slug,
+            &task_a.readable_id,
+            CreateReferenceRequest {
+                kind: "spec".into(),
+                target_task_readable_id: None,
+                target_document_id: Some(doc_b.id),
+            },
+        )
+        .await;
+    assert!(
+        matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
+        "cross-tenant document target must return 404, got: {result:?}"
+    );
+
+    let count_row = db
+        .conn()
+        .query_one_raw(Statement::from_string(
+            sea_orm::DatabaseBackend::Postgres,
+            format!(
+                "SELECT COUNT(*) AS cnt FROM task_references WHERE source_task_id = '{}'",
+                task_a.id
+            ),
+        ))
+        .await
+        .expect("query")
+        .expect("row");
+    let cnt: i64 = count_row.try_get("", "cnt").expect("cnt");
+    assert_eq!(
+        cnt, 0,
+        "no reference row must be written on cross-tenant 404"
+    );
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
+// Finding #8 — Assignee: unknown principal → 404; duplicate → 409
+// ---------------------------------------------------------------------------
+
+/// Adding a non-existent user ID as assignee must return 404 (FK violation,
+/// SQLSTATE 23503, classified as NotFound).
+#[tokio::test]
+async fn add_unknown_assignee_returns_404() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "assignee-404-1").await;
+
+    client
+        .create_project(&ws.slug, project_req("assignee-404-proj", "A4"))
+        .await
+        .expect("create project");
+
+    let board = client
+        .create_board(
+            &ws.slug,
+            "assignee-404-proj",
+            CreateBoardRequest { name: "B".into() },
+        )
+        .await
+        .expect("board");
+
+    let col = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "C".into(),
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("col");
+
+    let task = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: col.id,
+                title: "T".into(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("task");
+
+    let ghost_id = uuid::Uuid::new_v4();
+    let result = client
+        .add_assignee(
+            &ws.slug,
+            &task.readable_id,
+            AddAssigneeRequest {
+                assignee_type: "user".into(),
+                assignee_id: ghost_id,
+            },
+        )
+        .await;
+
+    assert!(
+        matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
+        "unknown user assignee must return 404, got: {result:?}"
+    );
+
+    db.teardown().await;
+}
+
+/// Adding the same assignee twice must return 409 (SQLSTATE 23505 unique violation).
+/// This test is more explicit than the existing `add_duplicate_assignee_returns_409`
+/// — it asserts the exact status without accepting any other value.
+#[tokio::test]
+async fn add_duplicate_assignee_returns_409_explicit() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, user) =
+        support::login_user_with_workspace(&server, &db, "dup-assign-explicit-1").await;
+
+    client
+        .create_project(&ws.slug, project_req("dup-assign-expl-proj", "DAE"))
+        .await
+        .expect("create project");
+
+    let board = client
+        .create_board(
+            &ws.slug,
+            "dup-assign-expl-proj",
+            CreateBoardRequest { name: "B".into() },
+        )
+        .await
+        .expect("board");
+
+    let col = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "C".into(),
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("col");
+
+    let task = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: col.id,
+                title: "T".into(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("task");
+
+    client
+        .add_assignee(
+            &ws.slug,
+            &task.readable_id,
+            AddAssigneeRequest {
+                assignee_type: "user".into(),
+                assignee_id: user.id.0,
+            },
+        )
+        .await
+        .expect("first add");
+
+    let result = client
+        .add_assignee(
+            &ws.slug,
+            &task.readable_id,
+            AddAssigneeRequest {
+                assignee_type: "user".into(),
+                assignee_id: user.id.0,
+            },
+        )
+        .await;
+
+    assert!(
+        matches!(result, Err(ClientError::Api(ref p)) if p.status == 409),
+        "duplicate assignee must return exactly 409, got: {result:?}"
+    );
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
+// Finding #9 — Unassigning a non-existent assignment → 404, no activity
+// ---------------------------------------------------------------------------
+
+/// Unassigning a user who was never assigned must return 404 AND must NOT
+/// write any `unassigned` activity row for the task.
+#[tokio::test]
+async fn unassign_non_existent_returns_404_and_no_activity() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, user) =
+        support::login_user_with_workspace(&server, &db, "unassign-404-1").await;
+
+    client
+        .create_project(&ws.slug, project_req("unassign-404-proj", "UA"))
+        .await
+        .expect("create project");
+
+    let board = client
+        .create_board(
+            &ws.slug,
+            "unassign-404-proj",
+            CreateBoardRequest { name: "B".into() },
+        )
+        .await
+        .expect("board");
+
+    let col = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "C".into(),
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("col");
+
+    let task = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: col.id,
+                title: "T".into(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("task");
+
+    let result = client
+        .remove_assignee(&ws.slug, &task.readable_id, &format!("user:{}", user.id.0))
+        .await;
+
+    assert!(
+        matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
+        "unassign of non-existent assignment must return 404, got: {result:?}"
+    );
+
+    let unassigned_count = count_activity_of_kind(&db, task.id, "unassigned").await;
+    assert_eq!(
+        unassigned_count, 0,
+        "no unassigned activity must be written when the assignment did not exist"
     );
 
     db.teardown().await;

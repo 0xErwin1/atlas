@@ -42,9 +42,13 @@ pub trait BoardRepo: Send + Sync {
         board_id: BoardId,
     ) -> Result<Vec<BoardColumn>, DomainError>;
 
+    /// Reorders a column. `board_id` is the board authorized by the caller; the
+    /// column must belong to it (intra-workspace IDOR guard), and the new key is
+    /// derived from that board's columns rather than the looked-up row's board.
     async fn move_column(
         &self,
         ctx: &WorkspaceCtx,
+        board_id: BoardId,
         column_id: ColumnId,
         position: PositionBetween,
     ) -> Result<(), DomainError>;
@@ -56,17 +60,26 @@ pub trait BoardRepo: Send + Sync {
         name: String,
     ) -> Result<Board, DomainError>;
 
+    /// Renames a column. `board_id` is the authorized board; a column from a
+    /// different board in the same workspace resolves to `NotFound`.
     async fn patch_column(
         &self,
         ctx: &WorkspaceCtx,
+        board_id: BoardId,
         id: ColumnId,
         name: String,
     ) -> Result<BoardColumn, DomainError>;
 
     async fn soft_delete_board(&self, ctx: &WorkspaceCtx, id: BoardId) -> Result<(), DomainError>;
 
-    async fn soft_delete_column(&self, ctx: &WorkspaceCtx, id: ColumnId)
-    -> Result<(), DomainError>;
+    /// Soft-deletes a column scoped to the authorized `board_id`; a mismatch
+    /// resolves to `NotFound`.
+    async fn soft_delete_column(
+        &self,
+        ctx: &WorkspaceCtx,
+        board_id: BoardId,
+        id: ColumnId,
+    ) -> Result<(), DomainError>;
 }
 
 #[async_trait]

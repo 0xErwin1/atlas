@@ -215,11 +215,9 @@ async fn add_column_returns_position_exhausted_when_anchors_are_equal() {
         .await
         .expect("anchor");
 
-    // Passing equal before and after exhausts the fractional space deterministically.
-    // try_between(k, k) returns None, triggering the resequence+retry path.
-    // The retry also produces None for equal keys, so PositionExhausted is returned.
-    // The old code would silently call position::between and return Ok with a wrong
-    // position instead.
+    // Equal before/after backed by a single column is genuinely unplaceable:
+    // try_between(k, k) returns None, the resequence cannot split one row into two,
+    // so the re-derived anchors stay equal and the retry surfaces PositionExhausted.
     let key = anchor.position_key.clone();
     let result = board_repo
         .add_column(
@@ -239,6 +237,105 @@ async fn add_column_returns_position_exhausted_when_anchors_are_equal() {
             Err(atlas_domain::DomainError::PositionExhausted { .. })
         ),
         "expected PositionExhausted for equal anchors, got: {result:?}"
+    );
+
+    db.teardown().await;
+}
+
+/// Adding a column into an exhausted slot (two distinct columns sharing one key)
+/// must SUCCEED after the resequence re-derives live anchors.
+#[tokio::test]
+async fn add_column_recovers_after_resequence() {
+    use sea_orm::{ConnectionTrait, Statement};
+
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "col-recover-user").await;
+    let ctx = support::ctx(&ws, &user);
+
+    let proj = make_project(&db, &ctx, "col-recover-proj", "CRV").await;
+    let board_repo = PgBoardRepo::new(db.conn().clone());
+
+    let board = board_repo
+        .create_board(
+            &ctx,
+            NewBoard {
+                project_id: proj.id,
+                name: "Recover Board".into(),
+            },
+        )
+        .await
+        .expect("create board");
+
+    let left = board_repo
+        .add_column(
+            &ctx,
+            board.id,
+            "Left".into(),
+            PositionBetween {
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("left");
+
+    let right = board_repo
+        .add_column(
+            &ctx,
+            board.id,
+            "Right".into(),
+            PositionBetween {
+                before: Some(left.position_key.clone()),
+                after: None,
+            },
+        )
+        .await
+        .expect("right");
+
+    // Collapse Left and Right onto one shared key: the exhausted slot.
+    let collision = left.position_key.clone();
+    db.conn()
+        .execute_raw(Statement::from_string(
+            sea_orm::DatabaseBackend::Postgres,
+            format!(
+                "UPDATE board_columns SET position_key = '{collision}' WHERE id = '{}'",
+                right.id.0
+            ),
+        ))
+        .await
+        .expect("force collision");
+
+    let inserted = board_repo
+        .add_column(
+            &ctx,
+            board.id,
+            "Inserted".into(),
+            PositionBetween {
+                before: Some(collision.clone()),
+                after: Some(collision.clone()),
+            },
+        )
+        .await
+        .expect("add must succeed after resequence");
+
+    let cols = board_repo
+        .list_columns(&ctx, board.id)
+        .await
+        .expect("list columns");
+    let left_key = &cols
+        .iter()
+        .find(|c| c.id == left.id)
+        .expect("left")
+        .position_key;
+    let right_key = &cols
+        .iter()
+        .find(|c| c.id == right.id)
+        .expect("right")
+        .position_key;
+    assert!(
+        *left_key < inserted.position_key && inserted.position_key < *right_key,
+        "inserted column ({}) must land strictly between left ({left_key}) and right ({right_key})",
+        inserted.position_key
     );
 
     db.teardown().await;

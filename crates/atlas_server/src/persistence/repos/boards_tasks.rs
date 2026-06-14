@@ -101,10 +101,11 @@ impl BoardRepo for PgBoardRepo {
             match position::try_between(position.before.as_deref(), position.after.as_deref()) {
                 Some(key) => key,
                 None => {
-                    resequence_column(&txn, ctx, board_id).await?;
+                    let remap = resequence_column(&txn, ctx, board_id).await?;
+                    let rebalanced = remap_anchors(&position, &remap);
                     match position::try_between(
-                        position.before.as_deref(),
-                        position.after.as_deref(),
+                        rebalanced.before.as_deref(),
+                        rebalanced.after.as_deref(),
                     ) {
                         Some(key) => key,
                         None => {
@@ -154,6 +155,7 @@ impl BoardRepo for PgBoardRepo {
     async fn move_column(
         &self,
         ctx: &WorkspaceCtx,
+        board_id: BoardId,
         column_id: ColumnId,
         position: PositionBetween,
     ) -> Result<(), DomainError> {
@@ -161,6 +163,7 @@ impl BoardRepo for PgBoardRepo {
 
         let row = board_column::Entity::find_by_id(column_id.0)
             .filter(board_column::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(board_column::Column::BoardId.eq(board_id.0))
             .filter(board_column::Column::DeletedAt.is_null())
             .one(&txn)
             .await
@@ -170,16 +173,15 @@ impl BoardRepo for PgBoardRepo {
                 id: column_id.0,
             })?;
 
-        let board_id = BoardId(row.board_id);
-
         let new_key =
             match position::try_between(position.before.as_deref(), position.after.as_deref()) {
                 Some(key) => key,
                 None => {
-                    resequence_column(&txn, ctx, board_id).await?;
+                    let remap = resequence_column(&txn, ctx, board_id).await?;
+                    let rebalanced = remap_anchors(&position, &remap);
                     match position::try_between(
-                        position.before.as_deref(),
-                        position.after.as_deref(),
+                        rebalanced.before.as_deref(),
+                        rebalanced.after.as_deref(),
                     ) {
                         Some(key) => key,
                         None => {
@@ -228,11 +230,13 @@ impl BoardRepo for PgBoardRepo {
     async fn patch_column(
         &self,
         ctx: &WorkspaceCtx,
+        board_id: BoardId,
         id: ColumnId,
         name: String,
     ) -> Result<BoardColumn, DomainError> {
         let row = board_column::Entity::find_by_id(id.0)
             .filter(board_column::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(board_column::Column::BoardId.eq(board_id.0))
             .filter(board_column::Column::DeletedAt.is_null())
             .one(&self.conn)
             .await
@@ -274,10 +278,12 @@ impl BoardRepo for PgBoardRepo {
     async fn soft_delete_column(
         &self,
         ctx: &WorkspaceCtx,
+        board_id: BoardId,
         id: ColumnId,
     ) -> Result<(), DomainError> {
         let row = board_column::Entity::find_by_id(id.0)
             .filter(board_column::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(board_column::Column::BoardId.eq(board_id.0))
             .filter(board_column::Column::DeletedAt.is_null())
             .one(&self.conn)
             .await
@@ -390,11 +396,36 @@ impl PgTaskRepo {
         column_id: ColumnId,
         position: PositionBetween,
     ) -> Result<Task, DomainError> {
+        // Reject positions where a provided anchor string is not a valid
+        // fractional-index key. Invalid anchors are silently dropped to None
+        // by try_between, which turns both-invalid into (None, None) → default
+        // midpoint. That silent success is wrong: the caller said "between X and
+        // Y" and we must honour that or surface PositionExhausted.
+        if anchor_is_invalid(position.before.as_deref())
+            || anchor_is_invalid(position.after.as_deref())
+        {
+            return Err(DomainError::PositionExhausted { column_id });
+        }
+
         match try_move_to_in(conn, ctx, id, column_id, &position).await {
             Ok(task) => Ok(task),
             Err(DomainError::PositionExhausted { .. }) => {
-                resequence_tasks_in_column(conn, ctx, column_id).await?;
-                try_move_to_in(conn, ctx, id, column_id, &position).await
+                let remap = resequence_tasks_in_column(conn, ctx, column_id).await?;
+                let rebalanced = remap_anchors(&position, &remap);
+
+                // If both original anchors were specified but neither appears in
+                // the resequence map, they are phantom keys that do not correspond
+                // to any row in this column. Resequencing cannot help; return
+                // PositionExhausted rather than silently placing at the default midpoint.
+                if position.before.is_some()
+                    && position.after.is_some()
+                    && rebalanced.before.is_none()
+                    && rebalanced.after.is_none()
+                {
+                    return Err(DomainError::PositionExhausted { column_id });
+                }
+
+                try_move_to_in(conn, ctx, id, column_id, &rebalanced).await
             }
             Err(e) => Err(e),
         }
@@ -438,14 +469,12 @@ impl PgTaskRepo {
         ) {
             Some(key) => key,
             None => {
-                resequence_tasks_in_column(conn, ctx, new.column_id).await?;
-                position::try_between(
-                    new.position.before.as_deref(),
-                    new.position.after.as_deref(),
-                )
-                .ok_or(DomainError::PositionExhausted {
-                    column_id: new.column_id,
-                })?
+                let remap = resequence_tasks_in_column(conn, ctx, new.column_id).await?;
+                let rebalanced = remap_anchors(&new.position, &remap);
+                position::try_between(rebalanced.before.as_deref(), rebalanced.after.as_deref())
+                    .ok_or(DomainError::PositionExhausted {
+                        column_id: new.column_id,
+                    })?
             }
         };
         let (by_user, by_key) = actor_columns(&ctx.actor);
@@ -614,7 +643,7 @@ impl PgTaskReferenceRepo {
         model
             .insert(conn)
             .await
-            .map_err(db_err)
+            .map_err(classify_reference_insert_err)
             .and_then(|m| task_reference_from(m).map_err(internal_err))
     }
 }
@@ -645,7 +674,7 @@ impl TaskReferenceRepo for PgTaskReferenceRepo {
         model
             .insert(&self.conn)
             .await
-            .map_err(db_err)
+            .map_err(classify_reference_insert_err)
             .and_then(|m| task_reference_from(m).map_err(internal_err))
     }
 
@@ -684,22 +713,41 @@ impl TaskReferenceRepo for PgTaskReferenceRepo {
     }
 
     async fn delete(&self, ctx: &WorkspaceCtx, id: TaskReferenceId) -> Result<(), DomainError> {
-        PgTaskReferenceRepo::delete_in(&self.conn, ctx, id).await
+        task_reference::Entity::delete_by_id(id.0)
+            .filter(task_reference::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .exec(&self.conn)
+            .await
+            .map_err(db_err)?;
+        Ok(())
     }
 }
 
 impl PgTaskReferenceRepo {
     /// Deletes a task reference inside an existing transaction.
+    ///
+    /// `expected_source_task_id` is the task authorized by the caller. The
+    /// reference must originate from it; a reference on another task in the same
+    /// workspace resolves to `NotFound` rather than being silently deleted.
     pub async fn delete_in(
         conn: &impl ConnectionTrait,
         ctx: &WorkspaceCtx,
+        expected_source_task_id: TaskId,
         id: TaskReferenceId,
     ) -> Result<(), DomainError> {
-        task_reference::Entity::delete_by_id(id.0)
+        let result = task_reference::Entity::delete_by_id(id.0)
             .filter(task_reference::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(task_reference::Column::SourceTaskId.eq(expected_source_task_id.0))
             .exec(conn)
             .await
             .map_err(db_err)?;
+
+        if result.rows_affected == 0 {
+            return Err(DomainError::NotFound {
+                entity: "task_reference",
+                id: id.0,
+            });
+        }
+
         Ok(())
     }
 }
@@ -719,6 +767,10 @@ impl PgTaskAssigneeRepo {
         ctx: &WorkspaceCtx,
         new: NewTaskAssignee,
     ) -> Result<TaskAssignee, DomainError> {
+        let principal_id = match new.assignee {
+            AssigneeRef::User(uid) => uid.0,
+            AssigneeRef::ApiKey(kid) => kid.0,
+        };
         let (assignee_user_id, assignee_api_key_id) = match new.assignee {
             AssigneeRef::User(uid) => (Some(uid.0), None),
             AssigneeRef::ApiKey(kid) => (None, Some(kid.0)),
@@ -737,26 +789,25 @@ impl PgTaskAssigneeRepo {
         model
             .insert(conn)
             .await
-            .map_err(|e| {
-                let msg = e.to_string();
-                if msg.contains("unique") || msg.contains("duplicate") {
-                    DomainError::Forbidden {
-                        message: "assignee already added to this task".into(),
-                    }
-                } else {
-                    db_err(e)
-                }
-            })
+            .map_err(|e| classify_insert_err(e, principal_id))
             .and_then(|m| task_assignee_from(m).map_err(internal_err))
     }
 
     /// Removes a task assignee inside an existing transaction.
+    ///
+    /// Returns `NotFound` when the assignee was not present on this task so that
+    /// callers can surface a 404 and avoid writing phantom `Unassigned` activity.
     pub async fn remove_in(
         conn: &impl ConnectionTrait,
         ctx: &WorkspaceCtx,
         task_id: TaskId,
         assignee: AssigneeRef,
     ) -> Result<(), DomainError> {
+        let principal_id = match assignee {
+            AssigneeRef::User(uid) => uid.0,
+            AssigneeRef::ApiKey(kid) => kid.0,
+        };
+
         let mut q = task_assignee::Entity::delete_many()
             .filter(task_assignee::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(task_assignee::Column::TaskId.eq(task_id.0));
@@ -766,7 +817,15 @@ impl PgTaskAssigneeRepo {
             AssigneeRef::ApiKey(kid) => q.filter(task_assignee::Column::AssigneeApiKeyId.eq(kid.0)),
         };
 
-        q.exec(conn).await.map_err(db_err)?;
+        let result = q.exec(conn).await.map_err(db_err)?;
+
+        if result.rows_affected == 0 {
+            return Err(DomainError::NotFound {
+                entity: "task_assignee",
+                id: principal_id,
+            });
+        }
+
         Ok(())
     }
 }
@@ -829,14 +888,12 @@ impl PgTaskChecklistRepo {
         ) {
             Some(key) => key,
             None => {
-                resequence_checklist_items(conn, ctx, new.task_id).await?;
-                position::try_between(
-                    new.position.before.as_deref(),
-                    new.position.after.as_deref(),
-                )
-                .ok_or(DomainError::PositionExhausted {
-                    column_id: ColumnId(new.task_id.0),
-                })?
+                let remap = resequence_checklist_items(conn, ctx, new.task_id).await?;
+                let rebalanced = remap_anchors(&new.position, &remap);
+                position::try_between(rebalanced.before.as_deref(), rebalanced.after.as_deref())
+                    .ok_or(DomainError::PositionExhausted {
+                        column_id: ColumnId(new.task_id.0),
+                    })?
             }
         };
         let (by_user, by_key) = actor_columns(&ctx.actor);
@@ -864,14 +921,20 @@ impl PgTaskChecklistRepo {
     }
 
     /// Patches a checklist item inside an existing transaction.
+    ///
+    /// `expected_task_id` is the task authorized by the caller's extractor. The
+    /// item must belong to it; an item from another task in the same workspace
+    /// resolves to `NotFound`, closing the intra-workspace IDOR path.
     pub async fn patch_item_in(
         conn: &impl ConnectionTrait,
         ctx: &WorkspaceCtx,
+        expected_task_id: TaskId,
         item_id: ChecklistItemId,
         patch: TaskChecklistItemPatch,
     ) -> Result<TaskChecklistItem, DomainError> {
         let row = task_checklist_item::Entity::find_by_id(item_id.0)
             .filter(task_checklist_item::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(task_checklist_item::Column::TaskId.eq(expected_task_id.0))
             .filter(task_checklist_item::Column::DeletedAt.is_null())
             .one(conn)
             .await
@@ -894,12 +957,12 @@ impl PgTaskChecklistRepo {
             let new_key = match position::try_between(pos.before.as_deref(), pos.after.as_deref()) {
                 Some(key) => key,
                 None => {
-                    resequence_checklist_items(conn, ctx, task_id).await?;
-                    position::try_between(pos.before.as_deref(), pos.after.as_deref()).ok_or(
-                        DomainError::PositionExhausted {
+                    let remap = resequence_checklist_items(conn, ctx, task_id).await?;
+                    let rebalanced = remap_anchors(&pos, &remap);
+                    position::try_between(rebalanced.before.as_deref(), rebalanced.after.as_deref())
+                        .ok_or(DomainError::PositionExhausted {
                             column_id: ColumnId(task_id.0),
-                        },
-                    )?
+                        })?
                 }
             };
             active.position_key = Set(new_key);
@@ -913,13 +976,18 @@ impl PgTaskChecklistRepo {
     }
 
     /// Soft-deletes a checklist item inside an existing transaction.
+    ///
+    /// `expected_task_id` scopes the item to the authorized task; a mismatch
+    /// resolves to `NotFound` (intra-workspace IDOR guard).
     pub async fn soft_delete_item_in(
         conn: &impl ConnectionTrait,
         ctx: &WorkspaceCtx,
+        expected_task_id: TaskId,
         item_id: ChecklistItemId,
     ) -> Result<(), DomainError> {
         let row = task_checklist_item::Entity::find_by_id(item_id.0)
             .filter(task_checklist_item::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(task_checklist_item::Column::TaskId.eq(expected_task_id.0))
             .filter(task_checklist_item::Column::DeletedAt.is_null())
             .one(conn)
             .await
@@ -944,11 +1012,13 @@ impl PgTaskChecklistRepo {
     pub async fn mark_promoted_in(
         conn: &impl ConnectionTrait,
         ctx: &WorkspaceCtx,
+        expected_task_id: TaskId,
         item_id: ChecklistItemId,
         promoted_task_id: TaskId,
     ) -> Result<TaskChecklistItem, DomainError> {
         let row = task_checklist_item::Entity::find_by_id(item_id.0)
             .filter(task_checklist_item::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(task_checklist_item::Column::TaskId.eq(expected_task_id.0))
             .filter(task_checklist_item::Column::DeletedAt.is_null())
             .one(conn)
             .await
@@ -973,6 +1043,29 @@ impl PgTaskChecklistRepo {
             .await
             .map(task_checklist_item_from)
             .map_err(db_err)
+    }
+
+    /// Resolves the owning task id of a live checklist item within the workspace.
+    ///
+    /// Used by the unscoped trait methods to feed the task-scoped `_in` variants
+    /// a self-consistent constraint; the HTTP handlers pass the authorized task.
+    async fn item_task_id(
+        &self,
+        ctx: &WorkspaceCtx,
+        item_id: ChecklistItemId,
+    ) -> Result<TaskId, DomainError> {
+        let row = task_checklist_item::Entity::find_by_id(item_id.0)
+            .filter(task_checklist_item::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(task_checklist_item::Column::DeletedAt.is_null())
+            .one(&self.conn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "task_checklist_item",
+                id: item_id.0,
+            })?;
+
+        Ok(TaskId(row.task_id))
     }
 }
 
@@ -1008,7 +1101,8 @@ impl TaskChecklistRepo for PgTaskChecklistRepo {
         item_id: ChecklistItemId,
         patch: TaskChecklistItemPatch,
     ) -> Result<TaskChecklistItem, DomainError> {
-        PgTaskChecklistRepo::patch_item_in(&self.conn, ctx, item_id, patch).await
+        let task_id = self.item_task_id(ctx, item_id).await?;
+        PgTaskChecklistRepo::patch_item_in(&self.conn, ctx, task_id, item_id, patch).await
     }
 
     async fn soft_delete_item(
@@ -1016,7 +1110,8 @@ impl TaskChecklistRepo for PgTaskChecklistRepo {
         ctx: &WorkspaceCtx,
         item_id: ChecklistItemId,
     ) -> Result<(), DomainError> {
-        PgTaskChecklistRepo::soft_delete_item_in(&self.conn, ctx, item_id).await
+        let task_id = self.item_task_id(ctx, item_id).await?;
+        PgTaskChecklistRepo::soft_delete_item_in(&self.conn, ctx, task_id, item_id).await
     }
 
     async fn mark_promoted(
@@ -1159,27 +1254,31 @@ pub async fn resequence_column(
     txn: &impl ConnectionTrait,
     ctx: &WorkspaceCtx,
     board_id: BoardId,
-) -> Result<(), DomainError> {
+) -> Result<Vec<(String, String)>, DomainError> {
     let rows = board_column::Entity::find()
         .filter(board_column::Column::WorkspaceId.eq(ctx.workspace_id.0))
         .filter(board_column::Column::BoardId.eq(board_id.0))
         .filter(board_column::Column::DeletedAt.is_null())
         .order_by(board_column::Column::PositionKey, Order::Asc)
+        .order_by(board_column::Column::Id, Order::Asc)
         .all(txn)
         .await
         .map_err(db_err)?;
 
+    let mut remap = Vec::with_capacity(rows.len());
     let mut prev: Option<String> = None;
     for row in rows {
+        let old_key = row.position_key.clone();
         let key = position::between(prev.as_deref(), None);
         let mut active = row.into_active_model();
         active.position_key = Set(key.clone());
         active.updated_at = Set(Utc::now());
         active.update(txn).await.map_err(db_err)?;
+        remap.push((old_key, key.clone()));
         prev = Some(key);
     }
 
-    Ok(())
+    Ok(remap)
 }
 
 /// Resequences all non-deleted tasks in `column_id` using evenly spaced fractional keys.
@@ -1190,27 +1289,31 @@ async fn resequence_tasks_in_column(
     txn: &impl ConnectionTrait,
     ctx: &WorkspaceCtx,
     column_id: ColumnId,
-) -> Result<(), DomainError> {
+) -> Result<Vec<(String, String)>, DomainError> {
     let rows = task::Entity::find()
         .filter(task::Column::WorkspaceId.eq(ctx.workspace_id.0))
         .filter(task::Column::ColumnId.eq(column_id.0))
         .filter(task::Column::DeletedAt.is_null())
         .order_by(task::Column::PositionKey, Order::Asc)
+        .order_by(task::Column::Id, Order::Asc)
         .all(txn)
         .await
         .map_err(db_err)?;
 
+    let mut remap = Vec::with_capacity(rows.len());
     let mut prev: Option<String> = None;
     for row in rows {
+        let old_key = row.position_key.clone();
         let key = position::between(prev.as_deref(), None);
         let mut active = row.into_active_model();
         active.position_key = Set(key.clone());
         active.updated_at = Set(Utc::now());
         active.update(txn).await.map_err(db_err)?;
+        remap.push((old_key, key.clone()));
         prev = Some(key);
     }
 
-    Ok(())
+    Ok(remap)
 }
 
 /// Resequences all non-deleted checklist items for `task_id` using evenly spaced fractional keys.
@@ -1220,27 +1323,90 @@ async fn resequence_checklist_items(
     conn: &impl ConnectionTrait,
     ctx: &WorkspaceCtx,
     task_id: TaskId,
-) -> Result<(), DomainError> {
+) -> Result<Vec<(String, String)>, DomainError> {
     let rows = task_checklist_item::Entity::find()
         .filter(task_checklist_item::Column::WorkspaceId.eq(ctx.workspace_id.0))
         .filter(task_checklist_item::Column::TaskId.eq(task_id.0))
         .filter(task_checklist_item::Column::DeletedAt.is_null())
         .order_by(task_checklist_item::Column::PositionKey, Order::Asc)
+        .order_by(task_checklist_item::Column::Id, Order::Asc)
         .all(conn)
         .await
         .map_err(db_err)?;
 
+    let mut remap = Vec::with_capacity(rows.len());
     let mut prev: Option<String> = None;
     for row in rows {
+        let old_key = row.position_key.clone();
         let key = position::between(prev.as_deref(), None);
         let mut active = row.into_active_model();
         active.position_key = Set(key.clone());
         active.updated_at = Set(Utc::now());
         active.update(conn).await.map_err(db_err)?;
+        remap.push((old_key, key.clone()));
         prev = Some(key);
     }
 
-    Ok(())
+    Ok(remap)
+}
+
+/// Re-derives a `PositionBetween` against the post-resequence keys.
+///
+/// After a resequence, the client's raw anchor keys are stale. `remap` is the
+/// ordered list of (old_key, new_key) pairs the resequence produced, in row
+/// order. Each present anchor is translated to its neighbor's NEW key so
+/// `try_between` operates on live anchors; retrying on the result lets the
+/// rebalance actually create room instead of re-failing on the same keys.
+///
+/// Exhaustion only arises when the two anchors collide (`before == after`,
+/// i.e. duplicate-keyed neighbors) or invert. When `before == after`, the
+/// resequence has split those colliding rows into distinct keys: we translate
+/// `before` to the FIRST occurrence's new key and `after` to the SECOND, so the
+/// insert lands between the now-separated neighbors. A non-colliding anchor maps
+/// to its single new key; an anchor with no surviving row becomes `None`.
+fn remap_anchors(original: &PositionBetween, remap: &[(String, String)]) -> PositionBetween {
+    let lookup = |old: &str| -> Vec<&String> {
+        remap
+            .iter()
+            .filter(|(o, _)| o == old)
+            .map(|(_, n)| n)
+            .collect()
+    };
+
+    match (&original.before, &original.after) {
+        (Some(b), Some(a)) if b == a => {
+            // Equal anchors only become placeable if the colliding key was backed
+            // by TWO distinct rows that the resequence has now split. With a single
+            // backing row (or none), the slot stays genuinely unplaceable: keep the
+            // anchors equal so the retry still fails into PositionExhausted.
+            let news = lookup(b);
+            match (news.first(), news.get(1)) {
+                (Some(first), Some(second)) => PositionBetween {
+                    before: Some((*first).clone()),
+                    after: Some((*second).clone()),
+                },
+                (Some(only), None) => PositionBetween {
+                    before: Some((*only).clone()),
+                    after: Some((*only).clone()),
+                },
+                _ => PositionBetween {
+                    before: original.before.clone(),
+                    after: original.after.clone(),
+                },
+            }
+        }
+        _ => {
+            let translate = |anchor: &Option<String>| -> Option<String> {
+                anchor
+                    .as_ref()
+                    .and_then(|key| lookup(key).first().map(|s| (*s).clone()))
+            };
+            PositionBetween {
+                before: translate(&original.before),
+                after: translate(&original.after),
+            }
+        }
+    }
 }
 
 /// Attempts a single-statement atomic move of `task_id` to `column_id` at `position`.
@@ -1396,6 +1562,17 @@ fn actor_columns(actor: &Actor) -> (Option<uuid::Uuid>, Option<uuid::Uuid>) {
     }
 }
 
+/// Returns `true` when `key` is `Some` but fails to parse as a fractional-index
+/// string. A `None` anchor (omitted) is always valid; a `Some` anchor that is
+/// not a well-formed hex-encoded fractional index is a phantom key and must be
+/// rejected before it silently collapses to `None` inside `try_between`.
+fn anchor_is_invalid(key: Option<&str>) -> bool {
+    match key {
+        None => false,
+        Some(s) => fractional_index::FractionalIndex::from_string(s).is_err(),
+    }
+}
+
 fn db_err(e: sea_orm::DbErr) -> DomainError {
     DomainError::Internal {
         message: e.to_string(),
@@ -1404,4 +1581,45 @@ fn db_err(e: sea_orm::DbErr) -> DomainError {
 
 fn internal_err(msg: String) -> DomainError {
     DomainError::Internal { message: msg }
+}
+
+/// Classifies a `DbErr` from a constrained INSERT by Postgres SQLSTATE code.
+///
+/// 23505 (unique_violation): the row already exists — callers surface this as
+/// `Forbidden` (which routes to 409 Conflict at the HTTP layer).
+///
+/// 23503 (foreign_key_violation): a referenced principal (user or api_key) does
+/// not exist in this workspace — callers surface this as `NotFound` (→ 404).
+///
+/// Anything else falls through to `Internal` (→ 500) via the normal `db_err` path.
+fn classify_insert_err(e: sea_orm::DbErr, principal_id: uuid::Uuid) -> DomainError {
+    use sea_orm::SqlErr;
+
+    match e.sql_err() {
+        Some(SqlErr::UniqueConstraintViolation(_)) => DomainError::Forbidden {
+            message: "assignee already added to this task".into(),
+        },
+        Some(SqlErr::ForeignKeyConstraintViolation(_)) => DomainError::NotFound {
+            entity: "principal",
+            id: principal_id,
+        },
+        _ => db_err(e),
+    }
+}
+
+/// Classifies a `DbErr` from a reference INSERT by Postgres SQLSTATE code.
+///
+/// 23505 (unique_violation): an identical reference already exists — callers
+/// surface this as `Forbidden` (→ 409 Conflict).
+///
+/// Anything else falls through to `Internal` (→ 500) via the normal `db_err` path.
+fn classify_reference_insert_err(e: sea_orm::DbErr) -> DomainError {
+    use sea_orm::SqlErr;
+
+    match e.sql_err() {
+        Some(SqlErr::UniqueConstraintViolation(_)) => DomainError::Forbidden {
+            message: "reference already exists".into(),
+        },
+        _ => db_err(e),
+    }
 }
