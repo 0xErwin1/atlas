@@ -358,7 +358,7 @@ impl DocumentRepo for PgDocumentRepo {
         })?;
 
         if current_rev_uuid != expected_revision.0 {
-            let base_seq = find_revision_seq(&txn, id.0, expected_revision.0)
+            let base_seq = find_revision_seq(&txn, ctx.workspace_id.0, id.0, expected_revision.0)
                 .await
                 .map_err(db_err)?;
 
@@ -369,7 +369,7 @@ impl DocumentRepo for PgDocumentRepo {
                 });
             };
 
-            let base_content = reconstruct_content_at(&txn, id.0, base_seq)
+            let base_content = reconstruct_content_at(&txn, ctx.workspace_id.0, id.0, base_seq)
                 .await
                 .map_err(internal_err)?;
 
@@ -534,6 +534,7 @@ impl DocumentRepo for PgDocumentRepo {
             })?;
 
         let rows = document_revision::Entity::find()
+            .filter(document_revision::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(document_revision::Column::DocumentId.eq(id.0))
             .order_by_asc(document_revision::Column::Seq)
             .all(&self.conn)
@@ -560,7 +561,7 @@ impl DocumentRepo for PgDocumentRepo {
                 id: id.0,
             })?;
 
-        reconstruct_content_at(&self.conn, id.0, seq)
+        reconstruct_content_at(&self.conn, ctx.workspace_id.0, id.0, seq)
             .await
             .map_err(internal_err)
     }
@@ -568,10 +569,12 @@ impl DocumentRepo for PgDocumentRepo {
 
 async fn find_revision_seq(
     conn: &impl sea_orm::ConnectionTrait,
+    workspace_id: Uuid,
     doc_id: Uuid,
     rev_id: Uuid,
 ) -> Result<Option<i64>, sea_orm::DbErr> {
     let row = document_revision::Entity::find_by_id(rev_id)
+        .filter(document_revision::Column::WorkspaceId.eq(workspace_id))
         .filter(document_revision::Column::DocumentId.eq(doc_id))
         .one(conn)
         .await?;
@@ -581,10 +584,12 @@ async fn find_revision_seq(
 
 async fn reconstruct_content_at(
     conn: &impl sea_orm::ConnectionTrait,
+    workspace_id: Uuid,
     doc_id: Uuid,
     target_seq: i64,
 ) -> Result<String, String> {
     let anchor = document_revision::Entity::find()
+        .filter(document_revision::Column::WorkspaceId.eq(workspace_id))
         .filter(document_revision::Column::DocumentId.eq(doc_id))
         .filter(document_revision::Column::Seq.lte(target_seq))
         .filter(document_revision::Column::IsAnchor.eq(true))
@@ -605,6 +610,7 @@ async fn reconstruct_content_at(
     }
 
     let patches = document_revision::Entity::find()
+        .filter(document_revision::Column::WorkspaceId.eq(workspace_id))
         .filter(document_revision::Column::DocumentId.eq(doc_id))
         .filter(document_revision::Column::Seq.gt(anchor.seq))
         .filter(document_revision::Column::Seq.lte(target_seq))
