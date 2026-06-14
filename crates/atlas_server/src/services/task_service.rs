@@ -7,7 +7,9 @@ use atlas_domain::{
     },
     ids::{BoardId, ChecklistItemId, ColumnId, ProjectId, TaskActivityId, TaskId, TaskReferenceId},
 };
-use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, TransactionTrait};
+use sea_orm::{
+    ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QuerySelect, TransactionTrait,
+};
 
 use atlas_domain::entities::documents::ExtractedLink;
 use atlas_domain::{parse_wikilinks, slugify};
@@ -451,6 +453,7 @@ impl TaskService {
                 .filter(task_checklist_item::Column::WorkspaceId.eq(ctx.workspace_id.0))
                 .filter(task_checklist_item::Column::TaskId.eq(parent_task_id.0))
                 .filter(task_checklist_item::Column::DeletedAt.is_null())
+                .lock_exclusive()
                 .one(&txn)
                 .await
                 .map_err(db_err)?

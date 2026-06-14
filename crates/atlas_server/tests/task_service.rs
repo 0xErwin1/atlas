@@ -17,8 +17,9 @@ use atlas_domain::{
 };
 use atlas_server::{
     persistence::repos::{
-        BoardRepo, PgBoardRepo, PgProjectRepo, PgTaskActivityRepo, PgTaskChecklistRepo, PgTaskRepo,
-        ProjectRepo, TaskActivityRepo, TaskChecklistRepo, TaskRepo,
+        BoardRepo, PgBoardRepo, PgProjectRepo, PgTaskActivityRepo, PgTaskChecklistRepo,
+        PgTaskReferenceRepo, PgTaskRepo, ProjectRepo, TaskActivityRepo, TaskChecklistRepo,
+        TaskReferenceRepo, TaskRepo,
     },
     services::TaskService,
 };
@@ -1063,6 +1064,198 @@ async fn checklist_patch_position_recovers_after_resequence() {
     assert!(
         a_key < c_key && c_key < b_key,
         "repositioned item ({c_key}) must land strictly between A ({a_key}) and B ({b_key})"
+    );
+
+    db.teardown().await;
+}
+
+/// Two concurrent promote_checklist_item calls on the same item must produce
+/// exactly one success and one Forbidden error. Without a FOR UPDATE lock on
+/// the guard-read both transactions see promoted_task_id = NULL, pass the
+/// is_some() guard, and each create a child task — leaving two orphan children.
+/// With the lock the second transaction blocks until the first commits, then
+/// sees promoted_task_id = Some and is rejected before creating any child.
+///
+/// Approach: deterministic two-transaction test. Txn1 opens a raw FOR UPDATE
+/// lock on the checklist item row and sets promoted_task_id to a sentinel UUID,
+/// simulating a first promote that has acquired the lock but not yet committed.
+/// Meanwhile txn2 (the promote_checklist_item service call) tries to acquire the
+/// same row lock and blocks at the Postgres level. Txn1 commits; txn2 unblocks,
+/// re-reads the row, finds promoted_task_id = Some, and returns Forbidden.
+/// This deterministically replays the concurrency window without relying on
+/// scheduler timing.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn promote_checklist_item_concurrent_double_promote_is_rejected() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "svc-concurrent-promote").await;
+    let ctx = support::ctx(&ws, &user);
+
+    let (proj, board, col) = seed_project_board_col(&db, &ctx, "svc-conc-promo", "CP2").await;
+
+    let svc = make_svc(&db);
+
+    let parent = svc
+        .create(
+            &ctx,
+            NewTask {
+                project_id: proj.id,
+                board_id: board.id,
+                column_id: col.id,
+                title: "Parent".into(),
+                description: String::new(),
+                priority: None,
+                due_date: None,
+                estimate: None,
+                labels: vec![],
+                properties: None,
+                position: PositionBetween {
+                    before: None,
+                    after: None,
+                },
+            },
+        )
+        .await
+        .expect("create parent");
+
+    let checklist_repo =
+        atlas_server::persistence::repos::PgTaskChecklistRepo::new(db.conn().clone());
+    let item = checklist_repo
+        .add_item(
+            &ctx,
+            NewTaskChecklistItem {
+                task_id: parent.id,
+                title: "Sub-item".into(),
+                position: PositionBetween {
+                    before: None,
+                    after: None,
+                },
+            },
+        )
+        .await
+        .expect("add checklist item");
+
+    // Create a dummy task to use as the promoted_task_id sentinel; the FK on
+    // task_checklist_items.promoted_task_id requires a real tasks row.
+    let dummy_child = svc
+        .create(
+            &ctx,
+            NewTask {
+                project_id: proj.id,
+                board_id: board.id,
+                column_id: col.id,
+                title: "Dummy child (sentinel)".into(),
+                description: String::new(),
+                priority: None,
+                due_date: None,
+                estimate: None,
+                labels: vec![],
+                properties: None,
+                position: PositionBetween {
+                    before: None,
+                    after: None,
+                },
+            },
+        )
+        .await
+        .expect("create dummy child task");
+
+    // Deterministic concurrency proof:
+    //
+    // 1. Txn1 (raw SQL) acquires FOR UPDATE on the checklist item row and
+    //    writes promoted_task_id = dummy_child.id, simulating the tail of a
+    //    first promote transaction that has locked and updated the row but has
+    //    not yet committed.
+    // 2. Txn2 (the real service call) begins and tries to read the same row.
+    //    - Without lock_exclusive(): reads the stale promoted_task_id = NULL
+    //      (txn1 has not committed), passes the is_some() guard, and proceeds
+    //      to create a second child — the double-promote bug.
+    //    - With lock_exclusive(): blocks on the row lock until txn1 commits,
+    //      re-reads promoted_task_id = Some(dummy_child.id), and returns
+    //      Forbidden before creating any child.
+    // 3. The commit channel controls when txn1 releases its lock, so the
+    //    ordering is fully deterministic.
+    let (lock_acquired_tx, lock_acquired_rx) = tokio::sync::oneshot::channel::<()>();
+    let (commit_tx, commit_rx) = tokio::sync::oneshot::channel::<()>();
+
+    let dummy_child_id = dummy_child.id.0;
+    let item_id_raw = item.id.0;
+    let ws_id_raw = ctx.workspace_id.0;
+    let db_conn_raw = db.conn().clone();
+
+    let locker = tokio::spawn(async move {
+        use sea_orm::{ConnectionTrait, Statement, TransactionTrait};
+
+        let txn = db_conn_raw.begin().await.expect("begin txn1");
+
+        txn.execute_raw(Statement::from_string(
+            sea_orm::DatabaseBackend::Postgres,
+            format!(
+                "SELECT id FROM task_checklist_items \
+                 WHERE id = '{item_id_raw}' AND workspace_id = '{ws_id_raw}' \
+                 FOR UPDATE"
+            ),
+        ))
+        .await
+        .expect("txn1 FOR UPDATE");
+
+        txn.execute_raw(Statement::from_string(
+            sea_orm::DatabaseBackend::Postgres,
+            format!(
+                "UPDATE task_checklist_items \
+                 SET promoted_task_id = '{dummy_child_id}' \
+                 WHERE id = '{item_id_raw}'"
+            ),
+        ))
+        .await
+        .expect("txn1 set promoted_task_id");
+
+        lock_acquired_tx.send(()).expect("signal lock acquired");
+
+        commit_rx.await.expect("wait for commit signal");
+
+        txn.commit().await.expect("txn1 commit");
+    });
+
+    lock_acquired_rx.await.expect("wait for lock acquired");
+
+    let ctx2 = ctx.clone();
+    let db_conn2 = db.conn().clone();
+    let (parent_id, item_id, proj_id, board_id, col_id) =
+        (parent.id, item.id, proj.id, board.id, col.id);
+
+    let promote_handle = tokio::spawn(async move {
+        atlas_server::services::TaskService::new(db_conn2)
+            .promote_checklist_item(&ctx2, parent_id, item_id, proj_id, board_id, col_id)
+            .await
+    });
+
+    // Give txn2 a moment to issue its guard-read (and block on the lock if the
+    // fix is present, or proceed with stale data if it is not).
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+
+    commit_tx.send(()).expect("signal commit");
+    locker.await.expect("locker task joined");
+
+    let result = promote_handle.await.expect("promote task joined");
+
+    assert!(
+        matches!(result, Err(atlas_domain::DomainError::Forbidden { .. })),
+        "promote_checklist_item must return Forbidden when promoted_task_id is set by a concurrent transaction"
+    );
+
+    // The parent task must have no inbound Parent references beyond what the
+    // locker task wrote — the promote was rejected before creating a child.
+    let ref_repo = PgTaskReferenceRepo::new(db.conn().clone());
+    let inbound = ref_repo
+        .list_inbound(&ctx, parent.id)
+        .await
+        .expect("list inbound refs");
+
+    assert_eq!(
+        inbound.len(),
+        0,
+        "no inbound Parent reference must exist after a rejected promote; got {}",
+        inbound.len()
     );
 
     db.teardown().await;
