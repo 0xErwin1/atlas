@@ -35,9 +35,40 @@ impl ServerConfig {
 impl fmt::Debug for ServerConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ServerConfig")
-            .field("database_url", &self.database_url)
+            .field("database_url", &"[REDACTED]")
             .field("root_password", &"[REDACTED]")
             .field("anchor_interval", &self.anchor_interval)
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use super::*;
+
+    #[test]
+    fn debug_does_not_expose_database_url_password() {
+        let config = ServerConfig {
+            database_url: "postgres://user:supersecretpassword@localhost/db".to_string(),
+            root_password: Some("rootsecret".to_string()),
+            anchor_interval: 50,
+        };
+
+        let output = format!("{config:?}");
+
+        assert!(
+            !output.contains("supersecretpassword"),
+            "database_url password must not appear in Debug output: {output}"
+        );
+        assert!(
+            !output.contains("rootsecret"),
+            "root_password must not appear in Debug output: {output}"
+        );
+        assert!(
+            output.contains("[REDACTED]"),
+            "Debug output must contain [REDACTED]: {output}"
+        );
     }
 }
