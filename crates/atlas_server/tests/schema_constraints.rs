@@ -132,6 +132,36 @@ async fn attachment_requires_exactly_one_actor() {
     db.teardown().await;
 }
 
+/// `attachments.task_id` must reference an existing task.
+#[tokio::test]
+async fn attachment_task_id_must_reference_existing_task() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "att-task-fk").await;
+
+    let ws_id = ws.id.0;
+    let user_id = user.id.0;
+
+    let missing_task_id = uuid::Uuid::now_v7();
+    let result = db
+        .conn()
+        .execute_unprepared(&format!(
+            r#"INSERT INTO attachments
+               (id, workspace_id, document_id, task_id, file_name, content_type, size_bytes, sha256,
+                created_by_user_id, created_at, updated_at)
+               VALUES
+               (gen_random_uuid(), '{ws_id}', NULL, '{missing_task_id}', 'f.txt', 'text/plain', 10, 'abc',
+                '{user_id}', now(), now())"#
+        ))
+        .await;
+
+    assert!(
+        result.is_err(),
+        "inserting an attachment whose task_id references no task must be rejected by the DB"
+    );
+
+    db.teardown().await;
+}
+
 /// Same constraint on `property_definitions`.
 #[tokio::test]
 async fn property_definition_requires_exactly_one_actor() {
