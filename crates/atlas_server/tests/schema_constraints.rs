@@ -285,3 +285,152 @@ async fn board_requires_actor() {
 
     db.teardown().await;
 }
+
+/// Seeds a project, board, column, and one task, returning their ids as strings.
+async fn seed_task_chain(
+    db: &support::TestDb,
+    ws_id: uuid::Uuid,
+    user_id: uuid::Uuid,
+    slug: &str,
+    prefix: &str,
+) -> (uuid::Uuid, uuid::Uuid) {
+    let proj_id = uuid::Uuid::now_v7();
+    let board_id = uuid::Uuid::now_v7();
+    let column_id = uuid::Uuid::now_v7();
+    let task_id = uuid::Uuid::now_v7();
+
+    db.conn()
+        .execute_unprepared(&format!(
+            r#"INSERT INTO projects
+               (id, workspace_id, name, slug, task_prefix,
+                created_by_user_id, created_at, updated_at)
+               VALUES ('{proj_id}', '{ws_id}', 'P', '{slug}', '{prefix}', '{user_id}', now(), now())"#
+        ))
+        .await
+        .expect("seed project");
+
+    db.conn()
+        .execute_unprepared(&format!(
+            r#"INSERT INTO boards
+               (id, workspace_id, project_id, name, created_by_user_id, created_at, updated_at)
+               VALUES ('{board_id}', '{ws_id}', '{proj_id}', 'B', '{user_id}', now(), now())"#
+        ))
+        .await
+        .expect("seed board");
+
+    db.conn()
+        .execute_unprepared(&format!(
+            r#"INSERT INTO board_columns
+               (id, workspace_id, board_id, name, position_key,
+                created_by_user_id, created_at, updated_at)
+               VALUES ('{column_id}', '{ws_id}', '{board_id}', 'Todo', 'a',
+                '{user_id}', now(), now())"#
+        ))
+        .await
+        .expect("seed column");
+
+    db.conn()
+        .execute_unprepared(&format!(
+            r#"INSERT INTO tasks
+               (id, workspace_id, project_id, board_id, column_id, readable_id, title,
+                position_key, created_by_user_id, created_at, updated_at)
+               VALUES ('{task_id}', '{ws_id}', '{proj_id}', '{board_id}', '{column_id}',
+                '{prefix}-1', 'T', 'a', '{user_id}', now(), now())"#
+        ))
+        .await
+        .expect("seed task");
+
+    (proj_id, task_id)
+}
+
+/// A `spec` reference must point at a document, never a task.
+/// A `blocks`/`relates`/`parent` reference must point at a task, never a document.
+#[tokio::test]
+async fn task_reference_kind_must_match_target_type() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "ref-kind-target").await;
+
+    let ws_id = ws.id.0;
+    let user_id = user.id.0;
+
+    let (_proj_id, source_task_id) = seed_task_chain(&db, ws_id, user_id, "p-ref-kind", "RK").await;
+    let (_proj_id2, other_task_id) =
+        seed_task_chain(&db, ws_id, user_id, "p-ref-kind2", "RL").await;
+
+    let doc_id = uuid::Uuid::now_v7();
+    db.conn()
+        .execute_unprepared(&format!(
+            r#"INSERT INTO documents
+               (id, workspace_id, title, content, current_revision_seq,
+                created_by_user_id, created_at, updated_at)
+               VALUES ('{doc_id}', '{ws_id}', 'Spec', '', 0, '{user_id}', now(), now())"#
+        ))
+        .await
+        .expect("seed document");
+
+    let spec_to_task = db
+        .conn()
+        .execute_unprepared(&format!(
+            r#"INSERT INTO task_references
+               (id, workspace_id, source_task_id, kind, target_task_id, target_document_id,
+                created_by_user_id, created_at)
+               VALUES (gen_random_uuid(), '{ws_id}', '{source_task_id}', 'spec',
+                '{other_task_id}', NULL, '{user_id}', now())"#
+        ))
+        .await;
+
+    assert!(
+        spec_to_task.is_err(),
+        "a 'spec' reference pointing at a task must be rejected by the DB"
+    );
+
+    let blocks_to_doc = db
+        .conn()
+        .execute_unprepared(&format!(
+            r#"INSERT INTO task_references
+               (id, workspace_id, source_task_id, kind, target_task_id, target_document_id,
+                created_by_user_id, created_at)
+               VALUES (gen_random_uuid(), '{ws_id}', '{source_task_id}', 'blocks',
+                NULL, '{doc_id}', '{user_id}', now())"#
+        ))
+        .await;
+
+    assert!(
+        blocks_to_doc.is_err(),
+        "a 'blocks' reference pointing at a document must be rejected by the DB"
+    );
+
+    let spec_to_doc = db
+        .conn()
+        .execute_unprepared(&format!(
+            r#"INSERT INTO task_references
+               (id, workspace_id, source_task_id, kind, target_task_id, target_document_id,
+                created_by_user_id, created_at)
+               VALUES (gen_random_uuid(), '{ws_id}', '{source_task_id}', 'spec',
+                NULL, '{doc_id}', '{user_id}', now())"#
+        ))
+        .await;
+
+    assert!(
+        spec_to_doc.is_ok(),
+        "a 'spec' reference pointing at a document must be accepted: {spec_to_doc:?}"
+    );
+
+    let blocks_to_task = db
+        .conn()
+        .execute_unprepared(&format!(
+            r#"INSERT INTO task_references
+               (id, workspace_id, source_task_id, kind, target_task_id, target_document_id,
+                created_by_user_id, created_at)
+               VALUES (gen_random_uuid(), '{ws_id}', '{source_task_id}', 'blocks',
+                '{other_task_id}', NULL, '{user_id}', now())"#
+        ))
+        .await;
+
+    assert!(
+        blocks_to_task.is_ok(),
+        "a 'blocks' reference pointing at a task must be accepted: {blocks_to_task:?}"
+    );
+
+    db.teardown().await;
+}

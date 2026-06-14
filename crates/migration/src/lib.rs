@@ -7,6 +7,7 @@ pub mod m20260612_000004_boards_tasks;
 pub mod m20260612_000005_permissions;
 pub mod m20260613_000006_document_slug;
 pub mod m20260613_000007_boards_tasks_e05;
+pub mod m20260614_000008_task_reference_kind_target_check;
 
 use sea_orm_migration::prelude::*;
 
@@ -23,6 +24,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260612_000005_permissions::Migration),
             Box::new(m20260613_000006_document_slug::Migration),
             Box::new(m20260613_000007_boards_tasks_e05::Migration),
+            Box::new(m20260614_000008_task_reference_kind_target_check::Migration),
         ]
     }
 }
