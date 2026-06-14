@@ -429,6 +429,85 @@ async fn delete_column_removes_it_from_list() {
     db.teardown().await;
 }
 
+#[tokio::test]
+async fn delete_column_with_live_task_is_rejected() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "col-del-busy").await;
+
+    client
+        .create_project(&ws.slug, project_req("col-busy-proj", "CB"))
+        .await
+        .expect("create project");
+
+    let board = client
+        .create_board(
+            &ws.slug,
+            "col-busy-proj",
+            CreateBoardRequest {
+                name: "Board".to_string(),
+            },
+        )
+        .await
+        .expect("create board");
+
+    let busy_col = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "Has Tasks".to_string(),
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create busy column");
+
+    client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: busy_col.id,
+                title: "Pinned Task".to_string(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create task");
+
+    let result = client.delete_column(&ws.slug, board.id, busy_col.id).await;
+
+    assert!(
+        matches!(result, Err(ClientError::Api(ref p)) if p.status == 422),
+        "deleting a column with live tasks must be rejected with 422, got: {result:?}"
+    );
+
+    let empty_col = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "Empty".to_string(),
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create empty column");
+
+    client
+        .delete_column(&ws.slug, board.id, empty_col.id)
+        .await
+        .expect("deleting an empty column must still succeed");
+
+    db.teardown().await;
+}
+
 // ---------------------------------------------------------------------------
 // Task happy-path CRUD
 // ---------------------------------------------------------------------------

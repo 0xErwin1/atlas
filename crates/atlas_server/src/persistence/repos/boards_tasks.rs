@@ -13,8 +13,8 @@ use atlas_domain::{
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection,
-    EntityTrait, IntoActiveModel, Order, QueryFilter, QueryOrder, QuerySelect, Statement,
-    TransactionTrait,
+    EntityTrait, IntoActiveModel, Order, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
+    Statement, TransactionTrait,
 };
 
 use crate::persistence::entities::boards_tasks::{
@@ -292,6 +292,20 @@ impl BoardRepo for PgBoardRepo {
                 entity: "board_column",
                 id: id.0,
             })?;
+
+        let live_tasks = task::Entity::find()
+            .filter(task::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(task::Column::ColumnId.eq(id.0))
+            .filter(task::Column::DeletedAt.is_null())
+            .count(&self.conn)
+            .await
+            .map_err(db_err)?;
+
+        if live_tasks > 0 {
+            return Err(DomainError::InvalidInput {
+                message: "column still has tasks; move or delete them first".to_string(),
+            });
+        }
 
         let mut active = row.into_active_model();
         active.deleted_at = Set(Some(Utc::now()));
