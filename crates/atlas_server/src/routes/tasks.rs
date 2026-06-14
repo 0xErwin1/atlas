@@ -39,6 +39,9 @@ use crate::{
         PgTaskAssigneeRepo, PgTaskChecklistRepo, PgTaskReferenceRepo, PgTaskRepo, TaskAssigneeRepo,
         TaskChecklistRepo, TaskReferenceRepo, TaskRepo,
     },
+    routes::validation::{
+        validate_custom_entry_count, validate_description, validate_labels, validate_name,
+    },
     state::AppState,
 };
 
@@ -338,6 +341,11 @@ pub(crate) async fn create_task(
     let actor = principal_to_actor(&auth.principal);
     let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
 
+    validate_name("title", &body.title)?;
+
+    let description = body.description.unwrap_or_default();
+    validate_description(&description)?;
+
     let props = body.properties.unwrap_or_default();
     let priority = props
         .priority
@@ -357,6 +365,12 @@ pub(crate) async fn create_task(
         });
     }
 
+    validate_labels(&props.labels)?;
+
+    if let Some(ref custom) = props.custom {
+        validate_custom_entry_count(custom)?;
+    }
+
     let task = state
         .task_service()
         .create(
@@ -366,7 +380,7 @@ pub(crate) async fn create_task(
                 board_id: board.id,
                 column_id: ColumnId(body.column_id),
                 title: body.title,
-                description: body.description.unwrap_or_default(),
+                description,
                 priority,
                 due_date: props.due_date,
                 estimate: props.estimate,
@@ -511,9 +525,25 @@ pub(crate) async fn update_task(
     let actor = principal_to_actor(&auth.principal);
     let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
 
+    if let Some(ref title) = body.title {
+        validate_name("title", title)?;
+    }
+
+    if let Some(ref desc) = body.description {
+        validate_description(desc)?;
+    }
+
+    if let Some(ref labels) = body.labels {
+        validate_labels(labels)?;
+    }
+
     let priority = parse_priority(body.priority)?;
     let due_date = parse_due_date(body.due_date)?;
     let estimate = parse_estimate(body.estimate)?;
+
+    if let Some(ref props) = body.properties {
+        validate_custom_entry_count(props)?;
+    }
 
     let patch = TaskPatch {
         title: body.title,
@@ -1150,6 +1180,8 @@ pub(crate) async fn create_checklist_item(
     let actor = principal_to_actor(&auth.principal);
     let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
 
+    validate_name("title", &body.title)?;
+
     let item = state
         .task_service()
         .add_checklist_item(
@@ -1202,6 +1234,10 @@ pub(crate) async fn update_checklist_item(
 
     let actor = principal_to_actor(&auth.principal);
     let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
+
+    if let Some(ref title) = body.title {
+        validate_name("title", title)?;
+    }
     let item_id = ChecklistItemId(p.item_id);
 
     let position = if body.before.is_some() || body.after.is_some() {

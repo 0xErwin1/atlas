@@ -9,4 +9,5 @@ pub(crate) mod projects;
 pub mod registry;
 pub(crate) mod tasks;
 pub(crate) mod users;
+pub(crate) mod validation;
 pub(crate) mod workspaces;

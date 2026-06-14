@@ -2417,13 +2417,28 @@ async fn setup_idor(
                 )
                 .await
                 .expect("create checklist item");
+            let other_task = owner
+                .create_task(
+                    &ws.slug,
+                    board.id,
+                    CreateTaskRequest {
+                        column_id: col.id,
+                        title: format!("{name} Other Task"),
+                        description: None,
+                        properties: None,
+                        before: None,
+                        after: None,
+                    },
+                )
+                .await
+                .expect("create other task");
             let reference = owner
                 .create_reference(
                     &ws.slug,
                     &task.readable_id,
                     CreateReferenceRequest {
                         kind: "relates".to_string(),
-                        target_task_readable_id: Some(task.readable_id.clone()),
+                        target_task_readable_id: Some(other_task.readable_id.clone()),
                         target_document_id: None,
                     },
                 )
@@ -4110,6 +4125,227 @@ async fn assign_non_member_principal_returns_404() {
     assert_eq!(
         assigned_count, 0,
         "no assigned activity must be written for the rejected non-member assign"
+    );
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
+// Free-text field cap tests (Fix 3)
+// ---------------------------------------------------------------------------
+
+/// Verifies that a task title longer than 200 characters is rejected with 422.
+#[tokio::test]
+async fn create_task_with_title_over_200_chars_returns_422() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "cap-title-1").await;
+
+    client
+        .create_project(&ws.slug, project_req("cap-proj-1", "CP1"))
+        .await
+        .expect("create project");
+
+    let board = client
+        .create_board(
+            &ws.slug,
+            "cap-proj-1",
+            CreateBoardRequest {
+                name: "B".to_string(),
+            },
+        )
+        .await
+        .expect("create board");
+
+    let col = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "Backlog".to_string(),
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create column");
+
+    let long_title = "x".repeat(201);
+    let result = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: col.id,
+                title: long_title,
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await;
+
+    assert!(
+        matches!(result, Err(ClientError::Api(ref p)) if p.status == 422),
+        "title over 200 chars must return 422, got: {result:?}"
+    );
+
+    db.teardown().await;
+}
+
+/// Verifies that a whitespace-only task title is rejected with 422.
+#[tokio::test]
+async fn create_task_with_empty_title_returns_422() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "cap-empty-1").await;
+
+    client
+        .create_project(&ws.slug, project_req("cap-empty-proj", "CE"))
+        .await
+        .expect("create project");
+
+    let board = client
+        .create_board(
+            &ws.slug,
+            "cap-empty-proj",
+            CreateBoardRequest {
+                name: "B".to_string(),
+            },
+        )
+        .await
+        .expect("create board");
+
+    let col = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "Backlog".to_string(),
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create column");
+
+    let result = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: col.id,
+                title: "   ".to_string(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await;
+
+    assert!(
+        matches!(result, Err(ClientError::Api(ref p)) if p.status == 422),
+        "whitespace-only title must return 422, got: {result:?}"
+    );
+
+    db.teardown().await;
+}
+
+/// Verifies that too many task labels (> 50) are rejected with 422.
+#[tokio::test]
+async fn create_task_with_too_many_labels_returns_422() {
+    use atlas_api::dtos::boards_tasks::TaskPropertiesDto;
+
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "cap-labels-1").await;
+
+    client
+        .create_project(&ws.slug, project_req("cap-labels-proj", "CL"))
+        .await
+        .expect("create project");
+
+    let board = client
+        .create_board(
+            &ws.slug,
+            "cap-labels-proj",
+            CreateBoardRequest {
+                name: "B".to_string(),
+            },
+        )
+        .await
+        .expect("create board");
+
+    let col = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "Backlog".to_string(),
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create column");
+
+    let labels: Vec<String> = (0..51).map(|i| format!("label-{i}")).collect();
+    let result = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: col.id,
+                title: "Task".to_string(),
+                description: None,
+                properties: Some(TaskPropertiesDto {
+                    labels,
+                    ..Default::default()
+                }),
+                before: None,
+                after: None,
+            },
+        )
+        .await;
+
+    assert!(
+        matches!(result, Err(ClientError::Api(ref p)) if p.status == 422),
+        "more than 50 labels must return 422, got: {result:?}"
+    );
+
+    db.teardown().await;
+}
+
+/// Verifies that a document title longer than 200 characters is rejected with 422.
+#[tokio::test]
+async fn create_document_with_title_over_200_chars_returns_422() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "cap-doc-1").await;
+
+    client
+        .create_project(&ws.slug, project_req("cap-doc-proj", "CD"))
+        .await
+        .expect("create project");
+
+    let long_title = "d".repeat(201);
+    let result = client
+        .create_document(
+            &ws.slug,
+            "cap-doc-proj",
+            atlas_api::dtos::documents::CreateDocumentRequest {
+                title: long_title,
+                folder_id: None,
+                content: None,
+            },
+        )
+        .await;
+
+    assert!(
+        matches!(result, Err(ClientError::Api(ref p)) if p.status == 422),
+        "document title over 200 chars must return 422, got: {result:?}"
     );
 
     db.teardown().await;

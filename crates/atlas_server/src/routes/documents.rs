@@ -37,6 +37,7 @@ use crate::{
         AttachmentRepo, DocumentLinkRepo, DocumentRepo, PgAttachmentRepo, PgDocumentLinkRepo,
         PgDocumentRepo,
     },
+    routes::validation::validate_name,
     state::AppState,
 };
 
@@ -89,6 +90,8 @@ pub(crate) async fn create_document(
 ) -> Result<impl IntoResponse, ApiError> {
     let actor = principal_to_actor(&auth.principal);
     let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
+
+    validate_name("title", &body.title)?;
 
     let doc_repo = PgDocumentRepo::new((*state.db).clone(), state.anchor_interval);
 
@@ -259,6 +262,10 @@ pub(crate) async fn update_document(
     let doc = auth.resource.0;
     let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
     let doc_repo = PgDocumentRepo::new((*state.db).clone(), state.anchor_interval);
+
+    if let Some(ref new_title) = body.title {
+        validate_name("title", new_title)?;
+    }
 
     let doc = if let Some(new_title) = body.title {
         if new_title != doc.title {

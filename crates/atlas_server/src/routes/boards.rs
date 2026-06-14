@@ -26,6 +26,7 @@ use crate::{
     authz::{Authorized, BoardRes, EditorMin, ProjectRes, ViewerMin},
     error::ApiError,
     persistence::repos::{BoardRepo, PgBoardRepo},
+    routes::validation::validate_name,
     state::AppState,
 };
 
@@ -108,6 +109,8 @@ pub(crate) async fn create_board(
     State(state): State<AppState>,
     Json(body): Json<CreateBoardRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
+    validate_name("name", &body.name)?;
+
     let actor = principal_to_actor(&auth.principal);
     let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
     let repo = PgBoardRepo::new((*state.db).clone());
@@ -245,6 +248,10 @@ pub(crate) async fn update_board(
     State(state): State<AppState>,
     Json(body): Json<UpdateBoardRequest>,
 ) -> Result<Json<BoardDto>, ApiError> {
+    if let Some(ref name) = body.name {
+        validate_name("name", name)?;
+    }
+
     let actor = principal_to_actor(&auth.principal);
     let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
     let repo = PgBoardRepo::new((*state.db).clone());
@@ -322,6 +329,8 @@ pub(crate) async fn create_column(
     State(state): State<AppState>,
     Json(body): Json<CreateColumnRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
+    validate_name("name", &body.name)?;
+
     let actor = principal_to_actor(&auth.principal);
     let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
     let repo = PgBoardRepo::new((*state.db).clone());
@@ -407,6 +416,10 @@ pub(crate) async fn update_column(
     State(state): State<AppState>,
     Json(body): Json<UpdateColumnRequest>,
 ) -> Result<Json<ColumnDto>, ApiError> {
+    if let Some(ref name) = body.name {
+        validate_name("name", name)?;
+    }
+
     let actor = principal_to_actor(&auth.principal);
     let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
     let repo = PgBoardRepo::new((*state.db).clone());

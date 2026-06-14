@@ -23,6 +23,7 @@ use crate::{
     authz::{Authorized, EditorMin, ViewerMin, WorkspaceMember, authorized::ProjectRes},
     error::ApiError,
     persistence::repos::{PermissionGrantRepo, PgPermissionGrantRepo, PgProjectRepo, ProjectRepo},
+    routes::validation::validate_name,
     state::AppState,
 };
 
@@ -50,6 +51,8 @@ pub(crate) async fn create_project(
     State(state): State<AppState>,
     Json(body): Json<CreateProjectRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
+    validate_name("name", &body.name)?;
+
     let visibility = parse_visibility(body.visibility.as_deref(), body.visibility_role.as_deref())?;
 
     let actor = principal_to_actor(&auth.principal);
@@ -207,6 +210,10 @@ pub(crate) async fn update_project(
     State(state): State<AppState>,
     Json(body): Json<UpdateProjectRequest>,
 ) -> Result<Json<ProjectDto>, ApiError> {
+    if let Some(ref name) = body.name {
+        validate_name("name", name)?;
+    }
+
     let new_visibility = if body.visibility.is_some() || body.visibility_role.is_some() {
         let vis = parse_visibility(body.visibility.as_deref(), body.visibility_role.as_deref())?;
 
