@@ -78,15 +78,15 @@ pub(crate) async fn login(
         return Err(ApiError::Unauthorized);
     };
 
-    if user.disabled_at.is_some() {
-        return Err(ApiError::Unauthorized);
-    }
-
     let is_valid = password::verify(body.password, user.password_hash.clone())
         .await
         .map_err(|_| ApiError::Unauthorized)?;
 
     if !is_valid {
+        return Err(ApiError::Unauthorized);
+    }
+
+    if user.disabled_at.is_some() {
         return Err(ApiError::Unauthorized);
     }
 

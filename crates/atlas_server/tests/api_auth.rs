@@ -9,6 +9,7 @@ mod support;
 
 use atlas_api::dtos::{LoginRequest, MeResponse};
 use atlas_client::AtlasClient;
+use atlas_server::persistence::repos::UserRepo;
 
 #[tokio::test]
 async fn login_returns_body_token_and_set_cookie() {
@@ -132,6 +133,34 @@ async fn wrong_password_returns_401() {
     assert!(
         matches!(result, Err(atlas_client::ClientError::Api(ref p)) if p.status == 401),
         "wrong password must return 401, got: {result:?}"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn disabled_user_with_correct_password_returns_401() {
+    // Behavioral test for the disabled-account timing fix: a disabled user must
+    // still receive 401 even when the correct password is supplied.
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (_client, user) = support::login_user(&server, &db, "auth-disabled-user").await;
+
+    db.user_repo()
+        .disable(user.id)
+        .await
+        .expect("disable user");
+
+    let result = atlas_client::AtlasClient::new(server.base_url())
+        .login(LoginRequest {
+            username: user.username.clone(),
+            password: "TestPassword1!".into(),
+        })
+        .await;
+
+    assert!(
+        matches!(result, Err(atlas_client::ClientError::Api(ref p)) if p.status == 401),
+        "disabled user with correct password must return 401, got: {result:?}"
     );
 
     db.teardown().await;
