@@ -191,8 +191,9 @@ pub mod task_activity {
 
 /// Constructs an `Actor` from the XOR user/api-key pair carried by every actor-attributed row.
 ///
-/// Panics only in tests; in production both fields being null violates the DB CHECK constraint
-/// and can never be observed here.
+/// The DB XOR CHECK constraint guarantees exactly one of the two columns is non-null, so the
+/// both-null arm is unreachable in practice. The fallback returns a fabricated `Actor::User`
+/// rather than panicking; threading `Result` through every infallible read mapper is out of scope.
 pub fn actor_from_columns(user_id: Option<Uuid>, api_key_id: Option<Uuid>) -> Actor {
     match (user_id, api_key_id) {
         (Some(uid), None) => Actor::User(UserId(uid)),
