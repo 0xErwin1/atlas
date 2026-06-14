@@ -499,11 +499,6 @@ pub(crate) async fn get_revision_content(
     let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
     let doc_repo = PgDocumentRepo::new((*state.db).clone(), state.anchor_interval);
 
-    let content = doc_repo
-        .content_at(&ctx, auth.resource.0.id, seq)
-        .await
-        .map_err(ApiError::Domain)?;
-
     let revisions = doc_repo
         .history(&ctx, auth.resource.0.id)
         .await
@@ -513,6 +508,11 @@ pub(crate) async fn get_revision_content(
         .into_iter()
         .find(|r| r.seq == seq)
         .ok_or(ApiError::NotFound)?;
+
+    let content = doc_repo
+        .content_at(&ctx, auth.resource.0.id, seq)
+        .await
+        .map_err(ApiError::Domain)?;
 
     Ok(Json(RevisionContentDto {
         id: rev_meta.id.0,
