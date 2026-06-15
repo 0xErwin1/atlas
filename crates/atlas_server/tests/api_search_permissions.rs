@@ -1,7 +1,9 @@
 //! Permission integration test matrix for `GET /v1/workspaces/{ws}/search`.
 //!
 //! Covers:
-//! - WARNING-B1: API-key principal — no-grant → 404 at route gate; ws-scope grant → sees rows.
+//! - WARNING-B1: API-key principal — no-grant → 404 at route gate; ws-scope grant → sees rows;
+//!   per-document grant sees only the granted doc (DISCRIMINATING — fails if membership_clause
+//!   for ApiKey regressed from FALSE to TRUE).
 //! - WARNING-B3: Cross-tenant TASK isolation — ws B task never leaks to ws A principal.
 //! - Cross-tenant document isolation (redundant with repo tests but proves the HTTP route).
 //! - Intra-workspace: workspace owner sees documents and tasks; non-member gets 404.
@@ -29,12 +31,15 @@ use atlas_domain::{
     },
     permissions::{ResourceRole, Visibility, VisibilityRole},
 };
+use atlas_domain::permissions::Principal;
+use atlas_domain::ports::search::SearchRepo;
+use atlas_domain::search::{SearchQuery, SearchSort, TypeFilter};
 use atlas_server::{
     auth::tokens::{generate_api_key, hash_token},
     persistence::repos::{
         ApiKeyRepo, BoardRepo, DocumentRepo, MembershipRepo, NewApiKey, NewUser,
         PgApiKeyRepo, PgBoardRepo, PgDocumentRepo, PgPermissionGrantRepo, PgProjectRepo,
-        PgTaskRepo, PermissionGrantRepo, ProjectRepo, TaskRepo, UserRepo,
+        PgSearchRepo, PgTaskRepo, PermissionGrantRepo, ProjectRepo, TaskRepo, UserRepo,
     },
 };
 use uuid::Uuid;
@@ -112,6 +117,34 @@ async fn grant_ws_scope_for_key(
     })
     .await
     .expect("grant ws-scope for key");
+}
+
+/// Grants an API key a per-document grant (document_id-scoped, all other resource ids NULL).
+///
+/// This is the document-level grant arm of the permission disjunction. A key with only
+/// this grant must see the specific document and no other same-workspace document.
+async fn grant_doc_for_key(
+    db: &support::TestDb,
+    ws_id: atlas_domain::ids::WorkspaceId,
+    key_id: atlas_domain::ids::ApiKeyId,
+    doc_id: atlas_domain::ids::DocumentId,
+    grantor_id: atlas_domain::ids::UserId,
+) {
+    let repo = PgPermissionGrantRepo { conn: db.conn().clone() };
+    repo.upsert(NewPermissionGrant {
+        workspace_id: ws_id,
+        user_id: None,
+        api_key_id: Some(key_id),
+        project_id: None,
+        folder_id: None,
+        document_id: Some(doc_id),
+        board_id: None,
+        role: ResourceRole::Viewer,
+        created_by_user_id: Some(grantor_id),
+        created_by_api_key_id: None,
+    })
+    .await
+    .expect("grant doc-scope for key");
 }
 
 /// Creates an API key for a workspace and returns (key_id, raw_token).
@@ -509,6 +542,87 @@ async fn task_visible_to_member_not_to_outsider() {
         404,
         "user not in workspace must get 404; got {:?}",
         outsider_resp.status()
+    );
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
+// WARNING-B1 DISCRIMINATING: api-key with NO grants sees NO rows via the SQL
+// row filter — membership_clause for ApiKey MUST be FALSE, not TRUE.
+//
+// This test calls PgSearchRepo::search() directly rather than via HTTP because
+// the route gate (`Authorized<WorkspaceRes, ViewerMin>`) blocks an api-key that
+// has no workspace-scope grant before the SQL ever runs. If we instead gave the
+// key a ws-scope grant, the ws-scope grant arm itself would surface every row —
+// making the membership_clause irrelevant and the test vacuous.
+//
+// The discrimination: with membership_clause = FALSE (correct) and no grants,
+// search returns nothing. If membership_clause were regressed to TRUE, the first
+// arm of the disjunction would be TRUE for every row, surfacing both docs.
+// ---------------------------------------------------------------------------
+
+/// An API key with no grants sees ZERO search results at the SQL level.
+///
+/// This is the non-vacuous closure of WARNING-B1: it would go RED if the
+/// `membership_clause` branch for `Principal::ApiKey` in `PgSearchRepo::search`
+/// were changed from `FALSE` to anything that evaluates to TRUE (e.g. a literal
+/// `TRUE`, or an EXISTS check that api-keys happen to satisfy).
+#[tokio::test]
+async fn api_key_no_grant_sees_no_rows_at_sql_level() {
+    let db = support::TestDb::create().await.expect("TestDb");
+
+    let (ws, owner) = seed_workspace_with_member(&db, "b1-disc-owner").await;
+    let ctx = support::ctx(&ws, &owner);
+
+    let unique = "b1discrimtoken9h";
+
+    // Seed two documents that both match the query term.
+    let granted_doc_id = seed_document(&db, &ctx, &format!("Granted {unique}"), unique).await;
+    let _ = seed_document(&db, &ctx, &format!("Ungranted {unique}"), unique).await;
+
+    // Create an api-key in the workspace. Grant it a per-document grant on
+    // granted_doc ONLY — no workspace-scope grant. At the route level this key
+    // would get 404 (no ws-scope grant), so we call the repo directly.
+    let (key_id, _raw_token) =
+        create_api_key_for_ws(&db, ws.id, owner.id, "key-disc-b1").await;
+
+    grant_doc_for_key(&db, ws.id, key_id, granted_doc_id, owner.id).await;
+
+    // Call PgSearchRepo::search() directly. The api-key has a per-doc grant on
+    // granted_doc and no ws-scope grant. With membership_clause = "FALSE":
+    //   - FALSE (membership arm)
+    //   - OR ws-scope grant arm: no ws-scope grant exists → FALSE
+    //   - OR per-doc grant arm on granted_doc.id: fires for granted_doc → TRUE
+    //   - ungranted_doc has no matching per-doc grant → FALSE
+    //
+    // Expected result: exactly {granted_doc_id}, NOT ungranted_doc.
+    // If membership_clause were "TRUE", both docs would surface (TRUE OR ...).
+    let repo = PgSearchRepo::new(db.conn().clone());
+    let principal = Principal::ApiKey(key_id);
+    let query = SearchQuery {
+        text: unique.to_string(),
+        filters: vec![],
+        sort: SearchSort::Relevance,
+        type_filter: TypeFilter::All,
+        warnings: vec![],
+    };
+    let hits = repo
+        .search(&ctx, &principal, &query, 50, None)
+        .await
+        .expect("search");
+
+    let ids: Vec<Uuid> = hits.iter().map(|h| h.id).collect();
+
+    assert!(
+        ids.contains(&granted_doc_id.0),
+        "api-key with per-doc grant must see the granted document; got: {ids:?}"
+    );
+    assert_eq!(
+        ids.len(),
+        1,
+        "api-key with per-doc grant must NOT see ungranted documents — \
+         any extra id indicates membership_clause is over-broad (not FALSE); got: {ids:?}"
     );
 
     db.teardown().await;
