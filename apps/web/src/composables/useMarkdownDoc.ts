@@ -1,4 +1,5 @@
-import type { ConflictProblem } from '@/api/problem';
+import type { AtlasProblem, ConflictProblem } from '@/api/problem';
+import { isConflictProblem } from '@/api/problem';
 import { wrappedClient } from '@/api/wrapper';
 import { joinFrontmatter, splitFrontmatter } from '@/lib/frontmatter';
 
@@ -65,20 +66,33 @@ export function useMarkdownDoc() {
       return { kind: 'ok' };
     }
 
-    const problem = error as Record<string, unknown>;
-    const problemType = typeof problem.type === 'string' ? problem.type : '';
+    const raw = error as Record<string, unknown>;
+    const problem: AtlasProblem = {
+      type: typeof raw.type === 'string' ? raw.type : 'urn:atlas:error:unknown',
+      title: typeof raw.title === 'string' ? raw.title : 'Save failed',
+      status: typeof raw.status === 'number' ? raw.status : 0,
+      detail: typeof raw.detail === 'string' ? raw.detail : undefined,
+      hint: typeof raw.hint === 'string' ? raw.hint : undefined,
+      request_id: typeof raw.request_id === 'string' ? raw.request_id : undefined,
+    };
 
-    if (problemType.includes('revision-conflict')) {
+    if (isConflictProblem(problem)) {
+      const conflictProblem: ConflictProblem = {
+        ...problem,
+        current_revision_id: typeof raw.current_revision_id === 'string' ? raw.current_revision_id : '',
+        current_seq: typeof raw.current_seq === 'number' ? raw.current_seq : 0,
+        base_to_current_patch: typeof raw.base_to_current_patch === 'string' ? raw.base_to_current_patch : '',
+      };
       return {
         kind: 'conflict',
-        problem: problem as unknown as ConflictProblem,
+        problem: conflictProblem,
       };
     }
 
     return {
       kind: 'error',
-      hint: typeof problem.hint === 'string' ? problem.hint : undefined,
-      title: typeof problem.title === 'string' ? problem.title : 'Save failed',
+      hint: problem.hint,
+      title: problem.title,
     };
   }
 

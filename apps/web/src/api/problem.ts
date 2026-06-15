@@ -13,7 +13,7 @@ export interface ConflictProblem extends AtlasProblem {
   base_to_current_patch: string;
 }
 
-function isConflictProblem(p: AtlasProblem): p is ConflictProblem {
+export function isConflictProblem(p: AtlasProblem): p is ConflictProblem {
   return p.type.includes('revision-conflict');
 }
 
