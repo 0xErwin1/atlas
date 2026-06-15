@@ -11,11 +11,13 @@ name = "atlas_mcp"
 path = "src/main.rs"
 
 [dependencies]
+atlas_client.workspace = true
 atlas_domain.workspace = true
 rmcp.workspace = true
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+schemars = "1"
 anyhow.workspace = true
 
 [lints]
