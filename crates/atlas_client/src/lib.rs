@@ -5,6 +5,7 @@ use atlas_api::{
         ApiKeyCreated, ApiKeyDto, CreateApiKeyRequest, CreateGrantRequest, CreateProjectRequest,
         CreateUserRequest, GrantDto, HealthResponse, LoginRequest, LoginResponse, MeResponse,
         ProjectDto, UpdateProjectRequest, UserDto, WorkspaceDto,
+        search::SearchHitDto,
         boards_tasks::{
             ActivityEntryDto, AddAssigneeRequest, AssigneeDto, BoardDto, BoardSummaryDto,
             ChecklistItemDto, ColumnDto, CreateBoardRequest, CreateChecklistItemRequest,
@@ -417,6 +418,25 @@ impl AtlasClient {
     pub async fn get_workspace(&self, ws: &str) -> Result<WorkspaceDto, ClientError> {
         let response = self.get(&format!("/v1/workspaces/{ws}")).send().await?;
         self.decode_response(response, "get_workspace").await
+    }
+
+    /// `GET /v1/workspaces/{ws}/search`
+    ///
+    /// Calls the unified full-text search endpoint. `q` is required; the
+    /// remaining parameters are optional and map directly to the query-string
+    /// parameters accepted by the server.
+    pub async fn search(
+        &self,
+        ws: &str,
+        q: &str,
+        type_filter: Option<&str>,
+        sort: Option<&str>,
+        cursor: Option<&str>,
+        limit: Option<u32>,
+    ) -> Result<Page<SearchHitDto>, ClientError> {
+        let path = build_search_path(ws, q, type_filter, sort, cursor, limit);
+        let response = self.get(&path).send().await?;
+        self.decode_response(response, "search").await
     }
 
     /// `POST /v1/workspaces/{ws}/projects/{project_slug}/documents`
@@ -1189,6 +1209,56 @@ impl AtlasClient {
     }
 }
 
+fn build_search_path(
+    ws: &str,
+    q: &str,
+    type_filter: Option<&str>,
+    sort: Option<&str>,
+    cursor: Option<&str>,
+    limit: Option<u32>,
+) -> String {
+    let encoded_q = encode_query_value(q);
+    let mut params = vec![format!("q={encoded_q}")];
+
+    if let Some(t) = type_filter {
+        params.push(format!("type={t}"));
+    }
+    if let Some(s) = sort {
+        params.push(format!("sort={s}"));
+    }
+    if let Some(c) = cursor {
+        params.push(format!("cursor={c}"));
+    }
+    if let Some(l) = limit {
+        params.push(format!("limit={l}"));
+    }
+
+    format!("/v1/workspaces/{ws}/search?{}", params.join("&"))
+}
+
+/// Percent-encodes characters that are not safe in a query-string value.
+fn encode_query_value(s: &str) -> String {
+    s.chars()
+        .flat_map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '~') {
+                vec![c]
+            } else {
+                let mut buf = [0u8; 4];
+                let bytes = c.encode_utf8(&mut buf);
+                bytes
+                    .bytes()
+                    .flat_map(|b| {
+                        let hi = (b >> 4) as u8;
+                        let lo = (b & 0x0f) as u8;
+                        let hex = b"0123456789ABCDEF";
+                        vec!['%', hex[hi as usize] as char, hex[lo as usize] as char]
+                    })
+                    .collect::<Vec<_>>()
+            }
+        })
+        .collect()
+}
+
 fn build_paginated_path(base: &str, cursor: Option<&str>, limit: Option<u32>) -> String {
     let mut params: Vec<String> = Vec::new();
     if let Some(c) = cursor {
@@ -1224,5 +1294,42 @@ mod tests {
     fn token_accessor_returns_none_initially() {
         let client = AtlasClient::new("http://localhost:8080");
         assert!(client.token().is_none());
+    }
+
+    #[test]
+    fn build_search_path_includes_required_q() {
+        let path = build_search_path("my-ws", "hello world", None, None, None, None);
+        assert!(path.starts_with("/v1/workspaces/my-ws/search?q="));
+        assert!(path.contains("hello%20world") || path.contains("hello+world") || path.contains("hello"));
+    }
+
+    #[test]
+    fn build_search_path_includes_optional_params() {
+        let path = build_search_path("ws1", "query", Some("task"), Some("updated"), Some("abc"), Some(10));
+        assert!(path.contains("type=task"));
+        assert!(path.contains("sort=updated"));
+        assert!(path.contains("cursor=abc"));
+        assert!(path.contains("limit=10"));
+    }
+
+    #[test]
+    fn build_search_path_omits_optional_params_when_none() {
+        let path = build_search_path("ws1", "query", None, None, None, None);
+        assert!(!path.contains("type="));
+        assert!(!path.contains("sort="));
+        assert!(!path.contains("cursor="));
+        assert!(!path.contains("limit="));
+    }
+
+    #[test]
+    fn encode_query_value_encodes_spaces() {
+        let encoded = encode_query_value("hello world");
+        assert!(encoded.contains("%20") || !encoded.contains(' '));
+    }
+
+    #[test]
+    fn encode_query_value_preserves_alphanumeric() {
+        let encoded = encode_query_value("abc123");
+        assert_eq!(encoded, "abc123");
     }
 }
