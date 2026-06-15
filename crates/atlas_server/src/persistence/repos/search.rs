@@ -706,12 +706,18 @@ fn row_to_hit(row: SearchRow) -> Result<SearchHit, DomainError> {
         }
     };
 
+    // A genuine body match always produces a ts_headline result containing
+    // <mark>...</mark> (StartSel/StopSel markers). A title-only match yields
+    // a leading body fragment with no markers — exactly the case REQ-7 says
+    // must produce an absent snippet rather than an unhighlighted fragment.
+    let snippet = row.snippet.filter(|s| s.contains("<mark>"));
+
     Ok(SearchHit {
         kind,
         id: row.id,
         readable_id: row.readable_id,
         title: row.title,
-        snippet: row.snippet,
+        snippet,
         score: row.score,
         updated_at: row.updated_at,
         project_slug: row.project_slug,

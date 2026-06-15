@@ -1489,6 +1489,56 @@ async fn tag_filter_narrows_documents_and_tasks() {
 }
 
 // ---------------------------------------------------------------------------
+// REQ-7: a title-only match must produce an ABSENT snippet (None). When the
+// search term appears only in the title — not in the body — ts_headline returns
+// a leading body fragment with no <mark> markers. The spec contract requires
+// snippet = None in that case; the wire response must omit the field entirely.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn title_only_match_yields_absent_snippet() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, owner) = support::seed_workspace(&db, "srch-titlesnip-owner").await;
+    let ctx_owner = support::ctx(&ws, &owner);
+
+    // Term is in the title only; body is intentionally empty so ts_headline
+    // has no fragment to highlight. The hit must still be returned (title
+    // match), but the snippet field must be None.
+    let doc_id = seed_doc(
+        &db,
+        &ctx_owner,
+        "uniquetoken_titlesnip9xqz Document",
+        "",
+    )
+    .await;
+
+    let repo = PgSearchRepo::new(db.conn().clone());
+    let hits = repo
+        .search(
+            &ctx_owner,
+            &Principal::User(owner.id),
+            &make_search_query("uniquetoken_titlesnip9xqz"),
+            50,
+            None,
+        )
+        .await
+        .expect("owner search");
+
+    let hit = hits
+        .iter()
+        .find(|h| h.id == doc_id.0)
+        .expect("doc must surface via title match");
+
+    assert!(
+        hit.snippet.is_none(),
+        "title-only match must yield an absent snippet; got: {:?}",
+        hit.snippet
+    );
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
 // Test 11: readable_id is populated for tasks and absent for documents.
 // ---------------------------------------------------------------------------
 
