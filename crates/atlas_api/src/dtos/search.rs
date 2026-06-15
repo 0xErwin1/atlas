@@ -22,9 +22,6 @@ pub struct SearchHitDto {
     /// Task readable ID (e.g. `"ATL-42"`). Present only when `kind = task`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub readable_id: Option<String>,
-    /// Document slug. Present only when `kind = document`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub slug: Option<String>,
     pub title: String,
     /// Highlighted snippet with `<mark>…</mark>` markers.
     /// Absent for title-only matches and filter-only queries.
@@ -50,12 +47,24 @@ mod tests {
         Utc::now()
     }
 
-    fn hit(kind: SearchKindDto, readable_id: Option<&str>, slug: Option<&str>) -> SearchHitDto {
+    fn task_hit(readable_id: &str) -> SearchHitDto {
         SearchHitDto {
             id: Uuid::now_v7(),
-            kind,
-            readable_id: readable_id.map(|s| s.to_string()),
-            slug: slug.map(|s| s.to_string()),
+            kind: SearchKindDto::Task,
+            readable_id: Some(readable_id.to_string()),
+            title: "Test".to_string(),
+            snippet: None,
+            score: 0.9,
+            updated_at: now(),
+            project_slug: None,
+        }
+    }
+
+    fn doc_hit() -> SearchHitDto {
+        SearchHitDto {
+            id: Uuid::now_v7(),
+            kind: SearchKindDto::Document,
+            readable_id: None,
             title: "Test".to_string(),
             snippet: None,
             score: 0.9,
@@ -65,21 +74,19 @@ mod tests {
     }
 
     #[test]
-    fn task_hit_serializes_readable_id_omits_slug() {
-        let dto = hit(SearchKindDto::Task, Some("ATL-1"), None);
+    fn task_hit_serializes_readable_id() {
+        let dto = task_hit("ATL-1");
         let json = serde_json::to_value(&dto).unwrap();
         assert_eq!(json["readable_id"], "ATL-1");
-        assert!(json.get("slug").is_none(), "slug must be absent for tasks");
     }
 
     #[test]
-    fn document_hit_serializes_slug_omits_readable_id() {
-        let dto = hit(SearchKindDto::Document, None, Some("my-doc"));
+    fn task_hit_omits_readable_id_when_none() {
+        let dto = doc_hit();
         let json = serde_json::to_value(&dto).unwrap();
-        assert_eq!(json["slug"], "my-doc");
         assert!(
             json.get("readable_id").is_none(),
-            "readable_id must be absent for documents"
+            "readable_id must be absent when None"
         );
     }
 
@@ -97,16 +104,41 @@ mod tests {
 
     #[test]
     fn snippet_absent_when_none() {
-        let dto = hit(SearchKindDto::Document, None, Some("slug"));
+        let dto = doc_hit();
         let json = serde_json::to_value(&dto).unwrap();
         assert!(json.get("snippet").is_none());
     }
 
     #[test]
     fn snippet_present_when_some() {
-        let mut dto = hit(SearchKindDto::Task, Some("ATL-2"), None);
+        let mut dto = task_hit("ATL-2");
         dto.snippet = Some("<mark>highlighted</mark> text".to_string());
         let json = serde_json::to_value(&dto).unwrap();
         assert_eq!(json["snippet"], "<mark>highlighted</mark> text");
+    }
+
+    #[test]
+    fn project_slug_absent_when_none() {
+        let dto = doc_hit();
+        let json = serde_json::to_value(&dto).unwrap();
+        assert!(json.get("project_slug").is_none());
+    }
+
+    #[test]
+    fn project_slug_present_when_some() {
+        let mut dto = doc_hit();
+        dto.project_slug = Some("my-project".to_string());
+        let json = serde_json::to_value(&dto).unwrap();
+        assert_eq!(json["project_slug"], "my-project");
+    }
+
+    #[test]
+    fn no_slug_field_in_wire_shape() {
+        let dto = doc_hit();
+        let json = serde_json::to_value(&dto).unwrap();
+        assert!(
+            json.get("slug").is_none(),
+            "bare 'slug' must not appear in the wire shape; spec uses 'project_slug'"
+        );
     }
 }
