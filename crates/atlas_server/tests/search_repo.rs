@@ -27,8 +27,9 @@ use atlas_domain::{
     search::{SearchQuery, SearchSort, TypeFilter},
 };
 use atlas_server::persistence::repos::{
-    BoardRepo, DocumentRepo, PgBoardRepo, PgDocumentRepo, PgPermissionGrantRepo, PgProjectRepo,
-    PgSearchRepo, PgTaskRepo, PermissionGrantRepo, ProjectRepo, TaskRepo, UserRepo,
+    BoardRepo, DocumentRepo, FolderRepo, PgBoardRepo, PgDocumentRepo, PgFolderRepo,
+    PgPermissionGrantRepo, PgProjectRepo, PgSearchRepo, PgTaskRepo, PermissionGrantRepo,
+    ProjectRepo, TaskRepo, UserRepo,
 };
 
 // ---------------------------------------------------------------------------
@@ -1586,6 +1587,147 @@ async fn task_hits_carry_readable_id_documents_do_not() {
             }
         }
     }
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
+// REQ-3 member visibility — Fix 2(a)
+//
+// A plain MemberRole::Member (no explicit grant) who has access to a folder
+// inside a NON-Private (Workspace-visibility) project MUST see the document
+// in that folder via the visibility contribution (p.visibility <> 'private').
+// The document carries `project_id` from its folder's project, so the LEFT
+// JOIN resolves `p.visibility` and the member clause fires.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn member_sees_in_folder_non_private_project_document() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, owner) = support::seed_workspace(&db, "srch-foldvis-owner").await;
+    let ctx_owner = support::ctx(&ws, &owner);
+
+    let member_id = seed_user(&db, "srch-foldvis-member").await;
+    add_member(
+        &db,
+        ws.id,
+        member_id,
+        atlas_domain::entities::identity::MemberRole::Member,
+    )
+    .await;
+
+    let visible_project_id = seed_project_with_visibility(
+        &db,
+        &ctx_owner,
+        "srch-foldvis-proj",
+        "SFV",
+        Visibility::Workspace(VisibilityRole::Editor),
+    )
+    .await;
+
+    let folder_repo = PgFolderRepo { conn: db.conn().clone() };
+    let folder = folder_repo
+        .create(
+            &ctx_owner,
+            atlas_domain::entities::workspace_core::NewFolder {
+                project_id: Some(visible_project_id),
+                parent_folder_id: None,
+                name: "srch-foldvis-folder".to_string(),
+            },
+        )
+        .await
+        .expect("seed folder");
+
+    let doc_repo = PgDocumentRepo::new(db.conn().clone(), 50);
+    let doc = doc_repo
+        .create(
+            &ctx_owner,
+            atlas_domain::entities::documents::NewDocument {
+                title: "Folder Doc".to_string(),
+                slug: None,
+                content: "uniquetoken_foldvis".to_string(),
+                folder_id: Some(folder.id),
+                project_id: Some(visible_project_id),
+                frontmatter: None,
+            },
+        )
+        .await
+        .expect("seed doc in folder");
+
+    let repo = PgSearchRepo::new(db.conn().clone());
+    let member_ctx = atlas_domain::WorkspaceCtx::new(ws.id, atlas_domain::Actor::User(member_id));
+    let hits = repo
+        .search(
+            &member_ctx,
+            &Principal::User(member_id),
+            &make_search_query("uniquetoken_foldvis"),
+            50,
+            None,
+        )
+        .await
+        .expect("member search");
+
+    assert!(
+        hits.iter().any(|h| h.id == doc.id.0),
+        "plain member must see a document in a folder of a non-Private project via visibility contribution; got: {hits:?}"
+    );
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
+// REQ-3 member visibility — Fix 2(b)
+//
+// A plain MemberRole::Member (no explicit grant) must NOT see a document that
+// has no project (project_id IS NULL). The visibility contribution clause
+// requires `p.id IS NOT NULL` (the LEFT JOIN must resolve a project row),
+// so workspace-root documents are grants-only.
+//
+// `seed_doc` creates documents with project_id = None, which models this
+// "workspace-root document" case at the repo level.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn member_gets_nothing_via_visibility_for_workspace_root_document() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, owner) = support::seed_workspace(&db, "srch-rootdoc-owner").await;
+    let ctx_owner = support::ctx(&ws, &owner);
+
+    let member_id = seed_user(&db, "srch-rootdoc-member").await;
+    add_member(
+        &db,
+        ws.id,
+        member_id,
+        atlas_domain::entities::identity::MemberRole::Member,
+    )
+    .await;
+
+    // Workspace-root document: project_id = None, folder_id = None.
+    let doc_id = seed_doc(
+        &db,
+        &ctx_owner,
+        "Root Doc No Project",
+        "uniquetoken_rootdoc9qzx",
+    )
+    .await;
+
+    let repo = PgSearchRepo::new(db.conn().clone());
+    let member_ctx = atlas_domain::WorkspaceCtx::new(ws.id, atlas_domain::Actor::User(member_id));
+    let hits = repo
+        .search(
+            &member_ctx,
+            &Principal::User(member_id),
+            &make_search_query("uniquetoken_rootdoc9qzx"),
+            50,
+            None,
+        )
+        .await
+        .expect("member search");
+
+    assert!(
+        !hits.iter().any(|h| h.id == doc_id.0),
+        "plain member must NOT see a workspace-root document (no project) via visibility; got: {hits:?}"
+    );
 
     db.teardown().await;
 }
