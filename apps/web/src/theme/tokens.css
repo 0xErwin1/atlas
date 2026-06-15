@@ -1,0 +1,133 @@
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  src: url('../assets/fonts/JetBrainsMono-Regular.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+  src: url('../assets/fonts/JetBrainsMono-Medium.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+  src: url('../assets/fonts/JetBrainsMono-SemiBold.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+  src: url('../assets/fonts/JetBrainsMono-Bold.woff2') format('woff2');
+}
+
+:root {
+  /* Palette */
+  --c-background: #0A0E14;
+  --c-panel: #0F1419;
+  --c-raised: #151E2B;
+  --c-tiles: #111823;
+  --c-foreground: #B3B1AD;
+  --c-muted: #5C6773;
+  --c-border: #1F2430;
+  --c-selection: #273747;
+
+  /* Primary (amber) */
+  --c-primary: #FFB454;
+  --c-primary-hover: #E6A34C;
+  --c-primary-active: #CC9143;
+  --c-primary-fg: #0A0E14;
+
+  /* Semantic */
+  --c-danger: #F07178;
+  --c-success: #AAD94C;
+  --c-warning: #FFB454;
+  --c-info: #59C2FF;
+  --c-secondary: #151E2B;
+  --c-secondary-hover: #1A2535;
+
+  /* Agent (magenta / cyan) */
+  --c-agent: #D2A6FF;
+  --c-agent-bg: rgba(210, 166, 255, 0.12);
+  --c-agent-border: rgba(210, 166, 255, 0.45);
+  --c-cyan: #95E6CB;
+
+  /* UI chrome */
+  --c-input: rgba(179, 177, 173, 0.14);
+  --c-ring: rgba(255, 180, 84, 0.75);
+  --c-overlay: rgba(0, 0, 0, 0.55);
+  --c-list-active: #273747;
+
+  /* Banner */
+  --c-banner-err-bg: #7F1D1D;
+  --c-banner-err-fg: #FCA5A5;
+
+  /* Typography */
+  --font-ui: 'JetBrains Mono', 'JetBrainsMono', monospace;
+  --font-code: 'JetBrains Mono', 'JetBrainsMono', monospace;
+  --font-sans: 'JetBrains Mono', 'JetBrainsMono', monospace;
+  --font-mono: 'JetBrains Mono', 'JetBrainsMono', monospace;
+
+  /* Font sizes */
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-base: 13px;
+  --fs-lg: 14px;
+  --fs-xl: 16px;
+  --fs-title: 18px;
+
+  /* Font weights */
+  --fw-normal: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+
+  /* Line heights */
+  --lh-tight: 1.2;
+  --lh-normal: 1.45;
+  --lh-relaxed: 1.6;
+
+  /* Font features */
+  --font-feature-ui: 'zero', 'ss20';
+
+  /* Spacing */
+  --sp-xs: 4px;
+  --sp-sm: 8px;
+  --sp-md: 12px;
+  --sp-lg: 16px;
+  --sp-xl: 24px;
+
+  /* Heights */
+  --h-row: 28px;
+  --h-compact: 24px;
+  --h-header: 40px;
+  --h-toolbar: 32px;
+  --h-tab: 28px;
+  --h-input: 32px;
+  --h-button: 28px;
+  --h-icon-sm: 16px;
+  --h-icon-md: 20px;
+  --h-icon-lg: 24px;
+
+  /* Radii */
+  --r-sm: 2px;
+  --r-md: 2px;
+  --r-lg: 3px;
+  --r-full: 9999px;
+
+  /* Shadows */
+  --shadow-md: 0 2px 6px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.55);
+
+  /* Focus ring */
+  --shadow-ring: 0 0 0 1px var(--c-ring);
+}

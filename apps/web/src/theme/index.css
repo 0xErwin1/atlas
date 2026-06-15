@@ -1,0 +1,70 @@
+@import 'tailwindcss';
+@import './tokens.css';
+@import './base.css';
+
+@theme {
+  /* Colors */
+  --color-background: var(--c-background);
+  --color-panel: var(--c-panel);
+  --color-raised: var(--c-raised);
+  --color-tiles: var(--c-tiles);
+  --color-foreground: var(--c-foreground);
+  --color-muted: var(--c-muted);
+  --color-border: var(--c-border);
+  --color-selection: var(--c-selection);
+
+  --color-primary: var(--c-primary);
+  --color-primary-hover: var(--c-primary-hover);
+  --color-primary-active: var(--c-primary-active);
+  --color-primary-fg: var(--c-primary-fg);
+
+  --color-danger: var(--c-danger);
+  --color-success: var(--c-success);
+  --color-warning: var(--c-warning);
+  --color-info: var(--c-info);
+  --color-secondary: var(--c-secondary);
+  --color-secondary-hover: var(--c-secondary-hover);
+
+  --color-agent: var(--c-agent);
+  --color-agent-bg: var(--c-agent-bg);
+  --color-agent-border: var(--c-agent-border);
+  --color-cyan: var(--c-cyan);
+
+  --color-input: var(--c-input);
+  --color-ring: var(--c-ring);
+  --color-overlay: var(--c-overlay);
+  --color-list-active: var(--c-list-active);
+
+  --color-banner-err-bg: var(--c-banner-err-bg);
+  --color-banner-err-fg: var(--c-banner-err-fg);
+
+  /* Typography */
+  --font-ui: var(--font-ui);
+  --font-mono: var(--font-mono);
+  --font-sans: var(--font-sans);
+
+  --text-xs: var(--fs-xs);
+  --text-sm: var(--fs-sm);
+  --text-base: var(--fs-base);
+  --text-lg: var(--fs-lg);
+  --text-xl: var(--fs-xl);
+  --text-title: var(--fs-title);
+
+  /* Radii */
+  --radius-sm: var(--r-sm);
+  --radius-md: var(--r-md);
+  --radius-lg: var(--r-lg);
+  --radius-full: var(--r-full);
+
+  /* Spacing */
+  --spacing-xs: var(--sp-xs);
+  --spacing-sm: var(--sp-sm);
+  --spacing-md: var(--sp-md);
+  --spacing-lg: var(--sp-lg);
+  --spacing-xl: var(--sp-xl);
+
+  /* Shadows */
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  --shadow-ring: var(--shadow-ring);
+}
