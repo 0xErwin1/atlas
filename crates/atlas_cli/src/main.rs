@@ -146,18 +146,9 @@ mod tests {
 
     #[test]
     fn search_subcommand_parses_required_args() {
-        let cli = Cli::try_parse_from([
-            "atlas",
-            "--workspace", "is-ignored",  // global workspace is via --workspace in Search
-            "search",
-            "--workspace", "my-ws",
-            "hello world",
-        ])
-        .unwrap_or_else(|_| {
-            // --workspace is a global arg on Cli, not on Search
+        let cli =
             Cli::try_parse_from(["atlas", "search", "--workspace", "my-ws", "hello world"])
-                .expect("parse")
-        });
+                .expect("search subcommand with required args must parse");
         if let Commands::Search(args) = cli.command {
             assert_eq!(args.workspace, "my-ws");
             assert_eq!(args.query, "hello world");
