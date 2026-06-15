@@ -13,8 +13,8 @@ use atlas_domain::{
 
 use crate::{
     authz::{
-        Authorized, EditorMin, FolderRes, ViewerMin, authorized::ProjectRes,
-        resolve_folder_ancestry,
+        Authorized, EditorMin, FolderRes, MinRole, ViewerMin, authorize_folder_destination,
+        authorized::ProjectRes, resolve_folder_ancestry,
     },
     error::ApiError,
     persistence::repos::{FolderRepo, PgFolderRepo},
@@ -274,6 +274,16 @@ pub(crate) async fn move_folder(
                 message: "a folder cannot be moved into itself".into(),
             });
         }
+
+        authorize_folder_destination(
+            &state.db,
+            &auth.principal,
+            auth.membership.clone(),
+            &auth.workspace,
+            new_parent,
+            EditorMin::ROLE,
+        )
+        .await?;
 
         let ancestry = resolve_folder_ancestry(&state.db, auth.workspace.id, new_parent).await?;
         let is_descendant = ancestry.iter().any(|f| f.id == folder_id);

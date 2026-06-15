@@ -12,6 +12,7 @@ use atlas_api::dtos::{
     folders::{CreateFolderRequest, MoveFolderRequest, RenameFolderRequest},
 };
 use atlas_client::ClientError;
+use atlas_domain::{Actor, WorkspaceCtx, entities::identity::MemberRole};
 
 fn project_req(name: &str, slug: &str) -> CreateProjectRequest {
     let prefix: String = slug
@@ -542,6 +543,273 @@ async fn get_folder_non_uuid_returns_422() {
         response.status().as_u16(),
         422,
         "non-UUID folder_id must return 422"
+    );
+
+    db.teardown().await;
+}
+
+// ---- REQ-F5 (move authz): cross-workspace destination → 404 (no cross-tenant write) ----------
+
+#[tokio::test]
+async fn move_folder_cross_workspace_destination_returns_404() {
+    use atlas_domain::entities::workspace_core::NewFolder;
+    use atlas_server::persistence::repos::FolderRepo;
+
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+
+    let (client_a, ws_a, user_a) =
+        support::login_user_with_workspace(&server, &db, "mv-authz-a").await;
+    let (_, ws_b, user_b) = support::login_user_with_workspace(&server, &db, "mv-authz-b").await;
+
+    let proj_a = client_a
+        .create_project(&ws_a.slug, project_req("MvProjA", "mv-proj-a"))
+        .await
+        .expect("proj a");
+
+    let ctx_b = WorkspaceCtx::new(ws_b.id, Actor::User(user_b.id));
+    let folder_b = db
+        .folder_repo()
+        .create(
+            &ctx_b,
+            NewFolder {
+                project_id: None,
+                parent_folder_id: None,
+                name: "WsBFolder".to_string(),
+            },
+        )
+        .await
+        .expect("seed ws_b folder");
+
+    let _ = user_a;
+
+    let source = client_a
+        .create_folder(
+            &ws_a.slug,
+            &proj_a.slug,
+            CreateFolderRequest {
+                name: "Source".to_string(),
+                parent_folder_id: None,
+            },
+        )
+        .await
+        .expect("source folder");
+
+    let err = client_a
+        .move_folder(
+            &ws_a.slug,
+            source.id,
+            MoveFolderRequest {
+                parent_folder_id: Some(folder_b.id.0),
+            },
+        )
+        .await
+        .expect_err("cross-workspace destination must fail");
+
+    match err {
+        ClientError::Api(p) => assert_eq!(p.status, 404, "expected 404, got {}", p.status),
+        other => panic!("unexpected error: {other:?}"),
+    }
+
+    let still_same = client_a
+        .get_folder(&ws_a.slug, source.id)
+        .await
+        .expect("get source after attempted move");
+
+    assert!(
+        still_same.parent_folder_id.is_none(),
+        "source folder parent must not have changed after rejected cross-workspace move"
+    );
+
+    db.teardown().await;
+}
+
+// ---- REQ-F5 (move authz): under-privileged destination → 404 (conceal) --------------
+//
+// The source folder lives in a workspace-visible project (caller has editor via visibility).
+// The destination folder lives in a PRIVATE project the caller has no access to.
+// After the fix, move must return 404 instead of succeeding.
+
+#[tokio::test]
+async fn move_folder_underprivileged_destination_returns_404() {
+    use atlas_api::dtos::LoginRequest;
+    use atlas_domain::entities::permissions::NewPermissionGrant;
+    use atlas_server::auth::password;
+    use atlas_server::persistence::repos::{MembershipRepo, NewUser, PermissionGrantRepo, PgPermissionGrantRepo, UserRepo};
+
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+
+    let (owner, ws, owner_user) =
+        support::login_user_with_workspace(&server, &db, "mv-unpriv-owner").await;
+
+    // Source lives in a workspace-visible project so the caller gets editor through visibility.
+    let src_proj = owner
+        .create_project(&ws.slug, project_req("MvUnprivSrcProj", "mv-unpriv-src"))
+        .await
+        .expect("source project");
+
+    // Destination lives in a PRIVATE project — the caller has no access to it.
+    let dst_proj = owner
+        .create_project(
+            &ws.slug,
+            CreateProjectRequest {
+                name: "MvUnprivDstProj".to_string(),
+                slug: "mv-unpriv-dst".to_string(),
+                task_prefix: "MUD".to_string(),
+                visibility: Some("private".to_string()),
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("private destination project");
+
+    let source = owner
+        .create_folder(
+            &ws.slug,
+            &src_proj.slug,
+            CreateFolderRequest {
+                name: "Source".to_string(),
+                parent_folder_id: None,
+            },
+        )
+        .await
+        .expect("source folder");
+
+    let dest = owner
+        .create_folder(
+            &ws.slug,
+            &dst_proj.slug,
+            CreateFolderRequest {
+                name: "Destination".to_string(),
+                parent_folder_id: None,
+            },
+        )
+        .await
+        .expect("destination folder");
+
+    let hash = password::hash("TestPassword1!".to_string())
+        .await
+        .expect("hash");
+    let caller_domain_user = db
+        .user_repo()
+        .create(NewUser {
+            username: "mv-unpriv-caller".to_string(),
+            display_name: "mv-unpriv-caller".to_string(),
+            password_hash: hash,
+            is_root: false,
+        })
+        .await
+        .expect("create caller user");
+
+    let ctx = WorkspaceCtx::new(ws.id, Actor::User(caller_domain_user.id));
+    db.membership_repo()
+        .add(&ctx, caller_domain_user.id, MemberRole::Member)
+        .await
+        .expect("membership");
+
+    // Explicit editor grant on the source folder so the Authorized extractor lets the caller through.
+    let grant_repo = PgPermissionGrantRepo {
+        conn: db.conn().clone(),
+    };
+    grant_repo
+        .upsert(NewPermissionGrant {
+            workspace_id: ws.id,
+            user_id: Some(caller_domain_user.id),
+            api_key_id: None,
+            project_id: None,
+            folder_id: Some(atlas_domain::ids::FolderId(source.id)),
+            document_id: None,
+            board_id: None,
+            role: atlas_domain::permissions::ResourceRole::Editor,
+            created_by_user_id: Some(owner_user.id),
+            created_by_api_key_id: None,
+        })
+        .await
+        .expect("editor grant on source folder");
+
+    let mut caller_client = atlas_client::AtlasClient::new(server.base_url().to_string());
+    caller_client
+        .login(LoginRequest {
+            username: "mv-unpriv-caller".to_string(),
+            password: "TestPassword1!".to_string(),
+        })
+        .await
+        .expect("login caller");
+
+    let err = caller_client
+        .move_folder(
+            &ws.slug,
+            source.id,
+            MoveFolderRequest {
+                parent_folder_id: Some(dest.id),
+            },
+        )
+        .await
+        .expect_err("move into private destination must fail with 404");
+
+    match err {
+        ClientError::Api(p) => assert_eq!(p.status, 404, "expected 404, got {}", p.status),
+        other => panic!("unexpected error: {other:?}"),
+    }
+
+    db.teardown().await;
+}
+
+// ---- REQ-F5 (move authz): happy-path — workspace owner moves to any dest → 200 -----
+
+#[tokio::test]
+async fn move_folder_owner_to_any_dest_returns_200() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+
+    let (client, ws, _) =
+        support::login_user_with_workspace(&server, &db, "mv-happy-owner").await;
+
+    let proj = client
+        .create_project(&ws.slug, project_req("MvHappyProj", "mv-happy-proj"))
+        .await
+        .expect("project");
+
+    let dest = client
+        .create_folder(
+            &ws.slug,
+            &proj.slug,
+            CreateFolderRequest {
+                name: "Destination".to_string(),
+                parent_folder_id: None,
+            },
+        )
+        .await
+        .expect("dest");
+
+    let source = client
+        .create_folder(
+            &ws.slug,
+            &proj.slug,
+            CreateFolderRequest {
+                name: "Source".to_string(),
+                parent_folder_id: None,
+            },
+        )
+        .await
+        .expect("source");
+
+    let moved = client
+        .move_folder(
+            &ws.slug,
+            source.id,
+            MoveFolderRequest {
+                parent_folder_id: Some(dest.id),
+            },
+        )
+        .await
+        .expect("move should succeed for workspace owner");
+
+    assert_eq!(
+        moved.parent_folder_id,
+        Some(dest.id),
+        "parent should be updated to dest"
     );
 
     db.teardown().await;
