@@ -342,6 +342,7 @@ dependencies = [
  "anyhow",
  "atlas_client",
  "clap",
+ "tokio",
 ]
 
 [[package]]
@@ -377,8 +378,10 @@ name = "atlas_mcp"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "atlas_client",
  "atlas_domain",
  "rmcp",
+ "schemars",
  "serde",
  "serde_json",
  "tokio",
