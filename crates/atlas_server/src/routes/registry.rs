@@ -439,4 +439,11 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/v1/workspaces/{ws}/tasks/{readable_id}/activity"),
     },
+    // ---- Search ----
+    RouteEntry {
+        method: "GET",
+        path_template: "/v1/workspaces/{ws}/search",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/search"),
+    },
 ];

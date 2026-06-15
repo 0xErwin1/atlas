@@ -213,6 +213,11 @@ pub fn app(state: AppState) -> Router {
             "/v1/workspaces/{ws}/documents/{slug}/move",
             axum::routing::patch(routes::documents::move_document),
         )
+        // Search
+        .route(
+            "/v1/workspaces/{ws}/search",
+            get(routes::search::search),
+        )
         .layer(axum_middleware::from_fn(
             crate::auth::csrf::require_csrf_for_cookie_mutations,
         ))
