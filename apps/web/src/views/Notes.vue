@@ -2,15 +2,18 @@
 import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import BacklinksPanel from '@/components/notas/BacklinksPanel.vue';
+import CasConflictView from '@/components/notas/CasConflictView.vue';
 // biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
 import NoteEditor from '@/components/notas/NoteEditor.vue';
 import PropertiesPanel from '@/components/notas/PropertiesPanel.vue';
 // biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
 import WikiLinkSuggest from '@/components/notas/WikiLinkSuggest.vue';
 import EditorToolbar from '@/components/shell/EditorToolbar.vue';
-import Btn from '@/components/ui/Btn.vue';
 import Icon from '@/components/ui/Icon.vue';
+import type { MergeSegment } from '@/composables/useCasMerge';
+import { useCasMerge } from '@/composables/useCasMerge';
 import { useMarkdownDoc } from '@/composables/useMarkdownDoc';
+import { joinFrontmatter, splitFrontmatter } from '@/lib/frontmatter';
 import { wikilinkTarget } from '@/lib/wikilink';
 import { useDocumentsStore } from '@/stores/documents';
 import { useUiStore } from '@/stores/ui';
@@ -24,6 +27,7 @@ const workspace = useWorkspaceStore();
 const documents = useDocumentsStore();
 const ui = useUiStore();
 const { load, save } = useMarkdownDoc();
+const { merge } = useCasMerge();
 
 const editorRef = ref<InstanceType<typeof NoteEditor> | null>(null);
 const suggestRef = ref<InstanceType<typeof WikiLinkSuggest> | null>(null);
@@ -41,8 +45,14 @@ const meta = ref<Record<string, unknown>>({});
 const headRevisionId = ref('');
 const dirty = ref(false);
 const loadError = ref<string | null>(null);
-const conflict = ref<{ hint: string } | null>(null);
 const wikilinkQuery = ref<string | null>(null);
+
+// The full document content (frontmatter + body) as loaded at headRevisionId.
+// It is the 3-way merge BASE; never mutated by local edits.
+const baseContent = ref('');
+
+const conflictOpen = ref(false);
+const conflictSegments = ref<MergeSegment[]>([]);
 
 const breadcrumbs = computed(() => ['Atlas', title.value || 'Untitled']);
 
@@ -50,12 +60,14 @@ let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
 async function loadDoc(): Promise<void> {
   loadError.value = null;
-  conflict.value = null;
+  conflictOpen.value = false;
+  conflictSegments.value = [];
 
   if (slug.value === null || ws.value === '') {
     body.value = '';
     title.value = '';
     meta.value = {};
+    baseContent.value = '';
     return;
   }
 
@@ -64,6 +76,7 @@ async function loadDoc(): Promise<void> {
     body.value = result.body;
     meta.value = result.meta;
     headRevisionId.value = result.headRevisionId;
+    baseContent.value = joinFrontmatter(result.meta, result.body);
     title.value = typeof result.meta.title === 'string' ? result.meta.title : (slug.value ?? '');
     dirty.value = false;
     await documents.loadBacklinks(ws.value, slug.value);
@@ -75,24 +88,94 @@ async function loadDoc(): Promise<void> {
 async function persist(): Promise<void> {
   if (slug.value === null || ws.value === '') return;
 
-  const current = editorRef.value?.currentMarkdown() ?? body.value;
-  const result = await save(ws.value, slug.value, current, meta.value, headRevisionId.value);
+  const currentBody = editorRef.value?.currentMarkdown() ?? body.value;
+  const result = await save(ws.value, slug.value, currentBody, meta.value, headRevisionId.value);
 
   if (result.kind === 'ok') {
-    dirty.value = false;
-    conflict.value = null;
+    onSaved(joinFrontmatter(meta.value, currentBody), headRevisionId.value);
+    return;
+  }
+
+  if (result.kind === 'error') {
+    ui.showBanner(result.hint ?? result.title, 'error');
+    return;
+  }
+
+  // CAS conflict: run the 3-way merge against the loaded base, never overwrite.
+  const mine = joinFrontmatter(meta.value, currentBody);
+  const merged = merge({
+    base: baseContent.value,
+    mine,
+    patch: result.problem.base_to_current_patch,
+  });
+
+  if (merged.kind === 'clean') {
+    await resave(merged.merged, result.problem.current_revision_id, true);
+    return;
+  }
+
+  // Overlapping edits: open the focused conflict view (never last-write-wins).
+  conflictSegments.value = merged.segments;
+  conflictOpen.value = true;
+  // Stash the server revision the resolution must be saved against.
+  pendingConflictRevision.value = result.problem.current_revision_id;
+}
+
+const pendingConflictRevision = ref('');
+
+async function resave(content: string, baseRevisionId: string, autoMerged: boolean): Promise<void> {
+  if (slug.value === null || ws.value === '') return;
+
+  const { body: resolvedBody, meta: resolvedMeta } = splitFrontmatter(content);
+  const result = await save(ws.value, slug.value, resolvedBody, resolvedMeta, baseRevisionId);
+
+  if (result.kind === 'ok') {
+    meta.value = resolvedMeta;
+    body.value = resolvedBody;
+    title.value = typeof resolvedMeta.title === 'string' ? resolvedMeta.title : title.value;
+    onSaved(content, baseRevisionId);
+    ui.showBanner(autoMerged ? 'Conflict auto-merged and saved.' : 'Conflict resolved and saved.', 'success');
     return;
   }
 
   if (result.kind === 'conflict') {
-    // The 3-way merge UI is T21-T22; here we surface a non-destructive banner
-    // and never apply last-write-wins.
-    conflict.value = { hint: result.problem.hint ?? 'This document changed on the server. Reload to merge.' };
-    ui.showBanner(conflict.value.hint, 'warning');
+    // The document moved again between merge and resave: re-enter the flow.
+    const mine = joinFrontmatter(resolvedMeta, resolvedBody);
+    const merged = merge({
+      base: baseContent.value,
+      mine,
+      patch: result.problem.base_to_current_patch,
+    });
+    if (merged.kind === 'clean') {
+      await resave(merged.merged, result.problem.current_revision_id, true);
+      return;
+    }
+    conflictSegments.value = merged.segments;
+    conflictOpen.value = true;
+    pendingConflictRevision.value = result.problem.current_revision_id;
     return;
   }
 
   ui.showBanner(result.hint ?? result.title, 'error');
+}
+
+function onSaved(content: string, revisionId: string): void {
+  dirty.value = false;
+  conflictOpen.value = false;
+  conflictSegments.value = [];
+  baseContent.value = content;
+  if (revisionId !== '') headRevisionId.value = revisionId;
+}
+
+async function onConflictResolve(content: string): Promise<void> {
+  conflictOpen.value = false;
+  await resave(content, pendingConflictRevision.value, false);
+}
+
+function onConflictCancel(): void {
+  conflictOpen.value = false;
+  conflictSegments.value = [];
+  ui.showBanner('Conflict not resolved — your local edits are kept unsaved.', 'warning');
 }
 
 function onChange(markdown: string): void {
@@ -170,23 +253,6 @@ watch([slug, ws], loadDoc, { immediate: true });
           {{ loadError }}
         </p>
 
-        <div
-          v-if="conflict"
-          class="flex items-center justify-between gap-2"
-          style="
-            padding: 8px 12px;
-            margin-bottom: 12px;
-            border: 1px solid var(--c-warning);
-            border-radius: var(--r-md);
-            background: var(--c-raised);
-            color: var(--c-foreground);
-            font-size: var(--fs-sm);
-          "
-        >
-          <span>{{ conflict.hint }}</span>
-          <Btn variant="secondary" @click="loadDoc">Reload</Btn>
-        </div>
-
         <template v-if="slug">
           <h1
             style="font-size: var(--fs-title); font-weight: var(--fw-bold); color: var(--c-foreground); margin-bottom: 16px;"
@@ -233,5 +299,12 @@ watch([slug, ws], loadDoc, { immediate: true });
         @navigate="(s) => router.push({ name: 'notes', params: { slug: s } })"
       />
     </template>
+
+    <CasConflictView
+      :open="conflictOpen"
+      :segments="conflictSegments"
+      @resolve="onConflictResolve"
+      @cancel="onConflictCancel"
+    />
   </AppShell>
 </template>

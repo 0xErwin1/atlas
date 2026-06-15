@@ -24,9 +24,23 @@ export interface MergeInput {
   patch: string;
 }
 
+/**
+ * The merged document expressed as an ordered list of segments. Stable segments
+ * are auto-merged text; conflict segments are unresolved hunks the user must
+ * choose. Concatenating the segments (after choosing a side per conflict) with
+ * '\n' reproduces a valid document, so the conflict view can reassemble the
+ * result without re-running the merge.
+ */
+export type MergeSegment = { kind: 'stable'; text: string } | { kind: 'conflict'; hunk: ConflictHunk };
+
 export type MergeResult =
   | { kind: 'clean'; merged: string }
-  | { kind: 'conflict'; hunks: ConflictHunk[]; reconstructed: string | null };
+  | {
+      kind: 'conflict';
+      hunks: ConflictHunk[];
+      segments: MergeSegment[];
+      reconstructed: string | null;
+    };
 
 /**
  * Composable implementing the CAS 3-way merge (REQ-W18, design §7b).
@@ -51,10 +65,12 @@ export function useCasMerge() {
     const reconstructed = reconstructTheirs(base, patch);
 
     if (reconstructed === false) {
+      const hunk: ConflictHunk = { base, mine, theirs: '' };
       return {
         kind: 'conflict',
         reconstructed: null,
-        hunks: [{ base, mine, theirs: '' }],
+        hunks: [hunk],
+        segments: [{ kind: 'conflict', hunk }],
       };
     }
 
@@ -94,37 +110,52 @@ function threeWayMerge(base: string, mine: string, theirs: string): MergeResult 
 
   const conflicts: ConflictHunk[] = [];
   const mergedLines: string[] = [];
+  const segments: MergeSegment[] = [];
+
+  const pushStable = (lines: string[]): void => {
+    if (lines.length === 0) return;
+    mergedLines.push(...lines);
+    const last = segments[segments.length - 1];
+    const text = lines.join('\n');
+    if (last !== undefined && last.kind === 'stable') {
+      last.text = `${last.text}\n${text}`;
+    } else {
+      segments.push({ kind: 'stable', text });
+    }
+  };
 
   for (const region of regions) {
     const mineChanged = !sameLines(region.base, region.mine);
     const theirsChanged = !sameLines(region.base, region.theirs);
 
     if (!mineChanged && !theirsChanged) {
-      mergedLines.push(...region.base);
+      pushStable(region.base);
       continue;
     }
 
     if (mineChanged && !theirsChanged) {
-      mergedLines.push(...region.mine);
+      pushStable(region.mine);
       continue;
     }
 
     if (theirsChanged && !mineChanged) {
-      mergedLines.push(...region.theirs);
+      pushStable(region.theirs);
       continue;
     }
 
     // Both sides changed the region.
     if (sameLines(region.mine, region.theirs)) {
-      mergedLines.push(...region.mine);
+      pushStable(region.mine);
       continue;
     }
 
-    conflicts.push({
+    const hunk: ConflictHunk = {
       base: region.base.join('\n'),
       mine: region.mine.join('\n'),
       theirs: region.theirs.join('\n'),
-    });
+    };
+    conflicts.push(hunk);
+    segments.push({ kind: 'conflict', hunk });
     // The conflicting region contributes nothing to the auto-merged text; the
     // caller resolves it through the conflict view before resaving.
   }
@@ -133,7 +164,7 @@ function threeWayMerge(base: string, mine: string, theirs: string): MergeResult 
     return { kind: 'clean', merged: mergedLines.join('\n') };
   }
 
-  return { kind: 'conflict', hunks: conflicts, reconstructed: theirs };
+  return { kind: 'conflict', hunks: conflicts, segments, reconstructed: theirs };
 }
 
 /**
@@ -158,7 +189,10 @@ function refineRegion(region: AlignedRegion): AlignedRegion[] {
 
   const split: AlignedRegion[] = [];
   for (let i = 0; i < region.base.length; i++) {
-    split.push({ base: [region.base[i]], mine: [region.mine[i]], theirs: [region.theirs[i]] });
+    const baseLine = region.base[i] ?? '';
+    const mineLine = region.mine[i] ?? '';
+    const theirsLine = region.theirs[i] ?? '';
+    split.push({ base: [baseLine], mine: [mineLine], theirs: [theirsLine] });
   }
 
   return split;
@@ -294,20 +328,22 @@ function alignSides(base: string[], mine: string[], theirs: string[]): AlignedRe
     while (grew) {
       grew = false;
 
-      while (mineChanges[mi] !== undefined && mineChanges[mi].baseStart <= regionEnd) {
-        const c = mineChanges[mi];
-        mineParts.push(c);
-        regionEnd = Math.max(regionEnd, c.baseEnd);
+      let nextMineChange = mineChanges[mi];
+      while (nextMineChange !== undefined && nextMineChange.baseStart <= regionEnd) {
+        mineParts.push(nextMineChange);
+        regionEnd = Math.max(regionEnd, nextMineChange.baseEnd);
         mi++;
         grew = true;
+        nextMineChange = mineChanges[mi];
       }
 
-      while (theirsChanges[ti] !== undefined && theirsChanges[ti].baseStart <= regionEnd) {
-        const c = theirsChanges[ti];
-        theirsParts.push(c);
-        regionEnd = Math.max(regionEnd, c.baseEnd);
+      let nextTheirsChange = theirsChanges[ti];
+      while (nextTheirsChange !== undefined && nextTheirsChange.baseStart <= regionEnd) {
+        theirsParts.push(nextTheirsChange);
+        regionEnd = Math.max(regionEnd, nextTheirsChange.baseEnd);
         ti++;
         grew = true;
+        nextTheirsChange = theirsChanges[ti];
       }
     }
 

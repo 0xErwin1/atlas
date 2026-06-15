@@ -61,11 +61,35 @@ describe('useCasMerge', () => {
     if (result.kind === 'conflict') {
       expect(result.hunks.length).toBe(1);
       const hunk = result.hunks[0];
-      expect(hunk.mine).toBe('shared paragraph — my version');
-      expect(hunk.theirs).toBe('shared paragraph — server version');
-      expect(hunk.base).toBe('shared paragraph');
+      expect(hunk?.mine).toBe('shared paragraph — my version');
+      expect(hunk?.theirs).toBe('shared paragraph — server version');
+      expect(hunk?.base).toBe('shared paragraph');
       // The reconstructed remote content is exposed for the conflict view.
       expect(result.reconstructed).toBe(theirs);
+    }
+  });
+
+  it('exposes ordered segments so the conflict view can reassemble the document', () => {
+    const base = ['title', 'shared paragraph', 'footer'].join('\n');
+    const theirs = ['title', 'shared paragraph — server version', 'footer'].join('\n');
+    const mine = ['title', 'shared paragraph — my version', 'footer'].join('\n');
+
+    const result = merge({ base, mine, patch: patchBaseToCurrent(base, theirs) });
+
+    expect(result.kind).toBe('conflict');
+    if (result.kind === 'conflict') {
+      expect(result.segments.map((s) => s.kind)).toEqual(['stable', 'conflict', 'stable']);
+
+      // Picking "mine" for the conflict and concatenating segments must rebuild
+      // exactly the local document.
+      const rebuilt = result.segments.map((s) => (s.kind === 'stable' ? s.text : s.hunk.mine)).join('\n');
+      expect(rebuilt).toBe(mine);
+
+      // Picking "theirs" rebuilds the remote document.
+      const rebuiltTheirs = result.segments
+        .map((s) => (s.kind === 'stable' ? s.text : s.hunk.theirs))
+        .join('\n');
+      expect(rebuiltTheirs).toBe(theirs);
     }
   });
 
@@ -81,8 +105,8 @@ describe('useCasMerge', () => {
     expect(result.kind).toBe('conflict');
     if (result.kind === 'conflict') {
       expect(result.hunks.length).toBe(1);
-      expect(result.hunks[0].mine).toBe('middle mine');
-      expect(result.hunks[0].theirs).toBe('middle server');
+      expect(result.hunks[0]?.mine).toBe('middle mine');
+      expect(result.hunks[0]?.theirs).toBe('middle server');
     }
   });
 
@@ -96,8 +120,8 @@ describe('useCasMerge', () => {
     expect(result.kind).toBe('conflict');
     if (result.kind === 'conflict') {
       expect(result.hunks.length).toBe(1);
-      expect(result.hunks[0].mine).toBe('l1 mine\nl2 mine');
-      expect(result.hunks[0].theirs).toBe('l1 server\nl2 server');
+      expect(result.hunks[0]?.mine).toBe('l1 mine\nl2 mine');
+      expect(result.hunks[0]?.theirs).toBe('l1 server\nl2 server');
     }
   });
 
