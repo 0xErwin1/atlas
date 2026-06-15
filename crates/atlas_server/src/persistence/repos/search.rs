@@ -36,7 +36,6 @@ struct SearchRow {
     kind: String,
     id: uuid::Uuid,
     readable_id: Option<String>,
-    slug: Option<String>,
     project_slug: Option<String>,
     title: String,
     snippet: Option<String>,
@@ -190,7 +189,7 @@ impl SearchRepo for PgSearchRepo {
 
         let sql = format!(
             r#"
-            SELECT kind, id, readable_id, slug, project_slug, title, snippet, score, updated_at
+            SELECT kind, id, readable_id, project_slug, title, snippet, score, updated_at
             FROM ({union_sql}) combined
             WHERE 1=1
             {cursor_cond}
@@ -274,7 +273,6 @@ fn build_doc_arm(
             'document'::text AS kind,
             d.id,
             NULL::text AS readable_id,
-            d.slug,
             p.slug AS project_slug,
             d.title,
             {snippet_expr} AS snippet,
@@ -421,7 +419,6 @@ fn build_task_arm(
             'task'::text AS kind,
             t.id,
             t.readable_id AS readable_id,
-            NULL::text AS slug,
             p.slug AS project_slug,
             t.title,
             {snippet_expr} AS snippet,
@@ -635,7 +632,6 @@ fn row_to_hit(row: SearchRow) -> Result<SearchHit, DomainError> {
         kind,
         id: row.id,
         readable_id: row.readable_id,
-        slug: row.slug,
         title: row.title,
         snippet: row.snippet,
         score: row.score,
