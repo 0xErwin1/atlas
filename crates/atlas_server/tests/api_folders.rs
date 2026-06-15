@@ -635,7 +635,9 @@ async fn move_folder_underprivileged_destination_returns_404() {
     use atlas_api::dtos::LoginRequest;
     use atlas_domain::entities::permissions::NewPermissionGrant;
     use atlas_server::auth::password;
-    use atlas_server::persistence::repos::{MembershipRepo, NewUser, PermissionGrantRepo, PgPermissionGrantRepo, UserRepo};
+    use atlas_server::persistence::repos::{
+        MembershipRepo, NewUser, PermissionGrantRepo, PgPermissionGrantRepo, UserRepo,
+    };
 
     let db = support::TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;
@@ -763,8 +765,7 @@ async fn move_folder_owner_to_any_dest_returns_200() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;
 
-    let (client, ws, _) =
-        support::login_user_with_workspace(&server, &db, "mv-happy-owner").await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "mv-happy-owner").await;
 
     let proj = client
         .create_project(&ws.slug, project_req("MvHappyProj", "mv-happy-proj"))
