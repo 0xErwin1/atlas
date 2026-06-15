@@ -5,7 +5,6 @@ use atlas_api::{
         ApiKeyCreated, ApiKeyDto, CreateApiKeyRequest, CreateGrantRequest, CreateProjectRequest,
         CreateUserRequest, GrantDto, HealthResponse, LoginRequest, LoginResponse, MeResponse,
         ProjectDto, UpdateProjectRequest, UserDto, WorkspaceDto,
-        search::SearchHitDto,
         boards_tasks::{
             ActivityEntryDto, AddAssigneeRequest, AssigneeDto, BoardDto, BoardSummaryDto,
             ChecklistItemDto, ColumnDto, CreateBoardRequest, CreateChecklistItemRequest,
@@ -19,6 +18,7 @@ use atlas_api::{
             DocumentSummaryDto, FrontmatterDto, MoveDocumentRequest, RevisionContentDto,
             RevisionMetaDto, UpdateContentRequest, UpdateDocumentRequest,
         },
+        search::SearchHitDto,
     },
     pagination::Page,
     problem::ProblemDetails,
@@ -1301,12 +1301,23 @@ mod tests {
     fn build_search_path_includes_required_q() {
         let path = build_search_path("my-ws", "hello world", None, None, None, None);
         assert!(path.starts_with("/v1/workspaces/my-ws/search?q="));
-        assert!(path.contains("hello%20world") || path.contains("hello+world") || path.contains("hello"));
+        assert!(
+            path.contains("hello%20world")
+                || path.contains("hello+world")
+                || path.contains("hello")
+        );
     }
 
     #[test]
     fn build_search_path_includes_optional_params() {
-        let path = build_search_path("ws1", "query", Some("task"), Some("updated"), Some("abc"), Some(10));
+        let path = build_search_path(
+            "ws1",
+            "query",
+            Some("task"),
+            Some("updated"),
+            Some("abc"),
+            Some(10),
+        );
         assert!(path.contains("type=task"));
         assert!(path.contains("sort=updated"));
         assert!(path.contains("cursor=abc"));

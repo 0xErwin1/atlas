@@ -1,7 +1,11 @@
 use async_trait::async_trait;
 use uuid::Uuid;
 
-use crate::{DomainError, WorkspaceCtx, permissions::Principal, search::{SearchHit, SearchQuery}};
+use crate::{
+    DomainError, WorkspaceCtx,
+    permissions::Principal,
+    search::{SearchHit, SearchQuery},
+};
 
 /// Sort discriminant for the search result ordering key.
 ///
@@ -61,10 +65,7 @@ mod tests {
         let r = SortKey::Relevance(0.5_f32);
         let u = SortKey::Updated(0_i64);
         // They carry different data and are not equal
-        assert_ne!(
-            std::mem::discriminant(&r),
-            std::mem::discriminant(&u)
-        );
+        assert_ne!(std::mem::discriminant(&r), std::mem::discriminant(&u));
     }
 
     #[test]

@@ -64,9 +64,7 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     let mut client = AtlasClient::new(&cli.base_url);
-    let token = cli
-        .token
-        .or_else(|| std::env::var("ATLAS_TOKEN").ok());
+    let token = cli.token.or_else(|| std::env::var("ATLAS_TOKEN").ok());
     if let Some(t) = token {
         client.set_token(t);
     }
@@ -113,14 +111,15 @@ async fn main() -> Result<()> {
                     let plain = snippet.replace("<mark>", "").replace("</mark>", "");
                     println!("  {plain}");
                 }
-                println!("  score={:.4}  updated={}", hit.score, hit.updated_at.format("%Y-%m-%d"));
+                println!(
+                    "  score={:.4}  updated={}",
+                    hit.score,
+                    hit.updated_at.format("%Y-%m-%d")
+                );
             }
 
             if page.has_more {
-                let next = page
-                    .next_cursor
-                    .as_deref()
-                    .unwrap_or("<cursor missing>");
+                let next = page.next_cursor.as_deref().unwrap_or("<cursor missing>");
                 println!("\n(More results available; next cursor: {next})");
             }
         }
@@ -146,9 +145,8 @@ mod tests {
 
     #[test]
     fn search_subcommand_parses_required_args() {
-        let cli =
-            Cli::try_parse_from(["atlas", "search", "--workspace", "my-ws", "hello world"])
-                .expect("search subcommand with required args must parse");
+        let cli = Cli::try_parse_from(["atlas", "search", "--workspace", "my-ws", "hello world"])
+            .expect("search subcommand with required args must parse");
         if let Commands::Search(args) = cli.command {
             assert_eq!(args.workspace, "my-ws");
             assert_eq!(args.query, "hello world");
@@ -162,11 +160,16 @@ mod tests {
     #[test]
     fn search_subcommand_parses_optional_flags() {
         let cli = Cli::try_parse_from([
-            "atlas", "search",
-            "--workspace", "ws1",
-            "--type", "task",
-            "--sort", "updated",
-            "--limit", "25",
+            "atlas",
+            "search",
+            "--workspace",
+            "ws1",
+            "--type",
+            "task",
+            "--sort",
+            "updated",
+            "--limit",
+            "25",
             "my query",
         ])
         .expect("parse");
@@ -181,12 +184,8 @@ mod tests {
 
     #[test]
     fn token_can_be_set_via_flag() {
-        let cli = Cli::try_parse_from([
-            "atlas",
-            "--token", "my-bearer-token",
-            "version",
-        ])
-        .expect("parse");
+        let cli =
+            Cli::try_parse_from(["atlas", "--token", "my-bearer-token", "version"]).expect("parse");
         assert_eq!(cli.token.as_deref(), Some("my-bearer-token"));
     }
 }

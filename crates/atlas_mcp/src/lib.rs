@@ -125,7 +125,8 @@ mod tests {
 
     #[test]
     fn search_resources_params_deserializes_with_optionals() {
-        let json = r#"{"workspace":"ws","query":"q","type_filter":"task","sort":"updated","limit":25}"#;
+        let json =
+            r#"{"workspace":"ws","query":"q","type_filter":"task","sort":"updated","limit":25}"#;
         let params: SearchResourcesParams = serde_json::from_str(json).unwrap();
         assert_eq!(params.type_filter.as_deref(), Some("task"));
         assert_eq!(params.sort.as_deref(), Some("updated"));

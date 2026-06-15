@@ -21,26 +21,26 @@ mod support;
 
 use atlas_api::dtos::search::SearchHitDto;
 use atlas_api::pagination::Page;
+use atlas_domain::permissions::Principal;
+use atlas_domain::ports::search::SearchRepo;
+use atlas_domain::search::{SearchQuery, SearchSort, TypeFilter};
 use atlas_domain::{
     Actor, WorkspaceCtx,
     entities::{
         boards_tasks::{NewBoard, NewTask, PositionBetween},
         documents::NewDocument,
+        identity::MemberRole,
         permissions::NewPermissionGrant,
         workspace_core::NewProject,
-        identity::MemberRole,
     },
     permissions::{ResourceRole, Visibility, VisibilityRole},
 };
-use atlas_domain::permissions::Principal;
-use atlas_domain::ports::search::SearchRepo;
-use atlas_domain::search::{SearchQuery, SearchSort, TypeFilter};
 use atlas_server::{
     auth::tokens::{generate_api_key, hash_token},
     persistence::repos::{
         ApiKeyRepo, BoardRepo, DocumentRepo, MembershipRepo, NewApiKey, NewUser,
-        PgApiKeyRepo, PgBoardRepo, PgDocumentRepo, PgPermissionGrantRepo, PgProjectRepo,
-        PgSearchRepo, PgTaskRepo, PermissionGrantRepo, ProjectRepo, TaskRepo, UserRepo,
+        PermissionGrantRepo, PgApiKeyRepo, PgBoardRepo, PgDocumentRepo, PgPermissionGrantRepo,
+        PgProjectRepo, PgSearchRepo, PgTaskRepo, ProjectRepo, TaskRepo, UserRepo,
     },
 };
 use uuid::Uuid;
@@ -103,7 +103,9 @@ async fn grant_ws_scope_for_key(
     key_id: atlas_domain::ids::ApiKeyId,
     grantor_id: atlas_domain::ids::UserId,
 ) {
-    let repo = PgPermissionGrantRepo { conn: db.conn().clone() };
+    let repo = PgPermissionGrantRepo {
+        conn: db.conn().clone(),
+    };
     repo.upsert(NewPermissionGrant {
         workspace_id: ws_id,
         user_id: None,
@@ -131,7 +133,9 @@ async fn grant_doc_for_key(
     doc_id: atlas_domain::ids::DocumentId,
     grantor_id: atlas_domain::ids::UserId,
 ) {
-    let repo = PgPermissionGrantRepo { conn: db.conn().clone() };
+    let repo = PgPermissionGrantRepo {
+        conn: db.conn().clone(),
+    };
     repo.upsert(NewPermissionGrant {
         workspace_id: ws_id,
         user_id: None,
@@ -159,17 +163,19 @@ async fn create_api_key_for_ws(
     let token_hash = hash_token(&raw_token);
 
     let ctx = WorkspaceCtx::new(ws_id, Actor::User(creator_id));
-    let key = PgApiKeyRepo { conn: db.conn().clone() }
-        .create(
-            &ctx,
-            NewApiKey {
-                name: name.to_string(),
-                token_hash,
-                expires_at: None,
-            },
-        )
-        .await
-        .expect("create api key");
+    let key = PgApiKeyRepo {
+        conn: db.conn().clone(),
+    }
+    .create(
+        &ctx,
+        NewApiKey {
+            name: name.to_string(),
+            token_hash,
+            expires_at: None,
+        },
+    )
+    .await
+    .expect("create api key");
 
     (key.id, raw_token)
 }
@@ -210,7 +216,9 @@ async fn seed_task_with_board(
     atlas_domain::ids::BoardId,
     atlas_domain::ids::ProjectId,
 ) {
-    let project_repo = PgProjectRepo { conn: db.conn().clone() };
+    let project_repo = PgProjectRepo {
+        conn: db.conn().clone(),
+    };
     let board_repo = PgBoardRepo::new(db.conn().clone());
 
     let project = project_repo
@@ -227,12 +235,26 @@ async fn seed_task_with_board(
         .expect("seed project");
 
     let board = board_repo
-        .create_board(ctx, NewBoard { project_id: project.id, name: "Board".to_string() })
+        .create_board(
+            ctx,
+            NewBoard {
+                project_id: project.id,
+                name: "Board".to_string(),
+            },
+        )
         .await
         .expect("seed board");
 
     let col = board_repo
-        .add_column(ctx, board.id, "Backlog".to_string(), PositionBetween { before: None, after: None })
+        .add_column(
+            ctx,
+            board.id,
+            "Backlog".to_string(),
+            PositionBetween {
+                before: None,
+                after: None,
+            },
+        )
         .await
         .expect("seed column");
 
@@ -251,7 +273,10 @@ async fn seed_task_with_board(
                 estimate: None,
                 labels: vec![],
                 properties: None,
-                position: PositionBetween { before: None, after: None },
+                position: PositionBetween {
+                    before: None,
+                    after: None,
+                },
             },
         )
         .await
@@ -313,7 +338,8 @@ async fn api_key_with_ws_scope_grant_sees_granted_resources() {
     let unique = "apikeywsgrant9b";
     let doc_id = seed_document(&db, &ctx, &format!("Doc {unique}"), unique).await;
 
-    let (key_id, raw_token) = create_api_key_for_ws(&db, ws.id, owner.id, "test-key-ws-grant").await;
+    let (key_id, raw_token) =
+        create_api_key_for_ws(&db, ws.id, owner.id, "test-key-ws-grant").await;
 
     // Grant workspace-scope access to the API key.
     grant_ws_scope_for_key(&db, ws.id, key_id, owner.id).await;
@@ -391,8 +417,7 @@ async fn cross_tenant_task_isolation() {
     let ctx_b = support::ctx(&ws_b, &bob);
 
     // Log in as alice to get a session token.
-    let _ =
-        support::login_user_with_workspace(&server, &db, "b3-alice-login").await;
+    let _ = support::login_user_with_workspace(&server, &db, "b3-alice-login").await;
     // seed_workspace inside login_user_with_workspace creates a NEW workspace, but we need alice's ws_a.
     // Use a separate login approach: log in alice directly via HTTP after seeding her with a real pw.
     let alice_token = {
@@ -401,30 +426,57 @@ async fn cross_tenant_task_isolation() {
         let pw = "TestPassword1!";
         let hash = password::hash(pw.to_string()).await.expect("hash");
 
-        let user = db.user_repo().create(NewUser {
-            username: "b3-alice-auth".to_string(),
-            display_name: "Alice".to_string(),
-            password_hash: hash,
-            is_root: false,
-        }).await.expect("create alice");
+        let user = db
+            .user_repo()
+            .create(NewUser {
+                username: "b3-alice-auth".to_string(),
+                display_name: "Alice".to_string(),
+                password_hash: hash,
+                is_root: false,
+            })
+            .await
+            .expect("create alice");
 
         let member_ctx = WorkspaceCtx::new(ws_a.id, Actor::User(user.id));
-        db.membership_repo().add(&member_ctx, user.id, MemberRole::Owner).await.expect("add membership");
+        db.membership_repo()
+            .add(&member_ctx, user.id, MemberRole::Owner)
+            .await
+            .expect("add membership");
 
         let mut client = atlas_client::AtlasClient::new(server.base_url().to_string());
-        client.login(LoginRequest { username: "b3-alice-auth".to_string(), password: pw.to_string() })
-            .await.expect("login");
+        client
+            .login(LoginRequest {
+                username: "b3-alice-auth".to_string(),
+                password: pw.to_string(),
+            })
+            .await
+            .expect("login");
         client.token().expect("token").to_string()
     };
 
     let unique = "crosstenant_task_b3";
 
     // Bob's workspace has a task with this unique token.
-    let _ = seed_task_with_board(&db, &ctx_b, "b3-proj-bob", "B3B", &format!("Task {unique}"), unique).await;
+    let _ = seed_task_with_board(
+        &db,
+        &ctx_b,
+        "b3-proj-bob",
+        "B3B",
+        &format!("Task {unique}"),
+        unique,
+    )
+    .await;
 
     // Alice's workspace also has a task — she should see only hers.
-    let (alice_task_id, _, _) =
-        seed_task_with_board(&db, &ctx_a, "b3-proj-alice", "B3A", &format!("Task {unique}"), unique).await;
+    let (alice_task_id, _, _) = seed_task_with_board(
+        &db,
+        &ctx_a,
+        "b3-proj-alice",
+        "B3A",
+        &format!("Task {unique}"),
+        unique,
+    )
+    .await;
 
     let http = reqwest::Client::new();
     let ids = search_ids(&http, &alice_token, server.base_url(), &ws_a.slug, unique).await;
@@ -518,8 +570,15 @@ async fn task_visible_to_member_not_to_outsider() {
     let owner_token = owner_client.token().expect("owner token").to_string();
 
     let unique = "perm_board9f";
-    let (task_id, _, _) =
-        seed_task_with_board(&db, &ctx, "perm-board-proj", "PBP", &format!("Task {unique}"), unique).await;
+    let (task_id, _, _) = seed_task_with_board(
+        &db,
+        &ctx,
+        "perm-board-proj",
+        "PBP",
+        &format!("Task {unique}"),
+        unique,
+    )
+    .await;
 
     // A completely unrelated user in a different workspace cannot access the search.
     let (outsider_client, _, _) =
@@ -582,8 +641,7 @@ async fn api_key_no_grant_sees_no_rows_at_sql_level() {
     // Create an api-key in the workspace. Grant it a per-document grant on
     // granted_doc ONLY — no workspace-scope grant. At the route level this key
     // would get 404 (no ws-scope grant), so we call the repo directly.
-    let (key_id, _raw_token) =
-        create_api_key_for_ws(&db, ws.id, owner.id, "key-disc-b1").await;
+    let (key_id, _raw_token) = create_api_key_for_ws(&db, ws.id, owner.id, "key-disc-b1").await;
 
     grant_doc_for_key(&db, ws.id, key_id, granted_doc_id, owner.id).await;
 
@@ -642,7 +700,9 @@ async fn grant_project_for_user(
     project_id: atlas_domain::ids::ProjectId,
     grantor_id: atlas_domain::ids::UserId,
 ) {
-    let repo = PgPermissionGrantRepo { conn: db.conn().clone() };
+    let repo = PgPermissionGrantRepo {
+        conn: db.conn().clone(),
+    };
     repo.upsert(NewPermissionGrant {
         workspace_id: ws_id,
         user_id: Some(user_id),

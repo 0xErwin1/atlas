@@ -132,16 +132,32 @@ impl SearchRepo for PgSearchRepo {
         let updated_before_cond = build_updated_before_cond(&query.filters, &mut values);
 
         let tag_values = collect_filter_strings(&query.filters, |f| {
-            if let SearchFilter::Tag(t) = f { Some(t) } else { None }
+            if let SearchFilter::Tag(t) = f {
+                Some(t)
+            } else {
+                None
+            }
         });
         let status_values = collect_filter_strings(&query.filters, |f| {
-            if let SearchFilter::Status(s) = f { Some(s) } else { None }
+            if let SearchFilter::Status(s) = f {
+                Some(s)
+            } else {
+                None
+            }
         });
         let priority_values = collect_filter_strings(&query.filters, |f| {
-            if let SearchFilter::Priority(p) = f { Some(p) } else { None }
+            if let SearchFilter::Priority(p) = f {
+                Some(p)
+            } else {
+                None
+            }
         });
         let assignee_values = collect_filter_strings(&query.filters, |f| {
-            if let SearchFilter::Assignee(a) = f { Some(a) } else { None }
+            if let SearchFilter::Assignee(a) = f {
+                Some(a)
+            } else {
+                None
+            }
         });
 
         // Cursor predicate — uses outer alias columns (score or updated_at).
@@ -625,7 +641,11 @@ fn build_project_filter_subquery(
     let slugs: Vec<&str> = filters
         .iter()
         .filter_map(|f| {
-            if let SearchFilter::Project(s) = f { Some(s.as_str()) } else { None }
+            if let SearchFilter::Project(s) = f {
+                Some(s.as_str())
+            } else {
+                None
+            }
         })
         .collect();
 
@@ -648,17 +668,11 @@ fn build_project_filter_subquery(
     format!("AND project_id IN ({sub})")
 }
 
-fn build_updated_after_cond(
-    filters: &[SearchFilter],
-    values: &mut Vec<sea_orm::Value>,
-) -> String {
+fn build_updated_after_cond(filters: &[SearchFilter], values: &mut Vec<sea_orm::Value>) -> String {
     let mut cond = String::new();
     for f in filters {
         if let SearchFilter::UpdatedAfter(date) = f {
-            let ts: DateTime<Utc> = date
-                .and_hms_opt(0, 0, 0)
-                .unwrap_or_default()
-                .and_utc();
+            let ts: DateTime<Utc> = date.and_hms_opt(0, 0, 0).unwrap_or_default().and_utc();
             values.push(ts.into());
             cond = format!("AND updated_at > ${}", values.len());
         }
@@ -666,17 +680,11 @@ fn build_updated_after_cond(
     cond
 }
 
-fn build_updated_before_cond(
-    filters: &[SearchFilter],
-    values: &mut Vec<sea_orm::Value>,
-) -> String {
+fn build_updated_before_cond(filters: &[SearchFilter], values: &mut Vec<sea_orm::Value>) -> String {
     let mut cond = String::new();
     for f in filters {
         if let SearchFilter::UpdatedBefore(date) = f {
-            let ts: DateTime<Utc> = date
-                .and_hms_opt(0, 0, 0)
-                .unwrap_or_default()
-                .and_utc();
+            let ts: DateTime<Utc> = date.and_hms_opt(0, 0, 0).unwrap_or_default().and_utc();
             values.push(ts.into());
             cond = format!("AND updated_at < ${}", values.len());
         }
@@ -702,7 +710,7 @@ fn row_to_hit(row: SearchRow) -> Result<SearchHit, DomainError> {
         other => {
             return Err(DomainError::Internal {
                 message: format!("unknown search result kind in DB: {other}"),
-            })
+            });
         }
     };
 

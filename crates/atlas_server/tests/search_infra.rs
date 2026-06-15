@@ -103,7 +103,10 @@ async fn search_vector_columns_exist_and_are_generated() {
     }
 
     let tables: Vec<&str> = rows.iter().map(|r| r.table_name.as_str()).collect();
-    assert!(tables.contains(&"documents"), "documents.search_vector missing");
+    assert!(
+        tables.contains(&"documents"),
+        "documents.search_vector missing"
+    );
     assert!(tables.contains(&"tasks"), "tasks.search_vector missing");
 
     db.teardown().await;

@@ -52,7 +52,16 @@ impl SearchCursor {
                 // relevance f32 is in the LOW 4 bytes (bytes 5..9 of the payload);
                 // HIGH 4 bytes (bytes 1..5) remain 0x00.
                 let score_be = score.to_be_bytes();
-                key_bytes = [0, 0, 0, 0, score_be[0], score_be[1], score_be[2], score_be[3]];
+                key_bytes = [
+                    0,
+                    0,
+                    0,
+                    0,
+                    score_be[0],
+                    score_be[1],
+                    score_be[2],
+                    score_be[3],
+                ];
             }
             SortKey::Updated(micros) => {
                 tag = TAG_UPDATED;
@@ -63,12 +72,30 @@ impl SearchCursor {
         let id_bytes = *self.id.as_bytes();
         let buf: [u8; SEARCH_CURSOR_BYTES] = [
             tag,
-            key_bytes[0], key_bytes[1], key_bytes[2], key_bytes[3],
-            key_bytes[4], key_bytes[5], key_bytes[6], key_bytes[7],
-            id_bytes[0],  id_bytes[1],  id_bytes[2],  id_bytes[3],
-            id_bytes[4],  id_bytes[5],  id_bytes[6],  id_bytes[7],
-            id_bytes[8],  id_bytes[9],  id_bytes[10], id_bytes[11],
-            id_bytes[12], id_bytes[13], id_bytes[14], id_bytes[15],
+            key_bytes[0],
+            key_bytes[1],
+            key_bytes[2],
+            key_bytes[3],
+            key_bytes[4],
+            key_bytes[5],
+            key_bytes[6],
+            key_bytes[7],
+            id_bytes[0],
+            id_bytes[1],
+            id_bytes[2],
+            id_bytes[3],
+            id_bytes[4],
+            id_bytes[5],
+            id_bytes[6],
+            id_bytes[7],
+            id_bytes[8],
+            id_bytes[9],
+            id_bytes[10],
+            id_bytes[11],
+            id_bytes[12],
+            id_bytes[13],
+            id_bytes[14],
+            id_bytes[15],
         ];
 
         URL_SAFE_NO_PAD.encode(buf)
@@ -255,12 +282,8 @@ mod tests {
             key: SortKey::Updated(42),
             id: fixed_uuid(),
         };
-        let rel_bytes = URL_SAFE_NO_PAD
-            .decode(relevance_cursor.encode())
-            .unwrap();
-        let upd_bytes = URL_SAFE_NO_PAD
-            .decode(updated_cursor.encode())
-            .unwrap();
+        let rel_bytes = URL_SAFE_NO_PAD.decode(relevance_cursor.encode()).unwrap();
+        let upd_bytes = URL_SAFE_NO_PAD.decode(updated_cursor.encode()).unwrap();
         assert_eq!(rel_bytes[0], TAG_RELEVANCE);
         assert_eq!(upd_bytes[0], TAG_UPDATED);
     }
@@ -321,11 +344,19 @@ mod tests {
         assert_eq!(raw[0], TAG_RELEVANCE);
 
         // bytes 1..5: high bytes of key field must be 0x00 (left-zero-extended)
-        assert_eq!(&raw[1..5], &[0u8, 0, 0, 0], "bytes 1..5 must be zero for relevance");
+        assert_eq!(
+            &raw[1..5],
+            &[0u8, 0, 0, 0],
+            "bytes 1..5 must be zero for relevance"
+        );
 
         // bytes 5..9: f32 in BE
         let expected_score_bytes = score.to_be_bytes();
-        assert_eq!(&raw[5..9], &expected_score_bytes, "bytes 5..9 must hold f32 BE");
+        assert_eq!(
+            &raw[5..9],
+            &expected_score_bytes,
+            "bytes 5..9 must hold f32 BE"
+        );
 
         // bytes 9..25: UUID
         assert_eq!(&raw[9..25], id.as_bytes().as_slice());
@@ -348,7 +379,11 @@ mod tests {
 
         // bytes 1..9: i64 epoch-micros in BE
         let expected_micros_bytes = micros.to_be_bytes();
-        assert_eq!(&raw[1..9], &expected_micros_bytes, "bytes 1..9 must hold i64 BE");
+        assert_eq!(
+            &raw[1..9],
+            &expected_micros_bytes,
+            "bytes 1..9 must hold i64 BE"
+        );
 
         // bytes 9..25: UUID
         assert_eq!(&raw[9..25], id.as_bytes().as_slice());

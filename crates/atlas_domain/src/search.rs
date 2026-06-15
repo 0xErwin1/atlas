@@ -265,7 +265,10 @@ mod tests {
     #[test]
     fn parse_filter_tokens_mixed_with_free_text() {
         let q = parse_query("project:atlas tag:shell permisos");
-        assert!(q.filters.contains(&SearchFilter::Project("atlas".to_string())));
+        assert!(
+            q.filters
+                .contains(&SearchFilter::Project("atlas".to_string()))
+        );
         assert!(q.filters.contains(&SearchFilter::Tag("shell".to_string())));
         assert_eq!(q.text, "permisos");
         assert!(q.warnings.is_empty());
@@ -281,7 +284,10 @@ mod tests {
     #[test]
     fn parse_status_token_with_note_type_produces_task_filter_on_notes_warning() {
         let q = parse_query("status:open type:note");
-        assert!(q.filters.contains(&SearchFilter::Status("open".to_string())));
+        assert!(
+            q.filters
+                .contains(&SearchFilter::Status("open".to_string()))
+        );
         assert_eq!(q.type_filter, TypeFilter::Documents);
         assert!(q.warnings.contains(&SearchWarning::TaskFilterOnNotes));
     }
@@ -289,7 +295,10 @@ mod tests {
     #[test]
     fn parse_unknown_key_produces_warning_and_keeps_text() {
         let q = parse_query("unknown:foo bar");
-        assert!(q.warnings.contains(&SearchWarning::UnknownKey("unknown".to_string())));
+        assert!(
+            q.warnings
+                .contains(&SearchWarning::UnknownKey("unknown".to_string()))
+        );
         assert!(q.text.contains("unknown:foo"));
         assert!(q.text.contains("bar"));
     }
@@ -321,7 +330,10 @@ mod tests {
     fn parse_updated_bad_date_produces_warning() {
         let q = parse_query("updated:<bad");
         assert!(q.filters.is_empty());
-        assert!(q.warnings.contains(&SearchWarning::BadDate("<bad".to_string())));
+        assert!(
+            q.warnings
+                .contains(&SearchWarning::BadDate("<bad".to_string()))
+        );
     }
 
     #[test]
@@ -357,13 +369,19 @@ mod tests {
     fn parse_split_on_first_colon_only() {
         // "project:foo:bar" — only "project" is the key, "foo:bar" is the value
         let q = parse_query("project:foo:bar");
-        assert!(q.filters.contains(&SearchFilter::Project("foo:bar".to_string())));
+        assert!(
+            q.filters
+                .contains(&SearchFilter::Project("foo:bar".to_string()))
+        );
     }
 
     #[test]
     fn parse_task_only_filter_with_type_all_no_warning() {
         let q = parse_query("status:open type:task");
-        assert!(q.filters.contains(&SearchFilter::Status("open".to_string())));
+        assert!(
+            q.filters
+                .contains(&SearchFilter::Status("open".to_string()))
+        );
         assert_eq!(q.type_filter, TypeFilter::Tasks);
         assert!(!q.warnings.contains(&SearchWarning::TaskFilterOnNotes));
     }
@@ -371,13 +389,19 @@ mod tests {
     #[test]
     fn parse_priority_filter() {
         let q = parse_query("priority:high");
-        assert!(q.filters.contains(&SearchFilter::Priority("high".to_string())));
+        assert!(
+            q.filters
+                .contains(&SearchFilter::Priority("high".to_string()))
+        );
     }
 
     #[test]
     fn parse_assignee_filter() {
         let q = parse_query("assignee:alice");
-        assert!(q.filters.contains(&SearchFilter::Assignee("alice".to_string())));
+        assert!(
+            q.filters
+                .contains(&SearchFilter::Assignee("alice".to_string()))
+        );
     }
 
     #[test]

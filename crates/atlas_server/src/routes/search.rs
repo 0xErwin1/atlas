@@ -12,14 +12,11 @@ use atlas_api::{
 use atlas_domain::{
     Actor, WorkspaceCtx,
     ports::search::{SearchAfter, SearchRepo, SortKey as DomainSortKey},
-    search::{SearchKind, SearchQuery, SearchSort, TypeFilter, SearchWarning, parse_query},
+    search::{SearchKind, SearchQuery, SearchSort, SearchWarning, TypeFilter, parse_query},
 };
 
 use crate::{
-    authz::WorkspaceAccess,
-    error::ApiError,
-    persistence::repos::PgSearchRepo,
-    state::AppState,
+    authz::WorkspaceAccess, error::ApiError, persistence::repos::PgSearchRepo, state::AppState,
 };
 
 /// Query parameters for `GET /v1/workspaces/{ws}/search`.
@@ -74,7 +71,11 @@ pub(crate) async fn search(
     })?;
 
     let mut query = parse_query(raw_q);
-    apply_param_overrides(&mut query, params.type_filter.as_deref(), params.sort.as_deref());
+    apply_param_overrides(
+        &mut query,
+        params.type_filter.as_deref(),
+        params.sort.as_deref(),
+    );
 
     let after = resolve_cursor(params.cursor.as_deref(), &query)?;
 
@@ -102,9 +103,7 @@ pub(crate) async fn search(
         hits.last().map(|h| {
             let key = match query.sort {
                 SearchSort::Relevance => ApiSortKey::Relevance(h.score),
-                SearchSort::UpdatedDesc => {
-                    ApiSortKey::Updated(h.updated_at.timestamp_micros())
-                }
+                SearchSort::UpdatedDesc => ApiSortKey::Updated(h.updated_at.timestamp_micros()),
             };
             SearchCursor { key, id: h.id }
         })
@@ -122,7 +121,11 @@ pub(crate) async fn search(
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-fn apply_param_overrides(query: &mut SearchQuery, type_param: Option<&str>, sort_param: Option<&str>) {
+fn apply_param_overrides(
+    query: &mut SearchQuery,
+    type_param: Option<&str>,
+    sort_param: Option<&str>,
+) {
     if let Some(t) = type_param {
         query.type_filter = match t.to_ascii_lowercase().as_str() {
             "note" | "notes" | "document" | "documents" => TypeFilter::Documents,
@@ -154,10 +157,7 @@ fn apply_param_overrides(query: &mut SearchQuery, type_param: Option<&str>, sort
     }
 }
 
-fn resolve_cursor(
-    raw: Option<&str>,
-    query: &SearchQuery,
-) -> Result<Option<SearchAfter>, ApiError> {
+fn resolve_cursor(raw: Option<&str>, query: &SearchQuery) -> Result<Option<SearchAfter>, ApiError> {
     let Some(s) = raw else {
         return Ok(None);
     };

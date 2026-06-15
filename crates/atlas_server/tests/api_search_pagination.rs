@@ -21,10 +21,7 @@ use atlas_api::{
     dtos::search::SearchHitDto,
     pagination::{Page, SearchCursor, SortKey},
 };
-use atlas_domain::{
-    Actor, WorkspaceCtx,
-    entities::documents::NewDocument,
-};
+use atlas_domain::{Actor, WorkspaceCtx, entities::documents::NewDocument};
 use atlas_server::persistence::repos::{DocumentRepo, PgDocumentRepo};
 use sea_orm::{ConnectionTrait, Statement};
 use std::collections::HashSet;
@@ -157,8 +154,7 @@ async fn relevance_tie_no_duplicate_no_gap() {
     let db = support::TestDb::create().await.expect("TestDb");
     let server = support::TestServer::spawn(&db).await;
 
-    let (client, ws, user) =
-        support::login_user_with_workspace(&server, &db, "pag-rel-tie").await;
+    let (client, ws, user) = support::login_user_with_workspace(&server, &db, "pag-rel-tie").await;
     let token = client.token().expect("token");
     let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
 
@@ -166,20 +162,21 @@ async fn relevance_tie_no_duplicate_no_gap() {
     let unique = "tiescoreuniq17";
     let mut expected_ids: HashSet<Uuid> = HashSet::new();
     for i in 0..4 {
-        let id = seed_document(
-            &db,
-            &ctx,
-            &format!("Tie Score {i} {unique}"),
-            unique,
-        )
-        .await;
+        let id = seed_document(&db, &ctx, &format!("Tie Score {i} {unique}"), unique).await;
         expected_ids.insert(id);
     }
 
     let http = reqwest::Client::new();
-    let all =
-        page_through_all(&http, token, server.base_url(), &ws.slug, &format!("q={unique}"), "relevance", 1)
-            .await;
+    let all = page_through_all(
+        &http,
+        token,
+        server.base_url(),
+        &ws.slug,
+        &format!("q={unique}"),
+        "relevance",
+        1,
+    )
+    .await;
 
     let collected_ids: HashSet<Uuid> = all.iter().map(|h| h.id).collect();
 
@@ -212,8 +209,7 @@ async fn updated_tie_no_duplicate_no_gap() {
     let db = support::TestDb::create().await.expect("TestDb");
     let server = support::TestServer::spawn(&db).await;
 
-    let (client, ws, user) =
-        support::login_user_with_workspace(&server, &db, "pag-upd-tie").await;
+    let (client, ws, user) = support::login_user_with_workspace(&server, &db, "pag-upd-tie").await;
     let token = client.token().expect("token");
     let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
 
@@ -222,13 +218,7 @@ async fn updated_tie_no_duplicate_no_gap() {
 
     // Seed 4 docs in quick succession; some may share the same updated_at microsecond.
     for i in 0..4 {
-        let id = seed_document(
-            &db,
-            &ctx,
-            &format!("Updated Tie {i} {unique}"),
-            unique,
-        )
-        .await;
+        let id = seed_document(&db, &ctx, &format!("Updated Tie {i} {unique}"), unique).await;
         expected_ids.insert(id);
     }
 
@@ -278,8 +268,7 @@ async fn updated_tie_deterministic_no_duplicate_no_gap() {
     let db = support::TestDb::create().await.expect("TestDb");
     let server = support::TestServer::spawn(&db).await;
 
-    let (client, ws, user) =
-        support::login_user_with_workspace(&server, &db, "pag-upd-det").await;
+    let (client, ws, user) = support::login_user_with_workspace(&server, &db, "pag-upd-det").await;
     let token = client.token().expect("token");
     let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
 
@@ -388,8 +377,7 @@ async fn multipage_relevance_sort_no_duplicate_no_gap() {
     let db = support::TestDb::create().await.expect("TestDb");
     let server = support::TestServer::spawn(&db).await;
 
-    let (client, ws, user) =
-        support::login_user_with_workspace(&server, &db, "pag-rel-mp").await;
+    let (client, ws, user) = support::login_user_with_workspace(&server, &db, "pag-rel-mp").await;
     let token = client.token().expect("token");
     let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
 
@@ -446,8 +434,7 @@ async fn multipage_updated_sort_no_duplicate_no_gap() {
     let db = support::TestDb::create().await.expect("TestDb");
     let server = support::TestServer::spawn(&db).await;
 
-    let (client, ws, user) =
-        support::login_user_with_workspace(&server, &db, "pag-upd-mp").await;
+    let (client, ws, user) = support::login_user_with_workspace(&server, &db, "pag-upd-mp").await;
     let token = client.token().expect("token");
     let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
 
@@ -504,8 +491,7 @@ async fn malformed_cursor_pagination_returns_422() {
     let db = support::TestDb::create().await.expect("TestDb");
     let server = support::TestServer::spawn(&db).await;
 
-    let (client, ws, _) =
-        support::login_user_with_workspace(&server, &db, "pag-badcur").await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "pag-badcur").await;
     let token = client.token().expect("token");
     let http = reqwest::Client::new();
 
@@ -525,8 +511,7 @@ async fn malformed_cursor_pagination_returns_422() {
     );
     let body: serde_json::Value = resp.json().await.expect("json body");
     assert_eq!(
-        body["type"],
-        "urn:atlas:error:invalid-input",
+        body["type"], "urn:atlas:error:invalid-input",
         "problem type must be invalid-input"
     );
 
@@ -542,8 +527,7 @@ async fn cursor_sort_mismatch_returns_422() {
     let db = support::TestDb::create().await.expect("TestDb");
     let server = support::TestServer::spawn(&db).await;
 
-    let (client, ws, _) =
-        support::login_user_with_workspace(&server, &db, "pag-sortmm").await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "pag-sortmm").await;
     let token = client.token().expect("token");
     let http = reqwest::Client::new();
 
@@ -584,8 +568,7 @@ async fn limit_out_of_range_is_silently_clamped() {
     let db = support::TestDb::create().await.expect("TestDb");
     let server = support::TestServer::spawn(&db).await;
 
-    let (client, ws, _) =
-        support::login_user_with_workspace(&server, &db, "pag-limclamp").await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "pag-limclamp").await;
     let token = client.token().expect("token");
     let http = reqwest::Client::new();
 

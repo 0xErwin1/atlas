@@ -222,11 +222,7 @@ impl FromRequestParts<AppState> for WorkspaceAccess {
 
                 if role.is_none() {
                     let has_grant = grant_repo
-                        .principal_has_any_grant_in_workspace(
-                            workspace.id,
-                            Some(user_id),
-                            None,
-                        )
+                        .principal_has_any_grant_in_workspace(workspace.id, Some(user_id), None)
                         .await
                         .map_err(|e| ApiError::Internal {
                             message: e.to_string(),

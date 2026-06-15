@@ -49,8 +49,7 @@ async fn get_search(
 async fn absent_q_returns_422() {
     let db = support::TestDb::create().await.expect("TestDb");
     let server = support::TestServer::spawn(&db).await;
-    let (client, ws, _) =
-        support::login_user_with_workspace(&server, &db, "search-abq").await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "search-abq").await;
     let token = client.token().expect("must be logged in");
     let http = reqwest::Client::new();
 
@@ -71,8 +70,7 @@ async fn absent_q_returns_422() {
 async fn empty_q_returns_200_empty_page() {
     let db = support::TestDb::create().await.expect("TestDb");
     let server = support::TestServer::spawn(&db).await;
-    let (client, ws, _) =
-        support::login_user_with_workspace(&server, &db, "search-emq").await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "search-emq").await;
     let token = client.token().expect("logged in");
     let http = reqwest::Client::new();
 
@@ -92,8 +90,7 @@ async fn empty_q_returns_200_empty_page() {
 async fn whitespace_q_returns_200_empty_page() {
     let db = support::TestDb::create().await.expect("TestDb");
     let server = support::TestServer::spawn(&db).await;
-    let (client, ws, _) =
-        support::login_user_with_workspace(&server, &db, "search-wsq").await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "search-wsq").await;
     let token = client.token().expect("logged in");
     let http = reqwest::Client::new();
 
@@ -112,8 +109,7 @@ async fn whitespace_q_returns_200_empty_page() {
 async fn malformed_cursor_returns_422() {
     let db = support::TestDb::create().await.expect("TestDb");
     let server = support::TestServer::spawn(&db).await;
-    let (client, ws, _) =
-        support::login_user_with_workspace(&server, &db, "search-badc").await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "search-badc").await;
     let token = client.token().expect("logged in");
     let http = reqwest::Client::new();
 
@@ -126,7 +122,11 @@ async fn malformed_cursor_returns_422() {
     )
     .await;
 
-    assert_eq!(resp.status().as_u16(), 422, "malformed cursor must return 422");
+    assert_eq!(
+        resp.status().as_u16(),
+        422,
+        "malformed cursor must return 422"
+    );
     let body: Value = resp.json().await.expect("json");
     assert_eq!(body["type"], "urn:atlas:error:invalid-input");
 
@@ -138,8 +138,7 @@ async fn malformed_cursor_returns_422() {
 async fn cursor_sort_tag_mismatch_returns_422() {
     let db = support::TestDb::create().await.expect("TestDb");
     let server = support::TestServer::spawn(&db).await;
-    let (client, ws, _) =
-        support::login_user_with_workspace(&server, &db, "search-smm").await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "search-smm").await;
     let token = client.token().expect("logged in");
     let http = reqwest::Client::new();
 
@@ -174,8 +173,7 @@ async fn cursor_sort_tag_mismatch_returns_422() {
 async fn cursor_updated_with_relevance_sort_returns_422() {
     let db = support::TestDb::create().await.expect("TestDb");
     let server = support::TestServer::spawn(&db).await;
-    let (client, ws, _) =
-        support::login_user_with_workspace(&server, &db, "search-smm2").await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "search-smm2").await;
     let token = client.token().expect("logged in");
     let http = reqwest::Client::new();
 
@@ -209,8 +207,7 @@ async fn cursor_updated_with_relevance_sort_returns_422() {
 async fn contradictory_filter_returns_200_empty_page() {
     let db = support::TestDb::create().await.expect("TestDb");
     let server = support::TestServer::spawn(&db).await;
-    let (client, ws, _) =
-        support::login_user_with_workspace(&server, &db, "search-contr").await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "search-contr").await;
     let token = client.token().expect("logged in");
     let http = reqwest::Client::new();
 
@@ -243,8 +240,7 @@ async fn contradictory_filter_returns_200_empty_page() {
 async fn limit_clamping_does_not_error() {
     let db = support::TestDb::create().await.expect("TestDb");
     let server = support::TestServer::spawn(&db).await;
-    let (client, ws, _) =
-        support::login_user_with_workspace(&server, &db, "search-lim").await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "search-lim").await;
     let token = client.token().expect("logged in");
     let http = reqwest::Client::new();
 
@@ -274,8 +270,7 @@ async fn limit_clamping_does_not_error() {
 async fn happy_path_returns_matching_document() {
     let db = support::TestDb::create().await.expect("TestDb");
     let server = support::TestServer::spawn(&db).await;
-    let (client, ws, user) =
-        support::login_user_with_workspace(&server, &db, "search-happy").await;
+    let (client, ws, user) = support::login_user_with_workspace(&server, &db, "search-happy").await;
     let token = client.token().expect("logged in");
     let http = reqwest::Client::new();
 
@@ -330,8 +325,7 @@ async fn happy_path_returns_matching_document() {
 async fn updated_sort_cursor_paginates_without_duplicates() {
     let db = support::TestDb::create().await.expect("TestDb");
     let server = support::TestServer::spawn(&db).await;
-    let (client, ws, user) =
-        support::login_user_with_workspace(&server, &db, "search-currt").await;
+    let (client, ws, user) = support::login_user_with_workspace(&server, &db, "search-currt").await;
     let token = client.token().expect("logged in");
     let http = reqwest::Client::new();
 
@@ -397,8 +391,7 @@ async fn updated_sort_cursor_paginates_without_duplicates() {
 async fn unauthenticated_returns_401() {
     let db = support::TestDb::create().await.expect("TestDb");
     let server = support::TestServer::spawn(&db).await;
-    let (_, ws, _) =
-        support::login_user_with_workspace(&server, &db, "search-unauth").await;
+    let (_, ws, _) = support::login_user_with_workspace(&server, &db, "search-unauth").await;
 
     let anon = reqwest::Client::new();
     let resp = anon
@@ -417,8 +410,7 @@ async fn unauthenticated_returns_401() {
 async fn unknown_workspace_returns_404() {
     let db = support::TestDb::create().await.expect("TestDb");
     let server = support::TestServer::spawn(&db).await;
-    let (client, _, _) =
-        support::login_user_with_workspace(&server, &db, "search-unkws").await;
+    let (client, _, _) = support::login_user_with_workspace(&server, &db, "search-unkws").await;
     let token = client.token().expect("logged in");
     let http = reqwest::Client::new();
 
@@ -446,8 +438,7 @@ async fn unknown_workspace_returns_404() {
 async fn title_hit_outranks_body_hit_under_relevance_sort() {
     let db = support::TestDb::create().await.expect("TestDb");
     let server = support::TestServer::spawn(&db).await;
-    let (client, ws, user) =
-        support::login_user_with_workspace(&server, &db, "search-rank").await;
+    let (client, ws, user) = support::login_user_with_workspace(&server, &db, "search-rank").await;
     let token = client.token().expect("logged in");
     let http = reqwest::Client::new();
 
@@ -501,11 +492,17 @@ async fn title_hit_outranks_body_hit_under_relevance_sort() {
     assert_eq!(resp.status().as_u16(), 200);
     let page: Page<SearchHitDto> = resp.json().await.expect("json");
 
-    assert_eq!(page.items.len(), 2, "both docs must match; got: {:?}", page.items.len());
+    assert_eq!(
+        page.items.len(),
+        2,
+        "both docs must match; got: {:?}",
+        page.items.len()
+    );
 
     let first = &page.items[0];
     assert_eq!(
-        first.id, doc_a.id.0,
+        first.id,
+        doc_a.id.0,
         "doc A (title match) must rank first; got: {:?}",
         page.items.iter().map(|h| h.id).collect::<Vec<_>>()
     );
@@ -529,8 +526,7 @@ async fn title_hit_outranks_body_hit_under_relevance_sort() {
 async fn body_match_snippet_contains_mark_highlight() {
     let db = support::TestDb::create().await.expect("TestDb");
     let server = support::TestServer::spawn(&db).await;
-    let (client, ws, user) =
-        support::login_user_with_workspace(&server, &db, "search-hl").await;
+    let (client, ws, user) = support::login_user_with_workspace(&server, &db, "search-hl").await;
     let token = client.token().expect("logged in");
     let http = reqwest::Client::new();
 

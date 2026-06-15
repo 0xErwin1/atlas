@@ -27,9 +27,9 @@ use atlas_domain::{
     search::{SearchQuery, SearchSort, TypeFilter},
 };
 use atlas_server::persistence::repos::{
-    BoardRepo, DocumentRepo, FolderRepo, PgBoardRepo, PgDocumentRepo, PgFolderRepo,
-    PgPermissionGrantRepo, PgProjectRepo, PgSearchRepo, PgTaskRepo, PermissionGrantRepo,
-    ProjectRepo, TaskRepo, UserRepo,
+    BoardRepo, DocumentRepo, FolderRepo, PermissionGrantRepo, PgBoardRepo, PgDocumentRepo,
+    PgFolderRepo, PgPermissionGrantRepo, PgProjectRepo, PgSearchRepo, PgTaskRepo, ProjectRepo,
+    TaskRepo, UserRepo,
 };
 
 // ---------------------------------------------------------------------------
@@ -110,7 +110,9 @@ async fn seed_project_and_board(
     atlas_domain::entities::boards_tasks::Board,
     atlas_domain::entities::boards_tasks::BoardColumn,
 ) {
-    let project_repo = PgProjectRepo { conn: db.conn().clone() };
+    let project_repo = PgProjectRepo {
+        conn: db.conn().clone(),
+    };
     let board_repo = PgBoardRepo::new(db.conn().clone());
 
     let project = project_repo
@@ -127,7 +129,13 @@ async fn seed_project_and_board(
         .expect("seed project");
 
     let board = board_repo
-        .create_board(ctx, NewBoard { project_id: project.id, name: "Board".to_string() })
+        .create_board(
+            ctx,
+            NewBoard {
+                project_id: project.id,
+                name: "Board".to_string(),
+            },
+        )
         .await
         .expect("seed board");
 
@@ -136,7 +144,10 @@ async fn seed_project_and_board(
             ctx,
             board.id,
             "Backlog".to_string(),
-            PositionBetween { before: None, after: None },
+            PositionBetween {
+                before: None,
+                after: None,
+            },
         )
         .await
         .expect("seed column");
@@ -168,7 +179,10 @@ async fn seed_task(
                 estimate: None,
                 labels: vec![],
                 properties: None,
-                position: PositionBetween { before: None, after: None },
+                position: PositionBetween {
+                    before: None,
+                    after: None,
+                },
             },
         )
         .await
@@ -182,7 +196,9 @@ async fn grant_ws_scope(
     user_id: UserId,
     grantor_id: UserId,
 ) {
-    let repo = PgPermissionGrantRepo { conn: db.conn().clone() };
+    let repo = PgPermissionGrantRepo {
+        conn: db.conn().clone(),
+    };
     repo.upsert(NewPermissionGrant {
         workspace_id: ws_id,
         user_id: Some(user_id),
@@ -206,7 +222,9 @@ async fn grant_doc(
     doc_id: DocumentId,
     grantor_id: UserId,
 ) {
-    let repo = PgPermissionGrantRepo { conn: db.conn().clone() };
+    let repo = PgPermissionGrantRepo {
+        conn: db.conn().clone(),
+    };
     repo.upsert(NewPermissionGrant {
         workspace_id: ws_id,
         user_id: Some(user_id),
@@ -230,7 +248,9 @@ async fn grant_board(
     board_id: BoardId,
     grantor_id: UserId,
 ) {
-    let repo = PgPermissionGrantRepo { conn: db.conn().clone() };
+    let repo = PgPermissionGrantRepo {
+        conn: db.conn().clone(),
+    };
     repo.upsert(NewPermissionGrant {
         workspace_id: ws_id,
         user_id: Some(user_id),
@@ -254,7 +274,9 @@ async fn grant_project(
     project_id: ProjectId,
     grantor_id: UserId,
 ) {
-    let repo = PgPermissionGrantRepo { conn: db.conn().clone() };
+    let repo = PgPermissionGrantRepo {
+        conn: db.conn().clone(),
+    };
     repo.upsert(NewPermissionGrant {
         workspace_id: ws_id,
         user_id: Some(user_id),
@@ -306,7 +328,9 @@ async fn seed_project_with_visibility(
     prefix: &str,
     visibility: Visibility,
 ) -> ProjectId {
-    let project_repo = PgProjectRepo { conn: db.conn().clone() };
+    let project_repo = PgProjectRepo {
+        conn: db.conn().clone(),
+    };
     let project = project_repo
         .create(
             ctx,
@@ -610,12 +634,23 @@ async fn plain_member_task_visibility_follows_project() {
     .await;
 
     // Private project task (member must NOT see it).
-    let private_project =
-        seed_project_with_visibility(&db, &ctx_owner, "srch-taskvis-priv", "STVP", Visibility::Private)
-            .await;
+    let private_project = seed_project_with_visibility(
+        &db,
+        &ctx_owner,
+        "srch-taskvis-priv",
+        "STVP",
+        Visibility::Private,
+    )
+    .await;
     let board_repo = PgBoardRepo::new(db.conn().clone());
     let private_board = board_repo
-        .create_board(&ctx_owner, NewBoard { project_id: private_project, name: "Board".to_string() })
+        .create_board(
+            &ctx_owner,
+            NewBoard {
+                project_id: private_project,
+                name: "Board".to_string(),
+            },
+        )
         .await
         .expect("private board");
     let private_col = board_repo
@@ -623,7 +658,10 @@ async fn plain_member_task_visibility_follows_project() {
             &ctx_owner,
             private_board.id,
             "Backlog".to_string(),
-            PositionBetween { before: None, after: None },
+            PositionBetween {
+                before: None,
+                after: None,
+            },
         )
         .await
         .expect("private column");
@@ -750,7 +788,9 @@ async fn task_of_soft_deleted_project_still_surfaces_for_owner() {
     )
     .await;
 
-    let project_repo = PgProjectRepo { conn: db.conn().clone() };
+    let project_repo = PgProjectRepo {
+        conn: db.conn().clone(),
+    };
     project_repo
         .soft_delete(&ctx_owner, project.id)
         .await
@@ -805,13 +845,7 @@ async fn cross_tenant_document_isolation() {
         "uniquetoken_xten_secret",
     )
     .await;
-    let alice_doc_id = seed_doc(
-        &db,
-        &ctx_a,
-        "Alice Own Doc",
-        "uniquetoken_xten_secret",
-    )
-    .await;
+    let alice_doc_id = seed_doc(&db, &ctx_a, "Alice Own Doc", "uniquetoken_xten_secret").await;
 
     // FTS index is GENERATED ALWAYS STORED, so it updates on insert.
     // Wait for any in-flight WAL flush (not needed for STORED, but be safe).
@@ -938,20 +972,13 @@ async fn direct_document_grant_surfaces_hit() {
         .await
         .expect("seed grantee");
 
-    let doc_id = seed_doc(
-        &db,
-        &ctx_owner,
-        "Granted Document",
-        "uniquetoken_docgrant",
-    )
-    .await;
+    let doc_id = seed_doc(&db, &ctx_owner, "Granted Document", "uniquetoken_docgrant").await;
 
     // Grant grantee access to this specific document.
     grant_doc(&db, ws.id, grantee.id, doc_id, owner.id).await;
 
     let repo = PgSearchRepo::new(db.conn().clone());
-    let grantee_ctx =
-        atlas_domain::WorkspaceCtx::new(ws.id, atlas_domain::Actor::User(grantee.id));
+    let grantee_ctx = atlas_domain::WorkspaceCtx::new(ws.id, atlas_domain::Actor::User(grantee.id));
     let hits = repo
         .search(
             &grantee_ctx,
@@ -1022,8 +1049,7 @@ async fn task_board_grant_surfaces_hit() {
     let repo = PgSearchRepo::new(db.conn().clone());
 
     // Grantee (board-level grant) can see the task.
-    let grantee_ctx =
-        atlas_domain::WorkspaceCtx::new(ws.id, atlas_domain::Actor::User(grantee.id));
+    let grantee_ctx = atlas_domain::WorkspaceCtx::new(ws.id, atlas_domain::Actor::User(grantee.id));
     let grantee_hits = repo
         .search(
             &grantee_ctx,
@@ -1088,8 +1114,7 @@ async fn workspace_scope_grant_surfaces_all_documents() {
     grant_ws_scope(&db, ws.id, grantee.id, owner.id).await;
 
     let repo = PgSearchRepo::new(db.conn().clone());
-    let grantee_ctx =
-        atlas_domain::WorkspaceCtx::new(ws.id, atlas_domain::Actor::User(grantee.id));
+    let grantee_ctx = atlas_domain::WorkspaceCtx::new(ws.id, atlas_domain::Actor::User(grantee.id));
     let hits = repo
         .search(
             &grantee_ctx,
@@ -1245,16 +1270,9 @@ async fn type_filter_documents_excludes_tasks() {
     let (ws, owner) = support::seed_workspace(&db, "srch-typef-owner").await;
     let ctx = support::ctx(&ws, &owner);
 
-    let (project, board, col) =
-        seed_project_and_board(&db, &ctx, "srch-typef-proj", "STP").await;
+    let (project, board, col) = seed_project_and_board(&db, &ctx, "srch-typef-proj", "STP").await;
 
-    let doc_id = seed_doc(
-        &db,
-        &ctx,
-        "TypeFilter Doc",
-        "uniquetoken_typef",
-    )
-    .await;
+    let doc_id = seed_doc(&db, &ctx, "TypeFilter Doc", "uniquetoken_typef").await;
     let task_id = seed_task(
         &db,
         &ctx,
@@ -1271,7 +1289,13 @@ async fn type_filter_documents_excludes_tasks() {
 
     // type=Documents: must include doc, must exclude task.
     let doc_hits = repo
-        .search(&ctx, &principal, &make_doc_only_query("uniquetoken_typef"), 50, None)
+        .search(
+            &ctx,
+            &principal,
+            &make_doc_only_query("uniquetoken_typef"),
+            50,
+            None,
+        )
         .await
         .expect("doc-only search");
     assert!(
@@ -1285,7 +1309,13 @@ async fn type_filter_documents_excludes_tasks() {
 
     // type=Tasks: must include task, must exclude doc.
     let task_hits = repo
-        .search(&ctx, &principal, &make_task_only_query("uniquetoken_typef"), 50, None)
+        .search(
+            &ctx,
+            &principal,
+            &make_task_only_query("uniquetoken_typef"),
+            50,
+            None,
+        )
         .await
         .expect("task-only search");
     assert!(
@@ -1320,7 +1350,10 @@ async fn status_filter_narrows_tasks_by_column_name() {
             &ctx,
             board.id,
             "Done".to_string(),
-            PositionBetween { before: None, after: None },
+            PositionBetween {
+                before: None,
+                after: None,
+            },
         )
         .await
         .expect("seed done column");
@@ -1350,7 +1383,11 @@ async fn status_filter_narrows_tasks_by_column_name() {
     let principal = Principal::User(owner.id);
 
     let mut status_query = make_task_only_query("uniquetoken_statusf");
-    status_query.filters.push(atlas_domain::search::SearchFilter::Status("Backlog".to_string()));
+    status_query
+        .filters
+        .push(atlas_domain::search::SearchFilter::Status(
+            "Backlog".to_string(),
+        ));
 
     let hits = repo
         .search(&ctx, &principal, &status_query, 50, None)
@@ -1380,8 +1417,7 @@ async fn tag_filter_narrows_documents_and_tasks() {
     let (ws, owner) = support::seed_workspace(&db, "srch-tagf-owner").await;
     let ctx = support::ctx(&ws, &owner);
 
-    let (project, board, col) =
-        seed_project_and_board(&db, &ctx, "srch-tagf-proj", "TGP").await;
+    let (project, board, col) = seed_project_and_board(&db, &ctx, "srch-tagf-proj", "TGP").await;
 
     // Seed a doc with frontmatter tags.
     let doc_repo = PgDocumentRepo::new(db.conn().clone(), 50);
@@ -1431,7 +1467,10 @@ async fn tag_filter_narrows_documents_and_tasks() {
                 estimate: None,
                 labels: vec!["rust".to_string()],
                 properties: None,
-                position: PositionBetween { before: None, after: None },
+                position: PositionBetween {
+                    before: None,
+                    after: None,
+                },
             },
         )
         .await
@@ -1451,7 +1490,10 @@ async fn tag_filter_narrows_documents_and_tasks() {
                 estimate: None,
                 labels: vec![],
                 properties: None,
-                position: PositionBetween { before: None, after: None },
+                position: PositionBetween {
+                    before: None,
+                    after: None,
+                },
             },
         )
         .await
@@ -1461,7 +1503,9 @@ async fn tag_filter_narrows_documents_and_tasks() {
     let principal = Principal::User(owner.id);
 
     let mut tag_query = make_search_query("uniquetoken_tagf");
-    tag_query.filters.push(atlas_domain::search::SearchFilter::Tag("rust".to_string()));
+    tag_query
+        .filters
+        .push(atlas_domain::search::SearchFilter::Tag("rust".to_string()));
 
     let hits = repo
         .search(&ctx, &principal, &tag_query, 50, None)
@@ -1505,13 +1549,7 @@ async fn title_only_match_yields_absent_snippet() {
     // Term is in the title only; body is intentionally empty so ts_headline
     // has no fragment to highlight. The hit must still be returned (title
     // match), but the snippet field must be None.
-    let doc_id = seed_doc(
-        &db,
-        &ctx_owner,
-        "uniquetoken_titlesnip9xqz Document",
-        "",
-    )
-    .await;
+    let doc_id = seed_doc(&db, &ctx_owner, "uniquetoken_titlesnip9xqz Document", "").await;
 
     let repo = PgSearchRepo::new(db.conn().clone());
     let hits = repo
@@ -1549,8 +1587,7 @@ async fn task_hits_carry_readable_id_documents_do_not() {
     let (ws, owner) = support::seed_workspace(&db, "srch-rid-owner").await;
     let ctx = support::ctx(&ws, &owner);
 
-    let (project, board, col) =
-        seed_project_and_board(&db, &ctx, "srch-rid-proj", "RID").await;
+    let (project, board, col) = seed_project_and_board(&db, &ctx, "srch-rid-proj", "RID").await;
 
     let _doc_id = seed_doc(&db, &ctx, "Rid Doc", "uniquetoken_rid").await;
     let _task_id = seed_task(
@@ -1567,7 +1604,13 @@ async fn task_hits_carry_readable_id_documents_do_not() {
     let repo = PgSearchRepo::new(db.conn().clone());
     let principal = Principal::User(owner.id);
     let hits = repo
-        .search(&ctx, &principal, &make_search_query("uniquetoken_rid"), 50, None)
+        .search(
+            &ctx,
+            &principal,
+            &make_search_query("uniquetoken_rid"),
+            50,
+            None,
+        )
         .await
         .expect("search");
 
@@ -1576,13 +1619,15 @@ async fn task_hits_carry_readable_id_documents_do_not() {
             atlas_domain::search::SearchKind::Task => {
                 assert!(
                     hit.readable_id.is_some(),
-                    "task hit must have readable_id; id={}", hit.id
+                    "task hit must have readable_id; id={}",
+                    hit.id
                 );
             }
             atlas_domain::search::SearchKind::Document => {
                 assert!(
                     hit.readable_id.is_none(),
-                    "document hit must NOT have readable_id; id={}", hit.id
+                    "document hit must NOT have readable_id; id={}",
+                    hit.id
                 );
             }
         }
@@ -1625,7 +1670,9 @@ async fn member_sees_in_folder_non_private_project_document() {
     )
     .await;
 
-    let folder_repo = PgFolderRepo { conn: db.conn().clone() };
+    let folder_repo = PgFolderRepo {
+        conn: db.conn().clone(),
+    };
     let folder = folder_repo
         .create(
             &ctx_owner,

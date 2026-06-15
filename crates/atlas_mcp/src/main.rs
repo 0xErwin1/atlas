@@ -4,8 +4,8 @@ use rmcp::{ServiceExt, transport::stdio};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let base_url = std::env::var("ATLAS_BASE_URL")
-        .unwrap_or_else(|_| "http://localhost:8080".to_string());
+    let base_url =
+        std::env::var("ATLAS_BASE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
 
     let mut mcp = AtlasMcp::new(base_url);
 
