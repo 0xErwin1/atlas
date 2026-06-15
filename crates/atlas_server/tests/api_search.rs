@@ -435,3 +435,148 @@ async fn unknown_workspace_returns_404() {
 
     db.teardown().await;
 }
+
+/// REQ-2: under `sort=relevance`, a document whose title contains the search
+/// term outranks a document whose title does NOT contain it (body-only match).
+///
+/// The `search_vector` column is weighted A (title) and B (body). `ts_rank_cd`
+/// applied to a vector weighted A>B must produce a strictly higher score for
+/// the title hit. This guards the A/B weight assignment in the E02 GEN column.
+#[tokio::test]
+async fn title_hit_outranks_body_hit_under_relevance_sort() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, user) =
+        support::login_user_with_workspace(&server, &db, "search-rank").await;
+    let token = client.token().expect("logged in");
+    let http = reqwest::Client::new();
+
+    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let doc_repo = PgDocumentRepo::new(db.conn().clone(), 50);
+
+    // A term that appears in no other doc in this workspace.
+    let unique = "xtitlerank7qzx";
+
+    // Doc A: term only in title, empty body.
+    let doc_a = doc_repo
+        .create(
+            &ctx,
+            NewDocument {
+                title: unique.to_string(),
+                slug: Some(format!("doc-a-{unique}")),
+                content: String::new(),
+                folder_id: None,
+                project_id: None,
+                frontmatter: None,
+            },
+        )
+        .await
+        .expect("create doc A");
+
+    // Doc B: term only in body, neutral title that does NOT contain the term.
+    doc_repo
+        .create(
+            &ctx,
+            NewDocument {
+                title: "Neutral document title".to_string(),
+                slug: Some(format!("doc-b-{unique}")),
+                content: format!("This body contains {unique} only here."),
+                folder_id: None,
+                project_id: None,
+                frontmatter: None,
+            },
+        )
+        .await
+        .expect("create doc B");
+
+    let resp = get_search(
+        &http,
+        token,
+        server.base_url(),
+        &ws.slug,
+        &format!("q={unique}&sort=relevance"),
+    )
+    .await;
+
+    assert_eq!(resp.status().as_u16(), 200);
+    let page: Page<SearchHitDto> = resp.json().await.expect("json");
+
+    assert_eq!(page.items.len(), 2, "both docs must match; got: {:?}", page.items.len());
+
+    let first = &page.items[0];
+    assert_eq!(
+        first.id, doc_a.id.0,
+        "doc A (title match) must rank first; got: {:?}",
+        page.items.iter().map(|h| h.id).collect::<Vec<_>>()
+    );
+    assert!(
+        page.items[0].score > page.items[1].score,
+        "title-match score ({}) must exceed body-match score ({})",
+        page.items[0].score,
+        page.items[1].score
+    );
+
+    db.teardown().await;
+}
+
+/// REQ-7: a body-match hit's `snippet` contains `<mark>` highlighting.
+///
+/// The outer page query runs `ts_headline` only for the returned rows, which
+/// wraps matched lexemes in `<mark>…</mark>`. An absent or un-highlighted
+/// snippet indicates the headline SQL is not running or is not targeting the
+/// right column.
+#[tokio::test]
+async fn body_match_snippet_contains_mark_highlight() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, user) =
+        support::login_user_with_workspace(&server, &db, "search-hl").await;
+    let token = client.token().expect("logged in");
+    let http = reqwest::Client::new();
+
+    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let doc_repo = PgDocumentRepo::new(db.conn().clone(), 50);
+
+    let unique = "xmarkhlterm9mzq";
+
+    doc_repo
+        .create(
+            &ctx,
+            NewDocument {
+                title: "Plain title without the term".to_string(),
+                slug: Some(format!("doc-hl-{unique}")),
+                content: format!("The body contains {unique} surrounded by other words."),
+                folder_id: None,
+                project_id: None,
+                frontmatter: None,
+            },
+        )
+        .await
+        .expect("create doc");
+
+    let resp = get_search(
+        &http,
+        token,
+        server.base_url(),
+        &ws.slug,
+        &format!("q={unique}"),
+    )
+    .await;
+
+    assert_eq!(resp.status().as_u16(), 200);
+    let page: Page<SearchHitDto> = resp.json().await.expect("json");
+
+    assert!(!page.items.is_empty(), "doc must match the query");
+
+    let hit = &page.items[0];
+    let snippet = hit
+        .snippet
+        .as_deref()
+        .expect("snippet must be present for a body match");
+    assert!(
+        snippet.contains("<mark>") && snippet.contains("</mark>"),
+        "snippet must carry <mark> highlighting; got: {snippet:?}"
+    );
+
+    db.teardown().await;
+}
