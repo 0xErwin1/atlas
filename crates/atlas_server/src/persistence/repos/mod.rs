@@ -9,6 +9,8 @@ mod identity;
 #[allow(unreachable_pub)]
 mod permissions;
 #[allow(unreachable_pub)]
+mod search;
+#[allow(unreachable_pub)]
 mod workspace_core;
 
 pub use identity::{
@@ -33,3 +35,4 @@ pub use workspace_core::{
 };
 
 pub use permissions::{PermissionGrantRepo, PgPermissionGrantRepo};
+pub use search::PgSearchRepo;
