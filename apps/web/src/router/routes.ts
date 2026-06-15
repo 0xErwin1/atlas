@@ -9,10 +9,7 @@ export const routes: RouteRecordRaw[] = [
   {
     path: '/n/:slug?',
     name: 'notes',
-    components: {
-      default: () => import('@/views/Notes.vue'),
-      sidebar: () => import('@/views/NotesSidebar.vue'),
-    },
+    component: () => import('@/views/Notes.vue'),
   },
   {
     path: '/t/:boardId',

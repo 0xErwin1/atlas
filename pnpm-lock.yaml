@@ -17,6 +17,9 @@ importers:
       '@tiptap/core':
         specifier: ^3.26.1
         version: 3.26.1(@tiptap/pm@3.26.1)
+      '@tiptap/pm':
+        specifier: ^3.26.1
+        version: 3.26.1
       '@tiptap/starter-kit':
         specifier: ^3.26.1
         version: 3.26.1

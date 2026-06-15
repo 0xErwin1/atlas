@@ -16,7 +16,7 @@ import { Schema } from 'prosemirror-model';
  * The wikilink node stores the raw link title as an attribute and renders as
  * [[Title]] in serialized markdown.
  */
-const atlasSchema = new Schema({
+export const atlasSchema = new Schema({
   nodes: (baseSchema.spec.nodes as OrderedMap<NodeSpec>).append({
     wikilink: {
       inline: true,
