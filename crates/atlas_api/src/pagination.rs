@@ -298,4 +298,59 @@ mod tests {
         let decoded = Cursor::decode(&c.encode()).expect("must decode");
         assert_eq!(decoded.0, id);
     }
+
+    // Golden-vector tests: pin the exact 25-byte payload layout so any
+    // regression in the byte-position of the sort key is caught immediately.
+    // This is load-bearing because the layout is a committed wire contract —
+    // a cursor issued by one server version must decode on the next.
+
+    #[test]
+    fn relevance_cursor_golden_byte_layout() {
+        // Known score chosen so its BE bytes are distinct and non-zero.
+        let score = 0.5_f32;
+        let id = fixed_uuid();
+        let cursor = SearchCursor {
+            key: SortKey::Relevance(score),
+            id,
+        };
+        let encoded = cursor.encode();
+        let raw = URL_SAFE_NO_PAD.decode(&encoded).unwrap();
+        assert_eq!(raw.len(), SEARCH_CURSOR_BYTES);
+
+        // byte 0: tag must be 0 (relevance)
+        assert_eq!(raw[0], TAG_RELEVANCE);
+
+        // bytes 1..5: high bytes of key field must be 0x00 (left-zero-extended)
+        assert_eq!(&raw[1..5], &[0u8, 0, 0, 0], "bytes 1..5 must be zero for relevance");
+
+        // bytes 5..9: f32 in BE
+        let expected_score_bytes = score.to_be_bytes();
+        assert_eq!(&raw[5..9], &expected_score_bytes, "bytes 5..9 must hold f32 BE");
+
+        // bytes 9..25: UUID
+        assert_eq!(&raw[9..25], id.as_bytes().as_slice());
+    }
+
+    #[test]
+    fn updated_cursor_golden_byte_layout() {
+        let micros: i64 = 1_718_000_000_000_000;
+        let id = fixed_uuid();
+        let cursor = SearchCursor {
+            key: SortKey::Updated(micros),
+            id,
+        };
+        let encoded = cursor.encode();
+        let raw = URL_SAFE_NO_PAD.decode(&encoded).unwrap();
+        assert_eq!(raw.len(), SEARCH_CURSOR_BYTES);
+
+        // byte 0: tag must be 1 (updated)
+        assert_eq!(raw[0], TAG_UPDATED);
+
+        // bytes 1..9: i64 epoch-micros in BE
+        let expected_micros_bytes = micros.to_be_bytes();
+        assert_eq!(&raw[1..9], &expected_micros_bytes, "bytes 1..9 must hold i64 BE");
+
+        // bytes 9..25: UUID
+        assert_eq!(&raw[9..25], id.as_bytes().as_slice());
+    }
 }
