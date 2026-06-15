@@ -1,5 +1,6 @@
 pub mod boards_tasks;
 pub mod documents;
+pub mod search;
 
 use serde::{Deserialize, Serialize};
 
