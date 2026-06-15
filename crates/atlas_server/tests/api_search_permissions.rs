@@ -1,10 +1,11 @@
 //! Permission integration test matrix for `GET /v1/workspaces/{ws}/search`.
 //!
 //! Covers:
-//! - WARNING-B1: API-key principal — no-grant → 404 at route gate; ws-scope grant → sees rows;
-//!   per-document grant sees only the granted doc (DISCRIMINATING — fails if membership_clause
-//!   for ApiKey regressed from FALSE to TRUE).
-//! - WARNING-B3: Cross-tenant TASK isolation — ws B task never leaks to ws A principal.
+//! - API-key principal access: no-grant → 404 at route gate; ws-scope grant → sees rows;
+//!   per-document grant sees only the granted doc. Guards the invariant that
+//!   `membership_clause` is FALSE for ApiKey principals (grants are the only access path).
+//! - Cross-tenant task isolation: a task in workspace B must never appear in searches
+//!   by a workspace A principal.
 //! - Cross-tenant document isolation (redundant with repo tests but proves the HTTP route).
 //! - Intra-workspace: workspace owner sees documents and tasks; non-member gets 404.
 //! - Workspace-scope grant does not leak cross-tenant documents to the grantee.
@@ -260,16 +261,16 @@ async fn seed_task_with_board(
 }
 
 // ---------------------------------------------------------------------------
-// WARNING-B1: API key principal — no-grant → empty; with grant → sees rows
+// API-key principal: no-grant → 404; with grant → sees rows
 // ---------------------------------------------------------------------------
 
 /// An API key with NO grants is rejected at the workspace gate (404).
 ///
-/// This covers WARNING-B1: `membership_clause="FALSE"` for ApiKey principals means
-/// the route's `Authorized<WorkspaceRes, ViewerMin>` extractor finds no qualifying
-/// membership or grant and returns 404 (workspace not visible, per cross-tenant
-/// concealment policy — never 403). This proves the api-key arm cannot bypass the
-/// outer authorization gate when completely ungrated.
+/// `membership_clause` is FALSE for ApiKey principals, so the route's
+/// `Authorized<WorkspaceRes, ViewerMin>` extractor finds no qualifying
+/// membership or grant and returns 404 (workspace not visible — never 403, per
+/// cross-tenant concealment policy). Guards the invariant that an unganted
+/// api-key cannot bypass the outer authorization gate.
 #[tokio::test]
 async fn api_key_without_grant_gets_404() {
     let db = support::TestDb::create().await.expect("TestDb");
@@ -299,8 +300,8 @@ async fn api_key_without_grant_gets_404() {
 
 /// An API key with a workspace-scope grant sees resources it has been granted.
 ///
-/// This covers WARNING-B1: the grant arm of the SQL predicate must fire correctly
-/// for Principal::ApiKey, surfacing rows that have an explicit grant.
+/// Guards the invariant that the grant arm of the SQL predicate fires correctly
+/// for `Principal::ApiKey`, surfacing rows that have an explicit grant.
 #[tokio::test]
 async fn api_key_with_ws_scope_grant_sees_granted_resources() {
     let db = support::TestDb::create().await.expect("TestDb");
@@ -331,11 +332,9 @@ async fn api_key_with_ws_scope_grant_sees_granted_resources() {
 /// An API key with workspace-scope grant sees docs in its workspace but NOT those
 /// in another workspace — even when searching the same query term.
 ///
-/// This is the WARNING-B1 scenario at the SQL level: `membership_clause="FALSE"` for
-/// API keys means their only access path is through grants. With a ws-scope grant on
-/// workspace A, the SQL permission predicate allows rows from workspace A (via the
-/// ws-scope grant arm) but the `d.workspace_id = $1` constraint prevents any row from
-/// workspace B from ever appearing, regardless of grants.
+/// Guards the invariant that the `workspace_id = $1` constraint in the SQL
+/// permission predicate prevents cross-tenant document leakage for api-key
+/// principals, whose only access path is through explicit grants.
 #[tokio::test]
 async fn api_key_ws_scope_grant_does_not_leak_cross_tenant() {
     let db = support::TestDb::create().await.expect("TestDb");
@@ -372,13 +371,14 @@ async fn api_key_ws_scope_grant_does_not_leak_cross_tenant() {
 }
 
 // ---------------------------------------------------------------------------
-// WARNING-B3: Cross-tenant TASK isolation
+// Cross-tenant task isolation
 // ---------------------------------------------------------------------------
 
 /// A task in workspace B must NEVER appear in a search by workspace A's principal.
 ///
-/// This is WARNING-B3: the tasks arm's workspace_id constraint must prevent
-/// cross-tenant leakage for tasks (Batch B only proved this for documents).
+/// Guards the invariant that the tasks arm's `workspace_id = $1` constraint
+/// prevents cross-tenant leakage for tasks, mirroring the same guard on the
+/// documents arm.
 #[tokio::test]
 async fn cross_tenant_task_isolation() {
     let db = support::TestDb::create().await.expect("TestDb");
@@ -548,26 +548,24 @@ async fn task_visible_to_member_not_to_outsider() {
 }
 
 // ---------------------------------------------------------------------------
-// WARNING-B1 DISCRIMINATING: api-key with NO grants sees NO rows via the SQL
-// row filter — membership_clause for ApiKey MUST be FALSE, not TRUE.
+// Discriminating: api-key `membership_clause` must be FALSE, not TRUE.
 //
 // This test calls PgSearchRepo::search() directly rather than via HTTP because
-// the route gate (`Authorized<WorkspaceRes, ViewerMin>`) blocks an api-key that
-// has no workspace-scope grant before the SQL ever runs. If we instead gave the
-// key a ws-scope grant, the ws-scope grant arm itself would surface every row —
-// making the membership_clause irrelevant and the test vacuous.
+// the route gate blocks an api-key with no workspace-scope grant before the SQL
+// ever runs. If we instead gave the key a ws-scope grant, that grant arm itself
+// would surface every row, making `membership_clause` irrelevant and the test
+// vacuous.
 //
-// The discrimination: with membership_clause = FALSE (correct) and no grants,
-// search returns nothing. If membership_clause were regressed to TRUE, the first
-// arm of the disjunction would be TRUE for every row, surfacing both docs.
+// With `membership_clause = FALSE` (correct) and no ws-scope grant, only the
+// per-doc grant arm fires. If `membership_clause` were regressed to TRUE, the
+// first arm of the disjunction would surface every row in the workspace.
 // ---------------------------------------------------------------------------
 
-/// An API key with no grants sees ZERO search results at the SQL level.
+/// An API key with no ws-scope grant sees only explicitly granted rows at the SQL level.
 ///
-/// This is the non-vacuous closure of WARNING-B1: it would go RED if the
-/// `membership_clause` branch for `Principal::ApiKey` in `PgSearchRepo::search`
-/// were changed from `FALSE` to anything that evaluates to TRUE (e.g. a literal
-/// `TRUE`, or an EXISTS check that api-keys happen to satisfy).
+/// Guards the invariant that `membership_clause` for `Principal::ApiKey` in
+/// `PgSearchRepo::search` is FALSE — any regression to TRUE would cause every
+/// workspace row to surface regardless of grants.
 #[tokio::test]
 async fn api_key_no_grant_sees_no_rows_at_sql_level() {
     let db = support::TestDb::create().await.expect("TestDb");

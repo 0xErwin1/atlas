@@ -1,8 +1,8 @@
 //! Pagination determinism matrix for `GET /v1/workspaces/{ws}/search`.
 //!
-//! Covers WARNING-B2: when two hits have an identical primary sort key (score or
-//! updated_at), the secondary key (id DESC, using UUIDv7 time-ordering) must break
-//! the tie so page-throughs produce no duplicates and no gaps.
+//! Guards the invariant that when two hits share an identical primary sort key
+//! (score or updated_at), the secondary sort key (id DESC, UUIDv7 time-ordering)
+//! fully orders them so that page-throughs produce no duplicates and no gaps.
 //!
 //! All tests verify:
 //! - The full result set is exactly covered with no duplicates and no gaps.
@@ -147,9 +147,9 @@ async fn page_through_all(
 // ---------------------------------------------------------------------------
 // T15a: Tie in relevance score → id tie-break prevents duplicates / gaps
 //
-// WARNING-B2 closure: two documents with IDENTICAL content produce identical
-// ts_rank_cd scores. The secondary sort (id DESC) must fully order them so a
-// page-through with page_size=1 yields each document exactly once.
+// Two documents with IDENTICAL content produce identical ts_rank_cd scores.
+// The secondary sort (id DESC) must fully order them so that a page-through
+// with page_size=1 yields each document exactly once.
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
@@ -202,9 +202,9 @@ async fn relevance_tie_no_duplicate_no_gap() {
 // ---------------------------------------------------------------------------
 // T15b: Tie in updated_at → id tie-break prevents duplicates / gaps
 //
-// WARNING-B2 closure: two documents inserted in rapid succession can share
-// the same updated_at microsecond (SeaORM's `Utc::now()` precision). The
-// secondary sort (id DESC) must fully order them.
+// Two documents inserted in rapid succession can share the same updated_at
+// microsecond (SeaORM's `Utc::now()` precision). The secondary sort (id DESC)
+// must fully order them.
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
@@ -265,11 +265,10 @@ async fn updated_tie_no_duplicate_no_gap() {
 // ---------------------------------------------------------------------------
 // T15b-det: updated_at DETERMINISTIC tie — id DESC tie-break, no duplicate/gap
 //
-// WARNING-B2 closure (hardened): seeds 3 docs then forces all three to the
-// SAME updated_at via a direct SQL UPDATE, guaranteeing a real tie regardless
-// of wall-clock resolution. Pages across the tie boundary with limit=1 and
-// asserts the exact ordered id sequence (id DESC tiebreak) with no duplicate
-// and no gap.
+// Seeds 3 docs then forces all three to the SAME updated_at via a direct SQL
+// UPDATE, guaranteeing a real tie regardless of wall-clock resolution. Pages
+// across the tie boundary with limit=1 and asserts the exact ordered id sequence
+// (id DESC tiebreak) with no duplicate and no gap.
 //
 // This test would fail if the id tiebreak were absent or reversed.
 // ---------------------------------------------------------------------------
