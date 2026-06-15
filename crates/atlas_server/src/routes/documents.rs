@@ -156,7 +156,7 @@ pub(crate) async fn create_document(
         ("limit" = Option<u32>, Query, description = "Page size (max 200)"),
     ),
     responses(
-        (status = 200, description = "Paginated document list"),
+        (status = 200, description = "Paginated document list", body = Page<DocumentSummaryDto>),
         (status = 401, description = "Unauthenticated"),
         (status = 403, description = "Insufficient permissions"),
     )
@@ -542,7 +542,7 @@ pub(crate) async fn get_revision_content(
         ("limit" = Option<u32>, Query, description = "Page size"),
     ),
     responses(
-        (status = 200, description = "Backlinks"),
+        (status = 200, description = "Backlinks", body = Page<BacklinkDto>),
         (status = 404, description = "Document not found"),
     )
 )]

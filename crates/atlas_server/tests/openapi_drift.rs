@@ -68,6 +68,9 @@ const EXPECTED_SCHEMAS: &[&str] = &[
     "MoveFolderRequest",
     "FolderDto",
     "Page_FolderDto",
+    "Page_DocumentSummaryDto",
+    "Page_BacklinkDto",
+    "Page_ProjectDto",
 ];
 
 #[test]

@@ -124,7 +124,7 @@ pub(crate) async fn create_project(
         ("limit" = Option<u32>, Query, description = "Page size (max 200)"),
     ),
     responses(
-        (status = 200, description = "Paginated project list"),
+        (status = 200, description = "Paginated project list", body = Page<ProjectDto>),
         (status = 401, description = "Unauthenticated"),
     )
 )]

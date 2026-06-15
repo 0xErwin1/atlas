@@ -1344,7 +1344,14 @@
         ],
         "responses": {
           "200": {
-            "description": "Backlinks"
+            "description": "Backlinks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_BacklinkDto"
+                }
+              }
+            }
           },
           "404": {
             "description": "Document not found"
@@ -2055,7 +2062,14 @@
         ],
         "responses": {
           "200": {
-            "description": "Paginated project list"
+            "description": "Paginated project list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_ProjectDto"
+                }
+              }
+            }
           },
           "401": {
             "description": "Unauthenticated"
@@ -2453,7 +2467,14 @@
         ],
         "responses": {
           "200": {
-            "description": "Paginated document list"
+            "description": "Paginated document list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_DocumentSummaryDto"
+                }
+              }
+            }
           },
           "401": {
             "description": "Unauthenticated"
@@ -5036,6 +5057,117 @@
           }
         }
       },
+      "Page_BacklinkDto": {
+        "type": "object",
+        "description": "Paginated response envelope.",
+        "required": [
+          "items",
+          "has_more"
+        ],
+        "properties": {
+          "has_more": {
+            "type": "boolean"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "A document that links to this document (backlink).",
+              "required": [
+                "source_document_id",
+                "source_title",
+                "display_title"
+              ],
+              "properties": {
+                "display_title": {
+                  "type": "string"
+                },
+                "source_document_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "source_slug": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "source_title": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "Page_DocumentSummaryDto": {
+        "type": "object",
+        "description": "Paginated response envelope.",
+        "required": [
+          "items",
+          "has_more"
+        ],
+        "properties": {
+          "has_more": {
+            "type": "boolean"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "Lightweight document summary for list endpoints.",
+              "required": [
+                "id",
+                "title",
+                "head_seq",
+                "updated_at"
+              ],
+              "properties": {
+                "folder_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                },
+                "head_seq": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "slug": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "title": {
+                  "type": "string"
+                },
+                "updated_at": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              }
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "Page_FolderDto": {
         "type": "object",
         "description": "Paginated response envelope.",
@@ -5088,6 +5220,78 @@
                 "updated_at": {
                   "type": "string",
                   "format": "date-time"
+                },
+                "workspace_id": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "Page_ProjectDto": {
+        "type": "object",
+        "description": "Paginated response envelope.",
+        "required": [
+          "items",
+          "has_more"
+        ],
+        "properties": {
+          "has_more": {
+            "type": "boolean"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "Project representation.",
+              "required": [
+                "id",
+                "workspace_id",
+                "name",
+                "slug",
+                "task_prefix",
+                "visibility",
+                "created_at",
+                "updated_at"
+              ],
+              "properties": {
+                "created_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "slug": {
+                  "type": "string"
+                },
+                "task_prefix": {
+                  "type": "string"
+                },
+                "updated_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "visibility": {
+                  "type": "string"
+                },
+                "visibility_role": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 },
                 "workspace_id": {
                   "type": "string",
