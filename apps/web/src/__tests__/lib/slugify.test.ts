@@ -18,16 +18,16 @@ describe('slugify', () => {
     expect(slugify('  -- hello --  ')).toBe('hello');
   });
 
-  it('handles unicode characters by replacing them', () => {
-    expect(slugify('Café au lait')).toBe('caf-au-lait');
+  it('preserves unicode alphanumeric characters (server parity)', () => {
+    expect(slugify('Café au lait')).toBe('café-au-lait');
   });
 
-  it('handles empty string', () => {
-    expect(slugify('')).toBe('');
+  it('returns untitled for empty string (server parity)', () => {
+    expect(slugify('')).toBe('untitled');
   });
 
-  it('handles all non-alphanumeric input', () => {
-    expect(slugify('---!!!')).toBe('');
+  it('returns untitled for all non-alphanumeric input (server parity)', () => {
+    expect(slugify('---!!!')).toBe('untitled');
   });
 
   it('preserves numbers in the slug', () => {
@@ -40,5 +40,21 @@ describe('slugify', () => {
 
   it('matches server-side behaviour: single space between words', () => {
     expect(slugify('My   Document  Title')).toBe('my-document-title');
+  });
+
+  it('truncates to 80 characters', () => {
+    const long = 'a'.repeat(100);
+    expect(slugify(long).length).toBe(80);
+  });
+
+  it('does not leave a trailing hyphen after truncation', () => {
+    const title = `${'a'.repeat(79)} ${'b'.repeat(10)}`;
+    const result = slugify(title);
+    expect(result.endsWith('-')).toBe(false);
+    expect(result.length).toBeLessThanOrEqual(80);
+  });
+
+  it('handles unicode titles with accented characters', () => {
+    expect(slugify('Über die Brücke')).toBe('über-die-brücke');
   });
 });
