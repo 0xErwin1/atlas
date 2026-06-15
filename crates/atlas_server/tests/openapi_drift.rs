@@ -61,6 +61,8 @@ const EXPECTED_SCHEMAS: &[&str] = &[
     "PromotionDto",
     "PromoteChecklistItemRequest",
     "ActivityEntryDto",
+    "SearchHitDto",
+    "SearchKindDto",
 ];
 
 #[test]

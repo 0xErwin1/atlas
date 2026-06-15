@@ -20,6 +20,7 @@ use atlas_api::{
             DocumentDto, DocumentSummaryDto, FrontmatterDto, MoveDocumentRequest,
             RevisionContentDto, RevisionMetaDto, UpdateContentRequest, UpdateDocumentRequest,
         },
+        search::{SearchHitDto, SearchKindDto},
     },
     problem::ProblemDetails,
 };
@@ -98,6 +99,7 @@ use atlas_api::{
         crate::routes::documents::download_attachment,
         crate::routes::documents::delete_attachment,
         crate::routes::documents::move_document,
+        crate::routes::search::search,
     ),
     components(schemas(
         LoginRequest,
@@ -153,6 +155,8 @@ use atlas_api::{
         PromotionDto,
         PromoteChecklistItemRequest,
         ActivityEntryDto,
+        SearchHitDto,
+        SearchKindDto,
     )),
     tags(
         (name = "auth", description = "Authentication and session management"),
@@ -164,6 +168,7 @@ use atlas_api::{
         (name = "documents", description = "Document management"),
         (name = "boards", description = "Board and column management"),
         (name = "tasks", description = "Task management"),
+        (name = "search", description = "Unified full-text search"),
     )
 )]
 pub(crate) struct ApiDoc;
