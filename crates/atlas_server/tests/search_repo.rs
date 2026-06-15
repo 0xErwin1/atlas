@@ -246,6 +246,495 @@ async fn grant_board(
     .expect("grant board");
 }
 
+async fn grant_project(
+    db: &support::TestDb,
+    ws_id: WorkspaceId,
+    user_id: UserId,
+    project_id: ProjectId,
+    grantor_id: UserId,
+) {
+    let repo = PgPermissionGrantRepo { conn: db.conn().clone() };
+    repo.upsert(NewPermissionGrant {
+        workspace_id: ws_id,
+        user_id: Some(user_id),
+        api_key_id: None,
+        project_id: Some(project_id),
+        folder_id: None,
+        document_id: None,
+        board_id: None,
+        role: ResourceRole::Viewer,
+        created_by_user_id: Some(grantor_id),
+        created_by_api_key_id: None,
+    })
+    .await
+    .expect("grant project");
+}
+
+async fn add_member(
+    db: &support::TestDb,
+    ws_id: WorkspaceId,
+    user_id: UserId,
+    role: atlas_domain::entities::identity::MemberRole,
+) {
+    use atlas_server::persistence::repos::MembershipRepo;
+    let ctx = atlas_domain::WorkspaceCtx::new(ws_id, atlas_domain::Actor::User(user_id));
+    db.membership_repo()
+        .add(&ctx, user_id, role)
+        .await
+        .expect("add member");
+}
+
+async fn seed_user(db: &support::TestDb, username: &str) -> UserId {
+    let user = db
+        .user_repo()
+        .create(atlas_server::persistence::repos::NewUser {
+            username: username.to_string(),
+            display_name: username.to_string(),
+            password_hash: "$argon2id$v=19$m=19456,t=2,p=1$test$hash".into(),
+            is_root: false,
+        })
+        .await
+        .expect("seed user");
+    user.id
+}
+
+async fn seed_project_with_visibility(
+    db: &support::TestDb,
+    ctx: &WorkspaceCtx,
+    slug: &str,
+    prefix: &str,
+    visibility: Visibility,
+) -> ProjectId {
+    let project_repo = PgProjectRepo { conn: db.conn().clone() };
+    let project = project_repo
+        .create(
+            ctx,
+            NewProject {
+                name: format!("Project {slug}"),
+                slug: slug.to_string(),
+                task_prefix: prefix.to_string(),
+                visibility,
+            },
+        )
+        .await
+        .expect("seed project");
+    project.id
+}
+
+async fn seed_doc_in_project(
+    db: &support::TestDb,
+    ctx: &WorkspaceCtx,
+    project_id: ProjectId,
+    title: &str,
+    content: &str,
+) -> DocumentId {
+    let repo = PgDocumentRepo::new(db.conn().clone(), 50);
+    let doc = repo
+        .create(
+            ctx,
+            NewDocument {
+                title: title.to_string(),
+                slug: None,
+                content: content.to_string(),
+                folder_id: None,
+                project_id: Some(project_id),
+                frontmatter: None,
+            },
+        )
+        .await
+        .expect("seed document in project");
+    doc.id
+}
+
+// ---------------------------------------------------------------------------
+// DISCRIMINATING: a plain workspace Member (not Owner/Admin) must NOT see a
+// document in a Private project owned by someone else without an explicit grant.
+//
+// This mirrors the domain `resolve()` authority (atlas_domain::permissions):
+// a member's only access to a Private-project resource is an explicit grant;
+// Private visibility contributes nothing (resolve() Rule 2, Visibility::Private
+// match arm yields no candidate).
+//
+// This test is driven at the repo level on purpose: a plain member with no
+// workspace-scope grant resolves to None on the workspace-only chain, so the
+// route gate would return 404 before the SQL row filter ever runs. Testing the
+// row filter directly is what proves the SQL mirrors resolve(); the gate
+// behavior is covered separately by the HTTP tests.
+//
+// It would go RED against the previous over-broad `EXISTS membership` clause,
+// which returned EVERY workspace row to any member regardless of visibility.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn plain_member_does_not_see_private_project_document() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, owner) = support::seed_workspace(&db, "srch-priv-owner").await;
+    let ctx_owner = support::ctx(&ws, &owner);
+
+    let member_id = seed_user(&db, "srch-priv-member").await;
+    add_member(
+        &db,
+        ws.id,
+        member_id,
+        atlas_domain::entities::identity::MemberRole::Member,
+    )
+    .await;
+
+    let private_project = seed_project_with_visibility(
+        &db,
+        &ctx_owner,
+        "srch-priv-proj",
+        "SPP",
+        Visibility::Private,
+    )
+    .await;
+
+    let doc_id = seed_doc_in_project(
+        &db,
+        &ctx_owner,
+        private_project,
+        "Private Project Doc",
+        "uniquetoken_privproj",
+    )
+    .await;
+
+    let repo = PgSearchRepo::new(db.conn().clone());
+    let member_ctx = atlas_domain::WorkspaceCtx::new(ws.id, atlas_domain::Actor::User(member_id));
+    let hits = repo
+        .search(
+            &member_ctx,
+            &Principal::User(member_id),
+            &make_search_query("uniquetoken_privproj"),
+            50,
+            None,
+        )
+        .await
+        .expect("member search");
+
+    assert!(
+        !hits.iter().any(|h| h.id == doc_id.0),
+        "a plain member must NOT see a Private-project document without a grant; got: {hits:?}"
+    );
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
+// A plain member WITH an explicit project grant on the Private project sees its
+// document (resolve() Rule 2: explicit grant on the project segment).
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn plain_member_with_project_grant_sees_private_project_document() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, owner) = support::seed_workspace(&db, "srch-privgrant-owner").await;
+    let ctx_owner = support::ctx(&ws, &owner);
+
+    let member_id = seed_user(&db, "srch-privgrant-member").await;
+    add_member(
+        &db,
+        ws.id,
+        member_id,
+        atlas_domain::entities::identity::MemberRole::Member,
+    )
+    .await;
+
+    let private_project = seed_project_with_visibility(
+        &db,
+        &ctx_owner,
+        "srch-privgrant-proj",
+        "SPG",
+        Visibility::Private,
+    )
+    .await;
+
+    let doc_id = seed_doc_in_project(
+        &db,
+        &ctx_owner,
+        private_project,
+        "Granted Private Doc",
+        "uniquetoken_privgrant",
+    )
+    .await;
+
+    grant_project(&db, ws.id, member_id, private_project, owner.id).await;
+
+    let repo = PgSearchRepo::new(db.conn().clone());
+    let member_ctx = atlas_domain::WorkspaceCtx::new(ws.id, atlas_domain::Actor::User(member_id));
+    let hits = repo
+        .search(
+            &member_ctx,
+            &Principal::User(member_id),
+            &make_search_query("uniquetoken_privgrant"),
+            50,
+            None,
+        )
+        .await
+        .expect("member search");
+
+    assert!(
+        hits.iter().any(|h| h.id == doc_id.0),
+        "a plain member WITH a project grant must see the Private-project document; got: {hits:?}"
+    );
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
+// A plain member sees a non-Private (Workspace-visibility) project document
+// without any grant (resolve() Rule 2: visibility contribution for members).
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn plain_member_sees_workspace_visible_project_document() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, owner) = support::seed_workspace(&db, "srch-wsvis-owner").await;
+    let ctx_owner = support::ctx(&ws, &owner);
+
+    let member_id = seed_user(&db, "srch-wsvis-member").await;
+    add_member(
+        &db,
+        ws.id,
+        member_id,
+        atlas_domain::entities::identity::MemberRole::Member,
+    )
+    .await;
+
+    let visible_project = seed_project_with_visibility(
+        &db,
+        &ctx_owner,
+        "srch-wsvis-proj",
+        "SWV",
+        Visibility::Workspace(VisibilityRole::Editor),
+    )
+    .await;
+
+    let doc_id = seed_doc_in_project(
+        &db,
+        &ctx_owner,
+        visible_project,
+        "Workspace Visible Doc",
+        "uniquetoken_wsvis",
+    )
+    .await;
+
+    let repo = PgSearchRepo::new(db.conn().clone());
+    let member_ctx = atlas_domain::WorkspaceCtx::new(ws.id, atlas_domain::Actor::User(member_id));
+    let hits = repo
+        .search(
+            &member_ctx,
+            &Principal::User(member_id),
+            &make_search_query("uniquetoken_wsvis"),
+            50,
+            None,
+        )
+        .await
+        .expect("member search");
+
+    assert!(
+        hits.iter().any(|h| h.id == doc_id.0),
+        "a plain member must see a Workspace-visibility project document; got: {hits:?}"
+    );
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
+// An Owner/Admin member sees a Private-project document with no grant
+// (resolve() Rule 1: implicit admin sees everything).
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn owner_sees_private_project_document() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, owner) = support::seed_workspace(&db, "srch-ownerpriv-owner").await;
+    let ctx_owner = support::ctx(&ws, &owner);
+
+    let private_project = seed_project_with_visibility(
+        &db,
+        &ctx_owner,
+        "srch-ownerpriv-proj",
+        "SOP",
+        Visibility::Private,
+    )
+    .await;
+
+    let doc_id = seed_doc_in_project(
+        &db,
+        &ctx_owner,
+        private_project,
+        "Owner Private Doc",
+        "uniquetoken_ownerpriv",
+    )
+    .await;
+
+    let repo = PgSearchRepo::new(db.conn().clone());
+    let hits = repo
+        .search(
+            &ctx_owner,
+            &Principal::User(owner.id),
+            &make_search_query("uniquetoken_ownerpriv"),
+            50,
+            None,
+        )
+        .await
+        .expect("owner search");
+
+    assert!(
+        hits.iter().any(|h| h.id == doc_id.0),
+        "an Owner must see a Private-project document via implicit admin; got: {hits:?}"
+    );
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
+// A plain member must NOT see a task in a Private project without a grant, and
+// MUST see one in a non-Private project (tasks arm visibility contribution).
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn plain_member_task_visibility_follows_project() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, owner) = support::seed_workspace(&db, "srch-taskvis-owner").await;
+    let ctx_owner = support::ctx(&ws, &owner);
+
+    let member_id = seed_user(&db, "srch-taskvis-member").await;
+    add_member(
+        &db,
+        ws.id,
+        member_id,
+        atlas_domain::entities::identity::MemberRole::Member,
+    )
+    .await;
+
+    // Private project task (member must NOT see it).
+    let private_project =
+        seed_project_with_visibility(&db, &ctx_owner, "srch-taskvis-priv", "STVP", Visibility::Private)
+            .await;
+    let board_repo = PgBoardRepo::new(db.conn().clone());
+    let private_board = board_repo
+        .create_board(&ctx_owner, NewBoard { project_id: private_project, name: "Board".to_string() })
+        .await
+        .expect("private board");
+    let private_col = board_repo
+        .add_column(
+            &ctx_owner,
+            private_board.id,
+            "Backlog".to_string(),
+            PositionBetween { before: None, after: None },
+        )
+        .await
+        .expect("private column");
+    let private_task = seed_task(
+        &db,
+        &ctx_owner,
+        private_col.id,
+        private_board.id,
+        private_project,
+        "Private Task",
+        "uniquetoken_taskvis",
+    )
+    .await;
+
+    // Workspace-visible project task (member MUST see it).
+    let (vis_project, vis_board, vis_col) =
+        seed_project_and_board(&db, &ctx_owner, "srch-taskvis-vis", "STVV").await;
+    let vis_task = seed_task(
+        &db,
+        &ctx_owner,
+        vis_col.id,
+        vis_board.id,
+        vis_project.id,
+        "Visible Task",
+        "uniquetoken_taskvis",
+    )
+    .await;
+
+    let repo = PgSearchRepo::new(db.conn().clone());
+    let member_ctx = atlas_domain::WorkspaceCtx::new(ws.id, atlas_domain::Actor::User(member_id));
+    let hits = repo
+        .search(
+            &member_ctx,
+            &Principal::User(member_id),
+            &make_task_only_query("uniquetoken_taskvis"),
+            50,
+            None,
+        )
+        .await
+        .expect("member task search");
+
+    let ids: Vec<uuid::Uuid> = hits.iter().map(|h| h.id).collect();
+    assert!(
+        ids.contains(&vis_task.0),
+        "member must see a task in a Workspace-visibility project; got: {ids:?}"
+    );
+    assert!(
+        !ids.contains(&private_task.0),
+        "member must NOT see a task in a Private project without a grant; got: {ids:?}"
+    );
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
+// Soft-deleted project consistency: a live task whose project was soft-deleted
+// must still surface for an Owner, with a NULL project_slug. The tasks arm uses
+// a LEFT JOIN on projects (matching the documents arm and the task-list
+// endpoint, which never drops a task when its project is soft-deleted).
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn task_of_soft_deleted_project_still_surfaces_for_owner() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, owner) = support::seed_workspace(&db, "srch-softdel-owner").await;
+    let ctx_owner = support::ctx(&ws, &owner);
+
+    let (project, board, col) =
+        seed_project_and_board(&db, &ctx_owner, "srch-softdel-proj", "SSD").await;
+
+    let task_id = seed_task(
+        &db,
+        &ctx_owner,
+        col.id,
+        board.id,
+        project.id,
+        "Soft Deleted Project Task",
+        "uniquetoken_softdel",
+    )
+    .await;
+
+    let project_repo = PgProjectRepo { conn: db.conn().clone() };
+    project_repo
+        .soft_delete(&ctx_owner, project.id)
+        .await
+        .expect("soft delete project");
+
+    let repo = PgSearchRepo::new(db.conn().clone());
+    let hits = repo
+        .search(
+            &ctx_owner,
+            &Principal::User(owner.id),
+            &make_task_only_query("uniquetoken_softdel"),
+            50,
+            None,
+        )
+        .await
+        .expect("owner search");
+
+    let hit = hits
+        .iter()
+        .find(|h| h.id == task_id.0)
+        .expect("task of a soft-deleted project must still surface");
+    assert!(
+        hit.project_slug.is_none(),
+        "a task whose project was soft-deleted must carry a NULL project_slug; got: {:?}",
+        hit.project_slug
+    );
+
+    db.teardown().await;
+}
+
 // ---------------------------------------------------------------------------
 // Test 1: cross-tenant isolation — documents in workspace B never appear for
 // a principal in workspace A, even when searching the same text.

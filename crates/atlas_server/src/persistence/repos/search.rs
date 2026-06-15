@@ -65,14 +65,30 @@ impl SearchRepo for PgSearchRepo {
         values.push(ctx.workspace_id.0.into());
 
         // $2 — principal id
-        let membership_clause: String;
+        //
+        // The permission predicate mirrors the domain `resolve()` authority
+        // (atlas_domain::permissions). For a User principal, three access paths
+        // exist: implicit admin (Owner/Admin membership → sees all), explicit
+        // grants (resource/ancestor/workspace-scope), and the member-only
+        // visibility contribution (a plain member sees a resource whose effective
+        // visibility is non-Private). An ApiKey is never a member and has no
+        // visibility contribution, so it sees only grant-backed rows.
         let principal_col: &str;
+        let owner_admin_clause: String;
+        let member_clause: String;
 
         match principal {
             Principal::User(uid) => {
                 principal_col = "user_id";
                 values.push(uid.0.into());
-                membership_clause = "EXISTS (
+                owner_admin_clause = "EXISTS (
+                        SELECT 1 FROM workspace_memberships
+                        WHERE workspace_id = $1
+                          AND user_id = $2
+                          AND role IN ('owner', 'admin')
+                    )"
+                .to_string();
+                member_clause = "EXISTS (
                         SELECT 1 FROM workspace_memberships
                         WHERE workspace_id = $1
                           AND user_id = $2
@@ -82,7 +98,8 @@ impl SearchRepo for PgSearchRepo {
             Principal::ApiKey(kid) => {
                 principal_col = "api_key_id";
                 values.push(kid.0.into());
-                membership_clause = "FALSE".to_string();
+                owner_admin_clause = "FALSE".to_string();
+                member_clause = "FALSE".to_string();
             }
         }
 
@@ -156,7 +173,8 @@ impl SearchRepo for PgSearchRepo {
         };
 
         let arm_ctx = ArmCtx {
-            membership_clause: &membership_clause,
+            owner_admin_clause: &owner_admin_clause,
+            member_clause: &member_clause,
             principal_col,
             has_text,
             tsq_param,
@@ -217,7 +235,8 @@ impl SearchRepo for PgSearchRepo {
 // ---------------------------------------------------------------------------
 
 struct ArmCtx<'a> {
-    membership_clause: &'a str,
+    owner_admin_clause: &'a str,
+    member_clause: &'a str,
     principal_col: &'a str,
     has_text: bool,
     tsq_param: usize,
@@ -262,7 +281,7 @@ fn build_doc_arm(
     let doc_tag_cond = build_doc_tag_cond(values, tag_values);
 
     // Permission pushdown: embedded in WHERE so LIMIT applies after permission filtering.
-    let perm = build_doc_permission(ctx.membership_clause, ctx.principal_col);
+    let perm = build_doc_permission(ctx.owner_admin_clause, ctx.member_clause, ctx.principal_col);
 
     let project_filter_subquery = ctx.project_filter_subquery;
     let updated_after_cond = ctx.updated_after_cond;
@@ -291,15 +310,31 @@ fn build_doc_arm(
     )
 }
 
-/// Four-branch permission disjunction for documents, mirrored from `list_visible`.
+/// Permission disjunction for documents, mirroring the domain `resolve()` authority.
+///
+/// A row is returned to the principal IFF `resolve()` would grant it >= Viewer:
+/// 1. `owner_admin_clause` — implicit admin (Owner/Admin members see all rows).
+/// 2. Explicit grants — workspace-scope, per-document, per-project, or folder
+///    ancestry (the same grant branches verified correct previously).
+/// 3. Visibility contribution — a plain member sees a row whose effective
+///    visibility is non-Private. A document's visibility derives from its
+///    project; a document with no project has no visibility contribution (the
+///    LEFT JOIN yields NULL `p.visibility`), exactly as `build_document_chain`
+///    produces no Project segment in that case. ApiKey principals are never
+///    members (`member_clause` = FALSE), so they get no visibility contribution.
 ///
 /// Permission pushdown: the disjunction is embedded in the WHERE clause so that
 /// LIMIT applies only to rows the principal can actually see. Fetching then
 /// filtering in Rust would require unbounded row reads and could leak row counts.
-fn build_doc_permission(membership_clause: &str, principal_col: &str) -> String {
+fn build_doc_permission(
+    owner_admin_clause: &str,
+    member_clause: &str,
+    principal_col: &str,
+) -> String {
     format!(
         r#"
-        {membership_clause}
+        {owner_admin_clause}
+        OR ({member_clause} AND p.id IS NOT NULL AND p.visibility <> 'private')
         OR EXISTS (
             SELECT 1 FROM permission_grants
             WHERE workspace_id = $1
@@ -408,7 +443,7 @@ fn build_task_arm(
     let priority_cond = build_priority_cond(values, priority_values);
     let assignee_cond = build_assignee_cond(values, assignee_values);
 
-    let perm = build_task_permission(ctx.membership_clause, ctx.principal_col);
+    let perm = build_task_permission(ctx.owner_admin_clause, ctx.member_clause, ctx.principal_col);
 
     let project_filter_subquery = ctx.project_filter_subquery;
     let updated_after_cond = ctx.updated_after_cond;
@@ -425,7 +460,7 @@ fn build_task_arm(
             {score_expr} AS score,
             t.updated_at
         FROM tasks t
-        JOIN projects p ON p.id = t.project_id AND p.workspace_id = $1 AND p.deleted_at IS NULL
+        LEFT JOIN projects p ON p.id = t.project_id AND p.workspace_id = $1 AND p.deleted_at IS NULL
         WHERE t.workspace_id = $1
           AND t.deleted_at IS NULL
           {fts_where}
@@ -440,10 +475,27 @@ fn build_task_arm(
     )
 }
 
-fn build_task_permission(membership_clause: &str, principal_col: &str) -> String {
+/// Permission disjunction for tasks, mirroring the domain `resolve()` authority.
+///
+/// A task's permission chain is Board -> Project -> Workspace (no folder, no own
+/// visibility). A row is returned to the principal IFF `resolve()` would grant it
+/// >= Viewer:
+/// 1. `owner_admin_clause` — implicit admin (Owner/Admin members see all rows).
+/// 2. Explicit grants — workspace-scope, per-project, or per-board.
+/// 3. Visibility contribution — a plain member sees a task whose project is
+///    non-Private. A soft-deleted project yields NULL `p.visibility` via the
+///    LEFT JOIN, removing the contribution exactly as a soft-deleted project
+///    drops out of the resolved chain (`PgProjectRepo::find` filters deleted
+///    rows). ApiKey principals get no visibility contribution.
+fn build_task_permission(
+    owner_admin_clause: &str,
+    member_clause: &str,
+    principal_col: &str,
+) -> String {
     format!(
         r#"
-        {membership_clause}
+        {owner_admin_clause}
+        OR ({member_clause} AND p.id IS NOT NULL AND p.visibility <> 'private')
         OR EXISTS (
             SELECT 1 FROM permission_grants
             WHERE workspace_id = $1
@@ -478,7 +530,7 @@ fn build_task_tag_cond(values: &mut Vec<sea_orm::Value>, tag_values: &[String]) 
     let mut parts = Vec::new();
     for tag in tag_values {
         values.push(tag.clone().into());
-        parts.push(format!("${}  = ANY(t.labels)", values.len()));
+        parts.push(format!("${} = ANY(t.labels)", values.len()));
     }
     format!("AND ({})", parts.join(" OR "))
 }
