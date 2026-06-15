@@ -1,3 +1,4 @@
+import type OrderedMap from 'orderedmap';
 import {
   schema as baseSchema,
   defaultMarkdownParser,
@@ -5,7 +6,7 @@ import {
   MarkdownParser,
   MarkdownSerializer,
 } from 'prosemirror-markdown';
-import type { Node as PmNode } from 'prosemirror-model';
+import type { MarkSpec, NodeSpec, Node as PmNode } from 'prosemirror-model';
 import { Schema } from 'prosemirror-model';
 
 /**
@@ -16,7 +17,7 @@ import { Schema } from 'prosemirror-model';
  * [[Title]] in serialized markdown.
  */
 const atlasSchema = new Schema({
-  nodes: (baseSchema.spec.nodes as unknown as { append: (spec: Record<string, unknown>) => unknown }).append({
+  nodes: (baseSchema.spec.nodes as OrderedMap<NodeSpec>).append({
     wikilink: {
       inline: true,
       attrs: { title: { default: '' } },
@@ -38,7 +39,7 @@ const atlasSchema = new Schema({
       ],
     },
   }),
-  marks: (baseSchema.spec.marks as unknown as { append: (spec: Record<string, unknown>) => unknown }).append({
+  marks: (baseSchema.spec.marks as OrderedMap<MarkSpec>).append({
     strike: {
       toDOM: () => ['s', 0],
       parseDOM: [{ tag: 's' }, { tag: 'del' }, { tag: 'strike' }],
@@ -46,80 +47,81 @@ const atlasSchema = new Schema({
   }),
 });
 
+type WikilinkToken = {
+  type: string;
+  attrSet?: (name: string, value: string) => void;
+  content: string;
+  level: number;
+  nesting: number;
+};
+
+type WikilinkCoreState = {
+  tokens: Array<{
+    type: string;
+    children: WikilinkToken[];
+  }>;
+};
+
 /**
  * markdown-it inline rule that tokenizes [[Title]] as `wikilink` tokens.
  * The rule matches `[[` ... `]]` sequences and emits a single token per link.
  */
 function wikilinkPlugin(md: {
-  core: { ruler: { push: (name: string, fn: (state: unknown) => void) => void } };
+  core: { ruler: { push: (name: string, fn: (state: WikilinkCoreState) => void) => void } };
 }): void {
-  md.core.ruler.push(
-    'wikilink',
-    (state: {
-      tokens: Array<{
-        type: string;
-        children: Array<{
-          type: string;
-          attrSet?: (name: string, value: string) => void;
-          content: string;
-          level: number;
-          nesting: number;
-        }>;
-      }>;
-    }) => {
-      for (const blockToken of state.tokens) {
-        if (blockToken.type !== 'inline' || !blockToken.children) continue;
+  md.core.ruler.push('wikilink', (state: WikilinkCoreState) => {
+    for (const blockToken of state.tokens) {
+      if (blockToken.type !== 'inline' || !blockToken.children) continue;
 
-        const newChildren: typeof blockToken.children = [];
+      const newChildren: typeof blockToken.children = [];
 
-        for (const child of blockToken.children) {
-          if (child.type !== 'text') {
-            newChildren.push(child);
-            continue;
-          }
+      for (const child of blockToken.children) {
+        if (child.type !== 'text') {
+          newChildren.push(child);
+          continue;
+        }
 
-          const WIKILINK_RE = /\[\[([^\]]+)\]\]/g;
-          let lastIndex = 0;
-          const text = child.content;
+        const WIKILINK_RE = /\[\[([^\]]+)\]\]/g;
+        let lastIndex = 0;
+        const text = child.content;
 
-          WIKILINK_RE.lastIndex = 0;
+        WIKILINK_RE.lastIndex = 0;
 
-          for (const match of text.matchAll(WIKILINK_RE)) {
-            if (match.index > lastIndex) {
-              newChildren.push({
-                type: 'text',
-                content: text.slice(lastIndex, match.index),
-                level: child.level,
-                nesting: 0,
-              });
-            }
-
-            const wlToken = {
-              type: 'wikilink',
-              content: match[1] ?? '',
-              level: child.level,
-              nesting: 0,
-              attrSet: (_name: string, _value: string) => undefined,
-            };
-
-            newChildren.push(wlToken);
-            lastIndex = (match.index ?? 0) + match[0].length;
-          }
-
-          if (lastIndex < text.length) {
+        for (const match of text.matchAll(WIKILINK_RE)) {
+          if (match.index > lastIndex) {
             newChildren.push({
               type: 'text',
-              content: text.slice(lastIndex),
+              content: text.slice(lastIndex, match.index),
               level: child.level,
               nesting: 0,
             });
           }
+
+          const wlToken = {
+            type: 'wikilink',
+            content: match[1] ?? '',
+            level: child.level,
+            nesting: 0,
+            attrSet: (_name: string, _value: string) => undefined,
+          };
+
+          newChildren.push(wlToken);
+          lastIndex = (match.index ?? 0) + match[0].length;
         }
 
-        blockToken.children = newChildren;
+        if (lastIndex < text.length) {
+          newChildren.push({
+            type: 'text',
+            content: text.slice(lastIndex),
+            level: child.level,
+            nesting: 0,
+          });
+        }
       }
-    },
-  );
+
+      blockToken.children = newChildren;
+    }
+  });
 }
 
 /**
