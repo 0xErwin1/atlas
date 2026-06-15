@@ -26,6 +26,7 @@ use atlas_domain::{
     entities::documents::NewDocument,
 };
 use atlas_server::persistence::repos::{DocumentRepo, PgDocumentRepo};
+use sea_orm::{ConnectionTrait, Statement};
 use std::collections::HashSet;
 use uuid::Uuid;
 
@@ -256,6 +257,120 @@ async fn updated_tie_no_duplicate_no_gap() {
     assert_eq!(
         collected_ids, expected_ids,
         "page-through with updated sort must cover all seeded docs with no gaps"
+    );
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
+// T15b-det: updated_at DETERMINISTIC tie — id DESC tie-break, no duplicate/gap
+//
+// WARNING-B2 closure (hardened): seeds 3 docs then forces all three to the
+// SAME updated_at via a direct SQL UPDATE, guaranteeing a real tie regardless
+// of wall-clock resolution. Pages across the tie boundary with limit=1 and
+// asserts the exact ordered id sequence (id DESC tiebreak) with no duplicate
+// and no gap.
+//
+// This test would fail if the id tiebreak were absent or reversed.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn updated_tie_deterministic_no_duplicate_no_gap() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let server = support::TestServer::spawn(&db).await;
+
+    let (client, ws, user) =
+        support::login_user_with_workspace(&server, &db, "pag-upd-det").await;
+    let token = client.token().expect("token");
+    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+
+    let unique = "tieupddetu19x";
+
+    // Seed 3 documents that all share the same query term.
+    let repo = PgDocumentRepo::new(db.conn().clone(), 50);
+    let mut seeded_ids: Vec<Uuid> = Vec::new();
+    for i in 0..3 {
+        let doc = repo
+            .create(
+                &ctx,
+                NewDocument {
+                    title: format!("Det Tie {i} {unique}"),
+                    slug: None,
+                    content: unique.to_string(),
+                    folder_id: None,
+                    project_id: None,
+                    frontmatter: None,
+                },
+            )
+            .await
+            .expect("seed document");
+        seeded_ids.push(doc.id.0);
+    }
+
+    // Force all three documents to the same updated_at timestamp. Using a fixed
+    // value in the past ensures no other insert can accidentally share it, and
+    // the identical value guarantees a real id-tiebreak is needed.
+    let placeholders = seeded_ids
+        .iter()
+        .enumerate()
+        .map(|(i, _)| format!("${}", i + 1))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let update_sql = format!(
+        "UPDATE documents SET updated_at = '2020-01-01 00:00:00+00' WHERE id IN ({placeholders})"
+    );
+    let values: Vec<sea_orm::Value> = seeded_ids
+        .iter()
+        .map(|id| sea_orm::Value::Uuid(Some(*id)))
+        .collect();
+    db.conn()
+        .execute_raw(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            &update_sql,
+            values,
+        ))
+        .await
+        .expect("force identical updated_at");
+
+    // Page through with limit=1. Every page crosses a tie boundary.
+    // The expected order is id DESC (UUIDv7 — descending by creation time).
+    let http = reqwest::Client::new();
+    let all = page_through_all(
+        &http,
+        token,
+        server.base_url(),
+        &ws.slug,
+        &format!("q={unique}"),
+        "updated",
+        1,
+    )
+    .await;
+
+    let collected_ids: Vec<Uuid> = all.iter().map(|h| h.id).collect();
+    let expected_set: HashSet<Uuid> = seeded_ids.iter().copied().collect();
+    let collected_set: HashSet<Uuid> = collected_ids.iter().copied().collect();
+
+    assert_eq!(
+        all.len(),
+        seeded_ids.len(),
+        "page-through must return exactly {n} items with no duplicates; got {got}",
+        n = seeded_ids.len(),
+        got = all.len()
+    );
+
+    assert_eq!(
+        collected_set, expected_set,
+        "page-through must cover all seeded docs with no gaps"
+    );
+
+    // The id tiebreak must be DESC: higher UUIDv7 (later insertion) comes first.
+    let mut expected_ordered = seeded_ids.clone();
+    expected_ordered.sort_by(|a, b| b.cmp(a));
+
+    assert_eq!(
+        collected_ids, expected_ordered,
+        "tied updated_at rows must be ordered by id DESC; \
+         got {collected_ids:?}, expected {expected_ordered:?}"
     );
 
     db.teardown().await;
