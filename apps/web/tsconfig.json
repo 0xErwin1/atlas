@@ -5,6 +5,7 @@
     "moduleResolution": "bundler",
     "strict": true,
     "noUncheckedIndexedAccess": true,
+    "noEmit": true,
     "jsx": "preserve",
     "types": ["vite/client"],
     "paths": {
