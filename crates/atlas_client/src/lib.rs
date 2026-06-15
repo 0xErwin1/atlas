@@ -1237,6 +1237,12 @@ fn build_search_path(
 }
 
 /// Percent-encodes characters that are not safe in a query-string value.
+fn hex_nibble(n: u8) -> char {
+    char::from_digit(n as u32, 16)
+        .map(|c| c.to_ascii_uppercase())
+        .unwrap_or('0')
+}
+
 fn encode_query_value(s: &str) -> String {
     s.chars()
         .flat_map(|c| {
@@ -1247,12 +1253,7 @@ fn encode_query_value(s: &str) -> String {
                 let bytes = c.encode_utf8(&mut buf);
                 bytes
                     .bytes()
-                    .flat_map(|b| {
-                        let hi = (b >> 4) as u8;
-                        let lo = (b & 0x0f) as u8;
-                        let hex = b"0123456789ABCDEF";
-                        vec!['%', hex[hi as usize] as char, hex[lo as usize] as char]
-                    })
+                    .flat_map(|b| vec!['%', hex_nibble(b >> 4), hex_nibble(b & 0x0f)])
                     .collect::<Vec<_>>()
             }
         })
