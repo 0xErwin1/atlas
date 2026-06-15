@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import type { AtlasProblem } from '@/api/problem';
 import Btn from '@/components/ui/Btn.vue';
@@ -28,7 +28,7 @@ async function handleLogin() {
   loading.value = false;
 
   if (result.ok) {
-    const redirect = (router.currentRoute.value.query['redirect'] as string) ?? '/n';
+    const redirect = (router.currentRoute.value.query.redirect as string) ?? '/n';
     await router.replace(redirect);
     return;
   }
@@ -38,10 +38,10 @@ async function handleLogin() {
   }
 }
 
-const errorDisplay = () => {
+const errorDisplay = computed(() => {
   if (!errorProblem.value) return null;
   return useProblem(errorProblem.value);
-};
+});
 </script>
 
 <template>
@@ -84,12 +84,12 @@ const errorDisplay = () => {
           line-height: var(--lh-normal);
         "
       >
-        <span>{{ errorDisplay()?.hint ?? errorDisplay()?.message }}</span>
+        <span>{{ errorDisplay?.hint ?? errorDisplay?.message }}</span>
         <span
-          v-if="errorDisplay()?.requestId"
+          v-if="errorDisplay?.requestId"
           style="display: block; opacity: 0.6; margin-top: 2px;"
         >
-          trace {{ errorDisplay()?.requestId }}
+          trace {{ errorDisplay?.requestId }}
         </span>
       </div>
 

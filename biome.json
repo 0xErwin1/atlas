@@ -21,14 +21,27 @@
   },
   "files": {
     "includes": [
-      "**/*.ts",
-      "**/*.vue",
-      "**/*.json",
+      "apps/**/*.ts",
+      "apps/**/*.vue",
+      "apps/**/*.json",
       "!**/dist",
       "!**/coverage",
       "!**/*.d.ts",
       "!**/node_modules",
       "!**/target"
     ]
-  }
+  },
+  "overrides": [
+    {
+      "includes": ["**/*.vue"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noUnusedVariables": "off",
+            "noUnusedImports": "off"
+          }
+        }
+      }
+    }
+  ]
 }

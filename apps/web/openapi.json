@@ -1655,6 +1655,235 @@
         ]
       }
     },
+    "/v1/workspaces/{ws}/folders/{folder_id}": {
+      "get": {
+        "tags": [
+          "folders"
+        ],
+        "operationId": "get_folder",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "folder_id",
+            "in": "path",
+            "description": "Folder ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Folder",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "422": {
+            "description": "Invalid UUID"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "folders"
+        ],
+        "operationId": "delete_folder",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "folder_id",
+            "in": "path",
+            "description": "Folder ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Folder deleted"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "folders"
+        ],
+        "operationId": "rename_folder",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "folder_id",
+            "in": "path",
+            "description": "Folder ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenameFolderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated folder",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          },
+          "422": {
+            "description": "Validation error"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{ws}/folders/{folder_id}/move": {
+      "patch": {
+        "tags": [
+          "folders"
+        ],
+        "operationId": "move_folder",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "folder_id",
+            "in": "path",
+            "description": "Folder ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveFolderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Moved folder",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          },
+          "422": {
+            "description": "Cycle detected or invalid parent"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/v1/workspaces/{ws}/grants": {
       "get": {
         "tags": [
@@ -2290,6 +2519,119 @@
           },
           "403": {
             "description": "Insufficient permissions"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{ws}/projects/{project_slug}/folders": {
+      "get": {
+        "tags": [
+          "folders"
+        ],
+        "operationId": "list_folders",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project_slug",
+            "in": "path",
+            "description": "Project slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Folder list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_FolderDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "folders"
+        ],
+        "operationId": "create_folder",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project_slug",
+            "in": "path",
+            "description": "Project slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFolderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Folder created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          },
+          "422": {
+            "description": "Validation error"
           }
         },
         "security": [
@@ -4221,6 +4563,25 @@
           }
         }
       },
+      "CreateFolderRequest": {
+        "type": "object",
+        "description": "Request body for `POST /v1/workspaces/{ws}/projects/{project_slug}/folders`.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "parent_folder_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
       "CreateGrantRequest": {
         "type": "object",
         "description": "Request body for `POST /v1/workspaces/{ws}/projects/{slug}/grants`.",
@@ -4470,6 +4831,52 @@
           }
         }
       },
+      "FolderDto": {
+        "type": "object",
+        "description": "Folder representation returned by all folder endpoints.",
+        "required": [
+          "id",
+          "workspace_id",
+          "name",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "parent_folder_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "project_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
       "FrontmatterDto": {
         "type": "object",
         "description": "Document frontmatter extracted from the leading YAML block.",
@@ -4590,6 +4997,20 @@
           }
         }
       },
+      "MoveFolderRequest": {
+        "type": "object",
+        "description": "Request body for `PATCH /v1/workspaces/{ws}/folders/{folder_id}/move`.",
+        "properties": {
+          "parent_folder_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "New parent folder ID, or `null` to move to the project root."
+          }
+        }
+      },
       "MoveTaskRequest": {
         "type": "object",
         "description": "Request body for `POST /v1/workspaces/{ws}/tasks/{readable_id}/move`.",
@@ -4612,6 +5033,74 @@
           "column_id": {
             "type": "string",
             "format": "uuid"
+          }
+        }
+      },
+      "Page_FolderDto": {
+        "type": "object",
+        "description": "Paginated response envelope.",
+        "required": [
+          "items",
+          "has_more"
+        ],
+        "properties": {
+          "has_more": {
+            "type": "boolean"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "Folder representation returned by all folder endpoints.",
+              "required": [
+                "id",
+                "workspace_id",
+                "name",
+                "created_at",
+                "updated_at"
+              ],
+              "properties": {
+                "created_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "parent_folder_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                },
+                "project_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                },
+                "updated_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "workspace_id": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -4812,6 +5301,18 @@
               "null"
             ],
             "format": "uuid"
+          }
+        }
+      },
+      "RenameFolderRequest": {
+        "type": "object",
+        "description": "Request body for `PATCH /v1/workspaces/{ws}/folders/{folder_id}`.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
           }
         }
       },
@@ -5402,6 +5903,10 @@
     {
       "name": "tasks",
       "description": "Task management"
+    },
+    {
+      "name": "folders",
+      "description": "Folder management"
     },
     {
       "name": "search",
