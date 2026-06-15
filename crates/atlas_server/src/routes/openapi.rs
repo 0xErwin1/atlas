@@ -20,6 +20,7 @@ use atlas_api::{
             DocumentDto, DocumentSummaryDto, FrontmatterDto, MoveDocumentRequest,
             RevisionContentDto, RevisionMetaDto, UpdateContentRequest, UpdateDocumentRequest,
         },
+        folders::{CreateFolderRequest, FolderDto, MoveFolderRequest, RenameFolderRequest},
         search::{SearchHitDto, SearchKindDto},
     },
     problem::ProblemDetails,
@@ -99,6 +100,12 @@ use atlas_api::{
         crate::routes::documents::download_attachment,
         crate::routes::documents::delete_attachment,
         crate::routes::documents::move_document,
+        crate::routes::folders::create_folder,
+        crate::routes::folders::list_folders,
+        crate::routes::folders::get_folder,
+        crate::routes::folders::rename_folder,
+        crate::routes::folders::move_folder,
+        crate::routes::folders::delete_folder,
         crate::routes::search::search,
     ),
     components(schemas(
@@ -157,6 +164,10 @@ use atlas_api::{
         ActivityEntryDto,
         SearchHitDto,
         SearchKindDto,
+        CreateFolderRequest,
+        RenameFolderRequest,
+        MoveFolderRequest,
+        FolderDto,
     )),
     tags(
         (name = "auth", description = "Authentication and session management"),
@@ -168,6 +179,7 @@ use atlas_api::{
         (name = "documents", description = "Document management"),
         (name = "boards", description = "Board and column management"),
         (name = "tasks", description = "Task management"),
+        (name = "folders", description = "Folder management"),
         (name = "search", description = "Unified full-text search"),
     )
 )]

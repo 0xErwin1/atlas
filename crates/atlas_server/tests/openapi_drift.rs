@@ -63,6 +63,11 @@ const EXPECTED_SCHEMAS: &[&str] = &[
     "ActivityEntryDto",
     "SearchHitDto",
     "SearchKindDto",
+    "CreateFolderRequest",
+    "RenameFolderRequest",
+    "MoveFolderRequest",
+    "FolderDto",
+    "Page_FolderDto",
 ];
 
 #[test]

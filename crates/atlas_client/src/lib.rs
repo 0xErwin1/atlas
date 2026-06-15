@@ -18,6 +18,7 @@ use atlas_api::{
             DocumentSummaryDto, FrontmatterDto, MoveDocumentRequest, RevisionContentDto,
             RevisionMetaDto, UpdateContentRequest, UpdateDocumentRequest,
         },
+        folders::{CreateFolderRequest, FolderDto, MoveFolderRequest, RenameFolderRequest},
         search::SearchHitDto,
     },
     pagination::Page,
@@ -73,6 +74,10 @@ impl AtlasClient {
 
     pub fn base_url(&self) -> &str {
         &self.base_url
+    }
+
+    pub fn http_client(&self) -> &reqwest::Client {
+        &self.http
     }
 
     fn get(&self, path: &str) -> reqwest::RequestBuilder {
@@ -437,6 +442,101 @@ impl AtlasClient {
         let path = build_search_path(ws, q, type_filter, sort, cursor, limit);
         let response = self.get(&path).send().await?;
         self.decode_response(response, "search").await
+    }
+
+    /// `POST /v1/workspaces/{ws}/projects/{project_slug}/folders`
+    pub async fn create_folder(
+        &self,
+        ws: &str,
+        project_slug: &str,
+        body: CreateFolderRequest,
+    ) -> Result<FolderDto, ClientError> {
+        let response = self
+            .post(&format!(
+                "/v1/workspaces/{ws}/projects/{project_slug}/folders"
+            ))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "create_folder").await
+    }
+
+    /// `GET /v1/workspaces/{ws}/projects/{project_slug}/folders`
+    pub async fn list_folders(
+        &self,
+        ws: &str,
+        project_slug: &str,
+    ) -> Result<Page<FolderDto>, ClientError> {
+        let response = self
+            .get(&format!(
+                "/v1/workspaces/{ws}/projects/{project_slug}/folders"
+            ))
+            .send()
+            .await?;
+        self.decode_response(response, "list_folders").await
+    }
+
+    /// `GET /v1/workspaces/{ws}/folders/{folder_id}`
+    pub async fn get_folder(
+        &self,
+        ws: &str,
+        folder_id: uuid::Uuid,
+    ) -> Result<FolderDto, ClientError> {
+        let response = self
+            .get(&format!("/v1/workspaces/{ws}/folders/{folder_id}"))
+            .send()
+            .await?;
+        self.decode_response(response, "get_folder").await
+    }
+
+    /// `PATCH /v1/workspaces/{ws}/folders/{folder_id}`
+    pub async fn rename_folder(
+        &self,
+        ws: &str,
+        folder_id: uuid::Uuid,
+        body: RenameFolderRequest,
+    ) -> Result<FolderDto, ClientError> {
+        let response = self
+            .patch(&format!("/v1/workspaces/{ws}/folders/{folder_id}"))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "rename_folder").await
+    }
+
+    /// `PATCH /v1/workspaces/{ws}/folders/{folder_id}/move`
+    pub async fn move_folder(
+        &self,
+        ws: &str,
+        folder_id: uuid::Uuid,
+        body: MoveFolderRequest,
+    ) -> Result<FolderDto, ClientError> {
+        let response = self
+            .patch(&format!("/v1/workspaces/{ws}/folders/{folder_id}/move"))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "move_folder").await
+    }
+
+    /// `DELETE /v1/workspaces/{ws}/folders/{folder_id}`
+    pub async fn delete_folder(&self, ws: &str, folder_id: uuid::Uuid) -> Result<(), ClientError> {
+        let response = self
+            .delete(&format!("/v1/workspaces/{ws}/folders/{folder_id}"))
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        if response.status().is_success() {
+            return Ok(());
+        }
+        let problem: ProblemDetails = response
+            .json()
+            .await
+            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
+        Err(ClientError::Api(problem))
     }
 
     /// `POST /v1/workspaces/{ws}/projects/{project_slug}/documents`

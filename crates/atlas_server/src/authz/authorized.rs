@@ -125,8 +125,89 @@ impl ResolvedResource for WorkspaceRes {
     }
 }
 
-/// Stub for folder-scope grants (no visibility column on folders).
-pub struct FolderRes;
+/// Proof of identity for a folder resource, resolved via `{folder_id}` path param.
+///
+/// Builds the `folder → project → workspace` permission chain. Cross-tenant or
+/// deleted folders surface as `ApiError::NotFound` (no existence disclosure).
+pub struct FolderRes(pub atlas_domain::entities::workspace_core::Folder);
+
+impl ResolvedResource for FolderRes {
+    type PathParams = HashMap<String, String>;
+
+    async fn resolve(
+        db: &sea_orm::DatabaseConnection,
+        ws: &Workspace,
+        params: Self::PathParams,
+    ) -> Result<(Self, ResourceChain), ApiError> {
+        use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+
+        let folder_id_str = params.get("folder_id").ok_or(ApiError::NotFound)?;
+        let folder_uuid =
+            folder_id_str
+                .parse::<uuid::Uuid>()
+                .map_err(|_| ApiError::InvalidInput {
+                    message: "folder_id must be a valid UUID".into(),
+                })?;
+
+        let row = folder::Entity::find_by_id(folder_uuid)
+            .filter(folder::Column::WorkspaceId.eq(ws.id.0))
+            .filter(folder::Column::DeletedAt.is_null())
+            .one(db)
+            .await
+            .map_err(|e| ApiError::Internal {
+                message: e.to_string(),
+            })?
+            .ok_or(ApiError::NotFound)?;
+
+        let f = crate::persistence::entities::workspace_core::folder_from(row);
+        let chain = build_folder_chain(db, ws, &f).await?;
+        Ok((FolderRes(f), chain))
+    }
+}
+
+/// Builds the `folder → project → workspace` permission chain for a resolved folder.
+pub async fn build_folder_chain(
+    db: &sea_orm::DatabaseConnection,
+    ws: &Workspace,
+    folder: &atlas_domain::entities::workspace_core::Folder,
+) -> Result<ResourceChain, ApiError> {
+    let ancestry = resolve_folder_ancestry(db, ws.id, folder.id).await?;
+
+    let mut segments = Vec::new();
+
+    for f in &ancestry {
+        segments.push(ChainSegment {
+            resource: ResourceRef::Folder(f.id),
+            visibility: None,
+        });
+    }
+
+    let effective_project_id = ancestry.last().and_then(|f| f.project_id);
+    if let Some(project_id) = effective_project_id {
+        let repo = PgProjectRepo { conn: db.clone() };
+        let ctx = atlas_domain::WorkspaceCtx::new(ws.id, atlas_domain::Actor::User(UserId::new()));
+        let project = repo
+            .find(&ctx, project_id)
+            .await
+            .map_err(|e| ApiError::Internal {
+                message: e.to_string(),
+            })?;
+
+        if let Some(p) = project {
+            segments.push(ChainSegment {
+                resource: ResourceRef::Project(project_id),
+                visibility: Some(project_visibility(&p.visibility)),
+            });
+        }
+    }
+
+    segments.push(ChainSegment {
+        resource: ResourceRef::Workspace,
+        visibility: None,
+    });
+
+    Ok(ResourceChain { segments })
+}
 
 /// Proof of identity for a board resource, resolved via `{board_id}` path param.
 ///

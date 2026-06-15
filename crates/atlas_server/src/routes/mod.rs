@@ -2,6 +2,7 @@ pub(crate) mod api_keys;
 pub(crate) mod auth;
 pub(crate) mod boards;
 pub(crate) mod documents;
+pub(crate) mod folders;
 pub(crate) mod grants;
 pub(crate) mod health;
 pub mod openapi;

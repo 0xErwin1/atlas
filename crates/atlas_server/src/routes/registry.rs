@@ -439,6 +439,43 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/v1/workspaces/{ws}/tasks/{readable_id}/activity"),
     },
+    // ---- Folder routes ----
+    RouteEntry {
+        method: "POST",
+        path_template: "/v1/workspaces/{ws}/projects/nonexistent-proj/folders",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/projects/{project_slug}/folders"),
+    },
+    RouteEntry {
+        method: "GET",
+        path_template: "/v1/workspaces/{ws}/projects/nonexistent-proj/folders",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/projects/{project_slug}/folders"),
+    },
+    RouteEntry {
+        method: "GET",
+        path_template: "/v1/workspaces/{ws}/folders/00000000-0000-0000-0000-000000000001",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/folders/{folder_id}"),
+    },
+    RouteEntry {
+        method: "PATCH",
+        path_template: "/v1/workspaces/{ws}/folders/00000000-0000-0000-0000-000000000001",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/folders/{folder_id}"),
+    },
+    RouteEntry {
+        method: "DELETE",
+        path_template: "/v1/workspaces/{ws}/folders/00000000-0000-0000-0000-000000000001",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/folders/{folder_id}"),
+    },
+    RouteEntry {
+        method: "PATCH",
+        path_template: "/v1/workspaces/{ws}/folders/00000000-0000-0000-0000-000000000001/move",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/folders/{folder_id}/move"),
+    },
     // ---- Search ----
     RouteEntry {
         method: "GET",

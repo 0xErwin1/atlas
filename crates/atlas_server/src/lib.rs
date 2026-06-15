@@ -213,6 +213,21 @@ pub fn app(state: AppState) -> Router {
             "/v1/workspaces/{ws}/documents/{slug}/move",
             axum::routing::patch(routes::documents::move_document),
         )
+        // Folders
+        .route(
+            "/v1/workspaces/{ws}/projects/{project_slug}/folders",
+            axum::routing::post(routes::folders::create_folder).get(routes::folders::list_folders),
+        )
+        .route(
+            "/v1/workspaces/{ws}/folders/{folder_id}",
+            get(routes::folders::get_folder)
+                .patch(routes::folders::rename_folder)
+                .delete(routes::folders::delete_folder),
+        )
+        .route(
+            "/v1/workspaces/{ws}/folders/{folder_id}/move",
+            axum::routing::patch(routes::folders::move_folder),
+        )
         // Search
         .route("/v1/workspaces/{ws}/search", get(routes::search::search))
         .layer(axum_middleware::from_fn(

@@ -1,0 +1,588 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+
+mod support;
+
+use atlas_api::dtos::{
+    CreateProjectRequest,
+    folders::{CreateFolderRequest, MoveFolderRequest, RenameFolderRequest},
+};
+use atlas_client::ClientError;
+
+fn project_req(name: &str, slug: &str) -> CreateProjectRequest {
+    let prefix: String = slug
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .map(|c| c.to_ascii_uppercase())
+        .take(10)
+        .collect();
+    let prefix = if prefix.len() >= 2 {
+        prefix
+    } else {
+        format!("{prefix}XX")
+    };
+    CreateProjectRequest {
+        name: name.to_string(),
+        slug: slug.to_string(),
+        task_prefix: prefix,
+        visibility: None,
+        visibility_role: None,
+    }
+}
+
+// ---- REQ-F1: Create folder — editor gets 201 ------------------------------------
+
+#[tokio::test]
+async fn create_folder_editor_returns_201() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "folder-create-1").await;
+
+    let project = client
+        .create_project(&ws.slug, project_req("FolderProj", "folder-proj-1"))
+        .await
+        .expect("create project");
+
+    let folder = client
+        .create_folder(
+            &ws.slug,
+            &project.slug,
+            CreateFolderRequest {
+                name: "My Folder".to_string(),
+                parent_folder_id: None,
+            },
+        )
+        .await
+        .expect("create folder");
+
+    assert_eq!(folder.name, "My Folder");
+    assert_eq!(folder.workspace_id, ws.id.0);
+    assert_eq!(folder.project_id, Some(project.id));
+    assert!(folder.parent_folder_id.is_none());
+
+    db.teardown().await;
+}
+
+// ---- REQ-F2: Blank name → 422 ---------------------------------------------------
+
+#[tokio::test]
+async fn create_folder_blank_name_returns_422() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "folder-blank-1").await;
+
+    let project = client
+        .create_project(&ws.slug, project_req("BlankNameProj", "blank-name-proj"))
+        .await
+        .expect("create project");
+
+    let err = client
+        .create_folder(
+            &ws.slug,
+            &project.slug,
+            CreateFolderRequest {
+                name: "   ".to_string(),
+                parent_folder_id: None,
+            },
+        )
+        .await
+        .expect_err("blank name should fail");
+
+    match err {
+        ClientError::Api(p) => assert_eq!(p.status, 422, "expected 422, got {}", p.status),
+        other => panic!("unexpected error: {other:?}"),
+    }
+
+    db.teardown().await;
+}
+
+// ---- REQ-F3: Foreign parent_folder_id → 422 --------------------------------------
+
+#[tokio::test]
+async fn create_folder_foreign_parent_returns_422() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) =
+        support::login_user_with_workspace(&server, &db, "folder-foreign-1").await;
+
+    let project = client
+        .create_project(
+            &ws.slug,
+            project_req("ForeignParent", "foreign-parent-proj"),
+        )
+        .await
+        .expect("create project");
+
+    let foreign_id = uuid::Uuid::new_v4();
+    let err = client
+        .create_folder(
+            &ws.slug,
+            &project.slug,
+            CreateFolderRequest {
+                name: "Orphan".to_string(),
+                parent_folder_id: Some(foreign_id),
+            },
+        )
+        .await
+        .expect_err("foreign parent should fail");
+
+    match err {
+        ClientError::Api(p) => assert_eq!(p.status, 422, "expected 422, got {}", p.status),
+        other => panic!("unexpected error: {other:?}"),
+    }
+
+    db.teardown().await;
+}
+
+// ---- REQ-F4: List folders is project-scoped only ---------------------------------
+
+#[tokio::test]
+async fn list_folders_scoped_to_project() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "folder-list-1").await;
+
+    let proj_a = client
+        .create_project(&ws.slug, project_req("ProjA", "proj-a"))
+        .await
+        .expect("proj a");
+
+    let proj_b = client
+        .create_project(&ws.slug, project_req("ProjB", "proj-b"))
+        .await
+        .expect("proj b");
+
+    client
+        .create_folder(
+            &ws.slug,
+            &proj_a.slug,
+            CreateFolderRequest {
+                name: "FolderA".to_string(),
+                parent_folder_id: None,
+            },
+        )
+        .await
+        .expect("folder a");
+
+    client
+        .create_folder(
+            &ws.slug,
+            &proj_b.slug,
+            CreateFolderRequest {
+                name: "FolderB".to_string(),
+                parent_folder_id: None,
+            },
+        )
+        .await
+        .expect("folder b");
+
+    let page = client
+        .list_folders(&ws.slug, &proj_a.slug)
+        .await
+        .expect("list");
+
+    assert_eq!(page.items.len(), 1, "should only see proj_a folders");
+    assert_eq!(page.items[0].name, "FolderA");
+
+    db.teardown().await;
+}
+
+// ---- REQ-F5: Get folder cross-tenant → 404 (concealment) ------------------------
+
+#[tokio::test]
+async fn get_folder_cross_tenant_returns_404() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+
+    let (client_a, ws_a, _) = support::login_user_with_workspace(&server, &db, "folder-ct-a").await;
+    let (client_b, ws_b, _) = support::login_user_with_workspace(&server, &db, "folder-ct-b").await;
+
+    let proj_a = client_a
+        .create_project(&ws_a.slug, project_req("CTProj", "ct-proj"))
+        .await
+        .expect("proj a");
+
+    let folder_a = client_a
+        .create_folder(
+            &ws_a.slug,
+            &proj_a.slug,
+            CreateFolderRequest {
+                name: "SecretFolder".to_string(),
+                parent_folder_id: None,
+            },
+        )
+        .await
+        .expect("folder a");
+
+    let err = client_b
+        .get_folder(&ws_b.slug, folder_a.id)
+        .await
+        .expect_err("cross-tenant should be 404");
+
+    match err {
+        ClientError::Api(p) => assert_eq!(p.status, 404, "expected 404, got {}", p.status),
+        other => panic!("unexpected error: {other:?}"),
+    }
+
+    db.teardown().await;
+}
+
+// ---- REQ-F6: Rename folder -------------------------------------------------------
+
+#[tokio::test]
+async fn rename_folder_returns_updated_dto() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "folder-rename-1").await;
+
+    let project = client
+        .create_project(&ws.slug, project_req("RenameProj", "rename-proj"))
+        .await
+        .expect("create project");
+
+    let folder = client
+        .create_folder(
+            &ws.slug,
+            &project.slug,
+            CreateFolderRequest {
+                name: "OldName".to_string(),
+                parent_folder_id: None,
+            },
+        )
+        .await
+        .expect("create folder");
+
+    let updated = client
+        .rename_folder(
+            &ws.slug,
+            folder.id,
+            RenameFolderRequest {
+                name: "NewName".to_string(),
+            },
+        )
+        .await
+        .expect("rename folder");
+
+    assert_eq!(updated.name, "NewName");
+    assert_eq!(updated.id, folder.id);
+
+    db.teardown().await;
+}
+
+// ---- REQ-F6b: Rename blank → 422 -------------------------------------------------
+
+#[tokio::test]
+async fn rename_folder_blank_name_returns_422() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) =
+        support::login_user_with_workspace(&server, &db, "folder-rename-blank").await;
+
+    let project = client
+        .create_project(&ws.slug, project_req("RenameBlank", "rename-blank-proj"))
+        .await
+        .expect("create project");
+
+    let folder = client
+        .create_folder(
+            &ws.slug,
+            &project.slug,
+            CreateFolderRequest {
+                name: "Valid".to_string(),
+                parent_folder_id: None,
+            },
+        )
+        .await
+        .expect("create folder");
+
+    let err = client
+        .rename_folder(
+            &ws.slug,
+            folder.id,
+            RenameFolderRequest {
+                name: "".to_string(),
+            },
+        )
+        .await
+        .expect_err("blank rename should fail");
+
+    match err {
+        ClientError::Api(p) => assert_eq!(p.status, 422, "expected 422, got {}", p.status),
+        other => panic!("unexpected error: {other:?}"),
+    }
+
+    db.teardown().await;
+}
+
+// ---- REQ-F7: Move folder — cycle → 422 ------------------------------------------
+
+#[tokio::test]
+async fn move_folder_self_cycle_returns_422() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "folder-cycle-1").await;
+
+    let project = client
+        .create_project(&ws.slug, project_req("CycleProj", "cycle-proj"))
+        .await
+        .expect("create project");
+
+    let folder = client
+        .create_folder(
+            &ws.slug,
+            &project.slug,
+            CreateFolderRequest {
+                name: "SelfCycle".to_string(),
+                parent_folder_id: None,
+            },
+        )
+        .await
+        .expect("create folder");
+
+    let err = client
+        .move_folder(
+            &ws.slug,
+            folder.id,
+            MoveFolderRequest {
+                parent_folder_id: Some(folder.id),
+            },
+        )
+        .await
+        .expect_err("self-cycle should fail");
+
+    match err {
+        ClientError::Api(p) => assert_eq!(p.status, 422, "expected 422, got {}", p.status),
+        other => panic!("unexpected error: {other:?}"),
+    }
+
+    db.teardown().await;
+}
+
+// ---- REQ-F7b: Move folder — descendant cycle → 422 -------------------------------
+
+#[tokio::test]
+async fn move_folder_descendant_cycle_returns_422() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) =
+        support::login_user_with_workspace(&server, &db, "folder-desc-cycle").await;
+
+    let project = client
+        .create_project(&ws.slug, project_req("DescCycle", "desc-cycle-proj"))
+        .await
+        .expect("create project");
+
+    let parent = client
+        .create_folder(
+            &ws.slug,
+            &project.slug,
+            CreateFolderRequest {
+                name: "Parent".to_string(),
+                parent_folder_id: None,
+            },
+        )
+        .await
+        .expect("parent");
+
+    let child = client
+        .create_folder(
+            &ws.slug,
+            &project.slug,
+            CreateFolderRequest {
+                name: "Child".to_string(),
+                parent_folder_id: Some(parent.id),
+            },
+        )
+        .await
+        .expect("child");
+
+    let err = client
+        .move_folder(
+            &ws.slug,
+            parent.id,
+            MoveFolderRequest {
+                parent_folder_id: Some(child.id),
+            },
+        )
+        .await
+        .expect_err("descendant cycle should fail");
+
+    match err {
+        ClientError::Api(p) => assert_eq!(p.status, 422, "expected 422, got {}", p.status),
+        other => panic!("unexpected error: {other:?}"),
+    }
+
+    db.teardown().await;
+}
+
+// ---- REQ-F7c: Move folder to null parent = project-root -------------------------
+
+#[tokio::test]
+async fn move_folder_null_parent_moves_to_root() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "folder-to-root").await;
+
+    let project = client
+        .create_project(&ws.slug, project_req("ToRoot", "to-root-proj"))
+        .await
+        .expect("create project");
+
+    let parent = client
+        .create_folder(
+            &ws.slug,
+            &project.slug,
+            CreateFolderRequest {
+                name: "Parent".to_string(),
+                parent_folder_id: None,
+            },
+        )
+        .await
+        .expect("parent");
+
+    let child = client
+        .create_folder(
+            &ws.slug,
+            &project.slug,
+            CreateFolderRequest {
+                name: "Child".to_string(),
+                parent_folder_id: Some(parent.id),
+            },
+        )
+        .await
+        .expect("child");
+
+    let moved = client
+        .move_folder(
+            &ws.slug,
+            child.id,
+            MoveFolderRequest {
+                parent_folder_id: None,
+            },
+        )
+        .await
+        .expect("move to root");
+
+    assert!(
+        moved.parent_folder_id.is_none(),
+        "parent should be null after move to root"
+    );
+
+    db.teardown().await;
+}
+
+// ---- REQ-F8: Soft-delete → 204, then 404 ----------------------------------------
+
+#[tokio::test]
+async fn delete_folder_then_get_returns_404() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "folder-delete-1").await;
+
+    let project = client
+        .create_project(&ws.slug, project_req("DeleteProj", "delete-proj"))
+        .await
+        .expect("create project");
+
+    let folder = client
+        .create_folder(
+            &ws.slug,
+            &project.slug,
+            CreateFolderRequest {
+                name: "ToDelete".to_string(),
+                parent_folder_id: None,
+            },
+        )
+        .await
+        .expect("create folder");
+
+    client
+        .delete_folder(&ws.slug, folder.id)
+        .await
+        .expect("delete folder");
+
+    let err = client
+        .get_folder(&ws.slug, folder.id)
+        .await
+        .expect_err("get after delete should be 404");
+
+    match err {
+        ClientError::Api(p) => assert_eq!(p.status, 404, "expected 404, got {}", p.status),
+        other => panic!("unexpected error: {other:?}"),
+    }
+
+    db.teardown().await;
+}
+
+// ---- REQ-F9: Non-UUID folder_id → 422 (not 500) ---------------------------------
+
+#[tokio::test]
+async fn get_folder_non_uuid_returns_422() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "folder-non-uuid").await;
+
+    let response = client
+        .http_client()
+        .get(format!(
+            "{}/v1/workspaces/{}/folders/not-a-uuid",
+            client.base_url(),
+            ws.slug
+        ))
+        .bearer_auth(client.token().unwrap_or(""))
+        .send()
+        .await
+        .expect("request");
+
+    assert_eq!(
+        response.status().as_u16(),
+        422,
+        "non-UUID folder_id must return 422"
+    );
+
+    db.teardown().await;
+}
+
+// ---- REQ-F1 (registry): all folder routes declared in ROUTE_REGISTRY -----------
+
+#[test]
+fn folder_routes_wired_in_registry_and_router() {
+    use atlas_server::routes::registry::ROUTE_REGISTRY;
+
+    let expected_openapi_paths = [
+        "/v1/workspaces/{ws}/projects/{project_slug}/folders",
+        "/v1/workspaces/{ws}/folders/{folder_id}",
+        "/v1/workspaces/{ws}/folders/{folder_id}/move",
+    ];
+
+    for path in &expected_openapi_paths {
+        let found = ROUTE_REGISTRY.iter().any(|e| e.openapi_path == Some(path));
+        assert!(
+            found,
+            "folder OpenAPI path {path} missing from ROUTE_REGISTRY"
+        );
+    }
+
+    let expected_methods = [
+        (
+            "POST",
+            "/v1/workspaces/{ws}/projects/{project_slug}/folders",
+        ),
+        ("GET", "/v1/workspaces/{ws}/projects/{project_slug}/folders"),
+        ("GET", "/v1/workspaces/{ws}/folders/{folder_id}"),
+        ("PATCH", "/v1/workspaces/{ws}/folders/{folder_id}"),
+        ("DELETE", "/v1/workspaces/{ws}/folders/{folder_id}"),
+        ("PATCH", "/v1/workspaces/{ws}/folders/{folder_id}/move"),
+    ];
+
+    for (method, openapi_path) in &expected_methods {
+        let found = ROUTE_REGISTRY
+            .iter()
+            .any(|e| e.method == *method && e.openapi_path == Some(openapi_path));
+        assert!(found, "registry missing {method} {openapi_path}");
+    }
+}
