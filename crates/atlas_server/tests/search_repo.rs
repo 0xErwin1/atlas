@@ -678,6 +678,51 @@ async fn plain_member_task_visibility_follows_project() {
 }
 
 // ---------------------------------------------------------------------------
+// REQ-7: the snippet is computed by the two-stage headline and carries the
+// <mark>...</mark> highlight around the matched term. This guards the headline
+// restructure (ts_headline moved out of the UNION arms to the outer page query).
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn snippet_carries_mark_highlight() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, owner) = support::seed_workspace(&db, "srch-headline-owner").await;
+    let ctx_owner = support::ctx(&ws, &owner);
+
+    let doc_id = seed_doc(
+        &db,
+        &ctx_owner,
+        "Headline Doc",
+        "the quick uniquetoken_headline brown fox jumps over the lazy dog",
+    )
+    .await;
+
+    let repo = PgSearchRepo::new(db.conn().clone());
+    let hits = repo
+        .search(
+            &ctx_owner,
+            &Principal::User(owner.id),
+            &make_search_query("uniquetoken_headline"),
+            50,
+            None,
+        )
+        .await
+        .expect("owner search");
+
+    let hit = hits
+        .iter()
+        .find(|h| h.id == doc_id.0)
+        .expect("doc must surface");
+    let snippet = hit.snippet.as_deref().expect("snippet must be present");
+    assert!(
+        snippet.contains("<mark>") && snippet.contains("</mark>"),
+        "snippet must carry the <mark> highlight; got: {snippet:?}"
+    );
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
 // Soft-deleted project consistency: a live task whose project was soft-deleted
 // must still surface for an Owner, with a NULL project_slug. The tasks arm uses
 // a LEFT JOIN on projects (matching the documents arm and the task-list

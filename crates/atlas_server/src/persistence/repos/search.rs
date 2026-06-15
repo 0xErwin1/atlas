@@ -205,14 +205,39 @@ impl SearchRepo for PgSearchRepo {
         values.push((limit as i64).into());
         let limit_param = values.len();
 
+        // Two-stage headline (design Q4 / REQ-7): the inner query resolves the
+        // page (FTS predicate, permission filter, cursor, ORDER BY, LIMIT) carrying
+        // only the bounded snippet source text; ts_headline runs in the outer SELECT
+        // over the <= N+1 surviving rows, never over every matching row. ts_rank_cd
+        // stays inside the inner query because it drives ORDER BY.
+        let snippet_expr = if has_text {
+            format!(
+                "ts_headline('simple', page.snippet_source, websearch_to_tsquery('simple', ${tsq_param}), '{HEADLINE_OPTS}')"
+            )
+        } else {
+            "NULL::text".to_string()
+        };
+
         let sql = format!(
             r#"
-            SELECT kind, id, readable_id, project_slug, title, snippet, score, updated_at
-            FROM ({union_sql}) combined
-            WHERE 1=1
-            {cursor_cond}
+            SELECT
+                page.kind,
+                page.id,
+                page.readable_id,
+                page.project_slug,
+                page.title,
+                {snippet_expr} AS snippet,
+                page.score,
+                page.updated_at
+            FROM (
+                SELECT kind, id, readable_id, project_slug, title, snippet_source, score, updated_at
+                FROM ({union_sql}) combined
+                WHERE 1=1
+                {cursor_cond}
+                {order_clause}
+                LIMIT ${limit_param}
+            ) page
             {order_clause}
-            LIMIT ${limit_param}
             "#,
         );
 
@@ -270,10 +295,11 @@ fn build_doc_arm(
         "0::real".to_string()
     };
 
-    let snippet_expr = if ctx.has_text {
-        format!(
-            "ts_headline('simple', left(d.content, {HEADLINE_MAX_CHARS}), {tsq_expr}, '{HEADLINE_OPTS}')"
-        )
+    // Carry the bounded source text instead of the headline. The headline is
+    // computed once per surviving page row in the outer query (after LIMIT), so
+    // ts_headline does not run for every matching row.
+    let snippet_source_expr = if ctx.has_text {
+        format!("left(d.content, {HEADLINE_MAX_CHARS})")
     } else {
         "NULL::text".to_string()
     };
@@ -294,7 +320,7 @@ fn build_doc_arm(
             NULL::text AS readable_id,
             p.slug AS project_slug,
             d.title,
-            {snippet_expr} AS snippet,
+            {snippet_source_expr} AS snippet_source,
             {score_expr} AS score,
             d.updated_at
         FROM documents d
@@ -430,10 +456,10 @@ fn build_task_arm(
         "0::real".to_string()
     };
 
-    let snippet_expr = if ctx.has_text {
-        format!(
-            "ts_headline('simple', left(t.description, {HEADLINE_MAX_CHARS}), {tsq_expr}, '{HEADLINE_OPTS}')"
-        )
+    // See build_doc_arm: carry the bounded source text; the headline is computed
+    // once per surviving page row in the outer query (after LIMIT).
+    let snippet_source_expr = if ctx.has_text {
+        format!("left(t.description, {HEADLINE_MAX_CHARS})")
     } else {
         "NULL::text".to_string()
     };
@@ -456,7 +482,7 @@ fn build_task_arm(
             t.readable_id AS readable_id,
             p.slug AS project_slug,
             t.title,
-            {snippet_expr} AS snippet,
+            {snippet_source_expr} AS snippet_source,
             {score_expr} AS score,
             t.updated_at
         FROM tasks t
