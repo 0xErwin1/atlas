@@ -15,9 +15,7 @@
   "paths": {
     "/health": {
       "get": {
-        "tags": [
-          "crate::routes::health"
-        ],
+        "tags": ["crate::routes::health"],
         "operationId": "health",
         "responses": {
           "200": {
@@ -28,9 +26,7 @@
     },
     "/v1/auth/login": {
       "post": {
-        "tags": [
-          "auth"
-        ],
+        "tags": ["auth"],
         "operationId": "login",
         "requestBody": {
           "content": {
@@ -64,9 +60,7 @@
     },
     "/v1/auth/logout": {
       "post": {
-        "tags": [
-          "auth"
-        ],
+        "tags": ["auth"],
         "operationId": "logout",
         "responses": {
           "204": {
@@ -85,9 +79,7 @@
     },
     "/v1/auth/me": {
       "get": {
-        "tags": [
-          "auth"
-        ],
+        "tags": ["auth"],
         "operationId": "me",
         "responses": {
           "200": {
@@ -113,9 +105,7 @@
     },
     "/v1/users": {
       "post": {
-        "tags": [
-          "users"
-        ],
+        "tags": ["users"],
         "operationId": "create_user",
         "requestBody": {
           "content": {
@@ -154,9 +144,7 @@
     },
     "/v1/users/{user_id}/disable": {
       "post": {
-        "tags": [
-          "users"
-        ],
+        "tags": ["users"],
         "operationId": "disable_user",
         "parameters": [
           {
@@ -190,9 +178,7 @@
     },
     "/v1/users/{user_id}/enable": {
       "post": {
-        "tags": [
-          "users"
-        ],
+        "tags": ["users"],
         "operationId": "enable_user",
         "parameters": [
           {
@@ -226,9 +212,7 @@
     },
     "/v1/workspaces/{ws}": {
       "get": {
-        "tags": [
-          "workspaces"
-        ],
+        "tags": ["workspaces"],
         "operationId": "get_workspace",
         "parameters": [
           {
@@ -268,9 +252,7 @@
     },
     "/v1/workspaces/{ws}/api-keys": {
       "get": {
-        "tags": [
-          "api-keys"
-        ],
+        "tags": ["api-keys"],
         "operationId": "list_api_keys",
         "parameters": [
           {
@@ -321,9 +303,7 @@
         ]
       },
       "post": {
-        "tags": [
-          "api-keys"
-        ],
+        "tags": ["api-keys"],
         "operationId": "create_api_key",
         "parameters": [
           {
@@ -373,9 +353,7 @@
     },
     "/v1/workspaces/{ws}/api-keys/{key_id}/revoke": {
       "post": {
-        "tags": [
-          "api-keys"
-        ],
+        "tags": ["api-keys"],
         "operationId": "revoke_api_key",
         "responses": {
           "204": {
@@ -397,9 +375,7 @@
     },
     "/v1/workspaces/{ws}/attachments/{attachment_id}": {
       "get": {
-        "tags": [
-          "documents"
-        ],
+        "tags": ["documents"],
         "operationId": "download_attachment",
         "parameters": [
           {
@@ -442,9 +418,7 @@
         ]
       },
       "delete": {
-        "tags": [
-          "documents"
-        ],
+        "tags": ["documents"],
         "operationId": "delete_attachment",
         "parameters": [
           {
@@ -489,9 +463,7 @@
     },
     "/v1/workspaces/{ws}/boards/{board_id}": {
       "get": {
-        "tags": [
-          "boards"
-        ],
+        "tags": ["boards"],
         "operationId": "get_board",
         "parameters": [
           {
@@ -541,9 +513,7 @@
         ]
       },
       "delete": {
-        "tags": [
-          "boards"
-        ],
+        "tags": ["boards"],
         "operationId": "delete_board",
         "parameters": [
           {
@@ -586,9 +556,7 @@
         ]
       },
       "patch": {
-        "tags": [
-          "boards"
-        ],
+        "tags": ["boards"],
         "operationId": "update_board",
         "parameters": [
           {
@@ -650,9 +618,7 @@
     },
     "/v1/workspaces/{ws}/boards/{board_id}/columns": {
       "get": {
-        "tags": [
-          "boards"
-        ],
+        "tags": ["boards"],
         "operationId": "list_columns",
         "parameters": [
           {
@@ -695,9 +661,7 @@
         ]
       },
       "post": {
-        "tags": [
-          "boards"
-        ],
+        "tags": ["boards"],
         "operationId": "create_column",
         "parameters": [
           {
@@ -762,9 +726,7 @@
     },
     "/v1/workspaces/{ws}/boards/{board_id}/columns/{column_id}": {
       "delete": {
-        "tags": [
-          "boards"
-        ],
+        "tags": ["boards"],
         "operationId": "delete_column",
         "parameters": [
           {
@@ -816,9 +778,7 @@
         ]
       },
       "patch": {
-        "tags": [
-          "boards"
-        ],
+        "tags": ["boards"],
         "operationId": "update_column",
         "parameters": [
           {
@@ -892,9 +852,7 @@
     },
     "/v1/workspaces/{ws}/boards/{board_id}/tasks": {
       "get": {
-        "tags": [
-          "tasks"
-        ],
+        "tags": ["tasks"],
         "operationId": "list_tasks",
         "parameters": [
           {
@@ -957,9 +915,7 @@
         ]
       },
       "post": {
-        "tags": [
-          "tasks"
-        ],
+        "tags": ["tasks"],
         "operationId": "create_task",
         "parameters": [
           {
@@ -1024,9 +980,7 @@
     },
     "/v1/workspaces/{ws}/documents/{slug}": {
       "get": {
-        "tags": [
-          "documents"
-        ],
+        "tags": ["documents"],
         "operationId": "get_document",
         "parameters": [
           {
@@ -1076,9 +1030,7 @@
         ]
       },
       "delete": {
-        "tags": [
-          "documents"
-        ],
+        "tags": ["documents"],
         "operationId": "delete_document",
         "parameters": [
           {
@@ -1121,9 +1073,7 @@
         ]
       },
       "patch": {
-        "tags": [
-          "documents"
-        ],
+        "tags": ["documents"],
         "operationId": "update_document",
         "parameters": [
           {
@@ -1185,9 +1135,7 @@
     },
     "/v1/workspaces/{ws}/documents/{slug}/attachments": {
       "get": {
-        "tags": [
-          "documents"
-        ],
+        "tags": ["documents"],
         "operationId": "list_attachments",
         "parameters": [
           {
@@ -1244,9 +1192,7 @@
         ]
       },
       "post": {
-        "tags": [
-          "documents"
-        ],
+        "tags": ["documents"],
         "operationId": "upload_attachment",
         "parameters": [
           {
@@ -1298,9 +1244,7 @@
     },
     "/v1/workspaces/{ws}/documents/{slug}/backlinks": {
       "get": {
-        "tags": [
-          "documents"
-        ],
+        "tags": ["documents"],
         "operationId": "list_backlinks",
         "parameters": [
           {
@@ -1359,9 +1303,7 @@
     },
     "/v1/workspaces/{ws}/documents/{slug}/content": {
       "put": {
-        "tags": [
-          "documents"
-        ],
+        "tags": ["documents"],
         "operationId": "update_content",
         "parameters": [
           {
@@ -1426,9 +1368,7 @@
     },
     "/v1/workspaces/{ws}/documents/{slug}/frontmatter": {
       "get": {
-        "tags": [
-          "documents"
-        ],
+        "tags": ["documents"],
         "operationId": "get_frontmatter",
         "parameters": [
           {
@@ -1474,9 +1414,7 @@
     },
     "/v1/workspaces/{ws}/documents/{slug}/history": {
       "get": {
-        "tags": [
-          "documents"
-        ],
+        "tags": ["documents"],
         "operationId": "list_history",
         "parameters": [
           {
@@ -1535,9 +1473,7 @@
     },
     "/v1/workspaces/{ws}/documents/{slug}/move": {
       "patch": {
-        "tags": [
-          "documents"
-        ],
+        "tags": ["documents"],
         "operationId": "move_document",
         "parameters": [
           {
@@ -1599,9 +1535,7 @@
     },
     "/v1/workspaces/{ws}/documents/{slug}/revisions/{seq}": {
       "get": {
-        "tags": [
-          "documents"
-        ],
+        "tags": ["documents"],
         "operationId": "get_revision_content",
         "parameters": [
           {
@@ -1657,9 +1591,7 @@
     },
     "/v1/workspaces/{ws}/folders/{folder_id}": {
       "get": {
-        "tags": [
-          "folders"
-        ],
+        "tags": ["folders"],
         "operationId": "get_folder",
         "parameters": [
           {
@@ -1710,9 +1642,7 @@
         ]
       },
       "delete": {
-        "tags": [
-          "folders"
-        ],
+        "tags": ["folders"],
         "operationId": "delete_folder",
         "parameters": [
           {
@@ -1756,9 +1686,7 @@
         ]
       },
       "patch": {
-        "tags": [
-          "folders"
-        ],
+        "tags": ["folders"],
         "operationId": "rename_folder",
         "parameters": [
           {
@@ -1821,9 +1749,7 @@
     },
     "/v1/workspaces/{ws}/folders/{folder_id}/move": {
       "patch": {
-        "tags": [
-          "folders"
-        ],
+        "tags": ["folders"],
         "operationId": "move_folder",
         "parameters": [
           {
@@ -1886,9 +1812,7 @@
     },
     "/v1/workspaces/{ws}/grants": {
       "get": {
-        "tags": [
-          "grants"
-        ],
+        "tags": ["grants"],
         "operationId": "list_workspace_grants",
         "parameters": [
           {
@@ -1939,9 +1863,7 @@
         ]
       },
       "post": {
-        "tags": [
-          "grants"
-        ],
+        "tags": ["grants"],
         "operationId": "create_workspace_grant",
         "parameters": [
           {
@@ -1991,9 +1913,7 @@
     },
     "/v1/workspaces/{ws}/grants/{grant_id}": {
       "delete": {
-        "tags": [
-          "grants"
-        ],
+        "tags": ["grants"],
         "operationId": "delete_workspace_grant",
         "responses": {
           "204": {
@@ -2018,9 +1938,7 @@
     },
     "/v1/workspaces/{ws}/projects": {
       "get": {
-        "tags": [
-          "projects"
-        ],
+        "tags": ["projects"],
         "operationId": "list_projects",
         "parameters": [
           {
@@ -2068,9 +1986,7 @@
         ]
       },
       "post": {
-        "tags": [
-          "projects"
-        ],
+        "tags": ["projects"],
         "operationId": "create_project",
         "parameters": [
           {
@@ -2120,9 +2036,7 @@
     },
     "/v1/workspaces/{ws}/projects/{project_slug}": {
       "get": {
-        "tags": [
-          "projects"
-        ],
+        "tags": ["projects"],
         "operationId": "get_project",
         "parameters": [
           {
@@ -2172,9 +2086,7 @@
         ]
       },
       "delete": {
-        "tags": [
-          "projects"
-        ],
+        "tags": ["projects"],
         "operationId": "delete_project",
         "parameters": [
           {
@@ -2217,9 +2129,7 @@
         ]
       },
       "patch": {
-        "tags": [
-          "projects"
-        ],
+        "tags": ["projects"],
         "operationId": "update_project",
         "parameters": [
           {
@@ -2281,9 +2191,7 @@
     },
     "/v1/workspaces/{ws}/projects/{project_slug}/boards": {
       "get": {
-        "tags": [
-          "boards"
-        ],
+        "tags": ["boards"],
         "operationId": "list_boards",
         "parameters": [
           {
@@ -2343,9 +2251,7 @@
         ]
       },
       "post": {
-        "tags": [
-          "boards"
-        ],
+        "tags": ["boards"],
         "operationId": "create_board",
         "parameters": [
           {
@@ -2407,9 +2313,7 @@
     },
     "/v1/workspaces/{ws}/projects/{project_slug}/documents": {
       "get": {
-        "tags": [
-          "documents"
-        ],
+        "tags": ["documents"],
         "operationId": "list_documents",
         "parameters": [
           {
@@ -2469,9 +2373,7 @@
         ]
       },
       "post": {
-        "tags": [
-          "documents"
-        ],
+        "tags": ["documents"],
         "operationId": "create_document",
         "parameters": [
           {
@@ -2530,9 +2432,7 @@
     },
     "/v1/workspaces/{ws}/projects/{project_slug}/folders": {
       "get": {
-        "tags": [
-          "folders"
-        ],
+        "tags": ["folders"],
         "operationId": "list_folders",
         "parameters": [
           {
@@ -2579,9 +2479,7 @@
         ]
       },
       "post": {
-        "tags": [
-          "folders"
-        ],
+        "tags": ["folders"],
         "operationId": "create_folder",
         "parameters": [
           {
@@ -2643,9 +2541,7 @@
     },
     "/v1/workspaces/{ws}/projects/{project_slug}/grants": {
       "get": {
-        "tags": [
-          "grants"
-        ],
+        "tags": ["grants"],
         "operationId": "list_project_grants",
         "parameters": [
           {
@@ -2705,9 +2601,7 @@
         ]
       },
       "post": {
-        "tags": [
-          "grants"
-        ],
+        "tags": ["grants"],
         "operationId": "create_project_grant",
         "parameters": [
           {
@@ -2766,9 +2660,7 @@
     },
     "/v1/workspaces/{ws}/projects/{project_slug}/grants/{grant_id}": {
       "delete": {
-        "tags": [
-          "grants"
-        ],
+        "tags": ["grants"],
         "operationId": "delete_project_grant",
         "responses": {
           "204": {
@@ -2793,9 +2685,7 @@
     },
     "/v1/workspaces/{ws}/search": {
       "get": {
-        "tags": [
-          "search"
-        ],
+        "tags": ["search"],
         "operationId": "search",
         "parameters": [
           {
@@ -2863,10 +2753,7 @@
                 "schema": {
                   "type": "object",
                   "description": "Paginated response envelope.",
-                  "required": [
-                    "items",
-                    "has_more"
-                  ],
+                  "required": ["items", "has_more"],
                   "properties": {
                     "has_more": {
                       "type": "boolean"
@@ -2876,13 +2763,7 @@
                       "items": {
                         "type": "object",
                         "description": "A single search result item returned by `GET /v1/workspaces/{ws}/search`.",
-                        "required": [
-                          "id",
-                          "kind",
-                          "title",
-                          "score",
-                          "updated_at"
-                        ],
+                        "required": ["id", "kind", "title", "score", "updated_at"],
                         "properties": {
                           "id": {
                             "type": "string",
@@ -2892,17 +2773,11 @@
                             "$ref": "#/components/schemas/SearchKindDto"
                           },
                           "project_slug": {
-                            "type": [
-                              "string",
-                              "null"
-                            ],
+                            "type": ["string", "null"],
                             "description": "Owning project slug; absent for workspace-root documents with no project."
                           },
                           "readable_id": {
-                            "type": [
-                              "string",
-                              "null"
-                            ],
+                            "type": ["string", "null"],
                             "description": "Task readable ID (e.g. `\"ATL-42\"`). Present only when `kind = task`."
                           },
                           "score": {
@@ -2910,10 +2785,7 @@
                             "format": "float"
                           },
                           "snippet": {
-                            "type": [
-                              "string",
-                              "null"
-                            ],
+                            "type": ["string", "null"],
                             "description": "Highlighted snippet with `<mark>…</mark>` markers.\nAbsent for title-only matches and filter-only queries."
                           },
                           "title": {
@@ -2927,10 +2799,7 @@
                       }
                     },
                     "next_cursor": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     }
                   }
                 }
@@ -2956,9 +2825,7 @@
     },
     "/v1/workspaces/{ws}/tasks/{readable_id}": {
       "get": {
-        "tags": [
-          "tasks"
-        ],
+        "tags": ["tasks"],
         "operationId": "get_task",
         "parameters": [
           {
@@ -3008,9 +2875,7 @@
         ]
       },
       "delete": {
-        "tags": [
-          "tasks"
-        ],
+        "tags": ["tasks"],
         "operationId": "delete_task",
         "parameters": [
           {
@@ -3053,9 +2918,7 @@
         ]
       },
       "patch": {
-        "tags": [
-          "tasks"
-        ],
+        "tags": ["tasks"],
         "operationId": "update_task",
         "parameters": [
           {
@@ -3120,9 +2983,7 @@
     },
     "/v1/workspaces/{ws}/tasks/{readable_id}/activity": {
       "get": {
-        "tags": [
-          "tasks"
-        ],
+        "tags": ["tasks"],
         "operationId": "list_activity",
         "parameters": [
           {
@@ -3187,9 +3048,7 @@
     },
     "/v1/workspaces/{ws}/tasks/{readable_id}/assignees": {
       "get": {
-        "tags": [
-          "tasks"
-        ],
+        "tags": ["tasks"],
         "operationId": "list_assignees",
         "parameters": [
           {
@@ -3232,9 +3091,7 @@
         ]
       },
       "post": {
-        "tags": [
-          "tasks"
-        ],
+        "tags": ["tasks"],
         "operationId": "add_assignee",
         "parameters": [
           {
@@ -3299,9 +3156,7 @@
     },
     "/v1/workspaces/{ws}/tasks/{readable_id}/assignees/{assignee_ref}": {
       "delete": {
-        "tags": [
-          "tasks"
-        ],
+        "tags": ["tasks"],
         "operationId": "remove_assignee",
         "parameters": [
           {
@@ -3355,9 +3210,7 @@
     },
     "/v1/workspaces/{ws}/tasks/{readable_id}/backlinks": {
       "get": {
-        "tags": [
-          "tasks"
-        ],
+        "tags": ["tasks"],
         "operationId": "list_task_backlinks",
         "parameters": [
           {
@@ -3422,9 +3275,7 @@
     },
     "/v1/workspaces/{ws}/tasks/{readable_id}/checklist": {
       "get": {
-        "tags": [
-          "tasks"
-        ],
+        "tags": ["tasks"],
         "operationId": "list_checklist",
         "parameters": [
           {
@@ -3467,9 +3318,7 @@
         ]
       },
       "post": {
-        "tags": [
-          "tasks"
-        ],
+        "tags": ["tasks"],
         "operationId": "create_checklist_item",
         "parameters": [
           {
@@ -3531,9 +3380,7 @@
     },
     "/v1/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}": {
       "delete": {
-        "tags": [
-          "tasks"
-        ],
+        "tags": ["tasks"],
         "operationId": "delete_checklist_item",
         "parameters": [
           {
@@ -3585,9 +3432,7 @@
         ]
       },
       "patch": {
-        "tags": [
-          "tasks"
-        ],
+        "tags": ["tasks"],
         "operationId": "update_checklist_item",
         "parameters": [
           {
@@ -3661,9 +3506,7 @@
     },
     "/v1/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}/promote": {
       "post": {
-        "tags": [
-          "tasks"
-        ],
+        "tags": ["tasks"],
         "operationId": "promote_checklist_item",
         "parameters": [
           {
@@ -3737,9 +3580,7 @@
     },
     "/v1/workspaces/{ws}/tasks/{readable_id}/move": {
       "post": {
-        "tags": [
-          "tasks"
-        ],
+        "tags": ["tasks"],
         "operationId": "move_task",
         "parameters": [
           {
@@ -3804,9 +3645,7 @@
     },
     "/v1/workspaces/{ws}/tasks/{readable_id}/references": {
       "get": {
-        "tags": [
-          "tasks"
-        ],
+        "tags": ["tasks"],
         "operationId": "list_references",
         "parameters": [
           {
@@ -3849,9 +3688,7 @@
         ]
       },
       "post": {
-        "tags": [
-          "tasks"
-        ],
+        "tags": ["tasks"],
         "summary": "Creates a reference from the authorized source task to exactly one target.",
         "description": "`task_references` targets are backed by foreign-key columns: the row cannot\nbe stored without a real target in this workspace. Both-null and both-set\nbodies are rejected here as 422 before reaching the DB, preventing a CHECK\nconstraint violation or a silent both-null insert.",
         "operationId": "create_reference",
@@ -3921,9 +3758,7 @@
     },
     "/v1/workspaces/{ws}/tasks/{readable_id}/references/{reference_id}": {
       "delete": {
-        "tags": [
-          "tasks"
-        ],
+        "tags": ["tasks"],
         "operationId": "delete_reference",
         "parameters": [
           {
@@ -3977,9 +3812,7 @@
     },
     "/version": {
       "get": {
-        "tags": [
-          "crate::routes::health"
-        ],
+        "tags": ["crate::routes::health"],
         "operationId": "version",
         "responses": {
           "200": {
@@ -3994,13 +3827,7 @@
       "ActivityEntryDto": {
         "type": "object",
         "description": "A single activity entry on a task.",
-        "required": [
-          "id",
-          "kind",
-          "actor",
-          "payload",
-          "created_at"
-        ],
+        "required": ["id", "kind", "actor", "payload", "created_at"],
         "properties": {
           "actor": {
             "$ref": "#/components/schemas/ActorDto"
@@ -4025,16 +3852,10 @@
       "ActorDto": {
         "type": "object",
         "description": "Actor attribution attached to revisions and attachments.",
-        "required": [
-          "type",
-          "id"
-        ],
+        "required": ["type", "id"],
         "properties": {
           "display_name": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "id": {
             "type": "string",
@@ -4048,10 +3869,7 @@
       "AddAssigneeRequest": {
         "type": "object",
         "description": "Request body for `POST /v1/workspaces/{ws}/tasks/{readable_id}/assignees`.",
-        "required": [
-          "assignee_type",
-          "assignee_id"
-        ],
+        "required": ["assignee_type", "assignee_id"],
         "properties": {
           "assignee_id": {
             "type": "string",
@@ -4066,22 +3884,14 @@
       "ApiKeyCreated": {
         "type": "object",
         "description": "Response for `POST /v1/workspaces/{ws}/api-keys` (secret returned exactly once).",
-        "required": [
-          "id",
-          "name",
-          "secret",
-          "created_at"
-        ],
+        "required": ["id", "name", "secret", "created_at"],
         "properties": {
           "created_at": {
             "type": "string",
             "format": "date-time"
           },
           "expires_at": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "date-time"
           },
           "id": {
@@ -4100,21 +3910,14 @@
       "ApiKeyDto": {
         "type": "object",
         "description": "Summary representation of an API key (no secret).",
-        "required": [
-          "id",
-          "name",
-          "created_at"
-        ],
+        "required": ["id", "name", "created_at"],
         "properties": {
           "created_at": {
             "type": "string",
             "format": "date-time"
           },
           "expires_at": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "date-time"
           },
           "id": {
@@ -4122,20 +3925,14 @@
             "format": "uuid"
           },
           "last_used_at": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "date-time"
           },
           "name": {
             "type": "string"
           },
           "revoked_at": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "date-time"
           }
         }
@@ -4143,11 +3940,7 @@
       "AssigneeDto": {
         "type": "object",
         "description": "An actor assigned to a task.",
-        "required": [
-          "assignee",
-          "assigned_by",
-          "assigned_at"
-        ],
+        "required": ["assignee", "assigned_by", "assigned_at"],
         "properties": {
           "assigned_at": {
             "type": "string",
@@ -4164,15 +3957,7 @@
       "AttachmentDto": {
         "type": "object",
         "description": "Attachment metadata.",
-        "required": [
-          "id",
-          "document_id",
-          "file_name",
-          "content_type",
-          "size_bytes",
-          "sha256",
-          "created_at"
-        ],
+        "required": ["id", "document_id", "file_name", "content_type", "size_bytes", "sha256", "created_at"],
         "properties": {
           "actor": {
             "oneOf": [
@@ -4214,11 +3999,7 @@
       "BacklinkDto": {
         "type": "object",
         "description": "A document that links to this document (backlink).",
-        "required": [
-          "source_document_id",
-          "source_title",
-          "display_title"
-        ],
+        "required": ["source_document_id", "source_title", "display_title"],
         "properties": {
           "display_title": {
             "type": "string"
@@ -4228,10 +4009,7 @@
             "format": "uuid"
           },
           "source_slug": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "source_title": {
             "type": "string"
@@ -4241,15 +4019,7 @@
       "BoardDto": {
         "type": "object",
         "description": "Full board representation.",
-        "required": [
-          "id",
-          "workspace_id",
-          "project_id",
-          "name",
-          "created_by",
-          "created_at",
-          "updated_at"
-        ],
+        "required": ["id", "workspace_id", "project_id", "name", "created_by", "created_at", "updated_at"],
         "properties": {
           "created_at": {
             "type": "string",
@@ -4282,12 +4052,7 @@
       "BoardSummaryDto": {
         "type": "object",
         "description": "Lightweight board summary for list endpoints.",
-        "required": [
-          "id",
-          "name",
-          "created_at",
-          "updated_at"
-        ],
+        "required": ["id", "name", "created_at", "updated_at"],
         "properties": {
           "created_at": {
             "type": "string",
@@ -4309,15 +4074,7 @@
       "ChecklistItemDto": {
         "type": "object",
         "description": "A single checklist item.",
-        "required": [
-          "id",
-          "task_id",
-          "title",
-          "checked",
-          "position_key",
-          "created_at",
-          "updated_at"
-        ],
+        "required": ["id", "task_id", "title", "checked", "position_key", "created_at", "updated_at"],
         "properties": {
           "checked": {
             "type": "boolean"
@@ -4334,16 +4091,10 @@
             "type": "string"
           },
           "promoted_readable_id": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "promoted_task_id": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "uuid",
             "description": "Set once the item has been promoted to a task."
           },
@@ -4363,14 +4114,7 @@
       "ColumnDto": {
         "type": "object",
         "description": "Column representation (always returned in board context).",
-        "required": [
-          "id",
-          "board_id",
-          "name",
-          "position_key",
-          "created_at",
-          "updated_at"
-        ],
+        "required": ["id", "board_id", "name", "position_key", "created_at", "updated_at"],
         "properties": {
           "board_id": {
             "type": "string",
@@ -4423,28 +4167,16 @@
             "description": "Sequence number of the current head revision."
           },
           "detail": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "hint": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "instance": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "request_id": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "status": {
             "type": "integer",
@@ -4462,15 +4194,10 @@
       "CreateApiKeyRequest": {
         "type": "object",
         "description": "Request body for `POST /v1/workspaces/{ws}/api-keys`.",
-        "required": [
-          "name"
-        ],
+        "required": ["name"],
         "properties": {
           "expires_at": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "date-time"
           },
           "name": {
@@ -4481,9 +4208,7 @@
       "CreateBoardRequest": {
         "type": "object",
         "description": "Request body for `POST /v1/workspaces/{ws}/projects/{ps}/boards`.",
-        "required": [
-          "name"
-        ],
+        "required": ["name"],
         "properties": {
           "name": {
             "type": "string"
@@ -4493,21 +4218,13 @@
       "CreateChecklistItemRequest": {
         "type": "object",
         "description": "Request body for `POST /v1/workspaces/{ws}/tasks/{readable_id}/checklist`.",
-        "required": [
-          "title"
-        ],
+        "required": ["title"],
         "properties": {
           "after": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "before": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "title": {
             "type": "string"
@@ -4517,21 +4234,13 @@
       "CreateColumnRequest": {
         "type": "object",
         "description": "Request body for `POST /v1/workspaces/{ws}/boards/{board_id}/columns`.",
-        "required": [
-          "name"
-        ],
+        "required": ["name"],
         "properties": {
           "after": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "before": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "name": {
             "type": "string"
@@ -4541,21 +4250,13 @@
       "CreateDocumentRequest": {
         "type": "object",
         "description": "Request body for `POST /v1/workspaces/{ws}/projects/{ps}/documents`.\n\nThe slug is always server-generated; any slug field provided by the client\nis silently ignored.",
-        "required": [
-          "title"
-        ],
+        "required": ["title"],
         "properties": {
           "content": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "folder_id": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "uuid"
           },
           "title": {
@@ -4566,18 +4267,13 @@
       "CreateFolderRequest": {
         "type": "object",
         "description": "Request body for `POST /v1/workspaces/{ws}/projects/{project_slug}/folders`.",
-        "required": [
-          "name"
-        ],
+        "required": ["name"],
         "properties": {
           "name": {
             "type": "string"
           },
           "parent_folder_id": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "uuid"
           }
         }
@@ -4585,10 +4281,7 @@
       "CreateGrantRequest": {
         "type": "object",
         "description": "Request body for `POST /v1/workspaces/{ws}/projects/{slug}/grants`.",
-        "required": [
-          "principal",
-          "role"
-        ],
+        "required": ["principal", "role"],
         "properties": {
           "principal": {
             "$ref": "#/components/schemas/GrantPrincipal"
@@ -4601,11 +4294,7 @@
       "CreateProjectRequest": {
         "type": "object",
         "description": "Request body for `POST /v1/workspaces/{ws}/projects`.",
-        "required": [
-          "name",
-          "slug",
-          "task_prefix"
-        ],
+        "required": ["name", "slug", "task_prefix"],
         "properties": {
           "name": {
             "type": "string"
@@ -4617,17 +4306,11 @@
             "type": "string"
           },
           "visibility": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "\"private\" | \"workspace\" | \"public\" (default: \"workspace\")"
           },
           "visibility_role": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "\"viewer\" | \"editor\" (default: \"editor\")"
           }
         }
@@ -4635,58 +4318,38 @@
       "CreateReferenceRequest": {
         "type": "object",
         "description": "Request body for `POST /v1/workspaces/{ws}/tasks/{readable_id}/references`.",
-        "required": [
-          "kind"
-        ],
+        "required": ["kind"],
         "properties": {
           "kind": {
             "type": "string",
             "description": "\"relates\" | \"blocks\" | \"parent\" | \"spec\""
           },
           "target_document_id": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "uuid"
           },
           "target_task_readable_id": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         }
       },
       "CreateTaskRequest": {
         "type": "object",
         "description": "Request body for `POST /v1/workspaces/{ws}/boards/{board_id}/tasks`.",
-        "required": [
-          "column_id",
-          "title"
-        ],
+        "required": ["column_id", "title"],
         "properties": {
           "after": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "before": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "column_id": {
             "type": "string",
             "format": "uuid"
           },
           "description": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "properties": {
             "oneOf": [
@@ -4706,11 +4369,7 @@
       "CreateUserRequest": {
         "type": "object",
         "description": "Request body for `POST /v1/users`.",
-        "required": [
-          "username",
-          "display_name",
-          "password"
-        ],
+        "required": ["username", "display_name", "password"],
         "properties": {
           "display_name": {
             "type": "string"
@@ -4746,10 +4405,7 @@
             "format": "date-time"
           },
           "folder_id": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "uuid"
           },
           "frontmatter": {},
@@ -4766,17 +4422,11 @@
             "format": "uuid"
           },
           "project_id": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "uuid"
           },
           "slug": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "title": {
             "type": "string"
@@ -4794,18 +4444,10 @@
       "DocumentSummaryDto": {
         "type": "object",
         "description": "Lightweight document summary for list endpoints.",
-        "required": [
-          "id",
-          "title",
-          "head_seq",
-          "updated_at"
-        ],
+        "required": ["id", "title", "head_seq", "updated_at"],
         "properties": {
           "folder_id": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "uuid"
           },
           "head_seq": {
@@ -4817,10 +4459,7 @@
             "format": "uuid"
           },
           "slug": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "title": {
             "type": "string"
@@ -4834,13 +4473,7 @@
       "FolderDto": {
         "type": "object",
         "description": "Folder representation returned by all folder endpoints.",
-        "required": [
-          "id",
-          "workspace_id",
-          "name",
-          "created_at",
-          "updated_at"
-        ],
+        "required": ["id", "workspace_id", "name", "created_at", "updated_at"],
         "properties": {
           "created_at": {
             "type": "string",
@@ -4854,17 +4487,11 @@
             "type": "string"
           },
           "parent_folder_id": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "uuid"
           },
           "project_id": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "uuid"
           },
           "updated_at": {
@@ -4880,9 +4507,7 @@
       "FrontmatterDto": {
         "type": "object",
         "description": "Document frontmatter extracted from the leading YAML block.",
-        "required": [
-          "data"
-        ],
+        "required": ["data"],
         "properties": {
           "data": {}
         }
@@ -4890,12 +4515,7 @@
       "GrantDto": {
         "type": "object",
         "description": "Grant representation.",
-        "required": [
-          "id",
-          "principal",
-          "role",
-          "created_at"
-        ],
+        "required": ["id", "principal", "role", "created_at"],
         "properties": {
           "created_at": {
             "type": "string",
@@ -4916,10 +4536,7 @@
       "GrantPrincipal": {
         "type": "object",
         "description": "Identifies a grant principal.",
-        "required": [
-          "type",
-          "id"
-        ],
+        "required": ["type", "id"],
         "properties": {
           "id": {
             "type": "string",
@@ -4933,10 +4550,7 @@
       "LoginRequest": {
         "type": "object",
         "description": "Request body for `POST /v1/auth/login`.",
-        "required": [
-          "username",
-          "password"
-        ],
+        "required": ["username", "password"],
         "properties": {
           "password": {
             "type": "string"
@@ -4949,11 +4563,7 @@
       "LoginResponse": {
         "type": "object",
         "description": "Response body from `POST /v1/auth/login`.",
-        "required": [
-          "token",
-          "expires_at",
-          "user"
-        ],
+        "required": ["token", "expires_at", "user"],
         "properties": {
           "expires_at": {
             "type": "string",
@@ -4971,10 +4581,7 @@
       "MeResponse": {
         "type": "object",
         "description": "Response from `GET /v1/auth/me`.",
-        "required": [
-          "principal_type",
-          "username"
-        ],
+        "required": ["principal_type", "username"],
         "properties": {
           "principal_type": {
             "type": "string"
@@ -4989,10 +4596,7 @@
         "description": "Request body for `PATCH /v1/workspaces/{ws}/documents/{slug}/move`.",
         "properties": {
           "folder_id": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "uuid"
           }
         }
@@ -5002,10 +4606,7 @@
         "description": "Request body for `PATCH /v1/workspaces/{ws}/folders/{folder_id}/move`.",
         "properties": {
           "parent_folder_id": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "uuid",
             "description": "New parent folder ID, or `null` to move to the project root."
           }
@@ -5014,21 +4615,13 @@
       "MoveTaskRequest": {
         "type": "object",
         "description": "Request body for `POST /v1/workspaces/{ws}/tasks/{readable_id}/move`.",
-        "required": [
-          "column_id"
-        ],
+        "required": ["column_id"],
         "properties": {
           "after": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "before": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "column_id": {
             "type": "string",
@@ -5039,10 +4632,7 @@
       "Page_FolderDto": {
         "type": "object",
         "description": "Paginated response envelope.",
-        "required": [
-          "items",
-          "has_more"
-        ],
+        "required": ["items", "has_more"],
         "properties": {
           "has_more": {
             "type": "boolean"
@@ -5052,13 +4642,7 @@
             "items": {
               "type": "object",
               "description": "Folder representation returned by all folder endpoints.",
-              "required": [
-                "id",
-                "workspace_id",
-                "name",
-                "created_at",
-                "updated_at"
-              ],
+              "required": ["id", "workspace_id", "name", "created_at", "updated_at"],
               "properties": {
                 "created_at": {
                   "type": "string",
@@ -5072,17 +4656,11 @@
                   "type": "string"
                 },
                 "parent_folder_id": {
-                  "type": [
-                    "string",
-                    "null"
-                  ],
+                  "type": ["string", "null"],
                   "format": "uuid"
                 },
                 "project_id": {
-                  "type": [
-                    "string",
-                    "null"
-                  ],
+                  "type": ["string", "null"],
                   "format": "uuid"
                 },
                 "updated_at": {
@@ -5097,47 +4675,28 @@
             }
           },
           "next_cursor": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         }
       },
       "ProblemDetails": {
         "type": "object",
         "description": "RFC 9457 problem+json representation, extended with `request_id` and `hint`.",
-        "required": [
-          "type",
-          "title",
-          "status"
-        ],
+        "required": ["type", "title", "status"],
         "properties": {
           "detail": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "hint": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "Actionable next-step hint for the caller."
           },
           "instance": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "Request path — filled by the problem-stamp middleware."
           },
           "request_id": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "Filled by the problem-stamp middleware from the `x-request-id` header."
           },
           "status": {
@@ -5195,10 +4754,7 @@
             "type": "string"
           },
           "visibility_role": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "workspace_id": {
             "type": "string",
@@ -5209,10 +4765,7 @@
       "PromoteChecklistItemRequest": {
         "type": "object",
         "description": "Request body for\n`POST /v1/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}/promote`.",
-        "required": [
-          "board_id",
-          "column_id"
-        ],
+        "required": ["board_id", "column_id"],
         "properties": {
           "board_id": {
             "type": "string",
@@ -5229,10 +4782,7 @@
       "PromotionDto": {
         "type": "object",
         "description": "Response from `POST .../checklist/{item_id}/promote`.",
-        "required": [
-          "task",
-          "checklist_item"
-        ],
+        "required": ["task", "checklist_item"],
         "properties": {
           "checklist_item": {
             "$ref": "#/components/schemas/ChecklistItemDto"
@@ -5255,13 +4805,7 @@
       "ReferenceDto": {
         "type": "object",
         "description": "A typed outbound reference from a task to another task or document.",
-        "required": [
-          "id",
-          "kind",
-          "target_resolved",
-          "created_by",
-          "created_at"
-        ],
+        "required": ["id", "kind", "target_resolved", "created_by", "created_at"],
         "properties": {
           "created_at": {
             "type": "string",
@@ -5279,27 +4823,18 @@
             "description": "\"relates\" | \"blocks\" | \"parent\" | \"spec\""
           },
           "target_document_id": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "uuid"
           },
           "target_readable_id": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "target_resolved": {
             "type": "boolean",
             "description": "False when the target no longer exists (broken ref), consistent with E04."
           },
           "target_task_id": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "uuid"
           }
         }
@@ -5307,9 +4842,7 @@
       "RenameFolderRequest": {
         "type": "object",
         "description": "Request body for `PATCH /v1/workspaces/{ws}/folders/{folder_id}`.",
-        "required": [
-          "name"
-        ],
+        "required": ["name"],
         "properties": {
           "name": {
             "type": "string"
@@ -5319,12 +4852,7 @@
       "RevisionContentDto": {
         "type": "object",
         "description": "Full revision content at a specific sequence number.",
-        "required": [
-          "id",
-          "seq",
-          "content",
-          "created_at"
-        ],
+        "required": ["id", "seq", "content", "created_at"],
         "properties": {
           "actor": {
             "oneOf": [
@@ -5356,12 +4884,7 @@
       "RevisionMetaDto": {
         "type": "object",
         "description": "Revision metadata returned by the history endpoint.",
-        "required": [
-          "id",
-          "seq",
-          "is_anchor",
-          "created_at"
-        ],
+        "required": ["id", "seq", "is_anchor", "created_at"],
         "properties": {
           "actor": {
             "oneOf": [
@@ -5393,13 +4916,7 @@
       "SearchHitDto": {
         "type": "object",
         "description": "A single search result item returned by `GET /v1/workspaces/{ws}/search`.",
-        "required": [
-          "id",
-          "kind",
-          "title",
-          "score",
-          "updated_at"
-        ],
+        "required": ["id", "kind", "title", "score", "updated_at"],
         "properties": {
           "id": {
             "type": "string",
@@ -5409,17 +4926,11 @@
             "$ref": "#/components/schemas/SearchKindDto"
           },
           "project_slug": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "Owning project slug; absent for workspace-root documents with no project."
           },
           "readable_id": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "Task readable ID (e.g. `\"ATL-42\"`). Present only when `kind = task`."
           },
           "score": {
@@ -5427,10 +4938,7 @@
             "format": "float"
           },
           "snippet": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "description": "Highlighted snippet with `<mark>…</mark>` markers.\nAbsent for title-only matches and filter-only queries."
           },
           "title": {
@@ -5445,20 +4953,12 @@
       "SearchKindDto": {
         "type": "string",
         "description": "Discriminant indicating whether a search hit is a document or a task.",
-        "enum": [
-          "document",
-          "task"
-        ]
+        "enum": ["document", "task"]
       },
       "TaskBacklinkDto": {
         "type": "object",
         "description": "An inbound reference — another task that points to this one.",
-        "required": [
-          "source_task_id",
-          "source_readable_id",
-          "source_title",
-          "kind"
-        ],
+        "required": ["source_task_id", "source_readable_id", "source_title", "kind"],
         "properties": {
           "kind": {
             "type": "string",
@@ -5512,17 +5012,11 @@
             "type": "string"
           },
           "due_date": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "date-time"
           },
           "estimate": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int32"
           },
           "id": {
@@ -5536,10 +5030,7 @@
             }
           },
           "priority": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "project_id": {
             "type": "string",
@@ -5570,17 +5061,11 @@
             "description": "Free-form JSONB escape hatch; no workspace-schema validation in M1."
           },
           "due_date": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "date-time"
           },
           "estimate": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "format": "int32",
             "description": "Non-negative work estimate in story-point units."
           },
@@ -5591,23 +5076,14 @@
             }
           },
           "priority": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         }
       },
       "TaskSummaryDto": {
         "type": "object",
         "description": "Lightweight task summary for list endpoints.",
-        "required": [
-          "id",
-          "readable_id",
-          "column_id",
-          "title",
-          "updated_at"
-        ],
+        "required": ["id", "readable_id", "column_id", "title", "updated_at"],
         "properties": {
           "column_id": {
             "type": "string",
@@ -5618,10 +5094,7 @@
             "format": "uuid"
           },
           "priority": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "readable_id": {
             "type": "string"
@@ -5640,10 +5113,7 @@
         "description": "Request body for `PATCH /v1/workspaces/{ws}/boards/{board_id}`.",
         "properties": {
           "name": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         }
       },
@@ -5652,28 +5122,16 @@
         "description": "Request body for `PATCH /v1/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}`.",
         "properties": {
           "after": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "before": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "checked": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "title": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         }
       },
@@ -5682,32 +5140,20 @@
         "description": "Request body for `PATCH /v1/workspaces/{ws}/boards/{board_id}/columns/{column_id}`.",
         "properties": {
           "after": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "before": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "name": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         }
       },
       "UpdateContentRequest": {
         "type": "object",
         "description": "Request body for `PUT /v1/workspaces/{ws}/documents/{slug}/content`.\n\nUses compare-and-swap semantics: `base_revision_id` must match the\ndocument's current revision or the server responds with 409 and a\n`ConflictProblemDto` body.",
-        "required": [
-          "content",
-          "base_revision_id"
-        ],
+        "required": ["content", "base_revision_id"],
         "properties": {
           "base_revision_id": {
             "type": "string",
@@ -5723,17 +5169,11 @@
         "description": "Request body for `PATCH /v1/workspaces/{ws}/documents/{slug}`.\n\nUpdates document metadata (title, folder). Use `PUT .../content` to update\ncontent with CAS.",
         "properties": {
           "folder_id": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "uuid"
           },
           "title": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         }
       },
@@ -5742,22 +5182,13 @@
         "description": "Request body for `PATCH /v1/workspaces/{ws}/projects/{project_slug}`.",
         "properties": {
           "name": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "visibility": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "visibility_role": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         }
       },
@@ -5766,18 +5197,12 @@
         "description": "Request body for `PATCH /v1/workspaces/{ws}/tasks/{readable_id}`.",
         "properties": {
           "description": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "due_date": {},
           "estimate": {},
           "labels": {
-            "type": [
-              "array",
-              "null"
-            ],
+            "type": ["array", "null"],
             "items": {
               "type": "string"
             }
@@ -5785,34 +5210,21 @@
           "priority": {},
           "properties": {},
           "title": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         }
       },
       "UserDto": {
         "type": "object",
         "description": "Public user representation (no password hash).",
-        "required": [
-          "id",
-          "username",
-          "display_name",
-          "is_root",
-          "created_at",
-          "updated_at"
-        ],
+        "required": ["id", "username", "display_name", "is_root", "created_at", "updated_at"],
         "properties": {
           "created_at": {
             "type": "string",
             "format": "date-time"
           },
           "disabled_at": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "format": "date-time"
           },
           "display_name": {
@@ -5837,13 +5249,7 @@
       "WorkspaceDto": {
         "type": "object",
         "description": "Workspace representation.",
-        "required": [
-          "id",
-          "name",
-          "slug",
-          "created_at",
-          "updated_at"
-        ],
+        "required": ["id", "name", "slug", "created_at", "updated_at"],
         "properties": {
           "created_at": {
             "type": "string",
