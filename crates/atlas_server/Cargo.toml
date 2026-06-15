@@ -14,6 +14,10 @@ path = "src/main.rs"
 name = "seed_dev"
 path = "src/bin/seed_dev.rs"
 
+[[bin]]
+name = "dump_openapi"
+path = "src/bin/dump_openapi.rs"
+
 [dependencies]
 atlas_domain.workspace = true
 atlas_api = { workspace = true, features = ["openapi"] }

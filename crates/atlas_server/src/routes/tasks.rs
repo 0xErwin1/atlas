@@ -1047,6 +1047,7 @@ pub(crate) async fn delete_reference(
 #[utoipa::path(
     get,
     path = "/v1/workspaces/{ws}/tasks/{readable_id}/backlinks",
+    operation_id = "list_task_backlinks",
     tag = "tasks",
     security(("bearer_auth" = [])),
     params(

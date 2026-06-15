@@ -10,6 +10,8 @@ dist
 .vscode/
 *.vue.js
 *.vue.js.map
+apps/web/src/**/*.js
+apps/web/src/**/*.js.map
 *.tsbuildinfo
 vite.config.js
 vite.config.d.ts
