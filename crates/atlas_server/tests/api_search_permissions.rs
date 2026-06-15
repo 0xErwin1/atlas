@@ -628,6 +628,143 @@ async fn api_key_no_grant_sees_no_rows_at_sql_level() {
     db.teardown().await;
 }
 
+// ---------------------------------------------------------------------------
+// Gate: any principal with workspace access can reach search.
+//
+// The search route admits any principal with access to the workspace: a member
+// (any MemberRole) OR a principal holding at least one grant anywhere in the
+// workspace. A principal with no membership and no grant gets 404 (concealment).
+// ---------------------------------------------------------------------------
+
+/// Grants a user a project-scope grant.
+async fn grant_project_for_user(
+    db: &support::TestDb,
+    ws_id: atlas_domain::ids::WorkspaceId,
+    user_id: atlas_domain::ids::UserId,
+    project_id: atlas_domain::ids::ProjectId,
+    grantor_id: atlas_domain::ids::UserId,
+) {
+    let repo = PgPermissionGrantRepo { conn: db.conn().clone() };
+    repo.upsert(NewPermissionGrant {
+        workspace_id: ws_id,
+        user_id: Some(user_id),
+        api_key_id: None,
+        project_id: Some(project_id),
+        folder_id: None,
+        document_id: None,
+        board_id: None,
+        role: ResourceRole::Viewer,
+        created_by_user_id: Some(grantor_id),
+        created_by_api_key_id: None,
+    })
+    .await
+    .expect("grant project for user");
+}
+
+/// A user who is NOT a member but holds a project-scope grant can reach search
+/// and sees ONLY that project's resources — nothing from other projects.
+#[tokio::test]
+async fn project_grant_only_user_can_search_and_is_scoped() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let server = support::TestServer::spawn(&db).await;
+
+    let (ws, owner) = seed_workspace_with_member(&db, "gate-projgrant-owner").await;
+    let ctx_owner = support::ctx(&ws, &owner);
+
+    let unique = "gateprojgrant9k";
+
+    // Granted project: a doc the grantee should see.
+    let (granted_task_id, _granted_board, granted_project) = seed_task_with_board(
+        &db,
+        &ctx_owner,
+        "gate-granted-proj",
+        "GGP",
+        &format!("Granted Task {unique}"),
+        unique,
+    )
+    .await;
+
+    // Other project: a task the grantee must NOT see.
+    let (other_task_id, _other_board, _other_project) = seed_task_with_board(
+        &db,
+        &ctx_owner,
+        "gate-other-proj",
+        "GOP",
+        &format!("Other Task {unique}"),
+        unique,
+    )
+    .await;
+
+    // A grantee who is not a member of the workspace, with a project grant only.
+    let (grantee_client, grantee) =
+        support::login_user(&server, &db, "gate-projgrant-grantee").await;
+    grant_project_for_user(&db, ws.id, grantee.id, granted_project, owner.id).await;
+
+    let token = grantee_client.token().expect("token");
+    let http = reqwest::Client::new();
+    let ids = search_ids(&http, token, server.base_url(), &ws.slug, unique).await;
+
+    assert!(
+        ids.contains(&granted_task_id.0),
+        "project-grant-only user must see the granted project's task; got: {ids:?}"
+    );
+    assert!(
+        !ids.contains(&other_task_id.0),
+        "project-grant-only user must NOT see other projects' tasks; got: {ids:?}"
+    );
+
+    db.teardown().await;
+}
+
+/// A plain member (no workspace-scope grant, not Owner/Admin) can reach search.
+#[tokio::test]
+async fn plain_member_can_reach_search() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let server = support::TestServer::spawn(&db).await;
+
+    let (ws, owner) = seed_workspace_with_member(&db, "gate-plainmember-owner").await;
+    let ctx_owner = support::ctx(&ws, &owner);
+
+    let unique = "gateplainmember9l";
+
+    // A Workspace-visibility project task the plain member should see.
+    let (task_id, _board, _project) = seed_task_with_board(
+        &db,
+        &ctx_owner,
+        "gate-plainmember-proj",
+        "GPM",
+        &format!("Member Task {unique}"),
+        unique,
+    )
+    .await;
+
+    let (member_client, member) =
+        support::login_user(&server, &db, "gate-plainmember-member").await;
+    let ctx = WorkspaceCtx::new(ws.id, Actor::User(member.id));
+    db.membership_repo()
+        .add(&ctx, member.id, MemberRole::Member)
+        .await
+        .expect("add plain member");
+
+    let token = member_client.token().expect("token");
+    let http = reqwest::Client::new();
+    let resp = get_search_with_token(&http, token, server.base_url(), &ws.slug, unique).await;
+    assert_eq!(
+        resp.status().as_u16(),
+        200,
+        "a plain member must be able to reach search; got {:?}",
+        resp.status()
+    );
+
+    let ids = search_ids(&http, token, server.base_url(), &ws.slug, unique).await;
+    assert!(
+        ids.contains(&task_id.0),
+        "a plain member must see a Workspace-visibility project task; got: {ids:?}"
+    );
+
+    db.teardown().await;
+}
+
 /// Cross-tenant document isolation via the HTTP route.
 ///
 /// Proved at repo level in search_repo.rs; this test also covers the HTTP surface.

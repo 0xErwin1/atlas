@@ -16,7 +16,7 @@ use atlas_domain::{
 };
 
 use crate::{
-    authz::{Authorized, ViewerMin, authorized::WorkspaceRes},
+    authz::WorkspaceAccess,
     error::ApiError,
     persistence::repos::PgSearchRepo,
     state::AppState,
@@ -58,12 +58,12 @@ pub(crate) struct SearchQueryParams {
     responses(
         (status = 200, description = "Search results page", body = inline(Page<SearchHitDto>)),
         (status = 401, description = "Unauthenticated"),
-        (status = 404, description = "Workspace not found or not a member"),
+        (status = 404, description = "Workspace not found or principal has no access"),
         (status = 422, description = "Invalid input: absent q, malformed cursor, or cursor/sort mismatch"),
     )
 )]
 pub(crate) async fn search(
-    auth: Authorized<WorkspaceRes, ViewerMin>,
+    auth: WorkspaceAccess,
     State(state): State<AppState>,
     Query(params): Query<SearchQueryParams>,
 ) -> Result<impl IntoResponse, ApiError> {

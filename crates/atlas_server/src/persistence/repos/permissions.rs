@@ -64,6 +64,59 @@ pub struct PgPermissionGrantRepo {
     pub conn: DatabaseConnection,
 }
 
+impl PgPermissionGrantRepo {
+    /// Returns whether the principal holds at least one grant anywhere in the
+    /// workspace (workspace-scope, project, folder, document, or board). Used by
+    /// the workspace-access gate to admit grant-bearing non-members.
+    pub async fn principal_has_any_grant_in_workspace(
+        &self,
+        workspace_id: WorkspaceId,
+        user_id: Option<UserId>,
+        api_key_id: Option<ApiKeyId>,
+    ) -> Result<bool, DomainError> {
+        use sea_orm::FromQueryResult;
+
+        let mut values: Vec<sea_orm::Value> = Vec::new();
+        values.push(workspace_id.0.into());
+
+        let principal_condition = if let Some(uid) = user_id {
+            values.push(uid.0.into());
+            format!("user_id = ${}", values.len())
+        } else if let Some(kid) = api_key_id {
+            values.push(kid.0.into());
+            format!("api_key_id = ${}", values.len())
+        } else {
+            return Ok(false);
+        };
+
+        #[derive(Debug, FromQueryResult)]
+        struct Exists {
+            present: bool,
+        }
+
+        let sql = format!(
+            r#"
+            SELECT EXISTS (
+                SELECT 1 FROM permission_grants
+                WHERE workspace_id = $1
+                  AND {principal_condition}
+            ) AS present
+            "#,
+        );
+
+        let row = Exists::find_by_statement(sea_orm::Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            sql,
+            values,
+        ))
+        .one(&self.conn)
+        .await
+        .map_err(db_err)?;
+
+        Ok(row.map(|r| r.present).unwrap_or(false))
+    }
+}
+
 #[async_trait]
 impl PermissionGrantRepo for PgPermissionGrantRepo {
     async fn upsert(&self, grant: NewPermissionGrant) -> Result<PermissionGrant, DomainError> {
