@@ -4,6 +4,7 @@ import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
 
 export type BoardDto = components['schemas']['BoardDto'];
+export type BoardSummaryDto = components['schemas']['BoardSummaryDto'];
 export type ColumnDto = components['schemas']['ColumnDto'];
 export type TaskSummaryDto = components['schemas']['TaskSummaryDto'];
 
@@ -32,6 +33,7 @@ export interface MovedTaskSummary {
  */
 export const useBoardsStore = defineStore('boards', () => {
   const board = ref<BoardDto | null>(null);
+  const boardSummaries = ref<BoardSummaryDto[]>([]);
   const columns = ref<ColumnDto[]>([]);
   const tasks = ref<Map<string, TaskSummaryDto[]>>(new Map());
   const loading = ref(false);
@@ -39,6 +41,20 @@ export const useBoardsStore = defineStore('boards', () => {
 
   function tasksByColumn(columnId: string): TaskSummaryDto[] {
     return tasks.value.get(columnId) ?? [];
+  }
+
+  async function loadBoards(ws: string, projectSlug: string): Promise<void> {
+    const { data, error: apiError } = await wrappedClient.GET(
+      '/v1/workspaces/{ws}/projects/{project_slug}/boards',
+      { params: { path: { ws, project_slug: projectSlug } } },
+    );
+
+    if (apiError !== undefined || data === undefined) {
+      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to load boards';
+      return;
+    }
+
+    boardSummaries.value = data.items;
   }
 
   async function loadBoard(ws: string, boardId: string): Promise<void> {
@@ -260,10 +276,12 @@ export const useBoardsStore = defineStore('boards', () => {
 
   return {
     board,
+    boardSummaries,
     columns,
     loading,
     error,
     tasksByColumn,
+    loadBoards,
     loadBoard,
     loadColumns,
     loadTasks,
