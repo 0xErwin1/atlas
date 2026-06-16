@@ -139,4 +139,51 @@ describe('useShareStore (REQ-W26/W27)', () => {
     expect(store.error).toBe('not a member of this workspace');
     expect(GET).not.toHaveBeenCalled();
   });
+
+  it('loadMembers populates members from the workspace members endpoint', async () => {
+    GET.mockResolvedValue({
+      data: [
+        { principal_type: 'user', id: 'u1', display: 'Ada Lovelace' },
+        { principal_type: 'api_key', id: 'k1', display: 'ci-bot' },
+      ],
+    });
+
+    const store = useShareStore();
+    await store.loadMembers('acme');
+
+    expect(GET).toHaveBeenCalledWith('/v1/workspaces/{ws}/members', {
+      params: { path: { ws: 'acme' } },
+    });
+    expect(store.members).toHaveLength(2);
+    expect(store.members[0]?.display).toBe('Ada Lovelace');
+    expect(store.members[1]?.principal_type).toBe('api_key');
+    expect(store.error).toBeNull();
+  });
+
+  it('loadMembers surfaces the API hint on error and leaves members untouched', async () => {
+    GET.mockResolvedValue({ error: { hint: 'not a member of this workspace', detail: 'stack' } });
+
+    const store = useShareStore();
+    await store.loadMembers('acme');
+
+    expect(store.error).toBe('not a member of this workspace');
+    expect(store.error).not.toContain('stack');
+    expect(store.members).toHaveLength(0);
+  });
+
+  it('addGrant still refuses admin for an api_key principal resolved from the member list (E03 cap)', async () => {
+    const store = useShareStore();
+    store.members = [{ principal_type: 'api_key', id: 'k2', display: 'ci-bot' }];
+
+    const member = store.members[0];
+    const ok = await store.addGrant(
+      'acme',
+      { type: member?.principal_type ?? '', id: member?.id ?? '' },
+      'admin',
+    );
+
+    expect(ok).toBe(false);
+    expect(POST).not.toHaveBeenCalled();
+    expect(store.error).toMatch(/admin/i);
+  });
 });

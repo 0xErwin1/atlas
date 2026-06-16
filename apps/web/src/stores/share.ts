@@ -6,6 +6,7 @@ import { type GrantRole, isRoleAllowedFor } from '@/lib/grantRoles';
 
 export type GrantDto = components['schemas']['GrantDto'];
 export type GrantPrincipal = components['schemas']['GrantPrincipal'];
+export type PrincipalDto = components['schemas']['PrincipalDto'];
 
 function hintOf(apiError: unknown, fallback: string): string {
   return (apiError as { hint?: string } | undefined)?.hint ?? fallback;
@@ -20,6 +21,7 @@ function hintOf(apiError: unknown, fallback: string): string {
  */
 export const useShareStore = defineStore('share', () => {
   const grants = ref<GrantDto[]>([]);
+  const members = ref<PrincipalDto[]>([]);
   const loading = ref(false);
   const error = ref<string | null>(null);
 
@@ -39,6 +41,19 @@ export const useShareStore = defineStore('share', () => {
     }
 
     grants.value = data.items;
+  }
+
+  async function loadMembers(ws: string): Promise<void> {
+    const { data, error: apiError } = await wrappedClient.GET('/v1/workspaces/{ws}/members', {
+      params: { path: { ws } },
+    });
+
+    if (apiError !== undefined || data === undefined) {
+      error.value = hintOf(apiError, 'Failed to load workspace members');
+      return;
+    }
+
+    members.value = data;
   }
 
   async function addGrant(ws: string, principal: GrantPrincipal, role: GrantRole): Promise<boolean> {
@@ -86,5 +101,15 @@ export const useShareStore = defineStore('share', () => {
     return true;
   }
 
-  return { grants, loading, error, load, addGrant, changeRole, removeGrant };
+  return {
+    grants,
+    members,
+    loading,
+    error,
+    load,
+    loadMembers,
+    addGrant,
+    changeRole,
+    removeGrant,
+  };
 });

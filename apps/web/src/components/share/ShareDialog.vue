@@ -7,9 +7,9 @@ import Btn from '@/components/ui/Btn.vue';
 import Icon from '@/components/ui/Icon.vue';
 import Presence from '@/components/ui/Presence.vue';
 import type { GrantRole } from '@/lib/grantRoles';
-import { type GrantDto, useShareStore } from '@/stores/share';
+import { type GrantDto, type PrincipalDto, useShareStore } from '@/stores/share';
 
-export type Visibility = 'private' | 'workspace' | 'public';
+export type Visibility = 'private' | 'workspace';
 
 const props = withDefaults(
   defineProps<{
@@ -26,19 +26,21 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   close: [];
-  'update:visibility': [value: Visibility];
 }>();
 
 const share = useShareStore();
 
 const openMenuFor = ref<string | null>(null);
+const memberQuery = ref('');
 
 watch(
   () => [props.open, props.ws] as const,
   ([open, ws]) => {
     if (open) {
       openMenuFor.value = null;
+      memberQuery.value = '';
       void share.load(ws);
+      void share.loadMembers(ws);
     }
   },
   { immediate: true },
@@ -63,7 +65,6 @@ function badgeFor(g: GrantDto): string | null {
 const VISIBILITY_OPTS: Array<{ value: Visibility; icon: string; label: string; desc: string }> = [
   { value: 'private', icon: 'lock', label: 'Private', desc: 'Only people invited above' },
   { value: 'workspace', icon: 'eye', label: 'Workspace', desc: 'Anyone in the Atlas workspace can view' },
-  { value: 'public', icon: 'globe', label: 'Public', desc: 'Anyone with the link can view' },
 ];
 
 function toggleMenu(id: string) {
@@ -80,11 +81,25 @@ async function onRemove(g: GrantDto) {
   await share.removeGrant(props.ws, g.id);
 }
 
-function chooseVisibility(value: Visibility) {
-  emit('update:visibility', value);
-}
-
 const grants = computed(() => share.grants);
+
+const grantedIds = computed(() => new Set(share.grants.map((g) => g.principal.id)));
+
+const memberMatches = computed<PrincipalDto[]>(() => {
+  const q = memberQuery.value.trim().toLowerCase();
+  if (q === '') return [];
+
+  return share.members.filter((m) => !grantedIds.value.has(m.id) && m.display.toLowerCase().includes(q));
+});
+
+async function selectMember(member: PrincipalDto): Promise<void> {
+  const principal = { type: member.principal_type, id: member.id };
+  const ok = await share.addGrant(props.ws, principal, 'viewer');
+
+  if (ok) {
+    memberQuery.value = '';
+  }
+}
 </script>
 
 <template>
@@ -134,17 +149,72 @@ const grants = computed(() => share.grants);
       </div>
 
       <div style="padding: 16px;">
-        <div class="flex" style="gap: 8px; margin-bottom: 18px;">
+        <div class="relative" style="margin-bottom: 18px;">
           <div
-            class="flex items-center flex-1"
+            class="flex items-center"
             style="gap: 8px; height: 32px; padding: 0 10px; background-color: var(--c-input); border: 1px solid var(--c-border); border-radius: var(--r-md);"
           >
             <Icon name="user" :size="14" :style="{ color: 'var(--c-muted)' }" />
-            <span style="font-size: var(--fs-base); color: var(--c-muted);">
-              Add people or agents by name, email, or @handle
-            </span>
+            <input
+              v-model="memberQuery"
+              type="text"
+              data-member-search
+              placeholder="Add people or agents by name"
+              autocomplete="off"
+              class="flex-1 min-w-0"
+              style="height: 100%; border: none; outline: none; background: transparent; font-size: var(--fs-base); color: var(--c-foreground);"
+            />
           </div>
-          <Btn variant="primary" style="height: 32px;">Invite</Btn>
+
+          <div
+            v-if="memberMatches.length > 0"
+            role="listbox"
+            data-member-results
+            style="
+              position: absolute;
+              top: 36px;
+              left: 0;
+              right: 0;
+              max-height: 220px;
+              overflow-y: auto;
+              background-color: var(--c-panel);
+              border: 1px solid var(--c-border);
+              border-radius: var(--r-lg);
+              box-shadow: var(--shadow-lg);
+              padding: 4px;
+              z-index: 10;
+            "
+          >
+            <button
+              v-for="m in memberMatches"
+              :key="m.id"
+              type="button"
+              role="option"
+              data-member-option
+              :data-principal-type="m.principal_type"
+              class="flex items-center w-full text-left"
+              style="
+                gap: 10px;
+                height: 34px;
+                padding: 0 8px;
+                border: none;
+                border-radius: var(--r-md);
+                background: transparent;
+                cursor: pointer;
+                color: var(--c-foreground);
+              "
+              @click="selectMember(m)"
+            >
+              <Avatar :agent="m.principal_type !== 'user'" :size="22" :name="m.display" />
+              <span class="flex-1 min-w-0 truncate" style="font-size: var(--fs-base); font-weight: var(--fw-medium);">
+                {{ m.display }}
+              </span>
+              <AgentBadge
+                v-if="m.principal_type !== 'user'"
+                :label="m.principal_type === 'api_key' ? 'SCRIPT' : 'AGENT'"
+              />
+            </button>
+          </div>
         </div>
 
         <div
@@ -225,19 +295,17 @@ const grants = computed(() => share.grants);
               v-if="i > 0"
               style="height: 1px; background-color: var(--c-border);"
             />
-            <button
-              type="button"
+            <div
               :data-visibility="opt.value"
-              :aria-pressed="visibility === opt.value"
-              class="flex items-center w-full text-left cursor-pointer"
+              :aria-current="visibility === opt.value ? 'true' : undefined"
+              class="flex items-center w-full text-left"
               :style="{
                 gap: '10px',
                 padding: '9px 11px',
-                border: 'none',
                 background: visibility === opt.value ? 'var(--c-selection)' : 'transparent',
                 boxShadow: visibility === opt.value ? 'inset 2px 0 0 var(--c-primary)' : 'none',
+                opacity: visibility === opt.value ? 1 : 0.55,
               }"
-              @click="chooseVisibility(opt.value)"
             >
               <Icon
                 :name="opt.icon"
@@ -256,8 +324,14 @@ const grants = computed(() => share.grants);
                 </div>
                 <div style="font-size: var(--fs-xs); color: var(--c-muted);">{{ opt.desc }}</div>
               </div>
-            </button>
+            </div>
           </template>
+        </div>
+
+        <div
+          style="font-size: var(--fs-xs); color: var(--c-muted); margin-top: 6px; line-height: 1.4;"
+        >
+          Changing visibility is coming in a future release.
         </div>
       </div>
 
