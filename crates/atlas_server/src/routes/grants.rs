@@ -125,7 +125,7 @@ pub(crate) async fn create_project_grant(
         ("limit" = Option<u32>, Query, description = "Page size (max 200)"),
     ),
     responses(
-        (status = 200, description = "Paginated grant list"),
+        (status = 200, description = "Paginated grant list", body = Page<GrantDto>),
         (status = 401, description = "Unauthenticated"),
         (status = 403, description = "Insufficient permissions"),
     )
@@ -169,6 +169,11 @@ pub(crate) async fn list_project_grants(
     path = "/v1/workspaces/{ws}/projects/{project_slug}/grants/{grant_id}",
     tag = "grants",
     security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+        ("project_slug" = String, Path, description = "Project slug"),
+        ("grant_id" = uuid::Uuid, Path, description = "Grant id"),
+    ),
     responses(
         (status = 204, description = "Grant deleted"),
         (status = 401, description = "Unauthenticated"),
@@ -291,7 +296,7 @@ pub(crate) async fn create_workspace_grant(
         ("limit" = Option<u32>, Query, description = "Page size (max 200)"),
     ),
     responses(
-        (status = 200, description = "Paginated workspace grant list"),
+        (status = 200, description = "Paginated workspace grant list", body = Page<GrantDto>),
         (status = 401, description = "Unauthenticated"),
         (status = 403, description = "Insufficient permissions"),
     )
@@ -339,6 +344,10 @@ pub(crate) async fn list_workspace_grants(
     path = "/v1/workspaces/{ws}/grants/{grant_id}",
     tag = "grants",
     security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+        ("grant_id" = uuid::Uuid, Path, description = "Grant id"),
+    ),
     responses(
         (status = 204, description = "Workspace grant deleted"),
         (status = 401, description = "Unauthenticated"),

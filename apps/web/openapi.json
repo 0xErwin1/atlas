@@ -1947,7 +1947,14 @@
         ],
         "responses": {
           "200": {
-            "description": "Paginated workspace grant list"
+            "description": "Paginated workspace grant list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_GrantDto"
+                }
+              }
+            }
           },
           "401": {
             "description": "Unauthenticated"
@@ -2019,6 +2026,27 @@
           "grants"
         ],
         "operationId": "delete_workspace_grant",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "grant_id",
+            "in": "path",
+            "description": "Grant id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
         "responses": {
           "204": {
             "description": "Workspace grant deleted"
@@ -2734,7 +2762,14 @@
         ],
         "responses": {
           "200": {
-            "description": "Paginated grant list"
+            "description": "Paginated grant list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_GrantDto"
+                }
+              }
+            }
           },
           "401": {
             "description": "Unauthenticated"
@@ -2815,6 +2850,36 @@
           "grants"
         ],
         "operationId": "delete_project_grant",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project_slug",
+            "in": "path",
+            "description": "Project slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "grant_id",
+            "in": "path",
+            "description": "Grant id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
         "responses": {
           "204": {
             "description": "Grant deleted"
@@ -5387,6 +5452,54 @@
                 "workspace_id": {
                   "type": "string",
                   "format": "uuid"
+                }
+              }
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "Page_GrantDto": {
+        "type": "object",
+        "description": "Paginated response envelope.",
+        "required": [
+          "items",
+          "has_more"
+        ],
+        "properties": {
+          "has_more": {
+            "type": "boolean"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "Grant representation.",
+              "required": [
+                "id",
+                "principal",
+                "role",
+                "created_at"
+              ],
+              "properties": {
+                "created_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "principal": {
+                  "$ref": "#/components/schemas/GrantPrincipal"
+                },
+                "role": {
+                  "type": "string"
                 }
               }
             }
