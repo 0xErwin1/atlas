@@ -70,8 +70,7 @@ export const useBoardsStore = defineStore('boards', () => {
       return;
     }
 
-    const raw = data as unknown as ColumnDto[];
-    columns.value = [...raw].sort((a, b) => a.position_key.localeCompare(b.position_key));
+    columns.value = [...data].sort((a, b) => a.position_key.localeCompare(b.position_key));
   }
 
   async function loadTasks(ws: string, boardId: string): Promise<void> {
@@ -84,14 +83,9 @@ export const useBoardsStore = defineStore('boards', () => {
       return;
     }
 
-    const raw = data as unknown as {
-      items: TaskSummaryDto[];
-      has_more: boolean;
-      next_cursor?: string | null;
-    };
     const grouped = new Map<string, TaskSummaryDto[]>();
 
-    for (const t of raw.items) {
+    for (const t of data.items) {
       const col = grouped.get(t.column_id) ?? [];
       col.push(t);
       grouped.set(t.column_id, col);
