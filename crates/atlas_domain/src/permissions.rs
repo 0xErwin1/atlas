@@ -131,6 +131,22 @@ pub enum ShareDenied {
     AgentsNeverManageGrants,
     RoleExceedsGrantors,
     InsufficientRoleToShare,
+    AgentCannotBeAdmin,
+}
+
+/// Enforces the agent cap at grant write time: an ApiKey principal can never be
+/// the target of an `Admin` grant. The cap is also applied at resolution time,
+/// but rejecting here prevents persisting a grant row that misrepresents the
+/// agent's effective role.
+pub fn authorize_grant_target(
+    target: &Principal,
+    role_in_play: ResourceRole,
+) -> Result<(), ShareDenied> {
+    if matches!(target, Principal::ApiKey(_)) && role_in_play == ResourceRole::Admin {
+        return Err(ShareDenied::AgentCannotBeAdmin);
+    }
+
+    Ok(())
 }
 
 /// Determines whether a principal with the given effective role may manage a grant for `role_in_play`.

@@ -29,7 +29,9 @@ use atlas_api::{
 use atlas_domain::{
     entities::permissions::NewPermissionGrant,
     ids::{ApiKeyId, UserId},
-    permissions::{Principal, ResourceRef, ResourceRole, ShareDenied, authorize_share},
+    permissions::{
+        Principal, ResourceRef, ResourceRole, ShareDenied, authorize_grant_target, authorize_share,
+    },
 };
 
 use crate::{
@@ -76,6 +78,9 @@ pub(crate) async fn create_project_grant(
 
     let (user_id, api_key_id) =
         parse_principal(&body.principal, &auth.workspace.id, &state).await?;
+
+    authorize_grant_target(&target_principal(user_id, api_key_id), role_in_play)
+        .map_err(share_denied_to_api_error)?;
 
     let created_by_user_id = match &auth.principal {
         Principal::User(uid) => Some(*uid),
@@ -248,6 +253,9 @@ pub(crate) async fn create_workspace_grant(
 
     let (user_id, api_key_id) =
         parse_principal(&body.principal, &auth.workspace.id, &state).await?;
+
+    authorize_grant_target(&target_principal(user_id, api_key_id), role_in_play)
+        .map_err(share_denied_to_api_error)?;
 
     let created_by_user_id = match &auth.principal {
         Principal::User(uid) => Some(*uid),
@@ -455,6 +463,14 @@ async fn parse_principal(
     }
 }
 
+fn target_principal(user_id: Option<UserId>, api_key_id: Option<ApiKeyId>) -> Principal {
+    match (user_id, api_key_id) {
+        (_, Some(kid)) => Principal::ApiKey(kid),
+        (Some(uid), None) => Principal::User(uid),
+        (None, None) => Principal::User(UserId(uuid::Uuid::nil())),
+    }
+}
+
 fn role_str(r: ResourceRole) -> String {
     match r {
         ResourceRole::Viewer => "viewer".to_string(),
@@ -478,10 +494,19 @@ fn grant_to_dto(
     }
 }
 
-fn share_denied_to_api_error(_: ShareDenied) -> ApiError {
-    ApiError::Forbidden {
-        message: "insufficient permissions to manage grants".into(),
-    }
+fn share_denied_to_api_error(denied: ShareDenied) -> ApiError {
+    let message = match denied {
+        ShareDenied::AgentCannotBeAdmin => {
+            "Agents and scripts cannot be granted the Admin role.".to_string()
+        }
+        ShareDenied::AgentsNeverManageGrants
+        | ShareDenied::RoleExceedsGrantors
+        | ShareDenied::InsufficientRoleToShare => {
+            "insufficient permissions to manage grants".to_string()
+        }
+    };
+
+    ApiError::Forbidden { message }
 }
 
 fn grant_domain_to_dto(grant: &atlas_domain::entities::permissions::PermissionGrant) -> GrantDto {

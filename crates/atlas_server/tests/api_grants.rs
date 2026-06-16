@@ -8,9 +8,40 @@
 mod support;
 
 use atlas_api::dtos::{CreateGrantRequest, CreateProjectRequest, GrantPrincipal};
+use atlas_client::ClientError;
 use atlas_domain::{Actor, WorkspaceCtx, entities::identity::MemberRole};
-use atlas_server::persistence::repos::{MembershipRepo, NewUser, UserRepo};
+use atlas_server::persistence::repos::{ApiKeyRepo, MembershipRepo, NewApiKey, NewUser, UserRepo};
 use support::{TestDb, TestServer, login_user_with_workspace};
+
+async fn add_agent(
+    db: &TestDb,
+    ws_id: atlas_domain::ids::WorkspaceId,
+    creator: atlas_domain::ids::UserId,
+    name: &str,
+) -> atlas_domain::entities::identity::ApiKey {
+    let ctx = WorkspaceCtx::new(ws_id, Actor::User(creator));
+    db.api_key_repo()
+        .create(
+            &ctx,
+            NewApiKey {
+                name: name.to_string(),
+                token_hash: format!("hash-{name}"),
+                expires_at: None,
+            },
+        )
+        .await
+        .expect("create api key")
+}
+
+fn agent_grant_req(api_key_id: uuid::Uuid, role: &str) -> CreateGrantRequest {
+    CreateGrantRequest {
+        principal: GrantPrincipal {
+            r#type: "api_key".to_string(),
+            id: api_key_id,
+        },
+        role: role.to_string(),
+    }
+}
 
 async fn add_user_to_workspace(
     db: &TestDb,
@@ -280,5 +311,107 @@ async fn list_and_delete_workspace_grant() {
     assert!(
         !page_after.items.iter().any(|g| g.id == grant.id),
         "deleted grant should not appear"
+    );
+}
+
+#[tokio::test]
+async fn create_project_grant_admin_to_agent_is_rejected() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner, ws, owner_user) =
+        login_user_with_workspace(&server, &db, "grant-agent-admin-proj").await;
+
+    owner
+        .create_project(&ws.slug, proj_req("Agent Admin Proj", "agent-admin-proj"))
+        .await
+        .expect("create project");
+
+    let agent = add_agent(&db, ws.id, owner_user.id, "admin-bot-proj").await;
+
+    let err = owner
+        .create_project_grant(
+            &ws.slug,
+            "agent-admin-proj",
+            agent_grant_req(agent.id.0, "admin"),
+        )
+        .await
+        .expect_err("admin grant to an agent must be rejected");
+
+    match err {
+        ClientError::Api(p) => assert_eq!(p.status, 403, "expected 403, got {}", p.status),
+        other => panic!("unexpected error: {other:?}"),
+    }
+
+    let page = owner
+        .list_project_grants(&ws.slug, "agent-admin-proj", None, None)
+        .await
+        .expect("list grants");
+
+    assert!(
+        !page.items.iter().any(|g| g.principal.id == agent.id.0),
+        "rejected admin grant must not be persisted"
+    );
+}
+
+#[tokio::test]
+async fn create_workspace_grant_admin_to_agent_is_rejected() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner, ws, owner_user) =
+        login_user_with_workspace(&server, &db, "grant-agent-admin-ws").await;
+
+    let agent = add_agent(&db, ws.id, owner_user.id, "admin-bot-ws").await;
+
+    let err = owner
+        .create_workspace_grant(&ws.slug, agent_grant_req(agent.id.0, "admin"))
+        .await
+        .expect_err("admin grant to an agent must be rejected");
+
+    match err {
+        ClientError::Api(p) => assert_eq!(p.status, 403, "expected 403, got {}", p.status),
+        other => panic!("unexpected error: {other:?}"),
+    }
+
+    let page = owner
+        .list_workspace_grants(&ws.slug, None, None)
+        .await
+        .expect("list grants");
+
+    assert!(
+        !page.items.iter().any(|g| g.principal.id == agent.id.0),
+        "rejected admin grant must not be persisted"
+    );
+}
+
+#[tokio::test]
+async fn create_workspace_grant_editor_to_agent_succeeds() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner, ws, owner_user) =
+        login_user_with_workspace(&server, &db, "grant-agent-editor-ws").await;
+
+    let agent = add_agent(&db, ws.id, owner_user.id, "editor-bot-ws").await;
+
+    let grant = owner
+        .create_workspace_grant(&ws.slug, agent_grant_req(agent.id.0, "editor"))
+        .await
+        .expect("editor grant to an agent must succeed");
+
+    assert_eq!(grant.principal.id, agent.id.0);
+    assert_eq!(grant.role, "editor");
+
+    let page = owner
+        .list_workspace_grants(&ws.slug, None, None)
+        .await
+        .expect("list grants");
+
+    assert!(
+        page.items
+            .iter()
+            .any(|g| g.principal.id == agent.id.0 && g.role == "editor"),
+        "editor grant to an agent must be persisted"
     );
 }
