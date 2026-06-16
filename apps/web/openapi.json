@@ -2068,6 +2068,51 @@
         ]
       }
     },
+    "/v1/workspaces/{ws}/members": {
+      "get": {
+        "tags": [
+          "members"
+        ],
+        "operationId": "list_workspace_members",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Workspace members and agents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PrincipalDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "404": {
+            "description": "Workspace not found or principal is not a member"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/v1/workspaces/{ws}/projects": {
       "get": {
         "tags": [
@@ -5640,6 +5685,29 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "PrincipalDto": {
+        "type": "object",
+        "description": "A principal (workspace member or agent) that a grant can be addressed to.\n\nReturned by `GET /v1/workspaces/{ws}/members` so the share dialog can resolve\na human-readable name to the principal id required by a grant request.",
+        "required": [
+          "principal_type",
+          "id",
+          "display"
+        ],
+        "properties": {
+          "display": {
+            "type": "string",
+            "description": "Display name: the user's display name, or the api key's name."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "principal_type": {
+            "type": "string",
+            "description": "`\"user\"` for a workspace member, `\"api_key\"` for an agent."
           }
         }
       },

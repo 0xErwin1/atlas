@@ -6,7 +6,7 @@ use atlas_api::{
     dtos::{
         ApiKeyCreated, ApiKeyDto, CreateApiKeyRequest, CreateGrantRequest, CreateProjectRequest,
         CreateUserRequest, GrantDto, GrantPrincipal, LoginRequest, LoginResponse, MeResponse,
-        ProjectDto, UpdateProjectRequest, UserDto, WorkspaceDto,
+        PrincipalDto, ProjectDto, UpdateProjectRequest, UserDto, WorkspaceDto,
         boards_tasks::{
             ActivityEntryDto, AddAssigneeRequest, AssigneeDto, BoardDto, BoardSummaryDto,
             ChecklistItemDto, ColumnDto, CreateBoardRequest, CreateChecklistItemRequest,
@@ -57,6 +57,7 @@ use atlas_api::{
         crate::routes::grants::create_workspace_grant,
         crate::routes::grants::list_workspace_grants,
         crate::routes::grants::delete_workspace_grant,
+        crate::routes::members::list_workspace_members,
         crate::routes::boards::create_board,
         crate::routes::boards::list_boards,
         crate::routes::boards::get_board,
@@ -123,6 +124,7 @@ use atlas_api::{
         CreateGrantRequest,
         GrantPrincipal,
         GrantDto,
+        PrincipalDto,
         WorkspaceDto,
         ProblemDetails,
         CreateDocumentRequest,

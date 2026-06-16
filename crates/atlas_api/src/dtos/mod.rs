@@ -165,6 +165,20 @@ pub struct GrantDto {
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
+/// A principal (workspace member or agent) that a grant can be addressed to.
+///
+/// Returned by `GET /v1/workspaces/{ws}/members` so the share dialog can resolve
+/// a human-readable name to the principal id required by a grant request.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct PrincipalDto {
+    /// `"user"` for a workspace member, `"api_key"` for an agent.
+    pub principal_type: String,
+    pub id: uuid::Uuid,
+    /// Display name: the user's display name, or the api key's name.
+    pub display: String,
+}
+
 /// Workspace representation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]

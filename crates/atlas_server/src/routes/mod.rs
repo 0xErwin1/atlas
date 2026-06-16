@@ -5,6 +5,7 @@ pub(crate) mod documents;
 pub(crate) mod folders;
 pub(crate) mod grants;
 pub(crate) mod health;
+pub(crate) mod members;
 pub mod openapi;
 pub(crate) mod projects;
 pub mod registry;

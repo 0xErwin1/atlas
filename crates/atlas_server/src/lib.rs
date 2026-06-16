@@ -93,6 +93,11 @@ pub fn app(state: AppState) -> Router {
             "/v1/workspaces/{ws}/grants/{grant_id}",
             axum::routing::delete(routes::grants::delete_workspace_grant),
         )
+        // Workspace members (principals addressable by a grant)
+        .route(
+            "/v1/workspaces/{ws}/members",
+            get(routes::members::list_workspace_members),
+        )
         // Boards
         .route(
             "/v1/workspaces/{ws}/projects/{project_slug}/boards",

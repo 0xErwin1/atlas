@@ -4,7 +4,7 @@ use atlas_api::{
     dtos::{
         ApiKeyCreated, ApiKeyDto, CreateApiKeyRequest, CreateGrantRequest, CreateProjectRequest,
         CreateUserRequest, GrantDto, HealthResponse, LoginRequest, LoginResponse, MeResponse,
-        ProjectDto, UpdateProjectRequest, UserDto, WorkspaceDto,
+        PrincipalDto, ProjectDto, UpdateProjectRequest, UserDto, WorkspaceDto,
         boards_tasks::{
             ActivityEntryDto, AddAssigneeRequest, AssigneeDto, BoardDto, BoardSummaryDto,
             ChecklistItemDto, ColumnDto, CreateBoardRequest, CreateChecklistItemRequest,
@@ -423,6 +423,16 @@ impl AtlasClient {
     pub async fn get_workspace(&self, ws: &str) -> Result<WorkspaceDto, ClientError> {
         let response = self.get(&format!("/v1/workspaces/{ws}")).send().await?;
         self.decode_response(response, "get_workspace").await
+    }
+
+    /// `GET /v1/workspaces/{ws}/members`
+    pub async fn list_workspace_members(&self, ws: &str) -> Result<Vec<PrincipalDto>, ClientError> {
+        let response = self
+            .get(&format!("/v1/workspaces/{ws}/members"))
+            .send()
+            .await?;
+        self.decode_response(response, "list_workspace_members")
+            .await
     }
 
     /// `GET /v1/workspaces/{ws}/search`
