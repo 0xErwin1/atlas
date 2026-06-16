@@ -2,6 +2,9 @@
 import { computed, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import EditorToolbar from '@/components/shell/EditorToolbar.vue';
+import EmptyState from '@/components/states/EmptyState.vue';
+import ErrorState from '@/components/states/ErrorState.vue';
+import LoadingState from '@/components/states/LoadingState.vue';
 import KanbanBoard from '@/components/tareas/KanbanBoard.vue';
 import { useBoardsStore } from '@/stores/boards';
 import { useWorkspaceStore } from '@/stores/workspace';
@@ -46,20 +49,19 @@ watch([boardId, ws], loadBoard, { immediate: true });
 
     <EditorToolbar :breadcrumbs="breadcrumbs" :dirty="false" />
 
-    <p
+    <ErrorState
       v-if="boards.error"
-      style="
-        margin: 12px 16px;
-        padding: 8px 12px;
-        border-radius: var(--r-md);
-        background: var(--c-banner-err-bg);
-        color: var(--c-banner-err-fg);
-        font-size: var(--fs-sm);
-      "
-    >
-      {{ boards.error }}
-    </p>
-
-    <KanbanBoard :ws="ws" @open="openTask" />
+      title="Couldn’t load board"
+      :hint="boards.error"
+      @retry="loadBoard"
+    />
+    <LoadingState v-else-if="boards.loading" label="Loading…" />
+    <EmptyState
+      v-else-if="boardId === null"
+      title="No board selected"
+      hint="Pick a board from the sidebar to see its tasks"
+      icon="square-kanban"
+    />
+    <KanbanBoard v-else :ws="ws" @open="openTask" />
   </AppShell>
 </template>

@@ -3,6 +3,9 @@ import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import ResultRow from '@/components/search/ResultRow.vue';
 import EditorToolbar from '@/components/shell/EditorToolbar.vue';
+import EmptyState from '@/components/states/EmptyState.vue';
+import ErrorState from '@/components/states/ErrorState.vue';
+import LoadingState from '@/components/states/LoadingState.vue';
 import Btn from '@/components/ui/Btn.vue';
 import { useSearch } from '@/composables/useSearch';
 import type { SearchHitDto } from '@/stores/search';
@@ -97,49 +100,48 @@ function onListKeydown(event: KeyboardEvent): void {
       :style="{ background: 'var(--c-background)' }"
       @keydown="onListKeydown"
     >
-      <p
+      <ErrorState
         v-if="store.error"
-        :style="{
-          margin: '12px 16px',
-          padding: '8px 12px',
-          borderRadius: 'var(--r-md)',
-          background: 'var(--c-banner-err-bg)',
-          color: 'var(--c-banner-err-fg)',
-          fontSize: 'var(--fs-sm)',
-        }"
-      >
-        {{ store.error }}
-      </p>
-
-      <ResultRow
-        v-for="(hit, i) in store.results"
-        :key="hit.id"
-        :hit="hit"
-        :active="i === activeIndex"
-        @click="navigateToHit(hit)"
-        @mouseenter="activeIndex = i"
+        title="Couldn’t search"
+        :hint="store.error"
+        @retry="onQueryInput(store.query)"
+      />
+      <LoadingState
+        v-else-if="store.loading && store.results.length === 0"
+        label="Searching…"
       />
 
-      <div
-        v-if="store.hasMore"
-        :style="{ display: 'flex', justifyContent: 'center', padding: '12px' }"
-      >
-        <Btn variant="secondary" @click="loadMore">Load more</Btn>
-      </div>
+      <template v-else>
+        <ResultRow
+          v-for="(hit, i) in store.results"
+          :key="hit.id"
+          :hit="hit"
+          :active="i === activeIndex"
+          @click="navigateToHit(hit)"
+          @mouseenter="activeIndex = i"
+        />
 
-      <div
-        v-if="store.query && store.results.length === 0 && !store.loading && !store.error"
-        :style="{ padding: '48px 16px', textAlign: 'center', color: 'var(--c-muted)', fontSize: 'var(--fs-sm)' }"
-      >
-        No results for "{{ store.query }}".
-      </div>
+        <div
+          v-if="store.hasMore"
+          :style="{ display: 'flex', justifyContent: 'center', padding: '12px' }"
+        >
+          <Btn variant="secondary" @click="loadMore">Load more</Btn>
+        </div>
 
-      <div
-        v-if="!store.query"
-        :style="{ padding: '48px 16px', textAlign: 'center', color: 'var(--c-muted)', fontSize: 'var(--fs-sm)' }"
-      >
-        Search documents and tasks across the workspace.
-      </div>
+        <EmptyState
+          v-if="store.query && store.results.length === 0 && !store.loading"
+          :title="`No results for “${store.query}”`"
+          hint="Try a different term, or broaden the type filter"
+          icon="search-x"
+        />
+
+        <EmptyState
+          v-else-if="!store.query"
+          title="Search documents and tasks"
+          hint="Search across the workspace by title, content, or @handle"
+          icon="search"
+        />
+      </template>
     </div>
   </AppShell>
 </template>
