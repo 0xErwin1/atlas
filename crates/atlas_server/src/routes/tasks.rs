@@ -661,7 +661,7 @@ pub(crate) async fn move_task(
         ("readable_id" = String, Path, description = "Task readable ID"),
     ),
     responses(
-        (status = 200, description = "Assignee list"),
+        (status = 200, description = "Assignee list", body = Vec<AssigneeDto>),
         (status = 401, description = "Unauthenticated"),
         (status = 403, description = "Insufficient permissions"),
         (status = 404, description = "Task not found"),
@@ -793,7 +793,7 @@ pub(crate) async fn remove_assignee(
         ("readable_id" = String, Path, description = "Task readable ID"),
     ),
     responses(
-        (status = 200, description = "Reference list"),
+        (status = 200, description = "Reference list", body = Vec<ReferenceDto>),
         (status = 401, description = "Unauthenticated"),
         (status = 403, description = "Insufficient permissions"),
         (status = 404, description = "Task not found"),
@@ -1130,7 +1130,7 @@ pub(crate) async fn list_backlinks(
         ("readable_id" = String, Path, description = "Task readable ID"),
     ),
     responses(
-        (status = 200, description = "Checklist items"),
+        (status = 200, description = "Checklist items", body = Vec<ChecklistItemDto>),
         (status = 401, description = "Unauthenticated"),
         (status = 403, description = "Insufficient permissions"),
         (status = 404, description = "Task not found"),
@@ -1395,7 +1395,7 @@ pub(crate) async fn promote_checklist_item(
         ("limit" = Option<u32>, Query, description = "Page size (max 200)"),
     ),
     responses(
-        (status = 200, description = "Activity feed"),
+        (status = 200, description = "Activity feed", body = Page<ActivityEntryDto>),
         (status = 401, description = "Unauthenticated"),
         (status = 403, description = "Insufficient permissions"),
         (status = 404, description = "Task not found"),

@@ -2358,7 +2358,14 @@
         ],
         "responses": {
           "200": {
-            "description": "Paginated board list"
+            "description": "Paginated board list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_BoardSummaryDto"
+                }
+              }
+            }
           },
           "401": {
             "description": "Unauthenticated"
@@ -3204,7 +3211,14 @@
         ],
         "responses": {
           "200": {
-            "description": "Activity feed"
+            "description": "Activity feed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_ActivityEntryDto"
+                }
+              }
+            }
           },
           "401": {
             "description": "Unauthenticated"
@@ -3251,7 +3265,17 @@
         ],
         "responses": {
           "200": {
-            "description": "Assignee list"
+            "description": "Assignee list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AssigneeDto"
+                  }
+                }
+              }
+            }
           },
           "401": {
             "description": "Unauthenticated"
@@ -3486,7 +3510,17 @@
         ],
         "responses": {
           "200": {
-            "description": "Checklist items"
+            "description": "Checklist items",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChecklistItemDto"
+                  }
+                }
+              }
+            }
           },
           "401": {
             "description": "Unauthenticated"
@@ -3868,7 +3902,17 @@
         ],
         "responses": {
           "200": {
-            "description": "Reference list"
+            "description": "Reference list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ReferenceDto"
+                  }
+                }
+              }
+            }
           },
           "401": {
             "description": "Unauthenticated"
@@ -5074,6 +5118,59 @@
           }
         }
       },
+      "Page_ActivityEntryDto": {
+        "type": "object",
+        "description": "Paginated response envelope.",
+        "required": [
+          "items",
+          "has_more"
+        ],
+        "properties": {
+          "has_more": {
+            "type": "boolean"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "A single activity entry on a task.",
+              "required": [
+                "id",
+                "kind",
+                "actor",
+                "payload",
+                "created_at"
+              ],
+              "properties": {
+                "actor": {
+                  "$ref": "#/components/schemas/ActorDto"
+                },
+                "created_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "kind": {
+                  "type": "string",
+                  "description": "\"created\" | \"moved\" | \"assigned\" | \"unassigned\" | \"field_changed\" |\n\"reference_added\" | \"reference_removed\" | \"checklist_added\" |\n\"checklist_updated\" | \"checklist_removed\" | \"checklist_promoted\" | \"deleted\""
+                },
+                "payload": {
+                  "description": "Typed-per-verb payload; schema varies by `kind`."
+                }
+              }
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "Page_BacklinkDto": {
         "type": "object",
         "description": "Paginated response envelope.",
@@ -5111,6 +5208,55 @@
                 },
                 "source_title": {
                   "type": "string"
+                }
+              }
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "Page_BoardSummaryDto": {
+        "type": "object",
+        "description": "Paginated response envelope.",
+        "required": [
+          "items",
+          "has_more"
+        ],
+        "properties": {
+          "has_more": {
+            "type": "boolean"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "Lightweight board summary for list endpoints.",
+              "required": [
+                "id",
+                "name",
+                "created_at",
+                "updated_at"
+              ],
+              "properties": {
+                "created_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "updated_at": {
+                  "type": "string",
+                  "format": "date-time"
                 }
               }
             }

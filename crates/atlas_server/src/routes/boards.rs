@@ -145,7 +145,7 @@ pub(crate) async fn create_board(
         ("limit" = Option<u32>, Query, description = "Page size (max 200)"),
     ),
     responses(
-        (status = 200, description = "Paginated board list"),
+        (status = 200, description = "Paginated board list", body = Page<BoardSummaryDto>),
         (status = 401, description = "Unauthenticated"),
         (status = 403, description = "Insufficient permissions"),
     )
