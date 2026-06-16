@@ -9,7 +9,7 @@ vi.mock('@/api/wrapper', () => ({
   wrappedClient: { GET },
 }));
 
-import { type LocalAction, filterLocalActions, useSearch } from '@/composables/useSearch';
+import { filterLocalActions, type LocalAction, useSearch } from '@/composables/useSearch';
 
 const page = (items: { id: string; kind: 'document' | 'task'; title: string }[]) => ({
   data: {

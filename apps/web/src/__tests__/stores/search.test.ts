@@ -25,11 +25,7 @@ const hit = (
   ...extra,
 });
 
-const page = (
-  items: ReturnType<typeof hit>[],
-  next: string | null,
-  hasMore: boolean,
-) => ({
+const page = (items: ReturnType<typeof hit>[], next: string | null, hasMore: boolean) => ({
   data: { items, next_cursor: next, has_more: hasMore },
   error: undefined,
 });
@@ -41,7 +37,9 @@ describe('useSearchStore (REQ-W23/W24)', () => {
   });
 
   it('runSearch sends q/type/sort and replaces results', async () => {
-    GET.mockResolvedValueOnce(page([hit('d1', 'document', 'Shell'), hit('t1', 'task', 'ATL-42')], null, false));
+    GET.mockResolvedValueOnce(
+      page([hit('d1', 'document', 'Shell'), hit('t1', 'task', 'ATL-42')], null, false),
+    );
 
     const store = useSearchStore();
     store.setQuery('app rail');
