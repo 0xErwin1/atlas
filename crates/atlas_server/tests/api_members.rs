@@ -7,6 +7,7 @@
 
 mod support;
 
+use atlas_client::ClientError;
 use atlas_domain::{Actor, WorkspaceCtx, entities::identity::MemberRole};
 use atlas_server::persistence::repos::{ApiKeyRepo, MembershipRepo, NewApiKey, NewUser, UserRepo};
 use support::{TestDb, TestServer, login_user_with_workspace};
@@ -157,8 +158,15 @@ async fn list_members_cross_tenant_returns_not_found() {
     let (outsider, ws_b, _) = login_user_with_workspace(&server, &db, "members-tenant-b").await;
 
     // outsider is a member of ws_b only; asking for ws_a's members must 404 (conceal).
-    let result = outsider.list_workspace_members("ws-members-tenant-a").await;
+    let err = outsider
+        .list_workspace_members("ws-members-tenant-a")
+        .await
+        .expect_err("outsider must not read another workspace");
 
-    assert!(result.is_err(), "outsider must not read another workspace");
+    match err {
+        ClientError::Api(p) => assert_eq!(p.status, 404, "expected 404, got {}", p.status),
+        other => panic!("unexpected error: {other:?}"),
+    }
+
     let _ = ws_b;
 }
