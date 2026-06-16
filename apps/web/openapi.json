@@ -676,7 +676,17 @@
         ],
         "responses": {
           "200": {
-            "description": "Column list"
+            "description": "Column list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ColumnDto"
+                  }
+                }
+              }
+            }
           },
           "401": {
             "description": "Unauthenticated"
@@ -938,7 +948,14 @@
         ],
         "responses": {
           "200": {
-            "description": "Paginated task list"
+            "description": "Paginated task list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_TaskSummaryDto"
+                }
+              }
+            }
           },
           "401": {
             "description": "Unauthenticated"
@@ -5296,6 +5313,65 @@
                 "workspace_id": {
                   "type": "string",
                   "format": "uuid"
+                }
+              }
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "Page_TaskSummaryDto": {
+        "type": "object",
+        "description": "Paginated response envelope.",
+        "required": [
+          "items",
+          "has_more"
+        ],
+        "properties": {
+          "has_more": {
+            "type": "boolean"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "Lightweight task summary for list endpoints.",
+              "required": [
+                "id",
+                "readable_id",
+                "column_id",
+                "title",
+                "updated_at"
+              ],
+              "properties": {
+                "column_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "priority": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "readable_id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "updated_at": {
+                  "type": "string",
+                  "format": "date-time"
                 }
               }
             }

@@ -414,7 +414,7 @@ pub(crate) async fn create_task(
         ("limit" = Option<u32>, Query, description = "Page size (max 200)"),
     ),
     responses(
-        (status = 200, description = "Paginated task list"),
+        (status = 200, description = "Paginated task list", body = Page<TaskSummaryDto>),
         (status = 401, description = "Unauthenticated"),
         (status = 403, description = "Insufficient permissions"),
         (status = 404, description = "Board not found"),

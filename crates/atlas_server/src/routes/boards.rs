@@ -365,7 +365,7 @@ pub(crate) async fn create_column(
         ("board_id" = String, Path, description = "Board UUID"),
     ),
     responses(
-        (status = 200, description = "Column list"),
+        (status = 200, description = "Column list", body = Vec<ColumnDto>),
         (status = 401, description = "Unauthenticated"),
         (status = 403, description = "Insufficient permissions"),
         (status = 404, description = "Board not found"),
