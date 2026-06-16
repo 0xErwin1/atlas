@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed, watch } from 'vue';
 import { useRoute } from 'vue-router';
+import SharePanel from '@/components/share/SharePanel.vue';
 import EditorToolbar from '@/components/shell/EditorToolbar.vue';
 import ActivityFeed from '@/components/tareas/ActivityFeed.vue';
 import AssigneeList from '@/components/tareas/AssigneeList.vue';
 import Checklist from '@/components/tareas/Checklist.vue';
 import ReferenceList from '@/components/tareas/ReferenceList.vue';
 import TaskDescription from '@/components/tareas/TaskDescription.vue';
-import AgentBadge from '@/components/ui/AgentBadge.vue';
 import Chip from '@/components/ui/Chip.vue';
 import Icon from '@/components/ui/Icon.vue';
 import MetaRow from '@/components/ui/MetaRow.vue';
@@ -197,10 +197,7 @@ watch([readableId, ws], load, { immediate: true });
     </template>
 
     <template #inspector-share>
-      <p style="font-size: var(--fs-sm); color: var(--c-muted);">
-        <AgentBadge />
-        Sharing is managed from the project share dialog.
-      </p>
+      <SharePanel :resource-label="`${task?.readable_id ?? 'Task'} · task`" />
     </template>
   </AppShell>
 </template>

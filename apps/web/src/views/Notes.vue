@@ -8,6 +8,7 @@ import NoteEditor from '@/components/notas/NoteEditor.vue';
 import PropertiesPanel from '@/components/notas/PropertiesPanel.vue';
 // biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
 import WikiLinkSuggest from '@/components/notas/WikiLinkSuggest.vue';
+import SharePanel from '@/components/share/SharePanel.vue';
 import EditorToolbar from '@/components/shell/EditorToolbar.vue';
 import Icon from '@/components/ui/Icon.vue';
 import type { MergeSegment } from '@/composables/useCasMerge';
@@ -298,6 +299,10 @@ watch([slug, ws], loadDoc, { immediate: true });
         :backlinks="documents.backlinks"
         @navigate="(s) => router.push({ name: 'notes', params: { slug: s } })"
       />
+    </template>
+
+    <template #inspector-share>
+      <SharePanel :resource-label="`${title || 'Document'} · note`" />
     </template>
 
     <CasConflictView

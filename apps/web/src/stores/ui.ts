@@ -28,6 +28,9 @@ export const useUiStore = defineStore('ui', () => {
   const inspectorTab = ref<InspectorTab>(saved.tab);
   const banner = ref<Banner | null>(null);
 
+  const shareOpen = ref(false);
+  const shareResourceLabel = ref('');
+
   function persistInspector() {
     try {
       localStorage.setItem(
@@ -57,13 +60,26 @@ export const useUiStore = defineStore('ui', () => {
     banner.value = null;
   }
 
+  function openShare(resourceLabel: string) {
+    shareResourceLabel.value = resourceLabel;
+    shareOpen.value = true;
+  }
+
+  function closeShare() {
+    shareOpen.value = false;
+  }
+
   return {
     inspectorOpen,
     inspectorTab,
     banner,
+    shareOpen,
+    shareResourceLabel,
     toggleInspector,
     setInspectorTab,
     showBanner,
     dismissBanner,
+    openShare,
+    closeShare,
   };
 });
