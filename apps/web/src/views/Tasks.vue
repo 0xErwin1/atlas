@@ -6,6 +6,7 @@ import EmptyState from '@/components/states/EmptyState.vue';
 import ErrorState from '@/components/states/ErrorState.vue';
 import LoadingState from '@/components/states/LoadingState.vue';
 import KanbanBoard from '@/components/tareas/KanbanBoard.vue';
+import Icon from '@/components/ui/Icon.vue';
 import { useBoardsStore } from '@/stores/boards';
 import { useWorkspaceStore } from '@/stores/workspace';
 import AppShell from '@/views/AppShell.vue';
@@ -42,12 +43,40 @@ watch([boardId, ws], loadBoard, { immediate: true });
 </script>
 
 <template>
-  <AppShell>
+  <AppShell sidebar-title="Tasks" sidebar-icon="square-kanban">
+    <template #sidebar-actions>
+      <button type="button" class="atl-gbtn" title="Filter" aria-label="Filter">
+        <Icon name="search" :size="14" />
+      </button>
+      <button type="button" class="atl-gbtn" title="Collapse" aria-label="Collapse sidebar">
+        <Icon name="panel-left" :size="13" />
+      </button>
+    </template>
+
     <template #sidebar>
       <TasksSidebar />
     </template>
 
-    <EditorToolbar :breadcrumbs="breadcrumbs" :dirty="false" />
+    <template #sidebar-footer>
+      <button
+        type="button"
+        class="atl-gbtn"
+        style="width: 100%; justify-content: flex-start; height: 26px; gap: 7px; color: var(--c-foreground);"
+      >
+        <Icon name="plus" :size="14" />
+        New project
+      </button>
+    </template>
+
+    <EditorToolbar :breadcrumbs="breadcrumbs" :dirty="false">
+      <button type="button" class="atl-gbtn" title="Filter" aria-label="Filter">
+        <Icon name="filter" :size="14" />
+        Filter
+      </button>
+      <button type="button" class="atl-gbtn" title="Command palette ⌘K" aria-label="Command palette">
+        <Icon name="command" :size="14" />
+      </button>
+    </EditorToolbar>
 
     <ErrorState
       v-if="boards.error"

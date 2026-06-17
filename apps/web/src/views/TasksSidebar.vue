@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import Icon from '@/components/ui/Icon.vue';
+import Row from '@/components/ui/Row.vue';
+import SectionLabel from '@/components/ui/SectionLabel.vue';
 import { useBoardsStore } from '@/stores/boards';
 import { useWorkspaceStore } from '@/stores/workspace';
 
@@ -45,53 +46,33 @@ watch(() => workspace.activeWorkspaceSlug, loadBoards);
 </script>
 
 <template>
-  <div v-if="activeProject">
-    <div
-      style="
-        padding: 8px 8px 4px;
-        font-size: var(--fs-xs);
-        font-weight: var(--fw-semibold);
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-        color: var(--c-muted);
-      "
-    >
-      {{ activeProject.name }}
-    </div>
+  <template v-if="activeProject">
+    <SectionLabel>Projects</SectionLabel>
 
-    <button
+    <Row
+      :label="activeProject.name"
+      icon="folder-open"
+      :chevron="true"
+      :open="true"
+    />
+
+    <Row
       v-for="b in boards.boardSummaries"
       :key="b.id"
-      type="button"
-      class="flex items-center w-full text-left cursor-pointer"
-      :style="{
-        gap: '8px',
-        height: 'var(--h-compact)',
-        padding: '0 8px',
-        border: 'none',
-        background: activeBoardId === b.id ? 'var(--c-list-active)' : 'transparent',
-        color: activeBoardId === b.id ? 'var(--c-foreground)' : 'var(--c-muted)',
-        fontFamily: 'var(--font-mono)',
-        fontSize: 'var(--fs-sm)',
-        fontWeight: activeBoardId === b.id ? 'var(--fw-semibold)' : 'var(--fw-normal)',
-      }"
+      :label="b.name"
+      icon="columns-3"
+      :depth="1"
+      :active="activeBoardId === b.id"
       @click="openBoard(b.id)"
-    >
-      <Icon
-        name="columns-3"
-        :size="13"
-        :style="{ color: activeBoardId === b.id ? 'var(--c-primary)' : 'var(--c-muted)' }"
-      />
-      <span class="flex-1 min-w-0 truncate">{{ b.name }}</span>
-    </button>
+    />
 
     <p
       v-if="boards.boardSummaries.length === 0"
-      style="padding: 8px; font-size: var(--fs-sm); color: var(--c-muted);"
+      style="padding: 8px 8px 8px 22px; font-size: var(--fs-sm); color: var(--c-muted);"
     >
       No boards in this project.
     </p>
-  </div>
+  </template>
 
   <p
     v-else

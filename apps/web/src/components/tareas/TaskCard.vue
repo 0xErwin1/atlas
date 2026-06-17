@@ -27,7 +27,7 @@ const priorityTone = computed<ChipTone>(() => {
 <template>
   <button
     type="button"
-    class="atl-task-card flex flex-col text-left w-full cursor-grab select-none"
+    class="atl-card atl-task-card flex flex-col text-left w-full cursor-grab select-none"
     :data-readable-id="task.readable_id"
     style="
       gap: 7px;
@@ -51,12 +51,13 @@ const priorityTone = computed<ChipTone>(() => {
 
     <div
       v-if="task.priority"
-      class="flex items-center gap-1 flex-wrap"
+      class="flex flex-wrap"
+      style="gap: 5px;"
     >
       <Chip :tone="priorityTone">{{ task.priority }}</Chip>
     </div>
 
-    <div class="flex items-center gap-2">
+    <div class="flex items-center" style="gap: 8px;">
       <span
         style="
           font-family: var(--font-mono);
@@ -74,9 +75,5 @@ const priorityTone = computed<ChipTone>(() => {
 <style scoped>
 .atl-task-card:active {
   cursor: grabbing;
-}
-
-.atl-task-card:hover {
-  border-color: var(--c-selection);
 }
 </style>

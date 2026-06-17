@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import { VueDraggable } from 'vue-draggable-plus';
 import TaskCard from '@/components/tareas/TaskCard.vue';
+import Icon from '@/components/ui/Icon.vue';
 import { resolveDropTarget } from '@/composables/kanbanDrop';
 import type { ColumnDto, TaskSummaryDto } from '@/stores/boards';
 
@@ -75,6 +76,16 @@ function onChange(event: unknown): void {
       >
         {{ tasks.length }}
       </span>
+      <span class="flex-1" />
+      <button
+        type="button"
+        class="atl-gbtn"
+        title="Add task"
+        aria-label="Add task"
+        style="width: 20px; height: 20px; min-width: 20px; padding: 0;"
+      >
+        <Icon name="plus" :size="13" />
+      </button>
     </div>
 
     <VueDraggable
