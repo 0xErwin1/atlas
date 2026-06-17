@@ -881,6 +881,65 @@ async fn move_task_changes_column() {
     db.teardown().await;
 }
 
+// A move anchored to a neighbour TASK ID (what clients send — they never see the
+// internal fractional keys) must resolve and succeed, not fail as an invalid key.
+#[tokio::test]
+async fn move_task_with_task_id_anchor_succeeds() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "task-anchor-1").await;
+
+    client
+        .create_project(&ws.slug, project_req("anchor-proj", "AN"))
+        .await
+        .expect("create project");
+
+    let board = client
+        .create_board(&ws.slug, "anchor-proj", CreateBoardRequest { name: "Board".to_string() })
+        .await
+        .expect("create board");
+
+    let col = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest { name: "Todo".to_string(), before: None, after: None },
+        )
+        .await
+        .expect("create column");
+
+    let make = |title: &str| CreateTaskRequest {
+        column_id: col.id,
+        title: title.to_string(),
+        description: None,
+        properties: None,
+        before: None,
+        after: None,
+    };
+
+    let t1 = client.create_task(&ws.slug, board.id, make("T1")).await.expect("t1");
+    let t2 = client.create_task(&ws.slug, board.id, make("T2")).await.expect("t2");
+
+    // Anchor the move to T1 by its task id; before the fix this was treated as a
+    // fractional key, was invalid, and returned 409 PositionExhausted.
+    let moved = client
+        .move_task(
+            &ws.slug,
+            &t2.readable_id,
+            MoveTaskRequest {
+                column_id: col.id,
+                before: Some(t1.id.to_string()),
+                after: None,
+            },
+        )
+        .await
+        .expect("move anchored by task id should succeed");
+
+    assert_eq!(moved.column_id, col.id);
+
+    db.teardown().await;
+}
+
 // ---------------------------------------------------------------------------
 // Assignees
 // ---------------------------------------------------------------------------

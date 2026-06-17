@@ -33,11 +33,12 @@ function isPositionExhausted(err: unknown): err is ApiProblem {
 }
 
 /**
- * Compute the before/after neighbor IDs for a POST move request.
+ * Compute the before/after neighbor task IDs for a POST move request.
  *
- * `after` = the task immediately before the target slot (the one the moving task will follow).
- * `before` = the task immediately after the target slot (the one that will follow the moving task).
- * Null means the slot is at the boundary on that side.
+ * The server places the moved task between these two anchors, so the contract
+ * matches the fractional order: `before` is the neighbour ABOVE the target slot
+ * (the task the moved one will follow) and `after` is the neighbour BELOW it (the
+ * task that will follow the moved one). Null means the slot is at that boundary.
  *
  * `destTasks` must be the destination column tasks EXCLUDING the moving task,
  * so that indexes are correct when the task moves within the same column.
@@ -46,12 +47,12 @@ function computeNeighbors(
   destTasks: TaskSummaryDto[],
   toIndex: number,
 ): { before: string | null; after: string | null } {
-  const afterTask = toIndex > 0 ? destTasks[toIndex - 1] : undefined;
-  const beforeTask = destTasks[toIndex];
+  const aboveTask = toIndex > 0 ? destTasks[toIndex - 1] : undefined;
+  const belowTask = destTasks[toIndex];
 
   return {
-    after: afterTask?.id ?? null,
-    before: beforeTask?.id ?? null,
+    before: aboveTask?.id ?? null,
+    after: belowTask?.id ?? null,
   };
 }
 

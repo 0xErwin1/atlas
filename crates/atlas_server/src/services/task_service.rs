@@ -165,7 +165,14 @@ impl TaskService {
         // column must belong to that board and the caller's workspace.
         validate_column_in_board(&txn, ctx, before.board_id, column_id, before.project_id).await?;
 
-        let moved = PgTaskRepo::move_to_in(&txn, ctx, id, column_id, position).await?;
+        // Clients send neighbour anchors as task ids; translate them to the
+        // neighbours' fractional position keys before computing the new key.
+        let resolved = PositionBetween {
+            before: resolve_anchor_key(&txn, ctx, position.before.as_deref()).await?,
+            after: resolve_anchor_key(&txn, ctx, position.after.as_deref()).await?,
+        };
+
+        let moved = PgTaskRepo::move_to_in(&txn, ctx, id, column_id, resolved).await?;
 
         PgTaskActivityRepo::append_in(
             &txn,
@@ -582,6 +589,33 @@ fn db_err(e: sea_orm::DbErr) -> DomainError {
 ///
 /// Returns `NotFound` for an unknown board, and `InvalidInput` (422) when the
 /// board's project does not match or the column does not belong to the board.
+/// Resolves a move anchor — a task id, as sent by clients — to that task's
+/// fractional position key. Returns `None` when the anchor is absent, not a UUID,
+/// or refers to no live task, so the move falls back to a boundary/default
+/// placement instead of failing. Fractional keys stay server-internal: clients
+/// reference neighbours by task id, never by raw position key.
+async fn resolve_anchor_key(
+    conn: &impl ConnectionTrait,
+    ctx: &WorkspaceCtx,
+    anchor: Option<&str>,
+) -> Result<Option<String>, DomainError> {
+    let Some(raw) = anchor else {
+        return Ok(None);
+    };
+    let Ok(task_id) = uuid::Uuid::parse_str(raw) else {
+        return Ok(None);
+    };
+
+    let row = task::Entity::find_by_id(task_id)
+        .filter(task::Column::WorkspaceId.eq(ctx.workspace_id.0))
+        .filter(task::Column::DeletedAt.is_null())
+        .one(conn)
+        .await
+        .map_err(db_err)?;
+
+    Ok(row.map(|r| r.position_key))
+}
+
 async fn validate_column_in_board(
     conn: &impl ConnectionTrait,
     ctx: &WorkspaceCtx,
