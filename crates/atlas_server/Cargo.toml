@@ -5,6 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 repository.workspace = true
+default-run = "atlas_server"
 
 [[bin]]
 name = "atlas_server"
