@@ -90,8 +90,10 @@ export const atlasMarkdownTheme = EditorView.theme(
       color: 'var(--c-muted)',
     },
 
-    // List item line (marker kept visible in v1).
+    // List item line. The raw bullet marker (`-`/`*`/`+`) is replaced by a `•`
+    // widget off the active line; ordered markers are left as content.
     '.cm-atlas-listitem': {},
+    '.cm-atlas-bullet': { color: 'var(--c-muted)' },
 
     // Links and wikilinks.
     '.cm-atlas-link': { color: 'var(--c-info)', cursor: 'pointer' },

@@ -72,6 +72,24 @@ class WikilinkWidget extends WidgetType {
   }
 }
 
+/**
+ * Widget that renders a list bullet in place of the raw `-`/`*`/`+` marker, so an
+ * off-active bullet line reads as `• item` while the document keeps the markdown
+ * marker. Ordered-list markers (`1.`) are meaningful content and never replaced.
+ */
+class BulletWidget extends WidgetType {
+  eq(): boolean {
+    return true;
+  }
+
+  toDOM(): HTMLElement {
+    const span = document.createElement('span');
+    span.className = 'cm-atlas-bullet';
+    span.textContent = '•';
+    return span;
+  }
+}
+
 const hideDeco = Decoration.replace({});
 
 function lineRangesFor(view: EditorView): LineRange[] {
@@ -185,6 +203,27 @@ function decorateSyntaxTree(
 
       if (name === 'Blockquote') {
         decorateLines(view, node.from, node.to, 'cm-atlas-quote', decos);
+        return;
+      }
+
+      if (name === 'QuoteMark') {
+        const lineNo = lineNumberAt(view, node.from);
+        if (!activeLines.has(lineNo)) {
+          const lineEnd = view.state.doc.lineAt(node.from).to;
+          decos.push(hideDeco.range(node.from, consumeTrailingSpace(view, node.to, lineEnd)));
+        }
+        return;
+      }
+
+      if (name === 'ListMark') {
+        const lineNo = lineNumberAt(view, node.from);
+        if (!activeLines.has(lineNo)) {
+          const markText = view.state.doc.sliceString(node.from, node.to);
+          const isBullet = markText === '-' || markText === '*' || markText === '+';
+          if (isBullet) {
+            decos.push(Decoration.replace({ widget: new BulletWidget() }).range(node.from, node.to));
+          }
+        }
         return;
       }
 
