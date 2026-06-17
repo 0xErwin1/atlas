@@ -168,10 +168,19 @@ onBeforeUnmount(() => {
 <style scoped>
 .note-editor :deep(.ProseMirror) {
   outline: none;
+  min-height: 60vh;
   color: var(--c-foreground);
   font-family: var(--font-mono);
   font-size: var(--fs-lg);
   line-height: var(--lh-relaxed);
+}
+
+/* The writing surface is a document, not a form field: never show the global
+   focus ring (base.css :focus-visible box-shadow) around the editable area. */
+.note-editor :deep(.ProseMirror:focus),
+.note-editor :deep(.ProseMirror:focus-visible) {
+  outline: none;
+  box-shadow: none;
 }
 
 .note-editor :deep(.ProseMirror p) {
