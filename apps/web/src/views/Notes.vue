@@ -18,6 +18,7 @@ import { useMarkdownDoc } from '@/composables/useMarkdownDoc';
 import { joinFrontmatter, splitFrontmatter } from '@/lib/frontmatter';
 import { wikilinkTarget } from '@/lib/wikilink';
 import { useDocumentsStore } from '@/stores/documents';
+import { useNotesTabsStore } from '@/stores/notesTabs';
 import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 import AppShell from '@/views/AppShell.vue';
@@ -29,6 +30,7 @@ const router = useRouter();
 const workspace = useWorkspaceStore();
 const documents = useDocumentsStore();
 const ui = useUiStore();
+const tabsStore = useNotesTabsStore();
 const { load, save } = useMarkdownDoc();
 const { merge } = useCasMerge();
 
@@ -61,18 +63,25 @@ const conflictSegments = ref<MergeSegment[]>([]);
 const breadcrumbs = computed(() => ['Atlas', title.value || 'Untitled']);
 
 const editorTabs = computed<Tab[]>(() =>
-  slug.value === null
-    ? []
-    : [
-        {
-          id: slug.value,
-          name: title.value || 'Untitled',
-          icon: 'file',
-          active: true,
-          dirty: dirty.value,
-        },
-      ],
+  tabsStore.tabs(ws.value).map((t) => ({
+    id: t.slug,
+    name: t.title || 'Untitled',
+    icon: 'file',
+    active: t.slug === slug.value,
+    dirty: t.slug === slug.value && dirty.value,
+  })),
 );
+
+function onSelectTab(id: string): void {
+  if (id !== slug.value) void router.push({ name: 'notes', params: { slug: id } });
+}
+
+function onCloseTab(id: string): void {
+  const nextSlug = tabsStore.close(ws.value, id);
+  if (id !== slug.value) return;
+
+  void router.push(nextSlug !== null ? { name: 'notes', params: { slug: nextSlug } } : { name: 'notes' });
+}
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -97,6 +106,7 @@ async function loadDoc(): Promise<void> {
     baseContent.value = joinFrontmatter(result.meta, result.body);
     title.value = typeof result.meta.title === 'string' ? result.meta.title : (slug.value ?? '');
     dirty.value = false;
+    tabsStore.open(ws.value, slug.value, title.value);
     await documents.loadBacklinks(ws.value, slug.value);
   } catch (e) {
     loadError.value = e instanceof Error ? e.message : 'Failed to load document';
@@ -235,6 +245,10 @@ function onEditorKeydown(event: KeyboardEvent): void {
 }
 
 watch([slug, ws], loadDoc, { immediate: true });
+
+watch(title, (t) => {
+  if (slug.value !== null && ws.value !== '') tabsStore.setTitle(ws.value, slug.value, t);
+});
 </script>
 
 <template>
@@ -264,7 +278,13 @@ watch([slug, ws], loadDoc, { immediate: true });
       </button>
     </template>
 
-    <TabStrip v-if="slug" :tabs="editorTabs">
+    <TabStrip
+      v-if="editorTabs.length > 0"
+      :tabs="editorTabs"
+      closable
+      @select="onSelectTab"
+      @close="onCloseTab"
+    >
       <template #right>
         <button
           type="button"
