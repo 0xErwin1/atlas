@@ -39,8 +39,23 @@ export const useBoardsStore = defineStore('boards', () => {
   const loading = ref(false);
   const error = ref<string | null>(null);
 
+  // Stable empty-array reference per column. Returning a fresh `[]` for an empty
+  // column on every call makes the kanban draggable's bound list change identity
+  // on every render, which drives an infinite render loop (renderer freeze).
+  const emptyByColumn = new Map<string, TaskSummaryDto[]>();
+
   function tasksByColumn(columnId: string): TaskSummaryDto[] {
-    return tasks.value.get(columnId) ?? [];
+    const existing = tasks.value.get(columnId);
+    if (existing !== undefined) {
+      return existing;
+    }
+
+    let empty = emptyByColumn.get(columnId);
+    if (empty === undefined) {
+      empty = [];
+      emptyByColumn.set(columnId, empty);
+    }
+    return empty;
   }
 
   async function loadBoards(ws: string, projectSlug: string): Promise<void> {

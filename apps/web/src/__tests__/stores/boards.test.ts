@@ -34,6 +34,15 @@ describe('useBoardsStore', () => {
     vi.clearAllMocks();
   });
 
+  it('returns a stable array reference for an empty column (guards the kanban render loop)', () => {
+    const store = useBoardsStore();
+    const first = store.tasksByColumn('empty-col');
+    const second = store.tasksByColumn('empty-col');
+
+    expect(first).toEqual([]);
+    expect(first).toBe(second);
+  });
+
   it('loadBoard fetches the board and stores it (REQ-W20)', async () => {
     GET.mockResolvedValueOnce({
       data: {
