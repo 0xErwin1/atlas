@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import EditorToolbar from '@/components/shell/EditorToolbar.vue';
 import EmptyState from '@/components/states/EmptyState.vue';
@@ -10,6 +10,7 @@ import Icon from '@/components/ui/Icon.vue';
 import { useBoardsStore } from '@/stores/boards';
 import { useWorkspaceStore } from '@/stores/workspace';
 import AppShell from '@/views/AppShell.vue';
+// biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
 import TasksSidebar from '@/views/TasksSidebar.vue';
 
 const route = useRoute();
@@ -23,6 +24,8 @@ const boardId = computed(() => {
 });
 
 const ws = computed(() => workspace.activeWorkspaceSlug ?? '');
+
+const sidebarRef = ref<InstanceType<typeof TasksSidebar> | null>(null);
 
 const breadcrumbs = computed(() => ['Atlas', boards.board?.name ?? 'Board']);
 
@@ -75,7 +78,7 @@ watch([boardId, ws], loadBoard, { immediate: true });
     </template>
 
     <template #sidebar>
-      <TasksSidebar />
+      <TasksSidebar ref="sidebarRef" />
     </template>
 
     <template #sidebar-footer>
@@ -83,6 +86,7 @@ watch([boardId, ws], loadBoard, { immediate: true });
         type="button"
         class="atl-gbtn"
         style="width: 100%; justify-content: flex-start; height: 26px; gap: 7px; color: var(--c-foreground);"
+        @click="sidebarRef?.openNewProject()"
       >
         <Icon name="plus" :size="14" />
         New project

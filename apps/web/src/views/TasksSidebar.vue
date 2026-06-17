@@ -22,11 +22,20 @@ const activeBoardId = computed(() => {
   return typeof id === 'string' ? id : null;
 });
 
-const activeProject = computed(() => workspace.projects[0] ?? null);
-
 const ws = computed(() => workspace.activeWorkspaceSlug ?? '');
 
-async function loadBoards(): Promise<void> {
+const collapsed = ref<Set<string>>(new Set());
+function isExpanded(slug: string): boolean {
+  return !collapsed.value.has(slug);
+}
+function toggleProject(slug: string): void {
+  const next = new Set(collapsed.value);
+  if (next.has(slug)) next.delete(slug);
+  else next.add(slug);
+  collapsed.value = next;
+}
+
+async function loadAll(): Promise<void> {
   const wsSlug = workspace.activeWorkspaceSlug;
   if (wsSlug === null) {
     await workspace.loadProjects('');
@@ -37,12 +46,7 @@ async function loadBoards(): Promise<void> {
     await workspace.loadProjects(wsSlug);
   }
 
-  const project = activeProject.value;
-  if (project === null) {
-    return;
-  }
-
-  await boards.loadBoards(wsSlug, project.slug);
+  await Promise.all(workspace.projects.map((p) => boards.loadBoardsForProject(wsSlug, p.slug)));
 }
 
 function openBoard(boardId: string): void {
@@ -52,7 +56,10 @@ function openBoard(boardId: string): void {
 // Shared sidebar context-menu + inline-edit logic (same composables as the notes sidebar).
 const { open: menuOpen, x: menuX, y: menuY, openAt, close: closeMenu } = useContextMenu();
 
-type EditCtx = { kind: 'new-board' } | { kind: 'rename-board'; boardId: string };
+type EditCtx =
+  | { kind: 'new-project' }
+  | { kind: 'new-board'; projectSlug: string }
+  | { kind: 'rename-board'; boardId: string; projectSlug: string };
 
 const {
   active: editActive,
@@ -62,135 +69,189 @@ const {
   commit: commitEdit,
   onKeydown: onEditKeydown,
 } = useInlineEdit<EditCtx>(async (name, ctx) => {
-  const project = activeProject.value;
-  if (project === null || ws.value === '') return;
+  if (ws.value === '') return;
+
+  if (ctx.kind === 'new-project') {
+    const slug = await workspace.createProject(ws.value, name);
+    if (slug !== null) {
+      await boards.loadBoardsForProject(ws.value, slug);
+    } else if (workspace.error) {
+      ui.showBanner(workspace.error, 'error');
+    }
+    return;
+  }
 
   if (ctx.kind === 'new-board') {
-    const id = await boards.createBoard(ws.value, project.slug, name);
+    const id = await boards.createBoard(ws.value, ctx.projectSlug, name);
     if (id !== null) openBoard(id);
     else if (boards.error) ui.showBanner(boards.error, 'error');
-  } else {
-    const ok = await boards.renameBoard(ws.value, project.slug, ctx.boardId, name);
-    if (!ok && boards.error) ui.showBanner(boards.error, 'error');
+    return;
   }
+
+  const ok = await boards.renameBoard(ws.value, ctx.projectSlug, ctx.boardId, name);
+  if (!ok && boards.error) ui.showBanner(boards.error, 'error');
 });
 
-async function removeBoard(boardId: string): Promise<void> {
-  const project = activeProject.value;
-  if (project === null || ws.value === '') return;
-
-  const ok = await boards.removeBoard(ws.value, project.slug, boardId);
+async function removeBoard(projectSlug: string, boardId: string): Promise<void> {
+  if (ws.value === '') return;
+  const ok = await boards.removeBoard(ws.value, projectSlug, boardId);
   if (!ok && boards.error) ui.showBanner(boards.error, 'error');
 }
 
-type MenuTarget = { kind: 'project' } | { kind: 'board'; boardId: string; name: string };
-const menuTarget = ref<MenuTarget>({ kind: 'project' });
+type MenuTarget =
+  | { kind: 'root' }
+  | { kind: 'project'; slug: string }
+  | { kind: 'board'; boardId: string; name: string; projectSlug: string };
+const menuTarget = ref<MenuTarget>({ kind: 'root' });
 
-const projectMenuItems = computed<MenuItem[]>(() => [
-  { label: 'New board', icon: 'plus', action: () => startEdit({ kind: 'new-board' }) },
-]);
+const activeMenuItems = computed<MenuItem[]>(() => {
+  const t = menuTarget.value;
 
-const boardMenuItems = computed<MenuItem[]>(() => {
-  const state = menuTarget.value;
-  if (state.kind !== 'board') return [];
-  const { boardId, name } = state;
-  return [
-    { header: true, label: name },
-    { label: 'Open', icon: 'external-link', kbd: ['↵'], action: () => openBoard(boardId) },
-    { sep: true },
-    {
-      label: 'Rename',
-      icon: 'pencil',
-      kbd: ['F2'],
-      action: () => startEdit({ kind: 'rename-board', boardId }, name, true),
-    },
-    { sep: true },
-    { label: 'Delete', icon: 'trash', kbd: ['⌫'], danger: true, action: () => removeBoard(boardId) },
-  ];
+  if (t.kind === 'board') {
+    return [
+      { header: true, label: t.name },
+      { label: 'Open', icon: 'external-link', kbd: ['↵'], action: () => openBoard(t.boardId) },
+      { sep: true },
+      {
+        label: 'Rename',
+        icon: 'pencil',
+        kbd: ['F2'],
+        action: () =>
+          startEdit({ kind: 'rename-board', boardId: t.boardId, projectSlug: t.projectSlug }, t.name, true),
+      },
+      { sep: true },
+      {
+        label: 'Delete',
+        icon: 'trash',
+        kbd: ['⌫'],
+        danger: true,
+        action: () => removeBoard(t.projectSlug, t.boardId),
+      },
+    ];
+  }
+
+  if (t.kind === 'project') {
+    return [
+      { header: true, label: workspace.projects.find((p) => p.slug === t.slug)?.name ?? 'Project' },
+      {
+        label: 'New board',
+        icon: 'plus',
+        action: () => startEdit({ kind: 'new-board', projectSlug: t.slug }),
+      },
+      { sep: true },
+      { label: 'New project', icon: 'folder-plus', action: () => startEdit({ kind: 'new-project' }) },
+    ];
+  }
+
+  return [{ label: 'New project', icon: 'folder-plus', action: () => startEdit({ kind: 'new-project' }) }];
 });
 
-const activeMenuItems = computed<MenuItem[]>(() =>
-  menuTarget.value.kind === 'board' ? boardMenuItems.value : projectMenuItems.value,
-);
-
-function openProjectMenu(event: MouseEvent): void {
-  menuTarget.value = { kind: 'project' };
+function openRootMenu(event: MouseEvent): void {
+  menuTarget.value = { kind: 'root' };
   openAt(event);
 }
 
-function openBoardMenu(event: MouseEvent, boardId: string, name: string): void {
-  menuTarget.value = { kind: 'board', boardId, name };
+function openProjectMenu(event: MouseEvent, slug: string): void {
+  menuTarget.value = { kind: 'project', slug };
   openAt(event);
 }
 
-onMounted(loadBoards);
-watch(() => workspace.activeWorkspaceSlug, loadBoards);
+function openBoardMenu(event: MouseEvent, boardId: string, name: string, projectSlug: string): void {
+  menuTarget.value = { kind: 'board', boardId, name, projectSlug };
+  openAt(event);
+}
+
+defineExpose({ openNewProject: () => startEdit({ kind: 'new-project' }) });
+
+onMounted(loadAll);
+watch(() => workspace.activeWorkspaceSlug, loadAll);
 </script>
 
 <template>
-  <template v-if="activeProject">
-    <div class="tasks-sidebar-header" @contextmenu.prevent="openProjectMenu">
+  <div style="min-height: 100%;" @contextmenu.prevent="openRootMenu">
+    <div class="tasks-sidebar-header">
       <SectionLabel>Projects</SectionLabel>
       <button
         type="button"
         class="tasks-sidebar-add"
-        title="New board"
-        aria-label="New board"
-        @click.stop="openProjectMenu"
+        title="New project"
+        aria-label="New project"
+        @click.stop="openRootMenu"
       >
         <Icon name="more-horizontal" :size="14" />
       </button>
     </div>
 
-    <Row
-      :label="activeProject.name"
-      icon="folder-open"
-      :chevron="true"
-      :open="true"
-      menu
-      @menu="openProjectMenu"
-      @contextmenu.prevent.stop="openProjectMenu"
-    />
-
-    <template v-for="b in boards.boardSummaries" :key="b.id">
-      <div
-        v-if="editActive?.kind === 'rename-board' && editActive.boardId === b.id"
-        style="display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px 22px;"
-      >
-        <Icon name="columns-3" :size="13" style="color: var(--c-muted); flex-shrink: 0;" />
-        <input
-          ref="inputRef"
-          v-model="editValue"
-          type="text"
-          placeholder="Board name…"
-          class="tasks-inline-input"
-          @keydown="onEditKeydown"
-          @blur="commitEdit"
-        />
-      </div>
+    <template v-for="p in workspace.projects" :key="p.slug">
       <Row
-        v-else
-        :label="b.name"
-        icon="columns-3"
-        :depth="1"
-        :active="activeBoardId === b.id"
+        :label="p.name"
+        :icon="isExpanded(p.slug) ? 'folder-open' : 'folder'"
+        chevron
+        :open="isExpanded(p.slug)"
         menu
-        @click="openBoard(b.id)"
-        @menu="(event: MouseEvent) => openBoardMenu(event, b.id, b.name)"
-        @contextmenu.prevent.stop="(event: MouseEvent) => openBoardMenu(event, b.id, b.name)"
+        @click="toggleProject(p.slug)"
+        @menu="(event: MouseEvent) => openProjectMenu(event, p.slug)"
+        @contextmenu.prevent.stop="(event: MouseEvent) => openProjectMenu(event, p.slug)"
       />
+
+      <template v-if="isExpanded(p.slug)">
+        <template v-for="b in boards.boardsFor(p.slug)" :key="b.id">
+          <div
+            v-if="editActive?.kind === 'rename-board' && editActive.boardId === b.id"
+            style="display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px 22px;"
+          >
+            <Icon name="columns-3" :size="13" style="color: var(--c-muted); flex-shrink: 0;" />
+            <input
+              ref="inputRef"
+              v-model="editValue"
+              type="text"
+              placeholder="Board name…"
+              class="tasks-inline-input"
+              @keydown="onEditKeydown"
+              @blur="commitEdit"
+            />
+          </div>
+          <Row
+            v-else
+            :label="b.name"
+            icon="columns-3"
+            :depth="1"
+            :active="activeBoardId === b.id"
+            menu
+            @click="openBoard(b.id)"
+            @menu="(event: MouseEvent) => openBoardMenu(event, b.id, b.name, p.slug)"
+            @contextmenu.prevent.stop="(event: MouseEvent) => openBoardMenu(event, b.id, b.name, p.slug)"
+          />
+        </template>
+
+        <div
+          v-if="editActive?.kind === 'new-board' && editActive.projectSlug === p.slug"
+          style="display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px 22px;"
+        >
+          <Icon name="columns-3" :size="13" style="color: var(--c-muted); flex-shrink: 0;" />
+          <input
+            ref="inputRef"
+            v-model="editValue"
+            type="text"
+            placeholder="Board name…"
+            class="tasks-inline-input"
+            @keydown="onEditKeydown"
+            @blur="commitEdit"
+          />
+        </div>
+      </template>
     </template>
 
     <div
-      v-if="editActive?.kind === 'new-board'"
-      style="display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px 22px;"
+      v-if="editActive?.kind === 'new-project'"
+      style="display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px 8px;"
     >
-      <Icon name="columns-3" :size="13" style="color: var(--c-muted); flex-shrink: 0;" />
+      <Icon name="folder" :size="13" style="color: var(--c-muted); flex-shrink: 0;" />
       <input
         ref="inputRef"
         v-model="editValue"
         type="text"
-        placeholder="Board name…"
+        placeholder="Project name…"
         class="tasks-inline-input"
         @keydown="onEditKeydown"
         @blur="commitEdit"
@@ -198,10 +259,10 @@ watch(() => workspace.activeWorkspaceSlug, loadBoards);
     </div>
 
     <p
-      v-if="boards.boardSummaries.length === 0 && editActive === null"
-      style="padding: 8px 8px 8px 22px; font-size: var(--fs-sm); color: var(--c-muted);"
+      v-if="workspace.projects.length === 0 && editActive === null"
+      style="padding: 8px; font-size: var(--fs-sm); color: var(--c-muted);"
     >
-      No boards in this project.
+      No projects yet.
     </p>
 
     <ContextMenu
@@ -211,14 +272,7 @@ watch(() => workspace.activeWorkspaceSlug, loadBoards);
       :items="activeMenuItems"
       @close="closeMenu"
     />
-  </template>
-
-  <p
-    v-else
-    style="padding: 8px; font-size: var(--fs-sm); color: var(--c-muted);"
-  >
-    No project selected.
-  </p>
+  </div>
 </template>
 
 <style scoped>

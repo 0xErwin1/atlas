@@ -34,6 +34,8 @@ export interface MovedTaskSummary {
 export const useBoardsStore = defineStore('boards', () => {
   const board = ref<BoardDto | null>(null);
   const boardSummaries = ref<BoardSummaryDto[]>([]);
+  // Board lists keyed by project slug, for sidebars that list every project.
+  const boardsByProject = ref<Map<string, BoardSummaryDto[]>>(new Map());
   const columns = ref<ColumnDto[]>([]);
   const tasks = ref<Map<string, TaskSummaryDto[]>>(new Map());
   const loading = ref(false);
@@ -72,6 +74,26 @@ export const useBoardsStore = defineStore('boards', () => {
     boardSummaries.value = data.items;
   }
 
+  async function loadBoardsForProject(ws: string, projectSlug: string): Promise<void> {
+    const { data, error: apiError } = await wrappedClient.GET(
+      '/v1/workspaces/{ws}/projects/{project_slug}/boards',
+      { params: { path: { ws, project_slug: projectSlug } } },
+    );
+
+    if (apiError !== undefined || data === undefined) {
+      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to load boards';
+      return;
+    }
+
+    const next = new Map(boardsByProject.value);
+    next.set(projectSlug, data.items);
+    boardsByProject.value = next;
+  }
+
+  function boardsFor(projectSlug: string): BoardSummaryDto[] {
+    return boardsByProject.value.get(projectSlug) ?? [];
+  }
+
   async function createBoard(ws: string, projectSlug: string, name: string): Promise<string | null> {
     const { data, error: apiError } = await wrappedClient.POST(
       '/v1/workspaces/{ws}/projects/{project_slug}/boards',
@@ -83,7 +105,7 @@ export const useBoardsStore = defineStore('boards', () => {
       return null;
     }
 
-    await loadBoards(ws, projectSlug);
+    await loadBoardsForProject(ws, projectSlug);
     return data.id ?? null;
   }
 
@@ -103,7 +125,7 @@ export const useBoardsStore = defineStore('boards', () => {
       return false;
     }
 
-    await loadBoards(ws, projectSlug);
+    await loadBoardsForProject(ws, projectSlug);
     return true;
   }
 
@@ -117,7 +139,7 @@ export const useBoardsStore = defineStore('boards', () => {
       return false;
     }
 
-    await loadBoards(ws, projectSlug);
+    await loadBoardsForProject(ws, projectSlug);
     return true;
   }
 
@@ -346,6 +368,8 @@ export const useBoardsStore = defineStore('boards', () => {
     error,
     tasksByColumn,
     loadBoards,
+    loadBoardsForProject,
+    boardsFor,
     createBoard,
     renameBoard,
     removeBoard,
