@@ -5,6 +5,7 @@ import { useRoute, useRouter } from 'vue-router';
 import NotesTree from '@/components/notas/NotesTree.vue';
 import { useDocumentsStore } from '@/stores/documents';
 import { useFoldersStore } from '@/stores/folders';
+import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 
 const route = useRoute();
@@ -13,6 +14,7 @@ const workspace = useWorkspaceStore();
 const treeRef = ref<InstanceType<typeof NotesTree> | null>(null);
 const folders = useFoldersStore();
 const documents = useDocumentsStore();
+const ui = useUiStore();
 
 const activeSlug = computed(() => {
   const slug = route.params.slug;
@@ -51,6 +53,8 @@ async function createDoc(title: string, folderId?: string): Promise<void> {
   const slug = await documents.create(ws.value, project.slug, title, folderId);
   if (slug !== null) {
     openDoc(slug);
+  } else if (documents.error) {
+    ui.showBanner(documents.error, 'error');
   }
 }
 
@@ -58,7 +62,10 @@ async function renameDoc(slug: string, title: string): Promise<void> {
   const project = activeProject.value;
   if (project === null || ws.value === '') return;
 
-  await documents.rename(ws.value, project.slug, slug, title);
+  const ok = await documents.rename(ws.value, project.slug, slug, title);
+  if (!ok && documents.error) {
+    ui.showBanner(documents.error, 'error');
+  }
 }
 
 async function removeDoc(slug: string): Promise<void> {
@@ -72,14 +79,20 @@ async function createFolder(name: string, parentFolderId?: string): Promise<void
   const project = activeProject.value;
   if (project === null || ws.value === '') return;
 
-  await folders.create(ws.value, project.slug, name, parentFolderId);
+  const ok = await folders.create(ws.value, project.slug, name, parentFolderId);
+  if (!ok && folders.error) {
+    ui.showBanner(folders.error, 'error');
+  }
 }
 
 async function renameFolder(folderId: string, name: string): Promise<void> {
   const project = activeProject.value;
   if (project === null || ws.value === '') return;
 
-  await folders.rename(ws.value, project.slug, folderId, name);
+  const ok = await folders.rename(ws.value, project.slug, folderId, name);
+  if (!ok && folders.error) {
+    ui.showBanner(folders.error, 'error');
+  }
 }
 
 async function removeFolder(folderId: string): Promise<void> {

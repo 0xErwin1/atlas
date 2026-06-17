@@ -190,7 +190,7 @@ defineExpose({ openNewPage: () => openInline('new-doc') });
             placeholder="Page name…"
             style="flex: 1; height: 28px; padding: 0 6px; background: var(--c-input); border: 1px solid var(--c-border); border-radius: var(--r-sm); font-size: var(--fs-sm); font-family: var(--font-mono); color: var(--c-foreground); outline: none;"
             @keydown="onInlineKeydown"
-            @blur="cancelInline"
+            @blur="commitInline"
           />
         </div>
         <Row
@@ -234,7 +234,7 @@ defineExpose({ openNewPage: () => openInline('new-doc') });
           outline: none;
         "
         @keydown="onInlineKeydown"
-        @blur="cancelInline"
+        @blur="commitInline"
       />
     </div>
 

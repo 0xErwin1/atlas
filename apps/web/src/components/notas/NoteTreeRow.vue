@@ -100,6 +100,9 @@ function openInline(mode: InlineMode): void {
     inlineValue.value = props.folder.name;
   } else {
     inlineValue.value = '';
+    // The new-page / new-folder input lives inside the expanded subtree; expand
+    // the folder so the input (and the created item) are actually visible.
+    expanded.value = true;
   }
   void nextTick(() => {
     inlineInputRef.value?.focus();
@@ -196,7 +199,7 @@ const inlinePaddingLeft = computed(() => `${8 + (props.depth + 1) * 14}px`);
           outline: none;
         "
         @keydown="onInlineKeydown"
-        @blur="cancelInline"
+        @blur="commitInline"
       />
     </div>
 
@@ -254,7 +257,7 @@ const inlinePaddingLeft = computed(() => `${8 + (props.depth + 1) * 14}px`);
               outline: none;
             "
             @keydown="onInlineKeydown"
-            @blur="cancelInline"
+            @blur="commitInline"
           />
         </div>
 
@@ -300,7 +303,7 @@ const inlinePaddingLeft = computed(() => `${8 + (props.depth + 1) * 14}px`);
             outline: none;
           "
           @keydown="onInlineKeydown"
-          @blur="cancelInline"
+          @blur="commitInline"
         />
       </div>
     </template>
