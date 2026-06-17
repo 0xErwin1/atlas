@@ -1,4 +1,4 @@
-import { syntaxTree } from '@codemirror/language';
+import { ensureSyntaxTree, syntaxTree } from '@codemirror/language';
 import { type Range, RangeSetBuilder } from '@codemirror/state';
 import {
   Decoration,
@@ -36,6 +36,16 @@ type SyntaxNode = ReturnType<ReturnType<typeof syntaxTree>['resolve']>;
 export interface LivePreviewCallbacks {
   /** Called when a rendered (collapsed) wikilink is clicked. */
   onWikilinkClick: (title: string) => void;
+}
+
+export interface LivePreviewOptions {
+  /**
+   * When true (edit mode), syntax markers on the line the cursor/selection
+   * touches are revealed raw so they can be edited. When false (preview / reading
+   * mode), no line is ever treated as active: every marker stays hidden and the
+   * document reads as fully rendered, like Obsidian's reading view.
+   */
+  reveal: boolean;
 }
 
 const WIKILINK_RE = /\[\[([^[\]\n]+)\]\]/g;
@@ -120,8 +130,10 @@ function lineNumberAt(view: EditorView, pos: number): number {
  * decorations added in document order. Line decorations and mark/replace
  * decorations are interleaved by position.
  */
-function buildDecorations(view: EditorView, callbacks: LivePreviewCallbacks): DecorationSet {
-  const activeLines = computeActiveLines(lineRangesFor(view), selectionRangesFor(view));
+function buildDecorations(view: EditorView, callbacks: LivePreviewCallbacks, reveal: boolean): DecorationSet {
+  const activeLines = reveal
+    ? computeActiveLines(lineRangesFor(view), selectionRangesFor(view))
+    : new Set<number>();
   const decos: Range<Decoration>[] = [];
 
   for (const { from, to } of view.visibleRanges) {
@@ -361,18 +373,34 @@ function consumeTrailingSpace(view: EditorView, pos: number, limit: number): num
  * change, selection change, and viewport change so reveal-on-active-line tracks
  * the cursor in real time.
  */
-export function livePreview(callbacks: LivePreviewCallbacks) {
+export function livePreview(callbacks: LivePreviewCallbacks, options: LivePreviewOptions) {
+  const { reveal } = options;
+
   return ViewPlugin.fromClass(
     class {
       decorations: DecorationSet;
 
       constructor(view: EditorView) {
-        this.decorations = buildDecorations(view, callbacks);
+        // The markdown grammar parses incrementally: on first construction the
+        // syntax tree may not yet cover the viewport, which would leave the doc
+        // rendered as raw markdown until the first interaction. Force the parse
+        // up to the viewport so the very first paint is already decorated.
+        ensureSyntaxTree(view.state, view.viewport.to, 100);
+        this.decorations = buildDecorations(view, callbacks, reveal);
       }
 
       update(update: ViewUpdate): void {
-        if (update.docChanged || update.selectionSet || update.viewportChanged) {
-          this.decorations = buildDecorations(update.view, callbacks);
+        // Rebuild on the obvious triggers, and ALSO when the syntax tree changed:
+        // the parser dispatches tree-progress transactions that carry none of the
+        // doc/selection/viewport flags, and skipping them is what made decorations
+        // appear only after the first click.
+        if (
+          update.docChanged ||
+          update.selectionSet ||
+          update.viewportChanged ||
+          syntaxTree(update.startState) !== syntaxTree(update.state)
+        ) {
+          this.decorations = buildDecorations(update.view, callbacks, reveal);
         }
       }
     },

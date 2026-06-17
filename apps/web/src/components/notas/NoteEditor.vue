@@ -44,6 +44,7 @@ defineExpose({ currentMarkdown, insertWikilink });
   <MarkdownEditor
     ref="editorRef"
     :body="body"
+    autofocus
     placeholder="Start writing…"
     @change="(md) => $emit('change', md)"
     @navigate-wikilink="(title) => $emit('navigate-wikilink', title)"

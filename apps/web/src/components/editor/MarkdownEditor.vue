@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
-import { EditorState } from '@codemirror/state';
-import { EditorView, keymap, placeholder as placeholderExt } from '@codemirror/view';
+import { Compartment, EditorState } from '@codemirror/state';
+import { EditorView, keymap } from '@codemirror/view';
 import { GFM } from '@lezer/markdown';
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import Icon from '@/components/ui/Icon.vue';
 import { detectWikilinkTrigger, type WikilinkTrigger } from '@/lib/wikilink';
 import { livePreview } from './livePreviewExtension';
 import { atlasMarkdownTheme } from './theme';
@@ -25,8 +26,10 @@ const props = withDefaults(
     body: string;
     placeholder?: string;
     editable?: boolean;
+    /** Focus the editor on mount and on document switch (Obsidian-style). */
+    autofocus?: boolean;
   }>(),
-  { placeholder: '', editable: true },
+  { placeholder: '', editable: true, autofocus: false },
 );
 
 const emit = defineEmits<{
@@ -41,6 +44,19 @@ const emit = defineEmits<{
 const host = ref<HTMLElement | null>(null);
 let view: EditorView | null = null;
 let activeTrigger: WikilinkTrigger | null = null;
+
+/** Rendering mode: 'live' shows the live-preview decorations, 'source' the raw markdown. */
+const mode = ref<'live' | 'source'>('live');
+/** User-toggled read-only, layered on top of the host's `editable` prop. */
+const readonly = ref(false);
+
+// The placeholder string, quoted for use as a CSS `content` value (see <style>).
+const placeholderCss = computed(() => JSON.stringify(props.placeholder));
+
+// Compartments let us reconfigure the live-preview and edit-state extensions in
+// place (mode / read-only toggles) without tearing down and rebuilding the view.
+const livePreviewCompartment = new Compartment();
+const editStateCompartment = new Compartment();
 
 // The last markdown value this editor emitted, used to distinguish an external
 // `body` prop change (must replace the doc) from an echo of our own edit (must
@@ -85,20 +101,72 @@ function onUpdate(docChanged: boolean, selectionChanged: boolean, state: EditorS
   }
 }
 
+function liveExtension(reveal: boolean) {
+  return livePreview({ onWikilinkClick: (title) => emit('navigate-wikilink', title) }, { reveal });
+}
+
+/**
+ * The rendering extension for the current mode:
+ * - read-only → preview: live-preview decorations with NO active-line reveal, so
+ *   the document reads as fully rendered (no markers, no caret-driven source).
+ * - editable + live → live-preview with reveal-on-active-line for editing.
+ * - editable + source → no decorations: raw markdown.
+ */
+function renderExtension() {
+  if (readonly.value) return liveExtension(false);
+  return mode.value === 'live' ? liveExtension(true) : [];
+}
+
+// Placeholder is rendered via CSS (`::after`, see <style>) rather than CodeMirror's
+// widget placeholder: a widget at offset 0 of an otherwise-empty document sits on
+// the cursor position and makes the caret unmeasurable, so the empty document would
+// show no caret. This flags the content element as empty for the CSS to hook; the
+// function is re-evaluated by CodeMirror on every update, so the class toggles as
+// the document becomes empty / non-empty.
+function emptyDocAttributes() {
+  return EditorView.contentAttributes.of((v) =>
+    v.state.doc.length === 0 ? { class: 'cm-doc-empty' } : null,
+  );
+}
+
+/** Effective editability: the host must allow it AND read-only must be off. */
+function effectiveEditable(): boolean {
+  return props.editable && !readonly.value;
+}
+
+function editStateExtension(editable: boolean) {
+  return [EditorView.editable.of(editable), EditorState.readOnly.of(!editable)];
+}
+
 function buildExtensions() {
   return [
     history(),
     keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
     markdown({ base: markdownLanguage, extensions: [GFM] }),
     EditorView.lineWrapping,
-    placeholderExt(props.placeholder),
-    livePreview({ onWikilinkClick: (title) => emit('navigate-wikilink', title) }),
+    emptyDocAttributes(),
+    livePreviewCompartment.of(renderExtension()),
     atlasMarkdownTheme,
-    EditorView.editable.of(props.editable),
+    editStateCompartment.of(editStateExtension(effectiveEditable())),
     EditorView.updateListener.of((update) => {
       onUpdate(update.docChanged, update.selectionSet, update.state);
     }),
   ];
+}
+
+function toggleMode(): void {
+  mode.value = mode.value === 'live' ? 'source' : 'live';
+  view?.dispatch({ effects: livePreviewCompartment.reconfigure(renderExtension()) });
+}
+
+function toggleReadonly(): void {
+  readonly.value = !readonly.value;
+  view?.dispatch({
+    effects: [
+      editStateCompartment.reconfigure(editStateExtension(effectiveEditable())),
+      livePreviewCompartment.reconfigure(renderExtension()),
+    ],
+  });
 }
 
 /**
@@ -133,6 +201,8 @@ onMounted(() => {
     parent: host.value,
   });
   lastEmitted = props.body;
+
+  if (props.autofocus && effectiveEditable()) view.focus();
 });
 
 watch(
@@ -144,8 +214,11 @@ watch(
 
     view.dispatch({
       changes: { from: 0, to: view.state.doc.length, insert: body },
+      selection: { anchor: 0 },
     });
     lastEmitted = body;
+
+    if (props.autofocus && effectiveEditable()) view.focus();
   },
 );
 
@@ -156,13 +229,48 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div
-    ref="host"
-    class="markdown-editor"
-  />
+  <div class="markdown-editor-wrap">
+    <div class="editor-controls">
+      <button
+        v-if="!readonly"
+        type="button"
+        class="atl-gbtn"
+        :class="{ on: mode === 'source' }"
+        :title="mode === 'live' ? 'Show markdown source' : 'Show preview'"
+        :aria-label="mode === 'live' ? 'Show markdown source' : 'Show preview'"
+        @click="toggleMode"
+      >
+        <Icon :name="mode === 'live' ? 'code' : 'eye'" :size="14" />
+      </button>
+      <button
+        v-if="editable"
+        type="button"
+        class="atl-gbtn"
+        :class="{ on: readonly }"
+        :title="readonly ? 'Preview — click to edit' : 'Editing — click to preview'"
+        :aria-label="readonly ? 'Preview — click to edit' : 'Editing — click to preview'"
+        @click="toggleReadonly"
+      >
+        <Icon :name="readonly ? 'book-open' : 'pencil'" :size="14" />
+      </button>
+    </div>
+    <div
+      ref="host"
+      class="markdown-editor"
+      :class="{ 'is-preview': readonly }"
+      :style="{ '--md-placeholder': placeholderCss }"
+    />
+  </div>
 </template>
 
 <style scoped>
+.editor-controls {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
 .markdown-editor {
   min-height: 60vh;
 }
@@ -172,13 +280,33 @@ onBeforeUnmount(() => {
 }
 
 /* The writing surface is a document, not a form field: never show the global
-   focus ring (base.css :focus-visible box-shadow) around the editable area. */
-.markdown-editor :deep(.cm-editor.cm-focused) {
-  outline: none;
-  box-shadow: none;
+   focus ring (base.css :focus-visible box-shadow) around any part of the editor,
+   whether editable or in read-only preview. */
+.markdown-editor :deep(.cm-editor),
+.markdown-editor :deep(.cm-editor.cm-focused),
+.markdown-editor :deep(.cm-scroller),
+.markdown-editor :deep(.cm-content) {
+  outline: none !important;
+  box-shadow: none !important;
 }
 
-.markdown-editor :deep(.cm-content) {
-  outline: none;
+/* Preview (reading) mode: no caret — there is nothing to edit. */
+.markdown-editor.is-preview :deep(.cm-content) {
+  caret-color: transparent;
+}
+
+/* CSS placeholder for the empty document. Rendered as an overlay so it does not
+   occupy a position in the content model (which would hide the caret at offset 0). */
+.markdown-editor :deep(.cm-content.cm-doc-empty .cm-line:first-of-type) {
+  position: relative;
+}
+
+.markdown-editor :deep(.cm-content.cm-doc-empty .cm-line:first-of-type)::after {
+  content: var(--md-placeholder, '');
+  position: absolute;
+  left: 0;
+  top: 0;
+  color: var(--c-muted);
+  pointer-events: none;
 }
 </style>
