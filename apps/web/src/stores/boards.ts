@@ -143,6 +143,26 @@ export const useBoardsStore = defineStore('boards', () => {
     return true;
   }
 
+  async function createTask(
+    ws: string,
+    boardId: string,
+    columnId: string,
+    title: string,
+  ): Promise<string | null> {
+    const { data, error: apiError } = await wrappedClient.POST(
+      '/v1/workspaces/{ws}/boards/{board_id}/tasks',
+      { params: { path: { ws, board_id: boardId } }, body: { column_id: columnId, title } },
+    );
+
+    if (apiError !== undefined || data === undefined) {
+      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to create task';
+      return null;
+    }
+
+    await loadTasks(ws, boardId);
+    return data.readable_id ?? null;
+  }
+
   async function loadBoard(ws: string, boardId: string): Promise<void> {
     loading.value = true;
     error.value = null;
@@ -373,6 +393,7 @@ export const useBoardsStore = defineStore('boards', () => {
     createBoard,
     renameBoard,
     removeBoard,
+    createTask,
     loadBoard,
     loadColumns,
     loadTasks,

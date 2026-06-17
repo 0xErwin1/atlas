@@ -4,6 +4,7 @@ import { VueDraggable } from 'vue-draggable-plus';
 import TaskCard from '@/components/tareas/TaskCard.vue';
 import Icon from '@/components/ui/Icon.vue';
 import { resolveDropTarget } from '@/composables/kanbanDrop';
+import { useInlineEdit } from '@/composables/useInlineEdit';
 import type { ColumnDto, TaskSummaryDto } from '@/stores/boards';
 
 const props = defineProps<{
@@ -14,8 +15,19 @@ const props = defineProps<{
 const emit = defineEmits<{
   /** A drop landed in this column: (readableId, columnId, toIndex). */
   drop: [readableId: string, columnId: string, toIndex: number];
+  /** Quick-add: create a task in this column with the given title. */
+  create: [columnId: string, title: string];
   open: [readableId: string];
 }>();
+
+const {
+  active: adding,
+  value: addValue,
+  inputRef,
+  start: startAdd,
+  commit: commitAdd,
+  onKeydown: onAddKeydown,
+} = useInlineEdit<'task'>((title) => emit('create', props.column.id, title));
 
 const DOT_COLOR: Record<string, string> = {
   backlog: 'var(--c-muted)',
@@ -38,7 +50,7 @@ const model = computed({
   set: () => undefined,
 });
 
-function onChange(event: unknown): void {
+function onSortableDrop(event: unknown): void {
   const target = resolveDropTarget(event as Parameters<typeof resolveDropTarget>[0]);
   if (target === null) {
     return;
@@ -83,9 +95,22 @@ function onChange(event: unknown): void {
         title="Add task"
         aria-label="Add task"
         style="width: 20px; height: 20px; min-width: 20px; padding: 0;"
+        @click="startAdd('task')"
       >
         <Icon name="plus" :size="13" />
       </button>
+    </div>
+
+    <div v-if="adding !== null" style="margin-bottom: 8px;">
+      <input
+        ref="inputRef"
+        v-model="addValue"
+        type="text"
+        placeholder="Task title…"
+        class="atl-quick-add"
+        @keydown="onAddKeydown"
+        @blur="commitAdd"
+      />
     </div>
 
     <VueDraggable
@@ -96,7 +121,8 @@ function onChange(event: unknown): void {
       class="flex flex-col"
       style="gap: 8px; min-height: 24px;"
       ghost-class="atl-card-ghost"
-      @change="onChange"
+      @add="onSortableDrop"
+      @update="onSortableDrop"
     >
       <TaskCard
         v-for="task in tasks"
@@ -111,5 +137,22 @@ function onChange(event: unknown): void {
 <style scoped>
 .atl-card-ghost {
   opacity: 0.4;
+}
+
+.atl-quick-add {
+  width: 100%;
+  height: 32px;
+  padding: 0 9px;
+  background: var(--c-raised);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  font-size: 12.5px;
+  font-family: var(--font-mono);
+  color: var(--c-foreground);
+  outline: none;
+}
+
+.atl-quick-add:focus {
+  border-color: var(--c-primary);
 }
 </style>

@@ -1,11 +1,13 @@
 /**
- * Pure resolver for the SortableJS `change` event emitted by vue-draggable-plus.
+ * Pure resolver for the SortableJS drop events emitted by vue-draggable-plus
+ * (`@add` for a cross-column drop, `@update` for an in-column reorder). Both carry
+ * the dragged DOM node as `item`; the task's `readable_id` is read from its
+ * `data-readable-id` attribute (exposed by TaskCard), and the destination slot
+ * from `newIndex`.
  *
- * The drag library fires `change` with exactly one of three shapes per drop:
- *   - `added`   — an item dropped INTO this column from another column.
- *   - `moved`   — an item reordered WITHIN this column.
- *   - `removed` — the source side of a cross-column move (handled by the
- *                 destination's `added`, so this side is a no-op).
+ * vue-draggable-plus does NOT emit the `{ added, moved, removed }` `change` event
+ * of the older `vuedraggable` library, so the drop must be read from these
+ * SortableJS events instead.
  *
  * Returns the moving task's `readable_id` and the target index to feed into
  * `useKanbanMove.move`, or `null` when the event carries nothing actionable.
@@ -15,39 +17,17 @@ export interface DropTarget {
   toIndex: number;
 }
 
-interface ChangePayload {
-  element?: { readable_id?: unknown } | null;
-  newIndex?: number;
+interface SortableDropEvent {
+  item?: { dataset?: { readableId?: string } } | null;
+  newIndex?: number | null;
 }
 
-interface SortableChangeEvent {
-  added?: ChangePayload;
-  moved?: ChangePayload;
-  removed?: unknown;
-}
-
-function fromPayload(payload: ChangePayload | undefined): DropTarget | null {
-  if (payload === undefined) {
-    return null;
-  }
-
-  const readableId = payload.element?.readable_id;
+export function resolveDropTarget(event: SortableDropEvent): DropTarget | null {
+  const readableId = event.item?.dataset?.readableId;
   if (typeof readableId !== 'string' || readableId.length === 0) {
     return null;
   }
 
-  const toIndex = typeof payload.newIndex === 'number' ? payload.newIndex : 0;
+  const toIndex = typeof event.newIndex === 'number' ? event.newIndex : 0;
   return { readableId, toIndex };
-}
-
-export function resolveDropTarget(event: SortableChangeEvent): DropTarget | null {
-  if (event.added !== undefined) {
-    return fromPayload(event.added);
-  }
-
-  if (event.moved !== undefined) {
-    return fromPayload(event.moved);
-  }
-
-  return null;
 }

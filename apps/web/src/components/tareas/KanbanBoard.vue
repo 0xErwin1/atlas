@@ -22,6 +22,16 @@ async function onDrop(readableId: string, columnId: string, toIndex: number): Pr
     ui.showBanner(result.hint ?? 'Move failed', 'error');
   }
 }
+
+async function onCreate(columnId: string, title: string): Promise<void> {
+  const boardId = boards.board?.id;
+  if (boardId === undefined) return;
+
+  const created = await boards.createTask(props.ws, boardId, columnId, title);
+  if (created === null && boards.error) {
+    ui.showBanner(boards.error, 'error');
+  }
+}
 </script>
 
 <template>
@@ -35,6 +45,7 @@ async function onDrop(readableId: string, columnId: string, toIndex: number): Pr
       :column="column"
       :tasks="boards.tasksByColumn(column.id)"
       @drop="onDrop"
+      @create="onCreate"
       @open="(id) => emit('open', id)"
     />
 

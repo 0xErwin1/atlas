@@ -8,12 +8,12 @@ vi.mock('@/api/wrapper', () => ({
   wrappedClient: { POST },
 }));
 
-// Stub vue-draggable-plus: render the slot, expose a way to fire `change`.
+// Stub vue-draggable-plus: render the slot, expose the SortableJS drop events.
 vi.mock('vue-draggable-plus', () => ({
   VueDraggable: {
     name: 'VueDraggable',
     props: ['modelValue'],
-    emits: ['change'],
+    emits: ['add', 'update'],
     template: '<div class="vdp-stub"><slot /></div>',
   },
 }));
@@ -124,16 +124,17 @@ describe('KanbanBoard drag-and-drop wiring', () => {
     expect(spy).toHaveBeenCalledWith('You cannot move this task', 'error');
   });
 
-  it('column change event resolves to a drop emit through resolveDropTarget', async () => {
+  it('a SortableJS @add event resolves to a drop emit through resolveDropTarget', async () => {
     seedBoard();
     POST.mockResolvedValueOnce({ data: taskDto('t3', 'ATL-3', 'c1'), error: undefined });
 
     const wrapper = mount(KanbanBoard, { props: { ws: 'ws' } });
     const backlog = wrapper.findAllComponents(KanbanColumn)[0];
 
-    // Fire the SortableJS change event on the inner draggable stub.
+    // Fire the SortableJS `add` event on the inner draggable stub, carrying the
+    // dragged DOM node with its data-readable-id.
     const draggable = backlog?.findComponent({ name: 'VueDraggable' });
-    draggable?.vm.$emit('change', { added: { element: { readable_id: 'ATL-3' }, newIndex: 0 } });
+    draggable?.vm.$emit('add', { item: { dataset: { readableId: 'ATL-3' } }, newIndex: 0 });
     await flushPromises();
 
     expect(POST).toHaveBeenCalledOnce();
