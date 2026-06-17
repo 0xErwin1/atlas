@@ -90,6 +90,12 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
     // ---- Workspace-scoped routes ----
     RouteEntry {
         method: "GET",
+        path_template: "/v1/workspaces",
+        kind: RouteKind::AuthnRequired,
+        openapi_path: Some("/v1/workspaces"),
+    },
+    RouteEntry {
+        method: "GET",
         path_template: "/v1/workspaces/{ws}",
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/v1/workspaces/{ws}"),

@@ -1,8 +1,63 @@
-use axum::{Json, extract::State};
+use axum::{
+    Json,
+    extract::{Extension, State},
+};
 
 use atlas_api::dtos::WorkspaceDto;
 
-use crate::{authz::WorkspaceMember, error::ApiError, state::AppState};
+use crate::{
+    auth::middleware::Principal,
+    authz::WorkspaceMember,
+    error::ApiError,
+    persistence::repos::{PgWorkspaceRepo, WorkspaceRepo},
+    state::AppState,
+};
+
+#[utoipa::path(
+    get,
+    path = "/v1/workspaces",
+    tag = "workspaces",
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Workspaces accessible to the caller", body = [WorkspaceDto]),
+        (status = 401, description = "Unauthenticated"),
+    )
+)]
+/// Returns the workspaces the authenticated principal is a member of.
+/// API keys are workspace-scoped and do not use this endpoint; the result is always empty for them.
+pub(crate) async fn list_workspaces(
+    State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
+) -> Result<Json<Vec<WorkspaceDto>>, ApiError> {
+    let user_id = match principal {
+        Principal::User(uid) => uid,
+        Principal::ApiKey(_) => return Ok(Json(Vec::new())),
+    };
+
+    let ws_repo = PgWorkspaceRepo {
+        conn: (*state.db).clone(),
+    };
+
+    let workspaces = ws_repo
+        .list_for_user(user_id)
+        .await
+        .map_err(|_| ApiError::Internal {
+            message: "workspace lookup failed".into(),
+        })?;
+
+    let dtos = workspaces
+        .into_iter()
+        .map(|ws| WorkspaceDto {
+            id: ws.id.0,
+            name: ws.name,
+            slug: ws.slug,
+            created_at: ws.created_at,
+            updated_at: ws.updated_at,
+        })
+        .collect();
+
+    Ok(Json(dtos))
+}
 
 #[utoipa::path(
     get,

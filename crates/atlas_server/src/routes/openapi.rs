@@ -42,6 +42,7 @@ use atlas_api::{
         crate::routes::users::create_user,
         crate::routes::users::disable_user,
         crate::routes::users::enable_user,
+        crate::routes::workspaces::list_workspaces,
         crate::routes::workspaces::get_workspace,
         crate::routes::api_keys::create_api_key,
         crate::routes::api_keys::list_api_keys,

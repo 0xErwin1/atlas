@@ -224,6 +224,38 @@
         ]
       }
     },
+    "/v1/workspaces": {
+      "get": {
+        "tags": [
+          "workspaces"
+        ],
+        "summary": "Returns the workspaces the authenticated principal is a member of.\nAPI keys are workspace-scoped and do not use this endpoint; the result is always empty for them.",
+        "operationId": "list_workspaces",
+        "responses": {
+          "200": {
+            "description": "Workspaces accessible to the caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WorkspaceDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/v1/workspaces/{ws}": {
       "get": {
         "tags": [

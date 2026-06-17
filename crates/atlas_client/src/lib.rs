@@ -419,6 +419,12 @@ impl AtlasClient {
         Err(ClientError::Api(problem))
     }
 
+    /// `GET /v1/workspaces`
+    pub async fn list_workspaces(&self) -> Result<Vec<WorkspaceDto>, ClientError> {
+        let response = self.get("/v1/workspaces").send().await?;
+        self.decode_response(response, "list_workspaces").await
+    }
+
     /// `GET /v1/workspaces/{ws}`
     pub async fn get_workspace(&self, ws: &str) -> Result<WorkspaceDto, ClientError> {
         let response = self.get(&format!("/v1/workspaces/{ws}")).send().await?;

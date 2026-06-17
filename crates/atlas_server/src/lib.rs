@@ -47,6 +47,7 @@ pub fn app(state: AppState) -> Router {
             axum::routing::post(routes::users::enable_user),
         )
         // Workspace
+        .route("/v1/workspaces", get(routes::workspaces::list_workspaces))
         .route(
             "/v1/workspaces/{ws}",
             get(routes::workspaces::get_workspace),
