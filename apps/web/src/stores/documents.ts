@@ -53,5 +53,57 @@ export const useDocumentsStore = defineStore('documents', () => {
     backlinks.value = data.items;
   }
 
-  return { summaries, backlinks, loading, error, loadSummaries, loadBacklinks };
+  async function create(
+    ws: string,
+    projectSlug: string,
+    title: string,
+    folderId?: string,
+  ): Promise<string | null> {
+    const { data, error: apiError } = await wrappedClient.POST(
+      '/v1/workspaces/{ws}/projects/{project_slug}/documents',
+      {
+        params: { path: { ws, project_slug: projectSlug } },
+        body: { title, folder_id: folderId ?? null },
+      },
+    );
+
+    if (apiError !== undefined || data === undefined) {
+      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to create document';
+      return null;
+    }
+
+    await loadSummaries(ws, projectSlug);
+    return data.slug ?? null;
+  }
+
+  async function rename(ws: string, projectSlug: string, slug: string, title: string): Promise<boolean> {
+    const { error: apiError } = await wrappedClient.PATCH('/v1/workspaces/{ws}/documents/{slug}', {
+      params: { path: { ws, slug } },
+      body: { title },
+    });
+
+    if (apiError !== undefined) {
+      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to rename document';
+      return false;
+    }
+
+    await loadSummaries(ws, projectSlug);
+    return true;
+  }
+
+  async function remove(ws: string, projectSlug: string, slug: string): Promise<boolean> {
+    const { error: apiError } = await wrappedClient.DELETE('/v1/workspaces/{ws}/documents/{slug}', {
+      params: { path: { ws, slug } },
+    });
+
+    if (apiError !== undefined) {
+      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to delete document';
+      return false;
+    }
+
+    await loadSummaries(ws, projectSlug);
+    return true;
+  }
+
+  return { summaries, backlinks, loading, error, loadSummaries, loadBacklinks, create, rename, remove };
 });

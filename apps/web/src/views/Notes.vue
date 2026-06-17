@@ -21,6 +21,7 @@ import { useDocumentsStore } from '@/stores/documents';
 import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 import AppShell from '@/views/AppShell.vue';
+// biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
 import NotesSidebar from '@/views/NotesSidebar.vue';
 
 const route = useRoute();
@@ -33,6 +34,7 @@ const { merge } = useCasMerge();
 
 const editorRef = ref<InstanceType<typeof NoteEditor> | null>(null);
 const suggestRef = ref<InstanceType<typeof WikiLinkSuggest> | null>(null);
+const sidebarRef = ref<InstanceType<typeof NotesSidebar> | null>(null);
 
 const slug = computed(() => {
   const s = route.params.slug;
@@ -247,11 +249,16 @@ watch([slug, ws], loadDoc, { immediate: true });
     </template>
 
     <template #sidebar>
-      <NotesSidebar />
+      <NotesSidebar ref="sidebarRef" />
     </template>
 
     <template #sidebar-footer>
-      <button type="button" class="atl-gbtn" style="width: 100%; justify-content: flex-start; height: 26px; gap: 7px; color: var(--c-foreground);">
+      <button
+        type="button"
+        class="atl-gbtn"
+        style="width: 100%; justify-content: flex-start; height: 26px; gap: 7px; color: var(--c-foreground);"
+        @click="sidebarRef?.openNewPage()"
+      >
         <Icon name="plus" :size="14" />
         New page
       </button>
@@ -259,7 +266,13 @@ watch([slug, ws], loadDoc, { immediate: true });
 
     <TabStrip v-if="slug" :tabs="editorTabs">
       <template #right>
-        <button type="button" class="atl-gbtn" title="New page" aria-label="New page">
+        <button
+          type="button"
+          class="atl-gbtn"
+          title="New page"
+          aria-label="New page"
+          @click="sidebarRef?.openNewPage()"
+        >
           <Icon name="plus" :size="13" />
         </button>
         <button type="button" class="atl-gbtn" title="Command palette ⌘K" aria-label="Command palette">

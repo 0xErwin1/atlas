@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+// biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
 import NotesTree from '@/components/notas/NotesTree.vue';
 import { useDocumentsStore } from '@/stores/documents';
 import { useFoldersStore } from '@/stores/folders';
@@ -9,6 +10,7 @@ import { useWorkspaceStore } from '@/stores/workspace';
 const route = useRoute();
 const router = useRouter();
 const workspace = useWorkspaceStore();
+const treeRef = ref<InstanceType<typeof NotesTree> | null>(null);
 const folders = useFoldersStore();
 const documents = useDocumentsStore();
 
@@ -19,39 +21,99 @@ const activeSlug = computed(() => {
 
 const activeProject = computed(() => workspace.projects[0] ?? null);
 
+const ws = computed(() => workspace.activeWorkspaceSlug ?? '');
+
 async function loadTree(): Promise<void> {
-  const ws = workspace.activeWorkspaceSlug;
-  if (ws === null) {
+  const wsSlug = workspace.activeWorkspaceSlug;
+  if (wsSlug === null) {
     await workspace.loadProjects('');
     return;
   }
 
   if (workspace.projects.length === 0) {
-    await workspace.loadProjects(ws);
+    await workspace.loadProjects(wsSlug);
   }
 
   const project = activeProject.value;
   if (project === null) return;
 
-  await Promise.all([folders.load(ws, project.slug), documents.loadSummaries(ws, project.slug)]);
+  await Promise.all([folders.load(wsSlug, project.slug), documents.loadSummaries(wsSlug, project.slug)]);
 }
 
 function openDoc(slug: string): void {
   void router.push({ name: 'notes', params: { slug } });
 }
 
+async function createDoc(title: string, folderId?: string): Promise<void> {
+  const project = activeProject.value;
+  if (project === null || ws.value === '') return;
+
+  const slug = await documents.create(ws.value, project.slug, title, folderId);
+  if (slug !== null) {
+    openDoc(slug);
+  }
+}
+
+async function renameDoc(slug: string, title: string): Promise<void> {
+  const project = activeProject.value;
+  if (project === null || ws.value === '') return;
+
+  await documents.rename(ws.value, project.slug, slug, title);
+}
+
+async function removeDoc(slug: string): Promise<void> {
+  const project = activeProject.value;
+  if (project === null || ws.value === '') return;
+
+  await documents.remove(ws.value, project.slug, slug);
+}
+
+async function createFolder(name: string, parentFolderId?: string): Promise<void> {
+  const project = activeProject.value;
+  if (project === null || ws.value === '') return;
+
+  await folders.create(ws.value, project.slug, name, parentFolderId);
+}
+
+async function renameFolder(folderId: string, name: string): Promise<void> {
+  const project = activeProject.value;
+  if (project === null || ws.value === '') return;
+
+  await folders.rename(ws.value, project.slug, folderId, name);
+}
+
+async function removeFolder(folderId: string): Promise<void> {
+  const project = activeProject.value;
+  if (project === null || ws.value === '') return;
+
+  await folders.remove(ws.value, project.slug, folderId);
+}
+
 onMounted(loadTree);
 watch(() => workspace.activeWorkspaceSlug, loadTree);
+
+function openNewPage(): void {
+  treeRef.value?.openNewPage();
+}
+
+defineExpose({ openNewPage });
 </script>
 
 <template>
   <NotesTree
     v-if="activeProject"
+    ref="treeRef"
     :project-name="activeProject.name"
     :folders="folders.folders"
     :docs="documents.summaries"
     :active-slug="activeSlug"
     @select-doc="openDoc"
+    @create-doc="createDoc"
+    @rename-doc="renameDoc"
+    @remove-doc="removeDoc"
+    @create-folder="createFolder"
+    @rename-folder="renameFolder"
+    @remove-folder="removeFolder"
   />
   <p
     v-else

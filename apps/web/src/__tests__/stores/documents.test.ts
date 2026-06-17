@@ -1,10 +1,15 @@
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { GET } = vi.hoisted(() => ({ GET: vi.fn() }));
+const { GET, POST, PATCH, DELETE } = vi.hoisted(() => ({
+  GET: vi.fn(),
+  POST: vi.fn(),
+  PATCH: vi.fn(),
+  DELETE: vi.fn(),
+}));
 
 vi.mock('@/api/wrapper', () => ({
-  wrappedClient: { GET },
+  wrappedClient: { GET, POST, PATCH, DELETE },
 }));
 
 import { useDocumentsStore } from '@/stores/documents';
@@ -74,5 +79,90 @@ describe('useDocumentsStore', () => {
     await store.loadBacklinks('ws', 'missing');
 
     expect(store.backlinks).toHaveLength(0);
+  });
+
+  it('create returns the new slug and refreshes summaries on success', async () => {
+    const created = {
+      id: 'd2',
+      title: 'New Doc',
+      slug: 'new-doc',
+      folder_id: null,
+      head_revision_id: 'r1',
+      head_seq: 1,
+      content: '',
+      frontmatter: {},
+      workspace_id: 'ws',
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    };
+    POST.mockResolvedValue({ data: created });
+    GET.mockResolvedValue({ data: { items: [summary('d2', 'New Doc')], has_more: false } });
+
+    const store = useDocumentsStore();
+    const slug = await store.create('ws', 'proj', 'New Doc');
+
+    expect(slug).toBe('new-doc');
+    expect(POST).toHaveBeenCalledOnce();
+    expect(GET).toHaveBeenCalledOnce();
+    expect(store.summaries).toHaveLength(1);
+    expect(store.summaries[0]?.id).toBe('d2');
+    expect(store.error).toBeNull();
+  });
+
+  it('create returns null and sets error from hint on failure', async () => {
+    POST.mockResolvedValue({ error: { hint: 'project not found' } });
+
+    const store = useDocumentsStore();
+    const slug = await store.create('ws', 'proj', 'Oops');
+
+    expect(slug).toBeNull();
+    expect(store.error).toBe('project not found');
+    expect(GET).not.toHaveBeenCalled();
+  });
+
+  it('rename PATCHes and refreshes summaries', async () => {
+    PATCH.mockResolvedValue({ data: {} });
+    GET.mockResolvedValue({ data: { items: [summary('d1', 'Renamed')], has_more: false } });
+
+    const store = useDocumentsStore();
+    const ok = await store.rename('ws', 'proj', 'my-doc', 'Renamed');
+
+    expect(ok).toBe(true);
+    expect(PATCH).toHaveBeenCalledOnce();
+    expect(GET).toHaveBeenCalledOnce();
+  });
+
+  it('rename returns false and sets error on failure', async () => {
+    PATCH.mockResolvedValue({ error: { hint: 'not found' } });
+
+    const store = useDocumentsStore();
+    const ok = await store.rename('ws', 'proj', 'bad-slug', 'X');
+
+    expect(ok).toBe(false);
+    expect(store.error).toBe('not found');
+    expect(GET).not.toHaveBeenCalled();
+  });
+
+  it('remove DELETEs and refreshes summaries', async () => {
+    DELETE.mockResolvedValue({ data: undefined });
+    GET.mockResolvedValue({ data: { items: [], has_more: false } });
+
+    const store = useDocumentsStore();
+    const ok = await store.remove('ws', 'proj', 'my-doc');
+
+    expect(ok).toBe(true);
+    expect(DELETE).toHaveBeenCalledOnce();
+    expect(store.summaries).toHaveLength(0);
+  });
+
+  it('remove returns false and sets error on failure', async () => {
+    DELETE.mockResolvedValue({ error: { hint: 'forbidden' } });
+
+    const store = useDocumentsStore();
+    const ok = await store.remove('ws', 'proj', 'my-doc');
+
+    expect(ok).toBe(false);
+    expect(store.error).toBe('forbidden');
+    expect(GET).not.toHaveBeenCalled();
   });
 });
