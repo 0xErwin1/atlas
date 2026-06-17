@@ -565,6 +565,58 @@ pub async fn authorize_folder_destination(
     Ok(())
 }
 
+/// Authorizes `principal` for at least `min` on the board that owns the
+/// destination `column`'s permission chain (board → project → workspace). Used
+/// by task move to prevent relocating a task into a board the caller cannot
+/// edit, even when they can edit the task's current board.
+///
+/// Rejects with NotFound when the column or its board is absent from the
+/// workspace, or the principal lacks the role, to avoid disclosing existence.
+pub async fn authorize_board_destination(
+    db: &sea_orm::DatabaseConnection,
+    principal: &Principal,
+    membership: Option<atlas_domain::entities::identity::MemberRole>,
+    workspace: &Workspace,
+    column_id: atlas_domain::ids::ColumnId,
+    min: ResourceRole,
+) -> Result<(), ApiError> {
+    use crate::persistence::entities::boards_tasks::board_column;
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+
+    let column = board_column::Entity::find_by_id(column_id.0)
+        .filter(board_column::Column::WorkspaceId.eq(workspace.id.0))
+        .filter(board_column::Column::DeletedAt.is_null())
+        .one(db)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?
+        .ok_or(ApiError::NotFound)?;
+
+    let board = board::Entity::find_by_id(column.board_id)
+        .filter(board::Column::WorkspaceId.eq(workspace.id.0))
+        .filter(board::Column::DeletedAt.is_null())
+        .one(db)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?
+        .ok_or(ApiError::NotFound)?;
+
+    let board = board_from(board);
+    let chain = build_board_chain(db, workspace, board.id, board.project_id).await?;
+
+    let effective = resolve_effective_role(db, principal, membership, workspace, &chain)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+
+    if effective < min {
+        return Err(ApiError::NotFound);
+    }
+
+    Ok(())
+}
+
 fn project_visibility(vis: &atlas_domain::permissions::Visibility) -> Visibility {
     vis.clone()
 }

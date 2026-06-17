@@ -410,6 +410,11 @@ impl PgTaskRepo {
         column_id: ColumnId,
         position: PositionBetween,
     ) -> Result<Task, DomainError> {
+        // The destination column may live on any board/project in the workspace:
+        // a move can cross boards. Resolve the column's board and project so the
+        // task adopts them; for a same-board move these equal the current values.
+        let (board_id, project_id) = resolve_column_target_in(conn, ctx, column_id).await?;
+
         // Reject positions where a provided anchor string is not a valid
         // fractional-index key. Invalid anchors are silently dropped to None
         // by try_between, which turns both-invalid into (None, None) → default
@@ -421,7 +426,7 @@ impl PgTaskRepo {
             return Err(DomainError::PositionExhausted { column_id });
         }
 
-        match try_move_to_in(conn, ctx, id, column_id, &position).await {
+        match try_move_to_in(conn, ctx, id, column_id, board_id, project_id, &position).await {
             Ok(task) => Ok(task),
             Err(DomainError::PositionExhausted { .. }) => {
                 let remap = resequence_tasks_in_column(conn, ctx, column_id).await?;
@@ -439,7 +444,7 @@ impl PgTaskRepo {
                     return Err(DomainError::PositionExhausted { column_id });
                 }
 
-                try_move_to_in(conn, ctx, id, column_id, &rebalanced).await
+                try_move_to_in(conn, ctx, id, column_id, board_id, project_id, &rebalanced).await
             }
             Err(e) => Err(e),
         }
@@ -1445,11 +1450,49 @@ fn remap_anchors(original: &PositionBetween, remap: &[(String, String)]) -> Posi
 /// Uses a single `UPDATE … WHERE id AND workspace_id AND deleted_at IS NULL RETURNING *`
 /// to avoid read-modify-write races (B1 fix). Returns `PositionExhausted` if the
 /// fractional space between the two anchors is exhausted.
+/// Resolves a destination column to the board and project it belongs to,
+/// enforcing that the column is live and in the caller's workspace.
+///
+/// Cross-board moves are allowed: the target column may belong to any
+/// board/project in the workspace, and the moved task adopts that column's board
+/// and project. A non-existent column is a client error (422 InvalidInput); a
+/// column whose board is missing is an internal inconsistency (404 board).
+async fn resolve_column_target_in(
+    conn: &impl ConnectionTrait,
+    ctx: &WorkspaceCtx,
+    column_id: ColumnId,
+) -> Result<(BoardId, ProjectId), DomainError> {
+    let column = board_column::Entity::find_by_id(column_id.0)
+        .filter(board_column::Column::WorkspaceId.eq(ctx.workspace_id.0))
+        .filter(board_column::Column::DeletedAt.is_null())
+        .one(conn)
+        .await
+        .map_err(db_err)?
+        .ok_or(DomainError::InvalidInput {
+            message: "column does not exist in this workspace".into(),
+        })?;
+
+    let board = board::Entity::find_by_id(column.board_id)
+        .filter(board::Column::WorkspaceId.eq(ctx.workspace_id.0))
+        .filter(board::Column::DeletedAt.is_null())
+        .one(conn)
+        .await
+        .map_err(db_err)?
+        .ok_or(DomainError::NotFound {
+            entity: "board",
+            id: column.board_id,
+        })?;
+
+    Ok((BoardId(board.id), ProjectId(board.project_id)))
+}
+
 async fn try_move_to_in(
     txn: &impl ConnectionTrait,
     ctx: &WorkspaceCtx,
     id: TaskId,
     column_id: ColumnId,
+    board_id: BoardId,
+    project_id: ProjectId,
     position: &PositionBetween,
 ) -> Result<Task, DomainError> {
     let new_key = match position::try_between(position.before.as_deref(), position.after.as_deref())
@@ -1462,15 +1505,20 @@ async fn try_move_to_in(
 
     let now = Utc::now();
 
+    // board_id and project_id are written too so a cross-board move keeps the
+    // task's board/project consistent with its new column; for a same-board move
+    // they equal the current values, leaving the row unchanged on those fields.
     let row = txn
         .query_one_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
             "UPDATE tasks \
-             SET column_id = $1, position_key = $2, updated_at = $3 \
-             WHERE id = $4 AND workspace_id = $5 AND deleted_at IS NULL \
+             SET column_id = $1, board_id = $2, project_id = $3, position_key = $4, updated_at = $5 \
+             WHERE id = $6 AND workspace_id = $7 AND deleted_at IS NULL \
              RETURNING *",
             [
                 column_id.0.into(),
+                board_id.0.into(),
+                project_id.0.into(),
                 new_key.into(),
                 now.into(),
                 id.0.into(),

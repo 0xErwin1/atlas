@@ -940,6 +940,91 @@ async fn move_task_with_task_id_anchor_succeeds() {
     db.teardown().await;
 }
 
+#[tokio::test]
+async fn move_task_across_boards_succeeds() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "task-xboard-1").await;
+
+    // Two projects, each with its own board and column, exercises updating both
+    // board_id and project_id on the moved task.
+    client
+        .create_project(&ws.slug, project_req("proj-a", "PA"))
+        .await
+        .expect("create project a");
+    client
+        .create_project(&ws.slug, project_req("proj-b", "PB"))
+        .await
+        .expect("create project b");
+
+    let board_a = client
+        .create_board(&ws.slug, "proj-a", CreateBoardRequest { name: "A".to_string() })
+        .await
+        .expect("create board a");
+    let board_b = client
+        .create_board(&ws.slug, "proj-b", CreateBoardRequest { name: "B".to_string() })
+        .await
+        .expect("create board b");
+
+    let col_a = client
+        .create_column(
+            &ws.slug,
+            board_a.id,
+            CreateColumnRequest { name: "Todo".to_string(), before: None, after: None },
+        )
+        .await
+        .expect("create column a");
+    let col_b = client
+        .create_column(
+            &ws.slug,
+            board_b.id,
+            CreateColumnRequest { name: "Todo".to_string(), before: None, after: None },
+        )
+        .await
+        .expect("create column b");
+
+    let task = client
+        .create_task(
+            &ws.slug,
+            board_a.id,
+            CreateTaskRequest {
+                column_id: col_a.id,
+                title: "Cross".to_string(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create task");
+
+    let moved = client
+        .move_task(
+            &ws.slug,
+            &task.readable_id,
+            MoveTaskRequest { column_id: col_b.id, before: None, after: None },
+        )
+        .await
+        .expect("cross-board move should succeed");
+
+    assert_eq!(moved.column_id, col_b.id, "task lands in the target column");
+    assert_eq!(moved.board_id, board_b.id, "task adopts the target board");
+    assert_eq!(moved.project_id, board_b.project_id, "task adopts the target board's project");
+    assert_eq!(moved.readable_id, task.readable_id, "readable id is immutable identity");
+
+    let in_board_b = client
+        .list_tasks(&ws.slug, board_b.id, None, None)
+        .await
+        .expect("list board b tasks");
+    assert!(
+        in_board_b.items.iter().any(|t| t.id == task.id),
+        "moved task must appear in the target board's task list"
+    );
+
+    db.teardown().await;
+}
+
 // ---------------------------------------------------------------------------
 // Assignees
 // ---------------------------------------------------------------------------

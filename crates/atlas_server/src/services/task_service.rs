@@ -161,12 +161,10 @@ impl TaskService {
             })
             .map(crate::persistence::entities::boards_tasks::task_from)?;
 
-        // A task may only move between columns of its own board; the target
-        // column must belong to that board and the caller's workspace.
-        validate_column_in_board(&txn, ctx, before.board_id, column_id, before.project_id).await?;
-
         // Clients send neighbour anchors as task ids; translate them to the
         // neighbours' fractional position keys before computing the new key.
+        // A move may cross boards; PgTaskRepo::move_to_in resolves the target
+        // board/project from the destination column.
         let resolved = PositionBetween {
             before: resolve_anchor_key(&txn, ctx, position.before.as_deref()).await?,
             after: resolve_anchor_key(&txn, ctx, position.after.as_deref()).await?,

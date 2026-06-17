@@ -685,17 +685,18 @@ async fn task_service_move_task_recovers_after_resequence() {
     let collision = left.position_key.clone();
     force_position_key(&db, "tasks", right.id.0, &collision).await;
 
-    // Move the mover "between" the two colliding neighbors. The first try_between
-    // sees equal anchors (None); the resequence splits Left/Right and re-derives
-    // the anchors so the retry lands the mover strictly between them.
+    // Move the mover "between" the two colliding neighbors. Anchors are task ids;
+    // both Left and Right now resolve to the same collided key, so the first
+    // try_between sees equal anchors, the resequence splits Left/Right, and the
+    // retry lands the mover strictly between them.
     let moved = svc
         .move_task(
             &ctx,
             mover.id,
             col.id,
             PositionBetween {
-                before: Some(collision.clone()),
-                after: Some(collision.clone()),
+                before: Some(left.id.to_string()),
+                after: Some(right.id.to_string()),
             },
         )
         .await
@@ -746,19 +747,21 @@ async fn task_service_move_task_inverted_anchors_returns_exhausted() {
         .await
         .expect("create task");
 
-    // before > after: no real neighbors back these keys, so the resequence cannot
-    // help and the result is a clean PositionExhausted.
-    let result = svc
-        .move_task(
-            &ctx,
-            task.id,
-            col.id,
-            PositionBetween {
-                before: Some("ZZZZ".into()),
-                after: Some("AAAA".into()),
-            },
-        )
-        .await;
+    // before > after with phantom keys that no real neighbour backs: the
+    // resequence cannot help and the result is a clean PositionExhausted. Raw
+    // fractional keys are the repo-layer contract — the service layer takes task
+    // ids — so this exercises PgTaskRepo::move_to_in directly.
+    let result = PgTaskRepo::move_to_in(
+        db.conn(),
+        &ctx,
+        task.id,
+        col.id,
+        PositionBetween {
+            before: Some("ZZZZ".into()),
+            after: Some("AAAA".into()),
+        },
+    )
+    .await;
 
     assert!(
         matches!(

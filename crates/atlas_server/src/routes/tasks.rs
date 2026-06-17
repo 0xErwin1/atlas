@@ -32,7 +32,9 @@ use atlas_domain::{
 };
 
 use crate::{
-    authz::{Authorized, BoardRes, EditorMin, TaskRes, ViewerMin},
+    authz::{
+        Authorized, BoardRes, EditorMin, MinRole, TaskRes, ViewerMin, authorize_board_destination,
+    },
     error::ApiError,
     persistence::repos::{
         ApiKeyRepo, DocumentRepo, MembershipRepo, PgApiKeyRepo, PgDocumentRepo, PgMembershipRepo,
@@ -629,6 +631,20 @@ pub(crate) async fn move_task(
 ) -> Result<Json<TaskDto>, ApiError> {
     let actor = principal_to_actor(&auth.principal);
     let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
+
+    // The Authorized<TaskRes, EditorMin> extractor only proves edit rights on the
+    // task's current board. A move may target a column on a different board, so
+    // independently require edit rights on the destination board too; otherwise a
+    // user could relocate a task into a board they cannot access.
+    authorize_board_destination(
+        &state.db,
+        &auth.principal,
+        auth.membership.clone(),
+        &auth.workspace,
+        ColumnId(body.column_id),
+        EditorMin::ROLE,
+    )
+    .await?;
 
     let moved = state
         .task_service()
