@@ -119,7 +119,7 @@ function onSortableDrop(event: unknown): void {
       :animation="150"
       item-key="id"
       class="flex flex-col"
-      style="gap: 8px; min-height: 24px;"
+      style="gap: 8px; flex: 1 1 auto; min-height: 60px;"
       ghost-class="atl-card-ghost"
       @add="onSortableDrop"
       @update="onSortableDrop"
