@@ -1,0 +1,346 @@
+import { syntaxTree } from '@codemirror/language';
+import { type Range, RangeSetBuilder } from '@codemirror/state';
+import {
+  Decoration,
+  type DecorationSet,
+  EditorView,
+  ViewPlugin,
+  type ViewUpdate,
+  WidgetType,
+} from '@codemirror/view';
+import { computeActiveLines, type LineRange, type SelectionRange } from '@/lib/livePreview';
+
+/**
+ * Lezer syntax node, derived from `Tree.resolve` so we do not depend on the
+ * transitive `@lezer/common` package being hoisted into node_modules.
+ */
+type SyntaxNode = ReturnType<ReturnType<typeof syntaxTree>['resolve']>;
+
+/**
+ * Obsidian-style "Live Preview" decorations for the CodeMirror 6 markdown editor.
+ *
+ * The document stays as raw markdown (source of truth). This ViewPlugin walks the
+ * Lezer markdown syntax tree over the visible ranges and:
+ *   - HIDES syntax markers (`#`, `**`, backticks, `~~`, link brackets) and styles
+ *     the rendered content, WHEN the marker's line is NOT touched by the selection;
+ *   - REVEALS the raw markers (no replace decoration), styling preserved, WHEN the
+ *     line IS active, so the user can edit them (delete a `#` to demote a heading).
+ *
+ * Wikilinks (`[[Title]]`) are not part of the Lezer markdown grammar, so they are
+ * decorated by a separate regex pass with the same reveal-on-active-line rule.
+ *
+ * The active-line decision is delegated to the pure `computeActiveLines` helper so
+ * it stays unit-testable without a DOM.
+ */
+
+export interface LivePreviewCallbacks {
+  /** Called when a rendered (collapsed) wikilink is clicked. */
+  onWikilinkClick: (title: string) => void;
+}
+
+const WIKILINK_RE = /\[\[([^[\]\n]+)\]\]/g;
+
+/**
+ * Widget that renders a collapsed wikilink as clickable text. The raw
+ * `[[Title]]` is replaced by this when the link's line is not active.
+ */
+class WikilinkWidget extends WidgetType {
+  constructor(
+    private readonly title: string,
+    private readonly onClick: (title: string) => void,
+  ) {
+    super();
+  }
+
+  eq(other: WikilinkWidget): boolean {
+    return other.title === this.title;
+  }
+
+  toDOM(): HTMLElement {
+    const span = document.createElement('span');
+    span.className = 'cm-atlas-wikilink';
+    span.textContent = this.title;
+    span.addEventListener('mousedown', (event) => {
+      event.preventDefault();
+      this.onClick(this.title);
+    });
+    return span;
+  }
+
+  ignoreEvent(): boolean {
+    return false;
+  }
+}
+
+const hideDeco = Decoration.replace({});
+
+function lineRangesFor(view: EditorView): LineRange[] {
+  const out: LineRange[] = [];
+  const doc = view.state.doc;
+
+  for (let n = 1; n <= doc.lines; n += 1) {
+    const line = doc.line(n);
+    out.push({ number: line.number, from: line.from, to: line.to });
+  }
+
+  return out;
+}
+
+function selectionRangesFor(view: EditorView): SelectionRange[] {
+  return view.state.selection.ranges.map((r) => ({ from: r.from, to: r.to }));
+}
+
+function lineNumberAt(view: EditorView, pos: number): number {
+  return view.state.doc.lineAt(pos).number;
+}
+
+/**
+ * Builds the full decoration set for the current view state.
+ *
+ * Decorations are collected unsorted into an array, then sorted by `from` (and by
+ * startSide) before being fed to a RangeSetBuilder, because CM6 requires
+ * decorations added in document order. Line decorations and mark/replace
+ * decorations are interleaved by position.
+ */
+function buildDecorations(view: EditorView, callbacks: LivePreviewCallbacks): DecorationSet {
+  const activeLines = computeActiveLines(lineRangesFor(view), selectionRangesFor(view));
+  const decos: Range<Decoration>[] = [];
+
+  for (const { from, to } of view.visibleRanges) {
+    decorateSyntaxTree(view, from, to, activeLines, decos);
+    decorateWikilinks(view, from, to, activeLines, callbacks, decos);
+  }
+
+  decos.sort((a, b) => a.from - b.from || a.value.startSide - b.value.startSide);
+
+  const builder = new RangeSetBuilder<Decoration>();
+  for (const deco of decos) builder.add(deco.from, deco.to, deco.value);
+  return builder.finish();
+}
+
+/**
+ * Walks the Lezer markdown tree over [from, to] and pushes decorations for every
+ * supported construct. The reveal-on-active-line rule is applied per construct:
+ * markers on an active line are left raw (only the content styling is applied),
+ * markers elsewhere are collapsed with a replace decoration.
+ */
+function decorateSyntaxTree(
+  view: EditorView,
+  from: number,
+  to: number,
+  activeLines: Set<number>,
+  decos: Range<Decoration>[],
+): void {
+  const tree = syntaxTree(view.state);
+
+  tree.iterate({
+    from,
+    to,
+    enter: (node) => {
+      const name = node.name;
+
+      if (/^ATXHeading[1-6]$/.test(name)) {
+        const level = Number(name.slice(-1));
+        const lineNo = lineNumberAt(view, node.from);
+        decos.push(
+          Decoration.line({ class: `cm-atlas-h${level}` }).range(view.state.doc.lineAt(node.from).from),
+        );
+
+        if (!activeLines.has(lineNo)) {
+          const headerMark = findChild(node.node.firstChild, 'HeaderMark');
+          if (headerMark) {
+            const markEnd = consumeTrailingSpace(view, headerMark.to, node.to);
+            decos.push(hideDeco.range(headerMark.from, markEnd));
+          }
+        }
+        return;
+      }
+
+      if (name === 'Emphasis' || name === 'StrongEmphasis') {
+        const cls = name === 'StrongEmphasis' ? 'cm-atlas-strong' : 'cm-atlas-em';
+        const lineNo = lineNumberAt(view, node.from);
+        decos.push(Decoration.mark({ class: cls }).range(node.from, node.to));
+        if (!activeLines.has(lineNo)) hideMarks(node.node, 'EmphasisMark', decos);
+        return;
+      }
+
+      if (name === 'Strikethrough') {
+        const lineNo = lineNumberAt(view, node.from);
+        decos.push(Decoration.mark({ class: 'cm-atlas-strike' }).range(node.from, node.to));
+        if (!activeLines.has(lineNo)) hideMarks(node.node, 'StrikethroughMark', decos);
+        return;
+      }
+
+      if (name === 'InlineCode') {
+        const lineNo = lineNumberAt(view, node.from);
+        decos.push(Decoration.mark({ class: 'cm-atlas-code' }).range(node.from, node.to));
+        if (!activeLines.has(lineNo)) hideMarks(node.node, 'CodeMark', decos);
+        return;
+      }
+
+      if (name === 'Link') {
+        decorateLink(view, node.node, activeLines, decos);
+        return;
+      }
+
+      if (name === 'Blockquote') {
+        decorateLines(view, node.from, node.to, 'cm-atlas-quote', decos);
+        return;
+      }
+
+      if (name === 'HorizontalRule') {
+        decos.push(Decoration.line({ class: 'cm-atlas-hr' }).range(view.state.doc.lineAt(node.from).from));
+        return;
+      }
+
+      if (name === 'FencedCode') {
+        decorateLines(view, node.from, node.to, 'cm-atlas-fenced', decos);
+        return;
+      }
+
+      if (name === 'ListItem') {
+        decos.push(
+          Decoration.line({ class: 'cm-atlas-listitem' }).range(view.state.doc.lineAt(node.from).from),
+        );
+        return;
+      }
+    },
+  });
+}
+
+/**
+ * Standard markdown link `[text](url)`. Off active line: hide `[`, and the
+ * `](url)` tail, leaving the link text styled. On active line: leave raw. The
+ * collapse is best-effort and relies on the Lezer LinkMark / URL children.
+ */
+function decorateLink(
+  view: EditorView,
+  node: SyntaxNode,
+  activeLines: Set<number>,
+  decos: Range<Decoration>[],
+): void {
+  const lineNo = lineNumberAt(view, node.from);
+  decos.push(Decoration.mark({ class: 'cm-atlas-link' }).range(node.from, node.to));
+
+  if (activeLines.has(lineNo)) return;
+
+  const marks = collectChildren(node, 'LinkMark');
+  const url = findChild(node.firstChild, 'URL');
+
+  // marks are: [ "[", "]", "(", ")" ] in document order for [text](url).
+  const open = marks[0];
+  const closeText = marks[1];
+
+  if (open) decos.push(hideDeco.range(open.from, open.to));
+
+  if (closeText && url) {
+    // Hide from the closing "]" through the closing ")" (covers "](url)").
+    decos.push(hideDeco.range(closeText.from, node.to));
+  }
+}
+
+/** Regex pass for wikilinks, which are not in the Lezer markdown grammar. */
+function decorateWikilinks(
+  view: EditorView,
+  from: number,
+  to: number,
+  activeLines: Set<number>,
+  callbacks: LivePreviewCallbacks,
+  decos: Range<Decoration>[],
+): void {
+  const text = view.state.doc.sliceString(from, to);
+  WIKILINK_RE.lastIndex = 0;
+
+  for (let m = WIKILINK_RE.exec(text); m !== null; m = WIKILINK_RE.exec(text)) {
+    const title = m[1];
+    if (title === undefined) continue;
+
+    const start = from + m.index;
+    const end = start + m[0].length;
+    const lineNo = lineNumberAt(view, start);
+
+    if (activeLines.has(lineNo)) {
+      decos.push(Decoration.mark({ class: 'cm-atlas-wikilink-raw' }).range(start, end));
+      continue;
+    }
+
+    decos.push(
+      Decoration.replace({ widget: new WikilinkWidget(title, callbacks.onWikilinkClick) }).range(start, end),
+    );
+  }
+}
+
+function decorateLines(
+  view: EditorView,
+  from: number,
+  to: number,
+  cls: string,
+  decos: Range<Decoration>[],
+): void {
+  const doc = view.state.doc;
+  const firstLine = doc.lineAt(from).number;
+  const lastLine = doc.lineAt(to).number;
+
+  for (let n = firstLine; n <= lastLine; n += 1) {
+    decos.push(Decoration.line({ class: cls }).range(doc.line(n).from));
+  }
+}
+
+function hideMarks(node: SyntaxNode, markName: string, decos: Range<Decoration>[]): void {
+  for (const mark of collectChildren(node, markName)) {
+    decos.push(hideDeco.range(mark.from, mark.to));
+  }
+}
+
+function collectChildren(node: SyntaxNode, name: string): SyntaxNode[] {
+  const out: SyntaxNode[] = [];
+  for (let child = node.firstChild; child !== null; child = child.nextSibling) {
+    if (child.name === name) out.push(child);
+  }
+  return out;
+}
+
+function findChild(start: SyntaxNode | null, name: string): SyntaxNode | null {
+  for (let child = start; child !== null; child = child.nextSibling) {
+    if (child.name === name) return child;
+  }
+  return null;
+}
+
+/**
+ * Extends a marker range to swallow one trailing space, so hiding `### ` removes
+ * the gap before the heading text rather than leaving a leading indent. Bounded
+ * by `limit` so it never crosses into the content.
+ */
+function consumeTrailingSpace(view: EditorView, pos: number, limit: number): number {
+  if (pos < limit && view.state.doc.sliceString(pos, pos + 1) === ' ') return pos + 1;
+  return pos;
+}
+
+/**
+ * Creates the live-preview extension. Rebuilds the decoration set on every doc
+ * change, selection change, and viewport change so reveal-on-active-line tracks
+ * the cursor in real time.
+ */
+export function livePreview(callbacks: LivePreviewCallbacks) {
+  return ViewPlugin.fromClass(
+    class {
+      decorations: DecorationSet;
+
+      constructor(view: EditorView) {
+        this.decorations = buildDecorations(view, callbacks);
+      }
+
+      update(update: ViewUpdate): void {
+        if (update.docChanged || update.selectionSet || update.viewportChanged) {
+          this.decorations = buildDecorations(update.view, callbacks);
+        }
+      }
+    },
+    {
+      decorations: (plugin) => plugin.decorations,
+      provide: (plugin) =>
+        EditorView.atomicRanges.of((view) => view.plugin(plugin)?.decorations ?? Decoration.none),
+    },
+  );
+}
