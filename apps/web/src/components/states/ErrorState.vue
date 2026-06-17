@@ -109,7 +109,7 @@ const diagnostics = computed(() => {
           height: var(--h-button);
           padding: 0 10px;
           border-radius: var(--r-md);
-          border: 1px solid transparent;
+          border: 1px solid var(--c-border);
           background: transparent;
           color: var(--c-foreground);
           font-family: var(--font-mono);

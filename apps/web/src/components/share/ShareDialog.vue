@@ -5,7 +5,6 @@ import AgentBadge from '@/components/ui/AgentBadge.vue';
 import Avatar from '@/components/ui/Avatar.vue';
 import Btn from '@/components/ui/Btn.vue';
 import Icon from '@/components/ui/Icon.vue';
-import Presence from '@/components/ui/Presence.vue';
 import type { GrantRole } from '@/lib/grantRoles';
 import { type GrantDto, type PrincipalDto, useShareStore } from '@/stores/share';
 
@@ -140,8 +139,8 @@ async function selectMember(member: PrincipalDto): Promise<void> {
           data-action="close"
           title="Close"
           aria-label="Close"
-          class="inline-flex items-center justify-center cursor-pointer"
-          style="width: 26px; height: 26px; border: none; background: transparent; color: var(--c-muted); border-radius: var(--r-md);"
+          class="atl-gbtn"
+          style="width: 26px; height: 26px;"
           @click="emit('close')"
         >
           <Icon name="x" :size="16" />
@@ -192,7 +191,7 @@ async function selectMember(member: PrincipalDto): Promise<void> {
               role="option"
               data-member-option
               :data-principal-type="m.principal_type"
-              class="flex items-center w-full text-left"
+              class="atl-row flex items-center w-full text-left"
               style="
                 gap: 10px;
                 height: 34px;
@@ -205,7 +204,13 @@ async function selectMember(member: PrincipalDto): Promise<void> {
               "
               @click="selectMember(m)"
             >
-              <Avatar :agent="m.principal_type !== 'user'" :size="22" :name="m.display" />
+              <Avatar :agent="m.principal_type !== 'user'" :size="22" :name="m.display">
+                <Icon
+                  v-if="m.principal_type !== 'user'"
+                  name="sparkles"
+                  :size="11"
+                />
+              </Avatar>
               <span class="flex-1 min-w-0 truncate" style="font-size: var(--fs-base); font-weight: var(--fw-medium);">
                 {{ m.display }}
               </span>
@@ -247,7 +252,9 @@ async function selectMember(member: PrincipalDto): Promise<void> {
           class="flex items-center relative"
           style="gap: 10px; padding: 8px 0;"
         >
-          <Avatar :agent="isAgent(g)" :size="24" :name="principalLabel(g)" />
+          <Avatar :agent="isAgent(g)" :size="24" :name="principalLabel(g)">
+            <Icon v-if="isAgent(g)" name="sparkles" :size="13" />
+          </Avatar>
           <div class="flex-1 min-w-0">
             <div
               class="flex items-center"
@@ -304,7 +311,6 @@ async function selectMember(member: PrincipalDto): Promise<void> {
                 padding: '9px 11px',
                 background: visibility === opt.value ? 'var(--c-selection)' : 'transparent',
                 boxShadow: visibility === opt.value ? 'inset 2px 0 0 var(--c-primary)' : 'none',
-                opacity: visibility === opt.value ? 1 : 0.55,
               }"
             >
               <Icon
@@ -344,8 +350,24 @@ async function selectMember(member: PrincipalDto): Promise<void> {
           Copy link
         </Btn>
         <div class="flex-1" />
-        <span class="inline-flex items-center" style="gap: 6px; font-size: var(--fs-sm); color: var(--c-muted);">
-          <Presence :size="7" />
+        <span
+          class="inline-flex items-center"
+          style="
+            gap: 6px;
+            font-size: var(--fs-xs);
+            font-weight: var(--fw-medium);
+            font-family: var(--font-mono);
+            color: var(--c-agent);
+            border: 1px solid var(--c-agent-border);
+            background: var(--c-agent-bg);
+            border-radius: var(--r-md);
+            padding: 2px 8px;
+          "
+        >
+          <span
+            class="atl-pulse"
+            style="width: 6px; height: 6px; border-radius: 9999px; background: var(--c-agent); flex: 0 0 auto;"
+          />
           Actor-aware
         </span>
         <Btn variant="primary" @click="emit('close')">Done</Btn>

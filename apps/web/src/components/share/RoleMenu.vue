@@ -64,6 +64,7 @@ function choose(role: GrantRole) {
       :aria-disabled="!allowed(row.value)"
       :disabled="!allowed(row.value)"
       class="flex items-center gap-2 w-full text-left"
+      :class="allowed(row.value) ? 'atl-row' : undefined"
       :style="{
         height: '28px',
         padding: '0 9px',
@@ -117,7 +118,7 @@ function choose(role: GrantRole) {
       type="button"
       role="menuitem"
       data-action="remove"
-      class="flex items-center gap-2 w-full text-left"
+      class="atl-row flex items-center gap-2 w-full text-left"
       style="
         height: 28px;
         padding: 0 9px;
