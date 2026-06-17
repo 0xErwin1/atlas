@@ -33,10 +33,27 @@ export const useTasksStore = defineStore('tasks', () => {
     openTask.value = data;
   }
 
+  async function updateDescription(ws: string, readableId: string, description: string): Promise<boolean> {
+    error.value = null;
+
+    const { data, error: apiError } = await wrappedClient.PATCH('/v1/workspaces/{ws}/tasks/{readable_id}', {
+      params: { path: { ws, readable_id: readableId } },
+      body: { description },
+    });
+
+    if (apiError !== undefined || data === undefined) {
+      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to update description';
+      return false;
+    }
+
+    openTask.value = data;
+    return true;
+  }
+
   function clear(): void {
     openTask.value = null;
     error.value = null;
   }
 
-  return { openTask, loading, error, loadTask, clear };
+  return { openTask, loading, error, loadTask, updateDescription, clear };
 });

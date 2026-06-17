@@ -148,7 +148,11 @@ watch([readableId, ws], load, { immediate: true });
           </MetaRow>
         </div>
 
-        <TaskDescription :markdown="task.description" />
+        <TaskDescription
+          :markdown="task.description"
+          :ws="ws"
+          :readable-id="task.readable_id"
+        />
 
         <div style="margin-top: 20px;">
           <Checklist
