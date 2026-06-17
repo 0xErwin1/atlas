@@ -27,8 +27,6 @@ const heading = computed(() => {
         font-size: var(--fs-xs);
         color: var(--c-muted);
         margin-bottom: 8px;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
       "
     >
       {{ heading }}
@@ -45,28 +43,28 @@ const heading = computed(() => {
       v-for="link in backlinks"
       :key="link.source_document_id"
       type="button"
-      class="w-full text-left"
+      class="atl-card w-full text-left"
       :disabled="link.source_slug === null || link.source_slug === undefined"
       style="
         display: block;
         width: 100%;
-        padding: 6px 8px;
-        margin-bottom: 6px;
+        padding: 8px 10px;
+        margin-bottom: 8px;
         border: 1px solid var(--c-border);
-        border-radius: var(--r-md);
+        border-radius: var(--r-sm);
         background: var(--c-raised);
         cursor: pointer;
       "
       @click="link.source_slug && emit('navigate', link.source_slug)"
     >
       <div
-        class="flex items-center gap-1"
-        style="font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--c-foreground);"
+        class="flex items-center"
+        style="gap: 6px; margin-bottom: 5px; font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--c-foreground);"
       >
-        <Icon name="file" :size="14" />
-        <span class="truncate">{{ link.source_title }}</span>
+        <Icon name="file" :size="13" style="color: var(--c-muted); flex-shrink: 0;" />
+        <span class="flex-1 truncate">{{ link.source_title }}</span>
       </div>
-      <div style="margin-top: 4px; font-size: var(--fs-xs); color: var(--c-muted);">
+      <div style="font-size: var(--fs-xs); line-height: 1.5; color: var(--c-muted);">
         {{ link.display_title }}
       </div>
     </button>

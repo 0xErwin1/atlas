@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import MetaRow from '@/components/ui/MetaRow.vue';
 
 const props = defineProps<{
   /** Frontmatter metadata extracted by useMarkdownDoc (REQ-W19). */
@@ -33,25 +34,24 @@ const properties = computed<Property[]>(() =>
     </p>
 
     <div
-      v-for="prop in properties"
-      :key="prop.key"
-      class="flex items-start gap-2"
-      style="padding: 4px 0; border-bottom: 1px solid var(--c-border);"
+      v-else
+      style="
+        background: var(--c-raised);
+        border: 1px solid var(--c-border);
+        border-radius: var(--r-sm);
+        padding: 10px 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      "
     >
-      <span
-        style="
-          width: 78px;
-          flex-shrink: 0;
-          font-family: var(--font-mono);
-          font-size: var(--fs-xs);
-          color: var(--c-muted);
-        "
+      <MetaRow
+        v-for="prop in properties"
+        :key="prop.key"
+        :label="prop.key"
       >
-        {{ prop.key }}
-      </span>
-      <span style="font-size: var(--fs-sm); color: var(--c-foreground); word-break: break-word;">
-        {{ prop.value }}
-      </span>
+        <span style="word-break: break-word; color: var(--c-foreground);">{{ prop.value }}</span>
+      </MetaRow>
     </div>
   </div>
 </template>

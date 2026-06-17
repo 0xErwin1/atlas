@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import Icon from '@/components/ui/Icon.vue';
+import Row from '@/components/ui/Row.vue';
+import SectionLabel from '@/components/ui/SectionLabel.vue';
 import { buildNotesTree, type DocInput, type FolderInput } from '@/lib/notesTree';
 import NoteTreeRow from './NoteTreeRow.vue';
 
@@ -22,18 +23,7 @@ const isEmpty = computed(() => tree.value.folders.length === 0 && tree.value.doc
 
 <template>
   <div>
-    <div
-      style="
-        padding: 6px 8px 2px;
-        font-family: var(--font-mono);
-        font-size: var(--fs-xs);
-        color: var(--c-muted);
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-      "
-    >
-      {{ projectName }}
-    </div>
+    <SectionLabel>{{ projectName }}</SectionLabel>
 
     <p
       v-if="isEmpty"
@@ -52,29 +42,15 @@ const isEmpty = computed(() => tree.value.folders.length === 0 && tree.value.doc
         @select-doc="emit('select-doc', $event)"
       />
 
-      <button
+      <Row
         v-for="doc in tree.docs"
         :key="doc.id"
-        type="button"
-        class="flex items-center gap-1 w-full text-left"
+        :label="doc.title"
+        icon="file"
+        :active="activeSlug !== null && doc.slug === activeSlug"
         :disabled="doc.slug === null"
-        :aria-current="activeSlug !== null && doc.slug === activeSlug"
-        :style="`
-          height: 24px;
-          padding-left: 8px;
-          padding-right: 8px;
-          border: none;
-          cursor: ${doc.slug === null ? 'default' : 'pointer'};
-          background: ${activeSlug !== null && doc.slug === activeSlug ? 'var(--c-list-active)' : 'transparent'};
-          color: ${activeSlug !== null && doc.slug === activeSlug ? 'var(--c-primary)' : 'var(--c-foreground)'};
-          font-size: var(--fs-sm);
-          font-weight: ${activeSlug !== null && doc.slug === activeSlug ? 'var(--fw-semibold)' : 'var(--fw-normal)'};
-        `"
         @click="doc.slug !== null && emit('select-doc', doc.slug)"
-      >
-        <Icon name="file" :size="13" />
-        <span class="truncate">{{ doc.title }}</span>
-      </button>
+      />
     </template>
   </div>
 </template>

@@ -8,6 +8,17 @@ import InspectorDock from '@/components/shell/InspectorDock.vue';
 import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 
+withDefaults(
+  defineProps<{
+    sidebarTitle?: string;
+    sidebarIcon?: string;
+  }>(),
+  {
+    sidebarTitle: 'Explorer',
+    sidebarIcon: '',
+  },
+);
+
 const ui = useUiStore();
 const workspace = useWorkspaceStore();
 
@@ -21,11 +32,14 @@ const ws = computed(() => workspace.activeWorkspaceSlug ?? '');
   >
     <AppRail />
 
-    <ContextSidebar>
+    <ContextSidebar :title="sidebarTitle" :icon="sidebarIcon">
       <template #header-actions>
         <slot name="sidebar-actions" />
       </template>
       <slot name="sidebar" />
+      <template v-if="$slots['sidebar-footer']" #footer>
+        <slot name="sidebar-footer" />
+      </template>
     </ContextSidebar>
 
     <main

@@ -11,6 +11,7 @@ import WikiLinkSuggest from '@/components/notas/WikiLinkSuggest.vue';
 import SharePanel from '@/components/share/SharePanel.vue';
 import EditorToolbar from '@/components/shell/EditorToolbar.vue';
 import Icon from '@/components/ui/Icon.vue';
+import TabStrip, { type Tab } from '@/components/ui/TabStrip.vue';
 import type { MergeSegment } from '@/composables/useCasMerge';
 import { useCasMerge } from '@/composables/useCasMerge';
 import { useMarkdownDoc } from '@/composables/useMarkdownDoc';
@@ -56,6 +57,20 @@ const conflictOpen = ref(false);
 const conflictSegments = ref<MergeSegment[]>([]);
 
 const breadcrumbs = computed(() => ['Atlas', title.value || 'Untitled']);
+
+const editorTabs = computed<Tab[]>(() =>
+  slug.value === null
+    ? []
+    : [
+        {
+          id: slug.value,
+          name: title.value || 'Untitled',
+          icon: 'file',
+          active: true,
+          dirty: dirty.value,
+        },
+      ],
+);
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -221,21 +236,49 @@ watch([slug, ws], loadDoc, { immediate: true });
 </script>
 
 <template>
-  <AppShell>
+  <AppShell sidebar-title="Notes" sidebar-icon="file-text">
+    <template #sidebar-actions>
+      <button type="button" class="atl-gbtn" title="Filter" aria-label="Filter">
+        <Icon name="search" :size="14" />
+      </button>
+      <button type="button" class="atl-gbtn" title="Collapse" aria-label="Collapse sidebar">
+        <Icon name="panel-left" :size="13" />
+      </button>
+    </template>
+
     <template #sidebar>
       <NotesSidebar />
     </template>
+
+    <template #sidebar-footer>
+      <button type="button" class="atl-gbtn" style="width: 100%; justify-content: flex-start; height: 26px; gap: 7px; color: var(--c-foreground);">
+        <Icon name="plus" :size="14" />
+        New page
+      </button>
+    </template>
+
+    <TabStrip v-if="slug" :tabs="editorTabs">
+      <template #right>
+        <button type="button" class="atl-gbtn" title="New page" aria-label="New page">
+          <Icon name="plus" :size="13" />
+        </button>
+        <button type="button" class="atl-gbtn" title="Command palette ⌘K" aria-label="Command palette">
+          <Icon name="command" :size="13" />
+        </button>
+      </template>
+    </TabStrip>
 
     <EditorToolbar :breadcrumbs="breadcrumbs" :dirty="dirty">
       <button
         type="button"
         title="Toggle inspector"
         aria-label="Toggle inspector"
-        class="flex items-center justify-center"
-        style="width: 28px; height: 28px; border: none; background: transparent; cursor: pointer; color: var(--c-muted);"
+        class="atl-gbtn"
+        :class="{ on: ui.inspectorOpen }"
+        style="width: 28px; height: 28px;"
         @click="ui.toggleInspector()"
       >
-        <Icon name="panel-right" :size="16" />
+        <Icon name="panel-right" :size="15" />
       </button>
     </EditorToolbar>
 

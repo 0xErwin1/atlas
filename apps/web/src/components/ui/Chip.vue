@@ -1,14 +1,16 @@
 <script setup lang="ts">
+import Icon from '@/components/ui/Icon.vue';
+
 export type ChipTone = 'info' | 'success' | 'warning' | 'danger' | 'agent' | 'neutral';
 
 const TONE_STYLES: Record<ChipTone, { bg: string; color: string; border: string }> = {
-  info: { bg: 'rgba(89, 194, 255, 0.12)', color: 'var(--c-info)', border: 'rgba(89, 194, 255, 0.35)' },
-  success: { bg: 'rgba(170, 217, 76, 0.12)', color: 'var(--c-success)', border: 'rgba(170, 217, 76, 0.35)' },
-  warning: { bg: 'rgba(255, 180, 84, 0.12)', color: 'var(--c-warning)', border: 'rgba(255, 180, 84, 0.35)' },
-  danger: { bg: 'rgba(240, 113, 120, 0.12)', color: 'var(--c-danger)', border: 'rgba(240, 113, 120, 0.35)' },
+  info: { bg: 'rgba(89, 194, 255, 0.12)', color: 'var(--c-info)', border: 'rgba(89, 194, 255, 0.4)' },
+  success: { bg: 'rgba(170, 217, 76, 0.12)', color: 'var(--c-success)', border: 'rgba(170, 217, 76, 0.4)' },
+  warning: { bg: 'rgba(255, 180, 84, 0.12)', color: 'var(--c-primary)', border: 'rgba(255, 180, 84, 0.4)' },
+  danger: { bg: 'rgba(240, 113, 120, 0.12)', color: 'var(--c-danger)', border: 'rgba(240, 113, 120, 0.4)' },
   agent: { bg: 'var(--c-agent-bg)', color: 'var(--c-agent)', border: 'var(--c-agent-border)' },
   neutral: {
-    bg: 'var(--c-raised)',
+    bg: 'rgba(179, 177, 173, 0.06)',
     color: 'var(--c-foreground)',
     border: 'var(--c-border)',
   },
@@ -17,9 +19,11 @@ const TONE_STYLES: Record<ChipTone, { bg: string; color: string; border: string 
 const props = withDefaults(
   defineProps<{
     tone?: ChipTone;
+    icon?: string;
   }>(),
   {
     tone: 'neutral',
+    icon: '',
   },
 );
 
@@ -30,8 +34,9 @@ const style = TONE_STYLES[props.tone];
   <span
     class="inline-flex items-center shrink-0 select-none"
     :style="{
-      padding: '1px 6px',
-      borderRadius: 'var(--r-full)',
+      gap: '5px',
+      padding: '1px 7px',
+      borderRadius: 'var(--r-sm)',
       backgroundColor: style.bg,
       border: `1px solid ${style.border}`,
       color: style.color,
@@ -42,6 +47,7 @@ const style = TONE_STYLES[props.tone];
       whiteSpace: 'nowrap',
     }"
   >
+    <Icon v-if="icon" :name="icon" :size="11" />
     <slot />
   </span>
 </template>

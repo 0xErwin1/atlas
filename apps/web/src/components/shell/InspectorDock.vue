@@ -7,10 +7,10 @@ import { useUiStore } from '@/stores/ui';
 const ui = useUiStore();
 
 const tabs: Array<{ id: InspectorTab; label: string; icon: string }> = [
-  { id: 'properties', label: 'Properties', icon: 'list' },
+  { id: 'properties', label: 'Properties', icon: 'hash' },
   { id: 'backlinks', label: 'Backlinks', icon: 'link' },
-  { id: 'activity', label: 'Activity', icon: 'activity' },
-  { id: 'share', label: 'Share', icon: 'share-2' },
+  { id: 'activity', label: 'Activity', icon: 'clock' },
+  { id: 'share', label: 'Share', icon: 'user' },
 ];
 
 const collapsed = computed(() => !ui.inspectorOpen);
@@ -19,120 +19,95 @@ const collapsed = computed(() => !ui.inspectorOpen);
 <template>
   <aside
     :style="`
-      width: ${collapsed ? '40px' : '290px'};
-      min-width: ${collapsed ? '40px' : '280px'};
-      max-width: ${collapsed ? '40px' : '300px'};
+      width: ${collapsed ? '40px' : '280px'};
+      flex: 0 0 ${collapsed ? '40px' : '280px'};
       background-color: var(--c-panel);
       border-left: 1px solid var(--c-border);
-      flex-shrink: 0;
       height: 100%;
       display: flex;
       flex-direction: column;
       overflow: hidden;
-      transition: width 0.15s ease, min-width 0.15s ease;
     `"
   >
-    <div
-      v-if="collapsed"
-      class="flex flex-col items-center gap-1 pt-2"
-    >
+    <template v-if="collapsed">
       <button
-        v-for="tab in tabs"
-        :key="tab.id"
         type="button"
-        :title="tab.label"
-        :aria-label="tab.label"
-        class="flex items-center justify-center"
-        style="
-          width: 40px;
-          height: 40px;
-          border: none;
-          cursor: pointer;
-          border-radius: var(--r-md);
-          background: transparent;
-          color: var(--c-muted);
-        "
-        @click="ui.setInspectorTab(tab.id); ui.toggleInspector()"
+        title="Expand inspector"
+        aria-label="Expand inspector"
+        class="atl-gbtn"
+        style="width: 28px; height: 28px; margin: 6px auto 0;"
+        @click="ui.toggleInspector()"
       >
-        <Icon :name="tab.icon" :size="16" />
+        <Icon name="panel-right" :size="15" />
       </button>
-    </div>
+
+      <div
+        aria-hidden="true"
+        style="width: 20px; height: 1px; background: var(--c-border); margin: 6px auto;"
+      />
+
+      <div class="flex flex-col items-center">
+        <button
+          v-for="tab in tabs"
+          :key="tab.id"
+          type="button"
+          :title="tab.label"
+          :aria-label="tab.label"
+          class="atl-gbtn"
+          style="width: 28px; height: 30px; color: var(--c-muted);"
+          @click="ui.setInspectorTab(tab.id); ui.toggleInspector()"
+        >
+          <Icon :name="tab.icon" :size="15" />
+        </button>
+      </div>
+    </template>
 
     <template v-else>
       <div
-        class="flex items-center"
+        class="flex items-end"
         style="
           height: 36px;
+          flex: 0 0 36px;
           border-bottom: 1px solid var(--c-border);
-          flex-shrink: 0;
-          overflow-x: auto;
+          padding: 0 4px;
         "
       >
         <button
           v-for="tab in tabs"
           :key="tab.id"
           type="button"
+          class="atl-itab flex items-center"
           :aria-selected="ui.inspectorTab === tab.id"
-          class="flex items-center justify-center"
           :style="`
-            height: 36px;
-            padding: 0 12px;
+            padding: 0 9px;
+            height: 28px;
             border: none;
             cursor: pointer;
             background: transparent;
-            font-family: var(--font-mono);
-            font-size: var(--fs-xs);
+            font-size: var(--fs-sm);
             white-space: nowrap;
-            position: relative;
             color: ${ui.inspectorTab === tab.id ? 'var(--c-foreground)' : 'var(--c-muted)'};
-            font-weight: ${ui.inspectorTab === tab.id ? 'var(--fw-bold)' : 'var(--fw-normal)'};
+            font-weight: ${ui.inspectorTab === tab.id ? 'var(--fw-bold)' : 'var(--fw-medium)'};
+            box-shadow: ${ui.inspectorTab === tab.id ? 'inset 0 -2px 0 var(--c-primary)' : 'none'};
           `"
           @click="ui.setInspectorTab(tab.id)"
         >
           {{ tab.label }}
-          <span
-            v-if="ui.inspectorTab === tab.id"
-            style="
-              position: absolute;
-              bottom: 0;
-              left: 0;
-              right: 0;
-              height: 2px;
-              background-color: var(--c-primary);
-              border-radius: 1px 1px 0 0;
-            "
-            aria-hidden="true"
-          />
         </button>
 
         <button
           type="button"
           title="Collapse inspector"
           aria-label="Collapse inspector"
-          style="
-            margin-left: auto;
-            width: 32px;
-            height: 32px;
-            border: none;
-            cursor: pointer;
-            border-radius: var(--r-md);
-            background: transparent;
-            color: var(--c-muted);
-            flex-shrink: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-          "
+          class="atl-gbtn"
+          style="margin-left: auto; width: 28px; height: 28px; align-self: center;"
           @click="ui.toggleInspector()"
         >
-          <Icon name="panel-right-close" :size="14" />
+          <Icon name="panel-right-close" :size="15" />
         </button>
       </div>
 
-      <div
-        class="flex-1 overflow-y-auto"
-        style="padding: 12px;"
-      >
+      <div class="flex-1 overflow-y-auto" style="padding: 10px;">
         <slot :tab="ui.inspectorTab" />
       </div>
     </template>

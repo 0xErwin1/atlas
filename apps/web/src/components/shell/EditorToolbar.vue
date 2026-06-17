@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import Crumb from '@/components/ui/Crumb.vue';
+import Icon from '@/components/ui/Icon.vue';
+
 withDefaults(
   defineProps<{
     breadcrumbs?: string[];
@@ -13,43 +16,32 @@ withDefaults(
 
 <template>
   <div
-    class="flex items-center gap-2"
+    class="flex items-center"
     style="
-      height: var(--h-toolbar);
-      padding: 0 12px;
+      height: 32px;
+      flex: 0 0 32px;
+      gap: 10px;
+      padding: 0 8px 0 12px;
       background-color: var(--c-panel);
       border-bottom: 1px solid var(--c-border);
-      flex-shrink: 0;
     "
   >
-    <div class="flex items-center gap-1 flex-1 min-w-0 overflow-hidden">
-      <template
-        v-for="(crumb, i) in breadcrumbs"
-        :key="crumb"
-      >
-        <span
-          :style="`
-            font-family: var(--font-mono);
-            font-size: var(--fs-xs);
-            color: ${i === breadcrumbs.length - 1 ? 'var(--c-foreground)' : 'var(--c-border)'};
-            font-weight: ${i === breadcrumbs.length - 1 ? 'var(--fw-semibold)' : 'var(--fw-normal)'};
-            white-space: nowrap;
-          `"
-        >
-          {{ crumb }}
-        </span>
-        <span
-          v-if="i < breadcrumbs.length - 1"
-          style="color: var(--c-border); font-size: var(--fs-xs);"
-          aria-hidden="true"
-        >
-          /
-        </span>
-      </template>
-    </div>
+    <Crumb :parts="breadcrumbs" />
 
-    <div class="flex items-center gap-1">
-      <slot />
-    </div>
+    <div style="flex: 1;" />
+
+    <button type="button" class="atl-gbtn" title="History" aria-label="History">
+      <Icon name="history" :size="14" />
+    </button>
+    <button type="button" class="atl-gbtn" title="Share" aria-label="Share">
+      <Icon name="user" :size="14" />
+    </button>
+    <button type="button" class="atl-gbtn" title="More" aria-label="More">
+      <Icon name="ellipsis" :size="14" />
+    </button>
+
+    <div aria-hidden="true" style="width: 1px; height: 18px; background: var(--c-border);" />
+
+    <slot />
   </div>
 </template>

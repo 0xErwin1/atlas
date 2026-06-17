@@ -38,6 +38,7 @@
   --c-tiles: #111823;
   --c-foreground: #B3B1AD;
   --c-muted: #5C6773;
+  --c-muted-foreground: var(--c-muted);
   --c-border: #1F2430;
   --c-selection: #273747;
 
@@ -60,6 +61,7 @@
   --c-agent-bg: rgba(210, 166, 255, 0.12);
   --c-agent-border: rgba(210, 166, 255, 0.45);
   --c-cyan: #95E6CB;
+  --c-chart-5: #D2A6FF;
 
   /* UI chrome */
   --c-input: rgba(179, 177, 173, 0.14);

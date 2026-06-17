@@ -4,10 +4,12 @@ import { useRoute, useRouter } from 'vue-router';
 import Avatar from '@/components/ui/Avatar.vue';
 import Icon from '@/components/ui/Icon.vue';
 import { useAuthStore } from '@/stores/auth';
+import { useWorkspaceStore } from '@/stores/workspace';
 
 const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
+const workspace = useWorkspaceStore();
 
 interface RailItem {
   name: string;
@@ -18,10 +20,9 @@ interface RailItem {
 
 const items: RailItem[] = [
   { name: 'Notes', icon: 'file-text', routeName: 'notes' },
-  { name: 'Tasks', icon: 'layout-kanban', routeName: 'tasks' },
+  { name: 'Tasks', icon: 'kanban', routeName: 'tasks' },
   { name: 'Search', icon: 'search', routeName: 'search' },
   { name: 'Engram', icon: 'brain', routeName: 'notes', disabled: true },
-  { name: 'New', icon: 'plus', routeName: 'notes', disabled: true },
 ];
 
 function isActive(item: RailItem) {
@@ -37,6 +38,11 @@ const userInitials = computed(() => {
   const name = auth.user?.username ?? '?';
   return name.slice(0, 2).toUpperCase();
 });
+
+const workspaceInitial = computed(() => {
+  const slug = workspace.activeWorkspaceSlug ?? '';
+  return slug.length > 0 ? slug.charAt(0).toUpperCase() : 'A';
+});
 </script>
 
 <template>
@@ -44,25 +50,27 @@ const userInitials = computed(() => {
     class="flex flex-col items-center"
     style="
       width: 48px;
+      flex: 0 0 48px;
       background-color: var(--c-panel);
       border-right: 1px solid var(--c-border);
-      flex-shrink: 0;
       height: 100%;
     "
     aria-label="App navigation"
   >
     <div
       class="flex items-center justify-center"
-      style="width: 48px; height: 48px; padding: 2px;"
+      style="height: 44px; color: var(--c-foreground);"
+      title="Atlas"
     >
-      <Icon
-        name="atlas-glyph"
-        :size="28"
-        style="color: var(--c-primary);"
-      />
+      <Icon name="atlas-glyph" :size="22" />
     </div>
 
-    <div class="flex flex-col items-center flex-1 gap-0.5 py-1">
+    <div
+      aria-hidden="true"
+      style="width: 24px; height: 1px; background: var(--c-border); margin-bottom: 6px;"
+    />
+
+    <div class="flex flex-col" style="width: 100%;">
       <button
         v-for="item in items"
         :key="item.name"
@@ -71,54 +79,79 @@ const userInitials = computed(() => {
         :disabled="item.disabled"
         :aria-label="item.name"
         :aria-current="isActive(item) ? 'page' : undefined"
-        class="flex items-center justify-center"
+        class="atl-railitem flex items-center justify-center"
+        :class="{ on: isActive(item) }"
         :style="`
           width: 48px;
           height: 40px;
           border: none;
           cursor: ${item.disabled ? 'not-allowed' : 'pointer'};
-          border-radius: var(--r-md);
-          position: relative;
           background-color: ${isActive(item) ? 'var(--c-selection)' : 'transparent'};
-          color: ${item.disabled ? 'var(--c-muted)' : isActive(item) ? 'var(--c-primary)' : 'var(--c-muted)'};
+          box-shadow: ${isActive(item) ? 'inset 2px 0 0 var(--c-primary)' : 'none'};
+          color: ${isActive(item) ? 'var(--c-primary)' : 'var(--c-muted)'};
           opacity: ${item.disabled ? '0.4' : '1'};
         `"
         @click="navigate(item)"
       >
-        <span
-          v-if="isActive(item)"
-          style="
-            position: absolute;
-            left: 0;
-            top: 8px;
-            bottom: 8px;
-            width: 2px;
-            border-radius: 0 1px 1px 0;
-            background-color: var(--c-primary);
-          "
-          aria-hidden="true"
-        />
-        <Icon :name="item.icon" :size="20" />
+        <Icon :name="item.icon" :size="20" :stroke-width="isActive(item) ? 2 : 1.8" />
+      </button>
+
+      <button
+        type="button"
+        title="Add app"
+        aria-label="Add app"
+        disabled
+        class="atl-railitem flex items-center justify-center"
+        style="
+          width: 48px;
+          height: 36px;
+          border: none;
+          background: transparent;
+          color: var(--c-muted);
+          cursor: not-allowed;
+          opacity: 0.4;
+        "
+      >
+        <Icon name="plus" :size="16" />
       </button>
     </div>
 
-    <div class="flex flex-col items-center gap-1 pb-2">
+    <div style="flex: 1;" />
+
+    <div class="flex flex-col items-center" style="gap: 8px; padding-bottom: 10px;">
+      <div
+        class="atl-ws flex items-center justify-center"
+        :title="`Workspace: ${workspace.activeWorkspaceSlug ?? 'Atlas'}`"
+        style="
+          width: 26px;
+          height: 26px;
+          border-radius: var(--r-sm);
+          background: var(--c-raised);
+          border: 1px solid var(--c-border);
+          font-family: var(--font-mono);
+          font-size: 12px;
+          font-weight: var(--fw-bold);
+          color: var(--c-primary);
+        "
+      >
+        {{ workspaceInitial }}
+      </div>
+
       <button
         type="button"
         title="Settings"
         aria-label="Settings"
-        class="flex items-center justify-center"
+        class="atl-railitem flex items-center justify-center"
         style="
-          width: 32px;
+          width: 40px;
           height: 32px;
           border: none;
           cursor: pointer;
-          border-radius: var(--r-md);
           background: transparent;
           color: var(--c-muted);
         "
       >
-        <Icon name="settings" :size="16" />
+        <Icon name="settings" :size="18" />
       </button>
 
       <Avatar

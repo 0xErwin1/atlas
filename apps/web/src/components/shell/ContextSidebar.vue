@@ -1,11 +1,15 @@
 <script setup lang="ts">
+import Icon from '@/components/ui/Icon.vue';
+
 withDefaults(
   defineProps<{
     title?: string;
+    icon?: string;
     collapsible?: boolean;
   }>(),
   {
     title: 'Explorer',
+    icon: '',
     collapsible: true,
   },
 );
@@ -14,12 +18,11 @@ withDefaults(
 <template>
   <aside
     style="
-      width: 256px;
+      width: 264px;
+      flex: 0 0 264px;
       min-width: 248px;
-      max-width: 264px;
       background-color: var(--c-panel);
       border-right: 1px solid var(--c-border);
-      flex-shrink: 0;
       height: 100%;
       display: flex;
       flex-direction: column;
@@ -27,17 +30,24 @@ withDefaults(
     "
   >
     <div
-      class="flex items-center justify-between"
+      class="flex items-center"
       style="
         height: 36px;
-        padding: 0 10px;
+        padding: 0 6px 0 10px;
+        gap: 8px;
         border-bottom: 1px solid var(--c-border);
         flex-shrink: 0;
       "
     >
+      <Icon
+        v-if="icon"
+        :name="icon"
+        :size="14"
+        style="color: var(--c-foreground);"
+      />
       <span
+        class="flex-1 truncate"
         style="
-          font-family: var(--font-mono);
           font-size: var(--fs-base);
           font-weight: var(--fw-bold);
           color: var(--c-foreground);
@@ -46,16 +56,23 @@ withDefaults(
         {{ title }}
       </span>
 
-      <div class="flex items-center gap-1">
+      <div class="flex items-center" style="gap: 2px;">
         <slot name="header-actions" />
       </div>
     </div>
 
     <div
       class="flex-1 overflow-y-auto overflow-x-hidden"
-      style="padding: 4px 0;"
+      style="padding-bottom: 4px;"
     >
       <slot />
+    </div>
+
+    <div
+      v-if="$slots.footer"
+      style="border-top: 1px solid var(--c-border); padding: 8px; flex-shrink: 0;"
+    >
+      <slot name="footer" />
     </div>
   </aside>
 </template>

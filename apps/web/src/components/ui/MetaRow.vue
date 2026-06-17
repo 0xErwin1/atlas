@@ -6,11 +6,11 @@ defineProps<{
 
 <template>
   <div
-    class="flex items-center gap-2"
+    class="flex items-center"
     style="
-      min-height: var(--h-compact);
+      gap: 10px;
+      min-height: 22px;
       font-size: var(--fs-sm);
-      line-height: var(--lh-normal);
     "
   >
     <span
@@ -18,14 +18,16 @@ defineProps<{
       style="
         width: 78px;
         color: var(--c-muted);
-        font-size: var(--fs-sm);
         font-weight: var(--fw-normal);
       "
     >
       {{ label }}
     </span>
 
-    <span class="flex-1 min-w-0 flex items-center gap-1 flex-wrap" style="color: var(--c-foreground)">
+    <span
+      class="flex-1 min-w-0 flex items-center flex-wrap"
+      style="gap: 6px; color: var(--c-foreground);"
+    >
       <slot />
     </span>
   </div>

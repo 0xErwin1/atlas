@@ -46,3 +46,93 @@ select {
   outline: none;
   box-shadow: var(--shadow-ring);
 }
+
+/* ── shell + notes interaction primitives (hover/active states) ──────── */
+
+.atl-gbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 22px;
+  min-width: 22px;
+  padding: 0 6px;
+  background: transparent;
+  border: none;
+  color: var(--c-muted);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  font-size: var(--fs-sm);
+  font-family: var(--font-ui);
+}
+.atl-gbtn:hover {
+  background: rgba(179, 177, 173, 0.06);
+  color: var(--c-foreground);
+}
+.atl-gbtn.on {
+  color: var(--c-primary);
+}
+
+.atl-railitem:hover {
+  background: rgba(179, 177, 173, 0.05);
+  color: var(--c-foreground);
+}
+.atl-railitem.on:hover {
+  background: var(--c-selection);
+}
+
+.atl-ws:hover {
+  border-color: var(--c-primary);
+}
+
+.atl-row:hover {
+  background: rgba(179, 177, 173, 0.05);
+}
+.atl-row.on:hover {
+  background: var(--c-selection);
+}
+
+.atl-tab:hover {
+  color: var(--c-foreground);
+}
+.atl-x:hover {
+  background: rgba(179, 177, 173, 0.1);
+  color: var(--c-foreground);
+}
+.atl-itab:hover {
+  color: var(--c-foreground);
+}
+
+.atl-wl {
+  color: var(--c-info);
+  cursor: pointer;
+}
+.atl-wl:hover {
+  text-decoration: underline;
+}
+.atl-wl.broken {
+  color: var(--c-danger);
+  text-decoration: underline;
+  text-decoration-style: dashed;
+  text-underline-offset: 2px;
+}
+
+.atl-card {
+  transition: border-color 0.12s;
+}
+.atl-card:hover {
+  border-color: rgba(179, 177, 173, 0.25);
+}
+
+@keyframes atl-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+.atl-pulse {
+  animation: atl-pulse 1.8s ease-in-out infinite;
+}
