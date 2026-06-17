@@ -1,0 +1,60 @@
+version: "0.5"
+
+# Dev supervisor: Postgres + dev seed + the axum API (with reload) + the Vite
+# dev server as one foreground session. `just up` wraps this.
+#
+# The recipe passes `-f process-compose.yaml` explicitly so process-compose does
+# not also auto-discover compose.yaml (the podman compose file) and choke on its
+# `services` key. It also moves process-compose's own REST API off :8080 (via
+# PC_PORT_NUM) so it does not clash with the Atlas API.
+
+processes:
+  postgres:
+    command: "podman compose -f compose.yaml up postgres"
+    shutdown:
+      command: "podman compose -f compose.yaml stop postgres"
+    readiness_probe:
+      exec:
+        command: "podman compose -f compose.yaml exec -T postgres pg_isready -U atlas -d atlas_dev -q"
+      initial_delay_seconds: 2
+      period_seconds: 3
+      timeout_seconds: 3
+      failure_threshold: 15
+
+  seed:
+    command: "cargo run -p atlas_server --bin seed_dev"
+    depends_on:
+      postgres:
+        condition: process_healthy
+    availability:
+      restart: "no"
+
+  gen-types:
+    command: "just gen-types"
+    availability:
+      restart: "no"
+
+  api:
+    command: "cargo watch -w crates -x 'run -p atlas_server'"
+    depends_on:
+      seed:
+        condition: process_completed_successfully
+    readiness_probe:
+      http_get:
+        host: "127.0.0.1"
+        scheme: "http"
+        path: "/health"
+        port: 8080
+      initial_delay_seconds: 3
+      period_seconds: 3
+      timeout_seconds: 3
+      failure_threshold: 60
+
+  web:
+    command: "pnpm dev"
+    working_dir: "apps/web"
+    depends_on:
+      gen-types:
+        condition: process_completed_successfully
+      api:
+        condition: process_healthy

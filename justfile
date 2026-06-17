@@ -82,4 +82,18 @@ fmt-web:
 dev: db-up
     cargo run -p atlas_server
 
+# Bring up the whole stack for manual testing with process-compose:
+# Postgres + dev seed (root user & sample workspace) + API (:8080) + web (:5173),
+# ordered by dependencies with health checks (see process-compose.yaml).
+# Login: user `root`, password = $ATLAS_ROOT_PASSWORD (default `rootdev`).
+# Quit the TUI with `q` / Ctrl-C — process-compose tears everything down.
+up:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export ATLAS_ROOT_PASSWORD="${ATLAS_ROOT_PASSWORD:-rootdev}"
+    # process-compose's own REST API defaults to :8080 and would clash with the
+    # Atlas API; move it out of the way via its native env var.
+    export PC_PORT_NUM="${PC_PORT_NUM:-8079}"
+    process-compose -f process-compose.yaml up
+
 verify: fmt-check clippy test build lint-web
