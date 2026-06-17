@@ -72,6 +72,55 @@ export const useBoardsStore = defineStore('boards', () => {
     boardSummaries.value = data.items;
   }
 
+  async function createBoard(ws: string, projectSlug: string, name: string): Promise<string | null> {
+    const { data, error: apiError } = await wrappedClient.POST(
+      '/v1/workspaces/{ws}/projects/{project_slug}/boards',
+      { params: { path: { ws, project_slug: projectSlug } }, body: { name } },
+    );
+
+    if (apiError !== undefined || data === undefined) {
+      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to create board';
+      return null;
+    }
+
+    await loadBoards(ws, projectSlug);
+    return data.id ?? null;
+  }
+
+  async function renameBoard(
+    ws: string,
+    projectSlug: string,
+    boardId: string,
+    name: string,
+  ): Promise<boolean> {
+    const { error: apiError } = await wrappedClient.PATCH('/v1/workspaces/{ws}/boards/{board_id}', {
+      params: { path: { ws, board_id: boardId } },
+      body: { name },
+    });
+
+    if (apiError !== undefined) {
+      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to rename board';
+      return false;
+    }
+
+    await loadBoards(ws, projectSlug);
+    return true;
+  }
+
+  async function removeBoard(ws: string, projectSlug: string, boardId: string): Promise<boolean> {
+    const { error: apiError } = await wrappedClient.DELETE('/v1/workspaces/{ws}/boards/{board_id}', {
+      params: { path: { ws, board_id: boardId } },
+    });
+
+    if (apiError !== undefined) {
+      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to delete board';
+      return false;
+    }
+
+    await loadBoards(ws, projectSlug);
+    return true;
+  }
+
   async function loadBoard(ws: string, boardId: string): Promise<void> {
     loading.value = true;
     error.value = null;
@@ -297,6 +346,9 @@ export const useBoardsStore = defineStore('boards', () => {
     error,
     tasksByColumn,
     loadBoards,
+    createBoard,
+    renameBoard,
+    removeBoard,
     loadBoard,
     loadColumns,
     loadTasks,

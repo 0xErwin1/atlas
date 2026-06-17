@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue';
+import { computed, ref } from 'vue';
 import ContextMenu, { type MenuItem } from '@/components/ui/ContextMenu.vue';
 import Icon from '@/components/ui/Icon.vue';
 import Row from '@/components/ui/Row.vue';
 import SectionLabel from '@/components/ui/SectionLabel.vue';
+import { useContextMenu } from '@/composables/useContextMenu';
+import { useInlineEdit } from '@/composables/useInlineEdit';
 import { buildNotesTree, type DocInput, type FolderInput } from '@/lib/notesTree';
 import NoteTreeRow from './NoteTreeRow.vue';
 
@@ -28,22 +30,30 @@ const tree = computed(() => buildNotesTree(props.folders, props.docs));
 
 const isEmpty = computed(() => tree.value.folders.length === 0 && tree.value.docs.length === 0);
 
-const contextOpen = ref(false);
-const contextX = ref(0);
-const contextY = ref(0);
+// Shared sidebar context-menu + inline-edit logic (same composables as the tasks sidebar).
+const { open: menuOpen, x: menuX, y: menuY, openAt, close: closeMenu } = useContextMenu();
 
 type ContextState = { kind: 'root' } | { kind: 'doc'; slug: string; title: string };
 const contextState = ref<ContextState>({ kind: 'root' });
 
-type InlineTarget = 'new-doc' | 'new-folder';
-const inlineTarget = ref<InlineTarget | null>(null);
-const inlineValue = ref('');
-const inlineInputRef = ref<HTMLInputElement | null>(null);
-const pendingDocRename = ref<{ slug: string } | null>(null);
+type EditCtx = { kind: 'new-doc' } | { kind: 'new-folder' } | { kind: 'rename-doc'; slug: string };
+
+const {
+  active: editActive,
+  value: editValue,
+  inputRef,
+  start: startEdit,
+  commit: commitEdit,
+  onKeydown: onEditKeydown,
+} = useInlineEdit<EditCtx>((name, ctx) => {
+  if (ctx.kind === 'new-doc') emit('create-doc', name);
+  else if (ctx.kind === 'new-folder') emit('create-folder', name);
+  else emit('rename-doc', ctx.slug, name);
+});
 
 const rootMenuItems = computed<MenuItem[]>(() => [
-  { label: 'New page', icon: 'file-plus', action: () => openInline('new-doc') },
-  { label: 'New folder', icon: 'folder-plus', action: () => openInline('new-folder') },
+  { label: 'New page', icon: 'file-plus', action: () => startEdit({ kind: 'new-doc' }) },
+  { label: 'New folder', icon: 'folder-plus', action: () => startEdit({ kind: 'new-folder' }) },
 ]);
 
 const docMenuItems = computed<MenuItem[]>(() => {
@@ -54,7 +64,12 @@ const docMenuItems = computed<MenuItem[]>(() => {
     { header: true, label: title },
     { label: 'Open', icon: 'external-link', kbd: ['↵'], action: () => emit('select-doc', slug) },
     { sep: true },
-    { label: 'Rename', icon: 'pencil', kbd: ['F2'], action: () => openDocRename(slug, title) },
+    {
+      label: 'Rename',
+      icon: 'pencil',
+      kbd: ['F2'],
+      action: () => startEdit({ kind: 'rename-doc', slug }, title, true),
+    },
     { sep: true },
     {
       label: 'Delete',
@@ -72,71 +87,15 @@ const activeMenuItems = computed<MenuItem[]>(() =>
 
 function onContextmenu(event: MouseEvent): void {
   contextState.value = { kind: 'root' };
-  contextX.value = event.clientX;
-  contextY.value = event.clientY;
-  contextOpen.value = true;
+  openAt(event);
 }
 
 function openDocMenu(event: MouseEvent, slug: string, title: string): void {
   contextState.value = { kind: 'doc', slug, title };
-  contextX.value = event.clientX;
-  contextY.value = event.clientY;
-  contextOpen.value = true;
+  openAt(event);
 }
 
-function openInline(target: InlineTarget): void {
-  inlineTarget.value = target;
-  inlineValue.value = '';
-  void nextTick(() => {
-    inlineInputRef.value?.focus();
-  });
-}
-
-function openDocRename(slug: string, currentTitle: string): void {
-  pendingDocRename.value = { slug };
-  inlineTarget.value = null;
-  inlineValue.value = currentTitle;
-  void nextTick(() => {
-    inlineInputRef.value?.focus();
-    inlineInputRef.value?.select();
-  });
-}
-
-function commitInline(): void {
-  const name = inlineValue.value.trim();
-  if (name === '') {
-    cancelInline();
-    return;
-  }
-
-  if (pendingDocRename.value !== null) {
-    emit('rename-doc', pendingDocRename.value.slug, name);
-  } else if (inlineTarget.value === 'new-doc') {
-    emit('create-doc', name);
-  } else if (inlineTarget.value === 'new-folder') {
-    emit('create-folder', name);
-  }
-
-  cancelInline();
-}
-
-function cancelInline(): void {
-  inlineTarget.value = null;
-  pendingDocRename.value = null;
-  inlineValue.value = '';
-}
-
-function onInlineKeydown(event: KeyboardEvent): void {
-  if (event.key === 'Enter') {
-    event.preventDefault();
-    commitInline();
-  } else if (event.key === 'Escape') {
-    event.preventDefault();
-    cancelInline();
-  }
-}
-
-defineExpose({ openNewPage: () => openInline('new-doc') });
+defineExpose({ openNewPage: () => startEdit({ kind: 'new-doc' }) });
 </script>
 
 <template>
@@ -155,7 +114,7 @@ defineExpose({ openNewPage: () => openInline('new-doc') });
     </div>
 
     <p
-      v-if="isEmpty && inlineTarget === null"
+      v-if="isEmpty && editActive === null"
       style="padding: 8px; font-size: var(--fs-sm); color: var(--c-muted);"
     >
       No documents yet.
@@ -179,18 +138,18 @@ defineExpose({ openNewPage: () => openInline('new-doc') });
 
       <template v-for="doc in tree.docs" :key="doc.id">
         <div
-          v-if="pendingDocRename !== null && pendingDocRename.slug === doc.slug"
+          v-if="editActive?.kind === 'rename-doc' && editActive.slug === doc.slug"
           style="display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px 20px;"
         >
           <Icon name="file" :size="13" style="color: var(--c-muted); flex-shrink: 0;" />
           <input
-            ref="inlineInputRef"
-            v-model="inlineValue"
+            ref="inputRef"
+            v-model="editValue"
             type="text"
             placeholder="Page name…"
-            style="flex: 1; height: 28px; padding: 0 6px; background: var(--c-input); border: 1px solid var(--c-border); border-radius: var(--r-sm); font-size: var(--fs-sm); font-family: var(--font-mono); color: var(--c-foreground); outline: none;"
-            @keydown="onInlineKeydown"
-            @blur="commitInline"
+            class="notes-inline-input"
+            @keydown="onEditKeydown"
+            @blur="commitEdit"
           />
         </div>
         <Row
@@ -208,42 +167,31 @@ defineExpose({ openNewPage: () => openInline('new-doc') });
     </template>
 
     <div
-      v-if="inlineTarget !== null"
+      v-if="editActive?.kind === 'new-doc' || editActive?.kind === 'new-folder'"
       style="display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px 20px;"
     >
       <Icon
-        :name="inlineTarget === 'new-doc' ? 'file' : 'folder'"
+        :name="editActive.kind === 'new-doc' ? 'file' : 'folder'"
         :size="13"
         style="color: var(--c-muted); flex-shrink: 0;"
       />
       <input
-        ref="inlineInputRef"
-        v-model="inlineValue"
+        ref="inputRef"
+        v-model="editValue"
         type="text"
-        :placeholder="inlineTarget === 'new-doc' ? 'Page name…' : 'Folder name…'"
-        style="
-          flex: 1;
-          height: 28px;
-          padding: 0 6px;
-          background: var(--c-input);
-          border: 1px solid var(--c-border);
-          border-radius: var(--r-sm);
-          font-size: var(--fs-sm);
-          font-family: var(--font-mono);
-          color: var(--c-foreground);
-          outline: none;
-        "
-        @keydown="onInlineKeydown"
-        @blur="commitInline"
+        :placeholder="editActive.kind === 'new-doc' ? 'Page name…' : 'Folder name…'"
+        class="notes-inline-input"
+        @keydown="onEditKeydown"
+        @blur="commitEdit"
       />
     </div>
 
     <ContextMenu
-      :open="contextOpen"
-      :x="contextX"
-      :y="contextY"
+      :open="menuOpen"
+      :x="menuX"
+      :y="menuY"
       :items="activeMenuItems"
-      @close="contextOpen = false"
+      @close="closeMenu"
     />
   </div>
 </template>
@@ -278,5 +226,18 @@ defineExpose({ openNewPage: () => openInline('new-doc') });
 .notes-tree-add:hover {
   background: var(--c-raised);
   color: var(--c-foreground);
+}
+
+.notes-inline-input {
+  flex: 1;
+  height: 28px;
+  padding: 0 6px;
+  background: var(--c-input);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sm);
+  font-family: var(--font-mono);
+  color: var(--c-foreground);
+  outline: none;
 }
 </style>
