@@ -27,12 +27,33 @@ const ws = computed(() => workspace.activeWorkspaceSlug ?? '');
 const breadcrumbs = computed(() => ['Atlas', boards.board?.name ?? 'Board']);
 
 async function loadBoard(): Promise<void> {
-  if (boardId.value === null || ws.value === '') {
+  if (ws.value === '') return;
+
+  // No board in the URL (e.g. the rail "Tasks" button): pick the project's first
+  // board and redirect to it, mirroring how /n opens without a slug.
+  if (boardId.value === null) {
+    await resolveDefaultBoard();
     return;
   }
 
   await boards.loadBoard(ws.value, boardId.value);
   await Promise.all([boards.loadColumns(ws.value, boardId.value), boards.loadTasks(ws.value, boardId.value)]);
+}
+
+async function resolveDefaultBoard(): Promise<void> {
+  if (workspace.projects.length === 0) {
+    await workspace.loadProjects(ws.value);
+  }
+
+  const project = workspace.projects[0];
+  if (project === undefined) return;
+
+  await boards.loadBoards(ws.value, project.slug);
+
+  const first = boards.boardSummaries[0];
+  if (first !== undefined) {
+    await router.replace({ name: 'tasks', params: { boardId: first.id } });
+  }
 }
 
 function openTask(readableId: string): void {

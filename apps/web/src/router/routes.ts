@@ -16,7 +16,7 @@ export const routes: RouteRecordRaw[] = [
     component: () => import('@/views/Notes.vue'),
   },
   {
-    path: '/t/:boardId',
+    path: '/t/:boardId?',
     name: 'tasks',
     component: () => import('@/views/Tasks.vue'),
   },
