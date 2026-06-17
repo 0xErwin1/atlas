@@ -10,7 +10,7 @@ export interface LoadResult {
 }
 
 export type SaveResult =
-  | { kind: 'ok' }
+  | { kind: 'ok'; headRevisionId: string }
   | { kind: 'conflict'; problem: ConflictProblem }
   | { kind: 'error'; hint: string | undefined; title: string };
 
@@ -57,13 +57,13 @@ export function useMarkdownDoc() {
   ): Promise<SaveResult> {
     const content = joinFrontmatter(meta, body);
 
-    const { error } = await wrappedClient.PUT('/v1/workspaces/{ws}/documents/{slug}/content', {
+    const { data, error } = await wrappedClient.PUT('/v1/workspaces/{ws}/documents/{slug}/content', {
       params: { path: { ws, slug } },
       body: { content, base_revision_id: baseRevisionId },
     });
 
     if (error === undefined) {
-      return { kind: 'ok' };
+      return { kind: 'ok', headRevisionId: data?.head_revision_id ?? '' };
     }
 
     const raw = error as Record<string, unknown>;

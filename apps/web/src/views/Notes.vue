@@ -110,7 +110,7 @@ async function persist(): Promise<void> {
   const result = await save(ws.value, slug.value, currentBody, meta.value, headRevisionId.value);
 
   if (result.kind === 'ok') {
-    onSaved(joinFrontmatter(meta.value, currentBody), headRevisionId.value);
+    onSaved(joinFrontmatter(meta.value, currentBody), result.headRevisionId);
     return;
   }
 
@@ -151,7 +151,7 @@ async function resave(content: string, baseRevisionId: string, autoMerged: boole
     meta.value = resolvedMeta;
     body.value = resolvedBody;
     title.value = typeof resolvedMeta.title === 'string' ? resolvedMeta.title : title.value;
-    onSaved(content, baseRevisionId);
+    onSaved(content, result.headRevisionId);
     ui.showBanner(autoMerged ? 'Conflict auto-merged and saved.' : 'Conflict resolved and saved.', 'success');
     return;
   }

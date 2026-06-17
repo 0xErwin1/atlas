@@ -60,8 +60,8 @@ describe('useMarkdownDoc', () => {
     expect(result.headRevisionId).toBe('rev-xyz');
   });
 
-  it('save: joins frontmatter+body and calls PUT with base_revision_id', async () => {
-    mockPut.mockResolvedValue({ data: {}, error: undefined });
+  it('save: joins frontmatter+body, PUTs with base_revision_id, returns the new head', async () => {
+    mockPut.mockResolvedValue({ data: { head_revision_id: 'rev-def' }, error: undefined });
 
     const { save } = useMarkdownDoc();
     const result = await save(WS, SLUG, '\nBody text.', { title: 'My Doc' }, 'rev-abc');
@@ -74,6 +74,11 @@ describe('useMarkdownDoc', () => {
     );
 
     expect(result.kind).toBe('ok');
+    // The caller must advance its base to this new revision; otherwise the next
+    // save would CAS-conflict against itself even with a single editor.
+    if (result.kind === 'ok') {
+      expect(result.headRevisionId).toBe('rev-def');
+    }
   });
 
   it('save: returns conflict when PUT returns 409', async () => {
