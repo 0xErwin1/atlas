@@ -26,6 +26,12 @@ const CUSTOM_GLYPHS: Record<string, { fill?: boolean; paths: string }> = {
     fill: true,
     paths: '<circle cx="12" cy="12" r="3.5"/>',
   },
+  enter: {
+    paths: '<path d="M9 10l-4 4 4 4"/><path d="M5 14h11a4 4 0 0 0 4-4V6"/>',
+  },
+  command: {
+    paths: '<path d="M9 6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3z"/>',
+  },
 };
 
 const customGlyph = computed(() => CUSTOM_GLYPHS[props.name] ?? null);

@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
 import Icon from '@/components/ui/Icon.vue';
+import SectionLabel from '@/components/ui/SectionLabel.vue';
 import type { SearchSort, SearchType } from '@/stores/search';
 import { useSearchStore } from '@/stores/search';
 
@@ -84,9 +85,7 @@ function onSort(value: string): void {
     </div>
 
     <div :style="{ padding: '0 10px 4px' }">
-      <p :style="{ fontSize: 'var(--fs-xs)', color: 'var(--c-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', margin: '8px 0 4px' }">
-        Type
-      </p>
+      <SectionLabel flush>Type</SectionLabel>
       <Dropdown
         :options="typeOptions"
         :model-value="store.type"
@@ -94,9 +93,7 @@ function onSort(value: string): void {
         @change="onType"
       />
 
-      <p :style="{ fontSize: 'var(--fs-xs)', color: 'var(--c-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', margin: '12px 0 4px' }">
-        Sort
-      </p>
+      <SectionLabel flush>Sort</SectionLabel>
       <Dropdown
         :options="sortOptions"
         :model-value="store.sort"

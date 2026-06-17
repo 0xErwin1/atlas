@@ -38,10 +38,11 @@ const updatedLabel = computed(() => {
 <template>
   <button
     type="button"
-    class="atl-result flex w-full text-left items-start gap-3"
+    class="atl-result flex w-full text-left items-start"
     data-kind="search-result"
     :data-active="active ? 'true' : 'false'"
     :style="{
+      gap: '11px',
       padding: '11px 13px',
       cursor: 'pointer',
       borderBottom: '1px solid var(--c-border)',
@@ -81,7 +82,7 @@ const updatedLabel = computed(() => {
         class="block"
         data-testid="snippet"
         :style="{
-          fontSize: 'var(--fs-sm)',
+          fontSize: '12.5px',
           color: 'var(--c-muted)',
           lineHeight: '1.4',
           marginBottom: '6px',
@@ -89,19 +90,19 @@ const updatedLabel = computed(() => {
         v-html="safeSnippet"
       />
 
-      <span class="flex items-center gap-3 flex-wrap">
+      <span class="flex items-center flex-wrap" :style="{ gap: '10px' }">
         <Chip tone="neutral">{{ kindLabel }}</Chip>
         <span
           v-if="hit.project_slug"
-          class="flex items-center gap-1"
-          :style="{ fontSize: 'var(--fs-xs)', color: 'var(--c-muted)' }"
+          class="flex items-center"
+          :style="{ gap: '4px', fontSize: 'var(--fs-xs)', color: 'var(--c-muted)' }"
         >
           <Icon name="folder" :size="12" />
           {{ hit.project_slug }}
         </span>
         <span
-          class="flex items-center gap-1"
-          :style="{ fontSize: 'var(--fs-xs)', color: 'var(--c-muted)', fontFamily: 'var(--font-mono)' }"
+          class="flex items-center"
+          :style="{ gap: '5px', fontSize: 'var(--fs-xs)', color: 'var(--c-muted)' }"
         >
           <Avatar :size="16" name="?" />
           {{ updatedLabel }}

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
-import Chip from '@/components/ui/Chip.vue';
 import Icon from '@/components/ui/Icon.vue';
 import Kbd from '@/components/ui/Kbd.vue';
+import SectionLabel from '@/components/ui/SectionLabel.vue';
 import { filterLocalActions, type LocalAction, useSearch } from '@/composables/useSearch';
 import { sanitizeSnippet } from '@/lib/sanitize';
 import type { SearchHitDto } from '@/stores/search';
@@ -42,6 +42,13 @@ const entries = computed<Entry[]>(() => [
 
 const hasQuery = computed(() => queryText.value.trim() !== '');
 const showEmpty = computed(() => hasQuery.value && entries.value.length === 0 && !store.loading);
+
+const firstActionIndex = computed(() => entries.value.findIndex((e) => e.kind === 'action'));
+const firstHitIndex = computed(() => entries.value.findIndex((e) => e.kind === 'hit'));
+
+function hitTag(hit: SearchHitDto): string {
+  return hit.kind === 'task' ? (hit.readable_id ?? 'task') : 'note';
+}
 
 function onInput(event: Event): void {
   const value = (event.target as HTMLInputElement).value;
@@ -120,7 +127,7 @@ watch(
     <div
       class="flex flex-col w-full"
       :style="{
-        maxWidth: '600px',
+        maxWidth: '540px',
         maxHeight: '60vh',
         background: 'var(--c-panel)',
         border: '1px solid var(--c-border)',
@@ -130,10 +137,10 @@ watch(
       }"
     >
       <div
-        class="flex items-center gap-2"
-        :style="{ padding: '10px 12px', borderBottom: '1px solid var(--c-border)' }"
+        class="flex items-center"
+        :style="{ gap: '9px', padding: '13px 15px', borderBottom: '1px solid var(--c-border)' }"
       >
-        <Icon name="search" :size="15" :style="{ color: 'var(--c-muted)' }" />
+        <Icon name="search" :size="18" :style="{ color: 'var(--c-muted)', flex: '0 0 auto' }" />
         <input
           ref="inputEl"
           type="text"
@@ -141,70 +148,70 @@ watch(
           :value="queryText"
           :style="{
             flex: 1,
+            minWidth: 0,
             background: 'transparent',
             border: 'none',
             outline: 'none',
             color: 'var(--c-foreground)',
             fontFamily: 'var(--font-mono)',
-            fontSize: 'var(--fs-base)',
+            fontSize: 'var(--fs-xl)',
           }"
           @input="onInput"
           @keydown="onKeydown"
         >
-        <Kbd>ESC</Kbd>
       </div>
 
-      <div class="flex-1 overflow-y-auto" :style="{ minHeight: 0 }">
-        <button
-          v-for="(entry, i) in entries"
-          :key="entry.kind === 'action' ? `a-${entry.action.id}` : `h-${entry.hit.id}`"
-          type="button"
-          class="atl-pal-row flex w-full items-center gap-3 text-left"
-          :data-active="i === activeIndex ? 'true' : 'false'"
-          :style="{
-            padding: '9px 13px',
-            cursor: 'pointer',
-            background: i === activeIndex ? 'var(--c-selection)' : 'transparent',
-            boxShadow: i === activeIndex ? 'inset 2px 0 0 var(--c-primary)' : 'none',
-          }"
-          @mouseenter="activeIndex = i"
-          @click="selectEntry(entry)"
-        >
-          <template v-if="entry.kind === 'action'">
-            <Icon
-              :name="entry.action.kind === 'navigate' ? 'corner-down-right' : 'plus'"
-              :size="15"
-              :style="{ color: i === activeIndex ? 'var(--c-primary)' : 'var(--c-muted)' }"
-            />
-            <span :style="{ fontSize: 'var(--fs-base)', color: 'var(--c-foreground)', flex: 1 }">
-              {{ entry.action.label }}
-            </span>
-          </template>
+      <div class="flex-1 overflow-y-auto" :style="{ minHeight: 0, padding: '6px 0' }">
+        <template v-for="(entry, i) in entries" :key="entry.kind === 'action' ? `a-${entry.action.id}` : `h-${entry.hit.id}`">
+          <SectionLabel v-if="i === firstActionIndex">Actions</SectionLabel>
+          <SectionLabel v-if="i === firstHitIndex">Results</SectionLabel>
 
-          <template v-else>
-            <Icon
-              :name="entry.hit.kind === 'task' ? 'square-check-big' : 'file-text'"
-              :size="15"
-              :style="{ color: i === activeIndex ? 'var(--c-primary)' : 'var(--c-muted)', flex: '0 0 auto' }"
-            />
-            <span class="flex-1 min-w-0">
-              <span class="block truncate" :style="{ fontSize: 'var(--fs-base)', color: 'var(--c-foreground)' }">
-                <span
-                  v-if="entry.hit.kind === 'task' && entry.hit.readable_id"
-                  :style="{ fontFamily: 'var(--font-mono)', color: 'var(--c-muted)', marginRight: '6px' }"
-                >{{ entry.hit.readable_id }}</span>{{ entry.hit.title }}
-              </span>
-              <!-- eslint-disable-next-line vue/no-v-html -- sanitizeSnippet allows only <mark> (REQ-W25) -->
-              <span
-                v-if="entry.hit.snippet"
-                class="atl-pal-snip block truncate"
-                :style="{ fontSize: 'var(--fs-xs)', color: 'var(--c-muted)' }"
-                v-html="snippetHtml(entry.hit)"
+          <button
+            type="button"
+            class="atl-pal-row flex w-full items-center gap-3 text-left"
+            :data-active="i === activeIndex ? 'true' : 'false'"
+            :style="{
+              padding: '9px 13px',
+              cursor: 'pointer',
+              background: i === activeIndex ? 'var(--c-selection)' : 'transparent',
+              boxShadow: i === activeIndex ? 'inset 2px 0 0 var(--c-primary)' : 'none',
+            }"
+            @mouseenter="activeIndex = i"
+            @click="selectEntry(entry)"
+          >
+            <template v-if="entry.kind === 'action'">
+              <Icon
+                :name="entry.action.kind === 'navigate' ? 'corner-down-right' : 'plus'"
+                :size="15"
+                :style="{ color: i === activeIndex ? 'var(--c-primary)' : 'var(--c-muted)', flex: '0 0 auto' }"
               />
-            </span>
-            <Chip tone="neutral">{{ entry.hit.kind === 'task' ? 'TASK' : 'NOTE' }}</Chip>
-          </template>
-        </button>
+              <span :style="{ fontSize: 'var(--fs-base)', color: 'var(--c-foreground)', flex: 1 }">
+                {{ entry.action.label }}
+              </span>
+            </template>
+
+            <template v-else>
+              <Icon
+                :name="entry.hit.kind === 'task' ? 'square-check-big' : 'file-text'"
+                :size="15"
+                :style="{ color: i === activeIndex ? 'var(--c-primary)' : 'var(--c-muted)', flex: '0 0 auto' }"
+              />
+              <span class="flex-1 min-w-0">
+                <span class="block truncate" :style="{ fontSize: 'var(--fs-base)', color: 'var(--c-foreground)' }">{{ entry.hit.title }}</span>
+                <!-- eslint-disable-next-line vue/no-v-html -- sanitizeSnippet allows only <mark> (REQ-W25) -->
+                <span
+                  v-if="entry.hit.snippet"
+                  class="atl-pal-snip block truncate"
+                  :style="{ fontSize: 'var(--fs-xs)', color: 'var(--c-muted)', marginTop: '1px' }"
+                  v-html="snippetHtml(entry.hit)"
+                />
+              </span>
+              <span
+                :style="{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-xs)', color: 'var(--c-muted)', flex: '0 0 auto' }"
+              >{{ hitTag(entry.hit) }}</span>
+            </template>
+          </button>
+        </template>
 
         <div
           v-if="showEmpty"
@@ -212,6 +219,41 @@ watch(
         >
           No results for "{{ queryText }}"
         </div>
+      </div>
+
+      <div
+        class="flex items-center"
+        :style="{ gap: '12px', padding: '8px 14px', borderTop: '1px solid var(--c-border)', fontSize: 'var(--fs-sm)', color: 'var(--c-muted)' }"
+      >
+        <span class="flex items-center" :style="{ gap: '5px' }">
+          <Kbd>↑↓</Kbd>
+          navigate
+        </span>
+        <span class="flex items-center" :style="{ gap: '5px' }">
+          <Icon name="enter" :size="13" />
+          open
+        </span>
+        <span class="flex items-center" :style="{ gap: '5px' }">
+          <Kbd>esc</Kbd>
+          close
+        </span>
+        <span :style="{ flex: 1 }" />
+        <span
+          class="flex items-center"
+          :style="{
+            gap: '5px',
+            fontFamily: 'var(--font-mono)',
+            fontSize: 'var(--fs-xs)',
+            color: 'var(--c-agent)',
+            border: '1px solid var(--c-agent-border)',
+            background: 'var(--c-agent-bg)',
+            borderRadius: 'var(--r-sm)',
+            padding: '2px 8px',
+          }"
+        >
+          <span class="atl-pulse" :style="{ width: '6px', height: '6px', borderRadius: 'var(--r-full)', background: 'var(--c-agent)', flex: '0 0 auto' }" />
+          AI-first
+        </span>
       </div>
     </div>
   </div>
