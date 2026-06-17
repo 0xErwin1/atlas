@@ -12,7 +12,7 @@ const props = withDefaults(
   },
 );
 
-const ATLAS_GLYPH_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true" style="width:100%;height:100%"><path d="M16 2 L30 27 L2 27 Z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="16" cy="16" r="4" fill="currentColor"/><line x1="16" y1="12" x2="16" y2="5" stroke="currentColor" stroke-width="1.5"/></svg>`;
+const ATLAS_GLYPH_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:100%;height:100%"><circle cx="12" cy="12" r="9"/><path d="M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18M4 9h16M4 15h16"/></svg>`;
 
 const isGlyph = computed(() => props.name === 'atlas-glyph');
 

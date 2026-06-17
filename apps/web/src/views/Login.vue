@@ -52,119 +52,119 @@ const errorDisplay = computed(() => {
     <div
       style="
         width: 340px;
-        padding: 32px;
+        padding: 26px 26px 22px;
         border-radius: var(--r-lg);
         background-color: var(--c-panel);
         border: 1px solid var(--c-border);
         box-shadow: var(--shadow-lg);
       "
     >
-      <div class="flex flex-col items-center gap-4 mb-8">
-        <Icon
-          name="atlas-glyph"
-          :size="44"
-          style="color: var(--c-primary);"
-        />
-        <span style="font-family: var(--font-mono); font-size: var(--fs-lg); font-weight: var(--fw-semibold); color: var(--c-foreground);">
+      <div class="flex items-center" style="gap: 9px; margin-bottom: 18px;">
+        <Icon name="atlas-glyph" :size="24" style="color: var(--c-primary);" />
+        <span style="font-size: 19px; font-weight: 700; color: var(--c-foreground); font-family: var(--font-ui);">
           Atlas
         </span>
+      </div>
+
+      <div style="font-size: var(--fs-xl); font-weight: 700; color: var(--c-foreground); margin-bottom: 3px;">
+        Sign in
+      </div>
+      <div style="font-size: var(--fs-base); color: var(--c-muted); margin-bottom: 18px;">
+        Use your Atlas account
       </div>
 
       <div
         v-if="errorProblem"
         style="
-          margin-bottom: 16px;
-          padding: 10px 12px;
-          border-radius: var(--r-md);
           background-color: var(--c-banner-err-bg);
-          border: 1px solid rgba(240, 113, 120, 0.35);
-          color: var(--c-banner-err-fg);
-          font-family: var(--font-mono);
-          font-size: var(--fs-xs);
-          line-height: var(--lh-normal);
+          border: 1px solid rgba(240, 113, 120, 0.5);
+          border-radius: var(--r-md);
+          padding: 9px 11px;
+          margin-bottom: 14px;
         "
       >
-        <span>{{ errorDisplay?.hint ?? errorDisplay?.message }}</span>
-        <span
+        <div
+          class="flex items-center"
+          style="gap: 7px; font-size: var(--fs-sm); font-weight: 700; color: var(--c-banner-err-fg); margin-bottom: 3px;"
+        >
+          <Icon name="triangle-alert" :size="13" />
+          Sign-in failed
+        </div>
+        <div style="font-size: var(--fs-sm); color: var(--c-banner-err-fg); opacity: 0.9;">
+          {{ errorDisplay?.hint ?? errorDisplay?.message }}
+        </div>
+        <div
           v-if="errorDisplay?.requestId"
-          style="display: block; opacity: 0.6; margin-top: 2px;"
+          style="font-size: var(--fs-xs); font-family: var(--font-mono); color: var(--c-banner-err-fg); opacity: 0.7; margin-top: 3px;"
         >
           trace {{ errorDisplay?.requestId }}
-        </span>
+        </div>
       </div>
 
-      <form class="flex flex-col gap-3" @submit.prevent="handleLogin">
-        <div class="flex flex-col gap-1">
+      <form @submit.prevent="handleLogin">
+        <div>
           <label
             for="username"
-            style="font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--c-muted);"
+            style="display: block; font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--c-muted); margin-bottom: 5px;"
           >
             Username
           </label>
-          <input
-            id="username"
-            v-model="username"
-            type="text"
-            autocomplete="username"
-            required
+          <div
+            class="flex items-center"
             :style="`
+              gap: 8px;
               height: var(--h-input);
               padding: 0 10px;
+              margin-bottom: 12px;
               border-radius: var(--r-md);
               background-color: var(--c-input);
               border: 1px solid ${errorProblem ? 'var(--c-danger)' : 'var(--c-border)'};
-              color: var(--c-foreground);
-              font-family: var(--font-mono);
-              font-size: var(--fs-sm);
-              outline: none;
-              width: 100%;
             `"
-          />
+          >
+            <input
+              id="username"
+              v-model="username"
+              type="text"
+              autocomplete="username"
+              placeholder="username"
+              required
+              class="atl-login-input"
+            />
+          </div>
         </div>
 
-        <div class="flex flex-col gap-1">
+        <div>
           <label
             for="password"
-            style="font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--c-muted);"
+            style="display: block; font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--c-muted); margin-bottom: 5px;"
           >
             Password
           </label>
-          <div class="relative">
+          <div
+            class="flex items-center"
+            :style="`
+              gap: 8px;
+              height: var(--h-input);
+              padding: 0 10px;
+              margin-bottom: 12px;
+              border-radius: var(--r-md);
+              background-color: var(--c-input);
+              border: 1px solid ${errorProblem ? 'var(--c-danger)' : 'var(--c-border)'};
+            `"
+          >
             <input
               id="password"
               v-model="password"
               :type="showPassword ? 'text' : 'password'"
               autocomplete="current-password"
               required
-              :style="`
-                height: var(--h-input);
-                padding: 0 36px 0 10px;
-                border-radius: var(--r-md);
-                background-color: var(--c-input);
-                border: 1px solid ${errorProblem ? 'var(--c-danger)' : 'var(--c-border)'};
-                color: var(--c-foreground);
-                font-family: var(--font-mono);
-                font-size: var(--fs-sm);
-                outline: none;
-                width: 100%;
-              `"
+              class="atl-login-input"
             />
             <button
               type="button"
               tabindex="-1"
-              style="
-                position: absolute;
-                right: 8px;
-                top: 50%;
-                transform: translateY(-50%);
-                color: var(--c-muted);
-                background: none;
-                border: none;
-                cursor: pointer;
-                padding: 0;
-                display: flex;
-                align-items: center;
-              "
+              class="flex items-center"
+              style="color: var(--c-muted); background: none; border: none; cursor: pointer; padding: 0;"
               @click="showPassword = !showPassword"
             >
               <Icon :name="showPassword ? 'eye-off' : 'eye'" :size="14" />
@@ -172,16 +172,43 @@ const errorDisplay = computed(() => {
           </div>
         </div>
 
+        <div style="height: 6px;" />
+
         <Btn
           variant="primary"
           type="submit"
           :disabled="loading"
-          class="mt-2 w-full justify-center gap-2"
+          style="width: 100%; height: 34px; margin-bottom: 14px;"
         >
-          <span>{{ loading ? 'Signing in…' : 'Sign in' }}</span>
-          <Kbd label="↵" />
+          Sign in
         </Btn>
+
+        <div
+          class="flex items-center justify-center"
+          style="gap: 7px; font-size: var(--fs-sm); color: var(--c-muted);"
+        >
+          Press
+          <Kbd label="↵" />
+          to continue
+        </div>
       </form>
     </div>
   </div>
 </template>
+
+<style scoped>
+.atl-login-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--c-foreground);
+  font-family: var(--font-mono);
+  font-size: var(--fs-base);
+}
+
+.atl-login-input::placeholder {
+  color: var(--c-muted);
+}
+</style>
