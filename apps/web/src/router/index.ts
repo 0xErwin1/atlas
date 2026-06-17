@@ -20,5 +20,12 @@ router.beforeEach(async (to, _from) => {
     return { name: 'login', query: { redirect: to.fullPath } };
   }
 
+  const { useWorkspaceStore } = await import('@/stores/workspace');
+  const workspace = useWorkspaceStore();
+
+  if (workspace.activeWorkspaceSlug === null) {
+    await workspace.loadWorkspaces();
+  }
+
   return true;
 });
