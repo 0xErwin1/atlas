@@ -5,6 +5,7 @@ import BacklinksPanel from '@/components/notas/BacklinksPanel.vue';
 import CasConflictView from '@/components/notas/CasConflictView.vue';
 // biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
 import NoteEditor from '@/components/notas/NoteEditor.vue';
+import PropertiesEditor from '@/components/notas/PropertiesEditor.vue';
 import PropertiesPanel from '@/components/notas/PropertiesPanel.vue';
 // biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
 import WikiLinkSuggest from '@/components/notas/WikiLinkSuggest.vue';
@@ -214,6 +215,15 @@ function onChange(markdown: string): void {
   saveTimer = setTimeout(() => void persist(), 800);
 }
 
+function onMetaChange(newMeta: Record<string, unknown>): void {
+  meta.value = newMeta;
+  title.value = typeof newMeta.title === 'string' ? newMeta.title : (slug.value ?? '');
+  dirty.value = true;
+
+  if (saveTimer !== null) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => void persist(), 800);
+}
+
 function onNavigateWikilink(linkTitle: string): void {
   void router.push(wikilinkTarget(linkTitle));
 }
@@ -343,6 +353,8 @@ watch(title, (t) => {
           >
             {{ title || 'Untitled' }}
           </h1>
+
+          <PropertiesEditor :meta="meta" @change="onMetaChange" />
 
           <div @keydown="onEditorKeydown">
             <NoteEditor
