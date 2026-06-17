@@ -142,10 +142,7 @@ pub(crate) async fn list_folders(
         conn: (*state.db).clone(),
     };
 
-    let all = repo
-        .list_children(&ctx, None)
-        .await
-        .map_err(ApiError::Domain)?;
+    let all = repo.list_all(&ctx).await.map_err(ApiError::Domain)?;
 
     let items: Vec<FolderDto> = all
         .into_iter()

@@ -21,6 +21,9 @@ pub enum DomainError {
     #[error("invalid input: {message}")]
     InvalidInput { message: String },
 
+    #[error("already exists: {message}")]
+    AlreadyExists { message: String },
+
     #[error("internal error: {message}")]
     Internal { message: String },
 

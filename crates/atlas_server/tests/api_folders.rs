@@ -68,6 +68,51 @@ async fn create_folder_editor_returns_201() {
     db.teardown().await;
 }
 
+// ---- Duplicate name in the same location → 409 (not an opaque 500) ---------------
+
+#[tokio::test]
+async fn create_duplicate_folder_name_returns_409() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "folder-dup-1").await;
+
+    let project = client
+        .create_project(&ws.slug, project_req("DupProj", "dup-proj-1"))
+        .await
+        .expect("create project");
+
+    client
+        .create_folder(
+            &ws.slug,
+            &project.slug,
+            CreateFolderRequest {
+                name: "Same Name".to_string(),
+                parent_folder_id: None,
+            },
+        )
+        .await
+        .expect("first create folder");
+
+    let err = client
+        .create_folder(
+            &ws.slug,
+            &project.slug,
+            CreateFolderRequest {
+                name: "Same Name".to_string(),
+                parent_folder_id: None,
+            },
+        )
+        .await
+        .expect_err("duplicate name should fail");
+
+    match err {
+        ClientError::Api(p) => assert_eq!(p.status, 409, "expected 409, got {}", p.status),
+        other => panic!("unexpected error: {other:?}"),
+    }
+
+    db.teardown().await;
+}
+
 // ---- REQ-F2: Blank name → 422 ---------------------------------------------------
 
 #[tokio::test]
@@ -188,6 +233,59 @@ async fn list_folders_scoped_to_project() {
 
     assert_eq!(page.items.len(), 1, "should only see proj_a folders");
     assert_eq!(page.items[0].name, "FolderA");
+
+    db.teardown().await;
+}
+
+// ---- Listing returns nested folders, not only root-level ones -------------------
+
+#[tokio::test]
+async fn list_folders_includes_nested() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "folder-nested-1").await;
+
+    let project = client
+        .create_project(&ws.slug, project_req("NestProj", "nest-proj-1"))
+        .await
+        .expect("create project");
+
+    let parent = client
+        .create_folder(
+            &ws.slug,
+            &project.slug,
+            CreateFolderRequest {
+                name: "Parent".to_string(),
+                parent_folder_id: None,
+            },
+        )
+        .await
+        .expect("create parent");
+
+    client
+        .create_folder(
+            &ws.slug,
+            &project.slug,
+            CreateFolderRequest {
+                name: "Child".to_string(),
+                parent_folder_id: Some(parent.id),
+            },
+        )
+        .await
+        .expect("create child");
+
+    let page = client
+        .list_folders(&ws.slug, &project.slug)
+        .await
+        .expect("list");
+
+    assert_eq!(page.items.len(), 2, "list must include the nested child folder");
+    let child = page
+        .items
+        .iter()
+        .find(|f| f.name == "Child")
+        .expect("child present in list");
+    assert_eq!(child.parent_folder_id, Some(parent.id));
 
     db.teardown().await;
 }

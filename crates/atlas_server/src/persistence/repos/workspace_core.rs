@@ -471,6 +471,16 @@ impl FolderRepo for PgFolderRepo {
             .map_err(db_err)
     }
 
+    async fn list_all(&self, ctx: &WorkspaceCtx) -> Result<Vec<Folder>, DomainError> {
+        folder::Entity::find()
+            .filter(folder::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(folder::Column::DeletedAt.is_null())
+            .all(&self.conn)
+            .await
+            .map(|rows| rows.into_iter().map(folder_from).collect())
+            .map_err(db_err)
+    }
+
     async fn rename(
         &self,
         ctx: &WorkspaceCtx,
@@ -547,6 +557,15 @@ fn user_id_from_actor(actor: &Actor) -> Option<uuid::Uuid> {
 }
 
 fn db_err(e: sea_orm::DbErr) -> DomainError {
+    // A unique-constraint violation is a caller error (e.g. a folder or document
+    // with that name already exists in the same place), not an internal fault:
+    // surface it as a 409 instead of an opaque 500.
+    if let Some(sea_orm::SqlErr::UniqueConstraintViolation(_)) = e.sql_err() {
+        return DomainError::AlreadyExists {
+            message: "an item with the same name already exists in this location".to_string(),
+        };
+    }
+
     DomainError::Internal {
         message: e.to_string(),
     }

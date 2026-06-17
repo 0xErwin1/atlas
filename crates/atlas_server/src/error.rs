@@ -148,6 +148,12 @@ fn domain_error_response(err: DomainError) -> Response {
             StatusCode::FORBIDDEN,
             ProblemDetails::new("urn:atlas:error:forbidden", "Forbidden", 403).with_detail(message),
         ),
+        DomainError::AlreadyExists { message } => (
+            StatusCode::CONFLICT,
+            ProblemDetails::new("urn:atlas:error:already-exists", "Already Exists", 409)
+                .with_hint("An item with this name already exists here — choose a different name.")
+                .with_detail(message),
+        ),
         DomainError::Internal { message } => {
             tracing::error!(error = %message, "domain internal error");
             (

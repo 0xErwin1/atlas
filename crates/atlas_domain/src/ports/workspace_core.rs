@@ -73,6 +73,10 @@ pub trait FolderRepo: Send + Sync {
         ctx: &WorkspaceCtx,
         parent: Option<FolderId>,
     ) -> Result<Vec<Folder>, DomainError>;
+    /// All non-deleted folders in the workspace, regardless of nesting depth.
+    /// Callers that build a folder tree need every folder, not just root-level
+    /// children.
+    async fn list_all(&self, ctx: &WorkspaceCtx) -> Result<Vec<Folder>, DomainError>;
     async fn rename(
         &self,
         ctx: &WorkspaceCtx,
