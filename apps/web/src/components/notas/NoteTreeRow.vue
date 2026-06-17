@@ -36,24 +36,15 @@ const inlineValue = ref('');
 const inlineInputRef = ref<HTMLInputElement | null>(null);
 
 const folderMenuItems = computed<MenuItem[]>(() => [
-  {
-    label: 'New page',
-    icon: 'file-plus',
-    action: () => openInline('new-doc'),
-  },
-  {
-    label: 'New folder',
-    icon: 'folder-plus',
-    action: () => openInline('new-folder'),
-  },
-  {
-    label: 'Rename',
-    icon: 'pencil',
-    action: () => openInline('rename-folder'),
-  },
+  { header: true, label: props.folder.name },
+  { label: 'New page', icon: 'file-plus', action: () => openInline('new-doc') },
+  { label: 'New folder', icon: 'folder-plus', action: () => openInline('new-folder') },
+  { sep: true },
+  { label: 'Rename', icon: 'pencil', kbd: ['F2'], action: () => openInline('rename-folder') },
+  { sep: true },
   {
     label: 'Delete folder',
-    icon: 'trash-2',
+    icon: 'trash',
     danger: true,
     action: () => emit('remove-folder', props.folder.id),
   },
@@ -67,14 +58,15 @@ const docMenuItems = computed<MenuItem[]>(() => {
   const currentTitle = state.currentTitle;
 
   return [
+    { header: true, label: currentTitle },
+    { label: 'Open', icon: 'external-link', kbd: ['↵'], action: () => emit('select-doc', slug) },
+    { sep: true },
+    { label: 'Rename', icon: 'pencil', kbd: ['F2'], action: () => openDocRename(slug, currentTitle) },
+    { sep: true },
     {
-      label: 'Rename',
-      icon: 'pencil',
-      action: () => openDocRename(slug, currentTitle),
-    },
-    {
-      label: 'Delete page',
-      icon: 'trash-2',
+      label: 'Delete',
+      icon: 'trash',
+      kbd: ['⌫'],
       danger: true,
       action: () => emit('remove-doc', slug),
     },

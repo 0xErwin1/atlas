@@ -32,25 +32,53 @@ const contextOpen = ref(false);
 const contextX = ref(0);
 const contextY = ref(0);
 
+type ContextState = { kind: 'root' } | { kind: 'doc'; slug: string; title: string };
+const contextState = ref<ContextState>({ kind: 'root' });
+
 type InlineTarget = 'new-doc' | 'new-folder';
 const inlineTarget = ref<InlineTarget | null>(null);
 const inlineValue = ref('');
 const inlineInputRef = ref<HTMLInputElement | null>(null);
+const pendingDocRename = ref<{ slug: string } | null>(null);
 
 const rootMenuItems = computed<MenuItem[]>(() => [
-  {
-    label: 'New page',
-    icon: 'file-plus',
-    action: () => openInline('new-doc'),
-  },
-  {
-    label: 'New folder',
-    icon: 'folder-plus',
-    action: () => openInline('new-folder'),
-  },
+  { label: 'New page', icon: 'file-plus', action: () => openInline('new-doc') },
+  { label: 'New folder', icon: 'folder-plus', action: () => openInline('new-folder') },
 ]);
 
+const docMenuItems = computed<MenuItem[]>(() => {
+  const state = contextState.value;
+  if (state.kind !== 'doc') return [];
+  const { slug, title } = state;
+  return [
+    { header: true, label: title },
+    { label: 'Open', icon: 'external-link', kbd: ['↵'], action: () => emit('select-doc', slug) },
+    { sep: true },
+    { label: 'Rename', icon: 'pencil', kbd: ['F2'], action: () => openDocRename(slug, title) },
+    { sep: true },
+    {
+      label: 'Delete',
+      icon: 'trash',
+      kbd: ['⌫'],
+      danger: true,
+      action: () => emit('remove-doc', slug),
+    },
+  ];
+});
+
+const activeMenuItems = computed<MenuItem[]>(() =>
+  contextState.value.kind === 'doc' ? docMenuItems.value : rootMenuItems.value,
+);
+
 function onContextmenu(event: MouseEvent): void {
+  contextState.value = { kind: 'root' };
+  contextX.value = event.clientX;
+  contextY.value = event.clientY;
+  contextOpen.value = true;
+}
+
+function openDocMenu(event: MouseEvent, slug: string, title: string): void {
+  contextState.value = { kind: 'doc', slug, title };
   contextX.value = event.clientX;
   contextY.value = event.clientY;
   contextOpen.value = true;
@@ -64,6 +92,16 @@ function openInline(target: InlineTarget): void {
   });
 }
 
+function openDocRename(slug: string, currentTitle: string): void {
+  pendingDocRename.value = { slug };
+  inlineTarget.value = null;
+  inlineValue.value = currentTitle;
+  void nextTick(() => {
+    inlineInputRef.value?.focus();
+    inlineInputRef.value?.select();
+  });
+}
+
 function commitInline(): void {
   const name = inlineValue.value.trim();
   if (name === '') {
@@ -71,18 +109,20 @@ function commitInline(): void {
     return;
   }
 
-  if (inlineTarget.value === 'new-doc') {
+  if (pendingDocRename.value !== null) {
+    emit('rename-doc', pendingDocRename.value.slug, name);
+  } else if (inlineTarget.value === 'new-doc') {
     emit('create-doc', name);
   } else if (inlineTarget.value === 'new-folder') {
     emit('create-folder', name);
   }
 
-  inlineTarget.value = null;
-  inlineValue.value = '';
+  cancelInline();
 }
 
 function cancelInline(): void {
   inlineTarget.value = null;
+  pendingDocRename.value = null;
   inlineValue.value = '';
 }
 
@@ -126,20 +166,32 @@ defineExpose({ openNewPage: () => openInline('new-doc') });
         @remove-folder="(folderId) => emit('remove-folder', folderId)"
       />
 
-      <Row
-        v-for="doc in tree.docs"
-        :key="doc.id"
-        :label="doc.title"
-        icon="file"
-        :active="activeSlug !== null && doc.slug === activeSlug"
-        :disabled="doc.slug === null"
-        @click="doc.slug !== null && emit('select-doc', doc.slug)"
-        @contextmenu.prevent.stop="(event: MouseEvent) => {
-          contextX = event.clientX;
-          contextY = event.clientY;
-          contextOpen = true;
-        }"
-      />
+      <template v-for="doc in tree.docs" :key="doc.id">
+        <div
+          v-if="pendingDocRename !== null && pendingDocRename.slug === doc.slug"
+          style="display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px 20px;"
+        >
+          <Icon name="file" :size="13" style="color: var(--c-muted); flex-shrink: 0;" />
+          <input
+            ref="inlineInputRef"
+            v-model="inlineValue"
+            type="text"
+            placeholder="Page name…"
+            style="flex: 1; height: 28px; padding: 0 6px; background: var(--c-input); border: 1px solid var(--c-border); border-radius: var(--r-sm); font-size: var(--fs-sm); font-family: var(--font-mono); color: var(--c-foreground); outline: none;"
+            @keydown="onInlineKeydown"
+            @blur="cancelInline"
+          />
+        </div>
+        <Row
+          v-else
+          :label="doc.title"
+          icon="file"
+          :active="activeSlug !== null && doc.slug === activeSlug"
+          :disabled="doc.slug === null"
+          @click="doc.slug !== null && emit('select-doc', doc.slug)"
+          @contextmenu.prevent.stop="(event: MouseEvent) => doc.slug !== null && openDocMenu(event, doc.slug, doc.title)"
+        />
+      </template>
     </template>
 
     <div
@@ -177,7 +229,7 @@ defineExpose({ openNewPage: () => openInline('new-doc') });
       :open="contextOpen"
       :x="contextX"
       :y="contextY"
-      :items="rootMenuItems"
+      :items="activeMenuItems"
       @close="contextOpen = false"
     />
   </div>
