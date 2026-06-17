@@ -296,7 +296,14 @@ watch([slug, ws], loadDoc, { immediate: true });
     </EditorToolbar>
 
     <div class="flex-1 overflow-y-auto">
-      <div style="max-width: 720px; margin: 0 auto; padding: 30px 40px; position: relative;">
+      <div
+        :style="{
+          maxWidth: ui.editorWide ? 'none' : '720px',
+          margin: '0 auto',
+          padding: ui.editorWide ? '30px 56px' : '30px 40px',
+          position: 'relative',
+        }"
+      >
         <p
           v-if="loadError"
           style="

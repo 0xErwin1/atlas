@@ -7,6 +7,7 @@ import { GFM } from '@lezer/markdown';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import Icon from '@/components/ui/Icon.vue';
 import { detectWikilinkTrigger, type WikilinkTrigger } from '@/lib/wikilink';
+import { useUiStore } from '@/stores/ui';
 import { livePreview } from './livePreviewExtension';
 import { atlasMarkdownTheme } from './theme';
 
@@ -28,8 +29,11 @@ const props = withDefaults(
     editable?: boolean;
     /** Focus the editor on mount and on document switch (Obsidian-style). */
     autofocus?: boolean;
+    /** Show the reading-width toggle. Off for hosts (e.g. tasks) whose column is
+     * not a full document and must not stretch to the viewport. */
+    widthToggle?: boolean;
   }>(),
-  { placeholder: '', editable: true, autofocus: false },
+  { placeholder: '', editable: true, autofocus: false, widthToggle: true },
 );
 
 const emit = defineEmits<{
@@ -40,6 +44,8 @@ const emit = defineEmits<{
   /** Emitted as the `[[` query changes; null clears the autocomplete. */
   'wikilink-query': [query: string | null];
 }>();
+
+const ui = useUiStore();
 
 const host = ref<HTMLElement | null>(null);
 let view: EditorView | null = null;
@@ -231,6 +237,17 @@ onBeforeUnmount(() => {
 <template>
   <div class="markdown-editor-wrap">
     <div class="editor-controls">
+      <button
+        v-if="widthToggle"
+        type="button"
+        class="atl-gbtn"
+        :class="{ on: ui.editorWide }"
+        :title="ui.editorWide ? 'Readable width' : 'Wide width'"
+        :aria-label="ui.editorWide ? 'Readable width' : 'Wide width'"
+        @click="ui.toggleEditorWide()"
+      >
+        <Icon :name="ui.editorWide ? 'fold-horizontal' : 'unfold-horizontal'" :size="14" />
+      </button>
       <button
         v-if="!readonly"
         type="button"

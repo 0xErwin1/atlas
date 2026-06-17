@@ -39,6 +39,7 @@ function onNavigateWikilink(title: string): void {
     ref="editorRef"
     :body="markdown"
     :editable="true"
+    :width-toggle="false"
     placeholder="Add a description…"
     @change="onChange"
     @navigate-wikilink="onNavigateWikilink"

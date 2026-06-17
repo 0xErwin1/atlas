@@ -10,6 +10,7 @@ export interface Banner {
 }
 
 const INSPECTOR_STORAGE_KEY = 'atlas:inspector';
+const EDITOR_WIDE_STORAGE_KEY = 'atlas:editor-wide';
 
 function loadInspectorState(): { open: boolean; tab: InspectorTab } {
   try {
@@ -21,6 +22,14 @@ function loadInspectorState(): { open: boolean; tab: InspectorTab } {
   return { open: false, tab: 'properties' };
 }
 
+function loadEditorWide(): boolean {
+  try {
+    return localStorage.getItem(EDITOR_WIDE_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
 export const useUiStore = defineStore('ui', () => {
   const saved = loadInspectorState();
 
@@ -30,6 +39,9 @@ export const useUiStore = defineStore('ui', () => {
 
   const shareOpen = ref(false);
   const shareResourceLabel = ref('');
+
+  // Editor reading width: false = readable column, true = full viewport width.
+  const editorWide = ref(loadEditorWide());
 
   function persistInspector() {
     try {
@@ -60,6 +72,15 @@ export const useUiStore = defineStore('ui', () => {
     banner.value = null;
   }
 
+  function toggleEditorWide() {
+    editorWide.value = !editorWide.value;
+    try {
+      localStorage.setItem(EDITOR_WIDE_STORAGE_KEY, editorWide.value ? '1' : '0');
+    } catch {
+      // ignore storage errors
+    }
+  }
+
   function openShare(resourceLabel: string) {
     shareResourceLabel.value = resourceLabel;
     shareOpen.value = true;
@@ -75,6 +96,8 @@ export const useUiStore = defineStore('ui', () => {
     banner,
     shareOpen,
     shareResourceLabel,
+    editorWide,
+    toggleEditorWide,
     toggleInspector,
     setInspectorTab,
     showBanner,
