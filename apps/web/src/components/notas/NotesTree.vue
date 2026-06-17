@@ -141,7 +141,18 @@ defineExpose({ openNewPage: () => openInline('new-doc') });
 
 <template>
   <div style="min-height: 100%;" @contextmenu.prevent="onContextmenu">
-    <SectionLabel>{{ projectName }}</SectionLabel>
+    <div class="notes-tree-header">
+      <SectionLabel>{{ projectName }}</SectionLabel>
+      <button
+        type="button"
+        class="notes-tree-add"
+        title="New page or folder"
+        aria-label="New page or folder"
+        @click.stop="onContextmenu"
+      >
+        <Icon name="more-horizontal" :size="14" />
+      </button>
+    </div>
 
     <p
       v-if="isEmpty && inlineTarget === null"
@@ -188,7 +199,9 @@ defineExpose({ openNewPage: () => openInline('new-doc') });
           icon="file"
           :active="activeSlug !== null && doc.slug === activeSlug"
           :disabled="doc.slug === null"
+          :menu="doc.slug !== null"
           @click="doc.slug !== null && emit('select-doc', doc.slug)"
+          @menu="(event: MouseEvent) => doc.slug !== null && openDocMenu(event, doc.slug, doc.title)"
           @contextmenu.prevent.stop="(event: MouseEvent) => doc.slug !== null && openDocMenu(event, doc.slug, doc.title)"
         />
       </template>
@@ -234,3 +247,36 @@ defineExpose({ openNewPage: () => openInline('new-doc') });
     />
   </div>
 </template>
+
+<style scoped>
+.notes-tree-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.notes-tree-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-right: 6px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--c-muted);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.notes-tree-header:hover .notes-tree-add {
+  opacity: 1;
+}
+
+.notes-tree-add:hover {
+  background: var(--c-raised);
+  color: var(--c-foreground);
+}
+</style>

@@ -15,6 +15,8 @@ const props = withDefaults(
     lock?: boolean;
     right?: string | null;
     disabled?: boolean;
+    /** Show a kebab (⋯) button on hover that emits `menu` to open a context menu. */
+    menu?: boolean;
   }>(),
   {
     icon: '',
@@ -27,11 +29,13 @@ const props = withDefaults(
     lock: false,
     right: null,
     disabled: false,
+    menu: false,
   },
 );
 
 defineEmits<{
   click: [event: MouseEvent];
+  menu: [event: MouseEvent];
 }>();
 
 const paddingLeft = computed(() => `${8 + props.depth * 14}px`);
@@ -42,6 +46,7 @@ const iconColor = computed(() => (props.active ? 'var(--c-primary)' : 'var(--c-m
 </script>
 
 <template>
+  <div class="atl-row-wrap">
   <button
     type="button"
     class="atl-row flex items-center w-full text-left"
@@ -109,4 +114,50 @@ const iconColor = computed(() => (props.active ? 'var(--c-primary)' : 'var(--c-m
       {{ right }}
     </span>
   </button>
+
+    <button
+      v-if="menu && !disabled"
+      type="button"
+      class="atl-row-kebab"
+      title="More actions"
+      aria-label="More actions"
+      @click.stop="$emit('menu', $event)"
+    >
+      <Icon name="more-horizontal" :size="14" />
+    </button>
+  </div>
 </template>
+
+<style scoped>
+.atl-row-wrap {
+  position: relative;
+}
+
+.atl-row-kebab {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  background: var(--c-panel);
+  color: var(--c-muted);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.atl-row-wrap:hover .atl-row-kebab {
+  opacity: 1;
+}
+
+.atl-row-kebab:hover {
+  background: var(--c-raised);
+  color: var(--c-foreground);
+}
+</style>

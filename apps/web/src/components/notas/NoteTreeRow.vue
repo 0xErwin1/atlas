@@ -207,7 +207,9 @@ const inlinePaddingLeft = computed(() => `${8 + (props.depth + 1) * 14}px`);
       :depth="depth"
       chevron
       :open="expanded"
+      menu
       @click="expanded = !expanded"
+      @menu="openFolderMenu"
       @contextmenu.prevent.stop="openFolderMenu"
     />
 
@@ -263,7 +265,9 @@ const inlinePaddingLeft = computed(() => `${8 + (props.depth + 1) * 14}px`);
           :depth="depth + 1"
           :active="activeSlug !== null && doc.slug === activeSlug"
           :disabled="doc.slug === null"
+          :menu="doc.slug !== null"
           @click="doc.slug !== null && emit('select-doc', doc.slug)"
+          @menu="(event: MouseEvent) => doc.slug !== null && openDocMenu(event, doc.slug, doc.title)"
           @contextmenu.prevent.stop="(event: MouseEvent) => doc.slug !== null && openDocMenu(event, doc.slug, doc.title)"
         />
       </template>
