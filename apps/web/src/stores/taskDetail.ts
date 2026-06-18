@@ -202,6 +202,23 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     return { ok: true, readableId: data.task.readable_id };
   }
 
+  async function addChecklistItem(ws: string, readableId: string, title: string): Promise<boolean> {
+    error.value = null;
+
+    const { data, error: apiError } = await wrappedClient.POST(
+      '/v1/workspaces/{ws}/tasks/{readable_id}/checklist',
+      { params: { path: { ws, readable_id: readableId } }, body: { title } },
+    );
+
+    if (apiError !== undefined || data === undefined) {
+      error.value = hintOf(apiError, 'Failed to add sub-task');
+      return false;
+    }
+
+    checklist.value = [...checklist.value, data];
+    return true;
+  }
+
   async function addReference(
     ws: string,
     readableId: string,
@@ -275,6 +292,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     removeAssignee,
     toggleChecklistItem,
     promoteChecklistItem,
+    addChecklistItem,
     addReference,
     removeReference,
     clear,

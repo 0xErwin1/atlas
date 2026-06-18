@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, watch } from 'vue';
 import { useRoute } from 'vue-router';
+import type { components } from '@/api/types.d.ts';
 import SharePanel from '@/components/share/SharePanel.vue';
 import EditorToolbar from '@/components/shell/EditorToolbar.vue';
 import ActivityFeed from '@/components/tareas/ActivityFeed.vue';
 import AssigneeList from '@/components/tareas/AssigneeList.vue';
 import Checklist from '@/components/tareas/Checklist.vue';
+import ReferenceAdd from '@/components/tareas/ReferenceAdd.vue';
 import ReferenceList from '@/components/tareas/ReferenceList.vue';
 import TaskDescription from '@/components/tareas/TaskDescription.vue';
 import Chip from '@/components/ui/Chip.vue';
@@ -114,6 +116,19 @@ async function onRemoveAssignee(assigneeType: string, assigneeId: string): Promi
   }
 }
 
+async function onAddChecklist(title: string): Promise<void> {
+  if (readableId.value === null) return;
+  const ok = await detail.addChecklistItem(ws.value, readableId.value, title);
+  if (!ok && detail.error) ui.showBanner(detail.error, 'error');
+}
+
+async function onAddReference(body: components['schemas']['CreateReferenceRequest']): Promise<void> {
+  if (readableId.value === null) return;
+  const ok = await detail.addReference(ws.value, readableId.value, body);
+  if (ok) ui.showBanner('Reference added', 'success');
+  else if (detail.error) ui.showBanner(detail.error, 'error');
+}
+
 async function onRemoveReference(referenceId: string): Promise<void> {
   if (readableId.value === null) {
     return;
@@ -191,6 +206,7 @@ watch([readableId, ws], load, { immediate: true });
             :items="detail.checklist"
             @toggle="onToggleChecklist"
             @promote="onPromoteChecklist"
+            @add="onAddChecklist"
           />
         </div>
       </div>
@@ -235,6 +251,7 @@ watch([readableId, ws], load, { immediate: true });
 
     <template #inspector-backlinks>
       <ReferenceList :references="detail.references" @remove="onRemoveReference" />
+      <ReferenceAdd :ws="ws" @add="onAddReference" />
     </template>
 
     <template #inspector-activity>

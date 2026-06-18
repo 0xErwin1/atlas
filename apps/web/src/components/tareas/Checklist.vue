@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import Icon from '@/components/ui/Icon.vue';
 import type { ChecklistItemDto } from '@/stores/taskDetail';
 
@@ -10,9 +10,19 @@ const props = defineProps<{
 const emit = defineEmits<{
   toggle: [itemId: string];
   promote: [itemId: string];
+  add: [title: string];
 }>();
 
 const doneCount = computed(() => props.items.filter((i) => i.checked).length);
+
+const draft = ref('');
+
+function submitDraft(): void {
+  const title = draft.value.trim();
+  if (title === '') return;
+  emit('add', title);
+  draft.value = '';
+}
 </script>
 
 <template>
@@ -93,11 +103,33 @@ const doneCount = computed(() => props.items.filter((i) => i.checked).length);
       </button>
     </div>
 
-    <p
-      v-if="items.length === 0"
-      style="font-size: var(--fs-sm); color: var(--c-muted);"
-    >
-      No sub-tasks.
-    </p>
+    <div class="flex items-center" style="gap: 8px; padding: 6px 0 0;">
+      <Icon name="plus" :size="13" style="color: var(--c-muted); flex: 0 0 auto;" />
+      <input
+        v-model="draft"
+        type="text"
+        placeholder="Add a sub-task…"
+        class="atl-checklist-add"
+        @keydown.enter.prevent="submitDraft"
+        @blur="submitDraft"
+      />
+    </div>
   </section>
 </template>
+
+<style scoped>
+.atl-checklist-add {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--c-foreground);
+  font-family: var(--font-ui);
+  font-size: var(--fs-base);
+}
+
+.atl-checklist-add::placeholder {
+  color: var(--c-muted);
+}
+</style>
