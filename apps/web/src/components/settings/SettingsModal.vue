@@ -3,10 +3,13 @@ import { computed, onBeforeUnmount, watch } from 'vue';
 import AboutPanel from '@/components/settings/AboutPanel.vue';
 import AccountPanel from '@/components/settings/AccountPanel.vue';
 import ApiKeysPanel from '@/components/settings/ApiKeysPanel.vue';
+import UsersPanel from '@/components/settings/UsersPanel.vue';
 import Icon from '@/components/ui/Icon.vue';
+import { useAuthStore } from '@/stores/auth';
 import { type SettingsTab, useUiStore } from '@/stores/ui';
 
 const ui = useUiStore();
+const auth = useAuthStore();
 
 interface NavItem {
   tab: SettingsTab;
@@ -14,13 +17,16 @@ interface NavItem {
   label: string;
 }
 
-// API keys and Users panels arrive in later slices; only wired tabs are shown
-// so the nav never offers a dead destination.
-const navItems = computed<NavItem[]>(() => [
-  { tab: 'account', icon: 'user', label: 'Account' },
-  { tab: 'keys', icon: 'key', label: 'API keys' },
-  { tab: 'about', icon: 'info', label: 'About' },
-]);
+// Users is root-only; the other tabs are available to every signed-in user.
+const navItems = computed<NavItem[]>(() => {
+  const items: NavItem[] = [
+    { tab: 'account', icon: 'user', label: 'Account' },
+    { tab: 'keys', icon: 'key', label: 'API keys' },
+  ];
+  if (auth.user?.is_root === true) items.push({ tab: 'users', icon: 'users', label: 'Users' });
+  items.push({ tab: 'about', icon: 'info', label: 'About' });
+  return items;
+});
 
 function onKeydown(event: KeyboardEvent): void {
   if (event.key === 'Escape') ui.closeSettings();
@@ -77,6 +83,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
         <div class="atl-settings-content">
           <AccountPanel v-if="ui.settingsTab === 'account'" />
           <ApiKeysPanel v-else-if="ui.settingsTab === 'keys'" />
+          <UsersPanel v-else-if="ui.settingsTab === 'users'" />
           <AboutPanel v-else-if="ui.settingsTab === 'about'" />
         </div>
       </div>
