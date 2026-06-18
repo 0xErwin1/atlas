@@ -375,12 +375,21 @@ impl ResolvedResource for DocumentSlugRes {
     ) -> Result<(Self, ResourceChain), ApiError> {
         use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
-        let slug = params.get("slug").ok_or(ApiError::NotFound)?;
+        let ident = params.get("slug").ok_or(ApiError::NotFound)?;
 
-        let row = document::Entity::find()
+        // The `{slug}` segment accepts either the document's stable UUID (used by
+        // search, wikilinks and any programmatic link — rename-proof) or its
+        // human-readable slug. UUID is the canonical identity; slug is sugar.
+        let base = document::Entity::find()
             .filter(document::Column::WorkspaceId.eq(ws.id.0))
-            .filter(document::Column::Slug.eq(slug.as_str()))
-            .filter(document::Column::DeletedAt.is_null())
+            .filter(document::Column::DeletedAt.is_null());
+
+        let query = match ident.parse::<uuid::Uuid>() {
+            Ok(uuid) => base.filter(document::Column::Id.eq(uuid)),
+            Err(_) => base.filter(document::Column::Slug.eq(ident.as_str())),
+        };
+
+        let row = query
             .one(db)
             .await
             .map_err(|e| ApiError::Internal {

@@ -101,6 +101,14 @@ async function loadDoc(): Promise<void> {
 
   try {
     const result = await load(ws.value, slug.value);
+
+    // A uuid-addressed URL (from search, a wikilink, etc.) is canonicalized to
+    // the pretty slug; the watch re-runs loadDoc with the slug and proceeds.
+    if (result.slug !== null && result.slug !== slug.value) {
+      await router.replace({ name: 'notes', params: { slug: result.slug } });
+      return;
+    }
+
     body.value = result.body;
     meta.value = result.meta;
     headRevisionId.value = result.headRevisionId;

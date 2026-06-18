@@ -7,6 +7,8 @@ export interface LoadResult {
   body: string;
   meta: Record<string, unknown>;
   headRevisionId: string;
+  /** The document's canonical slug, used to canonicalize a uuid-addressed URL. */
+  slug: string | null;
 }
 
 export type SaveResult =
@@ -45,6 +47,7 @@ export function useMarkdownDoc() {
       body,
       meta,
       headRevisionId: data.head_revision_id ?? '',
+      slug: data.slug ?? null,
     };
   }
 

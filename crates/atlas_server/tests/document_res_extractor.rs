@@ -14,7 +14,7 @@ use atlas_domain::{
     ports::permission_grant_repo::ResolutionQuery,
 };
 use atlas_server::{
-    authz::authorized::{DocumentRes, FolderRes, ResolvedResource},
+    authz::authorized::{DocumentRes, DocumentSlugRes, FolderRes, ResolvedResource},
     error::ApiError,
     persistence::repos::{
         DocumentRepo, FolderRepo, MembershipRepo, PermissionGrantRepo, PgDocumentRepo,
@@ -178,6 +178,54 @@ async fn document_res_resolve_returns_chain_with_document_and_workspace_segments
 #[tokio::test]
 async fn folder_res_stub_is_defined() {
     let _: Option<FolderRes> = None;
+}
+
+// --- DocumentSlugRes accepts the stable uuid as well as the slug ---
+
+fn slug_params(ident: &str) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    map.insert("slug".to_string(), ident.to_string());
+    map
+}
+
+#[tokio::test]
+async fn document_slug_res_resolves_by_uuid() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let (ws, user) = support::seed_workspace(&db, "docslug-uuid").await;
+
+    let doc = create_doc(&db, &ws, &user, "Addressed By Uuid").await;
+
+    let (res, _chain) =
+        DocumentSlugRes::resolve(db.conn(), &ws, slug_params(&doc.id.0.to_string()))
+            .await
+            .expect("the {slug} segment must resolve a document by its uuid");
+
+    assert_eq!(
+        res.0.id, doc.id,
+        "resolving by uuid must return the same document"
+    );
+
+    let _ = user;
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn document_slug_res_cross_tenant_uuid_returns_not_found() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let (ws1, _u1) = support::seed_workspace(&db, "docslug-t1").await;
+    let (ws2, user2) = support::seed_workspace(&db, "docslug-t2").await;
+
+    let doc = create_doc(&db, &ws2, &user2, "WS2 Doc").await;
+
+    let result =
+        DocumentSlugRes::resolve(db.conn(), &ws1, slug_params(&doc.id.0.to_string())).await;
+
+    assert!(
+        matches!(result, Err(ApiError::NotFound)),
+        "a uuid from another workspace must return NotFound"
+    );
+
+    db.teardown().await;
 }
 
 // --- folder ancestry in DocumentRes chain ---
