@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 
 export type InspectorTab = 'properties' | 'backlinks' | 'activity' | 'share';
+export type SettingsTab = 'account' | 'keys' | 'users' | 'about';
 export type BannerType = 'error' | 'warning' | 'info' | 'success';
 export type Theme = 'dark' | 'light';
 
@@ -123,6 +124,22 @@ export const useUiStore = defineStore('ui', () => {
     shareOpen.value = false;
   }
 
+  const settingsOpen = ref(false);
+  const settingsTab = ref<SettingsTab>('account');
+
+  function openSettings(tab: SettingsTab = 'account') {
+    settingsTab.value = tab;
+    settingsOpen.value = true;
+  }
+
+  function closeSettings() {
+    settingsOpen.value = false;
+  }
+
+  function setSettingsTab(tab: SettingsTab) {
+    settingsTab.value = tab;
+  }
+
   return {
     inspectorOpen,
     inspectorTab,
@@ -139,5 +156,10 @@ export const useUiStore = defineStore('ui', () => {
     dismissBanner,
     openShare,
     closeShare,
+    settingsOpen,
+    settingsTab,
+    openSettings,
+    closeSettings,
+    setSettingsTab,
   };
 });

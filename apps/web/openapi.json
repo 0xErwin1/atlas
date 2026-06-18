@@ -5400,14 +5400,31 @@
         "description": "Response from `GET /v1/auth/me`.",
         "required": [
           "principal_type",
-          "username"
+          "username",
+          "is_root"
         ],
         "properties": {
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "email": {
             "type": [
               "string",
               "null"
             ]
+          },
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "is_root": {
+            "type": "boolean"
           },
           "principal_type": {
             "type": "string"

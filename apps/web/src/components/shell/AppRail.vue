@@ -4,11 +4,13 @@ import { useRoute, useRouter } from 'vue-router';
 import Avatar from '@/components/ui/Avatar.vue';
 import Icon from '@/components/ui/Icon.vue';
 import { useAuthStore } from '@/stores/auth';
+import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 
 const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
+const ui = useUiStore();
 const workspace = useWorkspaceStore();
 
 interface RailItem {
@@ -32,6 +34,11 @@ function navigate(item: RailItem) {
 }
 
 const accountOpen = ref(false);
+
+function openSettings() {
+  accountOpen.value = false;
+  ui.openSettings();
+}
 
 async function handleLogout() {
   accountOpen.value = false;
@@ -134,6 +141,7 @@ const workspaceInitial = computed(() => {
           background: transparent;
           color: var(--c-muted);
         "
+        @click="ui.openSettings()"
       >
         <Icon name="settings" :size="18" />
       </button>
@@ -163,6 +171,10 @@ const workspaceInitial = computed(() => {
               <div class="atl-account-sub">Signed in</div>
             </div>
             <div class="atl-account-sep" aria-hidden="true" />
+            <button type="button" role="menuitem" class="atl-account-item" @click="openSettings">
+              <Icon name="settings" :size="14" />
+              Settings
+            </button>
             <button type="button" role="menuitem" class="atl-account-item danger" @click="handleLogout">
               <Icon name="log-out" :size="14" />
               Log out

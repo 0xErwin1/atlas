@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, useSlots } from 'vue';
+import SettingsModal from '@/components/settings/SettingsModal.vue';
 import ShareDialog from '@/components/share/ShareDialog.vue';
 import AppRail from '@/components/shell/AppRail.vue';
 import BannerToast from '@/components/shell/BannerToast.vue';
@@ -76,5 +77,7 @@ const hasInspector = computed(() => Object.keys(slots).some((name) => name.start
       :resource-label="ui.shareResourceLabel"
       @close="ui.closeShare()"
     />
+
+    <SettingsModal />
   </div>
 </template>

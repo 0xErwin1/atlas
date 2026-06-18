@@ -5,9 +5,22 @@ import { wrappedClient } from '@/api/wrapper';
 
 export type MeResponse = components['schemas']['MeResponse'];
 
+export interface Problem {
+  type: string;
+  title: string;
+  status: number;
+  hint?: string;
+  request_id?: string;
+}
+
 export interface LoginResult {
   ok: boolean;
-  problem?: { type: string; title: string; status: number; hint?: string; request_id?: string };
+  problem?: Problem;
+}
+
+export interface ActionResult {
+  ok: boolean;
+  problem?: Problem;
 }
 
 const UNREACHABLE_PROBLEM: NonNullable<LoginResult['problem']> = {
@@ -74,6 +87,32 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  async function updateProfile(patch: { email?: string; display_name?: string }): Promise<ActionResult> {
+    try {
+      const { error } = await wrappedClient.PATCH('/v1/users/me', { body: patch });
+      if (error) return { ok: false, problem: error as ActionResult['problem'] };
+
+      await fetchMe();
+      return { ok: true };
+    } catch {
+      return { ok: false, problem: UNREACHABLE_PROBLEM };
+    }
+  }
+
+  async function changePassword(body: {
+    current_password: string;
+    new_password: string;
+  }): Promise<ActionResult> {
+    try {
+      const { error } = await wrappedClient.POST('/v1/auth/change-password', { body });
+      if (error) return { ok: false, problem: error as ActionResult['problem'] };
+
+      return { ok: true };
+    } catch {
+      return { ok: false, problem: UNREACHABLE_PROBLEM };
+    }
+  }
+
   return {
     user,
     isAuthenticated,
@@ -81,5 +120,7 @@ export const useAuthStore = defineStore('auth', () => {
     fetchMe,
     login,
     logout,
+    updateProfile,
+    changePassword,
   };
 });
