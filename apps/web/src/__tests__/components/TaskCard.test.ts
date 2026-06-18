@@ -1,6 +1,7 @@
 import { mount } from '@vue/test-utils';
 import { describe, expect, it } from 'vitest';
 import TaskCard from '@/components/tareas/TaskCard.vue';
+import Avatar from '@/components/ui/Avatar.vue';
 import type { TaskSummaryDto } from '@/stores/boards';
 
 const task = (overrides: Partial<TaskSummaryDto> = {}): TaskSummaryDto => ({
@@ -37,5 +38,26 @@ describe('TaskCard (Linear-style selection)', () => {
     const text = wrapper.text();
     expect(text).toContain('shell');
     expect(text).toContain('M1');
+  });
+
+  it('renders an avatar per assignee, agent-styled for api keys', () => {
+    const wrapper = mount(TaskCard, {
+      props: {
+        task: task({
+          assignees: [
+            { type: 'user', id: 'u1', display_name: 'Mara K' },
+            { type: 'api_key', id: 'k1', display_name: 'CI Bot' },
+          ],
+        }),
+      },
+    });
+    const avatars = wrapper.findAllComponents(Avatar);
+    expect(avatars).toHaveLength(2);
+    expect(avatars[1]?.props('agent')).toBe(true);
+  });
+
+  it('renders no avatar when there are no assignees', () => {
+    const wrapper = mount(TaskCard, { props: { task: task() } });
+    expect(wrapper.findComponent(Avatar).exists()).toBe(false);
   });
 });

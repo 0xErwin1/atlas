@@ -886,6 +886,29 @@ impl TaskAssigneeRepo for PgTaskAssigneeRepo {
             .collect()
     }
 
+    async fn list_for_tasks(
+        &self,
+        ctx: &WorkspaceCtx,
+        task_ids: &[TaskId],
+    ) -> Result<Vec<TaskAssignee>, DomainError> {
+        if task_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let ids: Vec<uuid::Uuid> = task_ids.iter().map(|t| t.0).collect();
+
+        let rows = task_assignee::Entity::find()
+            .filter(task_assignee::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(task_assignee::Column::TaskId.is_in(ids))
+            .all(&self.conn)
+            .await
+            .map_err(db_err)?;
+
+        rows.into_iter()
+            .map(|m| task_assignee_from(m).map_err(internal_err))
+            .collect()
+    }
+
     async fn remove(
         &self,
         ctx: &WorkspaceCtx,

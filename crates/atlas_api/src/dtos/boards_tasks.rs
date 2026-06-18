@@ -105,6 +105,11 @@ pub struct TaskSummaryDto {
     pub priority: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub labels: Vec<String>,
+    /// Assigned actors (users and agents), resolved with display names so the
+    /// kanban card can render an avatar and the agent badge without a follow-up
+    /// request.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub assignees: Vec<ActorDto>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 

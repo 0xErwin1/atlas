@@ -202,6 +202,73 @@ async fn assignee_to_dto(state: &AppState, ctx: &WorkspaceCtx, a: TaskAssignee) 
     }
 }
 
+/// Batch-loads the assignees for a page of tasks and resolves their display
+/// names in a fixed number of queries (the assignee rows, the referenced users,
+/// and the workspace's api keys), grouped by task id — so a board listing never
+/// issues one query per card.
+async fn board_assignees_by_task(
+    state: &AppState,
+    ctx: &WorkspaceCtx,
+    tasks: &[Task],
+) -> Result<std::collections::HashMap<uuid::Uuid, Vec<ActorDto>>, ApiError> {
+    use std::collections::HashMap;
+
+    let task_ids: Vec<TaskId> = tasks.iter().map(|t| t.id).collect();
+
+    let rows = PgTaskAssigneeRepo::new((*state.db).clone())
+        .list_for_tasks(ctx, &task_ids)
+        .await
+        .map_err(ApiError::Domain)?;
+
+    let mut user_ids: Vec<UserId> = Vec::new();
+    let mut needs_keys = false;
+    for r in &rows {
+        match r.assignee {
+            AssigneeRef::User(uid) => user_ids.push(uid),
+            AssigneeRef::ApiKey(_) => needs_keys = true,
+        }
+    }
+    user_ids.sort_by_key(|u| u.0);
+    user_ids.dedup_by_key(|u| u.0);
+
+    let user_names: HashMap<uuid::Uuid, String> = PgUserRepo {
+        conn: (*state.db).clone(),
+    }
+    .list_by_ids(&user_ids)
+    .await
+    .map_err(ApiError::Domain)?
+    .into_iter()
+    .map(|u| (u.id.0, u.display_name))
+    .collect();
+
+    let key_names: HashMap<uuid::Uuid, String> = if needs_keys {
+        PgApiKeyRepo {
+            conn: (*state.db).clone(),
+        }
+        .list(ctx)
+        .await
+        .map_err(ApiError::Domain)?
+        .into_iter()
+        .map(|k| (k.id.0, k.name))
+        .collect()
+    } else {
+        HashMap::new()
+    };
+
+    let mut by_task: HashMap<uuid::Uuid, Vec<ActorDto>> = HashMap::new();
+    for r in rows {
+        let actor = assignee_ref_to_actor(r.assignee);
+        let mut dto = actor_to_dto(&actor);
+        dto.display_name = match &actor {
+            Actor::User(uid) => user_names.get(&uid.0).cloned(),
+            Actor::ApiKey(kid) => key_names.get(&kid.0).cloned(),
+        };
+        by_task.entry(r.task_id.0).or_default().push(dto);
+    }
+
+    Ok(by_task)
+}
+
 fn checklist_item_to_dto(item: TaskChecklistItem) -> ChecklistItemDto {
     ChecklistItemDto {
         id: item.id.0,
@@ -489,6 +556,8 @@ pub(crate) async fn list_tasks(
         None
     };
 
+    let mut assignees_by_task = board_assignees_by_task(&state, &ctx, &all).await?;
+
     let dtos = all
         .into_iter()
         .map(|t| TaskSummaryDto {
@@ -498,6 +567,7 @@ pub(crate) async fn list_tasks(
             title: t.title,
             priority: t.priority.map(|p| p.as_str().to_string()),
             labels: t.labels,
+            assignees: assignees_by_task.remove(&t.id.0).unwrap_or_default(),
             updated_at: t.updated_at,
         })
         .collect();

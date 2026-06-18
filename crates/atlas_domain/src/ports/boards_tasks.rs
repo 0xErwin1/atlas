@@ -161,6 +161,14 @@ pub trait TaskAssigneeRepo: Send + Sync {
         task_id: TaskId,
     ) -> Result<Vec<TaskAssignee>, DomainError>;
 
+    /// Batch variant of `list_for_task`: all assignees for the given tasks in a
+    /// single query, so a board listing avoids one query per card.
+    async fn list_for_tasks(
+        &self,
+        ctx: &WorkspaceCtx,
+        task_ids: &[TaskId],
+    ) -> Result<Vec<TaskAssignee>, DomainError>;
+
     async fn remove(
         &self,
         ctx: &WorkspaceCtx,

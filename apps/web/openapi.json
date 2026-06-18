@@ -6004,6 +6004,13 @@
                 "updated_at"
               ],
               "properties": {
+                "assignees": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ActorDto"
+                  },
+                  "description": "Assigned actors (users and agents), resolved with display names so the\nkanban card can render an avatar and the agent badge without a follow-up\nrequest."
+                },
                 "column_id": {
                   "type": "string",
                   "format": "uuid"
@@ -6610,6 +6617,13 @@
           "updated_at"
         ],
         "properties": {
+          "assignees": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActorDto"
+            },
+            "description": "Assigned actors (users and agents), resolved with display names so the\nkanban card can render an avatar and the agent badge without a follow-up\nrequest."
+          },
           "column_id": {
             "type": "string",
             "format": "uuid"

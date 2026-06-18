@@ -178,6 +178,21 @@ impl UserRepo for PgUserRepo {
             .map_err(db_err)
     }
 
+    async fn list_by_ids(&self, ids: &[UserId]) -> Result<Vec<User>, DomainError> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let raw: Vec<uuid::Uuid> = ids.iter().map(|id| id.0).collect();
+
+        user::Entity::find()
+            .filter(user::Column::Id.is_in(raw))
+            .all(&self.conn)
+            .await
+            .map(|rows| rows.into_iter().map(user_from).collect())
+            .map_err(db_err)
+    }
+
     async fn disable(&self, id: UserId) -> Result<(), DomainError> {
         use sea_orm::IntoActiveModel;
         let row = user::Entity::find_by_id(id.0)

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import Avatar from '@/components/ui/Avatar.vue';
 import Chip, { type ChipTone } from '@/components/ui/Chip.vue';
 import type { TaskSummaryDto } from '@/stores/boards';
 
@@ -76,6 +77,15 @@ const priorityTone = computed<ChipTone>(() => {
         {{ task.readable_id }}
       </span>
       <span class="flex-1" />
+      <span v-if="task.assignees && task.assignees.length" class="flex items-center" style="gap: 3px;">
+        <Avatar
+          v-for="a in task.assignees"
+          :key="`${a.type}:${a.id}`"
+          :name="a.display_name ?? ''"
+          :agent="a.type === 'api_key'"
+          :size="18"
+        />
+      </span>
     </div>
   </button>
 </template>

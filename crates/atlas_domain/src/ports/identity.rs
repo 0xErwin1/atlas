@@ -24,6 +24,8 @@ pub trait UserRepo: Send + Sync {
     async fn find_root(&self) -> Result<Option<User>, DomainError>;
     /// Lists all users (active and disabled), ordered by `created_at` ascending.
     async fn list(&self) -> Result<Vec<User>, DomainError>;
+    /// Batch lookup by id, for resolving display names without one query per id.
+    async fn list_by_ids(&self, ids: &[UserId]) -> Result<Vec<User>, DomainError>;
     async fn disable(&self, id: UserId) -> Result<(), DomainError>;
     async fn enable(&self, id: UserId) -> Result<(), DomainError>;
     /// Replaces the user's password hash and bumps `updated_at`.

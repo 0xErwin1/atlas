@@ -728,6 +728,92 @@ async fn list_tasks_includes_labels() {
 }
 
 #[tokio::test]
+async fn list_tasks_includes_assignees_with_names() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, user) =
+        support::login_user_with_workspace(&server, &db, "task-assignees-1").await;
+
+    client
+        .create_project(&ws.slug, project_req("task-asg-proj", "TAS"))
+        .await
+        .expect("create project");
+
+    let board = client
+        .create_board(
+            &ws.slug,
+            "task-asg-proj",
+            CreateBoardRequest {
+                name: "Board".to_string(),
+            },
+        )
+        .await
+        .expect("create board");
+
+    let col = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "Todo".to_string(),
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create column");
+
+    let task = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: col.id,
+                title: "Assigned".to_string(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create task");
+
+    client
+        .add_assignee(
+            &ws.slug,
+            &task.readable_id,
+            AddAssigneeRequest {
+                assignee_type: "user".to_string(),
+                assignee_id: user.id.0,
+            },
+        )
+        .await
+        .expect("add assignee");
+
+    let page = client
+        .list_tasks(&ws.slug, board.id, None, None)
+        .await
+        .expect("list tasks");
+
+    let summary = page.items.first().expect("one task in the board");
+    let assignee = summary
+        .assignees
+        .first()
+        .expect("the kanban summary must carry the task's assignees");
+
+    assert_eq!(assignee.id, user.id.0, "summary assignee id must match");
+    assert_eq!(assignee.r#type, "user");
+    assert_eq!(
+        assignee.display_name.as_deref(),
+        Some(user.display_name.as_str()),
+        "the summary assignee must carry the resolved display name, not a generic fallback"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
 async fn update_task_changes_title() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;
