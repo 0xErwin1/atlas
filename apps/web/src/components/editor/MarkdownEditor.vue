@@ -41,8 +41,12 @@ const emit = defineEmits<{
   change: [markdown: string];
   /** Emitted when a rendered wikilink is clicked, with its title. */
   'navigate-wikilink': [title: string];
-  /** Emitted as the `[[` query changes; null clears the autocomplete. */
-  'wikilink-query': [query: string | null];
+  /**
+   * Emitted as the `[[` query changes; null clears the autocomplete. The second
+   * argument is the caret's viewport position so the host can anchor the
+   * suggestion dropdown next to the cursor (null when there is no trigger).
+   */
+  'wikilink-query': [query: string | null, caret: { left: number; top: number } | null];
 }>();
 
 const ui = useUiStore();
@@ -83,7 +87,7 @@ function syncWikilinkTrigger(state: EditorState): void {
 
   if (!range.empty) {
     activeTrigger = null;
-    emit('wikilink-query', null);
+    emit('wikilink-query', null, null);
     return;
   }
 
@@ -92,7 +96,16 @@ function syncWikilinkTrigger(state: EditorState): void {
 
   const trigger = detectWikilinkTrigger(textBefore, range.head);
   activeTrigger = trigger;
-  emit('wikilink-query', trigger?.query ?? null);
+
+  if (trigger === null) {
+    emit('wikilink-query', null, null);
+    return;
+  }
+
+  // Anchor the suggestion dropdown just below the caret (viewport coords).
+  const coords = view?.coordsAtPos(range.head) ?? null;
+  const caret = coords === null ? null : { left: coords.left, top: coords.bottom + 4 };
+  emit('wikilink-query', trigger.query, caret);
 }
 
 function onUpdate(docChanged: boolean, selectionChanged: boolean, state: EditorState): void {

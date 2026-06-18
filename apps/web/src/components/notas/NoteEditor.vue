@@ -23,8 +23,9 @@ defineEmits<{
   change: [markdown: string];
   /** Emitted when a rendered wikilink is clicked, with the target title. */
   'navigate-wikilink': [title: string];
-  /** Emitted as the `[[` query changes; null clears the autocomplete. */
-  'wikilink-query': [query: string | null];
+  /** Emitted as the `[[` query changes; null clears the autocomplete. Carries
+   * the caret viewport position so the host can anchor the dropdown. */
+  'wikilink-query': [query: string | null, caret: { left: number; top: number } | null];
 }>();
 
 const editorRef = ref<InstanceType<typeof MarkdownEditor> | null>(null);
@@ -48,6 +49,6 @@ defineExpose({ currentMarkdown, insertWikilink });
     placeholder="Start writing…"
     @change="(md) => $emit('change', md)"
     @navigate-wikilink="(title) => $emit('navigate-wikilink', title)"
-    @wikilink-query="(query) => $emit('wikilink-query', query)"
+    @wikilink-query="(query, caret) => $emit('wikilink-query', query, caret)"
   />
 </template>

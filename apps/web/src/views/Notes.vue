@@ -53,6 +53,7 @@ const headRevisionId = ref('');
 const dirty = ref(false);
 const loadError = ref<string | null>(null);
 const wikilinkQuery = ref<string | null>(null);
+const wikilinkCaret = ref<{ left: number; top: number } | null>(null);
 
 // The full document content (frontmatter + body) as loaded at headRevisionId.
 // It is the 3-way merge BASE; never mutated by local edits.
@@ -236,13 +237,15 @@ function onNavigateWikilink(linkTitle: string): void {
   void router.push(wikilinkTarget(linkTitle));
 }
 
-function onWikilinkQuery(query: string | null): void {
+function onWikilinkQuery(query: string | null, caret: { left: number; top: number } | null): void {
   wikilinkQuery.value = query;
+  wikilinkCaret.value = caret;
 }
 
 function onSuggestSelect(selectedTitle: string): void {
   editorRef.value?.insertWikilink(selectedTitle);
   wikilinkQuery.value = null;
+  wikilinkCaret.value = null;
 }
 
 function onEditorKeydown(event: KeyboardEvent): void {
@@ -259,6 +262,7 @@ function onEditorKeydown(event: KeyboardEvent): void {
     suggestRef.value.confirmActive();
   } else if (event.key === 'Escape') {
     wikilinkQuery.value = null;
+    wikilinkCaret.value = null;
   }
 }
 
@@ -385,7 +389,15 @@ watch(title, (t) => {
               @wikilink-query="onWikilinkQuery"
             />
 
-            <div style="position: absolute; left: 40px;">
+            <div
+              v-if="wikilinkCaret"
+              :style="{
+                position: 'fixed',
+                left: `${wikilinkCaret.left}px`,
+                top: `${wikilinkCaret.top}px`,
+                zIndex: 40,
+              }"
+            >
               <WikiLinkSuggest
                 ref="suggestRef"
                 :ws="ws"
