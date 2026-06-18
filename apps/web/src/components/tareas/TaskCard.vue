@@ -57,11 +57,12 @@ const priorityTone = computed<ChipTone>(() => {
     </span>
 
     <div
-      v-if="task.priority"
+      v-if="task.priority || (task.labels && task.labels.length)"
       class="flex flex-wrap"
       style="gap: 5px;"
     >
-      <Chip :tone="priorityTone">{{ task.priority }}</Chip>
+      <Chip v-for="label in task.labels ?? []" :key="label" tone="info">{{ label }}</Chip>
+      <Chip v-if="task.priority" :tone="priorityTone">{{ task.priority }}</Chip>
     </div>
 
     <div class="flex items-center" style="gap: 8px;">

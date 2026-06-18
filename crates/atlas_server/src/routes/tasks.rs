@@ -497,6 +497,7 @@ pub(crate) async fn list_tasks(
             column_id: t.column_id.0,
             title: t.title,
             priority: t.priority.map(|p| p.as_str().to_string()),
+            labels: t.labels,
             updated_at: t.updated_at,
         })
         .collect();

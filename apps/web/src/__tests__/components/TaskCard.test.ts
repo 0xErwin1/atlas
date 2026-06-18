@@ -31,4 +31,11 @@ describe('TaskCard (Linear-style selection)', () => {
     expect(plain.attributes('style')).toContain('var(--c-border)');
     expect(picked.attributes('style')).toContain('var(--c-primary)');
   });
+
+  it('renders a chip per label', () => {
+    const wrapper = mount(TaskCard, { props: { task: task({ labels: ['shell', 'M1'] }) } });
+    const text = wrapper.text();
+    expect(text).toContain('shell');
+    expect(text).toContain('M1');
+  });
 });

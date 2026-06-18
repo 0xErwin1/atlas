@@ -659,6 +659,75 @@ async fn list_tasks_returns_tasks_for_board() {
 }
 
 #[tokio::test]
+async fn list_tasks_includes_labels() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "task-labels-1").await;
+
+    client
+        .create_project(&ws.slug, project_req("task-labels-proj", "TLB"))
+        .await
+        .expect("create project");
+
+    let board = client
+        .create_board(
+            &ws.slug,
+            "task-labels-proj",
+            CreateBoardRequest {
+                name: "Board".to_string(),
+            },
+        )
+        .await
+        .expect("create board");
+
+    let col = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "Todo".to_string(),
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create column");
+
+    client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: col.id,
+                title: "Labeled".to_string(),
+                description: None,
+                properties: Some(atlas_api::dtos::boards_tasks::TaskPropertiesDto {
+                    labels: vec!["shell".to_string(), "M1".to_string()],
+                    ..Default::default()
+                }),
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create task");
+
+    let page = client
+        .list_tasks(&ws.slug, board.id, None, None)
+        .await
+        .expect("list tasks");
+
+    let summary = page.items.first().expect("one task in the board");
+    assert_eq!(
+        summary.labels,
+        vec!["shell".to_string(), "M1".to_string()],
+        "the kanban summary must carry the task labels so cards can render them"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
 async fn update_task_changes_title() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;

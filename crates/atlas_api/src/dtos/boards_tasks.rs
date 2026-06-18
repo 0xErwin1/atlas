@@ -103,6 +103,8 @@ pub struct TaskSummaryDto {
     pub title: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub priority: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub labels: Vec<String>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
