@@ -4,6 +4,7 @@ import type { components } from '@/api/types';
 import { wrappedClient } from '@/api/wrapper';
 
 export type WorkspaceDto = components['schemas']['WorkspaceDto'];
+export type PrincipalDto = components['schemas']['PrincipalDto'];
 
 export interface ProjectSummary {
   slug: string;
@@ -15,6 +16,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const activeWorkspaceSlug = ref<string | null>(null);
   const projects = ref<ProjectSummary[]>([]);
   const workspaces = ref<WorkspaceDto[]>([]);
+  const members = ref<PrincipalDto[]>([]);
   const error = ref<string | null>(null);
 
   function setActiveWorkspace(slug: string) {
@@ -90,14 +92,30 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     return data.slug ?? slug;
   }
 
+  /** Loads workspace members (users and agents) for assignee pickers. */
+  async function loadMembers(ws: string): Promise<void> {
+    const { data, error: apiError } = await wrappedClient.GET('/v1/workspaces/{ws}/members', {
+      params: { path: { ws } },
+    });
+
+    if (apiError !== undefined || data === undefined) {
+      members.value = [];
+      return;
+    }
+
+    members.value = data;
+  }
+
   return {
     activeWorkspaceSlug,
     projects,
     workspaces,
+    members,
     error,
     setActiveWorkspace,
     loadWorkspaces,
     loadProjects,
     createProject,
+    loadMembers,
   };
 });

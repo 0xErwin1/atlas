@@ -352,6 +352,176 @@ export const useBoardsStore = defineStore('boards', () => {
     }
   }
 
+  function removeTaskById(taskId: string): void {
+    for (const [colId, colTasks] of tasks.value) {
+      if (colTasks.some((t) => t.id === taskId)) {
+        tasks.value.set(
+          colId,
+          colTasks.filter((t) => t.id !== taskId),
+        );
+        break;
+      }
+    }
+  }
+
+  /**
+   * Patch a task's editable fields (title, priority, due date) and reflect the
+   * title/priority change in the local summary. `null` clears priority/due date;
+   * `undefined` leaves a field untouched.
+   */
+  async function updateTask(
+    ws: string,
+    readableId: string,
+    patch: { title?: string; priority?: string | null; due_date?: string | null },
+  ): Promise<boolean> {
+    const { data, error: apiError } = await wrappedClient.PATCH('/v1/workspaces/{ws}/tasks/{readable_id}', {
+      params: { path: { ws, readable_id: readableId } },
+      body: patch,
+    });
+
+    if (apiError !== undefined || data === undefined) {
+      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to update task';
+      return false;
+    }
+
+    const summaryPatch: Partial<TaskSummaryDto> & { id: string } = { id: data.id };
+    if (patch.title !== undefined) summaryPatch.title = data.title;
+    if (patch.priority !== undefined) summaryPatch.priority = data.priority ?? null;
+    updateTaskFields(summaryPatch);
+
+    return true;
+  }
+
+  async function deleteTask(ws: string, readableId: string): Promise<boolean> {
+    const target = findTaskByReadableId(readableId);
+
+    const { error: apiError } = await wrappedClient.DELETE('/v1/workspaces/{ws}/tasks/{readable_id}', {
+      params: { path: { ws, readable_id: readableId } },
+    });
+
+    if (apiError !== undefined) {
+      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to delete task';
+      return false;
+    }
+
+    if (target !== undefined) removeTaskById(target.id);
+    return true;
+  }
+
+  /** Assigns a workspace member (user) or agent (api_key) to a task. */
+  async function assignTask(
+    ws: string,
+    readableId: string,
+    principalType: string,
+    principalId: string,
+  ): Promise<boolean> {
+    const { error: apiError } = await wrappedClient.POST(
+      '/v1/workspaces/{ws}/tasks/{readable_id}/assignees',
+      {
+        params: { path: { ws, readable_id: readableId } },
+        body: { assignee_type: principalType, assignee_id: principalId },
+      },
+    );
+
+    if (apiError !== undefined) {
+      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to assign task';
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Duplicates a task into the same column on the active board, copying its title
+   * (suffixed " (copy)"), description and priority. The create endpoint takes no
+   * priority, so a follow-up patch sets it when the source had one. Returns the
+   * new task's readable id, or null on failure.
+   */
+  async function duplicateTask(ws: string, boardId: string, readableId: string): Promise<string | null> {
+    const { data: source, error: getErr } = await wrappedClient.GET(
+      '/v1/workspaces/{ws}/tasks/{readable_id}',
+      { params: { path: { ws, readable_id: readableId } } },
+    );
+
+    if (getErr !== undefined || source === undefined) {
+      error.value = (getErr as { hint?: string } | undefined)?.hint ?? 'Failed to read task';
+      return null;
+    }
+
+    const { data: created, error: createErr } = await wrappedClient.POST(
+      '/v1/workspaces/{ws}/boards/{board_id}/tasks',
+      {
+        params: { path: { ws, board_id: boardId } },
+        body: {
+          column_id: source.column_id,
+          title: `${source.title} (copy)`,
+          description: source.description,
+        },
+      },
+    );
+
+    if (createErr !== undefined || created === undefined) {
+      error.value = (createErr as { hint?: string } | undefined)?.hint ?? 'Failed to duplicate task';
+      return null;
+    }
+
+    if (source.priority !== undefined && source.priority !== null) {
+      await wrappedClient.PATCH('/v1/workspaces/{ws}/tasks/{readable_id}', {
+        params: { path: { ws, readable_id: created.readable_id } },
+        body: { priority: source.priority },
+      });
+    }
+
+    await loadTasks(ws, boardId);
+    return created.readable_id ?? null;
+  }
+
+  /**
+   * Moves a task to a column (status). The column may live on a different board:
+   * the server adopts the target board/project. Reloads the active board so the
+   * task lands in its new column or disappears when it left the board entirely.
+   */
+  async function moveTaskToColumn(ws: string, readableId: string, columnId: string): Promise<boolean> {
+    const { error: apiError } = await wrappedClient.POST('/v1/workspaces/{ws}/tasks/{readable_id}/move', {
+      params: { path: { ws, readable_id: readableId } },
+      body: { column_id: columnId, before: null, after: null },
+    });
+
+    if (apiError !== undefined) {
+      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to move task';
+      return false;
+    }
+
+    const activeBoardId = board.value?.id;
+    if (activeBoardId !== undefined) await loadTasks(ws, activeBoardId);
+    return true;
+  }
+
+  /**
+   * Moves a task to another board, landing it in that board's first column.
+   * Returns false (with `error` set) when the target board has no columns.
+   */
+  async function moveTaskToBoard(ws: string, readableId: string, targetBoardId: string): Promise<boolean> {
+    const { data, error: apiError } = await wrappedClient.GET(
+      '/v1/workspaces/{ws}/boards/{board_id}/columns',
+      { params: { path: { ws, board_id: targetBoardId } } },
+    );
+
+    if (apiError !== undefined || data === undefined) {
+      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to read target board';
+      return false;
+    }
+
+    const sorted = [...data].sort((a, b) => a.position_key.localeCompare(b.position_key));
+    const first = sorted[0];
+    if (first === undefined) {
+      error.value = 'The target board has no columns to move into';
+      return false;
+    }
+
+    return moveTaskToColumn(ws, readableId, first.id);
+  }
+
   /**
    * Replace the tasks array for a specific column.
    * Used by useKanbanMove to reorder after reconcile, and in tests.
@@ -403,6 +573,12 @@ export const useBoardsStore = defineStore('boards', () => {
     restoreSnapshot,
     findTaskByReadableId,
     updateTaskFields,
+    updateTask,
+    deleteTask,
+    assignTask,
+    duplicateTask,
+    moveTaskToColumn,
+    moveTaskToBoard,
     _setColumnTasks,
     _setTasksForTest,
   };

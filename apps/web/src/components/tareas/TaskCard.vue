@@ -9,6 +9,7 @@ const props = defineProps<{
 
 defineEmits<{
   open: [readableId: string];
+  menu: [readableId: string, event: MouseEvent];
 }>();
 
 const PRIORITY_TONE: Record<string, ChipTone> = {
@@ -37,6 +38,7 @@ const priorityTone = computed<ChipTone>(() => {
       border-radius: var(--r-md);
     "
     @click="$emit('open', task.readable_id)"
+    @contextmenu.prevent="$emit('menu', task.readable_id, $event)"
   >
     <span
       style="

@@ -18,6 +18,7 @@ const emit = defineEmits<{
   /** Quick-add: create a task in this column with the given title. */
   create: [columnId: string, title: string];
   open: [readableId: string];
+  menu: [readableId: string, event: MouseEvent];
 }>();
 
 const {
@@ -129,6 +130,7 @@ function onSortableDrop(event: unknown): void {
         :key="task.id"
         :task="task"
         @open="(id) => emit('open', id)"
+        @menu="(id, event) => emit('menu', id, event)"
       />
     </VueDraggable>
   </div>
