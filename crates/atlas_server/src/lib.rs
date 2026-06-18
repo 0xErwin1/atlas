@@ -36,8 +36,15 @@ pub fn app(state: AppState) -> Router {
     let protected = Router::new()
         .route("/v1/auth/logout", axum::routing::post(routes::auth::logout))
         .route("/v1/auth/me", get(routes::auth::me))
+        .route(
+            "/v1/auth/change-password",
+            axum::routing::post(routes::auth::change_password),
+        )
         // Users (root-only)
-        .route("/v1/users", axum::routing::post(routes::users::create_user))
+        .route(
+            "/v1/users",
+            axum::routing::post(routes::users::create_user).get(routes::users::list_users),
+        )
         .route(
             "/v1/users/{user_id}/disable",
             axum::routing::post(routes::users::disable_user),

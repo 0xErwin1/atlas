@@ -17,6 +17,33 @@ use crate::{
 };
 
 #[utoipa::path(
+    get,
+    path = "/v1/users",
+    tag = "users",
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "All users (active and disabled)", body = [UserDto]),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Not a root/admin user"),
+    )
+)]
+pub(crate) async fn list_users(
+    _admin: RequireUserAdmin,
+    State(state): State<AppState>,
+) -> Result<Json<Vec<UserDto>>, ApiError> {
+    let user_repo = PgUserRepo {
+        conn: (*state.db).clone(),
+    };
+
+    let users = user_repo.list().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    let dtos = users.iter().map(user_to_dto).collect();
+    Ok(Json(dtos))
+}
+
+#[utoipa::path(
     post,
     path = "/v1/users",
     tag = "users",

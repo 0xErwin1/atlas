@@ -68,7 +68,19 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         kind: RouteKind::AuthnRequired,
         openapi_path: Some("/v1/auth/me"),
     },
+    RouteEntry {
+        method: "POST",
+        path_template: "/v1/auth/change-password",
+        kind: RouteKind::AuthnRequired,
+        openapi_path: Some("/v1/auth/change-password"),
+    },
     // ---- User management (root-only, but still require authn) ----
+    RouteEntry {
+        method: "GET",
+        path_template: "/v1/users",
+        kind: RouteKind::AuthnRequired,
+        openapi_path: Some("/v1/users"),
+    },
     RouteEntry {
         method: "POST",
         path_template: "/v1/users",

@@ -2,9 +2,10 @@
 
 use atlas_api::{
     dtos::{
-        ApiKeyCreated, ApiKeyDto, CreateApiKeyRequest, CreateGrantRequest, CreateProjectRequest,
-        CreateUserRequest, GrantDto, HealthResponse, LoginRequest, LoginResponse, MeResponse,
-        PrincipalDto, ProjectDto, UpdateProjectRequest, UserDto, WorkspaceDto,
+        ApiKeyCreated, ApiKeyDto, ChangePasswordRequest, CreateApiKeyRequest, CreateGrantRequest,
+        CreateProjectRequest, CreateUserRequest, GrantDto, HealthResponse, LoginRequest,
+        LoginResponse, MeResponse, PrincipalDto, ProjectDto, UpdateProjectRequest, UserDto,
+        WorkspaceDto,
         boards_tasks::{
             ActivityEntryDto, AddAssigneeRequest, AssigneeDto, BoardDto, BoardSummaryDto,
             ChecklistItemDto, ColumnDto, CreateBoardRequest, CreateChecklistItemRequest,
@@ -157,6 +158,30 @@ impl AtlasClient {
     pub async fn me(&self) -> Result<MeResponse, ClientError> {
         let response = self.get("/v1/auth/me").send().await?;
         self.decode_response(response, "me").await
+    }
+
+    /// `POST /v1/auth/change-password`
+    pub async fn change_password(&self, body: ChangePasswordRequest) -> Result<(), ClientError> {
+        let response = self
+            .post("/v1/auth/change-password")
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        if response.status().is_success() {
+            return Ok(());
+        }
+        let problem: ProblemDetails = response
+            .json()
+            .await
+            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
+        Err(ClientError::Api(problem))
+    }
+
+    /// `GET /v1/users`
+    pub async fn list_users(&self) -> Result<Vec<UserDto>, ClientError> {
+        let response = self.get("/v1/users").send().await?;
+        self.decode_response(response, "list_users").await
     }
 
     /// `POST /v1/users`

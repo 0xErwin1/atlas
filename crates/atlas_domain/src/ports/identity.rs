@@ -22,8 +22,12 @@ pub trait UserRepo: Send + Sync {
     async fn find_by_username(&self, username: &str) -> Result<Option<User>, DomainError>;
     async fn find_by_id(&self, id: UserId) -> Result<Option<User>, DomainError>;
     async fn find_root(&self) -> Result<Option<User>, DomainError>;
+    /// Lists all users (active and disabled), ordered by `created_at` ascending.
+    async fn list(&self) -> Result<Vec<User>, DomainError>;
     async fn disable(&self, id: UserId) -> Result<(), DomainError>;
     async fn enable(&self, id: UserId) -> Result<(), DomainError>;
+    /// Replaces the user's password hash and bumps `updated_at`.
+    async fn set_password_hash(&self, id: UserId, hash: String) -> Result<(), DomainError>;
 }
 
 #[async_trait]

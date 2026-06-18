@@ -165,6 +165,16 @@ impl UserRepo for PgUserRepo {
             .map_err(db_err)
     }
 
+    async fn list(&self) -> Result<Vec<User>, DomainError> {
+        use sea_orm::QueryOrder;
+        user::Entity::find()
+            .order_by_asc(user::Column::CreatedAt)
+            .all(&self.conn)
+            .await
+            .map(|rows| rows.into_iter().map(user_from).collect())
+            .map_err(db_err)
+    }
+
     async fn disable(&self, id: UserId) -> Result<(), DomainError> {
         use sea_orm::IntoActiveModel;
         let row = user::Entity::find_by_id(id.0)
@@ -194,6 +204,23 @@ impl UserRepo for PgUserRepo {
             })?;
         let mut active = row.into_active_model();
         active.disabled_at = Set(None);
+        active.updated_at = Set(Utc::now());
+        active.update(&self.conn).await.map_err(db_err)?;
+        Ok(())
+    }
+
+    async fn set_password_hash(&self, id: UserId, hash: String) -> Result<(), DomainError> {
+        use sea_orm::IntoActiveModel;
+        let row = user::Entity::find_by_id(id.0)
+            .one(&self.conn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "user",
+                id: id.0,
+            })?;
+        let mut active = row.into_active_model();
+        active.password_hash = Set(hash);
         active.updated_at = Set(Utc::now());
         active.update(&self.conn).await.map_err(db_err)?;
         Ok(())

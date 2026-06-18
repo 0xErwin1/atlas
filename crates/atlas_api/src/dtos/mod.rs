@@ -53,6 +53,14 @@ pub struct UserDto {
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
+/// Request body for `POST /v1/auth/change-password`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct ChangePasswordRequest {
+    pub current_password: String,
+    pub new_password: String,
+}
+
 /// Response from `GET /v1/auth/me`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]

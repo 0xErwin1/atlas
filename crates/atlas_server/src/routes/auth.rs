@@ -11,7 +11,7 @@ use axum_extra::extract::{
 use chrono::Utc;
 use std::sync::LazyLock;
 
-use atlas_api::dtos::{LoginRequest, LoginResponse, MeResponse, UserDto};
+use atlas_api::dtos::{ChangePasswordRequest, LoginRequest, LoginResponse, MeResponse, UserDto};
 use atlas_domain::ids::{SessionId, UserId};
 
 use crate::{
@@ -208,6 +208,65 @@ pub(crate) async fn me(
         principal_type,
         username,
     }))
+}
+
+#[utoipa::path(
+    post,
+    path = "/v1/auth/change-password",
+    tag = "auth",
+    security(("bearer_auth" = [])),
+    request_body = ChangePasswordRequest,
+    responses(
+        (status = 204, description = "Password changed"),
+        (status = 401, description = "Unauthenticated or wrong current password"),
+        (status = 403, description = "API keys cannot change a user password"),
+    )
+)]
+pub(crate) async fn change_password(
+    State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
+    Json(body): Json<ChangePasswordRequest>,
+) -> Result<StatusCode, ApiError> {
+    let Principal::User(user_id) = principal else {
+        return Err(ApiError::Forbidden {
+            message: "API keys cannot change a user password".into(),
+        });
+    };
+
+    let user_repo = PgUserRepo {
+        conn: (*state.db).clone(),
+    };
+
+    let user = user_repo
+        .find_by_id(user_id)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?
+        .ok_or(ApiError::Unauthorized)?;
+
+    let is_valid = password::verify(body.current_password, user.password_hash.clone())
+        .await
+        .map_err(|_| ApiError::Unauthorized)?;
+
+    if !is_valid {
+        return Err(ApiError::Unauthorized);
+    }
+
+    let new_hash = password::hash(body.new_password)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?;
+
+    user_repo
+        .set_password_hash(user_id, new_hash)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?;
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 fn user_to_dto(user: &atlas_domain::entities::identity::User) -> UserDto {
