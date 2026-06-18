@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import Icon from '@/components/ui/Icon.vue';
 
 const props = withDefaults(
@@ -30,6 +30,26 @@ const emit = defineEmits<{
   retry: [];
   copy: [requestId: string];
 }>();
+
+const copied = ref(false);
+
+async function copyError() {
+  const id = props.requestId;
+  if (id === undefined) return;
+
+  emit('copy', id);
+
+  try {
+    await navigator.clipboard.writeText(id);
+    copied.value = true;
+    setTimeout(() => {
+      copied.value = false;
+    }, 1500);
+  } catch {
+    // Clipboard unavailable (insecure context / denied): the emit still fires
+    // so a parent can fall back to its own feedback.
+  }
+}
 
 const message = computed(() => props.hint ?? 'Something went wrong. Your work is safe — retry in a moment.');
 
@@ -116,10 +136,10 @@ const diagnostics = computed(() => {
           font-size: var(--fs-sm);
           font-weight: var(--fw-medium);
         "
-        @click="emit('copy', requestId)"
+        @click="copyError"
       >
-        <Icon name="copy" :size="14" />
-        Copy error
+        <Icon :name="copied ? 'check' : 'copy'" :size="14" />
+        {{ copied ? 'Copied' : 'Copy error' }}
       </button>
     </div>
   </div>

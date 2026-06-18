@@ -1,17 +1,27 @@
 <script setup lang="ts">
 import Crumb from '@/components/ui/Crumb.vue';
 import Icon from '@/components/ui/Icon.vue';
+import { useUiStore } from '@/stores/ui';
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     breadcrumbs?: string[];
     dirty?: boolean;
+    /** When set, a Share button opens the share dialog for this resource. */
+    shareLabel?: string;
   }>(),
   {
     breadcrumbs: () => [],
     dirty: false,
+    shareLabel: '',
   },
 );
+
+const ui = useUiStore();
+
+function openShare() {
+  if (props.shareLabel !== '') ui.openShare(props.shareLabel);
+}
 </script>
 
 <template>
@@ -30,17 +40,22 @@ withDefaults(
 
     <div style="flex: 1;" />
 
-    <button type="button" class="atl-gbtn" title="History" aria-label="History">
-      <Icon name="history" :size="14" />
-    </button>
-    <button type="button" class="atl-gbtn" title="Share" aria-label="Share">
+    <button
+      v-if="shareLabel !== ''"
+      type="button"
+      class="atl-gbtn"
+      title="Share"
+      aria-label="Share"
+      @click="openShare"
+    >
       <Icon name="user" :size="14" />
     </button>
-    <button type="button" class="atl-gbtn" title="More" aria-label="More">
-      <Icon name="ellipsis" :size="14" />
-    </button>
 
-    <div aria-hidden="true" style="width: 1px; height: 18px; background: var(--c-border);" />
+    <div
+      v-if="shareLabel !== '' && $slots.default"
+      aria-hidden="true"
+      style="width: 1px; height: 18px; background: var(--c-border);"
+    />
 
     <slot />
   </div>

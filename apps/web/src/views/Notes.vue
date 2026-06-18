@@ -311,7 +311,7 @@ watch(title, (t) => {
       </template>
     </TabStrip>
 
-    <EditorToolbar :breadcrumbs="breadcrumbs" :dirty="dirty">
+    <EditorToolbar :breadcrumbs="breadcrumbs" :dirty="dirty" :share-label="`${title || 'Document'} · note`">
       <button
         type="button"
         title="Toggle inspector"

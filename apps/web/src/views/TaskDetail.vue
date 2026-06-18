@@ -101,7 +101,7 @@ watch([readableId, ws], load, { immediate: true });
       <TasksSidebar />
     </template>
 
-    <EditorToolbar :breadcrumbs="breadcrumbs" :dirty="false">
+    <EditorToolbar :breadcrumbs="breadcrumbs" :dirty="false" :share-label="`${task?.readable_id ?? 'Task'} · task`">
       <button
         type="button"
         title="Toggle inspector"
