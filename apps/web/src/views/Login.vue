@@ -157,6 +157,7 @@ const errorDisplay = computed(() => {
               v-model="password"
               :type="showPassword ? 'text' : 'password'"
               autocomplete="current-password"
+              placeholder="password"
               required
               class="atl-login-input"
             />
