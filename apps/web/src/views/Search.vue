@@ -2,25 +2,43 @@
 import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import ResultRow from '@/components/search/ResultRow.vue';
+import SearchPreview from '@/components/search/SearchPreview.vue';
 import EditorToolbar from '@/components/shell/EditorToolbar.vue';
 import EmptyState from '@/components/states/EmptyState.vue';
 import ErrorState from '@/components/states/ErrorState.vue';
 import LoadingState from '@/components/states/LoadingState.vue';
 import Btn from '@/components/ui/Btn.vue';
+import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
+import Icon from '@/components/ui/Icon.vue';
 import { useSearch } from '@/composables/useSearch';
-import type { SearchHitDto } from '@/stores/search';
+import { type SearchHitDto, type SearchSort, useSearchStore } from '@/stores/search';
+import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 import AppShell from '@/views/AppShell.vue';
 import SearchSidebar from '@/views/SearchSidebar.vue';
 
 const router = useRouter();
 const workspace = useWorkspaceStore();
+const ui = useUiStore();
 
 const ws = computed(() => workspace.activeWorkspaceSlug ?? '');
 
 const { store, onQueryInput, loadMore } = useSearch(ws.value);
+const searchStore = useSearchStore();
 
 const activeIndex = ref(0);
+
+const activeHit = computed<SearchHitDto | null>(() => store.results[activeIndex.value] ?? null);
+
+const SORT_OPTIONS: DropdownOption[] = [
+  { value: 'relevance', label: 'Relevance' },
+  { value: 'updated', label: 'Recently updated' },
+];
+
+function onSort(value: string): void {
+  searchStore.setSort(value as SearchSort);
+  void store.runSearch(ws.value);
+}
 
 const resultCountLabel = computed(() => {
   const n = store.results.length;
@@ -82,7 +100,7 @@ function onListKeydown(event: KeyboardEvent): void {
 
     <EditorToolbar :breadcrumbs="['Atlas', 'Search']" :dirty="false">
       <span
-        :style="{ fontSize: 'var(--fs-base)', fontWeight: 'var(--fw-bold)', color: 'var(--c-foreground)', marginRight: '8px' }"
+        :style="{ fontSize: 'var(--fs-base)', fontWeight: 'var(--fw-bold)', color: 'var(--c-foreground)' }"
       >
         {{ resultCountLabel }}
       </span>
@@ -92,56 +110,73 @@ function onListKeydown(event: KeyboardEvent): void {
       >
         for "{{ store.query }}"
       </span>
+
+      <div style="flex: 1;" />
+
+      <Dropdown :options="SORT_OPTIONS" :model-value="searchStore.sort" @change="onSort" />
+      <button
+        type="button"
+        class="atl-gbtn"
+        title="Command palette ⌘K"
+        aria-label="Command palette"
+        @click="ui.openPalette()"
+      >
+        <Icon name="command" :size="14" />
+      </button>
     </EditorToolbar>
 
-    <div
-      class="flex-1 overflow-y-auto outline-none"
-      tabindex="0"
-      :style="{ background: 'var(--c-background)' }"
-      @keydown="onListKeydown"
-    >
-      <ErrorState
-        v-if="store.error"
-        title="Couldn’t search"
-        :hint="store.error"
-        @retry="onQueryInput(store.query)"
-      />
-      <LoadingState
-        v-else-if="store.loading && store.results.length === 0"
-        label="Searching…"
-      />
-
-      <template v-else>
-        <ResultRow
-          v-for="(hit, i) in store.results"
-          :key="hit.id"
-          :hit="hit"
-          :active="i === activeIndex"
-          @click="navigateToHit(hit)"
-          @mouseenter="activeIndex = i"
+    <div class="flex flex-1 min-h-0">
+      <div
+        class="flex-1 overflow-y-auto outline-none min-w-0"
+        tabindex="0"
+        :style="{ background: 'var(--c-background)' }"
+        @keydown="onListKeydown"
+      >
+        <ErrorState
+          v-if="store.error"
+          title="Couldn’t search"
+          :hint="store.error"
+          @retry="onQueryInput(store.query)"
+        />
+        <LoadingState
+          v-else-if="store.loading && store.results.length === 0"
+          label="Searching…"
         />
 
-        <div
-          v-if="store.hasMore"
-          :style="{ display: 'flex', justifyContent: 'center', padding: '12px' }"
-        >
-          <Btn variant="secondary" @click="loadMore">Load more</Btn>
-        </div>
+        <template v-else>
+          <ResultRow
+            v-for="(hit, i) in store.results"
+            :key="hit.id"
+            :hit="hit"
+            :active="i === activeIndex"
+            @click="navigateToHit(hit)"
+            @mouseenter="activeIndex = i"
+          />
 
-        <EmptyState
-          v-if="store.query && store.results.length === 0 && !store.loading"
-          :title="`No results for “${store.query}”`"
-          hint="Try a different term, or broaden the type filter"
-          icon="search-x"
-        />
+          <div
+            v-if="store.hasMore"
+            :style="{ display: 'flex', justifyContent: 'center', padding: '12px' }"
+          >
+            <Btn variant="secondary" @click="loadMore">Load more</Btn>
+          </div>
 
-        <EmptyState
-          v-else-if="!store.query"
-          title="Search documents and tasks"
-          hint="Search across the workspace by title, content, or @handle"
-          icon="search"
-        />
-      </template>
+          <EmptyState
+            v-if="store.query && store.results.length === 0 && !store.loading"
+            :title="`No results for “${store.query}”`"
+            hint="Try a different term, or broaden the type filter"
+            icon="search-x"
+          />
+
+          <EmptyState
+            v-else-if="!store.query"
+            title="Search documents and tasks"
+            hint="Search across the workspace by title, content, or @handle"
+            icon="search"
+          />
+        </template>
+      </div>
+
+      <SearchPreview v-if="activeHit" :hit="activeHit" @open="navigateToHit" />
     </div>
   </AppShell>
 </template>

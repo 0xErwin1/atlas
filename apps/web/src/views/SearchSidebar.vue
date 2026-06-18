@@ -3,7 +3,7 @@ import { computed } from 'vue';
 import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
 import Icon from '@/components/ui/Icon.vue';
 import SectionLabel from '@/components/ui/SectionLabel.vue';
-import type { SearchSort, SearchType } from '@/stores/search';
+import type { SearchType } from '@/stores/search';
 import { useSearchStore } from '@/stores/search';
 
 const props = defineProps<{
@@ -24,20 +24,10 @@ const typeOptions: DropdownOption[] = [
   { value: 'task', label: 'Tasks' },
 ];
 
-const sortOptions: DropdownOption[] = [
-  { value: 'relevance', label: 'Relevance' },
-  { value: 'updated', label: 'Recently updated' },
-];
-
 const queryModel = computed(() => props.query);
 
 function onType(value: string): void {
   store.setType(value as SearchType);
-  emit('rerun');
-}
-
-function onSort(value: string): void {
-  store.setSort(value as SearchSort);
   emit('rerun');
 }
 </script>
@@ -91,14 +81,6 @@ function onSort(value: string): void {
         :model-value="store.type"
         :style="{ display: 'flex', width: '100%' }"
         @change="onType"
-      />
-
-      <SectionLabel flush>Sort</SectionLabel>
-      <Dropdown
-        :options="sortOptions"
-        :model-value="store.sort"
-        :style="{ display: 'flex', width: '100%' }"
-        @change="onSort"
       />
     </div>
   </div>

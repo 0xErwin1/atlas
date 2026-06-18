@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import Avatar from '@/components/ui/Avatar.vue';
 import Chip from '@/components/ui/Chip.vue';
 import Icon from '@/components/ui/Icon.vue';
+import { relativeTime } from '@/lib/relativeTime';
 import { sanitizeSnippet } from '@/lib/sanitize';
 import type { SearchHitDto } from '@/stores/search';
 
@@ -29,10 +29,7 @@ const iconName = computed(() => (isTask.value ? 'square-check-big' : 'file-text'
  */
 const safeSnippet = computed(() => (props.hit.snippet ? sanitizeSnippet(props.hit.snippet) : null));
 
-const updatedLabel = computed(() => {
-  const d = new Date(props.hit.updated_at);
-  return Number.isNaN(d.getTime()) ? props.hit.updated_at : d.toLocaleDateString();
-});
+const updatedLabel = computed(() => relativeTime(props.hit.updated_at));
 </script>
 
 <template>
@@ -104,7 +101,7 @@ const updatedLabel = computed(() => {
           class="flex items-center"
           :style="{ gap: '5px', fontSize: 'var(--fs-xs)', color: 'var(--c-muted)' }"
         >
-          <Avatar :size="16" name="?" />
+          <Icon name="clock" :size="12" />
           {{ updatedLabel }}
         </span>
       </span>
