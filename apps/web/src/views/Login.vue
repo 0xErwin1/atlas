@@ -1,21 +1,33 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
+import { z } from 'zod';
 import type { AtlasProblem } from '@/api/problem';
 import Btn from '@/components/ui/Btn.vue';
+import FormField from '@/components/ui/FormField.vue';
 import Icon from '@/components/ui/Icon.vue';
 import Kbd from '@/components/ui/Kbd.vue';
 import { useProblem } from '@/composables/useProblem';
+import { validateForm } from '@/lib/validation';
 import { useAuthStore } from '@/stores/auth';
+
+const loginSchema = z.object({
+  username: z.string().trim().min(1, 'Username is required'),
+  password: z.string().min(1, 'Password is required'),
+});
 
 const router = useRouter();
 const auth = useAuthStore();
 
 const username = ref('');
 const password = ref('');
-const showPassword = ref(false);
 const loading = ref(false);
 const errorProblem = ref<AtlasProblem | null>(null);
+
+const fieldErrors = reactive<{ username: string | null; password: string | null }>({
+  username: null,
+  password: null,
+});
 
 const FALLBACK_PROBLEM: AtlasProblem = {
   type: 'urn:atlas:error:unknown',
@@ -24,11 +36,32 @@ const FALLBACK_PROBLEM: AtlasProblem = {
   hint: 'Something went wrong signing in. Please try again.',
 };
 
+function onUsername(value: string) {
+  username.value = value;
+  fieldErrors.username = null;
+}
+
+function onPassword(value: string) {
+  password.value = value;
+  fieldErrors.password = null;
+}
+
+function validate(): boolean {
+  const result = validateForm(loginSchema, { username: username.value, password: password.value });
+
+  fieldErrors.username = result.ok ? null : (result.errors.username ?? null);
+  fieldErrors.password = result.ok ? null : (result.errors.password ?? null);
+
+  return result.ok;
+}
+
 async function handleLogin() {
   if (loading.value) return;
 
-  loading.value = true;
   errorProblem.value = null;
+  if (!validate()) return;
+
+  loading.value = true;
 
   try {
     const result = await auth.login({ username: username.value, password: password.value });
@@ -110,76 +143,32 @@ const errorDisplay = computed(() => {
         </div>
       </div>
 
-      <form @submit.prevent="handleLogin">
-        <div>
-          <label
-            for="username"
-            style="display: block; font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--c-muted); margin-bottom: 5px;"
-          >
-            Username
-          </label>
-          <div
-            class="flex items-center"
-            :style="`
-              gap: 8px;
-              height: var(--h-input);
-              padding: 0 10px;
-              margin-bottom: 12px;
-              border-radius: var(--r-md);
-              background-color: var(--c-input);
-              border: 1px solid ${errorProblem ? 'var(--c-danger)' : 'var(--c-border)'};
-            `"
-          >
-            <input
-              id="username"
-              v-model="username"
-              type="text"
-              autocomplete="username"
-              placeholder="username"
-              required
-              class="atl-login-input"
-            />
-          </div>
+      <form novalidate @submit.prevent="handleLogin">
+        <div style="margin-bottom: 12px;">
+          <FormField
+            id="username"
+            label="Username"
+            :model-value="username"
+            autocomplete="username"
+            placeholder="username"
+            mono
+            :error="fieldErrors.username"
+            @update:model-value="onUsername"
+          />
         </div>
 
-        <div>
-          <label
-            for="password"
-            style="display: block; font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--c-muted); margin-bottom: 5px;"
-          >
-            Password
-          </label>
-          <div
-            class="flex items-center"
-            :style="`
-              gap: 8px;
-              height: var(--h-input);
-              padding: 0 10px;
-              margin-bottom: 12px;
-              border-radius: var(--r-md);
-              background-color: var(--c-input);
-              border: 1px solid ${errorProblem ? 'var(--c-danger)' : 'var(--c-border)'};
-            `"
-          >
-            <input
-              id="password"
-              v-model="password"
-              :type="showPassword ? 'text' : 'password'"
-              autocomplete="current-password"
-              placeholder="password"
-              required
-              class="atl-login-input"
-            />
-            <button
-              type="button"
-              tabindex="-1"
-              class="flex items-center"
-              style="color: var(--c-muted); background: none; border: none; cursor: pointer; padding: 0;"
-              @click="showPassword = !showPassword"
-            >
-              <Icon :name="showPassword ? 'eye-off' : 'eye'" :size="14" />
-            </button>
-          </div>
+        <div style="margin-bottom: 12px;">
+          <FormField
+            id="password"
+            label="Password"
+            type="password"
+            :model-value="password"
+            autocomplete="current-password"
+            placeholder="password"
+            mono
+            :error="fieldErrors.password"
+            @update:model-value="onPassword"
+          />
         </div>
 
         <div style="height: 6px;" />
@@ -205,20 +194,3 @@ const errorDisplay = computed(() => {
     </div>
   </div>
 </template>
-
-<style scoped>
-.atl-login-input {
-  flex: 1;
-  min-width: 0;
-  background: transparent;
-  border: none;
-  outline: none;
-  color: var(--c-foreground);
-  font-family: var(--font-mono);
-  font-size: var(--fs-base);
-}
-
-.atl-login-input::placeholder {
-  color: var(--c-muted);
-}
-</style>

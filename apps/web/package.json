@@ -24,7 +24,8 @@
     "pinia": "^3",
     "vue": "^3.5",
     "vue-draggable-plus": "^0.6.1",
-    "vue-router": "^5"
+    "vue-router": "^5",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4",
