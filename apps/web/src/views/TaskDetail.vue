@@ -9,8 +9,10 @@ import Checklist from '@/components/tareas/Checklist.vue';
 import ReferenceList from '@/components/tareas/ReferenceList.vue';
 import TaskDescription from '@/components/tareas/TaskDescription.vue';
 import Chip from '@/components/ui/Chip.vue';
+import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
 import Icon from '@/components/ui/Icon.vue';
 import MetaRow from '@/components/ui/MetaRow.vue';
+import { useBoardsStore } from '@/stores/boards';
 import { useTaskDetailStore } from '@/stores/taskDetail';
 import { useTasksStore } from '@/stores/tasks';
 import { useUiStore } from '@/stores/ui';
@@ -22,6 +24,7 @@ const route = useRoute();
 const workspace = useWorkspaceStore();
 const tasks = useTasksStore();
 const detail = useTaskDetailStore();
+const boards = useBoardsStore();
 const ui = useUiStore();
 
 const readableId = computed(() => {
@@ -35,11 +38,40 @@ const task = computed(() => tasks.openTask);
 
 const breadcrumbs = computed(() => ['Atlas', task.value?.readable_id ?? 'Task']);
 
+const statusName = computed(() => {
+  const columnId = task.value?.column_id;
+  if (columnId === undefined) return null;
+  return boards.columns.find((c) => c.id === columnId)?.name ?? null;
+});
+
+const assignableOptions = computed<DropdownOption[]>(() => {
+  const assigned = new Set(detail.assignees.map((a) => a.assignee.id));
+  return workspace.members
+    .filter((m) => !assigned.has(m.id))
+    .map((m) => ({ value: `${m.principal_type}:${m.id}`, label: m.display }));
+});
+
 async function load(): Promise<void> {
   if (readableId.value === null || ws.value === '') {
     return;
   }
-  await Promise.all([tasks.loadTask(ws.value, readableId.value), detail.loadAll(ws.value, readableId.value)]);
+
+  await tasks.loadTask(ws.value, readableId.value);
+
+  const boardId = tasks.openTask?.board_id;
+  await Promise.all([
+    detail.loadAll(ws.value, readableId.value),
+    workspace.loadMembers(ws.value),
+    boardId === undefined ? Promise.resolve() : boards.loadColumns(ws.value, boardId),
+  ]);
+}
+
+async function onAddAssignee(ref: string): Promise<void> {
+  if (readableId.value === null) return;
+  const [assignee_type, assignee_id] = ref.split(':');
+  if (assignee_type === undefined || assignee_id === undefined) return;
+  const ok = await detail.addAssignee(ws.value, readableId.value, { assignee_type, assignee_id });
+  if (!ok && detail.error) ui.showBanner(detail.error, 'error');
 }
 
 async function onToggleChecklist(itemId: string): Promise<void> {
@@ -181,10 +213,19 @@ watch([readableId, ws], load, { immediate: true });
     <template #inspector-properties>
       <div class="flex flex-col" style="gap: 8px;">
         <MetaRow label="Status">
-          <Chip tone="info">Active</Chip>
+          <Chip v-if="statusName" tone="info">{{ statusName }}</Chip>
+          <span v-else style="font-size: var(--fs-sm); color: var(--c-muted);">—</span>
         </MetaRow>
         <MetaRow label="Assignees">
-          <AssigneeList :assignees="detail.assignees" @remove="onRemoveAssignee" />
+          <div class="flex flex-col" style="gap: 6px; align-items: flex-start;">
+            <AssigneeList :assignees="detail.assignees" @remove="onRemoveAssignee" />
+            <Dropdown
+              v-if="assignableOptions.length"
+              :options="assignableOptions"
+              placeholder="+ Add assignee"
+              @change="onAddAssignee"
+            />
+          </div>
         </MetaRow>
         <MetaRow v-if="task?.priority" label="Priority">
           <Chip tone="info">{{ task.priority }}</Chip>
