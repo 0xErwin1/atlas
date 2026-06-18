@@ -38,8 +38,8 @@ use crate::{
     error::ApiError,
     persistence::repos::{
         ApiKeyRepo, DocumentRepo, MembershipRepo, PgApiKeyRepo, PgDocumentRepo, PgMembershipRepo,
-        PgTaskAssigneeRepo, PgTaskChecklistRepo, PgTaskReferenceRepo, PgTaskRepo, TaskAssigneeRepo,
-        TaskChecklistRepo, TaskReferenceRepo, TaskRepo,
+        PgTaskAssigneeRepo, PgTaskChecklistRepo, PgTaskReferenceRepo, PgTaskRepo, PgUserRepo,
+        TaskAssigneeRepo, TaskChecklistRepo, TaskReferenceRepo, TaskRepo, UserRepo,
     },
     routes::validation::{
         validate_custom_entry_count, validate_description, validate_labels, validate_name,
@@ -160,10 +160,42 @@ fn assignee_ref_to_actor(r: AssigneeRef) -> Actor {
     }
 }
 
-fn assignee_to_dto(a: TaskAssignee) -> AssigneeDto {
+/// Builds an `ActorDto` with the actor's display name resolved from the database
+/// (a user's `display_name` or an api key's `name`). The base `actor_to_dto` only
+/// carries the id, so without this the client has no name to show and falls back
+/// to a generic "User"/"Agent" label.
+async fn resolve_actor_dto(state: &AppState, ctx: &WorkspaceCtx, actor: &Actor) -> ActorDto {
+    let display_name = match actor {
+        Actor::User(uid) => {
+            let repo = PgUserRepo {
+                conn: (*state.db).clone(),
+            };
+            repo.find_by_id(*uid)
+                .await
+                .ok()
+                .flatten()
+                .map(|u| u.display_name)
+        }
+        Actor::ApiKey(kid) => {
+            let repo = PgApiKeyRepo {
+                conn: (*state.db).clone(),
+            };
+            repo.list(ctx)
+                .await
+                .ok()
+                .and_then(|keys| keys.into_iter().find(|k| k.id == *kid).map(|k| k.name))
+        }
+    };
+
+    let mut dto = actor_to_dto(actor);
+    dto.display_name = display_name;
+    dto
+}
+
+async fn assignee_to_dto(state: &AppState, ctx: &WorkspaceCtx, a: TaskAssignee) -> AssigneeDto {
     AssigneeDto {
-        assignee: actor_to_dto(&assignee_ref_to_actor(a.assignee)),
-        assigned_by: actor_to_dto(&a.assigned_by),
+        assignee: resolve_actor_dto(state, ctx, &assignee_ref_to_actor(a.assignee)).await,
+        assigned_by: resolve_actor_dto(state, ctx, &a.assigned_by).await,
         assigned_at: a.assigned_at,
     }
 }
@@ -696,7 +728,12 @@ pub(crate) async fn list_assignees(
         .await
         .map_err(ApiError::Domain)?;
 
-    Ok(Json(items.into_iter().map(assignee_to_dto).collect()))
+    let mut dtos = Vec::with_capacity(items.len());
+    for item in items {
+        dtos.push(assignee_to_dto(&state, &ctx, item).await);
+    }
+
+    Ok(Json(dtos))
 }
 
 // ---------------------------------------------------------------------------
@@ -753,7 +790,7 @@ pub(crate) async fn add_assignee(
             other => ApiError::Domain(other),
         })?;
 
-    Ok((StatusCode::CREATED, Json(assignee_to_dto(result))))
+    Ok((StatusCode::CREATED, Json(assignee_to_dto(&state, &ctx, result).await)))
 }
 
 // ---------------------------------------------------------------------------

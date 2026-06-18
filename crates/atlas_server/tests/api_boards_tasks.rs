@@ -1093,6 +1093,11 @@ async fn add_and_list_assignees() {
         .expect("add assignee");
 
     assert_eq!(assignee.assignee.id, user.id.0);
+    assert_eq!(
+        assignee.assignee.display_name.as_deref(),
+        Some(user.display_name.as_str()),
+        "add must return the assignee's resolved display name, not a generic fallback"
+    );
 
     let list = client
         .list_assignees(&ws.slug, &task.readable_id)
@@ -1100,6 +1105,11 @@ async fn add_and_list_assignees() {
         .expect("list assignees");
 
     assert_eq!(list.len(), 1, "one assignee");
+    assert_eq!(
+        list[0].assignee.display_name.as_deref(),
+        Some(user.display_name.as_str()),
+        "list must return the assignee's resolved display name"
+    );
 
     db.teardown().await;
 }
