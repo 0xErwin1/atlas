@@ -133,3 +133,47 @@
   /* Focus ring */
   --shadow-ring: 0 0 0 1px var(--c-ring);
 }
+
+/* Ayu Light — alternate theme. Dark is the default (:root above); light is a
+   mirror translation applied when <html data-theme="light">. Only the palette
+   and semantic colors change; typography, spacing, radii and shadows are shared. */
+:root[data-theme='light'] {
+  --c-background: #FCFCFC;
+  --c-panel: #F3F4F6;
+  --c-raised: #ECEEF1;
+  --c-tiles: #F0F2F4;
+  --c-foreground: #5C6166;
+  --c-muted: #8A9199;
+  --c-muted-foreground: var(--c-muted);
+  --c-border: #E1E4E8;
+  --c-selection: #D6E5F3;
+
+  --c-primary: #F2922A;
+  --c-primary-hover: #E3851F;
+  --c-primary-active: #CC7619;
+  --c-primary-fg: #FFFFFF;
+
+  --c-danger: #E5484D;
+  --c-success: #6CA300;
+  --c-warning: #F2922A;
+  --c-info: #399EE6;
+  --c-secondary: #ECEEF1;
+  --c-secondary-hover: #E1E4E8;
+
+  --c-agent: #A37ACC;
+  --c-agent-bg: rgba(163, 122, 204, 0.12);
+  --c-agent-border: rgba(163, 122, 204, 0.40);
+  --c-cyan: #4CBF99;
+  --c-chart-5: #A37ACC;
+
+  --c-input: rgba(92, 97, 102, 0.06);
+  --c-ring: rgba(242, 146, 42, 0.55);
+  --c-overlay: rgba(0, 0, 0, 0.30);
+  --c-list-active: #D6E5F3;
+
+  --c-banner-err-bg: #FFE5E5;
+  --c-banner-err-fg: #B42318;
+
+  --shadow-md: 0 2px 6px rgba(92, 97, 102, 0.15);
+  --shadow-lg: 0 8px 24px rgba(92, 97, 102, 0.22);
+}

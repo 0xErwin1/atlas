@@ -3,6 +3,7 @@ import { ref } from 'vue';
 
 export type InspectorTab = 'properties' | 'backlinks' | 'activity' | 'share';
 export type BannerType = 'error' | 'warning' | 'info' | 'success';
+export type Theme = 'dark' | 'light';
 
 export interface Banner {
   message: string;
@@ -11,6 +12,25 @@ export interface Banner {
 
 const INSPECTOR_STORAGE_KEY = 'atlas:inspector';
 const EDITOR_WIDE_STORAGE_KEY = 'atlas:editor-wide';
+const THEME_STORAGE_KEY = 'atlas:theme';
+
+function loadTheme(): Theme {
+  try {
+    const v = localStorage.getItem(THEME_STORAGE_KEY);
+    if (v === 'light' || v === 'dark') return v;
+  } catch {
+    // ignore malformed storage
+  }
+  return 'dark';
+}
+
+function applyTheme(theme: Theme): void {
+  try {
+    document.documentElement.dataset.theme = theme;
+  } catch {
+    // no document (non-browser context)
+  }
+}
 
 function loadInspectorState(): { open: boolean; tab: InspectorTab } {
   try {
@@ -42,6 +62,19 @@ export const useUiStore = defineStore('ui', () => {
 
   // Editor reading width: false = readable column, true = full viewport width.
   const editorWide = ref(loadEditorWide());
+
+  const theme = ref<Theme>(loadTheme());
+  applyTheme(theme.value);
+
+  function setTheme(next: Theme) {
+    theme.value = next;
+    applyTheme(next);
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, next);
+    } catch {
+      // ignore storage errors
+    }
+  }
 
   function persistInspector() {
     try {
@@ -98,6 +131,8 @@ export const useUiStore = defineStore('ui', () => {
     shareResourceLabel,
     editorWide,
     toggleEditorWide,
+    theme,
+    setTheme,
     toggleInspector,
     setInspectorTab,
     showBanner,
