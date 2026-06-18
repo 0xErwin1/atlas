@@ -80,6 +80,7 @@ const EXPECTED_SCHEMAS: &[&str] = &[
     "Page_TaskSummaryDto",
     "Page_ActivityEntryDto",
     "Page_BoardSummaryDto",
+    "Page_ApiKeyDto",
 ];
 
 #[test]

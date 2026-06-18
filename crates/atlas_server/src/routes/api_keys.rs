@@ -100,7 +100,7 @@ pub(crate) async fn create_api_key(
         ("limit" = Option<u32>, Query, description = "Page size (max 200)"),
     ),
     responses(
-        (status = 200, description = "Paginated API key list"),
+        (status = 200, description = "Paginated API key list", body = Page<ApiKeyDto>),
         (status = 401, description = "Unauthenticated"),
         (status = 403, description = "Insufficient permissions"),
     )
@@ -162,6 +162,10 @@ pub(crate) async fn list_api_keys(
     path = "/v1/workspaces/{ws}/api-keys/{key_id}/revoke",
     tag = "api-keys",
     security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+        ("key_id" = uuid::Uuid, Path, description = "API key id"),
+    ),
     responses(
         (status = 204, description = "API key revoked"),
         (status = 401, description = "Unauthenticated"),
