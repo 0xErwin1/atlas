@@ -47,6 +47,40 @@ select {
   box-shadow: var(--shadow-ring);
 }
 
+/* ── scrollbars ─────────────────────────────────────────────────────── */
+/* Thin, themed scrollbars across the whole app instead of the chunky native
+   ones. Token-based so they follow the active (dark/light) theme. */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--c-selection) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--c-selection);
+  border-radius: var(--r-full);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--c-muted);
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 /* ── shell + notes interaction primitives (hover/active states) ──────── */
 
 .atl-gbtn {
