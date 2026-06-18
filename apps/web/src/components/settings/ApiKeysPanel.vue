@@ -227,10 +227,14 @@ async function confirmRevoke(): Promise<void> {
 
     <ConfirmDialog
       :open="revokeTarget !== null"
+      tone="danger"
       title="Revoke this API key?"
-      :message="`The key stops working immediately. Any agent or script still using ${revokeTarget?.name ?? 'it'} loses access at once. This can't be undone.`"
+      message="The key stops working immediately."
+      :detail="revokeTarget?.name"
+      detail-icon="key-round"
+      note="Any agent or script still using it loses access at once. This can't be undone."
       confirm-label="Revoke key"
-      danger
+      confirm-icon="trash-2"
       @confirm="confirmRevoke"
       @cancel="revokeTarget = null"
     />

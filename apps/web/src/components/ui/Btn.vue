@@ -1,5 +1,5 @@
 <script setup lang="ts">
-export type BtnVariant = 'primary' | 'secondary' | 'ghost';
+export type BtnVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
 
 withDefaults(
   defineProps<{
@@ -23,6 +23,8 @@ const VARIANT_STYLES: Record<BtnVariant, string> = {
   secondary:
     'background-color: var(--c-secondary); color: var(--c-foreground); border: 1px solid var(--c-border);',
   ghost: 'background-color: transparent; color: var(--c-foreground); border: 1px solid transparent;',
+  danger:
+    'background-color: var(--c-danger); color: var(--c-danger-fg, #fff); border: 1px solid transparent;',
 };
 </script>
 

@@ -40,6 +40,10 @@ const promptState = ref<{ open: boolean; mode: 'rename' | 'due'; title: string; 
 });
 const confirmOpen = ref(false);
 
+const deleteTarget = computed(() =>
+  menuReadableId.value === null ? null : (boards.findTaskByReadableId(menuReadableId.value) ?? null),
+);
+
 async function onDrop(readableId: string, columnId: string, toIndex: number): Promise<void> {
   const result = await move(readableId, columnId, toIndex);
   if (!result.ok) {
@@ -257,10 +261,14 @@ const menuItems = computed<MenuItem[]>(() => {
 
     <ConfirmDialog
       :open="confirmOpen"
-      title="Delete task"
-      message="This task will be permanently removed. This cannot be undone."
-      confirm-label="Delete"
-      danger
+      tone="danger"
+      title="Delete this task?"
+      message="The task is removed permanently. This can't be undone."
+      :detail="deleteTarget ? `${deleteTarget.readable_id} · ${deleteTarget.title}` : undefined"
+      detail-icon="square-kanban"
+      note="Its sub-tasks, references, and activity are removed along with it."
+      confirm-label="Delete task"
+      confirm-icon="trash-2"
       @confirm="onConfirmDelete"
       @cancel="confirmOpen = false"
     />

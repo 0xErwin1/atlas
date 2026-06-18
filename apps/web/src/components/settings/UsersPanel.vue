@@ -344,10 +344,14 @@ async function confirmDisable(): Promise<void> {
 
     <ConfirmDialog
       :open="disableTarget !== null"
+      tone="warning"
       title="Disable this user?"
-      :message="`${disableTarget?.display_name ?? 'They'} is signed out everywhere and can no longer access Atlas until re-enabled.`"
+      message="They are signed out everywhere and can no longer access Atlas until re-enabled."
+      :detail="disableTarget ? `${disableTarget.display_name} · @${disableTarget.username}` : undefined"
+      detail-icon="user"
+      note="Any API keys they created stop working while they are disabled; re-enabling restores access."
       confirm-label="Disable user"
-      danger
+      confirm-icon="lock"
       @confirm="confirmDisable"
       @cancel="disableTarget = null"
     />
