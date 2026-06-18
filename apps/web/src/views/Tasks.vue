@@ -12,8 +12,10 @@ import KanbanBoard from '@/components/tareas/KanbanBoard.vue';
 import ReferenceList from '@/components/tareas/ReferenceList.vue';
 import Btn from '@/components/ui/Btn.vue';
 import Chip from '@/components/ui/Chip.vue';
+import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
 import Icon from '@/components/ui/Icon.vue';
 import MetaRow from '@/components/ui/MetaRow.vue';
+import { useInlineEdit } from '@/composables/useInlineEdit';
 import { useBoardsStore } from '@/stores/boards';
 import { useTaskDetailStore } from '@/stores/taskDetail';
 import { useUiStore } from '@/stores/ui';
@@ -59,7 +61,67 @@ async function onSelect(readableId: string): Promise<void> {
   selectedReadableId.value = readableId;
   ui.inspectorOpen = true;
   ui.setInspectorTab('properties');
-  await detail.loadAll(ws.value, readableId);
+  await Promise.all([detail.loadAll(ws.value, readableId), workspace.loadMembers(ws.value)]);
+}
+
+const PRIORITY_OPTIONS: DropdownOption[] = [
+  { value: '', label: 'None' },
+  { value: 'urgent', label: 'Urgent' },
+  { value: 'high', label: 'High' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'low', label: 'Low' },
+];
+
+const statusOptions = computed<DropdownOption[]>(() =>
+  boards.columns.map((c) => ({ value: c.id, label: c.name })),
+);
+
+// Members not already assigned, offered in the "add assignee" picker.
+const assignableOptions = computed<DropdownOption[]>(() => {
+  const assigned = new Set(detail.assignees.map((a) => a.assignee.id));
+  return workspace.members
+    .filter((m) => !assigned.has(m.id))
+    .map((m) => ({ value: `${m.principal_type}:${m.id}`, label: m.display }));
+});
+
+// Inline title editing: the context is the task's readable id so a commit fires
+// against the right task even if selection changed during a blur.
+const {
+  active: titleActive,
+  value: titleValue,
+  inputRef: titleInputRef,
+  start: startTitle,
+  commit: commitTitleEdit,
+  onKeydown: onTitleKeydown,
+} = useInlineEdit<string>((title, readableId) => {
+  void commitTitle(readableId, title);
+});
+
+async function commitTitle(readableId: string, title: string): Promise<void> {
+  const ok = await boards.updateTask(ws.value, readableId, { title });
+  if (!ok && boards.error) ui.showBanner(boards.error, 'error');
+}
+
+async function onChangeStatus(columnId: string): Promise<void> {
+  if (selectedReadableId.value === null) return;
+  const ok = await boards.moveTaskToColumn(ws.value, selectedReadableId.value, columnId);
+  if (!ok && boards.error) ui.showBanner(boards.error, 'error');
+}
+
+async function onChangePriority(value: string): Promise<void> {
+  if (selectedReadableId.value === null) return;
+  const ok = await boards.updateTask(ws.value, selectedReadableId.value, {
+    priority: value === '' ? null : value,
+  });
+  if (!ok && boards.error) ui.showBanner(boards.error, 'error');
+}
+
+async function onAddAssignee(ref: string): Promise<void> {
+  if (selectedReadableId.value === null) return;
+  const [assignee_type, assignee_id] = ref.split(':');
+  if (assignee_type === undefined || assignee_id === undefined) return;
+  const ok = await detail.addAssignee(ws.value, selectedReadableId.value, { assignee_type, assignee_id });
+  if (!ok && detail.error) ui.showBanner(detail.error, 'error');
 }
 
 async function onRemoveAssignee(assigneeType: string, assigneeId: string): Promise<void> {
@@ -187,21 +249,50 @@ watch([boardId, ws], loadBoard, { immediate: true });
           <div style="font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--c-muted);">
             {{ selected.readable_id }}
           </div>
-          <div style="font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--c-foreground); margin-top: 2px;">
+          <input
+            v-if="titleActive === selected.readable_id"
+            ref="titleInputRef"
+            v-model="titleValue"
+            class="atl-peek-title-input"
+            @keydown="onTitleKeydown"
+            @blur="commitTitleEdit"
+          />
+          <div
+            v-else
+            class="atl-peek-title"
+            title="Click to rename"
+            @click="startTitle(selected.readable_id, selected.title, true)"
+          >
             {{ selected.title }}
           </div>
         </div>
 
         <div class="flex flex-col" style="gap: 8px;">
-          <MetaRow v-if="selectedStatus" label="Status">
-            <Chip tone="info">{{ selectedStatus }}</Chip>
+          <MetaRow label="Status">
+            <Dropdown
+              :options="statusOptions"
+              :model-value="selected.column_id"
+              placeholder="—"
+              @change="onChangeStatus"
+            />
           </MetaRow>
           <MetaRow label="Priority">
-            <Chip v-if="selected.priority" tone="info">{{ selected.priority }}</Chip>
-            <span v-else style="color: var(--c-muted);">None</span>
+            <Dropdown
+              :options="PRIORITY_OPTIONS"
+              :model-value="selected.priority ?? ''"
+              @change="onChangePriority"
+            />
           </MetaRow>
           <MetaRow label="Assignees">
-            <AssigneeList :assignees="detail.assignees" @remove="onRemoveAssignee" />
+            <div class="flex flex-col" style="gap: 6px; align-items: flex-start;">
+              <AssigneeList :assignees="detail.assignees" @remove="onRemoveAssignee" />
+              <Dropdown
+                v-if="assignableOptions.length"
+                :options="assignableOptions"
+                placeholder="+ Add assignee"
+                @change="onAddAssignee"
+              />
+            </div>
           </MetaRow>
         </div>
 
@@ -231,3 +322,33 @@ watch([boardId, ws], loadBoard, { immediate: true });
     </template>
   </AppShell>
 </template>
+
+<style scoped>
+.atl-peek-title {
+  margin-top: 2px;
+  padding: 2px 4px;
+  margin-left: -4px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+  color: var(--c-foreground);
+  cursor: text;
+}
+
+.atl-peek-title:hover {
+  background: var(--c-raised);
+}
+
+.atl-peek-title-input {
+  width: 100%;
+  margin-top: 2px;
+  padding: 2px 4px;
+  background: var(--c-panel);
+  border: 1px solid var(--c-primary);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+  color: var(--c-foreground);
+  outline: none;
+}
+</style>
