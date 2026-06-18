@@ -1,34 +1,34 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import CommandPalette, { type PaletteSelection } from '@/components/search/CommandPalette.vue';
 import type { LocalAction } from '@/composables/useSearch';
 import type { SearchHitDto } from '@/stores/search';
 import { useSearchStore } from '@/stores/search';
+import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 
 const router = useRouter();
 const workspace = useWorkspaceStore();
 const searchStore = useSearchStore();
-
-const paletteOpen = ref(false);
+const ui = useUiStore();
 
 const ws = computed(() => workspace.activeWorkspaceSlug ?? '');
+
+// Opening the palette (from anywhere — Cmd/Ctrl+K or a toolbar button) starts
+// from a clean search slate.
+watch(
+  () => ui.paletteOpen,
+  (open) => {
+    if (open) searchStore.clear();
+  },
+);
 
 const localActions: LocalAction[] = [
   { id: 'goto-notes', label: 'Go to Notes', kind: 'navigate' },
   { id: 'goto-tasks', label: 'Go to Tasks', kind: 'navigate' },
   { id: 'goto-search', label: 'Go to Search', kind: 'navigate' },
 ];
-
-function openPalette(): void {
-  searchStore.clear();
-  paletteOpen.value = true;
-}
-
-function closePalette(): void {
-  paletteOpen.value = false;
-}
 
 function runAction(action: LocalAction): void {
   switch (action.id) {
@@ -53,7 +53,7 @@ function jumpToHit(hit: SearchHitDto): void {
 }
 
 function onSelect(selection: PaletteSelection): void {
-  closePalette();
+  ui.closePalette();
   if (selection.type === 'action') {
     runAction(selection.action);
   } else {
@@ -64,11 +64,7 @@ function onSelect(selection: PaletteSelection): void {
 function onGlobalKeydown(event: KeyboardEvent): void {
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
     event.preventDefault();
-    if (paletteOpen.value) {
-      closePalette();
-    } else {
-      openPalette();
-    }
+    ui.togglePalette();
   }
 }
 
@@ -80,9 +76,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onGlobalKeydown));
   <RouterView />
   <CommandPalette
     :ws="ws"
-    :open="paletteOpen"
+    :open="ui.paletteOpen"
     :actions="localActions"
     @select="onSelect"
-    @close="closePalette"
+    @close="ui.closePalette()"
   />
 </template>

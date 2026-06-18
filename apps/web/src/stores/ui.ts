@@ -14,6 +14,15 @@ export interface Banner {
 const INSPECTOR_STORAGE_KEY = 'atlas:inspector';
 const EDITOR_WIDE_STORAGE_KEY = 'atlas:editor-wide';
 const THEME_STORAGE_KEY = 'atlas:theme';
+const SIDEBAR_STORAGE_KEY = 'atlas:sidebar-collapsed';
+
+function loadSidebarCollapsed(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
 
 function loadTheme(): Theme {
   try {
@@ -124,6 +133,31 @@ export const useUiStore = defineStore('ui', () => {
     shareOpen.value = false;
   }
 
+  const paletteOpen = ref(false);
+
+  function openPalette() {
+    paletteOpen.value = true;
+  }
+
+  function closePalette() {
+    paletteOpen.value = false;
+  }
+
+  function togglePalette() {
+    paletteOpen.value = !paletteOpen.value;
+  }
+
+  const sidebarCollapsed = ref(loadSidebarCollapsed());
+
+  function toggleSidebar() {
+    sidebarCollapsed.value = !sidebarCollapsed.value;
+    try {
+      localStorage.setItem(SIDEBAR_STORAGE_KEY, sidebarCollapsed.value ? '1' : '0');
+    } catch {
+      // ignore storage errors
+    }
+  }
+
   const settingsOpen = ref(false);
   const settingsTab = ref<SettingsTab>('account');
 
@@ -156,6 +190,12 @@ export const useUiStore = defineStore('ui', () => {
     dismissBanner,
     openShare,
     closeShare,
+    paletteOpen,
+    openPalette,
+    closePalette,
+    togglePalette,
+    sidebarCollapsed,
+    toggleSidebar,
     settingsOpen,
     settingsTab,
     openSettings,

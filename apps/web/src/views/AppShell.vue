@@ -40,7 +40,7 @@ const hasInspector = computed(() => Object.keys(slots).some((name) => name.start
   >
     <AppRail />
 
-    <ContextSidebar :title="sidebarTitle" :icon="sidebarIcon">
+    <ContextSidebar v-if="!ui.sidebarCollapsed" :title="sidebarTitle" :icon="sidebarIcon">
       <template #header-actions>
         <slot name="sidebar-actions" />
       </template>

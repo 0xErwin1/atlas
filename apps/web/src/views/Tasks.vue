@@ -179,10 +179,16 @@ watch([boardId, ws], loadBoard, { immediate: true });
 <template>
   <AppShell sidebar-title="Tasks" sidebar-icon="square-kanban">
     <template #sidebar-actions>
-      <button type="button" class="atl-gbtn" title="Filter" aria-label="Filter">
+      <button type="button" class="atl-gbtn" title="Search ⌘K" aria-label="Search" @click="ui.openPalette()">
         <Icon name="search" :size="14" />
       </button>
-      <button type="button" class="atl-gbtn" title="Collapse" aria-label="Collapse sidebar">
+      <button
+        type="button"
+        class="atl-gbtn"
+        title="Collapse sidebar"
+        aria-label="Collapse sidebar"
+        @click="ui.toggleSidebar()"
+      >
         <Icon name="panel-left" :size="13" />
       </button>
     </template>
@@ -204,11 +210,13 @@ watch([boardId, ws], loadBoard, { immediate: true });
     </template>
 
     <EditorToolbar :breadcrumbs="breadcrumbs" :dirty="false">
-      <button type="button" class="atl-gbtn" title="Filter" aria-label="Filter">
-        <Icon name="filter" :size="14" />
-        Filter
-      </button>
-      <button type="button" class="atl-gbtn" title="Command palette ⌘K" aria-label="Command palette">
+      <button
+        type="button"
+        class="atl-gbtn"
+        title="Command palette ⌘K"
+        aria-label="Command palette"
+        @click="ui.openPalette()"
+      >
         <Icon name="command" :size="14" />
       </button>
       <button
