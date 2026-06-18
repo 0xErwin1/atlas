@@ -84,6 +84,9 @@ pub struct MeResponse {
     pub principal_type: String,
     pub username: String,
     pub email: Option<String>,
+    pub id: Option<uuid::Uuid>,
+    pub display_name: Option<String>,
+    pub is_root: bool,
 }
 
 /// Response from `GET /v1/meta`. Server build information for the About screen.

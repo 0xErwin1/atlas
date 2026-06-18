@@ -192,7 +192,7 @@ pub(crate) async fn me(
         conn: (*state.db).clone(),
     };
 
-    let (principal_type, username, email) = match principal {
+    let me = match principal {
         Principal::User(user_id) => {
             let user = user_repo
                 .find_by_id(user_id)
@@ -201,16 +201,26 @@ pub(crate) async fn me(
                     message: "user lookup failed".into(),
                 })?
                 .ok_or(ApiError::Unauthorized)?;
-            ("user".to_string(), user.username, user.email)
+            MeResponse {
+                principal_type: "user".to_string(),
+                username: user.username,
+                email: user.email,
+                id: Some(user.id.0),
+                display_name: Some(user.display_name),
+                is_root: user.is_root,
+            }
         }
-        Principal::ApiKey(_key_id) => ("api_key".to_string(), "api_key".to_string(), None),
+        Principal::ApiKey(_key_id) => MeResponse {
+            principal_type: "api_key".to_string(),
+            username: "api_key".to_string(),
+            email: None,
+            id: None,
+            display_name: None,
+            is_root: false,
+        },
     };
 
-    Ok(Json(MeResponse {
-        principal_type,
-        username,
-        email,
-    }))
+    Ok(Json(me))
 }
 
 #[utoipa::path(
