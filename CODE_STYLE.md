@@ -63,3 +63,9 @@ just fmt-web     # auto-fix
 ```
 
 No ESLint or Prettier — Biome replaces both.
+
+### Patterns
+
+- **Generated API client.** `apps/web/src/api/types.d.ts` is generated from the served OpenAPI by `just gen-types`. Never hand-edit it; regenerate after a backend contract change.
+- **Form validation.** Validate with [zod](https://zod.dev/) through the shared `FormField` (`src/components/ui/FormField.vue`) and `validateForm` (`src/lib/validation.ts`). Show the API problem `hint` on failure; do not rely on native browser validation bubbles.
+- **Comments.** Same rule as Rust: default to none; explain only a non-obvious *why*.

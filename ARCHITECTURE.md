@@ -56,8 +56,8 @@ flowchart LR
 | Module | Holds |
 |--------|-------|
 | `auth/` | `password` (argon2 in `spawn_blocking`), `tokens`, `middleware` (authn), `csrf` |
-| `authz/` | `Authorized<R,M>` extractor + concrete `WorkspaceMember` / `RequireUserAdmin` extractors |
-| `routes/` | One module per resource (`auth`, `users`, `api_keys`, `projects`, `grants`, `workspaces`, `health`); `registry` (route source of truth); `openapi` (utoipa doc + Scalar) |
+| `authz/` | `Authorized<R,M>` extractor; the `ResolvedResource` types it resolves (`WorkspaceRes`, `ProjectRes`, `FolderRes`, `BoardRes`, `TaskRes`, `DocumentRes`, `DocumentSlugRes`) + the non-resource extractors `WorkspaceMember` / `RequireUserAdmin`. `DocumentSlugRes` accepts **either** a stable document UUID or its slug |
+| `routes/` | One module per resource (`auth`, `users`, `api_keys`, `workspaces`, `members`, `projects`, `folders`, `documents`, `boards`, `tasks`, `grants`, `search`, `health`); `registry` (route source of truth); `openapi` (utoipa doc + Scalar); `validation` (shared input checks) |
 | `middleware/` | `problem_stamp` (request-id into error bodies) |
 | `persistence/entities/` | SeaORM entity structs (DB shape) — never leak into `atlas_domain` |
 | `persistence/repos/` | Adapters implementing the domain ports; map entity ↔ domain |
@@ -65,22 +65,48 @@ flowchart LR
 
 `atlas_domain` mirrors the data subsystems in `entities/` and exposes them through `ports/` (one trait module per aggregate: identity, workspace_core, documents, boards_tasks, permission_grant_repo).
 
+### HTTP surface
+
+| Group | Endpoints (representative) |
+|-------|----------------------------|
+| Auth + account | `POST /v1/auth/login` · `POST /v1/auth/logout` · `GET /v1/auth/me` (returns id, username, email, display_name, is_root) · `POST /v1/auth/change-password` · `PATCH /v1/users/me` (email, display name) |
+| Users (root/admin) | `GET /v1/users` · `POST /v1/users` · `POST /v1/users/{id}/disable\|enable` · `POST /v1/users/{id}/reset-password` |
+| Workspaces | `GET /v1/workspaces` · `GET /v1/workspaces/{ws}/members` · agent API keys `…/api-keys` (create/list/revoke) |
+| Notes | projects · folders · documents (CAS content save, revisions, **backlinks**); a document is addressable by stable **UUID or slug** |
+| Tasks | boards · board columns · tasks (atomic move, assignees, references, checklist→task promotion, activity) |
+| Search | `GET /v1/workspaces/{ws}/search` (ranked docs+tasks, permission-filtered, filter tokens) |
+| Sharing + meta | grants (`…/grants`) · `GET /v1/meta` (server version/build) |
+
 ## Data model
 
-PostgreSQL 17, 17 tables. IDs are app-generated **UUIDv7** (time-ordered). Full schema and ER diagram: `sdd/atlas/atlas-e02-data-model-design-2026-06-12` (Obsidian). Highlights:
+PostgreSQL 17, 20 tables. IDs are app-generated **UUIDv7** (time-ordered). Full schema and ER diagram: `sdd/atlas/atlas-e02-data-model-design-2026-06-12` (Obsidian). Highlights:
 
 | Area | Tables | Notes |
 |------|--------|-------|
 | Tenancy + identity | workspaces, users, sessions, api_keys, workspace_memberships | `workspace_id NOT NULL` on every domain table; `users`/`sessions`/`api_keys` are the tenancy-root exceptions |
-| Content | folders, documents, document_revisions, document_links, attachments | document content is `TEXT` (TOAST); revisions are line diffs with snapshot anchors; attachments are metadata-only (blobs live in object storage → Cloudflare R2) |
-| Projects + tasks | projects, boards, board_columns, tasks, task_references | readable IDs `PREFIX-n` per project (immutable); kanban order via `fractional_index` `TEXT` position |
+| Content | folders, documents, document_revisions, document_links, attachments | document content is `TEXT` (TOAST); revisions are line diffs with snapshot anchors; attachments are metadata-only (blobs live in object storage → Cloudflare R2). `document_links` is the wikilink/backlink graph, bound to the **stable target id** |
+| Projects + tasks | projects, boards, board_columns, tasks, task_references, task_assignees, task_checklist_items, task_activity | readable IDs `PREFIX-n` per project (immutable); kanban order via `fractional_index` `TEXT` position; multiple assignees (user/agent), checklist items promotable to tasks, actor-attributed activity log |
 | Properties + access | property_definitions, permission_grants | hybrid free-frontmatter (jsonb) + typed properties; grants `(principal, resource, role)` |
 
-Every domain row records its `created_by` actor (user XOR api_key, DB CHECK), enabling human-vs-agent attribution.
+Every domain row records its `created_by` actor (user XOR api_key, DB CHECK), enabling human-vs-agent attribution. `users` carry an optional `email` (recovery only). **Wikilinks** are written as `[[<uuid>|Display Title]]` — bound to the target's stable id so they survive renames; the legacy `[[Title]]` form still resolves by slug. Slugs are immutable after creation, so addressing a document by UUID or by slug both resolve.
 
 ## Permission model
 
 Resource-sharing (not IAM). Grants `(principal, resource, role)` with roles `viewer < editor < admin` (+ `owner`, workspace-only) inheriting down `workspace > project > folder > document | board`. Most-specific grant wins; **default deny**. Visibility (`private` / `workspace` / `public`) is sugar over implicit grants. Defaults: a resource creator gets `admin`; workspace owner/admin hold implicit admin over all workspace resources; new resources default to `workspace`-edit visibility. **Agents (API keys) are capped at `editor` and never manage grants.** The list query (`list_visible`) mirrors the `resolve()` engine in both directions so a listed resource and its detail endpoint always agree. Full model: `Atlas/E00-diseno-de-producto/E00-permisos` (Obsidian).
+
+## Web frontend (`apps/web`)
+
+The browser UI is a Vue 3 SPA (Vite, Pinia, vue-router, Tailwind v4, Biome) — one of three first-class API consumers alongside the CLI and MCP. It never talks to the database; it speaks the same REST contract.
+
+| Concern | Approach |
+|---------|----------|
+| API client | A typed `openapi-fetch` client over types generated from the served OpenAPI (`just gen-types` → `src/api/types.d.ts`), wrapped thinly for the HttpOnly session cookie + CSRF header and RFC 9457 error `hint` surfacing. |
+| Shell | App rail + collapsible contextual sidebar + main area + toggleable inspector dock; Ayu-dark tokens with a dark/light theme toggle. |
+| Notes | CodeMirror 6 "live preview" markdown editor (markdown is the source of truth), `[[wikilink]]` autocomplete + id-bound links that render the target's current title, backlinks panel, CAS-409 three-way merge view. |
+| Tasks | Kanban with optimistic drag-and-drop (rollback on conflict), Linear-style peek + full task detail, inline editing. |
+| Cross-cutting | Command palette + global search (Cmd/Ctrl+K), per-resource Share dialog, Settings modal (account, agent API keys, root user management, about), consistent empty/loading/error states. Forms validate with **zod** through a shared `FormField`; the API's `hint` is shown, never a stack. |
+
+State lives in per-domain Pinia stores; `vue-router` owns navigation. Strict TDD applies here too (Vitest + vue-tsc + Biome, all in `just verify`).
 
 ## Cross-cutting conventions
 
@@ -94,4 +120,4 @@ Resource-sharing (not IAM). Grants `(principal, resource, role)` with roles `vie
 
 ## Next step
 
-When a new subsystem lands (documents/boards/tasks endpoints in E04/E05, search in E06, MCP tools in E08), extend the matching `routes/` module, add its `ROUTE_REGISTRY` entries, and update the relevant table here.
+The API now spans identity, workspaces, notes (documents/folders), tasks (boards/tasks), search, and sharing; the web SPA (E07) consumes all of it. When a new subsystem lands (e.g. MCP tools in E08, realtime collaboration in E14), extend the matching `routes/` module, add its `ROUTE_REGISTRY` entries, regenerate the web client (`just gen-types`), and update the relevant table here.

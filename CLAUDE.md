@@ -49,6 +49,15 @@ Seven crates. The dependency direction is strict and **compiler-enforced** — `
 
 Persistence pattern: SeaORM entities live in `atlas_server/src/persistence/entities/`, adapters in `.../repos/`, and map to/from domain types — SeaORM types never leak into `atlas_domain`.
 
+## Web frontend (`apps/web`)
+
+A Vue 3 SPA (Vite, Pinia per-domain stores, vue-router, Tailwind v4) — one of the three API consumers. It only speaks the REST contract; it never touches the DB.
+
+- **Generated API client.** A typed `openapi-fetch` client over `src/api/types.d.ts`, generated from the served OpenAPI by `just gen-types`. After ANY backend contract change, regenerate it; never hand-edit `types.d.ts`. A thin wrapper adds the session cookie + CSRF header and surfaces the RFC 9457 `hint`.
+- **Forms.** Validate with **zod** through the shared `FormField` (`src/components/ui/FormField.vue`) + `validateForm` (`src/lib/validation.ts`); show the API `hint`, never a stack. No native browser validation bubbles.
+- **Editor.** Shared CodeMirror 6 "live preview" `MarkdownEditor` — markdown is the source of truth. Wikilinks are id-bound `[[<uuid>|Title]]` (rename-stable; legacy `[[Title]]` resolves by slug) and render the target's current title.
+- **Tooling.** Biome (not eslint/prettier), Vitest, vue-tsc — all in `just verify`. Match existing component/store patterns; same English-only, comment-sparing conventions as the Rust side.
+
 ## Conventions
 
 - **Strict TDD.** Write the failing test first, see it red, then implement to green. Tests run with `cargo nextest`; doctests run separately.

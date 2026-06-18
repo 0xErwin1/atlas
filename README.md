@@ -1,6 +1,8 @@
 # Atlas
 
-Atlas is an AI-first workspace platform. This repository contains the full monorepo: Rust backend services, a Vue 3 web frontend, and shared tooling.
+Atlas is an AI-first workspace platform — markdown **notes** (with wikilinks and backlinks) and kanban **tasks**, multi-workspace, with resource-sharing permissions and human-vs-agent attribution. One REST API serves all three consumers alike: the web UI, the MCP server (agents), and the CLI. This repository is the full monorepo: Rust backend services, a Vue 3 web frontend, and shared tooling.
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the crate map, request lifecycle, data model, permission model, and the web frontend overview.
 
 ## Quick start
 
@@ -21,14 +23,15 @@ just dev-web          # run Vite dev server on :5173
 ```
 atlas/
 ├── crates/
-│   ├── atlas_domain/   # pure domain types, no I/O deps
-│   ├── atlas_server/   # axum HTTP server
-│   ├── atlas_client/   # HTTP client wrapping atlas_domain
+│   ├── atlas_domain/   # pure domain types + ports, no I/O deps
+│   ├── atlas_api/      # shared DTOs + OpenAPI schemas (the wire contract)
+│   ├── atlas_server/   # axum HTTP server + SeaORM adapters
+│   ├── atlas_client/   # typed HTTP client over atlas_api/atlas_domain
 │   ├── atlas_cli/      # clap CLI using atlas_client
 │   ├── atlas_mcp/      # Model Context Protocol server (rmcp)
-│   └── migration/      # sea-orm-migration stub (empty for now)
+│   └── migration/      # sea-orm-migration tool (run: cargo run -p migration -- up)
 ├── apps/
-│   └── web/            # Vue 3 + Vite + Tailwind v4 frontend
+│   └── web/            # Vue 3 + Vite + Pinia + Tailwind v4 frontend
 ├── packages/           # reserved for shared TS packages
 ├── .github/workflows/  # style, tests, web CI
 ├── justfile            # all local task recipes
