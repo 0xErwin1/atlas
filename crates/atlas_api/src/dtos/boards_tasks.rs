@@ -136,6 +136,10 @@ pub struct ReferenceDto {
     pub target_readable_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target_document_id: Option<uuid::Uuid>,
+    /// Title of the target document, for display. Present only for resolved
+    /// document references (task references use `target_readable_id`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_title: Option<String>,
     /// False when the target no longer exists (broken ref), consistent with E04.
     pub target_resolved: bool,
     pub created_by: ActorDto,

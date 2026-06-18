@@ -140,6 +140,7 @@ fn reference_to_dto(
     r: TaskReference,
     target_resolved: bool,
     target_readable_id: Option<String>,
+    target_title: Option<String>,
 ) -> ReferenceDto {
     ReferenceDto {
         id: r.id.0,
@@ -147,6 +148,7 @@ fn reference_to_dto(
         target_task_id: r.target_task_id.map(|id| id.0),
         target_readable_id,
         target_document_id: r.target_document_id.map(|id| id.0),
+        target_title,
         target_resolved,
         created_by: actor_to_dto(&r.created_by),
         created_at: r.created_at,
@@ -894,31 +896,29 @@ pub(crate) async fn list_references(
         }
     }
 
-    let mut live_doc_ids: HashSet<DocumentId> = HashSet::new();
+    let mut live_doc_titles: HashMap<DocumentId, String> = HashMap::new();
     for did in target_doc_ids {
-        if doc_repo
-            .get(&ctx, did)
-            .await
-            .map_err(ApiError::Domain)?
-            .is_some()
-        {
-            live_doc_ids.insert(did);
+        if let Some(doc) = doc_repo.get(&ctx, did).await.map_err(ApiError::Domain)? {
+            live_doc_titles.insert(did, doc.title);
         }
     }
 
     let dtos = refs
         .into_iter()
         .map(|r| {
-            let (target_resolved, target_readable_id) =
+            let (target_resolved, target_readable_id, target_title) =
                 match (r.target_task_id, r.target_document_id) {
                     (Some(tid), _) => {
                         let readable = live_task_readable.get(&tid).cloned();
-                        (readable.is_some(), readable)
+                        (readable.is_some(), readable, None)
                     }
-                    (_, Some(did)) => (live_doc_ids.contains(&did), None),
-                    _ => (false, None),
+                    (_, Some(did)) => {
+                        let title = live_doc_titles.get(&did).cloned();
+                        (title.is_some(), None, title)
+                    }
+                    _ => (false, None, None),
                 };
-            reference_to_dto(r, target_resolved, target_readable_id)
+            reference_to_dto(r, target_resolved, target_readable_id, target_title)
         })
         .collect();
 
@@ -1016,13 +1016,18 @@ pub(crate) async fn create_reference(
         None
     };
 
+    let mut target_title: Option<String> = None;
+
     let target_document_id = if let Some(raw_id) = body.target_document_id {
         let doc_id = DocumentId(raw_id);
         let doc_repo = PgDocumentRepo::new((*state.db).clone(), 0);
         let found = doc_repo.get(&ctx, doc_id).await.map_err(ApiError::Domain)?;
 
         match found {
-            Some(_) => Some(doc_id),
+            Some(doc) => {
+                target_title = Some(doc.title);
+                Some(doc_id)
+            }
             None => {
                 return Err(ApiError::Domain(atlas_domain::DomainError::NotFound {
                     entity: "document",
@@ -1053,7 +1058,12 @@ pub(crate) async fn create_reference(
 
     Ok((
         StatusCode::CREATED,
-        Json(reference_to_dto(reference, true, target_readable_id)),
+        Json(reference_to_dto(
+            reference,
+            true,
+            target_readable_id,
+            target_title,
+        )),
     ))
 }
 
@@ -1428,6 +1438,7 @@ pub(crate) async fn promote_checklist_item(
             result.parent_reference,
             true,
             Some(promoted_readable_id),
+            None,
         )),
         checklist_item: checklist_item_to_dto(result.checklist_item),
     };

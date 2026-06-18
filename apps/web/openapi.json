@@ -6259,6 +6259,13 @@
               "null"
             ],
             "format": "uuid"
+          },
+          "target_title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Title of the target document, for display. Present only for resolved\ndocument references (task references use `target_readable_id`)."
           }
         }
       },

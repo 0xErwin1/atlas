@@ -32,7 +32,7 @@ const rows = computed<Row[]>(() =>
     id: r.id,
     kind: r.kind,
     tone: KIND_TONE[r.kind] ?? 'neutral',
-    target: r.target_readable_id ?? r.target_document_id ?? 'unknown',
+    target: r.target_readable_id ?? r.target_title ?? r.target_document_id ?? 'unknown',
     resolved: r.target_resolved,
   })),
 );
