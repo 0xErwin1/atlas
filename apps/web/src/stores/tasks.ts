@@ -50,10 +50,21 @@ export const useTasksStore = defineStore('tasks', () => {
     return true;
   }
 
+  /**
+   * Merge fields into the currently open task without a round-trip. Used after a
+   * field edit (priority, status, title) goes through the boards store so the
+   * standalone task route — which has no kanban summary to read from — stays in
+   * sync. A no-op when no task is open.
+   */
+  function patchOpenTask(patch: Partial<TaskDto>): void {
+    if (openTask.value === null) return;
+    openTask.value = { ...openTask.value, ...patch };
+  }
+
   function clear(): void {
     openTask.value = null;
     error.value = null;
   }
 
-  return { openTask, loading, error, loadTask, updateDescription, clear };
+  return { openTask, loading, error, loadTask, updateDescription, patchOpenTask, clear };
 });

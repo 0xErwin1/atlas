@@ -1,23 +1,16 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import SharePanel from '@/components/share/SharePanel.vue';
 import EditorToolbar from '@/components/shell/EditorToolbar.vue';
 import EmptyState from '@/components/states/EmptyState.vue';
 import ErrorState from '@/components/states/ErrorState.vue';
 import LoadingState from '@/components/states/LoadingState.vue';
-import ActivityFeed from '@/components/tareas/ActivityFeed.vue';
-import AssigneeList from '@/components/tareas/AssigneeList.vue';
 import KanbanBoard from '@/components/tareas/KanbanBoard.vue';
-import ReferenceList from '@/components/tareas/ReferenceList.vue';
-import Btn from '@/components/ui/Btn.vue';
-import Chip from '@/components/ui/Chip.vue';
-import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
+import TaskDetailPane from '@/components/tareas/TaskDetailPane.vue';
 import Icon from '@/components/ui/Icon.vue';
-import MetaRow from '@/components/ui/MetaRow.vue';
-import { useInlineEdit } from '@/composables/useInlineEdit';
 import { useBoardsStore } from '@/stores/boards';
 import { useTaskDetailStore } from '@/stores/taskDetail';
+import { useTasksStore } from '@/stores/tasks';
 import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 import AppShell from '@/views/AppShell.vue';
@@ -28,6 +21,7 @@ const route = useRoute();
 const router = useRouter();
 const workspace = useWorkspaceStore();
 const boards = useBoardsStore();
+const tasks = useTasksStore();
 const detail = useTaskDetailStore();
 const ui = useUiStore();
 
@@ -42,108 +36,56 @@ const sidebarRef = ref<InstanceType<typeof TasksSidebar> | null>(null);
 
 const breadcrumbs = computed(() => ['Atlas', boards.board?.name ?? 'Board']);
 
-// Linear-style peek: the selected card's details show in the inspector dock
-// without leaving the board. Live fields (title, priority, status) come from the
-// reactive board summary so a context-menu change reflects immediately; the
-// richer data (assignees, backlinks, activity) is loaded into the detail store.
+// The task opened on the board, shown through TaskDetailPane in the persisted
+// view mode (sidebar dock or floating dialog). Full-screen mode navigates to the
+// standalone /t/task/:id route instead of rendering inline.
 const selectedReadableId = ref<string | null>(null);
 
-const selected = computed(() =>
-  selectedReadableId.value === null ? null : (boards.findTaskByReadableId(selectedReadableId.value) ?? null),
-);
-
-const selectedStatus = computed(() => {
-  const columnId = selected.value?.column_id;
-  return boards.columns.find((c) => c.id === columnId)?.name ?? null;
+const paneTask = computed(() => {
+  if (selectedReadableId.value === null) return null;
+  const open = tasks.openTask;
+  return open && open.readable_id === selectedReadableId.value ? open : null;
 });
+
+const paneVisible = computed(() => paneTask.value !== null && ui.taskViewMode !== 'full');
+const boardDimmed = computed(() => paneVisible.value && ui.taskViewMode === 'modal');
 
 async function onSelect(readableId: string): Promise<void> {
+  // The persisted preference may be full screen — then the board has no inline
+  // pane; open the standalone route instead.
+  if (ui.taskViewMode === 'full') {
+    openTask(readableId);
+    return;
+  }
+
   selectedReadableId.value = readableId;
-  ui.inspectorOpen = true;
-  ui.setInspectorTab('properties');
-  await Promise.all([detail.loadAll(ws.value, readableId), workspace.loadMembers(ws.value)]);
+  await Promise.all([
+    tasks.loadTask(ws.value, readableId),
+    detail.loadAll(ws.value, readableId),
+    workspace.loadMembers(ws.value),
+  ]);
 }
 
-const PRIORITY_OPTIONS: DropdownOption[] = [
-  { value: '', label: 'None' },
-  { value: 'urgent', label: 'Urgent' },
-  { value: 'high', label: 'High' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'low', label: 'Low' },
-];
-
-const statusOptions = computed<DropdownOption[]>(() =>
-  boards.columns.map((c) => ({ value: c.id, label: c.name })),
-);
-
-// Members not already assigned, offered in the "add assignee" picker.
-const assignableOptions = computed<DropdownOption[]>(() => {
-  const assigned = new Set(detail.assignees.map((a) => a.assignee.id));
-  return workspace.members
-    .filter((m) => !assigned.has(m.id))
-    .map((m) => ({ value: `${m.principal_type}:${m.id}`, label: m.display }));
-});
-
-// Inline title editing: the context is the task's readable id so a commit fires
-// against the right task even if selection changed during a blur.
-const {
-  active: titleActive,
-  value: titleValue,
-  inputRef: titleInputRef,
-  start: startTitle,
-  commit: commitTitleEdit,
-  onKeydown: onTitleKeydown,
-} = useInlineEdit<string>((title, readableId) => {
-  void commitTitle(readableId, title);
-});
-
-async function commitTitle(readableId: string, title: string): Promise<void> {
-  const ok = await boards.updateTask(ws.value, readableId, { title });
-  if (!ok && boards.error) ui.showBanner(boards.error, 'error');
+function closePane(): void {
+  selectedReadableId.value = null;
 }
 
-async function onChangeStatus(columnId: string): Promise<void> {
-  if (selectedReadableId.value === null) return;
-  const ok = await boards.moveTaskToColumn(ws.value, selectedReadableId.value, columnId);
-  if (!ok && boards.error) ui.showBanner(boards.error, 'error');
+function expandToFull(): void {
+  const readableId = selectedReadableId.value;
+  if (readableId === null) return;
+  ui.setTaskViewMode('full');
+  openTask(readableId);
 }
 
-async function onChangePriority(value: string): Promise<void> {
-  if (selectedReadableId.value === null) return;
-  const ok = await boards.updateTask(ws.value, selectedReadableId.value, {
-    priority: value === '' ? null : value,
-  });
-  if (!ok && boards.error) ui.showBanner(boards.error, 'error');
-}
-
-async function onAddAssignee(ref: string): Promise<void> {
-  if (selectedReadableId.value === null) return;
-  const [assignee_type, assignee_id] = ref.split(':');
-  if (assignee_type === undefined || assignee_id === undefined) return;
-  const ok = await detail.addAssignee(ws.value, selectedReadableId.value, { assignee_type, assignee_id });
-  if (!ok && detail.error) ui.showBanner(detail.error, 'error');
-}
-
-async function onRemoveAssignee(assigneeType: string, assigneeId: string): Promise<void> {
-  if (selectedReadableId.value === null) return;
-  const ok = await detail.removeAssignee(ws.value, selectedReadableId.value, assigneeType, assigneeId);
-  if (!ok && detail.error) ui.showBanner(detail.error, 'error');
-}
-
-async function onRemoveReference(referenceId: string): Promise<void> {
-  if (selectedReadableId.value === null) return;
-  const ok = await detail.removeReference(ws.value, selectedReadableId.value, referenceId);
-  if (!ok && detail.error) ui.showBanner(detail.error, 'error');
+function openTask(readableId: string): void {
+  void router.push({ name: 'task-detail', params: { readableId } });
 }
 
 async function loadBoard(): Promise<void> {
   if (ws.value === '') return;
 
-  // A different board invalidates the current selection/peek.
   selectedReadableId.value = null;
 
-  // No board in the URL (e.g. the rail "Tasks" button): pick the project's first
-  // board and redirect to it, mirroring how /n opens without a slug.
   if (boardId.value === null) {
     await resolveDefaultBoard();
     return;
@@ -151,6 +93,8 @@ async function loadBoard(): Promise<void> {
 
   await boards.loadBoard(ws.value, boardId.value);
   await Promise.all([boards.loadColumns(ws.value, boardId.value), boards.loadTasks(ws.value, boardId.value)]);
+
+  await openFromQuery();
 }
 
 async function resolveDefaultBoard(): Promise<void> {
@@ -169,8 +113,14 @@ async function resolveDefaultBoard(): Promise<void> {
   }
 }
 
-function openTask(readableId: string): void {
-  void router.push({ name: 'task-detail', params: { readableId } });
+// Returning from the full-screen route in sidebar/dialog mode carries the task
+// to reopen as ?open=<readable-id>; consume it once and strip it from the URL.
+async function openFromQuery(): Promise<void> {
+  const open = route.query.open;
+  if (typeof open !== 'string' || open.length === 0) return;
+
+  await router.replace({ name: 'tasks', params: { boardId: boardId.value }, query: {} });
+  await onSelect(open);
 }
 
 watch([boardId, ws], loadBoard, { immediate: true });
@@ -219,15 +169,6 @@ watch([boardId, ws], loadBoard, { immediate: true });
       >
         <Icon name="command" :size="14" />
       </button>
-      <button
-        type="button"
-        class="atl-gbtn"
-        title="Toggle inspector"
-        aria-label="Toggle inspector"
-        @click="ui.toggleInspector()"
-      >
-        <Icon name="panel-right" :size="14" />
-      </button>
     </EditorToolbar>
 
     <ErrorState
@@ -243,120 +184,28 @@ watch([boardId, ws], loadBoard, { immediate: true });
       hint="Pick a board from the sidebar to see its tasks"
       icon="square-kanban"
     />
-    <KanbanBoard
-      v-else
-      :ws="ws"
-      :selected-readable-id="selectedReadableId"
-      @select="onSelect"
-      @open="openTask"
-    />
-
-    <template #inspector-properties>
-      <div v-if="selected" class="flex flex-col" style="gap: 12px;">
-        <div>
-          <div style="font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--c-muted);">
-            {{ selected.readable_id }}
-          </div>
-          <input
-            v-if="titleActive === selected.readable_id"
-            ref="titleInputRef"
-            v-model="titleValue"
-            class="atl-peek-title-input"
-            @keydown="onTitleKeydown"
-            @blur="commitTitleEdit"
-          />
-          <div
-            v-else
-            class="atl-peek-title"
-            title="Click to rename"
-            @click="startTitle(selected.readable_id, selected.title, true)"
-          >
-            {{ selected.title }}
-          </div>
-        </div>
-
-        <div class="flex flex-col" style="gap: 8px;">
-          <MetaRow label="Status">
-            <Dropdown
-              :options="statusOptions"
-              :model-value="selected.column_id"
-              placeholder="—"
-              @change="onChangeStatus"
-            />
-          </MetaRow>
-          <MetaRow label="Priority">
-            <Dropdown
-              :options="PRIORITY_OPTIONS"
-              :model-value="selected.priority ?? ''"
-              @change="onChangePriority"
-            />
-          </MetaRow>
-          <MetaRow label="Assignees">
-            <div class="flex flex-col" style="gap: 6px; align-items: flex-start;">
-              <AssigneeList :assignees="detail.assignees" @remove="onRemoveAssignee" />
-              <Dropdown
-                v-if="assignableOptions.length"
-                :options="assignableOptions"
-                placeholder="+ Add assignee"
-                @change="onAddAssignee"
-              />
-            </div>
-          </MetaRow>
-        </div>
-
-        <Btn variant="secondary" @click="openTask(selected.readable_id)">Open full task</Btn>
-      </div>
-      <EmptyState
-        v-else
-        icon="square-kanban"
-        title="No task selected"
-        hint="Click a task on the board to see its details here."
+    <div v-else class="flex flex-1 min-h-0" style="position: relative;">
+      <KanbanBoard
+        :ws="ws"
+        :selected-readable-id="selectedReadableId"
+        :class="{ 'atl-board-dimmed': boardDimmed }"
+        @select="onSelect"
+        @open="openTask"
       />
-    </template>
-
-    <template #inspector-backlinks>
-      <ReferenceList v-if="selected" :references="detail.references" @remove="onRemoveReference" />
-      <EmptyState v-else icon="link" title="No task selected" hint="Click a task to see its backlinks." />
-    </template>
-
-    <template #inspector-activity>
-      <ActivityFeed v-if="selected" :items="detail.activity" />
-      <EmptyState v-else icon="clock" title="No task selected" hint="Click a task to see its activity." />
-    </template>
-
-    <template #inspector-share>
-      <SharePanel v-if="selected" :resource-label="`${selected.readable_id} · task`" />
-      <EmptyState v-else icon="user" title="No task selected" hint="Click a task to share it." />
-    </template>
+      <TaskDetailPane
+        v-if="paneVisible && paneTask"
+        :task="paneTask"
+        :ws="ws"
+        @close="closePane"
+        @expand="expandToFull"
+      />
+    </div>
   </AppShell>
 </template>
 
 <style scoped>
-.atl-peek-title {
-  margin-top: 2px;
-  padding: 2px 4px;
-  margin-left: -4px;
-  border-radius: var(--r-sm);
-  font-size: var(--fs-md);
-  font-weight: var(--fw-semibold);
-  color: var(--c-foreground);
-  cursor: text;
-}
-
-.atl-peek-title:hover {
-  background: var(--c-raised);
-}
-
-.atl-peek-title-input {
-  width: 100%;
-  margin-top: 2px;
-  padding: 2px 4px;
-  background: var(--c-panel);
-  border: 1px solid var(--c-primary);
-  border-radius: var(--r-sm);
-  font-size: var(--fs-md);
-  font-weight: var(--fw-semibold);
-  color: var(--c-foreground);
-  outline: none;
+.atl-board-dimmed {
+  filter: saturate(0.7) brightness(0.82);
+  transition: filter 0.2s;
 }
 </style>

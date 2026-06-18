@@ -99,4 +99,23 @@ describe('useTasksStore', () => {
       expect(opts.body.description).toBe('hello');
     });
   });
+
+  describe('patchOpenTask', () => {
+    it('merges fields into the open task', () => {
+      const store = useTasksStore();
+      store.$patch({ openTask: taskDto() });
+
+      store.patchOpenTask({ priority: 'high', column_id: 'col-2' });
+
+      expect(store.openTask?.priority).toBe('high');
+      expect(store.openTask?.column_id).toBe('col-2');
+      expect(store.openTask?.title).toBe('Test task');
+    });
+
+    it('is a no-op when no task is open', () => {
+      const store = useTasksStore();
+      store.patchOpenTask({ priority: 'low' });
+      expect(store.openTask).toBeNull();
+    });
+  });
 });

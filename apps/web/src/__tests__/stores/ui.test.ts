@@ -46,4 +46,30 @@ describe('useUiStore', () => {
     store.dismissBanner();
     expect(store.banner).toBeNull();
   });
+
+  it('taskViewMode defaults to sidebar', () => {
+    const store = useUiStore();
+    expect(store.taskViewMode).toBe('sidebar');
+  });
+
+  it('setTaskViewMode changes the mode', () => {
+    const store = useUiStore();
+    store.setTaskViewMode('modal');
+    expect(store.taskViewMode).toBe('modal');
+  });
+
+  it('setTaskViewMode persists the mode across store instances', () => {
+    const first = useUiStore();
+    first.setTaskViewMode('full');
+
+    setActivePinia(createPinia());
+    const second = useUiStore();
+    expect(second.taskViewMode).toBe('full');
+  });
+
+  it('an unknown persisted mode falls back to sidebar', () => {
+    localStorage.setItem('atlas.taskview.mode', 'bogus');
+    const store = useUiStore();
+    expect(store.taskViewMode).toBe('sidebar');
+  });
 });

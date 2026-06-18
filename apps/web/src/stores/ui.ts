@@ -5,6 +5,7 @@ export type InspectorTab = 'properties' | 'backlinks' | 'activity' | 'share';
 export type SettingsTab = 'account' | 'keys' | 'users' | 'about';
 export type BannerType = 'error' | 'warning' | 'info' | 'success';
 export type Theme = 'dark' | 'light';
+export type TaskViewMode = 'sidebar' | 'modal' | 'full';
 
 export interface Banner {
   message: string;
@@ -15,6 +16,17 @@ const INSPECTOR_STORAGE_KEY = 'atlas:inspector';
 const EDITOR_WIDE_STORAGE_KEY = 'atlas:editor-wide';
 const THEME_STORAGE_KEY = 'atlas:theme';
 const SIDEBAR_STORAGE_KEY = 'atlas:sidebar-collapsed';
+const TASK_VIEW_MODE_STORAGE_KEY = 'atlas.taskview.mode';
+
+function loadTaskViewMode(): TaskViewMode {
+  try {
+    const v = localStorage.getItem(TASK_VIEW_MODE_STORAGE_KEY);
+    if (v === 'sidebar' || v === 'modal' || v === 'full') return v;
+  } catch {
+    // ignore malformed storage
+  }
+  return 'sidebar';
+}
 
 function loadSidebarCollapsed(): boolean {
   try {
@@ -158,6 +170,19 @@ export const useUiStore = defineStore('ui', () => {
     }
   }
 
+  // How an opened task is presented: a right-side dock, a floating dialog, or
+  // full screen. Persisted so the user's preference sticks across tasks/sessions.
+  const taskViewMode = ref<TaskViewMode>(loadTaskViewMode());
+
+  function setTaskViewMode(mode: TaskViewMode) {
+    taskViewMode.value = mode;
+    try {
+      localStorage.setItem(TASK_VIEW_MODE_STORAGE_KEY, mode);
+    } catch {
+      // ignore storage errors
+    }
+  }
+
   const settingsOpen = ref(false);
   const settingsTab = ref<SettingsTab>('account');
 
@@ -196,6 +221,8 @@ export const useUiStore = defineStore('ui', () => {
     togglePalette,
     sidebarCollapsed,
     toggleSidebar,
+    taskViewMode,
+    setTaskViewMode,
     settingsOpen,
     settingsTab,
     openSettings,

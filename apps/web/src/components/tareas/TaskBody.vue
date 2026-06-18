@@ -1,0 +1,419 @@
+<script setup lang="ts">
+import { computed } from 'vue';
+import type { components } from '@/api/types.d.ts';
+import ActivityFeed from '@/components/tareas/ActivityFeed.vue';
+import AssigneeList from '@/components/tareas/AssigneeList.vue';
+import Checklist from '@/components/tareas/Checklist.vue';
+import ReferenceAdd from '@/components/tareas/ReferenceAdd.vue';
+import ReferenceList from '@/components/tareas/ReferenceList.vue';
+import TaskDescription from '@/components/tareas/TaskDescription.vue';
+import Chip from '@/components/ui/Chip.vue';
+import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
+import Icon from '@/components/ui/Icon.vue';
+import { useInlineEdit } from '@/composables/useInlineEdit';
+import { useBoardsStore } from '@/stores/boards';
+import { useTaskDetailStore } from '@/stores/taskDetail';
+import { useTasksStore } from '@/stores/tasks';
+import { useUiStore } from '@/stores/ui';
+import { useWorkspaceStore } from '@/stores/workspace';
+
+type TaskDto = components['schemas']['TaskDto'];
+
+const props = withDefaults(
+  defineProps<{
+    task: TaskDto;
+    ws: string;
+    layout?: 'wide' | 'narrow';
+  }>(),
+  { layout: 'wide' },
+);
+
+const boards = useBoardsStore();
+const tasks = useTasksStore();
+const detail = useTaskDetailStore();
+const workspace = useWorkspaceStore();
+const ui = useUiStore();
+
+const wide = computed(() => props.layout === 'wide');
+
+// Kanban-summary fields (title, priority, status) reflect context-menu edits made
+// on the board immediately; the full task supplies everything else. Prefer the
+// summary when present, falling back to the loaded task on the standalone route.
+const summary = computed(() => boards.findTaskByReadableId(props.task.readable_id) ?? null);
+
+const title = computed(() => summary.value?.title ?? props.task.title);
+const priority = computed(() => summary.value?.priority ?? props.task.priority ?? null);
+const columnId = computed(() => summary.value?.column_id ?? props.task.column_id);
+
+const statusName = computed(() => boards.columns.find((c) => c.id === columnId.value)?.name ?? null);
+
+const dueDate = computed(() => {
+  const raw = props.task.due_date;
+  if (raw == null) return null;
+  const d = new Date(raw);
+  return Number.isNaN(d.getTime())
+    ? null
+    : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+});
+
+const PRIORITY_OPTIONS: DropdownOption[] = [
+  { value: '', label: 'None' },
+  { value: 'urgent', label: 'Urgent' },
+  { value: 'high', label: 'High' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'low', label: 'Low' },
+];
+
+const statusOptions = computed<DropdownOption[]>(() =>
+  boards.columns.map((c) => ({ value: c.id, label: c.name })),
+);
+
+const assignableOptions = computed<DropdownOption[]>(() => {
+  const assigned = new Set(detail.assignees.map((a) => a.assignee.id));
+  return workspace.members
+    .filter((m) => !assigned.has(m.id))
+    .map((m) => ({ value: `${m.principal_type}:${m.id}`, label: m.display }));
+});
+
+const {
+  active: titleActive,
+  value: titleValue,
+  inputRef: titleInputRef,
+  start: startTitle,
+  commit: commitTitleEdit,
+  onKeydown: onTitleKeydown,
+} = useInlineEdit<string>((next, readableId) => {
+  void commitTitle(readableId, next);
+});
+
+function fail(message: string | null): void {
+  if (message) ui.showBanner(message, 'error');
+}
+
+async function commitTitle(readableId: string, next: string): Promise<void> {
+  const ok = await boards.updateTask(props.ws, readableId, { title: next });
+  if (ok) tasks.patchOpenTask({ title: next });
+  else fail(boards.error);
+}
+
+async function onChangeStatus(value: string): Promise<void> {
+  const ok = await boards.moveTaskToColumn(props.ws, props.task.readable_id, value);
+  if (ok) tasks.patchOpenTask({ column_id: value });
+  else fail(boards.error);
+}
+
+async function onChangePriority(value: string): Promise<void> {
+  const next = value === '' ? null : value;
+  const ok = await boards.updateTask(props.ws, props.task.readable_id, { priority: next });
+  if (ok) tasks.patchOpenTask({ priority: next });
+  else fail(boards.error);
+}
+
+async function onAddAssignee(ref: string): Promise<void> {
+  const [assignee_type, assignee_id] = ref.split(':');
+  if (assignee_type === undefined || assignee_id === undefined) return;
+  const ok = await detail.addAssignee(props.ws, props.task.readable_id, { assignee_type, assignee_id });
+  if (!ok) fail(detail.error);
+}
+
+async function onRemoveAssignee(assigneeType: string, assigneeId: string): Promise<void> {
+  const ok = await detail.removeAssignee(props.ws, props.task.readable_id, assigneeType, assigneeId);
+  if (!ok) fail(detail.error);
+}
+
+async function onToggleChecklist(itemId: string): Promise<void> {
+  const ok = await detail.toggleChecklistItem(props.ws, props.task.readable_id, itemId);
+  if (!ok) fail(detail.error);
+}
+
+async function onAddChecklist(itemTitle: string): Promise<void> {
+  const ok = await detail.addChecklistItem(props.ws, props.task.readable_id, itemTitle);
+  if (!ok) fail(detail.error);
+}
+
+async function onPromoteChecklist(itemId: string): Promise<void> {
+  const result = await detail.promoteChecklistItem(
+    props.ws,
+    props.task.readable_id,
+    itemId,
+    props.task.board_id,
+    columnId.value,
+  );
+  if (result.ok && result.readableId) ui.showBanner(`Promoted to ${result.readableId}`, 'success');
+  else fail(detail.error);
+}
+
+async function onAddReference(body: components['schemas']['CreateReferenceRequest']): Promise<void> {
+  const ok = await detail.addReference(props.ws, props.task.readable_id, body);
+  if (ok) ui.showBanner('Reference added', 'success');
+  else fail(detail.error);
+}
+
+async function onRemoveReference(referenceId: string): Promise<void> {
+  const ok = await detail.removeReference(props.ws, props.task.readable_id, referenceId);
+  if (!ok) fail(detail.error);
+}
+</script>
+
+<template>
+  <div class="atl-tv-body" :class="{ wide }">
+    <div class="atl-tv-typebar">
+      <span class="atl-tv-typechip">
+        <Icon name="square-kanban" :size="13" style="color: var(--c-primary);" />
+        Task
+      </span>
+      <span class="atl-tv-id">{{ task.readable_id }}</span>
+      <span style="flex: 1;" />
+      <Chip v-for="label in task.labels ?? []" :key="label" tone="info">{{ label }}</Chip>
+    </div>
+
+    <input
+      v-if="titleActive === task.readable_id"
+      ref="titleInputRef"
+      v-model="titleValue"
+      class="atl-tv-title-input"
+      :class="{ wide }"
+      @keydown="onTitleKeydown"
+      @blur="commitTitleEdit"
+    />
+    <h1
+      v-else
+      class="atl-tv-title"
+      :class="{ wide }"
+      title="Click to rename"
+      @click="startTitle(task.readable_id, title, true)"
+    >
+      {{ title }}
+    </h1>
+
+    <div class="atl-tv-fields" :class="{ wide }">
+      <div class="atl-tv-col">
+        <div class="atl-tv-field">
+          <span class="atl-tv-label"><Icon name="circle-dot" :size="14" />Status</span>
+          <span class="atl-tv-value">
+            <Dropdown :options="statusOptions" :model-value="columnId" placeholder="—" @change="onChangeStatus" />
+          </span>
+        </div>
+        <div class="atl-tv-field">
+          <span class="atl-tv-label"><Icon name="users" :size="14" />Assignees</span>
+          <span class="atl-tv-value" style="flex-direction: column; align-items: flex-start;">
+            <AssigneeList :assignees="detail.assignees" @remove="onRemoveAssignee" />
+            <Dropdown
+              v-if="assignableOptions.length"
+              :options="assignableOptions"
+              placeholder="+ Add assignee"
+              @change="onAddAssignee"
+            />
+          </span>
+        </div>
+        <div class="atl-tv-field">
+          <span class="atl-tv-label"><Icon name="calendar" :size="14" />Due</span>
+          <span class="atl-tv-value" :class="{ empty: dueDate === null }">
+            <span v-if="dueDate" style="font-family: var(--font-mono); font-size: var(--fs-xs);">{{ dueDate }}</span>
+            <span v-else>Empty</span>
+          </span>
+        </div>
+      </div>
+
+      <div class="atl-tv-col">
+        <div class="atl-tv-field">
+          <span class="atl-tv-label"><Icon name="flag" :size="14" />Priority</span>
+          <span class="atl-tv-value">
+            <Dropdown :options="PRIORITY_OPTIONS" :model-value="priority ?? ''" @change="onChangePriority" />
+          </span>
+        </div>
+        <div class="atl-tv-field">
+          <span class="atl-tv-label"><Icon name="clock" :size="14" />Estimate</span>
+          <span class="atl-tv-value" :class="{ empty: task.estimate == null }">
+            <span v-if="task.estimate != null" style="font-family: var(--font-mono); font-size: var(--fs-xs);">
+              {{ task.estimate }} pts
+            </span>
+            <span v-else>Empty</span>
+          </span>
+        </div>
+        <div class="atl-tv-field">
+          <span class="atl-tv-label"><Icon name="tag" :size="14" />Tags</span>
+          <span class="atl-tv-value" :class="{ empty: (task.labels ?? []).length === 0 }">
+            <template v-if="(task.labels ?? []).length">
+              <Chip v-for="label in task.labels" :key="label" tone="info">{{ label }}</Chip>
+            </template>
+            <span v-else>Empty</span>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <div class="atl-tv-divider" />
+
+    <div class="atl-tv-section-label">Description</div>
+    <TaskDescription :markdown="task.description" :ws="ws" :readable-id="task.readable_id" />
+
+    <div style="margin-top: 22px;">
+      <Checklist
+        :items="detail.checklist"
+        @toggle="onToggleChecklist"
+        @add="onAddChecklist"
+        @promote="onPromoteChecklist"
+      />
+    </div>
+
+    <div style="margin-top: 22px;">
+      <div class="atl-tv-section-label">References</div>
+      <ReferenceList :references="detail.references" @remove="onRemoveReference" />
+      <ReferenceAdd :ws="ws" @add="onAddReference" />
+    </div>
+
+    <div style="margin-top: 22px;">
+      <div class="atl-tv-section-label">Activity</div>
+      <ActivityFeed :items="detail.activity" />
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.atl-tv-body {
+  padding: 4px 0 28px;
+}
+
+.atl-tv-body.wide {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 8px 0 40px;
+}
+
+.atl-tv-typebar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.atl-tv-typechip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: var(--r-sm);
+  background: var(--c-raised);
+  border: 1px solid var(--c-border);
+  font-size: 11.5px;
+  font-weight: var(--fw-semibold);
+  color: var(--c-foreground);
+}
+
+.atl-tv-id {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--c-muted);
+}
+
+.atl-tv-title {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--c-foreground);
+  margin: 0 0 16px;
+  padding: 2px 4px;
+  margin-left: -4px;
+  border-radius: var(--r-sm);
+  cursor: text;
+}
+
+.atl-tv-title.wide {
+  font-size: var(--fs-title);
+}
+
+.atl-tv-title:hover {
+  background: var(--c-raised);
+}
+
+.atl-tv-title-input {
+  width: 100%;
+  margin: 0 0 16px;
+  padding: 2px 4px;
+  background: var(--c-panel);
+  border: 1px solid var(--c-primary);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
+  color: var(--c-foreground);
+  outline: none;
+}
+
+.atl-tv-title-input.wide {
+  font-size: var(--fs-title);
+}
+
+.atl-tv-fields {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 0;
+  margin-bottom: 14px;
+}
+
+.atl-tv-fields.wide {
+  column-gap: 36px;
+}
+
+.atl-tv-col {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+
+.atl-tv-fields.wide .atl-tv-col {
+  flex: 1 1 300px;
+}
+
+.atl-tv-field {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 30px;
+  padding: 4px 0;
+  min-width: 0;
+}
+
+.atl-tv-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 120px;
+  flex: 0 0 120px;
+  padding-top: 3px;
+  color: var(--c-muted);
+  font-size: var(--fs-sm);
+}
+
+.atl-tv-value {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  font-size: var(--fs-sm);
+  color: var(--c-foreground);
+}
+
+.atl-tv-value.empty {
+  color: var(--c-muted);
+}
+
+.atl-tv-divider {
+  height: 1px;
+  background: var(--c-border);
+  margin: 4px 0 18px;
+}
+
+.atl-tv-section-label {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--c-muted);
+  margin-bottom: 8px;
+}
+</style>
