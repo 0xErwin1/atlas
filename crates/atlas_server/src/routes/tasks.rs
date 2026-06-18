@@ -790,7 +790,10 @@ pub(crate) async fn add_assignee(
             other => ApiError::Domain(other),
         })?;
 
-    Ok((StatusCode::CREATED, Json(assignee_to_dto(&state, &ctx, result).await)))
+    Ok((
+        StatusCode::CREATED,
+        Json(assignee_to_dto(&state, &ctx, result).await),
+    ))
 }
 
 // ---------------------------------------------------------------------------

@@ -279,7 +279,11 @@ async fn list_folders_includes_nested() {
         .await
         .expect("list");
 
-    assert_eq!(page.items.len(), 2, "list must include the nested child folder");
+    assert_eq!(
+        page.items.len(),
+        2,
+        "list must include the nested child folder"
+    );
     let child = page
         .items
         .iter()

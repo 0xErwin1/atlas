@@ -895,7 +895,13 @@ async fn move_task_with_task_id_anchor_succeeds() {
         .expect("create project");
 
     let board = client
-        .create_board(&ws.slug, "anchor-proj", CreateBoardRequest { name: "Board".to_string() })
+        .create_board(
+            &ws.slug,
+            "anchor-proj",
+            CreateBoardRequest {
+                name: "Board".to_string(),
+            },
+        )
         .await
         .expect("create board");
 
@@ -903,7 +909,11 @@ async fn move_task_with_task_id_anchor_succeeds() {
         .create_column(
             &ws.slug,
             board.id,
-            CreateColumnRequest { name: "Todo".to_string(), before: None, after: None },
+            CreateColumnRequest {
+                name: "Todo".to_string(),
+                before: None,
+                after: None,
+            },
         )
         .await
         .expect("create column");
@@ -917,8 +927,14 @@ async fn move_task_with_task_id_anchor_succeeds() {
         after: None,
     };
 
-    let t1 = client.create_task(&ws.slug, board.id, make("T1")).await.expect("t1");
-    let t2 = client.create_task(&ws.slug, board.id, make("T2")).await.expect("t2");
+    let t1 = client
+        .create_task(&ws.slug, board.id, make("T1"))
+        .await
+        .expect("t1");
+    let t2 = client
+        .create_task(&ws.slug, board.id, make("T2"))
+        .await
+        .expect("t2");
 
     // Anchor the move to T1 by its task id; before the fix this was treated as a
     // fractional key, was invalid, and returned 409 PositionExhausted.
@@ -958,11 +974,23 @@ async fn move_task_across_boards_succeeds() {
         .expect("create project b");
 
     let board_a = client
-        .create_board(&ws.slug, "proj-a", CreateBoardRequest { name: "A".to_string() })
+        .create_board(
+            &ws.slug,
+            "proj-a",
+            CreateBoardRequest {
+                name: "A".to_string(),
+            },
+        )
         .await
         .expect("create board a");
     let board_b = client
-        .create_board(&ws.slug, "proj-b", CreateBoardRequest { name: "B".to_string() })
+        .create_board(
+            &ws.slug,
+            "proj-b",
+            CreateBoardRequest {
+                name: "B".to_string(),
+            },
+        )
         .await
         .expect("create board b");
 
@@ -970,7 +998,11 @@ async fn move_task_across_boards_succeeds() {
         .create_column(
             &ws.slug,
             board_a.id,
-            CreateColumnRequest { name: "Todo".to_string(), before: None, after: None },
+            CreateColumnRequest {
+                name: "Todo".to_string(),
+                before: None,
+                after: None,
+            },
         )
         .await
         .expect("create column a");
@@ -978,7 +1010,11 @@ async fn move_task_across_boards_succeeds() {
         .create_column(
             &ws.slug,
             board_b.id,
-            CreateColumnRequest { name: "Todo".to_string(), before: None, after: None },
+            CreateColumnRequest {
+                name: "Todo".to_string(),
+                before: None,
+                after: None,
+            },
         )
         .await
         .expect("create column b");
@@ -1003,15 +1039,25 @@ async fn move_task_across_boards_succeeds() {
         .move_task(
             &ws.slug,
             &task.readable_id,
-            MoveTaskRequest { column_id: col_b.id, before: None, after: None },
+            MoveTaskRequest {
+                column_id: col_b.id,
+                before: None,
+                after: None,
+            },
         )
         .await
         .expect("cross-board move should succeed");
 
     assert_eq!(moved.column_id, col_b.id, "task lands in the target column");
     assert_eq!(moved.board_id, board_b.id, "task adopts the target board");
-    assert_eq!(moved.project_id, board_b.project_id, "task adopts the target board's project");
-    assert_eq!(moved.readable_id, task.readable_id, "readable id is immutable identity");
+    assert_eq!(
+        moved.project_id, board_b.project_id,
+        "task adopts the target board's project"
+    );
+    assert_eq!(
+        moved.readable_id, task.readable_id,
+        "readable id is immutable identity"
+    );
 
     let in_board_b = client
         .list_tasks(&ws.slug, board_b.id, None, None)
