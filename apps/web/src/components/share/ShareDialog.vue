@@ -31,6 +31,19 @@ const share = useShareStore();
 
 const openMenuFor = ref<string | null>(null);
 const memberQuery = ref('');
+const linkCopied = ref(false);
+
+async function copyLink(): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(window.location.href);
+    linkCopied.value = true;
+    setTimeout(() => {
+      linkCopied.value = false;
+    }, 1500);
+  } catch {
+    // clipboard unavailable (insecure context / denied)
+  }
+}
 
 watch(
   () => [props.open, props.ws] as const,
@@ -345,9 +358,9 @@ async function selectMember(member: PrincipalDto): Promise<void> {
         class="flex items-center"
         style="gap: 10px; padding: 12px 16px; border-top: 1px solid var(--c-border);"
       >
-        <Btn variant="ghost">
-          <Icon name="link" :size="14" />
-          Copy link
+        <Btn variant="ghost" @click="copyLink">
+          <Icon :name="linkCopied ? 'check' : 'link'" :size="14" />
+          {{ linkCopied ? 'Copied' : 'Copy link' }}
         </Btn>
         <div class="flex-1" />
         <span
