@@ -1,5 +1,8 @@
 <script setup lang="ts">
-withDefaults(
+import { computed } from 'vue';
+import Icon from '@/components/ui/Icon.vue';
+
+const props = withDefaults(
   defineProps<{
     name?: string;
     size?: number;
@@ -11,6 +14,11 @@ withDefaults(
     agent: false,
   },
 );
+
+// Small avatars (the design's range) use a fixed 9px; larger ones the app adds
+// (account, reset) scale proportionally so initials stay readable.
+const fontSize = computed(() => (props.size <= 18 ? 9 : Math.max(10, Math.floor(props.size * 0.42))));
+const sparkleSize = computed(() => (props.size <= 18 ? 11 : 13));
 </script>
 
 <template>
@@ -23,13 +31,13 @@ withDefaults(
       backgroundColor: agent ? 'var(--c-agent-bg)' : 'var(--c-raised)',
       border: agent ? '1px solid var(--c-agent-border)' : '1px solid var(--c-border)',
       fontFamily: 'var(--font-mono)',
-      fontSize: `${Math.max(10, Math.floor(size * 0.42))}px`,
-      fontWeight: 600,
+      fontSize: `${fontSize}px`,
+      fontWeight: 700,
       color: agent ? 'var(--c-agent)' : 'var(--c-foreground)',
       lineHeight: '1',
     }"
   >
-    <slot>{{ name ? name.slice(0, 2).toUpperCase() : '?' }}</slot>
-    <slot name="sparkles" />
+    <Icon v-if="agent" name="sparkles" :size="sparkleSize" />
+    <slot v-else>{{ name ? name.slice(0, 2).toUpperCase() : '?' }}</slot>
   </span>
 </template>

@@ -217,13 +217,7 @@ async function selectMember(member: PrincipalDto): Promise<void> {
               "
               @click="selectMember(m)"
             >
-              <Avatar :agent="m.principal_type !== 'user'" :size="22" :name="m.display">
-                <Icon
-                  v-if="m.principal_type !== 'user'"
-                  name="sparkles"
-                  :size="11"
-                />
-              </Avatar>
+              <Avatar :agent="m.principal_type !== 'user'" :size="22" :name="m.display" />
               <span class="flex-1 min-w-0 truncate" style="font-size: var(--fs-base); font-weight: var(--fw-medium);">
                 {{ m.display }}
               </span>
@@ -265,9 +259,7 @@ async function selectMember(member: PrincipalDto): Promise<void> {
           class="flex items-center relative"
           style="gap: 10px; padding: 8px 0;"
         >
-          <Avatar :agent="isAgent(g)" :size="24" :name="principalLabel(g)">
-            <Icon v-if="isAgent(g)" name="sparkles" :size="13" />
-          </Avatar>
+          <Avatar :agent="isAgent(g)" :size="24" :name="principalLabel(g)" />
           <div class="flex-1 min-w-0">
             <div
               class="flex items-center"
