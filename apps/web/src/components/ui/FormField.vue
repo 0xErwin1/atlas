@@ -6,7 +6,7 @@ const props = withDefaults(
   defineProps<{
     label?: string;
     modelValue: string;
-    type?: 'text' | 'password' | 'email';
+    type?: 'text' | 'password' | 'email' | 'date';
     placeholder?: string;
     /** Inline validation message; when set the field renders in the error state. */
     error?: string | null;

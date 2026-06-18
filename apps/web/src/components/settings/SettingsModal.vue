@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, watch } from 'vue';
 import AboutPanel from '@/components/settings/AboutPanel.vue';
 import AccountPanel from '@/components/settings/AccountPanel.vue';
+import ApiKeysPanel from '@/components/settings/ApiKeysPanel.vue';
 import Icon from '@/components/ui/Icon.vue';
 import { type SettingsTab, useUiStore } from '@/stores/ui';
 
@@ -17,6 +18,7 @@ interface NavItem {
 // so the nav never offers a dead destination.
 const navItems = computed<NavItem[]>(() => [
   { tab: 'account', icon: 'user', label: 'Account' },
+  { tab: 'keys', icon: 'key', label: 'API keys' },
   { tab: 'about', icon: 'info', label: 'About' },
 ]);
 
@@ -74,6 +76,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
 
         <div class="atl-settings-content">
           <AccountPanel v-if="ui.settingsTab === 'account'" />
+          <ApiKeysPanel v-else-if="ui.settingsTab === 'keys'" />
           <AboutPanel v-else-if="ui.settingsTab === 'about'" />
         </div>
       </div>
