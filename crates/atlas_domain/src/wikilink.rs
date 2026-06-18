@@ -23,6 +23,25 @@ pub fn parse_wikilinks(content: &str) -> Vec<String> {
     targets
 }
 
+/// Resolves the inner content of a `[[...]]` wikilink into an optional target
+/// document id and a display title.
+///
+/// The syntax is split on the FIRST `|`. When a `|` is present and the left part
+/// (trimmed) parses as a UUID, the link is id-bound: the UUID is the stable
+/// target and the right part (trimmed) is the display title. Otherwise the link
+/// is treated as legacy / hand-typed: no id, and the whole trimmed `raw` is the
+/// title — this deliberately covers a `|` whose left part is not a UUID (e.g.
+/// `Foo|Bar`), which stays a legacy title rather than an id-bound link.
+pub fn parse_wikilink_target(raw: &str) -> (Option<uuid::Uuid>, String) {
+    if let Some((left, right)) = raw.split_once('|')
+        && let Ok(id) = uuid::Uuid::parse_str(left.trim())
+    {
+        return (Some(id), right.trim().to_string());
+    }
+
+    (None, raw.trim().to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -81,5 +100,50 @@ mod tests {
     #[test]
     fn empty_wikilink_not_included() {
         assert_eq!(parse_wikilinks("[[]]"), Vec::<String>::new());
+    }
+
+    #[test]
+    fn target_id_bound_link_returns_uuid_and_display_title() {
+        let uuid =
+            uuid::Uuid::parse_str("019ed5fa-0000-7000-8000-000000000000").expect("valid test uuid");
+        let raw = format!("{uuid}|Editor test");
+
+        assert_eq!(
+            parse_wikilink_target(&raw),
+            (Some(uuid), "Editor test".to_string())
+        );
+    }
+
+    #[test]
+    fn target_id_bound_link_trims_surrounding_whitespace() {
+        let uuid =
+            uuid::Uuid::parse_str("019ed5fa-0000-7000-8000-000000000000").expect("valid test uuid");
+        let raw = format!("  {uuid}  |  Editor test  ");
+
+        assert_eq!(
+            parse_wikilink_target(&raw),
+            (Some(uuid), "Editor test".to_string())
+        );
+    }
+
+    #[test]
+    fn target_plain_title_returns_none_and_title() {
+        assert_eq!(
+            parse_wikilink_target("Plain Title"),
+            (None, "Plain Title".to_string())
+        );
+    }
+
+    #[test]
+    fn target_non_uuid_before_pipe_is_legacy_title() {
+        assert_eq!(
+            parse_wikilink_target("Foo|Bar"),
+            (None, "Foo|Bar".to_string())
+        );
+    }
+
+    #[test]
+    fn target_empty_returns_none_and_empty_title() {
+        assert_eq!(parse_wikilink_target(""), (None, String::new()));
     }
 }

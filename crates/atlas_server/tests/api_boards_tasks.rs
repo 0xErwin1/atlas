@@ -1892,6 +1892,82 @@ async fn task_description_wikilink_persists_resolved_link() {
     db.teardown().await;
 }
 
+/// An id-bound `[[<uuid>|Title]]` wikilink in a task description resolves to the
+/// target document by its stable id, independent of the display title text.
+#[tokio::test]
+async fn task_description_id_bound_wikilink_resolves_by_id() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "wikilink-id-1").await;
+
+    client
+        .create_project(&ws.slug, project_req("wiki-id-proj", "WI"))
+        .await
+        .expect("create project");
+
+    let doc = client
+        .create_document(
+            &ws.slug,
+            "wiki-id-proj",
+            CreateDocumentRequest {
+                title: "Existing Doc".to_string(),
+                folder_id: None,
+                content: Some("body".to_string()),
+            },
+        )
+        .await
+        .expect("create document");
+
+    let board = client
+        .create_board(
+            &ws.slug,
+            "wiki-id-proj",
+            CreateBoardRequest {
+                name: "Board".to_string(),
+            },
+        )
+        .await
+        .expect("create board");
+
+    let col = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "Todo".to_string(),
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create column");
+
+    let task = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: col.id,
+                title: "Task".to_string(),
+                description: Some(format!("see [[{}|Renamed Label]] for context", doc.id)),
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create task");
+
+    let links = task_links(&db, task.id).await;
+    assert_eq!(
+        links,
+        vec![("Renamed Label".to_string(), Some(doc.id))],
+        "id-bound task wikilink must resolve to the target id with its display title"
+    );
+
+    db.teardown().await;
+}
+
 /// A `[[Nonexistent]]` wikilink is stored as a pending link (target NULL),
 /// consistent with E04 document behavior — not dropped, not an error.
 #[tokio::test]

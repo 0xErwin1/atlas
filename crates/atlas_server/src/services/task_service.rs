@@ -5,14 +5,17 @@ use atlas_domain::{
         NewTaskChecklistItem, NewTaskReference, PositionBetween, ReferenceKind, Task, TaskActivity,
         TaskAssignee, TaskChecklistItem, TaskChecklistItemPatch, TaskPatch, TaskReference,
     },
-    ids::{BoardId, ChecklistItemId, ColumnId, ProjectId, TaskActivityId, TaskId, TaskReferenceId},
+    ids::{
+        BoardId, ChecklistItemId, ColumnId, DocumentId, ProjectId, TaskActivityId, TaskId,
+        TaskReferenceId,
+    },
 };
 use sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QuerySelect, TransactionTrait,
 };
 
 use atlas_domain::entities::documents::ExtractedLink;
-use atlas_domain::{parse_wikilinks, slugify};
+use atlas_domain::{parse_wikilink_target, parse_wikilinks, slugify};
 use sea_orm::ConnectionTrait;
 
 use crate::persistence::entities::boards_tasks::{
@@ -653,12 +656,14 @@ async fn validate_column_in_board(
     }
 }
 
-/// Parses wikilinks out of a task description, resolves each `[[Title]]` to a
-/// live document by slug, and replaces the task's link set — all on `conn`, so
-/// it joins the caller's transaction.
+/// Parses wikilinks out of a task description, resolves each to a live document,
+/// and replaces the task's link set — all on `conn`, so it joins the caller's
+/// transaction.
 ///
-/// Mirrors E04's document wikilink flow: a title that resolves to no live
-/// document is stored as a pending link (target_document_id NULL), not dropped.
+/// An id-bound link `[[<uuid>|Title]]` resolves by the stable document id; a
+/// legacy `[[Title]]` link resolves by title-slug. Mirrors E04's document
+/// wikilink flow: a link that resolves to no live document is stored as a
+/// pending link (target_document_id NULL), not dropped.
 /// This pending-link behavior applies to task description wikilinks (`document_links`)
 /// only; typed `task_references` reject non-existent targets outright.
 async fn sync_task_description_links(
@@ -667,12 +672,20 @@ async fn sync_task_description_links(
     task_id: TaskId,
     description: &str,
 ) -> Result<(), DomainError> {
-    let titles = parse_wikilinks(description);
+    let raw_links = parse_wikilinks(description);
 
-    let mut extracted = Vec::with_capacity(titles.len());
-    for title in titles {
-        let target_document_id =
-            PgDocumentLinkRepo::find_document_id_by_slug_in(conn, ctx, &slugify(&title)).await?;
+    let mut extracted = Vec::with_capacity(raw_links.len());
+    for raw in raw_links {
+        let (target_id, title) = parse_wikilink_target(&raw);
+
+        let target_document_id = match target_id {
+            Some(id) => {
+                PgDocumentLinkRepo::find_document_id_by_id_in(conn, ctx, DocumentId(id)).await?
+            }
+            None => {
+                PgDocumentLinkRepo::find_document_id_by_slug_in(conn, ctx, &slugify(&title)).await?
+            }
+        };
 
         extracted.push(ExtractedLink {
             target_title: title,

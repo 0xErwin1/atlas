@@ -797,6 +797,186 @@ async fn broken_wikilink_is_stored_without_target() {
     db.teardown().await;
 }
 
+/// Reads `(target_title, target_document_id)` rows for the links sourced from a
+/// document, ordered by title — mirrors the task-link helper.
+async fn document_source_links(
+    db: &support::TestDb,
+    source_document_id: uuid::Uuid,
+) -> Vec<(String, Option<uuid::Uuid>)> {
+    use sea_orm::{ConnectionTrait, Statement};
+
+    let rows = db
+        .conn()
+        .query_all_raw(Statement::from_string(
+            sea_orm::DatabaseBackend::Postgres,
+            format!(
+                "SELECT target_title, target_document_id FROM document_links \
+                 WHERE source_document_id = '{source_document_id}' ORDER BY target_title"
+            ),
+        ))
+        .await
+        .expect("query document_links");
+
+    rows.into_iter()
+        .map(|r| {
+            let title: String = r.try_get("", "target_title").expect("target_title");
+            let doc: Option<uuid::Uuid> = r
+                .try_get("", "target_document_id")
+                .expect("target_document_id");
+            (title, doc)
+        })
+        .collect()
+}
+
+/// An id-bound wikilink `[[<uuid>|Title]]` resolves to the target by its stable
+/// id, independent of the display title text.
+#[tokio::test]
+async fn id_bound_wikilink_resolves_by_id_independent_of_title() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-idlink-1").await;
+
+    let project = client
+        .create_project(
+            &ws.slug,
+            atlas_api::dtos::CreateProjectRequest {
+                name: "Proj".to_string(),
+                slug: "proj-idlink-1".to_string(),
+                task_prefix: "PIL".to_string(),
+                visibility: None,
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create project");
+
+    let target = client
+        .create_document(&ws.slug, &project.slug, doc_req("Target Doc"))
+        .await
+        .expect("create target");
+
+    let source = client
+        .create_document(
+            &ws.slug,
+            &project.slug,
+            CreateDocumentRequest {
+                title: "Source Doc".to_string(),
+                folder_id: None,
+                content: Some(format!(
+                    "See [[{}|Totally Different Label]] now.",
+                    target.id
+                )),
+            },
+        )
+        .await
+        .expect("create source");
+
+    let links = document_source_links(&db, source.id).await;
+    assert_eq!(
+        links,
+        vec![("Totally Different Label".to_string(), Some(target.id))],
+        "id-bound link must resolve to the target id and keep the display title"
+    );
+
+    db.teardown().await;
+}
+
+/// An id-bound wikilink whose UUID does not exist in the workspace is stored as
+/// a pending link (target_document_id NULL), not dropped, not an error.
+#[tokio::test]
+async fn id_bound_wikilink_to_missing_doc_is_pending() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-idlink-2").await;
+
+    let project = client
+        .create_project(
+            &ws.slug,
+            atlas_api::dtos::CreateProjectRequest {
+                name: "Proj".to_string(),
+                slug: "proj-idlink-2".to_string(),
+                task_prefix: "PIM".to_string(),
+                visibility: None,
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create project");
+
+    let missing_id = uuid::Uuid::now_v7();
+
+    let source = client
+        .create_document(
+            &ws.slug,
+            &project.slug,
+            CreateDocumentRequest {
+                title: "Source Doc".to_string(),
+                folder_id: None,
+                content: Some(format!("See [[{missing_id}|Ghost Doc]] here.")),
+            },
+        )
+        .await
+        .expect("create source");
+
+    let links = document_source_links(&db, source.id).await;
+    assert_eq!(
+        links,
+        vec![("Ghost Doc".to_string(), None)],
+        "id-bound link to an unknown doc must persist as pending"
+    );
+
+    db.teardown().await;
+}
+
+/// A legacy `[[Title]]` wikilink (no `|`) still resolves by title-slug.
+#[tokio::test]
+async fn legacy_wikilink_still_resolves_by_slug() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-idlink-3").await;
+
+    let project = client
+        .create_project(
+            &ws.slug,
+            atlas_api::dtos::CreateProjectRequest {
+                name: "Proj".to_string(),
+                slug: "proj-idlink-3".to_string(),
+                task_prefix: "PIS".to_string(),
+                visibility: None,
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create project");
+
+    let target = client
+        .create_document(&ws.slug, &project.slug, doc_req("Target Doc"))
+        .await
+        .expect("create target");
+
+    let source = client
+        .create_document(
+            &ws.slug,
+            &project.slug,
+            CreateDocumentRequest {
+                title: "Source Doc".to_string(),
+                folder_id: None,
+                content: Some("See [[Target Doc]] for details.".to_string()),
+            },
+        )
+        .await
+        .expect("create source");
+
+    let links = document_source_links(&db, source.id).await;
+    assert_eq!(
+        links,
+        vec![("Target Doc".to_string(), Some(target.id))],
+        "legacy link must resolve by slug to the target"
+    );
+
+    db.teardown().await;
+}
+
 // ---- Frontmatter -----------------------------------------------------------
 
 #[tokio::test]

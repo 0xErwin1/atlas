@@ -689,6 +689,27 @@ impl PgDocumentLinkRepo {
 
         Ok(row.map(|d| DocumentId(d.id)))
     }
+
+    /// Verifies a document id refers to a live document in this workspace, inside
+    /// an existing transaction.
+    ///
+    /// Returns `Some(id)` when a matching live document exists, `None` otherwise;
+    /// callers store an unresolved id-bound wikilink as pending
+    /// (target_document_id NULL), consistent with E04.
+    pub async fn find_document_id_by_id_in(
+        conn: &impl ConnectionTrait,
+        ctx: &WorkspaceCtx,
+        id: DocumentId,
+    ) -> Result<Option<DocumentId>, DomainError> {
+        let row = document::Entity::find_by_id(id.0)
+            .filter(document::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(document::Column::DeletedAt.is_null())
+            .one(conn)
+            .await
+            .map_err(db_err)?;
+
+        Ok(row.map(|d| DocumentId(d.id)))
+    }
 }
 
 #[async_trait]

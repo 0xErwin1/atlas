@@ -1062,15 +1062,25 @@ async fn update_document_links(
     let raw_links = atlas_domain::parse_wikilinks(content);
 
     let mut extracted = Vec::with_capacity(raw_links.len());
-    for title in raw_links {
-        let target_doc = doc_repo
-            .find_by_slug(ctx, &slugify(&title))
-            .await
-            .map_err(ApiError::Domain)?;
+    for raw in raw_links {
+        let (target_id, title) = atlas_domain::parse_wikilink_target(&raw);
+
+        let target_document_id = match target_id {
+            Some(id) => doc_repo
+                .get(ctx, DocumentId(id))
+                .await
+                .map_err(ApiError::Domain)?
+                .map(|d| d.id),
+            None => doc_repo
+                .find_by_slug(ctx, &slugify(&title))
+                .await
+                .map_err(ApiError::Domain)?
+                .map(|d| d.id),
+        };
 
         extracted.push(ExtractedLink {
             target_title: title,
-            target_document_id: target_doc.map(|d| d.id),
+            target_document_id,
         });
     }
 
