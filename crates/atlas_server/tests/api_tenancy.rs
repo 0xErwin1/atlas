@@ -189,6 +189,7 @@ async fn member_of_both_workspaces_cannot_cross_scope_projects() {
         .create(NewUser {
             username: "ten-dual-member".to_string(),
             display_name: "Dual Member".to_string(),
+            email: None,
             password_hash: hash,
             is_root: false,
         })

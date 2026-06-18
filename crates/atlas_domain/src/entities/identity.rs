@@ -23,6 +23,7 @@ pub struct User {
     pub id: UserId,
     pub username: String,
     pub display_name: String,
+    pub email: Option<String>,
     pub password_hash: String,
     pub is_root: bool,
     pub disabled_at: Option<DateTime<Utc>>,
@@ -34,6 +35,7 @@ pub struct User {
 pub struct NewUser {
     pub username: String,
     pub display_name: String,
+    pub email: Option<String>,
     pub password_hash: String,
     pub is_root: bool,
 }

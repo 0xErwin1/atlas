@@ -21,6 +21,7 @@ async fn create_user_requires_admin() {
         .create_user(CreateUserRequest {
             username: "newuser".to_string(),
             display_name: "New User".to_string(),
+            email: None,
             password: "Password1!".to_string(),
         })
         .await;
@@ -43,6 +44,7 @@ async fn create_user_succeeds_for_root() {
         .create_user(CreateUserRequest {
             username: "brandnew".to_string(),
             display_name: "Brand New".to_string(),
+            email: None,
             password: "Password1!".to_string(),
         })
         .await

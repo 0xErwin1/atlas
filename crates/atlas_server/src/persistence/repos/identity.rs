@@ -99,6 +99,7 @@ impl UserRepo for PgUserRepo {
             id: Set(uid.0),
             username: Set(new.username),
             display_name: Set(new.display_name),
+            email: Set(new.email),
             password_hash: Set(new.password_hash),
             is_root: Set(new.is_root),
             disabled_at: Set(None),
@@ -118,6 +119,7 @@ impl UserRepo for PgUserRepo {
             id: Uuid,
             username: String,
             display_name: String,
+            email: Option<String>,
             password_hash: String,
             is_root: bool,
             disabled_at: Option<chrono::DateTime<Utc>>,
@@ -128,7 +130,7 @@ impl UserRepo for PgUserRepo {
         let lower = username.to_lowercase();
         let rows = Row::find_by_statement(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT id, username, display_name, password_hash, is_root, disabled_at, created_at, updated_at
+            "SELECT id, username, display_name, email, password_hash, is_root, disabled_at, created_at, updated_at
              FROM users WHERE lower(username) = $1 LIMIT 1",
             [lower.into()],
         ))
@@ -140,6 +142,7 @@ impl UserRepo for PgUserRepo {
             id: UserId(r.id),
             username: r.username,
             display_name: r.display_name,
+            email: r.email,
             password_hash: r.password_hash,
             is_root: r.is_root,
             disabled_at: r.disabled_at,
@@ -224,6 +227,39 @@ impl UserRepo for PgUserRepo {
         active.updated_at = Set(Utc::now());
         active.update(&self.conn).await.map_err(db_err)?;
         Ok(())
+    }
+
+    async fn update_profile(
+        &self,
+        id: UserId,
+        email: Option<String>,
+        display_name: Option<String>,
+    ) -> Result<User, DomainError> {
+        use sea_orm::IntoActiveModel;
+        let row = user::Entity::find_by_id(id.0)
+            .one(&self.conn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "user",
+                id: id.0,
+            })?;
+
+        let mut active = row.into_active_model();
+
+        if let Some(email) = email {
+            active.email = Set(Some(email));
+        }
+        if let Some(display_name) = display_name {
+            active.display_name = Set(display_name);
+        }
+        active.updated_at = Set(Utc::now());
+
+        active
+            .update(&self.conn)
+            .await
+            .map(user_from)
+            .map_err(db_err)
     }
 }
 

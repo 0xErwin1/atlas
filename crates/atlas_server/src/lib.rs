@@ -40,6 +40,13 @@ pub fn app(state: AppState) -> Router {
             "/v1/auth/change-password",
             axum::routing::post(routes::auth::change_password),
         )
+        // Self-service profile (any authenticated user)
+        .route(
+            "/v1/users/me",
+            axum::routing::patch(routes::auth::update_me),
+        )
+        // Server metadata (any authenticated principal)
+        .route("/v1/meta", get(routes::health::meta))
         // Users (root-only)
         .route(
             "/v1/users",
@@ -52,6 +59,10 @@ pub fn app(state: AppState) -> Router {
         .route(
             "/v1/users/{user_id}/enable",
             axum::routing::post(routes::users::enable_user),
+        )
+        .route(
+            "/v1/users/{user_id}/reset-password",
+            axum::routing::post(routes::users::reset_password),
         )
         // Workspace
         .route("/v1/workspaces", get(routes::workspaces::list_workspaces))

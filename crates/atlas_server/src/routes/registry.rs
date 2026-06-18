@@ -74,6 +74,19 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         kind: RouteKind::AuthnRequired,
         openapi_path: Some("/v1/auth/change-password"),
     },
+    // ---- Self-service profile and server metadata (any authenticated principal) ----
+    RouteEntry {
+        method: "PATCH",
+        path_template: "/v1/users/me",
+        kind: RouteKind::AuthnRequired,
+        openapi_path: Some("/v1/users/me"),
+    },
+    RouteEntry {
+        method: "GET",
+        path_template: "/v1/meta",
+        kind: RouteKind::AuthnRequired,
+        openapi_path: Some("/v1/meta"),
+    },
     // ---- User management (root-only, but still require authn) ----
     RouteEntry {
         method: "GET",
@@ -98,6 +111,12 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         path_template: "/v1/users/00000000-0000-0000-0000-000000000001/enable",
         kind: RouteKind::AuthnRequired,
         openapi_path: Some("/v1/users/{user_id}/enable"),
+    },
+    RouteEntry {
+        method: "POST",
+        path_template: "/v1/users/00000000-0000-0000-0000-000000000001/reset-password",
+        kind: RouteKind::AuthnRequired,
+        openapi_path: Some("/v1/users/{user_id}/reset-password"),
     },
     // ---- Workspace-scoped routes ----
     RouteEntry {

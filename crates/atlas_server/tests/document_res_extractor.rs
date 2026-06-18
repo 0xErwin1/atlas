@@ -293,6 +293,7 @@ async fn folder_scope_grant_yields_effective_access_on_document_in_that_folder()
         .create(atlas_server::persistence::repos::NewUser {
             username: "docres-fg-viewer".to_string(),
             display_name: "Viewer".to_string(),
+            email: None,
             password_hash: "$argon2id$v=19$m=19456,t=2,p=1$test$hash".into(),
             is_root: false,
         })
@@ -392,6 +393,7 @@ async fn folder_scope_grant_on_ancestor_yields_effective_access_on_nested_docume
         .create(atlas_server::persistence::repos::NewUser {
             username: "docres-fg-nested-viewer".to_string(),
             display_name: "NestedViewer".to_string(),
+            email: None,
             password_hash: "$argon2id$v=19$m=19456,t=2,p=1$test$hash".into(),
             is_root: false,
         })

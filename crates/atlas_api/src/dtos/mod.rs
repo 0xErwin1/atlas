@@ -47,6 +47,7 @@ pub struct UserDto {
     pub id: uuid::Uuid,
     pub username: String,
     pub display_name: String,
+    pub email: Option<String>,
     pub is_root: bool,
     pub disabled_at: Option<chrono::DateTime<chrono::Utc>>,
     pub created_at: chrono::DateTime<chrono::Utc>,
@@ -61,12 +62,36 @@ pub struct ChangePasswordRequest {
     pub new_password: String,
 }
 
+/// Request body for `PATCH /v1/users/me`. Only the provided fields are updated.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct UpdateMeRequest {
+    pub email: Option<String>,
+    pub display_name: Option<String>,
+}
+
+/// Request body for `POST /v1/users/{user_id}/reset-password`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct ResetPasswordRequest {
+    pub new_password: String,
+}
+
 /// Response from `GET /v1/auth/me`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct MeResponse {
     pub principal_type: String,
     pub username: String,
+    pub email: Option<String>,
+}
+
+/// Response from `GET /v1/meta`. Server build information for the About screen.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct ServerMetaDto {
+    pub version: String,
+    pub build: Option<String>,
 }
 
 /// Request body for `POST /v1/users`.
@@ -75,6 +100,8 @@ pub struct MeResponse {
 pub struct CreateUserRequest {
     pub username: String,
     pub display_name: String,
+    #[serde(default)]
+    pub email: Option<String>,
     pub password: String,
 }
 

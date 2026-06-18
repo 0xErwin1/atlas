@@ -431,6 +431,7 @@ async fn cross_tenant_task_isolation() {
             .create(NewUser {
                 username: "b3-alice-auth".to_string(),
                 display_name: "Alice".to_string(),
+                email: None,
                 password_hash: hash,
                 is_root: false,
             })

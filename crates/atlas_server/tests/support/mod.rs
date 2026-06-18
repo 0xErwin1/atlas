@@ -136,6 +136,7 @@ pub(crate) async fn seed_workspace(db: &TestDb, username: &str) -> (Workspace, U
         .create(NewUser {
             username: username.to_string(),
             display_name: username.to_string(),
+            email: None,
             password_hash: "$argon2id$v=19$m=19456,t=2,p=1$test$hash".into(),
             is_root: false,
         })
@@ -255,6 +256,7 @@ pub(crate) async fn login_user(
         .create(NewUser {
             username: username.to_string(),
             display_name: username.to_string(),
+            email: None,
             password_hash,
             is_root: false,
         })
@@ -299,6 +301,7 @@ pub(crate) async fn login_user_with_workspace(
         .create(NewUser {
             username: username.to_string(),
             display_name: username.to_string(),
+            email: None,
             password_hash,
             is_root: false,
         })
@@ -356,6 +359,7 @@ pub(crate) async fn login_root_user(server: &TestServer, db: &TestDb) -> AtlasCl
         .create(NewUser {
             username: username.clone(),
             display_name: "Root".to_string(),
+            email: None,
             password_hash,
             is_root: true,
         })

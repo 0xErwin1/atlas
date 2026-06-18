@@ -45,6 +45,7 @@ pub async fn run_bootstrap(cfg: &BootstrapConfig, conn: &DatabaseConnection) -> 
         .create(NewUser {
             username: "root".to_string(),
             display_name: "Root".to_string(),
+            email: None,
             password_hash,
             is_root: true,
         })

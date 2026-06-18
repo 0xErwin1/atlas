@@ -800,6 +800,7 @@ async fn move_folder_underprivileged_destination_returns_404() {
         .create(NewUser {
             username: "mv-unpriv-caller".to_string(),
             display_name: "mv-unpriv-caller".to_string(),
+            email: None,
             password_hash: hash,
             is_root: false,
         })

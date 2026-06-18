@@ -65,6 +65,7 @@ async fn add_user_to_workspace(
         .create(NewUser {
             username: username.to_string(),
             display_name: username.to_string(),
+            email: None,
             password_hash: hash,
             is_root: false,
         })
@@ -109,6 +110,7 @@ async fn create_non_member_user(
         .create(NewUser {
             username: username.to_string(),
             display_name: username.to_string(),
+            email: None,
             password_hash: hash,
             is_root: false,
         })

@@ -1525,6 +1525,7 @@ async fn viewer_cannot_create_document() {
         .create(NewUser {
             username: "doc-perm-viewer".to_string(),
             display_name: "Viewer".to_string(),
+            email: None,
             password_hash: hash,
             is_root: false,
         })
@@ -1695,6 +1696,7 @@ async fn member_client_with_optional_project_grant(
         .create(NewUser {
             username: username.to_string(),
             display_name: username.to_string(),
+            email: None,
             password_hash: hash,
             is_root: false,
         })

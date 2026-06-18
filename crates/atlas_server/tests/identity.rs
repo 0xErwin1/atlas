@@ -14,6 +14,7 @@ async fn user_password_hash_is_not_plaintext() {
         .create(NewUser {
             username: "alice".into(),
             display_name: "Alice".into(),
+            email: None,
             password_hash: "$argon2id$v=19$m=19456,t=2,p=1$test$hash".into(),
             is_root: false,
         })

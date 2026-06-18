@@ -11,7 +11,9 @@ use axum_extra::extract::{
 use chrono::Utc;
 use std::sync::LazyLock;
 
-use atlas_api::dtos::{ChangePasswordRequest, LoginRequest, LoginResponse, MeResponse, UserDto};
+use atlas_api::dtos::{
+    ChangePasswordRequest, LoginRequest, LoginResponse, MeResponse, UpdateMeRequest, UserDto,
+};
 use atlas_domain::ids::{SessionId, UserId};
 
 use crate::{
@@ -190,7 +192,7 @@ pub(crate) async fn me(
         conn: (*state.db).clone(),
     };
 
-    let (principal_type, username) = match principal {
+    let (principal_type, username, email) = match principal {
         Principal::User(user_id) => {
             let user = user_repo
                 .find_by_id(user_id)
@@ -199,14 +201,15 @@ pub(crate) async fn me(
                     message: "user lookup failed".into(),
                 })?
                 .ok_or(ApiError::Unauthorized)?;
-            ("user".to_string(), user.username)
+            ("user".to_string(), user.username, user.email)
         }
-        Principal::ApiKey(_key_id) => ("api_key".to_string(), "api_key".to_string()),
+        Principal::ApiKey(_key_id) => ("api_key".to_string(), "api_key".to_string(), None),
     };
 
     Ok(Json(MeResponse {
         principal_type,
         username,
+        email,
     }))
 }
 
@@ -269,11 +272,49 @@ pub(crate) async fn change_password(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[utoipa::path(
+    patch,
+    path = "/v1/users/me",
+    tag = "users",
+    security(("bearer_auth" = [])),
+    request_body = UpdateMeRequest,
+    responses(
+        (status = 200, description = "Updated profile", body = UserDto),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "API keys cannot update a user profile"),
+    )
+)]
+pub(crate) async fn update_me(
+    State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
+    Json(body): Json<UpdateMeRequest>,
+) -> Result<Json<UserDto>, ApiError> {
+    let Principal::User(user_id) = principal else {
+        return Err(ApiError::Forbidden {
+            message: "API keys cannot update a user profile".into(),
+        });
+    };
+
+    let user_repo = PgUserRepo {
+        conn: (*state.db).clone(),
+    };
+
+    let user = user_repo
+        .update_profile(user_id, body.email, body.display_name)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?;
+
+    Ok(Json(user_to_dto(&user)))
+}
+
 fn user_to_dto(user: &atlas_domain::entities::identity::User) -> UserDto {
     UserDto {
         id: user.id.0,
         username: user.username.clone(),
         display_name: user.display_name.clone(),
+        email: user.email.clone(),
         is_root: user.is_root,
         disabled_at: user.disabled_at,
         created_at: user.created_at,

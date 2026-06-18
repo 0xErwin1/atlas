@@ -586,6 +586,7 @@ async fn membership_repo_workspace_isolation() {
         .create(atlas_server::persistence::repos::NewUser {
             username: "extra-member-isolation".into(),
             display_name: "Extra".into(),
+            email: None,
             password_hash: "$argon2id$v=19$m=19456,t=2,p=1$test$hash".into(),
             is_root: false,
         })

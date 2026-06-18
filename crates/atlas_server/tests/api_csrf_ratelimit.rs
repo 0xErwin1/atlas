@@ -61,6 +61,7 @@ async fn csrf_cookie_mutation_without_header_is_rejected() {
         .create(atlas_server::persistence::repos::NewUser {
             username: "csrf-test-user".to_string(),
             display_name: "csrf-test-user".to_string(),
+            email: None,
             password_hash: hash,
             is_root: false,
         })
@@ -101,6 +102,7 @@ async fn csrf_cookie_mutation_with_header_succeeds() {
         .create(atlas_server::persistence::repos::NewUser {
             username: "csrf-ok-user".to_string(),
             display_name: "csrf-ok-user".to_string(),
+            email: None,
             password_hash: hash,
             is_root: false,
         })

@@ -4,8 +4,8 @@ use atlas_api::{
     dtos::{
         ApiKeyCreated, ApiKeyDto, ChangePasswordRequest, CreateApiKeyRequest, CreateGrantRequest,
         CreateProjectRequest, CreateUserRequest, GrantDto, HealthResponse, LoginRequest,
-        LoginResponse, MeResponse, PrincipalDto, ProjectDto, UpdateProjectRequest, UserDto,
-        WorkspaceDto,
+        LoginResponse, MeResponse, PrincipalDto, ProjectDto, ResetPasswordRequest, ServerMetaDto,
+        UpdateMeRequest, UpdateProjectRequest, UserDto, WorkspaceDto,
         boards_tasks::{
             ActivityEntryDto, AddAssigneeRequest, AssigneeDto, BoardDto, BoardSummaryDto,
             ChecklistItemDto, ColumnDto, CreateBoardRequest, CreateChecklistItemRequest,
@@ -178,6 +178,23 @@ impl AtlasClient {
         Err(ClientError::Api(problem))
     }
 
+    /// `PATCH /v1/users/me`
+    pub async fn update_me(&self, body: UpdateMeRequest) -> Result<UserDto, ClientError> {
+        let response = self
+            .patch("/v1/users/me")
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "update_me").await
+    }
+
+    /// `GET /v1/meta`
+    pub async fn server_meta(&self) -> Result<ServerMetaDto, ClientError> {
+        let response = self.get("/v1/meta").send().await?;
+        self.decode_response(response, "server_meta").await
+    }
+
     /// `GET /v1/users`
     pub async fn list_users(&self) -> Result<Vec<UserDto>, ClientError> {
         let response = self.get("/v1/users").send().await?;
@@ -212,6 +229,30 @@ impl AtlasClient {
         let response = self
             .post(&format!("/v1/users/{user_id}/enable"))
             .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        if response.status().is_success() {
+            return Ok(());
+        }
+        let problem: ProblemDetails = response
+            .json()
+            .await
+            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
+        Err(ClientError::Api(problem))
+    }
+
+    /// `POST /v1/users/{user_id}/reset-password`
+    pub async fn reset_user_password(
+        &self,
+        user_id: uuid::Uuid,
+        new_password: impl Into<String>,
+    ) -> Result<(), ClientError> {
+        let response = self
+            .post(&format!("/v1/users/{user_id}/reset-password"))
+            .header("x-atlas-csrf", "1")
+            .json(&ResetPasswordRequest {
+                new_password: new_password.into(),
+            })
             .send()
             .await?;
         if response.status().is_success() {

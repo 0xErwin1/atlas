@@ -35,6 +35,7 @@ async fn add_member_with_role(
         .create(NewUser {
             username: username.to_string(),
             display_name: username.to_string(),
+            email: None,
             password_hash: hash,
             is_root: false,
         })

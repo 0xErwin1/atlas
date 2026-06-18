@@ -28,6 +28,15 @@ pub trait UserRepo: Send + Sync {
     async fn enable(&self, id: UserId) -> Result<(), DomainError>;
     /// Replaces the user's password hash and bumps `updated_at`.
     async fn set_password_hash(&self, id: UserId, hash: String) -> Result<(), DomainError>;
+    /// Updates the user's self-service profile fields. Only `Some` fields are
+    /// overwritten; `None` leaves the existing value untouched. Bumps `updated_at`
+    /// and returns the updated user.
+    async fn update_profile(
+        &self,
+        id: UserId,
+        email: Option<String>,
+        display_name: Option<String>,
+    ) -> Result<User, DomainError>;
 }
 
 #[async_trait]
