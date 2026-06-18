@@ -13,9 +13,11 @@ import { useWorkspaceStore } from '@/stores/workspace';
 
 const props = defineProps<{
   ws: string;
+  selectedReadableId?: string | null;
 }>();
 
 const emit = defineEmits<{
+  select: [readableId: string];
   open: [readableId: string];
 }>();
 
@@ -221,8 +223,10 @@ const menuItems = computed<MenuItem[]>(() => {
       :key="column.id"
       :column="column"
       :tasks="boards.tasksByColumn(column.id)"
+      :selected-readable-id="selectedReadableId"
       @drop="onDrop"
       @create="onCreate"
+      @select="(id) => emit('select', id)"
       @open="(id) => emit('open', id)"
       @menu="onMenu"
     />

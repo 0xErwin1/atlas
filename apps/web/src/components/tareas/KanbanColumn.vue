@@ -10,6 +10,7 @@ import type { ColumnDto, TaskSummaryDto } from '@/stores/boards';
 const props = defineProps<{
   column: ColumnDto;
   tasks: TaskSummaryDto[];
+  selectedReadableId?: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -17,6 +18,7 @@ const emit = defineEmits<{
   drop: [readableId: string, columnId: string, toIndex: number];
   /** Quick-add: create a task in this column with the given title. */
   create: [columnId: string, title: string];
+  select: [readableId: string];
   open: [readableId: string];
   menu: [readableId: string, event: MouseEvent];
 }>();
@@ -129,6 +131,8 @@ function onSortableDrop(event: unknown): void {
         v-for="task in tasks"
         :key="task.id"
         :task="task"
+        :selected="task.readable_id === selectedReadableId"
+        @select="(id) => emit('select', id)"
         @open="(id) => emit('open', id)"
         @menu="(id, event) => emit('menu', id, event)"
       />

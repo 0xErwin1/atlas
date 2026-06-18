@@ -5,9 +5,13 @@ import type { TaskSummaryDto } from '@/stores/boards';
 
 const props = defineProps<{
   task: TaskSummaryDto;
+  selected?: boolean;
 }>();
 
 defineEmits<{
+  /** Single click: select the card (peek in the inspector). */
+  select: [readableId: string];
+  /** Double click: open the full task detail. */
   open: [readableId: string];
   menu: [readableId: string, event: MouseEvent];
 }>();
@@ -30,14 +34,15 @@ const priorityTone = computed<ChipTone>(() => {
     type="button"
     class="atl-card atl-task-card flex flex-col text-left w-full cursor-grab select-none"
     :data-readable-id="task.readable_id"
-    style="
-      gap: 7px;
-      padding: 9px 10px;
-      background-color: var(--c-raised);
-      border: 1px solid var(--c-border);
-      border-radius: var(--r-md);
-    "
-    @click="$emit('open', task.readable_id)"
+    :style="{
+      gap: '7px',
+      padding: '9px 10px',
+      backgroundColor: selected ? 'var(--c-selected, var(--c-raised))' : 'var(--c-raised)',
+      border: `1px solid ${selected ? 'var(--c-primary)' : 'var(--c-border)'}`,
+      borderRadius: 'var(--r-md)',
+    }"
+    @click="$emit('select', task.readable_id)"
+    @dblclick="$emit('open', task.readable_id)"
     @contextmenu.prevent="$emit('menu', task.readable_id, $event)"
   >
     <span
