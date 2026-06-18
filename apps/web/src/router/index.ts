@@ -6,11 +6,21 @@ export const router = createRouter({
   routes,
 });
 
-router.beforeEach(async (to, _from) => {
-  if (to.name === 'login') return true;
+function redirectTarget(to: { query: Record<string, unknown> }): string {
+  const redirect = to.query.redirect;
+  return typeof redirect === 'string' && redirect.length > 0 ? redirect : '/n';
+}
 
+router.beforeEach(async (to, _from) => {
   const { useAuthStore } = await import('@/stores/auth');
   const auth = useAuthStore();
+
+  if (to.name === 'login') {
+    // An authenticated visit to /login bounces to the redirect target or default
+    // instead of showing the sign-in form again.
+    if (!auth.isAuthenticated) await auth.fetchMe();
+    return auth.isAuthenticated ? redirectTarget(to) : true;
+  }
 
   if (!auth.isAuthenticated) {
     await auth.fetchMe();
