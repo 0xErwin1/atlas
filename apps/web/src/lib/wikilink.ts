@@ -58,10 +58,45 @@ export function filterWikilinkCandidates<T extends WikilinkCandidate>(candidates
 }
 
 /**
- * Resolves a wikilink title to the document route path, using the server-parity
- * slugify so the navigation target matches the slug the backend assigned
- * (REQ-W16).
+ * A parsed wikilink reference. `id` is the stable target document UUID when the
+ * link is id-bound (`[[uuid|Title]]`); `null` for a legacy/hand-typed
+ * `[[Title]]` that is still resolved by title-slug.
  */
-export function wikilinkTarget(title: string): string {
-  return `/n/${slugify(title)}`;
+export interface WikilinkRef {
+  id: string | null;
+  title: string;
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Parses the inner content of a `[[…]]` token. `[[uuid|Title]]` yields the stable
+ * id plus the display title; anything else (including a non-uuid before a `|`) is
+ * treated as a plain title. Mirrors the server's `parse_wikilink_target`.
+ */
+export function parseWikilinkInner(inner: string): WikilinkRef {
+  const pipe = inner.indexOf('|');
+  if (pipe !== -1) {
+    const id = inner.slice(0, pipe).trim();
+    const title = inner.slice(pipe + 1).trim();
+    if (UUID_RE.test(id)) return { id, title };
+  }
+  return { id: null, title: inner.trim() };
+}
+
+/**
+ * Serializes a reference back to wikilink markdown: `[[uuid|Title]]` when id-bound
+ * (stable across renames) or `[[Title]]` for a title-only link.
+ */
+export function formatWikilink(ref: WikilinkRef): string {
+  return ref.id !== null ? `[[${ref.id}|${ref.title}]]` : `[[${ref.title}]]`;
+}
+
+/**
+ * Resolves a wikilink reference to the document route path. Id-bound links
+ * navigate by the stable uuid (the document route resolves uuid or slug, then
+ * canonicalizes to the pretty slug); title-only links fall back to the slug.
+ */
+export function wikilinkHref(ref: WikilinkRef): string {
+  return ref.id !== null ? `/n/${ref.id}` : `/n/${slugify(ref.title)}`;
 }

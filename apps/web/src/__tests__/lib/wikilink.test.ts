@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { detectWikilinkTrigger, filterWikilinkCandidates, wikilinkTarget } from '@/lib/wikilink';
+import {
+  detectWikilinkTrigger,
+  filterWikilinkCandidates,
+  formatWikilink,
+  parseWikilinkInner,
+  wikilinkHref,
+} from '@/lib/wikilink';
 
 describe('detectWikilinkTrigger', () => {
   it('detects a trigger with the partial query after [[', () => {
@@ -48,12 +54,42 @@ describe('filterWikilinkCandidates', () => {
   });
 });
 
-describe('wikilinkTarget', () => {
-  it('resolves a title to the slugified note route', () => {
-    expect(wikilinkTarget('API Design')).toBe('/n/api-design');
+const UUID = '019ed5fa-6df7-7201-97ce-a99abae541c1';
+
+describe('parseWikilinkInner', () => {
+  it('parses an id-bound link into the stable id and display title', () => {
+    expect(parseWikilinkInner(`${UUID}|Editor test`)).toEqual({ id: UUID, title: 'Editor test' });
   });
 
-  it('uses server-parity slugify for unicode titles', () => {
-    expect(wikilinkTarget('Café Notes')).toBe('/n/café-notes');
+  it('trims surrounding whitespace around id and title', () => {
+    expect(parseWikilinkInner(`  ${UUID} | Editor test `)).toEqual({ id: UUID, title: 'Editor test' });
+  });
+
+  it('treats a plain title as a title-only link', () => {
+    expect(parseWikilinkInner('API Design')).toEqual({ id: null, title: 'API Design' });
+  });
+
+  it('treats a non-uuid before the pipe as a legacy title', () => {
+    expect(parseWikilinkInner('Foo|Bar')).toEqual({ id: null, title: 'Foo|Bar' });
+  });
+});
+
+describe('formatWikilink', () => {
+  it('serializes an id-bound ref with the pipe', () => {
+    expect(formatWikilink({ id: UUID, title: 'Editor test' })).toBe(`[[${UUID}|Editor test]]`);
+  });
+
+  it('serializes a title-only ref without a pipe', () => {
+    expect(formatWikilink({ id: null, title: 'Roadmap' })).toBe('[[Roadmap]]');
+  });
+});
+
+describe('wikilinkHref', () => {
+  it('navigates an id-bound ref by the stable uuid', () => {
+    expect(wikilinkHref({ id: UUID, title: 'Whatever the title is now' })).toBe(`/n/${UUID}`);
+  });
+
+  it('falls back to the slugified title for a title-only ref', () => {
+    expect(wikilinkHref({ id: null, title: 'API Design' })).toBe('/n/api-design');
   });
 });

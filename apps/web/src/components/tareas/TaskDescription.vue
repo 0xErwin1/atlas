@@ -3,7 +3,7 @@ import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 // biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
 import MarkdownEditor from '@/components/editor/MarkdownEditor.vue';
-import { wikilinkTarget } from '@/lib/wikilink';
+import { type WikilinkRef, wikilinkHref } from '@/lib/wikilink';
 import { useTasksStore } from '@/stores/tasks';
 
 const props = defineProps<{
@@ -29,8 +29,8 @@ function onChange(currentMarkdown: string): void {
   );
 }
 
-function onNavigateWikilink(title: string): void {
-  void router.push(wikilinkTarget(title));
+function onNavigateWikilink(ref: WikilinkRef): void {
+  void router.push(wikilinkHref(ref));
 }
 </script>
 

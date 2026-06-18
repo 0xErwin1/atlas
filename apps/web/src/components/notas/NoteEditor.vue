@@ -2,6 +2,7 @@
 import { ref } from 'vue';
 // biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
 import MarkdownEditor from '@/components/editor/MarkdownEditor.vue';
+import type { WikilinkRef } from '@/lib/wikilink';
 
 /**
  * Notes editor: a thin wrapper around the shared CodeMirror 6 `MarkdownEditor`.
@@ -21,8 +22,8 @@ const props = defineProps<{
 defineEmits<{
   /** Emitted on every edit with the current markdown body. */
   change: [markdown: string];
-  /** Emitted when a rendered wikilink is clicked, with the target title. */
-  'navigate-wikilink': [title: string];
+  /** Emitted when a rendered wikilink is clicked, with the parsed reference. */
+  'navigate-wikilink': [ref: WikilinkRef];
   /** Emitted as the `[[` query changes; null clears the autocomplete. Carries
    * the caret viewport position so the host can anchor the dropdown. */
   'wikilink-query': [query: string | null, caret: { left: number; top: number } | null];
@@ -34,8 +35,8 @@ function currentMarkdown(): string {
   return editorRef.value?.currentMarkdown() ?? props.body;
 }
 
-function insertWikilink(title: string): void {
-  editorRef.value?.insertWikilink(title);
+function insertWikilink(ref: WikilinkRef): void {
+  editorRef.value?.insertWikilink(ref);
 }
 
 defineExpose({ currentMarkdown, insertWikilink });
@@ -48,7 +49,7 @@ defineExpose({ currentMarkdown, insertWikilink });
     autofocus
     placeholder="Start writing…"
     @change="(md) => $emit('change', md)"
-    @navigate-wikilink="(title) => $emit('navigate-wikilink', title)"
+    @navigate-wikilink="(ref) => $emit('navigate-wikilink', ref)"
     @wikilink-query="(query, caret) => $emit('wikilink-query', query, caret)"
   />
 </template>

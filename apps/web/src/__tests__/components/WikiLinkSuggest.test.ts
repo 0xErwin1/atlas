@@ -47,7 +47,7 @@ describe('WikiLinkSuggest', () => {
     const option = wrapper.findAll('[role="option"]').find((o) => o.text().includes('Architecture'));
     await option?.trigger('mousedown');
 
-    expect(wrapper.emitted('select')?.[0]).toEqual(['Architecture']);
+    expect(wrapper.emitted('select')?.[0]).toEqual([{ id: 'd1', title: 'Architecture' }]);
   });
 
   it('degrades gracefully on a network error and still offers creation (REQ-W16)', async () => {
@@ -61,7 +61,7 @@ describe('WikiLinkSuggest', () => {
 
     const createOption = wrapper.findAll('[role="option"]').find((o) => o.text().includes('Create'));
     await createOption?.trigger('mousedown');
-    expect(wrapper.emitted('select')?.[0]).toEqual(['newnote']);
+    expect(wrapper.emitted('select')?.[0]).toEqual([{ id: null, title: 'newnote' }]);
   });
 
   it('confirms the active item via keyboard navigation', async () => {
@@ -75,6 +75,6 @@ describe('WikiLinkSuggest', () => {
     wrapper.vm.moveDown();
     wrapper.vm.confirmActive();
 
-    expect(wrapper.emitted('select')?.[0]).toEqual(['Beta']);
+    expect(wrapper.emitted('select')?.[0]).toEqual([{ id: 'd2', title: 'Beta' }]);
   });
 });

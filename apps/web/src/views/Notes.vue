@@ -17,7 +17,7 @@ import type { MergeSegment } from '@/composables/useCasMerge';
 import { useCasMerge } from '@/composables/useCasMerge';
 import { useMarkdownDoc } from '@/composables/useMarkdownDoc';
 import { joinFrontmatter, splitFrontmatter } from '@/lib/frontmatter';
-import { wikilinkTarget } from '@/lib/wikilink';
+import { type WikilinkRef, wikilinkHref } from '@/lib/wikilink';
 import { useDocumentsStore } from '@/stores/documents';
 import { useNotesTabsStore } from '@/stores/notesTabs';
 import { useUiStore } from '@/stores/ui';
@@ -233,8 +233,8 @@ function onMetaChange(newMeta: Record<string, unknown>): void {
   saveTimer = setTimeout(() => void persist(), 800);
 }
 
-function onNavigateWikilink(linkTitle: string): void {
-  void router.push(wikilinkTarget(linkTitle));
+function onNavigateWikilink(ref: WikilinkRef): void {
+  void router.push(wikilinkHref(ref));
 }
 
 function onWikilinkQuery(query: string | null, caret: { left: number; top: number } | null): void {
@@ -242,8 +242,8 @@ function onWikilinkQuery(query: string | null, caret: { left: number; top: numbe
   wikilinkCaret.value = caret;
 }
 
-function onSuggestSelect(selectedTitle: string): void {
-  editorRef.value?.insertWikilink(selectedTitle);
+function onSuggestSelect(ref: WikilinkRef): void {
+  editorRef.value?.insertWikilink(ref);
   wikilinkQuery.value = null;
   wikilinkCaret.value = null;
 }

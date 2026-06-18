@@ -6,7 +6,12 @@ import { EditorView, keymap } from '@codemirror/view';
 import { GFM } from '@lezer/markdown';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import Icon from '@/components/ui/Icon.vue';
-import { detectWikilinkTrigger, type WikilinkTrigger } from '@/lib/wikilink';
+import {
+  detectWikilinkTrigger,
+  formatWikilink,
+  type WikilinkRef,
+  type WikilinkTrigger,
+} from '@/lib/wikilink';
 import { useUiStore } from '@/stores/ui';
 import { livePreview } from './livePreviewExtension';
 import { atlasMarkdownTheme } from './theme';
@@ -39,8 +44,8 @@ const props = withDefaults(
 const emit = defineEmits<{
   /** Emitted on every doc change with the full markdown source. */
   change: [markdown: string];
-  /** Emitted when a rendered wikilink is clicked, with its title. */
-  'navigate-wikilink': [title: string];
+  /** Emitted when a rendered wikilink is clicked, with its parsed reference. */
+  'navigate-wikilink': [ref: WikilinkRef];
   /**
    * Emitted as the `[[` query changes; null clears the autocomplete. The second
    * argument is the caret's viewport position so the host can anchor the
@@ -121,7 +126,7 @@ function onUpdate(docChanged: boolean, selectionChanged: boolean, state: EditorS
 }
 
 function liveExtension(reveal: boolean) {
-  return livePreview({ onWikilinkClick: (title) => emit('navigate-wikilink', title) }, { reveal });
+  return livePreview({ onWikilinkClick: (ref) => emit('navigate-wikilink', ref) }, { reveal });
 }
 
 /**
@@ -189,15 +194,16 @@ function toggleReadonly(): void {
 }
 
 /**
- * Replaces the open `[[query` trigger text with `[[Title]]`, then places the
- * cursor after the inserted text. No-op when no trigger is active.
+ * Replaces the open `[[query` trigger text with the chosen reference. An id-bound
+ * ref serializes to `[[uuid|Title]]` (stable across renames); a title-only ref to
+ * `[[Title]]`. No-op when no trigger is active.
  */
-function insertWikilink(title: string): void {
+function insertWikilink(ref: WikilinkRef): void {
   if (view === null || activeTrigger === null) return;
 
   const from = activeTrigger.from;
   const to = view.state.selection.main.head;
-  const insert = `[[${title}]]`;
+  const insert = formatWikilink(ref);
 
   view.dispatch({
     changes: { from, to, insert },

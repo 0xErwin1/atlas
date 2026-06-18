@@ -13,8 +13,11 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  /** A note title was chosen (existing hit or a new-note creation). */
-  select: [title: string];
+  /**
+   * A note was chosen. An existing hit carries its stable id (the link binds to
+   * it); a free-typed "Create" carries a null id (resolved by slug, pending).
+   */
+  select: [ref: { id: string | null; title: string }];
 }>();
 
 const hits = ref<SearchHit[]>([]);
@@ -64,10 +67,10 @@ const itemCount = computed(() => hits.value.length + (canCreate.value ? 1 : 0));
 function choose(index: number): void {
   if (index < hits.value.length) {
     const hit = hits.value[index];
-    if (hit !== undefined) emit('select', hit.title);
+    if (hit !== undefined) emit('select', { id: hit.id, title: hit.title });
     return;
   }
-  if (canCreate.value) emit('select', createLabel.value);
+  if (canCreate.value) emit('select', { id: null, title: createLabel.value });
 }
 
 function moveDown(): void {

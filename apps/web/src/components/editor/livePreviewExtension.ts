@@ -9,6 +9,7 @@ import {
   WidgetType,
 } from '@codemirror/view';
 import { computeActiveLines, type LineRange, type SelectionRange } from '@/lib/livePreview';
+import { parseWikilinkInner, type WikilinkRef } from '@/lib/wikilink';
 
 /**
  * Lezer syntax node, derived from `Tree.resolve` so we do not depend on the
@@ -35,7 +36,7 @@ type SyntaxNode = ReturnType<ReturnType<typeof syntaxTree>['resolve']>;
 
 export interface LivePreviewCallbacks {
   /** Called when a rendered (collapsed) wikilink is clicked. */
-  onWikilinkClick: (title: string) => void;
+  onWikilinkClick: (ref: WikilinkRef) => void;
 }
 
 export interface LivePreviewOptions {
@@ -56,23 +57,23 @@ const WIKILINK_RE = /\[\[([^[\]\n]+)\]\]/g;
  */
 class WikilinkWidget extends WidgetType {
   constructor(
-    private readonly title: string,
-    private readonly onClick: (title: string) => void,
+    private readonly ref: WikilinkRef,
+    private readonly onClick: (ref: WikilinkRef) => void,
   ) {
     super();
   }
 
   eq(other: WikilinkWidget): boolean {
-    return other.title === this.title;
+    return other.ref.id === this.ref.id && other.ref.title === this.ref.title;
   }
 
   toDOM(): HTMLElement {
     const span = document.createElement('span');
     span.className = 'cm-atlas-wikilink';
-    span.textContent = this.title;
+    span.textContent = this.ref.title;
     span.addEventListener('mousedown', (event) => {
       event.preventDefault();
-      this.onClick(this.title);
+      this.onClick(this.ref);
     });
     return span;
   }
@@ -303,8 +304,8 @@ function decorateWikilinks(
   WIKILINK_RE.lastIndex = 0;
 
   for (let m = WIKILINK_RE.exec(text); m !== null; m = WIKILINK_RE.exec(text)) {
-    const title = m[1];
-    if (title === undefined) continue;
+    const inner = m[1];
+    if (inner === undefined) continue;
 
     const start = from + m.index;
     const end = start + m[0].length;
@@ -315,8 +316,9 @@ function decorateWikilinks(
       continue;
     }
 
+    const ref = parseWikilinkInner(inner);
     decos.push(
-      Decoration.replace({ widget: new WikilinkWidget(title, callbacks.onWikilinkClick) }).range(start, end),
+      Decoration.replace({ widget: new WikilinkWidget(ref, callbacks.onWikilinkClick) }).range(start, end),
     );
   }
 }
