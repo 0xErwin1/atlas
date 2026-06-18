@@ -17,24 +17,33 @@ const showPassword = ref(false);
 const loading = ref(false);
 const errorProblem = ref<AtlasProblem | null>(null);
 
+const FALLBACK_PROBLEM: AtlasProblem = {
+  type: 'urn:atlas:error:unknown',
+  title: 'Sign-in failed',
+  status: 0,
+  hint: 'Something went wrong signing in. Please try again.',
+};
+
 async function handleLogin() {
   if (loading.value) return;
 
   loading.value = true;
   errorProblem.value = null;
 
-  const result = await auth.login({ username: username.value, password: password.value });
+  try {
+    const result = await auth.login({ username: username.value, password: password.value });
 
-  loading.value = false;
+    if (result.ok) {
+      const redirect = (router.currentRoute.value.query.redirect as string) ?? '/n';
+      await router.replace(redirect);
+      return;
+    }
 
-  if (result.ok) {
-    const redirect = (router.currentRoute.value.query.redirect as string) ?? '/n';
-    await router.replace(redirect);
-    return;
-  }
-
-  if (result.problem) {
-    errorProblem.value = result.problem as AtlasProblem;
+    errorProblem.value = (result.problem as AtlasProblem) ?? FALLBACK_PROBLEM;
+  } catch {
+    errorProblem.value = FALLBACK_PROBLEM;
+  } finally {
+    loading.value = false;
   }
 }
 

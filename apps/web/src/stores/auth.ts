@@ -10,6 +10,13 @@ export interface LoginResult {
   problem?: { type: string; title: string; status: number; hint?: string; request_id?: string };
 }
 
+const UNREACHABLE_PROBLEM: NonNullable<LoginResult['problem']> = {
+  type: 'urn:atlas:error:unreachable',
+  title: "Can't reach the server",
+  status: 0,
+  hint: 'The Atlas server is not responding. Check it is running and try again.',
+};
+
 export const useAuthStore = defineStore('auth', () => {
   const user = ref<MeResponse | null>(null);
   const isAuthenticated = ref(false);
@@ -39,16 +46,22 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function login(credentials: { username: string; password: string }): Promise<LoginResult> {
-    const { data, error } = await wrappedClient.POST('/v1/auth/login', {
-      body: credentials,
-    });
+    try {
+      const { data, error } = await wrappedClient.POST('/v1/auth/login', {
+        body: credentials,
+      });
 
-    if (error || !data) {
-      return { ok: false, problem: error as LoginResult['problem'] };
+      if (error || !data) {
+        return { ok: false, problem: (error as LoginResult['problem']) ?? UNREACHABLE_PROBLEM };
+      }
+
+      await fetchMe();
+      return { ok: true };
+    } catch {
+      // fetch throws (not a 4xx/5xx) when the server is unreachable — surface it
+      // as a problem so the UI never fails silently.
+      return { ok: false, problem: UNREACHABLE_PROBLEM };
     }
-
-    await fetchMe();
-    return { ok: true };
   }
 
   async function logout(): Promise<void> {

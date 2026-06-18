@@ -106,4 +106,25 @@ describe('useAuthStore', () => {
     expect(result.ok).toBe(false);
     expect(store.isAuthenticated).toBe(false);
   });
+
+  it('login surfaces an unreachable problem when the request throws (server down)', async () => {
+    mockPost.mockRejectedValueOnce(new Error('Failed to fetch'));
+
+    const store = useAuthStore();
+    const result = await store.login({ username: 'bob', password: 'pass' });
+
+    expect(result.ok).toBe(false);
+    expect(result.problem?.type).toBe('urn:atlas:error:unreachable');
+    expect(result.problem?.hint).toBeTruthy();
+  });
+
+  it('login still returns a problem when the error body is empty', async () => {
+    mockPost.mockReturnValueOnce(Promise.resolve({ data: undefined, error: undefined }));
+
+    const store = useAuthStore();
+    const result = await store.login({ username: 'bob', password: 'pass' });
+
+    expect(result.ok).toBe(false);
+    expect(result.problem).toBeTruthy();
+  });
 });
