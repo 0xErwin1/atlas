@@ -69,6 +69,25 @@ export interface WikilinkRef {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+const WIKILINK_TOKEN_RE = /\[\[([^[\]\n]+)\]\]/g;
+
+/**
+ * Collects the unique target document ids referenced by id-bound wikilinks
+ * (`[[uuid|Title]]`) in markdown. Used to resolve their current titles so a
+ * rendered link shows the target's live title, not the snapshot in the text.
+ */
+export function collectWikilinkIds(markdown: string): string[] {
+  const ids = new Set<string>();
+  WIKILINK_TOKEN_RE.lastIndex = 0;
+  for (let m = WIKILINK_TOKEN_RE.exec(markdown); m !== null; m = WIKILINK_TOKEN_RE.exec(markdown)) {
+    const inner = m[1];
+    if (inner === undefined) continue;
+    const { id } = parseWikilinkInner(inner);
+    if (id !== null) ids.add(id);
+  }
+  return [...ids];
+}
+
 /**
  * Parses the inner content of a `[[…]]` token. `[[uuid|Title]]` yields the stable
  * id plus the display title; anything else (including a non-uuid before a `|`) is

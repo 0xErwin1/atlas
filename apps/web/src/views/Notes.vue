@@ -16,6 +16,7 @@ import TabStrip, { type Tab } from '@/components/ui/TabStrip.vue';
 import type { MergeSegment } from '@/composables/useCasMerge';
 import { useCasMerge } from '@/composables/useCasMerge';
 import { useMarkdownDoc } from '@/composables/useMarkdownDoc';
+import { useWikilinkTitles } from '@/composables/useWikilinkTitles';
 import { joinFrontmatter, splitFrontmatter } from '@/lib/frontmatter';
 import { type WikilinkRef, wikilinkHref } from '@/lib/wikilink';
 import { useDocumentsStore } from '@/stores/documents';
@@ -54,6 +55,9 @@ const dirty = ref(false);
 const loadError = ref<string | null>(null);
 const wikilinkQuery = ref<string | null>(null);
 const wikilinkCaret = ref<{ left: number; top: number } | null>(null);
+
+// Resolves id-bound wikilinks' current titles so rendered links track renames.
+const wikilinkTitles = useWikilinkTitles(ws, body);
 
 // The full document content (frontmatter + body) as loaded at headRevisionId.
 // It is the 3-way merge BASE; never mutated by local edits.
@@ -384,6 +388,7 @@ watch(title, (t) => {
             <NoteEditor
               ref="editorRef"
               :body="body"
+              :wikilink-titles="wikilinkTitles"
               @change="onChange"
               @navigate-wikilink="onNavigateWikilink"
               @wikilink-query="onWikilinkQuery"

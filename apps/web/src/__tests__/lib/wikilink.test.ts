@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  collectWikilinkIds,
   detectWikilinkTrigger,
   filterWikilinkCandidates,
   formatWikilink,
@@ -81,6 +82,20 @@ describe('formatWikilink', () => {
 
   it('serializes a title-only ref without a pipe', () => {
     expect(formatWikilink({ id: null, title: 'Roadmap' })).toBe('[[Roadmap]]');
+  });
+});
+
+describe('collectWikilinkIds', () => {
+  const A = '019ed5fa-6df7-7201-97ce-a99abae541c1';
+  const B = '019ed62e-a2b3-7dd1-8c5c-f802287647b1';
+
+  it('collects unique ids from id-bound links and ignores title-only links', () => {
+    const md = `See [[${A}|One]] and [[${B}|Two]] and [[Plain]] and again [[${A}|One again]]`;
+    expect(collectWikilinkIds(md).sort()).toEqual([A, B].sort());
+  });
+
+  it('returns an empty list when there are no id-bound links', () => {
+    expect(collectWikilinkIds('just [[a title]] here')).toEqual([]);
   });
 });
 

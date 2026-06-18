@@ -17,6 +17,8 @@ import type { WikilinkRef } from '@/lib/wikilink';
 const props = defineProps<{
   /** Markdown body (frontmatter already stripped by useMarkdownDoc). */
   body: string;
+  /** Live id → current-title map for id-bound wikilinks. */
+  wikilinkTitles?: Record<string, string>;
 }>();
 
 defineEmits<{
@@ -46,6 +48,7 @@ defineExpose({ currentMarkdown, insertWikilink });
   <MarkdownEditor
     ref="editorRef"
     :body="body"
+    :wikilink-titles="props.wikilinkTitles"
     autofocus
     placeholder="Start writing…"
     @change="(md) => $emit('change', md)"

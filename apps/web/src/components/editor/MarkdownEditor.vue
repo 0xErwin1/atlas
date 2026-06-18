@@ -37,8 +37,11 @@ const props = withDefaults(
     /** Show the reading-width toggle. Off for hosts (e.g. tasks) whose column is
      * not a full document and must not stretch to the viewport. */
     widthToggle?: boolean;
+    /** Live id → current-title map so id-bound wikilinks render the target's
+     * current title instead of the snapshot baked into the markdown. */
+    wikilinkTitles?: Record<string, string>;
   }>(),
-  { placeholder: '', editable: true, autofocus: false, widthToggle: true },
+  { placeholder: '', editable: true, autofocus: false, widthToggle: true, wikilinkTitles: () => ({}) },
 );
 
 const emit = defineEmits<{
@@ -126,7 +129,10 @@ function onUpdate(docChanged: boolean, selectionChanged: boolean, state: EditorS
 }
 
 function liveExtension(reveal: boolean) {
-  return livePreview({ onWikilinkClick: (ref) => emit('navigate-wikilink', ref) }, { reveal });
+  return livePreview(
+    { onWikilinkClick: (ref) => emit('navigate-wikilink', ref) },
+    { reveal, titles: props.wikilinkTitles },
+  );
 }
 
 /**
@@ -245,6 +251,16 @@ watch(
 
     if (props.autofocus && effectiveEditable()) view.focus();
   },
+);
+
+// Re-decorate when resolved wikilink titles arrive so id-bound links switch from
+// their snapshot title to the target's current title without a reload.
+watch(
+  () => props.wikilinkTitles,
+  () => {
+    view?.dispatch({ effects: livePreviewCompartment.reconfigure(renderExtension()) });
+  },
+  { deep: true },
 );
 
 onBeforeUnmount(() => {

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, toRef } from 'vue';
 import { useRouter } from 'vue-router';
 // biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
 import MarkdownEditor from '@/components/editor/MarkdownEditor.vue';
+import { useWikilinkTitles } from '@/composables/useWikilinkTitles';
 import { type WikilinkRef, wikilinkHref } from '@/lib/wikilink';
 import { useTasksStore } from '@/stores/tasks';
 
@@ -17,6 +18,8 @@ const props = defineProps<{
 
 const router = useRouter();
 const tasks = useTasksStore();
+
+const wikilinkTitles = useWikilinkTitles(toRef(props, 'ws'), toRef(props, 'markdown'));
 
 const editorRef = ref<InstanceType<typeof MarkdownEditor> | null>(null);
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -38,6 +41,7 @@ function onNavigateWikilink(ref: WikilinkRef): void {
   <MarkdownEditor
     ref="editorRef"
     :body="markdown"
+    :wikilink-titles="wikilinkTitles"
     :editable="true"
     :width-toggle="false"
     placeholder="Add a description…"

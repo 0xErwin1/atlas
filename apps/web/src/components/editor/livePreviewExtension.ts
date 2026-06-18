@@ -47,6 +47,11 @@ export interface LivePreviewOptions {
    * document reads as fully rendered, like Obsidian's reading view.
    */
   reveal: boolean;
+  /**
+   * Live id → current-title map for id-bound wikilinks. A rendered link shows the
+   * resolved title when present, falling back to the snapshot title in the text.
+   */
+  titles?: Record<string, string>;
 }
 
 const WIKILINK_RE = /\[\[([^[\]\n]+)\]\]/g;
@@ -58,19 +63,22 @@ const WIKILINK_RE = /\[\[([^[\]\n]+)\]\]/g;
 class WikilinkWidget extends WidgetType {
   constructor(
     private readonly ref: WikilinkRef,
+    private readonly display: string,
     private readonly onClick: (ref: WikilinkRef) => void,
   ) {
     super();
   }
 
   eq(other: WikilinkWidget): boolean {
-    return other.ref.id === this.ref.id && other.ref.title === this.ref.title;
+    return (
+      other.ref.id === this.ref.id && other.ref.title === this.ref.title && other.display === this.display
+    );
   }
 
   toDOM(): HTMLElement {
     const span = document.createElement('span');
     span.className = 'cm-atlas-wikilink';
-    span.textContent = this.ref.title;
+    span.textContent = this.display;
     span.addEventListener('mousedown', (event) => {
       event.preventDefault();
       this.onClick(this.ref);
@@ -131,7 +139,12 @@ function lineNumberAt(view: EditorView, pos: number): number {
  * decorations added in document order. Line decorations and mark/replace
  * decorations are interleaved by position.
  */
-function buildDecorations(view: EditorView, callbacks: LivePreviewCallbacks, reveal: boolean): DecorationSet {
+function buildDecorations(
+  view: EditorView,
+  callbacks: LivePreviewCallbacks,
+  reveal: boolean,
+  titles: Record<string, string>,
+): DecorationSet {
   const activeLines = reveal
     ? computeActiveLines(lineRangesFor(view), selectionRangesFor(view))
     : new Set<number>();
@@ -139,7 +152,7 @@ function buildDecorations(view: EditorView, callbacks: LivePreviewCallbacks, rev
 
   for (const { from, to } of view.visibleRanges) {
     decorateSyntaxTree(view, from, to, activeLines, decos);
-    decorateWikilinks(view, from, to, activeLines, callbacks, decos);
+    decorateWikilinks(view, from, to, activeLines, callbacks, titles, decos);
   }
 
   decos.sort((a, b) => a.from - b.from || a.value.startSide - b.value.startSide);
@@ -298,6 +311,7 @@ function decorateWikilinks(
   to: number,
   activeLines: Set<number>,
   callbacks: LivePreviewCallbacks,
+  titles: Record<string, string>,
   decos: Range<Decoration>[],
 ): void {
   const text = view.state.doc.sliceString(from, to);
@@ -317,8 +331,12 @@ function decorateWikilinks(
     }
 
     const ref = parseWikilinkInner(inner);
+    const display = ref.id !== null ? (titles[ref.id] ?? ref.title) : ref.title;
     decos.push(
-      Decoration.replace({ widget: new WikilinkWidget(ref, callbacks.onWikilinkClick) }).range(start, end),
+      Decoration.replace({ widget: new WikilinkWidget(ref, display, callbacks.onWikilinkClick) }).range(
+        start,
+        end,
+      ),
     );
   }
 }
@@ -377,6 +395,7 @@ function consumeTrailingSpace(view: EditorView, pos: number, limit: number): num
  */
 export function livePreview(callbacks: LivePreviewCallbacks, options: LivePreviewOptions) {
   const { reveal } = options;
+  const titles = options.titles ?? {};
 
   return ViewPlugin.fromClass(
     class {
@@ -388,7 +407,7 @@ export function livePreview(callbacks: LivePreviewCallbacks, options: LivePrevie
         // rendered as raw markdown until the first interaction. Force the parse
         // up to the viewport so the very first paint is already decorated.
         ensureSyntaxTree(view.state, view.viewport.to, 100);
-        this.decorations = buildDecorations(view, callbacks, reveal);
+        this.decorations = buildDecorations(view, callbacks, reveal, titles);
       }
 
       update(update: ViewUpdate): void {
@@ -402,7 +421,7 @@ export function livePreview(callbacks: LivePreviewCallbacks, options: LivePrevie
           update.viewportChanged ||
           syntaxTree(update.startState) !== syntaxTree(update.state)
         ) {
-          this.decorations = buildDecorations(update.view, callbacks, reveal);
+          this.decorations = buildDecorations(update.view, callbacks, reveal, titles);
         }
       }
     },
