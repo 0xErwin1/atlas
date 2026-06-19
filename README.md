@@ -51,4 +51,4 @@ atlas/
 | `just lint-web` | biome ci |
 | `just verify` | full local gate (fmt-check + clippy + test + build + lint-web) |
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for commit conventions and [CODE_STYLE.md](CODE_STYLE.md) for lint policy.
+See [AGENTS.md](AGENTS.md) for agent guidance and commit conventions, and [CODE_STYLE.md](CODE_STYLE.md) for coding conventions and lint policy.
