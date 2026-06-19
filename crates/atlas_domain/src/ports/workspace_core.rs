@@ -77,6 +77,17 @@ pub trait FolderRepo: Send + Sync {
     /// Callers that build a folder tree need every folder, not just root-level
     /// children.
     async fn list_all(&self, ctx: &WorkspaceCtx) -> Result<Vec<Folder>, DomainError>;
+    /// A keyset page of a project's non-deleted folders ordered by id, returning
+    /// folders with `id > after_id` (or from the start when `None`), capped at
+    /// `limit`. Used by the paginated folder list so a project's whole tree can be
+    /// fetched page by page.
+    async fn list_paginated_by_project(
+        &self,
+        ctx: &WorkspaceCtx,
+        project_id: ProjectId,
+        after_id: Option<FolderId>,
+        limit: u64,
+    ) -> Result<Vec<Folder>, DomainError>;
     async fn rename(
         &self,
         ctx: &WorkspaceCtx,

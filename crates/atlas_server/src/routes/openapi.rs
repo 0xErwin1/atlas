@@ -13,10 +13,9 @@ use atlas_api::{
             ActivityEntryDto, AddAssigneeRequest, AssigneeDto, BoardDto, BoardSummaryDto,
             ChecklistItemDto, ColumnDto, CreateBoardRequest, CreateChecklistItemRequest,
             CreateColumnRequest, CreateReferenceRequest, CreateSubtaskRequest, CreateTaskRequest,
-            MoveTaskRequest,
-            PromoteChecklistItemRequest, PromotionDto, ReferenceDto, TaskBacklinkDto, TaskDto,
-            TaskPropertiesDto, TaskSummaryDto, UpdateBoardRequest, UpdateChecklistItemRequest,
-            UpdateColumnRequest, UpdateTaskRequest,
+            MoveTaskRequest, PromoteChecklistItemRequest, PromotionDto, ReferenceDto,
+            TaskBacklinkDto, TaskDto, TaskPropertiesDto, TaskSummaryDto, UpdateBoardRequest,
+            UpdateChecklistItemRequest, UpdateColumnRequest, UpdateTaskRequest,
         },
         documents::{
             ActorDto, AttachmentDto, BacklinkDto, ConflictProblemDto, CopyDocumentRequest,

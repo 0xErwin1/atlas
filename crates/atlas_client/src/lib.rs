@@ -11,10 +11,9 @@ use atlas_api::{
             ActivityEntryDto, AddAssigneeRequest, AssigneeDto, BoardDto, BoardSummaryDto,
             ChecklistItemDto, ColumnDto, CreateBoardRequest, CreateChecklistItemRequest,
             CreateColumnRequest, CreateReferenceRequest, CreateSubtaskRequest, CreateTaskRequest,
-            MoveTaskRequest,
-            PromoteChecklistItemRequest, PromotionDto, ReferenceDto, TaskBacklinkDto, TaskDto,
-            TaskSummaryDto, UpdateBoardRequest, UpdateChecklistItemRequest, UpdateColumnRequest,
-            UpdateTaskRequest,
+            MoveTaskRequest, PromoteChecklistItemRequest, PromotionDto, ReferenceDto,
+            TaskBacklinkDto, TaskDto, TaskSummaryDto, UpdateBoardRequest,
+            UpdateChecklistItemRequest, UpdateColumnRequest, UpdateTaskRequest,
         },
         documents::{
             AttachmentDto, BacklinkDto, ConflictProblemDto, CopyDocumentRequest,
@@ -599,13 +598,15 @@ impl AtlasClient {
         &self,
         ws: &str,
         project_slug: &str,
+        cursor: Option<&str>,
+        limit: Option<u32>,
     ) -> Result<Page<FolderDto>, ClientError> {
-        let response = self
-            .get(&format!(
-                "/v1/workspaces/{ws}/projects/{project_slug}/folders"
-            ))
-            .send()
-            .await?;
+        let path = build_paginated_path(
+            &format!("/v1/workspaces/{ws}/projects/{project_slug}/folders"),
+            cursor,
+            limit,
+        );
+        let response = self.get(&path).send().await?;
         self.decode_response(response, "list_folders").await
     }
 
@@ -1447,9 +1448,7 @@ impl AtlasClient {
         readable_id: &str,
     ) -> Result<Vec<TaskSummaryDto>, ClientError> {
         let response = self
-            .get(&format!(
-                "/v1/workspaces/{ws}/tasks/{readable_id}/subtasks"
-            ))
+            .get(&format!("/v1/workspaces/{ws}/tasks/{readable_id}/subtasks"))
             .send()
             .await?;
         self.decode_response(response, "list_subtasks").await
@@ -1463,9 +1462,7 @@ impl AtlasClient {
         body: CreateSubtaskRequest,
     ) -> Result<TaskDto, ClientError> {
         let response = self
-            .post(&format!(
-                "/v1/workspaces/{ws}/tasks/{readable_id}/subtasks"
-            ))
+            .post(&format!("/v1/workspaces/{ws}/tasks/{readable_id}/subtasks"))
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()

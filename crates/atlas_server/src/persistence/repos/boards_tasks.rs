@@ -626,7 +626,11 @@ impl TaskRepo for PgTaskRepo {
         active.parent_task_id = Set(None);
         active.updated_at = Set(Utc::now());
 
-        active.update(&self.conn).await.map(task_from).map_err(db_err)
+        active
+            .update(&self.conn)
+            .await
+            .map(task_from)
+            .map_err(db_err)
     }
 
     async fn patch(
@@ -1619,11 +1623,11 @@ async fn try_move_to_in(
             .map_err(|e| DomainError::Internal {
                 message: e.to_string(),
             })?,
-        parent_task_id: row.try_get("", "parent_task_id").map_err(|e| {
-            DomainError::Internal {
+        parent_task_id: row
+            .try_get("", "parent_task_id")
+            .map_err(|e| DomainError::Internal {
                 message: e.to_string(),
-            }
-        })?,
+            })?,
         readable_id: row
             .try_get("", "readable_id")
             .map_err(|e| DomainError::Internal {

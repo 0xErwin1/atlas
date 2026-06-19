@@ -59,7 +59,10 @@ async fn copy_document_creates_independent_copy() {
         .expect("copy document");
 
     assert_eq!(copy.title, "Source Doc (copy)");
-    assert_eq!(copy.content, source.content, "content must be copied verbatim");
+    assert_eq!(
+        copy.content, source.content,
+        "content must be copied verbatim"
+    );
     assert_ne!(copy.id, source.id, "copy must be a new document");
     assert_ne!(copy.slug, source.slug, "copy must get a fresh slug");
     assert_eq!(copy.project_id, source.project_id);
@@ -150,7 +153,8 @@ async fn copy_folder_recursively_duplicates_subtree() {
 
     let db = support::TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;
-    let (client, ws, user) = support::login_user_with_workspace(&server, &db, "copy-folder-1").await;
+    let (client, ws, user) =
+        support::login_user_with_workspace(&server, &db, "copy-folder-1").await;
 
     let project = client
         .create_project(
@@ -239,7 +243,7 @@ async fn copy_folder_recursively_duplicates_subtree() {
 
     // The copied subtree: list folders in the project and find the new Child.
     let folders = client
-        .list_folders(&ws.slug, &project.slug)
+        .list_folders(&ws.slug, &project.slug, None, None)
         .await
         .expect("list folders");
 
@@ -248,7 +252,10 @@ async fn copy_folder_recursively_duplicates_subtree() {
         .iter()
         .find(|f| f.name == "Child" && f.parent_folder_id == Some(copy.id))
         .expect("copied child folder under the copied top");
-    assert_ne!(copied_child.id, child.id.0, "copied child must have a new id");
+    assert_ne!(
+        copied_child.id, child.id.0,
+        "copied child must have a new id"
+    );
 
     // Documents copied with same titles (descendants keep their title, no suffix).
     let copied_top_doc = doc_repo
@@ -258,7 +265,10 @@ async fn copy_folder_recursively_duplicates_subtree() {
     assert_eq!(copied_top_doc.len(), 1);
     assert_eq!(copied_top_doc[0].title, "Top Doc");
     assert_eq!(copied_top_doc[0].content, "top content");
-    assert_ne!(copied_top_doc[0].id, top_doc.id, "copied doc must have a new id");
+    assert_ne!(
+        copied_top_doc[0].id, top_doc.id,
+        "copied doc must have a new id"
+    );
 
     let copied_child_doc = doc_repo
         .list_in_folder(&ctx, FolderId(copied_child.id))
@@ -292,9 +302,7 @@ async fn copy_document_unauthenticated_returns_401() {
 
     let anon = atlas_client::AtlasClient::new(server.base_url().to_string());
 
-    let result = anon
-        .copy_document("any-ws", "any-slug", None)
-        .await;
+    let result = anon.copy_document("any-ws", "any-slug", None).await;
 
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 401),
@@ -311,9 +319,7 @@ async fn copy_folder_unauthenticated_returns_401() {
 
     let anon = atlas_client::AtlasClient::new(server.base_url().to_string());
 
-    let result = anon
-        .copy_folder("any-ws", uuid::Uuid::now_v7(), None)
-        .await;
+    let result = anon.copy_folder("any-ws", uuid::Uuid::now_v7(), None).await;
 
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 401),

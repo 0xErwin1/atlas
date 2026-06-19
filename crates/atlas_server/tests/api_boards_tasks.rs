@@ -4851,7 +4851,10 @@ async fn update_task_clears_estimate_with_explicit_null() {
         .await
         .expect("update task");
 
-    assert_eq!(updated.estimate, None, "explicit null must clear the estimate");
+    assert_eq!(
+        updated.estimate, None,
+        "explicit null must clear the estimate"
+    );
 
     db.teardown().await;
 }

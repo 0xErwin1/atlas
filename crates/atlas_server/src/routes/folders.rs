@@ -1,10 +1,16 @@
-use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
+use axum::{
+    Json,
+    extract::{Query, State},
+    http::StatusCode,
+    response::IntoResponse,
+};
+use serde::Deserialize;
 
 use atlas_api::{
     dtos::folders::{
         CopyFolderRequest, CreateFolderRequest, FolderDto, MoveFolderRequest, RenameFolderRequest,
     },
-    pagination::Page,
+    pagination::{Cursor, Page},
 };
 use atlas_domain::{
     Actor, WorkspaceCtx,
@@ -122,6 +128,12 @@ pub(crate) async fn create_folder(
 // GET /v1/workspaces/{ws}/projects/{project_slug}/folders
 // ---------------------------------------------------------------------------
 
+#[derive(Deserialize)]
+pub(crate) struct PaginationQuery {
+    cursor: Option<String>,
+    limit: Option<u32>,
+}
+
 #[utoipa::path(
     get,
     path = "/v1/workspaces/{ws}/projects/{project_slug}/folders",
@@ -130,9 +142,11 @@ pub(crate) async fn create_folder(
     params(
         ("ws" = String, Path, description = "Workspace slug"),
         ("project_slug" = String, Path, description = "Project slug"),
+        ("cursor" = Option<String>, Query, description = "Pagination cursor"),
+        ("limit" = Option<u32>, Query, description = "Page size (max 200)"),
     ),
     responses(
-        (status = 200, description = "Folder list", body = Page<FolderDto>),
+        (status = 200, description = "Paginated folder list", body = Page<FolderDto>),
         (status = 401, description = "Unauthenticated"),
         (status = 403, description = "Insufficient permissions"),
     )
@@ -140,7 +154,15 @@ pub(crate) async fn create_folder(
 pub(crate) async fn list_folders(
     auth: Authorized<ProjectRes, ViewerMin>,
     State(state): State<AppState>,
+    Query(q): Query<PaginationQuery>,
 ) -> Result<Json<Page<FolderDto>>, ApiError> {
+    let limit = q.limit.unwrap_or(50).clamp(1, 200) as u64;
+    let after_id = q
+        .cursor
+        .as_deref()
+        .and_then(Cursor::decode)
+        .map(|c| FolderId(c.0));
+
     let actor = principal_to_actor(&auth.principal);
     let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
     let project_id = auth.resource.0.id;
@@ -149,19 +171,25 @@ pub(crate) async fn list_folders(
         conn: (*state.db).clone(),
     };
 
-    let all = repo.list_all(&ctx).await.map_err(ApiError::Domain)?;
+    let mut folders = repo
+        .list_paginated_by_project(&ctx, project_id, after_id, limit + 1)
+        .await
+        .map_err(ApiError::Domain)?;
 
-    let items: Vec<FolderDto> = all
-        .into_iter()
-        .filter(|f| f.project_id == Some(project_id))
-        .map(folder_to_dto)
-        .collect();
+    let has_more = folders.len() > limit as usize;
+    if has_more {
+        folders.truncate(limit as usize);
+    }
 
-    Ok(Json(Page {
-        items,
-        next_cursor: None,
-        has_more: false,
-    }))
+    let next_cursor = if has_more {
+        folders.last().map(|f| Cursor(f.id.0))
+    } else {
+        None
+    };
+
+    let items: Vec<FolderDto> = folders.into_iter().map(folder_to_dto).collect();
+
+    Ok(Json(Page::new(items, next_cursor, has_more)))
 }
 
 // ---------------------------------------------------------------------------

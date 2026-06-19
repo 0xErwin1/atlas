@@ -158,7 +158,9 @@ impl TaskService {
             Some(p) => serde_json::Value::String(p.to_string()),
             None => {
                 txn.rollback().await.map_err(db_err)?;
-                return Ok(crate::persistence::entities::boards_tasks::task_from(before));
+                return Ok(crate::persistence::entities::boards_tasks::task_from(
+                    before,
+                ));
             }
         };
 
@@ -183,7 +185,9 @@ impl TaskService {
         .await?;
 
         txn.commit().await.map_err(db_err)?;
-        Ok(crate::persistence::entities::boards_tasks::task_from(updated))
+        Ok(crate::persistence::entities::boards_tasks::task_from(
+            updated,
+        ))
     }
 
     /// Patches a task and appends one `FieldChanged` activity per changed field,

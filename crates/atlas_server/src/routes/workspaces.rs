@@ -17,9 +17,7 @@ use crate::{
     auth::middleware::Principal,
     authz::WorkspaceMember,
     error::ApiError,
-    persistence::repos::{
-        MembershipRepo, PgMembershipRepo, PgWorkspaceRepo, WorkspaceRepo,
-    },
+    persistence::repos::{MembershipRepo, PgMembershipRepo, PgWorkspaceRepo, WorkspaceRepo},
     routes::validation::validate_name,
     state::AppState,
 };

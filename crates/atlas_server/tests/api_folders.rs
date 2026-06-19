@@ -227,12 +227,73 @@ async fn list_folders_scoped_to_project() {
         .expect("folder b");
 
     let page = client
-        .list_folders(&ws.slug, &proj_a.slug)
+        .list_folders(&ws.slug, &proj_a.slug, None, None)
         .await
         .expect("list");
 
     assert_eq!(page.items.len(), 1, "should only see proj_a folders");
     assert_eq!(page.items[0].name, "FolderA");
+
+    db.teardown().await;
+}
+
+// ---- Listing pages through the project's folders via the cursor -----------------
+
+#[tokio::test]
+async fn list_folders_paginates_with_cursor() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "folder-page-1").await;
+
+    let project = client
+        .create_project(&ws.slug, project_req("PageProj", "page-proj"))
+        .await
+        .expect("project");
+
+    for n in 0..3 {
+        client
+            .create_folder(
+                &ws.slug,
+                &project.slug,
+                CreateFolderRequest {
+                    name: format!("Folder{n}"),
+                    parent_folder_id: None,
+                },
+            )
+            .await
+            .expect("folder");
+    }
+
+    let page1 = client
+        .list_folders(&ws.slug, &project.slug, None, Some(2))
+        .await
+        .expect("page 1");
+
+    assert_eq!(page1.items.len(), 2, "first page honours the limit");
+    assert!(page1.has_more, "more folders remain");
+    let cursor = page1.next_cursor.expect("page 1 must carry a cursor");
+
+    let page2 = client
+        .list_folders(&ws.slug, &project.slug, Some(&cursor), Some(2))
+        .await
+        .expect("page 2");
+
+    assert_eq!(page2.items.len(), 1, "second page holds the remainder");
+    assert!(!page2.has_more, "no more pages");
+    assert!(page2.next_cursor.is_none(), "last page has no cursor");
+
+    let mut names: Vec<String> = page1
+        .items
+        .iter()
+        .chain(page2.items.iter())
+        .map(|f| f.name.clone())
+        .collect();
+    names.sort();
+    assert_eq!(
+        names,
+        vec!["Folder0", "Folder1", "Folder2"],
+        "every folder appears exactly once"
+    );
 
     db.teardown().await;
 }
@@ -275,7 +336,7 @@ async fn list_folders_includes_nested() {
         .expect("create child");
 
     let page = client
-        .list_folders(&ws.slug, &project.slug)
+        .list_folders(&ws.slug, &project.slug, None, None)
         .await
         .expect("list");
 

@@ -292,11 +292,23 @@ where
 pub struct UpdateTaskRequest {
     pub title: Option<String>,
     pub description: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "present_value")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present_value"
+    )]
     pub priority: Option<serde_json::Value>,
-    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "present_value")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present_value"
+    )]
     pub due_date: Option<serde_json::Value>,
-    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "present_value")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present_value"
+    )]
     pub estimate: Option<serde_json::Value>,
     pub labels: Option<Vec<String>>,
     pub properties: Option<serde_json::Value>,

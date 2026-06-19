@@ -119,7 +119,10 @@ mod tests {
     fn multiline_target_is_ignored() {
         // A real wikilink is single-line; a `[[` opened in prose/code that only
         // closes lines later must not be captured as a target.
-        assert_eq!(parse_wikilinks("[[line one\nline two]]"), Vec::<String>::new());
+        assert_eq!(
+            parse_wikilinks("[[line one\nline two]]"),
+            Vec::<String>::new()
+        );
     }
 
     #[test]

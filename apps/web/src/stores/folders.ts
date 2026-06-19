@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
+import { collectPaged } from '@/lib/pagination';
 
 export type FolderDto = components['schemas']['FolderDto'];
 
@@ -19,20 +20,24 @@ export const useFoldersStore = defineStore('folders', () => {
     loading.value = true;
     error.value = null;
 
-    const { data, error: apiError } = await wrappedClient.GET(
-      '/v1/workspaces/{ws}/projects/{project_slug}/folders',
-      { params: { path: { ws, project_slug: projectSlug } } },
+    const { items, error: apiError } = await collectPaged<FolderDto>((cursor) =>
+      wrappedClient.GET('/v1/workspaces/{ws}/projects/{project_slug}/folders', {
+        params: {
+          path: { ws, project_slug: projectSlug },
+          query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) },
+        },
+      }),
     );
 
     loading.value = false;
 
-    if (apiError !== undefined || data === undefined) {
+    if (apiError !== undefined) {
       error.value =
         (apiError as { hint?: string; title?: string } | undefined)?.hint ?? 'Failed to load folders';
       return;
     }
 
-    folders.value = data.items;
+    folders.value = items;
   }
 
   async function create(

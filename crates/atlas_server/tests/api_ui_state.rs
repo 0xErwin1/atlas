@@ -28,7 +28,11 @@ async fn get_ui_state_returns_empty_object_when_no_row() {
 
     let state = client.get_ui_state().await.expect("get_ui_state");
 
-    assert_eq!(state, json!({}), "a user with no row must get an empty object");
+    assert_eq!(
+        state,
+        json!({}),
+        "a user with no row must get an empty object"
+    );
 }
 
 #[tokio::test]
@@ -48,7 +52,10 @@ async fn put_then_get_returns_state_verbatim() {
     assert_eq!(echoed, payload, "PUT must echo the stored state back");
 
     let fetched = client.get_ui_state().await.expect("get_ui_state");
-    assert_eq!(fetched, payload, "GET must return the stored state verbatim");
+    assert_eq!(
+        fetched, payload,
+        "GET must return the stored state verbatim"
+    );
 }
 
 #[tokio::test]
@@ -64,7 +71,10 @@ async fn put_overwrites_previous_state() {
         .expect("first set_ui_state");
 
     let second = json!({ "second": 2, "extra": "x" });
-    client.set_ui_state(&second).await.expect("second set_ui_state");
+    client
+        .set_ui_state(&second)
+        .await
+        .expect("second set_ui_state");
 
     let fetched = client.get_ui_state().await.expect("get_ui_state");
 

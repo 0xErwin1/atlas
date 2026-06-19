@@ -11,7 +11,7 @@ use atlas_domain::{
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait,
-    IntoActiveModel, QueryFilter,
+    IntoActiveModel, QueryFilter, QueryOrder, QuerySelect,
 };
 
 use crate::persistence::entities::workspace_core::{
@@ -475,6 +475,30 @@ impl FolderRepo for PgFolderRepo {
         folder::Entity::find()
             .filter(folder::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(folder::Column::DeletedAt.is_null())
+            .all(&self.conn)
+            .await
+            .map(|rows| rows.into_iter().map(folder_from).collect())
+            .map_err(db_err)
+    }
+
+    async fn list_paginated_by_project(
+        &self,
+        ctx: &WorkspaceCtx,
+        project_id: ProjectId,
+        after_id: Option<FolderId>,
+        limit: u64,
+    ) -> Result<Vec<Folder>, DomainError> {
+        let mut q = folder::Entity::find()
+            .filter(folder::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(folder::Column::ProjectId.eq(project_id.0))
+            .filter(folder::Column::DeletedAt.is_null());
+
+        if let Some(after) = after_id {
+            q = q.filter(folder::Column::Id.gt(after.0));
+        }
+
+        q.order_by_asc(folder::Column::Id)
+            .limit(limit)
             .all(&self.conn)
             .await
             .map(|rows| rows.into_iter().map(folder_from).collect())

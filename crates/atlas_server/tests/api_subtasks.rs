@@ -156,7 +156,10 @@ async fn promote_subtask_moves_it_onto_the_board() {
         .await
         .expect("list board tasks");
     let ids: Vec<uuid::Uuid> = board_tasks.items.iter().map(|t| t.id).collect();
-    assert!(ids.contains(&sub.id), "promoted task now appears on the board");
+    assert!(
+        ids.contains(&sub.id),
+        "promoted task now appears on the board"
+    );
 
     let subs = client
         .list_subtasks(&ws.slug, &parent.readable_id)
