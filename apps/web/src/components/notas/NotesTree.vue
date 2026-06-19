@@ -5,7 +5,16 @@ import Icon from '@/components/ui/Icon.vue';
 import Row from '@/components/ui/Row.vue';
 import { useContextMenu } from '@/composables/useContextMenu';
 import { useInlineEdit } from '@/composables/useInlineEdit';
-import { buildNotesTree, type DocInput, docKey, type FolderInput, flattenVisible } from '@/lib/notesTree';
+import {
+  buildNotesTree,
+  type DocInput,
+  docKey,
+  type FolderInput,
+  flattenVisible,
+  folderKey,
+  parseNodeKey,
+  type TreeNodeRef,
+} from '@/lib/notesTree';
 import { useTreeSelection } from '@/stores/treeSelection';
 import { useUiStateStore } from '@/stores/uiState';
 import NoteTreeRow from './NoteTreeRow.vue';
@@ -25,8 +34,7 @@ const emit = defineEmits<{
   'create-folder': [name: string, parentFolderId?: string];
   'rename-folder': [folderId: string, name: string];
   'remove-folder': [folderId: string];
-  'move-doc': [slug: string, targetFolderId: string | null];
-  'move-folder': [folderId: string, targetParentId: string | null];
+  'move-nodes': [nodes: TreeNodeRef[], targetFolderId: string | null];
 }>();
 
 const tree = computed(() => buildNotesTree(props.folders, props.docs));
@@ -47,32 +55,39 @@ function onDocClick(event: MouseEvent, slug: string): void {
 
 const DND_MIME = 'application/atlas-node';
 
-interface DragNode {
-  type: 'doc' | 'folder';
-  id: string;
-}
-
 const rootDragOver = ref(false);
 
-function onDragStart(node: DragNode, event: DragEvent): void {
+// Dragging a selected item drags the whole selection; otherwise just that one.
+function dragPayload(node: TreeNodeRef): TreeNodeRef[] {
+  const key = node.type === 'folder' ? folderKey(node.id) : docKey(node.id);
+  if (selection.isSelected(key) && selection.count > 1) {
+    return selection
+      .keys()
+      .map(parseNodeKey)
+      .filter((n): n is TreeNodeRef => n !== null);
+  }
+  return [node];
+}
+
+function onDragStart(node: TreeNodeRef, event: DragEvent): void {
   if (event.dataTransfer === null) return;
-  event.dataTransfer.setData(DND_MIME, JSON.stringify(node));
+  event.dataTransfer.setData(DND_MIME, JSON.stringify({ nodes: dragPayload(node) }));
   event.dataTransfer.effectAllowed = 'move';
 }
 
-// Drop onto empty sidebar space: move the dragged node to the project root.
+// Drop onto empty sidebar space: move the dragged node(s) to the project root.
 function onRootDrop(event: DragEvent): void {
   rootDragOver.value = false;
   const raw = event.dataTransfer?.getData(DND_MIME);
   if (raw === undefined || raw === '') return;
-  let node: DragNode;
   try {
-    node = JSON.parse(raw) as DragNode;
+    const parsed = JSON.parse(raw) as { nodes?: TreeNodeRef[] };
+    if (Array.isArray(parsed.nodes) && parsed.nodes.length > 0) {
+      emit('move-nodes', parsed.nodes, null);
+    }
   } catch {
-    return;
+    // ignore malformed payloads
   }
-  if (node.type === 'doc') emit('move-doc', node.id, null);
-  else if (node.type === 'folder') emit('move-folder', node.id, null);
 }
 
 const isEmpty = computed(() => tree.value.folders.length === 0 && tree.value.docs.length === 0);
@@ -187,8 +202,7 @@ defineExpose({ openNewPage: () => startEdit({ kind: 'new-doc' }) });
         @create-folder="(name, parentId) => emit('create-folder', name, parentId)"
         @rename-folder="(folderId, name) => emit('rename-folder', folderId, name)"
         @remove-folder="(folderId) => emit('remove-folder', folderId)"
-        @move-doc="(slug, target) => emit('move-doc', slug, target)"
-        @move-folder="(id, target) => emit('move-folder', id, target)"
+        @move-nodes="(nodes, target) => emit('move-nodes', nodes, target)"
       />
 
       <template v-for="doc in tree.docs" :key="doc.id">

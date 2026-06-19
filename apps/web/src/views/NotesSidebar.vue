@@ -4,8 +4,10 @@ import { useRoute, useRouter } from 'vue-router';
 // biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
 import NotesTree from '@/components/notas/NotesTree.vue';
 import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
+import type { TreeNodeRef } from '@/lib/notesTree';
 import { useDocumentsStore } from '@/stores/documents';
 import { useFoldersStore } from '@/stores/folders';
+import { useTreeSelection } from '@/stores/treeSelection';
 import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 
@@ -25,6 +27,7 @@ const workspace = useWorkspaceStore();
 const treeRef = ref<InstanceType<typeof NotesTree> | null>(null);
 const folders = useFoldersStore();
 const documents = useDocumentsStore();
+const selection = useTreeSelection();
 const ui = useUiStore();
 
 const activeSlug = computed(() => {
@@ -133,23 +136,22 @@ async function removeFolder(folderId: string): Promise<void> {
   await folders.remove(ws.value, project.slug, folderId);
 }
 
-async function moveDoc(slug: string, targetFolderId: string | null): Promise<void> {
+async function moveNodes(nodes: TreeNodeRef[], target: string | null): Promise<void> {
   const project = activeProject.value;
   if (project === null || ws.value === '') return;
 
-  const ok = await documents.move(ws.value, project.slug, slug, targetFolderId);
-  if (!ok && documents.error) {
-    ui.showBanner(documents.error, 'error');
+  let failed = false;
+  for (const node of nodes) {
+    const ok =
+      node.type === 'doc'
+        ? await documents.move(ws.value, project.slug, node.id, target)
+        : await folders.move(ws.value, project.slug, node.id, target);
+    if (!ok) failed = true;
   }
-}
 
-async function moveFolder(folderId: string, targetParentId: string | null): Promise<void> {
-  const project = activeProject.value;
-  if (project === null || ws.value === '') return;
-
-  const ok = await folders.move(ws.value, project.slug, folderId, targetParentId);
-  if (!ok && folders.error) {
-    ui.showBanner(folders.error, 'error');
+  selection.clear();
+  if (failed) {
+    ui.showBanner(documents.error ?? folders.error ?? 'Move failed', 'error');
   }
 }
 
@@ -190,8 +192,7 @@ defineExpose({ openNewPage });
       @create-folder="createFolder"
       @rename-folder="renameFolder"
       @remove-folder="removeFolder"
-      @move-doc="moveDoc"
-      @move-folder="moveFolder"
+      @move-nodes="moveNodes"
     />
   </div>
   <p

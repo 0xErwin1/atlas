@@ -105,6 +105,22 @@ export function docKey(slug: string): string {
   return `doc:${slug}`;
 }
 
+export interface TreeNodeRef {
+  type: 'doc' | 'folder';
+  id: string;
+}
+
+/** Parses a selection/drag key (`folder:<id>` / `doc:<slug>`) back into a node ref. */
+export function parseNodeKey(key: string): TreeNodeRef | null {
+  const sep = key.indexOf(':');
+  if (sep < 0) return null;
+  const type = key.slice(0, sep);
+  const id = key.slice(sep + 1);
+  if (id === '') return null;
+  if (type === 'doc' || type === 'folder') return { type, id };
+  return null;
+}
+
 /**
  * Flattens the tree into the ordered list of selectable node keys, in the exact
  * order they render, honouring the collapsed state. Used for shift-range
