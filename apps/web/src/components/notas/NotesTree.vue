@@ -3,7 +3,6 @@ import { computed, ref } from 'vue';
 import ContextMenu, { type MenuItem } from '@/components/ui/ContextMenu.vue';
 import Icon from '@/components/ui/Icon.vue';
 import Row from '@/components/ui/Row.vue';
-import SectionLabel from '@/components/ui/SectionLabel.vue';
 import { useContextMenu } from '@/composables/useContextMenu';
 import { useInlineEdit } from '@/composables/useInlineEdit';
 import { buildNotesTree, type DocInput, type FolderInput } from '@/lib/notesTree';
@@ -101,7 +100,6 @@ defineExpose({ openNewPage: () => startEdit({ kind: 'new-doc' }) });
 <template>
   <div style="min-height: 100%;" @contextmenu.prevent="onContextmenu">
     <div class="notes-tree-header">
-      <SectionLabel>{{ projectName }}</SectionLabel>
       <button
         type="button"
         class="notes-tree-add"
@@ -200,7 +198,8 @@ defineExpose({ openNewPage: () => startEdit({ kind: 'new-doc' }) });
 .notes-tree-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
+  min-height: 20px;
 }
 
 .notes-tree-add {
