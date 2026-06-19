@@ -165,4 +165,42 @@ describe('useDocumentsStore', () => {
     expect(store.error).toBe('forbidden');
     expect(GET).not.toHaveBeenCalled();
   });
+
+  it('move PATCHes the document to a folder and re-fetches', async () => {
+    PATCH.mockResolvedValue({ error: undefined });
+    GET.mockResolvedValue({ data: { items: [], has_more: false } });
+
+    const store = useDocumentsStore();
+    const ok = await store.move('ws', 'proj', 'my-doc', 'folder-1');
+
+    expect(ok).toBe(true);
+    expect(PATCH).toHaveBeenCalledWith('/v1/workspaces/{ws}/documents/{slug}/move', {
+      params: { path: { ws: 'ws', slug: 'my-doc' } },
+      body: { folder_id: 'folder-1' },
+    });
+  });
+
+  it('move with null folder targets the project root', async () => {
+    PATCH.mockResolvedValue({ error: undefined });
+    GET.mockResolvedValue({ data: { items: [], has_more: false } });
+
+    const store = useDocumentsStore();
+    await store.move('ws', 'proj', 'my-doc', null);
+
+    expect(PATCH).toHaveBeenCalledWith('/v1/workspaces/{ws}/documents/{slug}/move', {
+      params: { path: { ws: 'ws', slug: 'my-doc' } },
+      body: { folder_id: null },
+    });
+  });
+
+  it('move returns false and sets error on failure', async () => {
+    PATCH.mockResolvedValue({ error: { hint: 'nope' } });
+
+    const store = useDocumentsStore();
+    const ok = await store.move('ws', 'proj', 'my-doc', 'folder-1');
+
+    expect(ok).toBe(false);
+    expect(store.error).toBe('nope');
+    expect(GET).not.toHaveBeenCalled();
+  });
 });

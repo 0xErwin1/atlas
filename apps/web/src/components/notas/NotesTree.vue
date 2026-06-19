@@ -23,9 +23,41 @@ const emit = defineEmits<{
   'create-folder': [name: string, parentFolderId?: string];
   'rename-folder': [folderId: string, name: string];
   'remove-folder': [folderId: string];
+  'move-doc': [slug: string, targetFolderId: string | null];
+  'move-folder': [folderId: string, targetParentId: string | null];
 }>();
 
 const tree = computed(() => buildNotesTree(props.folders, props.docs));
+
+const DND_MIME = 'application/atlas-node';
+
+interface DragNode {
+  type: 'doc' | 'folder';
+  id: string;
+}
+
+const rootDragOver = ref(false);
+
+function onDragStart(node: DragNode, event: DragEvent): void {
+  if (event.dataTransfer === null) return;
+  event.dataTransfer.setData(DND_MIME, JSON.stringify(node));
+  event.dataTransfer.effectAllowed = 'move';
+}
+
+// Drop onto empty sidebar space: move the dragged node to the project root.
+function onRootDrop(event: DragEvent): void {
+  rootDragOver.value = false;
+  const raw = event.dataTransfer?.getData(DND_MIME);
+  if (raw === undefined || raw === '') return;
+  let node: DragNode;
+  try {
+    node = JSON.parse(raw) as DragNode;
+  } catch {
+    return;
+  }
+  if (node.type === 'doc') emit('move-doc', node.id, null);
+  else if (node.type === 'folder') emit('move-folder', node.id, null);
+}
 
 const isEmpty = computed(() => tree.value.folders.length === 0 && tree.value.docs.length === 0);
 
@@ -98,7 +130,14 @@ defineExpose({ openNewPage: () => startEdit({ kind: 'new-doc' }) });
 </script>
 
 <template>
-  <div style="min-height: 100%;" @contextmenu.prevent="onContextmenu">
+  <div
+    style="min-height: 100%;"
+    :class="{ 'root-drop-target': rootDragOver }"
+    @contextmenu.prevent="onContextmenu"
+    @dragover.prevent="rootDragOver = true"
+    @dragleave.self="rootDragOver = false"
+    @drop.prevent="onRootDrop"
+  >
     <div class="notes-tree-header">
       <button
         type="button"
@@ -132,6 +171,8 @@ defineExpose({ openNewPage: () => startEdit({ kind: 'new-doc' }) });
         @create-folder="(name, parentId) => emit('create-folder', name, parentId)"
         @rename-folder="(folderId, name) => emit('rename-folder', folderId, name)"
         @remove-folder="(folderId) => emit('remove-folder', folderId)"
+        @move-doc="(slug, target) => emit('move-doc', slug, target)"
+        @move-folder="(id, target) => emit('move-folder', id, target)"
       />
 
       <template v-for="doc in tree.docs" :key="doc.id">
@@ -150,17 +191,23 @@ defineExpose({ openNewPage: () => startEdit({ kind: 'new-doc' }) });
             @blur="commitEdit"
           />
         </div>
-        <Row
+        <div
           v-else
-          :label="doc.title"
-          icon="file"
-          :active="activeSlug !== null && doc.slug === activeSlug"
-          :disabled="doc.slug === null"
-          :menu="doc.slug !== null"
-          @click="doc.slug !== null && emit('select-doc', doc.slug)"
-          @menu="(event: MouseEvent) => doc.slug !== null && openDocMenu(event, doc.slug, doc.title)"
-          @contextmenu.prevent.stop="(event: MouseEvent) => doc.slug !== null && openDocMenu(event, doc.slug, doc.title)"
-        />
+          class="tree-dnd"
+          :draggable="doc.slug !== null"
+          @dragstart.stop="doc.slug !== null && onDragStart({ type: 'doc', id: doc.slug }, $event)"
+        >
+          <Row
+            :label="doc.title"
+            icon="file"
+            :active="activeSlug !== null && doc.slug === activeSlug"
+            :disabled="doc.slug === null"
+            :menu="doc.slug !== null"
+            @click="doc.slug !== null && emit('select-doc', doc.slug)"
+            @menu="(event: MouseEvent) => doc.slug !== null && openDocMenu(event, doc.slug, doc.title)"
+            @contextmenu.prevent.stop="(event: MouseEvent) => doc.slug !== null && openDocMenu(event, doc.slug, doc.title)"
+          />
+        </div>
       </template>
     </template>
 
@@ -225,6 +272,15 @@ defineExpose({ openNewPage: () => startEdit({ kind: 'new-doc' }) });
 .notes-tree-add:hover {
   background: var(--c-raised);
   color: var(--c-foreground);
+}
+
+.root-drop-target {
+  box-shadow: inset 0 0 0 1px var(--c-primary);
+  border-radius: var(--r-sm);
+}
+
+.tree-dnd {
+  border-radius: var(--r-sm);
 }
 
 .notes-inline-input {

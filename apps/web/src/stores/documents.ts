@@ -105,5 +105,36 @@ export const useDocumentsStore = defineStore('documents', () => {
     return true;
   }
 
-  return { summaries, backlinks, loading, error, loadSummaries, loadBacklinks, create, rename, remove };
+  async function move(
+    ws: string,
+    projectSlug: string,
+    slug: string,
+    folderId: string | null,
+  ): Promise<boolean> {
+    const { error: apiError } = await wrappedClient.PATCH('/v1/workspaces/{ws}/documents/{slug}/move', {
+      params: { path: { ws, slug } },
+      body: { folder_id: folderId },
+    });
+
+    if (apiError !== undefined) {
+      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to move document';
+      return false;
+    }
+
+    await loadSummaries(ws, projectSlug);
+    return true;
+  }
+
+  return {
+    summaries,
+    backlinks,
+    loading,
+    error,
+    loadSummaries,
+    loadBacklinks,
+    create,
+    rename,
+    remove,
+    move,
+  };
 });

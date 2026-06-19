@@ -87,5 +87,25 @@ export const useFoldersStore = defineStore('folders', () => {
     return true;
   }
 
-  return { folders, loading, error, load, create, rename, remove };
+  async function move(
+    ws: string,
+    projectSlug: string,
+    folderId: string,
+    parentFolderId: string | null,
+  ): Promise<boolean> {
+    const { error: apiError } = await wrappedClient.PATCH('/v1/workspaces/{ws}/folders/{folder_id}/move', {
+      params: { path: { ws, folder_id: folderId } },
+      body: { parent_folder_id: parentFolderId },
+    });
+
+    if (apiError !== undefined) {
+      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to move folder';
+      return false;
+    }
+
+    await load(ws, projectSlug);
+    return true;
+  }
+
+  return { folders, loading, error, load, create, rename, remove, move };
 });

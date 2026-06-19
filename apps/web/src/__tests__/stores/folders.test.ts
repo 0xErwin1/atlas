@@ -97,4 +97,42 @@ describe('useFoldersStore', () => {
     expect(DELETE).toHaveBeenCalledOnce();
     expect(store.folders).toHaveLength(0);
   });
+
+  it('move PATCHes the folder under a new parent and re-fetches', async () => {
+    PATCH.mockResolvedValue({ error: undefined });
+    GET.mockResolvedValue({ data: { items: [], has_more: false } });
+
+    const store = useFoldersStore();
+    const ok = await store.move('ws', 'proj', 'f1', 'parent-1');
+
+    expect(ok).toBe(true);
+    expect(PATCH).toHaveBeenCalledWith('/v1/workspaces/{ws}/folders/{folder_id}/move', {
+      params: { path: { ws: 'ws', folder_id: 'f1' } },
+      body: { parent_folder_id: 'parent-1' },
+    });
+  });
+
+  it('move with null parent targets the project root', async () => {
+    PATCH.mockResolvedValue({ error: undefined });
+    GET.mockResolvedValue({ data: { items: [], has_more: false } });
+
+    const store = useFoldersStore();
+    await store.move('ws', 'proj', 'f1', null);
+
+    expect(PATCH).toHaveBeenCalledWith('/v1/workspaces/{ws}/folders/{folder_id}/move', {
+      params: { path: { ws: 'ws', folder_id: 'f1' } },
+      body: { parent_folder_id: null },
+    });
+  });
+
+  it('move returns false and surfaces hint on failure', async () => {
+    PATCH.mockResolvedValue({ error: { hint: 'cycle' } });
+
+    const store = useFoldersStore();
+    const ok = await store.move('ws', 'proj', 'f1', 'parent-1');
+
+    expect(ok).toBe(false);
+    expect(store.error).toBe('cycle');
+    expect(GET).not.toHaveBeenCalled();
+  });
 });

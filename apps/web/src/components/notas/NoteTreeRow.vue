@@ -21,9 +21,46 @@ const emit = defineEmits<{
   'create-folder': [name: string, parentFolderId?: string];
   'rename-folder': [folderId: string, name: string];
   'remove-folder': [folderId: string];
+  'move-doc': [slug: string, targetFolderId: string | null];
+  'move-folder': [folderId: string, targetParentId: string | null];
 }>();
 
 const expanded = ref(true);
+
+const DND_MIME = 'application/atlas-node';
+
+const dragOver = ref(false);
+
+interface DragNode {
+  type: 'doc' | 'folder';
+  id: string;
+}
+
+function onDragStart(node: DragNode, event: DragEvent): void {
+  if (event.dataTransfer === null) return;
+  event.dataTransfer.setData(DND_MIME, JSON.stringify(node));
+  event.dataTransfer.effectAllowed = 'move';
+}
+
+function parseDragNode(event: DragEvent): DragNode | null {
+  const raw = event.dataTransfer?.getData(DND_MIME);
+  if (raw === undefined || raw === '') return null;
+  try {
+    const node = JSON.parse(raw) as DragNode;
+    return node.type === 'doc' || node.type === 'folder' ? node : null;
+  } catch {
+    return null;
+  }
+}
+
+// Drop onto this folder: re-parent a document, or a folder (never onto itself).
+function onFolderDrop(event: DragEvent): void {
+  dragOver.value = false;
+  const node = parseDragNode(event);
+  if (node === null) return;
+  if (node.type === 'doc') emit('move-doc', node.id, props.folder.id);
+  else if (node.id !== props.folder.id) emit('move-folder', node.id, props.folder.id);
+}
 
 // Shared sidebar context-menu + inline-edit logic (same composables as the tasks sidebar).
 const { open: menuOpen, x: menuX, y: menuY, openAt, close: closeMenu } = useContextMenu();
@@ -140,18 +177,29 @@ const inlinePaddingLeft = computed(() => `${8 + (props.depth + 1) * 14}px`);
       />
     </div>
 
-    <Row
+    <div
       v-else
-      :label="folder.name"
-      :icon="expanded ? 'folder-open' : 'folder'"
-      :depth="depth"
-      chevron
-      :open="expanded"
-      menu
-      @click="expanded = !expanded"
-      @menu="openFolderMenu"
-      @contextmenu.prevent.stop="openFolderMenu"
-    />
+      draggable="true"
+      class="tree-dnd"
+      :class="{ 'drop-target': dragOver }"
+      @dragstart.stop="onDragStart({ type: 'folder', id: folder.id }, $event)"
+      @dragover.prevent="dragOver = true"
+      @dragenter.prevent="dragOver = true"
+      @dragleave="dragOver = false"
+      @drop.prevent.stop="onFolderDrop"
+    >
+      <Row
+        :label="folder.name"
+        :icon="expanded ? 'folder-open' : 'folder'"
+        :depth="depth"
+        chevron
+        :open="expanded"
+        menu
+        @click="expanded = !expanded"
+        @menu="openFolderMenu"
+        @contextmenu.prevent.stop="openFolderMenu"
+      />
+    </div>
 
     <template v-if="expanded">
       <NoteTreeRow
@@ -167,6 +215,8 @@ const inlinePaddingLeft = computed(() => `${8 + (props.depth + 1) * 14}px`);
         @create-folder="(name, parentId) => emit('create-folder', name, parentId)"
         @rename-folder="(folderId, name) => emit('rename-folder', folderId, name)"
         @remove-folder="(folderId) => emit('remove-folder', folderId)"
+        @move-doc="(slug, target) => emit('move-doc', slug, target)"
+        @move-folder="(id, target) => emit('move-folder', id, target)"
       />
 
       <template v-for="doc in folder.docs" :key="doc.id">
@@ -187,18 +237,24 @@ const inlinePaddingLeft = computed(() => `${8 + (props.depth + 1) * 14}px`);
           />
         </div>
 
-        <Row
+        <div
           v-else
-          :label="doc.title"
-          icon="file"
-          :depth="depth + 1"
-          :active="activeSlug !== null && doc.slug === activeSlug"
-          :disabled="doc.slug === null"
-          :menu="doc.slug !== null"
-          @click="doc.slug !== null && emit('select-doc', doc.slug)"
-          @menu="(event: MouseEvent) => doc.slug !== null && openDocMenu(event, doc.slug, doc.title)"
-          @contextmenu.prevent.stop="(event: MouseEvent) => doc.slug !== null && openDocMenu(event, doc.slug, doc.title)"
-        />
+          class="tree-dnd"
+          :draggable="doc.slug !== null"
+          @dragstart.stop="doc.slug !== null && onDragStart({ type: 'doc', id: doc.slug }, $event)"
+        >
+          <Row
+            :label="doc.title"
+            icon="file"
+            :depth="depth + 1"
+            :active="activeSlug !== null && doc.slug === activeSlug"
+            :disabled="doc.slug === null"
+            :menu="doc.slug !== null"
+            @click="doc.slug !== null && emit('select-doc', doc.slug)"
+            @menu="(event: MouseEvent) => doc.slug !== null && openDocMenu(event, doc.slug, doc.title)"
+            @contextmenu.prevent.stop="(event: MouseEvent) => doc.slug !== null && openDocMenu(event, doc.slug, doc.title)"
+          />
+        </div>
       </template>
 
       <div
@@ -234,6 +290,15 @@ const inlinePaddingLeft = computed(() => `${8 + (props.depth + 1) * 14}px`);
 </template>
 
 <style scoped>
+.tree-dnd {
+  border-radius: var(--r-sm);
+}
+
+.tree-dnd.drop-target {
+  background: var(--c-selection);
+  box-shadow: inset 0 0 0 1px var(--c-primary);
+}
+
 .note-inline-input {
   flex: 1;
   height: 28px;

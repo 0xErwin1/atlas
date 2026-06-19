@@ -133,6 +133,26 @@ async function removeFolder(folderId: string): Promise<void> {
   await folders.remove(ws.value, project.slug, folderId);
 }
 
+async function moveDoc(slug: string, targetFolderId: string | null): Promise<void> {
+  const project = activeProject.value;
+  if (project === null || ws.value === '') return;
+
+  const ok = await documents.move(ws.value, project.slug, slug, targetFolderId);
+  if (!ok && documents.error) {
+    ui.showBanner(documents.error, 'error');
+  }
+}
+
+async function moveFolder(folderId: string, targetParentId: string | null): Promise<void> {
+  const project = activeProject.value;
+  if (project === null || ws.value === '') return;
+
+  const ok = await folders.move(ws.value, project.slug, folderId, targetParentId);
+  if (!ok && folders.error) {
+    ui.showBanner(folders.error, 'error');
+  }
+}
+
 onMounted(loadTree);
 watch(() => workspace.activeWorkspaceSlug, loadTree);
 
@@ -170,6 +190,8 @@ defineExpose({ openNewPage });
       @create-folder="createFolder"
       @rename-folder="renameFolder"
       @remove-folder="removeFolder"
+      @move-doc="moveDoc"
+      @move-folder="moveFolder"
     />
   </div>
   <p
