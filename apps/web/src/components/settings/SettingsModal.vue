@@ -1,15 +1,17 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import AboutPanel from '@/components/settings/AboutPanel.vue';
 import AccountPanel from '@/components/settings/AccountPanel.vue';
 import ApiKeysPanel from '@/components/settings/ApiKeysPanel.vue';
 import UsersPanel from '@/components/settings/UsersPanel.vue';
 import Icon from '@/components/ui/Icon.vue';
+import { useBreakpoint } from '@/composables/useBreakpoint';
 import { useAuthStore } from '@/stores/auth';
 import { type SettingsTab, useUiStore } from '@/stores/ui';
 
 const ui = useUiStore();
 const auth = useAuthStore();
+const { isMobile } = useBreakpoint();
 
 interface NavItem {
   tab: SettingsTab;
@@ -28,15 +30,39 @@ const navItems = computed<NavItem[]>(() => {
   return items;
 });
 
+// On mobile the two-panel layout flattens to a list -> detail flow; this tracks
+// whether a section has been opened (detail) versus showing the list.
+const mobileDrilled = ref(false);
+
+const currentLabel = computed(
+  () => navItems.value.find((item) => item.tab === ui.settingsTab)?.label ?? 'Settings',
+);
+
+function openSection(tab: SettingsTab): void {
+  ui.setSettingsTab(tab);
+  mobileDrilled.value = true;
+}
+
+function backToList(): void {
+  mobileDrilled.value = false;
+}
+
 function onKeydown(event: KeyboardEvent): void {
-  if (event.key === 'Escape') ui.closeSettings();
+  if (event.key !== 'Escape') return;
+  // On mobile, Escape backs out of a section to the list before closing.
+  if (isMobile.value && mobileDrilled.value) backToList();
+  else ui.closeSettings();
 }
 
 watch(
   () => ui.settingsOpen,
   (open) => {
-    if (open) window.addEventListener('keydown', onKeydown);
-    else window.removeEventListener('keydown', onKeydown);
+    if (open) {
+      mobileDrilled.value = false;
+      window.addEventListener('keydown', onKeydown);
+    } else {
+      window.removeEventListener('keydown', onKeydown);
+    }
   },
 );
 
@@ -44,13 +70,39 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
 </script>
 
 <template>
-  <div v-if="ui.settingsOpen" class="atl-settings-overlay" @click.self="ui.closeSettings()">
-    <div class="atl-settings-modal" role="dialog" aria-label="Settings">
+  <div
+    v-if="ui.settingsOpen"
+    class="atl-settings-overlay"
+    :class="{ 'atl-settings-overlay--mobile': isMobile }"
+    @click.self="ui.closeSettings()"
+  >
+    <div
+      class="atl-settings-modal"
+      :class="{ 'atl-settings-modal--mobile': isMobile }"
+      role="dialog"
+      aria-label="Settings"
+    >
       <div class="atl-settings-header">
-        <Icon name="settings" :size="16" style="color: var(--c-foreground); flex: 0 0 auto;" />
-        <span style="font-size: 15px; font-weight: var(--fw-bold); color: var(--c-foreground); flex: 1;">
-          Settings
-        </span>
+        <template v-if="isMobile && mobileDrilled">
+          <button
+            type="button"
+            class="atl-settings-x"
+            data-action="settings-back"
+            aria-label="Back to settings"
+            @click="backToList"
+          >
+            <Icon name="chevron-left" :size="18" />
+          </button>
+          <span style="font-size: 15px; font-weight: var(--fw-bold); color: var(--c-foreground); flex: 1;">
+            {{ currentLabel }}
+          </span>
+        </template>
+        <template v-else>
+          <Icon name="settings" :size="16" style="color: var(--c-foreground); flex: 0 0 auto;" />
+          <span style="font-size: 15px; font-weight: var(--fw-bold); color: var(--c-foreground); flex: 1;">
+            Settings
+          </span>
+        </template>
         <button
           type="button"
           class="atl-settings-x"
@@ -62,7 +114,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
       </div>
 
       <div class="atl-settings-body">
-        <nav class="atl-settings-nav">
+        <nav v-if="!isMobile" class="atl-settings-nav">
           <button
             v-for="item in navItems"
             :key="item.tab"
@@ -80,7 +132,22 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
           </button>
         </nav>
 
-        <div class="atl-settings-content">
+        <div v-else-if="!mobileDrilled" class="atl-settings-list">
+          <button
+            v-for="item in navItems"
+            :key="item.tab"
+            type="button"
+            class="atl-list-row"
+            :data-settings-row="item.tab"
+            @click="openSection(item.tab)"
+          >
+            <Icon :name="item.icon" :size="17" :style="{ color: 'var(--c-muted)', flex: '0 0 auto' }" />
+            <span style="flex: 1; text-align: left;">{{ item.label }}</span>
+            <Icon name="chevron-right" :size="15" :style="{ color: 'var(--c-muted)', flex: '0 0 auto' }" />
+          </button>
+        </div>
+
+        <div v-if="!isMobile || mobileDrilled" class="atl-settings-content">
           <AccountPanel v-if="ui.settingsTab === 'account'" />
           <ApiKeysPanel v-else-if="ui.settingsTab === 'keys'" />
           <UsersPanel v-else-if="ui.settingsTab === 'users'" />
@@ -189,5 +256,47 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
   min-width: 0;
   overflow: auto;
   padding: 20px 24px;
+}
+
+.atl-settings-overlay--mobile {
+  padding: 0;
+}
+
+.atl-settings-modal--mobile {
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+  border: none;
+  border-radius: 0;
+}
+
+.atl-settings-list {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  overflow-y: auto;
+}
+
+.atl-list-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  height: 48px;
+  padding: 0 12px;
+  border: none;
+  border-radius: var(--r-md);
+  background: transparent;
+  cursor: pointer;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-medium);
+  color: var(--c-foreground);
+}
+
+.atl-list-row:active {
+  background: var(--c-raised);
 }
 </style>
