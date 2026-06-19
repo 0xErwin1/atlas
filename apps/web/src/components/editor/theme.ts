@@ -109,6 +109,24 @@ export const atlasMarkdownTheme = EditorView.theme(
       color: 'var(--c-foreground)',
     },
 
+    // Rendered mermaid diagram, in place of a ```mermaid block off active block.
+    '.cm-atlas-mermaid': {
+      display: 'flex',
+      justifyContent: 'center',
+      padding: '0.6em 0',
+      cursor: 'text',
+    },
+    '.cm-atlas-mermaid svg': {
+      maxWidth: '100%',
+      height: 'auto',
+    },
+    '.cm-atlas-mermaid-error': {
+      display: 'block',
+      whiteSpace: 'pre-wrap',
+      fontFamily: 'var(--font-mono)',
+      color: 'var(--c-danger)',
+    },
+
     // Blockquote.
     '.cm-atlas-quote': {
       borderLeft: '3px solid var(--c-border)',

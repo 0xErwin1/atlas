@@ -296,6 +296,72 @@ class TableWidget extends WidgetType {
   }
 }
 
+// Mermaid is heavy, so it is imported lazily on first use and cached. The render
+// runs with `securityLevel: 'strict'` so the produced SVG is sanitised.
+type MermaidApi = { render: (id: string, code: string) => Promise<{ svg: string }> };
+let mermaidPromise: Promise<MermaidApi> | null = null;
+let mermaidSeq = 0;
+
+function loadMermaid(): Promise<MermaidApi> {
+  if (mermaidPromise === null) {
+    mermaidPromise = import('mermaid').then((m) => {
+      const mermaid = m.default;
+      mermaid.initialize({ startOnLoad: false, theme: 'dark', securityLevel: 'strict' });
+      return mermaid as unknown as MermaidApi;
+    });
+  }
+  return mermaidPromise;
+}
+
+async function renderMermaid(container: HTMLElement, code: string): Promise<void> {
+  try {
+    const mermaid = await loadMermaid();
+    mermaidSeq += 1;
+    const { svg } = await mermaid.render(`atlas-mermaid-${mermaidSeq}`, code);
+    container.innerHTML = svg;
+  } catch {
+    container.textContent = code;
+    container.classList.add('cm-atlas-mermaid-error');
+  }
+}
+
+/**
+ * Block widget that renders a ```mermaid code block as a diagram. The diagram is
+ * rendered asynchronously (mermaid is lazy-loaded); on a parse error the raw code
+ * is shown instead. Clicking (when editable) reveals the source for editing.
+ */
+class MermaidWidget extends WidgetType {
+  constructor(
+    private readonly code: string,
+    private readonly from: number,
+  ) {
+    super();
+  }
+
+  eq(other: MermaidWidget): boolean {
+    return other.code === this.code && other.from === this.from;
+  }
+
+  toDOM(view: EditorView): HTMLElement {
+    const wrap = document.createElement('div');
+    wrap.className = 'cm-atlas-mermaid';
+
+    wrap.addEventListener('mousedown', (event) => {
+      if (view.state.readOnly) return;
+      event.preventDefault();
+      view.dispatch({ selection: { anchor: this.from }, scrollIntoView: true });
+      view.focus();
+    });
+
+    void renderMermaid(wrap, this.code);
+    return wrap;
+  }
+
+  ignoreEvent(): boolean {
+    return false;
+  }
+}
+
 const hideDeco = Decoration.replace({});
 
 function lineRangesFor(view: EditorView): LineRange[] {
@@ -503,6 +569,18 @@ function decorateSyntaxTree(
       }
 
       if (name === 'FencedCode') {
+        // A ```mermaid block renders as a diagram, which is a BLOCK decoration
+        // owned by the StateField. Here the ViewPlugin just records the range so
+        // its passes skip inside it; everything else is a normal fenced block.
+        if (fencedLanguage(view.state, node.node) === 'mermaid') {
+          const doc = view.state.doc;
+          const firstLine = doc.lineAt(node.from).number;
+          const lastLine = doc.lineAt(node.to).number;
+          if (!isBlockActive(firstLine, lastLine, activeLines)) {
+            blockRanges.push({ from: node.from, to: node.to });
+          }
+          return false;
+        }
         decorateFenced(view, node.node, activeLines, decos);
         return;
       }
@@ -649,6 +727,12 @@ function isInsideBlock(pos: number, blockRanges: BlockRange[]): boolean {
   return blockRanges.some((b) => pos >= b.from && pos < b.to);
 }
 
+/** The language label of a FencedCode node from its CodeInfo child, or null. */
+function fencedLanguage(state: EditorState, node: SyntaxNode): string | null {
+  const info = findChild(node.firstChild, 'CodeInfo');
+  return info ? fenceLanguage(state.doc.sliceString(info.from, info.to)) : null;
+}
+
 function hideMarks(node: SyntaxNode, markName: string, decos: Range<Decoration>[]): void {
   for (const mark of collectChildren(node, markName)) {
     decos.push(hideDeco.range(mark.from, mark.to));
@@ -701,9 +785,10 @@ function activeLinesForState(state: EditorState, reveal: boolean): Set<number> {
 }
 
 /**
- * Builds the BLOCK decorations (rendered tables) for the whole document. Block
- * widgets and decorations that span line breaks may only be provided through a
- * StateField, never a ViewPlugin, so these live apart from the inline pass.
+ * Builds the BLOCK decorations (rendered tables and mermaid diagrams) for the
+ * whole document. Block widgets and decorations that span line breaks may only be
+ * provided through a StateField, never a ViewPlugin, so these live apart from the
+ * inline pass.
  *
  * A block is rendered as a widget unless the selection touches it, in which case
  * it is left as raw markdown for editing (reveal-on-active-block).
@@ -714,6 +799,10 @@ function buildBlockDecorations(state: EditorState, reveal: boolean): DecorationS
   const activeLines = activeLinesForState(state, reveal);
   const decos: Range<Decoration>[] = [];
 
+  const blockReplace = (node: SyntaxNode, widget: WidgetType): void => {
+    decos.push(Decoration.replace({ widget, block: true }).range(node.from, node.to));
+  };
+
   tree.iterate({
     enter: (node) => {
       if (node.name === 'Table') {
@@ -721,17 +810,24 @@ function buildBlockDecorations(state: EditorState, reveal: boolean): DecorationS
         const lastLine = doc.lineAt(node.to).number;
         if (!isBlockActive(firstLine, lastLine, activeLines)) {
           const parsed = parseTable(doc.sliceString(node.from, node.to));
-          if (parsed !== null) {
-            decos.push(
-              Decoration.replace({ widget: new TableWidget(parsed, node.from), block: true }).range(
-                node.from,
-                node.to,
-              ),
-            );
+          if (parsed !== null) blockReplace(node.node, new TableWidget(parsed, node.from));
+        }
+        return false;
+      }
+
+      if (node.name === 'FencedCode') {
+        if (fencedLanguage(state, node.node) === 'mermaid') {
+          const firstLine = doc.lineAt(node.from).number;
+          const lastLine = doc.lineAt(node.to).number;
+          if (!isBlockActive(firstLine, lastLine, activeLines)) {
+            const codeText = findChild(node.node.firstChild, 'CodeText');
+            const code = codeText ? doc.sliceString(codeText.from, codeText.to) : '';
+            blockReplace(node.node, new MermaidWidget(code, node.from));
           }
         }
         return false;
       }
+
       return undefined;
     },
   });
