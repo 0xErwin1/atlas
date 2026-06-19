@@ -95,6 +95,26 @@ function onCloseTab(id: string): void {
   void router.push(nextSlug !== null ? { name: 'notes', params: { slug: nextSlug } } : { name: 'notes' });
 }
 
+// After a bulk close, navigate only when the active note was among those closed;
+// `anchor` is the note to fall back to (null = the notes root).
+function navigateAfterClose(anchor: string | null): void {
+  if (slug.value === null) return;
+  if (tabsStore.tabs(ws.value).some((t) => t.slug === slug.value)) return;
+  void router.push(anchor !== null ? { name: 'notes', params: { slug: anchor } } : { name: 'notes' });
+}
+
+function onCloseOthers(id: string): void {
+  navigateAfterClose(tabsStore.closeOthers(ws.value, id));
+}
+
+function onCloseRight(id: string): void {
+  navigateAfterClose(tabsStore.closeRight(ws.value, id));
+}
+
+function onCloseAll(): void {
+  navigateAfterClose(tabsStore.closeAll(ws.value));
+}
+
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
 async function loadDoc(): Promise<void> {
@@ -356,6 +376,9 @@ watch(title, (t) => {
       closable
       @select="onSelectTab"
       @close="onCloseTab"
+      @close-others="onCloseOthers"
+      @close-right="onCloseRight"
+      @close-all="onCloseAll"
     >
       <template #right>
         <button

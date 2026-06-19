@@ -1,5 +1,8 @@
 <script setup lang="ts">
+import { computed, ref } from 'vue';
+import ContextMenu, { type MenuItem } from '@/components/ui/ContextMenu.vue';
 import Icon from '@/components/ui/Icon.vue';
+import { useContextMenu } from '@/composables/useContextMenu';
 
 export interface Tab {
   id: string;
@@ -9,7 +12,7 @@ export interface Tab {
   dirty?: boolean;
 }
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     tabs?: Tab[];
     closable?: boolean;
@@ -20,10 +23,46 @@ withDefaults(
   },
 );
 
-defineEmits<{
+const emit = defineEmits<{
   select: [id: string];
   close: [id: string];
+  'close-others': [id: string];
+  'close-right': [id: string];
+  'close-all': [];
 }>();
+
+const { open: menuOpen, x: menuX, y: menuY, openAt, close: closeMenu } = useContextMenu();
+const menuTabId = ref<string | null>(null);
+
+function openTabMenu(event: MouseEvent, id: string): void {
+  menuTabId.value = id;
+  openAt(event);
+}
+
+const menuItems = computed<MenuItem[]>(() => {
+  const id = menuTabId.value;
+  if (id === null) return [];
+  const idx = props.tabs.findIndex((t) => t.id === id);
+  const onlyOne = props.tabs.length <= 1;
+  const isLast = idx === props.tabs.length - 1;
+  return [
+    { label: 'Close', icon: 'x', action: () => emit('close', id) },
+    {
+      label: 'Close others',
+      icon: 'x',
+      disabled: onlyOne,
+      action: () => emit('close-others', id),
+    },
+    {
+      label: 'Close to the right',
+      icon: 'arrow-right',
+      disabled: isLast,
+      action: () => emit('close-right', id),
+    },
+    { sep: true },
+    { label: 'Close all', icon: 'x', action: () => emit('close-all') },
+  ];
+});
 </script>
 
 <template>
@@ -60,6 +99,7 @@ defineEmits<{
         min-width: 110px;
       `"
       @click="$emit('select', tab.id)"
+      @contextmenu.prevent.stop="openTabMenu($event, tab.id)"
     >
       <Icon :name="tab.icon" :size="12" style="flex-shrink: 0;" />
       <span class="flex-1 truncate">{{ tab.name }}</span>
@@ -83,5 +123,7 @@ defineEmits<{
     <div class="flex items-center" style="margin-left: auto; gap: 4px; padding-right: 4px; align-self: center;">
       <slot name="right" />
     </div>
+
+    <ContextMenu :open="menuOpen" :x="menuX" :y="menuY" :items="menuItems" @close="closeMenu" />
   </div>
 </template>

@@ -78,5 +78,31 @@ export const useNotesTabsStore = defineStore('notesTabs', () => {
     return neighbour?.slug ?? null;
   }
 
-  return { byWorkspace, tabs, open, setTitle, close };
+  /** Closes every tab in the workspace. */
+  function closeAll(ws: string): null {
+    byWorkspace.value[ws] = [];
+    persist();
+    return null;
+  }
+
+  /** Closes every tab except `slug`. Returns the surviving slug (or null). */
+  function closeOthers(ws: string, slug: string): string | null {
+    const keep = (byWorkspace.value[ws] ?? []).find((t) => t.slug === slug);
+    if (keep === undefined) return null;
+    byWorkspace.value[ws] = [keep];
+    persist();
+    return slug;
+  }
+
+  /** Closes every tab to the right of `slug`. Returns `slug` (or null if absent). */
+  function closeRight(ws: string, slug: string): string | null {
+    const list = byWorkspace.value[ws] ?? [];
+    const idx = list.findIndex((t) => t.slug === slug);
+    if (idx === -1) return null;
+    byWorkspace.value[ws] = list.slice(0, idx + 1);
+    persist();
+    return slug;
+  }
+
+  return { byWorkspace, tabs, open, setTitle, close, closeAll, closeOthers, closeRight };
 });
