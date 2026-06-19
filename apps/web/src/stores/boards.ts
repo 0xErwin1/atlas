@@ -372,7 +372,13 @@ export const useBoardsStore = defineStore('boards', () => {
   async function updateTask(
     ws: string,
     readableId: string,
-    patch: { title?: string; priority?: string | null; due_date?: string | null },
+    patch: {
+      title?: string;
+      priority?: string | null;
+      due_date?: string | null;
+      estimate?: number | null;
+      labels?: string[];
+    },
   ): Promise<boolean> {
     const { data, error: apiError } = await wrappedClient.PATCH('/v1/workspaces/{ws}/tasks/{readable_id}', {
       params: { path: { ws, readable_id: readableId } },

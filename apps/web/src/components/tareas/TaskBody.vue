@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import type { components } from '@/api/types.d.ts';
 import ActivityFeed from '@/components/tareas/ActivityFeed.vue';
 import AssigneeList from '@/components/tareas/AssigneeList.vue';
@@ -47,14 +47,15 @@ const columnId = computed(() => summary.value?.column_id ?? props.task.column_id
 
 const statusName = computed(() => boards.columns.find((c) => c.id === columnId.value)?.name ?? null);
 
-const dueDate = computed(() => {
+// `<input type="date">` wants YYYY-MM-DD; the API stores a full ISO datetime.
+const dueInputValue = computed(() => {
   const raw = props.task.due_date;
-  if (raw == null) return null;
+  if (raw == null) return '';
   const d = new Date(raw);
-  return Number.isNaN(d.getTime())
-    ? null
-    : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  return Number.isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
 });
+
+const labelDraft = ref('');
 
 const PRIORITY_OPTIONS: DropdownOption[] = [
   { value: '', label: 'None' },
@@ -107,6 +108,45 @@ async function onChangePriority(value: string): Promise<void> {
   const ok = await boards.updateTask(props.ws, props.task.readable_id, { priority: next });
   if (ok) tasks.patchOpenTask({ priority: next });
   else fail(boards.error);
+}
+
+async function onChangeDue(value: string): Promise<void> {
+  const due = value === '' ? null : new Date(`${value}T00:00:00Z`).toISOString();
+  const ok = await boards.updateTask(props.ws, props.task.readable_id, { due_date: due });
+  if (ok) tasks.patchOpenTask({ due_date: due });
+  else fail(boards.error);
+}
+
+async function onChangeEstimate(value: string): Promise<void> {
+  const trimmed = value.trim();
+  const estimate = trimmed === '' ? null : Number.parseInt(trimmed, 10);
+  if (estimate !== null && (Number.isNaN(estimate) || estimate < 0)) return;
+  const ok = await boards.updateTask(props.ws, props.task.readable_id, { estimate });
+  if (ok) tasks.patchOpenTask({ estimate });
+  else fail(boards.error);
+}
+
+async function commitLabels(labels: string[]): Promise<void> {
+  const ok = await boards.updateTask(props.ws, props.task.readable_id, { labels });
+  if (ok) tasks.patchOpenTask({ labels });
+  else fail(boards.error);
+}
+
+function onAddLabel(): void {
+  const value = labelDraft.value.trim();
+  labelDraft.value = '';
+  if (value === '') return;
+  const current = props.task.labels ?? [];
+  if (!current.includes(value)) void commitLabels([...current, value]);
+}
+
+function onRemoveLabel(label: string): void {
+  void commitLabels((props.task.labels ?? []).filter((l) => l !== label));
+}
+
+async function onRemoveChecklist(itemId: string): Promise<void> {
+  const ok = await detail.removeChecklistItem(props.ws, props.task.readable_id, itemId);
+  if (!ok) fail(detail.error);
 }
 
 async function onAddAssignee(ref: string): Promise<void> {
@@ -208,9 +248,13 @@ async function onRemoveReference(referenceId: string): Promise<void> {
         </div>
         <div class="atl-tv-field">
           <span class="atl-tv-label"><Icon name="calendar" :size="14" />Due</span>
-          <span class="atl-tv-value" :class="{ empty: dueDate === null }">
-            <span v-if="dueDate" style="font-family: var(--font-mono); font-size: var(--fs-xs);">{{ dueDate }}</span>
-            <span v-else>Empty</span>
+          <span class="atl-tv-value">
+            <input
+              type="date"
+              class="atl-tv-input"
+              :value="dueInputValue"
+              @change="onChangeDue(($event.target as HTMLInputElement).value)"
+            />
           </span>
         </div>
       </div>
@@ -224,20 +268,41 @@ async function onRemoveReference(referenceId: string): Promise<void> {
         </div>
         <div class="atl-tv-field">
           <span class="atl-tv-label"><Icon name="clock" :size="14" />Estimate</span>
-          <span class="atl-tv-value" :class="{ empty: task.estimate == null }">
-            <span v-if="task.estimate != null" style="font-family: var(--font-mono); font-size: var(--fs-xs);">
-              {{ task.estimate }} pts
-            </span>
-            <span v-else>Empty</span>
+          <span class="atl-tv-value">
+            <input
+              type="number"
+              min="0"
+              class="atl-tv-input"
+              style="width: 80px;"
+              placeholder="—"
+              :value="task.estimate ?? ''"
+              @change="onChangeEstimate(($event.target as HTMLInputElement).value)"
+            />
+            <span style="color: var(--c-muted); font-size: var(--fs-xs);">pts</span>
           </span>
         </div>
         <div class="atl-tv-field">
           <span class="atl-tv-label"><Icon name="tag" :size="14" />Tags</span>
-          <span class="atl-tv-value" :class="{ empty: (task.labels ?? []).length === 0 }">
-            <template v-if="(task.labels ?? []).length">
-              <Chip v-for="label in task.labels" :key="label" tone="info">{{ label }}</Chip>
-            </template>
-            <span v-else>Empty</span>
+          <span class="atl-tv-value" style="flex-wrap: wrap;">
+            <span v-for="label in task.labels ?? []" :key="label" class="atl-tag">
+              {{ label }}
+              <button
+                type="button"
+                class="atl-tag-x"
+                aria-label="Remove tag"
+                @click="onRemoveLabel(label)"
+              >
+                ×
+              </button>
+            </span>
+            <input
+              v-model="labelDraft"
+              class="atl-tv-input"
+              style="width: 96px;"
+              placeholder="+ Tag"
+              @keydown.enter.prevent="onAddLabel"
+              @blur="onAddLabel"
+            />
           </span>
         </div>
       </div>
@@ -254,6 +319,7 @@ async function onRemoveReference(referenceId: string): Promise<void> {
         @toggle="onToggleChecklist"
         @add="onAddChecklist"
         @promote="onPromoteChecklist"
+        @remove="onRemoveChecklist"
       />
     </div>
 
@@ -400,6 +466,53 @@ async function onRemoveReference(referenceId: string): Promise<void> {
 
 .atl-tv-value.empty {
   color: var(--c-muted);
+}
+
+.atl-tv-input {
+  height: 26px;
+  padding: 0 8px;
+  background: var(--c-raised);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  color: var(--c-foreground);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  outline: none;
+}
+
+.atl-tv-input:focus {
+  border-color: var(--c-primary);
+}
+
+.atl-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 4px 0 8px;
+  border-radius: var(--r-sm);
+  background: var(--c-selection);
+  color: var(--c-foreground);
+  font-size: var(--fs-xs);
+}
+
+.atl-tag-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--c-muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.atl-tag-x:hover {
+  color: var(--c-foreground);
 }
 
 .atl-tv-divider {

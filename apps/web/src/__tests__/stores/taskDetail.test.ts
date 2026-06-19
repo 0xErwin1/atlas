@@ -183,6 +183,33 @@ describe('useTaskDetailStore', () => {
     expect(store.error).toBe('Failed');
   });
 
+  it('removeChecklistItem deletes the item on success', async () => {
+    const store = useTaskDetailStore();
+    store._setForTest({
+      checklist: [checklistItem('c1', 'Step', false), checklistItem('c2', 'Other', false)],
+    });
+
+    DELETE.mockResolvedValueOnce({ data: undefined, error: undefined });
+
+    const ok = await store.removeChecklistItem('ws', 'ATL-1', 'c1');
+
+    expect(ok).toBe(true);
+    expect(store.checklist.map((i) => i.id)).toEqual(['c2']);
+  });
+
+  it('removeChecklistItem keeps the item and sets error on failure', async () => {
+    const store = useTaskDetailStore();
+    store._setForTest({ checklist: [checklistItem('c1', 'Step', false)] });
+
+    DELETE.mockResolvedValueOnce({ data: undefined, error: { hint: 'No permission' } });
+
+    const ok = await store.removeChecklistItem('ws', 'ATL-1', 'c1');
+
+    expect(ok).toBe(false);
+    expect(store.checklist).toHaveLength(1);
+    expect(store.error).toBe('No permission');
+  });
+
   it('promoteChecklistItem POSTs board+column and marks the item promoted on success', async () => {
     const store = useTaskDetailStore();
     store._setForTest({ checklist: [checklistItem('c1', 'Step', false)] });

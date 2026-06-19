@@ -10,6 +10,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   toggle: [itemId: string];
   promote: [itemId: string];
+  remove: [itemId: string];
   add: [title: string];
 }>();
 
@@ -100,6 +101,23 @@ function submitDraft(): void {
         @click="emit('promote', item.id)"
       >
         <Icon name="arrow-up-right" :size="13" />
+      </button>
+      <button
+        type="button"
+        title="Delete sub-task"
+        aria-label="Delete sub-task"
+        class="shrink-0 cursor-pointer opacity-0 group-hover:opacity-100 flex items-center justify-center"
+        style="
+          width: 22px;
+          height: 22px;
+          border: 1px solid var(--c-border);
+          border-radius: var(--r-sm);
+          background: var(--c-secondary);
+          color: var(--c-muted);
+        "
+        @click="emit('remove', item.id)"
+      >
+        <Icon name="trash" :size="13" />
       </button>
     </div>
 

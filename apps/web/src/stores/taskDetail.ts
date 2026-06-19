@@ -219,6 +219,23 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     return true;
   }
 
+  async function removeChecklistItem(ws: string, readableId: string, itemId: string): Promise<boolean> {
+    error.value = null;
+
+    const { error: apiError } = await wrappedClient.DELETE(
+      '/v1/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}',
+      { params: { path: { ws, readable_id: readableId, item_id: itemId } } },
+    );
+
+    if (apiError !== undefined) {
+      error.value = hintOf(apiError, 'Failed to delete sub-task');
+      return false;
+    }
+
+    checklist.value = checklist.value.filter((i) => i.id !== itemId);
+    return true;
+  }
+
   async function addReference(
     ws: string,
     readableId: string,
@@ -293,6 +310,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     toggleChecklistItem,
     promoteChecklistItem,
     addChecklistItem,
+    removeChecklistItem,
     addReference,
     removeReference,
     clear,

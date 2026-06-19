@@ -45,4 +45,12 @@ describe('Checklist (REQ-W22)', () => {
     expect(wrapper.text()).toContain('ATL-99');
     expect(wrapper.find('button[aria-label="Promote to task"]').exists()).toBe(false);
   });
+
+  it('emits remove with the item id when the delete button is clicked', async () => {
+    const wrapper = mount(Checklist, { props: { items: [item('a', 'One', false)] } });
+
+    await wrapper.get('button[aria-label="Delete sub-task"]').trigger('click');
+
+    expect(wrapper.emitted('remove')).toEqual([['a']]);
+  });
 });
