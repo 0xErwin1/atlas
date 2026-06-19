@@ -6,24 +6,31 @@ import AppRail from '@/components/shell/AppRail.vue';
 import BannerToast from '@/components/shell/BannerToast.vue';
 import ContextSidebar from '@/components/shell/ContextSidebar.vue';
 import InspectorDock from '@/components/shell/InspectorDock.vue';
+import MobileTabBar from '@/components/shell/MobileTabBar.vue';
 import EmptyState from '@/components/states/EmptyState.vue';
+import { useBreakpoint } from '@/composables/useBreakpoint';
 import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     sidebarTitle?: string;
     sidebarIcon?: string;
+    // On mobile a single pane is shown at a time: the sidebar (list/tree) by
+    // default, or the main content when the view has navigated into a detail.
+    mobileDetail?: boolean;
   }>(),
   {
     sidebarTitle: 'Explorer',
     sidebarIcon: '',
+    mobileDetail: false,
   },
 );
 
 const ui = useUiStore();
 const workspace = useWorkspaceStore();
 const slots = useSlots();
+const { isMobile } = useBreakpoint();
 
 const ws = computed(() => workspace.activeWorkspaceSlug ?? '');
 
@@ -31,10 +38,63 @@ const ws = computed(() => workspace.activeWorkspaceSlug ?? '');
 // provides no inspector slot — e.g. the board — has nothing to show there, so the
 // dock is hidden rather than opening to a blank panel.
 const hasInspector = computed(() => Object.keys(slots).some((name) => name.startsWith('inspector-')));
+
+const hasSidebar = computed(() => Boolean(slots.sidebar));
+
+// With no sidebar (e.g. the board) the main content is always the primary pane.
+const showMainOnMobile = computed(() => props.mobileDetail || !hasSidebar.value);
 </script>
 
 <template>
   <div
+    v-if="isMobile"
+    class="flex flex-col"
+    style="height: 100dvh; overflow: hidden; background-color: var(--c-background);"
+  >
+    <main class="flex flex-col flex-1 min-w-0 overflow-hidden" style="background-color: var(--c-background);">
+      <template v-if="showMainOnMobile">
+        <slot />
+      </template>
+      <template v-else>
+        <div
+          class="flex items-center"
+          style="height: 44px; flex: 0 0 44px; padding: 0 12px; gap: 8px; border-bottom: 1px solid var(--c-border);"
+        >
+          <span
+            class="flex-1 truncate"
+            style="font-size: var(--fs-lg); font-weight: var(--fw-bold); color: var(--c-foreground);"
+          >
+            {{ sidebarTitle }}
+          </span>
+          <div class="flex items-center" style="gap: 2px;">
+            <slot name="sidebar-actions" />
+          </div>
+        </div>
+        <div class="flex-1 overflow-y-auto overflow-x-hidden">
+          <slot name="sidebar" />
+        </div>
+        <div v-if="$slots['sidebar-footer']" style="border-top: 1px solid var(--c-border); padding: 8px;">
+          <slot name="sidebar-footer" />
+        </div>
+      </template>
+    </main>
+
+    <MobileTabBar />
+
+    <BannerToast />
+
+    <ShareDialog
+      :open="ui.shareOpen"
+      :ws="ws"
+      :resource-label="ui.shareResourceLabel"
+      @close="ui.closeShare()"
+    />
+
+    <SettingsModal />
+  </div>
+
+  <div
+    v-else
     class="flex"
     style="height: 100vh; overflow: hidden; background-color: var(--c-background);"
   >
