@@ -4782,3 +4782,76 @@ async fn create_document_with_title_over_200_chars_returns_422() {
 
     db.teardown().await;
 }
+
+#[tokio::test]
+async fn update_task_clears_estimate_with_explicit_null() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "task-clr-est").await;
+
+    client
+        .create_project(&ws.slug, project_req("task-clr-proj", "TC"))
+        .await
+        .expect("create project");
+
+    let board = client
+        .create_board(
+            &ws.slug,
+            "task-clr-proj",
+            CreateBoardRequest {
+                name: "Board".to_string(),
+            },
+        )
+        .await
+        .expect("create board");
+
+    let col = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "Todo".to_string(),
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create column");
+
+    let task = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: col.id,
+                title: "Has estimate".to_string(),
+                description: None,
+                properties: Some(atlas_api::dtos::boards_tasks::TaskPropertiesDto {
+                    estimate: Some(5),
+                    ..Default::default()
+                }),
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create task");
+    assert_eq!(task.estimate, Some(5));
+
+    // An explicit JSON null must clear the estimate (an absent field would leave it).
+    let updated = client
+        .update_task(
+            &ws.slug,
+            &task.readable_id,
+            UpdateTaskRequest {
+                estimate: Some(serde_json::Value::Null),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("update task");
+
+    assert_eq!(updated.estimate, None, "explicit null must clear the estimate");
+
+    db.teardown().await;
+}

@@ -268,14 +268,28 @@ pub struct CreateTaskRequest {
     pub after: Option<String>,
 }
 
+/// Captures field presence for nullable patch fields: an absent field stays
+/// `None` (leave unchanged), while an explicit JSON `null` becomes
+/// `Some(Value::Null)` so a caller can clear the value. Without this, serde
+/// collapses `null` into `None` and clearing a field is impossible.
+fn present_value<'de, D>(de: D) -> Result<Option<serde_json::Value>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    serde_json::Value::deserialize(de).map(Some)
+}
+
 /// Request body for `PATCH /v1/workspaces/{ws}/tasks/{readable_id}`.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct UpdateTaskRequest {
     pub title: Option<String>,
     pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "present_value")]
     pub priority: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "present_value")]
     pub due_date: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "present_value")]
     pub estimate: Option<serde_json::Value>,
     pub labels: Option<Vec<String>>,
     pub properties: Option<serde_json::Value>,
