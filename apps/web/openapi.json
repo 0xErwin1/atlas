@@ -145,6 +145,80 @@
         ]
       }
     },
+    "/v1/me/ui-state": {
+      "get": {
+        "tags": [
+          "ui-state"
+        ],
+        "summary": "Returns the authenticated human user's stored UI state.",
+        "description": "The state is an opaque JSON object owned by the client. When the user has no\nrow yet, an empty object `{}` is returned. API keys (agents) are rejected\nwith 403: agents have no UI.",
+        "operationId": "get_ui_state",
+        "responses": {
+          "200": {
+            "description": "The caller's stored UI state, or an empty object",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UiStateDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "API keys have no UI state"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "ui-state"
+        ],
+        "summary": "Inserts or replaces the authenticated human user's UI state.",
+        "description": "The `state` JSON object is stored verbatim; the server does not validate its\ninner shape. The stored value is echoed back. API keys (agents) are rejected\nwith 403: agents have no UI.",
+        "operationId": "set_ui_state",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUiStateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The stored UI state, echoed back",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UiStateDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "API keys have no UI state"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/v1/meta": {
       "get": {
         "tags": [
@@ -428,6 +502,47 @@
           },
           "401": {
             "description": "Unauthenticated"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "workspaces"
+        ],
+        "summary": "Creates a new workspace owned by the authenticated human user.",
+        "description": "The slug is derived from the name and de-duplicated against existing\nworkspace slugs. The creating user is added as `Owner`, so the workspace\nimmediately appears in `GET /v1/workspaces`. API keys (agents) are rejected\nwith 403: agents are workspace-scoped and must not create workspaces.",
+        "operationId": "create_workspace",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateWorkspaceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Workspace created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "API keys cannot create workspaces"
           }
         },
         "security": [
@@ -5178,6 +5293,18 @@
           }
         }
       },
+      "CreateWorkspaceRequest": {
+        "type": "object",
+        "description": "Request body for `POST /v1/workspaces`.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        }
+      },
       "DocumentDto": {
         "type": "object",
         "description": "Full document representation.",
@@ -6663,6 +6790,18 @@
           }
         }
       },
+      "UiStateDto": {
+        "type": "object",
+        "description": "Response from `GET /v1/me/ui-state` and `PUT /v1/me/ui-state`.\n\n`state` is an opaque JSON object owned by the client (e.g. which sidebar\nfolders are collapsed). The server stores and returns it verbatim and does\nnot validate its inner shape.",
+        "required": [
+          "state"
+        ],
+        "properties": {
+          "state": {
+            "type": "object"
+          }
+        }
+      },
       "UpdateBoardRequest": {
         "type": "object",
         "description": "Request body for `PATCH /v1/workspaces/{ws}/boards/{board_id}`.",
@@ -6838,6 +6977,18 @@
           }
         }
       },
+      "UpdateUiStateRequest": {
+        "type": "object",
+        "description": "Request body for `PUT /v1/me/ui-state`. The `state` is stored verbatim.",
+        "required": [
+          "state"
+        ],
+        "properties": {
+          "state": {
+            "type": "object"
+          }
+        }
+      },
       "UserDto": {
         "type": "object",
         "description": "Public user representation (no password hash).",
@@ -6931,6 +7082,10 @@
     {
       "name": "meta",
       "description": "Server metadata"
+    },
+    {
+      "name": "ui-state",
+      "description": "Per-user UI state"
     },
     {
       "name": "api-keys",
