@@ -8,6 +8,7 @@ import LoadingState from '@/components/states/LoadingState.vue';
 import KanbanBoard from '@/components/tareas/KanbanBoard.vue';
 import TaskDetailPane from '@/components/tareas/TaskDetailPane.vue';
 import Icon from '@/components/ui/Icon.vue';
+import { useBreakpoint } from '@/composables/useBreakpoint';
 import { useBoardsStore } from '@/stores/boards';
 import { useTaskDetailStore } from '@/stores/taskDetail';
 import { useTasksStore } from '@/stores/tasks';
@@ -24,6 +25,7 @@ const boards = useBoardsStore();
 const tasks = useTasksStore();
 const detail = useTaskDetailStore();
 const ui = useUiStore();
+const { isMobile } = useBreakpoint();
 
 const boardId = computed(() => {
   const id = route.params.boardId;
@@ -52,8 +54,9 @@ const boardDimmed = computed(() => paneVisible.value && ui.taskViewMode === 'mod
 
 async function onSelect(readableId: string): Promise<void> {
   // The persisted preference may be full screen — then the board has no inline
-  // pane; open the standalone route instead.
-  if (ui.taskViewMode === 'full') {
+  // pane; open the standalone route instead. On mobile the inline dock/dialog is
+  // too cramped, so a tapped card always opens the full-screen route.
+  if (isMobile.value || ui.taskViewMode === 'full') {
     openTask(readableId);
     return;
   }
@@ -127,7 +130,7 @@ watch([boardId, ws], loadBoard, { immediate: true });
 </script>
 
 <template>
-  <AppShell sidebar-title="Tasks" sidebar-icon="square-kanban">
+  <AppShell sidebar-title="Tasks" sidebar-icon="square-kanban" :mobile-detail="true">
     <template #sidebar-actions>
       <button type="button" class="atl-gbtn" title="Search ⌘K" aria-label="Search" @click="ui.openPalette()">
         <Icon name="search" :size="14" />
@@ -159,7 +162,20 @@ watch([boardId, ws], loadBoard, { immediate: true });
       </button>
     </template>
 
-    <EditorToolbar :breadcrumbs="breadcrumbs" :dirty="false">
+    <div
+      v-if="isMobile"
+      class="flex items-center"
+      style="height: 44px; flex: 0 0 44px; padding: 0 10px; gap: 8px; border-bottom: 1px solid var(--c-border);"
+    >
+      <span class="flex-1 truncate" style="font-size: var(--fs-lg); font-weight: var(--fw-bold); color: var(--c-foreground);">
+        {{ boards.board?.name ?? 'Board' }}
+      </span>
+      <button type="button" class="atl-gbtn" title="Search ⌘K" aria-label="Search" @click="ui.openPalette()">
+        <Icon name="search" :size="15" />
+      </button>
+    </div>
+
+    <EditorToolbar v-else :breadcrumbs="breadcrumbs" :dirty="false">
       <button
         type="button"
         class="atl-gbtn"

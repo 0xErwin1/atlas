@@ -11,6 +11,9 @@ const props = defineProps<{
   column: ColumnDto;
   tasks: TaskSummaryDto[];
   selectedReadableId?: string | null;
+  // On mobile the column fills most of the viewport and snaps, with the next
+  // column peeking, instead of the fixed 250px desktop width.
+  fluid?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -65,7 +68,9 @@ function onSortableDrop(event: unknown): void {
 <template>
   <div
     class="flex flex-col min-h-0"
-    style="width: 250px; flex: 0 0 250px;"
+    :style="fluid
+      ? 'width: 84vw; max-width: 320px; flex: 0 0 84vw; scroll-snap-align: start;'
+      : 'width: 250px; flex: 0 0 250px;'"
   >
     <div
       class="flex items-center"

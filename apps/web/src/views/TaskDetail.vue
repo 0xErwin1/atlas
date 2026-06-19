@@ -5,6 +5,7 @@ import ErrorState from '@/components/states/ErrorState.vue';
 import LoadingState from '@/components/states/LoadingState.vue';
 import TaskBody from '@/components/tareas/TaskBody.vue';
 import TaskDetailHeader from '@/components/tareas/TaskDetailHeader.vue';
+import { useBreakpoint } from '@/composables/useBreakpoint';
 import { useBoardsStore } from '@/stores/boards';
 import { useTaskDetailStore } from '@/stores/taskDetail';
 import { useTasksStore } from '@/stores/tasks';
@@ -20,6 +21,7 @@ const tasks = useTasksStore();
 const detail = useTaskDetailStore();
 const boards = useBoardsStore();
 const ui = useUiStore();
+const { isMobile } = useBreakpoint();
 
 const readableId = computed(() => {
   const id = route.params.readableId;
@@ -77,7 +79,7 @@ watch([readableId, ws], load, { immediate: true });
 </script>
 
 <template>
-  <AppShell sidebar-title="Tasks" sidebar-icon="square-kanban">
+  <AppShell sidebar-title="Tasks" sidebar-icon="square-kanban" :mobile-detail="true">
     <template #sidebar>
       <TasksSidebar />
     </template>
@@ -91,7 +93,7 @@ watch([readableId, ws], load, { immediate: true });
       @change="onChangeMode"
     />
 
-    <div class="flex-1 overflow-y-auto" style="padding: 24px 40px;">
+    <div class="flex-1 overflow-y-auto" :style="isMobile ? 'padding: 16px;' : 'padding: 24px 40px;'">
       <TaskBody v-if="task" :task="task" :ws="ws" layout="wide" />
       <ErrorState
         v-else-if="tasks.error"

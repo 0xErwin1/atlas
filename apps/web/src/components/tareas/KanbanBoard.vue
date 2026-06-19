@@ -5,8 +5,10 @@ import KanbanColumn from '@/components/tareas/KanbanColumn.vue';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import ContextMenu, { type MenuItem } from '@/components/ui/ContextMenu.vue';
 import PromptDialog from '@/components/ui/PromptDialog.vue';
+import { useBreakpoint } from '@/composables/useBreakpoint';
 import { useContextMenu } from '@/composables/useContextMenu';
 import { useKanbanMove } from '@/composables/useKanbanMove';
+import { activeDotIndex, dotScrollTarget } from '@/lib/kanbanDots';
 import { useBoardsStore } from '@/stores/boards';
 import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
@@ -26,6 +28,25 @@ const workspace = useWorkspaceStore();
 const ui = useUiStore();
 const router = useRouter();
 const { move } = useKanbanMove(props.ws);
+const { isMobile } = useBreakpoint();
+
+const scrollEl = ref<HTMLElement | null>(null);
+const activeColumn = ref(0);
+
+function onBoardScroll(): void {
+  const el = scrollEl.value;
+  if (el === null) return;
+  activeColumn.value = activeDotIndex(el.scrollLeft, el.scrollWidth - el.clientWidth, boards.columns.length);
+}
+
+function scrollToColumn(index: number): void {
+  const el = scrollEl.value;
+  if (el === null) return;
+  el.scrollTo({
+    left: dotScrollTarget(index, el.scrollWidth - el.clientWidth, boards.columns.length),
+    behavior: 'smooth',
+  });
+}
 
 const PRIORITIES = ['urgent', 'high', 'medium', 'low'] as const;
 
@@ -218,29 +239,59 @@ const menuItems = computed<MenuItem[]>(() => {
 </script>
 
 <template>
-  <div
-    class="flex flex-1 overflow-x-auto"
-    style="gap: 14px; padding: 16px; background-color: var(--c-background);"
-  >
-    <KanbanColumn
-      v-for="column in boards.columns"
-      :key="column.id"
-      :column="column"
-      :tasks="boards.tasksByColumn(column.id)"
-      :selected-readable-id="selectedReadableId"
-      @drop="onDrop"
-      @create="onCreate"
-      @select="(id) => emit('select', id)"
-      @open="(id) => emit('open', id)"
-      @menu="onMenu"
-    />
-
-    <p
-      v-if="boards.columns.length === 0 && !boards.loading"
-      style="font-size: var(--fs-sm); color: var(--c-muted); padding: 8px;"
+  <div class="flex flex-col flex-1 min-h-0 min-w-0" style="background-color: var(--c-background);">
+    <div
+      ref="scrollEl"
+      class="flex flex-1 overflow-x-auto min-w-0"
+      :style="`gap: 14px; padding: 16px; ${isMobile ? 'scroll-snap-type: x mandatory; scroll-padding-left: 16px;' : ''}`"
+      @scroll="onBoardScroll"
     >
-      This board has no columns yet.
-    </p>
+      <KanbanColumn
+        v-for="column in boards.columns"
+        :key="column.id"
+        :column="column"
+        :tasks="boards.tasksByColumn(column.id)"
+        :selected-readable-id="selectedReadableId"
+        :fluid="isMobile"
+        @drop="onDrop"
+        @create="onCreate"
+        @select="(id) => emit('select', id)"
+        @open="(id) => emit('open', id)"
+        @menu="onMenu"
+      />
+
+      <p
+        v-if="boards.columns.length === 0 && !boards.loading"
+        style="font-size: var(--fs-sm); color: var(--c-muted); padding: 8px;"
+      >
+        This board has no columns yet.
+      </p>
+    </div>
+
+    <div
+      v-if="isMobile && boards.columns.length > 1"
+      class="flex items-center justify-center"
+      style="gap: 7px; padding: 8px 0 10px;"
+      aria-hidden="true"
+    >
+      <button
+        v-for="(column, i) in boards.columns"
+        :key="column.id"
+        type="button"
+        :aria-label="`Go to ${column.name}`"
+        :style="`
+          width: ${i === activeColumn ? '18px' : '7px'};
+          height: 7px;
+          border: none;
+          padding: 0;
+          border-radius: 9999px;
+          cursor: pointer;
+          background: ${i === activeColumn ? 'var(--c-primary)' : 'var(--c-border)'};
+          transition: width 0.18s, background 0.18s;
+        `"
+        @click="scrollToColumn(i)"
+      />
+    </div>
 
     <ContextMenu
       :open="menu.open.value"
