@@ -40,8 +40,19 @@ const props = withDefaults(
     /** Live id → current-title map so id-bound wikilinks render the target's
      * current title instead of the snapshot baked into the markdown. */
     wikilinkTitles?: Record<string, string>;
+    /** CSS min-height of the writing surface. Full-page hosts (Notes) want a tall
+     * surface (60vh); embedded hosts (task description) pass a compact value so the
+     * editor hugs its content instead of leaving a large empty area. */
+    minHeight?: string;
   }>(),
-  { placeholder: '', editable: true, autofocus: false, widthToggle: true, wikilinkTitles: () => ({}) },
+  {
+    placeholder: '',
+    editable: true,
+    autofocus: false,
+    widthToggle: true,
+    wikilinkTitles: () => ({}),
+    minHeight: '60vh',
+  },
 );
 
 const emit = defineEmits<{
@@ -310,7 +321,7 @@ onBeforeUnmount(() => {
       ref="host"
       class="markdown-editor"
       :class="{ 'is-preview': readonly }"
-      :style="{ '--md-placeholder': placeholderCss }"
+      :style="{ '--md-placeholder': placeholderCss, '--md-min-h': minHeight }"
     />
   </div>
 </template>
@@ -324,11 +335,11 @@ onBeforeUnmount(() => {
 }
 
 .markdown-editor {
-  min-height: 60vh;
+  min-height: var(--md-min-h, 60vh);
 }
 
 .markdown-editor :deep(.cm-editor) {
-  min-height: 60vh;
+  min-height: var(--md-min-h, 60vh);
 }
 
 /* The writing surface is a document, not a form field: never show the global

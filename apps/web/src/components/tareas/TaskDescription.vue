@@ -44,6 +44,7 @@ function onNavigateWikilink(ref: WikilinkRef): void {
     :wikilink-titles="wikilinkTitles"
     :editable="true"
     :width-toggle="false"
+    min-height="2.5rem"
     placeholder="Add a description…"
     @change="onChange"
     @navigate-wikilink="onNavigateWikilink"

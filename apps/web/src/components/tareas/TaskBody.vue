@@ -8,6 +8,7 @@ import ReferenceAdd from '@/components/tareas/ReferenceAdd.vue';
 import ReferenceList from '@/components/tareas/ReferenceList.vue';
 import TaskDescription from '@/components/tareas/TaskDescription.vue';
 import Chip from '@/components/ui/Chip.vue';
+import CollapsibleText from '@/components/ui/CollapsibleText.vue';
 import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
 import Icon from '@/components/ui/Icon.vue';
 import { useInlineEdit } from '@/composables/useInlineEdit';
@@ -311,7 +312,9 @@ async function onRemoveReference(referenceId: string): Promise<void> {
     <div class="atl-tv-divider" />
 
     <div class="atl-tv-section-label">Description</div>
-    <TaskDescription :markdown="task.description" :ws="ws" :readable-id="task.readable_id" />
+    <CollapsibleText :collapsed-height="220">
+      <TaskDescription :markdown="task.description" :ws="ws" :readable-id="task.readable_id" />
+    </CollapsibleText>
 
     <div style="margin-top: 22px;">
       <Checklist
