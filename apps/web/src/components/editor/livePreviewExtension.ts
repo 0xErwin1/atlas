@@ -12,6 +12,7 @@ import {
   computeActiveLines,
   fenceLanguage,
   type LineRange,
+  parseImage,
   type SelectionRange,
   taskMarkerChecked,
 } from '@/lib/livePreview';
@@ -182,6 +183,36 @@ class LangBadgeWidget extends WidgetType {
   }
 }
 
+/**
+ * Widget that renders a markdown image `![alt](url)` as an actual `<img>` in place
+ * of the raw markdown, off the active line. The source markdown is restored when
+ * the cursor enters the line, keeping it editable.
+ */
+class ImageWidget extends WidgetType {
+  constructor(
+    private readonly url: string,
+    private readonly alt: string,
+  ) {
+    super();
+  }
+
+  eq(other: ImageWidget): boolean {
+    return other.url === this.url && other.alt === this.alt;
+  }
+
+  toDOM(): HTMLElement {
+    const img = document.createElement('img');
+    img.className = 'cm-atlas-img';
+    img.src = this.url;
+    img.alt = this.alt;
+    return img;
+  }
+
+  ignoreEvent(): boolean {
+    return false;
+  }
+}
+
 const hideDeco = Decoration.replace({});
 
 function lineRangesFor(view: EditorView): LineRange[] {
@@ -293,6 +324,22 @@ function decorateSyntaxTree(
         decos.push(Decoration.mark({ class: 'cm-atlas-code' }).range(node.from, node.to));
         if (!activeLines.has(lineNo)) hideMarks(node.node, 'CodeMark', decos);
         return;
+      }
+
+      if (name === 'Image') {
+        const lineNo = lineNumberAt(view, node.from);
+        if (!activeLines.has(lineNo)) {
+          const parsed = parseImage(view.state.doc.sliceString(node.from, node.to));
+          if (parsed !== null) {
+            decos.push(
+              Decoration.replace({ widget: new ImageWidget(parsed.url, parsed.alt) }).range(
+                node.from,
+                node.to,
+              ),
+            );
+          }
+        }
+        return false;
       }
 
       if (name === 'Link') {

@@ -6,6 +6,7 @@ import {
   isMarkerRevealed,
   type LineRange,
   type MarkerRange,
+  parseImage,
   partitionMarkers,
   type SelectionRange,
   taskMarkerChecked,
@@ -94,6 +95,25 @@ describe('fenceLanguage', () => {
   it('returns null for an empty info string', () => {
     expect(fenceLanguage('')).toBeNull();
     expect(fenceLanguage('   ')).toBeNull();
+  });
+});
+
+describe('parseImage', () => {
+  it('parses alt text and url', () => {
+    expect(parseImage('![alt text](http://x/y.png)')).toEqual({
+      alt: 'alt text',
+      url: 'http://x/y.png',
+    });
+  });
+
+  it('parses an empty alt and ignores a title', () => {
+    expect(parseImage('![](u)')).toEqual({ alt: '', url: 'u' });
+    expect(parseImage('![a](u "t")')).toEqual({ alt: 'a', url: 'u' });
+  });
+
+  it('returns null for non-image text', () => {
+    expect(parseImage('[link](u)')).toBeNull();
+    expect(parseImage('plain')).toBeNull();
   });
 });
 

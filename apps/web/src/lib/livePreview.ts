@@ -90,6 +90,18 @@ export function fenceLanguage(infoText: string): string | null {
   return first.length > 0 ? first : null;
 }
 
+const IMAGE_RE = /^!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)$/;
+
+/**
+ * Parses a markdown image `![alt](url)` (optionally with a `"title"`) into its alt
+ * text and url. Returns null when the text is not a single complete image.
+ */
+export function parseImage(src: string): { alt: string; url: string } | null {
+  const m = IMAGE_RE.exec(src.trim());
+  if (m === null) return null;
+  return { alt: m[1] ?? '', url: m[2] ?? '' };
+}
+
 /**
  * Whether a block construct (table, fenced diagram) should be revealed as raw
  * markdown for editing: true when the selection touches any line the block spans,

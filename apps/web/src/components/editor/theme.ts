@@ -134,6 +134,15 @@ export const atlasMarkdownTheme = EditorView.theme(
       transform: 'rotate(45deg)',
     },
 
+    // Rendered image, in place of the raw ![alt](url) off active line.
+    '.cm-atlas-img': {
+      display: 'inline-block',
+      maxWidth: '100%',
+      height: 'auto',
+      borderRadius: 'var(--r-lg)',
+      verticalAlign: 'top',
+    },
+
     // Links and wikilinks.
     '.cm-atlas-link': { color: 'var(--c-info)', cursor: 'pointer' },
     '.cm-atlas-wikilink': { color: 'var(--c-info)', cursor: 'pointer' },
