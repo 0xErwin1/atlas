@@ -7,6 +7,7 @@ import {
   type LineRange,
   type MarkerRange,
   parseImage,
+  parseTable,
   partitionMarkers,
   type SelectionRange,
   taskMarkerChecked,
@@ -114,6 +115,30 @@ describe('parseImage', () => {
   it('returns null for non-image text', () => {
     expect(parseImage('[link](u)')).toBeNull();
     expect(parseImage('plain')).toBeNull();
+  });
+});
+
+describe('parseTable', () => {
+  it('parses headers, alignment and body rows', () => {
+    const src = '| a | b | c |\n| :-- | :-: | --: |\n| 1 | 2 | 3 |\n| 4 | 5 | 6 |';
+    expect(parseTable(src)).toEqual({
+      headers: ['a', 'b', 'c'],
+      aligns: ['left', 'center', 'right'],
+      rows: [
+        ['1', '2', '3'],
+        ['4', '5', '6'],
+      ],
+    });
+  });
+
+  it('treats a plain --- delimiter as no alignment', () => {
+    const parsed = parseTable('| h |\n| --- |\n| v |');
+    expect(parsed?.aligns).toEqual([null]);
+  });
+
+  it('returns null without a valid delimiter row', () => {
+    expect(parseTable('| a | b |\n| 1 | 2 |')).toBeNull();
+    expect(parseTable('just text')).toBeNull();
   });
 });
 

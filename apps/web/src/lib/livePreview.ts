@@ -102,6 +102,55 @@ export function parseImage(src: string): { alt: string; url: string } | null {
   return { alt: m[1] ?? '', url: m[2] ?? '' };
 }
 
+/** Per-column horizontal alignment from a GFM table delimiter row. */
+export type ColumnAlign = 'left' | 'center' | 'right' | null;
+
+export interface ParsedTable {
+  headers: string[];
+  aligns: ColumnAlign[];
+  rows: string[][];
+}
+
+function splitTableRow(line: string): string[] {
+  let s = line.trim();
+  if (s.startsWith('|')) s = s.slice(1);
+  if (s.endsWith('|')) s = s.slice(0, -1);
+  return s.split('|').map((cell) => cell.trim());
+}
+
+/**
+ * Parses a GFM table block (header row, `---` delimiter row, then body rows) into
+ * its cells and per-column alignment. Returns null when the text is not a valid
+ * table (missing or malformed delimiter row).
+ */
+export function parseTable(src: string): ParsedTable | null {
+  const lines = src
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+
+  if (lines.length < 2) return null;
+
+  const headers = splitTableRow(lines[0] ?? '');
+  const delim = splitTableRow(lines[1] ?? '');
+
+  const isDelim = delim.length > 0 && delim.every((c) => /^:?-+:?$/.test(c));
+  if (!isDelim) return null;
+
+  const aligns: ColumnAlign[] = delim.map((c) => {
+    const left = c.startsWith(':');
+    const right = c.endsWith(':');
+    if (left && right) return 'center';
+    if (right) return 'right';
+    if (left) return 'left';
+    return null;
+  });
+
+  const rows = lines.slice(2).map(splitTableRow);
+
+  return { headers, aligns, rows };
+}
+
 /**
  * Whether a block construct (table, fenced diagram) should be revealed as raw
  * markdown for editing: true when the selection touches any line the block spans,

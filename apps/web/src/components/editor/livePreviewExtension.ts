@@ -1,5 +1,5 @@
 import { ensureSyntaxTree, syntaxTree } from '@codemirror/language';
-import { type Range, RangeSetBuilder } from '@codemirror/state';
+import { type EditorState, type Extension, type Range, RangeSetBuilder, StateField } from '@codemirror/state';
 import {
   Decoration,
   type DecorationSet,
@@ -11,8 +11,11 @@ import {
 import {
   computeActiveLines,
   fenceLanguage,
+  isBlockActive,
   type LineRange,
+  type ParsedTable,
   parseImage,
+  parseTable,
   type SelectionRange,
   taskMarkerChecked,
 } from '@/lib/livePreview';
@@ -23,6 +26,12 @@ import { parseWikilinkInner, type WikilinkRef } from '@/lib/wikilink';
  * transitive `@lezer/common` package being hoisted into node_modules.
  */
 type SyntaxNode = ReturnType<ReturnType<typeof syntaxTree>['resolve']>;
+
+/** A document range replaced by a block widget (table, diagram). */
+interface BlockRange {
+  from: number;
+  to: number;
+}
 
 /**
  * Obsidian-style "Live Preview" decorations for the CodeMirror 6 markdown editor.
@@ -213,6 +222,80 @@ class ImageWidget extends WidgetType {
   }
 }
 
+/**
+ * Block widget that renders a GFM table as an HTML `<table>` off the active block.
+ * Clicking it (when editable) drops the caret at the table's start, which reveals
+ * the raw markdown so it can be edited. Cell content is rendered as plain text.
+ */
+class TableWidget extends WidgetType {
+  constructor(
+    private readonly table: ParsedTable,
+    private readonly from: number,
+  ) {
+    super();
+  }
+
+  eq(other: TableWidget): boolean {
+    return other.from === this.from && other.key === this.key;
+  }
+
+  private get key(): string {
+    return JSON.stringify(this.table);
+  }
+
+  toDOM(view: EditorView): HTMLElement {
+    const wrap = document.createElement('div');
+    wrap.className = 'cm-atlas-table-wrap';
+
+    const table = document.createElement('table');
+    table.className = 'cm-atlas-table';
+
+    const cols = this.table.headers.length;
+    const align = (cell: HTMLTableCellElement, index: number): void => {
+      const a = this.table.aligns[index];
+      if (a) cell.style.textAlign = a;
+    };
+
+    const thead = document.createElement('thead');
+    const headRow = document.createElement('tr');
+    this.table.headers.forEach((text, i) => {
+      const th = document.createElement('th');
+      th.textContent = text;
+      align(th, i);
+      headRow.appendChild(th);
+    });
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    for (const row of this.table.rows) {
+      const tr = document.createElement('tr');
+      for (let i = 0; i < cols; i += 1) {
+        const td = document.createElement('td');
+        td.textContent = row[i] ?? '';
+        align(td, i);
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+
+    wrap.addEventListener('mousedown', (event) => {
+      if (view.state.readOnly) return;
+      event.preventDefault();
+      view.dispatch({ selection: { anchor: this.from }, scrollIntoView: true });
+      view.focus();
+    });
+
+    return wrap;
+  }
+
+  ignoreEvent(): boolean {
+    return false;
+  }
+}
+
 const hideDeco = Decoration.replace({});
 
 function lineRangesFor(view: EditorView): LineRange[] {
@@ -254,9 +337,17 @@ function buildDecorations(
     : new Set<number>();
   const decos: Range<Decoration>[] = [];
 
+  // Ranges replaced by a block widget (tables, diagrams). The wikilink pass must
+  // skip these: a replace decoration inside an already-replaced block would
+  // overlap and break the RangeSet. Collect them in a full first pass so every
+  // block range is known before any wikilink is added.
+  const blockRanges: BlockRange[] = [];
+
   for (const { from, to } of view.visibleRanges) {
-    decorateSyntaxTree(view, from, to, activeLines, decos);
-    decorateWikilinks(view, from, to, activeLines, callbacks, titles, decos);
+    decorateSyntaxTree(view, from, to, activeLines, decos, blockRanges);
+  }
+  for (const { from, to } of view.visibleRanges) {
+    decorateWikilinks(view, from, to, activeLines, callbacks, titles, decos, blockRanges);
   }
 
   decos.sort((a, b) => a.from - b.from || a.value.startSide - b.value.startSide);
@@ -278,6 +369,7 @@ function decorateSyntaxTree(
   to: number,
   activeLines: Set<number>,
   decos: Range<Decoration>[],
+  blockRanges: BlockRange[],
 ): void {
   const tree = syntaxTree(view.state);
 
@@ -345,6 +437,20 @@ function decorateSyntaxTree(
       if (name === 'Link') {
         decorateLink(view, node.node, activeLines, decos);
         return;
+      }
+
+      if (name === 'Table') {
+        // The rendered table is a BLOCK decoration, which CodeMirror only allows
+        // from a StateField (see blockDecorationsField). Here the ViewPlugin just
+        // records the range so its inline/wikilink passes skip inside it; the
+        // actual widget is produced by the field with the same active-block rule.
+        const doc = view.state.doc;
+        const firstLine = doc.lineAt(node.from).number;
+        const lastLine = doc.lineAt(node.to).number;
+        if (!isBlockActive(firstLine, lastLine, activeLines)) {
+          blockRanges.push({ from: node.from, to: node.to });
+        }
+        return false;
       }
 
       if (name === 'Blockquote') {
@@ -489,6 +595,7 @@ function decorateWikilinks(
   callbacks: LivePreviewCallbacks,
   titles: Record<string, string>,
   decos: Range<Decoration>[],
+  blockRanges: BlockRange[],
 ): void {
   const text = view.state.doc.sliceString(from, to);
   WIKILINK_RE.lastIndex = 0;
@@ -499,6 +606,11 @@ function decorateWikilinks(
 
     const start = from + m.index;
     const end = start + m[0].length;
+
+    // Skip wikilinks inside a block-replaced range (e.g. a rendered table cell):
+    // a replace inside an already-replaced block would overlap and throw.
+    if (isInsideBlock(start, blockRanges)) continue;
+
     const lineNo = lineNumberAt(view, start);
 
     if (activeLines.has(lineNo)) {
@@ -531,6 +643,10 @@ function decorateLines(
   for (let n = firstLine; n <= lastLine; n += 1) {
     decos.push(Decoration.line({ class: cls }).range(doc.line(n).from));
   }
+}
+
+function isInsideBlock(pos: number, blockRanges: BlockRange[]): boolean {
+  return blockRanges.some((b) => pos >= b.from && pos < b.to);
 }
 
 function hideMarks(node: SyntaxNode, markName: string, decos: Range<Decoration>[]): void {
@@ -571,16 +687,93 @@ function consumeTrailingSpace(view: EditorView, pos: number, limit: number): num
   return pos;
 }
 
+function activeLinesForState(state: EditorState, reveal: boolean): Set<number> {
+  if (!reveal) return new Set<number>();
+
+  const lines: LineRange[] = [];
+  for (let n = 1; n <= state.doc.lines; n += 1) {
+    const line = state.doc.line(n);
+    lines.push({ number: line.number, from: line.from, to: line.to });
+  }
+  const sels = state.selection.ranges.map((r) => ({ from: r.from, to: r.to }));
+
+  return computeActiveLines(lines, sels);
+}
+
 /**
- * Creates the live-preview extension. Rebuilds the decoration set on every doc
- * change, selection change, and viewport change so reveal-on-active-line tracks
- * the cursor in real time.
+ * Builds the BLOCK decorations (rendered tables) for the whole document. Block
+ * widgets and decorations that span line breaks may only be provided through a
+ * StateField, never a ViewPlugin, so these live apart from the inline pass.
+ *
+ * A block is rendered as a widget unless the selection touches it, in which case
+ * it is left as raw markdown for editing (reveal-on-active-block).
  */
-export function livePreview(callbacks: LivePreviewCallbacks, options: LivePreviewOptions) {
+function buildBlockDecorations(state: EditorState, reveal: boolean): DecorationSet {
+  const tree = syntaxTree(state);
+  const doc = state.doc;
+  const activeLines = activeLinesForState(state, reveal);
+  const decos: Range<Decoration>[] = [];
+
+  tree.iterate({
+    enter: (node) => {
+      if (node.name === 'Table') {
+        const firstLine = doc.lineAt(node.from).number;
+        const lastLine = doc.lineAt(node.to).number;
+        if (!isBlockActive(firstLine, lastLine, activeLines)) {
+          const parsed = parseTable(doc.sliceString(node.from, node.to));
+          if (parsed !== null) {
+            decos.push(
+              Decoration.replace({ widget: new TableWidget(parsed, node.from), block: true }).range(
+                node.from,
+                node.to,
+              ),
+            );
+          }
+        }
+        return false;
+      }
+      return undefined;
+    },
+  });
+
+  decos.sort((a, b) => a.from - b.from || a.value.startSide - b.value.startSide);
+
+  const builder = new RangeSetBuilder<Decoration>();
+  for (const deco of decos) builder.add(deco.from, deco.to, deco.value);
+  return builder.finish();
+}
+
+/**
+ * StateField that provides the block decorations. Recomputed on every doc or
+ * selection change so a table re-renders (or reveals raw) as the cursor moves.
+ */
+function blockDecorationsField(reveal: boolean): StateField<DecorationSet> {
+  return StateField.define<DecorationSet>({
+    create(state) {
+      ensureSyntaxTree(state, state.doc.length, 100);
+      return buildBlockDecorations(state, reveal);
+    },
+    update(value, tr) {
+      if (tr.docChanged || tr.selection !== undefined || syntaxTree(tr.startState) !== syntaxTree(tr.state)) {
+        return buildBlockDecorations(tr.state, reveal);
+      }
+      return value.map(tr.changes);
+    },
+    provide: (field) => EditorView.decorations.from(field),
+  });
+}
+
+/**
+ * Creates the live-preview extension. The inline / per-line decorations come from
+ * a ViewPlugin (rebuilt on doc, selection, viewport and syntax-tree changes); the
+ * block decorations (tables) come from a StateField, since CodeMirror forbids a
+ * ViewPlugin from emitting block or line-break-spanning decorations.
+ */
+export function livePreview(callbacks: LivePreviewCallbacks, options: LivePreviewOptions): Extension {
   const { reveal } = options;
   const titles = options.titles ?? {};
 
-  return ViewPlugin.fromClass(
+  const inline = ViewPlugin.fromClass(
     class {
       decorations: DecorationSet;
 
@@ -614,4 +807,6 @@ export function livePreview(callbacks: LivePreviewCallbacks, options: LivePrevie
         EditorView.atomicRanges.of((view) => view.plugin(plugin)?.decorations ?? Decoration.none),
     },
   );
+
+  return [inline, blockDecorationsField(reveal)];
 }

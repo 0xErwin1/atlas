@@ -87,6 +87,28 @@ export const atlasMarkdownTheme = EditorView.theme(
       color: 'var(--c-muted)',
     },
 
+    // Rendered GFM table, in place of the raw pipe markdown off the active block.
+    '.cm-atlas-table-wrap': {
+      overflowX: 'auto',
+      margin: '0.2em 0',
+      cursor: 'text',
+    },
+    '.cm-atlas-table': {
+      borderCollapse: 'collapse',
+      fontFamily: 'var(--font-mono)',
+      fontSize: 'var(--fs-base)',
+    },
+    '.cm-atlas-table th, .cm-atlas-table td': {
+      border: '1px solid var(--c-border)',
+      padding: '4px 10px',
+      textAlign: 'left',
+    },
+    '.cm-atlas-table th': {
+      backgroundColor: 'var(--c-raised)',
+      fontWeight: 'var(--fw-semibold)',
+      color: 'var(--c-foreground)',
+    },
+
     // Blockquote.
     '.cm-atlas-quote': {
       borderLeft: '3px solid var(--c-border)',
