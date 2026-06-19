@@ -11,6 +11,7 @@ import {
 import {
   computeActiveLines,
   fenceLanguage,
+  type InlineToken,
   isBlockActive,
   type LineRange,
   type ParsedTable,
@@ -18,6 +19,7 @@ import {
   parseTable,
   type SelectionRange,
   taskMarkerChecked,
+  tokenizeInline,
 } from '@/lib/livePreview';
 import { parseWikilinkInner, type WikilinkRef } from '@/lib/wikilink';
 
@@ -31,6 +33,59 @@ type SyntaxNode = ReturnType<ReturnType<typeof syntaxTree>['resolve']>;
 interface BlockRange {
   from: number;
   to: number;
+}
+
+/** Context for rendering inline markdown inside block widgets (table cells). */
+interface InlineCtx {
+  titles: Record<string, string>;
+  onWikilinkClick: (ref: WikilinkRef) => void;
+}
+
+/**
+ * Builds a safe DOM node for one inline token. Text is set via textContent (never
+ * innerHTML), so cell content cannot inject markup. Wikilinks resolve their
+ * current title and are clickable through the same callback as the editor.
+ */
+function inlineNode(token: InlineToken, ctx: InlineCtx): Node {
+  if (token.type === 'text') return document.createTextNode(token.value);
+
+  if (token.type === 'link') {
+    const a = document.createElement('a');
+    a.className = 'cm-atlas-link';
+    a.textContent = token.value;
+    a.href = token.url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    return a;
+  }
+
+  if (token.type === 'wikilink') {
+    const ref = parseWikilinkInner(token.value);
+    const span = document.createElement('span');
+    span.className = 'cm-atlas-wikilink';
+    span.textContent = ref.id !== null ? (ctx.titles[ref.id] ?? ref.title) : ref.title;
+    span.addEventListener('mousedown', (event) => {
+      event.preventDefault();
+      ctx.onWikilinkClick(ref);
+    });
+    return span;
+  }
+
+  const cls = {
+    code: 'cm-atlas-code',
+    strong: 'cm-atlas-strong',
+    em: 'cm-atlas-em',
+    strike: 'cm-atlas-strike',
+  }[token.type];
+  const span = document.createElement('span');
+  span.className = cls;
+  span.textContent = token.value;
+  return span;
+}
+
+/** Renders a cell's inline markdown into `parent` as formatted DOM nodes. */
+function appendInline(parent: HTMLElement, text: string, ctx: InlineCtx): void {
+  for (const token of tokenizeInline(text)) parent.appendChild(inlineNode(token, ctx));
 }
 
 /**
@@ -225,12 +280,14 @@ class ImageWidget extends WidgetType {
 /**
  * Block widget that renders a GFM table as an HTML `<table>` off the active block.
  * Clicking it (when editable) drops the caret at the table's start, which reveals
- * the raw markdown so it can be edited. Cell content is rendered as plain text.
+ * the raw markdown so it can be edited. Cell content renders inline markdown
+ * (bold, italic, code, strikethrough, links, wikilinks).
  */
 class TableWidget extends WidgetType {
   constructor(
     private readonly table: ParsedTable,
     private readonly from: number,
+    private readonly ctx: InlineCtx,
   ) {
     super();
   }
@@ -239,8 +296,9 @@ class TableWidget extends WidgetType {
     return other.from === this.from && other.key === this.key;
   }
 
+  // Includes the resolved titles so cells with wikilinks re-render on rename.
   private get key(): string {
-    return JSON.stringify(this.table);
+    return JSON.stringify(this.table) + JSON.stringify(this.ctx.titles);
   }
 
   toDOM(view: EditorView): HTMLElement {
@@ -260,7 +318,7 @@ class TableWidget extends WidgetType {
     const headRow = document.createElement('tr');
     this.table.headers.forEach((text, i) => {
       const th = document.createElement('th');
-      th.textContent = text;
+      appendInline(th, text, this.ctx);
       align(th, i);
       headRow.appendChild(th);
     });
@@ -272,7 +330,7 @@ class TableWidget extends WidgetType {
       const tr = document.createElement('tr');
       for (let i = 0; i < cols; i += 1) {
         const td = document.createElement('td');
-        td.textContent = row[i] ?? '';
+        appendInline(td, row[i] ?? '', this.ctx);
         align(td, i);
         tr.appendChild(td);
       }
@@ -298,37 +356,49 @@ class TableWidget extends WidgetType {
 
 // Mermaid is heavy, so it is imported lazily on first use and cached. The render
 // runs with `securityLevel: 'strict'` so the produced SVG is sanitised.
-type MermaidApi = { render: (id: string, code: string) => Promise<{ svg: string }> };
+type MermaidApi = {
+  initialize: (config: Record<string, unknown>) => void;
+  render: (id: string, code: string) => Promise<{ svg: string }>;
+};
 let mermaidPromise: Promise<MermaidApi> | null = null;
 let mermaidSeq = 0;
 
 function loadMermaid(): Promise<MermaidApi> {
   if (mermaidPromise === null) {
-    mermaidPromise = import('mermaid').then((m) => {
-      const mermaid = m.default;
-      mermaid.initialize({ startOnLoad: false, theme: 'dark', securityLevel: 'strict' });
-      return mermaid as unknown as MermaidApi;
-    });
+    mermaidPromise = import('mermaid').then((m) => m.default as unknown as MermaidApi);
   }
   return mermaidPromise;
+}
+
+/** Maps the app theme (`data-theme` on <html>) to a built-in mermaid theme. */
+function currentMermaidTheme(): 'dark' | 'default' {
+  return document.documentElement.dataset.theme === 'light' ? 'default' : 'dark';
 }
 
 async function renderMermaid(container: HTMLElement, code: string): Promise<void> {
   try {
     const mermaid = await loadMermaid();
     mermaidSeq += 1;
+    // Theme is set per render so the diagram tracks the app's dark/light theme.
+    mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: currentMermaidTheme() });
     const { svg } = await mermaid.render(`atlas-mermaid-${mermaidSeq}`, code);
     container.innerHTML = svg;
+    container.classList.remove('cm-atlas-mermaid-error');
   } catch {
     container.textContent = code;
     container.classList.add('cm-atlas-mermaid-error');
   }
 }
 
+// Per-diagram observers that re-render when the app theme flips, keyed by the
+// widget DOM so they can be disconnected when the widget is destroyed.
+const mermaidThemeObservers = new WeakMap<HTMLElement, MutationObserver>();
+
 /**
  * Block widget that renders a ```mermaid code block as a diagram. The diagram is
- * rendered asynchronously (mermaid is lazy-loaded); on a parse error the raw code
- * is shown instead. Clicking (when editable) reveals the source for editing.
+ * rendered asynchronously (mermaid is lazy-loaded) with the current app theme and
+ * re-rendered when the theme changes; on a parse error the raw code is shown
+ * instead. Clicking (when editable) reveals the source for editing.
  */
 class MermaidWidget extends WidgetType {
   constructor(
@@ -354,7 +424,22 @@ class MermaidWidget extends WidgetType {
     });
 
     void renderMermaid(wrap, this.code);
+
+    if (typeof MutationObserver !== 'undefined') {
+      const observer = new MutationObserver(() => void renderMermaid(wrap, this.code));
+      observer.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['data-theme'],
+      });
+      mermaidThemeObservers.set(wrap, observer);
+    }
+
     return wrap;
+  }
+
+  destroy(dom: HTMLElement): void {
+    mermaidThemeObservers.get(dom)?.disconnect();
+    mermaidThemeObservers.delete(dom);
   }
 
   ignoreEvent(): boolean {
@@ -793,7 +878,7 @@ function activeLinesForState(state: EditorState, reveal: boolean): Set<number> {
  * A block is rendered as a widget unless the selection touches it, in which case
  * it is left as raw markdown for editing (reveal-on-active-block).
  */
-function buildBlockDecorations(state: EditorState, reveal: boolean): DecorationSet {
+function buildBlockDecorations(state: EditorState, reveal: boolean, ctx: InlineCtx): DecorationSet {
   const tree = syntaxTree(state);
   const doc = state.doc;
   const activeLines = activeLinesForState(state, reveal);
@@ -810,7 +895,7 @@ function buildBlockDecorations(state: EditorState, reveal: boolean): DecorationS
         const lastLine = doc.lineAt(node.to).number;
         if (!isBlockActive(firstLine, lastLine, activeLines)) {
           const parsed = parseTable(doc.sliceString(node.from, node.to));
-          if (parsed !== null) blockReplace(node.node, new TableWidget(parsed, node.from));
+          if (parsed !== null) blockReplace(node.node, new TableWidget(parsed, node.from, ctx));
         }
         return false;
       }
@@ -843,15 +928,15 @@ function buildBlockDecorations(state: EditorState, reveal: boolean): DecorationS
  * StateField that provides the block decorations. Recomputed on every doc or
  * selection change so a table re-renders (or reveals raw) as the cursor moves.
  */
-function blockDecorationsField(reveal: boolean): StateField<DecorationSet> {
+function blockDecorationsField(reveal: boolean, ctx: InlineCtx): StateField<DecorationSet> {
   return StateField.define<DecorationSet>({
     create(state) {
       ensureSyntaxTree(state, state.doc.length, 100);
-      return buildBlockDecorations(state, reveal);
+      return buildBlockDecorations(state, reveal, ctx);
     },
     update(value, tr) {
       if (tr.docChanged || tr.selection !== undefined || syntaxTree(tr.startState) !== syntaxTree(tr.state)) {
-        return buildBlockDecorations(tr.state, reveal);
+        return buildBlockDecorations(tr.state, reveal, ctx);
       }
       return value.map(tr.changes);
     },
@@ -904,5 +989,6 @@ export function livePreview(callbacks: LivePreviewCallbacks, options: LivePrevie
     },
   );
 
-  return [inline, blockDecorationsField(reveal)];
+  const ctx: InlineCtx = { titles, onWikilinkClick: callbacks.onWikilinkClick };
+  return [inline, blockDecorationsField(reveal, ctx)];
 }

@@ -102,6 +102,60 @@ export function parseImage(src: string): { alt: string; url: string } | null {
   return { alt: m[1] ?? '', url: m[2] ?? '' };
 }
 
+/** A run of inline markdown produced by {@link tokenizeInline}. */
+export type InlineToken =
+  | { type: 'text'; value: string }
+  | { type: 'code'; value: string }
+  | { type: 'strong'; value: string }
+  | { type: 'em'; value: string }
+  | { type: 'strike'; value: string }
+  | { type: 'link'; value: string; url: string }
+  | { type: 'wikilink'; value: string };
+
+const INLINE_RE =
+  /(`[^`]+`)|(\[\[[^\]]+\]\])|(\[[^\]]+\]\([^)]+\))|(\*\*[^*]+\*\*|__[^_]+__)|(~~[^~]+~~)|(\*[^*]+\*|_[^_]+_)/;
+
+/**
+ * Splits a line of inline markdown into typed tokens (text, code, bold, italic,
+ * strikethrough, link, wikilink). Used to render table cells as formatted content
+ * instead of raw markdown. Single-level only: a mark cannot contain another mark
+ * (enough for table cells); anything unrecognised stays as text.
+ */
+export function tokenizeInline(text: string): InlineToken[] {
+  const tokens: InlineToken[] = [];
+  const re = new RegExp(INLINE_RE.source, 'g');
+  let last = 0;
+
+  for (let m = re.exec(text); m !== null; m = re.exec(text)) {
+    if (m.index > last) tokens.push({ type: 'text', value: text.slice(last, m.index) });
+
+    const [whole, code, wikilink, link, strong, strike, em] = m;
+
+    if (code !== undefined) {
+      tokens.push({ type: 'code', value: code.slice(1, -1) });
+    } else if (wikilink !== undefined) {
+      tokens.push({ type: 'wikilink', value: wikilink.slice(2, -2) });
+    } else if (link !== undefined) {
+      const lm = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(link);
+      tokens.push(
+        lm !== null ? { type: 'link', value: lm[1] ?? '', url: lm[2] ?? '' } : { type: 'text', value: link },
+      );
+    } else if (strong !== undefined) {
+      tokens.push({ type: 'strong', value: strong.slice(2, -2) });
+    } else if (strike !== undefined) {
+      tokens.push({ type: 'strike', value: strike.slice(2, -2) });
+    } else if (em !== undefined) {
+      tokens.push({ type: 'em', value: em.slice(1, -1) });
+    }
+
+    last = m.index + (whole?.length ?? 0);
+  }
+
+  if (last < text.length) tokens.push({ type: 'text', value: text.slice(last) });
+
+  return tokens;
+}
+
 /** Per-column horizontal alignment from a GFM table delimiter row. */
 export type ColumnAlign = 'left' | 'center' | 'right' | null;
 

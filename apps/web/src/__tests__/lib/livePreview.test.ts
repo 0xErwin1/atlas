@@ -11,6 +11,7 @@ import {
   partitionMarkers,
   type SelectionRange,
   taskMarkerChecked,
+  tokenizeInline,
 } from '@/lib/livePreview';
 
 /**
@@ -115,6 +116,37 @@ describe('parseImage', () => {
   it('returns null for non-image text', () => {
     expect(parseImage('[link](u)')).toBeNull();
     expect(parseImage('plain')).toBeNull();
+  });
+});
+
+describe('tokenizeInline', () => {
+  it('returns a single text token for plain text', () => {
+    expect(tokenizeInline('plain text')).toEqual([{ type: 'text', value: 'plain text' }]);
+  });
+
+  it('tokenizes bold, italic, code and strikethrough', () => {
+    expect(tokenizeInline('a **b** `c` ~~d~~ *e*')).toEqual([
+      { type: 'text', value: 'a ' },
+      { type: 'strong', value: 'b' },
+      { type: 'text', value: ' ' },
+      { type: 'code', value: 'c' },
+      { type: 'text', value: ' ' },
+      { type: 'strike', value: 'd' },
+      { type: 'text', value: ' ' },
+      { type: 'em', value: 'e' },
+    ]);
+  });
+
+  it('tokenizes links and wikilinks', () => {
+    expect(tokenizeInline('see [docs](https://x/y)')).toEqual([
+      { type: 'text', value: 'see ' },
+      { type: 'link', value: 'docs', url: 'https://x/y' },
+    ]);
+    expect(tokenizeInline('[[id|Title]]')).toEqual([{ type: 'wikilink', value: 'id|Title' }]);
+  });
+
+  it('returns an empty array for an empty string', () => {
+    expect(tokenizeInline('')).toEqual([]);
   });
 });
 
