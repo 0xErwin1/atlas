@@ -81,6 +81,16 @@ export function taskMarkerChecked(markerText: string): boolean {
 }
 
 /**
+ * Extracts the language label from a fenced-code info string (the text after the
+ * opening ```` ``` ````). Returns the first whitespace-delimited token, or null
+ * when there is no language.
+ */
+export function fenceLanguage(infoText: string): string | null {
+  const first = infoText.trim().split(/\s+/)[0] ?? '';
+  return first.length > 0 ? first : null;
+}
+
+/**
  * Whether a block construct (table, fenced diagram) should be revealed as raw
  * markdown for editing: true when the selection touches any line the block spans,
  * so clicking into it turns the rendered widget back into editable source.

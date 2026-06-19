@@ -77,6 +77,16 @@ export const atlasMarkdownTheme = EditorView.theme(
       borderTop: '1px solid var(--c-border)',
     },
 
+    // Language badge shown in place of the opening ```lang fence off active line.
+    '.cm-atlas-lang': {
+      display: 'inline-block',
+      fontFamily: 'var(--font-mono)',
+      fontSize: 'var(--fs-xs)',
+      textTransform: 'uppercase',
+      letterSpacing: '0.05em',
+      color: 'var(--c-muted)',
+    },
+
     // Blockquote.
     '.cm-atlas-quote': {
       borderLeft: '3px solid var(--c-border)',

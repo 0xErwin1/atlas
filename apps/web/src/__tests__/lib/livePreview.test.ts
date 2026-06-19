@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   computeActiveLines,
+  fenceLanguage,
   isBlockActive,
   isMarkerRevealed,
   type LineRange,
@@ -81,6 +82,18 @@ describe('taskMarkerChecked', () => {
 
   it('treats [ ] as unchecked', () => {
     expect(taskMarkerChecked('[ ]')).toBe(false);
+  });
+});
+
+describe('fenceLanguage', () => {
+  it('returns the first token of the info string', () => {
+    expect(fenceLanguage('rust')).toBe('rust');
+    expect(fenceLanguage('  ts  ignored')).toBe('ts');
+  });
+
+  it('returns null for an empty info string', () => {
+    expect(fenceLanguage('')).toBeNull();
+    expect(fenceLanguage('   ')).toBeNull();
   });
 });
 

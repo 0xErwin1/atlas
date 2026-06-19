@@ -10,6 +10,7 @@ import {
 } from '@codemirror/view';
 import {
   computeActiveLines,
+  fenceLanguage,
   type LineRange,
   type SelectionRange,
   taskMarkerChecked,
@@ -156,6 +157,28 @@ class CheckboxWidget extends WidgetType {
 
   ignoreEvent(): boolean {
     return false;
+  }
+}
+
+/**
+ * Widget that renders the fenced-code language label in place of the opening
+ * ```` ```lang ```` marker, so an off-active code block reads like GitHub: a small
+ * language tag instead of the raw backticks.
+ */
+class LangBadgeWidget extends WidgetType {
+  constructor(private readonly lang: string) {
+    super();
+  }
+
+  eq(other: LangBadgeWidget): boolean {
+    return other.lang === this.lang;
+  }
+
+  toDOM(): HTMLElement {
+    const span = document.createElement('span');
+    span.className = 'cm-atlas-lang';
+    span.textContent = this.lang;
+    return span;
   }
 }
 
@@ -327,7 +350,7 @@ function decorateSyntaxTree(
       }
 
       if (name === 'FencedCode') {
-        decorateLines(view, node.from, node.to, 'cm-atlas-fenced', decos);
+        decorateFenced(view, node.node, activeLines, decos);
         return;
       }
 
@@ -369,6 +392,44 @@ function decorateLink(
   if (closeText && url) {
     // Hide from the closing "]" through the closing ")" (covers "](url)").
     decos.push(hideDeco.range(closeText.from, node.to));
+  }
+}
+
+/**
+ * Fenced code block. Every line gets the code background. Off the active line(s),
+ * the opening ```` ```lang ```` collapses to a language badge (or hides, when no
+ * language) and the closing ```` ``` ```` hides, so the block reads as code with a
+ * label instead of raw backticks. On an active fence line the markers stay raw.
+ */
+function decorateFenced(
+  view: EditorView,
+  node: SyntaxNode,
+  activeLines: Set<number>,
+  decos: Range<Decoration>[],
+): void {
+  const doc = view.state.doc;
+  decorateLines(view, node.from, node.to, 'cm-atlas-fenced', decos);
+
+  const marks = collectChildren(node, 'CodeMark');
+  const openMark = marks[0];
+  const closeMark = marks[marks.length - 1];
+  const info = findChild(node.firstChild, 'CodeInfo');
+
+  if (openMark) {
+    const openLine = doc.lineAt(openMark.from).number;
+    if (!activeLines.has(openLine)) {
+      const end = info ? info.to : openMark.to;
+      const lang = info ? fenceLanguage(doc.sliceString(info.from, info.to)) : null;
+      const deco = lang ? Decoration.replace({ widget: new LangBadgeWidget(lang) }) : hideDeco;
+      decos.push(deco.range(openMark.from, end));
+    }
+  }
+
+  if (closeMark && closeMark !== openMark) {
+    const closeLine = doc.lineAt(closeMark.from).number;
+    if (!activeLines.has(closeLine)) {
+      decos.push(hideDeco.range(closeMark.from, closeMark.to));
+    }
   }
 }
 
