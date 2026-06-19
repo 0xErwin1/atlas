@@ -12,21 +12,16 @@ const ui = useUiStore();
 interface ModeOption {
   key: TaskViewMode;
   label: string;
-  icon: string;
 }
 
 const MODES: ModeOption[] = [
-  { key: 'modal', label: 'Dialog', icon: 'app-window' },
-  { key: 'full', label: 'Full screen', icon: 'maximize-2' },
-  { key: 'sidebar', label: 'Sidebar', icon: 'panel-right' },
+  { key: 'modal', label: 'Dialog' },
+  { key: 'full', label: 'Full screen' },
+  { key: 'sidebar', label: 'Sidebar' },
 ];
 
 const open = ref(false);
 const root = ref<HTMLElement | null>(null);
-
-function currentIcon(): string {
-  return MODES.find((m) => m.key === ui.taskViewMode)?.icon ?? 'panel-right';
-}
 
 function onDocMousedown(event: MouseEvent): void {
   if (root.value && !root.value.contains(event.target as Node)) open.value = false;
@@ -69,7 +64,7 @@ function pick(mode: TaskViewMode): void {
       style="width: 26px; height: 26px;"
       @click="open = !open"
     >
-      <Icon :name="currentIcon()" :size="15" />
+      <Icon name="layout-template" :size="15" />
     </button>
 
     <div
