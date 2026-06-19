@@ -73,7 +73,7 @@ flowchart LR
 | Users (root/admin) | `GET /v1/users` · `POST /v1/users` · `POST /v1/users/{id}/disable\|enable` · `POST /v1/users/{id}/reset-password` |
 | Workspaces | `GET /v1/workspaces` · `GET /v1/workspaces/{ws}/members` · agent API keys `…/api-keys` (create/list/revoke) |
 | Notes | projects · folders · documents (CAS content save, revisions, **backlinks**); a document is addressable by stable **UUID or slug** |
-| Tasks | boards · board columns · tasks (atomic move, assignees, references, checklist→task promotion, activity) |
+| Tasks | boards · board columns · tasks (atomic move, assignees, references, activity) · sub-tasks (`…/tasks/{id}/subtasks` create/list, `…/tasks/{id}/promote` to detach onto the board) |
 | Search | `GET /v1/workspaces/{ws}/search` (ranked docs+tasks, permission-filtered, filter tokens) |
 | Sharing + meta | grants (`…/grants`) · `GET /v1/meta` (server version/build) |
 
@@ -85,7 +85,7 @@ PostgreSQL 17, 20 tables. IDs are app-generated **UUIDv7** (time-ordered). Full 
 |------|--------|-------|
 | Tenancy + identity | workspaces, users, sessions, api_keys, workspace_memberships | `workspace_id NOT NULL` on every domain table; `users`/`sessions`/`api_keys` are the tenancy-root exceptions |
 | Content | folders, documents, document_revisions, document_links, attachments | document content is `TEXT` (TOAST); revisions are line diffs with snapshot anchors; attachments are metadata-only (blobs live in object storage → Cloudflare R2). `document_links` is the wikilink/backlink graph, bound to the **stable target id** |
-| Projects + tasks | projects, boards, board_columns, tasks, task_references, task_assignees, task_checklist_items, task_activity | readable IDs `PREFIX-n` per project (immutable); kanban order via `fractional_index` `TEXT` position; multiple assignees (user/agent), checklist items promotable to tasks, actor-attributed activity log |
+| Projects + tasks | projects, boards, board_columns, tasks, task_references, task_assignees, task_checklist_items, task_activity | readable IDs `PREFIX-n` per project (immutable); kanban order via `fractional_index` `TEXT` position; multiple assignees (user/agent), actor-attributed activity log. **Sub-tasks** are full tasks linked by `tasks.parent_task_id`: they carry every task field (status, assignees, description, tags, estimate, their own `readable_id` so they are wikilink-referenceable) but are excluded from the board listings (`parent_task_id IS NULL`); promoting one clears the parent so it appears on the board |
 | Properties + access | property_definitions, permission_grants | hybrid free-frontmatter (jsonb) + typed properties; grants `(principal, resource, role)` |
 
 Every domain row records its `created_by` actor (user XOR api_key, DB CHECK), enabling human-vs-agent attribution. `users` carry an optional `email` (recovery only). **Wikilinks** are written as `[[<uuid>|Display Title]]` — bound to the target's stable id so they survive renames; the legacy `[[Title]]` form still resolves by slug. Slugs are immutable after creation, so addressing a document by UUID or by slug both resolve.
@@ -103,7 +103,7 @@ The browser UI is a Vue 3 SPA (Vite, Pinia, vue-router, Tailwind v4, Biome) — 
 | API client | A typed `openapi-fetch` client over types generated from the served OpenAPI (`just gen-types` → `src/api/types.d.ts`), wrapped thinly for the HttpOnly session cookie + CSRF header and RFC 9457 error `hint` surfacing. |
 | Shell | App rail + collapsible contextual sidebar + main area + toggleable inspector dock; Ayu-dark tokens with a dark/light theme toggle. |
 | Notes | CodeMirror 6 "live preview" markdown editor (markdown is the source of truth), `[[wikilink]]` autocomplete + id-bound links that render the target's current title, backlinks panel, CAS-409 three-way merge view. |
-| Tasks | Kanban with optimistic drag-and-drop (rollback on conflict), Linear-style peek + full task detail, inline editing. |
+| Tasks | Kanban with optimistic drag-and-drop (rollback on conflict), Linear-style peek + full task detail, inline editing. Sub-tasks render inline (status, assignees, estimate), open as full tasks of their own, and can be promoted onto the board. |
 | Cross-cutting | Command palette + global search (Cmd/Ctrl+K), per-resource Share dialog, Settings modal (account, agent API keys, root user management, about), consistent empty/loading/error states. Forms validate with **zod** through a shared `FormField`; the API's `hint` is shown, never a stack. |
 
 State lives in per-domain Pinia stores; `vue-router` owns navigation. Strict TDD applies here too (Vitest + vue-tsc + Biome, all in `just verify`).
