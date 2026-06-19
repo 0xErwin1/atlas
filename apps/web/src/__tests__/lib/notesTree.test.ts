@@ -1,5 +1,29 @@
 import { describe, expect, it } from 'vitest';
-import { buildNotesTree, docKey, flattenVisible, folderKey } from '@/lib/notesTree';
+import { buildNotesTree, docKey, flattenVisible, folderAncestors, folderKey } from '@/lib/notesTree';
+
+describe('folderAncestors', () => {
+  const folders = [
+    { id: 'root', name: 'Root', parent_folder_id: null },
+    { id: 'mid', name: 'Mid', parent_folder_id: 'root' },
+    { id: 'leaf', name: 'Leaf', parent_folder_id: 'mid' },
+  ];
+
+  it('returns the chain from the start folder up to the root', () => {
+    expect(folderAncestors(folders, 'leaf')).toEqual(['leaf', 'mid', 'root']);
+  });
+
+  it('returns an empty array for a root-level document (no folder)', () => {
+    expect(folderAncestors(folders, null)).toEqual([]);
+  });
+
+  it('stops safely on a cycle', () => {
+    const cyclic = [
+      { id: 'a', name: 'A', parent_folder_id: 'b' },
+      { id: 'b', name: 'B', parent_folder_id: 'a' },
+    ];
+    expect(folderAncestors(cyclic, 'a')).toEqual(['a', 'b']);
+  });
+});
 
 describe('flattenVisible', () => {
   const tree = buildNotesTree(

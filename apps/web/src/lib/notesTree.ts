@@ -11,6 +11,29 @@ export interface DocInput {
   folder_id?: string | null;
 }
 
+/**
+ * Returns the chain of folder ids from `startFolderId` up to the root, inclusive.
+ * Used to reveal a document in the tree by expanding all of its ancestor folders.
+ * Cycle-safe; stops at the first repeated id.
+ */
+export function folderAncestors(folders: FolderInput[], startFolderId: string | null): string[] {
+  if (startFolderId === null) return [];
+
+  const parentOf = new Map(folders.map((f) => [f.id, f.parent_folder_id ?? null]));
+
+  const chain: string[] = [];
+  const seen = new Set<string>();
+  let current: string | null = startFolderId;
+
+  while (current !== null && !seen.has(current)) {
+    seen.add(current);
+    chain.push(current);
+    current = parentOf.get(current) ?? null;
+  }
+
+  return chain;
+}
+
 export interface TreeFolder {
   kind: 'folder';
   id: string;

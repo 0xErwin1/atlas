@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import ContextMenu, { type MenuItem } from '@/components/ui/ContextMenu.vue';
 import Icon from '@/components/ui/Icon.vue';
 import Row from '@/components/ui/Row.vue';
@@ -11,6 +11,7 @@ import {
   docKey,
   type FolderInput,
   flattenVisible,
+  folderAncestors,
   folderKey,
   parseNodeKey,
   type TreeNodeRef,
@@ -43,6 +44,35 @@ const tree = computed(() => buildNotesTree(props.folders, props.docs));
 
 const selection = useTreeSelection();
 const uiState = useUiStateStore();
+
+const rootEl = ref<HTMLElement | null>(null);
+
+// Navigating to a document (e.g. via a wikilink) reveals it in the tree: expand
+// every ancestor folder, then scroll the active row into view.
+function revealActive(slug: string | null): void {
+  if (slug === null) return;
+
+  const doc = props.docs.find((d) => d.slug === slug);
+  if (doc === undefined) return;
+
+  for (const folderId of folderAncestors(props.folders, doc.folder_id ?? null)) {
+    if (uiState.isFolderCollapsed(folderId)) uiState.setFolderCollapsed(folderId, false);
+  }
+
+  void nextTick(() => {
+    const active = rootEl.value?.querySelector('[aria-current="true"]');
+    if (active instanceof HTMLElement && typeof active.scrollIntoView === 'function') {
+      active.scrollIntoView({ block: 'nearest' });
+    }
+  });
+}
+
+// Re-run when the active doc changes and when docs first arrive (deep-link load).
+watch(
+  () => [props.activeSlug, props.docs.length] as const,
+  () => revealActive(props.activeSlug),
+  { immediate: true },
+);
 
 // Keep the selection store's range order in sync with what is actually visible.
 const visibleKeys = computed(() => flattenVisible(tree.value, (id) => uiState.isFolderCollapsed(id)));
@@ -174,6 +204,7 @@ defineExpose({ openNewPage: () => startEdit({ kind: 'new-doc' }) });
 
 <template>
   <div
+    ref="rootEl"
     style="min-height: 100%;"
     :class="{ 'root-drop-target': rootDragOver }"
     @contextmenu.prevent="onContextmenu"
