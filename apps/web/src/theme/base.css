@@ -47,6 +47,16 @@ select {
   box-shadow: var(--shadow-ring);
 }
 
+/* Form fields get a softer, app-styled focus instead of the generic 1px ring:
+   a crisp primary border plus a translucent halo in the same hue. */
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+  border-color: var(--c-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-primary) 20%, transparent);
+}
+
 /* ── scrollbars ─────────────────────────────────────────────────────── */
 /* Thin, themed scrollbars across the whole app instead of the chunky native
    ones. Token-based so they follow the active (dark/light) theme. */
