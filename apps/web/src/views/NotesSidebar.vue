@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import FolderPickerDialog from '@/components/notas/FolderPickerDialog.vue';
 // biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
 import NotesTree from '@/components/notas/NotesTree.vue';
 import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
@@ -155,6 +156,52 @@ async function moveNodes(nodes: TreeNodeRef[], target: string | null): Promise<v
   }
 }
 
+async function copyNodes(nodes: TreeNodeRef[], target: string | null): Promise<void> {
+  const project = activeProject.value;
+  if (project === null || ws.value === '') return;
+
+  let failed = false;
+  for (const node of nodes) {
+    const ok =
+      node.type === 'doc'
+        ? await documents.copy(ws.value, project.slug, node.id, target)
+        : await folders.copy(ws.value, project.slug, node.id, target);
+    if (!ok) failed = true;
+  }
+
+  selection.clear();
+  if (failed) {
+    ui.showBanner(documents.error ?? folders.error ?? 'Copy failed', 'error');
+  }
+}
+
+// "Move to…" / "Copy to…" open a folder picker; the pending op + nodes are held
+// until the user confirms a destination.
+const pendingOp = ref<'move' | 'copy' | null>(null);
+const pendingNodes = ref<TreeNodeRef[]>([]);
+
+const pickerTitle = computed(() => (pendingOp.value === 'copy' ? 'Copy to…' : 'Move to…'));
+const pickerConfirm = computed(() => (pendingOp.value === 'copy' ? 'Copy here' : 'Move here'));
+
+function requestMove(nodes: TreeNodeRef[]): void {
+  pendingNodes.value = nodes;
+  pendingOp.value = 'move';
+}
+
+function requestCopy(nodes: TreeNodeRef[]): void {
+  pendingNodes.value = nodes;
+  pendingOp.value = 'copy';
+}
+
+async function onPickFolder(target: string | null): Promise<void> {
+  const op = pendingOp.value;
+  const nodes = pendingNodes.value;
+  pendingOp.value = null;
+  pendingNodes.value = [];
+  if (op === 'move') await moveNodes(nodes, target);
+  else if (op === 'copy') await copyNodes(nodes, target);
+}
+
 onMounted(loadTree);
 watch(() => workspace.activeWorkspaceSlug, loadTree);
 
@@ -193,6 +240,16 @@ defineExpose({ openNewPage });
       @rename-folder="renameFolder"
       @remove-folder="removeFolder"
       @move-nodes="moveNodes"
+      @request-move="requestMove"
+      @request-copy="requestCopy"
+    />
+    <FolderPickerDialog
+      :open="pendingOp !== null"
+      :title="pickerTitle"
+      :confirm-label="pickerConfirm"
+      :folders="folders.folders"
+      @confirm="onPickFolder"
+      @cancel="pendingOp = null"
     />
   </div>
   <p

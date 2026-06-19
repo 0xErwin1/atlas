@@ -24,6 +24,8 @@ const emit = defineEmits<{
   'rename-folder': [folderId: string, name: string];
   'remove-folder': [folderId: string];
   'move-nodes': [nodes: TreeNodeRef[], targetFolderId: string | null];
+  'request-move': [nodes: TreeNodeRef[]];
+  'request-copy': [nodes: TreeNodeRef[]];
 }>();
 
 const uiState = useUiStateStore();
@@ -126,25 +128,30 @@ function startCreate(kind: 'new-doc' | 'new-folder'): void {
   startEdit({ kind });
 }
 
-const folderMenuItems = computed<MenuItem[]>(() => [
-  { header: true, label: props.folder.name },
-  { label: 'New page', icon: 'file-plus', action: () => startCreate('new-doc') },
-  { label: 'New folder', icon: 'folder-plus', action: () => startCreate('new-folder') },
-  { sep: true },
-  {
-    label: 'Rename',
-    icon: 'pencil',
-    kbd: ['F2'],
-    action: () => startEdit({ kind: 'rename-folder' }, props.folder.name, true),
-  },
-  { sep: true },
-  {
-    label: 'Delete folder',
-    icon: 'trash',
-    danger: true,
-    action: () => emit('remove-folder', props.folder.id),
-  },
-]);
+const folderMenuItems = computed<MenuItem[]>(() => {
+  const self: TreeNodeRef = { type: 'folder', id: props.folder.id };
+  return [
+    { header: true, label: props.folder.name },
+    { label: 'New page', icon: 'file-plus', action: () => startCreate('new-doc') },
+    { label: 'New folder', icon: 'folder-plus', action: () => startCreate('new-folder') },
+    { sep: true },
+    {
+      label: 'Rename',
+      icon: 'pencil',
+      kbd: ['F2'],
+      action: () => startEdit({ kind: 'rename-folder' }, props.folder.name, true),
+    },
+    { label: 'Move to…', icon: 'arrow-right', action: () => emit('request-move', dragPayload(self)) },
+    { label: 'Copy to…', icon: 'copy', action: () => emit('request-copy', dragPayload(self)) },
+    { sep: true },
+    {
+      label: 'Delete folder',
+      icon: 'trash',
+      danger: true,
+      action: () => emit('remove-folder', props.folder.id),
+    },
+  ];
+});
 
 const docMenuItems = computed<MenuItem[]>(() => {
   const state = contextState.value;
@@ -160,6 +167,16 @@ const docMenuItems = computed<MenuItem[]>(() => {
       icon: 'pencil',
       kbd: ['F2'],
       action: () => startEdit({ kind: 'rename-doc', slug }, currentTitle, true),
+    },
+    {
+      label: 'Move to…',
+      icon: 'arrow-right',
+      action: () => emit('request-move', dragPayload({ type: 'doc', id: slug })),
+    },
+    {
+      label: 'Copy to…',
+      icon: 'copy',
+      action: () => emit('request-copy', dragPayload({ type: 'doc', id: slug })),
     },
     { sep: true },
     {
@@ -248,6 +265,8 @@ const inlinePaddingLeft = computed(() => `${8 + (props.depth + 1) * 14}px`);
         @rename-folder="(folderId, name) => emit('rename-folder', folderId, name)"
         @remove-folder="(folderId) => emit('remove-folder', folderId)"
         @move-nodes="(nodes, target) => emit('move-nodes', nodes, target)"
+        @request-move="(nodes) => emit('request-move', nodes)"
+        @request-copy="(nodes) => emit('request-copy', nodes)"
       />
 
       <template v-for="doc in folder.docs" :key="doc.id">

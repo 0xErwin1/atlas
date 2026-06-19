@@ -35,6 +35,8 @@ const emit = defineEmits<{
   'rename-folder': [folderId: string, name: string];
   'remove-folder': [folderId: string];
   'move-nodes': [nodes: TreeNodeRef[], targetFolderId: string | null];
+  'request-move': [nodes: TreeNodeRef[]];
+  'request-copy': [nodes: TreeNodeRef[]];
 }>();
 
 const tree = computed(() => buildNotesTree(props.folders, props.docs));
@@ -132,6 +134,16 @@ const docMenuItems = computed<MenuItem[]>(() => {
       kbd: ['F2'],
       action: () => startEdit({ kind: 'rename-doc', slug }, title, true),
     },
+    {
+      label: 'Move to…',
+      icon: 'arrow-right',
+      action: () => emit('request-move', dragPayload({ type: 'doc', id: slug })),
+    },
+    {
+      label: 'Copy to…',
+      icon: 'copy',
+      action: () => emit('request-copy', dragPayload({ type: 'doc', id: slug })),
+    },
     { sep: true },
     {
       label: 'Delete',
@@ -203,6 +215,8 @@ defineExpose({ openNewPage: () => startEdit({ kind: 'new-doc' }) });
         @rename-folder="(folderId, name) => emit('rename-folder', folderId, name)"
         @remove-folder="(folderId) => emit('remove-folder', folderId)"
         @move-nodes="(nodes, target) => emit('move-nodes', nodes, target)"
+        @request-move="(nodes) => emit('request-move', nodes)"
+        @request-copy="(nodes) => emit('request-copy', nodes)"
       />
 
       <template v-for="doc in tree.docs" :key="doc.id">

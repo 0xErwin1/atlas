@@ -203,4 +203,29 @@ describe('useDocumentsStore', () => {
     expect(store.error).toBe('nope');
     expect(GET).not.toHaveBeenCalled();
   });
+
+  it('copy POSTs to the copy endpoint and re-fetches', async () => {
+    POST.mockResolvedValue({ data: { id: 'x', slug: 'my-doc-copy' } });
+    GET.mockResolvedValue({ data: { items: [], has_more: false } });
+
+    const store = useDocumentsStore();
+    const ok = await store.copy('ws', 'proj', 'my-doc', 'folder-1');
+
+    expect(ok).toBe(true);
+    expect(POST).toHaveBeenCalledWith('/v1/workspaces/{ws}/documents/{slug}/copy', {
+      params: { path: { ws: 'ws', slug: 'my-doc' } },
+      body: { folder_id: 'folder-1' },
+    });
+  });
+
+  it('copy returns false and sets error on failure', async () => {
+    POST.mockResolvedValue({ error: { hint: 'denied' } });
+
+    const store = useDocumentsStore();
+    const ok = await store.copy('ws', 'proj', 'my-doc', null);
+
+    expect(ok).toBe(false);
+    expect(store.error).toBe('denied');
+    expect(GET).not.toHaveBeenCalled();
+  });
 });

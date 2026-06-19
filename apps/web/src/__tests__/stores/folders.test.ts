@@ -135,4 +135,29 @@ describe('useFoldersStore', () => {
     expect(store.error).toBe('cycle');
     expect(GET).not.toHaveBeenCalled();
   });
+
+  it('copy POSTs to the copy endpoint and re-fetches', async () => {
+    POST.mockResolvedValue({ data: folder('f9', 'Specs (copy)') });
+    GET.mockResolvedValue({ data: { items: [], has_more: false } });
+
+    const store = useFoldersStore();
+    const ok = await store.copy('ws', 'proj', 'f1', 'parent-1');
+
+    expect(ok).toBe(true);
+    expect(POST).toHaveBeenCalledWith('/v1/workspaces/{ws}/folders/{folder_id}/copy', {
+      params: { path: { ws: 'ws', folder_id: 'f1' } },
+      body: { parent_folder_id: 'parent-1' },
+    });
+  });
+
+  it('copy returns false and surfaces hint on failure', async () => {
+    POST.mockResolvedValue({ error: { hint: 'denied' } });
+
+    const store = useFoldersStore();
+    const ok = await store.copy('ws', 'proj', 'f1', null);
+
+    expect(ok).toBe(false);
+    expect(store.error).toBe('denied');
+    expect(GET).not.toHaveBeenCalled();
+  });
 });

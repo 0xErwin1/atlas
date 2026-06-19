@@ -125,6 +125,26 @@ export const useDocumentsStore = defineStore('documents', () => {
     return true;
   }
 
+  async function copy(
+    ws: string,
+    projectSlug: string,
+    slug: string,
+    folderId: string | null,
+  ): Promise<boolean> {
+    const { error: apiError } = await wrappedClient.POST('/v1/workspaces/{ws}/documents/{slug}/copy', {
+      params: { path: { ws, slug } },
+      body: { folder_id: folderId },
+    });
+
+    if (apiError !== undefined) {
+      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to copy document';
+      return false;
+    }
+
+    await loadSummaries(ws, projectSlug);
+    return true;
+  }
+
   return {
     summaries,
     backlinks,
@@ -136,5 +156,6 @@ export const useDocumentsStore = defineStore('documents', () => {
     rename,
     remove,
     move,
+    copy,
   };
 });
