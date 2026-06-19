@@ -95,6 +95,35 @@ export const atlasMarkdownTheme = EditorView.theme(
     '.cm-atlas-listitem': {},
     '.cm-atlas-bullet': { color: 'var(--c-muted)' },
 
+    // Task-list checkbox, rendered in place of the raw `[ ]`/`[x]` marker.
+    '.cm-atlas-checkbox': {
+      appearance: 'none',
+      width: '1em',
+      height: '1em',
+      margin: '0 0.4em 0 0',
+      verticalAlign: '-0.12em',
+      border: '1.5px solid var(--c-muted)',
+      borderRadius: 'var(--r-sm)',
+      backgroundColor: 'transparent',
+      cursor: 'pointer',
+      position: 'relative',
+    },
+    '.cm-atlas-checkbox:checked': {
+      backgroundColor: 'var(--c-primary)',
+      borderColor: 'var(--c-primary)',
+    },
+    '.cm-atlas-checkbox:checked::after': {
+      content: '""',
+      position: 'absolute',
+      left: '0.28em',
+      top: '0.1em',
+      width: '0.25em',
+      height: '0.5em',
+      border: 'solid var(--c-primary-fg)',
+      borderWidth: '0 2px 2px 0',
+      transform: 'rotate(45deg)',
+    },
+
     // Links and wikilinks.
     '.cm-atlas-link': { color: 'var(--c-info)', cursor: 'pointer' },
     '.cm-atlas-wikilink': { color: 'var(--c-info)', cursor: 'pointer' },

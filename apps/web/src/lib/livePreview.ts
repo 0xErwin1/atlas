@@ -75,6 +75,23 @@ export function isMarkerRevealed(marker: MarkerRange, activeLines: Set<number>):
   return activeLines.has(marker.line);
 }
 
+/** Whether a GFM task marker (`[ ]`, `[x]`, `[X]`) is in the checked state. */
+export function taskMarkerChecked(markerText: string): boolean {
+  return /\[[xX]\]/.test(markerText);
+}
+
+/**
+ * Whether a block construct (table, fenced diagram) should be revealed as raw
+ * markdown for editing: true when the selection touches any line the block spans,
+ * so clicking into it turns the rendered widget back into editable source.
+ */
+export function isBlockActive(firstLine: number, lastLine: number, activeLines: Set<number>): boolean {
+  for (let n = firstLine; n <= lastLine; n += 1) {
+    if (activeLines.has(n)) return true;
+  }
+  return false;
+}
+
 /**
  * Partitions a marker list into the ranges to HIDE (replace/collapse) and the
  * ranges to REVEAL (leave raw) for the current selection. This is the single

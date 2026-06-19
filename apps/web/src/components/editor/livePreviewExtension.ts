@@ -8,7 +8,12 @@ import {
   type ViewUpdate,
   WidgetType,
 } from '@codemirror/view';
-import { computeActiveLines, type LineRange, type SelectionRange } from '@/lib/livePreview';
+import {
+  computeActiveLines,
+  type LineRange,
+  type SelectionRange,
+  taskMarkerChecked,
+} from '@/lib/livePreview';
 import { parseWikilinkInner, type WikilinkRef } from '@/lib/wikilink';
 
 /**
@@ -106,6 +111,51 @@ class BulletWidget extends WidgetType {
     span.className = 'cm-atlas-bullet';
     span.textContent = '•';
     return span;
+  }
+}
+
+/**
+ * Widget that renders a GFM task marker (`[ ]`/`[x]`) as a real checkbox. Click
+ * toggles the underlying `[ ]`↔`[x]` in the source, unless the editor is
+ * read-only (preview mode), where the box reflects state without mutating.
+ */
+class CheckboxWidget extends WidgetType {
+  constructor(
+    private readonly checked: boolean,
+    private readonly from: number,
+  ) {
+    super();
+  }
+
+  eq(other: CheckboxWidget): boolean {
+    return other.checked === this.checked && other.from === this.from;
+  }
+
+  toDOM(view: EditorView): HTMLElement {
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.className = 'cm-atlas-checkbox';
+    box.checked = this.checked;
+
+    // Keep the click from moving the caret into the line (which would reveal the
+    // raw marker); the toggle is an explicit document edit instead.
+    box.addEventListener('mousedown', (event) => event.preventDefault());
+    box.addEventListener('click', (event) => {
+      event.preventDefault();
+      if (view.state.readOnly) {
+        box.checked = this.checked;
+        return;
+      }
+      view.dispatch({
+        changes: { from: this.from, to: this.from + 3, insert: this.checked ? '[ ]' : '[x]' },
+      });
+    });
+
+    return box;
+  }
+
+  ignoreEvent(): boolean {
+    return false;
   }
 }
 
@@ -246,9 +296,27 @@ function decorateSyntaxTree(
         if (!activeLines.has(lineNo)) {
           const markText = view.state.doc.sliceString(node.from, node.to);
           const isBullet = markText === '-' || markText === '*' || markText === '+';
-          if (isBullet) {
+          const isTask = node.node.parent !== null && hasChild(node.node.parent, 'Task');
+
+          // Task items render a checkbox in place of the marker, so the bullet is
+          // hidden entirely (marker + its trailing space) to avoid "• ☑ item".
+          if (isTask) {
+            const lineEnd = view.state.doc.lineAt(node.from).to;
+            decos.push(hideDeco.range(node.from, consumeTrailingSpace(view, node.to, lineEnd)));
+          } else if (isBullet) {
             decos.push(Decoration.replace({ widget: new BulletWidget() }).range(node.from, node.to));
           }
+        }
+        return;
+      }
+
+      if (name === 'TaskMarker') {
+        const lineNo = lineNumberAt(view, node.from);
+        if (!activeLines.has(lineNo)) {
+          const checked = taskMarkerChecked(view.state.doc.sliceString(node.from, node.to));
+          decos.push(
+            Decoration.replace({ widget: new CheckboxWidget(checked, node.from) }).range(node.from, node.to),
+          );
         }
         return;
       }
@@ -369,6 +437,13 @@ function collectChildren(node: SyntaxNode, name: string): SyntaxNode[] {
     if (child.name === name) out.push(child);
   }
   return out;
+}
+
+function hasChild(node: SyntaxNode, name: string): boolean {
+  for (let child = node.firstChild; child !== null; child = child.nextSibling) {
+    if (child.name === name) return true;
+  }
+  return false;
 }
 
 function findChild(start: SyntaxNode | null, name: string): SyntaxNode | null {

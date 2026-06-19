@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   computeActiveLines,
+  isBlockActive,
   isMarkerRevealed,
   type LineRange,
   type MarkerRange,
   partitionMarkers,
   type SelectionRange,
+  taskMarkerChecked,
 } from '@/lib/livePreview';
 
 /**
@@ -68,6 +70,32 @@ describe('computeActiveLines', () => {
 
   it('returns an empty set when there are no selections', () => {
     expect(computeActiveLines(lines, [])).toEqual(new Set());
+  });
+});
+
+describe('taskMarkerChecked', () => {
+  it('treats [x] and [X] as checked', () => {
+    expect(taskMarkerChecked('[x]')).toBe(true);
+    expect(taskMarkerChecked('[X]')).toBe(true);
+  });
+
+  it('treats [ ] as unchecked', () => {
+    expect(taskMarkerChecked('[ ]')).toBe(false);
+  });
+});
+
+describe('isBlockActive', () => {
+  it('is active when the selection touches any line the block spans', () => {
+    expect(isBlockActive(3, 6, new Set([5]))).toBe(true);
+  });
+
+  it('is inactive when no spanned line is selected', () => {
+    expect(isBlockActive(3, 6, new Set([1, 8]))).toBe(false);
+  });
+
+  it('includes both block boundaries', () => {
+    expect(isBlockActive(3, 6, new Set([3]))).toBe(true);
+    expect(isBlockActive(3, 6, new Set([6]))).toBe(true);
   });
 });
 
