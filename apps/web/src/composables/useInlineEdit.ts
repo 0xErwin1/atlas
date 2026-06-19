@@ -18,8 +18,13 @@ export function useInlineEdit<T>(onCommit: (value: string, ctx: T) => void) {
     active.value = ctx;
     value.value = initial;
     void nextTick(() => {
-      inputRef.value?.focus();
-      if (select) inputRef.value?.select();
+      // A `ref` placed on an element inside `v-for` is populated by Vue as an
+      // array; the inline inputs live in the sidebar's project/board loops, so
+      // unwrap before focusing — otherwise the focus call silently no-ops.
+      const target = inputRef.value as HTMLInputElement | HTMLInputElement[] | null;
+      const el = Array.isArray(target) ? target[0] : target;
+      el?.focus();
+      if (select) el?.select();
     });
   }
 
