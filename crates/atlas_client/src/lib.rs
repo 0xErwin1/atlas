@@ -3,9 +3,9 @@
 use atlas_api::{
     dtos::{
         ApiKeyCreated, ApiKeyDto, ChangePasswordRequest, CreateApiKeyRequest, CreateGrantRequest,
-        CreateProjectRequest, CreateUserRequest, GrantDto, HealthResponse, LoginRequest,
-        LoginResponse, MeResponse, PrincipalDto, ProjectDto, ResetPasswordRequest, ServerMetaDto,
-        UpdateMeRequest, UpdateProjectRequest, UserDto, WorkspaceDto,
+        CreateProjectRequest, CreateUserRequest, CreateWorkspaceRequest, GrantDto, HealthResponse,
+        LoginRequest, LoginResponse, MeResponse, PrincipalDto, ProjectDto, ResetPasswordRequest,
+        ServerMetaDto, UpdateMeRequest, UpdateProjectRequest, UserDto, WorkspaceDto,
         boards_tasks::{
             ActivityEntryDto, AddAssigneeRequest, AssigneeDto, BoardDto, BoardSummaryDto,
             ChecklistItemDto, ColumnDto, CreateBoardRequest, CreateChecklistItemRequest,
@@ -483,6 +483,20 @@ impl AtlasClient {
             .await
             .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
         Err(ClientError::Api(problem))
+    }
+
+    /// `POST /v1/workspaces`
+    pub async fn create_workspace(&self, name: &str) -> Result<WorkspaceDto, ClientError> {
+        let body = CreateWorkspaceRequest {
+            name: name.to_string(),
+        };
+        let response = self
+            .post("/v1/workspaces")
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "create_workspace").await
     }
 
     /// `GET /v1/workspaces`

@@ -220,6 +220,13 @@ pub struct PrincipalDto {
     pub display: String,
 }
 
+/// Request body for `POST /v1/workspaces`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct CreateWorkspaceRequest {
+    pub name: String,
+}
+
 /// Workspace representation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]

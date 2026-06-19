@@ -14,6 +14,9 @@ pub trait WorkspaceRepo: Send + Sync {
     async fn find_by_id(&self, id: WorkspaceId) -> Result<Option<Workspace>, DomainError>;
     async fn find_by_slug(&self, slug: &str) -> Result<Option<Workspace>, DomainError>;
     async fn list_for_user(&self, user_id: UserId) -> Result<Vec<Workspace>, DomainError>;
+    /// Returns the slugs of every workspace, used to resolve slug collisions
+    /// when deriving a new workspace slug from its name.
+    async fn list_slugs(&self) -> Result<Vec<String>, DomainError>;
 }
 
 #[async_trait]

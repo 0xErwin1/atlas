@@ -65,7 +65,11 @@ pub fn app(state: AppState) -> Router {
             axum::routing::post(routes::users::reset_password),
         )
         // Workspace
-        .route("/v1/workspaces", get(routes::workspaces::list_workspaces))
+        .route(
+            "/v1/workspaces",
+            get(routes::workspaces::list_workspaces)
+                .post(routes::workspaces::create_workspace),
+        )
         .route(
             "/v1/workspaces/{ws}",
             get(routes::workspaces::get_workspace),

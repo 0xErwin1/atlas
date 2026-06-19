@@ -1,17 +1,95 @@
 use axum::{
     Json,
     extract::{Extension, State},
+    http::StatusCode,
+    response::IntoResponse,
 };
 
-use atlas_api::dtos::WorkspaceDto;
+use atlas_api::dtos::{CreateWorkspaceRequest, WorkspaceDto};
+use atlas_domain::{
+    Actor, WorkspaceCtx,
+    entities::identity::{MemberRole, NewWorkspace},
+    ids::WorkspaceId,
+    resolve_collision, slugify,
+};
 
 use crate::{
     auth::middleware::Principal,
     authz::WorkspaceMember,
     error::ApiError,
-    persistence::repos::{PgWorkspaceRepo, WorkspaceRepo},
+    persistence::repos::{
+        MembershipRepo, PgMembershipRepo, PgWorkspaceRepo, WorkspaceRepo,
+    },
+    routes::validation::validate_name,
     state::AppState,
 };
+
+#[utoipa::path(
+    post,
+    path = "/v1/workspaces",
+    tag = "workspaces",
+    security(("bearer_auth" = [])),
+    request_body = CreateWorkspaceRequest,
+    responses(
+        (status = 201, description = "Workspace created", body = WorkspaceDto),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "API keys cannot create workspaces"),
+    )
+)]
+/// Creates a new workspace owned by the authenticated human user.
+///
+/// The slug is derived from the name and de-duplicated against existing
+/// workspace slugs. The creating user is added as `Owner`, so the workspace
+/// immediately appears in `GET /v1/workspaces`. API keys (agents) are rejected
+/// with 403: agents are workspace-scoped and must not create workspaces.
+pub(crate) async fn create_workspace(
+    State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
+    Json(body): Json<CreateWorkspaceRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    let Principal::User(user_id) = principal else {
+        return Err(ApiError::Forbidden {
+            message: "API keys cannot create workspaces".into(),
+        });
+    };
+
+    validate_name("name", &body.name)?;
+
+    let ws_repo = PgWorkspaceRepo {
+        conn: (*state.db).clone(),
+    };
+    let membership_repo = PgMembershipRepo {
+        conn: (*state.db).clone(),
+    };
+
+    let existing_slugs = ws_repo.list_slugs().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+    let taken: Vec<&str> = existing_slugs.iter().map(String::as_str).collect();
+    let slug = resolve_collision(&slugify(&body.name), &taken);
+
+    let workspace_id = WorkspaceId::new();
+    let workspace = ws_repo
+        .create(NewWorkspace {
+            id: workspace_id,
+            name: body.name,
+            slug,
+        })
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?;
+
+    let ctx = WorkspaceCtx::new(workspace.id, Actor::User(user_id));
+    membership_repo
+        .add(&ctx, user_id, MemberRole::Owner)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?;
+
+    Ok((StatusCode::CREATED, Json(workspace_to_dto(&workspace))))
+}
 
 #[utoipa::path(
     get,
@@ -45,16 +123,7 @@ pub(crate) async fn list_workspaces(
             message: "workspace lookup failed".into(),
         })?;
 
-    let dtos = workspaces
-        .into_iter()
-        .map(|ws| WorkspaceDto {
-            id: ws.id.0,
-            name: ws.name,
-            slug: ws.slug,
-            created_at: ws.created_at,
-            updated_at: ws.updated_at,
-        })
-        .collect();
+    let dtos = workspaces.iter().map(workspace_to_dto).collect();
 
     Ok(Json(dtos))
 }
@@ -75,12 +144,15 @@ pub(crate) async fn get_workspace(
     member: WorkspaceMember,
     State(_state): State<AppState>,
 ) -> Result<Json<WorkspaceDto>, ApiError> {
-    let ws = &member.workspace;
-    Ok(Json(WorkspaceDto {
+    Ok(Json(workspace_to_dto(&member.workspace)))
+}
+
+fn workspace_to_dto(ws: &atlas_domain::entities::identity::Workspace) -> WorkspaceDto {
+    WorkspaceDto {
         id: ws.id.0,
         name: ws.name.clone(),
         slug: ws.slug.clone(),
         created_at: ws.created_at,
         updated_at: ws.updated_at,
-    }))
+    }
 }

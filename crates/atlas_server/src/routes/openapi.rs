@@ -5,9 +5,9 @@ use utoipa_scalar::{Scalar, Servable as _};
 use atlas_api::{
     dtos::{
         ApiKeyCreated, ApiKeyDto, ChangePasswordRequest, CreateApiKeyRequest, CreateGrantRequest,
-        CreateProjectRequest, CreateUserRequest, GrantDto, GrantPrincipal, LoginRequest,
-        LoginResponse, MeResponse, PrincipalDto, ProjectDto, ResetPasswordRequest, ServerMetaDto,
-        UpdateMeRequest, UpdateProjectRequest, UserDto, WorkspaceDto,
+        CreateProjectRequest, CreateUserRequest, CreateWorkspaceRequest, GrantDto, GrantPrincipal,
+        LoginRequest, LoginResponse, MeResponse, PrincipalDto, ProjectDto, ResetPasswordRequest,
+        ServerMetaDto, UpdateMeRequest, UpdateProjectRequest, UserDto, WorkspaceDto,
         boards_tasks::{
             ActivityEntryDto, AddAssigneeRequest, AssigneeDto, BoardDto, BoardSummaryDto,
             ChecklistItemDto, ColumnDto, CreateBoardRequest, CreateChecklistItemRequest,
@@ -48,6 +48,7 @@ use atlas_api::{
         crate::routes::users::disable_user,
         crate::routes::users::enable_user,
         crate::routes::users::reset_password,
+        crate::routes::workspaces::create_workspace,
         crate::routes::workspaces::list_workspaces,
         crate::routes::workspaces::get_workspace,
         crate::routes::api_keys::create_api_key,
@@ -136,6 +137,7 @@ use atlas_api::{
         GrantPrincipal,
         GrantDto,
         PrincipalDto,
+        CreateWorkspaceRequest,
         WorkspaceDto,
         ProblemDetails,
         CreateDocumentRequest,

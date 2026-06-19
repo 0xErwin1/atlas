@@ -126,6 +126,12 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         openapi_path: Some("/v1/workspaces"),
     },
     RouteEntry {
+        method: "POST",
+        path_template: "/v1/workspaces",
+        kind: RouteKind::AuthnRequired,
+        openapi_path: Some("/v1/workspaces"),
+    },
+    RouteEntry {
         method: "GET",
         path_template: "/v1/workspaces/{ws}",
         kind: RouteKind::WorkspaceMember,
