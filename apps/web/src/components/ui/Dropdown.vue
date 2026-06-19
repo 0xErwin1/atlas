@@ -100,6 +100,7 @@ const selectedLabel = () => {
           class="flex items-center px-3 cursor-pointer"
           :style="`
             height: var(--h-compact);
+            white-space: nowrap;
             font-size: var(--fs-sm);
             font-family: var(--font-mono);
             ${opt.disabled ? 'opacity: 0.45; cursor: not-allowed;' : ''}
