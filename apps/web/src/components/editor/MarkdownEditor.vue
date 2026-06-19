@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
+import { languages } from '@codemirror/language-data';
 import { Compartment, EditorState } from '@codemirror/state';
 import { EditorView, keymap } from '@codemirror/view';
 import { GFM } from '@lezer/markdown';
@@ -13,6 +14,7 @@ import {
   type WikilinkTrigger,
 } from '@/lib/wikilink';
 import { useUiStore } from '@/stores/ui';
+import { atlasHighlight } from './highlight';
 import { livePreview } from './livePreviewExtension';
 import { atlasMarkdownTheme } from './theme';
 
@@ -183,7 +185,8 @@ function buildExtensions() {
   return [
     history(),
     keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
-    markdown({ base: markdownLanguage, extensions: [GFM] }),
+    markdown({ base: markdownLanguage, extensions: [GFM], codeLanguages: languages }),
+    atlasHighlight,
     EditorView.lineWrapping,
     emptyDocAttributes(),
     livePreviewCompartment.of(renderExtension()),

@@ -63,6 +63,16 @@
   --c-cyan: #95E6CB;
   --c-chart-5: #D2A6FF;
 
+  /* Code syntax (Ayu Dark) — used by the editor's HighlightStyle. Scoped to
+     code tokens; markdown prose keeps its cm-atlas-* structural styling. */
+  --c-syntax-keyword: #FF8F40;
+  --c-syntax-string: #C2D94C;
+  --c-syntax-comment: #5C6773;
+  --c-syntax-number: #D2A6FF;
+  --c-syntax-function: #FFB454;
+  --c-syntax-type: #59C2FF;
+  --c-syntax-operator: #F29668;
+
   /* UI chrome */
   --c-input: rgba(179, 177, 173, 0.14);
   --c-ring: rgba(255, 180, 84, 0.75);
@@ -165,6 +175,15 @@
   --c-agent-border: rgba(163, 122, 204, 0.40);
   --c-cyan: #4CBF99;
   --c-chart-5: #A37ACC;
+
+  /* Code syntax (Ayu Light) */
+  --c-syntax-keyword: #FA8D3E;
+  --c-syntax-string: #86B300;
+  --c-syntax-comment: #8A9199;
+  --c-syntax-number: #A37ACC;
+  --c-syntax-function: #F2AE49;
+  --c-syntax-type: #399EE6;
+  --c-syntax-operator: #ED9366;
 
   --c-input: rgba(92, 97, 102, 0.06);
   --c-ring: rgba(242, 146, 42, 0.55);
