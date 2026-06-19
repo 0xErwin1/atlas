@@ -5,7 +5,7 @@ import FolderPickerDialog from '@/components/notas/FolderPickerDialog.vue';
 // biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
 import NotesTree from '@/components/notas/NotesTree.vue';
 import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
-import type { TreeNodeRef } from '@/lib/notesTree';
+import { docKey, type TreeNodeRef } from '@/lib/notesTree';
 import { useDocumentsStore } from '@/stores/documents';
 import { useFoldersStore } from '@/stores/folders';
 import { useTreeSelection } from '@/stores/treeSelection';
@@ -35,6 +35,19 @@ const activeSlug = computed(() => {
   const slug = route.params.slug;
   return typeof slug === 'string' && slug.length > 0 ? slug : null;
 });
+
+// Keep the tree's persistent selection in step with the open document: the
+// selection store outlives this view (Pinia), so without this a doc selected
+// before switching apps would stay highlighted on return even with nothing open.
+// Multi-select gestures (shift/ctrl) do not change the route, so they survive.
+watch(
+  activeSlug,
+  (slug) => {
+    if (slug === null) selection.clear();
+    else selection.selectOnly(docKey(slug));
+  },
+  { immediate: true },
+);
 
 // Which project's tree the Notes view shows. Persisted so the choice sticks
 // across sessions; falls back to the first project when unset or stale.
