@@ -210,6 +210,7 @@ defineExpose({ openNewPage: () => startEdit({ kind: 'new-doc' }) });
     @contextmenu.prevent="onContextmenu"
     @dragover.prevent="rootDragOver = true"
     @dragleave.self="rootDragOver = false"
+    @dragend="rootDragOver = false"
     @drop.prevent="onRootDrop"
   >
     <div class="notes-tree-header">
