@@ -89,7 +89,9 @@ watch([readableId, ws], load, { immediate: true });
       :readable-id="task.readable_id"
       :share-label="shareLabel"
       :breadcrumbs="breadcrumbs"
-      @close="backToBoard()"
+      show-back
+      :show-close="false"
+      @back="backToBoard()"
       @change="onChangeMode"
     />
 

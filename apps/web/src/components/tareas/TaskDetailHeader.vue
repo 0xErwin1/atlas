@@ -10,13 +10,15 @@ const props = withDefaults(
     breadcrumbs?: string[];
     showExpand?: boolean;
     showClose?: boolean;
+    showBack?: boolean;
   }>(),
-  { breadcrumbs: () => [], showExpand: false, showClose: true },
+  { breadcrumbs: () => [], showExpand: false, showClose: true, showBack: false },
 );
 
 const emit = defineEmits<{
   close: [];
   expand: [];
+  back: [];
   change: [mode: TaskViewMode];
 }>();
 
@@ -25,6 +27,18 @@ const ui = useUiStore();
 
 <template>
   <header class="atl-tv-header">
+    <button
+      v-if="showBack"
+      type="button"
+      class="atl-gbtn"
+      style="width: 26px; height: 26px;"
+      title="Back to board"
+      aria-label="Back to board"
+      @click="emit('back')"
+    >
+      <Icon name="arrow-left" :size="16" />
+    </button>
+
     <nav v-if="breadcrumbs.length" class="atl-tv-crumb" aria-label="Breadcrumb">
       <template v-for="(part, i) in breadcrumbs" :key="i">
         <span v-if="i > 0" class="atl-tv-crumb-sep">/</span>
