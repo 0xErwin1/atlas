@@ -45,6 +45,11 @@ pub fn app(state: AppState) -> Router {
             "/v1/users/me",
             axum::routing::patch(routes::auth::update_me),
         )
+        // Self-service UI state (human users only; agents are rejected at the handler)
+        .route(
+            "/v1/me/ui-state",
+            get(routes::ui_state::get_ui_state).put(routes::ui_state::set_ui_state),
+        )
         // Server metadata (any authenticated principal)
         .route("/v1/meta", get(routes::health::meta))
         // Users (root-only)

@@ -10,6 +10,7 @@ pub mod m20260613_000007_boards_tasks_e05;
 pub mod m20260614_000008_task_reference_kind_target_check;
 pub mod m20260614_000009_attachment_task_fk;
 pub mod m20260618_000010_user_email;
+pub mod m20260618_000011_user_ui_state;
 
 use sea_orm_migration::prelude::*;
 
@@ -29,6 +30,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260614_000008_task_reference_kind_target_check::Migration),
             Box::new(m20260614_000009_attachment_task_fk::Migration),
             Box::new(m20260618_000010_user_email::Migration),
+            Box::new(m20260618_000011_user_ui_state::Migration),
         ]
     }
 }

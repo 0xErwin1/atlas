@@ -5,7 +5,8 @@ use atlas_api::{
         ApiKeyCreated, ApiKeyDto, ChangePasswordRequest, CreateApiKeyRequest, CreateGrantRequest,
         CreateProjectRequest, CreateUserRequest, CreateWorkspaceRequest, GrantDto, HealthResponse,
         LoginRequest, LoginResponse, MeResponse, PrincipalDto, ProjectDto, ResetPasswordRequest,
-        ServerMetaDto, UpdateMeRequest, UpdateProjectRequest, UserDto, WorkspaceDto,
+        ServerMetaDto, UiStateDto, UpdateMeRequest, UpdateProjectRequest, UpdateUiStateRequest,
+        UserDto, WorkspaceDto,
         boards_tasks::{
             ActivityEntryDto, AddAssigneeRequest, AssigneeDto, BoardDto, BoardSummaryDto,
             ChecklistItemDto, ColumnDto, CreateBoardRequest, CreateChecklistItemRequest,
@@ -187,6 +188,36 @@ impl AtlasClient {
             .send()
             .await?;
         self.decode_response(response, "update_me").await
+    }
+
+    /// `GET /v1/me/ui-state`
+    ///
+    /// Returns the current user's stored UI state object (an empty object when
+    /// no state has been saved yet).
+    pub async fn get_ui_state(&self) -> Result<serde_json::Value, ClientError> {
+        let response = self.get("/v1/me/ui-state").send().await?;
+        let dto: UiStateDto = self.decode_response(response, "get_ui_state").await?;
+        Ok(dto.state)
+    }
+
+    /// `PUT /v1/me/ui-state`
+    ///
+    /// Upserts the current user's UI state and returns the stored object.
+    pub async fn set_ui_state(
+        &self,
+        state: &serde_json::Value,
+    ) -> Result<serde_json::Value, ClientError> {
+        let body = UpdateUiStateRequest {
+            state: state.clone(),
+        };
+        let response = self
+            .put("/v1/me/ui-state")
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        let dto: UiStateDto = self.decode_response(response, "set_ui_state").await?;
+        Ok(dto.state)
     }
 
     /// `GET /v1/meta`

@@ -13,15 +13,15 @@ use uuid::Uuid;
 
 use crate::persistence::entities::identity::{
     api_key, api_key_from, membership, membership_from, session, session_from, user, user_from,
-    workspace, workspace_from,
+    user_ui_state, user_ui_state_from, workspace, workspace_from,
 };
 
 pub use atlas_domain::entities::identity::{
-    ApiKey, NewApiKey, NewSession, NewUser, NewWorkspace, Session, User, Workspace,
+    ApiKey, NewApiKey, NewSession, NewUser, NewWorkspace, Session, User, UserUiState, Workspace,
 };
 
 pub use atlas_domain::ports::identity::{
-    ApiKeyRepo, MembershipRepo, SessionRepo, UserRepo, WorkspaceRepo,
+    ApiKeyRepo, MembershipRepo, SessionRepo, UiStateRepo, UserRepo, WorkspaceRepo,
 };
 
 pub struct PgWorkspaceRepo {
@@ -581,6 +581,52 @@ impl MembershipRepo for PgMembershipRepo {
             .await
             .map(|_| ())
             .map_err(db_err)
+    }
+}
+
+pub struct PgUiStateRepo {
+    pub conn: DatabaseConnection,
+}
+
+#[async_trait]
+impl UiStateRepo for PgUiStateRepo {
+    async fn find(&self, user_id: UserId) -> Result<Option<UserUiState>, DomainError> {
+        user_ui_state::Entity::find_by_id(user_id.0)
+            .one(&self.conn)
+            .await
+            .map(|opt| opt.map(user_ui_state_from))
+            .map_err(db_err)
+    }
+
+    async fn upsert(
+        &self,
+        user_id: UserId,
+        state: serde_json::Value,
+    ) -> Result<UserUiState, DomainError> {
+        use sea_orm::ConnectionTrait;
+
+        self.conn
+            .execute_raw(Statement::from_sql_and_values(
+                sea_orm::DatabaseBackend::Postgres,
+                r#"
+                INSERT INTO user_ui_state (user_id, state, updated_at)
+                VALUES ($1, $2, now())
+                ON CONFLICT (user_id)
+                DO UPDATE SET state = EXCLUDED.state, updated_at = EXCLUDED.updated_at
+                "#,
+                [user_id.0.into(), state.into()],
+            ))
+            .await
+            .map_err(db_err)?;
+
+        user_ui_state::Entity::find_by_id(user_id.0)
+            .one(&self.conn)
+            .await
+            .map_err(db_err)?
+            .map(user_ui_state_from)
+            .ok_or(DomainError::Internal {
+                message: "user_ui_state row missing after upsert".into(),
+            })
     }
 }
 

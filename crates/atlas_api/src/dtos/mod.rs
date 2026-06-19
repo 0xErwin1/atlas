@@ -237,3 +237,23 @@ pub struct WorkspaceDto {
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
+
+/// Response from `GET /v1/me/ui-state` and `PUT /v1/me/ui-state`.
+///
+/// `state` is an opaque JSON object owned by the client (e.g. which sidebar
+/// folders are collapsed). The server stores and returns it verbatim and does
+/// not validate its inner shape.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct UiStateDto {
+    #[cfg_attr(feature = "openapi", schema(value_type = Object))]
+    pub state: serde_json::Value,
+}
+
+/// Request body for `PUT /v1/me/ui-state`. The `state` is stored verbatim.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct UpdateUiStateRequest {
+    #[cfg_attr(feature = "openapi", schema(value_type = Object))]
+    pub state: serde_json::Value,
+}

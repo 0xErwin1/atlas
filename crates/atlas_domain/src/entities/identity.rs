@@ -105,3 +105,12 @@ pub struct WorkspaceMembership {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
+
+/// Per-user UI state: an opaque JSON object the web app persists across devices
+/// (e.g. which sidebar folders are collapsed). One row per user.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserUiState {
+    pub user_id: UserId,
+    pub state: serde_json::Value,
+    pub updated_at: DateTime<Utc>,
+}

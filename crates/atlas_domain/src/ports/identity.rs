@@ -1,8 +1,8 @@
 use crate::{
     DomainError, WorkspaceCtx,
     entities::identity::{
-        ApiKey, MemberRole, NewApiKey, NewSession, NewUser, NewWorkspace, Session, User, Workspace,
-        WorkspaceMembership,
+        ApiKey, MemberRole, NewApiKey, NewSession, NewUser, NewWorkspace, Session, User,
+        UserUiState, Workspace, WorkspaceMembership,
     },
     ids::{ApiKeyId, SessionId, UserId, WorkspaceId},
 };
@@ -73,6 +73,20 @@ pub trait ApiKeyRepo: Send + Sync {
     ) -> Result<Option<ApiKey>, DomainError>;
     async fn revoke(&self, ctx: &WorkspaceCtx, id: ApiKeyId) -> Result<(), DomainError>;
     async fn list(&self, ctx: &WorkspaceCtx) -> Result<Vec<ApiKey>, DomainError>;
+}
+
+/// Persistence for per-user UI state. Scoped to a single user (not a workspace),
+/// so its methods take a `UserId` rather than a `WorkspaceCtx`.
+#[async_trait]
+pub trait UiStateRepo: Send + Sync {
+    /// Returns the user's stored UI state, or `None` when no row exists yet.
+    async fn find(&self, user_id: UserId) -> Result<Option<UserUiState>, DomainError>;
+    /// Inserts or replaces the user's UI state, returning the stored row.
+    async fn upsert(
+        &self,
+        user_id: UserId,
+        state: serde_json::Value,
+    ) -> Result<UserUiState, DomainError>;
 }
 
 #[async_trait]
