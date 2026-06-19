@@ -2,6 +2,9 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { components } from '@/api/types';
 import { wrappedClient } from '@/api/wrapper';
+import { collectPaged } from '@/lib/pagination';
+
+type ProjectDto = components['schemas']['Page_ProjectDto']['items'][number];
 
 export type WorkspaceDto = components['schemas']['WorkspaceDto'];
 export type PrincipalDto = components['schemas']['PrincipalDto'];
@@ -97,16 +100,18 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   async function loadProjects(ws: string): Promise<void> {
-    const { data, error } = await wrappedClient.GET('/v1/workspaces/{ws}/projects', {
-      params: { path: { ws } },
-    });
+    const { items, error } = await collectPaged<ProjectDto>((cursor) =>
+      wrappedClient.GET('/v1/workspaces/{ws}/projects', {
+        params: { path: { ws }, query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) } },
+      }),
+    );
 
-    if (error !== undefined || data === undefined) {
+    if (error !== undefined) {
       projects.value = [];
       return;
     }
 
-    projects.value = data.items.map((p) => ({
+    projects.value = items.map((p) => ({
       slug: p.slug,
       name: p.name,
       workspace_id: p.workspace_id,

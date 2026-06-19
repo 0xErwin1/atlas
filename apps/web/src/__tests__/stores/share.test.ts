@@ -35,7 +35,7 @@ describe('useShareStore (REQ-W26/W27)', () => {
     await store.load('acme');
 
     expect(GET).toHaveBeenCalledWith('/v1/workspaces/{ws}/grants', {
-      params: { path: { ws: 'acme' } },
+      params: { path: { ws: 'acme' }, query: { limit: 200 } },
     });
     expect(store.grants).toHaveLength(1);
     expect(store.grants[0]?.id).toBe('g1');

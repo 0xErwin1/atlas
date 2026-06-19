@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
+import { collectPaged } from '@/lib/pagination';
 
 export type ApiKeyDto = components['schemas']['ApiKeyDto'];
 export type ApiKeyCreated = components['schemas']['ApiKeyCreated'];
@@ -26,18 +27,20 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
     error.value = null;
 
     try {
-      const { data, error: e } = await wrappedClient.GET('/v1/workspaces/{ws}/api-keys', {
-        params: { path: { ws } },
-      });
+      const { items, error: e } = await collectPaged<ApiKeyDto>((cursor) =>
+        wrappedClient.GET('/v1/workspaces/{ws}/api-keys', {
+          params: { path: { ws }, query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) } },
+        }),
+      );
 
-      if (e || !data) {
+      if (e !== undefined) {
         error.value = hintOf(e, 'Failed to load API keys');
         keys.value = [];
         return;
       }
 
       // Only active keys are shown; revoked ones stay in the audit trail server-side.
-      keys.value = data.items.filter((k) => k.revoked_at == null);
+      keys.value = items.filter((k) => k.revoked_at == null);
     } catch {
       error.value = 'Can’t reach the server';
       keys.value = [];

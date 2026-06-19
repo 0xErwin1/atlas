@@ -3,6 +3,7 @@ import { ref } from 'vue';
 import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
 import { type GrantRole, isRoleAllowedFor } from '@/lib/grantRoles';
+import { collectPaged } from '@/lib/pagination';
 
 export type GrantDto = components['schemas']['GrantDto'];
 export type GrantPrincipal = components['schemas']['GrantPrincipal'];
@@ -29,18 +30,20 @@ export const useShareStore = defineStore('share', () => {
     loading.value = true;
     error.value = null;
 
-    const { data, error: apiError } = await wrappedClient.GET('/v1/workspaces/{ws}/grants', {
-      params: { path: { ws } },
-    });
+    const { items, error: apiError } = await collectPaged<GrantDto>((cursor) =>
+      wrappedClient.GET('/v1/workspaces/{ws}/grants', {
+        params: { path: { ws }, query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) } },
+      }),
+    );
 
     loading.value = false;
 
-    if (apiError !== undefined || data === undefined) {
+    if (apiError !== undefined) {
       error.value = hintOf(apiError, 'Failed to load access');
       return;
     }
 
-    grants.value = data.items;
+    grants.value = items;
   }
 
   async function loadMembers(ws: string): Promise<void> {

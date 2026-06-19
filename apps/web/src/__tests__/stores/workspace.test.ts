@@ -108,7 +108,7 @@ describe('useWorkspaceStore', () => {
       body: { name: 'Roadmap 2' },
     });
     expect(mockGet).toHaveBeenCalledWith('/v1/workspaces/{ws}/projects', {
-      params: { path: { ws: 'atlas' } },
+      params: { path: { ws: 'atlas' }, query: { limit: 200 } },
     });
   });
 
@@ -136,7 +136,7 @@ describe('useWorkspaceStore', () => {
       params: { path: { ws: 'atlas', project_slug: 'roadmap' } },
     });
     expect(mockGet).toHaveBeenCalledWith('/v1/workspaces/{ws}/projects', {
-      params: { path: { ws: 'atlas' } },
+      params: { path: { ws: 'atlas' }, query: { limit: 200 } },
     });
   });
 

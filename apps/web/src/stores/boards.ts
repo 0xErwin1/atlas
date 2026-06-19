@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
+import { collectPaged } from '@/lib/pagination';
 
 export type BoardDto = components['schemas']['BoardDto'];
 export type BoardSummaryDto = components['schemas']['BoardSummaryDto'];
@@ -61,32 +62,40 @@ export const useBoardsStore = defineStore('boards', () => {
   }
 
   async function loadBoards(ws: string, projectSlug: string): Promise<void> {
-    const { data, error: apiError } = await wrappedClient.GET(
-      '/v1/workspaces/{ws}/projects/{project_slug}/boards',
-      { params: { path: { ws, project_slug: projectSlug } } },
+    const { items, error: apiError } = await collectPaged<BoardSummaryDto>((cursor) =>
+      wrappedClient.GET('/v1/workspaces/{ws}/projects/{project_slug}/boards', {
+        params: {
+          path: { ws, project_slug: projectSlug },
+          query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) },
+        },
+      }),
     );
 
-    if (apiError !== undefined || data === undefined) {
+    if (apiError !== undefined) {
       error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to load boards';
       return;
     }
 
-    boardSummaries.value = data.items;
+    boardSummaries.value = items;
   }
 
   async function loadBoardsForProject(ws: string, projectSlug: string): Promise<void> {
-    const { data, error: apiError } = await wrappedClient.GET(
-      '/v1/workspaces/{ws}/projects/{project_slug}/boards',
-      { params: { path: { ws, project_slug: projectSlug } } },
+    const { items, error: apiError } = await collectPaged<BoardSummaryDto>((cursor) =>
+      wrappedClient.GET('/v1/workspaces/{ws}/projects/{project_slug}/boards', {
+        params: {
+          path: { ws, project_slug: projectSlug },
+          query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) },
+        },
+      }),
     );
 
-    if (apiError !== undefined || data === undefined) {
+    if (apiError !== undefined) {
       error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to load boards';
       return;
     }
 
     const next = new Map(boardsByProject.value);
-    next.set(projectSlug, data.items);
+    next.set(projectSlug, items);
     boardsByProject.value = next;
   }
 
@@ -196,18 +205,25 @@ export const useBoardsStore = defineStore('boards', () => {
   }
 
   async function loadTasks(ws: string, boardId: string): Promise<void> {
-    const { data, error: apiError } = await wrappedClient.GET('/v1/workspaces/{ws}/boards/{board_id}/tasks', {
-      params: { path: { ws, board_id: boardId } },
-    });
+    // The kanban shows every task on the board; page through so a board with more
+    // than one page of tasks is not silently truncated.
+    const { items, error: apiError } = await collectPaged<TaskSummaryDto>((cursor) =>
+      wrappedClient.GET('/v1/workspaces/{ws}/boards/{board_id}/tasks', {
+        params: {
+          path: { ws, board_id: boardId },
+          query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) },
+        },
+      }),
+    );
 
-    if (apiError !== undefined || data === undefined) {
+    if (apiError !== undefined) {
       error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to load tasks';
       return;
     }
 
     const grouped = new Map<string, TaskSummaryDto[]>();
 
-    for (const t of data.items) {
+    for (const t of items) {
       const col = grouped.get(t.column_id) ?? [];
       col.push(t);
       grouped.set(t.column_id, col);

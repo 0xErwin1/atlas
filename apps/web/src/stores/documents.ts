@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
+import { collectPaged } from '@/lib/pagination';
 
 export type DocumentSummary = components['schemas']['Page_DocumentSummaryDto']['items'][number];
 export type BacklinkSummary = components['schemas']['Page_BacklinkDto']['items'][number];
@@ -24,53 +25,41 @@ export const useDocumentsStore = defineStore('documents', () => {
     loading.value = true;
     error.value = null;
 
-    // The tree renders the whole project, but the endpoint is paginated. Follow
-    // the cursor and accumulate every page so all documents show — and so a newly
-    // created note (newest by UUIDv7, hence on the last page) is never dropped.
-    const all: DocumentSummary[] = [];
-    let cursor: string | undefined;
-
-    for (;;) {
-      const { data, error: apiError } = await wrappedClient.GET(
-        '/v1/workspaces/{ws}/projects/{project_slug}/documents',
-        {
-          params: {
-            path: { ws, project_slug: projectSlug },
-            query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) },
-          },
+    // The tree renders the whole project, but the endpoint is paginated. Page
+    // through it so all documents show — and so a newly created note (newest by
+    // UUIDv7, hence on the last page) is never dropped.
+    const { items, error: apiError } = await collectPaged<DocumentSummary>((cursor) =>
+      wrappedClient.GET('/v1/workspaces/{ws}/projects/{project_slug}/documents', {
+        params: {
+          path: { ws, project_slug: projectSlug },
+          query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) },
         },
-      );
+      }),
+    );
 
-      if (apiError !== undefined || data === undefined) {
-        loading.value = false;
-        error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to load documents';
-        return;
-      }
+    loading.value = false;
 
-      all.push(...data.items);
-
-      if (data.has_more !== true || data.next_cursor === null || data.next_cursor === undefined) {
-        break;
-      }
-      cursor = data.next_cursor;
+    if (apiError !== undefined) {
+      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to load documents';
+      return;
     }
 
-    summaries.value = all;
-    loading.value = false;
+    summaries.value = items;
   }
 
   async function loadBacklinks(ws: string, slug: string): Promise<void> {
-    const { data, error: apiError } = await wrappedClient.GET(
-      '/v1/workspaces/{ws}/documents/{slug}/backlinks',
-      { params: { path: { ws, slug } } },
+    const { items, error: apiError } = await collectPaged<BacklinkSummary>((cursor) =>
+      wrappedClient.GET('/v1/workspaces/{ws}/documents/{slug}/backlinks', {
+        params: { path: { ws, slug }, query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) } },
+      }),
     );
 
-    if (apiError !== undefined || data === undefined) {
+    if (apiError !== undefined) {
       backlinks.value = [];
       return;
     }
 
-    backlinks.value = data.items;
+    backlinks.value = items;
   }
 
   async function create(
