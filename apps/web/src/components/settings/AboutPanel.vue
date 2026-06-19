@@ -4,6 +4,7 @@ import { wrappedClient } from '@/api/wrapper';
 
 const version = ref<string | null>(null);
 const build = ref<string | null>(null);
+const url = ref<string | null>(null);
 const loading = ref(true);
 
 onMounted(async () => {
@@ -12,6 +13,7 @@ onMounted(async () => {
     if (data) {
       version.value = data.version;
       build.value = data.build ?? null;
+      url.value = data.url ?? null;
     }
   } catch {
     // leave fields null; the panel renders an em dash
@@ -32,6 +34,10 @@ onMounted(async () => {
       <div class="atl-about-row">
         <div class="atl-about-k">Server version</div>
         <div class="atl-about-v">{{ loading ? '…' : (version ?? '—') }}</div>
+      </div>
+      <div v-if="url" class="atl-about-row">
+        <div class="atl-about-k">URL</div>
+        <div class="atl-about-v">{{ url }}</div>
       </div>
       <div class="atl-about-row">
         <div class="atl-about-k">Build</div>

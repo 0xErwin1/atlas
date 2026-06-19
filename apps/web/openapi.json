@@ -6453,6 +6453,13 @@
               "null"
             ]
           },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Public base URL of this server, when configured (`ATLAS_SERVER_URL`)."
+          },
           "version": {
             "type": "string"
           }

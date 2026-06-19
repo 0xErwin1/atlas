@@ -95,6 +95,9 @@ pub struct MeResponse {
 pub struct ServerMetaDto {
     pub version: String,
     pub build: Option<String>,
+    /// Public base URL of this server, when configured (`ATLAS_SERVER_URL`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
 }
 
 /// Request body for `POST /v1/users`.

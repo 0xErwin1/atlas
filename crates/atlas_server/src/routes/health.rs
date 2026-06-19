@@ -35,5 +35,6 @@ pub(crate) async fn meta() -> impl IntoResponse {
     Json(ServerMetaDto {
         version: env!("CARGO_PKG_VERSION").to_string(),
         build: std::env::var("ATLAS_BUILD").ok(),
+        url: std::env::var("ATLAS_SERVER_URL").ok(),
     })
 }
