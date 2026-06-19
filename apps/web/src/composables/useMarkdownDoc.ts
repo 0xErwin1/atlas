@@ -37,7 +37,11 @@ export function useMarkdownDoc() {
     });
 
     if (error !== undefined || data === undefined) {
-      throw new Error((error as { title?: string } | undefined)?.title ?? 'Failed to load document');
+      const err = new Error(
+        (error as { title?: string } | undefined)?.title ?? 'Failed to load document',
+      ) as Error & { status?: number };
+      err.status = (error as { status?: number } | undefined)?.status ?? 0;
+      throw err;
     }
 
     const raw = data.content ?? '';

@@ -149,6 +149,14 @@ async function loadDoc(): Promise<void> {
     tabsStore.open(ws.value, slug.value, title.value);
     await documents.loadBacklinks(ws.value, slug.value);
   } catch (e) {
+    // The note is gone (deleted here, elsewhere, or a stale persisted tab): drop
+    // its tab and move on instead of stranding the user on a broken tab.
+    const status = (e as { status?: number }).status ?? 0;
+    if (status === 404 && slug.value !== null && ws.value !== '') {
+      const next = tabsStore.close(ws.value, slug.value);
+      void router.replace(next !== null ? { name: 'notes', params: { slug: next } } : { name: 'notes' });
+      return;
+    }
     loadError.value = e instanceof Error ? e.message : 'Failed to load document';
   }
 }

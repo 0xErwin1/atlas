@@ -8,6 +8,7 @@ import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
 import { docKey, type TreeNodeRef } from '@/lib/notesTree';
 import { useDocumentsStore } from '@/stores/documents';
 import { useFoldersStore } from '@/stores/folders';
+import { useNotesTabsStore } from '@/stores/notesTabs';
 import { useTreeSelection } from '@/stores/treeSelection';
 import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
@@ -29,6 +30,7 @@ const treeRef = ref<InstanceType<typeof NotesTree> | null>(null);
 const folders = useFoldersStore();
 const documents = useDocumentsStore();
 const selection = useTreeSelection();
+const tabs = useNotesTabsStore();
 const ui = useUiStore();
 
 const activeSlug = computed(() => {
@@ -120,7 +122,19 @@ async function removeDoc(slug: string): Promise<void> {
   const project = activeProject.value;
   if (project === null || ws.value === '') return;
 
-  await documents.remove(ws.value, project.slug, slug);
+  const ok = await documents.remove(ws.value, project.slug, slug);
+  if (!ok) {
+    if (documents.error) ui.showBanner(documents.error, 'error');
+    return;
+  }
+
+  // Drop the deleted note's open tab; if it was the one being viewed, move to a
+  // neighbour (or the empty notes root) so we never land on a dead tab.
+  const wasActive = activeSlug.value === slug;
+  const next = tabs.close(ws.value, slug);
+  if (wasActive) {
+    void router.push(next !== null ? { name: 'notes', params: { slug: next } } : { name: 'notes' });
+  }
 }
 
 async function createFolder(name: string, parentFolderId?: string): Promise<void> {
