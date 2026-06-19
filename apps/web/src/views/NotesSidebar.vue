@@ -3,10 +3,21 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 // biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
 import NotesTree from '@/components/notas/NotesTree.vue';
+import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
 import { useDocumentsStore } from '@/stores/documents';
 import { useFoldersStore } from '@/stores/folders';
 import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
+
+const PROJECT_STORAGE_KEY = 'atlas:notes-project';
+
+function loadStoredProject(): string | null {
+  try {
+    return localStorage.getItem(PROJECT_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
 
 const route = useRoute();
 const router = useRouter();
@@ -21,9 +32,29 @@ const activeSlug = computed(() => {
   return typeof slug === 'string' && slug.length > 0 ? slug : null;
 });
 
-const activeProject = computed(() => workspace.projects[0] ?? null);
+// Which project's tree the Notes view shows. Persisted so the choice sticks
+// across sessions; falls back to the first project when unset or stale.
+const selectedSlug = ref<string | null>(loadStoredProject());
+
+const activeProject = computed(
+  () => workspace.projects.find((p) => p.slug === selectedSlug.value) ?? workspace.projects[0] ?? null,
+);
+
+const projectOptions = computed<DropdownOption[]>(() =>
+  workspace.projects.map((p) => ({ value: p.slug, label: p.name })),
+);
 
 const ws = computed(() => workspace.activeWorkspaceSlug ?? '');
+
+function selectProject(slug: string): void {
+  selectedSlug.value = slug;
+  try {
+    localStorage.setItem(PROJECT_STORAGE_KEY, slug);
+  } catch {
+    // ignore storage errors
+  }
+  void loadTree();
+}
 
 async function loadTree(): Promise<void> {
   const wsSlug = workspace.activeWorkspaceSlug;
@@ -113,21 +144,34 @@ defineExpose({ openNewPage });
 </script>
 
 <template>
-  <NotesTree
-    v-if="activeProject"
-    ref="treeRef"
-    :project-name="activeProject.name"
-    :folders="folders.folders"
-    :docs="documents.summaries"
-    :active-slug="activeSlug"
-    @select-doc="openDoc"
-    @create-doc="createDoc"
-    @rename-doc="renameDoc"
-    @remove-doc="removeDoc"
-    @create-folder="createFolder"
-    @rename-folder="renameFolder"
-    @remove-folder="removeFolder"
-  />
+  <div v-if="workspace.projects.length > 0">
+    <div
+      v-if="projectOptions.length > 1"
+      style="padding: 6px 8px 8px; border-bottom: 1px solid var(--c-border); margin-bottom: 6px;"
+    >
+      <Dropdown
+        :options="projectOptions"
+        :model-value="activeProject?.slug ?? ''"
+        @change="selectProject"
+      />
+    </div>
+
+    <NotesTree
+      v-if="activeProject"
+      ref="treeRef"
+      :project-name="activeProject.name"
+      :folders="folders.folders"
+      :docs="documents.summaries"
+      :active-slug="activeSlug"
+      @select-doc="openDoc"
+      @create-doc="createDoc"
+      @rename-doc="renameDoc"
+      @remove-doc="removeDoc"
+      @create-folder="createFolder"
+      @rename-folder="renameFolder"
+      @remove-folder="removeFolder"
+    />
+  </div>
   <p
     v-else
     style="padding: 8px; font-size: var(--fs-sm); color: var(--c-muted);"
