@@ -1,7 +1,16 @@
 import { mount } from '@vue/test-utils';
-import { describe, expect, it } from 'vitest';
+import { createPinia, setActivePinia } from 'pinia';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import NoteTreeRow from '@/components/notas/NoteTreeRow.vue';
 import type { TreeFolder } from '@/lib/notesTree';
+
+vi.mock('@/api/wrapper', () => ({
+  wrappedClient: { GET: vi.fn().mockResolvedValue({ data: { state: {} } }), PUT: vi.fn() },
+}));
+
+beforeEach(() => {
+  setActivePinia(createPinia());
+});
 
 function folder(): TreeFolder {
   return {

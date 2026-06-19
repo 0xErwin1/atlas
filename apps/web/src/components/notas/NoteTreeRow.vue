@@ -6,6 +6,7 @@ import Row from '@/components/ui/Row.vue';
 import { useContextMenu } from '@/composables/useContextMenu';
 import { useInlineEdit } from '@/composables/useInlineEdit';
 import type { TreeFolder } from '@/lib/notesTree';
+import { useUiStateStore } from '@/stores/uiState';
 
 const props = defineProps<{
   folder: TreeFolder;
@@ -25,7 +26,15 @@ const emit = defineEmits<{
   'move-folder': [folderId: string, targetParentId: string | null];
 }>();
 
-const expanded = ref(true);
+const uiState = useUiStateStore();
+
+// Expand/collapse is persisted per user (server-side) so it survives refreshes
+// and follows the user across devices; default is expanded.
+const expanded = computed(() => !uiState.isFolderCollapsed(props.folder.id));
+
+function toggleExpanded(): void {
+  uiState.setFolderCollapsed(props.folder.id, expanded.value);
+}
 
 const DND_MIME = 'application/atlas-node';
 
@@ -90,7 +99,7 @@ const {
 
 // Creating inside a folder: expand it first so the input and the new item show.
 function startCreate(kind: 'new-doc' | 'new-folder'): void {
-  expanded.value = true;
+  uiState.setFolderCollapsed(props.folder.id, false);
   startEdit({ kind });
 }
 
@@ -195,7 +204,7 @@ const inlinePaddingLeft = computed(() => `${8 + (props.depth + 1) * 14}px`);
         chevron
         :open="expanded"
         menu
-        @click="expanded = !expanded"
+        @click="toggleExpanded"
         @menu="openFolderMenu"
         @contextmenu.prevent.stop="openFolderMenu"
       />

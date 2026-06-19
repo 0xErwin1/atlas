@@ -1,6 +1,15 @@
 import { mount } from '@vue/test-utils';
-import { describe, expect, it } from 'vitest';
+import { createPinia, setActivePinia } from 'pinia';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import NotesTree from '@/components/notas/NotesTree.vue';
+
+vi.mock('@/api/wrapper', () => ({
+  wrappedClient: { GET: vi.fn().mockResolvedValue({ data: { state: {} } }), PUT: vi.fn() },
+}));
+
+beforeEach(() => {
+  setActivePinia(createPinia());
+});
 
 describe('NotesTree', () => {
   it('renders nested folders and docs and emits the slug on click (REQ-W14)', async () => {

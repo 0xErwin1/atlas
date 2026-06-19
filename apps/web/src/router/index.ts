@@ -37,5 +37,11 @@ router.beforeEach(async (to, _from) => {
     await workspace.loadWorkspaces();
   }
 
+  const { useUiStateStore } = await import('@/stores/uiState');
+  const uiState = useUiStateStore();
+  if (!uiState.loaded) {
+    await uiState.load();
+  }
+
   return true;
 });
