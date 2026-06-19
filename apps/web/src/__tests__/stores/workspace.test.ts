@@ -4,6 +4,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('@/api/wrapper', () => ({
   wrappedClient: {
     GET: vi.fn(),
+    POST: vi.fn(),
+    PATCH: vi.fn(),
+    DELETE: vi.fn(),
   },
 }));
 
@@ -11,6 +14,10 @@ import { wrappedClient } from '@/api/wrapper';
 import { useWorkspaceStore } from '@/stores/workspace';
 
 const mockGet = wrappedClient.GET as ReturnType<typeof vi.fn>;
+const mockPatch = wrappedClient.PATCH as ReturnType<typeof vi.fn>;
+const mockDelete = wrappedClient.DELETE as ReturnType<typeof vi.fn>;
+
+const emptyProjects = { data: { items: [] }, error: undefined };
 
 describe('useWorkspaceStore', () => {
   beforeEach(() => {
@@ -80,5 +87,62 @@ describe('useWorkspaceStore', () => {
 
     expect(slug).toBeNull();
     expect(store.activeWorkspaceSlug).toBeNull();
+  });
+
+  it('renameProject PATCHes the project and refreshes the list', async () => {
+    mockPatch.mockResolvedValueOnce({ error: undefined });
+    mockGet.mockResolvedValueOnce(emptyProjects);
+
+    const store = useWorkspaceStore();
+    const ok = await store.renameProject('atlas', 'roadmap', 'Roadmap 2');
+
+    expect(ok).toBe(true);
+    expect(mockPatch).toHaveBeenCalledWith('/v1/workspaces/{ws}/projects/{project_slug}', {
+      params: { path: { ws: 'atlas', project_slug: 'roadmap' } },
+      body: { name: 'Roadmap 2' },
+    });
+    expect(mockGet).toHaveBeenCalledWith('/v1/workspaces/{ws}/projects', {
+      params: { path: { ws: 'atlas' } },
+    });
+  });
+
+  it('renameProject returns false and sets error on API failure', async () => {
+    mockPatch.mockResolvedValueOnce({
+      error: { type: 'urn:atlas:error:forbidden', title: 'Forbidden', status: 403, hint: 'No permission' },
+    });
+
+    const store = useWorkspaceStore();
+    const ok = await store.renameProject('atlas', 'roadmap', 'X');
+
+    expect(ok).toBe(false);
+    expect(store.error).toBe('No permission');
+  });
+
+  it('deleteProject DELETEs the project and refreshes the list', async () => {
+    mockDelete.mockResolvedValueOnce({ error: undefined });
+    mockGet.mockResolvedValueOnce(emptyProjects);
+
+    const store = useWorkspaceStore();
+    const ok = await store.deleteProject('atlas', 'roadmap');
+
+    expect(ok).toBe(true);
+    expect(mockDelete).toHaveBeenCalledWith('/v1/workspaces/{ws}/projects/{project_slug}', {
+      params: { path: { ws: 'atlas', project_slug: 'roadmap' } },
+    });
+    expect(mockGet).toHaveBeenCalledWith('/v1/workspaces/{ws}/projects', {
+      params: { path: { ws: 'atlas' } },
+    });
+  });
+
+  it('deleteProject returns false and sets error on API failure', async () => {
+    mockDelete.mockResolvedValueOnce({
+      error: { type: 'urn:atlas:error:forbidden', title: 'Forbidden', status: 403, hint: 'No permission' },
+    });
+
+    const store = useWorkspaceStore();
+    const ok = await store.deleteProject('atlas', 'roadmap');
+
+    expect(ok).toBe(false);
+    expect(store.error).toBe('No permission');
   });
 });

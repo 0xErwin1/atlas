@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import ContextMenu, { type MenuItem } from '@/components/ui/ContextMenu.vue';
 import Icon from '@/components/ui/Icon.vue';
 import Row from '@/components/ui/Row.vue';
@@ -8,6 +9,8 @@ import SectionLabel from '@/components/ui/SectionLabel.vue';
 import { useContextMenu } from '@/composables/useContextMenu';
 import { useInlineEdit } from '@/composables/useInlineEdit';
 import { useBoardsStore } from '@/stores/boards';
+import { useDocumentsStore } from '@/stores/documents';
+import { useFoldersStore } from '@/stores/folders';
 import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 
@@ -15,6 +18,8 @@ const route = useRoute();
 const router = useRouter();
 const workspace = useWorkspaceStore();
 const boards = useBoardsStore();
+const documents = useDocumentsStore();
+const folders = useFoldersStore();
 const ui = useUiStore();
 
 const activeBoardId = computed(() => {
@@ -59,7 +64,10 @@ const { open: menuOpen, x: menuX, y: menuY, openAt, close: closeMenu } = useCont
 type EditCtx =
   | { kind: 'new-project' }
   | { kind: 'new-board'; projectSlug: string }
-  | { kind: 'rename-board'; boardId: string; projectSlug: string };
+  | { kind: 'rename-board'; boardId: string; projectSlug: string }
+  | { kind: 'rename-project'; slug: string }
+  | { kind: 'new-doc'; projectSlug: string }
+  | { kind: 'new-folder'; projectSlug: string };
 
 const {
   active: editActive,
@@ -88,6 +96,26 @@ const {
     return;
   }
 
+  if (ctx.kind === 'rename-project') {
+    const ok = await workspace.renameProject(ws.value, ctx.slug, name);
+    if (!ok && workspace.error) ui.showBanner(workspace.error, 'error');
+    return;
+  }
+
+  if (ctx.kind === 'new-doc') {
+    const slug = await documents.create(ws.value, ctx.projectSlug, name);
+    if (slug !== null) void router.push({ name: 'notes', params: { slug } });
+    else if (documents.error) ui.showBanner(documents.error, 'error');
+    return;
+  }
+
+  if (ctx.kind === 'new-folder') {
+    const ok = await folders.create(ws.value, ctx.projectSlug, name);
+    if (ok) ui.showBanner('Folder created', 'success');
+    else if (folders.error) ui.showBanner(folders.error, 'error');
+    return;
+  }
+
   const ok = await boards.renameBoard(ws.value, ctx.projectSlug, ctx.boardId, name);
   if (!ok && boards.error) ui.showBanner(boards.error, 'error');
 });
@@ -96,6 +124,30 @@ async function removeBoard(projectSlug: string, boardId: string): Promise<void> 
   if (ws.value === '') return;
   const ok = await boards.removeBoard(ws.value, projectSlug, boardId);
   if (!ok && boards.error) ui.showBanner(boards.error, 'error');
+}
+
+const deleteTarget = ref<{ slug: string; name: string } | null>(null);
+
+function boardStillExists(id: string): boolean {
+  return workspace.projects.some((p) => boards.boardsFor(p.slug).some((b) => b.id === id));
+}
+
+async function confirmDeleteProject(): Promise<void> {
+  const target = deleteTarget.value;
+  deleteTarget.value = null;
+  if (target === null || ws.value === '') return;
+
+  const ok = await workspace.deleteProject(ws.value, target.slug);
+  if (!ok) {
+    if (workspace.error) ui.showBanner(workspace.error, 'error');
+    return;
+  }
+
+  await loadAll();
+  if (activeBoardId.value !== null && !boardStillExists(activeBoardId.value)) {
+    void router.push({ name: 'tasks' });
+  }
+  ui.showBanner('Project deleted', 'success');
 }
 
 type MenuTarget =
@@ -131,12 +183,39 @@ const activeMenuItems = computed<MenuItem[]>(() => {
   }
 
   if (t.kind === 'project') {
+    const slug = t.slug;
+    const name = workspace.projects.find((p) => p.slug === slug)?.name ?? 'Project';
     return [
-      { header: true, label: workspace.projects.find((p) => p.slug === t.slug)?.name ?? 'Project' },
+      { header: true, label: name },
+      {
+        label: 'New document',
+        icon: 'file-plus',
+        action: () => startEdit({ kind: 'new-doc', projectSlug: slug }),
+      },
+      {
+        label: 'New folder',
+        icon: 'folder-plus',
+        action: () => startEdit({ kind: 'new-folder', projectSlug: slug }),
+      },
       {
         label: 'New board',
-        icon: 'plus',
-        action: () => startEdit({ kind: 'new-board', projectSlug: t.slug }),
+        icon: 'columns-3',
+        action: () => startEdit({ kind: 'new-board', projectSlug: slug }),
+      },
+      { sep: true },
+      {
+        label: 'Rename',
+        icon: 'pencil',
+        kbd: ['F2'],
+        action: () => startEdit({ kind: 'rename-project', slug }, name, true),
+      },
+      {
+        label: 'Delete',
+        icon: 'trash',
+        danger: true,
+        action: () => {
+          deleteTarget.value = { slug, name };
+        },
       },
       { sep: true },
       { label: 'New project', icon: 'folder-plus', action: () => startEdit({ kind: 'new-project' }) },
@@ -183,7 +262,23 @@ watch(() => workspace.activeWorkspaceSlug, loadAll);
     </div>
 
     <template v-for="p in workspace.projects" :key="p.slug">
+      <div
+        v-if="editActive?.kind === 'rename-project' && editActive.slug === p.slug"
+        style="display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px 8px;"
+      >
+        <Icon name="folder" :size="13" style="color: var(--c-muted); flex-shrink: 0;" />
+        <input
+          ref="inputRef"
+          v-model="editValue"
+          type="text"
+          placeholder="Project name…"
+          class="tasks-inline-input"
+          @keydown="onEditKeydown"
+          @blur="commitEdit"
+        />
+      </div>
       <Row
+        v-else
         :label="p.name"
         :icon="isExpanded(p.slug) ? 'folder-open' : 'folder'"
         chevron
@@ -193,6 +288,26 @@ watch(() => workspace.activeWorkspaceSlug, loadAll);
         @menu="(event: MouseEvent) => openProjectMenu(event, p.slug)"
         @contextmenu.prevent.stop="(event: MouseEvent) => openProjectMenu(event, p.slug)"
       />
+
+      <div
+        v-if="(editActive?.kind === 'new-doc' || editActive?.kind === 'new-folder') && editActive.projectSlug === p.slug"
+        style="display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px 22px;"
+      >
+        <Icon
+          :name="editActive.kind === 'new-doc' ? 'file' : 'folder'"
+          :size="13"
+          style="color: var(--c-muted); flex-shrink: 0;"
+        />
+        <input
+          ref="inputRef"
+          v-model="editValue"
+          type="text"
+          :placeholder="editActive.kind === 'new-doc' ? 'Page name…' : 'Folder name…'"
+          class="tasks-inline-input"
+          @keydown="onEditKeydown"
+          @blur="commitEdit"
+        />
+      </div>
 
       <template v-if="isExpanded(p.slug)">
         <template v-for="b in boards.boardsFor(p.slug)" :key="b.id">
@@ -271,6 +386,19 @@ watch(() => workspace.activeWorkspaceSlug, loadAll);
       :y="menuY"
       :items="activeMenuItems"
       @close="closeMenu"
+    />
+
+    <ConfirmDialog
+      :open="deleteTarget !== null"
+      tone="danger"
+      title="Delete project?"
+      :message="`This permanently deletes “${deleteTarget?.name ?? ''}” and all its boards, folders and documents.`"
+      :detail="deleteTarget?.name"
+      detail-icon="folder"
+      confirm-label="Delete project"
+      confirm-icon="trash-2"
+      @confirm="confirmDeleteProject"
+      @cancel="deleteTarget = null"
     />
   </div>
 </template>

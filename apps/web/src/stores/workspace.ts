@@ -92,6 +92,40 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     return data.slug ?? slug;
   }
 
+  /** Renames a project. Returns true on success; sets `error` and returns false otherwise. */
+  async function renameProject(ws: string, slug: string, name: string): Promise<boolean> {
+    const { error: apiError } = await wrappedClient.PATCH('/v1/workspaces/{ws}/projects/{project_slug}', {
+      params: { path: { ws, project_slug: slug } },
+      body: { name },
+    });
+
+    if (apiError !== undefined) {
+      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to rename project';
+      return false;
+    }
+
+    await loadProjects(ws);
+    return true;
+  }
+
+  /**
+   * Deletes a project and everything under it (boards, folders, documents).
+   * Returns true on success; sets `error` and returns false otherwise.
+   */
+  async function deleteProject(ws: string, slug: string): Promise<boolean> {
+    const { error: apiError } = await wrappedClient.DELETE('/v1/workspaces/{ws}/projects/{project_slug}', {
+      params: { path: { ws, project_slug: slug } },
+    });
+
+    if (apiError !== undefined) {
+      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to delete project';
+      return false;
+    }
+
+    await loadProjects(ws);
+    return true;
+  }
+
   /** Loads workspace members (users and agents) for assignee pickers. */
   async function loadMembers(ws: string): Promise<void> {
     const { data, error: apiError } = await wrappedClient.GET('/v1/workspaces/{ws}/members', {
@@ -116,6 +150,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     loadWorkspaces,
     loadProjects,
     createProject,
+    renameProject,
+    deleteProject,
     loadMembers,
   };
 });
