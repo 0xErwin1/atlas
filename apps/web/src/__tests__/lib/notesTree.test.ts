@@ -1,5 +1,31 @@
 import { describe, expect, it } from 'vitest';
-import { buildNotesTree } from '@/lib/notesTree';
+import { buildNotesTree, docKey, flattenVisible, folderKey } from '@/lib/notesTree';
+
+describe('flattenVisible', () => {
+  const tree = buildNotesTree(
+    [
+      { id: 'f1', name: 'Alpha', parent_folder_id: null },
+      { id: 'f1a', name: 'Inner', parent_folder_id: 'f1' },
+    ],
+    [
+      { id: 'd1', title: 'In Alpha', slug: 'in-alpha', folder_id: 'f1' },
+      { id: 'd2', title: 'Root doc', slug: 'root-doc', folder_id: null },
+    ],
+  );
+
+  it('lists keys in render order when nothing is collapsed', () => {
+    expect(flattenVisible(tree, () => false)).toEqual([
+      folderKey('f1'),
+      folderKey('f1a'),
+      docKey('in-alpha'),
+      docKey('root-doc'),
+    ]);
+  });
+
+  it('omits the children of a collapsed folder', () => {
+    expect(flattenVisible(tree, (id) => id === 'f1')).toEqual([folderKey('f1'), docKey('root-doc')]);
+  });
+});
 
 describe('buildNotesTree', () => {
   it('places root folders and root docs at the top level', () => {

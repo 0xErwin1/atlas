@@ -2,6 +2,8 @@ import { mount } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import NotesTree from '@/components/notas/NotesTree.vue';
+import { docKey } from '@/lib/notesTree';
+import { useTreeSelection } from '@/stores/treeSelection';
 
 vi.mock('@/api/wrapper', () => ({
   wrappedClient: { GET: vi.fn().mockResolvedValue({ data: { state: {} } }), PUT: vi.fn() },
@@ -60,5 +62,23 @@ describe('NotesTree', () => {
 
     const docButton = wrapper.findAll('button').find((b) => b.text().includes('Unslugged'));
     expect(docButton?.attributes('disabled')).toBeDefined();
+  });
+
+  it('ctrl-click selects a doc without opening it', async () => {
+    const wrapper = mount(NotesTree, {
+      props: {
+        projectName: 'Atlas',
+        folders: [],
+        docs: [{ id: 'd2', title: 'Root note', slug: 'root-note', folder_id: null }],
+        activeSlug: null,
+      },
+    });
+
+    const selection = useTreeSelection();
+    const docButton = wrapper.findAll('button').find((b) => b.text().includes('Root note'));
+    await docButton?.trigger('click', { ctrlKey: true });
+
+    expect(wrapper.emitted('select-doc')).toBeUndefined();
+    expect(selection.isSelected(docKey('root-note'))).toBe(true);
   });
 });

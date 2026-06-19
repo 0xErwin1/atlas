@@ -5,7 +5,8 @@ import Icon from '@/components/ui/Icon.vue';
 import Row from '@/components/ui/Row.vue';
 import { useContextMenu } from '@/composables/useContextMenu';
 import { useInlineEdit } from '@/composables/useInlineEdit';
-import type { TreeFolder } from '@/lib/notesTree';
+import { docKey, folderKey, type TreeFolder } from '@/lib/notesTree';
+import { useTreeSelection } from '@/stores/treeSelection';
 import { useUiStateStore } from '@/stores/uiState';
 
 const props = defineProps<{
@@ -34,6 +35,22 @@ const expanded = computed(() => !uiState.isFolderCollapsed(props.folder.id));
 
 function toggleExpanded(): void {
   uiState.setFolderCollapsed(props.folder.id, expanded.value);
+}
+
+const selection = useTreeSelection();
+
+function onFolderClick(event: MouseEvent): void {
+  const mods = { shift: event.shiftKey, meta: event.metaKey || event.ctrlKey };
+  if (selection.activate(folderKey(props.folder.id), mods) === 'default') {
+    toggleExpanded();
+  }
+}
+
+function onDocClick(event: MouseEvent, slug: string): void {
+  const mods = { shift: event.shiftKey, meta: event.metaKey || event.ctrlKey };
+  if (selection.activate(docKey(slug), mods) === 'default') {
+    emit('select-doc', slug);
+  }
 }
 
 const DND_MIME = 'application/atlas-node';
@@ -190,7 +207,7 @@ const inlinePaddingLeft = computed(() => `${8 + (props.depth + 1) * 14}px`);
       v-else
       draggable="true"
       class="tree-dnd"
-      :class="{ 'drop-target': dragOver }"
+      :class="{ 'drop-target': dragOver, selected: selection.isSelected(folderKey(folder.id)) }"
       @dragstart.stop="onDragStart({ type: 'folder', id: folder.id }, $event)"
       @dragover.prevent="dragOver = true"
       @dragenter.prevent="dragOver = true"
@@ -204,7 +221,7 @@ const inlinePaddingLeft = computed(() => `${8 + (props.depth + 1) * 14}px`);
         chevron
         :open="expanded"
         menu
-        @click="toggleExpanded"
+        @click="onFolderClick"
         @menu="openFolderMenu"
         @contextmenu.prevent.stop="openFolderMenu"
       />
@@ -249,6 +266,7 @@ const inlinePaddingLeft = computed(() => `${8 + (props.depth + 1) * 14}px`);
         <div
           v-else
           class="tree-dnd"
+          :class="{ selected: doc.slug !== null && selection.isSelected(docKey(doc.slug)) }"
           :draggable="doc.slug !== null"
           @dragstart.stop="doc.slug !== null && onDragStart({ type: 'doc', id: doc.slug }, $event)"
         >
@@ -259,7 +277,7 @@ const inlinePaddingLeft = computed(() => `${8 + (props.depth + 1) * 14}px`);
             :active="activeSlug !== null && doc.slug === activeSlug"
             :disabled="doc.slug === null"
             :menu="doc.slug !== null"
-            @click="doc.slug !== null && emit('select-doc', doc.slug)"
+            @click="(event: MouseEvent) => doc.slug !== null && onDocClick(event, doc.slug)"
             @menu="(event: MouseEvent) => doc.slug !== null && openDocMenu(event, doc.slug, doc.title)"
             @contextmenu.prevent.stop="(event: MouseEvent) => doc.slug !== null && openDocMenu(event, doc.slug, doc.title)"
           />
@@ -301,6 +319,10 @@ const inlinePaddingLeft = computed(() => `${8 + (props.depth + 1) * 14}px`);
 <style scoped>
 .tree-dnd {
   border-radius: var(--r-sm);
+}
+
+.tree-dnd.selected {
+  background: var(--c-selection);
 }
 
 .tree-dnd.drop-target {

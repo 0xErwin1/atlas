@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import ContextMenu, { type MenuItem } from '@/components/ui/ContextMenu.vue';
 import Icon from '@/components/ui/Icon.vue';
 import Row from '@/components/ui/Row.vue';
 import { useContextMenu } from '@/composables/useContextMenu';
 import { useInlineEdit } from '@/composables/useInlineEdit';
-import { buildNotesTree, type DocInput, type FolderInput } from '@/lib/notesTree';
+import { buildNotesTree, type DocInput, docKey, type FolderInput, flattenVisible } from '@/lib/notesTree';
+import { useTreeSelection } from '@/stores/treeSelection';
+import { useUiStateStore } from '@/stores/uiState';
 import NoteTreeRow from './NoteTreeRow.vue';
 
 const props = defineProps<{
@@ -28,6 +30,20 @@ const emit = defineEmits<{
 }>();
 
 const tree = computed(() => buildNotesTree(props.folders, props.docs));
+
+const selection = useTreeSelection();
+const uiState = useUiStateStore();
+
+// Keep the selection store's range order in sync with what is actually visible.
+const visibleKeys = computed(() => flattenVisible(tree.value, (id) => uiState.isFolderCollapsed(id)));
+watch(visibleKeys, (keys) => selection.setOrder(keys), { immediate: true });
+
+function onDocClick(event: MouseEvent, slug: string): void {
+  const mods = { shift: event.shiftKey, meta: event.metaKey || event.ctrlKey };
+  if (selection.activate(docKey(slug), mods) === 'default') {
+    emit('select-doc', slug);
+  }
+}
 
 const DND_MIME = 'application/atlas-node';
 
@@ -194,6 +210,7 @@ defineExpose({ openNewPage: () => startEdit({ kind: 'new-doc' }) });
         <div
           v-else
           class="tree-dnd"
+          :class="{ selected: doc.slug !== null && selection.isSelected(docKey(doc.slug)) }"
           :draggable="doc.slug !== null"
           @dragstart.stop="doc.slug !== null && onDragStart({ type: 'doc', id: doc.slug }, $event)"
         >
@@ -203,7 +220,7 @@ defineExpose({ openNewPage: () => startEdit({ kind: 'new-doc' }) });
             :active="activeSlug !== null && doc.slug === activeSlug"
             :disabled="doc.slug === null"
             :menu="doc.slug !== null"
-            @click="doc.slug !== null && emit('select-doc', doc.slug)"
+            @click="(event: MouseEvent) => doc.slug !== null && onDocClick(event, doc.slug)"
             @menu="(event: MouseEvent) => doc.slug !== null && openDocMenu(event, doc.slug, doc.title)"
             @contextmenu.prevent.stop="(event: MouseEvent) => doc.slug !== null && openDocMenu(event, doc.slug, doc.title)"
           />
@@ -281,6 +298,10 @@ defineExpose({ openNewPage: () => startEdit({ kind: 'new-doc' }) });
 
 .tree-dnd {
   border-radius: var(--r-sm);
+}
+
+.tree-dnd.selected {
+  background: var(--c-selection);
 }
 
 .notes-inline-input {

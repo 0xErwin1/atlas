@@ -95,6 +95,44 @@ export function buildNotesTree(folders: FolderInput[], docs: DocInput[]): NotesT
   return root;
 }
 
+/** Stable selection key for a folder node. */
+export function folderKey(id: string): string {
+  return `folder:${id}`;
+}
+
+/** Stable selection key for a document node. */
+export function docKey(slug: string): string {
+  return `doc:${slug}`;
+}
+
+/**
+ * Flattens the tree into the ordered list of selectable node keys, in the exact
+ * order they render, honouring the collapsed state. Used for shift-range
+ * selection. Documents without a slug are not selectable and are omitted.
+ */
+export function flattenVisible(tree: NotesTree, isCollapsed: (folderId: string) => boolean): string[] {
+  const out: string[] = [];
+
+  function walk(folders: TreeFolder[]): void {
+    for (const folder of folders) {
+      out.push(folderKey(folder.id));
+      if (!isCollapsed(folder.id)) {
+        walk(folder.folders);
+        for (const doc of folder.docs) {
+          if (doc.slug !== null) out.push(docKey(doc.slug));
+        }
+      }
+    }
+  }
+
+  walk(tree.folders);
+  for (const doc of tree.docs) {
+    if (doc.slug !== null) out.push(docKey(doc.slug));
+  }
+
+  return out;
+}
+
 function sortTree(level: NotesTree): void {
   level.folders.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
   level.docs.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
