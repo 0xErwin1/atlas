@@ -36,6 +36,17 @@ const checklistItem = (id: string, title: string, checked: boolean) => ({
   updated_at: '2026-01-01T00:00:00Z',
 });
 
+const subtaskSummary = (id: string, readableId: string, title: string) => ({
+  id,
+  readable_id: readableId,
+  column_id: 'col-1',
+  title,
+  estimate: null,
+  labels: [],
+  assignees: [],
+  updated_at: '2026-01-01T00:00:00Z',
+});
+
 const reference = (id: string, kind: string) => ({
   id,
   kind,
@@ -59,7 +70,7 @@ describe('useTaskDetailStore', () => {
     vi.clearAllMocks();
   });
 
-  it('loadAll populates assignees, references, checklist and activity', async () => {
+  it('loadAll populates assignees, references, subtasks and activity', async () => {
     GET.mockImplementation((path: string) => {
       if (path.endsWith('/assignees')) {
         return Promise.resolve({ data: [assignee('u9', 'user', 'Jordan')], error: undefined });
@@ -67,8 +78,8 @@ describe('useTaskDetailStore', () => {
       if (path.endsWith('/references')) {
         return Promise.resolve({ data: [reference('r1', 'relates')], error: undefined });
       }
-      if (path.endsWith('/checklist')) {
-        return Promise.resolve({ data: [checklistItem('c1', 'Step', false)], error: undefined });
+      if (path.endsWith('/subtasks')) {
+        return Promise.resolve({ data: [subtaskSummary('s1', 'ATL-2', 'Child')], error: undefined });
       }
       if (path.endsWith('/activity')) {
         return Promise.resolve({
@@ -85,8 +96,44 @@ describe('useTaskDetailStore', () => {
     expect(store.assignees).toHaveLength(1);
     expect(store.assignees[0]?.assignee.display_name).toBe('Jordan');
     expect(store.references).toHaveLength(1);
-    expect(store.checklist).toHaveLength(1);
+    expect(store.subtasks).toHaveLength(1);
+    expect(store.subtasks[0]?.readable_id).toBe('ATL-2');
     expect(store.activity).toHaveLength(1);
+  });
+
+  it('addSubtask appends the created child as a summary row', async () => {
+    const store = useTaskDetailStore();
+
+    POST.mockResolvedValueOnce({
+      data: {
+        id: 's2',
+        readable_id: 'ATL-3',
+        column_id: 'col-1',
+        title: 'New child',
+        estimate: null,
+        labels: [],
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+      error: undefined,
+    });
+
+    const ok = await store.addSubtask('ws', 'ATL-1', 'New child');
+
+    expect(ok).toBe(true);
+    expect(store.subtasks).toHaveLength(1);
+    expect(store.subtasks[0]?.readable_id).toBe('ATL-3');
+  });
+
+  it('promoteSubtask removes the child on success', async () => {
+    const store = useTaskDetailStore();
+    store._setForTest({ subtasks: [subtaskSummary('s1', 'ATL-2', 'Child')] });
+
+    POST.mockResolvedValueOnce({ data: undefined, error: undefined });
+
+    const ok = await store.promoteSubtask('ws', 'ATL-2');
+
+    expect(ok).toBe(true);
+    expect(store.subtasks).toHaveLength(0);
   });
 
   it('addAssignee optimistically appends, then reconciles with the server DTO', async () => {

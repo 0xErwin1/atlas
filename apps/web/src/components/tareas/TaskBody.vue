@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
+import { useRouter } from 'vue-router';
 import type { components } from '@/api/types.d.ts';
 import ActivityFeed from '@/components/tareas/ActivityFeed.vue';
 import AssigneeList from '@/components/tareas/AssigneeList.vue';
-import Checklist from '@/components/tareas/Checklist.vue';
 import ReferenceAdd from '@/components/tareas/ReferenceAdd.vue';
 import ReferenceList from '@/components/tareas/ReferenceList.vue';
+import SubtaskList from '@/components/tareas/SubtaskList.vue';
 import TaskDescription from '@/components/tareas/TaskDescription.vue';
 import Chip from '@/components/ui/Chip.vue';
 import CollapsibleText from '@/components/ui/CollapsibleText.vue';
@@ -34,6 +35,7 @@ const tasks = useTasksStore();
 const detail = useTaskDetailStore();
 const workspace = useWorkspaceStore();
 const ui = useUiStore();
+const router = useRouter();
 
 const wide = computed(() => props.layout === 'wide');
 
@@ -145,11 +147,6 @@ function onRemoveLabel(label: string): void {
   void commitLabels((props.task.labels ?? []).filter((l) => l !== label));
 }
 
-async function onRemoveChecklist(itemId: string): Promise<void> {
-  const ok = await detail.removeChecklistItem(props.ws, props.task.readable_id, itemId);
-  if (!ok) fail(detail.error);
-}
-
 async function onAddAssignee(ref: string): Promise<void> {
   const [assignee_type, assignee_id] = ref.split(':');
   if (assignee_type === undefined || assignee_id === undefined) return;
@@ -162,26 +159,19 @@ async function onRemoveAssignee(assigneeType: string, assigneeId: string): Promi
   if (!ok) fail(detail.error);
 }
 
-async function onToggleChecklist(itemId: string): Promise<void> {
-  const ok = await detail.toggleChecklistItem(props.ws, props.task.readable_id, itemId);
+async function onAddSubtask(title: string): Promise<void> {
+  const ok = await detail.addSubtask(props.ws, props.task.readable_id, title);
   if (!ok) fail(detail.error);
 }
 
-async function onAddChecklist(itemTitle: string): Promise<void> {
-  const ok = await detail.addChecklistItem(props.ws, props.task.readable_id, itemTitle);
-  if (!ok) fail(detail.error);
-}
-
-async function onPromoteChecklist(itemId: string): Promise<void> {
-  const result = await detail.promoteChecklistItem(
-    props.ws,
-    props.task.readable_id,
-    itemId,
-    props.task.board_id,
-    columnId.value,
-  );
-  if (result.ok && result.readableId) ui.showBanner(`Promoted to ${result.readableId}`, 'success');
+async function onPromoteSubtask(readableId: string): Promise<void> {
+  const ok = await detail.promoteSubtask(props.ws, readableId);
+  if (ok) ui.showBanner(`${readableId} promoted to a board task`, 'success');
   else fail(detail.error);
+}
+
+function onOpenSubtask(readableId: string): void {
+  void router.push({ name: 'task-detail', params: { readableId } });
 }
 
 async function onAddReference(body: components['schemas']['CreateReferenceRequest']): Promise<void> {
@@ -317,12 +307,12 @@ async function onRemoveReference(referenceId: string): Promise<void> {
     </CollapsibleText>
 
     <div style="margin-top: 22px;">
-      <Checklist
-        :items="detail.checklist"
-        @toggle="onToggleChecklist"
-        @add="onAddChecklist"
-        @promote="onPromoteChecklist"
-        @remove="onRemoveChecklist"
+      <SubtaskList
+        :subtasks="detail.subtasks"
+        :columns="boards.columns"
+        @add="onAddSubtask"
+        @promote="onPromoteSubtask"
+        @open="onOpenSubtask"
       />
     </div>
 
