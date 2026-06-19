@@ -4469,6 +4469,60 @@
         ]
       }
     },
+    "/v1/workspaces/{ws}/tasks/{readable_id}/promote": {
+      "post": {
+        "tags": [
+          "tasks"
+        ],
+        "operationId": "promote_subtask",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "readable_id",
+            "in": "path",
+            "description": "Sub-task readable ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sub-task promoted to a board task",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          },
+          "404": {
+            "description": "Task not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/v1/workspaces/{ws}/tasks/{readable_id}/references": {
       "get": {
         "tags": [
@@ -4643,6 +4697,128 @@
           },
           "404": {
             "description": "Reference not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{ws}/tasks/{readable_id}/subtasks": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "operationId": "list_subtasks",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "readable_id",
+            "in": "path",
+            "description": "Parent task readable ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sub-tasks of the task",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TaskSummaryDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          },
+          "404": {
+            "description": "Task not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "tasks"
+        ],
+        "operationId": "create_subtask",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "readable_id",
+            "in": "path",
+            "description": "Parent task readable ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSubtaskRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Sub-task created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          },
+          "404": {
+            "description": "Task not found"
+          },
+          "422": {
+            "description": "Invalid input"
           }
         },
         "security": [
@@ -5374,6 +5550,18 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "CreateSubtaskRequest": {
+        "type": "object",
+        "description": "Request body for `POST /v1/workspaces/{ws}/tasks/{readable_id}/subtasks`.",
+        "required": [
+          "title"
+        ],
+        "properties": {
+          "title": {
+            "type": "string"
           }
         }
       },
@@ -6297,6 +6485,14 @@
                   "type": "string",
                   "format": "uuid"
                 },
+                "estimate": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "int32",
+                  "description": "Non-negative work estimate in story-point units; surfaced inline (e.g. on a\nsub-task row) without loading the full task."
+                },
                 "id": {
                   "type": "string",
                   "format": "uuid"
@@ -6832,6 +7028,14 @@
               "type": "string"
             }
           },
+          "parent_task_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Set when this task is a sub-task of another; absent for top-level tasks."
+          },
           "priority": {
             "type": [
               "string",
@@ -6916,6 +7120,14 @@
           "column_id": {
             "type": "string",
             "format": "uuid"
+          },
+          "estimate": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Non-negative work estimate in story-point units; surfaced inline (e.g. on a\nsub-task row) without loading the full task."
           },
           "id": {
             "type": "string",

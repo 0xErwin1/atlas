@@ -10,8 +10,10 @@ use atlas_domain::{
         TaskReferenceId,
     },
 };
+use chrono::Utc;
 use sea_orm::{
-    ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QuerySelect, TransactionTrait,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
+    QuerySelect, TransactionTrait,
 };
 
 use atlas_domain::entities::documents::ExtractedLink;
@@ -65,7 +67,7 @@ impl TaskService {
         )
         .await?;
 
-        let task = PgTaskRepo::create_in(&txn, ctx, new).await?;
+        let task = PgTaskRepo::create_in(&txn, ctx, new, None).await?;
 
         sync_task_description_links(&txn, ctx, task.id, &task.description).await?;
 
@@ -82,6 +84,106 @@ impl TaskService {
 
         txn.commit().await.map_err(db_err)?;
         Ok(task)
+    }
+
+    /// Creates a sub-task under `parent`, inheriting the parent's board and column,
+    /// and appends a `Created` activity in the same transaction. The sub-task is a
+    /// full task excluded from the board listing until promoted.
+    pub async fn create_subtask(
+        &self,
+        ctx: &WorkspaceCtx,
+        parent: &Task,
+        title: String,
+    ) -> Result<Task, DomainError> {
+        let txn = self.conn.begin().await.map_err(db_err)?;
+
+        let new = NewTask {
+            project_id: parent.project_id,
+            board_id: parent.board_id,
+            column_id: parent.column_id,
+            title,
+            description: String::new(),
+            priority: None,
+            due_date: None,
+            estimate: None,
+            labels: vec![],
+            properties: None,
+            position: PositionBetween {
+                before: None,
+                after: None,
+            },
+        };
+
+        let task = PgTaskRepo::create_in(&txn, ctx, new, Some(parent.id)).await?;
+
+        PgTaskActivityRepo::append_in(
+            &txn,
+            ctx,
+            NewTaskActivity {
+                task_id: task.id,
+                kind: ActivityKind::Created,
+                payload: ActivityPayload::Created,
+            },
+        )
+        .await?;
+
+        txn.commit().await.map_err(db_err)?;
+        Ok(task)
+    }
+
+    /// Promotes a sub-task to a top-level board task by clearing its parent, and
+    /// records the change as a `FieldChanged` activity. No-op (idempotent) when the
+    /// task already has no parent.
+    pub async fn promote_subtask(
+        &self,
+        ctx: &WorkspaceCtx,
+        id: TaskId,
+    ) -> Result<Task, DomainError> {
+        use sea_orm::IntoActiveModel;
+
+        let txn = self.conn.begin().await.map_err(db_err)?;
+
+        let before = task::Entity::find_by_id(id.0)
+            .filter(task::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(task::Column::DeletedAt.is_null())
+            .one(&txn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "task",
+                id: id.0,
+            })?;
+
+        let old_parent = match before.parent_task_id {
+            Some(p) => serde_json::Value::String(p.to_string()),
+            None => {
+                txn.rollback().await.map_err(db_err)?;
+                return Ok(crate::persistence::entities::boards_tasks::task_from(before));
+            }
+        };
+
+        let mut active = before.into_active_model();
+        active.parent_task_id = Set(None);
+        active.updated_at = Set(Utc::now());
+        let updated = active.update(&txn).await.map_err(db_err)?;
+
+        PgTaskActivityRepo::append_in(
+            &txn,
+            ctx,
+            NewTaskActivity {
+                task_id: id,
+                kind: ActivityKind::FieldChanged,
+                payload: ActivityPayload::FieldChanged {
+                    field: "parent_task_id".into(),
+                    old_value: old_parent,
+                    new_value: serde_json::Value::Null,
+                },
+            },
+        )
+        .await?;
+
+        txn.commit().await.map_err(db_err)?;
+        Ok(crate::persistence::entities::boards_tasks::task_from(updated))
     }
 
     /// Patches a task and appends one `FieldChanged` activity per changed field,
@@ -503,6 +605,7 @@ impl TaskService {
                     after: None,
                 },
             },
+            None,
         )
         .await?;
 

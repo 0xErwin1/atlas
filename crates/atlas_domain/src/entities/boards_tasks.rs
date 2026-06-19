@@ -86,6 +86,10 @@ pub struct Task {
     pub project_id: ProjectId,
     pub board_id: BoardId,
     pub column_id: ColumnId,
+    /// Set when this task is a sub-task of another. Sub-tasks are full tasks
+    /// (their own status, assignees, description, etc.) but are excluded from the
+    /// kanban board listing; promoting one clears this back to `None`.
+    pub parent_task_id: Option<TaskId>,
     pub readable_id: String,
     pub title: String,
     pub description: String,

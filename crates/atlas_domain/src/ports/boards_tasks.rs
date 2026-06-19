@@ -106,6 +106,18 @@ pub trait TaskRepo: Send + Sync {
         board_id: BoardId,
     ) -> Result<Vec<Task>, DomainError>;
 
+    /// Lists the sub-tasks (children) of `parent_task_id`, ordered by position.
+    /// Sub-tasks are full tasks excluded from the board listings.
+    async fn list_children(
+        &self,
+        ctx: &WorkspaceCtx,
+        parent_task_id: TaskId,
+    ) -> Result<Vec<Task>, DomainError>;
+
+    /// Clears a task's parent so it becomes a top-level board task again
+    /// ("promote"). Returns the updated task.
+    async fn detach(&self, ctx: &WorkspaceCtx, id: TaskId) -> Result<Task, DomainError>;
+
     async fn patch(
         &self,
         ctx: &WorkspaceCtx,

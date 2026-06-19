@@ -11,9 +11,9 @@ use serde::Deserialize;
 use atlas_api::{
     dtos::boards_tasks::{
         ActivityEntryDto, AddAssigneeRequest, AssigneeDto, ChecklistItemDto,
-        CreateChecklistItemRequest, CreateReferenceRequest, CreateTaskRequest, MoveTaskRequest,
-        PromoteChecklistItemRequest, PromotionDto, ReferenceDto, TaskBacklinkDto, TaskDto,
-        TaskSummaryDto, UpdateChecklistItemRequest, UpdateTaskRequest,
+        CreateChecklistItemRequest, CreateReferenceRequest, CreateSubtaskRequest, CreateTaskRequest,
+        MoveTaskRequest, PromoteChecklistItemRequest, PromotionDto, ReferenceDto, TaskBacklinkDto,
+        TaskDto, TaskSummaryDto, UpdateChecklistItemRequest, UpdateTaskRequest,
     },
     dtos::documents::ActorDto,
     pagination::{Cursor, Page},
@@ -118,6 +118,7 @@ fn task_to_dto(t: Task) -> TaskDto {
         project_id: t.project_id.0,
         board_id: t.board_id.0,
         column_id: t.column_id.0,
+        parent_task_id: t.parent_task_id.map(|p| p.0),
         readable_id: t.readable_id,
         title: t.title,
         description: t.description,
@@ -566,6 +567,7 @@ pub(crate) async fn list_tasks(
             column_id: t.column_id.0,
             title: t.title,
             priority: t.priority.map(|p| p.as_str().to_string()),
+            estimate: t.estimate,
             labels: t.labels,
             assignees: assignees_by_task.remove(&t.id.0).unwrap_or_default(),
             updated_at: t.updated_at,
@@ -1515,6 +1517,138 @@ pub(crate) async fn promote_checklist_item(
     };
 
     Ok((StatusCode::CREATED, Json(dto)))
+}
+
+// ---------------------------------------------------------------------------
+// Sub-tasks (child tasks)
+// ---------------------------------------------------------------------------
+
+/// Builds `TaskSummaryDto`s for the given tasks, resolving assignees in one batch
+/// so a sub-task row can render status, estimate, and assignees without a per-task
+/// follow-up request.
+async fn tasks_to_summaries(
+    state: &AppState,
+    ctx: &WorkspaceCtx,
+    tasks: Vec<Task>,
+) -> Result<Vec<TaskSummaryDto>, ApiError> {
+    let mut assignees_by_task = board_assignees_by_task(state, ctx, &tasks).await?;
+
+    Ok(tasks
+        .into_iter()
+        .map(|t| TaskSummaryDto {
+            id: t.id.0,
+            readable_id: t.readable_id,
+            column_id: t.column_id.0,
+            title: t.title,
+            priority: t.priority.map(|p| p.as_str().to_string()),
+            estimate: t.estimate,
+            labels: t.labels,
+            assignees: assignees_by_task.remove(&t.id.0).unwrap_or_default(),
+            updated_at: t.updated_at,
+        })
+        .collect())
+}
+
+#[utoipa::path(
+    get,
+    path = "/v1/workspaces/{ws}/tasks/{readable_id}/subtasks",
+    tag = "tasks",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+        ("readable_id" = String, Path, description = "Parent task readable ID"),
+    ),
+    responses(
+        (status = 200, description = "Sub-tasks of the task", body = Vec<TaskSummaryDto>),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Insufficient permissions"),
+        (status = 404, description = "Task not found"),
+    )
+)]
+pub(crate) async fn list_subtasks(
+    auth: Authorized<TaskRes, ViewerMin>,
+    State(state): State<AppState>,
+) -> Result<Json<Vec<TaskSummaryDto>>, ApiError> {
+    let actor = principal_to_actor(&auth.principal);
+    let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
+    let repo = PgTaskRepo::new((*state.db).clone());
+
+    let children = repo
+        .list_children(&ctx, auth.resource.0.id)
+        .await
+        .map_err(ApiError::Domain)?;
+
+    let dtos = tasks_to_summaries(&state, &ctx, children).await?;
+    Ok(Json(dtos))
+}
+
+#[utoipa::path(
+    post,
+    path = "/v1/workspaces/{ws}/tasks/{readable_id}/subtasks",
+    tag = "tasks",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+        ("readable_id" = String, Path, description = "Parent task readable ID"),
+    ),
+    request_body = CreateSubtaskRequest,
+    responses(
+        (status = 201, description = "Sub-task created", body = TaskDto),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Insufficient permissions"),
+        (status = 404, description = "Task not found"),
+        (status = 422, description = "Invalid input"),
+    )
+)]
+pub(crate) async fn create_subtask(
+    auth: Authorized<TaskRes, EditorMin>,
+    State(state): State<AppState>,
+    Json(body): Json<CreateSubtaskRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    let actor = principal_to_actor(&auth.principal);
+    let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
+
+    validate_name("title", &body.title)?;
+
+    let task = state
+        .task_service()
+        .create_subtask(&ctx, &auth.resource.0, body.title)
+        .await
+        .map_err(ApiError::Domain)?;
+
+    Ok((StatusCode::CREATED, Json(task_to_dto(task))))
+}
+
+#[utoipa::path(
+    post,
+    path = "/v1/workspaces/{ws}/tasks/{readable_id}/promote",
+    tag = "tasks",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+        ("readable_id" = String, Path, description = "Sub-task readable ID"),
+    ),
+    responses(
+        (status = 200, description = "Sub-task promoted to a board task", body = TaskDto),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Insufficient permissions"),
+        (status = 404, description = "Task not found"),
+    )
+)]
+pub(crate) async fn promote_subtask(
+    auth: Authorized<TaskRes, EditorMin>,
+    State(state): State<AppState>,
+) -> Result<Json<TaskDto>, ApiError> {
+    let actor = principal_to_actor(&auth.principal);
+    let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
+
+    let task = state
+        .task_service()
+        .promote_subtask(&ctx, auth.resource.0.id)
+        .await
+        .map_err(ApiError::Domain)?;
+
+    Ok(Json(task_to_dto(task)))
 }
 
 // ---------------------------------------------------------------------------

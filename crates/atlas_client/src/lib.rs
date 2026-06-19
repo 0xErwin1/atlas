@@ -10,7 +10,8 @@ use atlas_api::{
         boards_tasks::{
             ActivityEntryDto, AddAssigneeRequest, AssigneeDto, BoardDto, BoardSummaryDto,
             ChecklistItemDto, ColumnDto, CreateBoardRequest, CreateChecklistItemRequest,
-            CreateColumnRequest, CreateReferenceRequest, CreateTaskRequest, MoveTaskRequest,
+            CreateColumnRequest, CreateReferenceRequest, CreateSubtaskRequest, CreateTaskRequest,
+            MoveTaskRequest,
             PromoteChecklistItemRequest, PromotionDto, ReferenceDto, TaskBacklinkDto, TaskDto,
             TaskSummaryDto, UpdateBoardRequest, UpdateChecklistItemRequest, UpdateColumnRequest,
             UpdateTaskRequest,
@@ -1437,6 +1438,53 @@ impl AtlasClient {
             .await?;
         self.decode_response(response, "promote_checklist_item")
             .await
+    }
+
+    /// `GET /v1/workspaces/{ws}/tasks/{readable_id}/subtasks`
+    pub async fn list_subtasks(
+        &self,
+        ws: &str,
+        readable_id: &str,
+    ) -> Result<Vec<TaskSummaryDto>, ClientError> {
+        let response = self
+            .get(&format!(
+                "/v1/workspaces/{ws}/tasks/{readable_id}/subtasks"
+            ))
+            .send()
+            .await?;
+        self.decode_response(response, "list_subtasks").await
+    }
+
+    /// `POST /v1/workspaces/{ws}/tasks/{readable_id}/subtasks`
+    pub async fn create_subtask(
+        &self,
+        ws: &str,
+        readable_id: &str,
+        body: CreateSubtaskRequest,
+    ) -> Result<TaskDto, ClientError> {
+        let response = self
+            .post(&format!(
+                "/v1/workspaces/{ws}/tasks/{readable_id}/subtasks"
+            ))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "create_subtask").await
+    }
+
+    /// `POST /v1/workspaces/{ws}/tasks/{readable_id}/promote`
+    pub async fn promote_subtask(
+        &self,
+        ws: &str,
+        readable_id: &str,
+    ) -> Result<TaskDto, ClientError> {
+        let response = self
+            .post(&format!("/v1/workspaces/{ws}/tasks/{readable_id}/promote"))
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        self.decode_response(response, "promote_subtask").await
     }
 
     /// `GET /v1/workspaces/{ws}/tasks/{readable_id}/activity`

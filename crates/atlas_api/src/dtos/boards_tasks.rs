@@ -75,6 +75,9 @@ pub struct TaskDto {
     pub project_id: uuid::Uuid,
     pub board_id: uuid::Uuid,
     pub column_id: uuid::Uuid,
+    /// Set when this task is a sub-task of another; absent for top-level tasks.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_task_id: Option<uuid::Uuid>,
     pub readable_id: String,
     pub title: String,
     pub description: String,
@@ -103,6 +106,10 @@ pub struct TaskSummaryDto {
     pub title: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub priority: Option<String>,
+    /// Non-negative work estimate in story-point units; surfaced inline (e.g. on a
+    /// sub-task row) without loading the full task.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub estimate: Option<i32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub labels: Vec<String>,
     /// Assigned actors (users and agents), resolved with display names so the
@@ -325,6 +332,13 @@ pub struct CreateReferenceRequest {
     pub target_task_readable_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target_document_id: Option<uuid::Uuid>,
+}
+
+/// Request body for `POST /v1/workspaces/{ws}/tasks/{readable_id}/subtasks`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct CreateSubtaskRequest {
+    pub title: String,
 }
 
 /// Request body for `POST /v1/workspaces/{ws}/tasks/{readable_id}/checklist`.

@@ -66,6 +66,7 @@ const EXPECTED_SCHEMAS: &[&str] = &[
     "CreateReferenceRequest",
     "ChecklistItemDto",
     "CreateChecklistItemRequest",
+    "CreateSubtaskRequest",
     "UpdateChecklistItemRequest",
     "PromotionDto",
     "PromoteChecklistItemRequest",

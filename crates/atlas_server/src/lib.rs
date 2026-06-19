@@ -197,6 +197,15 @@ pub fn app(state: AppState) -> Router {
             axum::routing::post(routes::tasks::promote_checklist_item),
         )
         .route(
+            "/v1/workspaces/{ws}/tasks/{readable_id}/subtasks",
+            axum::routing::get(routes::tasks::list_subtasks)
+                .post(routes::tasks::create_subtask),
+        )
+        .route(
+            "/v1/workspaces/{ws}/tasks/{readable_id}/promote",
+            axum::routing::post(routes::tasks::promote_subtask),
+        )
+        .route(
             "/v1/workspaces/{ws}/tasks/{readable_id}/activity",
             axum::routing::get(routes::tasks::list_activity),
         )

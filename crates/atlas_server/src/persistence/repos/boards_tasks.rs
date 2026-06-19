@@ -459,6 +459,7 @@ impl PgTaskRepo {
         conn: &impl ConnectionTrait,
         ctx: &WorkspaceCtx,
         new: NewTask,
+        parent_task_id: Option<TaskId>,
     ) -> Result<Task, DomainError> {
         let row = conn
             .query_one_raw(Statement::from_sql_and_values(
@@ -503,6 +504,7 @@ impl PgTaskRepo {
             project_id: Set(new.project_id.0),
             board_id: Set(new.board_id.0),
             column_id: Set(new.column_id.0),
+            parent_task_id: Set(parent_task_id.map(|t| t.0)),
             readable_id: Set(readable_id),
             title: Set(new.title),
             description: Set(new.description),
@@ -528,7 +530,7 @@ impl PgTaskRepo {
 impl TaskRepo for PgTaskRepo {
     async fn create(&self, ctx: &WorkspaceCtx, new: NewTask) -> Result<Task, DomainError> {
         let txn = self.conn.begin().await.map_err(db_err)?;
-        let task = PgTaskRepo::create_in(&txn, ctx, new).await?;
+        let task = PgTaskRepo::create_in(&txn, ctx, new, None).await?;
         txn.commit().await.map_err(db_err)?;
         Ok(task)
     }
@@ -566,6 +568,7 @@ impl TaskRepo for PgTaskRepo {
         task::Entity::find()
             .filter(task::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(task::Column::BoardId.eq(board_id.0))
+            .filter(task::Column::ParentTaskId.is_null())
             .filter(task::Column::DeletedAt.is_null())
             .order_by_asc(task::Column::PositionKey)
             .all(&self.conn)
@@ -582,12 +585,48 @@ impl TaskRepo for PgTaskRepo {
         task::Entity::find()
             .filter(task::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(task::Column::ColumnId.eq(column_id.0))
+            .filter(task::Column::ParentTaskId.is_null())
             .filter(task::Column::DeletedAt.is_null())
             .order_by_asc(task::Column::PositionKey)
             .all(&self.conn)
             .await
             .map(|rows| rows.into_iter().map(task_from).collect())
             .map_err(db_err)
+    }
+
+    async fn list_children(
+        &self,
+        ctx: &WorkspaceCtx,
+        parent_task_id: TaskId,
+    ) -> Result<Vec<Task>, DomainError> {
+        task::Entity::find()
+            .filter(task::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(task::Column::ParentTaskId.eq(parent_task_id.0))
+            .filter(task::Column::DeletedAt.is_null())
+            .order_by_asc(task::Column::PositionKey)
+            .all(&self.conn)
+            .await
+            .map(|rows| rows.into_iter().map(task_from).collect())
+            .map_err(db_err)
+    }
+
+    async fn detach(&self, ctx: &WorkspaceCtx, id: TaskId) -> Result<Task, DomainError> {
+        let row = task::Entity::find_by_id(id.0)
+            .filter(task::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(task::Column::DeletedAt.is_null())
+            .one(&self.conn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "task",
+                id: id.0,
+            })?;
+
+        let mut active = row.into_active_model();
+        active.parent_task_id = Set(None);
+        active.updated_at = Set(Utc::now());
+
+        active.update(&self.conn).await.map(task_from).map_err(db_err)
     }
 
     async fn patch(
@@ -1580,6 +1619,11 @@ async fn try_move_to_in(
             .map_err(|e| DomainError::Internal {
                 message: e.to_string(),
             })?,
+        parent_task_id: row.try_get("", "parent_task_id").map_err(|e| {
+            DomainError::Internal {
+                message: e.to_string(),
+            }
+        })?,
         readable_id: row
             .try_get("", "readable_id")
             .map_err(|e| DomainError::Internal {
