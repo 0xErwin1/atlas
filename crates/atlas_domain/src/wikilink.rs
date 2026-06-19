@@ -1,6 +1,15 @@
+/// Upper bound on a wikilink target's byte length. A real target is a short
+/// title (optionally id-bound), never a paragraph; anything longer is a `[[`
+/// opened in prose or an inline-code span whose `]]` only appears far away.
+/// Bounding it also keeps the value below Postgres' btree index row limit, so a
+/// false positive cannot overflow the unique index on `document_links`.
+const MAX_WIKILINK_TARGET_LEN: usize = 512;
+
 /// Parses `[[Target]]` wikilinks from markdown content.
 ///
 /// Returns de-duplicated target strings in order of first appearance.
+/// Multi-line or oversized candidates are skipped: a genuine wikilink is a
+/// short, single-line title, so such spans are false positives.
 pub fn parse_wikilinks(content: &str) -> Vec<String> {
     let mut targets: Vec<String> = Vec::new();
     let mut remaining = content;
@@ -12,7 +21,11 @@ pub fn parse_wikilinks(content: &str) -> Vec<String> {
             let target = &remaining[..close];
             remaining = &remaining[close + 2..];
 
-            if !target.is_empty() && !targets.iter().any(|t| t == target) {
+            if !target.is_empty()
+                && !target.contains('\n')
+                && target.len() <= MAX_WIKILINK_TARGET_LEN
+                && !targets.iter().any(|t| t == target)
+            {
                 targets.push(target.to_string());
             }
         } else {
@@ -100,6 +113,28 @@ mod tests {
     #[test]
     fn empty_wikilink_not_included() {
         assert_eq!(parse_wikilinks("[[]]"), Vec::<String>::new());
+    }
+
+    #[test]
+    fn multiline_target_is_ignored() {
+        // A real wikilink is single-line; a `[[` opened in prose/code that only
+        // closes lines later must not be captured as a target.
+        assert_eq!(parse_wikilinks("[[line one\nline two]]"), Vec::<String>::new());
+    }
+
+    #[test]
+    fn oversized_target_is_ignored() {
+        let big = "x".repeat(600);
+        assert_eq!(parse_wikilinks(&format!("[[{big}]]")), Vec::<String>::new());
+    }
+
+    #[test]
+    fn oversized_target_does_not_block_later_links() {
+        let big = "x".repeat(600);
+        assert_eq!(
+            parse_wikilinks(&format!("[[{big}]] and [[Real]]")),
+            vec!["Real".to_string()]
+        );
     }
 
     #[test]
