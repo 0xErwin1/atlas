@@ -8,6 +8,7 @@ vi.mock('vue-router', () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));
 
+import { useUiStore } from '@/stores/ui';
 import AppShell from '@/views/AppShell.vue';
 
 function setViewportWidth(width: number): void {
@@ -23,6 +24,7 @@ const stubs = {
   ShareDialog: { template: '<div />' },
   SettingsModal: { template: '<div />' },
   BannerToast: { template: '<div />' },
+  EmptyState: { template: '<div data-stub="empty" />' },
 };
 
 function mountShell(props: Record<string, unknown> = {}, withSidebar = true) {
@@ -87,5 +89,51 @@ describe('AppShell responsive layout', () => {
 
     expect(wrapper.find('[data-test="main"]').exists()).toBe(true);
     expect(wrapper.find('[data-test="tree"]').exists()).toBe(true);
+  });
+
+  function mountWithInspector() {
+    return mount(AppShell, {
+      slots: {
+        default: () => h('div', { 'data-test': 'main' }, 'MAIN'),
+        sidebar: () => h('div', { 'data-test': 'tree' }, 'TREE'),
+        'inspector-properties': () => h('div', { 'data-test': 'props' }, 'PROPS'),
+      },
+      global: { stubs },
+    });
+  }
+
+  it('surfaces the inspector as a Details bottom sheet on mobile when open', () => {
+    setViewportWidth(390);
+    const ui = useUiStore();
+    ui.inspectorOpen = true;
+
+    const wrapper = mountWithInspector();
+
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Details');
+    expect(wrapper.find('[data-test="props"]').exists()).toBe(true);
+    expect(wrapper.find('[data-stub="inspector"]').exists()).toBe(false);
+  });
+
+  it('does not show the Details sheet on mobile when the inspector is closed', () => {
+    setViewportWidth(390);
+    const ui = useUiStore();
+    ui.inspectorOpen = false;
+
+    const wrapper = mountWithInspector();
+
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false);
+    expect(wrapper.find('[data-test="props"]').exists()).toBe(false);
+  });
+
+  it('uses the desktop inspector dock above the breakpoint', () => {
+    setViewportWidth(1280);
+    const ui = useUiStore();
+    ui.inspectorOpen = true;
+
+    const wrapper = mountWithInspector();
+
+    expect(wrapper.find('[data-stub="inspector"]').exists()).toBe(true);
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false);
   });
 });

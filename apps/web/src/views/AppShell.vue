@@ -8,9 +8,18 @@ import ContextSidebar from '@/components/shell/ContextSidebar.vue';
 import InspectorDock from '@/components/shell/InspectorDock.vue';
 import MobileTabBar from '@/components/shell/MobileTabBar.vue';
 import EmptyState from '@/components/states/EmptyState.vue';
+import BottomSheet from '@/components/ui/BottomSheet.vue';
+import Icon from '@/components/ui/Icon.vue';
 import { useBreakpoint } from '@/composables/useBreakpoint';
-import { useUiStore } from '@/stores/ui';
+import { type InspectorTab, useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
+
+const INSPECTOR_TABS: Array<{ id: InspectorTab; label: string; icon: string }> = [
+  { id: 'properties', label: 'Properties', icon: 'hash' },
+  { id: 'backlinks', label: 'Backlinks', icon: 'link' },
+  { id: 'activity', label: 'Activity', icon: 'clock' },
+  { id: 'share', label: 'Share', icon: 'user' },
+];
 
 const props = withDefaults(
   defineProps<{
@@ -80,6 +89,44 @@ const showMainOnMobile = computed(() => props.mobileDetail || !hasSidebar.value)
     </main>
 
     <MobileTabBar />
+
+    <BottomSheet
+      v-if="hasInspector"
+      :open="ui.inspectorOpen"
+      title="Details"
+      @close="ui.toggleInspector()"
+    >
+      <div class="flex" style="gap: 2px; margin-bottom: 12px;">
+        <button
+          v-for="tab in INSPECTOR_TABS"
+          :key="tab.id"
+          type="button"
+          class="flex items-center justify-center flex-1"
+          :aria-selected="ui.inspectorTab === tab.id"
+          :style="`
+            gap: 6px;
+            height: 34px;
+            border: none;
+            border-radius: var(--r-md);
+            cursor: pointer;
+            background: ${ui.inspectorTab === tab.id ? 'var(--c-selection)' : 'transparent'};
+            color: ${ui.inspectorTab === tab.id ? 'var(--c-primary)' : 'var(--c-muted)'};
+            font-size: var(--fs-sm);
+          `"
+          @click="ui.setInspectorTab(tab.id)"
+        >
+          <Icon :name="tab.icon" :size="15" />
+        </button>
+      </div>
+
+      <slot :name="`inspector-${ui.inspectorTab}`" :tab="ui.inspectorTab">
+        <EmptyState
+          icon="panel-right"
+          title="Nothing to show"
+          hint="This panel has no content for the current view."
+        />
+      </slot>
+    </BottomSheet>
 
     <BannerToast />
 

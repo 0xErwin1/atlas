@@ -13,6 +13,7 @@ import SharePanel from '@/components/share/SharePanel.vue';
 import EditorToolbar from '@/components/shell/EditorToolbar.vue';
 import Icon from '@/components/ui/Icon.vue';
 import TabStrip, { type Tab } from '@/components/ui/TabStrip.vue';
+import { useBreakpoint } from '@/composables/useBreakpoint';
 import type { MergeSegment } from '@/composables/useCasMerge';
 import { useCasMerge } from '@/composables/useCasMerge';
 import { useMarkdownDoc } from '@/composables/useMarkdownDoc';
@@ -35,6 +36,11 @@ const ui = useUiStore();
 const tabsStore = useNotesTabsStore();
 const { load, save } = useMarkdownDoc();
 const { merge } = useCasMerge();
+const { isMobile } = useBreakpoint();
+
+function goBackToTree(): void {
+  void router.push({ name: 'notes' });
+}
 
 const editorRef = ref<InstanceType<typeof NoteEditor> | null>(null);
 const suggestRef = ref<InstanceType<typeof WikiLinkSuggest> | null>(null);
@@ -278,7 +284,7 @@ watch(title, (t) => {
 </script>
 
 <template>
-  <AppShell sidebar-title="Notes" sidebar-icon="file-text">
+  <AppShell sidebar-title="Notes" sidebar-icon="file-text" :mobile-detail="slug !== null">
     <template #sidebar-actions>
       <button type="button" class="atl-gbtn" title="Search ⌘K" aria-label="Search" @click="ui.openPalette()">
         <Icon name="search" :size="14" />
@@ -310,8 +316,32 @@ watch(title, (t) => {
       </button>
     </template>
 
+    <div
+      v-if="isMobile && slug"
+      class="flex items-center"
+      style="height: 44px; flex: 0 0 44px; padding: 0 6px; gap: 4px; border-bottom: 1px solid var(--c-border);"
+    >
+      <button type="button" class="atl-gbtn" title="Back" aria-label="Back to notes" @click="goBackToTree">
+        <Icon name="chevron-left" :size="20" />
+      </button>
+      <span class="flex-1 truncate" style="font-size: var(--fs-lg); font-weight: var(--fw-bold); color: var(--c-foreground);">
+        {{ title || 'Untitled' }}
+      </span>
+      <button
+        type="button"
+        title="Details"
+        aria-label="Details"
+        class="atl-gbtn"
+        :class="{ on: ui.inspectorOpen }"
+        style="width: 28px; height: 28px;"
+        @click="ui.toggleInspector()"
+      >
+        <Icon name="panel-right" :size="15" />
+      </button>
+    </div>
+
     <TabStrip
-      v-if="editorTabs.length > 0"
+      v-if="!isMobile && editorTabs.length > 0"
       :tabs="editorTabs"
       closable
       @select="onSelectTab"
@@ -339,7 +369,12 @@ watch(title, (t) => {
       </template>
     </TabStrip>
 
-    <EditorToolbar :breadcrumbs="breadcrumbs" :dirty="dirty" :share-label="`${title || 'Document'} · note`">
+    <EditorToolbar
+      v-if="!isMobile"
+      :breadcrumbs="breadcrumbs"
+      :dirty="dirty"
+      :share-label="`${title || 'Document'} · note`"
+    >
       <button
         type="button"
         title="Toggle inspector"
@@ -356,9 +391,9 @@ watch(title, (t) => {
     <div class="flex-1 overflow-y-auto">
       <div
         :style="{
-          maxWidth: ui.editorWide ? 'none' : '720px',
+          maxWidth: isMobile || ui.editorWide ? 'none' : '720px',
           margin: '0 auto',
-          padding: ui.editorWide ? '30px 56px' : '30px 40px',
+          padding: isMobile ? '16px 16px 32px' : ui.editorWide ? '30px 56px' : '30px 40px',
           position: 'relative',
         }"
       >
