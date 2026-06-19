@@ -10,8 +10,9 @@ import LoadingState from '@/components/states/LoadingState.vue';
 import Btn from '@/components/ui/Btn.vue';
 import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
 import Icon from '@/components/ui/Icon.vue';
+import { useBreakpoint } from '@/composables/useBreakpoint';
 import { useSearch } from '@/composables/useSearch';
-import { type SearchHitDto, type SearchSort, useSearchStore } from '@/stores/search';
+import { type SearchHitDto, type SearchSort, type SearchType, useSearchStore } from '@/stores/search';
 import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 import AppShell from '@/views/AppShell.vue';
@@ -20,11 +21,23 @@ import SearchSidebar from '@/views/SearchSidebar.vue';
 const router = useRouter();
 const workspace = useWorkspaceStore();
 const ui = useUiStore();
+const { isMobile } = useBreakpoint();
 
 const ws = computed(() => workspace.activeWorkspaceSlug ?? '');
 
 const { store, onQueryInput, loadMore } = useSearch(ws.value);
 const searchStore = useSearchStore();
+
+const SCOPE_CHIPS: Array<{ value: SearchType; label: string }> = [
+  { value: 'all', label: 'All' },
+  { value: 'note', label: 'Notes' },
+  { value: 'task', label: 'Tasks' },
+];
+
+function onScope(value: SearchType): void {
+  searchStore.setType(value);
+  void store.runSearch(ws.value);
+}
 
 const activeIndex = ref(0);
 
@@ -93,12 +106,67 @@ function onListKeydown(event: KeyboardEvent): void {
 </script>
 
 <template>
-  <AppShell>
+  <AppShell :mobile-detail="true">
     <template #sidebar>
       <SearchSidebar :query="store.query" @input="onInput" @clear="clearSearch" @rerun="rerun" />
     </template>
 
-    <EditorToolbar :breadcrumbs="['Atlas', 'Search']" :dirty="false">
+    <div
+      v-if="isMobile"
+      class="flex flex-col"
+      style="padding: 10px 12px; gap: 10px; border-bottom: 1px solid var(--c-border);"
+    >
+      <div
+        class="flex items-center"
+        style="gap: 8px; height: 36px; padding: 0 10px; background: var(--c-input); border: 1px solid var(--c-border); border-radius: var(--r-md);"
+      >
+        <Icon name="search" :size="15" :style="{ color: 'var(--c-muted)' }" />
+        <input
+          type="text"
+          placeholder="Search documents and tasks…"
+          autocomplete="off"
+          :value="store.query"
+          class="flex-1 min-w-0"
+          style="height: 100%; border: none; outline: none; background: transparent; color: var(--c-foreground); font-size: var(--fs-base);"
+          @input="onInput(($event.target as HTMLInputElement).value)"
+        >
+        <button
+          v-if="store.query"
+          type="button"
+          aria-label="Clear search"
+          class="inline-flex items-center cursor-pointer"
+          style="border: none; background: transparent; color: var(--c-muted);"
+          @click="clearSearch"
+        >
+          <Icon name="x" :size="14" />
+        </button>
+      </div>
+
+      <div class="flex" style="gap: 6px;">
+        <button
+          v-for="chip in SCOPE_CHIPS"
+          :key="chip.value"
+          type="button"
+          :aria-pressed="searchStore.type === chip.value"
+          :style="`
+            height: 28px;
+            padding: 0 12px;
+            border-radius: 9999px;
+            cursor: pointer;
+            font-size: var(--fs-sm);
+            font-weight: var(--fw-medium);
+            border: 1px solid ${searchStore.type === chip.value ? 'var(--c-primary)' : 'var(--c-border)'};
+            background: ${searchStore.type === chip.value ? 'var(--c-selection)' : 'transparent'};
+            color: ${searchStore.type === chip.value ? 'var(--c-primary)' : 'var(--c-muted)'};
+          `"
+          @click="onScope(chip.value)"
+        >
+          {{ chip.label }}
+        </button>
+      </div>
+    </div>
+
+    <EditorToolbar v-else :breadcrumbs="['Atlas', 'Search']" :dirty="false">
       <span
         :style="{ fontSize: 'var(--fs-base)', fontWeight: 'var(--fw-bold)', color: 'var(--c-foreground)' }"
       >
@@ -176,7 +244,7 @@ function onListKeydown(event: KeyboardEvent): void {
         </template>
       </div>
 
-      <SearchPreview v-if="activeHit" :hit="activeHit" @open="navigateToHit" />
+      <SearchPreview v-if="!isMobile && activeHit" :hit="activeHit" @open="navigateToHit" />
     </div>
   </AppShell>
 </template>
