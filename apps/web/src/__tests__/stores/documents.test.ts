@@ -40,6 +40,21 @@ describe('useDocumentsStore', () => {
     expect(store.error).toBeNull();
   });
 
+  it('loadSummaries follows the cursor and accumulates every page', async () => {
+    GET.mockResolvedValueOnce({
+      data: { items: [summary('d1', 'A')], next_cursor: 'c1', has_more: true },
+    }).mockResolvedValueOnce({
+      data: { items: [summary('d2', 'B')], next_cursor: null, has_more: false },
+    });
+
+    const store = useDocumentsStore();
+    await store.loadSummaries('ws', 'proj');
+
+    expect(store.summaries.map((s) => s.id)).toEqual(['d1', 'd2']);
+    expect(GET).toHaveBeenCalledTimes(2);
+    expect(GET.mock.calls[1]?.[1]?.params?.query?.cursor).toBe('c1');
+  });
+
   it('loadSummaries surfaces the hint on error', async () => {
     GET.mockResolvedValue({ error: { hint: 'denied' } });
 

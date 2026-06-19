@@ -24,19 +24,39 @@ export const useDocumentsStore = defineStore('documents', () => {
     loading.value = true;
     error.value = null;
 
-    const { data, error: apiError } = await wrappedClient.GET(
-      '/v1/workspaces/{ws}/projects/{project_slug}/documents',
-      { params: { path: { ws, project_slug: projectSlug } } },
-    );
+    // The tree renders the whole project, but the endpoint is paginated. Follow
+    // the cursor and accumulate every page so all documents show — and so a newly
+    // created note (newest by UUIDv7, hence on the last page) is never dropped.
+    const all: DocumentSummary[] = [];
+    let cursor: string | undefined;
 
-    loading.value = false;
+    for (;;) {
+      const { data, error: apiError } = await wrappedClient.GET(
+        '/v1/workspaces/{ws}/projects/{project_slug}/documents',
+        {
+          params: {
+            path: { ws, project_slug: projectSlug },
+            query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) },
+          },
+        },
+      );
 
-    if (apiError !== undefined || data === undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to load documents';
-      return;
+      if (apiError !== undefined || data === undefined) {
+        loading.value = false;
+        error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to load documents';
+        return;
+      }
+
+      all.push(...data.items);
+
+      if (data.has_more !== true || data.next_cursor === null || data.next_cursor === undefined) {
+        break;
+      }
+      cursor = data.next_cursor;
     }
 
-    summaries.value = data.items;
+    summaries.value = all;
+    loading.value = false;
   }
 
   async function loadBacklinks(ws: string, slug: string): Promise<void> {
