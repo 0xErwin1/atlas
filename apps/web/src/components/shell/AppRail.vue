@@ -3,6 +3,7 @@ import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import Avatar from '@/components/ui/Avatar.vue';
 import Icon from '@/components/ui/Icon.vue';
+import PromptDialog from '@/components/ui/PromptDialog.vue';
 import { useAuthStore } from '@/stores/auth';
 import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
@@ -51,10 +52,42 @@ const userInitials = computed(() => {
   return name.slice(0, 2).toUpperCase();
 });
 
+const activeWorkspace = computed(() =>
+  workspace.workspaces.find((w) => w.slug === workspace.activeWorkspaceSlug),
+);
+
 const workspaceInitial = computed(() => {
-  const slug = workspace.activeWorkspaceSlug ?? '';
-  return slug.length > 0 ? slug.charAt(0).toUpperCase() : 'A';
+  const label = activeWorkspace.value?.name ?? workspace.activeWorkspaceSlug ?? '';
+  return label.length > 0 ? label.charAt(0).toUpperCase() : 'A';
 });
+
+const workspaceMenuOpen = ref(false);
+const newWorkspaceOpen = ref(false);
+
+function pickWorkspace(slug: string): void {
+  workspaceMenuOpen.value = false;
+  if (slug === workspace.activeWorkspaceSlug) return;
+  workspace.switchWorkspace(slug);
+  router.push({ name: 'notes' });
+}
+
+function startNewWorkspace(): void {
+  workspaceMenuOpen.value = false;
+  newWorkspaceOpen.value = true;
+}
+
+async function confirmNewWorkspace(name: string): Promise<void> {
+  newWorkspaceOpen.value = false;
+  const trimmed = name.trim();
+  if (trimmed === '') return;
+
+  const slug = await workspace.createWorkspace(trimmed);
+  if (slug !== null) {
+    router.push({ name: 'notes' });
+  } else if (workspace.error !== null) {
+    ui.showBanner(workspace.error, 'error');
+  }
+}
 </script>
 
 <template>
@@ -110,22 +143,62 @@ const workspaceInitial = computed(() => {
     <div style="flex: 1;" />
 
     <div class="flex flex-col items-center" style="gap: 8px; padding-bottom: 10px;">
-      <div
-        class="atl-ws flex items-center justify-center"
-        :title="`Workspace: ${workspace.activeWorkspaceSlug ?? 'Atlas'}`"
-        style="
-          width: 26px;
-          height: 26px;
-          border-radius: var(--r-sm);
-          background: var(--c-raised);
-          border: 1px solid var(--c-border);
-          font-family: var(--font-mono);
-          font-size: 12px;
-          font-weight: var(--fw-bold);
-          color: var(--c-primary);
-        "
-      >
-        {{ workspaceInitial }}
+      <div style="position: relative;">
+        <button
+          type="button"
+          class="atl-ws flex items-center justify-center"
+          :title="`Workspace: ${activeWorkspace?.name ?? workspace.activeWorkspaceSlug ?? 'Atlas'}`"
+          aria-label="Switch workspace"
+          aria-haspopup="menu"
+          :aria-expanded="workspaceMenuOpen"
+          style="
+            width: 26px;
+            height: 26px;
+            border-radius: var(--r-sm);
+            background: var(--c-raised);
+            border: 1px solid var(--c-border);
+            font-family: var(--font-mono);
+            font-size: 12px;
+            font-weight: var(--fw-bold);
+            color: var(--c-primary);
+            cursor: pointer;
+          "
+          @click="workspaceMenuOpen = !workspaceMenuOpen"
+        >
+          {{ workspaceInitial }}
+        </button>
+
+        <template v-if="workspaceMenuOpen">
+          <div
+            class="atl-account-backdrop"
+            aria-hidden="true"
+            @click="workspaceMenuOpen = false"
+            @contextmenu.prevent="workspaceMenuOpen = false"
+          />
+          <div class="atl-account-menu" role="menu">
+            <div class="atl-account-id">
+              <div class="atl-account-name">Workspaces</div>
+            </div>
+            <div class="atl-account-sep" aria-hidden="true" />
+            <button
+              v-for="w in workspace.workspaces"
+              :key="w.slug"
+              type="button"
+              role="menuitem"
+              class="atl-account-item"
+              :class="{ on: w.slug === workspace.activeWorkspaceSlug }"
+              @click="pickWorkspace(w.slug)"
+            >
+              <Icon :name="w.slug === workspace.activeWorkspaceSlug ? 'check' : 'folder'" :size="14" />
+              {{ w.name }}
+            </button>
+            <div class="atl-account-sep" aria-hidden="true" />
+            <button type="button" role="menuitem" class="atl-account-item" @click="startNewWorkspace">
+              <Icon name="plus" :size="14" />
+              New workspace
+            </button>
+          </div>
+        </template>
       </div>
 
       <button
@@ -183,6 +256,15 @@ const workspaceInitial = computed(() => {
         </template>
       </div>
     </div>
+
+    <PromptDialog
+      :open="newWorkspaceOpen"
+      title="New workspace"
+      placeholder="Workspace name…"
+      confirm-label="Create"
+      @confirm="confirmNewWorkspace"
+      @cancel="newWorkspaceOpen = false"
+    />
   </nav>
 </template>
 
@@ -244,6 +326,11 @@ const workspaceInitial = computed(() => {
 
 .atl-account-item:hover {
   background: var(--c-raised);
+}
+
+.atl-account-item.on {
+  color: var(--c-primary);
+  font-weight: var(--fw-semibold);
 }
 
 .atl-account-item.danger {

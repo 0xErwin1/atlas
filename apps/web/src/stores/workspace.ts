@@ -12,6 +12,24 @@ export interface ProjectSummary {
   workspace_id: string;
 }
 
+const WORKSPACE_STORAGE_KEY = 'atlas:workspace';
+
+function loadStoredWorkspace(): string | null {
+  try {
+    return localStorage.getItem(WORKSPACE_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function persistWorkspace(slug: string): void {
+  try {
+    localStorage.setItem(WORKSPACE_STORAGE_KEY, slug);
+  } catch {
+    // ignore storage errors
+  }
+}
+
 export const useWorkspaceStore = defineStore('workspace', () => {
   const activeWorkspaceSlug = ref<string | null>(null);
   const projects = ref<ProjectSummary[]>([]);
@@ -34,13 +52,48 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
     workspaces.value = data;
 
-    const first = data[0];
-    if (first !== undefined) {
-      activeWorkspaceSlug.value = first.slug;
-      return first.slug;
+    // Restore the last-used workspace when it still exists, otherwise the first.
+    const stored = loadStoredWorkspace();
+    const chosen = data.find((w) => w.slug === stored) ?? data[0];
+    if (chosen !== undefined) {
+      activeWorkspaceSlug.value = chosen.slug;
+      return chosen.slug;
     }
 
     return null;
+  }
+
+  /**
+   * Switches the active workspace: clears the cached project list so consumers
+   * (watching `activeWorkspaceSlug`) reload for the new workspace, and persists
+   * the choice so it survives a refresh.
+   */
+  function switchWorkspace(slug: string): void {
+    if (slug === activeWorkspaceSlug.value) return;
+    activeWorkspaceSlug.value = slug;
+    projects.value = [];
+    persistWorkspace(slug);
+  }
+
+  /**
+   * Creates a workspace and switches to it. Returns the new slug, or null on
+   * failure (with `error` set).
+   */
+  async function createWorkspace(name: string): Promise<string | null> {
+    const { data, error: apiError } = await wrappedClient.POST('/v1/workspaces', {
+      body: { name },
+    });
+
+    if (apiError !== undefined || data === undefined) {
+      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to create workspace';
+      return null;
+    }
+
+    const list = await wrappedClient.GET('/v1/workspaces');
+    if (list.data !== undefined) workspaces.value = list.data;
+
+    switchWorkspace(data.slug);
+    return data.slug;
   }
 
   async function loadProjects(ws: string): Promise<void> {
@@ -147,6 +200,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     members,
     error,
     setActiveWorkspace,
+    switchWorkspace,
+    createWorkspace,
     loadWorkspaces,
     loadProjects,
     createProject,

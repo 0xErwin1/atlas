@@ -14,6 +14,7 @@ import { wrappedClient } from '@/api/wrapper';
 import { useWorkspaceStore } from '@/stores/workspace';
 
 const mockGet = wrappedClient.GET as ReturnType<typeof vi.fn>;
+const mockPost = wrappedClient.POST as ReturnType<typeof vi.fn>;
 const mockPatch = wrappedClient.PATCH as ReturnType<typeof vi.fn>;
 const mockDelete = wrappedClient.DELETE as ReturnType<typeof vi.fn>;
 
@@ -23,6 +24,11 @@ describe('useWorkspaceStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
+    try {
+      localStorage.clear();
+    } catch {
+      // jsdom provides localStorage; ignore if absent
+    }
   });
 
   it('starts with no active workspace', () => {
@@ -144,5 +150,64 @@ describe('useWorkspaceStore', () => {
 
     expect(ok).toBe(false);
     expect(store.error).toBe('No permission');
+  });
+
+  it('loadWorkspaces restores the stored workspace when it still exists', async () => {
+    localStorage.setItem('atlas:workspace', 'second');
+    mockGet.mockResolvedValueOnce({
+      data: [
+        { id: '1', name: 'First', slug: 'first', created_at: 'x', updated_at: 'x' },
+        { id: '2', name: 'Second', slug: 'second', created_at: 'x', updated_at: 'x' },
+      ],
+      error: undefined,
+    });
+
+    const store = useWorkspaceStore();
+    const slug = await store.loadWorkspaces();
+
+    expect(slug).toBe('second');
+    expect(store.activeWorkspaceSlug).toBe('second');
+  });
+
+  it('switchWorkspace sets the slug, clears projects and persists', () => {
+    const store = useWorkspaceStore();
+    store.setActiveWorkspace('first');
+    store.projects = [{ slug: 'p', name: 'P', workspace_id: 'w' }];
+
+    store.switchWorkspace('second');
+
+    expect(store.activeWorkspaceSlug).toBe('second');
+    expect(store.projects).toEqual([]);
+    expect(localStorage.getItem('atlas:workspace')).toBe('second');
+  });
+
+  it('createWorkspace POSTs, refreshes the list and switches to the new one', async () => {
+    mockPost.mockResolvedValueOnce({
+      data: { id: '9', name: 'New WS', slug: 'new-ws', created_at: 'x', updated_at: 'x' },
+      error: undefined,
+    });
+    mockGet.mockResolvedValueOnce({
+      data: [{ id: '9', name: 'New WS', slug: 'new-ws', created_at: 'x', updated_at: 'x' }],
+      error: undefined,
+    });
+
+    const store = useWorkspaceStore();
+    const slug = await store.createWorkspace('New WS');
+
+    expect(slug).toBe('new-ws');
+    expect(mockPost).toHaveBeenCalledWith('/v1/workspaces', { body: { name: 'New WS' } });
+    expect(store.activeWorkspaceSlug).toBe('new-ws');
+  });
+
+  it('createWorkspace returns null and sets error on failure', async () => {
+    mockPost.mockResolvedValueOnce({
+      error: { type: 'urn:atlas:error:forbidden', title: 'Forbidden', status: 403, hint: 'Agents cannot' },
+    });
+
+    const store = useWorkspaceStore();
+    const slug = await store.createWorkspace('Nope');
+
+    expect(slug).toBeNull();
+    expect(store.error).toBe('Agents cannot');
   });
 });
