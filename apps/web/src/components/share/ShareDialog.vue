@@ -5,6 +5,7 @@ import AgentBadge from '@/components/ui/AgentBadge.vue';
 import Avatar from '@/components/ui/Avatar.vue';
 import Btn from '@/components/ui/Btn.vue';
 import Icon from '@/components/ui/Icon.vue';
+import { useBreakpoint } from '@/composables/useBreakpoint';
 import type { GrantRole } from '@/lib/grantRoles';
 import { type GrantDto, type PrincipalDto, useShareStore } from '@/stores/share';
 
@@ -28,6 +29,7 @@ const emit = defineEmits<{
 }>();
 
 const share = useShareStore();
+const { isMobile } = useBreakpoint();
 
 const openMenuFor = ref<string | null>(null);
 const memberQuery = ref('');
@@ -117,23 +119,22 @@ async function selectMember(member: PrincipalDto): Promise<void> {
 <template>
   <div
     v-if="open"
-    class="fixed inset-0 flex items-center justify-center"
+    class="fixed inset-0 flex justify-center"
+    :class="isMobile ? 'items-end' : 'items-center'"
     style="background-color: var(--c-overlay); z-index: 60;"
     @click.self="emit('close')"
   >
     <div
       role="dialog"
       aria-label="Share"
-      style="
-        width: 580px;
-        max-width: calc(100vw - 32px);
-        background-color: var(--c-panel);
-        border: 1px solid var(--c-border);
-        border-radius: var(--r-lg);
-        box-shadow: var(--shadow-lg);
-        overflow: visible;
-      "
+      :style="isMobile
+        ? 'width: 100%; max-height: 90vh; overflow-y: auto; background-color: var(--c-panel); border-top: 1px solid var(--c-border); border-radius: var(--r-lg) var(--r-lg) 0 0; box-shadow: var(--shadow-lg);'
+        : 'width: 580px; max-width: calc(100vw - 32px); background-color: var(--c-panel); border: 1px solid var(--c-border); border-radius: var(--r-lg); box-shadow: var(--shadow-lg); overflow: visible;'"
     >
+      <div v-if="isMobile" class="flex justify-center" style="padding: 8px 0 0;" aria-hidden="true">
+        <div style="width: 36px; height: 4px; border-radius: 9999px; background: var(--c-border);" />
+      </div>
+
       <div
         class="flex items-center"
         style="gap: 10px; padding: 13px 16px; border-bottom: 1px solid var(--c-border);"

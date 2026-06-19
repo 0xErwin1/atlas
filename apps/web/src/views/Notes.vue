@@ -329,6 +329,16 @@ watch(title, (t) => {
       </span>
       <button
         type="button"
+        title="Share"
+        aria-label="Share"
+        class="atl-gbtn"
+        style="width: 28px; height: 28px;"
+        @click="ui.openShare(`${title || 'Document'} · note`)"
+      >
+        <Icon name="user" :size="15" />
+      </button>
+      <button
+        type="button"
         title="Details"
         aria-label="Details"
         class="atl-gbtn"
