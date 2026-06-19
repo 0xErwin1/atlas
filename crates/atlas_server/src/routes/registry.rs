@@ -330,6 +330,12 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/v1/workspaces/{ws}/documents/{slug}/move"),
     },
+    RouteEntry {
+        method: "POST",
+        path_template: "/v1/workspaces/{ws}/documents/nonexistent-slug/copy",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/documents/{slug}/copy"),
+    },
     // ---- Board routes ----
     RouteEntry {
         method: "POST",
@@ -536,6 +542,12 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         path_template: "/v1/workspaces/{ws}/folders/00000000-0000-0000-0000-000000000001/move",
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/v1/workspaces/{ws}/folders/{folder_id}/move"),
+    },
+    RouteEntry {
+        method: "POST",
+        path_template: "/v1/workspaces/{ws}/folders/00000000-0000-0000-0000-000000000001/copy",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/folders/{folder_id}/copy"),
     },
     // ---- Search ----
     RouteEntry {

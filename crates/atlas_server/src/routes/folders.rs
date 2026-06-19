@@ -1,7 +1,9 @@
 use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 
 use atlas_api::{
-    dtos::folders::{CreateFolderRequest, FolderDto, MoveFolderRequest, RenameFolderRequest},
+    dtos::folders::{
+        CopyFolderRequest, CreateFolderRequest, FolderDto, MoveFolderRequest, RenameFolderRequest,
+    },
     pagination::Page,
 };
 use atlas_domain::{
@@ -17,10 +19,15 @@ use crate::{
         authorized::ProjectRes, resolve_folder_ancestry,
     },
     error::ApiError,
-    persistence::repos::{FolderRepo, PgFolderRepo},
-    routes::validation::validate_name,
+    persistence::repos::{DocumentRepo, FolderRepo, PgDocumentRepo, PgFolderRepo},
+    routes::{documents::copy_document_into, validation::validate_name},
     state::AppState,
 };
+
+/// Maximum folder nesting depth honored by the recursive copy. Mirrors the
+/// 32-level bound used by `resolve_folder_ancestry` so a pathological or cyclic
+/// tree cannot recurse without limit.
+const MAX_COPY_DEPTH: usize = 32;
 
 fn folder_to_dto(f: Folder) -> FolderDto {
     FolderDto {
@@ -306,6 +313,141 @@ pub(crate) async fn move_folder(
         .ok_or(ApiError::NotFound)?;
 
     Ok(Json(folder_to_dto(updated)))
+}
+
+// ---------------------------------------------------------------------------
+// POST /v1/workspaces/{ws}/folders/{folder_id}/copy
+// ---------------------------------------------------------------------------
+
+#[utoipa::path(
+    post,
+    path = "/v1/workspaces/{ws}/folders/{folder_id}/copy",
+    tag = "folders",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+        ("folder_id" = uuid::Uuid, Path, description = "Source folder ID"),
+    ),
+    request_body = CopyFolderRequest,
+    responses(
+        (status = 201, description = "Folder copied", body = FolderDto),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Insufficient permissions"),
+        (status = 404, description = "Not found"),
+    )
+)]
+pub(crate) async fn copy_folder(
+    auth: Authorized<FolderRes, EditorMin>,
+    State(state): State<AppState>,
+    Json(body): Json<CopyFolderRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    let source = auth.resource.0;
+    let actor = principal_to_actor(&auth.principal);
+    let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
+
+    let parent_folder_id = match body.parent_folder_id {
+        Some(pid) => Some(FolderId(pid)),
+        None => source.parent_folder_id,
+    };
+
+    if let Some(pid) = body.parent_folder_id {
+        authorize_folder_destination(
+            &state.db,
+            &auth.principal,
+            auth.membership.clone(),
+            &auth.workspace,
+            FolderId(pid),
+            EditorMin::ROLE,
+        )
+        .await?;
+    }
+
+    let folder_repo = PgFolderRepo {
+        conn: (*state.db).clone(),
+    };
+    let doc_repo = PgDocumentRepo::new((*state.db).clone(), state.anchor_interval);
+
+    let top_name = format!("{} (copy)", source.name);
+
+    let new_top = folder_repo
+        .create(
+            &ctx,
+            NewFolder {
+                project_id: source.project_id,
+                parent_folder_id,
+                name: top_name,
+            },
+        )
+        .await
+        .map_err(ApiError::Domain)?;
+
+    copy_folder_subtree(&state, &ctx, &folder_repo, &doc_repo, &source, &new_top, 0).await?;
+
+    Ok((StatusCode::CREATED, Json(folder_to_dto(new_top))))
+}
+
+/// Recursively recreates the documents and subfolders of `source` underneath the
+/// already-created `dest` folder.
+///
+/// Descendant subfolders and documents preserve their original names verbatim
+/// (only the top-level copy carries the " (copy)" suffix, applied by the caller).
+/// Every created entity gets a fresh id and, for documents, a fresh slug and
+/// first revision. Bounded by `MAX_COPY_DEPTH` to guard against cyclic trees.
+async fn copy_folder_subtree(
+    state: &AppState,
+    ctx: &WorkspaceCtx,
+    folder_repo: &PgFolderRepo,
+    doc_repo: &PgDocumentRepo,
+    source: &Folder,
+    dest: &Folder,
+    depth: usize,
+) -> Result<(), ApiError> {
+    if depth >= MAX_COPY_DEPTH {
+        return Err(ApiError::InvalidInput {
+            message: "folder nesting is too deep to copy".to_string(),
+        });
+    }
+
+    let documents = doc_repo
+        .list_in_folder(ctx, source.id)
+        .await
+        .map_err(ApiError::Domain)?;
+
+    for doc in &documents {
+        copy_document_into(state, ctx, doc_repo, doc, Some(dest.id), dest.project_id).await?;
+    }
+
+    let children = folder_repo
+        .list_children(ctx, Some(source.id))
+        .await
+        .map_err(ApiError::Domain)?;
+
+    for child in &children {
+        let new_child = folder_repo
+            .create(
+                ctx,
+                NewFolder {
+                    project_id: child.project_id,
+                    parent_folder_id: Some(dest.id),
+                    name: child.name.clone(),
+                },
+            )
+            .await
+            .map_err(ApiError::Domain)?;
+
+        Box::pin(copy_folder_subtree(
+            state,
+            ctx,
+            folder_repo,
+            doc_repo,
+            child,
+            &new_child,
+            depth + 1,
+        ))
+        .await?;
+    }
+
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------

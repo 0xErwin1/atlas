@@ -45,6 +45,17 @@ pub struct MoveDocumentRequest {
     pub folder_id: Option<uuid::Uuid>,
 }
 
+/// Request body for `POST /v1/workspaces/{ws}/documents/{slug}/copy`.
+///
+/// `folder_id` is the destination folder for the copy. When omitted, the copy
+/// lands in the same folder as the source document.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct CopyDocumentRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub folder_id: Option<uuid::Uuid>,
+}
+
 /// Actor attribution attached to revisions and attachments.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]

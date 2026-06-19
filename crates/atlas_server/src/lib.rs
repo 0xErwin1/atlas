@@ -246,6 +246,10 @@ pub fn app(state: AppState) -> Router {
             "/v1/workspaces/{ws}/documents/{slug}/move",
             axum::routing::patch(routes::documents::move_document),
         )
+        .route(
+            "/v1/workspaces/{ws}/documents/{slug}/copy",
+            axum::routing::post(routes::documents::copy_document),
+        )
         // Folders
         .route(
             "/v1/workspaces/{ws}/projects/{project_slug}/folders",
@@ -260,6 +264,10 @@ pub fn app(state: AppState) -> Router {
         .route(
             "/v1/workspaces/{ws}/folders/{folder_id}/move",
             axum::routing::patch(routes::folders::move_folder),
+        )
+        .route(
+            "/v1/workspaces/{ws}/folders/{folder_id}/copy",
+            axum::routing::post(routes::folders::copy_folder),
         )
         // Search
         .route("/v1/workspaces/{ws}/search", get(routes::search::search))

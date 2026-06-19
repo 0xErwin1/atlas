@@ -296,6 +296,24 @@ impl DocumentRepo for PgDocumentRepo {
             .map_err(internal_err)
     }
 
+    async fn list_in_folder(
+        &self,
+        ctx: &WorkspaceCtx,
+        folder: FolderId,
+    ) -> Result<Vec<Document>, DomainError> {
+        document::Entity::find()
+            .filter(document::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(document::Column::FolderId.eq(folder.0))
+            .filter(document::Column::DeletedAt.is_null())
+            .all(&self.conn)
+            .await
+            .map_err(db_err)?
+            .into_iter()
+            .map(document_from)
+            .collect::<Result<Vec<_>, String>>()
+            .map_err(internal_err)
+    }
+
     async fn rename(
         &self,
         ctx: &WorkspaceCtx,

@@ -43,6 +43,16 @@ pub trait DocumentRepo: Send + Sync {
         slug: &str,
     ) -> Result<Option<Document>, DomainError>;
 
+    /// Lists every live document whose `folder_id` equals `folder`, without any
+    /// visibility filtering. Used by the recursive folder copy, which has already
+    /// authorized the caller against the source subtree and needs the raw set of
+    /// documents to duplicate.
+    async fn list_in_folder(
+        &self,
+        ctx: &WorkspaceCtx,
+        folder: FolderId,
+    ) -> Result<Vec<Document>, DomainError>;
+
     /// Renames a document: updates `title`, re-derives `slug` (with collision
     /// resolution), and propagates the display title to any inbound
     /// `document_links` rows that resolved to this document.

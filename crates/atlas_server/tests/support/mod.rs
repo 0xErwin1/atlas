@@ -6,9 +6,9 @@ use atlas_client::AtlasClient;
 use atlas_domain::{Actor, WorkspaceCtx, ids::WorkspaceId};
 use atlas_server::{
     persistence::repos::{
-        MembershipRepo, NewUser, NewWorkspace, PgApiKeyRepo, PgBoardRepo, PgFolderRepo,
-        PgMembershipRepo, PgProjectRepo, PgPropertyDefinitionRepo, PgSessionRepo, PgTaskRepo,
-        PgUserRepo, PgWorkspaceRepo, User, UserRepo, Workspace, WorkspaceRepo,
+        MembershipRepo, NewUser, NewWorkspace, PgApiKeyRepo, PgBoardRepo, PgDocumentRepo,
+        PgFolderRepo, PgMembershipRepo, PgProjectRepo, PgPropertyDefinitionRepo, PgSessionRepo,
+        PgTaskRepo, PgUserRepo, PgWorkspaceRepo, User, UserRepo, Workspace, WorkspaceRepo,
     },
     state::AppState,
 };
@@ -95,6 +95,10 @@ impl TestDb {
         PgFolderRepo {
             conn: self.conn.clone(),
         }
+    }
+
+    pub(crate) fn doc_repo(&self) -> PgDocumentRepo {
+        PgDocumentRepo::new(self.conn.clone(), 25)
     }
 
     pub(crate) fn property_definition_repo(&self) -> PgPropertyDefinitionRepo {

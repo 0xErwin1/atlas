@@ -12,8 +12,8 @@ use serde::Deserialize;
 
 use atlas_api::{
     dtos::documents::{
-        ActorDto, AttachmentDto, BacklinkDto, CreateDocumentRequest, DocumentDto,
-        DocumentSummaryDto, FrontmatterDto, MoveDocumentRequest, RevisionContentDto,
+        ActorDto, AttachmentDto, BacklinkDto, CopyDocumentRequest, CreateDocumentRequest,
+        DocumentDto, DocumentSummaryDto, FrontmatterDto, MoveDocumentRequest, RevisionContentDto,
         RevisionMetaDto, UpdateContentRequest, UpdateDocumentRequest,
     },
     pagination::{Cursor, Page},
@@ -115,17 +115,49 @@ pub(crate) async fn create_document(
     }
 
     let content = body.content.unwrap_or_default();
+
+    let doc = persist_new_document(
+        &state,
+        &ctx,
+        &doc_repo,
+        body.title,
+        slug,
+        content,
+        folder_id,
+        Some(project_id),
+    )
+    .await?;
+
+    Ok((StatusCode::CREATED, Json(document_to_dto(doc))))
+}
+
+/// Persists a new document and its first revision exactly the way the normal
+/// create path does: derives frontmatter from the content, inserts via the
+/// repository (which writes the fresh first revision), and replaces the document's
+/// outbound wikilinks. Shared by `create_document` and `copy_document` so a copied
+/// document is indistinguishable from a freshly created one.
+#[allow(clippy::too_many_arguments)]
+async fn persist_new_document(
+    state: &AppState,
+    ctx: &WorkspaceCtx,
+    doc_repo: &PgDocumentRepo,
+    title: String,
+    slug: String,
+    content: String,
+    folder_id: Option<FolderId>,
+    project_id: Option<atlas_domain::ids::ProjectId>,
+) -> Result<atlas_domain::entities::documents::Document, ApiError> {
     let frontmatter = derive_frontmatter(&content);
 
     let doc = doc_repo
         .create(
-            &ctx,
+            ctx,
             NewDocument {
-                title: body.title,
+                title,
                 slug: Some(slug),
                 content,
                 folder_id,
-                project_id: Some(project_id),
+                project_id,
                 frontmatter: Some(frontmatter),
             },
         )
@@ -135,9 +167,9 @@ pub(crate) async fn create_document(
     let link_repo = PgDocumentLinkRepo {
         conn: (*state.db).clone(),
     };
-    update_document_links(&ctx, &doc_repo, &link_repo, doc.id, &doc.content).await?;
+    update_document_links(ctx, doc_repo, &link_repo, doc.id, &doc.content).await?;
 
-    Ok((StatusCode::CREATED, Json(document_to_dto(doc))))
+    Ok(doc)
 }
 
 // ---------------------------------------------------------------------------
@@ -965,6 +997,105 @@ pub(crate) async fn move_document(
         .ok_or(ApiError::NotFound)?;
 
     Ok(Json(document_to_dto(updated)))
+}
+
+// ---------------------------------------------------------------------------
+// POST /v1/workspaces/{ws}/documents/{slug}/copy
+// ---------------------------------------------------------------------------
+
+#[utoipa::path(
+    post,
+    path = "/v1/workspaces/{ws}/documents/{slug}/copy",
+    tag = "documents",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+        ("slug" = String, Path, description = "Source document slug"),
+    ),
+    request_body = CopyDocumentRequest,
+    responses(
+        (status = 201, description = "Document copied", body = DocumentDto),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Insufficient permissions"),
+        (status = 404, description = "Document not found"),
+    )
+)]
+pub(crate) async fn copy_document(
+    auth: Authorized<DocumentSlugRes, EditorMin>,
+    State(state): State<AppState>,
+    Json(body): Json<CopyDocumentRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    let source = auth.resource.0;
+    let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
+    let doc_repo = PgDocumentRepo::new((*state.db).clone(), state.anchor_interval);
+
+    let folder_id = match body.folder_id {
+        Some(fid) => Some(FolderId(fid)),
+        None => source.folder_id,
+    };
+
+    if let Some(fid) = body.folder_id {
+        authorize_folder_destination(
+            &state.db,
+            &auth.principal,
+            auth.membership.clone(),
+            &auth.workspace,
+            FolderId(fid),
+            EditorMin::ROLE,
+        )
+        .await?;
+    }
+
+    let title = format!("{} (copy)", source.title);
+
+    let base_slug = slugify(&title);
+    let existing = collect_existing_slugs_for_workspace(&state, &ctx).await?;
+    let taken: Vec<&str> = existing.iter().map(String::as_str).collect();
+    let slug = resolve_collision(&base_slug, &taken);
+
+    let copy = persist_new_document(
+        &state,
+        &ctx,
+        &doc_repo,
+        title,
+        slug,
+        source.content,
+        folder_id,
+        source.project_id,
+    )
+    .await?;
+
+    Ok((StatusCode::CREATED, Json(document_to_dto(copy))))
+}
+
+/// Copies a single source document into `folder_id` / `project_id`, keeping the
+/// source title verbatim (no " (copy)" suffix) and a fresh collision-resolved
+/// slug. Used by the recursive folder copy to duplicate every document in the
+/// source subtree.
+pub(crate) async fn copy_document_into(
+    state: &AppState,
+    ctx: &WorkspaceCtx,
+    doc_repo: &PgDocumentRepo,
+    source: &atlas_domain::entities::documents::Document,
+    folder_id: Option<FolderId>,
+    project_id: Option<atlas_domain::ids::ProjectId>,
+) -> Result<atlas_domain::entities::documents::Document, ApiError> {
+    let base_slug = slugify(&source.title);
+    let existing = collect_existing_slugs_for_workspace(state, ctx).await?;
+    let taken: Vec<&str> = existing.iter().map(String::as_str).collect();
+    let slug = resolve_collision(&base_slug, &taken);
+
+    persist_new_document(
+        state,
+        ctx,
+        doc_repo,
+        source.title.clone(),
+        slug,
+        source.content.clone(),
+        folder_id,
+        project_id,
+    )
+    .await
 }
 
 // ---------------------------------------------------------------------------

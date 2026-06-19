@@ -16,11 +16,15 @@ use atlas_api::{
             UpdateTaskRequest,
         },
         documents::{
-            AttachmentDto, BacklinkDto, ConflictProblemDto, CreateDocumentRequest, DocumentDto,
-            DocumentSummaryDto, FrontmatterDto, MoveDocumentRequest, RevisionContentDto,
-            RevisionMetaDto, UpdateContentRequest, UpdateDocumentRequest,
+            AttachmentDto, BacklinkDto, ConflictProblemDto, CopyDocumentRequest,
+            CreateDocumentRequest, DocumentDto, DocumentSummaryDto, FrontmatterDto,
+            MoveDocumentRequest, RevisionContentDto, RevisionMetaDto, UpdateContentRequest,
+            UpdateDocumentRequest,
         },
-        folders::{CreateFolderRequest, FolderDto, MoveFolderRequest, RenameFolderRequest},
+        folders::{
+            CopyFolderRequest, CreateFolderRequest, FolderDto, MoveFolderRequest,
+            RenameFolderRequest,
+        },
         search::SearchHitDto,
     },
     pagination::Page,
@@ -649,6 +653,22 @@ impl AtlasClient {
         self.decode_response(response, "move_folder").await
     }
 
+    /// `POST /v1/workspaces/{ws}/folders/{folder_id}/copy`
+    pub async fn copy_folder(
+        &self,
+        ws: &str,
+        folder_id: uuid::Uuid,
+        parent_folder_id: Option<uuid::Uuid>,
+    ) -> Result<FolderDto, ClientError> {
+        let response = self
+            .post(&format!("/v1/workspaces/{ws}/folders/{folder_id}/copy"))
+            .header("x-atlas-csrf", "1")
+            .json(&CopyFolderRequest { parent_folder_id })
+            .send()
+            .await?;
+        self.decode_response(response, "copy_folder").await
+    }
+
     /// `DELETE /v1/workspaces/{ws}/folders/{folder_id}`
     pub async fn delete_folder(&self, ws: &str, folder_id: uuid::Uuid) -> Result<(), ClientError> {
         let response = self
@@ -930,6 +950,22 @@ impl AtlasClient {
             .send()
             .await?;
         self.decode_response(response, "move_document").await
+    }
+
+    /// `POST /v1/workspaces/{ws}/documents/{slug}/copy`
+    pub async fn copy_document(
+        &self,
+        ws: &str,
+        slug: &str,
+        folder_id: Option<uuid::Uuid>,
+    ) -> Result<DocumentDto, ClientError> {
+        let response = self
+            .post(&format!("/v1/workspaces/{ws}/documents/{slug}/copy"))
+            .header("x-atlas-csrf", "1")
+            .json(&CopyDocumentRequest { folder_id })
+            .send()
+            .await?;
+        self.decode_response(response, "copy_document").await
     }
 
     // ---- Boards ----------------------------------------------------------------

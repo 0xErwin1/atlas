@@ -27,6 +27,17 @@ pub struct MoveFolderRequest {
     pub parent_folder_id: Option<uuid::Uuid>,
 }
 
+/// Request body for `POST /v1/workspaces/{ws}/folders/{folder_id}/copy`.
+///
+/// `parent_folder_id` is the destination parent for the copied top folder. When
+/// omitted, the copy lands under the same parent as the source folder.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct CopyFolderRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_folder_id: Option<uuid::Uuid>,
+}
+
 /// Folder representation returned by all folder endpoints.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
