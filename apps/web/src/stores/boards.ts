@@ -9,6 +9,7 @@ export type BoardDto = components['schemas']['BoardDto'];
 export type BoardSummaryDto = components['schemas']['BoardSummaryDto'];
 export type ColumnDto = components['schemas']['ColumnDto'];
 export type TaskSummaryDto = components['schemas']['TaskSummaryDto'];
+export type TaskDto = components['schemas']['TaskDto'];
 
 /**
  * Reconcile shape: a subset of TaskDto fields we need to update a summary after a move.
@@ -40,6 +41,11 @@ export const useBoardsStore = defineStore('boards', () => {
   const boardsByProject = ref<Map<string, BoardSummaryDto[]>>(new Map());
   const columns = ref<ColumnDto[]>([]);
   const tasks = ref<Map<string, TaskSummaryDto[]>>(new Map());
+  // Full task DTOs keyed by readable_id, lazily fetched for the date-driven
+  // layouts (calendar, timeline, table Due column) since the bulk task summary
+  // carries no due_date. The data model has no start_date at all.
+  const taskDetails = ref<Map<string, TaskDto>>(new Map());
+  const detailsLoading = ref(false);
   const loading = ref(false);
   const error = ref<string | null>(null);
 
@@ -234,6 +240,39 @@ export const useBoardsStore = defineStore('boards', () => {
 
     // Feed the (endpoint-less) tag registry from real labels so facets can offer them.
     useLabelColorsStore().recordTags(items.flatMap((t) => t.labels ?? []));
+  }
+
+  function taskDetail(readableId: string): TaskDto | undefined {
+    return taskDetails.value.get(readableId);
+  }
+
+  /**
+   * Fetch full DTOs for every task currently on the board so the date-driven
+   * layouts have real due dates. The bulk summary endpoint omits due_date, so
+   * this is a per-task fan-out; boards are small enough that one parallel batch
+   * is acceptable. Never fabricates dates — a task with no due_date stays absent.
+   */
+  async function loadTaskDetails(ws: string): Promise<void> {
+    const ids = [...tasks.value.values()].flat().map((t) => t.readable_id);
+
+    detailsLoading.value = true;
+
+    const results = await Promise.all(
+      ids.map((rid) =>
+        wrappedClient.GET('/v1/workspaces/{ws}/tasks/{readable_id}', {
+          params: { path: { ws, readable_id: rid } },
+        }),
+      ),
+    );
+
+    const next = new Map<string, TaskDto>();
+    results.forEach((res, i) => {
+      const rid = ids[i];
+      if (rid !== undefined && res.data !== undefined) next.set(rid, res.data);
+    });
+
+    taskDetails.value = next;
+    detailsLoading.value = false;
   }
 
   /**
@@ -582,6 +621,10 @@ export const useBoardsStore = defineStore('boards', () => {
     columns,
     loading,
     error,
+    taskDetails,
+    detailsLoading,
+    taskDetail,
+    loadTaskDetails,
     tasksByColumn,
     loadBoards,
     loadBoardsForProject,

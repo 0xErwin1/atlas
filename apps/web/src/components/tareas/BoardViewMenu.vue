@@ -1,44 +1,40 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed } from 'vue';
 import Icon from '@/components/ui/Icon.vue';
 import Popover from '@/components/ui/Popover.vue';
-import { useUiStore } from '@/stores/ui';
+import { type TaskBoardView, useUiStore } from '@/stores/ui';
 
 /**
- * Board view switcher (Board · List · Calendar · Table · Timeline). Only the
- * Board view is implemented; the others are planned layouts, so selecting one
- * surfaces a "coming soon" banner. The floating surface and its open/dismiss
- * behavior come from the shared Popover.
+ * Board view switcher (Board · List · Table · Calendar · Timeline). Picking one
+ * sets the active layout on the ui store, which the Tasks view renders. The
+ * floating surface and its open/dismiss behavior come from the shared Popover.
  */
 
 interface ViewOption {
-  id: string;
+  id: TaskBoardView;
   label: string;
   icon: string;
-  ready: boolean;
 }
 
 const VIEWS: ViewOption[] = [
-  { id: 'board', label: 'Board', icon: 'columns-3', ready: true },
-  { id: 'list', label: 'List', icon: 'tasks', ready: false },
-  { id: 'calendar', label: 'Calendar', icon: 'calendar', ready: false },
-  { id: 'table', label: 'Table', icon: 'dashboard', ready: false },
-  { id: 'timeline', label: 'Timeline', icon: 'clock', ready: false },
+  { id: 'board', label: 'Board', icon: 'columns-3' },
+  { id: 'list', label: 'List', icon: 'tasks' },
+  { id: 'table', label: 'Table', icon: 'dashboard' },
+  { id: 'calendar', label: 'Calendar', icon: 'calendar' },
+  { id: 'timeline', label: 'Timeline', icon: 'clock' },
 ];
 
 const ui = useUiStore();
-const activeId = ref('board');
+const activeId = computed(() => ui.taskView);
+
+const activeView = computed(() => VIEWS.find((v) => v.id === activeId.value) ?? VIEWS[0]!);
 
 function activeLabel(): string {
-  return VIEWS.find((v) => v.id === activeId.value)?.label ?? 'Board';
+  return activeView.value.label;
 }
 
 function pick(view: ViewOption): void {
-  if (view.ready) {
-    activeId.value = view.id;
-    return;
-  }
-  ui.showBanner(`${view.label} view is coming soon`, 'info');
+  ui.setTaskView(view.id);
 }
 
 function newView(): void {
@@ -71,7 +67,7 @@ function newView(): void {
         :style="{ borderColor: open ? 'var(--c-primary)' : 'var(--c-border)' }"
         @click="toggle"
       >
-        <Icon name="columns-3" :size="13" style="color: var(--c-muted); flex: 0 0 auto;" />
+        <Icon :name="activeView.icon" :size="13" style="color: var(--c-muted); flex: 0 0 auto;" />
         <span style="white-space: nowrap;">{{ activeLabel() }}</span>
         <Icon name="chevron-down" :size="12" style="color: var(--c-muted); flex: 0 0 auto;" />
       </button>

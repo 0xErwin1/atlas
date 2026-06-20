@@ -8,8 +8,14 @@ import LoadingState from '@/components/states/LoadingState.vue';
 // biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
 import BoardViewMenu from '@/components/tareas/BoardViewMenu.vue';
 import KanbanBoard from '@/components/tareas/KanbanBoard.vue';
+import TaskCalendarView from '@/components/tareas/TaskCalendarView.vue';
 import TaskDetailPane from '@/components/tareas/TaskDetailPane.vue';
+import TaskListView from '@/components/tareas/TaskListView.vue';
+import TaskTableView from '@/components/tareas/TaskTableView.vue';
+import TaskTimelineView from '@/components/tareas/TaskTimelineView.vue';
 import Icon from '@/components/ui/Icon.vue';
+import Popover from '@/components/ui/Popover.vue';
+import type { TaskGroupBy } from '@/stores/ui';
 import { useBreakpoint } from '@/composables/useBreakpoint';
 import { useBoardsStore } from '@/stores/boards';
 import { useTaskDetailStore } from '@/stores/taskDetail';
@@ -57,6 +63,37 @@ const paneTask = computed(() => {
 const paneVisible = computed(() => paneTask.value !== null && ui.taskViewMode !== 'full');
 const boardDimmed = computed(() => paneVisible.value && ui.taskViewMode === 'modal');
 
+// The active board layout. Every view takes the same (ws, selected) contract and
+// emits select/open, so the toolbar and detail pane wire identically across them.
+const VIEW_COMPONENTS = {
+  board: KanbanBoard,
+  list: TaskListView,
+  table: TaskTableView,
+  calendar: TaskCalendarView,
+  timeline: TaskTimelineView,
+} as const;
+
+const activeViewComponent = computed(() => VIEW_COMPONENTS[ui.taskView]);
+const isBoardView = computed(() => ui.taskView === 'board');
+
+const GROUP_OPTIONS: { id: TaskGroupBy; label: string }[] = [
+  { id: 'status', label: 'Status' },
+  { id: 'assignee', label: 'Assignee' },
+  { id: 'priority', label: 'Priority' },
+];
+
+const groupLabel = computed(() => GROUP_OPTIONS.find((g) => g.id === ui.taskGroupBy)?.label ?? 'Status');
+
+// Calendar, timeline and table render real due dates, which the bulk task summary
+// omits; fetch the full task DTOs once when one of those layouts becomes active.
+function ensureTaskDetails(view = ui.taskView): void {
+  if ((view === 'calendar' || view === 'timeline' || view === 'table') && ws.value !== '') {
+    void boards.loadTaskDetails(ws.value);
+  }
+}
+
+watch(() => ui.taskView, ensureTaskDetails);
+
 async function onSelect(readableId: string): Promise<void> {
   // The persisted preference may be full screen — then the board has no inline
   // pane; open the standalone route instead. On mobile the inline dock/dialog is
@@ -102,6 +139,7 @@ async function loadBoard(): Promise<void> {
   await boards.loadBoard(ws.value, boardId.value);
   await Promise.all([boards.loadColumns(ws.value, boardId.value), boards.loadTasks(ws.value, boardId.value)]);
 
+  ensureTaskDetails();
   await openFromQuery();
 }
 
@@ -183,6 +221,41 @@ watch([boardId, ws], loadBoard, { immediate: true });
     <EditorToolbar v-else :breadcrumbs="breadcrumbs" :dirty="false">
       <template #lead>
         <BoardViewMenu />
+        <Popover v-if="!isBoardView" placement="bottom-start" width="180px">
+          <template #trigger="{ open, toggle }">
+            <button
+              type="button"
+              class="atl-gbtn"
+              :title="`Group by: ${groupLabel}`"
+              aria-haspopup="menu"
+              :aria-expanded="open"
+              @click="toggle"
+            >
+              <Icon name="user" :size="14" />
+              Group: {{ groupLabel }}
+            </button>
+          </template>
+          <template #default="{ close }">
+            <div style="padding: 5px 0;">
+              <div
+                v-for="opt in GROUP_OPTIONS"
+                :key="opt.id"
+                class="atl-vmi"
+                :class="{ on: opt.id === ui.taskGroupBy }"
+                role="menuitem"
+                @click="ui.setTaskGroupBy(opt.id), close()"
+              >
+                <span style="flex: 1;">{{ opt.label }}</span>
+                <Icon
+                  v-if="opt.id === ui.taskGroupBy"
+                  name="check"
+                  :size="13"
+                  style="color: var(--c-primary); flex: 0 0 auto;"
+                />
+              </div>
+            </div>
+          </template>
+        </Popover>
       </template>
 
       <button
@@ -220,7 +293,8 @@ watch([boardId, ws], loadBoard, { immediate: true });
       icon="square-kanban"
     />
     <div v-else class="flex flex-1 min-h-0" style="position: relative;">
-      <KanbanBoard
+      <component
+        :is="activeViewComponent"
         :ws="ws"
         :selected-readable-id="selectedReadableId"
         :class="{ 'atl-board-dimmed': boardDimmed }"
@@ -233,6 +307,7 @@ watch([boardId, ws], loadBoard, { immediate: true });
         :ws="ws"
         @close="closePane"
         @expand="expandToFull"
+        @navigate="openTask"
       />
     </div>
   </AppShell>

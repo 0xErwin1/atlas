@@ -6,6 +6,8 @@ export type SettingsTab = 'account' | 'keys' | 'users' | 'about';
 export type BannerType = 'error' | 'warning' | 'info' | 'success';
 export type Theme = 'dark' | 'light';
 export type TaskViewMode = 'sidebar' | 'modal' | 'full';
+export type TaskBoardView = 'board' | 'list' | 'table' | 'calendar' | 'timeline';
+export type TaskGroupBy = 'status' | 'assignee' | 'priority';
 
 export interface Banner {
   message: string;
@@ -183,6 +185,20 @@ export const useUiStore = defineStore('ui', () => {
     }
   }
 
+  // Which layout the board's tasks render in (kanban board, list, table,
+  // calendar, timeline) and how non-board layouts group rows. Session state.
+  const taskView = ref<TaskBoardView>('board');
+
+  function setTaskView(view: TaskBoardView) {
+    taskView.value = view;
+  }
+
+  const taskGroupBy = ref<TaskGroupBy>('status');
+
+  function setTaskGroupBy(group: TaskGroupBy) {
+    taskGroupBy.value = group;
+  }
+
   const settingsOpen = ref(false);
   const settingsTab = ref<SettingsTab>('account');
 
@@ -223,6 +239,10 @@ export const useUiStore = defineStore('ui', () => {
     toggleSidebar,
     taskViewMode,
     setTaskViewMode,
+    taskView,
+    setTaskView,
+    taskGroupBy,
+    setTaskGroupBy,
     settingsOpen,
     settingsTab,
     openSettings,
