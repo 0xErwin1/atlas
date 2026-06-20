@@ -50,16 +50,16 @@ const rows = computed<Row[]>(() =>
   <ul
     v-if="rows.length > 0"
     class="flex flex-col"
-    style="gap: 12px; list-style: none; margin: 0; padding: 0;"
+    style="list-style: none; margin: 0; padding: 0;"
   >
     <li
       v-for="row in rows"
       :key="row.id"
       class="flex items-start"
-      style="gap: 8px;"
+      style="gap: 8px; padding: 7px 0;"
       :data-actor-kind="row.isAgent ? 'agent' : 'user'"
     >
-      <Avatar :name="row.name" :agent="row.isAgent" :size="18" />
+      <Avatar :name="row.name" :agent="row.isAgent" :size="22" />
 
       <div class="flex flex-col" style="gap: 2px; min-width: 0;">
         <div class="flex items-center" style="gap: 6px; flex-wrap: wrap;">

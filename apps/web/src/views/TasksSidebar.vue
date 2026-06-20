@@ -29,6 +29,14 @@ const activeBoardId = computed(() => {
 
 const ws = computed(() => workspace.activeWorkspaceSlug ?? '');
 
+// Saved-view shortcuts shown under the projects. These are planned views (not yet
+// wired to a backend query), so selecting one surfaces a "coming soon" banner.
+const savedViews = [
+  { label: 'My tasks', icon: 'star', agent: false },
+  { label: 'Recently updated', icon: 'clock', agent: false },
+  { label: 'Agent activity', icon: 'sparkles', agent: true },
+];
+
 const collapsed = ref<Set<string>>(new Set());
 function isExpanded(slug: string): boolean {
   return !collapsed.value.has(slug);
@@ -357,6 +365,23 @@ watch(() => workspace.activeWorkspaceSlug, loadAll);
       </template>
     </template>
 
+    <SectionLabel>Views</SectionLabel>
+    <button
+      v-for="view in savedViews"
+      :key="view.label"
+      type="button"
+      class="atl-row views-row"
+      @click="ui.showBanner(`${view.label} is coming soon`, 'info')"
+    >
+      <span style="width: 12px; flex: 0 0 auto;" />
+      <Icon
+        :name="view.icon"
+        :size="13"
+        :style="{ color: view.agent ? 'var(--c-agent)' : 'var(--c-muted)', flexShrink: 0 }"
+      />
+      <span class="views-label">{{ view.label }}</span>
+    </button>
+
     <div
       v-if="editActive?.kind === 'new-project'"
       style="display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px 8px;"
@@ -446,5 +471,28 @@ watch(() => workspace.activeWorkspaceSlug, loadAll);
   font-family: var(--font-mono);
   color: var(--c-foreground);
   outline: none;
+}
+
+.views-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 24px;
+  padding: 0 8px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--c-foreground);
+  text-align: left;
+}
+
+.views-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

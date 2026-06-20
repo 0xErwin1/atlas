@@ -3,6 +3,9 @@ import { computed } from 'vue';
 import Avatar from '@/components/ui/Avatar.vue';
 import Chip, { type ChipTone } from '@/components/ui/Chip.vue';
 import type { TaskSummaryDto } from '@/stores/boards';
+import { useLabelColorsStore } from '@/stores/labelColors';
+
+const labelColors = useLabelColorsStore();
 
 const props = defineProps<{
   task: TaskSummaryDto;
@@ -62,7 +65,7 @@ const priorityTone = computed<ChipTone>(() => {
       class="flex flex-wrap"
       style="gap: 5px;"
     >
-      <Chip v-for="label in task.labels ?? []" :key="label" tone="info">{{ label }}</Chip>
+      <Chip v-for="label in task.labels ?? []" :key="label" :color="labelColors.colorFor(`tag:${label.toLowerCase()}`)">{{ label }}</Chip>
       <Chip v-if="task.priority" :tone="priorityTone">{{ task.priority }}</Chip>
     </div>
 

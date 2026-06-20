@@ -3,6 +3,7 @@ import { ref } from 'vue';
 import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
 import { collectPaged } from '@/lib/pagination';
+import { useLabelColorsStore } from '@/stores/labelColors';
 
 export type BoardDto = components['schemas']['BoardDto'];
 export type BoardSummaryDto = components['schemas']['BoardSummaryDto'];
@@ -230,6 +231,9 @@ export const useBoardsStore = defineStore('boards', () => {
     }
 
     tasks.value = grouped;
+
+    // Feed the (endpoint-less) tag registry from real labels so facets can offer them.
+    useLabelColorsStore().recordTags(items.flatMap((t) => t.labels ?? []));
   }
 
   /**

@@ -1,6 +1,11 @@
 import { mount } from '@vue/test-utils';
-import { describe, expect, it } from 'vitest';
+import { createPinia, setActivePinia } from 'pinia';
+import { beforeEach, describe, expect, it } from 'vitest';
 import SubtaskList from '@/components/tareas/SubtaskList.vue';
+
+beforeEach(() => {
+  setActivePinia(createPinia());
+});
 
 const subtask = (id: string, readableId: string, title: string, columnId: string, estimate?: number) => ({
   id,

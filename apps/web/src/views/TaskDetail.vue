@@ -5,6 +5,7 @@ import ErrorState from '@/components/states/ErrorState.vue';
 import LoadingState from '@/components/states/LoadingState.vue';
 import TaskBody from '@/components/tareas/TaskBody.vue';
 import TaskDetailHeader from '@/components/tareas/TaskDetailHeader.vue';
+import TaskInspector from '@/components/tareas/TaskInspector.vue';
 import { useBreakpoint } from '@/composables/useBreakpoint';
 import { useBoardsStore } from '@/stores/boards';
 import { useTaskDetailStore } from '@/stores/taskDetail';
@@ -95,10 +96,15 @@ watch([readableId, ws], load, { immediate: true });
       @change="onChangeMode"
     />
 
-    <div class="flex-1 overflow-y-auto" :style="isMobile ? 'padding: 16px;' : 'padding: 24px 40px;'">
-      <TaskBody v-if="task" :task="task" :ws="ws" layout="wide" />
+    <div v-if="task" class="flex flex-1 min-h-0">
+      <div class="flex-1 overflow-y-auto" :style="isMobile ? 'padding: 16px;' : 'padding: 24px 40px;'">
+        <TaskBody :task="task" :ws="ws" layout="wide" :show-secondary="isMobile" />
+      </div>
+      <TaskInspector v-if="!isMobile" :task="task" :ws="ws" />
+    </div>
+    <div v-else class="flex-1 overflow-y-auto" style="padding: 24px 40px;">
       <ErrorState
-        v-else-if="tasks.error"
+        v-if="tasks.error"
         title="Couldn’t load task"
         :hint="tasks.error"
         @retry="load"

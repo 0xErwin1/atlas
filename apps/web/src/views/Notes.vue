@@ -58,6 +58,19 @@ const body = ref('');
 const meta = ref<Record<string, unknown>>({});
 const headRevisionId = ref('');
 const dirty = ref(false);
+
+// Editor view mode, owned here so the toolbar's segmented control drives the
+// shared editor (which renders no in-body controls for Notes).
+const editorMode = ref<'live' | 'source'>('live');
+const editorReading = ref(false);
+
+function toggleEditorSource(): void {
+  editorMode.value = editorMode.value === 'source' ? 'live' : 'source';
+}
+
+function toggleEditorReading(): void {
+  editorReading.value = !editorReading.value;
+}
 const loadError = ref<string | null>(null);
 const wikilinkQuery = ref<string | null>(null);
 const wikilinkCaret = ref<{ left: number; top: number } | null>(null);
@@ -410,12 +423,54 @@ watch(title, (t) => {
       </template>
     </TabStrip>
 
-    <EditorToolbar
-      v-if="!isMobile"
-      :breadcrumbs="breadcrumbs"
-      :dirty="dirty"
-      :share-label="`${title || 'Document'} · note`"
-    >
+    <EditorToolbar v-if="!isMobile" :breadcrumbs="breadcrumbs" :dirty="dirty">
+      <template v-if="slug">
+        <div class="atl-seg" role="group" aria-label="Editor view mode">
+          <button
+            type="button"
+            class="atl-segb accent"
+            :class="{ on: ui.editorWide }"
+            :title="ui.editorWide ? 'Readable width' : 'Wider text'"
+            :aria-pressed="ui.editorWide"
+            @click="ui.toggleEditorWide()"
+          >
+            <Icon name="widen" :size="14" />
+          </button>
+          <div aria-hidden="true" style="width: 1px; height: 14px; background: var(--c-border); margin: 0 1px;" />
+          <button
+            type="button"
+            class="atl-segb"
+            :class="{ on: editorMode === 'source' }"
+            title="Markdown source"
+            :aria-pressed="editorMode === 'source'"
+            @click="toggleEditorSource"
+          >
+            <Icon name="code" :size="14" />
+          </button>
+          <button
+            type="button"
+            class="atl-segb"
+            :class="{ on: editorReading }"
+            title="Rendered view"
+            :aria-pressed="editorReading"
+            @click="toggleEditorReading"
+          >
+            <Icon name="pencil" :size="14" />
+          </button>
+        </div>
+
+        <div aria-hidden="true" style="width: 1px; height: 18px; background: var(--c-border);" />
+
+        <button type="button" class="atl-gbtn" title="History" aria-label="History">
+          <Icon name="history" :size="14" />
+        </button>
+        <button type="button" class="atl-gbtn" title="More" aria-label="More">
+          <Icon name="more-horizontal" :size="14" />
+        </button>
+
+        <div aria-hidden="true" style="width: 1px; height: 18px; background: var(--c-border);" />
+      </template>
+
       <button
         type="button"
         title="Toggle inspector"
@@ -432,9 +487,9 @@ watch(title, (t) => {
     <div class="flex-1 overflow-y-auto">
       <div
         :style="{
-          maxWidth: isMobile || ui.editorWide ? 'none' : '720px',
+          maxWidth: isMobile || ui.editorWide ? 'none' : '980px',
           margin: '0 auto',
-          padding: isMobile ? '16px 16px 32px' : ui.editorWide ? '30px 56px' : '30px 40px',
+          padding: isMobile ? '16px 16px 32px' : '30px 40px',
           position: 'relative',
         }"
       >
@@ -453,7 +508,7 @@ watch(title, (t) => {
 
         <template v-if="slug">
           <h1
-            style="font-size: var(--fs-title); font-weight: var(--fw-bold); color: var(--c-foreground); margin-bottom: 16px;"
+            style="font-size: 22px; font-weight: var(--fw-bold); letter-spacing: -0.01em; color: var(--c-foreground); margin-bottom: 14px;"
           >
             {{ title || 'Untitled' }}
           </h1>
@@ -463,6 +518,8 @@ watch(title, (t) => {
           <div @keydown="onEditorKeydown">
             <NoteEditor
               ref="editorRef"
+              v-model:mode="editorMode"
+              v-model:reading="editorReading"
               :body="body"
               :wikilink-titles="wikilinkTitles"
               @change="onChange"

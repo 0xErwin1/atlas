@@ -117,6 +117,70 @@ select:focus-visible {
   color: var(--c-primary);
 }
 
+/* Editor mode control — segmented widen / source / rendered toggle. */
+.atl-seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--c-panel);
+  border: 1px solid var(--c-border);
+  border-radius: 5px;
+  padding: 2px;
+}
+.atl-segb {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 27px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: var(--c-muted);
+  border-radius: var(--r-lg);
+  cursor: pointer;
+}
+.atl-segb:hover {
+  background: rgba(179, 177, 173, 0.07);
+  color: var(--c-foreground);
+}
+.atl-segb.on {
+  background: var(--c-selection);
+  color: var(--c-foreground);
+}
+.atl-segb.accent.on {
+  background: rgba(255, 180, 84, 0.16);
+  color: var(--c-primary);
+}
+
+/* Dropdown trigger (view switcher, project picker). */
+.atl-dd {
+  transition: background 0.12s;
+}
+.atl-dd:hover {
+  background: var(--c-secondary-hover);
+}
+
+/* View-menu item (board view switcher). */
+.atl-vmi {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 28px;
+  padding: 0 12px;
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: var(--fw-medium);
+  color: var(--c-foreground);
+  user-select: none;
+  white-space: nowrap;
+}
+.atl-vmi:hover {
+  background: rgba(179, 177, 173, 0.07);
+}
+.atl-vmi.on {
+  background: var(--c-selection);
+}
+
 .atl-railitem:hover {
   background: rgba(179, 177, 173, 0.05);
   color: var(--c-foreground);

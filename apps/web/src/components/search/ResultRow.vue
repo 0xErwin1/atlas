@@ -20,7 +20,7 @@ const isTask = computed(() => props.hit.kind === 'task');
 
 const kindLabel = computed(() => (isTask.value ? 'TASK' : 'NOTE'));
 
-const iconName = computed(() => (isTask.value ? 'square-check-big' : 'file-text'));
+const iconName = computed(() => (isTask.value ? 'tasks' : 'file'));
 
 /**
  * Snippet HTML is sanitized to only allow <mark> before it reaches v-html.

@@ -49,6 +49,8 @@ function openShare() {
 
     <Crumb :parts="breadcrumbs" />
 
+    <slot name="lead" />
+
     <div style="flex: 1;" />
 
     <button

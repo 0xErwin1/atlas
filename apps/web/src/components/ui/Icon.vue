@@ -18,9 +18,28 @@ const props = withDefaults(
 // hi-fi design icon set (frames/icons.jsx). Paths use currentColor on a
 // 24-viewBox so they inherit size/color exactly like lucide icons.
 const CUSTOM_GLYPHS: Record<string, { fill?: boolean; paths: string }> = {
+  // Brand mark — diverging legs + crossbar + filled apex, matching the
+  // hi-fi `atlas` glyph (frames/icons.jsx) and the app-icon artwork.
   'atlas-glyph': {
     paths:
-      '<circle cx="12" cy="12" r="9"/><path d="M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18M4 9h16M4 15h16"/>',
+      '<path d="M12 5 5.5 20M12 5 18.5 20M8.3 13.6H15.7"/><circle cx="5.5" cy="20" r="1.6"/><circle cx="18.5" cy="20" r="1.6"/><circle cx="12" cy="4" r="1.8" fill="currentColor" stroke="none"/>',
+  },
+  // Rail identity glyphs ported verbatim from the hi-fi icon set so the rail
+  // matches the design exactly (lucide's file-text/kanban differ visibly).
+  notes: {
+    paths:
+      '<path d="M14 3v5h5"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M9 12h6M9 16h5"/>',
+  },
+  tasks: {
+    paths: '<path d="M3 5l2 2 3-3"/><path d="M3 13l2 2 3-3"/><path d="M11 5h10M11 14h10M11 19h6"/>',
+  },
+  dashboard: {
+    paths:
+      '<rect x="3" y="3" width="8" height="10" rx="1"/><rect x="13" y="3" width="8" height="6" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/><rect x="3" y="17" width="8" height="4" rx="1"/>',
+  },
+  // Reading-width toggle in the editor mode control (hi-fi `widen`).
+  widen: {
+    paths: '<path d="M12 3v18M3 12h18M8 7 3 12l5 5M16 7l5 5-5 5"/>',
   },
   dot: {
     fill: true,

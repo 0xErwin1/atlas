@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import Avatar from '@/components/ui/Avatar.vue';
+import Chip from '@/components/ui/Chip.vue';
 import Icon from '@/components/ui/Icon.vue';
+import { useLabelColorsStore } from '@/stores/labelColors';
 import type { SubtaskDto } from '@/stores/taskDetail';
 
 interface ColumnRef {
@@ -18,11 +20,52 @@ const emit = defineEmits<{
   add: [title: string];
   promote: [readableId: string];
   open: [readableId: string];
+  /** Toggle done / move a sub-task to a column via its checkbox. */
+  setColumn: [readableId: string, columnId: string];
 }>();
 
+const labelColors = useLabelColorsStore();
 const draft = ref('');
 
-const columnName = (columnId: string): string => props.columns.find((c) => c.id === columnId)?.name ?? '—';
+const columnName = (columnId: string): string =>
+  props.columns.find((c) => c.id === columnId)?.name ?? '—';
+
+// Map a column name to a semantic bucket so the status pill and the done checkbox
+// follow the board's flow (matching the kanban column dots). Structural, not a
+// free-text value, so a name-based mapping is appropriate here.
+type Bucket = 'todo' | 'progress' | 'review' | 'done';
+
+function bucket(name: string): Bucket {
+  const n = name.toLowerCase();
+  if (/(done|complete|closed|shipped|merged)/.test(n)) return 'done';
+  if (/(review|qa|verify)/.test(n)) return 'review';
+  if (/(progress|doing|active|wip)/.test(n)) return 'progress';
+  return 'todo';
+}
+
+const PILL: Record<Bucket, { fg: string; bg: string }> = {
+  done: { fg: 'var(--c-success)', bg: 'rgba(170, 217, 76, 0.13)' },
+  review: { fg: 'var(--c-primary)', bg: 'rgba(255, 180, 84, 0.13)' },
+  progress: { fg: 'var(--c-info)', bg: 'rgba(89, 194, 255, 0.13)' },
+  todo: { fg: 'var(--c-muted)', bg: 'rgba(179, 177, 173, 0.1)' },
+};
+
+const doneColumnId = computed(
+  () => props.columns.find((c) => bucket(c.name) === 'done')?.id ?? props.columns.at(-1)?.id ?? null,
+);
+const todoColumnId = computed(() => props.columns[0]?.id ?? null);
+
+function isDone(sub: SubtaskDto): boolean {
+  return bucket(columnName(sub.column_id)) === 'done';
+}
+
+const doneCount = computed(() => props.subtasks.filter(isDone).length);
+
+function toggleDone(sub: SubtaskDto): void {
+  const target = isDone(sub) ? todoColumnId.value : doneColumnId.value;
+  if (target === null || target === sub.column_id) return;
+  emit('setColumn', sub.readable_id, target);
+}
 
 function submitDraft(): void {
   const title = draft.value.trim();
@@ -34,14 +77,24 @@ function submitDraft(): void {
 
 <template>
   <section>
-    <div class="atl-sub-head">Sub-tasks · {{ subtasks.length }}</div>
+    <div class="atl-sub-head">Sub-tasks · {{ doneCount }} / {{ subtasks.length }}</div>
 
     <div v-for="sub in subtasks" :key="sub.id" class="group atl-sub-row" :data-subtask="sub.id">
-      <span class="atl-sub-status">{{ columnName(sub.column_id) }}</span>
+      <button
+        type="button"
+        class="atl-sub-check"
+        :class="{ done: isDone(sub) }"
+        :title="isDone(sub) ? 'Mark not done' : 'Mark done'"
+        :aria-pressed="isDone(sub)"
+        @click="toggleDone(sub)"
+      >
+        <Icon v-if="isDone(sub)" name="check" :size="12" :stroke-width="2.4" />
+      </button>
 
       <button
         type="button"
         class="atl-sub-title"
+        :class="{ done: isDone(sub) }"
         :data-subtask-open="sub.id"
         :title="`Open ${sub.readable_id}`"
         @click="emit('open', sub.readable_id)"
@@ -49,17 +102,33 @@ function submitDraft(): void {
         {{ sub.title }}
       </button>
 
-      <span class="flex items-center" style="gap: 4px;">
-        <Avatar
-          v-for="a in sub.assignees ?? []"
-          :key="`${a.type}:${a.id}`"
-          :name="a.display_name ?? (a.type === 'api_key' ? 'Agent' : 'User')"
-          :agent="a.type === 'api_key'"
-          :size="16"
-        />
-      </span>
+      <Chip
+        v-for="label in sub.labels ?? []"
+        :key="label"
+        :color="labelColors.colorFor(`tag:${label.toLowerCase()}`)"
+      >
+        {{ label }}
+      </Chip>
 
       <span v-if="sub.estimate != null" class="atl-sub-est">{{ sub.estimate }} pts</span>
+
+      <span
+        class="atl-sub-status"
+        :style="{ color: PILL[bucket(columnName(sub.column_id))].fg, background: PILL[bucket(columnName(sub.column_id))].bg }"
+      >
+        <span class="atl-sub-dot" :style="{ background: PILL[bucket(columnName(sub.column_id))].fg }" />
+        {{ columnName(sub.column_id) }}
+      </span>
+
+      <Avatar
+        v-if="(sub.assignees ?? []).length > 0"
+        :name="sub.assignees?.[0]?.display_name ?? ''"
+        :agent="sub.assignees?.[0]?.type === 'api_key'"
+        :size="18"
+      />
+      <span v-else class="atl-sub-unassigned" title="Unassigned">
+        <Icon name="user" :size="11" />
+      </span>
 
       <span class="atl-sub-id">{{ sub.readable_id }}</span>
 
@@ -102,20 +171,34 @@ function submitDraft(): void {
 .atl-sub-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 5px 0;
+  gap: 9px;
+  padding: 6px;
+  border-radius: var(--r-lg);
   font-size: var(--fs-base);
 }
 
-.atl-sub-status {
+.atl-sub-row:hover {
+  background: rgba(179, 177, 173, 0.05);
+}
+
+.atl-sub-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
   flex: 0 0 auto;
-  padding: 1px 8px;
-  border-radius: var(--r-full);
-  background: var(--c-raised);
-  border: 1px solid var(--c-border);
-  color: var(--c-muted);
-  font-size: var(--fs-xs);
-  white-space: nowrap;
+  padding: 0;
+  border: 1px solid var(--c-muted);
+  border-radius: var(--r-sm);
+  background: transparent;
+  cursor: pointer;
+}
+
+.atl-sub-check.done {
+  border-color: var(--c-success);
+  background: var(--c-success);
+  color: var(--c-background);
 }
 
 .atl-sub-title {
@@ -137,6 +220,11 @@ function submitDraft(): void {
   text-decoration: underline;
 }
 
+.atl-sub-title.done {
+  color: var(--c-muted);
+  text-decoration: line-through;
+}
+
 .atl-sub-est {
   flex: 0 0 auto;
   color: var(--c-muted);
@@ -144,10 +232,44 @@ function submitDraft(): void {
   font-family: var(--font-mono);
 }
 
+.atl-sub-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  height: 20px;
+  padding: 0 8px 0 7px;
+  border-radius: var(--r-lg);
+  font-size: 10.5px;
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
+}
+
+.atl-sub-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-full);
+  flex: 0 0 auto;
+}
+
+.atl-sub-unassigned {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  border: 1px dashed var(--c-muted);
+  border-radius: var(--r-sm);
+  color: var(--c-muted);
+}
+
 .atl-sub-id {
   flex: 0 0 auto;
+  width: 46px;
+  text-align: right;
   font-family: var(--font-mono);
-  font-size: var(--fs-xs);
+  font-size: 10.5px;
   color: var(--c-muted);
 }
 
@@ -169,7 +291,7 @@ function submitDraft(): void {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 0 0;
+  padding: 6px;
 }
 
 .atl-sub-add {

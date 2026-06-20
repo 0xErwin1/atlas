@@ -14,6 +14,7 @@ import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
 import Icon from '@/components/ui/Icon.vue';
 import { useInlineEdit } from '@/composables/useInlineEdit';
 import { useBoardsStore } from '@/stores/boards';
+import { useLabelColorsStore } from '@/stores/labelColors';
 import { useTaskDetailStore } from '@/stores/taskDetail';
 import { useTasksStore } from '@/stores/tasks';
 import { useUiStore } from '@/stores/ui';
@@ -26,13 +27,17 @@ const props = withDefaults(
     task: TaskDto;
     ws: string;
     layout?: 'wide' | 'narrow';
+    /** Render References + Activity inline. Off when a host (the full view) shows
+     * them in a side inspector instead, so they are not duplicated. */
+    showSecondary?: boolean;
   }>(),
-  { layout: 'wide' },
+  { layout: 'wide', showSecondary: true },
 );
 
 const boards = useBoardsStore();
 const tasks = useTasksStore();
 const detail = useTaskDetailStore();
+const labelColors = useLabelColorsStore();
 const workspace = useWorkspaceStore();
 const ui = useUiStore();
 const router = useRouter();
@@ -170,6 +175,11 @@ async function onPromoteSubtask(readableId: string): Promise<void> {
   else fail(detail.error);
 }
 
+async function onSubtaskSetColumn(readableId: string, columnId: string): Promise<void> {
+  const ok = await detail.moveSubtaskToColumn(props.ws, readableId, columnId);
+  if (!ok) fail(detail.error);
+}
+
 function onOpenSubtask(readableId: string): void {
   void router.push({ name: 'task-detail', params: { readableId } });
 }
@@ -195,7 +205,13 @@ async function onRemoveReference(referenceId: string): Promise<void> {
       </span>
       <span class="atl-tv-id">{{ task.readable_id }}</span>
       <span style="flex: 1;" />
-      <Chip v-for="label in task.labels ?? []" :key="label" tone="info">{{ label }}</Chip>
+      <Chip
+        v-for="label in task.labels ?? []"
+        :key="label"
+        :color="labelColors.colorFor(`tag:${label.toLowerCase()}`)"
+      >
+        {{ label }}
+      </Chip>
     </div>
 
     <input
@@ -313,19 +329,22 @@ async function onRemoveReference(referenceId: string): Promise<void> {
         @add="onAddSubtask"
         @promote="onPromoteSubtask"
         @open="onOpenSubtask"
+        @set-column="onSubtaskSetColumn"
       />
     </div>
 
-    <div style="margin-top: 22px;">
-      <div class="atl-tv-section-label">References</div>
-      <ReferenceList :references="detail.references" @remove="onRemoveReference" />
-      <ReferenceAdd :ws="ws" @add="onAddReference" />
-    </div>
+    <template v-if="showSecondary">
+      <div style="margin-top: 22px;">
+        <div class="atl-tv-section-label">References</div>
+        <ReferenceList :references="detail.references" @remove="onRemoveReference" />
+        <ReferenceAdd :ws="ws" @add="onAddReference" />
+      </div>
 
-    <div style="margin-top: 22px;">
-      <div class="atl-tv-section-label">Activity</div>
-      <ActivityFeed :items="detail.activity" />
-    </div>
+      <div style="margin-top: 22px;">
+        <div class="atl-tv-section-label">Activity</div>
+        <ActivityFeed :items="detail.activity" />
+      </div>
+    </template>
   </div>
 </template>
 
@@ -410,7 +429,11 @@ async function onRemoveReference(referenceId: string): Promise<void> {
   display: flex;
   flex-wrap: wrap;
   column-gap: 0;
-  margin-bottom: 14px;
+  margin-bottom: 18px;
+  padding: 8px 14px;
+  background: var(--c-raised);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-lg);
 }
 
 .atl-tv-fields.wide {
@@ -439,8 +462,8 @@ async function onRemoveReference(referenceId: string): Promise<void> {
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 120px;
-  flex: 0 0 120px;
+  width: 92px;
+  flex: 0 0 92px;
   padding-top: 3px;
   color: var(--c-muted);
   font-size: var(--fs-sm);

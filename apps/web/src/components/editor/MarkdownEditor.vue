@@ -46,6 +46,10 @@ const props = withDefaults(
      * surface (60vh); embedded hosts (task description) pass a compact value so the
      * editor hugs its content instead of leaving a large empty area. */
     minHeight?: string;
+    /** Render the mode/width controls inside the editor body. Hosts with their own
+     * toolbar (Notes) set this false and drive `mode`/`reading` via v-model so the
+     * controls live in the toolbar instead; embedded hosts (tasks) keep them here. */
+    embeddedControls?: boolean;
   }>(),
   {
     placeholder: '',
@@ -54,6 +58,7 @@ const props = withDefaults(
     widthToggle: true,
     wikilinkTitles: () => ({}),
     minHeight: '60vh',
+    embeddedControls: true,
   },
 );
 
@@ -76,10 +81,13 @@ const host = ref<HTMLElement | null>(null);
 let view: EditorView | null = null;
 let activeTrigger: WikilinkTrigger | null = null;
 
-/** Rendering mode: 'live' shows the live-preview decorations, 'source' the raw markdown. */
-const mode = ref<'live' | 'source'>('live');
-/** User-toggled read-only, layered on top of the host's `editable` prop. */
-const readonly = ref(false);
+/** Rendering mode: 'live' shows the live-preview decorations, 'source' the raw
+ * markdown. A v-model so a host toolbar (Notes) can own it; defaults to local
+ * state when unbound (tasks). */
+const mode = defineModel<'live' | 'source'>('mode', { default: 'live' });
+/** User-toggled read-only (reading/preview), layered on top of the host's
+ * `editable` prop. v-model for the same reason as `mode`. */
+const readonly = defineModel<boolean>('reading', { default: false });
 
 // The placeholder string, quoted for use as a CSS `content` value (see <style>).
 const placeholderCss = computed(() => JSON.stringify(props.placeholder));
@@ -200,18 +208,27 @@ function buildExtensions() {
 
 function toggleMode(): void {
   mode.value = mode.value === 'live' ? 'source' : 'live';
-  view?.dispatch({ effects: livePreviewCompartment.reconfigure(renderExtension()) });
 }
 
 function toggleReadonly(): void {
   readonly.value = !readonly.value;
+}
+
+// Reconfigure the live-preview / edit-state compartments whenever the mode or
+// reading flags change — whether flipped by the in-body buttons or by a host
+// toolbar through the v-models.
+watch(mode, () => {
+  view?.dispatch({ effects: livePreviewCompartment.reconfigure(renderExtension()) });
+});
+
+watch(readonly, () => {
   view?.dispatch({
     effects: [
       editStateCompartment.reconfigure(editStateExtension(effectiveEditable())),
       livePreviewCompartment.reconfigure(renderExtension()),
     ],
   });
-}
+});
 
 /**
  * Replaces the open `[[query` trigger text with the chosen reference. An id-bound
@@ -285,7 +302,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="markdown-editor-wrap">
-    <div class="editor-controls">
+    <div v-if="embeddedControls" class="editor-controls">
       <button
         v-if="widthToggle"
         type="button"

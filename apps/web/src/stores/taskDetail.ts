@@ -269,6 +269,44 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     return true;
   }
 
+  /**
+   * Moves a sub-task to another column (status), e.g. when its done checkbox is
+   * toggled. Optimistically updates the local column_id and rolls back on error.
+   */
+  async function moveSubtaskToColumn(
+    ws: string,
+    subtaskReadableId: string,
+    columnId: string,
+  ): Promise<boolean> {
+    error.value = null;
+
+    const idx = subtasks.value.findIndex((s) => s.readable_id === subtaskReadableId);
+    const previous = idx !== -1 ? subtasks.value[idx] : undefined;
+
+    if (idx !== -1 && previous !== undefined) {
+      const optimistic = [...subtasks.value];
+      optimistic[idx] = { ...previous, column_id: columnId };
+      subtasks.value = optimistic;
+    }
+
+    const { error: apiError } = await wrappedClient.POST('/v1/workspaces/{ws}/tasks/{readable_id}/move', {
+      params: { path: { ws, readable_id: subtaskReadableId } },
+      body: { column_id: columnId, before: null, after: null },
+    });
+
+    if (apiError !== undefined) {
+      if (idx !== -1 && previous !== undefined) {
+        const rolledBack = [...subtasks.value];
+        rolledBack[idx] = previous;
+        subtasks.value = rolledBack;
+      }
+      error.value = hintOf(apiError, 'Failed to update sub-task');
+      return false;
+    }
+
+    return true;
+  }
+
   async function promoteSubtask(ws: string, subtaskReadableId: string): Promise<boolean> {
     error.value = null;
 
@@ -365,6 +403,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     addChecklistItem,
     removeChecklistItem,
     addSubtask,
+    moveSubtaskToColumn,
     promoteSubtask,
     addReference,
     removeReference,

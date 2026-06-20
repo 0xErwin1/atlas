@@ -1,8 +1,13 @@
 import { mount } from '@vue/test-utils';
-import { describe, expect, it } from 'vitest';
+import { createPinia, setActivePinia } from 'pinia';
+import { beforeEach, describe, expect, it } from 'vitest';
 import TaskCard from '@/components/tareas/TaskCard.vue';
 import Avatar from '@/components/ui/Avatar.vue';
 import type { TaskSummaryDto } from '@/stores/boards';
+
+beforeEach(() => {
+  setActivePinia(createPinia());
+});
 
 const task = (overrides: Partial<TaskSummaryDto> = {}): TaskSummaryDto => ({
   id: 't1',

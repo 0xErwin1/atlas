@@ -21,8 +21,8 @@ interface RailItem {
 }
 
 const items: RailItem[] = [
-  { name: 'Notes', icon: 'file-text', routeName: 'notes' },
-  { name: 'Tasks', icon: 'kanban', routeName: 'tasks' },
+  { name: 'Notes', icon: 'notes', routeName: 'notes' },
+  { name: 'Tasks', icon: 'tasks', routeName: 'tasks' },
   { name: 'Search', icon: 'search', routeName: 'search' },
 ];
 
@@ -107,7 +107,7 @@ async function confirmNewWorkspace(name: string): Promise<void> {
       style="height: 44px; color: var(--c-foreground);"
       title="Atlas"
     >
-      <Icon name="atlas-glyph" :size="22" />
+      <Icon name="atlas-glyph" :size="22" :stroke-width="1.9" />
     </div>
 
     <div
@@ -138,6 +138,24 @@ async function confirmNewWorkspace(name: string): Promise<void> {
       >
         <Icon :name="item.icon" :size="20" :stroke-width="isActive(item) ? 2 : 1.8" />
       </button>
+
+      <div
+        class="atl-railitem flex items-center justify-center"
+        title="Engram"
+        aria-disabled="true"
+        style="width: 48px; height: 40px; color: var(--c-muted); cursor: pointer;"
+      >
+        <Icon name="dashboard" :size="20" :stroke-width="1.8" />
+      </div>
+
+      <div
+        class="atl-railitem flex items-center justify-center"
+        title="Add app"
+        aria-disabled="true"
+        style="width: 48px; height: 36px; color: var(--c-muted); cursor: pointer;"
+      >
+        <Icon name="plus" :size="16" />
+      </div>
     </div>
 
     <div style="flex: 1;" />

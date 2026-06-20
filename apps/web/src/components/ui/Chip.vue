@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import Icon from '@/components/ui/Icon.vue';
+import { swatchById } from '@/lib/swatches';
 
 export type ChipTone = 'info' | 'success' | 'warning' | 'danger' | 'agent' | 'neutral';
 
@@ -20,14 +22,24 @@ const props = withDefaults(
   defineProps<{
     tone?: ChipTone;
     icon?: string;
+    /** A user-chosen swatch id (see lib/swatches). Overrides `tone` when set. */
+    color?: string;
   }>(),
   {
     tone: 'neutral',
     icon: '',
+    color: '',
   },
 );
 
-const style = TONE_STYLES[props.tone];
+// An explicit user-picked color wins over the semantic tone.
+const style = computed(() => {
+  if (props.color !== '') {
+    const swatch = swatchById(props.color);
+    return { bg: swatch.bg, color: swatch.fg, border: swatch.border };
+  }
+  return TONE_STYLES[props.tone];
+});
 </script>
 
 <template>

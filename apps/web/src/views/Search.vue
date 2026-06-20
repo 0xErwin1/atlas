@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import ResultRow from '@/components/search/ResultRow.vue';
 import SearchPreview from '@/components/search/SearchPreview.vue';
@@ -85,6 +85,13 @@ function move(delta: number): void {
   activeIndex.value = (activeIndex.value + delta + count) % count;
 }
 
+// Populate the sidebar's Project facet (the search view itself loads no projects).
+onMounted(() => {
+  if (workspace.projects.length === 0 && ws.value !== '') {
+    void workspace.loadProjects(ws.value);
+  }
+});
+
 function onListKeydown(event: KeyboardEvent): void {
   switch (event.key) {
     case 'ArrowDown':
@@ -106,9 +113,21 @@ function onListKeydown(event: KeyboardEvent): void {
 </script>
 
 <template>
-  <AppShell :mobile-detail="true">
+  <AppShell sidebar-title="Search" sidebar-icon="search" :mobile-detail="true">
     <template #sidebar>
       <SearchSidebar :query="store.query" @input="onInput" @clear="clearSearch" @rerun="rerun" />
+    </template>
+
+    <template #sidebar-footer>
+      <button
+        type="button"
+        class="atl-gbtn"
+        style="width: 100%; justify-content: flex-start; height: 26px; gap: 7px; color: var(--c-foreground);"
+        @click="ui.showBanner('Saved searches are coming soon', 'info')"
+      >
+        <Icon name="star" :size="14" />
+        Save this search
+      </button>
     </template>
 
     <div
@@ -166,7 +185,7 @@ function onListKeydown(event: KeyboardEvent): void {
       </div>
     </div>
 
-    <EditorToolbar v-else :breadcrumbs="['Atlas', 'Search']" :dirty="false">
+    <EditorToolbar v-else :breadcrumbs="[]" :dirty="false">
       <span
         :style="{ fontSize: 'var(--fs-base)', fontWeight: 'var(--fw-bold)', color: 'var(--c-foreground)' }"
       >

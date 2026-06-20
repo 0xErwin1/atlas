@@ -1,6 +1,12 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { nextTick, ref, watch } from 'vue';
+import Avatar from '@/components/ui/Avatar.vue';
+import Chip from '@/components/ui/Chip.vue';
+import ColorPicker from '@/components/ui/ColorPicker.vue';
 import Icon from '@/components/ui/Icon.vue';
+import { useLabelColorsStore } from '@/stores/labelColors';
+
+const labelColors = useLabelColorsStore();
 
 /**
  * Inline, editable frontmatter properties block, shown below the note title
@@ -8,10 +14,11 @@ import Icon from '@/components/ui/Icon.vue';
  * truth: rows are seeded from `meta` and emitted back as a rebuilt meta object on
  * every edit, which the Notes view persists through the normal save path.
  *
- * `meta` is re-read into the rows only when it changes from the OUTSIDE (a new
- * document loads), detected by comparing against the last value we emitted. An
- * echo of our own edit is ignored so typing never resets the inputs (mirrors the
- * lastEmitted pattern in MarkdownEditor).
+ * Known keys render as typed widgets (status → toned chip, tags → chips with
+ * add/remove, visibility → lock/globe, owner → avatar) while staying editable;
+ * unknown keys fall back to a plain value cell. `meta` is re-read into the rows
+ * only when it changes from the OUTSIDE (a new document loads), detected by
+ * comparing against the last value we emitted, so typing never resets the inputs.
  */
 
 const props = defineProps<{
@@ -80,37 +87,233 @@ watch(
 
 function addRow(): void {
   rows.value.push({ key: '', value: '', isArray: false });
+  editing.value = rows.value.length - 1;
 }
 
 function removeRow(index: number): void {
   rows.value.splice(index, 1);
+  if (editing.value === index) editing.value = null;
   emitChange();
+}
+
+// ── typed value rendering ────────────────────────────────────────────
+type Kind = 'tags' | 'status' | 'visibility' | 'owner' | 'text';
+
+function rowKind(row: Row): Kind {
+  if (row.isArray) return 'tags';
+
+  const key = row.key.trim().toLowerCase();
+  if (key === 'status') return 'status';
+  if (key === 'visibility' || key === 'access') return 'visibility';
+  if (key === 'owner' || key === 'author' || key === 'assignee') return 'owner';
+  return 'text';
+}
+
+// Color is a user choice, persisted per value — never inferred from the text.
+function statusKey(value: string): string {
+  return `status:${value.trim().toLowerCase()}`;
+}
+
+function tagKey(tag: string): string {
+  return `tag:${tag.trim().toLowerCase()}`;
+}
+
+// Which chip's color popover is open, by storage key (null = none).
+const colorOpen = ref<string | null>(null);
+
+function toggleColor(key: string): void {
+  colorOpen.value = colorOpen.value === key ? null : key;
+}
+
+function pickColor(key: string, swatchId: string): void {
+  labelColors.setColor(key, swatchId);
+  colorOpen.value = null;
+}
+
+function visibilityIcon(value: string): string {
+  return value.toLowerCase().includes('public') ? 'globe' : 'lock';
+}
+
+function ownerInitials(value: string): string {
+  const clean = value.replace(/^@/, '').trim();
+  return (clean.slice(0, 2) || '?').toUpperCase();
+}
+
+function keyLabel(key: string): string {
+  const trimmed = key.trim();
+  return trimmed === '' ? '' : trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+}
+
+// ── tags: chips with inline add / remove ─────────────────────────────
+function tagList(row: Row): string[] {
+  return row.value
+    .split(',')
+    .map((t) => t.trim())
+    .filter((t) => t !== '');
+}
+
+const tagDraft = ref<Record<number, string>>({});
+
+function removeTag(row: Row, tag: string): void {
+  row.value = tagList(row)
+    .filter((t) => t !== tag)
+    .join(', ');
+  emitChange();
+}
+
+function addTag(row: Row, index: number): void {
+  const draft = (tagDraft.value[index] ?? '').trim();
+  if (draft === '') return;
+
+  const tags = tagList(row);
+  if (!tags.includes(draft)) {
+    tags.push(draft);
+    row.value = tags.join(', ');
+    emitChange();
+  }
+  tagDraft.value[index] = '';
+}
+
+// ── click-to-edit for single-value typed cells ───────────────────────
+// `editing` holds the index of the row whose value is currently an input; the
+// typed display is shown otherwise. The function ref focuses the input the moment
+// it mounts so a click lands the caret without an extra tab.
+const editing = ref<number | null>(null);
+
+function startEdit(index: number): void {
+  editing.value = index;
+}
+
+function focusOnMount(el: Element | null): void {
+  if (el !== null) nextTick(() => (el as HTMLInputElement).focus());
 }
 </script>
 
 <template>
   <div class="properties">
-    <div v-if="rows.length > 0" class="properties-block">
-      <div v-for="(row, index) in rows" :key="index" class="property-row">
+    <div v-if="colorOpen !== null" class="color-backdrop" aria-hidden="true" @click="colorOpen = null" />
+    <div v-if="rows.length > 0" class="properties-card">
+      <div v-for="(row, index) in rows" :key="index" class="meta-row">
         <input
           v-model="row.key"
           type="text"
-          class="property-key"
+          class="meta-key"
           placeholder="property"
           spellcheck="false"
           @input="emitChange"
         />
-        <input
-          v-model="row.value"
-          type="text"
-          class="property-value"
-          placeholder="empty"
-          spellcheck="false"
-          @input="emitChange"
-        />
+
+        <!-- tags: editable chips; click a chip to recolor, × to remove -->
+        <div v-if="rowKind(row) === 'tags'" class="meta-value tags">
+          <span v-for="tag in tagList(row)" :key="tag" class="chip-wrap">
+            <Chip
+              :color="labelColors.colorFor(tagKey(tag))"
+              style="cursor: pointer;"
+              :title="`Recolor “${tag}”`"
+              @click="toggleColor(tagKey(tag))"
+            >
+              {{ tag }}
+              <button
+                type="button"
+                class="tag-x"
+                title="Remove tag"
+                aria-label="Remove tag"
+                @click.stop="removeTag(row, tag)"
+              >
+                <Icon name="x" :size="10" />
+              </button>
+            </Chip>
+            <div v-if="colorOpen === tagKey(tag)" class="color-pop">
+              <ColorPicker
+                :selected="labelColors.colorFor(tagKey(tag))"
+                @select="(id) => pickColor(tagKey(tag), id)"
+              />
+            </div>
+          </span>
+          <input
+            v-model="tagDraft[index]"
+            type="text"
+            class="tag-add"
+            placeholder="add…"
+            spellcheck="false"
+            @keydown.enter.prevent="addTag(row, index)"
+            @blur="addTag(row, index)"
+          />
+        </div>
+
+        <!-- single-value typed cells: typed display ⇄ click-to-edit input -->
+        <template v-else>
+          <input
+            v-if="editing === index"
+            :ref="focusOnMount"
+            v-model="row.value"
+            type="text"
+            class="meta-value-input"
+            placeholder="empty"
+            spellcheck="false"
+            @input="emitChange"
+            @blur="editing = null"
+            @keydown.enter.prevent="editing = null"
+          />
+
+          <!-- status: colored chip; click recolors, pencil edits the value -->
+          <div
+            v-else-if="rowKind(row) === 'status' && row.value !== ''"
+            class="meta-value status-cell"
+          >
+            <Chip
+              :color="labelColors.colorFor(statusKey(row.value))"
+              icon="dot"
+              style="cursor: pointer;"
+              :title="`Recolor “${row.value}”`"
+              @click="toggleColor(statusKey(row.value))"
+            >
+              {{ row.value }}
+            </Chip>
+            <button
+              type="button"
+              class="status-edit"
+              title="Edit value"
+              aria-label="Edit value"
+              @click="startEdit(index)"
+            >
+              <Icon name="pencil" :size="11" />
+            </button>
+            <div v-if="colorOpen === statusKey(row.value)" class="color-pop">
+              <ColorPicker
+                :selected="labelColors.colorFor(statusKey(row.value))"
+                @select="(id) => pickColor(statusKey(row.value), id)"
+              />
+            </div>
+          </div>
+
+          <button
+            v-else
+            type="button"
+            class="meta-value display"
+            @click="startEdit(index)"
+          >
+            <template v-if="row.value === ''">
+              <span class="empty">Empty</span>
+            </template>
+
+            <template v-else-if="rowKind(row) === 'visibility'">
+              <Icon :name="visibilityIcon(row.value)" :size="12" style="color: var(--c-muted);" />
+              <span>{{ row.value }}</span>
+            </template>
+
+            <template v-else-if="rowKind(row) === 'owner'">
+              <Avatar :name="ownerInitials(row.value)" :size="18" />
+              <span class="mono">{{ row.value }}</span>
+            </template>
+
+            <span v-else>{{ row.value }}</span>
+          </button>
+        </template>
+
         <button
           type="button"
-          class="property-remove"
+          class="meta-remove"
           title="Remove property"
           aria-label="Remove property"
           @click="removeRow(index)"
@@ -129,77 +332,199 @@ function removeRow(index: number): void {
 
 <style scoped>
 .properties {
-  margin-bottom: 18px;
+  margin-bottom: 22px;
 }
 
-.properties-block {
-  border-top: 1px solid var(--c-border);
-  border-bottom: 1px solid var(--c-border);
-  padding: 6px 0;
+.properties-card {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
+  padding: 10px 14px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-lg);
+  background: var(--c-raised);
 }
 
-.property-row {
+.meta-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  min-height: 22px;
+  font-size: var(--fs-sm);
 }
 
-.property-key,
-.property-value {
-  height: 26px;
-  padding: 0 6px;
+.meta-key {
+  width: 88px;
+  flex: 0 0 auto;
+  height: 22px;
+  padding: 0 4px;
   border: none;
-  background: transparent;
   border-radius: var(--r-sm);
-  font-family: var(--font-mono);
+  background: transparent;
+  color: var(--c-muted);
+  font-family: var(--font-ui);
   font-size: var(--fs-sm);
-  color: var(--c-foreground);
   outline: none;
 }
 
-.property-key {
-  width: 140px;
-  flex-shrink: 0;
-  color: var(--c-muted);
-}
-
-.property-value {
-  flex: 1;
-  min-width: 0;
-}
-
-.property-key:hover,
-.property-value:hover,
-.property-key:focus,
-.property-value:focus {
+.meta-key:hover,
+.meta-key:focus {
   background: var(--c-input);
 }
 
-.property-remove {
+.meta-value {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* Click-to-edit display cell: a borderless button that reads like text/chips. */
+.meta-value.display {
+  border: none;
+  background: transparent;
+  padding: 2px 4px;
+  margin: 0 -4px;
+  border-radius: var(--r-sm);
+  cursor: text;
+  text-align: left;
+  color: var(--c-foreground);
+}
+
+.meta-value.display:hover {
+  background: var(--c-input);
+}
+
+.meta-value.display .empty {
+  color: var(--c-muted);
+}
+
+.meta-value.display .mono {
+  font-family: var(--font-mono);
+}
+
+.meta-value-input {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  padding: 0 4px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: var(--c-input);
+  color: var(--c-foreground);
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
+  outline: none;
+}
+
+.tag-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  margin-left: 1px;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.6;
+}
+
+.tag-x:hover {
+  opacity: 1;
+  color: var(--c-danger);
+}
+
+.tag-add {
+  width: 56px;
+  height: 20px;
+  padding: 0 4px;
+  border: none;
+  background: transparent;
+  color: var(--c-foreground);
+  font-family: var(--font-ui);
+  font-size: var(--fs-xs);
+  outline: none;
+}
+
+.chip-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.status-cell {
+  position: relative;
+}
+
+.status-edit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--c-muted);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.status-cell:hover .status-edit {
+  opacity: 1;
+}
+
+.status-edit:hover {
+  background: var(--c-input);
+  color: var(--c-foreground);
+}
+
+/* Color popover floats just under the clicked chip. */
+.color-pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 51;
+  background: var(--c-raised);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-md);
+}
+
+.color-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+}
+
+.meta-remove {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 22px;
   height: 22px;
-  flex-shrink: 0;
+  flex: 0 0 auto;
   padding: 0;
   border: none;
+  border-radius: var(--r-sm);
   background: transparent;
   color: var(--c-muted);
-  border-radius: var(--r-sm);
   cursor: pointer;
   opacity: 0;
 }
 
-.property-row:hover .property-remove {
+.meta-row:hover .meta-remove {
   opacity: 1;
 }
 
-.property-remove:hover {
-  background: var(--c-raised);
+.meta-remove:hover {
+  background: var(--c-background);
   color: var(--c-danger);
 }
 
@@ -213,7 +538,7 @@ function removeRow(index: number): void {
   background: transparent;
   color: var(--c-muted);
   border-radius: var(--r-sm);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: var(--fs-sm);
   cursor: pointer;
   opacity: 0;

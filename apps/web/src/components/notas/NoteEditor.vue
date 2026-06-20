@@ -31,6 +31,11 @@ defineEmits<{
   'wikilink-query': [query: string | null, caret: { left: number; top: number } | null];
 }>();
 
+// View-mode models forwarded to the shared editor so the Notes toolbar owns the
+// width/source/preview controls (the editor body renders none here).
+const mode = defineModel<'live' | 'source'>('mode', { default: 'live' });
+const reading = defineModel<boolean>('reading', { default: false });
+
 const editorRef = ref<InstanceType<typeof MarkdownEditor> | null>(null);
 
 function currentMarkdown(): string {
@@ -47,8 +52,11 @@ defineExpose({ currentMarkdown, insertWikilink });
 <template>
   <MarkdownEditor
     ref="editorRef"
+    v-model:mode="mode"
+    v-model:reading="reading"
     :body="body"
     :wikilink-titles="props.wikilinkTitles"
+    :embedded-controls="false"
     autofocus
     placeholder="Start writing…"
     @change="(md) => $emit('change', md)"

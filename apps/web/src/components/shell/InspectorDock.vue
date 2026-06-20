@@ -64,47 +64,37 @@ const collapsed = computed(() => !ui.inspectorOpen);
 
     <template v-else>
       <div
-        class="flex items-center"
+        class="flex"
         style="
           height: 36px;
           flex: 0 0 36px;
+          align-items: flex-end;
           border-bottom: 1px solid var(--c-border);
-          padding: 0 6px;
-          gap: 2px;
+          padding: 0 4px;
         "
       >
         <button
           v-for="tab in tabs"
           :key="tab.id"
           type="button"
-          class="atl-itab flex items-center justify-center"
-          :title="tab.label"
+          class="atl-itab flex items-center"
           :aria-label="tab.label"
           :aria-selected="ui.inspectorTab === tab.id"
           :style="`
-            width: 30px;
             height: 28px;
+            padding: 0 9px;
             flex: 0 0 auto;
             border: none;
             cursor: pointer;
             background: transparent;
+            font-size: var(--fs-sm);
+            font-weight: ${ui.inspectorTab === tab.id ? 'var(--fw-bold)' : 'var(--fw-medium)'};
             color: ${ui.inspectorTab === tab.id ? 'var(--c-foreground)' : 'var(--c-muted)'};
             box-shadow: ${ui.inspectorTab === tab.id ? 'inset 0 -2px 0 var(--c-primary)' : 'none'};
           `"
           @click="ui.setInspectorTab(tab.id)"
         >
-          <Icon :name="tab.icon" :size="15" />
-        </button>
-
-        <button
-          type="button"
-          title="Collapse inspector"
-          aria-label="Collapse inspector"
-          class="atl-gbtn"
-          style="margin-left: auto; width: 28px; height: 28px; flex: 0 0 auto;"
-          @click="ui.toggleInspector()"
-        >
-          <Icon name="panel-right-close" :size="15" />
+          {{ tab.label }}
         </button>
       </div>
 

@@ -27,10 +27,38 @@ interface SearchPage {
  * Filter tokens (status:, tag:, type:, …) ride inside the query string `q`; the
  * server parses them. The client only passes `q` through.
  */
+const RECENTS_KEY = 'atlas:search-recents';
+
+function loadRecents(): string[] {
+  try {
+    const raw = localStorage.getItem(RECENTS_KEY);
+    if (raw !== null) return JSON.parse(raw) as string[];
+  } catch {
+    // ignore malformed storage
+  }
+  return [];
+}
+
 export const useSearchStore = defineStore('search', () => {
   const query = ref('');
   const type = ref<SearchType>('all');
   const sort = ref<SearchSort>('relevance');
+
+  // The last few searches the user ran, most-recent first, for the sidebar's
+  // Recent section. Persisted so it survives reloads.
+  const recents = ref<string[]>(loadRecents());
+
+  function recordRecent(value: string): void {
+    const trimmed = value.trim();
+    if (trimmed === '') return;
+
+    recents.value = [trimmed, ...recents.value.filter((q) => q !== trimmed)].slice(0, 8);
+    try {
+      localStorage.setItem(RECENTS_KEY, JSON.stringify(recents.value));
+    } catch {
+      // ignore storage errors
+    }
+  }
 
   const results = ref<SearchHitDto[]>([]);
   const cursor = ref<string | null>(null);
@@ -114,6 +142,7 @@ export const useSearchStore = defineStore('search', () => {
     results.value = page.items;
     cursor.value = page.next_cursor ?? null;
     hasMore.value = page.has_more;
+    recordRecent(query.value);
   }
 
   /**
@@ -152,6 +181,7 @@ export const useSearchStore = defineStore('search', () => {
     query,
     type,
     sort,
+    recents,
     results,
     cursor,
     hasMore,

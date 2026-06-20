@@ -5,6 +5,8 @@ import EditorToolbar from '@/components/shell/EditorToolbar.vue';
 import EmptyState from '@/components/states/EmptyState.vue';
 import ErrorState from '@/components/states/ErrorState.vue';
 import LoadingState from '@/components/states/LoadingState.vue';
+// biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
+import BoardViewMenu from '@/components/tareas/BoardViewMenu.vue';
 import KanbanBoard from '@/components/tareas/KanbanBoard.vue';
 import TaskDetailPane from '@/components/tareas/TaskDetailPane.vue';
 import Icon from '@/components/ui/Icon.vue';
@@ -36,7 +38,10 @@ const ws = computed(() => workspace.activeWorkspaceSlug ?? '');
 
 const sidebarRef = ref<InstanceType<typeof TasksSidebar> | null>(null);
 
-const breadcrumbs = computed(() => ['Atlas', boards.board?.name ?? 'Board']);
+const breadcrumbs = computed(() => {
+  const name = boards.board?.name;
+  return name !== undefined ? ['Atlas', name, 'Board'] : ['Atlas', 'Board'];
+});
 
 // The task opened on the board, shown through TaskDetailPane in the persisted
 // view mode (sidebar dock or floating dialog). Full-screen mode navigates to the
@@ -176,6 +181,20 @@ watch([boardId, ws], loadBoard, { immediate: true });
     </div>
 
     <EditorToolbar v-else :breadcrumbs="breadcrumbs" :dirty="false">
+      <template #lead>
+        <BoardViewMenu />
+      </template>
+
+      <button
+        type="button"
+        class="atl-gbtn"
+        title="Filter"
+        aria-label="Filter"
+        @click="ui.showBanner('Filtering is coming soon', 'info')"
+      >
+        <Icon name="filter" :size="14" />
+        Filter
+      </button>
       <button
         type="button"
         class="atl-gbtn"
