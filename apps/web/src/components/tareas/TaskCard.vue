@@ -1,13 +1,12 @@
 <script setup lang="ts">
-import { computed } from 'vue';
 import Avatar from '@/components/ui/Avatar.vue';
-import Chip, { type ChipTone } from '@/components/ui/Chip.vue';
+import Chip from '@/components/ui/Chip.vue';
 import type { TaskSummaryDto } from '@/stores/boards';
 import { useLabelColorsStore } from '@/stores/labelColors';
 
 const labelColors = useLabelColorsStore();
 
-const props = defineProps<{
+defineProps<{
   task: TaskSummaryDto;
   selected?: boolean;
 }>();
@@ -19,18 +18,6 @@ defineEmits<{
   open: [readableId: string];
   menu: [readableId: string, event: MouseEvent];
 }>();
-
-const PRIORITY_TONE: Record<string, ChipTone> = {
-  urgent: 'danger',
-  high: 'warning',
-  medium: 'info',
-  low: 'neutral',
-};
-
-const priorityTone = computed<ChipTone>(() => {
-  const p = props.task.priority?.toLowerCase() ?? '';
-  return PRIORITY_TONE[p] ?? 'neutral';
-});
 </script>
 
 <template>
@@ -43,6 +30,7 @@ const priorityTone = computed<ChipTone>(() => {
       padding: '9px 10px',
       backgroundColor: selected ? 'var(--c-selected, var(--c-raised))' : 'var(--c-raised)',
       border: `1px solid ${selected ? 'var(--c-primary)' : 'var(--c-border)'}`,
+      boxShadow: selected ? 'inset 0 0 0 1px var(--c-primary)' : 'none',
       borderRadius: 'var(--r-md)',
     }"
     @click="$emit('select', task.readable_id)"
@@ -61,12 +49,11 @@ const priorityTone = computed<ChipTone>(() => {
     </span>
 
     <div
-      v-if="task.priority || (task.labels && task.labels.length)"
+      v-if="task.labels && task.labels.length"
       class="flex flex-wrap"
       style="gap: 5px;"
     >
       <Chip v-for="label in task.labels ?? []" :key="label" :color="labelColors.colorFor(`tag:${label.toLowerCase()}`)">{{ label }}</Chip>
-      <Chip v-if="task.priority" :tone="priorityTone">{{ task.priority }}</Chip>
     </div>
 
     <div class="flex items-center" style="gap: 8px;">

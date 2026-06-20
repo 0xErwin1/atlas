@@ -11,14 +11,28 @@ const props = withDefaults(
     showExpand?: boolean;
     showClose?: boolean;
     showBack?: boolean;
+    /** Prev/next task arrows, shown in the sidebar-dock variant. */
+    showNav?: boolean;
+    hasPrev?: boolean;
+    hasNext?: boolean;
   }>(),
-  { breadcrumbs: () => [], showExpand: false, showClose: true, showBack: false },
+  {
+    breadcrumbs: () => [],
+    showExpand: false,
+    showClose: true,
+    showBack: false,
+    showNav: false,
+    hasPrev: false,
+    hasNext: false,
+  },
 );
 
 const emit = defineEmits<{
   close: [];
   expand: [];
   back: [];
+  prev: [];
+  next: [];
   change: [mode: TaskViewMode];
 }>();
 
@@ -38,6 +52,31 @@ const ui = useUiStore();
     >
       <Icon name="arrow-left" :size="16" />
     </button>
+
+    <div v-if="showNav" class="flex" style="gap: 2px;">
+      <button
+        type="button"
+        class="atl-gbtn"
+        style="width: 22px; height: 22px;"
+        title="Previous task"
+        aria-label="Previous task"
+        :disabled="!hasPrev"
+        @click="emit('prev')"
+      >
+        <Icon name="chevron-down" :size="14" style="transform: rotate(90deg);" />
+      </button>
+      <button
+        type="button"
+        class="atl-gbtn"
+        style="width: 22px; height: 22px;"
+        title="Next task"
+        aria-label="Next task"
+        :disabled="!hasNext"
+        @click="emit('next')"
+      >
+        <Icon name="chevron-down" :size="14" style="transform: rotate(-90deg);" />
+      </button>
+    </div>
 
     <nav v-if="breadcrumbs.length" class="atl-tv-crumb" aria-label="Breadcrumb">
       <template v-for="(part, i) in breadcrumbs" :key="i">
@@ -65,6 +104,17 @@ const ui = useUiStore();
       @click="emit('expand')"
     >
       <Icon name="maximize-2" :size="15" />
+    </button>
+
+    <button
+      type="button"
+      class="atl-gbtn"
+      style="width: 24px; height: 24px;"
+      title="More"
+      aria-label="More actions"
+      @click="ui.showBanner('That action is coming soon', 'info')"
+    >
+      <Icon name="more-horizontal" :size="16" />
     </button>
 
     <button

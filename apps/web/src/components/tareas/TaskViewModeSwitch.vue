@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import Icon from '@/components/ui/Icon.vue';
 import Popover from '@/components/ui/Popover.vue';
 import { type TaskViewMode, useUiStore } from '@/stores/ui';
@@ -12,13 +13,18 @@ const ui = useUiStore();
 interface ModeOption {
   key: TaskViewMode;
   label: string;
+  icon: string;
 }
 
 const MODES: ModeOption[] = [
-  { key: 'modal', label: 'Dialog' },
-  { key: 'full', label: 'Full screen' },
-  { key: 'sidebar', label: 'Sidebar' },
+  { key: 'modal', label: 'Dialog', icon: 'app-window' },
+  { key: 'full', label: 'Full screen', icon: 'maximize' },
+  { key: 'sidebar', label: 'Sidebar', icon: 'panel-right' },
 ];
+
+const activeIcon = computed(
+  () => MODES.find((m) => m.key === ui.taskViewMode)?.icon ?? 'layout-template',
+);
 
 function pick(mode: TaskViewMode, close: () => void): void {
   ui.setTaskViewMode(mode);
@@ -28,7 +34,7 @@ function pick(mode: TaskViewMode, close: () => void): void {
 </script>
 
 <template>
-  <Popover placement="bottom-end" width="236px">
+  <Popover placement="bottom-end" width="232px">
     <template #trigger="{ open, toggle }">
       <button
         type="button"
@@ -36,10 +42,10 @@ function pick(mode: TaskViewMode, close: () => void): void {
         :class="{ on: open }"
         title="View mode"
         aria-label="Change task view mode"
-        style="width: 26px; height: 26px;"
+        style="width: 24px; height: 24px;"
         @click="toggle"
       >
-        <Icon name="layout-template" :size="15" />
+        <Icon :name="activeIcon" :size="15" />
       </button>
     </template>
 

@@ -12,7 +12,9 @@ import Chip from '@/components/ui/Chip.vue';
 import CollapsibleText from '@/components/ui/CollapsibleText.vue';
 import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
 import Icon from '@/components/ui/Icon.vue';
+import Popover from '@/components/ui/Popover.vue';
 import { useInlineEdit } from '@/composables/useInlineEdit';
+import { swatchById } from '@/lib/swatches';
 import { useBoardsStore } from '@/stores/boards';
 import { useLabelColorsStore } from '@/stores/labelColors';
 import { useTaskDetailStore } from '@/stores/taskDetail';
@@ -54,6 +56,10 @@ const priority = computed(() => summary.value?.priority ?? props.task.priority ?
 const columnId = computed(() => summary.value?.column_id ?? props.task.column_id);
 
 const statusName = computed(() => boards.columns.find((c) => c.id === columnId.value)?.name ?? null);
+
+// The status pill is glazed with the user's registry color for this column value,
+// mirroring how chips derive their swatch — never inferred from the status text.
+const statusSwatch = computed(() => swatchById(labelColors.colorFor(`status:${columnId.value}`)));
 
 // `<input type="date">` wants YYYY-MM-DD; the API stores a full ISO datetime.
 const dueInputValue = computed(() => {
@@ -194,6 +200,20 @@ async function onRemoveReference(referenceId: string): Promise<void> {
   const ok = await detail.removeReference(props.ws, props.task.readable_id, referenceId);
   if (!ok) fail(detail.error);
 }
+
+const statusOpen = ref(false);
+const customFieldsOpen = ref(true);
+
+function comingSoon(): void {
+  ui.showBanner('That action is coming soon', 'info');
+}
+
+/** Footer quick-actions; "Add sub-task" focuses the sub-task input, the rest defer. */
+function focusSubtaskInput(): void {
+  const el = document.querySelector<HTMLInputElement>('.atl-sub-add');
+  if (el !== null) el.focus();
+  else comingSoon();
+}
 </script>
 
 <template>
@@ -233,12 +253,51 @@ async function onRemoveReference(referenceId: string): Promise<void> {
       {{ title }}
     </h1>
 
+    <div class="atl-tv-agenthint">
+      <Icon name="sparkles" :size="15" style="color: var(--c-agent); flex: 0 0 auto;" />
+      <span>
+        Ask <b style="color: var(--c-agent);">Claude</b> to
+        <a class="atl-tv-link" @click="comingSoon">summarize</a>,
+        <a class="atl-tv-link" @click="comingSoon">generate sub-tasks</a>, or
+        <a class="atl-tv-link" @click="comingSoon">find similar tasks</a>
+      </span>
+    </div>
+
     <div class="atl-tv-fields" :class="{ wide }">
       <div class="atl-tv-col">
         <div class="atl-tv-field">
           <span class="atl-tv-label"><Icon name="circle-dot" :size="14" />Status</span>
           <span class="atl-tv-value">
-            <Dropdown :options="statusOptions" :model-value="columnId" placeholder="—" @change="onChangeStatus" />
+            <Popover v-model:open="statusOpen" placement="bottom-start" width="200px">
+              <template #trigger="{ toggle }">
+                <button
+                  type="button"
+                  class="atl-tv-statuspill"
+                  :style="{ color: statusSwatch.fg, background: statusSwatch.bg }"
+                  @click="toggle"
+                >
+                  <span class="atl-tv-statusdot" :style="{ background: statusSwatch.fg }" />
+                  {{ statusName ?? '—' }}
+                  <Icon name="chevron-down" :size="12" />
+                </button>
+              </template>
+              <template #default="{ close }">
+                <div role="listbox" style="padding: 3px;">
+                  <button
+                    v-for="opt in statusOptions"
+                    :key="opt.value"
+                    type="button"
+                    role="option"
+                    :aria-selected="opt.value === columnId"
+                    class="atl-mi"
+                    style="width: 100%; border: none; background: transparent; text-align: left;"
+                    @click="onChangeStatus(opt.value); close()"
+                  >
+                    {{ opt.label }}
+                  </button>
+                </div>
+              </template>
+            </Popover>
           </span>
         </div>
         <div class="atl-tv-field">
@@ -254,7 +313,7 @@ async function onRemoveReference(referenceId: string): Promise<void> {
           </span>
         </div>
         <div class="atl-tv-field">
-          <span class="atl-tv-label"><Icon name="calendar" :size="14" />Due</span>
+          <span class="atl-tv-label"><Icon name="calendar" :size="14" />Dates</span>
           <span class="atl-tv-value">
             <input
               type="date"
@@ -274,7 +333,7 @@ async function onRemoveReference(referenceId: string): Promise<void> {
           </span>
         </div>
         <div class="atl-tv-field">
-          <span class="atl-tv-label"><Icon name="clock" :size="14" />Estimate</span>
+          <span class="atl-tv-label"><Icon name="clock" :size="14" />Time estimate</span>
           <span class="atl-tv-value">
             <input
               type="number"
@@ -318,7 +377,7 @@ async function onRemoveReference(referenceId: string): Promise<void> {
     <div class="atl-tv-divider" />
 
     <div class="atl-tv-section-label">Description</div>
-    <CollapsibleText :collapsed-height="220">
+    <CollapsibleText :collapsed-height="88">
       <TaskDescription :markdown="task.description" :ws="ws" :readable-id="task.readable_id" />
     </CollapsibleText>
 
@@ -331,6 +390,52 @@ async function onRemoveReference(referenceId: string): Promise<void> {
         @open="onOpenSubtask"
         @set-column="onSubtaskSetColumn"
       />
+    </div>
+
+    <div class="atl-tv-cf" style="margin-top: 22px;">
+      <div class="atl-tv-cf-head">
+        <button
+          type="button"
+          class="atl-tv-cf-toggle"
+          :aria-expanded="customFieldsOpen"
+          @click="customFieldsOpen = !customFieldsOpen"
+        >
+          <Icon
+            name="chevron-down"
+            :size="13"
+            :style="{ transform: customFieldsOpen ? 'none' : 'rotate(-90deg)', transition: 'transform 0.12s' }"
+          />
+          Custom fields
+        </button>
+        <span style="flex: 1;" />
+        <button type="button" class="atl-gbtn" style="width: 22px; height: 22px;" title="Search fields" @click="comingSoon">
+          <Icon name="search" :size="13" />
+        </button>
+        <button type="button" class="atl-gbtn" style="width: 22px; height: 22px;" title="Add field" @click="comingSoon">
+          <Icon name="plus" :size="14" />
+        </button>
+      </div>
+      <div v-if="customFieldsOpen" class="atl-tv-cf-body">
+        <div class="atl-tv-cf-empty">
+          No custom fields yet.
+          <button type="button" class="atl-tv-link" @click="comingSoon">Add one</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="atl-tv-actions">
+      <button type="button" class="atl-tv-action" @click="focusSubtaskInput">
+        <Icon name="tasks" :size="14" style="color: var(--c-muted);" />Add sub-task
+      </button>
+      <button type="button" class="atl-tv-action" @click="comingSoon">
+        <Icon name="link" :size="14" style="color: var(--c-muted);" />Link or add dependency
+      </button>
+      <button type="button" class="atl-tv-action" @click="comingSoon">
+        <Icon name="check" :size="14" style="color: var(--c-muted);" />Create checklist
+      </button>
+      <button type="button" class="atl-tv-action" @click="comingSoon">
+        <Icon name="paperclip" :size="14" style="color: var(--c-muted);" />Attach file
+      </button>
     </div>
 
     <template v-if="showSecondary">
@@ -388,7 +493,7 @@ async function onRemoveReference(referenceId: string): Promise<void> {
 }
 
 .atl-tv-title {
-  font-size: var(--fs-lg);
+  font-size: 19px;
   font-weight: var(--fw-bold);
   line-height: 1.2;
   letter-spacing: -0.01em;
@@ -401,7 +506,7 @@ async function onRemoveReference(referenceId: string): Promise<void> {
 }
 
 .atl-tv-title.wide {
-  font-size: var(--fs-title);
+  font-size: 24px;
 }
 
 .atl-tv-title:hover {
@@ -415,14 +520,38 @@ async function onRemoveReference(referenceId: string): Promise<void> {
   background: var(--c-panel);
   border: 1px solid var(--c-primary);
   border-radius: var(--r-sm);
-  font-size: var(--fs-lg);
+  font-size: 19px;
   font-weight: var(--fw-bold);
+  letter-spacing: -0.01em;
+  line-height: 1.2;
   color: var(--c-foreground);
   outline: none;
 }
 
 .atl-tv-title-input.wide {
-  font-size: var(--fs-title);
+  font-size: 24px;
+}
+
+.atl-tv-agenthint {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 12px;
+  margin-bottom: 20px;
+  border-radius: 4px;
+  background: var(--c-agent-bg);
+  border: 1px solid var(--c-agent-border);
+  font-size: 12.5px;
+  color: var(--c-foreground);
+}
+
+.atl-tv-link {
+  color: var(--c-agent);
+  cursor: pointer;
+}
+
+.atl-tv-link:hover {
+  text-decoration: underline;
 }
 
 .atl-tv-fields {
@@ -430,10 +559,6 @@ async function onRemoveReference(referenceId: string): Promise<void> {
   flex-wrap: wrap;
   column-gap: 0;
   margin-bottom: 18px;
-  padding: 8px 14px;
-  background: var(--c-raised);
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-lg);
 }
 
 .atl-tv-fields.wide {
@@ -462,8 +587,8 @@ async function onRemoveReference(referenceId: string): Promise<void> {
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 92px;
-  flex: 0 0 92px;
+  width: 132px;
+  flex: 0 0 132px;
   padding-top: 3px;
   color: var(--c-muted);
   font-size: var(--fs-sm);
@@ -544,5 +669,90 @@ async function onRemoveReference(referenceId: string): Promise<void> {
   text-transform: uppercase;
   color: var(--c-muted);
   margin-bottom: 8px;
+}
+
+.atl-tv-statuspill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 9px 0 8px;
+  border: none;
+  border-radius: 3px;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+}
+
+.atl-tv-statusdot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--r-full);
+  flex: 0 0 auto;
+}
+
+.atl-tv-cf-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.atl-tv-cf-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--c-muted);
+}
+
+.atl-tv-cf-body {
+  border: 1px solid var(--c-border);
+  border-radius: 4px;
+  padding: 4px;
+}
+
+.atl-tv-cf-empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 8px;
+  font-size: var(--fs-sm);
+  color: var(--c-muted);
+}
+
+.atl-tv-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 22px;
+  margin-bottom: 24px;
+}
+
+.atl-tv-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  background: transparent;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  color: var(--c-foreground);
+  font-size: var(--fs-sm);
+  font-family: var(--font-ui);
+  cursor: pointer;
+}
+
+.atl-tv-action:hover {
+  background: rgba(179, 177, 173, 0.06);
 }
 </style>

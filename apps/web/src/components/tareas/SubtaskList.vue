@@ -172,7 +172,7 @@ function submitDraft(): void {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 6px;
+  padding: 7px 8px;
   border-radius: var(--r-lg);
   font-size: var(--fs-base);
 }
@@ -185,12 +185,12 @@ function submitDraft(): void {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 15px;
-  height: 15px;
+  width: 14px;
+  height: 14px;
   flex: 0 0 auto;
   padding: 0;
-  border: 1px solid var(--c-muted);
-  border-radius: var(--r-sm);
+  border: 1.5px solid var(--c-muted);
+  border-radius: 3px;
   background: transparent;
   cursor: pointer;
 }

@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import type { components } from '@/api/types.d.ts';
 import TaskBody from '@/components/tareas/TaskBody.vue';
 import TaskDetailHeader from '@/components/tareas/TaskDetailHeader.vue';
+import { useBoardsStore } from '@/stores/boards';
 import { type TaskViewMode, useUiStore } from '@/stores/ui';
 
 type TaskDto = components['schemas']['TaskDto'];
@@ -15,12 +16,37 @@ const props = defineProps<{
 const emit = defineEmits<{
   close: [];
   expand: [];
+  /** Navigate to a neighbouring board task (prev/next arrows in the dock). */
+  navigate: [readableId: string];
 }>();
 
 const ui = useUiStore();
+const boards = useBoardsStore();
 
 const shareLabel = computed(() => `${props.task.readable_id} · task`);
 const isModal = computed(() => ui.taskViewMode === 'modal');
+
+// The board's tasks flattened in column order, so the dock's prev/next arrows
+// walk the same sequence the user sees on the board.
+const orderedIds = computed<string[]>(() =>
+  boards.columns.flatMap((c) => boards.tasksByColumn(c.id).map((t) => t.readable_id)),
+);
+
+const currentIndex = computed(() => orderedIds.value.indexOf(props.task.readable_id));
+const hasPrev = computed(() => currentIndex.value > 0);
+const hasNext = computed(
+  () => currentIndex.value >= 0 && currentIndex.value < orderedIds.value.length - 1,
+);
+
+function goPrev(): void {
+  const prev = orderedIds.value[currentIndex.value - 1];
+  if (hasPrev.value && prev !== undefined) emit('navigate', prev);
+}
+
+function goNext(): void {
+  const next = orderedIds.value[currentIndex.value + 1];
+  if (hasNext.value && next !== undefined) emit('navigate', next);
+}
 
 // Picking "Full screen" in the header switch leaves this inline pane (it only
 // renders dock/dialog); hand off to the parent to open the standalone route.
@@ -55,8 +81,13 @@ function onChangeMode(mode: TaskViewMode): void {
       :readable-id="task.readable_id"
       :share-label="shareLabel"
       show-expand
+      show-nav
+      :has-prev="hasPrev"
+      :has-next="hasNext"
       @close="emit('close')"
       @expand="emit('expand')"
+      @prev="goPrev"
+      @next="goNext"
     />
     <div class="atl-tv-scroll" style="padding: 14px 18px;">
       <TaskBody :task="task" :ws="ws" layout="narrow" />

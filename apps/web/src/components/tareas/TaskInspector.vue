@@ -32,11 +32,11 @@ const detail = useTaskDetailStore();
 const ui = useUiStore();
 
 type Tab = 'details' | 'references' | 'activity' | 'share';
-const TABS: Array<{ id: Tab; label: string }> = [
-  { id: 'details', label: 'Details' },
-  { id: 'references', label: 'References' },
-  { id: 'activity', label: 'Activity' },
-  { id: 'share', label: 'Share' },
+const TABS: Array<{ id: Tab; label: string; icon: string }> = [
+  { id: 'details', label: 'Details', icon: 'file' },
+  { id: 'references', label: 'References', icon: 'link' },
+  { id: 'activity', label: 'Activity', icon: 'history' },
+  { id: 'share', label: 'Share', icon: 'user' },
 ];
 const active = ref('activity');
 
