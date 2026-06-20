@@ -80,14 +80,17 @@ describe('ShareDialog (REQ-W26/W27)', () => {
     expect(agentRow.findComponent({ name: 'AgentBadge' }).exists()).toBe(true);
   });
 
-  it('renders visibility as read-only: no public option and clicking does not emit or persist', async () => {
+  it('lists the public option but keeps visibility read-only: clicking does not emit or persist', async () => {
     const wrapper = mountDialog();
     await wrapper.vm.$nextTick();
 
-    expect(wrapper.find('[data-visibility="public"]').exists()).toBe(false);
+    expect(wrapper.find('[data-visibility="public"]').exists()).toBe(true);
 
     const privateOpt = wrapper.find('[data-visibility="private"]');
     await privateOpt.trigger('click');
+
+    const publicOpt = wrapper.find('[data-visibility="public"]');
+    await publicOpt.trigger('click');
 
     expect(wrapper.emitted('update:visibility')).toBeUndefined();
     expect(POST).not.toHaveBeenCalled();

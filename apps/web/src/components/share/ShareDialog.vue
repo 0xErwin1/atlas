@@ -10,7 +10,7 @@ import { useBreakpoint } from '@/composables/useBreakpoint';
 import type { GrantRole } from '@/lib/grantRoles';
 import { type GrantDto, type PrincipalDto, useShareStore } from '@/stores/share';
 
-export type Visibility = 'private' | 'workspace';
+export type Visibility = 'private' | 'workspace' | 'public';
 
 const props = withDefaults(
   defineProps<{
@@ -78,6 +78,7 @@ function badgeFor(g: GrantDto): string | null {
 const VISIBILITY_OPTS: Array<{ value: Visibility; icon: string; label: string; desc: string }> = [
   { value: 'private', icon: 'lock', label: 'Private', desc: 'Only people invited above' },
   { value: 'workspace', icon: 'eye', label: 'Workspace', desc: 'Anyone in the Atlas workspace can view' },
+  { value: 'public', icon: 'globe', label: 'Public', desc: 'Anyone with the link can view' },
 ];
 
 async function onSelectRole(g: GrantDto, role: GrantRole) {
@@ -106,6 +107,14 @@ async function selectMember(member: PrincipalDto): Promise<void> {
   if (ok) {
     memberQuery.value = '';
   }
+}
+
+const canInvite = computed(() => memberMatches.value.length > 0);
+
+async function invite(): Promise<void> {
+  const highlighted = memberMatches.value[0];
+  if (highlighted === undefined) return;
+  await selectMember(highlighted);
 }
 </script>
 
@@ -156,20 +165,42 @@ async function selectMember(member: PrincipalDto): Promise<void> {
 
       <div style="padding: 16px;">
         <div class="relative" style="margin-bottom: 18px;">
-          <div
-            class="flex items-center"
-            style="gap: 8px; height: 32px; padding: 0 10px; background-color: var(--c-input); border: 1px solid var(--c-border); border-radius: var(--r-md);"
-          >
-            <Icon name="user" :size="14" :style="{ color: 'var(--c-muted)' }" />
-            <input
-              v-model="memberQuery"
-              type="text"
-              data-member-search
-              placeholder="Add people or agents by name"
-              autocomplete="off"
-              class="flex-1 min-w-0"
-              style="height: 100%; border: none; outline: none; background: transparent; font-size: var(--fs-base); color: var(--c-foreground);"
-            />
+          <div class="flex items-center" style="gap: 8px;">
+            <div
+              class="flex flex-1 min-w-0 items-center"
+              style="gap: 8px; height: 32px; padding: 0 10px; background-color: var(--c-input); border: 1px solid var(--c-border); border-radius: var(--r-md);"
+            >
+              <Icon name="user" :size="14" :style="{ color: 'var(--c-muted)' }" />
+              <input
+                v-model="memberQuery"
+                type="text"
+                data-member-search
+                placeholder="Add people or agents by name, email, or @handle"
+                autocomplete="off"
+                class="flex-1 min-w-0"
+                style="height: 100%; border: none; outline: none; background: transparent; font-size: var(--fs-base); color: var(--c-foreground);"
+                @keydown.enter.prevent="invite"
+              />
+            </div>
+
+            <span
+              data-invite-role
+              class="inline-flex items-center"
+              style="gap: 5px; flex: 0 0 auto; font-size: var(--fs-sm); color: var(--c-foreground); border: 1px solid var(--c-border); border-radius: 2px; padding: 3px 8px; background-color: var(--c-secondary);"
+            >
+              Editor
+              <Icon name="chevron-down" :size="12" :style="{ color: 'var(--c-muted)' }" />
+            </span>
+
+            <Btn
+              variant="primary"
+              data-action="invite"
+              :disabled="!canInvite"
+              style="height: 32px; flex: 0 0 auto;"
+              @click="invite"
+            >
+              Invite
+            </Btn>
           </div>
 
           <div
@@ -340,7 +371,7 @@ async function selectMember(member: PrincipalDto): Promise<void> {
         <div
           style="font-size: var(--fs-xs); color: var(--c-muted); margin-top: 6px; line-height: 1.4;"
         >
-          Changing visibility is coming in a future release.
+          General access reflects the current scope. Switching it from here isn’t available yet.
         </div>
       </div>
 

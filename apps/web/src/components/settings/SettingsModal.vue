@@ -180,7 +180,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
   overflow: hidden;
   background: var(--c-panel);
   border: 1px solid var(--c-border);
-  border-radius: var(--r-lg);
+  border-radius: 4px;
   box-shadow: var(--shadow-lg);
 }
 

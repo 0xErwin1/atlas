@@ -31,7 +31,7 @@ withDefaults(
 
 <style scoped>
 .atl-spin {
-  animation: atl-spin 0.9s linear infinite;
+  animation: atl-spin 1.1s steps(8) infinite;
 }
 
 @keyframes atl-spin {

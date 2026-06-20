@@ -203,7 +203,7 @@ async function signOut(): Promise<void> {
     <div class="atl-divider" />
 
     <button type="button" class="atl-signout" @click="signOut">
-      <Icon name="log-out" :size="14" />Sign out
+      <Icon name="external-link" :size="14" />Sign out
     </button>
   </div>
 </template>
@@ -216,7 +216,7 @@ async function signOut(): Promise<void> {
   padding: 14px;
   background: var(--c-raised);
   border: 1px solid var(--c-border);
-  border-radius: var(--r-lg);
+  border-radius: 4px;
   margin-bottom: 22px;
 }
 

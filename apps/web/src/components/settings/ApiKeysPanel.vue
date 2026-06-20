@@ -28,6 +28,15 @@ const copied = ref(false);
 
 const revokeTarget = ref<{ id: string; name: string } | null>(null);
 
+const revokeDetail = computed(() => {
+  const target = revokeTarget.value;
+  if (target === null) return undefined;
+  // The list never exposes the secret prefix (it is shown only once at
+  // creation). The key id is the only stable identifier we can surface, so the
+  // fragment is taken from it rather than from a fabricated secret prefix.
+  return `${target.name} · ${target.id.slice(0, 8)}…`;
+});
+
 const nameSchema = z.object({ name: z.string().trim().min(1, 'Name is required') });
 
 function fmtDate(iso: string | null | undefined): string {
@@ -229,10 +238,10 @@ async function confirmRevoke(): Promise<void> {
       :open="revokeTarget !== null"
       tone="danger"
       title="Revoke this API key?"
-      message="The key stops working immediately."
-      :detail="revokeTarget?.name"
-      detail-icon="key-round"
-      note="Any agent or script still using it loses access at once. This can't be undone."
+      message="The key stops working immediately. Any agent or script still using it loses access at once."
+      :detail="revokeDetail"
+      detail-icon="key"
+      note="This can’t be undone — you’ll need to issue a new key and update anything that relied on it."
       confirm-label="Revoke key"
       confirm-icon="trash-2"
       @confirm="confirmRevoke"
@@ -266,7 +275,7 @@ async function confirmRevoke(): Promise<void> {
 
 .atl-keys-table {
   border: 1px solid var(--c-border);
-  border-radius: var(--r-lg);
+  border-radius: 4px;
   overflow: hidden;
 }
 
@@ -329,13 +338,13 @@ async function confirmRevoke(): Promise<void> {
   text-align: center;
   padding: 54px 20px;
   border: 1px dashed var(--c-border);
-  border-radius: var(--r-lg);
+  border-radius: 4px;
 }
 
 .atl-keys-empty-icon {
   width: 44px;
   height: 44px;
-  border-radius: var(--r-lg);
+  border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -356,7 +365,7 @@ async function confirmRevoke(): Promise<void> {
 
 .atl-secret-box {
   border: 1px solid rgba(255, 180, 84, 0.45);
-  border-radius: var(--r-lg);
+  border-radius: 4px;
   overflow: hidden;
 }
 

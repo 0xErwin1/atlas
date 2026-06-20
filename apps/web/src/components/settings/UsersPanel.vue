@@ -345,11 +345,12 @@ async function confirmDisable(): Promise<void> {
     <ConfirmDialog
       :open="disableTarget !== null"
       tone="warning"
+      :width="460"
       title="Disable this user?"
-      message="They are signed out everywhere and can no longer access Atlas until re-enabled."
+      message="They’re signed out everywhere and can no longer access Atlas until re-enabled."
       :detail="disableTarget ? `${disableTarget.display_name} · @${disableTarget.username}` : undefined"
       detail-icon="user"
-      note="Any API keys they created stop working while they are disabled; re-enabling restores access."
+      note="Disabling them also disables the API keys they created — agents using those keys lose access immediately. Re-enabling restores both."
       confirm-label="Disable user"
       confirm-icon="lock"
       @confirm="confirmDisable"
@@ -395,7 +396,7 @@ async function confirmDisable(): Promise<void> {
 
 .atl-users-table {
   border: 1px solid var(--c-border);
-  border-radius: var(--r-lg);
+  border-radius: 4px;
   overflow: hidden;
 }
 
@@ -477,7 +478,7 @@ async function confirmDisable(): Promise<void> {
   padding: 12px;
   background: var(--c-raised);
   border: 1px solid var(--c-border);
-  border-radius: var(--r-lg);
+  border-radius: 4px;
   margin-bottom: 18px;
 }
 </style>
