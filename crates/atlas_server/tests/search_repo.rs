@@ -24,7 +24,7 @@ use atlas_domain::{
     ids::{BoardId, DocumentId, ProjectId, UserId, WorkspaceId},
     permissions::{Principal, ResourceRole, Visibility, VisibilityRole},
     ports::search::{SearchAfter, SearchRepo, SortKey},
-    search::{SearchQuery, SearchSort, TypeFilter},
+    search::{SearchQuery, SearchSort, TypeSet},
 };
 use atlas_server::persistence::repos::{
     BoardRepo, DocumentRepo, FolderRepo, PermissionGrantRepo, PgBoardRepo, PgDocumentRepo,
@@ -41,7 +41,7 @@ fn make_search_query(text: &str) -> SearchQuery {
         text: text.to_string(),
         filters: vec![],
         sort: SearchSort::Relevance,
-        type_filter: TypeFilter::All,
+        type_filter: TypeSet::all(),
         warnings: vec![],
     }
 }
@@ -51,7 +51,7 @@ fn make_updated_query(text: &str) -> SearchQuery {
         text: text.to_string(),
         filters: vec![],
         sort: SearchSort::UpdatedDesc,
-        type_filter: TypeFilter::All,
+        type_filter: TypeSet::all(),
         warnings: vec![],
     }
 }
@@ -61,7 +61,10 @@ fn make_doc_only_query(text: &str) -> SearchQuery {
         text: text.to_string(),
         filters: vec![],
         sort: SearchSort::Relevance,
-        type_filter: TypeFilter::Documents,
+        type_filter: TypeSet {
+            notes: true,
+            tasks: false,
+        },
         warnings: vec![],
     }
 }
@@ -71,7 +74,10 @@ fn make_task_only_query(text: &str) -> SearchQuery {
         text: text.to_string(),
         filters: vec![],
         sort: SearchSort::Relevance,
-        type_filter: TypeFilter::Tasks,
+        type_filter: TypeSet {
+            notes: false,
+            tasks: true,
+        },
         warnings: vec![],
     }
 }

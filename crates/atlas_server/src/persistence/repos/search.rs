@@ -3,7 +3,7 @@ use atlas_domain::{
     DomainError, WorkspaceCtx,
     permissions::Principal,
     ports::search::{SearchAfter, SearchRepo, SortKey},
-    search::{SearchFilter, SearchHit, SearchKind, SearchQuery, SearchSort, TypeFilter},
+    search::{SearchFilter, SearchHit, SearchKind, SearchQuery, SearchSort},
 };
 use chrono::{DateTime, TimeZone, Utc};
 use sea_orm::{DatabaseConnection, FromQueryResult};
@@ -110,9 +110,8 @@ impl SearchRepo for PgSearchRepo {
             )
         });
 
-        let emit_docs = matches!(query.type_filter, TypeFilter::All | TypeFilter::Documents)
-            && !has_task_only_filter;
-        let emit_tasks = matches!(query.type_filter, TypeFilter::All | TypeFilter::Tasks);
+        let emit_docs = query.type_filter.notes && !has_task_only_filter;
+        let emit_tasks = query.type_filter.tasks;
 
         if !emit_docs && !emit_tasks {
             return Ok(vec![]);

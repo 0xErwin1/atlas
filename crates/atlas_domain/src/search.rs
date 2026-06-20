@@ -2,15 +2,95 @@ use chrono::NaiveDate;
 use uuid::Uuid;
 
 // ---------------------------------------------------------------------------
-// Enums / sum types
+// Type filter — set of content kinds
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub enum TypeFilter {
-    #[default]
-    All,
-    Documents,
-    Tasks,
+/// Selected content kinds for a search. A set, not a single value.
+///
+/// `notes` selects documents; `tasks` selects board tasks. The default and the
+/// canonical "no restriction" value is `all()` (every field `true`); an empty
+/// set is never produced by `parse` (it collapses to `all()`), so the SQL gate
+/// only sees a non-empty set on the request path.
+///
+/// Forward-compat: a future third kind (e.g. `comments: bool`) is an additive
+/// field. After that, `{notes:true, tasks:true}` will NOT equal `all()` — it
+/// will exclude comments — which is the correct future behavior. The two paths
+/// (an explicit set vs the `all` sentinel) are deliberately distinguishable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TypeSet {
+    pub notes: bool,
+    pub tasks: bool,
+}
+
+impl Default for TypeSet {
+    fn default() -> Self {
+        Self::all()
+    }
+}
+
+impl TypeSet {
+    /// Every kind selected — the canonical "no restriction" value.
+    pub const fn all() -> Self {
+        Self {
+            notes: true,
+            tasks: true,
+        }
+    }
+
+    /// No kind selected. Internal use only (e.g. as a fold accumulator);
+    /// `parse` never returns this — an empty parse result collapses to `all()`.
+    pub const fn none() -> Self {
+        Self {
+            notes: false,
+            tasks: false,
+        }
+    }
+
+    /// True iff no kind is selected.
+    pub const fn is_empty(self) -> bool {
+        !self.notes && !self.tasks
+    }
+
+    /// True iff every kind is selected (today: both notes and tasks).
+    pub const fn is_all(self) -> bool {
+        self.notes && self.tasks
+    }
+
+    /// Parses a comma-separated list of type tokens into a `TypeSet`.
+    ///
+    /// Grammar (shared by the `type=` query param and the `type:` q-token):
+    /// - split on `,`; trim and ascii-lowercase each token;
+    /// - `all` anywhere in the list short-circuits to `all()` (D2);
+    /// - `note`/`notes`/`document`/`documents` -> notes; `task`/`tasks` -> tasks;
+    /// - unknown / unsupported tokens are ignored (D1, lenient);
+    /// - if the resulting set is empty (only unknowns, or an empty/`type=` input),
+    ///   it collapses to `all()` — "empty == all", matching absent-param semantics.
+    ///   So `parse` NEVER returns an empty set.
+    pub fn parse(raw: &str) -> Self {
+        let mut acc = Self::none();
+        for token in raw.split(',') {
+            let t = token.trim().to_ascii_lowercase();
+            match t.as_str() {
+                "all" => return Self::all(),
+                "note" | "notes" | "document" | "documents" => acc.notes = true,
+                "task" | "tasks" => acc.tasks = true,
+                _ => {}
+            }
+        }
+        // Empty result means only unknowns (or empty input): treat as all.
+        if acc.is_empty() { Self::all() } else { acc }
+    }
+}
+
+/// Single source of truth for the `TaskFilterOnNotes` condition.
+///
+/// A task-only filter (`status:`/`priority:`/`assignee:`) is futile when the
+/// selection is notes-only — documents have no status/priority/assignee, so the
+/// result is guaranteed empty. Fires iff a task-only filter is present AND the
+/// selection includes notes but NOT tasks. With tasks also selected the filter
+/// is meaningful on the task arm, so no warning.
+pub fn task_filter_on_notes(type_set: TypeSet, has_task_only_filter: bool) -> bool {
+    has_task_only_filter && type_set.notes && !type_set.tasks
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -57,7 +137,7 @@ pub struct SearchQuery {
     pub text: String,
     pub filters: Vec<SearchFilter>,
     pub sort: SearchSort,
-    pub type_filter: TypeFilter,
+    pub type_filter: TypeSet,
     pub warnings: Vec<SearchWarning>,
 }
 
@@ -110,7 +190,7 @@ pub fn parse_query(raw: &str) -> SearchQuery {
     let mut text_parts: Vec<String> = Vec::new();
     let mut filters: Vec<SearchFilter> = Vec::new();
     let mut sort = SearchSort::Relevance;
-    let mut type_filter = TypeFilter::All;
+    let mut type_filter = TypeSet::all();
     let mut warnings: Vec<SearchWarning> = Vec::new();
 
     let segments = tokenise(raw);
@@ -123,11 +203,7 @@ pub fn parse_query(raw: &str) -> SearchQuery {
             if KNOWN_FILTER_KEYS.contains(&key.as_str()) {
                 match key.as_str() {
                     "type" => {
-                        type_filter = match value.to_ascii_lowercase().as_str() {
-                            "note" | "document" | "notes" | "documents" => TypeFilter::Documents,
-                            "task" | "tasks" => TypeFilter::Tasks,
-                            _ => TypeFilter::All,
-                        };
+                        type_filter = TypeSet::parse(value);
                     }
                     "sort" => {
                         sort = match value.to_ascii_lowercase().as_str() {
@@ -170,7 +246,7 @@ pub fn parse_query(raw: &str) -> SearchQuery {
             SearchFilter::Status(_) | SearchFilter::Priority(_) | SearchFilter::Assignee(_)
         )
     });
-    if task_only_present && type_filter == TypeFilter::Documents {
+    if task_filter_on_notes(type_filter, task_only_present) {
         warnings.push(SearchWarning::TaskFilterOnNotes);
     }
 
@@ -252,13 +328,227 @@ fn tokenise(raw: &str) -> Vec<String> {
 mod tests {
     use super::*;
 
+    // -----------------------------------------------------------------------
+    // T01 — TypeSet::parse (RED → GREEN after T04)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn typeset_parse_note_single_value() {
+        assert_eq!(
+            TypeSet::parse("note"),
+            TypeSet {
+                notes: true,
+                tasks: false
+            }
+        );
+    }
+
+    #[test]
+    fn typeset_parse_task_single_value() {
+        assert_eq!(
+            TypeSet::parse("task"),
+            TypeSet {
+                notes: false,
+                tasks: true
+            }
+        );
+    }
+
+    #[test]
+    fn typeset_parse_all_single_value() {
+        assert_eq!(TypeSet::parse("all"), TypeSet::all());
+    }
+
+    #[test]
+    fn typeset_parse_note_task_multi_value() {
+        assert_eq!(
+            TypeSet::parse("note,task"),
+            TypeSet {
+                notes: true,
+                tasks: true
+            }
+        );
+    }
+
+    #[test]
+    fn typeset_parse_task_note_order_independent() {
+        assert_eq!(
+            TypeSet::parse("task,note"),
+            TypeSet {
+                notes: true,
+                tasks: true
+            }
+        );
+    }
+
+    #[test]
+    fn typeset_parse_dedup_note_note() {
+        assert_eq!(
+            TypeSet::parse("note,note"),
+            TypeSet {
+                notes: true,
+                tasks: false
+            }
+        );
+    }
+
+    #[test]
+    fn typeset_parse_trim_and_lowercase() {
+        assert_eq!(
+            TypeSet::parse("Note, Task "),
+            TypeSet {
+                notes: true,
+                tasks: true
+            }
+        );
+    }
+
+    #[test]
+    fn typeset_parse_note_all_short_circuits_to_all() {
+        assert_eq!(TypeSet::parse("note,all"), TypeSet::all());
+    }
+
+    #[test]
+    fn typeset_parse_unknown_only_collapses_to_all() {
+        assert_eq!(TypeSet::parse("doc"), TypeSet::all());
+    }
+
+    #[test]
+    fn typeset_parse_empty_collapses_to_all() {
+        assert_eq!(TypeSet::parse(""), TypeSet::all());
+    }
+
+    #[test]
+    fn typeset_parse_all_unknown_collapses_to_all() {
+        assert_eq!(TypeSet::parse("comment,xyz"), TypeSet::all());
+    }
+
+    #[test]
+    fn typeset_parse_document_alias() {
+        assert_eq!(
+            TypeSet::parse("document"),
+            TypeSet {
+                notes: true,
+                tasks: false
+            }
+        );
+    }
+
+    #[test]
+    fn typeset_parse_notes_alias() {
+        assert_eq!(
+            TypeSet::parse("notes"),
+            TypeSet {
+                notes: true,
+                tasks: false
+            }
+        );
+    }
+
+    #[test]
+    fn typeset_parse_documents_alias() {
+        assert_eq!(
+            TypeSet::parse("documents"),
+            TypeSet {
+                notes: true,
+                tasks: false
+            }
+        );
+    }
+
+    #[test]
+    fn typeset_parse_tasks_alias() {
+        assert_eq!(
+            TypeSet::parse("tasks"),
+            TypeSet {
+                notes: false,
+                tasks: true
+            }
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // T02 — TypeSet API + task_filter_on_notes truth table (RED → GREEN after T04)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn typeset_all_is_all() {
+        let s = TypeSet::all();
+        assert!(s.is_all());
+        assert!(!s.is_empty());
+    }
+
+    #[test]
+    fn typeset_none_is_empty() {
+        let s = TypeSet::none();
+        assert!(s.is_empty());
+        assert!(!s.is_all());
+    }
+
+    #[test]
+    fn typeset_default_is_all() {
+        assert_eq!(TypeSet::default(), TypeSet::all());
+    }
+
+    #[test]
+    fn task_filter_on_notes_all_with_task_only_filter_false() {
+        assert!(!task_filter_on_notes(TypeSet::all(), true));
+    }
+
+    #[test]
+    fn task_filter_on_notes_all_without_task_only_filter_false() {
+        assert!(!task_filter_on_notes(TypeSet::all(), false));
+    }
+
+    #[test]
+    fn task_filter_on_notes_notes_only_with_task_only_filter_true() {
+        assert!(task_filter_on_notes(
+            TypeSet {
+                notes: true,
+                tasks: false
+            },
+            true
+        ));
+    }
+
+    #[test]
+    fn task_filter_on_notes_notes_only_without_task_only_filter_false() {
+        assert!(!task_filter_on_notes(
+            TypeSet {
+                notes: true,
+                tasks: false
+            },
+            false
+        ));
+    }
+
+    #[test]
+    fn task_filter_on_notes_tasks_only_with_task_only_filter_false() {
+        assert!(!task_filter_on_notes(
+            TypeSet {
+                notes: false,
+                tasks: true
+            },
+            true
+        ));
+    }
+
+    #[test]
+    fn task_filter_on_notes_none_with_task_only_filter_false() {
+        assert!(!task_filter_on_notes(TypeSet::none(), true));
+    }
+
+    // -----------------------------------------------------------------------
+    // T03 — parse_query tests rewritten/added for TypeSet (RED → GREEN after T04)
+    // -----------------------------------------------------------------------
+
     #[test]
     fn parse_free_text_only() {
         let q = parse_query("hello world");
         assert_eq!(q.text, "hello world");
         assert!(q.filters.is_empty());
         assert!(q.warnings.is_empty());
-        assert_eq!(q.type_filter, TypeFilter::All);
+        assert_eq!(q.type_filter, TypeSet::all());
         assert_eq!(q.sort, SearchSort::Relevance);
     }
 
@@ -288,7 +578,13 @@ mod tests {
             q.filters
                 .contains(&SearchFilter::Status("open".to_string()))
         );
-        assert_eq!(q.type_filter, TypeFilter::Documents);
+        assert_eq!(
+            q.type_filter,
+            TypeSet {
+                notes: true,
+                tasks: false
+            }
+        );
         assert!(q.warnings.contains(&SearchWarning::TaskFilterOnNotes));
     }
 
@@ -354,7 +650,13 @@ mod tests {
     #[test]
     fn parse_type_token_updates_type_filter() {
         let q = parse_query("type:task hello");
-        assert_eq!(q.type_filter, TypeFilter::Tasks);
+        assert_eq!(
+            q.type_filter,
+            TypeSet {
+                notes: false,
+                tasks: true
+            }
+        );
         assert_eq!(q.text, "hello");
     }
 
@@ -382,7 +684,13 @@ mod tests {
             q.filters
                 .contains(&SearchFilter::Status("open".to_string()))
         );
-        assert_eq!(q.type_filter, TypeFilter::Tasks);
+        assert_eq!(
+            q.type_filter,
+            TypeSet {
+                notes: false,
+                tasks: true
+            }
+        );
         assert!(!q.warnings.contains(&SearchWarning::TaskFilterOnNotes));
     }
 
@@ -416,5 +724,30 @@ mod tests {
         let q = parse_query("hello world foo");
         assert_eq!(q.text, "hello world foo");
         assert!(q.filters.is_empty());
+    }
+
+    #[test]
+    fn parse_type_note_task_multi_no_warning() {
+        let q = parse_query("type:note,task status:open");
+        assert_eq!(
+            q.type_filter,
+            TypeSet {
+                notes: true,
+                tasks: true
+            }
+        );
+        assert!(!q.warnings.contains(&SearchWarning::TaskFilterOnNotes));
+    }
+
+    #[test]
+    fn parse_type_repeated_tokens_last_wins() {
+        let q = parse_query("type:note type:task");
+        assert_eq!(
+            q.type_filter,
+            TypeSet {
+                notes: false,
+                tasks: true
+            }
+        );
     }
 }

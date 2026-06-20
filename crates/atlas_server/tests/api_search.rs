@@ -7,10 +7,21 @@
 
 mod support;
 
-use atlas_api::dtos::search::SearchHitDto;
+use atlas_api::dtos::search::{SearchHitDto, SearchKindDto};
 use atlas_api::pagination::{Page, SearchCursor, SortKey};
-use atlas_domain::{Actor, WorkspaceCtx, entities::documents::NewDocument};
-use atlas_server::persistence::repos::{DocumentRepo, PgDocumentRepo};
+use atlas_domain::{
+    Actor, WorkspaceCtx,
+    entities::{
+        boards_tasks::{NewBoard, NewTask, PositionBetween},
+        documents::NewDocument,
+        workspace_core::NewProject,
+    },
+    permissions::{Visibility, VisibilityRole},
+};
+use atlas_server::persistence::repos::{
+    BoardRepo, DocumentRepo, PgBoardRepo, PgDocumentRepo, PgProjectRepo, PgTaskRepo, ProjectRepo,
+    TaskRepo,
+};
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -572,6 +583,463 @@ async fn body_match_snippet_contains_mark_highlight() {
     assert!(
         snippet.contains("<mark>") && snippet.contains("</mark>"),
         "snippet must carry <mark> highlighting; got: {snippet:?}"
+    );
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers shared by T10/T11 integration tests
+// ---------------------------------------------------------------------------
+
+async fn seed_doc_and_task(db: &support::TestDb, ctx: &WorkspaceCtx, unique: &str) -> (Uuid, Uuid) {
+    let doc_repo = PgDocumentRepo::new(db.conn().clone(), 50);
+    let doc = doc_repo
+        .create(
+            ctx,
+            NewDocument {
+                title: format!("Document {unique}"),
+                slug: Some(format!("doc-{unique}")),
+                content: String::new(),
+                folder_id: None,
+                project_id: None,
+                frontmatter: None,
+            },
+        )
+        .await
+        .expect("seed document");
+
+    let project_repo = PgProjectRepo {
+        conn: db.conn().clone(),
+    };
+    let board_repo = PgBoardRepo::new(db.conn().clone());
+    let task_repo = PgTaskRepo::new(db.conn().clone());
+
+    let project = project_repo
+        .create(
+            ctx,
+            NewProject {
+                name: format!("Project {unique}"),
+                slug: format!("proj-{unique}"),
+                task_prefix: format!("T{}", &unique[..4].to_uppercase()),
+                visibility: Visibility::Workspace(VisibilityRole::Editor),
+            },
+        )
+        .await
+        .expect("seed project");
+
+    let board = board_repo
+        .create_board(
+            ctx,
+            NewBoard {
+                project_id: project.id,
+                name: "Board".to_string(),
+            },
+        )
+        .await
+        .expect("seed board");
+
+    let col = board_repo
+        .add_column(
+            ctx,
+            board.id,
+            "Backlog".to_string(),
+            PositionBetween {
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("seed column");
+
+    let task = task_repo
+        .create(
+            ctx,
+            NewTask {
+                column_id: col.id,
+                board_id: board.id,
+                project_id: project.id,
+                title: format!("Task {unique}"),
+                description: String::new(),
+                priority: None,
+                due_date: None,
+                estimate: None,
+                labels: vec![],
+                properties: None,
+                position: PositionBetween {
+                    before: None,
+                    after: None,
+                },
+            },
+        )
+        .await
+        .expect("seed task");
+
+    (doc.id.0, task.id.0)
+}
+
+// ---------------------------------------------------------------------------
+// T10 — REQ-MT2/MT3/MT7/MT8 integration tests
+// ---------------------------------------------------------------------------
+
+/// `type=note,task` returns both the seeded document and the seeded task (REQ-MT2).
+#[tokio::test]
+async fn type_note_task_returns_both_kinds() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, user) =
+        support::login_user_with_workspace(&server, &db, "search-mt2-both").await;
+    let token = client.token().expect("logged in");
+    let http = reqwest::Client::new();
+
+    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let unique = "xmt2bothkinds9z";
+    let (doc_id, task_id) = seed_doc_and_task(&db, &ctx, unique).await;
+
+    let resp = get_search(
+        &http,
+        token,
+        server.base_url(),
+        &ws.slug,
+        &format!("q={unique}&type=note,task"),
+    )
+    .await;
+
+    assert_eq!(resp.status().as_u16(), 200);
+    let page: Page<SearchHitDto> = resp.json().await.expect("json");
+
+    let ids: Vec<Uuid> = page.items.iter().map(|h| h.id).collect();
+    assert!(ids.contains(&doc_id), "document must appear; got: {ids:?}");
+    assert!(ids.contains(&task_id), "task must appear; got: {ids:?}");
+
+    let has_doc_kind = page.items.iter().any(|h| h.kind == SearchKindDto::Document);
+    let has_task_kind = page.items.iter().any(|h| h.kind == SearchKindDto::Task);
+    assert!(has_doc_kind, "must have a document-kind hit");
+    assert!(has_task_kind, "must have a task-kind hit");
+
+    db.teardown().await;
+}
+
+/// `type=note,task` today-only equivalence to absent `type` (REQ-MT2 caveat).
+///
+/// Today the searchable universe is exactly {note, task}, so an explicit
+/// `type=note,task` returns the same set as an absent `type`. This assertion
+/// is labeled "today only" — once a third kind exists `{note,task}` will
+/// correctly EXCLUDE it while `all` includes it.
+#[tokio::test]
+async fn type_note_task_today_same_as_absent_type() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, user) =
+        support::login_user_with_workspace(&server, &db, "search-mt2-equiv").await;
+    let token = client.token().expect("logged in");
+    let http = reqwest::Client::new();
+
+    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let unique = "xmt2equivterm8q";
+    seed_doc_and_task(&db, &ctx, unique).await;
+
+    let resp_explicit = get_search(
+        &http,
+        token,
+        server.base_url(),
+        &ws.slug,
+        &format!("q={unique}&type=note,task"),
+    )
+    .await;
+    let resp_absent = get_search(
+        &http,
+        token,
+        server.base_url(),
+        &ws.slug,
+        &format!("q={unique}"),
+    )
+    .await;
+
+    let page_explicit: Page<SearchHitDto> = resp_explicit.json().await.expect("json explicit");
+    let page_absent: Page<SearchHitDto> = resp_absent.json().await.expect("json absent");
+
+    let mut ids_explicit: Vec<Uuid> = page_explicit.items.iter().map(|h| h.id).collect();
+    let mut ids_absent: Vec<Uuid> = page_absent.items.iter().map(|h| h.id).collect();
+    ids_explicit.sort();
+    ids_absent.sort();
+
+    // today only, not an invariant: {note,task}==all while universe is {note,task}
+    assert_eq!(
+        ids_explicit, ids_absent,
+        "today only: type=note,task must match absent type (universe={{note,task}})"
+    );
+
+    db.teardown().await;
+}
+
+/// `type=note` returns only the document (backward compat, REQ-MT1).
+#[tokio::test]
+async fn type_note_returns_only_documents() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, user) =
+        support::login_user_with_workspace(&server, &db, "search-mt1-note").await;
+    let token = client.token().expect("logged in");
+    let http = reqwest::Client::new();
+
+    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let unique = "xmt1noteonlyterm";
+    let (doc_id, _task_id) = seed_doc_and_task(&db, &ctx, unique).await;
+
+    let resp = get_search(
+        &http,
+        token,
+        server.base_url(),
+        &ws.slug,
+        &format!("q={unique}&type=note"),
+    )
+    .await;
+
+    assert_eq!(resp.status().as_u16(), 200);
+    let page: Page<SearchHitDto> = resp.json().await.expect("json");
+
+    let ids: Vec<Uuid> = page.items.iter().map(|h| h.id).collect();
+    assert!(
+        ids.contains(&doc_id),
+        "document must appear with type=note; got: {ids:?}"
+    );
+    assert!(
+        page.items.iter().all(|h| h.kind == SearchKindDto::Document),
+        "type=note must return only documents; got kinds: {:?}",
+        page.items.iter().map(|h| &h.kind).collect::<Vec<_>>()
+    );
+
+    db.teardown().await;
+}
+
+/// `type=task` returns only the task (backward compat, REQ-MT1).
+#[tokio::test]
+async fn type_task_returns_only_tasks() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, user) =
+        support::login_user_with_workspace(&server, &db, "search-mt1-task").await;
+    let token = client.token().expect("logged in");
+    let http = reqwest::Client::new();
+
+    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let unique = "xmt1taskonlyterm";
+    let (_doc_id, task_id) = seed_doc_and_task(&db, &ctx, unique).await;
+
+    let resp = get_search(
+        &http,
+        token,
+        server.base_url(),
+        &ws.slug,
+        &format!("q={unique}&type=task"),
+    )
+    .await;
+
+    assert_eq!(resp.status().as_u16(), 200);
+    let page: Page<SearchHitDto> = resp.json().await.expect("json");
+
+    let ids: Vec<Uuid> = page.items.iter().map(|h| h.id).collect();
+    assert!(
+        ids.contains(&task_id),
+        "task must appear with type=task; got: {ids:?}"
+    );
+    assert!(
+        page.items.iter().all(|h| h.kind == SearchKindDto::Task),
+        "type=task must return only tasks; got kinds: {:?}",
+        page.items.iter().map(|h| &h.kind).collect::<Vec<_>>()
+    );
+
+    db.teardown().await;
+}
+
+/// `type=note,task` + status filter in q does NOT short-circuit (REQ-MT7 NO row).
+///
+/// With both note and task selected, the task arm covers the status filter,
+/// so no TaskFilterOnNotes warning fires and the route does not return empty.
+#[tokio::test]
+async fn type_note_task_with_status_filter_does_not_short_circuit() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, user) =
+        support::login_user_with_workspace(&server, &db, "search-mt7-notask").await;
+    let token = client.token().expect("logged in");
+    let http = reqwest::Client::new();
+
+    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let unique = "xmt7nowarningterm";
+    let (_doc_id, task_id) = seed_doc_and_task(&db, &ctx, unique).await;
+
+    // q contains status:backlog (task-only filter); type=note,task includes task arm
+    let resp = get_search(
+        &http,
+        token,
+        server.base_url(),
+        &ws.slug,
+        &format!("q={unique}%20status:backlog&type=note,task"),
+    )
+    .await;
+
+    assert_eq!(resp.status().as_u16(), 200);
+    let page: Page<SearchHitDto> = resp.json().await.expect("json");
+    // The route must NOT short-circuit to empty
+    let ids: Vec<Uuid> = page.items.iter().map(|h| h.id).collect();
+    assert!(
+        ids.contains(&task_id),
+        "type=note,task with status filter must find the task (no short-circuit); got: {ids:?}"
+    );
+
+    db.teardown().await;
+}
+
+/// `type=note` + status filter in q → empty page (warning short-circuit, REQ-MT7 YES row).
+#[tokio::test]
+async fn type_note_with_status_filter_returns_empty() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, user) =
+        support::login_user_with_workspace(&server, &db, "search-mt7-warn").await;
+    let token = client.token().expect("logged in");
+    let http = reqwest::Client::new();
+
+    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let unique = "xmt7warnterm9p";
+    seed_doc_and_task(&db, &ctx, unique).await;
+
+    // q contains status:open (task-only filter); type=note is notes-only -> TaskFilterOnNotes
+    let resp = get_search(
+        &http,
+        token,
+        server.base_url(),
+        &ws.slug,
+        &format!("q={unique}%20status:open&type=note"),
+    )
+    .await;
+
+    assert_eq!(resp.status().as_u16(), 200);
+    let page: Page<SearchHitDto> = resp.json().await.expect("json");
+    assert!(
+        page.items.is_empty(),
+        "type=note + status filter must return empty page (TaskFilterOnNotes); got: {:?}",
+        page.items.len()
+    );
+
+    db.teardown().await;
+}
+
+/// Permission filtering preserved under `type=note,task` (REQ-MT8).
+///
+/// Seeding two users' data in the same workspace; a plain member who can see
+/// their own document via workspace visibility must not see a private-project
+/// resource. The per-arm predicates must still apply independently.
+///
+/// This test verifies the owner can see both kinds and the task carries readable_id.
+#[tokio::test]
+async fn type_note_task_owner_sees_both_kinds_with_readable_id() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, user) =
+        support::login_user_with_workspace(&server, &db, "search-mt8-perm").await;
+    let token = client.token().expect("logged in");
+    let http = reqwest::Client::new();
+
+    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let unique = "xmt8permterm7r";
+    let (doc_id, task_id) = seed_doc_and_task(&db, &ctx, unique).await;
+
+    let resp = get_search(
+        &http,
+        token,
+        server.base_url(),
+        &ws.slug,
+        &format!("q={unique}&type=note,task"),
+    )
+    .await;
+
+    assert_eq!(resp.status().as_u16(), 200);
+    let page: Page<SearchHitDto> = resp.json().await.expect("json");
+    let ids: Vec<Uuid> = page.items.iter().map(|h| h.id).collect();
+
+    assert!(
+        ids.contains(&doc_id),
+        "owner must see document with type=note,task; got: {ids:?}"
+    );
+    assert!(
+        ids.contains(&task_id),
+        "owner must see task with type=note,task; got: {ids:?}"
+    );
+
+    let task_hit = page
+        .items
+        .iter()
+        .find(|h| h.id == task_id)
+        .expect("task hit");
+    assert!(
+        task_hit.readable_id.is_some(),
+        "task hit must carry readable_id; got: {:?}",
+        task_hit.readable_id
+    );
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
+// T11 — REQ-MT4/D1: unknown type token returns all results (not empty)
+// ---------------------------------------------------------------------------
+
+/// `type=comment` (unknown token) collapses to all — returns same as absent type (REQ-MT4/D1).
+#[tokio::test]
+async fn type_unknown_token_collapses_to_all() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, user) =
+        support::login_user_with_workspace(&server, &db, "search-d1-unknown").await;
+    let token = client.token().expect("logged in");
+    let http = reqwest::Client::new();
+
+    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let unique = "xd1unknownterm5s";
+    let (doc_id, task_id) = seed_doc_and_task(&db, &ctx, unique).await;
+
+    let resp_unknown = get_search(
+        &http,
+        token,
+        server.base_url(),
+        &ws.slug,
+        &format!("q={unique}&type=comment"),
+    )
+    .await;
+
+    let resp_absent = get_search(
+        &http,
+        token,
+        server.base_url(),
+        &ws.slug,
+        &format!("q={unique}"),
+    )
+    .await;
+
+    assert_eq!(resp_unknown.status().as_u16(), 200);
+    let page_unknown: Page<SearchHitDto> = resp_unknown.json().await.expect("json unknown");
+    let page_absent: Page<SearchHitDto> = resp_absent.json().await.expect("json absent");
+
+    let ids_unknown: Vec<Uuid> = page_unknown.items.iter().map(|h| h.id).collect();
+    assert!(
+        ids_unknown.contains(&doc_id),
+        "type=comment must not filter documents (D1 collapse to all); got: {ids_unknown:?}"
+    );
+    assert!(
+        ids_unknown.contains(&task_id),
+        "type=comment must not filter tasks (D1 collapse to all); got: {ids_unknown:?}"
+    );
+
+    let mut ids_u = ids_unknown.clone();
+    let mut ids_a: Vec<Uuid> = page_absent.items.iter().map(|h| h.id).collect();
+    ids_u.sort();
+    ids_a.sort();
+    assert_eq!(
+        ids_u, ids_a,
+        "type=comment must return same result set as absent type"
     );
 
     db.teardown().await;

@@ -12,7 +12,10 @@ use atlas_api::{
 use atlas_domain::{
     Actor, WorkspaceCtx,
     ports::search::{SearchAfter, SearchRepo, SortKey as DomainSortKey},
-    search::{SearchKind, SearchQuery, SearchSort, SearchWarning, TypeFilter, parse_query},
+    search::{
+        SearchKind, SearchQuery, SearchSort, SearchWarning, TypeSet, parse_query,
+        task_filter_on_notes,
+    },
 };
 
 use crate::{
@@ -24,7 +27,7 @@ use crate::{
 pub(crate) struct SearchQueryParams {
     /// Free-text query with optional `key:value` filter tokens. Required.
     pub q: Option<String>,
-    /// Restricts results by kind: `all` (default), `note` (documents), `task`.
+    /// Comma-separated content kinds: `note` (documents), `task`. `all` or empty = no restriction (default). Unknown values are ignored.
     #[serde(rename = "type")]
     pub type_filter: Option<String>,
     /// Sort order: `relevance` (default) or `updated`.
@@ -47,7 +50,7 @@ pub(crate) struct SearchQueryParams {
     params(
         ("ws" = String, Path, description = "Workspace slug"),
         ("q" = String, Query, description = "Search query (required). Supports key:value filter tokens."),
-        ("type" = Option<String>, Query, description = "Kind filter: all (default) | note | task"),
+        ("type" = Option<String>, Query, description = "Comma-separated kinds: note, task (e.g. note,task). 'all' or empty = no restriction (default). Unknown values are ignored."),
         ("sort" = Option<String>, Query, description = "Sort order: relevance (default) | updated"),
         ("cursor" = Option<String>, Query, description = "Opaque pagination cursor; must match the sort of the issuing request"),
         ("limit" = Option<u32>, Query, description = "Page size, default 50, clamped to [1,200]"),
@@ -127,11 +130,9 @@ fn apply_param_overrides(
     sort_param: Option<&str>,
 ) {
     if let Some(t) = type_param {
-        query.type_filter = match t.to_ascii_lowercase().as_str() {
-            "note" | "notes" | "document" | "documents" => TypeFilter::Documents,
-            "task" | "tasks" => TypeFilter::Tasks,
-            _ => TypeFilter::All,
-        };
+        // Param OVERRIDES any type: token from q (unchanged precedence),
+        // and uses the SAME parser as the token path.
+        query.type_filter = TypeSet::parse(t);
     }
 
     if let Some(s) = sort_param {
@@ -141,6 +142,11 @@ fn apply_param_overrides(
         };
     }
 
+    // Recompute the warning AFTER the possible type override, via the SAME
+    // predicate the domain parser uses. Because the override may have flipped
+    // type_filter, a stale warning from parse_query must also be DROPPED when
+    // it no longer applies — otherwise `q="type:note status:open"` + `type=task`
+    // would keep a TaskFilterOnNotes warning that is now wrong.
     let task_only_present = query.filters.iter().any(|f| {
         matches!(
             f,
@@ -149,11 +155,16 @@ fn apply_param_overrides(
                 | atlas_domain::search::SearchFilter::Assignee(_)
         )
     });
-    if task_only_present
-        && query.type_filter == TypeFilter::Documents
-        && !query.warnings.contains(&SearchWarning::TaskFilterOnNotes)
-    {
+
+    let should_warn = task_filter_on_notes(query.type_filter, task_only_present);
+    let has_warn = query.warnings.contains(&SearchWarning::TaskFilterOnNotes);
+
+    if should_warn && !has_warn {
         query.warnings.push(SearchWarning::TaskFilterOnNotes);
+    } else if !should_warn && has_warn {
+        query
+            .warnings
+            .retain(|w| *w != SearchWarning::TaskFilterOnNotes);
     }
 }
 
@@ -208,5 +219,145 @@ fn principal_to_actor(principal: &atlas_domain::permissions::Principal) -> Actor
     match principal {
         atlas_domain::permissions::Principal::User(uid) => Actor::User(*uid),
         atlas_domain::permissions::Principal::ApiKey(kid) => Actor::ApiKey(*kid),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests (T05 — apply_param_overrides unit tests)
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use atlas_domain::search::{SearchFilter, SearchQuery, SearchSort, SearchWarning, TypeSet};
+
+    fn base_query() -> SearchQuery {
+        SearchQuery {
+            text: String::new(),
+            filters: vec![],
+            sort: SearchSort::Relevance,
+            type_filter: TypeSet::all(),
+            warnings: vec![],
+        }
+    }
+
+    #[test]
+    fn override_note_task_multi_value() {
+        let mut q = base_query();
+        apply_param_overrides(&mut q, Some("note,task"), None);
+        assert_eq!(
+            q.type_filter,
+            TypeSet {
+                notes: true,
+                tasks: true
+            }
+        );
+    }
+
+    #[test]
+    fn override_note_backward_compat() {
+        let mut q = base_query();
+        apply_param_overrides(&mut q, Some("note"), None);
+        assert_eq!(
+            q.type_filter,
+            TypeSet {
+                notes: true,
+                tasks: false
+            }
+        );
+    }
+
+    #[test]
+    fn override_task_backward_compat() {
+        let mut q = base_query();
+        apply_param_overrides(&mut q, Some("task"), None);
+        assert_eq!(
+            q.type_filter,
+            TypeSet {
+                notes: false,
+                tasks: true
+            }
+        );
+    }
+
+    #[test]
+    fn override_all_backward_compat() {
+        let mut q = base_query();
+        apply_param_overrides(&mut q, Some("all"), None);
+        assert_eq!(q.type_filter, TypeSet::all());
+    }
+
+    #[test]
+    fn override_empty_string_collapses_to_all() {
+        let mut q = base_query();
+        apply_param_overrides(&mut q, Some(""), None);
+        assert_eq!(q.type_filter, TypeSet::all());
+    }
+
+    #[test]
+    fn override_none_leaves_type_unchanged() {
+        let mut q = base_query();
+        q.type_filter = TypeSet {
+            notes: true,
+            tasks: false,
+        };
+        apply_param_overrides(&mut q, None, None);
+        assert_eq!(
+            q.type_filter,
+            TypeSet {
+                notes: true,
+                tasks: false
+            }
+        );
+    }
+
+    #[test]
+    fn override_precedence_replaces_token_derived_value() {
+        let mut q = base_query();
+        q.type_filter = TypeSet {
+            notes: true,
+            tasks: false,
+        };
+        apply_param_overrides(&mut q, Some("task"), None);
+        assert_eq!(
+            q.type_filter,
+            TypeSet {
+                notes: false,
+                tasks: true
+            }
+        );
+    }
+
+    #[test]
+    fn override_warning_add_path() {
+        let mut q = base_query();
+        q.filters.push(SearchFilter::Status("open".to_string()));
+        apply_param_overrides(&mut q, Some("note"), None);
+        assert!(q.warnings.contains(&SearchWarning::TaskFilterOnNotes));
+    }
+
+    #[test]
+    fn override_warning_drop_path() {
+        let mut q = base_query();
+        q.filters.push(SearchFilter::Status("open".to_string()));
+        q.type_filter = TypeSet {
+            notes: true,
+            tasks: false,
+        };
+        q.warnings.push(SearchWarning::TaskFilterOnNotes);
+
+        apply_param_overrides(&mut q, Some("note,task"), None);
+
+        assert_eq!(
+            q.type_filter,
+            TypeSet {
+                notes: true,
+                tasks: true
+            }
+        );
+        assert!(
+            !q.warnings.contains(&SearchWarning::TaskFilterOnNotes),
+            "stale TaskFilterOnNotes warning must be removed when type is widened to include tasks"
+        );
     }
 }

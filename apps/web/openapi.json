@@ -3691,7 +3691,7 @@
           {
             "name": "type",
             "in": "query",
-            "description": "Kind filter: all (default) | note | task",
+            "description": "Comma-separated kinds: note, task (e.g. note,task). 'all' or empty = no restriction (default). Unknown values are ignored.",
             "required": false,
             "schema": {
               "type": "string"

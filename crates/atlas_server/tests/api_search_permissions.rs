@@ -23,7 +23,7 @@ use atlas_api::dtos::search::SearchHitDto;
 use atlas_api::pagination::Page;
 use atlas_domain::permissions::Principal;
 use atlas_domain::ports::search::SearchRepo;
-use atlas_domain::search::{SearchQuery, SearchSort, TypeFilter};
+use atlas_domain::search::{SearchQuery, SearchSort, TypeSet};
 use atlas_domain::{
     Actor, WorkspaceCtx,
     entities::{
@@ -661,7 +661,7 @@ async fn api_key_no_grant_sees_no_rows_at_sql_level() {
         text: unique.to_string(),
         filters: vec![],
         sort: SearchSort::Relevance,
-        type_filter: TypeFilter::All,
+        type_filter: TypeSet::all(),
         warnings: vec![],
     };
     let hits = repo
