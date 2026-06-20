@@ -4,6 +4,7 @@ import Avatar from '@/components/ui/Avatar.vue';
 import Chip from '@/components/ui/Chip.vue';
 import ColorPicker from '@/components/ui/ColorPicker.vue';
 import Icon from '@/components/ui/Icon.vue';
+import Popover from '@/components/ui/Popover.vue';
 import { useLabelColorsStore } from '@/stores/labelColors';
 
 const labelColors = useLabelColorsStore();
@@ -118,16 +119,8 @@ function tagKey(tag: string): string {
   return `tag:${tag.trim().toLowerCase()}`;
 }
 
-// Which chip's color popover is open, by storage key (null = none).
-const colorOpen = ref<string | null>(null);
-
-function toggleColor(key: string): void {
-  colorOpen.value = colorOpen.value === key ? null : key;
-}
-
 function pickColor(key: string, swatchId: string): void {
   labelColors.setColor(key, swatchId);
-  colorOpen.value = null;
 }
 
 function visibilityIcon(value: string): string {
@@ -191,7 +184,6 @@ function focusOnMount(el: Element | null): void {
 
 <template>
   <div class="properties">
-    <div v-if="colorOpen !== null" class="color-backdrop" aria-hidden="true" @click="colorOpen = null" />
     <div v-if="rows.length > 0" class="properties-card">
       <div v-for="(row, index) in rows" :key="index" class="meta-row">
         <input
@@ -205,31 +197,33 @@ function focusOnMount(el: Element | null): void {
 
         <!-- tags: editable chips; click a chip to recolor, × to remove -->
         <div v-if="rowKind(row) === 'tags'" class="meta-value tags">
-          <span v-for="tag in tagList(row)" :key="tag" class="chip-wrap">
-            <Chip
-              :color="labelColors.colorFor(tagKey(tag))"
-              style="cursor: pointer;"
-              :title="`Recolor “${tag}”`"
-              @click="toggleColor(tagKey(tag))"
-            >
-              {{ tag }}
-              <button
-                type="button"
-                class="tag-x"
-                title="Remove tag"
-                aria-label="Remove tag"
-                @click.stop="removeTag(row, tag)"
+          <Popover v-for="tag in tagList(row)" :key="tag" placement="bottom-start">
+            <template #trigger="{ toggle }">
+              <Chip
+                :color="labelColors.colorFor(tagKey(tag))"
+                style="cursor: pointer;"
+                :title="`Recolor “${tag}”`"
+                @click="toggle"
               >
-                <Icon name="x" :size="10" />
-              </button>
-            </Chip>
-            <div v-if="colorOpen === tagKey(tag)" class="color-pop">
+                {{ tag }}
+                <button
+                  type="button"
+                  class="tag-x"
+                  title="Remove tag"
+                  aria-label="Remove tag"
+                  @click.stop="removeTag(row, tag)"
+                >
+                  <Icon name="x" :size="10" />
+                </button>
+              </Chip>
+            </template>
+            <template #default="{ close }">
               <ColorPicker
                 :selected="labelColors.colorFor(tagKey(tag))"
-                @select="(id) => pickColor(tagKey(tag), id)"
+                @select="(id) => (pickColor(tagKey(tag), id), close())"
               />
-            </div>
-          </span>
+            </template>
+          </Popover>
           <input
             v-model="tagDraft[index]"
             type="text"
@@ -261,15 +255,25 @@ function focusOnMount(el: Element | null): void {
             v-else-if="rowKind(row) === 'status' && row.value !== ''"
             class="meta-value status-cell"
           >
-            <Chip
-              :color="labelColors.colorFor(statusKey(row.value))"
-              icon="dot"
-              style="cursor: pointer;"
-              :title="`Recolor “${row.value}”`"
-              @click="toggleColor(statusKey(row.value))"
-            >
-              {{ row.value }}
-            </Chip>
+            <Popover placement="bottom-start">
+              <template #trigger="{ toggle }">
+                <Chip
+                  :color="labelColors.colorFor(statusKey(row.value))"
+                  icon="dot"
+                  style="cursor: pointer;"
+                  :title="`Recolor “${row.value}”`"
+                  @click="toggle"
+                >
+                  {{ row.value }}
+                </Chip>
+              </template>
+              <template #default="{ close }">
+                <ColorPicker
+                  :selected="labelColors.colorFor(statusKey(row.value))"
+                  @select="(id) => (pickColor(statusKey(row.value), id), close())"
+                />
+              </template>
+            </Popover>
             <button
               type="button"
               class="status-edit"
@@ -279,12 +283,6 @@ function focusOnMount(el: Element | null): void {
             >
               <Icon name="pencil" :size="11" />
             </button>
-            <div v-if="colorOpen === statusKey(row.value)" class="color-pop">
-              <ColorPicker
-                :selected="labelColors.colorFor(statusKey(row.value))"
-                @select="(id) => pickColor(statusKey(row.value), id)"
-              />
-            </div>
           </div>
 
           <button
@@ -452,11 +450,6 @@ function focusOnMount(el: Element | null): void {
   outline: none;
 }
 
-.chip-wrap {
-  position: relative;
-  display: inline-flex;
-}
-
 .status-cell {
   position: relative;
 }
@@ -483,24 +476,6 @@ function focusOnMount(el: Element | null): void {
 .status-edit:hover {
   background: var(--c-input);
   color: var(--c-foreground);
-}
-
-/* Color popover floats just under the clicked chip. */
-.color-pop {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  z-index: 51;
-  background: var(--c-raised);
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
-  box-shadow: var(--shadow-md);
-}
-
-.color-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
 }
 
 .meta-remove {

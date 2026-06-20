@@ -5,6 +5,7 @@ import AgentBadge from '@/components/ui/AgentBadge.vue';
 import Avatar from '@/components/ui/Avatar.vue';
 import Btn from '@/components/ui/Btn.vue';
 import Icon from '@/components/ui/Icon.vue';
+import Popover from '@/components/ui/Popover.vue';
 import { useBreakpoint } from '@/composables/useBreakpoint';
 import type { GrantRole } from '@/lib/grantRoles';
 import { type GrantDto, type PrincipalDto, useShareStore } from '@/stores/share';
@@ -31,7 +32,6 @@ const emit = defineEmits<{
 const share = useShareStore();
 const { isMobile } = useBreakpoint();
 
-const openMenuFor = ref<string | null>(null);
 const memberQuery = ref('');
 const linkCopied = ref(false);
 
@@ -51,7 +51,6 @@ watch(
   () => [props.open, props.ws] as const,
   ([open, ws]) => {
     if (open) {
-      openMenuFor.value = null;
       memberQuery.value = '';
       void share.load(ws);
       void share.loadMembers(ws);
@@ -81,17 +80,11 @@ const VISIBILITY_OPTS: Array<{ value: Visibility; icon: string; label: string; d
   { value: 'workspace', icon: 'eye', label: 'Workspace', desc: 'Anyone in the Atlas workspace can view' },
 ];
 
-function toggleMenu(id: string) {
-  openMenuFor.value = openMenuFor.value === id ? null : id;
-}
-
 async function onSelectRole(g: GrantDto, role: GrantRole) {
-  openMenuFor.value = null;
   await share.changeRole(props.ws, g.id, role);
 }
 
 async function onRemove(g: GrantDto) {
-  openMenuFor.value = null;
   await share.removeGrant(props.ws, g.id);
 }
 
@@ -274,24 +267,28 @@ async function selectMember(member: PrincipalDto): Promise<void> {
             </div>
           </div>
 
-          <button
-            type="button"
-            data-action="open-role-menu"
-            class="inline-flex items-center cursor-pointer"
-            style="gap: 5px; font-size: var(--fs-sm); color: var(--c-foreground); border: 1px solid var(--c-border); border-radius: var(--r-md); padding: 3px 8px; background-color: var(--c-secondary);"
-            @click="toggleMenu(g.id)"
-          >
-            {{ roleLabel(g.role) }}
-            <Icon name="chevron-down" :size="12" :style="{ color: 'var(--c-muted)' }" />
-          </button>
-
-          <RoleMenu
-            v-if="openMenuFor === g.id"
-            :principal-type="g.principal.type"
-            :role="g.role"
-            @select="(r) => onSelectRole(g, r)"
-            @remove="() => onRemove(g)"
-          />
+          <Popover placement="bottom-end" width="200px">
+            <template #trigger="{ toggle }">
+              <button
+                type="button"
+                data-action="open-role-menu"
+                class="inline-flex items-center cursor-pointer"
+                style="gap: 5px; font-size: var(--fs-sm); color: var(--c-foreground); border: 1px solid var(--c-border); border-radius: var(--r-md); padding: 3px 8px; background-color: var(--c-secondary);"
+                @click="toggle"
+              >
+                {{ roleLabel(g.role) }}
+                <Icon name="chevron-down" :size="12" :style="{ color: 'var(--c-muted)' }" />
+              </button>
+            </template>
+            <template #default="{ close }">
+              <RoleMenu
+                :principal-type="g.principal.type"
+                :role="g.role"
+                @select="(r) => { onSelectRole(g, r); close(); }"
+                @remove="() => { onRemove(g); close(); }"
+              />
+            </template>
+          </Popover>
         </div>
 
         <div style="height: 1px; background-color: var(--c-border); margin: 14px 0;" />

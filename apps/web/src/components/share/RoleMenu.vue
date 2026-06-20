@@ -38,21 +38,7 @@ function choose(role: GrantRole) {
 </script>
 
 <template>
-  <div
-    role="menu"
-    style="
-      position: absolute;
-      top: 30px;
-      right: 0;
-      width: 200px;
-      background-color: var(--c-panel);
-      border: 1px solid var(--c-border);
-      border-radius: var(--r-lg);
-      box-shadow: var(--shadow-lg);
-      padding: 4px;
-      z-index: 5;
-    "
-  >
+  <div style="padding: 4px;">
     <button
       v-for="row in ROWS"
       :key="row.value"

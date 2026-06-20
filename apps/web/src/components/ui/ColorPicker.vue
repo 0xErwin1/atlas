@@ -18,7 +18,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="atl-menu color-picker" role="menu" aria-label="Pick a color">
+  <div class="color-picker" role="menu" aria-label="Pick a color">
     <button
       v-for="swatch in SWATCHES"
       :key="swatch.id"

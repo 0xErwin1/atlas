@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref, watch } from 'vue';
 import Icon from '@/components/ui/Icon.vue';
+import Popover from '@/components/ui/Popover.vue';
 import { type TaskViewMode, useUiStore } from '@/stores/ui';
 
 const emit = defineEmits<{
@@ -20,101 +20,63 @@ const MODES: ModeOption[] = [
   { key: 'sidebar', label: 'Sidebar' },
 ];
 
-const open = ref(false);
-const root = ref<HTMLElement | null>(null);
-
-function onDocMousedown(event: MouseEvent): void {
-  if (root.value && !root.value.contains(event.target as Node)) open.value = false;
-}
-
-function onKeydown(event: KeyboardEvent): void {
-  if (event.key === 'Escape') open.value = false;
-}
-
-watch(open, (isOpen) => {
-  if (isOpen) {
-    window.addEventListener('mousedown', onDocMousedown);
-    window.addEventListener('keydown', onKeydown);
-  } else {
-    window.removeEventListener('mousedown', onDocMousedown);
-    window.removeEventListener('keydown', onKeydown);
-  }
-});
-
-onBeforeUnmount(() => {
-  window.removeEventListener('mousedown', onDocMousedown);
-  window.removeEventListener('keydown', onKeydown);
-});
-
-function pick(mode: TaskViewMode): void {
+function pick(mode: TaskViewMode, close: () => void): void {
   ui.setTaskViewMode(mode);
-  open.value = false;
+  close();
   emit('change', mode);
 }
 </script>
 
 <template>
-  <div ref="root" style="position: relative;">
-    <button
-      type="button"
-      class="atl-gbtn"
-      :class="{ on: open }"
-      title="View mode"
-      aria-label="Change task view mode"
-      style="width: 26px; height: 26px;"
-      @click="open = !open"
-    >
-      <Icon name="layout-template" :size="15" />
-    </button>
-
-    <div
-      v-if="open"
-      class="atl-menu"
-      role="menu"
-      style="
-        position: absolute;
-        top: 32px;
-        right: 0;
-        z-index: 60;
-        width: 236px;
-        padding: 6px;
-        background: var(--c-raised);
-        border: 1px solid var(--c-border);
-        border-radius: var(--r-md);
-        box-shadow: var(--shadow-lg, var(--shadow-md));
-      "
-    >
-      <div
-        style="
-          padding: 4px 6px 6px;
-          font-size: var(--fs-xs);
-          font-weight: var(--fw-semibold);
-          letter-spacing: 0.06em;
-          text-transform: uppercase;
-          color: var(--c-muted);
-        "
+  <Popover placement="bottom-end" width="236px">
+    <template #trigger="{ open, toggle }">
+      <button
+        type="button"
+        class="atl-gbtn"
+        :class="{ on: open }"
+        title="View mode"
+        aria-label="Change task view mode"
+        style="width: 26px; height: 26px;"
+        @click="toggle"
       >
-        Open task as
-      </div>
+        <Icon name="layout-template" :size="15" />
+      </button>
+    </template>
 
-      <div class="flex" style="gap: 6px;">
-        <button
-          v-for="mode in MODES"
-          :key="mode.key"
-          type="button"
-          role="menuitemradio"
-          :aria-checked="ui.taskViewMode === mode.key"
-          class="atl-tv-modeopt flex flex-col items-center"
-          :class="{ active: ui.taskViewMode === mode.key }"
-          style="flex: 1; gap: 6px; padding: 8px 4px; border-radius: var(--r-sm); cursor: pointer;"
-          @click="pick(mode.key)"
+    <template #default="{ close }">
+      <div style="padding: 6px;">
+        <div
+          style="
+            padding: 4px 6px 6px;
+            font-size: var(--fs-xs);
+            font-weight: var(--fw-semibold);
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--c-muted);
+          "
         >
-          <span class="atl-tv-thumb" :data-mode="mode.key" :data-active="ui.taskViewMode === mode.key" />
-          <span style="font-size: 10.5px; line-height: 1.2; text-align: center;">{{ mode.label }}</span>
-        </button>
+          Open task as
+        </div>
+
+        <div class="flex" style="gap: 6px;">
+          <button
+            v-for="mode in MODES"
+            :key="mode.key"
+            type="button"
+            role="menuitemradio"
+            :aria-checked="ui.taskViewMode === mode.key"
+            class="atl-tv-modeopt flex flex-col items-center"
+            :class="{ active: ui.taskViewMode === mode.key }"
+            style="flex: 1; gap: 6px; padding: 8px 4px; border-radius: var(--r-sm); cursor: pointer;"
+            @click="pick(mode.key, close)"
+          >
+            <span class="atl-tv-thumb" :data-mode="mode.key" :data-active="ui.taskViewMode === mode.key" />
+            <span style="font-size: 10.5px; line-height: 1.2; text-align: center;">{{ mode.label }}</span>
+          </button>
+        </div>
       </div>
-    </div>
-  </div>
+    </template>
+  </Popover>
 </template>
 
 <style scoped>

@@ -3,6 +3,7 @@ import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import Avatar from '@/components/ui/Avatar.vue';
 import Icon from '@/components/ui/Icon.vue';
+import Popover from '@/components/ui/Popover.vue';
 import PromptDialog from '@/components/ui/PromptDialog.vue';
 import { useAuthStore } from '@/stores/auth';
 import { useUiStore } from '@/stores/ui';
@@ -34,15 +35,11 @@ function navigate(item: RailItem) {
   router.push({ name: item.routeName });
 }
 
-const accountOpen = ref(false);
-
 function openSettings() {
-  accountOpen.value = false;
   ui.openSettings();
 }
 
 async function handleLogout() {
-  accountOpen.value = false;
   await auth.logout();
   router.push({ name: 'login' });
 }
@@ -61,18 +58,15 @@ const workspaceInitial = computed(() => {
   return label.length > 0 ? label.charAt(0).toUpperCase() : 'A';
 });
 
-const workspaceMenuOpen = ref(false);
 const newWorkspaceOpen = ref(false);
 
 function pickWorkspace(slug: string): void {
-  workspaceMenuOpen.value = false;
   if (slug === workspace.activeWorkspaceSlug) return;
   workspace.switchWorkspace(slug);
   router.push({ name: 'notes' });
 }
 
 function startNewWorkspace(): void {
-  workspaceMenuOpen.value = false;
   newWorkspaceOpen.value = true;
 }
 
@@ -161,39 +155,35 @@ async function confirmNewWorkspace(name: string): Promise<void> {
     <div style="flex: 1;" />
 
     <div class="flex flex-col items-center" style="gap: 8px; padding-bottom: 10px;">
-      <div style="position: relative;">
-        <button
-          type="button"
-          class="atl-ws flex items-center justify-center"
-          :title="`Workspace: ${activeWorkspace?.name ?? workspace.activeWorkspaceSlug ?? 'Atlas'}`"
-          aria-label="Switch workspace"
-          aria-haspopup="menu"
-          :aria-expanded="workspaceMenuOpen"
-          style="
-            width: 26px;
-            height: 26px;
-            border-radius: var(--r-sm);
-            background: var(--c-raised);
-            border: 1px solid var(--c-border);
-            font-family: var(--font-mono);
-            font-size: 12px;
-            font-weight: var(--fw-bold);
-            color: var(--c-primary);
-            cursor: pointer;
-          "
-          @click="workspaceMenuOpen = !workspaceMenuOpen"
-        >
-          {{ workspaceInitial }}
-        </button>
+      <Popover placement="right-end">
+        <template #trigger="{ open, toggle }">
+          <button
+            type="button"
+            class="atl-ws flex items-center justify-center"
+            :title="`Workspace: ${activeWorkspace?.name ?? workspace.activeWorkspaceSlug ?? 'Atlas'}`"
+            aria-label="Switch workspace"
+            aria-haspopup="menu"
+            :aria-expanded="open"
+            style="
+              width: 26px;
+              height: 26px;
+              border-radius: var(--r-sm);
+              background: var(--c-raised);
+              border: 1px solid var(--c-border);
+              font-family: var(--font-mono);
+              font-size: 12px;
+              font-weight: var(--fw-bold);
+              color: var(--c-primary);
+              cursor: pointer;
+            "
+            @click="toggle"
+          >
+            {{ workspaceInitial }}
+          </button>
+        </template>
 
-        <template v-if="workspaceMenuOpen">
-          <div
-            class="atl-account-backdrop"
-            aria-hidden="true"
-            @click="workspaceMenuOpen = false"
-            @contextmenu.prevent="workspaceMenuOpen = false"
-          />
-          <div class="atl-account-menu" role="menu">
+        <template #default="{ close }">
+          <div class="atl-account-content">
             <div class="atl-account-id">
               <div class="atl-account-name">Workspaces</div>
             </div>
@@ -205,19 +195,19 @@ async function confirmNewWorkspace(name: string): Promise<void> {
               role="menuitem"
               class="atl-account-item"
               :class="{ on: w.slug === workspace.activeWorkspaceSlug }"
-              @click="pickWorkspace(w.slug)"
+              @click="pickWorkspace(w.slug), close()"
             >
               <Icon :name="w.slug === workspace.activeWorkspaceSlug ? 'check' : 'folder'" :size="14" />
               {{ w.name }}
             </button>
             <div class="atl-account-sep" aria-hidden="true" />
-            <button type="button" role="menuitem" class="atl-account-item" @click="startNewWorkspace">
+            <button type="button" role="menuitem" class="atl-account-item" @click="startNewWorkspace(), close()">
               <Icon name="plus" :size="14" />
               New workspace
             </button>
           </div>
         </template>
-      </div>
+      </Popover>
 
       <button
         type="button"
@@ -237,42 +227,38 @@ async function confirmNewWorkspace(name: string): Promise<void> {
         <Icon name="settings" :size="18" />
       </button>
 
-      <div style="position: relative;">
-        <button
-          type="button"
-          title="Account"
-          aria-label="Account"
-          :aria-expanded="accountOpen"
-          style="border: none; background: transparent; padding: 0; cursor: pointer; display: block;"
-          @click="accountOpen = !accountOpen"
-        >
-          <Avatar :name="userInitials" :size="26" :agent="auth.apiKeyWarning" />
-        </button>
+      <Popover placement="right-end">
+        <template #trigger="{ open, toggle }">
+          <button
+            type="button"
+            title="Account"
+            aria-label="Account"
+            :aria-expanded="open"
+            style="border: none; background: transparent; padding: 0; cursor: pointer; display: block;"
+            @click="toggle"
+          >
+            <Avatar :name="userInitials" :size="26" :agent="auth.apiKeyWarning" />
+          </button>
+        </template>
 
-        <template v-if="accountOpen">
-          <div
-            class="atl-account-backdrop"
-            aria-hidden="true"
-            @click="accountOpen = false"
-            @contextmenu.prevent="accountOpen = false"
-          />
-          <div class="atl-account-menu" role="menu">
+        <template #default="{ close }">
+          <div class="atl-account-content">
             <div class="atl-account-id">
               <div class="atl-account-name">{{ auth.user?.username ?? 'Account' }}</div>
               <div class="atl-account-sub">Signed in</div>
             </div>
             <div class="atl-account-sep" aria-hidden="true" />
-            <button type="button" role="menuitem" class="atl-account-item" @click="openSettings">
+            <button type="button" role="menuitem" class="atl-account-item" @click="openSettings(), close()">
               <Icon name="settings" :size="14" />
               Settings
             </button>
-            <button type="button" role="menuitem" class="atl-account-item danger" @click="handleLogout">
+            <button type="button" role="menuitem" class="atl-account-item danger" @click="handleLogout(), close()">
               <Icon name="log-out" :size="14" />
               Log out
             </button>
           </div>
         </template>
-      </div>
+      </Popover>
     </div>
 
     <PromptDialog
@@ -287,23 +273,9 @@ async function confirmNewWorkspace(name: string): Promise<void> {
 </template>
 
 <style scoped>
-.atl-account-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-}
-
-.atl-account-menu {
-  position: absolute;
-  bottom: 0;
-  left: calc(100% + 8px);
-  z-index: 41;
+.atl-account-content {
   min-width: 180px;
   padding: 5px;
-  background: var(--c-panel);
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
-  box-shadow: var(--shadow-md, 0 8px 24px rgba(0, 0, 0, 0.35));
 }
 
 .atl-account-id {

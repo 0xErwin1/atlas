@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import Btn from '@/components/ui/Btn.vue';
 import Chip from '@/components/ui/Chip.vue';
 import Crumb from '@/components/ui/Crumb.vue';
 import Icon from '@/components/ui/Icon.vue';
+import InspectorTabs from '@/components/ui/InspectorTabs.vue';
 import SectionLabel from '@/components/ui/SectionLabel.vue';
 import { relativeTime } from '@/lib/relativeTime';
 import { sanitizeSnippet } from '@/lib/sanitize';
@@ -34,13 +35,14 @@ const updatedLabel = computed(() => relativeTime(props.hit.updated_at));
 // The API omits the snippet for title-only matches, so its presence tells us
 // whether the term was also found in the body.
 const matchIn = computed(() => (props.hit.snippet ? 'Title · body' : 'Title only'));
+
+const PREVIEW_TABS = [{ id: 'preview', label: 'Preview' }];
+const activeTab = ref('preview');
 </script>
 
 <template>
   <aside class="atl-search-preview">
-    <div class="atl-search-preview-tabs">
-      <span class="atl-search-preview-tab">Preview</span>
-    </div>
+    <InspectorTabs :tabs="PREVIEW_TABS" v-model:active="activeTab" />
 
     <div class="atl-search-preview-body">
       <div class="flex items-center" style="gap: 7px; margin-bottom: 8px;">
@@ -91,26 +93,6 @@ const matchIn = computed(() => (props.hit.snippet ? 'Title · body' : 'Title onl
   flex-direction: column;
   background: var(--c-panel);
   border-left: 1px solid var(--c-border);
-}
-
-.atl-search-preview-tabs {
-  display: flex;
-  align-items: flex-end;
-  height: 36px;
-  flex: 0 0 36px;
-  padding: 0 4px;
-  border-bottom: 1px solid var(--c-border);
-}
-
-.atl-search-preview-tab {
-  display: flex;
-  align-items: center;
-  height: 28px;
-  padding: 0 9px;
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-bold);
-  color: var(--c-foreground);
-  box-shadow: inset 0 -2px 0 var(--c-primary);
 }
 
 .atl-search-preview-body {

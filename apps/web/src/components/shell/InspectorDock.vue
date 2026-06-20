@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import Icon from '@/components/ui/Icon.vue';
+import InspectorTabs from '@/components/ui/InspectorTabs.vue';
 import type { InspectorTab } from '@/stores/ui';
 import { useUiStore } from '@/stores/ui';
 
@@ -63,40 +64,11 @@ const collapsed = computed(() => !ui.inspectorOpen);
     </template>
 
     <template v-else>
-      <div
-        class="flex"
-        style="
-          height: 36px;
-          flex: 0 0 36px;
-          align-items: flex-end;
-          border-bottom: 1px solid var(--c-border);
-          padding: 0 4px;
-        "
-      >
-        <button
-          v-for="tab in tabs"
-          :key="tab.id"
-          type="button"
-          class="atl-itab flex items-center"
-          :aria-label="tab.label"
-          :aria-selected="ui.inspectorTab === tab.id"
-          :style="`
-            height: 28px;
-            padding: 0 9px;
-            flex: 0 0 auto;
-            border: none;
-            cursor: pointer;
-            background: transparent;
-            font-size: var(--fs-sm);
-            font-weight: ${ui.inspectorTab === tab.id ? 'var(--fw-bold)' : 'var(--fw-medium)'};
-            color: ${ui.inspectorTab === tab.id ? 'var(--c-foreground)' : 'var(--c-muted)'};
-            box-shadow: ${ui.inspectorTab === tab.id ? 'inset 0 -2px 0 var(--c-primary)' : 'none'};
-          `"
-          @click="ui.setInspectorTab(tab.id)"
-        >
-          {{ tab.label }}
-        </button>
-      </div>
+      <InspectorTabs
+        :tabs="tabs"
+        :active="ui.inspectorTab"
+        @update:active="(id) => ui.setInspectorTab(id as InspectorTab)"
+      />
 
       <div class="flex-1 overflow-y-auto" style="padding: 10px;">
         <slot :tab="ui.inspectorTab" />
