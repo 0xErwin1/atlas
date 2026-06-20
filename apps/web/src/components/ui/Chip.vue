@@ -55,7 +55,7 @@ const style = computed(() => {
       fontFamily: 'var(--font-mono)',
       fontSize: 'var(--fs-xs)',
       fontWeight: 'var(--fw-medium)',
-      lineHeight: '1.4',
+      lineHeight: '1',
       whiteSpace: 'nowrap',
     }"
   >

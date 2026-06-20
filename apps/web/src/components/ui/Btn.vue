@@ -19,12 +19,14 @@ defineEmits<{
 }>();
 
 const VARIANT_STYLES: Record<BtnVariant, string> = {
-  primary: 'background-color: var(--c-primary); color: var(--c-primary-fg); border: 1px solid transparent;',
+  primary:
+    'background-color: var(--c-primary); color: var(--c-primary-fg); border: 1px solid transparent; font-weight: var(--fw-semibold);',
   secondary:
-    'background-color: var(--c-secondary); color: var(--c-foreground); border: 1px solid var(--c-border);',
-  ghost: 'background-color: transparent; color: var(--c-foreground); border: 1px solid transparent;',
+    'background-color: var(--c-secondary); color: var(--c-foreground); border: 1px solid var(--c-border); font-weight: var(--fw-medium);',
+  ghost:
+    'background-color: transparent; color: var(--c-foreground); border: 1px solid var(--c-border); font-weight: var(--fw-medium);',
   danger:
-    'background-color: var(--c-danger); color: var(--c-danger-fg, #fff); border: 1px solid transparent;',
+    'background-color: var(--c-danger); color: var(--c-danger-fg, #fff); border: 1px solid transparent; font-weight: var(--fw-semibold);',
 };
 </script>
 
@@ -32,10 +34,11 @@ const VARIANT_STYLES: Record<BtnVariant, string> = {
   <button
     :type="type"
     :disabled="disabled"
-    class="inline-flex items-center justify-center gap-1 shrink-0 cursor-pointer select-none"
+    class="inline-flex items-center justify-center shrink-0 cursor-pointer select-none"
     :style="`
       height: var(--h-button);
-      padding: 0 10px;
+      gap: 6px;
+      padding: 0 12px;
       border-radius: var(--r-md);
       font-family: var(--font-mono);
       font-size: var(--fs-sm);

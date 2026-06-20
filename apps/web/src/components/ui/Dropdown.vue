@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Icon from '@/components/ui/Icon.vue';
 import Popover from '@/components/ui/Popover.vue';
 
 export interface DropdownOption {
@@ -13,11 +14,14 @@ const props = withDefaults(
     modelValue?: string;
     placeholder?: string;
     disabled?: boolean;
+    /** Optional leading icon rendered before the label. */
+    icon?: string;
   }>(),
   {
     modelValue: undefined,
     placeholder: 'Select…',
     disabled: false,
+    icon: '',
   },
 );
 
@@ -43,11 +47,12 @@ const selectedLabel = (): string => {
     <template #trigger="{ open, toggle }">
       <button
         type="button"
-        class="inline-flex items-center gap-1 cursor-pointer select-none"
+        class="inline-flex items-center cursor-pointer select-none"
         :disabled="disabled"
         :style="`
           height: var(--h-button);
-          padding: 0 8px;
+          gap: 7px;
+          padding: 0 9px;
           border-radius: var(--r-md);
           background-color: var(--c-raised);
           border: 1px solid var(--c-border);
@@ -59,17 +64,18 @@ const selectedLabel = (): string => {
         `"
         @click="toggle"
       >
+        <Icon v-if="icon" :name="icon" :size="13" style="color: var(--c-muted); flex: 0 0 auto;" />
         <span>{{ selectedLabel() }}</span>
-        <svg
-          width="12"
-          height="12"
-          viewBox="0 0 12 12"
-          fill="none"
-          aria-hidden="true"
-          :style="{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.1s' }"
-        >
-          <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-        </svg>
+        <Icon
+          name="chevron-down"
+          :size="12"
+          :style="{
+            flex: '0 0 auto',
+            color: 'var(--c-muted)',
+            transform: open ? 'rotate(180deg)' : 'none',
+            transition: 'transform 0.1s',
+          }"
+        />
       </button>
     </template>
 

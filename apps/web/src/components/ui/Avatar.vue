@@ -15,9 +15,7 @@ const props = withDefaults(
   },
 );
 
-// Small avatars (the design's range) use a fixed 9px; larger ones the app adds
-// (account, reset) scale proportionally so initials stay readable.
-const fontSize = computed(() => (props.size <= 18 ? 9 : Math.max(10, Math.floor(props.size * 0.42))));
+const fontSize = computed(() => (props.size <= 18 ? 9 : 10));
 const sparkleSize = computed(() => (props.size <= 18 ? 11 : 13));
 </script>
 

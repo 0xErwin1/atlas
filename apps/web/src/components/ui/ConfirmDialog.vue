@@ -38,7 +38,7 @@ const props = withDefaults(
     cancelLabel: 'Cancel',
     detailIcon: 'file',
     danger: false,
-    width: 400,
+    width: 440,
   },
 );
 
@@ -107,7 +107,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
           maxWidth: '100%',
           background: 'var(--c-raised)',
           border: '1px solid var(--c-border)',
-          borderRadius: 'var(--r-md)',
+          borderRadius: '4px',
           boxShadow: 'var(--shadow-lg)',
           overflow: 'hidden',
           fontFamily: 'var(--font-ui)',
@@ -129,12 +129,12 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
           </span>
 
           <div class="flex-1 min-w-0" style="padding-top: 1px;">
-            <h2 style="font-size: var(--fs-md); font-weight: var(--fw-bold); color: var(--c-foreground); margin: 0;">
+            <h2 style="font-size: var(--fs-lg); font-weight: var(--fw-bold); color: var(--c-foreground); margin: 0;">
               {{ title }}
             </h2>
             <p
               v-if="message"
-              style="font-size: var(--fs-sm); line-height: 1.5; color: var(--c-muted); margin: 5px 0 0;"
+              style="font-size: 12.5px; line-height: 1.5; color: var(--c-muted); margin: 5px 0 0;"
             >
               {{ message }}
             </p>
@@ -157,7 +157,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
           v-if="detail"
           data-test="detail"
           class="flex items-center"
-          style="margin: 12px 16px 0; padding: 7px 10px; gap: 8px; background: var(--c-background); border: 1px solid var(--c-border); border-radius: var(--r-md); font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--c-foreground); white-space: nowrap; overflow: hidden;"
+          style="margin: 12px 16px 0; padding: 7px 10px; gap: 8px; background: var(--c-background); border: 1px solid var(--c-border); border-radius: var(--r-md); font-family: var(--font-mono); font-size: 11.5px; color: var(--c-foreground); white-space: nowrap; overflow: hidden;"
         >
           <Icon :name="detailIcon" :size="13" style="color: var(--c-muted); flex: 0 0 auto;" />
           <span style="flex: 1; overflow: hidden; text-overflow: ellipsis;">{{ detail }}</span>

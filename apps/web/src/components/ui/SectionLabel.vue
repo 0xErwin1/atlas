@@ -9,7 +9,7 @@ defineProps<{
   <div
     class="select-none"
     :style="`
-      font-size: var(--fs-xs);
+      font-size: 10px;
       font-weight: var(--fw-semibold);
       letter-spacing: 0.06em;
       text-transform: uppercase;
