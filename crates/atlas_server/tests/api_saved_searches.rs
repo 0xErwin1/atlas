@@ -735,6 +735,133 @@ async fn saved_searches_return_404_for_non_member() {
 }
 
 // ---------------------------------------------------------------------------
+// Rename validation — blank / too-long name (SS10)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn rename_saved_search_rejects_blank_name() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) =
+        support::login_user_with_workspace(&server, &db, "ss-rename-blank-1").await;
+
+    let ss = client
+        .create_saved_search(
+            &ws.slug,
+            CreateSavedSearchRequest {
+                name: "Before".to_string(),
+                query: "x".to_string(),
+            },
+        )
+        .await
+        .expect("create");
+
+    let result = client
+        .rename_saved_search(
+            &ws.slug,
+            ss.id,
+            RenameSavedSearchRequest {
+                name: "   ".to_string(),
+            },
+        )
+        .await;
+
+    assert!(
+        matches!(result, Err(ClientError::Api(ref p)) if p.status == 422),
+        "blank rename name must be rejected as 422, got {result:?}"
+    );
+
+    let listed = client.list_saved_searches(&ws.slug).await.expect("list");
+    assert_eq!(listed.len(), 1);
+    assert_eq!(
+        listed[0].name, "Before",
+        "row must be unchanged after rejected rename"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn rename_saved_search_rejects_name_over_200_chars() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) =
+        support::login_user_with_workspace(&server, &db, "ss-rename-long-1").await;
+
+    let ss = client
+        .create_saved_search(
+            &ws.slug,
+            CreateSavedSearchRequest {
+                name: "Before".to_string(),
+                query: "x".to_string(),
+            },
+        )
+        .await
+        .expect("create");
+
+    let result = client
+        .rename_saved_search(
+            &ws.slug,
+            ss.id,
+            RenameSavedSearchRequest {
+                name: "a".repeat(201),
+            },
+        )
+        .await;
+
+    assert!(
+        matches!(result, Err(ClientError::Api(ref p)) if p.status == 422),
+        "name > 200 chars must be rejected as 422, got {result:?}"
+    );
+
+    let listed = client.list_saved_searches(&ws.slug).await.expect("list");
+    assert_eq!(listed.len(), 1);
+    assert_eq!(
+        listed[0].name, "Before",
+        "row must be unchanged after rejected rename"
+    );
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
+// Double-delete: soft-deleted row returns 404 on second attempt (SS15)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn delete_saved_search_returns_404_on_second_delete() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) =
+        support::login_user_with_workspace(&server, &db, "ss-double-delete-1").await;
+
+    let ss = client
+        .create_saved_search(
+            &ws.slug,
+            CreateSavedSearchRequest {
+                name: "ToDelete".to_string(),
+                query: "x".to_string(),
+            },
+        )
+        .await
+        .expect("create");
+
+    client
+        .delete_saved_search(&ws.slug, ss.id)
+        .await
+        .expect("first delete must return 204");
+
+    let result = client.delete_saved_search(&ws.slug, ss.id).await;
+
+    assert!(
+        matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
+        "second delete of soft-deleted id must return 404, got {result:?}"
+    );
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
 // Per-owner cap of 100 (SS8)
 // ---------------------------------------------------------------------------
 
