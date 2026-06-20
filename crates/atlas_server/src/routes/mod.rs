@@ -10,6 +10,7 @@ pub mod openapi;
 pub(crate) mod projects;
 pub mod registry;
 pub(crate) mod search;
+pub(crate) mod tags;
 pub(crate) mod tasks;
 pub(crate) mod ui_state;
 pub(crate) mod users;

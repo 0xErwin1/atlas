@@ -78,6 +78,8 @@ const EXPECTED_SCHEMAS: &[&str] = &[
     "MoveFolderRequest",
     "CopyFolderRequest",
     "FolderDto",
+    "TagDto",
+    "CreateTagRequest",
     "Page_FolderDto",
     "Page_GrantDto",
     "Page_DocumentSummaryDto",

@@ -28,6 +28,7 @@ use atlas_api::{
             RenameFolderRequest,
         },
         search::{SearchHitDto, SearchKindDto},
+        tags::{CreateTagRequest, TagDto},
     },
     problem::ProblemDetails,
 };
@@ -128,6 +129,8 @@ use atlas_api::{
         crate::routes::folders::copy_folder,
         crate::routes::folders::delete_folder,
         crate::routes::search::search,
+        crate::routes::tags::list_tags,
+        crate::routes::tags::create_tag,
     ),
     components(schemas(
         LoginRequest,
@@ -200,6 +203,8 @@ use atlas_api::{
         MoveFolderRequest,
         CopyFolderRequest,
         FolderDto,
+        TagDto,
+        CreateTagRequest,
     )),
     tags(
         (name = "auth", description = "Authentication and session management"),
@@ -215,6 +220,7 @@ use atlas_api::{
         (name = "tasks", description = "Task management"),
         (name = "folders", description = "Folder management"),
         (name = "search", description = "Unified full-text search"),
+        (name = "tags", description = "Workspace tag registry"),
     )
 )]
 pub(crate) struct ApiDoc;

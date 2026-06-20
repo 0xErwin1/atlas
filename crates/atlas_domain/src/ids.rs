@@ -53,6 +53,7 @@ define_id!(ChecklistItemId);
 define_id!(TaskActivityId);
 define_id!(PropertyDefinitionId);
 define_id!(MembershipId);
+define_id!(TagId);
 
 #[cfg(test)]
 mod tests {

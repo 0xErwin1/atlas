@@ -30,7 +30,7 @@ pub use actor::{Actor, WorkspaceCtx};
 pub use error::{DomainError, RevisionConflict};
 pub use ids::{
     ApiKeyId, AttachmentId, BoardId, ChecklistItemId, ColumnId, DocumentId, FolderId, MembershipId,
-    ProjectId, PropertyDefinitionId, RevisionId, SessionId, TaskActivityId, TaskId,
+    ProjectId, PropertyDefinitionId, RevisionId, SessionId, TagId, TaskActivityId, TaskId,
     TaskReferenceId, UserId, WorkspaceId,
 };
 

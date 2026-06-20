@@ -2,6 +2,7 @@ pub mod boards_tasks;
 pub mod documents;
 pub mod folders;
 pub mod search;
+pub mod tags;
 
 use serde::{Deserialize, Serialize};
 

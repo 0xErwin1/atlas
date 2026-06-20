@@ -26,6 +26,7 @@ use atlas_api::{
             RenameFolderRequest,
         },
         search::SearchHitDto,
+        tags::{CreateTagRequest, TagDto},
     },
     pagination::Page,
     problem::ProblemDetails,
@@ -1076,6 +1077,33 @@ impl AtlasClient {
             .send()
             .await?;
         self.decode_response(response, "list_columns").await
+    }
+
+    /// `POST /v1/workspaces/{ws}/tags`
+    ///
+    /// Idempotent by case-insensitive name: an existing tag is returned with 200,
+    /// a new one with 201. Both are surfaced as a successful `TagDto`.
+    pub async fn create_tag(
+        &self,
+        ws: &str,
+        body: CreateTagRequest,
+    ) -> Result<TagDto, ClientError> {
+        let response = self
+            .post(&format!("/v1/workspaces/{ws}/tags"))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "create_tag").await
+    }
+
+    /// `GET /v1/workspaces/{ws}/tags`
+    pub async fn list_tags(&self, ws: &str) -> Result<Vec<TagDto>, ClientError> {
+        let response = self
+            .get(&format!("/v1/workspaces/{ws}/tags"))
+            .send()
+            .await?;
+        self.decode_response(response, "list_tags").await
     }
 
     /// `PATCH /v1/workspaces/{ws}/boards/{board_id}/columns/{column_id}`

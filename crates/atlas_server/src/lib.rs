@@ -125,6 +125,11 @@ pub fn app(state: AppState) -> Router {
             "/v1/workspaces/{ws}/members",
             get(routes::members::list_workspace_members),
         )
+        // Tags (workspace tag registry)
+        .route(
+            "/v1/workspaces/{ws}/tags",
+            axum::routing::get(routes::tags::list_tags).post(routes::tags::create_tag),
+        )
         // Boards
         .route(
             "/v1/workspaces/{ws}/projects/{project_slug}/boards",
