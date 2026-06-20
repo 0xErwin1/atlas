@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import Avatar from '@/components/ui/Avatar.vue';
 import Chip from '@/components/ui/Chip.vue';
 import Icon from '@/components/ui/Icon.vue';
 import { relativeTime } from '@/lib/relativeTime';
@@ -30,6 +31,12 @@ const iconName = computed(() => (isTask.value ? 'tasks' : 'file'));
 const safeSnippet = computed(() => (props.hit.snippet ? sanitizeSnippet(props.hit.snippet) : null));
 
 const updatedLabel = computed(() => relativeTime(props.hit.updated_at));
+
+// Search hits carry no author/actor field (SearchHitDto has no `who`/`created_by`),
+// so the author box falls back to the result title's initials. There is likewise
+// no agent flag on a hit, so the sparkles/agent variant cannot be driven from real
+// data and is not shown.
+const authorInitials = computed(() => props.hit.title);
 </script>
 
 <template>
@@ -101,7 +108,7 @@ const updatedLabel = computed(() => relativeTime(props.hit.updated_at));
           class="flex items-center"
           :style="{ gap: '5px', fontSize: 'var(--fs-xs)', color: 'var(--c-muted)' }"
         >
-          <Icon name="clock" :size="12" />
+          <Avatar :name="authorInitials" :size="16" />
           {{ updatedLabel }}
         </span>
       </span>

@@ -56,7 +56,7 @@ const activeTab = ref('preview');
         </span>
       </div>
 
-      <h2 style="font-size: var(--fs-xl); font-weight: var(--fw-bold); color: var(--c-foreground); margin: 0 0 6px; line-height: 1.25;">
+      <h2 style="font-size: var(--fs-title); font-weight: var(--fw-bold); color: var(--c-foreground); margin: 0 0 8px; line-height: 1.25;">
         {{ hit.title }}
       </h2>
 

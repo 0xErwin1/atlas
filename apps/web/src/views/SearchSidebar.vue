@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
-import GhTag from '@/components/ui/GhTag.vue';
+import { computed, onBeforeUnmount, onMounted, ref, type WritableComputedRef } from 'vue';
 import Icon from '@/components/ui/Icon.vue';
+import MultiSelect, { type MultiSelectOption } from '@/components/ui/MultiSelect.vue';
 import Row from '@/components/ui/Row.vue';
 import SectionLabel from '@/components/ui/SectionLabel.vue';
 import { swatchById } from '@/lib/swatches';
@@ -25,24 +24,38 @@ const store = useSearchStore();
 const workspace = useWorkspaceStore();
 const labelColors = useLabelColorsStore();
 
-const typeOptions: DropdownOption[] = [
-  { value: 'all', label: 'All types' },
+// The design shows four type options, but the backend `type` filter accepts a
+// single value (`all` | `note` | `task`) — there is no Docs/Comments dimension
+// server-side. Docs and Comments are surfaced as disabled-equivalent extras: a
+// multi-select selection is mapped down to the single-type the store supports
+// (`note`/`task` when exactly one of them is chosen, `all` otherwise). Selecting
+// the unsupported Docs/Comments values therefore widens to `all` rather than
+// filtering — flagged, not faked.
+const TYPE_OPTIONS: MultiSelectOption[] = [
   { value: 'note', label: 'Notes' },
   { value: 'task', label: 'Tasks' },
+  { value: 'doc', label: 'Docs' },
+  { value: 'comment', label: 'Comments' },
 ];
 
-const STATUS_FILTERS = [
-  { label: 'Open', token: 'status:open' },
-  { label: 'In review', token: 'status:review' },
-  { label: 'Done', token: 'status:done' },
+const typeModel = computed<string[]>({
+  get: () => (store.type === 'all' ? [] : [store.type]),
+  set: (values) => {
+    const supported = values.filter((v): v is SearchType => v === 'note' || v === 'task');
+    const next: SearchType = supported.length === 1 && supported[0] !== undefined ? supported[0] : 'all';
+    store.setType(next);
+    emit('rerun');
+  },
+});
+
+const STATUS_OPTIONS: MultiSelectOption[] = [
+  { value: 'open', label: 'Open', dot: 'var(--c-info)' },
+  { value: 'review', label: 'In review', dot: 'var(--c-primary)' },
+  { value: 'done', label: 'Done', dot: 'var(--c-success)' },
+  { value: 'blocked', label: 'Blocked', dot: 'var(--c-danger)' },
 ];
 
 const queryModel = computed(() => props.query);
-
-function onType(value: string): void {
-  store.setType(value as SearchType);
-  emit('rerun');
-}
 
 // Facets are query tokens (the server parses `status:` / `project:` etc. out of
 // `q`). Toggling a chip rewrites the query and re-runs; the chip's on-state is
@@ -55,19 +68,66 @@ function hasToken(token: string): boolean {
   return new RegExp(`(^|\\s)${escapeRegex(token)}(\\s|$)`).test(store.query);
 }
 
-function toggleToken(token: string): void {
-  let q = store.query;
-  if (hasToken(token)) {
-    q = q
-      .replace(new RegExp(`(^|\\s)${escapeRegex(token)}(?=\\s|$)`), ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-  } else {
-    q = `${q.trim()} ${token}`.trim();
-  }
+function addToken(token: string): void {
+  if (hasToken(token)) return;
+  store.setQuery(`${store.query.trim()} ${token}`.trim());
+  emit('rerun');
+}
+
+function removeToken(token: string): void {
+  if (!hasToken(token)) return;
+  const q = store.query
+    .replace(new RegExp(`(^|\\s)${escapeRegex(token)}(?=\\s|$)`), ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   store.setQuery(q);
   emit('rerun');
 }
+
+function toggleToken(token: string): void {
+  if (hasToken(token)) removeToken(token);
+  else addToken(token);
+}
+
+// Bridges a MultiSelect (`string[]` of selected values) to the facet tokens that
+// live inside `q`. The model reflects which tokens are present and writing it
+// diffs each value against the current set, preserving the existing add/remove
+// query behavior underneath. `values` is a getter so dynamic facets (tags) stay
+// reactive.
+function tokenModel(
+  values: () => string[],
+  tokenFor: (value: string) => string,
+): WritableComputedRef<string[]> {
+  return computed<string[]>({
+    get: () => values().filter((v) => hasToken(tokenFor(v))),
+    set: (next) => {
+      for (const v of values()) {
+        const token = tokenFor(v);
+        const shouldBeOn = next.includes(v);
+        if (shouldBeOn && !hasToken(token)) addToken(token);
+        else if (!shouldBeOn && hasToken(token)) removeToken(token);
+      }
+    },
+  });
+}
+
+const statusModel = tokenModel(
+  () => STATUS_OPTIONS.map((o) => o.value),
+  (value) => `status:${value}`,
+);
+
+const tagModel = tokenModel(
+  () => labelColors.tagNames,
+  (name) => tagToken(name),
+);
+
+const tagOptions = computed<MultiSelectOption[]>(() =>
+  labelColors.tagNames.map((name) => ({
+    value: name,
+    label: name,
+    dot: tagDotColor(name),
+  })),
+);
 
 function projectToken(slug: string): string {
   return `project:${slug}`;
@@ -85,10 +145,44 @@ function pickRecent(value: string): void {
   store.setQuery(value);
   emit('rerun');
 }
+
+// The Search rail is 256px in the design, narrower than the shared 264px shell
+// default. The width lives on the ContextSidebar `aside`, which this view does
+// not own, so it is overridden here for the Search view only — the enclosing
+// aside is found at mount and restored on unmount, leaving other views' shells
+// untouched.
+const SEARCH_SIDEBAR_WIDTH = '256px';
+const rootEl = ref<HTMLElement | null>(null);
+let restoreSidebarWidth: (() => void) | null = null;
+
+onMounted(() => {
+  const aside = rootEl.value?.closest('aside');
+  if (!aside) return;
+
+  const previous = {
+    width: aside.style.width,
+    flexBasis: aside.style.flexBasis,
+    minWidth: aside.style.minWidth,
+  };
+
+  aside.style.width = SEARCH_SIDEBAR_WIDTH;
+  aside.style.flexBasis = SEARCH_SIDEBAR_WIDTH;
+  aside.style.minWidth = SEARCH_SIDEBAR_WIDTH;
+
+  restoreSidebarWidth = () => {
+    aside.style.width = previous.width;
+    aside.style.flexBasis = previous.flexBasis;
+    aside.style.minWidth = previous.minWidth;
+  };
+});
+
+onBeforeUnmount(() => {
+  restoreSidebarWidth?.();
+});
 </script>
 
 <template>
-  <div>
+  <div ref="rootEl">
     <div :style="{ padding: '8px 10px' }">
       <div
         class="flex items-center"
@@ -130,31 +224,15 @@ function pickRecent(value: string): void {
       </div>
     </div>
 
+    <SectionLabel>Type</SectionLabel>
     <div :style="{ padding: '0 10px 4px' }">
-      <SectionLabel flush>Type</SectionLabel>
-      <Dropdown
-        :options="typeOptions"
-        :model-value="store.type"
-        :style="{ display: 'flex', width: '100%' }"
-        @change="onType"
-      />
+      <MultiSelect v-model="typeModel" :options="TYPE_OPTIONS" placeholder="Any type" />
     </div>
 
     <SectionLabel>Status</SectionLabel>
-    <button
-      v-for="s in STATUS_FILTERS"
-      :key="s.token"
-      type="button"
-      class="atl-row search-check"
-      :class="{ on: hasToken(s.token) }"
-      :aria-pressed="hasToken(s.token)"
-      @click="toggleToken(s.token)"
-    >
-      <span class="search-check-box" :class="{ on: hasToken(s.token) }">
-        <Icon v-if="hasToken(s.token)" name="check" :size="11" :stroke-width="2.6" />
-      </span>
-      {{ s.label }}
-    </button>
+    <div :style="{ padding: '0 10px 4px' }">
+      <MultiSelect v-model="statusModel" :options="STATUS_OPTIONS" placeholder="Any status" />
+    </div>
 
     <template v-if="workspace.projects.length > 0">
       <SectionLabel>Project</SectionLabel>
@@ -170,17 +248,8 @@ function pickRecent(value: string): void {
 
     <template v-if="labelColors.tagNames.length > 0">
       <SectionLabel>Tags</SectionLabel>
-      <div class="search-tags">
-        <button
-          v-for="t in labelColors.tagNames"
-          :key="t"
-          type="button"
-          class="search-tag-btn"
-          :aria-pressed="hasToken(tagToken(t))"
-          @click="toggleToken(tagToken(t))"
-        >
-          <GhTag :color="tagDotColor(t)" :active="hasToken(tagToken(t))">{{ t }}</GhTag>
-        </button>
+      <div :style="{ padding: '0 10px 6px' }">
+        <MultiSelect v-model="tagModel" :options="tagOptions" icon="tag" placeholder="Any tag" />
       </div>
     </template>
 
@@ -196,55 +265,3 @@ function pickRecent(value: string): void {
     </template>
   </div>
 </template>
-
-<style scoped>
-.search-check {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  height: 24px;
-  padding: 0 10px;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  font-size: var(--fs-sm);
-  color: var(--c-muted);
-  text-align: left;
-}
-
-.search-check.on {
-  color: var(--c-foreground);
-}
-
-.search-check-box {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 14px;
-  height: 14px;
-  flex: 0 0 auto;
-  border: 1px solid var(--c-muted);
-  border-radius: var(--r-sm);
-}
-
-.search-check-box.on {
-  border-color: var(--c-primary);
-  background: var(--c-primary);
-  color: var(--c-background);
-}
-
-.search-tags {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  padding: 2px 10px 6px;
-}
-
-.search-tag-btn {
-  border: none;
-  background: transparent;
-  padding: 0;
-  cursor: pointer;
-}
-</style>

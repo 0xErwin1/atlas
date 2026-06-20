@@ -8,8 +8,8 @@ import EmptyState from '@/components/states/EmptyState.vue';
 import ErrorState from '@/components/states/ErrorState.vue';
 import LoadingState from '@/components/states/LoadingState.vue';
 import Btn from '@/components/ui/Btn.vue';
-import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
 import Icon from '@/components/ui/Icon.vue';
+import Popover from '@/components/ui/Popover.vue';
 import { useBreakpoint } from '@/composables/useBreakpoint';
 import { useSearch } from '@/composables/useSearch';
 import { type SearchHitDto, type SearchSort, type SearchType, useSearchStore } from '@/stores/search';
@@ -43,13 +43,17 @@ const activeIndex = ref(0);
 
 const activeHit = computed<SearchHitDto | null>(() => store.results[activeIndex.value] ?? null);
 
-const SORT_OPTIONS: DropdownOption[] = [
+const SORT_OPTIONS: Array<{ value: SearchSort; label: string }> = [
   { value: 'relevance', label: 'Relevance' },
   { value: 'updated', label: 'Recently updated' },
 ];
 
-function onSort(value: string): void {
-  searchStore.setSort(value as SearchSort);
+const sortLabel = computed(
+  () => SORT_OPTIONS.find((o) => o.value === searchStore.sort)?.label ?? 'Relevance',
+);
+
+function onSort(value: SearchSort): void {
+  searchStore.setSort(value);
   void store.runSearch(ws.value);
 }
 
@@ -200,7 +204,56 @@ function onListKeydown(event: KeyboardEvent): void {
 
       <div style="flex: 1;" />
 
-      <Dropdown :options="SORT_OPTIONS" :model-value="searchStore.sort" @change="onSort" />
+      <Popover placement="bottom-end">
+        <template #trigger="{ open, toggle }">
+          <button
+            type="button"
+            class="inline-flex items-center cursor-pointer select-none"
+            :style="{
+              gap: '6px',
+              fontSize: 'var(--fs-sm)',
+              color: 'var(--c-muted)',
+              border: '1px solid var(--c-border)',
+              borderRadius: 'var(--r-sm)',
+              padding: '4px 9px',
+              background: 'transparent',
+            }"
+            @click="toggle"
+          >
+            {{ sortLabel }}
+            <Icon
+              name="chevron-down"
+              :size="12"
+              :style="{
+                flex: '0 0 auto',
+                transform: open ? 'rotate(180deg)' : 'none',
+                transition: 'transform 0.1s',
+              }"
+            />
+          </button>
+        </template>
+
+        <template #default="{ close }">
+          <ul role="listbox" style="list-style: none; padding: 2px 0; min-width: 100%;">
+            <li
+              v-for="opt in SORT_OPTIONS"
+              :key="opt.value"
+              role="option"
+              :aria-selected="opt.value === searchStore.sort"
+              class="flex items-center px-3 cursor-pointer"
+              :style="`
+                height: var(--h-compact);
+                white-space: nowrap;
+                font-size: var(--fs-sm);
+                ${opt.value === searchStore.sort ? 'background-color: var(--c-selection); color: var(--c-foreground);' : 'color: var(--c-foreground);'}
+              `"
+              @click="onSort(opt.value), close()"
+            >
+              {{ opt.label }}
+            </li>
+          </ul>
+        </template>
+      </Popover>
       <button
         type="button"
         class="atl-gbtn"
