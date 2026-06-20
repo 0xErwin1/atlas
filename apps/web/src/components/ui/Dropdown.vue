@@ -96,16 +96,18 @@ const selectedLabel = (): string => selectedOption()?.label ?? props.placeholder
     </template>
 
     <template #default="{ close }">
-      <ul role="listbox" style="list-style: none; padding: 2px 0; min-width: 100%;">
+      <ul role="listbox" style="list-style: none; padding: 4px; min-width: 100%;">
         <li
           v-for="opt in options"
           :key="opt.value"
           role="option"
           :aria-selected="opt.value === modelValue"
           :aria-disabled="opt.disabled"
-          class="flex items-center px-3 cursor-pointer"
+          class="flex items-center cursor-pointer"
           :style="`
             height: var(--h-compact);
+            padding: 0 9px;
+            border-radius: var(--r-sm);
             white-space: nowrap;
             font-size: var(--fs-sm);
             font-family: var(--font-mono);
