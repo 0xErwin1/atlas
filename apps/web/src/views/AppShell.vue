@@ -15,9 +15,9 @@ import { type InspectorTab, useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 
 const INSPECTOR_TABS: Array<{ id: InspectorTab; label: string; icon: string }> = [
-  { id: 'properties', label: 'Properties', icon: 'hash' },
+  { id: 'properties', label: 'Properties', icon: 'columns' },
   { id: 'backlinks', label: 'Backlinks', icon: 'link' },
-  { id: 'activity', label: 'Activity', icon: 'clock' },
+  { id: 'activity', label: 'Activity', icon: 'history' },
   { id: 'share', label: 'Share', icon: 'user' },
 ];
 

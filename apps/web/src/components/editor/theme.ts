@@ -188,6 +188,13 @@ export const atlasMarkdownTheme = EditorView.theme(
     '.cm-atlas-wikilink': { color: 'var(--c-info)', cursor: 'pointer' },
     '.cm-atlas-wikilink:hover': { textDecoration: 'underline' },
     '.cm-atlas-wikilink-raw': { color: 'var(--c-info)' },
+    // Wikilink whose target does not resolve. The class is applied by the
+    // decorator once target resolution is wired; until then nothing emits it.
+    '.cm-atlas-wikilink-broken': {
+      color: 'var(--c-danger)',
+      textDecoration: 'underline dashed',
+      cursor: 'pointer',
+    },
   },
   { dark: true },
 );

@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import BacklinksPanel from '@/components/notas/BacklinksPanel.vue';
 import CasConflictView from '@/components/notas/CasConflictView.vue';
+import HistoryPanel from '@/components/notas/HistoryPanel.vue';
 // biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
 import NoteEditor from '@/components/notas/NoteEditor.vue';
 import PropertiesEditor from '@/components/notas/PropertiesEditor.vue';
@@ -85,7 +86,17 @@ const baseContent = ref('');
 const conflictOpen = ref(false);
 const conflictSegments = ref<MergeSegment[]>([]);
 
-const breadcrumbs = computed(() => ['Atlas', title.value || 'Untitled']);
+const breadcrumbs = computed(() => {
+  const docTitle = title.value || 'Untitled';
+  const parent =
+    typeof meta.value.project === 'string'
+      ? meta.value.project
+      : typeof meta.value.folder === 'string'
+        ? meta.value.folder
+        : null;
+
+  return parent !== null && parent !== '' ? ['Atlas', parent, docTitle] : ['Atlas', docTitle];
+});
 
 const editorTabs = computed<Tab[]>(() =>
   tabsStore.tabs(ws.value).map((t) => ({
@@ -564,6 +575,10 @@ watch(title, (t) => {
         :backlinks="documents.backlinks"
         @navigate="(s) => router.push({ name: 'notes', params: { slug: s } })"
       />
+    </template>
+
+    <template #inspector-activity>
+      <HistoryPanel />
     </template>
 
     <template #inspector-share>

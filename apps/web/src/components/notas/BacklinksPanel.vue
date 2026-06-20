@@ -23,8 +23,10 @@ const heading = computed(() => {
   <div>
     <div
       style="
-        font-family: var(--font-mono);
-        font-size: var(--fs-xs);
+        font-size: 10px;
+        font-weight: var(--fw-semibold);
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
         color: var(--c-muted);
         margin-bottom: 8px;
       "
@@ -59,9 +61,9 @@ const heading = computed(() => {
     >
       <div
         class="flex items-center"
-        style="gap: 6px; margin-bottom: 5px; font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--c-foreground);"
+        style="gap: 6px; margin-bottom: 4px; font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--c-foreground);"
       >
-        <Icon name="file" :size="13" style="color: var(--c-muted); flex-shrink: 0;" />
+        <Icon name="file" :size="14" style="color: var(--c-muted); flex-shrink: 0;" />
         <span class="flex-1 truncate">{{ link.source_title }}</span>
       </div>
       <div style="font-size: var(--fs-xs); line-height: 1.5; color: var(--c-muted);">

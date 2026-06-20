@@ -109,11 +109,11 @@ defineExpose({ open, moveDown, moveUp, confirmActive });
     <div
       style="
         padding: 3px 8px 4px;
-        font-family: var(--font-mono);
-        font-size: var(--fs-xs);
+        font-size: 10px;
+        font-weight: var(--fw-semibold);
         color: var(--c-muted);
         text-transform: uppercase;
-        letter-spacing: 0.04em;
+        letter-spacing: 0.06em;
       "
     >
       Link to note
@@ -161,9 +161,23 @@ defineExpose({ open, moveDown, moveUp, confirmActive });
       @mousedown.prevent="choose(hits.length)"
     >
       <Icon name="plus" :size="14" />
-      <span>
+      <span class="flex-1">
         Create
         <span style="font-family: var(--font-mono); color: var(--c-primary);">"{{ createLabel }}"</span>
+      </span>
+      <span
+        style="
+          font-size: 10px;
+          font-weight: var(--fw-bold);
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
+          color: var(--c-muted);
+          background: var(--c-panel);
+          border-radius: var(--r-sm);
+          padding: 1px 5px;
+        "
+      >
+        new
       </span>
     </button>
 
