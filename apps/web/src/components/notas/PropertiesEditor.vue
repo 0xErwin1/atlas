@@ -177,8 +177,8 @@ function startEdit(index: number): void {
   editing.value = index;
 }
 
-function focusOnMount(el: Element | null): void {
-  if (el !== null) nextTick(() => (el as HTMLInputElement).focus());
+function focusOnMount(el: unknown): void {
+  if (el instanceof HTMLElement) nextTick(() => el.focus());
 }
 </script>
 

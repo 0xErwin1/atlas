@@ -25,12 +25,15 @@ export const SWATCHES: Swatch[] = [
 
 const SWATCH_BY_ID = new Map(SWATCHES.map((s) => [s.id, s]));
 
+// SWATCHES is a non-empty literal, so index 0 always exists.
+const NEUTRAL_SWATCH: Swatch = SWATCHES[0]!;
+
 // Colored swatches only (excludes neutral) for the deterministic default, so a
 // fresh tag gets a stable color instead of all-gray — still fully overridable.
 const DEFAULT_POOL = SWATCHES.filter((s) => s.id !== 'neutral');
 
 export function swatchById(id: string | undefined): Swatch {
-  return (id !== undefined ? SWATCH_BY_ID.get(id) : undefined) ?? SWATCHES[0];
+  return (id !== undefined ? SWATCH_BY_ID.get(id) : undefined) ?? NEUTRAL_SWATCH;
 }
 
 /**
@@ -44,5 +47,5 @@ export function defaultSwatchId(key: string): string {
     hash = (hash * 31 + key.charCodeAt(i)) | 0;
   }
   const index = Math.abs(hash) % DEFAULT_POOL.length;
-  return DEFAULT_POOL[index].id;
+  return (DEFAULT_POOL[index] ?? NEUTRAL_SWATCH).id;
 }
