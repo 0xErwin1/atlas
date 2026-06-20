@@ -37,9 +37,7 @@ function isSelected(value: string): boolean {
 }
 
 function toggle(value: string): void {
-  model.value = isSelected(value)
-    ? model.value.filter((v) => v !== value)
-    : [...model.value, value];
+  model.value = isSelected(value) ? model.value.filter((v) => v !== value) : [...model.value, value];
 }
 
 function remove(value: string): void {

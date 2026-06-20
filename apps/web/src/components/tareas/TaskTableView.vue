@@ -40,9 +40,7 @@ interface Row {
 }
 
 const rows = computed<Row[]>(() =>
-  boards.columns.flatMap((column) =>
-    boards.tasksByColumn(column.id).map((task) => ({ task, column })),
-  ),
+  boards.columns.flatMap((column) => boards.tasksByColumn(column.id).map((task) => ({ task, column }))),
 );
 
 function statusSwatch(column: ColumnDto | undefined): { fg: string; bg: string } {

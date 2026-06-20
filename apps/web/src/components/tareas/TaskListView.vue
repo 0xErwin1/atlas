@@ -59,9 +59,7 @@ function priorityLabel(priority: string | null): string {
   return priority.charAt(0).toUpperCase() + priority.slice(1);
 }
 
-const allTasks = computed<TaskSummaryDto[]>(() =>
-  boards.columns.flatMap((c) => boards.tasksByColumn(c.id)),
-);
+const allTasks = computed<TaskSummaryDto[]>(() => boards.columns.flatMap((c) => boards.tasksByColumn(c.id)));
 
 function firstAssigneeName(task: TaskSummaryDto): string | null {
   const actor = task.assignees?.[0];

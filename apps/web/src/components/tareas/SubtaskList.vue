@@ -27,8 +27,7 @@ const emit = defineEmits<{
 const labelColors = useLabelColorsStore();
 const draft = ref('');
 
-const columnName = (columnId: string): string =>
-  props.columns.find((c) => c.id === columnId)?.name ?? '—';
+const columnName = (columnId: string): string => props.columns.find((c) => c.id === columnId)?.name ?? '—';
 
 // Map a column name to a semantic bucket so the status pill and the done checkbox
 // follow the board's flow (matching the kanban column dots). Structural, not a

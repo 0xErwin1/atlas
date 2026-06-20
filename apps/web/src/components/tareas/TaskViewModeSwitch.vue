@@ -22,9 +22,7 @@ const MODES: ModeOption[] = [
   { key: 'sidebar', label: 'Sidebar', icon: 'panel-right' },
 ];
 
-const activeIcon = computed(
-  () => MODES.find((m) => m.key === ui.taskViewMode)?.icon ?? 'layout-template',
-);
+const activeIcon = computed(() => MODES.find((m) => m.key === ui.taskViewMode)?.icon ?? 'layout-template');
 
 function pick(mode: TaskViewMode, close: () => void): void {
   ui.setTaskViewMode(mode);

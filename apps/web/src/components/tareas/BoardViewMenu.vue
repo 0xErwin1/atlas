@@ -16,8 +16,10 @@ interface ViewOption {
   icon: string;
 }
 
+const DEFAULT_VIEW: ViewOption = { id: 'board', label: 'Board', icon: 'columns-3' };
+
 const VIEWS: ViewOption[] = [
-  { id: 'board', label: 'Board', icon: 'columns-3' },
+  DEFAULT_VIEW,
   { id: 'list', label: 'List', icon: 'tasks' },
   { id: 'table', label: 'Table', icon: 'dashboard' },
   { id: 'calendar', label: 'Calendar', icon: 'calendar' },
@@ -27,7 +29,7 @@ const VIEWS: ViewOption[] = [
 const ui = useUiStore();
 const activeId = computed(() => ui.taskView);
 
-const activeView = computed(() => VIEWS.find((v) => v.id === activeId.value) ?? VIEWS[0]!);
+const activeView = computed(() => VIEWS.find((v) => v.id === activeId.value) ?? DEFAULT_VIEW);
 
 function activeLabel(): string {
   return activeView.value.label;

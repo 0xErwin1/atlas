@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import type { components } from '@/api/types.d.ts';
+import SharePanel from '@/components/share/SharePanel.vue';
 import ActivityFeed from '@/components/tareas/ActivityFeed.vue';
 import ReferenceAdd from '@/components/tareas/ReferenceAdd.vue';
 import ReferenceList from '@/components/tareas/ReferenceList.vue';
-import SharePanel from '@/components/share/SharePanel.vue';
 import AgentBadge from '@/components/ui/AgentBadge.vue';
 import Avatar from '@/components/ui/Avatar.vue';
 import InspectorTabs from '@/components/ui/InspectorTabs.vue';

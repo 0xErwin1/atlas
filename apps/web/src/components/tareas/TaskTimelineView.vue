@@ -56,9 +56,7 @@ const axisDays = computed<AxisDay[]>(() =>
 
 const todayPct = computed(() => ((WINDOW_LEAD_DAYS + 0.5) / WINDOW_DAYS) * 100);
 
-const allTasks = computed<TaskSummaryDto[]>(() =>
-  boards.columns.flatMap((c) => boards.tasksByColumn(c.id)),
-);
+const allTasks = computed<TaskSummaryDto[]>(() => boards.columns.flatMap((c) => boards.tasksByColumn(c.id)));
 
 function dueIndex(readableId: string): number | null {
   const raw = boards.taskDetail(readableId)?.due_date;

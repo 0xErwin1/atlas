@@ -25,8 +25,18 @@ const labelColors = useLabelColorsStore();
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
 ];
 
 const today = new Date();
@@ -46,9 +56,7 @@ function jumpToToday(): void {
   viewMonth.value = today.getMonth();
 }
 
-const allTasks = computed<TaskSummaryDto[]>(() =>
-  boards.columns.flatMap((c) => boards.tasksByColumn(c.id)),
-);
+const allTasks = computed<TaskSummaryDto[]>(() => boards.columns.flatMap((c) => boards.tasksByColumn(c.id)));
 
 function dueDate(readableId: string): Date | null {
   const raw = boards.taskDetail(readableId)?.due_date;

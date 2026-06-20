@@ -34,9 +34,7 @@ const orderedIds = computed<string[]>(() =>
 
 const currentIndex = computed(() => orderedIds.value.indexOf(props.task.readable_id));
 const hasPrev = computed(() => currentIndex.value > 0);
-const hasNext = computed(
-  () => currentIndex.value >= 0 && currentIndex.value < orderedIds.value.length - 1,
-);
+const hasNext = computed(() => currentIndex.value >= 0 && currentIndex.value < orderedIds.value.length - 1);
 
 function goPrev(): void {
   const prev = orderedIds.value[currentIndex.value - 1];
