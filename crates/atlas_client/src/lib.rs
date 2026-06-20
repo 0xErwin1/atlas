@@ -25,6 +25,7 @@ use atlas_api::{
             CopyFolderRequest, CreateFolderRequest, FolderDto, MoveFolderRequest,
             RenameFolderRequest,
         },
+        saved_searches::{CreateSavedSearchRequest, RenameSavedSearchRequest, SavedSearchDto},
         search::SearchHitDto,
         tags::{CreateTagRequest, TagDto},
     },
@@ -1104,6 +1105,70 @@ impl AtlasClient {
             .send()
             .await?;
         self.decode_response(response, "list_tags").await
+    }
+
+    /// `POST /v1/workspaces/{ws}/saved-searches`
+    pub async fn create_saved_search(
+        &self,
+        ws: &str,
+        body: CreateSavedSearchRequest,
+    ) -> Result<SavedSearchDto, ClientError> {
+        let response = self
+            .post(&format!("/v1/workspaces/{ws}/saved-searches"))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "create_saved_search").await
+    }
+
+    /// `GET /v1/workspaces/{ws}/saved-searches`
+    pub async fn list_saved_searches(
+        &self,
+        ws: &str,
+    ) -> Result<Vec<SavedSearchDto>, ClientError> {
+        let response = self
+            .get(&format!("/v1/workspaces/{ws}/saved-searches"))
+            .send()
+            .await?;
+        self.decode_response(response, "list_saved_searches").await
+    }
+
+    /// `PATCH /v1/workspaces/{ws}/saved-searches/{id}`
+    pub async fn rename_saved_search(
+        &self,
+        ws: &str,
+        id: uuid::Uuid,
+        body: RenameSavedSearchRequest,
+    ) -> Result<SavedSearchDto, ClientError> {
+        let response = self
+            .patch(&format!("/v1/workspaces/{ws}/saved-searches/{id}"))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "rename_saved_search").await
+    }
+
+    /// `DELETE /v1/workspaces/{ws}/saved-searches/{id}`
+    pub async fn delete_saved_search(
+        &self,
+        ws: &str,
+        id: uuid::Uuid,
+    ) -> Result<(), ClientError> {
+        let response = self
+            .delete(&format!("/v1/workspaces/{ws}/saved-searches/{id}"))
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        if response.status().is_success() {
+            return Ok(());
+        }
+        let problem: ProblemDetails = response
+            .json()
+            .await
+            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
+        Err(ClientError::Api(problem))
     }
 
     /// `PATCH /v1/workspaces/{ws}/boards/{board_id}/columns/{column_id}`

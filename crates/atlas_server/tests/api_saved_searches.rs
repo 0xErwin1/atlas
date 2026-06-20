@@ -224,6 +224,7 @@ async fn create_saved_search_allows_same_name_for_different_owners() {
             &ws.slug,
             atlas_api::dtos::CreateApiKeyRequest {
                 name: "test-key".to_string(),
+                expires_at: None,
             },
         )
         .await
@@ -279,6 +280,7 @@ async fn list_saved_searches_is_owner_scoped_sorted_and_excludes_deleted() {
             &ws.slug,
             atlas_api::dtos::CreateApiKeyRequest {
                 name: "other-owner-key".to_string(),
+                expires_at: None,
             },
         )
         .await
@@ -437,6 +439,7 @@ async fn rename_saved_search_returns_404_for_non_owned_id() {
             &ws.slug,
             atlas_api::dtos::CreateApiKeyRequest {
                 name: "intruder-key".to_string(),
+                expires_at: None,
             },
         )
         .await
@@ -567,6 +570,7 @@ async fn delete_saved_search_returns_404_for_non_owned_id() {
             &ws.slug,
             atlas_api::dtos::CreateApiKeyRequest {
                 name: "intruder-key".to_string(),
+                expires_at: None,
             },
         )
         .await

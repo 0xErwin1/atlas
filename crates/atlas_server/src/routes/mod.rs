@@ -9,6 +9,7 @@ pub(crate) mod members;
 pub mod openapi;
 pub(crate) mod projects;
 pub mod registry;
+pub(crate) mod saved_searches;
 pub(crate) mod search;
 pub(crate) mod tags;
 pub(crate) mod tasks;

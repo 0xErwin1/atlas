@@ -587,4 +587,29 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/v1/workspaces/{ws}/tags"),
     },
+    // ---- Saved searches ----
+    RouteEntry {
+        method: "GET",
+        path_template: "/v1/workspaces/{ws}/saved-searches",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/saved-searches"),
+    },
+    RouteEntry {
+        method: "POST",
+        path_template: "/v1/workspaces/{ws}/saved-searches",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/saved-searches"),
+    },
+    RouteEntry {
+        method: "PATCH",
+        path_template: "/v1/workspaces/{ws}/saved-searches/00000000-0000-0000-0000-000000000001",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/saved-searches/{id}"),
+    },
+    RouteEntry {
+        method: "DELETE",
+        path_template: "/v1/workspaces/{ws}/saved-searches/00000000-0000-0000-0000-000000000001",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/saved-searches/{id}"),
+    },
 ];

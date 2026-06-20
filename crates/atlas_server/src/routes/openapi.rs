@@ -27,6 +27,7 @@ use atlas_api::{
             CopyFolderRequest, CreateFolderRequest, FolderDto, MoveFolderRequest,
             RenameFolderRequest,
         },
+        saved_searches::{CreateSavedSearchRequest, RenameSavedSearchRequest, SavedSearchDto},
         search::{SearchHitDto, SearchKindDto},
         tags::{CreateTagRequest, TagDto},
     },
@@ -131,6 +132,10 @@ use atlas_api::{
         crate::routes::search::search,
         crate::routes::tags::list_tags,
         crate::routes::tags::create_tag,
+        crate::routes::saved_searches::list_saved_searches,
+        crate::routes::saved_searches::create_saved_search,
+        crate::routes::saved_searches::rename_saved_search,
+        crate::routes::saved_searches::delete_saved_search,
     ),
     components(schemas(
         LoginRequest,
@@ -205,6 +210,9 @@ use atlas_api::{
         FolderDto,
         TagDto,
         CreateTagRequest,
+        SavedSearchDto,
+        CreateSavedSearchRequest,
+        RenameSavedSearchRequest,
     )),
     tags(
         (name = "auth", description = "Authentication and session management"),
@@ -221,6 +229,7 @@ use atlas_api::{
         (name = "folders", description = "Folder management"),
         (name = "search", description = "Unified full-text search"),
         (name = "tags", description = "Workspace tag registry"),
+        (name = "saved-searches", description = "Per-owner saved search registry"),
     )
 )]
 pub(crate) struct ApiDoc;

@@ -5,6 +5,7 @@ const MAX_DESC_LEN: usize = 20_000;
 const MAX_LABEL_LEN: usize = 64;
 const MAX_LABELS: usize = 50;
 const MAX_CUSTOM_ENTRIES: usize = 100;
+pub(crate) const MAX_QUERY_LEN: usize = 2_000;
 
 /// Validates a short name/title field.
 ///
@@ -85,4 +86,12 @@ pub(crate) fn validate_custom_entry_count(value: &serde_json::Value) -> Result<(
 /// Validates the description field using the standard 20 000-character cap.
 pub(crate) fn validate_description(value: &str) -> Result<(), ApiError> {
     validate_long_text("description", value, MAX_DESC_LEN)
+}
+
+/// Validates the `query` field for a saved search.
+///
+/// Empty queries are allowed (they represent "search everything"). Only the
+/// 2 000-character upper bound is enforced.
+pub(crate) fn validate_query(value: &str) -> Result<(), ApiError> {
+    validate_long_text("query", value, MAX_QUERY_LEN)
 }

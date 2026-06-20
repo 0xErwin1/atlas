@@ -1,6 +1,7 @@
 pub mod boards_tasks;
 pub mod documents;
 pub mod folders;
+pub mod saved_searches;
 pub mod search;
 pub mod tags;
 
