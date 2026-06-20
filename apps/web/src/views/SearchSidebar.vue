@@ -32,10 +32,10 @@ const labelColors = useLabelColorsStore();
 // the unsupported Docs/Comments values therefore widens to `all` rather than
 // filtering — flagged, not faked.
 const TYPE_OPTIONS: MultiSelectOption[] = [
-  { value: 'note', label: 'Notes' },
-  { value: 'task', label: 'Tasks' },
-  { value: 'doc', label: 'Docs' },
-  { value: 'comment', label: 'Comments' },
+  { value: 'note', label: 'Notes', icon: 'notes' },
+  { value: 'task', label: 'Tasks', icon: 'square-kanban' },
+  { value: 'doc', label: 'Docs', icon: 'file-text' },
+  { value: 'comment', label: 'Comments', icon: 'message-square' },
 ];
 
 const typeModel = computed<string[]>({

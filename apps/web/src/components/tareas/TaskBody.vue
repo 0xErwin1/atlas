@@ -72,22 +72,31 @@ const dueInputValue = computed(() => {
 const labelDraft = ref('');
 
 const PRIORITY_OPTIONS: DropdownOption[] = [
-  { value: '', label: 'None' },
-  { value: 'urgent', label: 'Urgent' },
-  { value: 'high', label: 'High' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'low', label: 'Low' },
+  { value: '', label: 'None', icon: 'flag', iconColor: 'var(--c-muted)' },
+  { value: 'urgent', label: 'Urgent', icon: 'flag', iconColor: 'var(--c-danger)' },
+  { value: 'high', label: 'High', icon: 'flag', iconColor: 'var(--c-primary)' },
+  { value: 'medium', label: 'Medium', icon: 'flag', iconColor: 'var(--c-info)' },
+  { value: 'low', label: 'Low', icon: 'flag', iconColor: 'var(--c-muted)' },
 ];
 
 const statusOptions = computed<DropdownOption[]>(() =>
-  boards.columns.map((c) => ({ value: c.id, label: c.name })),
+  boards.columns.map((c) => ({
+    value: c.id,
+    label: c.name,
+    dot: swatchById(labelColors.colorFor(`status:${c.id}`)).fg,
+  })),
 );
 
 const assignableOptions = computed<DropdownOption[]>(() => {
   const assigned = new Set(detail.assignees.map((a) => a.assignee.id));
   return workspace.members
     .filter((m) => !assigned.has(m.id))
-    .map((m) => ({ value: `${m.principal_type}:${m.id}`, label: m.display }));
+    .map((m) => ({
+      value: `${m.principal_type}:${m.id}`,
+      label: m.display,
+      icon: m.principal_type === 'api_key' ? 'sparkles' : 'user',
+      iconColor: m.principal_type === 'api_key' ? 'var(--c-agent)' : 'var(--c-muted)',
+    }));
 });
 
 const {
@@ -290,9 +299,12 @@ function focusSubtaskInput(): void {
                     role="option"
                     :aria-selected="opt.value === columnId"
                     class="atl-mi"
-                    style="width: 100%; border: none; background: transparent; text-align: left;"
+                    style="width: 100%; border: none; background: transparent; text-align: left; gap: 8px;"
                     @click="onChangeStatus(opt.value); close()"
                   >
+                    <span
+                      :style="{ width: '7px', height: '7px', borderRadius: 'var(--r-full)', background: opt.dot, flex: '0 0 auto' }"
+                    />
                     {{ opt.label }}
                   </button>
                 </div>
@@ -623,6 +635,19 @@ function focusSubtaskInput(): void {
 
 .atl-tv-input:focus {
   border-color: var(--c-primary);
+}
+
+/* Numeric fields (estimate) carry no spin buttons — the value is typed, not nudged. */
+.atl-tv-input[type='number'] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.atl-tv-input[type='number']::-webkit-outer-spin-button,
+.atl-tv-input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
 }
 
 .atl-tag {

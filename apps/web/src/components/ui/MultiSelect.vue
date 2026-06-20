@@ -14,6 +14,8 @@ export interface MultiSelectOption {
   label: string;
   /** A CSS color or token for a leading status dot. */
   dot?: string;
+  /** A leading icon, as an alternative to `dot`. */
+  icon?: string;
 }
 
 const props = withDefaults(
@@ -80,6 +82,7 @@ const chosen = (): MultiSelectOption[] => props.options.filter((o) => model.valu
               v-if="opt.dot"
               :style="{ width: '6px', height: '6px', borderRadius: 'var(--r-full)', background: opt.dot }"
             />
+            <Icon v-else-if="opt.icon" :name="opt.icon" :size="11" style="color: var(--c-muted); flex: 0 0 auto;" />
             {{ opt.label }}
             <span
               class="inline-flex cursor-pointer"
@@ -132,6 +135,7 @@ const chosen = (): MultiSelectOption[] => props.options.filter((o) => model.valu
             v-if="opt.dot"
             :style="{ width: '6px', height: '6px', borderRadius: 'var(--r-full)', background: opt.dot, flex: '0 0 auto' }"
           />
+          <Icon v-else-if="opt.icon" :name="opt.icon" :size="14" style="color: var(--c-muted); flex: 0 0 auto;" />
           <span style="flex: 1; color: var(--c-foreground);">{{ opt.label }}</span>
         </div>
       </div>

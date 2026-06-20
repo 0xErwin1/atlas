@@ -60,7 +60,7 @@ const activeProject = computed(
 );
 
 const projectOptions = computed<DropdownOption[]>(() =>
-  workspace.projects.map((p) => ({ value: p.slug, label: p.name })),
+  workspace.projects.map((p) => ({ value: p.slug, label: p.name, icon: 'folder' })),
 );
 
 const ws = computed(() => workspace.activeWorkspaceSlug ?? '');

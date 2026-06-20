@@ -6,6 +6,12 @@ export interface DropdownOption {
   value: string;
   label: string;
   disabled?: boolean;
+  /** Leading icon for the option (and the trigger when selected). */
+  icon?: string;
+  /** CSS color/token for `icon`; defaults to muted. */
+  iconColor?: string;
+  /** Leading colored dot, as an alternative to `icon`. */
+  dot?: string;
 }
 
 const props = withDefaults(
@@ -36,10 +42,10 @@ function selectOption(opt: DropdownOption): void {
   emit('change', opt.value);
 }
 
-const selectedLabel = (): string => {
-  const found = props.options.find((o) => o.value === props.modelValue);
-  return found ? found.label : props.placeholder;
-};
+const selectedOption = (): DropdownOption | undefined =>
+  props.options.find((o) => o.value === props.modelValue);
+
+const selectedLabel = (): string => selectedOption()?.label ?? props.placeholder;
 </script>
 
 <template>
@@ -64,7 +70,17 @@ const selectedLabel = (): string => {
         `"
         @click="toggle"
       >
-        <Icon v-if="icon" :name="icon" :size="13" style="color: var(--c-muted); flex: 0 0 auto;" />
+        <Icon
+          v-if="selectedOption()?.icon"
+          :name="selectedOption()!.icon!"
+          :size="13"
+          :style="{ color: selectedOption()!.iconColor ?? 'var(--c-muted)', flex: '0 0 auto' }"
+        />
+        <span
+          v-else-if="selectedOption()?.dot"
+          :style="{ width: '7px', height: '7px', borderRadius: 'var(--r-full)', background: selectedOption()!.dot, flex: '0 0 auto' }"
+        />
+        <Icon v-else-if="icon" :name="icon" :size="13" style="color: var(--c-muted); flex: 0 0 auto;" />
         <span>{{ selectedLabel() }}</span>
         <Icon
           name="chevron-down"
@@ -98,6 +114,16 @@ const selectedLabel = (): string => {
           `"
           @click="selectOption(opt), !opt.disabled && close()"
         >
+          <Icon
+            v-if="opt.icon"
+            :name="opt.icon"
+            :size="13"
+            :style="{ color: opt.iconColor ?? 'var(--c-muted)', flex: '0 0 auto', marginRight: '7px' }"
+          />
+          <span
+            v-else-if="opt.dot"
+            :style="{ width: '7px', height: '7px', borderRadius: 'var(--r-full)', background: opt.dot, flex: '0 0 auto', marginRight: '7px' }"
+          />
           {{ opt.label }}
         </li>
       </ul>

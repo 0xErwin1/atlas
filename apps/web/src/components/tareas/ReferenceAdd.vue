@@ -13,10 +13,10 @@ const props = defineProps<{ ws: string }>();
 const emit = defineEmits<{ add: [body: CreateReferenceRequest] }>();
 
 const KIND_OPTIONS: DropdownOption[] = [
-  { value: 'relates', label: 'Relates to' },
-  { value: 'blocks', label: 'Blocks' },
-  { value: 'parent', label: 'Parent' },
-  { value: 'spec', label: 'Spec' },
+  { value: 'relates', label: 'Relates to', icon: 'link' },
+  { value: 'blocks', label: 'Blocks', icon: 'ban' },
+  { value: 'parent', label: 'Parent', icon: 'git-branch' },
+  { value: 'spec', label: 'Spec', icon: 'file-text' },
 ];
 
 const kind = ref('relates');
