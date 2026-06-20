@@ -37,5 +37,9 @@ pub use workspace_core::{
 };
 
 pub use permissions::{PermissionGrantRepo, PgPermissionGrantRepo};
+#[allow(unreachable_pub)]
+mod saved_searches;
+
+pub use saved_searches::{PgSavedSearchRepo, SavedSearchRepo};
 pub use search::PgSearchRepo;
 pub use tags::{PgTagRepo, TagRepo};
