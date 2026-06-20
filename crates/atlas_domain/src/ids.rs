@@ -54,6 +54,7 @@ define_id!(TaskActivityId);
 define_id!(PropertyDefinitionId);
 define_id!(MembershipId);
 define_id!(TagId);
+define_id!(SavedSearchId);
 
 #[cfg(test)]
 mod tests {

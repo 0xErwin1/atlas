@@ -3,6 +3,7 @@ pub mod boards_tasks;
 pub mod documents;
 pub mod identity;
 pub mod permission_grant_repo;
+pub mod saved_searches;
 pub mod search;
 pub mod tags;
 pub mod workspace_core;
