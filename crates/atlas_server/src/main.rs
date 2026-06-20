@@ -10,16 +10,20 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "atlas_server=info".into()),
+                .unwrap_or_else(|_| "info,atlas_server=debug,tower_http=info".into()),
         )
+        .with_target(true)
         .init();
 
     let cfg = atlas_server::config::ServerConfig::from_env().map_err(|e| anyhow::anyhow!("{e}"))?;
 
+    info!("connecting to database");
     let db = Database::connect(&cfg.database_url).await?;
 
+    info!("applying migrations");
     Migrator::up(&db, None).await?;
 
+    info!("running bootstrap");
     atlas_server::persistence::bootstrap::run_bootstrap(
         &atlas_server::persistence::bootstrap::BootstrapConfig {
             root_password: cfg.root_password.clone(),

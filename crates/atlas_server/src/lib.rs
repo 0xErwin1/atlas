@@ -3,6 +3,7 @@
 use axum::{Router, middleware as axum_middleware, routing::get};
 use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
 use tower_http::{
+    classify::ServerErrorsFailureClass,
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
     trace::TraceLayer,
 };
@@ -308,12 +309,72 @@ pub fn app(state: AppState) -> Router {
 }
 
 /// Wraps `router` with the standard request-id / trace / problem-stamp layer stack.
+///
+/// The trace layer opens one span per request carrying the method, URI, and the
+/// `x-request-id` set by the outer request-id layer, so every log emitted while
+/// handling a request is correlated by that id. Request start, completion (with
+/// status and latency), and failures are logged at INFO/ERROR.
+///
+/// `/health` and `/version` are intentionally excluded: they are polled at high
+/// frequency by probes and carry no useful signal. Their span is disabled, and
+/// the lifecycle callbacks short-circuit on a disabled span so nothing is logged
+/// for them.
 fn apply_layers(router: Router) -> Router {
+    let trace_layer = TraceLayer::new_for_http()
+        .make_span_with(|request: &axum::http::Request<_>| {
+            if matches!(request.uri().path(), "/health" | "/version") {
+                return tracing::Span::none();
+            }
+
+            let request_id = request
+                .headers()
+                .get("x-request-id")
+                .and_then(|value| value.to_str().ok())
+                .unwrap_or("-");
+
+            tracing::info_span!(
+                "http",
+                method = %request.method(),
+                uri = %request.uri(),
+                request_id = %request_id,
+            )
+        })
+        .on_request(|_request: &axum::http::Request<_>, span: &tracing::Span| {
+            if span.is_disabled() {
+                return;
+            }
+            tracing::info!("started processing request");
+        })
+        .on_response(
+            |response: &axum::http::Response<_>,
+             latency: std::time::Duration,
+             span: &tracing::Span| {
+                if span.is_disabled() {
+                    return;
+                }
+                tracing::info!(
+                    status = response.status().as_u16(),
+                    latency = ?latency,
+                    "finished processing request"
+                );
+            },
+        )
+        .on_failure(
+            |error: ServerErrorsFailureClass,
+             latency: std::time::Duration,
+             span: &tracing::Span| {
+                if span.is_disabled() {
+                    return;
+                }
+                tracing::error!(error = %error, latency = ?latency, "request failed");
+            },
+        );
+
     router
         .layer(axum_middleware::from_fn(
             crate::middleware::problem_stamp::problem_stamp,
         ))
-        .layer(TraceLayer::new_for_http())
+        .layer(trace_layer)
         .layer(PropagateRequestIdLayer::x_request_id())
         .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
 }

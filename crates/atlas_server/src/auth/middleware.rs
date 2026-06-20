@@ -39,7 +39,13 @@ pub async fn require_authn(
     mut request: Request,
     next: Next,
 ) -> Result<Response, ApiError> {
-    let raw_token = extract_token(&request, &jar).ok_or(ApiError::Unauthorized)?;
+    let raw_token = match extract_token(&request, &jar) {
+        Some(token) => token,
+        None => {
+            tracing::debug!("authentication rejected: no bearer token or session cookie");
+            return Err(ApiError::Unauthorized);
+        }
+    };
     let token_hash = hash_token(&raw_token);
 
     let principal = if raw_token.starts_with("atlas_") {
@@ -47,6 +53,13 @@ pub async fn require_authn(
     } else {
         resolve_session(&state, &token_hash).await?
     };
+
+    match &principal {
+        Principal::User(user_id) => tracing::debug!(user_id = ?user_id, "authenticated user"),
+        Principal::ApiKey(api_key_id) => {
+            tracing::debug!(api_key_id = ?api_key_id, "authenticated api key");
+        }
+    }
 
     request.extensions_mut().insert(principal);
     Ok(next.run(request).await)
@@ -70,8 +83,14 @@ async fn resolve_api_key(state: &AppState, token_hash: &str) -> Result<Principal
     let key = repo
         .find_active_by_token_hash(token_hash)
         .await
-        .map_err(|_| ApiError::Unauthorized)?
-        .ok_or(ApiError::Unauthorized)?;
+        .map_err(|e| {
+            tracing::warn!(error = %e, "api key lookup failed");
+            ApiError::Unauthorized
+        })?
+        .ok_or_else(|| {
+            tracing::debug!("authentication rejected: no active api key for token");
+            ApiError::Unauthorized
+        })?;
 
     repo.touch(key.id).await.ok();
 
@@ -89,16 +108,29 @@ async fn resolve_session(state: &AppState, token_hash: &str) -> Result<Principal
     let session = session_repo
         .find_active_by_token_hash(token_hash)
         .await
-        .map_err(|_| ApiError::Unauthorized)?
-        .ok_or(ApiError::Unauthorized)?;
+        .map_err(|e| {
+            tracing::warn!(error = %e, "session lookup failed");
+            ApiError::Unauthorized
+        })?
+        .ok_or_else(|| {
+            tracing::debug!("authentication rejected: no active session for token");
+            ApiError::Unauthorized
+        })?;
 
     let user = user_repo
         .find_by_id(session.user_id)
         .await
-        .map_err(|_| ApiError::Unauthorized)?
-        .ok_or(ApiError::Unauthorized)?;
+        .map_err(|e| {
+            tracing::warn!(error = %e, "user lookup failed");
+            ApiError::Unauthorized
+        })?
+        .ok_or_else(|| {
+            tracing::debug!(user_id = ?session.user_id, "authentication rejected: session user not found");
+            ApiError::Unauthorized
+        })?;
 
     if user.disabled_at.is_some() {
+        tracing::debug!(user_id = ?session.user_id, "authentication rejected: user is disabled");
         return Err(ApiError::Unauthorized);
     }
 

@@ -759,6 +759,12 @@ where
         .ok_or(ApiError::NotFound)?;
 
         if effective < M::ROLE {
+            tracing::warn!(
+                required = ?M::ROLE,
+                effective = ?effective,
+                workspace = %ws_slug,
+                "authorization denied: insufficient role for resource"
+            );
             return Err(ApiError::Forbidden {
                 message: "insufficient permissions for this resource".into(),
             });
