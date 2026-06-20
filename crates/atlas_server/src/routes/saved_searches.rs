@@ -66,7 +66,9 @@ pub(crate) async fn list_saved_searches(
 
     let searches = repo.list_for_owner(&ctx).await.map_err(ApiError::Domain)?;
 
-    Ok(Json(searches.into_iter().map(saved_search_to_dto).collect()))
+    Ok(Json(
+        searches.into_iter().map(saved_search_to_dto).collect(),
+    ))
 }
 
 // ---------------------------------------------------------------------------

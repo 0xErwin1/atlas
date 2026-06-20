@@ -3451,6 +3451,218 @@
         ]
       }
     },
+    "/v1/workspaces/{ws}/saved-searches": {
+      "get": {
+        "tags": [
+          "saved-searches"
+        ],
+        "operationId": "list_saved_searches",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Caller's saved searches sorted by name (case-insensitive)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SavedSearchDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "404": {
+            "description": "Workspace not found or caller is not a member"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "saved-searches"
+        ],
+        "operationId": "create_saved_search",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSavedSearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Saved search created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedSearchDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "404": {
+            "description": "Workspace not found or caller is not a member"
+          },
+          "409": {
+            "description": "A saved search with this name already exists for this owner"
+          },
+          "422": {
+            "description": "Validation error or per-owner cap exceeded"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{ws}/saved-searches/{id}": {
+      "delete": {
+        "tags": [
+          "saved-searches"
+        ],
+        "operationId": "delete_saved_search",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Saved search id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Saved search deleted"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "404": {
+            "description": "Saved search not found, not owned by caller, or caller is not a member"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "saved-searches"
+        ],
+        "operationId": "rename_saved_search",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Saved search id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenameSavedSearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Saved search renamed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedSearchDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "404": {
+            "description": "Saved search not found, not owned by caller, or caller is not a member"
+          },
+          "409": {
+            "description": "A saved search with this name already exists for this owner"
+          },
+          "422": {
+            "description": "Validation error"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/v1/workspaces/{ws}/search": {
       "get": {
         "tags": [
@@ -5678,6 +5890,22 @@
           }
         }
       },
+      "CreateSavedSearchRequest": {
+        "type": "object",
+        "description": "Request body for `POST /v1/workspaces/{ws}/saved-searches`.",
+        "required": [
+          "name",
+          "query"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "query": {
+            "type": "string"
+          }
+        }
+      },
       "CreateSubtaskRequest": {
         "type": "object",
         "description": "Request body for `POST /v1/workspaces/{ws}/tasks/{readable_id}/subtasks`.",
@@ -6909,6 +7137,18 @@
           }
         }
       },
+      "RenameSavedSearchRequest": {
+        "type": "object",
+        "description": "Request body for `PATCH /v1/workspaces/{ws}/saved-searches/{id}`.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        }
+      },
       "ResetPasswordRequest": {
         "type": "object",
         "description": "Request body for `POST /v1/users/{user_id}/reset-password`.",
@@ -6992,6 +7232,42 @@
           "seq": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "SavedSearchDto": {
+        "type": "object",
+        "description": "Saved search representation. Does not expose the owner principal.",
+        "required": [
+          "id",
+          "workspace_id",
+          "name",
+          "query",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "query": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid"
           }
         }
       },
@@ -7662,6 +7938,10 @@
     {
       "name": "tags",
       "description": "Workspace tag registry"
+    },
+    {
+      "name": "saved-searches",
+      "description": "Per-owner saved search registry"
     }
   ]
 }

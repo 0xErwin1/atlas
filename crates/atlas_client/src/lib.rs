@@ -1123,10 +1123,7 @@ impl AtlasClient {
     }
 
     /// `GET /v1/workspaces/{ws}/saved-searches`
-    pub async fn list_saved_searches(
-        &self,
-        ws: &str,
-    ) -> Result<Vec<SavedSearchDto>, ClientError> {
+    pub async fn list_saved_searches(&self, ws: &str) -> Result<Vec<SavedSearchDto>, ClientError> {
         let response = self
             .get(&format!("/v1/workspaces/{ws}/saved-searches"))
             .send()
@@ -1151,11 +1148,7 @@ impl AtlasClient {
     }
 
     /// `DELETE /v1/workspaces/{ws}/saved-searches/{id}`
-    pub async fn delete_saved_search(
-        &self,
-        ws: &str,
-        id: uuid::Uuid,
-    ) -> Result<(), ClientError> {
+    pub async fn delete_saved_search(&self, ws: &str, id: uuid::Uuid) -> Result<(), ClientError> {
         let response = self
             .delete(&format!("/v1/workspaces/{ws}/saved-searches/{id}"))
             .header("x-atlas-csrf", "1")
