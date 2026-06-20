@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router';
 import KanbanColumn from '@/components/tareas/KanbanColumn.vue';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import ContextMenu, { type MenuItem } from '@/components/ui/ContextMenu.vue';
+import Icon from '@/components/ui/Icon.vue';
 import PromptDialog from '@/components/ui/PromptDialog.vue';
 import { useBreakpoint } from '@/composables/useBreakpoint';
 import { useContextMenu } from '@/composables/useContextMenu';
@@ -60,6 +61,7 @@ const promptState = ref<{ open: boolean; mode: 'rename' | 'due'; title: string; 
   initial: '',
 });
 const confirmOpen = ref(false);
+const addColumnOpen = ref(false);
 
 const deleteTarget = computed(() =>
   menuReadableId.value === null ? null : (boards.findTaskByReadableId(menuReadableId.value) ?? null),
@@ -155,6 +157,17 @@ async function onPromptConfirm(value: string): Promise<void> {
   // Empty date clears the due date; otherwise send an ISO datetime.
   const due = value === '' ? null : new Date(value).toISOString();
   await runUpdate(readableId, { due_date: due });
+}
+
+async function onAddColumnConfirm(value: string): Promise<void> {
+  addColumnOpen.value = false;
+
+  const name = value.trim();
+  const boardId = boards.board?.id;
+  if (name.length === 0 || boardId === undefined) return;
+
+  const created = await boards.createColumn(props.ws, boardId, name);
+  if (created === null && boards.error) ui.showBanner(boards.error, 'error');
 }
 
 async function onConfirmDelete(): Promise<void> {
@@ -260,6 +273,17 @@ const menuItems = computed<MenuItem[]>(() => {
         @menu="onMenu"
       />
 
+      <button
+        v-if="boards.board?.id !== undefined && !boards.loading"
+        type="button"
+        class="atl-add-column"
+        :style="isMobile ? 'width: 84vw; max-width: 320px; flex: 0 0 84vw; scroll-snap-align: start;' : 'width: 250px; flex: 0 0 250px;'"
+        @click="addColumnOpen = true"
+      >
+        <Icon name="plus" :size="15" />
+        Add status
+      </button>
+
       <p
         v-if="boards.columns.length === 0 && !boards.loading"
         style="font-size: var(--fs-sm); color: var(--c-muted); padding: 8px;"
@@ -310,6 +334,15 @@ const menuItems = computed<MenuItem[]>(() => {
       @cancel="promptState = { ...promptState, open: false }"
     />
 
+    <PromptDialog
+      :open="addColumnOpen"
+      title="New status"
+      placeholder="Status name"
+      confirm-label="Create status"
+      @confirm="onAddColumnConfirm"
+      @cancel="addColumnOpen = false"
+    />
+
     <ConfirmDialog
       :open="confirmOpen"
       tone="danger"
@@ -325,3 +358,32 @@ const menuItems = computed<MenuItem[]>(() => {
     />
   </div>
 </template>
+
+<style scoped>
+.atl-add-column {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  align-self: flex-start;
+  height: 38px;
+  padding: 0 12px;
+  border: 1px dashed var(--c-border);
+  border-radius: var(--r-lg);
+  background: transparent;
+  color: var(--c-muted);
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition:
+    color 0.12s,
+    border-color 0.12s,
+    background 0.12s;
+}
+
+.atl-add-column:hover {
+  color: var(--c-foreground);
+  border-color: var(--c-primary);
+  background: var(--c-raised);
+}
+</style>

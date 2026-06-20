@@ -1,13 +1,16 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import Avatar from '@/components/ui/Avatar.vue';
 import Chip from '@/components/ui/Chip.vue';
 import ColorPicker from '@/components/ui/ColorPicker.vue';
 import Icon from '@/components/ui/Icon.vue';
 import Popover from '@/components/ui/Popover.vue';
+import TagInput from '@/components/ui/TagInput.vue';
 import { useLabelColorsStore } from '@/stores/labelColors';
+import { useTagsStore } from '@/stores/tags';
 
 const labelColors = useLabelColorsStore();
+const tagsStore = useTagsStore();
 
 /**
  * Inline, editable frontmatter properties block, shown below the note title
@@ -24,6 +27,8 @@ const labelColors = useLabelColorsStore();
 
 const props = defineProps<{
   meta: Record<string, unknown>;
+  /** Workspace slug, used to load/create tags in the shared registry. */
+  ws: string;
 }>();
 
 const emit = defineEmits<{
@@ -137,7 +142,7 @@ function keyLabel(key: string): string {
   return trimmed === '' ? '' : trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
 }
 
-// ── tags: chips with inline add / remove ─────────────────────────────
+// ── tags: creatable combobox over the shared registry ────────────────
 function tagList(row: Row): string[] {
   return row.value
     .split(',')
@@ -145,27 +150,29 @@ function tagList(row: Row): string[] {
     .filter((t) => t !== '');
 }
 
-const tagDraft = ref<Record<number, string>>({});
-
-function removeTag(row: Row, tag: string): void {
-  row.value = tagList(row)
-    .filter((t) => t !== tag)
-    .join(', ');
+function setRowTags(row: Row, tags: string[]): void {
+  row.value = tags.join(', ');
   emitChange();
 }
 
-function addTag(row: Row, index: number): void {
-  const draft = (tagDraft.value[index] ?? '').trim();
-  if (draft === '') return;
-
-  const tags = tagList(row);
-  if (!tags.includes(draft)) {
-    tags.push(draft);
-    row.value = tags.join(', ');
-    emitChange();
+// Autocomplete pool: the workspace tag registry unioned with tags already seen
+// in loaded data, deduped case-insensitively.
+const tagSuggestions = computed<string[]>(() => {
+  const byLower = new Map<string, string>();
+  for (const name of [...tagsStore.names, ...labelColors.tagNames]) {
+    const key = name.trim().toLowerCase();
+    if (key !== '' && !byLower.has(key)) byLower.set(key, name.trim());
   }
-  tagDraft.value[index] = '';
+  return [...byLower.values()].sort((a, b) => a.localeCompare(b));
+});
+
+function onCreateTag(name: string): void {
+  void tagsStore.ensure(props.ws, name);
 }
+
+onMounted(() => {
+  void tagsStore.load(props.ws);
+});
 
 // ── click-to-edit for single-value typed cells ───────────────────────
 // `editing` holds the index of the row whose value is currently an input; the
@@ -195,43 +202,16 @@ function focusOnMount(el: unknown): void {
           @input="emitChange"
         />
 
-        <!-- tags: editable chips; click a chip to recolor, × to remove -->
+        <!-- tags: creatable combobox; click a chip to recolor, × to remove -->
         <div v-if="rowKind(row) === 'tags'" class="meta-value tags">
-          <Popover v-for="tag in tagList(row)" :key="tag" placement="bottom-start">
-            <template #trigger="{ toggle }">
-              <Chip
-                :color="labelColors.colorFor(tagKey(tag))"
-                style="cursor: pointer;"
-                :title="`Recolor “${tag}”`"
-                @click="toggle"
-              >
-                {{ tag }}
-                <button
-                  type="button"
-                  class="tag-x"
-                  title="Remove tag"
-                  aria-label="Remove tag"
-                  @click.stop="removeTag(row, tag)"
-                >
-                  <Icon name="x" :size="10" />
-                </button>
-              </Chip>
-            </template>
-            <template #default="{ close }">
-              <ColorPicker
-                :selected="labelColors.colorFor(tagKey(tag))"
-                @select="(id) => (pickColor(tagKey(tag), id), close())"
-              />
-            </template>
-          </Popover>
-          <input
-            v-model="tagDraft[index]"
-            type="text"
-            class="tag-add"
+          <TagInput
+            :model-value="tagList(row)"
+            :suggestions="tagSuggestions"
+            :color-for="(t) => labelColors.colorFor(tagKey(t))"
+            :on-recolor="(t, id) => pickColor(tagKey(t), id)"
             placeholder="add…"
-            spellcheck="false"
-            @keydown.enter.prevent="addTag(row, index)"
-            @blur="addTag(row, index)"
+            @update:model-value="(next) => setRowTags(row, next)"
+            @create="onCreateTag"
           />
         </div>
 
@@ -414,39 +394,6 @@ function focusOnMount(el: unknown): void {
   color: var(--c-foreground);
   font-family: var(--font-ui);
   font-size: var(--fs-sm);
-  outline: none;
-}
-
-.tag-x {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 13px;
-  height: 13px;
-  margin-left: 1px;
-  padding: 0;
-  border: none;
-  border-radius: var(--r-sm);
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  opacity: 0.6;
-}
-
-.tag-x:hover {
-  opacity: 1;
-  color: var(--c-danger);
-}
-
-.tag-add {
-  width: 56px;
-  height: 20px;
-  padding: 0 4px;
-  border: none;
-  background: transparent;
-  color: var(--c-foreground);
-  font-family: var(--font-ui);
-  font-size: var(--fs-xs);
   outline: none;
 }
 

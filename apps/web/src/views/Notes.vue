@@ -524,7 +524,7 @@ watch(title, (t) => {
             {{ title || 'Untitled' }}
           </h1>
 
-          <PropertiesEditor :meta="meta" @change="onMetaChange" />
+          <PropertiesEditor :ws="ws" :meta="meta" @change="onMetaChange" />
 
           <div @keydown="onEditorKeydown">
             <NoteEditor

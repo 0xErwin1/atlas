@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import type { components } from '@/api/types.d.ts';
 import ActivityFeed from '@/components/tareas/ActivityFeed.vue';
@@ -13,10 +13,13 @@ import CollapsibleText from '@/components/ui/CollapsibleText.vue';
 import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
 import Icon from '@/components/ui/Icon.vue';
 import Popover from '@/components/ui/Popover.vue';
+import PromptDialog from '@/components/ui/PromptDialog.vue';
+import TagInput from '@/components/ui/TagInput.vue';
 import { useInlineEdit } from '@/composables/useInlineEdit';
 import { swatchById } from '@/lib/swatches';
 import { useBoardsStore } from '@/stores/boards';
 import { useLabelColorsStore } from '@/stores/labelColors';
+import { useTagsStore } from '@/stores/tags';
 import { useTaskDetailStore } from '@/stores/taskDetail';
 import { useTasksStore } from '@/stores/tasks';
 import { useUiStore } from '@/stores/ui';
@@ -39,6 +42,7 @@ const props = withDefaults(
 const boards = useBoardsStore();
 const tasks = useTasksStore();
 const detail = useTaskDetailStore();
+const tagsStore = useTagsStore();
 const labelColors = useLabelColorsStore();
 const workspace = useWorkspaceStore();
 const ui = useUiStore();
@@ -68,8 +72,6 @@ const dueInputValue = computed(() => {
   const d = new Date(raw);
   return Number.isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
 });
-
-const labelDraft = ref('');
 
 const PRIORITY_OPTIONS: DropdownOption[] = [
   { value: '', label: 'None', icon: 'flag', iconColor: 'var(--c-muted)' },
@@ -155,17 +157,39 @@ async function commitLabels(labels: string[]): Promise<void> {
   else fail(boards.error);
 }
 
-function onAddLabel(): void {
-  const value = labelDraft.value.trim();
-  labelDraft.value = '';
-  if (value === '') return;
-  const current = props.task.labels ?? [];
-  if (!current.includes(value)) void commitLabels([...current, value]);
+const labelsModel = computed<string[]>({
+  get: () => props.task.labels ?? [],
+  set: (next) => {
+    void commitLabels(next);
+  },
+});
+
+// Autocomplete pool: the workspace tag registry unioned with tags the app has
+// already seen in loaded data, deduped case-insensitively.
+const tagSuggestions = computed<string[]>(() => {
+  const byLower = new Map<string, string>();
+  for (const name of [...tagsStore.names, ...labelColors.tagNames]) {
+    const key = name.trim().toLowerCase();
+    if (key !== '' && !byLower.has(key)) byLower.set(key, name.trim());
+  }
+  return [...byLower.values()].sort((a, b) => a.localeCompare(b));
+});
+
+function tagColor(tag: string): string {
+  return labelColors.colorFor(`tag:${tag.toLowerCase()}`);
 }
 
-function onRemoveLabel(label: string): void {
-  void commitLabels((props.task.labels ?? []).filter((l) => l !== label));
+function onRecolorTag(tag: string, swatchId: string): void {
+  labelColors.setColor(`tag:${tag.toLowerCase()}`, swatchId);
 }
+
+function onCreateTag(name: string): void {
+  void tagsStore.ensure(props.ws, name);
+}
+
+onMounted(() => {
+  void tagsStore.load(props.ws);
+});
 
 async function onAddAssignee(ref: string): Promise<void> {
   const [assignee_type, assignee_id] = ref.split(':');
@@ -211,7 +235,23 @@ async function onRemoveReference(referenceId: string): Promise<void> {
 }
 
 const statusOpen = ref(false);
+const addStatusOpen = ref(false);
 const customFieldsOpen = ref(true);
+
+async function onCreateStatus(value: string): Promise<void> {
+  addStatusOpen.value = false;
+
+  const name = value.trim();
+  if (name === '') return;
+
+  const created = await boards.createColumn(props.ws, props.task.board_id, name);
+  if (created === null) {
+    fail(boards.error);
+    return;
+  }
+
+  await onChangeStatus(created.id);
+}
 
 function comingSoon(): void {
   ui.showBanner('That action is coming soon', 'info');
@@ -307,6 +347,18 @@ function focusSubtaskInput(): void {
                     />
                     {{ opt.label }}
                   </button>
+
+                  <div style="height: 1px; margin: 3px 0; background: var(--c-border);" />
+
+                  <button
+                    type="button"
+                    class="atl-mi"
+                    style="width: 100%; border: none; background: transparent; text-align: left; gap: 8px; color: var(--c-muted);"
+                    @click="addStatusOpen = true; close()"
+                  >
+                    <Icon name="plus" :size="13" style="flex: 0 0 auto;" />
+                    New status
+                  </button>
                 </div>
               </template>
             </Popover>
@@ -361,25 +413,13 @@ function focusSubtaskInput(): void {
         </div>
         <div class="atl-tv-field">
           <span class="atl-tv-label"><Icon name="tag" :size="14" />Tags</span>
-          <span class="atl-tv-value" style="flex-wrap: wrap;">
-            <span v-for="label in task.labels ?? []" :key="label" class="atl-tag">
-              {{ label }}
-              <button
-                type="button"
-                class="atl-tag-x"
-                aria-label="Remove tag"
-                @click="onRemoveLabel(label)"
-              >
-                ×
-              </button>
-            </span>
-            <input
-              v-model="labelDraft"
-              class="atl-tv-input"
-              style="width: 96px;"
-              placeholder="+ Tag"
-              @keydown.enter.prevent="onAddLabel"
-              @blur="onAddLabel"
+          <span class="atl-tv-value">
+            <TagInput
+              v-model="labelsModel"
+              :suggestions="tagSuggestions"
+              :color-for="tagColor"
+              :on-recolor="onRecolorTag"
+              @create="onCreateTag"
             />
           </span>
         </div>
@@ -462,6 +502,15 @@ function focusSubtaskInput(): void {
         <ActivityFeed :items="detail.activity" />
       </div>
     </template>
+
+    <PromptDialog
+      :open="addStatusOpen"
+      title="New status"
+      placeholder="Status name"
+      confirm-label="Create status"
+      @confirm="onCreateStatus"
+      @cancel="addStatusOpen = false"
+    />
   </div>
 </template>
 
@@ -648,37 +697,6 @@ function focusSubtaskInput(): void {
   -webkit-appearance: none;
   appearance: none;
   margin: 0;
-}
-
-.atl-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 22px;
-  padding: 0 4px 0 8px;
-  border-radius: var(--r-sm);
-  background: var(--c-selection);
-  color: var(--c-foreground);
-  font-size: var(--fs-xs);
-}
-
-.atl-tag-x {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  border: none;
-  border-radius: var(--r-sm);
-  background: transparent;
-  color: var(--c-muted);
-  cursor: pointer;
-  font-size: 14px;
-  line-height: 1;
-}
-
-.atl-tag-x:hover {
-  color: var(--c-foreground);
 }
 
 .atl-tv-divider {

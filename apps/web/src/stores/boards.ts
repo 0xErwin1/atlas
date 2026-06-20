@@ -211,6 +211,32 @@ export const useBoardsStore = defineStore('boards', () => {
     columns.value = [...data].sort((a, b) => a.position_key.localeCompare(b.position_key));
   }
 
+  /**
+   * Creates a new column (status) appended after the current last one on the
+   * board, then inserts it into the sorted `columns` list. Columns order by
+   * `position_key`, so the new key is requested between the last column and the
+   * end (`before` = last key, no `after`).
+   */
+  async function createColumn(ws: string, boardId: string, name: string): Promise<ColumnDto | null> {
+    const last = columns.value.at(-1);
+
+    const { data, error: apiError } = await wrappedClient.POST(
+      '/v1/workspaces/{ws}/boards/{board_id}/columns',
+      {
+        params: { path: { ws, board_id: boardId } },
+        body: { name, before: last?.position_key ?? null, after: null },
+      },
+    );
+
+    if (apiError !== undefined || data === undefined) {
+      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to create status';
+      return null;
+    }
+
+    columns.value = [...columns.value, data].sort((a, b) => a.position_key.localeCompare(b.position_key));
+    return data;
+  }
+
   async function loadTasks(ws: string, boardId: string): Promise<void> {
     // The kanban shows every task on the board; page through so a board with more
     // than one page of tasks is not silently truncated.
@@ -635,6 +661,7 @@ export const useBoardsStore = defineStore('boards', () => {
     createTask,
     loadBoard,
     loadColumns,
+    createColumn,
     loadTasks,
     reconcileTask,
     applyOptimisticMove,
