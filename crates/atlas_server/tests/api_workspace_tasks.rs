@@ -872,3 +872,57 @@ async fn list_workspace_tasks_assignee_me_as_api_key_resolves_against_assignee_a
 
     db.teardown().await;
 }
+
+// ---------------------------------------------------------------------------
+// TW18: summaries carry board_name and column_name; cross-board rows are distinct
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn list_workspace_tasks_summaries_carry_board_name_and_column_name() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let seed = seed_workspace(&server, &db, "tw18-user").await;
+
+    let page = seed
+        .user_client
+        .list_workspace_tasks(&seed.ws_slug, &Default::default())
+        .await
+        .expect("list workspace tasks");
+
+    assert_eq!(page.items.len(), 4);
+
+    // user_task_ids[0] → Board 1 / col1 (Todo)
+    let t1 = page
+        .items
+        .iter()
+        .find(|t| t.id == seed.user_task_ids[0])
+        .expect("user_task_ids[0] must appear");
+    assert_eq!(t1.board_name, "Board 1");
+    assert_eq!(t1.column_name, "Todo");
+
+    // user_task_ids[1] → Board 1 / col2 (In Progress)
+    let t2 = page
+        .items
+        .iter()
+        .find(|t| t.id == seed.user_task_ids[1])
+        .expect("user_task_ids[1] must appear");
+    assert_eq!(t2.board_name, "Board 1");
+    assert_eq!(t2.column_name, "In Progress");
+
+    // key_task_ids[0] and [1] → Board 2 / Todo
+    let t3 = page
+        .items
+        .iter()
+        .find(|t| t.id == seed.key_task_ids[0])
+        .expect("key_task_ids[0] must appear");
+    assert_eq!(t3.board_name, "Board 2");
+    assert_eq!(t3.column_name, "Todo");
+
+    // Cross-board: t1 and t3 have distinct board_names
+    assert_ne!(
+        t1.board_name, t3.board_name,
+        "tasks on different boards must have distinct board_names"
+    );
+
+    db.teardown().await;
+}

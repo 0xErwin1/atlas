@@ -22,8 +22,9 @@ use atlas_api::{
 use atlas_domain::{
     Actor, WorkspaceCtx,
     entities::boards_tasks::{
-        AssigneeRef, NewTask, NewTaskChecklistItem, NewTaskReference, PositionBetween, Priority,
-        Task, TaskActivity, TaskAssignee, TaskChecklistItem, TaskPatch, TaskReference,
+        AssigneeRef, Board, BoardColumn, NewTask, NewTaskChecklistItem, NewTaskReference,
+        PositionBetween, Priority, Task, TaskActivity, TaskAssignee, TaskChecklistItem, TaskPatch,
+        TaskReference,
     },
     entities::task_views::{ActorTypeFilter, AssigneeFilter, TaskSort, TaskViewFilters},
     ids::{
@@ -40,9 +41,9 @@ use crate::{
     },
     error::ApiError,
     persistence::repos::{
-        ApiKeyRepo, DocumentRepo, MembershipRepo, PgApiKeyRepo, PgDocumentRepo, PgMembershipRepo,
-        PgTaskAssigneeRepo, PgTaskChecklistRepo, PgTaskReferenceRepo, PgTaskRepo, PgUserRepo,
-        TaskAssigneeRepo, TaskChecklistRepo, TaskReferenceRepo, TaskRepo, UserRepo,
+        ApiKeyRepo, DocumentRepo, MembershipRepo, PgApiKeyRepo, PgBoardRepo, PgDocumentRepo,
+        PgMembershipRepo, PgTaskAssigneeRepo, PgTaskChecklistRepo, PgTaskReferenceRepo, PgTaskRepo,
+        PgUserRepo, TaskAssigneeRepo, TaskChecklistRepo, TaskReferenceRepo, TaskRepo, UserRepo,
     },
     routes::validation::{
         validate_custom_entry_count, validate_description, validate_labels, validate_name,
@@ -271,6 +272,57 @@ async fn board_assignees_by_task(
     }
 
     Ok(by_task)
+}
+
+/// Batch-loads the board name and column name for a page of tasks.
+///
+/// Issues two `IN (...)` queries — one for columns, one for boards — both
+/// scoped to `ctx.workspace_id`, then builds a map from column id to
+/// `(board_name, column_name)`. The caller can then populate `board_name` and
+/// `column_name` on each `TaskSummaryDto` without an N+1 query.
+///
+/// When a column or board row cannot be found (data-integrity error), the
+/// entry is absent from the returned map; callers substitute a fallback
+/// string so a missing row does not abort the listing.
+async fn board_column_names_by_task(
+    state: &AppState,
+    ctx: &WorkspaceCtx,
+    tasks: &[Task],
+) -> Result<std::collections::HashMap<uuid::Uuid, (String, String)>, ApiError> {
+    use std::collections::HashMap;
+
+    let mut col_ids: Vec<uuid::Uuid> = tasks.iter().map(|t| t.column_id.0).collect();
+    col_ids.sort_unstable();
+    col_ids.dedup();
+
+    let repo = PgBoardRepo::new((*state.db).clone());
+
+    let columns: Vec<BoardColumn> = repo
+        .list_columns_by_ids(ctx.workspace_id.0, &col_ids)
+        .await
+        .map_err(ApiError::Domain)?;
+
+    let mut board_ids: Vec<uuid::Uuid> = columns.iter().map(|c| c.board_id.0).collect();
+    board_ids.sort_unstable();
+    board_ids.dedup();
+
+    let boards: Vec<Board> = repo
+        .list_boards_by_ids(ctx.workspace_id.0, &board_ids)
+        .await
+        .map_err(ApiError::Domain)?;
+
+    let board_names: HashMap<uuid::Uuid, String> =
+        boards.into_iter().map(|b| (b.id.0, b.name)).collect();
+
+    let by_column: HashMap<uuid::Uuid, (String, String)> = columns
+        .into_iter()
+        .filter_map(|col| {
+            let board_name = board_names.get(&col.board_id.0)?.clone();
+            Some((col.id.0, (board_name, col.name)))
+        })
+        .collect();
+
+    Ok(by_column)
 }
 
 fn checklist_item_to_dto(item: TaskChecklistItem) -> ChecklistItemDto {
@@ -561,19 +613,30 @@ pub(crate) async fn list_tasks(
     };
 
     let mut assignees_by_task = board_assignees_by_task(&state, &ctx, &all).await?;
+    let board_column_names = board_column_names_by_task(&state, &ctx, &all).await?;
+    let board_name_fallback = auth.resource.0.name.clone();
 
     let dtos = all
         .into_iter()
-        .map(|t| TaskSummaryDto {
-            id: t.id.0,
-            readable_id: t.readable_id,
-            column_id: t.column_id.0,
-            title: t.title,
-            priority: t.priority.map(|p| p.as_str().to_string()),
-            estimate: t.estimate,
-            labels: t.labels,
-            assignees: assignees_by_task.remove(&t.id.0).unwrap_or_default(),
-            updated_at: t.updated_at,
+        .map(|t| {
+            let (board_name, column_name) = board_column_names
+                .get(&t.column_id.0)
+                .cloned()
+                .unwrap_or_else(|| (board_name_fallback.clone(), String::new()));
+
+            TaskSummaryDto {
+                id: t.id.0,
+                readable_id: t.readable_id,
+                column_id: t.column_id.0,
+                title: t.title,
+                priority: t.priority.map(|p| p.as_str().to_string()),
+                estimate: t.estimate,
+                labels: t.labels,
+                assignees: assignees_by_task.remove(&t.id.0).unwrap_or_default(),
+                board_name,
+                column_name,
+                updated_at: t.updated_at,
+            }
         })
         .collect();
 
@@ -1526,28 +1589,37 @@ pub(crate) async fn promote_checklist_item(
 // Sub-tasks (child tasks)
 // ---------------------------------------------------------------------------
 
-/// Builds `TaskSummaryDto`s for the given tasks, resolving assignees in one batch
-/// so a sub-task row can render status, estimate, and assignees without a per-task
-/// follow-up request.
+/// Builds `TaskSummaryDto`s for the given tasks, resolving assignees and board/
+/// column names in a fixed number of batch queries.
 async fn tasks_to_summaries(
     state: &AppState,
     ctx: &WorkspaceCtx,
     tasks: Vec<Task>,
 ) -> Result<Vec<TaskSummaryDto>, ApiError> {
     let mut assignees_by_task = board_assignees_by_task(state, ctx, &tasks).await?;
+    let board_column_names = board_column_names_by_task(state, ctx, &tasks).await?;
 
     Ok(tasks
         .into_iter()
-        .map(|t| TaskSummaryDto {
-            id: t.id.0,
-            readable_id: t.readable_id,
-            column_id: t.column_id.0,
-            title: t.title,
-            priority: t.priority.map(|p| p.as_str().to_string()),
-            estimate: t.estimate,
-            labels: t.labels,
-            assignees: assignees_by_task.remove(&t.id.0).unwrap_or_default(),
-            updated_at: t.updated_at,
+        .map(|t| {
+            let (board_name, column_name) = board_column_names
+                .get(&t.column_id.0)
+                .cloned()
+                .unwrap_or_default();
+
+            TaskSummaryDto {
+                id: t.id.0,
+                readable_id: t.readable_id,
+                column_id: t.column_id.0,
+                title: t.title,
+                priority: t.priority.map(|p| p.as_str().to_string()),
+                estimate: t.estimate,
+                labels: t.labels,
+                assignees: assignees_by_task.remove(&t.id.0).unwrap_or_default(),
+                board_name,
+                column_name,
+                updated_at: t.updated_at,
+            }
         })
         .collect())
 }
@@ -1875,19 +1947,29 @@ pub(crate) async fn list_workspace_tasks(
     };
 
     let mut assignees_by_task = board_assignees_by_task(&state, &ctx, &tasks).await?;
+    let board_column_names = board_column_names_by_task(&state, &ctx, &tasks).await?;
 
     let dtos = tasks
         .into_iter()
-        .map(|t| TaskSummaryDto {
-            id: t.id.0,
-            readable_id: t.readable_id,
-            column_id: t.column_id.0,
-            title: t.title,
-            priority: t.priority.map(|p| p.as_str().to_string()),
-            estimate: t.estimate,
-            labels: t.labels,
-            assignees: assignees_by_task.remove(&t.id.0).unwrap_or_default(),
-            updated_at: t.updated_at,
+        .map(|t| {
+            let (board_name, column_name) = board_column_names
+                .get(&t.column_id.0)
+                .cloned()
+                .unwrap_or_default();
+
+            TaskSummaryDto {
+                id: t.id.0,
+                readable_id: t.readable_id,
+                column_id: t.column_id.0,
+                title: t.title,
+                priority: t.priority.map(|p| p.as_str().to_string()),
+                estimate: t.estimate,
+                labels: t.labels,
+                assignees: assignees_by_task.remove(&t.id.0).unwrap_or_default(),
+                board_name,
+                column_name,
+                updated_at: t.updated_at,
+            }
         })
         .collect();
 

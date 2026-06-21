@@ -317,6 +317,53 @@ impl BoardRepo for PgBoardRepo {
     }
 }
 
+impl PgBoardRepo {
+    /// Batch-loads boards by their IDs, scoped to the workspace.
+    ///
+    /// Returns only non-deleted boards. Missing IDs (deleted or unknown) are
+    /// silently absent from the result, not an error.
+    pub async fn list_boards_by_ids(
+        &self,
+        workspace_id: uuid::Uuid,
+        ids: &[uuid::Uuid],
+    ) -> Result<Vec<Board>, DomainError> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        board::Entity::find()
+            .filter(board::Column::WorkspaceId.eq(workspace_id))
+            .filter(board::Column::Id.is_in(ids.to_vec()))
+            .filter(board::Column::DeletedAt.is_null())
+            .all(&self.conn)
+            .await
+            .map(|rows| rows.into_iter().map(board_from).collect())
+            .map_err(db_err)
+    }
+
+    /// Batch-loads columns by their IDs, scoped to the workspace.
+    ///
+    /// Returns only non-deleted columns. Missing IDs are silently absent.
+    pub async fn list_columns_by_ids(
+        &self,
+        workspace_id: uuid::Uuid,
+        ids: &[uuid::Uuid],
+    ) -> Result<Vec<BoardColumn>, DomainError> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        board_column::Entity::find()
+            .filter(board_column::Column::WorkspaceId.eq(workspace_id))
+            .filter(board_column::Column::Id.is_in(ids.to_vec()))
+            .filter(board_column::Column::DeletedAt.is_null())
+            .all(&self.conn)
+            .await
+            .map(|rows| rows.into_iter().map(board_column_from).collect())
+            .map_err(db_err)
+    }
+}
+
 pub struct PgTaskRepo {
     pub conn: DatabaseConnection,
 }

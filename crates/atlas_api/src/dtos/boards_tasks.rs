@@ -117,6 +117,10 @@ pub struct TaskSummaryDto {
     /// request.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub assignees: Vec<ActorDto>,
+    /// Name of the board this task belongs to.
+    pub board_name: String,
+    /// Name of the column (status) this task is currently in.
+    pub column_name: String,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 

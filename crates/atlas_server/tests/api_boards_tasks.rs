@@ -655,6 +655,17 @@ async fn list_tasks_returns_tasks_for_board() {
 
     assert_eq!(page.items.len(), 2, "board must have 2 tasks");
 
+    for task in &page.items {
+        assert_eq!(
+            task.board_name, "Board",
+            "board-scoped listing must carry board_name"
+        );
+        assert_eq!(
+            task.column_name, "Todo",
+            "board-scoped listing must carry column_name"
+        );
+    }
+
     db.teardown().await;
 }
 
