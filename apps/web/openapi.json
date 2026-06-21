@@ -3931,6 +3931,396 @@
         ]
       }
     },
+    "/v1/workspaces/{ws}/task-views": {
+      "get": {
+        "tags": [
+          "task-views"
+        ],
+        "operationId": "list_task_views",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Caller's task views sorted by name (case-insensitive)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TaskViewDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "404": {
+            "description": "Workspace not found or caller is not a member"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "task-views"
+        ],
+        "operationId": "create_task_view",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTaskViewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Task view created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskViewDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "404": {
+            "description": "Workspace not found or caller is not a member"
+          },
+          "409": {
+            "description": "A task view with this name already exists for this owner"
+          },
+          "422": {
+            "description": "Validation error or per-owner cap exceeded"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{ws}/task-views/{id}": {
+      "get": {
+        "tags": [
+          "task-views"
+        ],
+        "operationId": "get_task_view",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Task view id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Task view with filters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskViewDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "404": {
+            "description": "Task view not found, not owned by caller, or caller is not a member"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "task-views"
+        ],
+        "operationId": "delete_task_view",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Task view id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Task view deleted"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "404": {
+            "description": "Task view not found, not owned by caller, or caller is not a member"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "task-views"
+        ],
+        "operationId": "update_task_view",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Task view id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTaskViewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Task view updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskViewDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "404": {
+            "description": "Task view not found, not owned by caller, or caller is not a member"
+          },
+          "409": {
+            "description": "A task view with this name already exists for this owner"
+          },
+          "422": {
+            "description": "Validation error"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{ws}/tasks": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "operationId": "list_workspace_tasks",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "assignee",
+            "in": "query",
+            "description": "Assignee filter: 'me', 'user:{uuid}', or 'api_key:{uuid}'",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "actor",
+            "in": "query",
+            "description": "Actor type filter: 'user' or 'api_key'",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "column_id",
+            "in": "query",
+            "description": "Filter by column id (repeat for multiple)",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "priority",
+            "in": "query",
+            "description": "Filter by priority (repeat for multiple)",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "label",
+            "in": "query",
+            "description": "Filter by label (repeat for multiple)",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "board_id",
+            "in": "query",
+            "description": "Filter by board id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "Sort order: updated_at_desc (default), updated_at_asc, created_at_desc, created_at_asc, priority_desc, title_asc",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Pagination cursor (34-char base64url)",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size (max 200, default 50)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated workspace task list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_TaskSummaryDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameter (e.g. unknown sort)"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "404": {
+            "description": "Workspace not found or caller is not a member"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/v1/workspaces/{ws}/tasks/{readable_id}": {
       "get": {
         "tags": [
@@ -5975,6 +6365,22 @@
           }
         }
       },
+      "CreateTaskViewRequest": {
+        "type": "object",
+        "description": "Request body for `POST /v1/workspaces/{ws}/task-views`.",
+        "required": [
+          "name",
+          "filters"
+        ],
+        "properties": {
+          "filters": {
+            "$ref": "#/components/schemas/TaskViewFiltersDto"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
       "CreateUserRequest": {
         "type": "object",
         "description": "Request body for `POST /v1/users`.",
@@ -6836,6 +7242,8 @@
                 "readable_id",
                 "column_id",
                 "title",
+                "board_name",
+                "column_name",
                 "updated_at"
               ],
               "properties": {
@@ -6846,9 +7254,17 @@
                   },
                   "description": "Assigned actors (users and agents), resolved with display names so the\nkanban card can render an avatar and the agent badge without a follow-up\nrequest."
                 },
+                "board_name": {
+                  "type": "string",
+                  "description": "Name of the board this task belongs to."
+                },
                 "column_id": {
                   "type": "string",
                   "format": "uuid"
+                },
+                "column_name": {
+                  "type": "string",
+                  "description": "Name of the column (status) this task is currently in."
                 },
                 "estimate": {
                   "type": [
@@ -7552,6 +7968,8 @@
           "readable_id",
           "column_id",
           "title",
+          "board_name",
+          "column_name",
           "updated_at"
         ],
         "properties": {
@@ -7562,9 +7980,17 @@
             },
             "description": "Assigned actors (users and agents), resolved with display names so the\nkanban card can render an avatar and the agent badge without a follow-up\nrequest."
           },
+          "board_name": {
+            "type": "string",
+            "description": "Name of the board this task belongs to."
+          },
           "column_id": {
             "type": "string",
             "format": "uuid"
+          },
+          "column_name": {
+            "type": "string",
+            "description": "Name of the column (status) this task is currently in."
           },
           "estimate": {
             "type": [
@@ -7599,6 +8025,99 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "TaskViewDto": {
+        "type": "object",
+        "description": "Task view representation. Does not expose the owner principal.",
+        "required": [
+          "id",
+          "workspace_id",
+          "name",
+          "filters",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "filters": {
+            "$ref": "#/components/schemas/TaskViewFiltersDto"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "TaskViewFiltersDto": {
+        "type": "object",
+        "description": "Task view filter set as exposed at the API boundary.\n\nAll fields are optional. An empty `{}` is a valid \"all workspace tasks\" view.",
+        "properties": {
+          "actor_type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Creator actor-type filter. Valid values: \"user\", \"api_key\"."
+          },
+          "assignee": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Assignee filter. Encoded as a string: \"me\", \"user:{uuid}\", \"api_key:{uuid}\"."
+          },
+          "board_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Scope to a single board."
+          },
+          "column_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Restrict to these board column ids."
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Restrict to tasks carrying ALL of these labels."
+          },
+          "priorities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Restrict to these priority levels. Valid values: low, medium, high, urgent."
+          },
+          "sort": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Sort order. Valid values: updated_at_desc, updated_at_asc, created_at_desc,\ncreated_at_asc, priority_desc, title_asc."
           }
         }
       },
@@ -7789,6 +8308,22 @@
           }
         }
       },
+      "UpdateTaskViewRequest": {
+        "type": "object",
+        "description": "Request body for `PATCH /v1/workspaces/{ws}/task-views/{id}`.",
+        "required": [
+          "name",
+          "filters"
+        ],
+        "properties": {
+          "filters": {
+            "$ref": "#/components/schemas/TaskViewFiltersDto"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
       "UpdateUiStateRequest": {
         "type": "object",
         "description": "Request body for `PUT /v1/me/ui-state`. The `state` is stored verbatim.",
@@ -7942,6 +8477,10 @@
     {
       "name": "saved-searches",
       "description": "Per-owner saved search registry"
+    },
+    {
+      "name": "task-views",
+      "description": "Per-owner task filter views"
     }
   ]
 }
