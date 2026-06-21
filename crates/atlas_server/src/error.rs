@@ -22,6 +22,12 @@ pub enum ApiError {
     Forbidden {
         message: String,
     },
+    /// Malformed query parameter — the value is syntactically invalid and
+    /// cannot be coerced.  Returns 400 Bad Request, not 422 (which is reserved
+    /// for semantically invalid but parseable inputs).
+    BadRequest {
+        message: String,
+    },
     /// Generic conflict (no payload). Prefer `RevisionConflict` for CAS failures.
     Conflict,
     /// CAS revision conflict with full patch payload for the 409 response body.
@@ -58,6 +64,11 @@ impl IntoResponse for ApiError {
             ApiError::InvalidInput { message } => (
                 StatusCode::UNPROCESSABLE_ENTITY,
                 ProblemDetails::new("urn:atlas:error:invalid-input", "Invalid Input", 422)
+                    .with_detail(message),
+            ),
+            ApiError::BadRequest { message } => (
+                StatusCode::BAD_REQUEST,
+                ProblemDetails::new("urn:atlas:error:bad-request", "Bad Request", 400)
                     .with_detail(message),
             ),
             ApiError::NotFound => (

@@ -5,9 +5,28 @@ use crate::{
         NewTaskChecklistItem, NewTaskReference, PositionBetween, Task, TaskActivity, TaskAssignee,
         TaskChecklistItem, TaskChecklistItemPatch, TaskPatch, TaskReference,
     },
+    entities::task_views::TaskViewFilters,
     ids::{BoardId, ChecklistItemId, ColumnId, ProjectId, TaskId, TaskReferenceId},
 };
 use async_trait::async_trait;
+
+/// Opaque domain cursor for workspace-scoped task listing.
+///
+/// Carries the sort-column value and the task id as a tiebreak so the SQL
+/// keyset predicate `(sort_col, id) < ($val, $id)` can produce a stable,
+/// non-overlapping page sequence regardless of which column the user sorted by.
+///
+/// This is a domain type: it does NOT depend on the api-layer `SearchCursor`.
+/// The route handler encodes/decodes the wire cursor and passes the decoded
+/// domain cursor to the port method.
+#[derive(Debug, Clone)]
+pub struct TaskListCursor {
+    /// Serialised sort-column value (epoch micros for temporal sorts, the
+    /// string representation for text/priority sorts).
+    pub sort_value: serde_json::Value,
+    /// UUID tiebreak — the id of the last item on the previous page.
+    pub id: TaskId,
+}
 
 #[async_trait]
 pub trait BoardRepo: Send + Sync {
@@ -134,6 +153,28 @@ pub trait TaskRepo: Send + Sync {
     ) -> Result<Task, DomainError>;
 
     async fn soft_delete(&self, ctx: &WorkspaceCtx, id: TaskId) -> Result<(), DomainError>;
+
+    /// Lists top-level workspace tasks matching `filters`, ordered by the sort
+    /// specified in the filters (default: `UpdatedDesc`).
+    ///
+    /// Callers should pass `limit + 1` and check `len() > limit` to derive
+    /// `has_more`; this method returns exactly what the DB returns (no
+    /// truncation), so the overfetch idiom is correct here.
+    ///
+    /// The keyset cursor `after` positions the result window after the last
+    /// seen item. Pass `None` for the first page.
+    ///
+    /// Always-applied predicates:
+    /// - `workspace_id = ctx.workspace_id`
+    /// - `parent_task_id IS NULL` (top-level only)
+    /// - `deleted_at IS NULL`
+    async fn list_by_workspace_filtered(
+        &self,
+        ctx: &WorkspaceCtx,
+        filters: &TaskViewFilters,
+        after: Option<TaskListCursor>,
+        limit: u64,
+    ) -> Result<Vec<Task>, DomainError>;
 }
 
 #[async_trait]

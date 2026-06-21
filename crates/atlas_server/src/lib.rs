@@ -180,6 +180,10 @@ pub fn app(state: AppState) -> Router {
             axum::routing::post(routes::tasks::create_task).get(routes::tasks::list_tasks),
         )
         .route(
+            "/v1/workspaces/{ws}/tasks",
+            axum::routing::get(routes::tasks::list_workspace_tasks),
+        )
+        .route(
             "/v1/workspaces/{ws}/tasks/{readable_id}",
             axum::routing::get(routes::tasks::get_task)
                 .patch(routes::tasks::update_task)

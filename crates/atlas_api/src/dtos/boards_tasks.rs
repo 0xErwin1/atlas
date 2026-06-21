@@ -384,3 +384,50 @@ pub struct PromoteChecklistItemRequest {
     /// Target column for the new task.
     pub column_id: uuid::Uuid,
 }
+
+// ---------------------------------------------------------------------------
+// Workspace-scoped task listing
+// ---------------------------------------------------------------------------
+
+/// Query parameters for `GET /v1/workspaces/{ws}/tasks`.
+///
+/// All fields are optional. Absent fields apply no filter (workspace-wide listing).
+/// Used by both the client library and the test harness.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct WorkspaceTaskQueryParams {
+    /// `me` | `user:{uuid}` | `api_key:{uuid}`
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assignee: Option<String>,
+
+    /// `user` | `api_key` — restrict to tasks created by this actor type.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actor: Option<String>,
+
+    /// Restrict to tasks in these columns (repeated param).
+    #[serde(default, rename = "column_id", skip_serializing_if = "Vec::is_empty")]
+    pub column_ids: Vec<String>,
+
+    /// Restrict to tasks with these priorities (repeated param).
+    #[serde(default, rename = "priority", skip_serializing_if = "Vec::is_empty")]
+    pub priorities: Vec<String>,
+
+    /// Restrict to tasks carrying ALL of these labels (array-contains).
+    #[serde(default, rename = "label", skip_serializing_if = "Vec::is_empty")]
+    pub labels: Vec<String>,
+
+    /// Scope to a single board.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub board_id: Option<String>,
+
+    /// Sort key — see D8 whitelist in design. Defaults to `updated_at_desc`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sort: Option<String>,
+
+    /// Opaque pagination cursor (34-char `SearchCursor` wire format).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<String>,
+
+    /// Page size (1–200, default 50).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+}

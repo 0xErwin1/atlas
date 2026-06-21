@@ -14,10 +14,10 @@ use atlas_api::{
         CreateChecklistItemRequest, CreateReferenceRequest, CreateSubtaskRequest,
         CreateTaskRequest, MoveTaskRequest, PromoteChecklistItemRequest, PromotionDto,
         ReferenceDto, TaskBacklinkDto, TaskDto, TaskSummaryDto, UpdateChecklistItemRequest,
-        UpdateTaskRequest,
+        UpdateTaskRequest, WorkspaceTaskQueryParams,
     },
     dtos::documents::ActorDto,
-    pagination::{Cursor, Page},
+    pagination::{Cursor, Page, SearchCursor, SortKey},
 };
 use atlas_domain::{
     Actor, WorkspaceCtx,
@@ -25,6 +25,7 @@ use atlas_domain::{
         AssigneeRef, NewTask, NewTaskChecklistItem, NewTaskReference, PositionBetween, Priority,
         Task, TaskActivity, TaskAssignee, TaskChecklistItem, TaskPatch, TaskReference,
     },
+    entities::task_views::{ActorTypeFilter, AssigneeFilter, TaskSort, TaskViewFilters},
     ids::{
         ApiKeyId, BoardId, ChecklistItemId, ColumnId, DocumentId, TaskActivityId, TaskId,
         TaskReferenceId, UserId,
@@ -34,7 +35,8 @@ use atlas_domain::{
 
 use crate::{
     authz::{
-        Authorized, BoardRes, EditorMin, MinRole, TaskRes, ViewerMin, authorize_board_destination,
+        Authorized, BoardRes, EditorMin, MinRole, TaskRes, ViewerMin, WorkspaceMember,
+        authorize_board_destination,
     },
     error::ApiError,
     persistence::repos::{
@@ -1708,4 +1710,246 @@ pub(crate) async fn list_activity(
 
     let dtos = entries.into_iter().map(activity_to_dto).collect();
     Ok(Json(Page::new(dtos, next_cursor, has_more)))
+}
+
+// ---------------------------------------------------------------------------
+// GET /v1/workspaces/{ws}/tasks
+// ---------------------------------------------------------------------------
+
+#[utoipa::path(
+    get,
+    path = "/v1/workspaces/{ws}/tasks",
+    tag = "tasks",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+        ("assignee" = Option<String>, Query, description = "Assignee filter: 'me', 'user:{uuid}', or 'api_key:{uuid}'"),
+        ("actor" = Option<String>, Query, description = "Actor type filter: 'user' or 'api_key'"),
+        ("column_id" = Option<String>, Query, description = "Filter by column id (repeat for multiple)"),
+        ("priority" = Option<String>, Query, description = "Filter by priority (repeat for multiple)"),
+        ("label" = Option<String>, Query, description = "Filter by label (repeat for multiple)"),
+        ("board_id" = Option<String>, Query, description = "Filter by board id"),
+        ("sort" = Option<String>, Query, description = "Sort order: updated_at_desc (default), updated_at_asc, created_at_desc, created_at_asc, priority_desc, title_asc"),
+        ("cursor" = Option<String>, Query, description = "Pagination cursor (34-char base64url)"),
+        ("limit" = Option<u32>, Query, description = "Page size (max 200, default 50)"),
+    ),
+    responses(
+        (status = 200, description = "Paginated workspace task list", body = Page<TaskSummaryDto>),
+        (status = 400, description = "Invalid query parameter (e.g. unknown sort)"),
+        (status = 401, description = "Unauthenticated"),
+        (status = 404, description = "Workspace not found or caller is not a member"),
+    )
+)]
+pub(crate) async fn list_workspace_tasks(
+    member: WorkspaceMember,
+    State(state): State<AppState>,
+    axum::extract::RawQuery(raw_query): axum::extract::RawQuery,
+) -> Result<Json<Page<TaskSummaryDto>>, ApiError> {
+    let q = parse_workspace_task_query(raw_query.as_deref().unwrap_or(""))?;
+
+    let actor = match (&member.user, &member.api_key_id) {
+        (Some(user), _) => Actor::User(user.id),
+        (None, Some(key_id)) => Actor::ApiKey(*key_id),
+        (None, None) => return Err(ApiError::Unauthorized),
+    };
+
+    let limit = q.limit.unwrap_or(50).clamp(1, 200) as u64;
+
+    let sort = q
+        .sort
+        .as_deref()
+        .map(|s| {
+            TaskSort::from_param_str(s).ok_or_else(|| ApiError::BadRequest {
+                message: format!("invalid sort key '{s}'"),
+            })
+        })
+        .transpose()?;
+
+    let priorities = q
+        .priorities
+        .iter()
+        .map(|p| {
+            p.parse::<Priority>().map_err(|_| ApiError::InvalidInput {
+                message: format!("invalid priority '{p}'"),
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let column_ids = q
+        .column_ids
+        .iter()
+        .map(|s| {
+            s.parse::<uuid::Uuid>()
+                .map(atlas_domain::ids::ColumnId)
+                .map_err(|_| ApiError::InvalidInput {
+                    message: format!("invalid column_id '{s}'"),
+                })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let board_id = q
+        .board_id
+        .as_deref()
+        .map(|s| {
+            s.parse::<uuid::Uuid>()
+                .map(atlas_domain::ids::BoardId)
+                .map_err(|_| ApiError::InvalidInput {
+                    message: format!("invalid board_id '{s}'"),
+                })
+        })
+        .transpose()?;
+
+    let assignee = q
+        .assignee
+        .as_deref()
+        .map(parse_workspace_assignee_filter)
+        .transpose()?;
+
+    let actor_type = q
+        .actor
+        .as_deref()
+        .map(|s| match s {
+            "user" => Ok(ActorTypeFilter::User),
+            "api_key" => Ok(ActorTypeFilter::ApiKey),
+            other => Err(ApiError::InvalidInput {
+                message: format!("invalid actor filter '{other}'; must be 'user' or 'api_key'"),
+            }),
+        })
+        .transpose()?;
+
+    let after = q
+        .cursor
+        .as_deref()
+        .map(|s| {
+            SearchCursor::decode(s).ok_or_else(|| ApiError::InvalidInput {
+                message: "invalid cursor".to_string(),
+            })
+        })
+        .transpose()?
+        .map(|sc| {
+            let micros = match sc.key {
+                SortKey::Updated(m) => m,
+                SortKey::Relevance(_) => {
+                    return Err(ApiError::InvalidInput {
+                        message: "cursor sort key is not compatible with task listing".to_string(),
+                    });
+                }
+            };
+            Ok(atlas_domain::ports::boards_tasks::TaskListCursor {
+                sort_value: serde_json::Value::Number(micros.into()),
+                id: atlas_domain::ids::TaskId(sc.id),
+            })
+        })
+        .transpose()?;
+
+    let filters = TaskViewFilters {
+        sort,
+        priorities,
+        column_ids,
+        labels: q.labels,
+        board_id,
+        assignee,
+        actor_type,
+    };
+
+    let ctx = WorkspaceCtx::new(member.workspace.id, actor);
+    let repo = PgTaskRepo::new((*state.db).clone());
+
+    let mut tasks = repo
+        .list_by_workspace_filtered(&ctx, &filters, after, limit + 1)
+        .await
+        .map_err(ApiError::Domain)?;
+
+    let has_more = tasks.len() > limit as usize;
+    if has_more {
+        tasks.truncate(limit as usize);
+    }
+
+    let next_cursor = if has_more {
+        tasks.last().map(|t| SearchCursor {
+            key: SortKey::Updated(t.updated_at.timestamp_micros()),
+            id: t.id.0,
+        })
+    } else {
+        None
+    };
+
+    let mut assignees_by_task = board_assignees_by_task(&state, &ctx, &tasks).await?;
+
+    let dtos = tasks
+        .into_iter()
+        .map(|t| TaskSummaryDto {
+            id: t.id.0,
+            readable_id: t.readable_id,
+            column_id: t.column_id.0,
+            title: t.title,
+            priority: t.priority.map(|p| p.as_str().to_string()),
+            estimate: t.estimate,
+            labels: t.labels,
+            assignees: assignees_by_task.remove(&t.id.0).unwrap_or_default(),
+            updated_at: t.updated_at,
+        })
+        .collect();
+
+    Ok(Json(Page::new_search(dtos, next_cursor, has_more)))
+}
+
+/// Parses the raw query string for `GET /v1/workspaces/{ws}/tasks`.
+///
+/// Uses `form_urlencoded` directly to support repeated params (e.g.
+/// `?column_id=x&column_id=y`) which `serde_urlencoded` does not handle for
+/// `Vec<T>` fields.
+fn parse_workspace_task_query(raw: &str) -> Result<WorkspaceTaskQueryParams, ApiError> {
+    let mut q = WorkspaceTaskQueryParams::default();
+    for pair in raw.split('&').filter(|s| !s.is_empty()) {
+        let (key, val) = pair.split_once('=').unwrap_or((pair, ""));
+        // Decode `+` as space (form-urlencoded convention). Full percent-decoding
+        // is not needed here because all expected values are ASCII-safe (UUIDs,
+        // slugs, sort keys, simple labels). A label with non-ASCII chars would
+        // arrive as a percent-encoded value; those cases are handled server-side
+        // by treating the raw encoded form as the label string.
+        let val = val.replace('+', " ");
+        match key {
+            "assignee" => q.assignee = Some(val),
+            "actor" => q.actor = Some(val),
+            "column_id" => q.column_ids.push(val),
+            "priority" => q.priorities.push(val),
+            "label" => q.labels.push(val),
+            "board_id" => q.board_id = Some(val),
+            "sort" => q.sort = Some(val),
+            "cursor" => q.cursor = Some(val),
+            "limit" => {
+                q.limit = val.parse::<u32>().ok();
+            }
+            _ => {}
+        }
+    }
+    Ok(q)
+}
+
+fn parse_workspace_assignee_filter(s: &str) -> Result<AssigneeFilter, ApiError> {
+    if s == "me" {
+        return Ok(AssigneeFilter::Me);
+    }
+    if let Some(rest) = s.strip_prefix("user:") {
+        let id = rest
+            .parse::<uuid::Uuid>()
+            .map_err(|_| ApiError::InvalidInput {
+                message: format!("invalid assignee user uuid: {rest}"),
+            })?;
+        return Ok(AssigneeFilter::User(UserId(id)));
+    }
+    if let Some(rest) = s.strip_prefix("api_key:") {
+        let id = rest
+            .parse::<uuid::Uuid>()
+            .map_err(|_| ApiError::InvalidInput {
+                message: format!("invalid assignee api_key uuid: {rest}"),
+            })?;
+        return Ok(AssigneeFilter::ApiKey(ApiKeyId(id)));
+    }
+    Err(ApiError::InvalidInput {
+        message: format!(
+            "invalid assignee filter '{s}'; must be 'me', 'user:{{uuid}}', or 'api_key:{{uuid}}'"
+        ),
+    })
 }

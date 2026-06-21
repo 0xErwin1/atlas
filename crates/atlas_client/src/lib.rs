@@ -14,6 +14,7 @@ use atlas_api::{
             MoveTaskRequest, PromoteChecklistItemRequest, PromotionDto, ReferenceDto,
             TaskBacklinkDto, TaskDto, TaskSummaryDto, UpdateBoardRequest,
             UpdateChecklistItemRequest, UpdateColumnRequest, UpdateTaskRequest,
+            WorkspaceTaskQueryParams,
         },
         documents::{
             AttachmentDto, BacklinkDto, ConflictProblemDto, CopyDocumentRequest,
@@ -1313,6 +1314,17 @@ impl AtlasClient {
         self.decode_response(response, "list_tasks").await
     }
 
+    /// `GET /v1/workspaces/{ws}/tasks`
+    pub async fn list_workspace_tasks(
+        &self,
+        ws: &str,
+        query: &WorkspaceTaskQueryParams,
+    ) -> Result<Page<TaskSummaryDto>, ClientError> {
+        let path = build_workspace_tasks_path(ws, query);
+        let response = self.get(&path).send().await?;
+        self.decode_response(response, "list_workspace_tasks").await
+    }
+
     /// `GET /v1/workspaces/{ws}/tasks/{readable_id}`
     pub async fn get_task(&self, ws: &str, readable_id: &str) -> Result<TaskDto, ClientError> {
         let response = self
@@ -1723,6 +1735,45 @@ fn encode_query_value(s: &str) -> String {
             }
         })
         .collect()
+}
+
+fn build_workspace_tasks_path(ws: &str, q: &WorkspaceTaskQueryParams) -> String {
+    let base = format!("/v1/workspaces/{ws}/tasks");
+    let mut params: Vec<String> = Vec::new();
+
+    if let Some(a) = &q.assignee {
+        params.push(format!("assignee={a}"));
+    }
+    if let Some(a) = &q.actor {
+        params.push(format!("actor={a}"));
+    }
+    for col in &q.column_ids {
+        params.push(format!("column_id={col}"));
+    }
+    for pri in &q.priorities {
+        params.push(format!("priority={pri}"));
+    }
+    for lbl in &q.labels {
+        params.push(format!("label={lbl}"));
+    }
+    if let Some(b) = &q.board_id {
+        params.push(format!("board_id={b}"));
+    }
+    if let Some(s) = &q.sort {
+        params.push(format!("sort={s}"));
+    }
+    if let Some(c) = &q.cursor {
+        params.push(format!("cursor={c}"));
+    }
+    if let Some(l) = q.limit {
+        params.push(format!("limit={l}"));
+    }
+
+    if params.is_empty() {
+        base
+    } else {
+        format!("{}?{}", base, params.join("&"))
+    }
 }
 
 fn build_paginated_path(base: &str, cursor: Option<&str>, limit: Option<u32>) -> String {

@@ -7,14 +7,16 @@ use atlas_domain::{
         TaskActivity, TaskAssignee, TaskChecklistItem, TaskChecklistItemPatch, TaskPatch,
         TaskReference,
     },
+    entities::task_views::{ActorTypeFilter, AssigneeFilter, TaskSort, TaskViewFilters},
     ids::{BoardId, ChecklistItemId, ColumnId, ProjectId, TaskActivityId, TaskId, TaskReferenceId},
+    ports::boards_tasks::TaskListCursor,
     position,
 };
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection,
-    EntityTrait, IntoActiveModel, Order, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
-    Statement, TransactionTrait,
+    EntityTrait, FromQueryResult, IntoActiveModel, Order, PaginatorTrait, QueryFilter, QueryOrder,
+    QuerySelect, Statement, TransactionTrait,
 };
 
 use crate::persistence::entities::boards_tasks::{
@@ -663,6 +665,202 @@ impl TaskRepo for PgTaskRepo {
 
     async fn soft_delete(&self, ctx: &WorkspaceCtx, id: TaskId) -> Result<(), DomainError> {
         PgTaskRepo::soft_delete_in(&self.conn, ctx, id).await
+    }
+
+    async fn list_by_workspace_filtered(
+        &self,
+        ctx: &WorkspaceCtx,
+        filters: &TaskViewFilters,
+        after: Option<TaskListCursor>,
+        limit: u64,
+    ) -> Result<Vec<Task>, DomainError> {
+        use chrono::{TimeZone, Utc};
+
+        let mut values: Vec<sea_orm::Value> = Vec::new();
+
+        // $1 — workspace_id (always-on predicate)
+        values.push(ctx.workspace_id.0.into());
+
+        let mut clauses: Vec<String> = Vec::new();
+
+        // Optional filter: board_id
+        if let Some(board_id) = &filters.board_id {
+            values.push(board_id.0.into());
+            clauses.push(format!("t.board_id = ${}", values.len()));
+        }
+
+        // Optional filter: column_ids — expanded to OR conditions over individual params
+        if !filters.column_ids.is_empty() {
+            let mut parts = Vec::new();
+            for col_id in &filters.column_ids {
+                values.push(col_id.0.into());
+                parts.push(format!("t.column_id = ${}", values.len()));
+            }
+            clauses.push(format!("({})", parts.join(" OR ")));
+        }
+
+        // Optional filter: priorities — expanded to OR conditions over individual params
+        if !filters.priorities.is_empty() {
+            let mut parts = Vec::new();
+            for priority in &filters.priorities {
+                values.push(priority.as_str().to_string().into());
+                parts.push(format!("t.priority = ${}", values.len()));
+            }
+            clauses.push(format!("({})", parts.join(" OR ")));
+        }
+
+        // Optional filter: labels (array-contains all requested labels)
+        for label in &filters.labels {
+            values.push(label.clone().into());
+            clauses.push(format!("${} = ANY(t.labels)", values.len()));
+        }
+
+        // Optional filter: actor_type (which column created_by_* is non-null)
+        if let Some(actor_type) = &filters.actor_type {
+            let cond = match actor_type {
+                ActorTypeFilter::User => "t.created_by_user_id IS NOT NULL",
+                ActorTypeFilter::ApiKey => "t.created_by_api_key_id IS NOT NULL",
+            };
+            clauses.push(cond.to_string());
+        }
+
+        // Optional filter: assignee EXISTS subquery
+        if let Some(assignee) = &filters.assignee {
+            let exists_cond = match assignee {
+                AssigneeFilter::Me => match &ctx.actor {
+                    Actor::User(uid) => {
+                        values.push(uid.0.into());
+                        let pn = values.len();
+                        format!(
+                            "EXISTS (
+                                    SELECT 1 FROM task_assignees ta
+                                    WHERE ta.task_id = t.id
+                                      AND ta.workspace_id = t.workspace_id
+                                      AND ta.assignee_user_id = ${pn}
+                                )"
+                        )
+                    }
+                    Actor::ApiKey(kid) => {
+                        values.push(kid.0.into());
+                        let pn = values.len();
+                        format!(
+                            "EXISTS (
+                                    SELECT 1 FROM task_assignees ta
+                                    WHERE ta.task_id = t.id
+                                      AND ta.workspace_id = t.workspace_id
+                                      AND ta.assignee_api_key_id = ${pn}
+                                )"
+                        )
+                    }
+                },
+                AssigneeFilter::User(uid) => {
+                    values.push(uid.0.into());
+                    let pn = values.len();
+                    format!(
+                        "EXISTS (
+                            SELECT 1 FROM task_assignees ta
+                            WHERE ta.task_id = t.id
+                              AND ta.workspace_id = t.workspace_id
+                              AND ta.assignee_user_id = ${pn}
+                        )"
+                    )
+                }
+                AssigneeFilter::ApiKey(kid) => {
+                    values.push(kid.0.into());
+                    let pn = values.len();
+                    format!(
+                        "EXISTS (
+                            SELECT 1 FROM task_assignees ta
+                            WHERE ta.task_id = t.id
+                              AND ta.workspace_id = t.workspace_id
+                              AND ta.assignee_api_key_id = ${pn}
+                        )"
+                    )
+                }
+            };
+            clauses.push(exists_cond);
+        }
+
+        // Keyset pagination: (updated_at, id) < ($ts, $id) for DESC ordering
+        let cursor_cond = if let Some(ref cursor) = after {
+            let micros = match &cursor.sort_value {
+                serde_json::Value::Number(n) => {
+                    n.as_i64().ok_or_else(|| DomainError::Internal {
+                        message: "cursor sort_value is not a valid i64".to_string(),
+                    })?
+                }
+                other => {
+                    return Err(DomainError::Internal {
+                        message: format!("unexpected cursor sort_value type: {other:?}"),
+                    });
+                }
+            };
+            let ts =
+                Utc.timestamp_micros(micros)
+                    .single()
+                    .ok_or_else(|| DomainError::Internal {
+                        message: format!("cursor timestamp {micros} is out of range"),
+                    })?;
+            values.push(ts.into());
+            let pts = values.len();
+            values.push(cursor.id.0.into());
+            let pid = values.len();
+            format!("AND (t.updated_at, t.id) < (${pts}, ${pid})")
+        } else {
+            String::new()
+        };
+
+        // ORDER BY is determined exclusively by the sort enum — no user strings ever
+        // reach the query. Unknown sort values are rejected at the route layer (→ 400)
+        // before this method is called.
+        let order_clause = match filters.sort.as_ref().unwrap_or(&TaskSort::UpdatedDesc) {
+            TaskSort::UpdatedDesc => "ORDER BY t.updated_at DESC, t.id DESC",
+            TaskSort::UpdatedAsc => "ORDER BY t.updated_at ASC, t.id ASC",
+            TaskSort::CreatedDesc => "ORDER BY t.created_at DESC, t.id DESC",
+            TaskSort::CreatedAsc => "ORDER BY t.created_at ASC, t.id ASC",
+            TaskSort::PriorityDesc => {
+                "ORDER BY CASE t.priority \
+                    WHEN 'urgent' THEN 1 \
+                    WHEN 'high' THEN 2 \
+                    WHEN 'medium' THEN 3 \
+                    WHEN 'low' THEN 4 \
+                    ELSE 5 END ASC, t.id ASC"
+            }
+            TaskSort::TitleAsc => "ORDER BY t.title ASC, t.id ASC",
+        };
+
+        let extra_where = if clauses.is_empty() {
+            String::new()
+        } else {
+            format!("AND {}", clauses.join("\n  AND "))
+        };
+
+        values.push((limit as i64).into());
+        let limit_param = values.len();
+
+        let sql = format!(
+            r#"
+            SELECT t.*
+            FROM tasks t
+            WHERE t.workspace_id = $1
+              AND t.parent_task_id IS NULL
+              AND t.deleted_at IS NULL
+              {extra_where}
+              {cursor_cond}
+            {order_clause}
+            LIMIT ${limit_param}
+            "#
+        );
+
+        task::Model::find_by_statement(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            sql,
+            values,
+        ))
+        .all(&self.conn)
+        .await
+        .map(|rows| rows.into_iter().map(task_from).collect())
+        .map_err(db_err)
     }
 }
 

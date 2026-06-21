@@ -89,6 +89,7 @@ use atlas_api::{
         crate::routes::boards::delete_column,
         crate::routes::tasks::create_task,
         crate::routes::tasks::list_tasks,
+        crate::routes::tasks::list_workspace_tasks,
         crate::routes::tasks::get_task,
         crate::routes::tasks::update_task,
         crate::routes::tasks::delete_task,
