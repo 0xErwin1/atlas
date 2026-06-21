@@ -238,6 +238,8 @@ pub(crate) async fn me(
 pub(crate) async fn change_password(
     State(state): State<AppState>,
     Extension(principal): Extension<Principal>,
+    headers: axum::http::HeaderMap,
+    jar: CookieJar,
     Json(body): Json<ChangePasswordRequest>,
 ) -> Result<StatusCode, ApiError> {
     let Principal::User(user_id) = principal else {
@@ -247,6 +249,9 @@ pub(crate) async fn change_password(
     };
 
     let user_repo = PgUserRepo {
+        conn: (*state.db).clone(),
+    };
+    let session_repo = PgSessionRepo {
         conn: (*state.db).clone(),
     };
 
@@ -278,6 +283,31 @@ pub(crate) async fn change_password(
         .map_err(|e| ApiError::Internal {
             message: e.to_string(),
         })?;
+
+    // Resolve the calling session so we can keep it alive while revoking all
+    // others. A stolen session token that survives a self password-change is a
+    // security gap — we close it here.
+    let bearer_token = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .map(|t| t.to_owned());
+
+    let raw_token = jar
+        .get("atlas_session")
+        .map(|c| c.value().to_owned())
+        .or(bearer_token);
+
+    if let Some(raw) = raw_token {
+        let hash = hash_token(&raw);
+        if let Ok(Some(session)) = session_repo.find_active_by_token_hash(&hash).await
+            && let Err(e) = session_repo
+                .revoke_all_for_user_except(user_id, session.id)
+                .await
+        {
+            tracing::warn!(error = %e, "change_password: failed to revoke other sessions");
+        }
+    }
 
     Ok(StatusCode::NO_CONTENT)
 }

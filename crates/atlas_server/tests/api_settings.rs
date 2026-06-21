@@ -440,6 +440,58 @@ async fn reset_password_rejects_non_admin() {
 }
 
 #[tokio::test]
+async fn change_password_revokes_other_sessions() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (session_a, _, _) = login_user_with_workspace(&server, &db, "pw-revoke-sessions").await;
+
+    // Log in a second independent session for the same user.
+    let mut session_b = AtlasClient::new(server.base_url().to_string());
+    session_b
+        .login(LoginRequest {
+            username: "pw-revoke-sessions".to_string(),
+            password: "TestPassword1!".to_string(),
+        })
+        .await
+        .expect("second login");
+
+    // Both sessions are active before the password change.
+    session_a
+        .me()
+        .await
+        .expect("session_a active before change");
+    session_b
+        .me()
+        .await
+        .expect("session_b active before change");
+
+    // Session A changes the password.
+    session_a
+        .change_password(ChangePasswordRequest {
+            current_password: "TestPassword1!".to_string(),
+            new_password: "NewSecurePass2@".to_string(),
+        })
+        .await
+        .expect("change_password");
+
+    // Session B (the other session) must now be revoked.
+    let after_b = session_b.me().await;
+    assert!(
+        matches!(after_b, Err(atlas_client::ClientError::Api(ref p)) if p.status == 401),
+        "session_b must be revoked after password change, got {after_b:?}"
+    );
+
+    // Session A (the calling session) must still be alive.
+    session_a
+        .me()
+        .await
+        .expect("session_a must survive its own password change");
+
+    db.teardown().await;
+}
+
+#[tokio::test]
 async fn meta_returns_the_crate_version() {
     let db = TestDb::create().await.expect("TestDb::create");
     let server = TestServer::spawn(&db).await;

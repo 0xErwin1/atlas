@@ -54,6 +54,14 @@ pub trait SessionRepo: Send + Sync {
     async fn revoke(&self, id: SessionId) -> Result<(), DomainError>;
     /// Revoke all active sessions for a user (used when disabling a user).
     async fn revoke_all_for_user(&self, user_id: UserId) -> Result<(), DomainError>;
+    /// Revoke all active sessions for a user except the one the caller is currently
+    /// authenticated with. Used on self password-change so stolen tokens are
+    /// invalidated while the performing session stays alive.
+    async fn revoke_all_for_user_except(
+        &self,
+        user_id: UserId,
+        keep_session_id: SessionId,
+    ) -> Result<(), DomainError>;
     /// Update last_used_at and slide expires_at by ttl_hours, capped at created_at + max_ttl_hours.
     /// Throttled: only writes if last_used_at is older than 60 seconds.
     async fn touch(

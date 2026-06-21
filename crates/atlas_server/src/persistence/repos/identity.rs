@@ -363,6 +363,25 @@ impl SessionRepo for PgSessionRepo {
         Ok(())
     }
 
+    async fn revoke_all_for_user_except(
+        &self,
+        user_id: UserId,
+        keep_session_id: SessionId,
+    ) -> Result<(), DomainError> {
+        use sea_orm::ConnectionTrait;
+        self.conn
+            .execute_raw(sea_orm::Statement::from_sql_and_values(
+                sea_orm::DatabaseBackend::Postgres,
+                "UPDATE sessions SET revoked_at = now()
+                 WHERE user_id = $1 AND id <> $2
+                   AND revoked_at IS NULL AND expires_at > now()",
+                [user_id.0.into(), keep_session_id.0.into()],
+            ))
+            .await
+            .map_err(db_err)?;
+        Ok(())
+    }
+
     async fn touch(
         &self,
         id: SessionId,
