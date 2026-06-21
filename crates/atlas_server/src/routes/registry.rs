@@ -612,4 +612,35 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/v1/workspaces/{ws}/saved-searches/{id}"),
     },
+    // ---- Task views ----
+    RouteEntry {
+        method: "GET",
+        path_template: "/v1/workspaces/{ws}/task-views",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/task-views"),
+    },
+    RouteEntry {
+        method: "POST",
+        path_template: "/v1/workspaces/{ws}/task-views",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/task-views"),
+    },
+    RouteEntry {
+        method: "GET",
+        path_template: "/v1/workspaces/{ws}/task-views/00000000-0000-0000-0000-000000000001",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/task-views/{id}"),
+    },
+    RouteEntry {
+        method: "PATCH",
+        path_template: "/v1/workspaces/{ws}/task-views/00000000-0000-0000-0000-000000000001",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/task-views/{id}"),
+    },
+    RouteEntry {
+        method: "DELETE",
+        path_template: "/v1/workspaces/{ws}/task-views/00000000-0000-0000-0000-000000000001",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/task-views/{id}"),
+    },
 ];

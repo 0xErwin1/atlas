@@ -43,3 +43,7 @@ mod saved_searches;
 pub use saved_searches::{PgSavedSearchRepo, SavedSearchRepo};
 pub use search::PgSearchRepo;
 pub use tags::{PgTagRepo, TagRepo};
+#[allow(unreachable_pub)]
+mod task_views;
+
+pub use task_views::{PgTaskViewRepo, TaskViewRepo};

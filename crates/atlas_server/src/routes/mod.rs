@@ -12,6 +12,7 @@ pub mod registry;
 pub(crate) mod saved_searches;
 pub(crate) mod search;
 pub(crate) mod tags;
+pub(crate) mod task_views;
 pub(crate) mod tasks;
 pub(crate) mod ui_state;
 pub(crate) mod users;

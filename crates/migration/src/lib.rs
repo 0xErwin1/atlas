@@ -14,6 +14,7 @@ pub mod m20260618_000011_user_ui_state;
 pub mod m20260619_000012_task_parent;
 pub mod m20260620_000013_tags;
 pub mod m20260620_000014_saved_searches;
+pub mod m20260621_000015_task_views;
 
 use sea_orm_migration::prelude::*;
 
@@ -37,6 +38,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260619_000012_task_parent::Migration),
             Box::new(m20260620_000013_tags::Migration),
             Box::new(m20260620_000014_saved_searches::Migration),
+            Box::new(m20260621_000015_task_views::Migration),
         ]
     }
 }

@@ -1,4 +1,5 @@
 use crate::error::ApiError;
+use atlas_api::dtos::task_views::TaskViewFiltersDto;
 
 const MAX_NAME_LEN: usize = 200;
 const MAX_DESC_LEN: usize = 20_000;
@@ -94,4 +95,60 @@ pub(crate) fn validate_description(value: &str) -> Result<(), ApiError> {
 /// 2 000-character upper bound is enforced.
 pub(crate) fn validate_query(value: &str) -> Result<(), ApiError> {
     validate_long_text("query", value, MAX_QUERY_LEN)
+}
+
+const VALID_SORT_KEYS: &[&str] = &[
+    "updated_at_desc",
+    "updated_at_asc",
+    "created_at_desc",
+    "created_at_asc",
+    "priority_desc",
+    "title_asc",
+];
+
+const VALID_PRIORITIES: &[&str] = &["low", "medium", "high", "urgent"];
+const MAX_FILTER_COLLECTION_SIZE: usize = 50;
+
+/// Validates the filters object for a task view.
+///
+/// Enforces: known sort key, collection sizes ≤ 50 (column_ids, labels, priorities),
+/// and that all priority strings are from the known set.
+pub(crate) fn validate_task_view_filters(filters: &TaskViewFiltersDto) -> Result<(), ApiError> {
+    if let Some(sort) = &filters.sort
+        && !VALID_SORT_KEYS.contains(&sort.as_str())
+    {
+        return Err(ApiError::InvalidInput {
+            message: format!("sort must be one of: {}", VALID_SORT_KEYS.join(", ")),
+        });
+    }
+
+    if filters.priorities.len() > MAX_FILTER_COLLECTION_SIZE {
+        return Err(ApiError::InvalidInput {
+            message: format!("priorities must not exceed {MAX_FILTER_COLLECTION_SIZE} entries"),
+        });
+    }
+
+    for p in &filters.priorities {
+        if !VALID_PRIORITIES.contains(&p.as_str()) {
+            return Err(ApiError::InvalidInput {
+                message: format!(
+                    "invalid priority '{p}'; must be one of: low, medium, high, urgent"
+                ),
+            });
+        }
+    }
+
+    if filters.column_ids.len() > MAX_FILTER_COLLECTION_SIZE {
+        return Err(ApiError::InvalidInput {
+            message: format!("column_ids must not exceed {MAX_FILTER_COLLECTION_SIZE} entries"),
+        });
+    }
+
+    if filters.labels.len() > MAX_FILTER_COLLECTION_SIZE {
+        return Err(ApiError::InvalidInput {
+            message: format!("labels must not exceed {MAX_FILTER_COLLECTION_SIZE} entries"),
+        });
+    }
+
+    Ok(())
 }

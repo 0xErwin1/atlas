@@ -31,7 +31,7 @@ pub use error::{DomainError, RevisionConflict};
 pub use ids::{
     ApiKeyId, AttachmentId, BoardId, ChecklistItemId, ColumnId, DocumentId, FolderId, MembershipId,
     ProjectId, PropertyDefinitionId, RevisionId, SavedSearchId, SessionId, TagId, TaskActivityId,
-    TaskId, TaskReferenceId, UserId, WorkspaceId,
+    TaskId, TaskReferenceId, TaskViewId, UserId, WorkspaceId,
 };
 
 pub trait HealthProbe {

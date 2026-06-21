@@ -142,6 +142,18 @@ pub fn app(state: AppState) -> Router {
             axum::routing::patch(routes::saved_searches::rename_saved_search)
                 .delete(routes::saved_searches::delete_saved_search),
         )
+        // Task views (per-owner personal filter views)
+        .route(
+            "/v1/workspaces/{ws}/task-views",
+            axum::routing::get(routes::task_views::list_task_views)
+                .post(routes::task_views::create_task_view),
+        )
+        .route(
+            "/v1/workspaces/{ws}/task-views/{id}",
+            axum::routing::get(routes::task_views::get_task_view)
+                .patch(routes::task_views::update_task_view)
+                .delete(routes::task_views::delete_task_view),
+        )
         // Boards
         .route(
             "/v1/workspaces/{ws}/projects/{project_slug}/boards",

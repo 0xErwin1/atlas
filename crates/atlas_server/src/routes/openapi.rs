@@ -30,6 +30,9 @@ use atlas_api::{
         saved_searches::{CreateSavedSearchRequest, RenameSavedSearchRequest, SavedSearchDto},
         search::{SearchHitDto, SearchKindDto},
         tags::{CreateTagRequest, TagDto},
+        task_views::{
+            CreateTaskViewRequest, TaskViewDto, TaskViewFiltersDto, UpdateTaskViewRequest,
+        },
     },
     problem::ProblemDetails,
 };
@@ -136,6 +139,11 @@ use atlas_api::{
         crate::routes::saved_searches::create_saved_search,
         crate::routes::saved_searches::rename_saved_search,
         crate::routes::saved_searches::delete_saved_search,
+        crate::routes::task_views::list_task_views,
+        crate::routes::task_views::create_task_view,
+        crate::routes::task_views::get_task_view,
+        crate::routes::task_views::update_task_view,
+        crate::routes::task_views::delete_task_view,
     ),
     components(schemas(
         LoginRequest,
@@ -213,6 +221,10 @@ use atlas_api::{
         SavedSearchDto,
         CreateSavedSearchRequest,
         RenameSavedSearchRequest,
+        TaskViewDto,
+        TaskViewFiltersDto,
+        CreateTaskViewRequest,
+        UpdateTaskViewRequest,
     )),
     tags(
         (name = "auth", description = "Authentication and session management"),
@@ -230,6 +242,7 @@ use atlas_api::{
         (name = "search", description = "Unified full-text search"),
         (name = "tags", description = "Workspace tag registry"),
         (name = "saved-searches", description = "Per-owner saved search registry"),
+        (name = "task-views", description = "Per-owner task filter views"),
     )
 )]
 pub(crate) struct ApiDoc;

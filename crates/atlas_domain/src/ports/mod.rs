@@ -6,4 +6,5 @@ pub mod permission_grant_repo;
 pub mod saved_searches;
 pub mod search;
 pub mod tags;
+pub mod task_views;
 pub mod workspace_core;

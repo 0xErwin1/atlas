@@ -4,6 +4,7 @@ pub mod folders;
 pub mod saved_searches;
 pub mod search;
 pub mod tags;
+pub mod task_views;
 
 use serde::{Deserialize, Serialize};
 

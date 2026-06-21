@@ -28,6 +28,7 @@ use atlas_api::{
         saved_searches::{CreateSavedSearchRequest, RenameSavedSearchRequest, SavedSearchDto},
         search::SearchHitDto,
         tags::{CreateTagRequest, TagDto},
+        task_views::{CreateTaskViewRequest, TaskViewDto, UpdateTaskViewRequest},
     },
     pagination::Page,
     problem::ProblemDetails,
@@ -1151,6 +1152,76 @@ impl AtlasClient {
     pub async fn delete_saved_search(&self, ws: &str, id: uuid::Uuid) -> Result<(), ClientError> {
         let response = self
             .delete(&format!("/v1/workspaces/{ws}/saved-searches/{id}"))
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        if response.status().is_success() {
+            return Ok(());
+        }
+        let problem: ProblemDetails = response
+            .json()
+            .await
+            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
+        Err(ClientError::Api(problem))
+    }
+
+    /// `GET /v1/workspaces/{ws}/task-views`
+    pub async fn list_task_views(&self, ws: &str) -> Result<Vec<TaskViewDto>, ClientError> {
+        let response = self
+            .get(&format!("/v1/workspaces/{ws}/task-views"))
+            .send()
+            .await?;
+        self.decode_response(response, "list_task_views").await
+    }
+
+    /// `POST /v1/workspaces/{ws}/task-views`
+    pub async fn create_task_view(
+        &self,
+        ws: &str,
+        body: CreateTaskViewRequest,
+    ) -> Result<TaskViewDto, ClientError> {
+        let response = self
+            .post(&format!("/v1/workspaces/{ws}/task-views"))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "create_task_view").await
+    }
+
+    /// `GET /v1/workspaces/{ws}/task-views/{id}`
+    pub async fn get_task_view(
+        &self,
+        ws: &str,
+        id: uuid::Uuid,
+    ) -> Result<TaskViewDto, ClientError> {
+        let response = self
+            .get(&format!("/v1/workspaces/{ws}/task-views/{id}"))
+            .send()
+            .await?;
+        self.decode_response(response, "get_task_view").await
+    }
+
+    /// `PATCH /v1/workspaces/{ws}/task-views/{id}`
+    pub async fn update_task_view(
+        &self,
+        ws: &str,
+        id: uuid::Uuid,
+        body: UpdateTaskViewRequest,
+    ) -> Result<TaskViewDto, ClientError> {
+        let response = self
+            .patch(&format!("/v1/workspaces/{ws}/task-views/{id}"))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "update_task_view").await
+    }
+
+    /// `DELETE /v1/workspaces/{ws}/task-views/{id}`
+    pub async fn delete_task_view(&self, ws: &str, id: uuid::Uuid) -> Result<(), ClientError> {
+        let response = self
+            .delete(&format!("/v1/workspaces/{ws}/task-views/{id}"))
             .header("x-atlas-csrf", "1")
             .send()
             .await?;
