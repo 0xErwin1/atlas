@@ -1,9 +1,10 @@
 use crate::{
     DomainError, WorkspaceCtx,
     entities::boards_tasks::{
-        ActivityKind, Board, BoardColumn, NewBoard, NewTask, NewTaskActivity, NewTaskAssignee,
-        NewTaskChecklistItem, NewTaskReference, PositionBetween, Task, TaskActivity, TaskAssignee,
-        TaskChecklistItem, TaskChecklistItemPatch, TaskPatch, TaskReference,
+        ActivityKind, Board, BoardColumn, ColumnPatch, NewBoard, NewTask, NewTaskActivity,
+        NewTaskAssignee, NewTaskChecklistItem, NewTaskReference, PositionBetween, Task,
+        TaskActivity, TaskAssignee, TaskChecklistItem, TaskChecklistItemPatch, TaskPatch,
+        TaskReference,
     },
     entities::task_views::TaskViewFilters,
     ids::{BoardId, ChecklistItemId, ColumnId, ProjectId, TaskId, TaskReferenceId},
@@ -52,6 +53,7 @@ pub trait BoardRepo: Send + Sync {
         ctx: &WorkspaceCtx,
         board_id: BoardId,
         name: String,
+        color: Option<String>,
         position: PositionBetween,
     ) -> Result<BoardColumn, DomainError>;
 
@@ -79,14 +81,17 @@ pub trait BoardRepo: Send + Sync {
         name: String,
     ) -> Result<Board, DomainError>;
 
-    /// Renames a column. `board_id` is the authorized board; a column from a
-    /// different board in the same workspace resolves to `NotFound`.
+    /// Patches a column's name and/or color. `board_id` is the authorized board;
+    /// a column from a different board in the same workspace resolves to `NotFound`.
+    ///
+    /// `patch.name`: `None` = leave name unchanged; `Some(v)` = rename.
+    /// `patch.color`: `None` = leave color unchanged; `Some(None)` = clear; `Some(Some(v))` = set.
     async fn patch_column(
         &self,
         ctx: &WorkspaceCtx,
         board_id: BoardId,
         id: ColumnId,
-        name: String,
+        patch: ColumnPatch,
     ) -> Result<BoardColumn, DomainError>;
 
     async fn soft_delete_board(&self, ctx: &WorkspaceCtx, id: BoardId) -> Result<(), DomainError>;

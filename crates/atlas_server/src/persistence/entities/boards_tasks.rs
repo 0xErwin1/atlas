@@ -46,6 +46,7 @@ pub mod board_column {
         pub board_id: Uuid,
         pub name: String,
         pub position_key: String,
+        pub color: Option<String>,
         pub created_by_user_id: Option<Uuid>,
         pub created_by_api_key_id: Option<Uuid>,
         pub created_at: DateTime<Utc>,
@@ -223,6 +224,7 @@ pub fn board_column_from(m: board_column::Model) -> BoardColumn {
         board_id: BoardId(m.board_id),
         name: m.name,
         position_key: m.position_key,
+        color: m.color,
         created_by: actor_from_columns(m.created_by_user_id, m.created_by_api_key_id),
         created_at: m.created_at,
         updated_at: m.updated_at,
@@ -370,6 +372,27 @@ mod tests {
         let kid = Uuid::now_v7();
         let actor = actor_from_columns(None, Some(kid));
         assert!(matches!(actor, Actor::ApiKey(id) if id.0 == kid));
+    }
+
+    #[test]
+    fn board_column_from_maps_color() {
+        let now = chrono::Utc::now();
+        let uid = Uuid::now_v7();
+        let m = board_column::Model {
+            id: Uuid::now_v7(),
+            workspace_id: Uuid::now_v7(),
+            board_id: Uuid::now_v7(),
+            name: "Done".into(),
+            position_key: "80".into(),
+            color: Some("green".into()),
+            created_by_user_id: Some(uid),
+            created_by_api_key_id: None,
+            created_at: now,
+            updated_at: now,
+            deleted_at: None,
+        };
+        let col = board_column_from(m);
+        assert_eq!(col.color.as_deref(), Some("green"));
     }
 
     #[test]

@@ -40,6 +40,8 @@ pub struct ColumnDto {
     pub board_id: uuid::Uuid,
     pub name: String,
     pub position_key: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
@@ -245,10 +247,12 @@ pub struct UpdateBoardRequest {
 }
 
 /// Request body for `POST /v1/workspaces/{ws}/boards/{board_id}/columns`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct CreateColumnRequest {
     pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub before: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -256,10 +260,20 @@ pub struct CreateColumnRequest {
 }
 
 /// Request body for `PATCH /v1/workspaces/{ws}/boards/{board_id}/columns/{column_id}`.
+///
+/// Color uses the same `present_value` convention as `UpdateTaskRequest` fields:
+/// an absent `color` key leaves the color unchanged; explicit `null` clears it;
+/// a string value sets it. `name`, `before`, and `after` remain simple `Option<String>`.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct UpdateColumnRequest {
     pub name: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present_value"
+    )]
+    pub color: Option<serde_json::Value>,
     pub before: Option<String>,
     pub after: Option<String>,
 }

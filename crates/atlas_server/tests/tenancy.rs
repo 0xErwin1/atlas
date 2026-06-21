@@ -107,6 +107,7 @@ async fn task_repo_workspace_isolation() {
             &ctx_b,
             board_b.id,
             "Backlog".into(),
+            None,
             PositionBetween {
                 before: None,
                 after: None,
@@ -356,6 +357,7 @@ async fn task_reference_repo_workspace_isolation() {
             &ctx_b,
             board_b.id,
             "Backlog".into(),
+            None,
             PositionBetween {
                 before: None,
                 after: None,

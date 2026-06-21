@@ -150,6 +150,7 @@ async fn seed_project_and_board(
             ctx,
             board.id,
             "Backlog".to_string(),
+            None,
             PositionBetween {
                 before: None,
                 after: None,
@@ -665,6 +666,7 @@ async fn plain_member_task_visibility_follows_project() {
             &ctx_owner,
             private_board.id,
             "Backlog".to_string(),
+            None,
             PositionBetween {
                 before: None,
                 after: None,
@@ -1362,6 +1364,7 @@ async fn status_filter_narrows_tasks_by_column_name() {
             &ctx,
             board.id,
             "Done".to_string(),
+            None,
             PositionBetween {
                 before: None,
                 after: None,

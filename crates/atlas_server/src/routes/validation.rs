@@ -97,6 +97,25 @@ pub(crate) fn validate_query(value: &str) -> Result<(), ApiError> {
     validate_long_text("query", value, MAX_QUERY_LEN)
 }
 
+/// Valid swatch IDs, mirroring `apps/web/src/lib/swatches.ts`.
+const VALID_SWATCH_IDS: &[&str] = &[
+    "neutral", "blue", "green", "amber", "red", "magenta", "cyan",
+];
+
+/// Validates a color value against the known swatch-id set.
+///
+/// Rejects unknown ids so a bad client cannot store arbitrary strings in the DB.
+/// `None` is accepted (no color = use the default).
+pub(crate) fn validate_swatch(field: &str, id: &str) -> Result<(), ApiError> {
+    if VALID_SWATCH_IDS.contains(&id) {
+        return Ok(());
+    }
+
+    Err(ApiError::InvalidInput {
+        message: format!("{field} must be one of: {}", VALID_SWATCH_IDS.join(", ")),
+    })
+}
+
 const VALID_SORT_KEYS: &[&str] = &[
     "updated_at_desc",
     "updated_at_asc",

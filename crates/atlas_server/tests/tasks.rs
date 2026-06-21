@@ -66,7 +66,7 @@ async fn seed_column(
     position: PositionBetween,
 ) -> atlas_domain::entities::boards_tasks::BoardColumn {
     let repo = make_board_repo(db);
-    repo.add_column(ctx, board_id, name.into(), position)
+    repo.add_column(ctx, board_id, name.into(), None, position)
         .await
         .expect("seed column")
 }

@@ -127,6 +127,7 @@ async fn resequence_column_reorders_existing_keys() {
             &ctx,
             board.id,
             "A".into(),
+            None,
             PositionBetween {
                 before: None,
                 after: None,
@@ -139,6 +140,7 @@ async fn resequence_column_reorders_existing_keys() {
             &ctx,
             board.id,
             "B".into(),
+            None,
             PositionBetween {
                 before: Some(col_a.position_key.clone()),
                 after: None,
@@ -151,6 +153,7 @@ async fn resequence_column_reorders_existing_keys() {
             &ctx,
             board.id,
             "C".into(),
+            None,
             PositionBetween {
                 before: Some(col_b.position_key.clone()),
                 after: None,
@@ -207,6 +210,7 @@ async fn add_column_returns_position_exhausted_when_anchors_are_equal() {
             &ctx,
             board.id,
             "Anchor".into(),
+            None,
             PositionBetween {
                 before: None,
                 after: None,
@@ -224,6 +228,7 @@ async fn add_column_returns_position_exhausted_when_anchors_are_equal() {
             &ctx,
             board.id,
             "Should fail".into(),
+            None,
             PositionBetween {
                 before: Some(key.clone()),
                 after: Some(key.clone()),
@@ -271,6 +276,7 @@ async fn add_column_recovers_after_resequence() {
             &ctx,
             board.id,
             "Left".into(),
+            None,
             PositionBetween {
                 before: None,
                 after: None,
@@ -284,6 +290,7 @@ async fn add_column_recovers_after_resequence() {
             &ctx,
             board.id,
             "Right".into(),
+            None,
             PositionBetween {
                 before: Some(left.position_key.clone()),
                 after: None,
@@ -310,6 +317,7 @@ async fn add_column_recovers_after_resequence() {
             &ctx,
             board.id,
             "Inserted".into(),
+            None,
             PositionBetween {
                 before: Some(collision.clone()),
                 after: Some(collision.clone()),

@@ -2,9 +2,9 @@ use async_trait::async_trait;
 use atlas_domain::{
     Actor, DomainError, WorkspaceCtx,
     entities::boards_tasks::{
-        ActivityKind, AssigneeRef, Board, BoardColumn, NewBoard, NewTask, NewTaskActivity,
-        NewTaskAssignee, NewTaskChecklistItem, NewTaskReference, PositionBetween, Task,
-        TaskActivity, TaskAssignee, TaskChecklistItem, TaskChecklistItemPatch, TaskPatch,
+        ActivityKind, AssigneeRef, Board, BoardColumn, ColumnPatch, NewBoard, NewTask,
+        NewTaskActivity, NewTaskAssignee, NewTaskChecklistItem, NewTaskReference, PositionBetween,
+        Task, TaskActivity, TaskAssignee, TaskChecklistItem, TaskChecklistItemPatch, TaskPatch,
         TaskReference,
     },
     entities::task_views::{ActorTypeFilter, AssigneeFilter, TaskSort, TaskViewFilters},
@@ -95,6 +95,7 @@ impl BoardRepo for PgBoardRepo {
         ctx: &WorkspaceCtx,
         board_id: BoardId,
         name: String,
+        color: Option<String>,
         position: PositionBetween,
     ) -> Result<BoardColumn, DomainError> {
         let txn = self.conn.begin().await.map_err(db_err)?;
@@ -127,6 +128,7 @@ impl BoardRepo for PgBoardRepo {
             board_id: Set(board_id.0),
             name: Set(name),
             position_key: Set(position_key),
+            color: Set(color),
             created_by_user_id: Set(by_user),
             created_by_api_key_id: Set(by_key),
             created_at: Set(Utc::now()),
@@ -234,7 +236,7 @@ impl BoardRepo for PgBoardRepo {
         ctx: &WorkspaceCtx,
         board_id: BoardId,
         id: ColumnId,
-        name: String,
+        patch: ColumnPatch,
     ) -> Result<BoardColumn, DomainError> {
         let row = board_column::Entity::find_by_id(id.0)
             .filter(board_column::Column::WorkspaceId.eq(ctx.workspace_id.0))
@@ -249,7 +251,15 @@ impl BoardRepo for PgBoardRepo {
             })?;
 
         let mut active = row.into_active_model();
-        active.name = Set(name);
+
+        if let Some(name) = patch.name {
+            active.name = Set(name);
+        }
+
+        if let Some(color) = patch.color {
+            active.color = Set(color);
+        }
+
         active.updated_at = Set(Utc::now());
         active
             .update(&self.conn)

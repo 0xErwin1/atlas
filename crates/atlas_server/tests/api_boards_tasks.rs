@@ -305,6 +305,7 @@ async fn create_and_list_columns() {
                 name: "Todo".to_string(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -353,6 +354,7 @@ async fn update_column_renames_it() {
                 name: "Backlog".to_string(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -367,6 +369,7 @@ async fn update_column_renames_it() {
                 name: Some("In Progress".to_string()),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -407,6 +410,7 @@ async fn delete_column_removes_it_from_list() {
                 name: "Bye".to_string(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -460,6 +464,7 @@ async fn delete_column_with_live_task_is_rejected() {
                 name: "Has Tasks".to_string(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -496,6 +501,7 @@ async fn delete_column_with_live_task_is_rejected() {
                 name: "Empty".to_string(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -543,6 +549,7 @@ async fn create_and_get_task_returns_201_and_task_data() {
                 name: "Todo".to_string(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -611,6 +618,7 @@ async fn list_tasks_returns_tasks_for_board() {
                 name: "Todo".to_string(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -703,6 +711,7 @@ async fn list_tasks_includes_labels() {
                 name: "Todo".to_string(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -773,6 +782,7 @@ async fn list_tasks_includes_assignees_with_names() {
                 name: "Todo".to_string(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -858,6 +868,7 @@ async fn update_task_changes_title() {
                 name: "Todo".to_string(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -931,6 +942,7 @@ async fn delete_task_returns_404_on_subsequent_get() {
                 name: "Todo".to_string(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -997,6 +1009,7 @@ async fn move_task_changes_column() {
                 name: "Todo".to_string(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -1010,6 +1023,7 @@ async fn move_task_changes_column() {
                 name: "Done".to_string(),
                 before: Some(col_a.position_key.clone()),
                 after: None,
+                color: None,
             },
         )
         .await
@@ -1084,6 +1098,7 @@ async fn move_task_with_task_id_anchor_succeeds() {
                 name: "Todo".to_string(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -1173,6 +1188,7 @@ async fn move_task_across_boards_succeeds() {
                 name: "Todo".to_string(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -1185,6 +1201,7 @@ async fn move_task_across_boards_succeeds() {
                 name: "Todo".to_string(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -1276,6 +1293,7 @@ async fn add_and_list_assignees() {
                 name: "Todo".to_string(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -1362,6 +1380,7 @@ async fn add_duplicate_assignee_returns_409() {
                 name: "Todo".to_string(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -1445,6 +1464,7 @@ async fn remove_assignee_unassigns_user() {
                 name: "Todo".to_string(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -1527,6 +1547,7 @@ async fn create_and_list_references() {
                 name: "Todo".to_string(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -1620,6 +1641,7 @@ async fn backlinks_surface_pending_references() {
                 name: "Todo".to_string(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -1719,6 +1741,7 @@ async fn create_and_list_checklist_items() {
                 name: "Todo".to_string(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -1797,6 +1820,7 @@ async fn promote_checklist_item_returns_409_on_second_promote() {
                 name: "Todo".to_string(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -1898,6 +1922,7 @@ async fn promote_checklist_item_always_persists_parent_reference() {
                 name: "Todo".to_string(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -2031,6 +2056,7 @@ async fn task_description_wikilink_persists_resolved_link() {
                 name: "Todo".to_string(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -2107,6 +2133,7 @@ async fn task_description_id_bound_wikilink_resolves_by_id() {
                 name: "Todo".to_string(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -2170,6 +2197,7 @@ async fn task_description_wikilink_to_missing_doc_is_pending() {
                 name: "Todo".to_string(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -2259,6 +2287,7 @@ async fn task_description_patch_replaces_wikilinks() {
                 name: "Todo".to_string(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -2340,6 +2369,7 @@ async fn activity_is_recorded_on_task_create() {
                 name: "Todo".to_string(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -2449,6 +2479,7 @@ async fn cross_tenant_task_access_returns_404() {
                 name: "Todo".to_string(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -2571,6 +2602,7 @@ async fn viewer_cannot_create_task() {
                 name: "Todo".to_string(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -2636,6 +2668,7 @@ async fn create_task_with_invalid_priority_returns_422() {
                 name: "Todo".to_string(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -2700,6 +2733,7 @@ async fn create_task_with_negative_estimate_returns_422() {
                 name: "Todo".to_string(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -2833,6 +2867,7 @@ async fn setup_idor(
                         name: "Todo".to_string(),
                         before: None,
                         after: None,
+                        color: None,
                     },
                 )
                 .await
@@ -3063,6 +3098,7 @@ async fn idor_column_cross_board_is_404() {
                 name: Some("hijacked".to_string()),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await;
@@ -3091,6 +3127,7 @@ async fn idor_column_cross_board_is_404() {
                 name: Some("renamed".to_string()),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await;
@@ -3314,6 +3351,7 @@ async fn board_scoped_grant_grants_task_access() {
                 name: "Todo".to_string(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -3462,6 +3500,7 @@ async fn duplicate_reference_returns_409() {
                 name: "C".into(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -3568,6 +3607,7 @@ async fn delete_blocks_reference_records_correct_kind_in_activity() {
                 name: "C".into(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -3683,6 +3723,7 @@ async fn create_reference_without_target_returns_422() {
                 name: "C".into(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -3753,6 +3794,7 @@ async fn create_reference_with_both_targets_returns_422() {
                 name: "C".into(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -3854,6 +3896,7 @@ async fn create_reference_unknown_task_target_returns_404_and_no_row() {
                 name: "C".into(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -3950,6 +3993,7 @@ async fn create_reference_cross_tenant_document_target_returns_404() {
                 name: "C".into(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -4057,6 +4101,7 @@ async fn add_unknown_assignee_returns_404() {
                 name: "C".into(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -4130,6 +4175,7 @@ async fn add_duplicate_assignee_returns_409_explicit() {
                 name: "C".into(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -4217,6 +4263,7 @@ async fn unassign_non_existent_returns_404_and_no_activity() {
                 name: "C".into(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -4367,6 +4414,7 @@ async fn reference_target_resolved_false_after_target_task_soft_deleted() {
                 name: "C".into(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -4515,6 +4563,7 @@ async fn assign_non_member_principal_returns_404() {
                 name: "C".into(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -4612,6 +4661,7 @@ async fn create_task_with_title_over_200_chars_returns_422() {
                 name: "Backlog".to_string(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -4672,6 +4722,7 @@ async fn create_task_with_empty_title_returns_422() {
                 name: "Backlog".to_string(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -4733,6 +4784,7 @@ async fn create_task_with_too_many_labels_returns_422() {
                 name: "Backlog".to_string(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -4828,6 +4880,7 @@ async fn update_task_clears_estimate_with_explicit_null() {
                 name: "Todo".to_string(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -4869,6 +4922,415 @@ async fn update_task_clears_estimate_with_explicit_null() {
     assert_eq!(
         updated.estimate, None,
         "explicit null must clear the estimate"
+    );
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
+// Column color (B1)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn create_column_with_valid_color_returns_color_in_response_and_listing() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) =
+        support::login_user_with_workspace(&server, &db, "col-color-create-1").await;
+
+    client
+        .create_project(&ws.slug, project_req("col-color-proj-1", "CC1"))
+        .await
+        .expect("create project");
+
+    let board = client
+        .create_board(
+            &ws.slug,
+            "col-color-proj-1",
+            CreateBoardRequest {
+                name: "Board".to_string(),
+            },
+        )
+        .await
+        .expect("create board");
+
+    let col = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "In Progress".to_string(),
+                color: Some("blue".to_string()),
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create column with color");
+
+    assert_eq!(col.color.as_deref(), Some("blue"));
+
+    let cols = client
+        .list_columns(&ws.slug, board.id)
+        .await
+        .expect("list columns");
+
+    assert_eq!(cols.len(), 1);
+    assert_eq!(cols[0].id, col.id);
+    assert_eq!(
+        cols[0].color.as_deref(),
+        Some("blue"),
+        "color must round-trip through listing"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn create_column_without_color_omits_color_field() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) =
+        support::login_user_with_workspace(&server, &db, "col-color-absent-1").await;
+
+    client
+        .create_project(&ws.slug, project_req("col-color-proj-2", "CC2"))
+        .await
+        .expect("create project");
+
+    let board = client
+        .create_board(
+            &ws.slug,
+            "col-color-proj-2",
+            CreateBoardRequest {
+                name: "Board".to_string(),
+            },
+        )
+        .await
+        .expect("create board");
+
+    let col = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "Todo".to_string(),
+                color: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create column without color");
+
+    assert_eq!(col.color, None, "no color set must yield null/absent color");
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn patch_column_sets_color() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) =
+        support::login_user_with_workspace(&server, &db, "col-color-patch-1").await;
+
+    client
+        .create_project(&ws.slug, project_req("col-color-proj-3", "CC3"))
+        .await
+        .expect("create project");
+
+    let board = client
+        .create_board(
+            &ws.slug,
+            "col-color-proj-3",
+            CreateBoardRequest {
+                name: "Board".to_string(),
+            },
+        )
+        .await
+        .expect("create board");
+
+    let col = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "Done".to_string(),
+                color: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create column");
+
+    assert_eq!(col.color, None);
+
+    let updated = client
+        .update_column(
+            &ws.slug,
+            board.id,
+            col.id,
+            UpdateColumnRequest {
+                name: None,
+                color: Some(serde_json::Value::String("green".to_string())),
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("patch color");
+
+    assert_eq!(
+        updated.color.as_deref(),
+        Some("green"),
+        "color must be set after PATCH"
+    );
+
+    let cols = client
+        .list_columns(&ws.slug, board.id)
+        .await
+        .expect("list columns");
+
+    assert_eq!(
+        cols[0].color.as_deref(),
+        Some("green"),
+        "color persists in listing"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn patch_column_clears_color_with_explicit_null() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) =
+        support::login_user_with_workspace(&server, &db, "col-color-clear-1").await;
+
+    client
+        .create_project(&ws.slug, project_req("col-color-proj-4", "CC4"))
+        .await
+        .expect("create project");
+
+    let board = client
+        .create_board(
+            &ws.slug,
+            "col-color-proj-4",
+            CreateBoardRequest {
+                name: "Board".to_string(),
+            },
+        )
+        .await
+        .expect("create board");
+
+    let col = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "Review".to_string(),
+                color: Some("amber".to_string()),
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create column with color");
+
+    assert_eq!(col.color.as_deref(), Some("amber"));
+
+    let cleared = client
+        .update_column(
+            &ws.slug,
+            board.id,
+            col.id,
+            UpdateColumnRequest {
+                name: None,
+                color: Some(serde_json::Value::Null),
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("clear color with explicit null");
+
+    assert_eq!(cleared.color, None, "explicit null must clear the color");
+
+    let cols = client
+        .list_columns(&ws.slug, board.id)
+        .await
+        .expect("list columns");
+
+    assert_eq!(
+        cols[0].color, None,
+        "cleared color must be absent in listing"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn patch_column_absent_color_leaves_color_unchanged() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) =
+        support::login_user_with_workspace(&server, &db, "col-color-unchanged-1").await;
+
+    client
+        .create_project(&ws.slug, project_req("col-color-proj-5", "CC5"))
+        .await
+        .expect("create project");
+
+    let board = client
+        .create_board(
+            &ws.slug,
+            "col-color-proj-5",
+            CreateBoardRequest {
+                name: "Board".to_string(),
+            },
+        )
+        .await
+        .expect("create board");
+
+    let col = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "Staging".to_string(),
+                color: Some("cyan".to_string()),
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create column with color");
+
+    let renamed = client
+        .update_column(
+            &ws.slug,
+            board.id,
+            col.id,
+            UpdateColumnRequest {
+                name: Some("Staging (renamed)".to_string()),
+                color: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("rename without touching color");
+
+    assert_eq!(renamed.name, "Staging (renamed)");
+    assert_eq!(
+        renamed.color.as_deref(),
+        Some("cyan"),
+        "absent color field must leave color unchanged"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn create_column_with_invalid_swatch_id_returns_422() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) =
+        support::login_user_with_workspace(&server, &db, "col-color-invalid-create-1").await;
+
+    client
+        .create_project(&ws.slug, project_req("col-color-proj-6", "CC6"))
+        .await
+        .expect("create project");
+
+    let board = client
+        .create_board(
+            &ws.slug,
+            "col-color-proj-6",
+            CreateBoardRequest {
+                name: "Board".to_string(),
+            },
+        )
+        .await
+        .expect("create board");
+
+    let result = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "Bad Color".to_string(),
+                color: Some("hotpink".to_string()),
+                before: None,
+                after: None,
+            },
+        )
+        .await;
+
+    assert!(
+        matches!(result, Err(ClientError::Api(ref p)) if p.status == 422),
+        "invalid swatch id must return 422, got: {result:?}"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn patch_column_with_invalid_swatch_id_returns_422() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) =
+        support::login_user_with_workspace(&server, &db, "col-color-invalid-patch-1").await;
+
+    client
+        .create_project(&ws.slug, project_req("col-color-proj-7", "CC7"))
+        .await
+        .expect("create project");
+
+    let board = client
+        .create_board(
+            &ws.slug,
+            "col-color-proj-7",
+            CreateBoardRequest {
+                name: "Board".to_string(),
+            },
+        )
+        .await
+        .expect("create board");
+
+    let col = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "Valid".to_string(),
+                color: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create column");
+
+    let result = client
+        .update_column(
+            &ws.slug,
+            board.id,
+            col.id,
+            UpdateColumnRequest {
+                name: None,
+                color: Some(serde_json::Value::String("#ff0000".to_string())),
+                before: None,
+                after: None,
+            },
+        )
+        .await;
+
+    assert!(
+        matches!(result, Err(ClientError::Api(ref p)) if p.status == 422),
+        "invalid swatch id on PATCH must return 422, got: {result:?}"
     );
 
     db.teardown().await;

@@ -55,6 +55,7 @@ async fn seed_project_board_task(
             ctx,
             board.id,
             "Backlog".into(),
+            None,
             PositionBetween {
                 before: None,
                 after: None,

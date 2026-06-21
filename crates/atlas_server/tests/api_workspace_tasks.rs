@@ -120,6 +120,7 @@ async fn seed_workspace(
                 name: "Todo".to_string(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -134,6 +135,7 @@ async fn seed_workspace(
                 name: "In Progress".to_string(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await
@@ -148,6 +150,7 @@ async fn seed_workspace(
                 name: "Todo".to_string(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await

@@ -17,7 +17,7 @@ use atlas_api::{
 };
 use atlas_domain::{
     Actor, WorkspaceCtx,
-    entities::boards_tasks::{Board, BoardColumn, NewBoard, PositionBetween},
+    entities::boards_tasks::{Board, BoardColumn, ColumnPatch, NewBoard, PositionBetween},
     ids::ColumnId,
     permissions::Principal,
 };
@@ -26,7 +26,7 @@ use crate::{
     authz::{Authorized, BoardRes, EditorMin, ProjectRes, ViewerMin},
     error::ApiError,
     persistence::repos::{BoardRepo, PgBoardRepo},
-    routes::validation::validate_name,
+    routes::validation::{validate_name, validate_swatch},
     state::AppState,
 };
 
@@ -78,6 +78,7 @@ fn column_to_dto(c: BoardColumn) -> ColumnDto {
         board_id: c.board_id.0,
         name: c.name,
         position_key: c.position_key,
+        color: c.color,
         created_at: c.created_at,
         updated_at: c.updated_at,
     }
@@ -331,6 +332,10 @@ pub(crate) async fn create_column(
 ) -> Result<impl IntoResponse, ApiError> {
     validate_name("name", &body.name)?;
 
+    if let Some(ref color) = body.color {
+        validate_swatch("color", color)?;
+    }
+
     let actor = principal_to_actor(&auth.principal);
     let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
     let repo = PgBoardRepo::new((*state.db).clone());
@@ -340,6 +345,7 @@ pub(crate) async fn create_column(
             &ctx,
             auth.resource.0.id,
             body.name,
+            body.color,
             PositionBetween {
                 before: body.before,
                 after: body.after,
@@ -420,6 +426,24 @@ pub(crate) async fn update_column(
         validate_name("name", name)?;
     }
 
+    // Decode the color patch value from the JSON-level representation:
+    //   absent key          → None           (leave unchanged)
+    //   explicit JSON null  → Some(None)     (clear color)
+    //   string              → Some(Some(id)) (set color; validate swatch id)
+    let color_patch: Option<Option<String>> = match body.color {
+        None => None,
+        Some(serde_json::Value::Null) => Some(None),
+        Some(serde_json::Value::String(id)) => {
+            validate_swatch("color", &id)?;
+            Some(Some(id))
+        }
+        Some(other) => {
+            return Err(ApiError::InvalidInput {
+                message: format!("color must be a swatch id string or null, got {other}"),
+            });
+        }
+    };
+
     let actor = principal_to_actor(&auth.principal);
     let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
     let repo = PgBoardRepo::new((*state.db).clone());
@@ -440,10 +464,20 @@ pub(crate) async fn update_column(
         .map_err(ApiError::Domain)?;
     }
 
-    let col = if let Some(name) = body.name {
-        repo.patch_column(&ctx, board_id, col_id, name)
-            .await
-            .map_err(ApiError::Domain)?
+    let has_patch = body.name.is_some() || color_patch.is_some();
+
+    let col = if has_patch {
+        repo.patch_column(
+            &ctx,
+            board_id,
+            col_id,
+            ColumnPatch {
+                name: body.name,
+                color: color_patch,
+            },
+        )
+        .await
+        .map_err(ApiError::Domain)?
     } else {
         let cols = repo
             .list_columns(&ctx, board_id)

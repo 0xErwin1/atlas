@@ -58,6 +58,7 @@ async fn setup_parent(
                 name: "Todo".to_string(),
                 before: None,
                 after: None,
+                color: None,
             },
         )
         .await

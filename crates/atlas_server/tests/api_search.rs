@@ -644,6 +644,7 @@ async fn seed_doc_and_task(db: &support::TestDb, ctx: &WorkspaceCtx, unique: &st
             ctx,
             board.id,
             "Backlog".to_string(),
+            None,
             PositionBetween {
                 before: None,
                 after: None,

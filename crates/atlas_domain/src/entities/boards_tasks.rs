@@ -31,6 +31,7 @@ pub struct BoardColumn {
     pub board_id: BoardId,
     pub name: String,
     pub position_key: String,
+    pub color: Option<String>,
     pub created_by: Actor,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -42,6 +43,14 @@ pub struct NewBoardColumn {
     pub board_id: BoardId,
     pub name: String,
     pub position_key: String,
+}
+
+/// Patch type for column updates, mirroring `TaskPatch`'s `Option<Option<T>>`
+/// convention: `None` = leave unchanged; `Some(None)` = clear; `Some(Some(v))` = set.
+#[derive(Debug, Clone, Default)]
+pub struct ColumnPatch {
+    pub name: Option<String>,
+    pub color: Option<Option<String>>,
 }
 
 /// Task priority levels, ordered from lowest to highest urgency.

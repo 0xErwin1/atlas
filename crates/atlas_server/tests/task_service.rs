@@ -65,6 +65,7 @@ async fn seed_project_board_col(
             ctx,
             board.id,
             "Backlog".into(),
+            None,
             PositionBetween {
                 before: None,
                 after: None,
@@ -292,6 +293,7 @@ async fn task_service_move_task_emits_moved_activity() {
             &ctx,
             board.id,
             "Done".into(),
+            None,
             PositionBetween {
                 before: Some(col_a.position_key.clone()),
                 after: None,
