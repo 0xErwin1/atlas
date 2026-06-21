@@ -11,6 +11,7 @@
  * registry choice for the column value, never inferred from text.
  */
 import { computed, ref } from 'vue';
+import { VueDraggable } from 'vue-draggable-plus';
 import TaskRowPicker, { type PickerOption } from '@/components/tareas/TaskRowPicker.vue';
 import Avatar from '@/components/ui/Avatar.vue';
 import Chip from '@/components/ui/Chip.vue';
@@ -18,7 +19,9 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import ContextMenu from '@/components/ui/ContextMenu.vue';
 import Icon from '@/components/ui/Icon.vue';
 import PromptDialog from '@/components/ui/PromptDialog.vue';
+import { resolveDropTarget } from '@/composables/kanbanDrop';
 import { useContextMenu } from '@/composables/useContextMenu';
+import { useKanbanMove } from '@/composables/useKanbanMove';
 import { useTaskInteractions } from '@/composables/useTaskInteractions';
 import { swatchById } from '@/lib/swatches';
 import type { ColumnDto, TaskSummaryDto } from '@/stores/boards';
@@ -36,6 +39,24 @@ const labelColors = useLabelColorsStore();
 const ui = useUiStore();
 const menu = useContextMenu();
 const ti = useTaskInteractions(props.ws);
+const { move } = useKanbanMove(props.ws);
+
+/**
+ * Drag-drop is valid only when grouped by status: the group key is then a real
+ * column_id that the move API accepts. For assignee/priority grouping the key is
+ * not a column_id, so we suppress the draggable wrapper entirely in those modes.
+ */
+const isDragEnabled = computed(() => ui.taskGroupBy === 'status');
+
+async function onSortableDrop(event: unknown, columnId: string): Promise<void> {
+  const target = resolveDropTarget(event as Parameters<typeof resolveDropTarget>[0]);
+  if (target === null) return;
+
+  const result = await move(target.readableId, columnId, target.toIndex);
+  if (!result.ok) {
+    ui.showBanner(result.hint ?? 'Move failed', 'error');
+  }
+}
 
 interface Group {
   key: string;
@@ -323,13 +344,131 @@ function onAssigneePick(task: TaskSummaryDto, value: string): void {
           <span class="atl-tl-count">{{ group.tasks.length }}</span>
         </button>
 
-        <div v-show="!isGroupCollapsed(group.key)">
+        <VueDraggable
+          v-if="isDragEnabled"
+          :model-value="group.tasks"
+          v-show="!isGroupCollapsed(group.key)"
+          :group="'kanban'"
+          :animation="150"
+          item-key="id"
+          ghost-class="atl-tl-row-ghost"
+          @update:model-value="() => undefined"
+          @add="(e: unknown) => onSortableDrop(e, group.key)"
+          @update="(e: unknown) => onSortableDrop(e, group.key)"
+        >
           <button
             v-for="task in group.tasks"
             :key="task.id"
             type="button"
             class="atl-tl-row"
             :class="{ selected: task.readable_id === selectedReadableId }"
+            :data-readable-id="task.readable_id"
+            @click="emit('select', task.readable_id)"
+            @contextmenu.prevent="onMenu(task, $event)"
+          >
+            <TaskRowPicker
+              class="atl-tl-pick"
+              :options="statusOptionsFor(task)"
+              :open="isPickerOpen('status', task)"
+              @update:open="(v: boolean) => setPickerOpen('status', task, v)"
+              @pick="(v: string) => onStatusPick(task, v)"
+            >
+              <template #trigger>
+                <span
+                  v-if="taskIsDone(task)"
+                  class="atl-tl-marker done"
+                  title="Change status"
+                >
+                  <Icon name="check" :size="10" :stroke-width="2.6" />
+                </span>
+                <span
+                  v-else
+                  class="atl-tl-marker"
+                  title="Change status"
+                  :style="{ borderColor: statusRingColor(task) }"
+                />
+              </template>
+            </TaskRowPicker>
+
+            <span class="atl-tl-name">
+              <span class="atl-tl-title" :class="{ muted: taskIsDone(task) }">{{ task.title }}</span>
+              <span v-if="(task.labels ?? []).length > 0" class="atl-tl-labels">
+                <Chip
+                  v-for="label in task.labels ?? []"
+                  :key="label"
+                  :color="labelColors.colorFor(`tag:${label.toLowerCase()}`)"
+                >
+                  {{ label }}
+                </Chip>
+              </span>
+            </span>
+
+            <span class="atl-tl-id">
+              <span class="atl-tl-id-text">{{ task.readable_id }}</span>
+              <button
+                type="button"
+                class="atl-tl-copy"
+                :title="`Copy ${task.readable_id}`"
+                @click.stop="copyId(task)"
+              >
+                <Icon name="copy" :size="12" />
+              </button>
+            </span>
+
+            <TaskRowPicker
+              class="atl-tl-pick atl-tl-assignee"
+              :options="assigneeOptions"
+              width="220px"
+              :open="isPickerOpen('assignee', task)"
+              @update:open="(v: boolean) => onAssigneeOpen(task, v)"
+              @pick="(v: string) => onAssigneePick(task, v)"
+            >
+              <template #trigger>
+                <template v-if="assigneeForTask(task)">
+                  <Avatar :name="assigneeForTask(task)!.name" :agent="assigneeForTask(task)!.agent" :size="18" />
+                </template>
+                <span v-else class="atl-tl-noassignee" title="Assign">
+                  <Icon name="user" :size="11" />
+                </span>
+              </template>
+            </TaskRowPicker>
+
+            <TaskRowPicker
+              class="atl-tl-pick atl-tl-prio"
+              :options="priorityOptionsFor(task)"
+              :open="isPickerOpen('priority', task)"
+              @update:open="(v: boolean) => setPickerOpen('priority', task, v)"
+              @pick="(v: string) => onPriorityPick(task, v)"
+            >
+              <template #trigger>
+                <span class="atl-tl-prio-inner" title="Change priority">
+                  <template v-if="task.priority">
+                    <Icon
+                      name="flag"
+                      :size="13"
+                      :style="{ color: PRIORITY_COLOR[task.priority] ?? 'var(--c-muted)' }"
+                    />
+                    {{ priorityLabel(task.priority) }}
+                  </template>
+                  <span v-else class="atl-tl-prio-empty">—</span>
+                </span>
+              </template>
+            </TaskRowPicker>
+
+            <span class="atl-tl-status">{{ statusNameForTask(task) }}</span>
+
+            <span class="atl-tl-est">{{ task.estimate !== null && task.estimate !== undefined ? `${task.estimate} pts` : '—' }}</span>
+          </button>
+        </VueDraggable>
+
+        <div v-else v-show="!isGroupCollapsed(group.key)">
+          <button
+            v-for="task in group.tasks"
+            :key="task.id"
+            type="button"
+            class="atl-tl-row"
+            :class="{ selected: task.readable_id === selectedReadableId }"
+            :data-readable-id="task.readable_id"
             @click="emit('select', task.readable_id)"
             @contextmenu.prevent="onMenu(task, $event)"
           >
@@ -746,5 +885,9 @@ function onAssigneePick(task: TaskSummaryDto, value: string): void {
   padding: 8px;
   font-size: var(--fs-sm);
   color: var(--c-muted);
+}
+
+.atl-tl-row-ghost {
+  opacity: 0.4;
 }
 </style>
