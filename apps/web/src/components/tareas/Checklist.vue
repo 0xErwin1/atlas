@@ -1,15 +1,22 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import Icon from '@/components/ui/Icon.vue';
+import Popover from '@/components/ui/Popover.vue';
 import type { ChecklistItemDto } from '@/stores/taskDetail';
+
+interface ColumnRef {
+  id: string;
+  name: string;
+}
 
 const props = defineProps<{
   items: ChecklistItemDto[];
+  columns: ColumnRef[];
 }>();
 
 const emit = defineEmits<{
   toggle: [itemId: string];
-  promote: [itemId: string];
+  promote: [itemId: string, columnId: string];
   remove: [itemId: string];
   add: [title: string];
 }>();
@@ -17,12 +24,26 @@ const emit = defineEmits<{
 const doneCount = computed(() => props.items.filter((i) => i.checked).length);
 
 const draft = ref('');
+const pickerOpenForItem = ref<string | null>(null);
 
 function submitDraft(): void {
   const title = draft.value.trim();
   if (title === '') return;
   emit('add', title);
   draft.value = '';
+}
+
+function openPicker(itemId: string): void {
+  pickerOpenForItem.value = itemId;
+}
+
+function closePicker(): void {
+  pickerOpenForItem.value = null;
+}
+
+function pickColumn(itemId: string, columnId: string): void {
+  closePicker();
+  emit('promote', itemId, columnId);
 }
 </script>
 
@@ -84,24 +105,52 @@ function submitDraft(): void {
       >
         {{ item.promoted_readable_id }}
       </a>
-      <button
-        v-else
-        type="button"
-        title="Promote to task"
-        aria-label="Promote to task"
-        class="shrink-0 cursor-pointer opacity-0 group-hover:opacity-100 flex items-center justify-center"
-        style="
-          width: 22px;
-          height: 22px;
-          border: 1px solid var(--c-border);
-          border-radius: var(--r-sm);
-          background: var(--c-secondary);
-          color: var(--c-muted);
-        "
-        @click="emit('promote', item.id)"
+
+      <Popover
+        v-else-if="columns.length > 0"
+        :open="pickerOpenForItem === item.id"
+        placement="bottom-end"
+        width="160px"
+        @update:open="(v) => { if (!v) closePicker(); }"
       >
-        <Icon name="arrow-up-right" :size="13" />
-      </button>
+        <template #trigger>
+          <button
+            type="button"
+            title="Promote to task"
+            aria-label="Promote to task"
+            class="shrink-0 cursor-pointer opacity-0 group-hover:opacity-100 flex items-center justify-center"
+            style="
+              width: 22px;
+              height: 22px;
+              border: 1px solid var(--c-border);
+              border-radius: var(--r-sm);
+              background: var(--c-secondary);
+              color: var(--c-muted);
+            "
+            @click="openPicker(item.id)"
+          >
+            <Icon name="arrow-up-right" :size="13" />
+          </button>
+        </template>
+
+        <template #default="{ close }">
+          <div role="listbox" style="padding: 3px;">
+            <button
+              v-for="col in columns"
+              :key="col.id"
+              type="button"
+              role="option"
+              :data-column-id="col.id"
+              class="atl-mi"
+              style="width: 100%; border: none; background: transparent; text-align: left; gap: 8px;"
+              @click="pickColumn(item.id, col.id); close()"
+            >
+              {{ col.name }}
+            </button>
+          </div>
+        </template>
+      </Popover>
+
       <button
         type="button"
         title="Delete sub-task"

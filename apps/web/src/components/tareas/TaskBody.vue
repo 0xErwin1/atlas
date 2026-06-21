@@ -285,6 +285,25 @@ async function onChecklistAdd(title: string): Promise<void> {
   const ok = await detail.addChecklistItem(props.ws, props.task.readable_id, title);
   if (!ok) fail(detail.error);
 }
+
+async function onChecklistPromote(itemId: string, columnId: string): Promise<void> {
+  const boardId = boards.board?.id;
+  if (boardId === undefined) return;
+
+  const result = await detail.promoteChecklistItem(
+    props.ws,
+    props.task.readable_id,
+    itemId,
+    boardId,
+    columnId,
+  );
+
+  if (result.ok && result.readableId !== undefined) {
+    ui.showBanner(`${result.readableId} promoted to a board task`, 'success');
+  } else {
+    fail(detail.error);
+  }
+}
 </script>
 
 <template>
@@ -469,10 +488,11 @@ async function onChecklistAdd(title: string): Promise<void> {
     <div style="margin-top: 22px;">
       <Checklist
         :items="detail.checklist"
+        :columns="boards.columns"
         @toggle="onChecklistToggle"
         @remove="onChecklistRemove"
         @add="onChecklistAdd"
-        @promote="() => comingSoon()"
+        @promote="onChecklistPromote"
       />
     </div>
 
