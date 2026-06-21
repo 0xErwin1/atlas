@@ -80,6 +80,7 @@ const EXPECTED_SCHEMAS: &[&str] = &[
     "FolderDto",
     "TagDto",
     "CreateTagRequest",
+    "UpdateTagRequest",
     "SavedSearchDto",
     "CreateSavedSearchRequest",
     "RenameSavedSearchRequest",

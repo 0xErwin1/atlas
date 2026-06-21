@@ -1,15 +1,21 @@
-use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
+use axum::{
+    Json,
+    extract::{Path, State},
+    http::StatusCode,
+    response::IntoResponse,
+};
 
-use atlas_api::dtos::tags::{CreateTagRequest, TagDto};
+use atlas_api::dtos::tags::{CreateTagRequest, TagDto, UpdateTagRequest};
 use atlas_domain::{
-    Actor, WorkspaceCtx, entities::tags::NewTag, entities::tags::Tag, permissions::Principal,
+    Actor, WorkspaceCtx, entities::tags::NewTag, entities::tags::Tag, ids::TagId,
+    permissions::Principal,
 };
 
 use crate::{
     authz::{Authorized, EditorMin, ViewerMin, authorized::WorkspaceRes},
     error::ApiError,
     persistence::repos::{PgTagRepo, TagRepo},
-    routes::validation::validate_name,
+    routes::validation::{validate_name, validate_swatch},
     state::AppState,
 };
 
@@ -25,6 +31,7 @@ fn tag_to_dto(t: Tag) -> TagDto {
         id: t.id.0,
         workspace_id: t.workspace_id.0,
         name: t.name,
+        color: t.color,
         created_at: t.created_at,
         updated_at: t.updated_at,
     }
@@ -109,4 +116,89 @@ pub(crate) async fn create_tag(
         .map_err(ApiError::Domain)?;
 
     Ok((StatusCode::CREATED, Json(tag_to_dto(tag))))
+}
+
+// ---------------------------------------------------------------------------
+// PATCH /v1/workspaces/{ws}/tags/{tag_id}
+// ---------------------------------------------------------------------------
+
+#[utoipa::path(
+    patch,
+    path = "/v1/workspaces/{ws}/tags/{tag_id}",
+    tag = "tags",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+        ("tag_id" = uuid::Uuid, Path, description = "Tag ID"),
+    ),
+    request_body = UpdateTagRequest,
+    responses(
+        (status = 200, description = "Tag updated", body = TagDto),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Insufficient permissions"),
+        (status = 404, description = "Tag not found or not in workspace"),
+        (status = 409, description = "Name already taken by another tag"),
+        (status = 422, description = "Invalid input (blank name or unknown color swatch)"),
+    )
+)]
+pub(crate) async fn patch_tag(
+    auth: Authorized<WorkspaceRes, EditorMin>,
+    State(state): State<AppState>,
+    Path((_ws, tag_id)): Path<(String, uuid::Uuid)>,
+    Json(body): Json<UpdateTagRequest>,
+) -> Result<Json<TagDto>, ApiError> {
+    if let Some(ref name) = body.name {
+        validate_name("name", name)?;
+    }
+
+    if let Some(ref color) = body.color {
+        validate_swatch("color", color)?;
+    }
+
+    let actor = principal_to_actor(&auth.principal);
+    let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
+    let repo = PgTagRepo::new((*state.db).clone());
+
+    let tag = repo
+        .update(&ctx, TagId(tag_id), body.name, body.color)
+        .await
+        .map_err(ApiError::Domain)?;
+
+    Ok(Json(tag_to_dto(tag)))
+}
+
+// ---------------------------------------------------------------------------
+// DELETE /v1/workspaces/{ws}/tags/{tag_id}
+// ---------------------------------------------------------------------------
+
+#[utoipa::path(
+    delete,
+    path = "/v1/workspaces/{ws}/tags/{tag_id}",
+    tag = "tags",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+        ("tag_id" = uuid::Uuid, Path, description = "Tag ID"),
+    ),
+    responses(
+        (status = 204, description = "Tag soft-deleted"),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Insufficient permissions"),
+        (status = 404, description = "Tag not found or not in workspace"),
+    )
+)]
+pub(crate) async fn delete_tag(
+    auth: Authorized<WorkspaceRes, EditorMin>,
+    State(state): State<AppState>,
+    Path((_ws, tag_id)): Path<(String, uuid::Uuid)>,
+) -> Result<StatusCode, ApiError> {
+    let actor = principal_to_actor(&auth.principal);
+    let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
+    let repo = PgTagRepo::new((*state.db).clone());
+
+    repo.soft_delete(&ctx, TagId(tag_id))
+        .await
+        .map_err(ApiError::Domain)?;
+
+    Ok(StatusCode::NO_CONTENT)
 }

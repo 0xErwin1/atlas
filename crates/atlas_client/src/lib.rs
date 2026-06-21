@@ -28,7 +28,7 @@ use atlas_api::{
         },
         saved_searches::{CreateSavedSearchRequest, RenameSavedSearchRequest, SavedSearchDto},
         search::SearchHitDto,
-        tags::{CreateTagRequest, TagDto},
+        tags::{CreateTagRequest, TagDto, UpdateTagRequest},
         task_views::{CreateTaskViewRequest, TaskViewDto, UpdateTaskViewRequest},
     },
     pagination::Page,
@@ -1107,6 +1107,43 @@ impl AtlasClient {
             .send()
             .await?;
         self.decode_response(response, "list_tags").await
+    }
+
+    /// `PATCH /v1/workspaces/{ws}/tags/{tag_id}`
+    ///
+    /// Updates a tag's name and/or color. Returns the updated tag.
+    pub async fn update_tag(
+        &self,
+        ws: &str,
+        tag_id: uuid::Uuid,
+        body: UpdateTagRequest,
+    ) -> Result<TagDto, ClientError> {
+        let response = self
+            .patch(&format!("/v1/workspaces/{ws}/tags/{tag_id}"))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "update_tag").await
+    }
+
+    /// `DELETE /v1/workspaces/{ws}/tags/{tag_id}`
+    ///
+    /// Soft-deletes a tag. Task label strings are preserved.
+    pub async fn delete_tag(&self, ws: &str, tag_id: uuid::Uuid) -> Result<(), ClientError> {
+        let response = self
+            .delete(&format!("/v1/workspaces/{ws}/tags/{tag_id}"))
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        if response.status().is_success() {
+            return Ok(());
+        }
+        let problem: ProblemDetails = response
+            .json()
+            .await
+            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
+        Err(ClientError::Api(problem))
     }
 
     /// `POST /v1/workspaces/{ws}/saved-searches`

@@ -8,6 +8,7 @@ pub struct Tag {
     pub id: TagId,
     pub workspace_id: WorkspaceId,
     pub name: String,
+    pub color: Option<String>,
     pub created_by: Actor,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,

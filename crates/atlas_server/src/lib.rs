@@ -131,6 +131,10 @@ pub fn app(state: AppState) -> Router {
             "/v1/workspaces/{ws}/tags",
             axum::routing::get(routes::tags::list_tags).post(routes::tags::create_tag),
         )
+        .route(
+            "/v1/workspaces/{ws}/tags/{tag_id}",
+            axum::routing::patch(routes::tags::patch_tag).delete(routes::tags::delete_tag),
+        )
         // Saved searches (per-owner personal search registry)
         .route(
             "/v1/workspaces/{ws}/saved-searches",
