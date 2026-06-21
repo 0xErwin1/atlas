@@ -471,15 +471,6 @@ watch(title, (t) => {
         </div>
 
         <div aria-hidden="true" style="width: 1px; height: 18px; background: var(--c-border);" />
-
-        <button type="button" class="atl-gbtn" title="History" aria-label="History">
-          <Icon name="history" :size="14" />
-        </button>
-        <button type="button" class="atl-gbtn" title="More" aria-label="More">
-          <Icon name="more-horizontal" :size="14" />
-        </button>
-
-        <div aria-hidden="true" style="width: 1px; height: 18px; background: var(--c-border);" />
       </template>
 
       <button

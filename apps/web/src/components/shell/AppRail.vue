@@ -132,24 +132,6 @@ async function confirmNewWorkspace(name: string): Promise<void> {
       >
         <Icon :name="item.icon" :size="20" :stroke-width="isActive(item) ? 2 : 1.8" />
       </button>
-
-      <div
-        class="atl-railitem flex items-center justify-center"
-        title="Engram"
-        aria-disabled="true"
-        style="width: 48px; height: 40px; color: var(--c-muted); cursor: pointer;"
-      >
-        <Icon name="dashboard" :size="20" :stroke-width="1.8" />
-      </div>
-
-      <div
-        class="atl-railitem flex items-center justify-center"
-        title="Add app"
-        aria-disabled="true"
-        style="width: 48px; height: 36px; color: var(--c-muted); cursor: pointer;"
-      >
-        <Icon name="plus" :size="16" />
-      </div>
     </div>
 
     <div style="flex: 1;" />
