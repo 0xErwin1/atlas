@@ -4,6 +4,7 @@ import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
 import { collectPaged } from '@/lib/pagination';
 import { useLabelColorsStore } from '@/stores/labelColors';
+import { useUiStore } from '@/stores/ui';
 
 export type BoardDto = components['schemas']['BoardDto'];
 export type BoardSummaryDto = components['schemas']['BoardSummaryDto'];
@@ -66,6 +67,68 @@ export const useBoardsStore = defineStore('boards', () => {
       emptyByColumn.set(columnId, empty);
     }
     return empty;
+  }
+
+  // Memoized filtered lists keyed by column. Identity must stay stable across
+  // renders while a column's raw tasks and the active filter are unchanged: the
+  // kanban draggable freezes in an infinite render loop if its bound list
+  // changes identity on every render (see emptyByColumn above). Safe because the
+  // raw arrays are always replaced, never mutated in place, so `raw` reference
+  // equality is a sound cache-invalidation signal.
+  const filteredByColumn = new Map<
+    string,
+    { raw: TaskSummaryDto[]; key: string; result: TaskSummaryDto[] }
+  >();
+
+  /**
+   * Returns the tasks for a column after applying the active filter from useUiStore.
+   *
+   * Semantics: a task passes a dimension when that dimension's selected array is
+   * empty (inactive) OR the task matches at least one value in it (OR within
+   * dimension). A task is included only when it passes ALL four dimensions (AND
+   * across dimensions).
+   *
+   * Dimension → TaskSummaryDto field mapping:
+   *   statuses    → column_id
+   *   priorities  → priority
+   *   labels      → labels[] (any label must be in the selected set)
+   *   assigneeIds → assignees[].id (any assignee id must be in the selected set)
+   */
+  function filteredTasksByColumn(columnId: string): TaskSummaryDto[] {
+    const raw = tasksByColumn(columnId);
+    const filter = useUiStore().taskFilter;
+
+    const noStatusFilter = filter.statuses.length === 0;
+    const noPriorityFilter = filter.priorities.length === 0;
+    const noLabelFilter = filter.labels.length === 0;
+    const noAssigneeFilter = filter.assigneeIds.length === 0;
+
+    if (noStatusFilter && noPriorityFilter && noLabelFilter && noAssigneeFilter) {
+      return raw;
+    }
+
+    const key = `${filter.statuses.join(',')}|${filter.priorities.join(',')}|${filter.labels.join(',')}|${filter.assigneeIds.join(',')}`;
+    const cached = filteredByColumn.get(columnId);
+    if (cached !== undefined && cached.raw === raw && cached.key === key) {
+      return cached.result;
+    }
+
+    const statusSet = new Set(filter.statuses);
+    const prioritySet = new Set(filter.priorities);
+    const labelSet = new Set(filter.labels);
+    const assigneeSet = new Set(filter.assigneeIds);
+
+    const result = raw.filter((task) => {
+      if (!noStatusFilter && !statusSet.has(task.column_id)) return false;
+      if (!noPriorityFilter && !prioritySet.has(task.priority ?? '')) return false;
+      if (!noLabelFilter && !(task.labels ?? []).some((l) => labelSet.has(l))) return false;
+      if (!noAssigneeFilter && !(task.assignees ?? []).some((a) => assigneeSet.has(a.id))) return false;
+
+      return true;
+    });
+
+    filteredByColumn.set(columnId, { raw, key, result });
+    return result;
   }
 
   async function loadBoards(ws: string, projectSlug: string): Promise<void> {
@@ -652,6 +715,7 @@ export const useBoardsStore = defineStore('boards', () => {
     taskDetail,
     loadTaskDetails,
     tasksByColumn,
+    filteredTasksByColumn,
     loadBoards,
     loadBoardsForProject,
     boardsFor,

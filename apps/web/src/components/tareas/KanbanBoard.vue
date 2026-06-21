@@ -263,7 +263,7 @@ const menuItems = computed<MenuItem[]>(() => {
         v-for="column in boards.columns"
         :key="column.id"
         :column="column"
-        :tasks="boards.tasksByColumn(column.id)"
+        :tasks="boards.filteredTasksByColumn(column.id)"
         :selected-readable-id="selectedReadableId"
         :fluid="isMobile"
         @drop="onDrop"

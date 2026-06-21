@@ -9,6 +9,7 @@ import BoardViewMenu from '@/components/tareas/BoardViewMenu.vue';
 import KanbanBoard from '@/components/tareas/KanbanBoard.vue';
 import TaskCalendarView from '@/components/tareas/TaskCalendarView.vue';
 import TaskDetailPane from '@/components/tareas/TaskDetailPane.vue';
+import TaskFilterPanel from '@/components/tareas/TaskFilterPanel.vue';
 import TaskListView from '@/components/tareas/TaskListView.vue';
 import TaskTableView from '@/components/tareas/TaskTableView.vue';
 import TaskTimelineView from '@/components/tareas/TaskTimelineView.vue';
@@ -136,7 +137,11 @@ async function loadBoard(): Promise<void> {
   }
 
   await boards.loadBoard(ws.value, boardId.value);
-  await Promise.all([boards.loadColumns(ws.value, boardId.value), boards.loadTasks(ws.value, boardId.value)]);
+  await Promise.all([
+    boards.loadColumns(ws.value, boardId.value),
+    boards.loadTasks(ws.value, boardId.value),
+    workspace.loadMembers(ws.value),
+  ]);
 
   ensureTaskDetails();
   await openFromQuery();
@@ -257,16 +262,33 @@ watch([boardId, ws], loadBoard, { immediate: true });
         </Popover>
       </template>
 
-      <button
-        type="button"
-        class="atl-gbtn"
-        title="Filter"
-        aria-label="Filter"
-        @click="ui.showBanner('Filtering is coming soon', 'info')"
-      >
-        <Icon name="filter" :size="14" />
-        Filter
-      </button>
+      <Popover placement="bottom-start">
+        <template #trigger="{ open, toggle }">
+          <button
+            type="button"
+            class="atl-gbtn"
+            :class="{ on: ui.hasActiveFilter }"
+            title="Filter"
+            aria-label="Filter"
+            aria-haspopup="dialog"
+            :aria-expanded="open"
+            @click="toggle"
+          >
+            <span class="atl-filter-icon" style="position: relative; display: inline-flex;">
+              <Icon name="filter" :size="14" />
+              <span
+                v-if="ui.hasActiveFilter"
+                aria-hidden="true"
+                style="position: absolute; top: -2px; right: -3px; width: 6px; height: 6px; border-radius: var(--r-full); background: var(--c-primary);"
+              />
+            </span>
+            Filter
+          </button>
+        </template>
+        <template #default>
+          <TaskFilterPanel />
+        </template>
+      </Popover>
       <button
         type="button"
         class="atl-gbtn"

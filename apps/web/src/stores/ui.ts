@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 
 export type InspectorTab = 'properties' | 'backlinks' | 'activity' | 'share';
 export type SettingsTab = 'account' | 'keys' | 'users' | 'about';
@@ -8,6 +8,13 @@ export type Theme = 'dark' | 'light';
 export type TaskViewMode = 'sidebar' | 'modal' | 'full';
 export type TaskBoardView = 'board' | 'list' | 'table' | 'calendar' | 'timeline';
 export type TaskGroupBy = 'status' | 'assignee' | 'priority';
+
+export interface TaskFilterState {
+  statuses: string[];
+  priorities: string[];
+  assigneeIds: string[];
+  labels: string[];
+}
 
 export interface Banner {
   message: string;
@@ -199,6 +206,32 @@ export const useUiStore = defineStore('ui', () => {
     taskGroupBy.value = group;
   }
 
+  // Session-only filter state for the tasks board. Parallels taskGroupBy and
+  // taskView: ephemeral, not persisted, cleared when the board unmounts or the
+  // user explicitly clears it.
+  const taskFilter = ref<TaskFilterState>({
+    statuses: [],
+    priorities: [],
+    assigneeIds: [],
+    labels: [],
+  });
+
+  const hasActiveFilter = computed<boolean>(
+    () =>
+      taskFilter.value.statuses.length > 0 ||
+      taskFilter.value.priorities.length > 0 ||
+      taskFilter.value.assigneeIds.length > 0 ||
+      taskFilter.value.labels.length > 0,
+  );
+
+  function setTaskFilter(next: TaskFilterState): void {
+    taskFilter.value = next;
+  }
+
+  function clearTaskFilter(): void {
+    taskFilter.value = { statuses: [], priorities: [], assigneeIds: [], labels: [] };
+  }
+
   const settingsOpen = ref(false);
   const settingsTab = ref<SettingsTab>('account');
 
@@ -243,6 +276,10 @@ export const useUiStore = defineStore('ui', () => {
     setTaskView,
     taskGroupBy,
     setTaskGroupBy,
+    taskFilter,
+    hasActiveFilter,
+    setTaskFilter,
+    clearTaskFilter,
     settingsOpen,
     settingsTab,
     openSettings,

@@ -59,7 +59,9 @@ function priorityLabel(priority: string | null): string {
   return priority.charAt(0).toUpperCase() + priority.slice(1);
 }
 
-const allTasks = computed<TaskSummaryDto[]>(() => boards.columns.flatMap((c) => boards.tasksByColumn(c.id)));
+const allTasks = computed<TaskSummaryDto[]>(() =>
+  boards.columns.flatMap((c) => boards.filteredTasksByColumn(c.id)),
+);
 
 function firstAssigneeName(task: TaskSummaryDto): string | null {
   const actor = task.assignees?.[0];
@@ -73,7 +75,7 @@ const statusGroups = computed<Group[]>(() =>
     label: column.name,
     color: statusColor(column),
     done: isDoneColumn(column),
-    tasks: boards.tasksByColumn(column.id),
+    tasks: boards.filteredTasksByColumn(column.id),
   })),
 );
 

@@ -56,7 +56,9 @@ function jumpToToday(): void {
   viewMonth.value = today.getMonth();
 }
 
-const allTasks = computed<TaskSummaryDto[]>(() => boards.columns.flatMap((c) => boards.tasksByColumn(c.id)));
+const allTasks = computed<TaskSummaryDto[]>(() =>
+  boards.columns.flatMap((c) => boards.filteredTasksByColumn(c.id)),
+);
 
 function dueDate(readableId: string): Date | null {
   const raw = boards.taskDetail(readableId)?.due_date;
