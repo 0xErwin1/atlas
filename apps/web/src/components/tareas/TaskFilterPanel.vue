@@ -12,15 +12,18 @@ import { computed, type WritableComputedRef } from 'vue';
 import Icon from '@/components/ui/Icon.vue';
 import MultiSelect, { type MultiSelectOption } from '@/components/ui/MultiSelect.vue';
 import SectionLabel from '@/components/ui/SectionLabel.vue';
+import { resolveColumnSwatchId } from '@/lib/columnColor';
 import { swatchById } from '@/lib/swatches';
 import { useBoardsStore } from '@/stores/boards';
 import { useLabelColorsStore } from '@/stores/labelColors';
+import { useTagsStore } from '@/stores/tags';
 import { type TaskFilterState, useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 
 const ui = useUiStore();
 const boards = useBoardsStore();
 const labelColors = useLabelColorsStore();
+const tags = useTagsStore();
 const workspace = useWorkspaceStore();
 
 const PRIORITY_OPTIONS: MultiSelectOption[] = [
@@ -34,7 +37,7 @@ const statusOptions = computed<MultiSelectOption[]>(() =>
   boards.columns.map((column) => ({
     value: column.id,
     label: column.name,
-    dot: swatchById(labelColors.colorFor(`status:${column.id}`)).fg,
+    dot: swatchById(resolveColumnSwatchId(column)).fg,
   })),
 );
 
@@ -42,7 +45,7 @@ const labelOptions = computed<MultiSelectOption[]>(() =>
   labelColors.tagNames.map((name) => ({
     value: name,
     label: name,
-    dot: swatchById(labelColors.colorFor(`tag:${name.toLowerCase()}`)).fg,
+    dot: swatchById(tags.colorFor(name)).fg,
   })),
 );
 

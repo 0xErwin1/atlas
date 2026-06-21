@@ -23,6 +23,7 @@ import { resolveDropTarget } from '@/composables/kanbanDrop';
 import { useContextMenu } from '@/composables/useContextMenu';
 import { useKanbanMove } from '@/composables/useKanbanMove';
 import { useTaskInteractions } from '@/composables/useTaskInteractions';
+import { resolveColumnSwatchId } from '@/lib/columnColor';
 import { swatchById } from '@/lib/swatches';
 import type { ColumnDto, TaskSummaryDto } from '@/stores/boards';
 import { useBoardsStore } from '@/stores/boards';
@@ -78,7 +79,7 @@ const PRIORITY_COLOR: Record<string, string> = {
 };
 
 function statusColor(column: ColumnDto): string {
-  return swatchById(labelColors.colorFor(`status:${column.name}`)).fg;
+  return swatchById(resolveColumnSwatchId(column)).fg;
 }
 
 function isDoneColumn(column: ColumnDto): boolean {

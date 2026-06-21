@@ -21,8 +21,9 @@ import Icon from '@/components/ui/Icon.vue';
 import PromptDialog from '@/components/ui/PromptDialog.vue';
 import { useContextMenu } from '@/composables/useContextMenu';
 import { useTaskInteractions } from '@/composables/useTaskInteractions';
+import { resolveColumnSwatchId } from '@/lib/columnColor';
 import { relativeTime } from '@/lib/relativeTime';
-import { swatchById } from '@/lib/swatches';
+import { defaultSwatchId, swatchById } from '@/lib/swatches';
 import type { ColumnDto, TaskSummaryDto } from '@/stores/boards';
 import { useBoardsStore } from '@/stores/boards';
 import { useLabelColorsStore } from '@/stores/labelColors';
@@ -54,8 +55,16 @@ const PRIORITY_COLOR: Record<string, string> = {
   low: 'var(--c-muted)',
 };
 
-function statusColor(columnName: string): string {
-  return swatchById(labelColors.colorFor(`status:${columnName}`)).fg;
+// This cross-board feed carries only the column NAME on each task, not the
+// column id/color. When the board's columns have been loaded (e.g. after opening
+// a status picker) the backend color is the source of truth via the resolver;
+// otherwise the deterministic name-keyed default keeps the marker stable.
+function statusColor(columnName: string, boardId?: string): string {
+  if (boardId !== undefined) {
+    const column = (statusColumns.value[boardId] ?? []).find((c) => c.name === columnName);
+    if (column !== undefined) return swatchById(resolveColumnSwatchId(column)).fg;
+  }
+  return swatchById(defaultSwatchId(`status:${columnName}`)).fg;
 }
 
 function isDone(task: TaskSummaryDto): boolean {
@@ -153,7 +162,7 @@ function statusOptionsFor(task: TaskSummaryDto): PickerOption[] {
   return (statusColumns.value[task.board_id] ?? []).map((column) => ({
     value: column.id,
     label: column.name,
-    color: statusColor(column.name),
+    color: swatchById(resolveColumnSwatchId(column)).fg,
     active: column.id === task.column_id,
   }));
 }
@@ -252,7 +261,7 @@ function onAssigneePick(task: TaskSummaryDto, value: string): void {
               v-else
               class="atl-tl-marker"
               title="Change status"
-              :style="{ borderColor: statusColor(task.column_name) }"
+              :style="{ borderColor: statusColor(task.column_name, task.board_id) }"
             />
           </template>
         </TaskRowPicker>
@@ -326,7 +335,7 @@ function onAssigneePick(task: TaskSummaryDto, value: string): void {
 
         <span
           class="atl-tl-status"
-          :style="{ color: statusColor(task.column_name) }"
+          :style="{ color: statusColor(task.column_name, task.board_id) }"
         >
           {{ task.column_name }}
         </span>

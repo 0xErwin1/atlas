@@ -210,4 +210,66 @@ describe('useWorkspaceStore', () => {
     expect(slug).toBeNull();
     expect(store.error).toBe('Agents cannot');
   });
+
+  it('renameWorkspace PATCHes the workspace and reflects the new name in the cached list', async () => {
+    mockPatch.mockResolvedValueOnce({
+      data: { id: '1', name: 'Atlas Renamed', slug: 'atlas', created_at: 'x', updated_at: 'y' },
+      error: undefined,
+    });
+
+    const store = useWorkspaceStore();
+    store.workspaces = [{ id: '1', name: 'Atlas', slug: 'atlas', created_at: 'x', updated_at: 'x' }];
+
+    const ok = await store.renameWorkspace('atlas', 'Atlas Renamed');
+
+    expect(ok).toBe(true);
+    expect(mockPatch).toHaveBeenCalledWith('/v1/workspaces/{ws}', {
+      params: { path: { ws: 'atlas' } },
+      body: { name: 'Atlas Renamed' },
+    });
+    expect(store.workspaces.at(0)?.name).toBe('Atlas Renamed');
+  });
+
+  it('renameWorkspace returns false and sets error on API failure', async () => {
+    mockPatch.mockResolvedValueOnce({
+      data: undefined,
+      error: { type: 'urn:atlas:error:forbidden', title: 'Forbidden', status: 403, hint: 'No permission' },
+    });
+
+    const store = useWorkspaceStore();
+    const ok = await store.renameWorkspace('atlas', 'X');
+
+    expect(ok).toBe(false);
+    expect(store.error).toBe('No permission');
+  });
+
+  it('loadAdminWorkspaces GETs the admin list and stores it', async () => {
+    mockGet.mockResolvedValueOnce({
+      data: [
+        { id: '1', name: 'Atlas', slug: 'atlas', created_at: 'x', updated_at: 'x' },
+        { id: '2', name: 'Other', slug: 'other', created_at: 'x', updated_at: 'x' },
+      ],
+      error: undefined,
+    });
+
+    const store = useWorkspaceStore();
+    await store.loadAdminWorkspaces();
+
+    expect(mockGet).toHaveBeenCalledWith('/v1/admin/workspaces');
+    expect(store.adminWorkspaces).toHaveLength(2);
+    expect(store.adminWorkspaces.at(1)?.slug).toBe('other');
+  });
+
+  it('loadAdminWorkspaces clears the list and sets error on failure', async () => {
+    mockGet.mockResolvedValueOnce({
+      data: undefined,
+      error: { type: 'urn:atlas:error:forbidden', title: 'Forbidden', status: 403, hint: 'Root only' },
+    });
+
+    const store = useWorkspaceStore();
+    await store.loadAdminWorkspaces();
+
+    expect(store.adminWorkspaces).toEqual([]);
+    expect(store.error).toBe('Root only');
+  });
 });

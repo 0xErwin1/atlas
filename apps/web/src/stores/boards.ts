@@ -300,6 +300,83 @@ export const useBoardsStore = defineStore('boards', () => {
     return data;
   }
 
+  /**
+   * Patches a column's name and/or color (color is a swatch id; `null` clears it
+   * back to the deterministic default). Replaces the cached column in place,
+   * re-sorting so a name change never disturbs the ordering. Returns true on
+   * success; sets `error` otherwise.
+   */
+  async function updateColumn(
+    ws: string,
+    boardId: string,
+    columnId: string,
+    patch: { name?: string; color?: string | null },
+  ): Promise<boolean> {
+    const { data, error: apiError } = await wrappedClient.PATCH(
+      '/v1/workspaces/{ws}/boards/{board_id}/columns/{column_id}',
+      {
+        params: { path: { ws, board_id: boardId, column_id: columnId } },
+        body: patch,
+      },
+    );
+
+    if (apiError !== undefined || data === undefined) {
+      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to update status';
+      return false;
+    }
+
+    columns.value = columns.value
+      .map((c) => (c.id === columnId ? data : c))
+      .sort((a, b) => a.position_key.localeCompare(b.position_key));
+    return true;
+  }
+
+  /**
+   * Reorders a column by requesting a new position between `before`/`after`
+   * sibling position keys. Re-sorts the cache by the returned `position_key`.
+   * Returns true on success; sets `error` otherwise.
+   */
+  async function moveColumn(
+    ws: string,
+    boardId: string,
+    columnId: string,
+    placement: { before: string | null; after: string | null },
+  ): Promise<boolean> {
+    const { data, error: apiError } = await wrappedClient.PATCH(
+      '/v1/workspaces/{ws}/boards/{board_id}/columns/{column_id}',
+      {
+        params: { path: { ws, board_id: boardId, column_id: columnId } },
+        body: { before: placement.before, after: placement.after },
+      },
+    );
+
+    if (apiError !== undefined || data === undefined) {
+      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to reorder status';
+      return false;
+    }
+
+    columns.value = columns.value
+      .map((c) => (c.id === columnId ? data : c))
+      .sort((a, b) => a.position_key.localeCompare(b.position_key));
+    return true;
+  }
+
+  /** Deletes a column (status) and drops it from the cache. Returns true on success. */
+  async function deleteColumn(ws: string, boardId: string, columnId: string): Promise<boolean> {
+    const { error: apiError } = await wrappedClient.DELETE(
+      '/v1/workspaces/{ws}/boards/{board_id}/columns/{column_id}',
+      { params: { path: { ws, board_id: boardId, column_id: columnId } } },
+    );
+
+    if (apiError !== undefined) {
+      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to delete status';
+      return false;
+    }
+
+    columns.value = columns.value.filter((c) => c.id !== columnId);
+    return true;
+  }
+
   async function loadTasks(ws: string, boardId: string): Promise<void> {
     // The kanban shows every task on the board; page through so a board with more
     // than one page of tasks is not silently truncated.
@@ -755,6 +832,9 @@ export const useBoardsStore = defineStore('boards', () => {
     loadBoard,
     loadColumns,
     createColumn,
+    updateColumn,
+    moveColumn,
+    deleteColumn,
     loadTasks,
     reconcileTask,
     applyOptimisticMove,

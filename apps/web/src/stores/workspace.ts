@@ -37,6 +37,9 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const activeWorkspaceSlug = ref<string | null>(null);
   const projects = ref<ProjectSummary[]>([]);
   const workspaces = ref<WorkspaceDto[]>([]);
+  // Every workspace in the system, loaded on demand for the root-only admin
+  // panel. Kept separate from `workspaces` (the caller's own memberships).
+  const adminWorkspaces = ref<WorkspaceDto[]>([]);
   const members = ref<PrincipalDto[]>([]);
   const error = ref<string | null>(null);
 
@@ -184,6 +187,46 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     return true;
   }
 
+  /**
+   * Renames a workspace's display name (the slug is never re-derived server-side,
+   * so existing links stay valid). Reflects the new name in any cached workspace
+   * list — the active memberships and, when present, the admin list. Returns true
+   * on success; sets `error` and returns false otherwise.
+   */
+  async function renameWorkspace(ws: string, name: string): Promise<boolean> {
+    const { data, error: apiError } = await wrappedClient.PATCH('/v1/workspaces/{ws}', {
+      params: { path: { ws } },
+      body: { name },
+    });
+
+    if (apiError !== undefined || data === undefined) {
+      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to rename workspace';
+      return false;
+    }
+
+    const apply = (list: WorkspaceDto[]): WorkspaceDto[] => list.map((w) => (w.slug === ws ? data : w));
+
+    workspaces.value = apply(workspaces.value);
+    adminWorkspaces.value = apply(adminWorkspaces.value);
+    return true;
+  }
+
+  /**
+   * Loads every workspace in the system for the root-only admin panel. Clears the
+   * list and sets `error` on failure (e.g. a non-root caller gets 403).
+   */
+  async function loadAdminWorkspaces(): Promise<void> {
+    const { data, error: apiError } = await wrappedClient.GET('/v1/admin/workspaces');
+
+    if (apiError !== undefined || data === undefined) {
+      adminWorkspaces.value = [];
+      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to load workspaces';
+      return;
+    }
+
+    adminWorkspaces.value = data;
+  }
+
   /** Loads workspace members (users and agents) for assignee pickers. */
   async function loadMembers(ws: string): Promise<void> {
     const { data, error: apiError } = await wrappedClient.GET('/v1/workspaces/{ws}/members', {
@@ -202,12 +245,15 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     activeWorkspaceSlug,
     projects,
     workspaces,
+    adminWorkspaces,
     members,
     error,
     setActiveWorkspace,
     switchWorkspace,
     createWorkspace,
+    renameWorkspace,
     loadWorkspaces,
+    loadAdminWorkspaces,
     loadProjects,
     createProject,
     renameProject,

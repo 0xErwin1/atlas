@@ -3,16 +3,28 @@ import { computed, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import AboutPanel from '@/components/settings/AboutPanel.vue';
 import AccountPanel from '@/components/settings/AccountPanel.vue';
+import AdminWorkspacesPanel from '@/components/settings/AdminWorkspacesPanel.vue';
 import ApiKeysPanel from '@/components/settings/ApiKeysPanel.vue';
+import StatusesPanel from '@/components/settings/StatusesPanel.vue';
+import TagsPanel from '@/components/settings/TagsPanel.vue';
 import UsersPanel from '@/components/settings/UsersPanel.vue';
+import WorkspaceGeneralPanel from '@/components/settings/WorkspaceGeneralPanel.vue';
 import Icon from '@/components/ui/Icon.vue';
 import { useAuthStore } from '@/stores/auth';
 import AppShell from '@/views/AppShell.vue';
 
 // Section slugs are the contract between the URL (/settings/:section) and the
-// panels. New sections (general, statuses, tags, workspaces) are added here
-// plus an entry in the nav groups below — F-PANELS extends both.
-export type SettingsSection = 'account' | 'keys' | 'users' | 'about';
+// panels. Adding a section means extending this union, adding one nav entry to
+// the right group below, and adding one panel branch in the template.
+export type SettingsSection =
+  | 'account'
+  | 'keys'
+  | 'general'
+  | 'statuses'
+  | 'tags'
+  | 'users'
+  | 'workspaces'
+  | 'about';
 
 const DEFAULT_SECTION: SettingsSection = 'account';
 
@@ -48,6 +60,14 @@ const navGroups = computed<NavGroup[]>(() => {
         { section: 'keys', icon: 'key', label: 'API keys' },
       ],
     },
+    {
+      label: 'Workspace',
+      entries: [
+        { section: 'general', icon: 'settings', label: 'General' },
+        { section: 'statuses', icon: 'kanban', label: 'Statuses' },
+        { section: 'tags', icon: 'tag', label: 'Tags' },
+      ],
+    },
   ];
 
   if (isRoot.value) {
@@ -55,6 +75,7 @@ const navGroups = computed<NavGroup[]>(() => {
       label: 'Administration',
       entries: [
         { section: 'users', icon: 'users', label: 'Users', rootOnly: true },
+        { section: 'workspaces', icon: 'layers', label: 'Workspaces', rootOnly: true },
         { section: 'about', icon: 'info', label: 'About', rootOnly: true },
       ],
     });
@@ -127,7 +148,11 @@ watch(
     <div class="atl-settings-content">
       <AccountPanel v-if="activeSection === 'account'" />
       <ApiKeysPanel v-else-if="activeSection === 'keys'" />
+      <WorkspaceGeneralPanel v-else-if="activeSection === 'general'" />
+      <StatusesPanel v-else-if="activeSection === 'statuses'" />
+      <TagsPanel v-else-if="activeSection === 'tags'" />
       <UsersPanel v-else-if="activeSection === 'users'" />
+      <AdminWorkspacesPanel v-else-if="activeSection === 'workspaces'" />
       <AboutPanel v-else-if="activeSection === 'about'" />
     </div>
   </AppShell>

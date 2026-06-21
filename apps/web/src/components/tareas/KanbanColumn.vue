@@ -5,6 +5,8 @@ import TaskCard from '@/components/tareas/TaskCard.vue';
 import Icon from '@/components/ui/Icon.vue';
 import { resolveDropTarget } from '@/composables/kanbanDrop';
 import { useInlineEdit } from '@/composables/useInlineEdit';
+import { resolveColumnSwatchId } from '@/lib/columnColor';
+import { swatchById } from '@/lib/swatches';
 import type { ColumnDto, TaskSummaryDto } from '@/stores/boards';
 
 const props = defineProps<{
@@ -35,15 +37,7 @@ const {
   onKeydown: onAddKeydown,
 } = useInlineEdit<'task'>((title) => emit('create', props.column.id, title));
 
-const DOT_COLOR: Record<string, string> = {
-  backlog: 'var(--c-muted)',
-  'in progress': 'var(--c-info)',
-  inprogress: 'var(--c-info)',
-  review: 'var(--c-primary)',
-  done: 'var(--c-success)',
-};
-
-const dotColor = computed(() => DOT_COLOR[props.column.name.toLowerCase()] ?? 'var(--c-muted)');
+const dotColor = computed(() => swatchById(resolveColumnSwatchId(props.column)).fg);
 
 /**
  * vue-draggable-plus drives `v-model` mutation on drop; we ignore the mutated
