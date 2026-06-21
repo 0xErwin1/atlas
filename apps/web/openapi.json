@@ -7240,6 +7240,7 @@
               "required": [
                 "id",
                 "readable_id",
+                "board_id",
                 "column_id",
                 "title",
                 "board_name",
@@ -7253,6 +7254,10 @@
                     "$ref": "#/components/schemas/ActorDto"
                   },
                   "description": "Assigned actors (users and agents), resolved with display names so the\nkanban card can render an avatar and the agent badge without a follow-up\nrequest."
+                },
+                "board_id": {
+                  "type": "string",
+                  "format": "uuid"
                 },
                 "board_name": {
                   "type": "string",
@@ -7966,6 +7971,7 @@
         "required": [
           "id",
           "readable_id",
+          "board_id",
           "column_id",
           "title",
           "board_name",
@@ -7979,6 +7985,10 @@
               "$ref": "#/components/schemas/ActorDto"
             },
             "description": "Assigned actors (users and agents), resolved with display names so the\nkanban card can render an avatar and the agent badge without a follow-up\nrequest."
+          },
+          "board_id": {
+            "type": "string",
+            "format": "uuid"
           },
           "board_name": {
             "type": "string",
