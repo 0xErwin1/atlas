@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
+import { z } from 'zod';
 import ResultRow from '@/components/search/ResultRow.vue';
 import SearchPreview from '@/components/search/SearchPreview.vue';
 import EditorToolbar from '@/components/shell/EditorToolbar.vue';
@@ -8,10 +9,13 @@ import EmptyState from '@/components/states/EmptyState.vue';
 import ErrorState from '@/components/states/ErrorState.vue';
 import LoadingState from '@/components/states/LoadingState.vue';
 import Btn from '@/components/ui/Btn.vue';
+import FormField from '@/components/ui/FormField.vue';
 import Icon from '@/components/ui/Icon.vue';
 import Popover from '@/components/ui/Popover.vue';
 import { useBreakpoint } from '@/composables/useBreakpoint';
 import { useSearch } from '@/composables/useSearch';
+import { validateForm } from '@/lib/validation';
+import { useSavedSearchesStore } from '@/stores/savedSearches';
 import { type SearchHitDto, type SearchSort, useSearchStore } from '@/stores/search';
 import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
@@ -27,6 +31,53 @@ const ws = computed(() => workspace.activeWorkspaceSlug ?? '');
 
 const { store, onQueryInput, loadMore } = useSearch(ws.value);
 const searchStore = useSearchStore();
+const savedSearches = useSavedSearchesStore();
+
+const saveName = ref('');
+const saveError = ref<string | null>(null);
+const saving = ref(false);
+
+const saveSchema = z.object({
+  name: z.string().trim().min(1, 'Name is required').max(100, 'Name is too long'),
+});
+
+function resetSaveForm(): void {
+  saveName.value = '';
+  saveError.value = null;
+}
+
+function onSaveTriggerClick(toggle: () => void): void {
+  if (searchStore.query.trim() === '') return;
+  resetSaveForm();
+  toggle();
+}
+
+async function submitSave(close: () => void): Promise<void> {
+  const validation = validateForm(saveSchema, { name: saveName.value });
+  if (!validation.ok) {
+    saveError.value = validation.errors.name ?? 'Name is invalid';
+    return;
+  }
+
+  saving.value = true;
+  saveError.value = null;
+
+  const created = await savedSearches.create(ws.value, {
+    name: validation.data.name,
+    query: searchStore.query,
+  });
+
+  saving.value = false;
+
+  if (created === null) {
+    saveError.value = savedSearches.error ?? 'Could not save search';
+    return;
+  }
+
+  resetSaveForm();
+  close();
+  ui.showBanner('Search saved', 'success');
+}
 
 const SCOPE_CHIPS: Array<{ value: 'all' | 'note' | 'task'; label: string }> = [
   { value: 'all', label: 'All' },
@@ -153,15 +204,46 @@ function onListKeydown(event: KeyboardEvent): void {
     </template>
 
     <template #sidebar-footer>
-      <button
-        type="button"
-        class="atl-gbtn"
-        style="width: 100%; justify-content: flex-start; height: 26px; gap: 7px; color: var(--c-foreground);"
-        @click="ui.showBanner('Saved searches are coming soon', 'info')"
-      >
-        <Icon name="star" :size="14" />
-        Save this search
-      </button>
+      <Popover placement="top-start" block>
+        <template #trigger="{ open, toggle }">
+          <button
+            type="button"
+            class="atl-gbtn"
+            aria-label="Save this search"
+            :disabled="store.query.trim() === ''"
+            :style="{
+              width: '100%',
+              justifyContent: 'flex-start',
+              height: '26px',
+              gap: '7px',
+              color: 'var(--c-foreground)',
+              opacity: store.query.trim() === '' ? 0.5 : 1,
+              cursor: store.query.trim() === '' ? 'not-allowed' : 'pointer',
+              background: open ? 'var(--c-selection)' : undefined,
+            }"
+            @click="onSaveTriggerClick(toggle)"
+          >
+            <Icon name="star" :size="14" />
+            Save this search
+          </button>
+        </template>
+
+        <template #default="{ close }">
+          <div style="width: 232px; padding: 10px;">
+            <FormField
+              v-model="saveName"
+              label="Name"
+              placeholder="Open tasks tagged urgent"
+              :error="saveError"
+              @keydown.enter.prevent="submitSave(close)"
+            />
+            <div class="flex" style="gap: 6px; margin-top: 10px; justify-content: flex-end;">
+              <Btn variant="secondary" @click="close()">Cancel</Btn>
+              <Btn variant="primary" :disabled="saving" @click="submitSave(close)">Save</Btn>
+            </div>
+          </div>
+        </template>
+      </Popover>
     </template>
 
     <div

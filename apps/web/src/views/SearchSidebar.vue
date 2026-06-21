@@ -1,12 +1,17 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, type WritableComputedRef } from 'vue';
+import ContextMenu, { type MenuItem } from '@/components/ui/ContextMenu.vue';
 import Icon from '@/components/ui/Icon.vue';
 import MultiSelect, { type MultiSelectOption } from '@/components/ui/MultiSelect.vue';
 import Row from '@/components/ui/Row.vue';
 import SectionLabel from '@/components/ui/SectionLabel.vue';
+import { useContextMenu } from '@/composables/useContextMenu';
+import { useInlineEdit } from '@/composables/useInlineEdit';
 import { swatchById } from '@/lib/swatches';
 import { useLabelColorsStore } from '@/stores/labelColors';
+import { type SavedSearchDto, useSavedSearchesStore } from '@/stores/savedSearches';
 import { useSearchStore } from '@/stores/search';
+import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 
 const props = defineProps<{
@@ -22,6 +27,8 @@ const emit = defineEmits<{
 const store = useSearchStore();
 const workspace = useWorkspaceStore();
 const labelColors = useLabelColorsStore();
+const savedSearches = useSavedSearchesStore();
+const ui = useUiStore();
 
 const TYPE_OPTIONS: MultiSelectOption[] = [
   { value: 'note', label: 'Notes', icon: 'notes' },
@@ -158,6 +165,57 @@ function pickRecent(value: string): void {
   emit('rerun');
 }
 
+// ── Saved searches: apply / rename (inline) / delete (context menu) ──────
+const ws = computed(() => workspace.activeWorkspaceSlug ?? '');
+
+const { open: menuOpen, x: menuX, y: menuY, openAt, close: closeMenu } = useContextMenu();
+const menuTarget = ref<SavedSearchDto | null>(null);
+
+const {
+  active: editActive,
+  value: editValue,
+  inputRef,
+  start: startEdit,
+  commit: commitEdit,
+  onKeydown: onEditKeydown,
+} = useInlineEdit<{ id: string }>(async (name, ctx) => {
+  if (ws.value === '') return;
+  const ok = await savedSearches.rename(ws.value, ctx.id, name);
+  if (!ok && savedSearches.error) ui.showBanner(savedSearches.error, 'error');
+});
+
+function applySaved(ss: SavedSearchDto): void {
+  store.setQuery(ss.query);
+  emit('rerun');
+}
+
+async function removeSaved(ss: SavedSearchDto): Promise<void> {
+  if (ws.value === '') return;
+  const ok = await savedSearches.remove(ws.value, ss.id);
+  if (!ok && savedSearches.error) ui.showBanner(savedSearches.error, 'error');
+}
+
+const savedMenuItems = computed<MenuItem[]>(() => {
+  const t = menuTarget.value;
+  if (t === null) return [];
+  return [
+    { header: true, label: t.name },
+    { label: 'Apply', icon: 'corner-down-left', action: () => applySaved(t) },
+    { sep: true },
+    { label: 'Rename', icon: 'pencil', action: () => startEdit({ id: t.id }, t.name, true) },
+    { label: 'Delete', icon: 'trash-2', danger: true, action: () => void removeSaved(t) },
+  ];
+});
+
+function openSavedMenu(event: MouseEvent, ss: SavedSearchDto): void {
+  menuTarget.value = ss;
+  openAt(event);
+}
+
+onMounted(() => {
+  if (ws.value !== '') void savedSearches.load(ws.value);
+});
+
 // The Search rail is 256px in the design, narrower than the shared 264px shell
 // default. The width lives on the ContextSidebar `aside`, which this view does
 // not own, so it is overridden here for the Search view only — the enclosing
@@ -275,5 +333,58 @@ onBeforeUnmount(() => {
         @click="pickRecent(q)"
       />
     </template>
+
+    <template v-if="savedSearches.items.length > 0">
+      <SectionLabel>Saved</SectionLabel>
+      <template v-for="ss in savedSearches.items" :key="ss.id">
+        <div
+          v-if="editActive?.id === ss.id"
+          style="display: flex; align-items: center; gap: 6px; padding: 3px 8px;"
+        >
+          <Icon name="star" :size="13" style="color: var(--c-muted); flex-shrink: 0;" />
+          <input
+            ref="inputRef"
+            v-model="editValue"
+            type="text"
+            placeholder="Search name…"
+            class="saved-inline-input"
+            @keydown="onEditKeydown"
+            @blur="commitEdit"
+          />
+        </div>
+        <Row
+          v-else
+          :label="ss.name"
+          icon="star"
+          menu
+          @click="applySaved(ss)"
+          @menu="(event: MouseEvent) => openSavedMenu(event, ss)"
+          @contextmenu.prevent.stop="(event: MouseEvent) => openSavedMenu(event, ss)"
+        />
+      </template>
+    </template>
+
+    <ContextMenu
+      :open="menuOpen"
+      :x="menuX"
+      :y="menuY"
+      :items="savedMenuItems"
+      @close="closeMenu"
+    />
   </div>
 </template>
+
+<style scoped>
+.saved-inline-input {
+  flex: 1;
+  height: 28px;
+  padding: 0 6px;
+  background: var(--c-input);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sm);
+  font-family: var(--font-mono);
+  color: var(--c-foreground);
+  outline: none;
+}
+</style>
