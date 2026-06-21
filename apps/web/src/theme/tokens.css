@@ -90,12 +90,12 @@
   --font-mono: 'JetBrains Mono', 'JetBrainsMono', monospace;
 
   /* Font sizes */
-  --fs-xs: 11px;
-  --fs-sm: 12px;
-  --fs-base: 13px;
-  --fs-lg: 14px;
-  --fs-xl: 16px;
-  --fs-title: 18px;
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs-base: 14px;
+  --fs-lg: 15px;
+  --fs-xl: 17px;
+  --fs-title: 19px;
 
   /* Font weights */
   --fw-normal: 400;
