@@ -23,6 +23,7 @@ import { useTasksStore } from '@/stores/tasks';
 import { useTaskViewsStore } from '@/stores/taskViews';
 import type { TaskGroupBy } from '@/stores/ui';
 import { useUiStore } from '@/stores/ui';
+import { useUiStateStore } from '@/stores/uiState';
 import { useWorkspaceStore } from '@/stores/workspace';
 import { paramsForView, useWorkspaceTasksStore } from '@/stores/workspaceTasks';
 import AppShell from '@/views/AppShell.vue';
@@ -36,6 +37,7 @@ const boards = useBoardsStore();
 const tasks = useTasksStore();
 const detail = useTaskDetailStore();
 const ui = useUiStore();
+const uiState = useUiStateStore();
 const workspaceTasks = useWorkspaceTasksStore();
 const taskViews = useTaskViewsStore();
 const { isMobile } = useBreakpoint();
@@ -169,6 +171,9 @@ async function loadBoard(): Promise<void> {
     boards.loadTasks(ws.value, boardId.value),
     workspace.loadMembers(ws.value),
   ]);
+
+  const savedView = uiState.boardViewFor(boardId.value);
+  ui.setTaskView(savedView ?? 'board');
 
   ensureTaskDetails();
   await openFromQuery();

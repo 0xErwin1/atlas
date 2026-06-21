@@ -13,6 +13,7 @@ import { type TaskSummaryDto, useBoardsStore } from '@/stores/boards';
 const task = (id: string, readableId: string, columnId: string): TaskSummaryDto => ({
   id,
   readable_id: readableId,
+  board_id: 'board-1',
   column_id: columnId,
   board_name: 'Board',
   column_name: 'Todo',

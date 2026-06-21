@@ -7,6 +7,7 @@ import { useUiStore } from '@/stores/ui';
 function makeTask(overrides: Partial<TaskSummaryDto> & { id: string; column_id: string }): TaskSummaryDto {
   return {
     readable_id: overrides.id,
+    board_id: 'board-1',
     board_name: 'Board',
     column_name: 'Todo',
     title: `Task ${overrides.id}`,

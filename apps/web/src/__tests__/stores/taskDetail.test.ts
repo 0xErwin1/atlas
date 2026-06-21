@@ -39,6 +39,7 @@ const checklistItem = (id: string, title: string, checked: boolean) => ({
 const subtaskSummary = (id: string, readableId: string, title: string) => ({
   id,
   readable_id: readableId,
+  board_id: 'board-1',
   column_id: 'col-1',
   board_name: 'Board',
   column_name: 'Todo',

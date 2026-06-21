@@ -12,6 +12,7 @@ beforeEach(() => {
 const task = (overrides: Partial<TaskSummaryDto> = {}): TaskSummaryDto => ({
   id: 't1',
   readable_id: 'AB-1',
+  board_id: 'board-1',
   column_id: 'col-1',
   board_name: 'Board',
   column_name: 'Todo',

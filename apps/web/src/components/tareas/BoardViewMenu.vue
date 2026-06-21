@@ -4,8 +4,10 @@ import { useRouter } from 'vue-router';
 import NewViewDialog from '@/components/tareas/NewViewDialog.vue';
 import Icon from '@/components/ui/Icon.vue';
 import Popover from '@/components/ui/Popover.vue';
+import { useBoardsStore } from '@/stores/boards';
 import { type TaskViewFiltersDto, useTaskViewsStore } from '@/stores/taskViews';
 import { type TaskBoardView, useUiStore } from '@/stores/ui';
+import { useUiStateStore } from '@/stores/uiState';
 import { useWorkspaceStore } from '@/stores/workspace';
 
 /**
@@ -32,8 +34,10 @@ const VIEWS: ViewOption[] = [
 
 const router = useRouter();
 const ui = useUiStore();
+const uiState = useUiStateStore();
 const taskViews = useTaskViewsStore();
 const workspace = useWorkspaceStore();
+const boards = useBoardsStore();
 
 const activeId = computed(() => ui.taskView);
 const activeView = computed(() => VIEWS.find((v) => v.id === activeId.value) ?? DEFAULT_VIEW);
@@ -44,6 +48,9 @@ function activeLabel(): string {
 
 function pick(view: ViewOption): void {
   ui.setTaskView(view.id);
+
+  const boardId = boards.board?.id;
+  if (boardId !== undefined) uiState.setBoardView(boardId, view.id);
 }
 
 const dialogOpen = ref(false);

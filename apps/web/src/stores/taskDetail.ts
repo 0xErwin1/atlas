@@ -261,6 +261,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
       {
         id: data.id,
         readable_id: data.readable_id,
+        board_id: data.board_id,
         column_id: data.column_id,
         board_name: '',
         column_name: '',

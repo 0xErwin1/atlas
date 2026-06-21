@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { components } from '@/api/types';
 import { wrappedClient } from '@/api/wrapper';
+import type { TaskBoardView } from '@/stores/ui';
 
 // The server models `state` as an opaque JSON object, so the generated type is
 // an empty object. We hold concrete keys (e.g. collapsedFolders), so the PUT
@@ -57,5 +58,33 @@ export const useUiStateStore = defineStore('uiState', () => {
     scheduleSave();
   }
 
-  return { data, loaded, load, isFolderCollapsed, setFolderCollapsed };
+  // The board layout (kanban/list/table/...) the user last chose, keyed by board
+  // id. Absence means the board has no saved preference and falls back to the
+  // default view.
+  function boardViews(): Record<string, TaskBoardView> {
+    const v = data.value.boardViews;
+    return v !== null && typeof v === 'object' ? (v as Record<string, TaskBoardView>) : {};
+  }
+
+  function boardViewFor(boardId: string): TaskBoardView | undefined {
+    return boardViews()[boardId];
+  }
+
+  function setBoardView(boardId: string, view: TaskBoardView): void {
+    data.value = {
+      ...data.value,
+      boardViews: { ...boardViews(), [boardId]: view },
+    };
+    scheduleSave();
+  }
+
+  return {
+    data,
+    loaded,
+    load,
+    isFolderCollapsed,
+    setFolderCollapsed,
+    boardViewFor,
+    setBoardView,
+  };
 });

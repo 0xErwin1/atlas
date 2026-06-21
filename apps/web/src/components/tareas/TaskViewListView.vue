@@ -19,6 +19,7 @@ import { relativeTime } from '@/lib/relativeTime';
 import { swatchById } from '@/lib/swatches';
 import type { TaskSummaryDto } from '@/stores/boards';
 import { useLabelColorsStore } from '@/stores/labelColors';
+import { useUiStore } from '@/stores/ui';
 
 const props = defineProps<{
   tasks: TaskSummaryDto[];
@@ -31,6 +32,7 @@ const emit = defineEmits<{
 }>();
 
 const labelColors = useLabelColorsStore();
+const ui = useUiStore();
 
 const PRIORITY_COLOR: Record<string, string> = {
   urgent: 'var(--c-danger)',
@@ -60,11 +62,32 @@ function assigneeForTask(task: TaskSummaryDto): { name: string; agent: boolean }
 }
 
 const isEmpty = computed(() => props.tasks.length === 0);
+
+async function copyId(task: TaskSummaryDto): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(task.readable_id);
+    ui.showBanner(`Copied ${task.readable_id}`, 'success');
+  } catch {
+    ui.showBanner('Could not copy the task id', 'error');
+  }
+}
 </script>
 
 <template>
   <div class="atl-tl-scroll">
     <div class="atl-tl-inner">
+      <div v-if="!isEmpty" class="atl-tl-colhead">
+        <span />
+        <span>Name</span>
+        <span>Board</span>
+        <span class="atl-tl-h-id">ID</span>
+        <span class="atl-tl-h-center">Assignee</span>
+        <span>Priority</span>
+        <span>Status</span>
+        <span class="atl-tl-h-id">Estimate</span>
+        <span class="atl-tl-h-id">Updated</span>
+      </div>
+
       <button
         v-for="task in tasks"
         :key="task.id"
@@ -86,6 +109,53 @@ const isEmpty = computed(() => props.tasks.length === 0);
           :style="{ borderColor: statusColor(task.column_name) }"
         />
 
+        <span class="atl-tl-name">
+          <span class="atl-tl-title" :class="{ muted: isDone(task) }">{{ task.title }}</span>
+          <span v-if="(task.labels ?? []).length > 0" class="atl-tl-labels">
+            <Chip
+              v-for="label in task.labels ?? []"
+              :key="label"
+              :color="labelColors.colorFor(`tag:${label.toLowerCase()}`)"
+            >
+              {{ label }}
+            </Chip>
+          </span>
+        </span>
+
+        <span class="atl-tl-board">{{ task.board_name }}</span>
+
+        <span class="atl-tl-id">
+          <span class="atl-tl-id-text">{{ task.readable_id }}</span>
+          <button
+            type="button"
+            class="atl-tl-copy"
+            :title="`Copy ${task.readable_id}`"
+            @click.stop="copyId(task)"
+          >
+            <Icon name="copy" :size="12" />
+          </button>
+        </span>
+
+        <span class="atl-tl-assignee">
+          <template v-if="assigneeForTask(task)">
+            <Avatar :name="assigneeForTask(task)!.name" :agent="assigneeForTask(task)!.agent" :size="18" />
+          </template>
+          <span v-else class="atl-tl-noassignee" title="Unassigned">
+            <Icon name="user" :size="11" />
+          </span>
+        </span>
+
+        <span class="atl-tl-prio">
+          <template v-if="task.priority">
+            <Icon
+              name="flag"
+              :size="13"
+              :style="{ color: PRIORITY_COLOR[task.priority] ?? 'var(--c-muted)' }"
+            />
+            {{ priorityLabel(task.priority) }}
+          </template>
+        </span>
+
         <span
           class="atl-tl-status"
           :style="{ color: statusColor(task.column_name) }"
@@ -93,44 +163,9 @@ const isEmpty = computed(() => props.tasks.length === 0);
           {{ task.column_name }}
         </span>
 
-        <span class="atl-tl-board">{{ task.board_name }}</span>
+        <span class="atl-tl-est">{{ task.estimate !== null && task.estimate !== undefined ? `${task.estimate} pts` : '—' }}</span>
 
-        <span class="atl-tl-title" :class="{ muted: isDone(task) }">{{ task.title }}</span>
-
-        <span class="atl-tl-trailing">
-          <Chip
-            v-for="label in task.labels ?? []"
-            :key="label"
-            :color="labelColors.colorFor(`tag:${label.toLowerCase()}`)"
-          >
-            {{ label }}
-          </Chip>
-
-          <span class="atl-tl-prio">
-            <template v-if="task.priority">
-              <Icon
-                name="flag"
-                :size="13"
-                :style="{ color: PRIORITY_COLOR[task.priority] ?? 'var(--c-muted)' }"
-              />
-              {{ priorityLabel(task.priority) }}
-            </template>
-          </span>
-
-          <span class="atl-tl-est">{{ task.estimate !== null && task.estimate !== undefined ? `${task.estimate} pts` : '—' }}</span>
-
-          <span class="atl-tl-assignee">
-            <template v-if="assigneeForTask(task)">
-              <Avatar :name="assigneeForTask(task)!.name" :agent="assigneeForTask(task)!.agent" :size="18" />
-            </template>
-            <span v-else class="atl-tl-noassignee" title="Unassigned">
-              <Icon name="user" :size="11" />
-            </span>
-          </span>
-
-          <span class="atl-tl-id">{{ task.readable_id }}</span>
-          <span class="atl-tl-updated">{{ relativeTime(task.updated_at) }}</span>
-        </span>
+        <span class="atl-tl-updated">{{ relativeTime(task.updated_at) }}</span>
       </button>
 
       <p v-if="isEmpty" class="atl-tl-empty">No tasks to show.</p>
@@ -152,10 +187,35 @@ const isEmpty = computed(() => props.tasks.length === 0);
   max-width: 1100px;
 }
 
-.atl-tl-row {
-  display: flex;
+.atl-tl-colhead {
+  display: grid;
+  grid-template-columns: 15px minmax(0, 1fr) 110px 64px 26px 92px 110px 56px 64px;
   align-items: center;
-  gap: 10px;
+  column-gap: 10px;
+  padding: 0 12px 0 10px;
+  height: 28px;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--c-muted);
+  border-bottom: 1px solid var(--c-border);
+  margin-bottom: 4px;
+}
+
+.atl-tl-h-id {
+  text-align: right;
+}
+
+.atl-tl-h-center {
+  text-align: center;
+}
+
+.atl-tl-row {
+  display: grid;
+  grid-template-columns: 15px minmax(0, 1fr) 110px 64px 26px 92px 110px 56px 64px;
+  align-items: center;
+  column-gap: 10px;
   width: 100%;
   height: 38px;
   padding: 0 12px 0 10px;
@@ -193,8 +253,6 @@ const isEmpty = computed(() => props.tasks.length === 0);
 }
 
 .atl-tl-status {
-  flex: 0 0 auto;
-  width: 96px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -203,8 +261,8 @@ const isEmpty = computed(() => props.tasks.length === 0);
 }
 
 .atl-tl-board {
-  flex: 0 0 auto;
-  max-width: 130px;
+  justify-self: start;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -216,8 +274,14 @@ const isEmpty = computed(() => props.tasks.length === 0);
   color: var(--c-muted);
 }
 
+.atl-tl-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 .atl-tl-title {
-  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -230,25 +294,25 @@ const isEmpty = computed(() => props.tasks.length === 0);
   color: var(--c-muted);
 }
 
-.atl-tl-trailing {
-  display: flex;
+.atl-tl-labels {
+  display: inline-flex;
   align-items: center;
-  gap: 9px;
-  flex: 0 0 auto;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  flex: 0 1 auto;
 }
 
 .atl-tl-prio {
   display: inline-flex;
   align-items: center;
-  justify-content: flex-end;
   gap: 6px;
-  width: 86px;
+  min-width: 0;
   font-size: var(--fs-sm);
   color: var(--c-foreground);
 }
 
 .atl-tl-est {
-  width: 48px;
   text-align: right;
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
@@ -258,8 +322,7 @@ const isEmpty = computed(() => props.tasks.length === 0);
 .atl-tl-assignee {
   display: inline-flex;
   align-items: center;
-  justify-content: flex-end;
-  width: 22px;
+  justify-content: center;
 }
 
 .atl-tl-noassignee {
@@ -275,15 +338,49 @@ const isEmpty = computed(() => props.tasks.length === 0);
 }
 
 .atl-tl-id {
-  width: 52px;
-  text-align: right;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+}
+
+.atl-tl-id-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   color: var(--c-muted);
 }
 
+.atl-tl-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--c-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.atl-tl-copy:hover {
+  background: var(--c-raised);
+  color: var(--c-foreground);
+}
+
+.atl-tl-row:hover .atl-tl-copy {
+  opacity: 1;
+}
+
 .atl-tl-updated {
-  width: 64px;
   text-align: right;
   font-size: var(--fs-xs);
   color: var(--c-muted);

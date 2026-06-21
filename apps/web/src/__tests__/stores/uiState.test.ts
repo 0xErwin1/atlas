@@ -64,4 +64,51 @@ describe('useUiStateStore', () => {
 
     expect(store.isFolderCollapsed('f1')).toBe(false);
   });
+
+  it('load reads persisted board views from the server state', async () => {
+    GET.mockResolvedValue({ data: { state: { boardViews: { b1: 'list' } } } });
+
+    const store = useUiStateStore();
+    await store.load();
+
+    expect(store.boardViewFor('b1')).toBe('list');
+    expect(store.boardViewFor('b2')).toBeUndefined();
+  });
+
+  it('treats an empty state as no persisted board views', async () => {
+    GET.mockResolvedValue({ data: { state: {} } });
+
+    const store = useUiStateStore();
+    await store.load();
+
+    expect(store.boardViewFor('anything')).toBeUndefined();
+  });
+
+  it('setBoardView persists per-board and debounces a single PUT', () => {
+    const store = useUiStateStore();
+
+    store.setBoardView('b1', 'list');
+    expect(store.boardViewFor('b1')).toBe('list');
+
+    store.setBoardView('b2', 'table');
+    // Debounced: no PUT yet, then exactly one after the window.
+    expect(PUT).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(600);
+
+    expect(PUT).toHaveBeenCalledTimes(1);
+    expect(PUT).toHaveBeenCalledWith('/v1/me/ui-state', {
+      body: { state: { boardViews: { b1: 'list', b2: 'table' } } },
+    });
+  });
+
+  it('setBoardView keeps each board isolated and overwrites only the given board', () => {
+    const store = useUiStateStore();
+
+    store.setBoardView('b1', 'list');
+    store.setBoardView('b2', 'table');
+    store.setBoardView('b1', 'calendar');
+
+    expect(store.boardViewFor('b1')).toBe('calendar');
+    expect(store.boardViewFor('b2')).toBe('table');
+  });
 });

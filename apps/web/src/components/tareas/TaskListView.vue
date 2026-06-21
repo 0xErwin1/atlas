@@ -10,7 +10,7 @@
  * All data is real (read from the boards store). The status color is the user's
  * registry choice for the column value, never inferred from text.
  */
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import Avatar from '@/components/ui/Avatar.vue';
 import Chip from '@/components/ui/Chip.vue';
 import Icon from '@/components/ui/Icon.vue';
@@ -148,52 +148,126 @@ function assigneeForTask(task: TaskSummaryDto): { name: string; agent: boolean }
   const agent = actor.type === 'api_key';
   return { name: actor.display_name ?? (agent ? 'Agent' : 'User'), agent };
 }
+
+function statusNameForTask(task: TaskSummaryDto): string {
+  const column = boards.columns.find((c) => c.id === task.column_id);
+  return column?.name ?? '';
+}
+
+// Session-only collapse state per group; v-show (not v-if) keeps the rows mounted
+// so later drag-drop zones survive a collapse toggle.
+const collapsedGroups = ref<Set<string>>(new Set());
+
+function isGroupCollapsed(key: string): boolean {
+  return collapsedGroups.value.has(key);
+}
+
+function toggleGroup(key: string): void {
+  const next = new Set(collapsedGroups.value);
+  if (next.has(key)) next.delete(key);
+  else next.add(key);
+  collapsedGroups.value = next;
+}
+
+async function copyId(task: TaskSummaryDto): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(task.readable_id);
+    ui.showBanner(`Copied ${task.readable_id}`, 'success');
+  } catch {
+    ui.showBanner('Could not copy the task id', 'error');
+  }
+}
 </script>
 
 <template>
   <div class="atl-tl-scroll">
     <div class="atl-tl-inner">
+      <div v-if="groups.length > 0" class="atl-tl-colhead">
+        <span />
+        <span>Name</span>
+        <span class="atl-tl-h-id">ID</span>
+        <span class="atl-tl-h-center">Assignee</span>
+        <span>Priority</span>
+        <span class="atl-tl-h-center">Status</span>
+        <span class="atl-tl-h-id">Estimate</span>
+      </div>
+
       <div v-for="group in groups" :key="group.key" class="atl-tl-group">
-        <div class="atl-tl-grouphead">
-          <Icon name="chevron-down" :size="13" style="color: var(--c-muted);" />
+        <button
+          type="button"
+          class="atl-tl-grouphead"
+          :aria-expanded="!isGroupCollapsed(group.key)"
+          @click="toggleGroup(group.key)"
+        >
+          <Icon
+            name="chevron-down"
+            :size="13"
+            class="atl-tl-chevron"
+            :class="{ collapsed: isGroupCollapsed(group.key) }"
+            style="color: var(--c-muted);"
+          />
           <span
             class="atl-tl-dot"
             :style="{ background: group.color ?? 'var(--c-muted)' }"
           />
           <span class="atl-tl-groupname">{{ group.label }}</span>
           <span class="atl-tl-count">{{ group.tasks.length }}</span>
-        </div>
+        </button>
 
-        <button
-          v-for="task in group.tasks"
-          :key="task.id"
-          type="button"
-          class="atl-tl-row"
-          :class="{ selected: task.readable_id === selectedReadableId }"
-          @click="emit('select', task.readable_id)"
-        >
-          <span
-            v-if="taskIsDone(task)"
-            class="atl-tl-marker done"
+        <div v-show="!isGroupCollapsed(group.key)">
+          <button
+            v-for="task in group.tasks"
+            :key="task.id"
+            type="button"
+            class="atl-tl-row"
+            :class="{ selected: task.readable_id === selectedReadableId }"
+            @click="emit('select', task.readable_id)"
           >
-            <Icon name="check" :size="10" :stroke-width="2.6" />
-          </span>
-          <span
-            v-else
-            class="atl-tl-marker"
-            :style="{ borderColor: statusRingColor(task) }"
-          />
-
-          <span class="atl-tl-title" :class="{ muted: taskIsDone(task) }">{{ task.title }}</span>
-
-          <span class="atl-tl-trailing">
-            <Chip
-              v-for="label in task.labels ?? []"
-              :key="label"
-              :color="labelColors.colorFor(`tag:${label.toLowerCase()}`)"
+            <span
+              v-if="taskIsDone(task)"
+              class="atl-tl-marker done"
             >
-              {{ label }}
-            </Chip>
+              <Icon name="check" :size="10" :stroke-width="2.6" />
+            </span>
+            <span
+              v-else
+              class="atl-tl-marker"
+              :style="{ borderColor: statusRingColor(task) }"
+            />
+
+            <span class="atl-tl-name">
+              <span class="atl-tl-title" :class="{ muted: taskIsDone(task) }">{{ task.title }}</span>
+              <span v-if="(task.labels ?? []).length > 0" class="atl-tl-labels">
+                <Chip
+                  v-for="label in task.labels ?? []"
+                  :key="label"
+                  :color="labelColors.colorFor(`tag:${label.toLowerCase()}`)"
+                >
+                  {{ label }}
+                </Chip>
+              </span>
+            </span>
+
+            <span class="atl-tl-id">
+              <span class="atl-tl-id-text">{{ task.readable_id }}</span>
+              <button
+                type="button"
+                class="atl-tl-copy"
+                :title="`Copy ${task.readable_id}`"
+                @click.stop="copyId(task)"
+              >
+                <Icon name="copy" :size="12" />
+              </button>
+            </span>
+
+            <span class="atl-tl-assignee">
+              <template v-if="assigneeForTask(task)">
+                <Avatar :name="assigneeForTask(task)!.name" :agent="assigneeForTask(task)!.agent" :size="18" />
+              </template>
+              <span v-else class="atl-tl-noassignee" title="Unassigned">
+                <Icon name="user" :size="11" />
+              </span>
+            </span>
 
             <span class="atl-tl-prio">
               <template v-if="task.priority">
@@ -206,20 +280,11 @@ function assigneeForTask(task: TaskSummaryDto): { name: string; agent: boolean }
               </template>
             </span>
 
+            <span class="atl-tl-status">{{ statusNameForTask(task) }}</span>
+
             <span class="atl-tl-est">{{ task.estimate !== null && task.estimate !== undefined ? `${task.estimate} pts` : '—' }}</span>
-
-            <span class="atl-tl-assignee">
-              <template v-if="assigneeForTask(task)">
-                <Avatar :name="assigneeForTask(task)!.name" :agent="assigneeForTask(task)!.agent" :size="18" />
-              </template>
-              <span v-else class="atl-tl-noassignee" title="Unassigned">
-                <Icon name="user" :size="11" />
-              </span>
-            </span>
-
-            <span class="atl-tl-id">{{ task.readable_id }}</span>
-          </span>
-        </button>
+          </button>
+        </div>
       </div>
 
       <p v-if="groups.length === 0" class="atl-tl-empty">No tasks to show.</p>
@@ -241,6 +306,30 @@ function assigneeForTask(task: TaskSummaryDto): { name: string; agent: boolean }
   max-width: 1100px;
 }
 
+.atl-tl-colhead {
+  display: grid;
+  grid-template-columns: 15px minmax(0, 1fr) 64px 26px 92px 110px 56px;
+  align-items: center;
+  column-gap: 10px;
+  padding: 0 12px 0 10px;
+  height: 28px;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--c-muted);
+  border-bottom: 1px solid var(--c-border);
+  margin-bottom: 4px;
+}
+
+.atl-tl-h-id {
+  text-align: right;
+}
+
+.atl-tl-h-center {
+  text-align: center;
+}
+
 .atl-tl-group {
   margin-bottom: 10px;
 }
@@ -249,8 +338,21 @@ function assigneeForTask(task: TaskSummaryDto): { name: string; agent: boolean }
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
   height: 30px;
   padding: 0 8px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.atl-tl-chevron {
+  transition: transform 0.12s ease;
+}
+
+.atl-tl-chevron.collapsed {
+  transform: rotate(-90deg);
 }
 
 .atl-tl-dot {
@@ -273,9 +375,10 @@ function assigneeForTask(task: TaskSummaryDto): { name: string; agent: boolean }
 }
 
 .atl-tl-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 15px minmax(0, 1fr) 64px 26px 92px 110px 56px;
   align-items: center;
-  gap: 10px;
+  column-gap: 10px;
   width: 100%;
   height: 38px;
   padding: 0 12px 0 10px;
@@ -312,8 +415,14 @@ function assigneeForTask(task: TaskSummaryDto): { name: string; agent: boolean }
   color: var(--c-background);
 }
 
+.atl-tl-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 .atl-tl-title {
-  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -326,25 +435,34 @@ function assigneeForTask(task: TaskSummaryDto): { name: string; agent: boolean }
   color: var(--c-muted);
 }
 
-.atl-tl-trailing {
-  display: flex;
+.atl-tl-labels {
+  display: inline-flex;
   align-items: center;
-  gap: 9px;
-  flex: 0 0 auto;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  flex: 0 1 auto;
 }
 
 .atl-tl-prio {
   display: inline-flex;
   align-items: center;
-  justify-content: flex-end;
   gap: 6px;
-  width: 86px;
+  min-width: 0;
   font-size: var(--fs-sm);
   color: var(--c-foreground);
 }
 
+.atl-tl-status {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+  font-size: var(--fs-sm);
+  color: var(--c-muted);
+}
+
 .atl-tl-est {
-  width: 48px;
   text-align: right;
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
@@ -354,8 +472,7 @@ function assigneeForTask(task: TaskSummaryDto): { name: string; agent: boolean }
 .atl-tl-assignee {
   display: inline-flex;
   align-items: center;
-  justify-content: flex-end;
-  width: 22px;
+  justify-content: center;
 }
 
 .atl-tl-noassignee {
@@ -371,11 +488,46 @@ function assigneeForTask(task: TaskSummaryDto): { name: string; agent: boolean }
 }
 
 .atl-tl-id {
-  width: 52px;
-  text-align: right;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+}
+
+.atl-tl-id-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   color: var(--c-muted);
+}
+
+.atl-tl-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--c-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.atl-tl-copy:hover {
+  background: var(--c-raised);
+  color: var(--c-foreground);
+}
+
+.atl-tl-row:hover .atl-tl-copy {
+  opacity: 1;
 }
 
 .atl-tl-empty {
