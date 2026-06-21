@@ -11,17 +11,25 @@
  * emits `open`. The status color is the user's registry choice for the column
  * value, never inferred from text.
  */
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import Avatar from '@/components/ui/Avatar.vue';
 import Chip from '@/components/ui/Chip.vue';
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
+import ContextMenu from '@/components/ui/ContextMenu.vue';
 import Icon from '@/components/ui/Icon.vue';
+import PromptDialog from '@/components/ui/PromptDialog.vue';
+import { useContextMenu } from '@/composables/useContextMenu';
+import { useTaskInteractions } from '@/composables/useTaskInteractions';
 import { relativeTime } from '@/lib/relativeTime';
 import { swatchById } from '@/lib/swatches';
-import type { TaskSummaryDto } from '@/stores/boards';
+import type { ColumnDto, TaskSummaryDto } from '@/stores/boards';
+import { useBoardsStore } from '@/stores/boards';
 import { useLabelColorsStore } from '@/stores/labelColors';
 import { useUiStore } from '@/stores/ui';
+import { useWorkspaceStore } from '@/stores/workspace';
 
 const props = defineProps<{
+  ws: string;
   tasks: TaskSummaryDto[];
   selectedReadableId?: string | null;
 }>();
@@ -31,8 +39,12 @@ const emit = defineEmits<{
   open: [readableId: string];
 }>();
 
+const boards = useBoardsStore();
+const workspace = useWorkspaceStore();
 const labelColors = useLabelColorsStore();
 const ui = useUiStore();
+const menu = useContextMenu();
+const ti = useTaskInteractions(props.ws);
 
 const PRIORITY_COLOR: Record<string, string> = {
   urgent: 'var(--c-danger)',
@@ -63,14 +75,47 @@ function assigneeForTask(task: TaskSummaryDto): { name: string; agent: boolean }
 
 const isEmpty = computed(() => props.tasks.length === 0);
 
+const menuTaskColumns = ref<ColumnDto[]>([]);
+
 async function copyId(task: TaskSummaryDto): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(task.readable_id);
-    ui.showBanner(`Copied ${task.readable_id}`, 'success');
-  } catch {
-    ui.showBanner('Could not copy the task id', 'error');
+  await ti.copyText(task.readable_id, task.readable_id);
+}
+
+async function onMenu(task: TaskSummaryDto, event: MouseEvent): Promise<void> {
+  ti.menuReadableId.value = task.readable_id;
+  menu.openAt(event);
+
+  void workspace.loadMembers(props.ws);
+  await Promise.all(workspace.projects.map((p) => boards.loadBoardsForProject(props.ws, p.slug)));
+
+  if (task.board_id !== '') {
+    menuTaskColumns.value = await boards.fetchColumnsForBoard(props.ws, task.board_id);
   }
 }
+
+const menuItems = computed(() => {
+  const readableId = ti.menuReadableId.value;
+  if (readableId === null) return [];
+
+  const task = props.tasks.find((t) => t.readable_id === readableId);
+  if (task === undefined) return [];
+
+  const boardId = task.board_id !== '' ? task.board_id : undefined;
+
+  return ti.buildMenuItems({
+    task,
+    boardId,
+    columns: menuTaskColumns.value,
+    allowDuplicate: boardId !== undefined,
+    onOpen: (rid) => emit('open', rid),
+  });
+});
+
+const deleteTarget = computed(() => {
+  const rid = ti.menuReadableId.value;
+  if (rid === null) return null;
+  return props.tasks.find((t) => t.readable_id === rid) ?? null;
+});
 </script>
 
 <template>
@@ -96,6 +141,7 @@ async function copyId(task: TaskSummaryDto): Promise<void> {
         :class="{ selected: task.readable_id === selectedReadableId }"
         @click="emit('select', task.readable_id)"
         @dblclick="emit('open', task.readable_id)"
+        @contextmenu.prevent="onMenu(task, $event)"
       >
         <span
           v-if="isDone(task)"
@@ -171,6 +217,37 @@ async function copyId(task: TaskSummaryDto): Promise<void> {
       <p v-if="isEmpty" class="atl-tl-empty">No tasks to show.</p>
     </div>
   </div>
+
+  <ContextMenu
+    :open="menu.open.value"
+    :x="menu.x.value"
+    :y="menu.y.value"
+    :items="menuItems"
+    @close="menu.close"
+  />
+
+  <PromptDialog
+    :open="ti.promptState.value.open"
+    :title="ti.promptState.value.title"
+    :initial="ti.promptState.value.initial"
+    :input-type="ti.promptState.value.mode === 'due' ? 'date' : 'text'"
+    @confirm="ti.onPromptConfirm"
+    @cancel="ti.promptState.value = { ...ti.promptState.value, open: false }"
+  />
+
+  <ConfirmDialog
+    :open="ti.confirmOpen.value"
+    tone="danger"
+    title="Delete this task?"
+    message="The task is removed permanently. This can't be undone."
+    :detail="deleteTarget ? `${deleteTarget.readable_id} · ${deleteTarget.title}` : undefined"
+    detail-icon="square-kanban"
+    note="Its sub-tasks, references, and activity are removed along with it."
+    confirm-label="Delete task"
+    confirm-icon="trash-2"
+    @confirm="ti.onConfirmDelete"
+    @cancel="ti.confirmOpen.value = false"
+  />
 </template>
 
 <style scoped>

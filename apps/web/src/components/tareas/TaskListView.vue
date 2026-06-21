@@ -13,19 +13,28 @@
 import { computed, ref } from 'vue';
 import Avatar from '@/components/ui/Avatar.vue';
 import Chip from '@/components/ui/Chip.vue';
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
+import ContextMenu from '@/components/ui/ContextMenu.vue';
 import Icon from '@/components/ui/Icon.vue';
+import PromptDialog from '@/components/ui/PromptDialog.vue';
+import { useContextMenu } from '@/composables/useContextMenu';
+import { useTaskInteractions } from '@/composables/useTaskInteractions';
 import { swatchById } from '@/lib/swatches';
 import type { ColumnDto, TaskSummaryDto } from '@/stores/boards';
 import { useBoardsStore } from '@/stores/boards';
 import { useLabelColorsStore } from '@/stores/labelColors';
 import { useUiStore } from '@/stores/ui';
+import { useWorkspaceStore } from '@/stores/workspace';
 
-defineProps<{ ws: string; selectedReadableId: string | null }>();
+const props = defineProps<{ ws: string; selectedReadableId: string | null }>();
 const emit = defineEmits<{ select: [readableId: string]; open: [readableId: string] }>();
 
 const boards = useBoardsStore();
+const workspace = useWorkspaceStore();
 const labelColors = useLabelColorsStore();
 const ui = useUiStore();
+const menu = useContextMenu();
+const ti = useTaskInteractions(props.ws);
 
 interface Group {
   key: string;
@@ -170,13 +179,35 @@ function toggleGroup(key: string): void {
 }
 
 async function copyId(task: TaskSummaryDto): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(task.readable_id);
-    ui.showBanner(`Copied ${task.readable_id}`, 'success');
-  } catch {
-    ui.showBanner('Could not copy the task id', 'error');
-  }
+  await ti.copyText(task.readable_id, task.readable_id);
 }
+
+async function onMenu(task: TaskSummaryDto, event: MouseEvent): Promise<void> {
+  ti.menuReadableId.value = task.readable_id;
+  menu.openAt(event);
+
+  void workspace.loadMembers(props.ws);
+  await Promise.all(workspace.projects.map((p) => boards.loadBoardsForProject(props.ws, p.slug)));
+}
+
+const menuItems = computed(() => {
+  const readableId = ti.menuReadableId.value;
+  if (readableId === null) return [];
+
+  const task = boards.findTaskByReadableId(readableId);
+  if (task === undefined) return [];
+
+  const boardId = boards.board?.id;
+  return ti.buildMenuItems({
+    task,
+    boardId,
+    columns: boards.columns,
+    allowDuplicate: boardId !== undefined,
+    onOpen: (rid) => emit('open', rid),
+  });
+});
+
+const deleteTarget = computed(() => ti.deleteTargetFor(ti.menuReadableId.value));
 </script>
 
 <template>
@@ -222,6 +253,7 @@ async function copyId(task: TaskSummaryDto): Promise<void> {
             class="atl-tl-row"
             :class="{ selected: task.readable_id === selectedReadableId }"
             @click="emit('select', task.readable_id)"
+            @contextmenu.prevent="onMenu(task, $event)"
           >
             <span
               v-if="taskIsDone(task)"
@@ -290,6 +322,37 @@ async function copyId(task: TaskSummaryDto): Promise<void> {
       <p v-if="groups.length === 0" class="atl-tl-empty">No tasks to show.</p>
     </div>
   </div>
+
+  <ContextMenu
+    :open="menu.open.value"
+    :x="menu.x.value"
+    :y="menu.y.value"
+    :items="menuItems"
+    @close="menu.close"
+  />
+
+  <PromptDialog
+    :open="ti.promptState.value.open"
+    :title="ti.promptState.value.title"
+    :initial="ti.promptState.value.initial"
+    :input-type="ti.promptState.value.mode === 'due' ? 'date' : 'text'"
+    @confirm="ti.onPromptConfirm"
+    @cancel="ti.promptState.value = { ...ti.promptState.value, open: false }"
+  />
+
+  <ConfirmDialog
+    :open="ti.confirmOpen.value"
+    tone="danger"
+    title="Delete this task?"
+    message="The task is removed permanently. This can't be undone."
+    :detail="deleteTarget ? `${deleteTarget.readable_id} · ${deleteTarget.title}` : undefined"
+    detail-icon="square-kanban"
+    note="Its sub-tasks, references, and activity are removed along with it."
+    confirm-label="Delete task"
+    confirm-icon="trash-2"
+    @confirm="ti.onConfirmDelete"
+    @cancel="ti.confirmOpen.value = false"
+  />
 </template>
 
 <style scoped>

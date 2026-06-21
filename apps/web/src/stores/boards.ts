@@ -680,6 +680,32 @@ export const useBoardsStore = defineStore('boards', () => {
   }
 
   /**
+   * Cached per-board columns for cross-board menus (Change status submenu on
+   * TaskViewListView rows). Uses a separate Map so it never overwrites the active
+   * `columns` ref that the kanban depends on. Results are cached by boardId and
+   * never re-fetched until the store resets.
+   */
+  const columnsByBoard = new Map<string, ColumnDto[]>();
+
+  async function fetchColumnsForBoard(ws: string, boardId: string): Promise<ColumnDto[]> {
+    const cached = columnsByBoard.get(boardId);
+    if (cached !== undefined) return cached;
+
+    const { data, error: apiError } = await wrappedClient.GET(
+      '/v1/workspaces/{ws}/boards/{board_id}/columns',
+      { params: { path: { ws, board_id: boardId } } },
+    );
+
+    if (apiError !== undefined || data === undefined) {
+      return [];
+    }
+
+    const sorted = [...data].sort((a, b) => a.position_key.localeCompare(b.position_key));
+    columnsByBoard.set(boardId, sorted);
+    return sorted;
+  }
+
+  /**
    * Replace the tasks array for a specific column.
    * Used by useKanbanMove to reorder after reconcile, and in tests.
    */
@@ -742,6 +768,7 @@ export const useBoardsStore = defineStore('boards', () => {
     duplicateTask,
     moveTaskToColumn,
     moveTaskToBoard,
+    fetchColumnsForBoard,
     _setColumnTasks,
     _setTasksForTest,
   };

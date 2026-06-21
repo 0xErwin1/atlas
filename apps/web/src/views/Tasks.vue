@@ -363,6 +363,7 @@ watch(
       <LoadingState v-else-if="workspaceTasks.loading" label="Loading…" />
       <div v-else class="flex flex-1 min-h-0" style="position: relative;">
         <TaskViewListView
+          :ws="ws"
           :tasks="workspaceTasks.tasks"
           :selected-readable-id="selectedReadableId"
           :class="{ 'atl-board-dimmed': boardDimmed }"
