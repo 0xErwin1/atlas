@@ -39,6 +39,8 @@ function isSelected(value: string): boolean {
 }
 
 function toggle(value: string): void {
+  const opt = props.options.find((o) => o.value === value);
+  if (opt?.disabled) return;
   model.value = isSelected(value) ? model.value.filter((v) => v !== value) : [...model.value, value];
 }
 
@@ -114,8 +116,17 @@ const chosen = (): MultiSelectOption[] => props.options.filter((o) => model.valu
           :key="opt.value"
           role="option"
           :aria-selected="isSelected(opt.value)"
-          class="atl-mi flex items-center cursor-pointer"
-          style="gap: 8px; height: 26px; padding: 0 7px; border-radius: 3px; font-size: var(--fs-sm);"
+          :aria-disabled="opt.disabled ? 'true' : undefined"
+          class="atl-mi flex items-center"
+          :class="{ disabled: opt.disabled }"
+          :style="{
+            gap: '8px',
+            height: '26px',
+            padding: '0 7px',
+            borderRadius: '3px',
+            fontSize: 'var(--fs-sm)',
+            cursor: opt.disabled ? 'not-allowed' : 'pointer',
+          }"
           @click="toggle(opt.value)"
         >
           <span
@@ -137,6 +148,12 @@ const chosen = (): MultiSelectOption[] => props.options.filter((o) => model.valu
           />
           <Icon v-else-if="opt.icon" :name="opt.icon" :size="14" style="color: var(--c-muted); flex: 0 0 auto;" />
           <span style="flex: 1; color: var(--c-foreground);">{{ opt.label }}</span>
+          <span
+            v-if="opt.disabled"
+            style="flex: 0 0 auto; font-size: 9.5px; font-weight: var(--fw-semibold); letter-spacing: 0.06em; text-transform: uppercase; color: var(--c-muted);"
+          >
+            Soon
+          </span>
         </div>
       </div>
     </template>
