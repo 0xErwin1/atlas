@@ -926,3 +926,49 @@ async fn list_workspace_tasks_summaries_carry_board_name_and_column_name() {
 
     db.teardown().await;
 }
+
+// ---------------------------------------------------------------------------
+// TW19: summaries carry board_id; cross-board rows have DISTINCT board_ids
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn list_workspace_tasks_summaries_carry_board_id_and_cross_board_ids_are_distinct() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let seed = seed_workspace(&server, &db, "tw19-user").await;
+
+    let page = seed
+        .user_client
+        .list_workspace_tasks(&seed.ws_slug, &Default::default())
+        .await
+        .expect("list workspace tasks");
+
+    assert_eq!(page.items.len(), 4);
+
+    let t1 = page
+        .items
+        .iter()
+        .find(|t| t.id == seed.user_task_ids[0])
+        .expect("user_task_ids[0] must appear");
+
+    let t3 = page
+        .items
+        .iter()
+        .find(|t| t.id == seed.key_task_ids[0])
+        .expect("key_task_ids[0] must appear");
+
+    assert_eq!(
+        t1.board_id, seed.board1_id,
+        "user task must carry board1_id"
+    );
+    assert_eq!(
+        t3.board_id, seed.board2_id,
+        "agent task must carry board2_id"
+    );
+    assert_ne!(
+        t1.board_id, t3.board_id,
+        "tasks on different boards must have distinct board_ids"
+    );
+
+    db.teardown().await;
+}

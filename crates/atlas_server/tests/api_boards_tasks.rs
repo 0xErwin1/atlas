@@ -664,6 +664,10 @@ async fn list_tasks_returns_tasks_for_board() {
             task.column_name, "Todo",
             "board-scoped listing must carry column_name"
         );
+        assert_eq!(
+            task.board_id, board.id,
+            "board-scoped listing must carry the board's id"
+        );
     }
 
     db.teardown().await;

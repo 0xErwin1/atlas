@@ -283,12 +283,14 @@ async fn board_assignees_by_task(
 ///
 /// When a column or board row cannot be found (data-integrity error), the
 /// entry is absent from the returned map; callers substitute a fallback
-/// string so a missing row does not abort the listing.
+/// so a missing row does not abort the listing.
+///
+/// Returns a map keyed by `column_id` → `(board_id, board_name, column_name)`.
 async fn board_column_names_by_task(
     state: &AppState,
     ctx: &WorkspaceCtx,
     tasks: &[Task],
-) -> Result<std::collections::HashMap<uuid::Uuid, (String, String)>, ApiError> {
+) -> Result<std::collections::HashMap<uuid::Uuid, (uuid::Uuid, String, String)>, ApiError> {
     use std::collections::HashMap;
 
     let mut col_ids: Vec<uuid::Uuid> = tasks.iter().map(|t| t.column_id.0).collect();
@@ -314,11 +316,11 @@ async fn board_column_names_by_task(
     let board_names: HashMap<uuid::Uuid, String> =
         boards.into_iter().map(|b| (b.id.0, b.name)).collect();
 
-    let by_column: HashMap<uuid::Uuid, (String, String)> = columns
+    let by_column: HashMap<uuid::Uuid, (uuid::Uuid, String, String)> = columns
         .into_iter()
         .filter_map(|col| {
             let board_name = board_names.get(&col.board_id.0)?.clone();
-            Some((col.id.0, (board_name, col.name)))
+            Some((col.id.0, (col.board_id.0, board_name, col.name)))
         })
         .collect();
 
@@ -616,17 +618,26 @@ pub(crate) async fn list_tasks(
     let board_column_names = board_column_names_by_task(&state, &ctx, &all).await?;
     let board_name_fallback = auth.resource.0.name.clone();
 
+    let board_id_fallback = auth.resource.0.id.0;
+
     let dtos = all
         .into_iter()
         .map(|t| {
-            let (board_name, column_name) = board_column_names
+            let (board_id, board_name, column_name) = board_column_names
                 .get(&t.column_id.0)
                 .cloned()
-                .unwrap_or_else(|| (board_name_fallback.clone(), String::new()));
+                .unwrap_or_else(|| {
+                    (
+                        board_id_fallback,
+                        board_name_fallback.clone(),
+                        String::new(),
+                    )
+                });
 
             TaskSummaryDto {
                 id: t.id.0,
                 readable_id: t.readable_id,
+                board_id,
                 column_id: t.column_id.0,
                 title: t.title,
                 priority: t.priority.map(|p| p.as_str().to_string()),
@@ -1602,7 +1613,7 @@ async fn tasks_to_summaries(
     Ok(tasks
         .into_iter()
         .map(|t| {
-            let (board_name, column_name) = board_column_names
+            let (board_id, board_name, column_name) = board_column_names
                 .get(&t.column_id.0)
                 .cloned()
                 .unwrap_or_default();
@@ -1610,6 +1621,7 @@ async fn tasks_to_summaries(
             TaskSummaryDto {
                 id: t.id.0,
                 readable_id: t.readable_id,
+                board_id,
                 column_id: t.column_id.0,
                 title: t.title,
                 priority: t.priority.map(|p| p.as_str().to_string()),
@@ -1952,7 +1964,7 @@ pub(crate) async fn list_workspace_tasks(
     let dtos = tasks
         .into_iter()
         .map(|t| {
-            let (board_name, column_name) = board_column_names
+            let (board_id, board_name, column_name) = board_column_names
                 .get(&t.column_id.0)
                 .cloned()
                 .unwrap_or_default();
@@ -1960,6 +1972,7 @@ pub(crate) async fn list_workspace_tasks(
             TaskSummaryDto {
                 id: t.id.0,
                 readable_id: t.readable_id,
+                board_id,
                 column_id: t.column_id.0,
                 title: t.title,
                 priority: t.priority.map(|p| p.as_str().to_string()),

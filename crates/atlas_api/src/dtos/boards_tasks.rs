@@ -102,6 +102,7 @@ pub struct TaskDto {
 pub struct TaskSummaryDto {
     pub id: uuid::Uuid,
     pub readable_id: String,
+    pub board_id: uuid::Uuid,
     pub column_id: uuid::Uuid,
     pub title: String,
     #[serde(skip_serializing_if = "Option::is_none")]
