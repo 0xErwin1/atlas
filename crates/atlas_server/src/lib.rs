@@ -77,7 +77,12 @@ pub fn app(state: AppState) -> Router {
         )
         .route(
             "/v1/workspaces/{ws}",
-            get(routes::workspaces::get_workspace),
+            get(routes::workspaces::get_workspace).patch(routes::workspaces::update_workspace),
+        )
+        // Admin workspace list (root-only)
+        .route(
+            "/v1/admin/workspaces",
+            get(routes::workspaces::admin_list_workspaces),
         )
         // API keys
         .route(

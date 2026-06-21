@@ -30,6 +30,7 @@ const EXPECTED_SCHEMAS: &[&str] = &[
     "GrantDto",
     "PrincipalDto",
     "CreateWorkspaceRequest",
+    "UpdateWorkspaceRequest",
     "WorkspaceDto",
     "ProblemDetails",
     "CreateDocumentRequest",

@@ -150,6 +150,19 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         openapi_path: Some("/v1/workspaces/{ws}"),
     },
     RouteEntry {
+        method: "PATCH",
+        path_template: "/v1/workspaces/{ws}",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}"),
+    },
+    // ---- Admin (root-only) routes ----
+    RouteEntry {
+        method: "GET",
+        path_template: "/v1/admin/workspaces",
+        kind: RouteKind::AuthnRequired,
+        openapi_path: Some("/v1/admin/workspaces"),
+    },
+    RouteEntry {
         method: "POST",
         path_template: "/v1/workspaces/{ws}/api-keys",
         kind: RouteKind::WorkspaceMember,

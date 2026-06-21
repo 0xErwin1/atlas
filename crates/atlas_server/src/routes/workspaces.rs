@@ -5,7 +5,7 @@ use axum::{
     response::IntoResponse,
 };
 
-use atlas_api::dtos::{CreateWorkspaceRequest, WorkspaceDto};
+use atlas_api::dtos::{CreateWorkspaceRequest, UpdateWorkspaceRequest, WorkspaceDto};
 use atlas_domain::{
     Actor, WorkspaceCtx,
     entities::identity::{MemberRole, NewWorkspace},
@@ -15,7 +15,7 @@ use atlas_domain::{
 
 use crate::{
     auth::middleware::Principal,
-    authz::WorkspaceMember,
+    authz::{RequireUserAdmin, WorkspaceMember},
     error::ApiError,
     persistence::repos::{MembershipRepo, PgMembershipRepo, PgWorkspaceRepo, WorkspaceRepo},
     routes::validation::validate_name,
@@ -143,6 +143,72 @@ pub(crate) async fn get_workspace(
     State(_state): State<AppState>,
 ) -> Result<Json<WorkspaceDto>, ApiError> {
     Ok(Json(workspace_to_dto(&member.workspace)))
+}
+
+#[utoipa::path(
+    patch,
+    path = "/v1/workspaces/{ws}",
+    tag = "workspaces",
+    security(("bearer_auth" = [])),
+    params(("ws" = String, Path, description = "Workspace slug")),
+    request_body = UpdateWorkspaceRequest,
+    responses(
+        (status = 200, description = "Workspace renamed", body = WorkspaceDto),
+        (status = 401, description = "Unauthenticated"),
+        (status = 404, description = "Workspace not found or not a member"),
+        (status = 422, description = "Validation error"),
+    )
+)]
+/// Renames the workspace display name. The slug is never re-derived; only
+/// `name` and `updated_at` change. Requires workspace membership.
+pub(crate) async fn update_workspace(
+    member: WorkspaceMember,
+    State(state): State<AppState>,
+    Json(body): Json<UpdateWorkspaceRequest>,
+) -> Result<Json<WorkspaceDto>, ApiError> {
+    validate_name("name", &body.name)?;
+
+    let ws_repo = PgWorkspaceRepo {
+        conn: (*state.db).clone(),
+    };
+
+    let updated = ws_repo
+        .rename(member.workspace.id, body.name)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?;
+
+    Ok(Json(workspace_to_dto(&updated)))
+}
+
+#[utoipa::path(
+    get,
+    path = "/v1/admin/workspaces",
+    tag = "workspaces",
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "All workspaces (root only)", body = [WorkspaceDto]),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Not a root/admin user"),
+    )
+)]
+/// Returns every workspace in the system, ordered by creation date.
+/// Restricted to root users via `RequireUserAdmin`.
+pub(crate) async fn admin_list_workspaces(
+    _admin: RequireUserAdmin,
+    State(state): State<AppState>,
+) -> Result<Json<Vec<WorkspaceDto>>, ApiError> {
+    let ws_repo = PgWorkspaceRepo {
+        conn: (*state.db).clone(),
+    };
+
+    let workspaces = ws_repo.list_all().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    let dtos = workspaces.iter().map(workspace_to_dto).collect();
+    Ok(Json(dtos))
 }
 
 fn workspace_to_dto(ws: &atlas_domain::entities::identity::Workspace) -> WorkspaceDto {

@@ -17,6 +17,12 @@ pub trait WorkspaceRepo: Send + Sync {
     /// Returns the slugs of every workspace, used to resolve slug collisions
     /// when deriving a new workspace slug from its name.
     async fn list_slugs(&self) -> Result<Vec<String>, DomainError>;
+    /// Updates the display name of a workspace. The slug is never re-derived;
+    /// only `name` and `updated_at` change.
+    async fn rename(&self, id: WorkspaceId, name: String) -> Result<Workspace, DomainError>;
+    /// Returns every workspace in the system, ordered by `created_at` ascending.
+    /// Intended for root/admin use only — the route layer enforces the guard.
+    async fn list_all(&self) -> Result<Vec<Workspace>, DomainError>;
 }
 
 #[async_trait]

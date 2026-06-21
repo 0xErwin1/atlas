@@ -230,6 +230,13 @@ pub struct CreateWorkspaceRequest {
     pub name: String,
 }
 
+/// Request body for `PATCH /v1/workspaces/{ws}`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct UpdateWorkspaceRequest {
+    pub name: String,
+}
+
 /// Workspace representation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]

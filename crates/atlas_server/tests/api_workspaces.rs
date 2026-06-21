@@ -7,6 +7,7 @@
 
 mod support;
 
+use atlas_api::dtos::UpdateWorkspaceRequest;
 use atlas_client::ClientError;
 use support::{TestDb, TestServer, login_user_with_workspace};
 
@@ -65,4 +66,145 @@ async fn list_workspaces_returns_401_for_unauthenticated() {
         }
         other => panic!("unexpected error: {other:?}"),
     }
+}
+
+// ---- B3: workspace rename ----
+
+#[tokio::test]
+async fn rename_workspace_member_can_rename() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (client, ws, _user) = login_user_with_workspace(&server, &db, "ws-rename-member").await;
+
+    let updated = client
+        .update_workspace(
+            &ws.slug,
+            UpdateWorkspaceRequest {
+                name: "Renamed Workspace".to_string(),
+            },
+        )
+        .await
+        .expect("update_workspace");
+
+    assert_eq!(updated.name, "Renamed Workspace", "name must be updated");
+    assert_eq!(updated.slug, ws.slug, "slug must not change");
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn rename_workspace_persists() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (client, ws, _user) = login_user_with_workspace(&server, &db, "ws-rename-persist").await;
+
+    client
+        .update_workspace(
+            &ws.slug,
+            UpdateWorkspaceRequest {
+                name: "Persisted Name".to_string(),
+            },
+        )
+        .await
+        .expect("update_workspace");
+
+    let fetched = client
+        .get_workspace(&ws.slug)
+        .await
+        .expect("get_workspace after rename");
+
+    assert_eq!(fetched.name, "Persisted Name");
+    assert_eq!(fetched.slug, ws.slug);
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn rename_workspace_non_member_gets_404() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (_owner_client, ws, _owner) =
+        login_user_with_workspace(&server, &db, "ws-rename-owner").await;
+    let (non_member, _other_ws, _other_user) =
+        login_user_with_workspace(&server, &db, "ws-rename-nonmember").await;
+
+    let err = non_member
+        .update_workspace(
+            &ws.slug,
+            UpdateWorkspaceRequest {
+                name: "Hijacked Name".to_string(),
+            },
+        )
+        .await
+        .expect_err("non-member must be denied");
+
+    match err {
+        ClientError::Api(p) => {
+            assert_eq!(
+                p.status, 404,
+                "expected 404 (concealment), got {}",
+                p.status
+            )
+        }
+        other => panic!("unexpected error: {other:?}"),
+    }
+
+    db.teardown().await;
+}
+
+// ---- B4: root workspace list ----
+
+#[tokio::test]
+async fn admin_list_workspaces_root_sees_all() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (_client_a, ws_a, _user_a) =
+        login_user_with_workspace(&server, &db, "ws-admin-list-a").await;
+    let (_client_b, ws_b, _user_b) =
+        login_user_with_workspace(&server, &db, "ws-admin-list-b").await;
+
+    let root = support::login_root_user(&server, &db).await;
+
+    let all = root
+        .admin_list_workspaces()
+        .await
+        .expect("admin_list_workspaces");
+
+    assert!(
+        all.iter().any(|w| w.slug == ws_a.slug),
+        "root must see ws_a"
+    );
+    assert!(
+        all.iter().any(|w| w.slug == ws_b.slug),
+        "root must see ws_b"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn admin_list_workspaces_non_root_gets_403() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (non_root, _ws, _user) =
+        login_user_with_workspace(&server, &db, "ws-admin-list-nonroot").await;
+
+    let err = non_root
+        .admin_list_workspaces()
+        .await
+        .expect_err("non-root must be denied");
+
+    match err {
+        ClientError::Api(p) => {
+            assert_eq!(p.status, 403, "expected 403, got {}", p.status)
+        }
+        other => panic!("unexpected error: {other:?}"),
+    }
+
+    db.teardown().await;
 }

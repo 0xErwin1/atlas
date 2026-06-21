@@ -103,6 +103,40 @@ impl WorkspaceRepo for PgWorkspaceRepo {
 
         Ok(rows.into_iter().map(|r| r.slug).collect())
     }
+
+    async fn rename(&self, id: WorkspaceId, name: String) -> Result<Workspace, DomainError> {
+        use sea_orm::IntoActiveModel;
+
+        let row = workspace::Entity::find_by_id(id.0)
+            .one(&self.conn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "workspace",
+                id: id.0,
+            })?;
+
+        let mut active = row.into_active_model();
+        active.name = Set(name);
+        active.updated_at = Set(Utc::now());
+
+        active
+            .update(&self.conn)
+            .await
+            .map(workspace_from)
+            .map_err(db_err)
+    }
+
+    async fn list_all(&self) -> Result<Vec<Workspace>, DomainError> {
+        use sea_orm::QueryOrder;
+
+        workspace::Entity::find()
+            .order_by_asc(workspace::Column::CreatedAt)
+            .all(&self.conn)
+            .await
+            .map(|rows| rows.into_iter().map(workspace_from).collect())
+            .map_err(db_err)
+    }
 }
 
 pub struct PgUserRepo {

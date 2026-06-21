@@ -6,7 +6,7 @@ use atlas_api::{
         CreateProjectRequest, CreateUserRequest, CreateWorkspaceRequest, GrantDto, HealthResponse,
         LoginRequest, LoginResponse, MeResponse, PrincipalDto, ProjectDto, ResetPasswordRequest,
         ServerMetaDto, UiStateDto, UpdateMeRequest, UpdateProjectRequest, UpdateUiStateRequest,
-        UserDto, WorkspaceDto,
+        UpdateWorkspaceRequest, UserDto, WorkspaceDto,
         boards_tasks::{
             ActivityEntryDto, AddAssigneeRequest, AssigneeDto, BoardDto, BoardSummaryDto,
             ChecklistItemDto, ColumnDto, CreateBoardRequest, CreateChecklistItemRequest,
@@ -548,6 +548,32 @@ impl AtlasClient {
     pub async fn get_workspace(&self, ws: &str) -> Result<WorkspaceDto, ClientError> {
         let response = self.get(&format!("/v1/workspaces/{ws}")).send().await?;
         self.decode_response(response, "get_workspace").await
+    }
+
+    /// `PATCH /v1/workspaces/{ws}`
+    ///
+    /// Renames the workspace display name. The slug is never changed.
+    pub async fn update_workspace(
+        &self,
+        ws: &str,
+        body: UpdateWorkspaceRequest,
+    ) -> Result<WorkspaceDto, ClientError> {
+        let response = self
+            .patch(&format!("/v1/workspaces/{ws}"))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "update_workspace").await
+    }
+
+    /// `GET /v1/admin/workspaces`
+    ///
+    /// Returns all workspaces in the system. Requires root/admin privileges.
+    pub async fn admin_list_workspaces(&self) -> Result<Vec<WorkspaceDto>, ClientError> {
+        let response = self.get("/v1/admin/workspaces").send().await?;
+        self.decode_response(response, "admin_list_workspaces")
+            .await
     }
 
     /// `GET /v1/workspaces/{ws}/members`
