@@ -12,7 +12,7 @@ import Icon from '@/components/ui/Icon.vue';
 import Popover from '@/components/ui/Popover.vue';
 import { useBreakpoint } from '@/composables/useBreakpoint';
 import { useSearch } from '@/composables/useSearch';
-import { type SearchHitDto, type SearchSort, type SearchType, useSearchStore } from '@/stores/search';
+import { type SearchHitDto, type SearchSort, useSearchStore } from '@/stores/search';
 import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 import AppShell from '@/views/AppShell.vue';
@@ -28,14 +28,38 @@ const ws = computed(() => workspace.activeWorkspaceSlug ?? '');
 const { store, onQueryInput, loadMore } = useSearch(ws.value);
 const searchStore = useSearchStore();
 
-const SCOPE_CHIPS: Array<{ value: SearchType; label: string }> = [
+const SCOPE_CHIPS: Array<{ value: 'all' | 'note' | 'task'; label: string }> = [
   { value: 'all', label: 'All' },
   { value: 'note', label: 'Notes' },
   { value: 'task', label: 'Tasks' },
 ];
 
-function onScope(value: SearchType): void {
-  searchStore.setType(value);
+function setTypeTokens(types: string[]): void {
+  const stripped = searchStore.query
+    .replace(/(?:^|\s)type:\S+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (types.length === 0) {
+    searchStore.setQuery(stripped);
+  } else {
+    const token = `type:${types.join(',')}`;
+    searchStore.setQuery(stripped === '' ? token : `${stripped} ${token}`);
+  }
+}
+
+function typeActive(value: 'all' | 'note' | 'task'): boolean {
+  const match = searchStore.query.match(/(?:^|\s)type:(\S+)(?:\s|$)/);
+  const tokenValues = match?.[1]?.split(',') ?? [];
+  if (value === 'all') return !match;
+  return tokenValues.includes(value);
+}
+
+function onScope(value: 'all' | 'note' | 'task'): void {
+  if (value === 'all') {
+    setTypeTokens([]);
+  } else {
+    setTypeTokens([value]);
+  }
   void store.runSearch(ws.value);
 }
 
@@ -122,6 +146,12 @@ function onListKeydown(event: KeyboardEvent): void {
       <SearchSidebar :query="store.query" @input="onInput" @clear="clearSearch" @rerun="rerun" />
     </template>
 
+    <template #sidebar-actions>
+      <button type="button" class="atl-gbtn" title="Command palette ⌘K" aria-label="Command palette" @click="ui.openPalette()">
+        <Icon name="command" :size="14" />
+      </button>
+    </template>
+
     <template #sidebar-footer>
       <button
         type="button"
@@ -170,7 +200,7 @@ function onListKeydown(event: KeyboardEvent): void {
           v-for="chip in SCOPE_CHIPS"
           :key="chip.value"
           type="button"
-          :aria-pressed="searchStore.type === chip.value"
+          :aria-pressed="typeActive(chip.value)"
           :style="`
             height: 28px;
             padding: 0 12px;
@@ -178,9 +208,9 @@ function onListKeydown(event: KeyboardEvent): void {
             cursor: pointer;
             font-size: var(--fs-sm);
             font-weight: var(--fw-medium);
-            border: 1px solid ${searchStore.type === chip.value ? 'var(--c-primary)' : 'var(--c-border)'};
-            background: ${searchStore.type === chip.value ? 'var(--c-selection)' : 'transparent'};
-            color: ${searchStore.type === chip.value ? 'var(--c-primary)' : 'var(--c-muted)'};
+            border: 1px solid ${typeActive(chip.value) ? 'var(--c-primary)' : 'var(--c-border)'};
+            background: ${typeActive(chip.value) ? 'var(--c-selection)' : 'transparent'};
+            color: ${typeActive(chip.value) ? 'var(--c-primary)' : 'var(--c-muted)'};
           `"
           @click="onScope(chip.value)"
         >

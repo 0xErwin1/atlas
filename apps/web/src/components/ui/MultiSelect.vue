@@ -16,6 +16,8 @@ export interface MultiSelectOption {
   dot?: string;
   /** A leading icon, as an alternative to `dot`. */
   icon?: string;
+  /** When true the option is rendered visibly but cannot be toggled. */
+  disabled?: boolean;
 }
 
 const props = withDefaults(

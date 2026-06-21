@@ -6,7 +6,6 @@ import Row from '@/components/ui/Row.vue';
 import SectionLabel from '@/components/ui/SectionLabel.vue';
 import { swatchById } from '@/lib/swatches';
 import { useLabelColorsStore } from '@/stores/labelColors';
-import type { SearchType } from '@/stores/search';
 import { useSearchStore } from '@/stores/search';
 import { useWorkspaceStore } from '@/stores/workspace';
 
@@ -24,26 +23,39 @@ const store = useSearchStore();
 const workspace = useWorkspaceStore();
 const labelColors = useLabelColorsStore();
 
-// The design shows four type options, but the backend `type` filter accepts a
-// single value (`all` | `note` | `task`) — there is no Docs/Comments dimension
-// server-side. Docs and Comments are surfaced as disabled-equivalent extras: a
-// multi-select selection is mapped down to the single-type the store supports
-// (`note`/`task` when exactly one of them is chosen, `all` otherwise). Selecting
-// the unsupported Docs/Comments values therefore widens to `all` rather than
-// filtering — flagged, not faked.
 const TYPE_OPTIONS: MultiSelectOption[] = [
   { value: 'note', label: 'Notes', icon: 'notes' },
   { value: 'task', label: 'Tasks', icon: 'square-kanban' },
-  { value: 'doc', label: 'Docs', icon: 'file-text' },
-  { value: 'comment', label: 'Comments', icon: 'message-square' },
+  { value: 'doc', label: 'Docs', icon: 'file-text', disabled: true },
+  { value: 'comment', label: 'Comments', icon: 'message-square', disabled: true },
 ];
 
+const SUPPORTED_TYPES = ['note', 'task'] as const;
+type SupportedType = (typeof SUPPORTED_TYPES)[number];
+
 const typeModel = computed<string[]>({
-  get: () => (store.type === 'all' ? [] : [store.type]),
+  get: () => {
+    const match = store.query.match(/(?:^|\s)type:(\S+)(?:\s|$)/);
+    if (!match || match[1] === undefined) return [];
+    return match[1]
+      .split(',')
+      .filter((v): v is SupportedType => SUPPORTED_TYPES.includes(v as SupportedType));
+  },
   set: (values) => {
-    const supported = values.filter((v): v is SearchType => v === 'note' || v === 'task');
-    const next: SearchType = supported.length === 1 && supported[0] !== undefined ? supported[0] : 'all';
-    store.setType(next);
+    const supported = values.filter((v): v is SupportedType => SUPPORTED_TYPES.includes(v as SupportedType));
+
+    const stripped = store.query
+      .replace(/(?:^|\s)type:\S+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (supported.length === 0) {
+      store.setQuery(stripped);
+    } else {
+      const token = `type:${supported.join(',')}`;
+      store.setQuery(stripped === '' ? token : `${stripped} ${token}`);
+    }
+
     emit('rerun');
   },
 });
