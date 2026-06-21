@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router';
 import type { components } from '@/api/types.d.ts';
 import ActivityFeed from '@/components/tareas/ActivityFeed.vue';
 import AssigneeList from '@/components/tareas/AssigneeList.vue';
+import Checklist from '@/components/tareas/Checklist.vue';
 import ReferenceAdd from '@/components/tareas/ReferenceAdd.vue';
 import ReferenceList from '@/components/tareas/ReferenceList.vue';
 import SubtaskList from '@/components/tareas/SubtaskList.vue';
@@ -263,6 +264,27 @@ function focusSubtaskInput(): void {
   if (el !== null) el.focus();
   else comingSoon();
 }
+
+function focusChecklistInput(): void {
+  const el = document.querySelector<HTMLInputElement>('.atl-checklist-add');
+  if (el !== null) el.focus();
+  else comingSoon();
+}
+
+async function onChecklistToggle(itemId: string): Promise<void> {
+  const ok = await detail.toggleChecklistItem(props.ws, props.task.readable_id, itemId);
+  if (!ok) fail(detail.error);
+}
+
+async function onChecklistRemove(itemId: string): Promise<void> {
+  const ok = await detail.removeChecklistItem(props.ws, props.task.readable_id, itemId);
+  if (!ok) fail(detail.error);
+}
+
+async function onChecklistAdd(title: string): Promise<void> {
+  const ok = await detail.addChecklistItem(props.ws, props.task.readable_id, title);
+  if (!ok) fail(detail.error);
+}
 </script>
 
 <template>
@@ -444,6 +466,16 @@ function focusSubtaskInput(): void {
       />
     </div>
 
+    <div style="margin-top: 22px;">
+      <Checklist
+        :items="detail.checklist"
+        @toggle="onChecklistToggle"
+        @remove="onChecklistRemove"
+        @add="onChecklistAdd"
+        @promote="() => comingSoon()"
+      />
+    </div>
+
     <div class="atl-tv-cf" style="margin-top: 22px;">
       <div class="atl-tv-cf-head">
         <button
@@ -482,7 +514,7 @@ function focusSubtaskInput(): void {
       <button type="button" class="atl-tv-action" @click="comingSoon">
         <Icon name="link" :size="14" style="color: var(--c-muted);" />Link or add dependency
       </button>
-      <button type="button" class="atl-tv-action" @click="comingSoon">
+      <button type="button" class="atl-tv-action" @click="focusChecklistInput">
         <Icon name="check" :size="14" style="color: var(--c-muted);" />Create checklist
       </button>
       <button type="button" class="atl-tv-action" @click="comingSoon">

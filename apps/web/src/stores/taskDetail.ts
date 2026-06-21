@@ -57,10 +57,11 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
 
     const path = { ws, readable_id: readableId };
 
-    const [a, r, s, act] = await Promise.all([
+    const [a, r, s, cl, act] = await Promise.all([
       wrappedClient.GET('/v1/workspaces/{ws}/tasks/{readable_id}/assignees', { params: { path } }),
       wrappedClient.GET('/v1/workspaces/{ws}/tasks/{readable_id}/references', { params: { path } }),
       wrappedClient.GET('/v1/workspaces/{ws}/tasks/{readable_id}/subtasks', { params: { path } }),
+      wrappedClient.GET('/v1/workspaces/{ws}/tasks/{readable_id}/checklist', { params: { path } }),
       wrappedClient.GET('/v1/workspaces/{ws}/tasks/{readable_id}/activity', { params: { path } }),
     ]);
 
@@ -75,11 +76,14 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     if (s.data !== undefined) {
       subtasks.value = s.data;
     }
+    if (cl.data !== undefined) {
+      checklist.value = cl.data;
+    }
     if (act.data !== undefined) {
       activity.value = act.data.items;
     }
 
-    const firstError = a.error ?? r.error ?? s.error ?? act.error;
+    const firstError = a.error ?? r.error ?? s.error ?? cl.error ?? act.error;
     if (firstError !== undefined) {
       error.value = hintOf(firstError, 'Failed to load task detail');
     }

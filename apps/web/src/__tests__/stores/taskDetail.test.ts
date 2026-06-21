@@ -70,7 +70,7 @@ describe('useTaskDetailStore', () => {
     vi.clearAllMocks();
   });
 
-  it('loadAll populates assignees, references, subtasks and activity', async () => {
+  it('loadAll populates assignees, references, subtasks, checklist and activity', async () => {
     GET.mockImplementation((path: string) => {
       if (path.endsWith('/assignees')) {
         return Promise.resolve({ data: [assignee('u9', 'user', 'Jordan')], error: undefined });
@@ -80,6 +80,9 @@ describe('useTaskDetailStore', () => {
       }
       if (path.endsWith('/subtasks')) {
         return Promise.resolve({ data: [subtaskSummary('s1', 'ATL-2', 'Child')], error: undefined });
+      }
+      if (path.endsWith('/checklist')) {
+        return Promise.resolve({ data: [checklistItem('c1', 'Review code', false)], error: undefined });
       }
       if (path.endsWith('/activity')) {
         return Promise.resolve({
@@ -98,7 +101,36 @@ describe('useTaskDetailStore', () => {
     expect(store.references).toHaveLength(1);
     expect(store.subtasks).toHaveLength(1);
     expect(store.subtasks[0]?.readable_id).toBe('ATL-2');
+    expect(store.checklist).toHaveLength(1);
+    expect(store.checklist[0]?.title).toBe('Review code');
     expect(store.activity).toHaveLength(1);
+  });
+
+  it('addChecklistItem appends the created item to checklist on success', async () => {
+    const store = useTaskDetailStore();
+
+    POST.mockResolvedValueOnce({
+      data: checklistItem('c9', 'Write tests', false),
+      error: undefined,
+    });
+
+    const ok = await store.addChecklistItem('ws', 'ATL-1', 'Write tests');
+
+    expect(ok).toBe(true);
+    expect(store.checklist).toHaveLength(1);
+    expect(store.checklist[0]?.title).toBe('Write tests');
+  });
+
+  it('addChecklistItem surfaces the hint and returns false on error', async () => {
+    const store = useTaskDetailStore();
+
+    POST.mockResolvedValueOnce({ data: undefined, error: { hint: 'Not found' } });
+
+    const ok = await store.addChecklistItem('ws', 'ATL-1', 'Step');
+
+    expect(ok).toBe(false);
+    expect(store.checklist).toHaveLength(0);
+    expect(store.error).toBe('Not found');
   });
 
   it('addSubtask appends the created child as a summary row', async () => {
