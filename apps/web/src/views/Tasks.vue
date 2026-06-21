@@ -13,15 +13,18 @@ import TaskFilterPanel from '@/components/tareas/TaskFilterPanel.vue';
 import TaskListView from '@/components/tareas/TaskListView.vue';
 import TaskTableView from '@/components/tareas/TaskTableView.vue';
 import TaskTimelineView from '@/components/tareas/TaskTimelineView.vue';
+import TaskViewListView from '@/components/tareas/TaskViewListView.vue';
 import Icon from '@/components/ui/Icon.vue';
 import Popover from '@/components/ui/Popover.vue';
 import { useBreakpoint } from '@/composables/useBreakpoint';
 import { useBoardsStore } from '@/stores/boards';
 import { useTaskDetailStore } from '@/stores/taskDetail';
 import { useTasksStore } from '@/stores/tasks';
+import { useTaskViewsStore } from '@/stores/taskViews';
 import type { TaskGroupBy } from '@/stores/ui';
 import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
+import { paramsForView, useWorkspaceTasksStore } from '@/stores/workspaceTasks';
 import AppShell from '@/views/AppShell.vue';
 // biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
 import TasksSidebar from '@/views/TasksSidebar.vue';
@@ -33,6 +36,8 @@ const boards = useBoardsStore();
 const tasks = useTasksStore();
 const detail = useTaskDetailStore();
 const ui = useUiStore();
+const workspaceTasks = useWorkspaceTasksStore();
+const taskViews = useTaskViewsStore();
 const { isMobile } = useBreakpoint();
 
 const boardId = computed(() => {
@@ -40,11 +45,33 @@ const boardId = computed(() => {
   return typeof id === 'string' ? id : null;
 });
 
+const viewId = computed(() => {
+  const id = route.params.viewId;
+  return typeof id === 'string' ? id : null;
+});
+
+const isView = computed(() => viewId.value !== null);
+
 const ws = computed(() => workspace.activeWorkspaceSlug ?? '');
 
 const sidebarRef = ref<InstanceType<typeof TasksSidebar> | null>(null);
 
+const PREDEFINED_VIEW_LABELS: Record<string, string> = {
+  'my-tasks': 'My tasks',
+  'recently-updated': 'Recently updated',
+  'agent-activity': 'Agent activity',
+};
+
+function viewLabel(id: string): string {
+  if (id in PREDEFINED_VIEW_LABELS) return PREDEFINED_VIEW_LABELS[id] as string;
+  return taskViews.items.find((v) => v.id === id)?.name ?? 'View';
+}
+
 const breadcrumbs = computed(() => {
+  if (isView.value && viewId.value !== null) {
+    return ['Atlas', viewLabel(viewId.value), 'View'];
+  }
+
   const name = boards.board?.name;
   return name !== undefined ? ['Atlas', name, 'Board'] : ['Atlas', 'Board'];
 });
@@ -173,7 +200,28 @@ async function openFromQuery(): Promise<void> {
   await onSelect(open);
 }
 
-watch([boardId, ws], loadBoard, { immediate: true });
+async function loadView(): Promise<void> {
+  const vid = viewId.value;
+  if (ws.value === '' || vid === null) return;
+
+  selectedReadableId.value = null;
+
+  const customView = taskViews.items.find((v) => v.id === vid);
+  const params = paramsForView(vid, customView?.filters);
+  await workspaceTasks.load(ws.value, params);
+}
+
+watch(
+  [boardId, viewId, ws],
+  () => {
+    if (isView.value) {
+      void loadView();
+    } else {
+      void loadBoard();
+    }
+  },
+  { immediate: true },
+);
 </script>
 
 <template>
@@ -224,8 +272,8 @@ watch([boardId, ws], loadBoard, { immediate: true });
 
     <EditorToolbar v-else :breadcrumbs="breadcrumbs" :dirty="false">
       <template #lead>
-        <BoardViewMenu />
-        <Popover v-if="!isBoardView" placement="bottom-start" width="180px">
+        <BoardViewMenu v-if="!isView" />
+        <Popover v-if="!isView && !isBoardView" placement="bottom-start" width="180px">
           <template #trigger="{ open, toggle }">
             <button
               type="button"
@@ -262,7 +310,7 @@ watch([boardId, ws], loadBoard, { immediate: true });
         </Popover>
       </template>
 
-      <Popover placement="bottom-start">
+      <Popover v-if="!isView" placement="bottom-start">
         <template #trigger="{ open, toggle }">
           <button
             type="button"
@@ -300,37 +348,66 @@ watch([boardId, ws], loadBoard, { immediate: true });
       </button>
     </EditorToolbar>
 
-    <ErrorState
-      v-if="boards.error"
-      title="Couldn’t load board"
-      :hint="boards.error"
-      @retry="loadBoard"
-    />
-    <LoadingState v-else-if="boards.loading" label="Loading…" />
-    <EmptyState
-      v-else-if="boardId === null"
-      title="No board selected"
-      hint="Pick a board from the sidebar to see its tasks"
-      icon="square-kanban"
-    />
-    <div v-else class="flex flex-1 min-h-0" style="position: relative;">
-      <component
-        :is="activeViewComponent"
-        :ws="ws"
-        :selected-readable-id="selectedReadableId"
-        :class="{ 'atl-board-dimmed': boardDimmed }"
-        @select="onSelect"
-        @open="openTask"
+    <template v-if="isView">
+      <ErrorState
+        v-if="workspaceTasks.error"
+        title="Couldn't load view"
+        :hint="workspaceTasks.error"
+        @retry="loadView"
       />
-      <TaskDetailPane
-        v-if="paneVisible && paneTask"
-        :task="paneTask"
-        :ws="ws"
-        @close="closePane"
-        @expand="expandToFull"
-        @navigate="openTask"
+      <LoadingState v-else-if="workspaceTasks.loading" label="Loading…" />
+      <div v-else class="flex flex-1 min-h-0" style="position: relative;">
+        <TaskViewListView
+          :tasks="workspaceTasks.tasks"
+          :selected-readable-id="selectedReadableId"
+          :class="{ 'atl-board-dimmed': boardDimmed }"
+          @select="onSelect"
+          @open="openTask"
+        />
+        <TaskDetailPane
+          v-if="paneVisible && paneTask"
+          :task="paneTask"
+          :ws="ws"
+          @close="closePane"
+          @expand="expandToFull"
+          @navigate="openTask"
+        />
+      </div>
+    </template>
+
+    <template v-else>
+      <ErrorState
+        v-if="boards.error"
+        title="Couldn't load board"
+        :hint="boards.error"
+        @retry="loadBoard"
       />
-    </div>
+      <LoadingState v-else-if="boards.loading" label="Loading…" />
+      <EmptyState
+        v-else-if="boardId === null"
+        title="No board selected"
+        hint="Pick a board from the sidebar to see its tasks"
+        icon="square-kanban"
+      />
+      <div v-else class="flex flex-1 min-h-0" style="position: relative;">
+        <component
+          :is="activeViewComponent"
+          :ws="ws"
+          :selected-readable-id="selectedReadableId"
+          :class="{ 'atl-board-dimmed': boardDimmed }"
+          @select="onSelect"
+          @open="openTask"
+        />
+        <TaskDetailPane
+          v-if="paneVisible && paneTask"
+          :task="paneTask"
+          :ws="ws"
+          @close="closePane"
+          @expand="expandToFull"
+          @navigate="openTask"
+        />
+      </div>
+    </template>
   </AppShell>
 </template>
 

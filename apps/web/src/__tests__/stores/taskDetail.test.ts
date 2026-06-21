@@ -40,6 +40,8 @@ const subtaskSummary = (id: string, readableId: string, title: string) => ({
   id,
   readable_id: readableId,
   column_id: 'col-1',
+  board_name: 'Board',
+  column_name: 'Todo',
   title,
   estimate: null,
   labels: [],

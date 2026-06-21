@@ -11,6 +11,8 @@ const subtask = (id: string, readableId: string, title: string, columnId: string
   id,
   readable_id: readableId,
   column_id: columnId,
+  board_name: 'Board',
+  column_name: 'Todo',
   title,
   estimate,
   labels: [],

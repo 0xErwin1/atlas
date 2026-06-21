@@ -24,6 +24,8 @@ const task = (
   id,
   readable_id: readableId,
   column_id: columnId,
+  board_name: 'Board',
+  column_name: 'Todo',
   title: `Task ${id}`,
   priority,
   updated_at: '2026-01-01T00:00:00Z',

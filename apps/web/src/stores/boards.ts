@@ -390,6 +390,8 @@ export const useBoardsStore = defineStore('boards', () => {
       id: moved.id,
       readable_id: moved.readable_id,
       column_id: newColumnId,
+      board_name: board.value?.name ?? '',
+      column_name: columns.value.find((c) => c.id === newColumnId)?.name ?? '',
       title: moved.title,
       priority: moved.priority ?? null,
       updated_at: moved.updated_at,

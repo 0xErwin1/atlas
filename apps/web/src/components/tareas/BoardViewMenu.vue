@@ -1,8 +1,12 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
+import { useRouter } from 'vue-router';
+import NewViewDialog from '@/components/tareas/NewViewDialog.vue';
 import Icon from '@/components/ui/Icon.vue';
 import Popover from '@/components/ui/Popover.vue';
+import { type TaskViewFiltersDto, useTaskViewsStore } from '@/stores/taskViews';
 import { type TaskBoardView, useUiStore } from '@/stores/ui';
+import { useWorkspaceStore } from '@/stores/workspace';
 
 /**
  * Board view switcher (Board · List · Table · Calendar · Timeline). Picking one
@@ -26,9 +30,12 @@ const VIEWS: ViewOption[] = [
   { id: 'timeline', label: 'Timeline', icon: 'clock' },
 ];
 
+const router = useRouter();
 const ui = useUiStore();
-const activeId = computed(() => ui.taskView);
+const taskViews = useTaskViewsStore();
+const workspace = useWorkspaceStore();
 
+const activeId = computed(() => ui.taskView);
 const activeView = computed(() => VIEWS.find((v) => v.id === activeId.value) ?? DEFAULT_VIEW);
 
 function activeLabel(): string {
@@ -39,8 +46,23 @@ function pick(view: ViewOption): void {
   ui.setTaskView(view.id);
 }
 
+const dialogOpen = ref(false);
+
 function newView(): void {
-  ui.showBanner('Custom views are coming soon', 'info');
+  dialogOpen.value = true;
+}
+
+async function onSubmitView(payload: { name: string; filters: TaskViewFiltersDto }): Promise<void> {
+  dialogOpen.value = false;
+  const ws = workspace.activeWorkspaceSlug;
+  if (ws === null) return;
+
+  const created = await taskViews.create(ws, payload);
+  if (created !== null) {
+    void router.push({ name: 'task-view', params: { viewId: created.id } });
+  } else if (taskViews.error) {
+    ui.showBanner(taskViews.error, 'error');
+  }
 }
 </script>
 
@@ -121,4 +143,11 @@ function newView(): void {
       </div>
     </template>
   </Popover>
+
+  <NewViewDialog
+    :open="dialogOpen"
+    :initial="null"
+    @submit="onSubmitView"
+    @cancel="dialogOpen = false"
+  />
 </template>
