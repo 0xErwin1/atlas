@@ -36,6 +36,11 @@ export const routes: RouteRecordRaw[] = [
     component: () => import('@/views/Search.vue'),
   },
   {
+    path: '/settings/:section?',
+    name: 'settings',
+    component: () => import('@/views/SettingsView.vue'),
+  },
+  {
     path: '/:pathMatch(.*)*',
     name: 'not-found',
     component: () => import('@/views/NotFound.vue'),

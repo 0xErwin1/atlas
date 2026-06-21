@@ -2,7 +2,6 @@ import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 
 export type InspectorTab = 'properties' | 'backlinks' | 'activity' | 'share';
-export type SettingsTab = 'account' | 'keys' | 'users' | 'about';
 export type BannerType = 'error' | 'warning' | 'info' | 'success';
 export type Theme = 'dark' | 'light';
 export type TaskViewMode = 'sidebar' | 'modal' | 'full';
@@ -232,22 +231,6 @@ export const useUiStore = defineStore('ui', () => {
     taskFilter.value = { statuses: [], priorities: [], assigneeIds: [], labels: [] };
   }
 
-  const settingsOpen = ref(false);
-  const settingsTab = ref<SettingsTab>('account');
-
-  function openSettings(tab: SettingsTab = 'account') {
-    settingsTab.value = tab;
-    settingsOpen.value = true;
-  }
-
-  function closeSettings() {
-    settingsOpen.value = false;
-  }
-
-  function setSettingsTab(tab: SettingsTab) {
-    settingsTab.value = tab;
-  }
-
   return {
     inspectorOpen,
     inspectorTab,
@@ -280,10 +263,5 @@ export const useUiStore = defineStore('ui', () => {
     hasActiveFilter,
     setTaskFilter,
     clearTaskFilter,
-    settingsOpen,
-    settingsTab,
-    openSettings,
-    closeSettings,
-    setSettingsTab,
   };
 });

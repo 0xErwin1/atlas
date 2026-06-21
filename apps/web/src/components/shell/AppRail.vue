@@ -36,7 +36,7 @@ function navigate(item: RailItem) {
 }
 
 function openSettings() {
-  ui.openSettings();
+  router.push({ name: 'settings', params: { section: 'account' } });
 }
 
 async function handleLogout() {
@@ -204,7 +204,7 @@ async function confirmNewWorkspace(name: string): Promise<void> {
           background: transparent;
           color: var(--c-muted);
         "
-        @click="ui.openSettings()"
+        @click="openSettings()"
       >
         <Icon name="settings" :size="18" />
       </button>

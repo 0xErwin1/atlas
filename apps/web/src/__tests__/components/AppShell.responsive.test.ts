@@ -22,7 +22,6 @@ const stubs = {
   InspectorDock: { template: '<aside data-stub="inspector" />' },
   MobileTabBar: { template: '<nav data-stub="tabbar" />' },
   ShareDialog: { template: '<div />' },
-  SettingsModal: { template: '<div />' },
   BannerToast: { template: '<div />' },
   EmptyState: { template: '<div data-stub="empty" />' },
 };

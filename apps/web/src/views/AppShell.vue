@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, useSlots } from 'vue';
-import SettingsModal from '@/components/settings/SettingsModal.vue';
 import ShareDialog from '@/components/share/ShareDialog.vue';
 import AppRail from '@/components/shell/AppRail.vue';
 import BannerToast from '@/components/shell/BannerToast.vue';
@@ -136,8 +135,6 @@ const showMainOnMobile = computed(() => props.mobileDetail || !hasSidebar.value)
       :resource-label="ui.shareResourceLabel"
       @close="ui.closeShare()"
     />
-
-    <SettingsModal />
   </div>
 
   <div
@@ -184,7 +181,5 @@ const showMainOnMobile = computed(() => props.mobileDetail || !hasSidebar.value)
       :resource-label="ui.shareResourceLabel"
       @close="ui.closeShare()"
     />
-
-    <SettingsModal />
   </div>
 </template>

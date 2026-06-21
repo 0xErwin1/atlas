@@ -5,7 +5,6 @@ import Avatar from '@/components/ui/Avatar.vue';
 import BottomSheet from '@/components/ui/BottomSheet.vue';
 import Icon from '@/components/ui/Icon.vue';
 import { useAuthStore } from '@/stores/auth';
-import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 
 defineProps<{
@@ -18,7 +17,6 @@ const emit = defineEmits<{
 
 const router = useRouter();
 const auth = useAuthStore();
-const ui = useUiStore();
 const workspace = useWorkspaceStore();
 
 const userInitials = computed(() => (auth.user?.username ?? '?').slice(0, 2).toUpperCase());
@@ -29,7 +27,7 @@ const workspaceInitial = computed(() => workspaceSlug.value.charAt(0).toUpperCas
 
 function openSettings(): void {
   emit('close');
-  ui.openSettings();
+  router.push({ name: 'settings', params: { section: 'account' } });
 }
 
 async function handleLogout(): Promise<void> {

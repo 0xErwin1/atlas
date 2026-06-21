@@ -105,7 +105,6 @@ async function updatePassword(): Promise<void> {
 
 // ── Sign out ───────────────────────────────────────────────────────
 async function signOut(): Promise<void> {
-  ui.closeSettings();
   await auth.logout();
   router.push({ name: 'login' });
 }
