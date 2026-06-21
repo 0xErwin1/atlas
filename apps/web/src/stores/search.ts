@@ -5,7 +5,6 @@ import { wrappedClient } from '@/api/wrapper';
 
 export type SearchHitDto = components['schemas']['SearchHitDto'];
 export type SearchKind = components['schemas']['SearchKindDto'];
-export type SearchType = 'all' | 'note' | 'task';
 export type SearchSort = 'relevance' | 'updated';
 
 interface SearchPage {
@@ -41,7 +40,6 @@ function loadRecents(): string[] {
 
 export const useSearchStore = defineStore('search', () => {
   const query = ref('');
-  const type = ref<SearchType>('all');
   const sort = ref<SearchSort>('relevance');
 
   // The last few searches the user ran, most-recent first, for the sidebar's
@@ -70,10 +68,6 @@ export const useSearchStore = defineStore('search', () => {
     query.value = value;
   }
 
-  function setType(value: SearchType): void {
-    type.value = value;
-  }
-
   function setSort(value: SearchSort): void {
     sort.value = value;
   }
@@ -99,7 +93,6 @@ export const useSearchStore = defineStore('search', () => {
         path: { ws },
         query: {
           q: query.value,
-          type: type.value,
           sort: sort.value,
           ...(pageCursor !== undefined ? { cursor: pageCursor } : {}),
         },
@@ -179,7 +172,6 @@ export const useSearchStore = defineStore('search', () => {
 
   return {
     query,
-    type,
     sort,
     recents,
     results,
@@ -188,7 +180,6 @@ export const useSearchStore = defineStore('search', () => {
     loading,
     error,
     setQuery,
-    setType,
     setSort,
     clear,
     reset,

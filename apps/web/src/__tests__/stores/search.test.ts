@@ -36,19 +36,18 @@ describe('useSearchStore (REQ-W23/W24)', () => {
     vi.clearAllMocks();
   });
 
-  it('runSearch sends q/type/sort and replaces results', async () => {
+  it('runSearch sends q and sort (no type param) and replaces results (SE1, SE2)', async () => {
     GET.mockResolvedValueOnce(
       page([hit('d1', 'document', 'Shell'), hit('t1', 'task', 'ATL-42')], null, false),
     );
 
     const store = useSearchStore();
     store.setQuery('app rail');
-    store.setType('all');
     store.setSort('relevance');
     await store.runSearch('acme');
 
     expect(GET).toHaveBeenCalledWith('/v1/workspaces/{ws}/search', {
-      params: { path: { ws: 'acme' }, query: { q: 'app rail', type: 'all', sort: 'relevance' } },
+      params: { path: { ws: 'acme' }, query: { q: 'app rail', sort: 'relevance' } },
     });
     expect(store.results).toHaveLength(2);
     expect(store.results[0]?.kind).toBe('document');
@@ -129,5 +128,24 @@ describe('useSearchStore (REQ-W23/W24)', () => {
 
     expect(store.error).toBe('Search is temporarily unavailable');
     expect(store.results).toHaveLength(0);
+  });
+
+  it('fetchPage does NOT send a ?type= query param (SE2)', async () => {
+    GET.mockResolvedValueOnce(page([], null, false));
+
+    const store = useSearchStore();
+    store.setQuery('type:note shell');
+    await store.runSearch('acme');
+
+    const call = GET.mock.calls[0]?.[1] as { params: { query: Record<string, unknown> } };
+    expect('type' in call.params.query).toBe(false);
+    expect(call.params.query.q).toBe('type:note shell');
+    expect(call.params.query.sort).toBeDefined();
+  });
+
+  it('SearchType and setType are not exported from the module (SE1)', async () => {
+    const mod = await import('@/stores/search');
+    expect('setType' in mod).toBe(false);
+    expect('SearchType' in mod).toBe(false);
   });
 });
