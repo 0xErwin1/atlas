@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, watch } from 'vue';
+import { nextTick, onBeforeUnmount, ref, watch } from 'vue';
 
 /**
  * Single floating-surface primitive: a panel anchored to a trigger, with the
@@ -7,6 +7,12 @@ import { onBeforeUnmount, watch } from 'vue';
  * place. Every anchored menu/dropdown/popover (view switcher, color picker, role
  * menu, account menu, select dropdown) builds on this instead of re-implementing
  * the surface and its behavior. Cursor-positioned menus keep using ContextMenu.
+ *
+ * The default surface is `position: absolute`, relative to the trigger wrapper.
+ * When `teleport` is set, the panel is rendered into `<body>` as a `position:
+ * fixed` surface anchored to the trigger's bounding rect — this is required when
+ * an ancestor has `overflow: auto/hidden` and would otherwise clip the panel
+ * (e.g. inline editors inside a scrolling task list).
  *
  * Slots:
  *  - `trigger` (scoped: { open, toggle, close }) — the control that opens it.
@@ -24,11 +30,20 @@ const props = withDefaults(
     surface?: boolean;
     /** Make the wrapper fill its container (e.g. full-width select dropdowns). */
     block?: boolean;
+    /**
+     * Render the panel into `<body>` as a fixed surface anchored to the trigger
+     * rect, escaping any clipping `overflow` ancestor. Off by default so every
+     * existing consumer keeps the absolute-positioned behavior unchanged.
+     */
+    teleport?: boolean;
   }>(),
-  { placement: 'bottom-start', width: '', surface: true, block: false },
+  { placement: 'bottom-start', width: '', surface: true, block: false, teleport: false },
 );
 
 const open = defineModel<boolean>('open', { default: false });
+
+const anchor = ref<HTMLElement | null>(null);
+const fixedStyle = ref<Record<string, string>>({});
 
 function close(): void {
   open.value = false;
@@ -42,9 +57,40 @@ function onKeydown(event: KeyboardEvent): void {
   if (event.key === 'Escape') close();
 }
 
+/**
+ * Anchors the teleported panel to the trigger rect. Only the start/end edges of
+ * the configured placement are honored for the fixed surface (top vs bottom,
+ * left vs right); the panel is positioned just outside the trigger on that edge.
+ */
+function positionFixed(): void {
+  const el = anchor.value;
+  if (el === null) return;
+
+  const rect = el.getBoundingClientRect();
+  const gap = 4;
+  const onTop = props.placement.startsWith('top');
+  const onEnd = props.placement.endsWith('end');
+
+  const style: Record<string, string> = { position: 'fixed' };
+
+  if (onTop) style.bottom = `${window.innerHeight - rect.top + gap}px`;
+  else style.top = `${rect.bottom + gap}px`;
+
+  if (onEnd) style.right = `${window.innerWidth - rect.right}px`;
+  else style.left = `${rect.left}px`;
+
+  if (props.width !== '') style.width = props.width;
+
+  fixedStyle.value = style;
+}
+
 watch(open, (isOpen) => {
-  if (isOpen) window.addEventListener('keydown', onKeydown);
-  else window.removeEventListener('keydown', onKeydown);
+  if (isOpen) {
+    window.addEventListener('keydown', onKeydown);
+    if (props.teleport) void nextTick(positionFixed);
+  } else {
+    window.removeEventListener('keydown', onKeydown);
+  }
 });
 
 onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
@@ -59,10 +105,10 @@ const PLACEMENT: Record<Placement, Record<string, string>> = {
 </script>
 
 <template>
-  <div class="atl-popover" :class="{ block }">
+  <div ref="anchor" class="atl-popover" :class="{ block }">
     <slot name="trigger" :open="open" :toggle="toggle" :close="close" />
 
-    <template v-if="open">
+    <template v-if="open && !teleport">
       <div
         class="atl-popover-backdrop"
         aria-hidden="true"
@@ -78,6 +124,25 @@ const PLACEMENT: Record<Placement, Record<string, string>> = {
         <slot :close="close" />
       </div>
     </template>
+
+    <Teleport v-if="teleport" to="body">
+      <template v-if="open">
+        <div
+          class="atl-popover-backdrop"
+          aria-hidden="true"
+          @click="close"
+          @contextmenu.prevent="close"
+        />
+        <div
+          class="atl-menu atl-popover-panel fixed"
+          :class="{ surface }"
+          role="menu"
+          :style="fixedStyle"
+        >
+          <slot :close="close" />
+        </div>
+      </template>
+    </Teleport>
   </div>
 </template>
 
@@ -102,6 +167,12 @@ const PLACEMENT: Record<Placement, Record<string, string>> = {
   position: absolute;
   z-index: 60;
   min-width: 100%;
+}
+
+.atl-popover-panel.fixed {
+  position: fixed;
+  z-index: 60;
+  min-width: 0;
 }
 
 .atl-popover-panel.surface {
