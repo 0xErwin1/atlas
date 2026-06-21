@@ -47,19 +47,19 @@ const style = computed(() => {
     class="inline-flex items-center shrink-0 select-none"
     :style="{
       gap: '5px',
-      padding: '1px 7px',
+      padding: '3px 9px',
       borderRadius: 'var(--r-sm)',
       backgroundColor: style.bg,
       border: `1px solid ${style.border}`,
       color: style.color,
       fontFamily: 'var(--font-mono)',
-      fontSize: 'var(--fs-xs)',
+      fontSize: 'var(--fs-base)',
       fontWeight: 'var(--fw-medium)',
       lineHeight: '1',
       whiteSpace: 'nowrap',
     }"
   >
-    <Icon v-if="icon" :name="icon" :size="11" />
+    <Icon v-if="icon" :name="icon" :size="13" />
     <slot />
   </span>
 </template>
