@@ -26,6 +26,41 @@
         }
       }
     },
+    "/v1/admin/workspaces": {
+      "get": {
+        "tags": [
+          "workspaces"
+        ],
+        "summary": "Returns every workspace in the system, ordered by creation date.\nRestricted to root users via `RequireUserAdmin`.",
+        "operationId": "admin_list_workspaces",
+        "responses": {
+          "200": {
+            "description": "All workspaces (root only)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WorkspaceDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Not a root/admin user"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/v1/auth/change-password": {
       "post": {
         "tags": [
@@ -585,6 +620,60 @@
           },
           "404": {
             "description": "Workspace not found or not a member"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "workspaces"
+        ],
+        "summary": "Renames the workspace display name. The slug is never re-derived; only\n`name` and `updated_at` change. Requires workspace membership.",
+        "operationId": "update_workspace",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateWorkspaceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Workspace renamed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "404": {
+            "description": "Workspace not found or not a member"
+          },
+          "422": {
+            "description": "Validation error"
           }
         },
         "security": [
@@ -3931,6 +4020,123 @@
         ]
       }
     },
+    "/v1/workspaces/{ws}/tags/{tag_id}": {
+      "delete": {
+        "tags": [
+          "tags"
+        ],
+        "operationId": "delete_tag",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tag_id",
+            "in": "path",
+            "description": "Tag ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Tag soft-deleted"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          },
+          "404": {
+            "description": "Tag not found or not in workspace"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "tags"
+        ],
+        "operationId": "patch_tag",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tag_id",
+            "in": "path",
+            "description": "Tag ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTagRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Tag updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TagDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          },
+          "404": {
+            "description": "Tag not found or not in workspace"
+          },
+          "409": {
+            "description": "Name already taken by another tag"
+          },
+          "422": {
+            "description": "Invalid input (blank name or unknown color swatch)"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/v1/workspaces/{ws}/task-views": {
       "get": {
         "tags": [
@@ -5972,6 +6178,12 @@
             "type": "string",
             "format": "uuid"
           },
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -6150,6 +6362,12 @@
             ]
           },
           "before": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "color": {
             "type": [
               "string",
               "null"
@@ -7788,6 +8006,12 @@
           "updated_at"
         ],
         "properties": {
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -8187,7 +8411,7 @@
       },
       "UpdateColumnRequest": {
         "type": "object",
-        "description": "Request body for `PATCH /v1/workspaces/{ws}/boards/{board_id}/columns/{column_id}`.",
+        "description": "Request body for `PATCH /v1/workspaces/{ws}/boards/{board_id}/columns/{column_id}`.\n\nColor uses the same `present_value` convention as `UpdateTaskRequest` fields:\nan absent `color` key leaves the color unchanged; explicit `null` clears it;\na string value sets it. `name`, `before`, and `after` remain simple `Option<String>`.",
         "properties": {
           "after": {
             "type": [
@@ -8201,6 +8425,7 @@
               "null"
             ]
           },
+          "color": {},
           "name": {
             "type": [
               "string",
@@ -8287,6 +8512,24 @@
           }
         }
       },
+      "UpdateTagRequest": {
+        "type": "object",
+        "description": "Request body for `PATCH /v1/workspaces/{ws}/tags/{tag_id}`.\n\nBoth fields are optional: supply `name` to rename, `color` to recolor, or both.\n`color: None` in the JSON payload is treated as \"leave unchanged\"; there is no\nway to explicitly clear a tag color via this endpoint (NULL = unset).",
+        "properties": {
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "UpdateTaskRequest": {
         "type": "object",
         "description": "Request body for `PATCH /v1/workspaces/{ws}/tasks/{readable_id}`.",
@@ -8343,6 +8586,18 @@
         "properties": {
           "state": {
             "type": "object"
+          }
+        }
+      },
+      "UpdateWorkspaceRequest": {
+        "type": "object",
+        "description": "Request body for `PATCH /v1/workspaces/{ws}`.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
           }
         }
       },
