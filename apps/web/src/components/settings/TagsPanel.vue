@@ -136,7 +136,7 @@ async function confirmDelete(): Promise<void> {
 
     <div v-else class="atl-tag-list">
       <div v-for="tag in tagsStore.tags" :key="tag.id" class="atl-tag-row">
-        <Popover placement="bottom-start">
+        <Popover placement="bottom-start" teleport>
           <template #trigger="{ toggle }">
             <button type="button" class="atl-tag-swatch-btn" title="Recolor tag" @click="toggle">
               <Chip :color="tagsStore.colorFor(tag.name)" icon="dot">{{ tag.name }}</Chip>

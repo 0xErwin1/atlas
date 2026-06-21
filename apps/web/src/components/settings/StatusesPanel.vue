@@ -201,7 +201,7 @@ async function confirmDelete(): Promise<void> {
     <div v-else>
       <div class="atl-statuses-list">
         <div v-for="(column, index) in boards.columns" :key="column.id" class="atl-status-row">
-          <Popover placement="bottom-start">
+          <Popover placement="bottom-start" teleport>
             <template #trigger="{ toggle }">
               <button type="button" class="atl-dot-btn" title="Recolor status" @click="toggle">
                 <span class="atl-dot" :style="{ backgroundColor: swatchFg(column) }" />
