@@ -58,81 +58,48 @@ use response::{
 };
 
 const ATLAS_INSTRUCTIONS: &str = "\
-Atlas is a personal knowledge base for notes and tasks. \
-Use `search` to retrieve content by keyword or structured filters \
-(status:open, tag:rust, etc.) before acting on it. \
-Use `get_document` to read a note's content, `list_tasks` to browse tasks \
-with status/board/assignee/label filters, and `get_task` for a single task's details. \
-Use `list_documents` to enumerate documents in a project, `list_folders` for the \
-folder hierarchy, `list_boards` to discover boards, and `list_columns` to map \
-column names to IDs for use in status filters. \
-For workspace context discovery use: `list_workspaces` to find available workspaces, \
-`list_projects` to enumerate projects in a workspace, `list_members` to resolve \
-member names to IDs for assignee filters, `list_tags` for the tag registry, \
-`list_used_labels` for labels currently in use on tasks, `list_saved_searches` and \
-`list_task_views` for the caller's saved filters. \
-For link graph exploration use: `get_task_references` for a task's OUTBOUND references \
-(tasks/documents the task points to), `get_task_backlinks` for INBOUND references \
-(other tasks that point to this task), and `get_document_backlinks` for documents/tasks \
-that link to a given document. \
-For task depth use: `list_checklist` for a task's checklist items, `list_activity` for \
-its change history (who moved/assigned/commented). \
-For document depth use: `list_document_history` to browse revision metadata, \
-`get_document_revision` to fetch the full content of a specific historical revision \
-(by seq number from `list_document_history`), and `list_attachments` to enumerate \
-file attachments on a document. \
-For task mutations use: `create_task` (board + column resolved by name), `update_task` \
-(PATCH semantics — omit a field to leave it unchanged, pass null to clear), `move_task` \
-(target column resolved by name; errors with the column list on a miss), `delete_task` \
-(requires confirm: true), `add_task_assignee` / `remove_task_assignee` for assignees. \
-For document mutations use: `create_document` (returns compact projection with head_revision_id), \
-`update_document_metadata` (title / folder, PATCH), `update_document_content` (CAS write — \
-call `get_document detail=full` first to get head_revision_id and content, edit locally, \
-then call with base_revision_id = head_revision_id; on revision_conflict apply \
-base_to_current_patch to your edit and retry with current_revision_id), \
-`delete_document` (requires confirm: true), `move_document` (folder_id or null for root), \
-`copy_document` (optional destination folder_id). \
-For folder mutations use: `create_folder`, `rename_folder`, `move_folder` \
-(parent_folder_id or null for project root; note no ordering support), \
-`copy_folder`, `delete_folder` (requires confirm: true — documents inside keep their \
-folder_id and may be orphaned from navigation). \
-For board mutations use: `create_board` (scoped to a project), `update_board` (rename; \
-board resolved by name or UUID), `delete_board` (requires confirm: true — soft-deletes only \
-the board row; columns and tasks become unreachable but their rows persist). \
-For column mutations use: `create_column` (on a board; optional color swatch and ordering \
-anchors), `update_column` (rename/recolor — color accepts null to clear), `delete_column` \
-(requires confirm: true; the server refuses deletion when the column still has tasks — \
-move or delete the tasks first). \
-For tag mutations use: `create_tag` (idempotent by case-insensitive name; returns the tag \
-whether created or already existing), `update_tag` (rename and/or recolor; color can be \
-set but not cleared — omit color to leave it unchanged), `delete_tag` (soft-delete; task \
-label strings are preserved). \
-For reference mutations use: `add_task_reference` (creates a typed outbound reference from \
-a task to another task or document; kind must be one of relates|blocks|parent|spec; supply \
-exactly one of target_task_readable_id or target_document_id), `remove_task_reference` \
-(removes a reference by its UUID from `get_task_references`). \
-For checklist mutations use: `add_checklist_item` (appends an item; optional before/after \
-ordering anchors), `update_checklist_item` (PATCH — omit title/checked to leave unchanged; \
-optional ordering), `delete_checklist_item` (plain delete, low-risk), \
-`promote_checklist_item` (converts a checklist item into a full task on the specified \
-board+column; returns the new task and the updated checklist item). \
-For subtask mutations use: `create_subtask` (creates a subtask under a parent task), \
-`promote_subtask` (promotes a subtask to a top-level task, detaching it from the parent). \
-For project mutations use: `create_project` (name, slug, task_prefix required; optional \
-visibility and visibility_role), `update_project` (PATCH — omit fields to leave unchanged), \
-`delete_project` (requires confirm: true — soft-deletes only the project row; boards, \
-tasks, and documents inside are not cascaded but become unreachable from project listings). \
-For status template mutations use: `create_status_template` (name required; optional color \
-and ordering anchors), `update_status_template` (name and color optional PATCH; color \
-accepts null to clear; optional ordering anchors), `delete_status_template` (plain delete). \
-For saved search mutations use: `create_saved_search` (name + query required), \
-`rename_saved_search` (rename only; use `create_saved_search` to change the query), \
-`delete_saved_search` (plain delete). \
-For task view mutations use: `create_task_view` (name + filters object required; pass \
-an empty filters object for an all-workspace view), `update_task_view` (name + filters \
-both required — full replacement, not PATCH), `delete_task_view` (plain delete). \
-Prefer narrow queries over broad ones; follow up with targeted reads rather than \
-enumerating all results.";
+Atlas is a personal knowledge base of notes (markdown documents) and tasks (kanban \
+boards). Work as an agent: discover with the read tools, then mutate with the write \
+tools. Each tool's own description is authoritative; this preamble covers the \
+conventions shared across all of them.\n\
+\n\
+Conventions:\n\
+- Discover before acting: use `search` (keyword plus filters like status:open, tag:rust) \
+and the list tools to find resources first. Identify tasks by readable_id (e.g. ATL-42) \
+and documents by slug.\n\
+- Pass names, not UUIDs, for boards / columns / assignees; on a miss the error lists the \
+valid options.\n\
+- List responses are paginated as {items, next_cursor, has_more}; reads are compact by \
+default — pass detail=full for heavy fields (document content, task description).\n\
+- PATCH updates are partial: omit a field to leave it unchanged, pass null to clear it.\n\
+- Destructive deletes (task, document, folder, board, column, project) require confirm: true.\n\
+- Editing document content is compare-and-swap: read with `get_document detail=full` to get \
+head_revision_id and content, edit locally, then call `update_document_content` with \
+base_revision_id = head_revision_id; on a revision_conflict, apply the returned \
+base_to_current_patch and retry with current_revision_id.\n\
+\n\
+Tools by area (see each tool's own description for parameters):\n\
+- Read: `search`, `get_document`, `list_tasks`, `get_task`.\n\
+- Structure: `list_documents`, `list_folders`, `list_boards`, `list_columns`.\n\
+- Workspace context: `list_workspaces`, `list_projects`, `list_members`, `list_tags`, \
+`list_used_labels`, `list_saved_searches`, `list_task_views`.\n\
+- Links and depth: `get_task_references`, `get_task_backlinks`, `get_document_backlinks`, \
+`list_checklist`, `list_activity`, `list_document_history`, `get_document_revision`, \
+`list_attachments`.\n\
+- Task writes: `create_task`, `update_task`, `move_task`, `delete_task`, \
+`add_task_assignee`, `remove_task_assignee`.\n\
+- Document and folder writes: `create_document`, `update_document_metadata`, \
+`update_document_content`, `delete_document`, `move_document`, `copy_document`, \
+`create_folder`, `rename_folder`, `move_folder`, `copy_folder`, `delete_folder`.\n\
+- Board, column and tag writes: `create_board`, `update_board`, `delete_board`, \
+`create_column`, `update_column`, `delete_column`, `create_tag`, `update_tag`, `delete_tag`.\n\
+- Graph writes: `add_task_reference`, `remove_task_reference`, `add_checklist_item`, \
+`update_checklist_item`, `delete_checklist_item`, `promote_checklist_item`, \
+`create_subtask`, `promote_subtask`.\n\
+- Workspace-settings writes: `create_project`, `update_project`, `delete_project`, \
+`create_status_template`, `update_status_template`, `delete_status_template`, \
+`create_saved_search`, `rename_saved_search`, `delete_saved_search`, `create_task_view`, \
+`update_task_view`, `delete_task_view`.";
 
 /// MCP server backed by an Atlas HTTP API endpoint.
 ///
