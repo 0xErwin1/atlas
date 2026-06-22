@@ -9,6 +9,7 @@ import Popover from '@/components/ui/Popover.vue';
 import { resolveColumnSwatchId } from '@/lib/columnColor';
 import { swatchById } from '@/lib/swatches';
 import { type ColumnDto, useBoardsStore } from '@/stores/boards';
+import { useStatusTemplatesStore } from '@/stores/statusTemplates';
 import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 
@@ -22,12 +23,14 @@ import { useWorkspaceStore } from '@/stores/workspace';
 
 const workspace = useWorkspaceStore();
 const boards = useBoardsStore();
+const templatesStore = useStatusTemplatesStore();
 const ui = useUiStore();
 
 const ws = computed(() => workspace.activeWorkspaceSlug);
 
 const selectedBoardId = ref<string>('');
 const loadingColumns = ref(false);
+const applyingDefaults = ref(false);
 
 const adding = ref(false);
 const newColumnName = ref('');
@@ -168,6 +171,24 @@ async function move(column: ColumnDto, direction: -1 | 1): Promise<void> {
   if (!ok && boards.error) ui.showBanner(boards.error, 'error');
 }
 
+/**
+ * Copies the workspace status templates into the selected board (adding only the
+ * statuses it does not already have by name), then reloads its columns so the new
+ * ones appear immediately.
+ */
+async function applyDefaults(): Promise<void> {
+  const slug = ws.value;
+  if (slug === null || selectedBoardId.value === '') return;
+
+  applyingDefaults.value = true;
+  const ok = await templatesStore.applyToBoard(slug, selectedBoardId.value);
+  if (ok) await boards.loadColumns(slug, selectedBoardId.value);
+  applyingDefaults.value = false;
+
+  if (ok) ui.showBanner('Workspace defaults applied', 'success');
+  else if (templatesStore.error !== null) ui.showBanner(templatesStore.error, 'error');
+}
+
 async function confirmDelete(): Promise<void> {
   const slug = ws.value;
   const id = deleteTargetId.value;
@@ -283,9 +304,14 @@ async function confirmDelete(): Promise<void> {
         <Btn variant="primary" :disabled="newColumnName.trim() === ''" @click="addColumn">Add</Btn>
         <button type="button" class="atl-rowact" @click="adding = false">Cancel</button>
       </div>
-      <Btn v-else variant="secondary" style="margin-top: 12px;" @click="adding = true">
-        <Icon name="plus" :size="14" />Add status
-      </Btn>
+      <div v-if="!adding" class="atl-status-actions">
+        <Btn variant="secondary" @click="adding = true">
+          <Icon name="plus" :size="14" />Add status
+        </Btn>
+        <Btn variant="ghost" :disabled="applyingDefaults" @click="applyDefaults">
+          <Icon name="kanban" :size="14" />Apply workspace defaults
+        </Btn>
+      </div>
     </div>
 
     <ConfirmDialog
@@ -401,6 +427,13 @@ async function confirmDelete(): Promise<void> {
 }
 
 .atl-status-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.atl-status-actions {
   display: flex;
   align-items: center;
   gap: 8px;

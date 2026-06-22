@@ -7,6 +7,7 @@ import AdminWorkspacesPanel from '@/components/settings/AdminWorkspacesPanel.vue
 import ApiKeysPanel from '@/components/settings/ApiKeysPanel.vue';
 import ProjectsPanel from '@/components/settings/ProjectsPanel.vue';
 import StatusesPanel from '@/components/settings/StatusesPanel.vue';
+import StatusTemplatesPanel from '@/components/settings/StatusTemplatesPanel.vue';
 import TagsPanel from '@/components/settings/TagsPanel.vue';
 import UsersPanel from '@/components/settings/UsersPanel.vue';
 import WorkspaceGeneralPanel from '@/components/settings/WorkspaceGeneralPanel.vue';
@@ -22,6 +23,7 @@ export type SettingsSection =
   | 'keys'
   | 'general'
   | 'statuses'
+  | 'default-statuses'
   | 'tags'
   | 'projects'
   | 'users'
@@ -67,6 +69,7 @@ const navGroups = computed<NavGroup[]>(() => {
       entries: [
         { section: 'general', icon: 'settings', label: 'General' },
         { section: 'statuses', icon: 'kanban', label: 'Statuses' },
+        { section: 'default-statuses', icon: 'kanban', label: 'Default statuses' },
         { section: 'tags', icon: 'tag', label: 'Tags' },
         { section: 'projects', icon: 'folder', label: 'Projects' },
       ],
@@ -153,6 +156,7 @@ watch(
       <ApiKeysPanel v-else-if="activeSection === 'keys'" />
       <WorkspaceGeneralPanel v-else-if="activeSection === 'general'" />
       <StatusesPanel v-else-if="activeSection === 'statuses'" />
+      <StatusTemplatesPanel v-else-if="activeSection === 'default-statuses'" />
       <TagsPanel v-else-if="activeSection === 'tags'" />
       <ProjectsPanel v-else-if="activeSection === 'projects'" />
       <UsersPanel v-else-if="activeSection === 'users'" />
