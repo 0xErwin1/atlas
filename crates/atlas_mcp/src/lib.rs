@@ -16,9 +16,10 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use response::{
-    Detail, envelope_page, match_columns_by_name, parse_csv, parse_detail,
-    project_document_compact, project_document_full, project_reference, project_search_hit,
-    project_task_compact, project_task_full, project_task_row,
+    Detail, envelope_page, match_columns_by_name, parse_csv, parse_detail, project_board_summary,
+    project_column, project_document_compact, project_document_full, project_document_summary,
+    project_folder, project_reference, project_search_hit, project_task_compact, project_task_full,
+    project_task_row, wrap_vec,
 };
 
 const ATLAS_INSTRUCTIONS: &str = "\
@@ -27,6 +28,9 @@ Use `search` to retrieve content by keyword or structured filters \
 (status:open, tag:rust, etc.) before acting on it. \
 Use `get_document` to read a note's content, `list_tasks` to browse tasks \
 with status/board/assignee/label filters, and `get_task` for a single task's details. \
+Use `list_documents` to enumerate documents in a project, `list_folders` for the \
+folder hierarchy, `list_boards` to discover boards, and `list_columns` to map \
+column names to IDs for use in status filters. \
 Prefer narrow queries over broad ones; follow up with targeted reads rather than \
 enumerating all results.";
 
@@ -148,6 +152,60 @@ pub struct GetTaskParams {
     /// `compact` (default) = identifying fields; `full` = adds description, references, subtasks.
     #[serde(default)]
     pub detail: Option<String>,
+}
+
+/// Parameters accepted by the `list_documents` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ListDocumentsParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Project slug. Document listing is per-project; use `search` for cross-project discovery.
+    pub project: String,
+    /// Pass `next_cursor` from the previous response to fetch the next page.
+    #[serde(default)]
+    pub cursor: Option<String>,
+    /// Page size (default 20, max 200).
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+/// Parameters accepted by the `list_folders` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ListFoldersParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Project slug. Folder listing is per-project.
+    pub project: String,
+    /// Pass `next_cursor` from the previous response to fetch the next page.
+    #[serde(default)]
+    pub cursor: Option<String>,
+    /// Page size (default 20, max 200).
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+/// Parameters accepted by the `list_boards` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ListBoardsParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Project slug. Board listing is per-project.
+    pub project: String,
+    /// Pass `next_cursor` from the previous response to fetch the next page.
+    #[serde(default)]
+    pub cursor: Option<String>,
+    /// Page size (default 20, max 200).
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+/// Parameters accepted by the `list_columns` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ListColumnsParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Board name (partial match) or UUID. Returns all columns of that board.
+    pub board: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -283,6 +341,100 @@ impl AtlasMcp {
             }
         };
 
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "List documents in a project within an Atlas workspace")]
+    async fn list_documents(
+        &self,
+        Parameters(params): Parameters<ListDocumentsParams>,
+    ) -> Result<String, String> {
+        let limit = params.limit.unwrap_or(20).clamp(1, 200);
+
+        let page = self
+            .client
+            .list_documents(
+                &params.workspace,
+                &params.project,
+                params.cursor.as_deref(),
+                Some(limit),
+            )
+            .await
+            .map_err(|e| {
+                format!(
+                    "list_documents for project '{}' failed: {e}",
+                    params.project
+                )
+            })?;
+
+        let result = envelope_page(page, project_document_summary);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "List folders in a project within an Atlas workspace")]
+    async fn list_folders(
+        &self,
+        Parameters(params): Parameters<ListFoldersParams>,
+    ) -> Result<String, String> {
+        let limit = params.limit.unwrap_or(20).clamp(1, 200);
+
+        let page = self
+            .client
+            .list_folders(
+                &params.workspace,
+                &params.project,
+                params.cursor.as_deref(),
+                Some(limit),
+            )
+            .await
+            .map_err(|e| format!("list_folders for project '{}' failed: {e}", params.project))?;
+
+        let result = envelope_page(page, project_folder);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "List boards in a project within an Atlas workspace")]
+    async fn list_boards(
+        &self,
+        Parameters(params): Parameters<ListBoardsParams>,
+    ) -> Result<String, String> {
+        let limit = params.limit.unwrap_or(20).clamp(1, 200);
+
+        let page = self
+            .client
+            .list_boards(
+                &params.workspace,
+                &params.project,
+                params.cursor.as_deref(),
+                Some(limit),
+            )
+            .await
+            .map_err(|e| format!("list_boards for project '{}' failed: {e}", params.project))?;
+
+        let result = envelope_page(page, project_board_summary);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "List columns of a board; use column IDs in list_tasks status filters")]
+    async fn list_columns(
+        &self,
+        Parameters(params): Parameters<ListColumnsParams>,
+    ) -> Result<String, String> {
+        let board_id_str = self
+            .resolve_board_id(&params.workspace, &params.board)
+            .await?;
+
+        let board_uuid: uuid::Uuid = board_id_str
+            .parse()
+            .map_err(|_| format!("resolved board_id '{board_id_str}' is not a valid UUID"))?;
+
+        let cols = self
+            .client
+            .list_columns(&params.workspace, board_uuid)
+            .await
+            .map_err(|e| format!("list_columns for board '{}' failed: {e}", params.board))?;
+
+        let result = wrap_vec(cols, project_column);
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 }
@@ -536,5 +688,54 @@ mod tests {
         let params: GetTaskParams = serde_json::from_str(json).unwrap();
         assert_eq!(params.readable_id, "ATL-42");
         assert_eq!(params.detail.as_deref(), Some("compact"));
+    }
+
+    #[test]
+    fn list_documents_params_deserializes_minimal() {
+        let json = r#"{"workspace":"ws","project":"my-proj"}"#;
+        let params: ListDocumentsParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.workspace, "ws");
+        assert_eq!(params.project, "my-proj");
+        assert!(params.cursor.is_none());
+        assert!(params.limit.is_none());
+    }
+
+    #[test]
+    fn list_documents_params_deserializes_with_pagination() {
+        let json = r#"{"workspace":"ws","project":"p","cursor":"tok","limit":50}"#;
+        let params: ListDocumentsParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.cursor.as_deref(), Some("tok"));
+        assert_eq!(params.limit, Some(50));
+    }
+
+    #[test]
+    fn list_folders_params_deserializes_minimal() {
+        let json = r#"{"workspace":"ws","project":"my-proj"}"#;
+        let params: ListFoldersParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.project, "my-proj");
+        assert!(params.cursor.is_none());
+    }
+
+    #[test]
+    fn list_boards_params_deserializes_minimal() {
+        let json = r#"{"workspace":"ws","project":"my-proj"}"#;
+        let params: ListBoardsParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.project, "my-proj");
+        assert!(params.limit.is_none());
+    }
+
+    #[test]
+    fn list_columns_params_deserializes() {
+        let json = r#"{"workspace":"ws","board":"Sprint Board"}"#;
+        let params: ListColumnsParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.workspace, "ws");
+        assert_eq!(params.board, "Sprint Board");
+    }
+
+    #[test]
+    fn list_columns_params_accepts_uuid_board() {
+        let json = r#"{"workspace":"ws","board":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234"}"#;
+        let params: ListColumnsParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.board, "018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234");
     }
 }

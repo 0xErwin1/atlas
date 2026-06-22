@@ -7,8 +7,9 @@
 
 use atlas_api::{
     dtos::{
-        boards_tasks::{ColumnDto, ReferenceDto, TaskDto, TaskSummaryDto},
-        documents::DocumentDto,
+        boards_tasks::{BoardSummaryDto, ColumnDto, ReferenceDto, TaskDto, TaskSummaryDto},
+        documents::{DocumentDto, DocumentSummaryDto},
+        folders::FolderDto,
         search::SearchHitDto,
     },
     pagination::Page,
@@ -90,7 +91,6 @@ where
 ///
 /// These are always returned with `next_cursor: null` and `has_more: false` so
 /// the agent never needs to special-case them.
-#[allow(dead_code)]
 pub(crate) fn wrap_vec<T, F>(items: Vec<T>, project_fn: F) -> Value
 where
     F: Fn(T) -> Value,
@@ -283,6 +283,90 @@ pub(crate) fn project_task_full(
 }
 
 // ---------------------------------------------------------------------------
+// Document summary projection (list_documents rows)
+// ---------------------------------------------------------------------------
+
+/// Compact projection of a document list row.
+///
+/// All fields on `DocumentSummaryDto` are cheap; `folder_id` is omitted when
+/// absent to keep the output uncluttered.
+pub(crate) fn project_document_summary(doc: DocumentSummaryDto) -> Value {
+    let mut map = serde_json::Map::new();
+    map.insert("id".into(), json!(doc.id));
+    map.insert("title".into(), json!(doc.title));
+    map.insert("head_seq".into(), json!(doc.head_seq));
+    map.insert("updated_at".into(), json!(doc.updated_at));
+
+    if let Some(slug) = doc.slug {
+        map.insert("slug".into(), json!(slug));
+    }
+    if let Some(folder_id) = doc.folder_id {
+        map.insert("folder_id".into(), json!(folder_id));
+    }
+
+    Value::Object(map)
+}
+
+// ---------------------------------------------------------------------------
+// Folder projection (list_folders rows)
+// ---------------------------------------------------------------------------
+
+/// Compact projection of a folder list row.
+///
+/// `workspace_id`, `project_id`, and `created_at` are dropped — the agent
+/// works within a scoped project context where these are implicit.
+/// `parent_folder_id` is retained so the agent can reconstruct the tree.
+pub(crate) fn project_folder(folder: FolderDto) -> Value {
+    let mut map = serde_json::Map::new();
+    map.insert("id".into(), json!(folder.id));
+    map.insert("name".into(), json!(folder.name));
+    map.insert("updated_at".into(), json!(folder.updated_at));
+
+    if let Some(parent) = folder.parent_folder_id {
+        map.insert("parent_folder_id".into(), json!(parent));
+    }
+
+    Value::Object(map)
+}
+
+// ---------------------------------------------------------------------------
+// Board summary projection (list_boards rows)
+// ---------------------------------------------------------------------------
+
+/// Compact projection of a board list row.
+///
+/// `created_at` is dropped; `id` and `name` are what the agent needs to
+/// reference a board (by name for display, by id for `list_columns`).
+pub(crate) fn project_board_summary(board: BoardSummaryDto) -> Value {
+    json!({
+        "id": board.id,
+        "name": board.name,
+        "updated_at": board.updated_at,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Column projection (list_columns rows)
+// ---------------------------------------------------------------------------
+
+/// Compact projection of a board column.
+///
+/// `board_id`, `position_key`, and timestamps are dropped. `color` is omitted
+/// when absent. The `id` + `name` pair is the primary value: `id` is passed
+/// to status filters and `name` is the human-readable label.
+pub(crate) fn project_column(col: ColumnDto) -> Value {
+    let mut map = serde_json::Map::new();
+    map.insert("id".into(), json!(col.id));
+    map.insert("name".into(), json!(col.name));
+
+    if let Some(color) = col.color {
+        map.insert("color".into(), json!(color));
+    }
+
+    Value::Object(map)
+}
+
+// ---------------------------------------------------------------------------
 // Reference projection
 // ---------------------------------------------------------------------------
 
@@ -306,8 +390,9 @@ pub(crate) fn project_reference(r: ReferenceDto) -> Value {
 mod tests {
     use super::*;
     use atlas_api::dtos::{
-        boards_tasks::{ColumnDto, ReferenceDto, TaskDto, TaskSummaryDto},
-        documents::{ActorDto, DocumentDto},
+        boards_tasks::{BoardSummaryDto, ColumnDto, ReferenceDto, TaskDto, TaskSummaryDto},
+        documents::{ActorDto, DocumentDto, DocumentSummaryDto},
+        folders::FolderDto,
         search::{SearchHitDto, SearchKindDto},
     };
     use chrono::Utc;
@@ -746,5 +831,173 @@ mod tests {
         // Heavy fields dropped
         assert!(val.get("id").is_none());
         assert!(val.get("created_by").is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // project_document_summary
+    // -----------------------------------------------------------------------
+
+    fn make_doc_summary(slug: Option<&str>, folder_id: Option<Uuid>) -> DocumentSummaryDto {
+        DocumentSummaryDto {
+            id: fixed_uuid(),
+            slug: slug.map(String::from),
+            title: "My Note".into(),
+            folder_id,
+            head_seq: 7,
+            updated_at: now(),
+        }
+    }
+
+    #[test]
+    fn document_summary_includes_required_fields() {
+        let val = project_document_summary(make_doc_summary(Some("my-note"), None));
+        assert_eq!(val["title"], "My Note");
+        assert_eq!(val["head_seq"], 7);
+        assert!(!val["id"].is_null());
+        assert!(!val["updated_at"].is_null());
+    }
+
+    #[test]
+    fn document_summary_includes_slug_when_present() {
+        let val = project_document_summary(make_doc_summary(Some("my-note"), None));
+        assert_eq!(val["slug"], "my-note");
+    }
+
+    #[test]
+    fn document_summary_omits_slug_when_absent() {
+        let val = project_document_summary(make_doc_summary(None, None));
+        assert!(val.get("slug").is_none());
+    }
+
+    #[test]
+    fn document_summary_includes_folder_id_when_present() {
+        let folder_id = fixed_uuid();
+        let val = project_document_summary(make_doc_summary(None, Some(folder_id)));
+        assert!(!val["folder_id"].is_null());
+    }
+
+    #[test]
+    fn document_summary_omits_folder_id_when_absent() {
+        let val = project_document_summary(make_doc_summary(None, None));
+        assert!(val.get("folder_id").is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // project_folder
+    // -----------------------------------------------------------------------
+
+    fn make_folder(parent: Option<Uuid>) -> FolderDto {
+        FolderDto {
+            id: fixed_uuid(),
+            workspace_id: fixed_uuid(),
+            project_id: Some(fixed_uuid()),
+            parent_folder_id: parent,
+            name: "Design".into(),
+            created_at: now(),
+            updated_at: now(),
+        }
+    }
+
+    #[test]
+    fn folder_projection_includes_id_name_updated_at() {
+        let val = project_folder(make_folder(None));
+        assert_eq!(val["name"], "Design");
+        assert!(!val["id"].is_null());
+        assert!(!val["updated_at"].is_null());
+    }
+
+    #[test]
+    fn folder_projection_drops_workspace_and_project_ids() {
+        let val = project_folder(make_folder(None));
+        assert!(val.get("workspace_id").is_none());
+        assert!(val.get("project_id").is_none());
+        assert!(val.get("created_at").is_none());
+    }
+
+    #[test]
+    fn folder_projection_includes_parent_when_present() {
+        let parent = Uuid::now_v7();
+        let val = project_folder(make_folder(Some(parent)));
+        assert_eq!(
+            val["parent_folder_id"].as_str().unwrap(),
+            parent.to_string()
+        );
+    }
+
+    #[test]
+    fn folder_projection_omits_parent_when_absent() {
+        let val = project_folder(make_folder(None));
+        assert!(val.get("parent_folder_id").is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // project_board_summary
+    // -----------------------------------------------------------------------
+
+    fn make_board_summary() -> BoardSummaryDto {
+        BoardSummaryDto {
+            id: fixed_uuid(),
+            name: "Sprint Board".into(),
+            created_at: now(),
+            updated_at: now(),
+        }
+    }
+
+    #[test]
+    fn board_summary_includes_id_name_updated_at() {
+        let val = project_board_summary(make_board_summary());
+        assert_eq!(val["name"], "Sprint Board");
+        assert!(!val["id"].is_null());
+        assert!(!val["updated_at"].is_null());
+    }
+
+    #[test]
+    fn board_summary_drops_created_at() {
+        let val = project_board_summary(make_board_summary());
+        assert!(val.get("created_at").is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // project_column
+    // -----------------------------------------------------------------------
+
+    fn make_column_dto(color: Option<&str>) -> ColumnDto {
+        ColumnDto {
+            id: fixed_uuid(),
+            board_id: fixed_uuid(),
+            name: "In Progress".into(),
+            position_key: "a0".into(),
+            color: color.map(String::from),
+            created_at: now(),
+            updated_at: now(),
+        }
+    }
+
+    #[test]
+    fn column_projection_includes_id_and_name() {
+        let val = project_column(make_column_dto(None));
+        assert_eq!(val["name"], "In Progress");
+        assert!(!val["id"].is_null());
+    }
+
+    #[test]
+    fn column_projection_drops_board_id_and_timestamps() {
+        let val = project_column(make_column_dto(None));
+        assert!(val.get("board_id").is_none());
+        assert!(val.get("position_key").is_none());
+        assert!(val.get("created_at").is_none());
+        assert!(val.get("updated_at").is_none());
+    }
+
+    #[test]
+    fn column_projection_includes_color_when_present() {
+        let val = project_column(make_column_dto(Some("#FF5733")));
+        assert_eq!(val["color"], "#FF5733");
+    }
+
+    #[test]
+    fn column_projection_omits_color_when_absent() {
+        let val = project_column(make_column_dto(None));
+        assert!(val.get("color").is_none());
     }
 }
