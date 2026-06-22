@@ -5,13 +5,15 @@ mod response;
 use std::sync::Arc;
 
 use atlas_api::dtos::boards_tasks::{
-    AddAssigneeRequest, CreateTaskRequest, MoveTaskRequest, TaskPropertiesDto, UpdateTaskRequest,
+    AddAssigneeRequest, CreateBoardRequest, CreateColumnRequest, CreateTaskRequest,
+    MoveTaskRequest, TaskPropertiesDto, UpdateBoardRequest, UpdateColumnRequest, UpdateTaskRequest,
     WorkspaceTaskQueryParams,
 };
 use atlas_api::dtos::documents::{
     CreateDocumentRequest, MoveDocumentRequest, UpdateContentRequest, UpdateDocumentRequest,
 };
 use atlas_api::dtos::folders::{CreateFolderRequest, MoveFolderRequest, RenameFolderRequest};
+use atlas_api::dtos::tags::{CreateTagRequest, UpdateTagRequest};
 use atlas_client::AtlasClient;
 use rmcp::{
     ServerHandler,
@@ -22,6 +24,18 @@ use rmcp::{
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
+
+/// Preserves the distinction between an absent field and an explicit JSON `null`.
+///
+/// Standard serde maps both to `None` for `Option<T>`. This deserializer instead
+/// maps an explicit `null` to `Some(Value::Null)` so callers can express "clear
+/// this field" vs "leave this field unchanged" in PATCH requests.
+fn present_value<'de, D>(de: D) -> Result<Option<serde_json::Value>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    serde_json::Value::deserialize(de).map(Some)
+}
 
 use response::{
     Detail, enrich_client_error, envelope_page, map_present_value, match_columns_by_name,
@@ -74,6 +88,17 @@ For folder mutations use: `create_folder`, `rename_folder`, `move_folder` \
 (parent_folder_id or null for project root; note no ordering support), \
 `copy_folder`, `delete_folder` (requires confirm: true — documents inside keep their \
 folder_id and may be orphaned from navigation). \
+For board mutations use: `create_board` (scoped to a project), `update_board` (rename; \
+board resolved by name or UUID), `delete_board` (requires confirm: true — soft-deletes only \
+the board row; columns and tasks become unreachable but their rows persist). \
+For column mutations use: `create_column` (on a board; optional color swatch and ordering \
+anchors), `update_column` (rename/recolor — color accepts null to clear), `delete_column` \
+(requires confirm: true; the server refuses deletion when the column still has tasks — \
+move or delete the tasks first). \
+For tag mutations use: `create_tag` (idempotent by case-insensitive name; returns the tag \
+whether created or already existing), `update_tag` (rename and/or recolor; color can be \
+set but not cleared — omit color to leave it unchanged), `delete_tag` (soft-delete; task \
+label strings are preserved). \
 Prefer narrow queries over broad ones; follow up with targeted reads rather than \
 enumerating all results.";
 
@@ -445,13 +470,13 @@ pub struct UpdateTaskParams {
     #[serde(default)]
     pub description: Option<String>,
     /// Priority. Omit to leave unchanged. Pass JSON null to clear. Value must be one of low, medium, high, urgent.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "present_value")]
     pub priority: Option<serde_json::Value>,
     /// Due date (RFC 3339). Omit to leave unchanged. Pass JSON null to clear.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "present_value")]
     pub due_date: Option<serde_json::Value>,
     /// Estimate (story points). Omit to leave unchanged. Pass JSON null to clear.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "present_value")]
     pub estimate: Option<serde_json::Value>,
     /// Labels. When provided, replaces the entire label set. Omit to leave unchanged.
     #[serde(default)]
@@ -658,6 +683,139 @@ pub struct DeleteFolderParams {
     /// Set to `true` to confirm deletion. The folder row is soft-deleted; documents inside
     /// keep their folder_id and may become orphaned from navigation.
     pub confirm: bool,
+}
+
+// ---------------------------------------------------------------------------
+// Batch 3c param structs — Board / Column / Tag writes
+// ---------------------------------------------------------------------------
+
+/// Parameters accepted by the `create_board` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CreateBoardParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Project slug that will own the new board.
+    pub project: String,
+    /// Name of the new board.
+    pub name: String,
+}
+
+/// Parameters accepted by the `update_board` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct UpdateBoardParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Board name (partial match) or UUID string to identify the board to update.
+    pub board: String,
+    /// New name for the board.
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
+/// Parameters accepted by the `delete_board` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DeleteBoardParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Board name (partial match) or UUID string identifying the board to delete.
+    pub board: String,
+    /// Set to `true` to confirm deletion. Soft-deletes only the board row; columns
+    /// and tasks become unreachable from listings but their rows persist.
+    pub confirm: bool,
+}
+
+/// Parameters accepted by the `create_column` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CreateColumnParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Board name (partial match) or UUID string identifying the target board.
+    pub board: String,
+    /// Name of the new column.
+    pub name: String,
+    /// Optional color swatch ID for the column.
+    #[serde(default)]
+    pub color: Option<String>,
+    /// Optional position anchor: UUID/key of the column this new column should appear before.
+    #[serde(default)]
+    pub before: Option<String>,
+    /// Optional position anchor: UUID/key of the column this new column should appear after.
+    #[serde(default)]
+    pub after: Option<String>,
+}
+
+/// Parameters accepted by the `update_column` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct UpdateColumnParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Board name (partial match) or UUID string identifying the board that owns the column.
+    pub board: String,
+    /// Column name (partial match, resolved on the board) identifying the column to update.
+    pub column: String,
+    /// New name for the column.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// Color swatch ID. Omit to leave unchanged. Pass JSON null to clear. Pass a string to set.
+    #[serde(default, deserialize_with = "present_value")]
+    pub color: Option<serde_json::Value>,
+    /// Optional position anchor: UUID/key of the column this column should move before.
+    #[serde(default)]
+    pub before: Option<String>,
+    /// Optional position anchor: UUID/key of the column this column should move after.
+    #[serde(default)]
+    pub after: Option<String>,
+}
+
+/// Parameters accepted by the `delete_column` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DeleteColumnParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Board name (partial match) or UUID string identifying the board that owns the column.
+    pub board: String,
+    /// Column name (partial match, resolved on the board) identifying the column to delete.
+    pub column: String,
+    /// Set to `true` to confirm deletion. The server refuses deletion when the column still
+    /// has tasks — move or delete the column's tasks first.
+    pub confirm: bool,
+}
+
+/// Parameters accepted by the `create_tag` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CreateTagParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Name of the tag to create. Idempotent by case-insensitive name: returns the existing
+    /// tag when one already exists with the same name.
+    pub name: String,
+}
+
+/// Parameters accepted by the `update_tag` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct UpdateTagParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// UUID string of the tag to update.
+    pub tag_id: String,
+    /// New name for the tag.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// New color for the tag. Omit to leave unchanged. Note: the tag color cannot be cleared
+    /// once set (API limitation D-WRITE-UPDATETAG-COLOR-NOCLEAR) — supply a new color to
+    /// change it, or omit to leave it as-is.
+    #[serde(default)]
+    pub color: Option<String>,
+}
+
+/// Parameters accepted by the `delete_tag` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DeleteTagParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// UUID string of the tag to delete. Soft-deletes the tag; existing task label strings
+    /// are preserved even after the tag is deleted.
+    pub tag_id: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -1717,6 +1875,273 @@ impl AtlasMcp {
         });
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
+
+    #[tool(description = "Create a new board in a project.")]
+    async fn create_board(
+        &self,
+        Parameters(params): Parameters<CreateBoardParams>,
+    ) -> Result<String, String> {
+        let body = CreateBoardRequest { name: params.name };
+
+        let board = self
+            .client
+            .create_board(&params.workspace, &params.project, body)
+            .await
+            .map_err(|e| enrich_client_error(e, "create_board"))?;
+
+        let result = json!({
+            "id": board.id,
+            "name": board.name,
+            "project_id": board.project_id,
+            "updated_at": board.updated_at,
+        });
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "Rename a board. Board resolved by name (partial match) or UUID.")]
+    async fn update_board(
+        &self,
+        Parameters(params): Parameters<UpdateBoardParams>,
+    ) -> Result<String, String> {
+        let board_id_str = self
+            .resolve_board_id(&params.workspace, &params.board)
+            .await?;
+
+        let board_uuid: uuid::Uuid = board_id_str
+            .parse()
+            .map_err(|_| format!("resolved board '{board_id_str}' is not a valid UUID"))?;
+
+        let body = UpdateBoardRequest { name: params.name };
+
+        let board = self
+            .client
+            .update_board(&params.workspace, board_uuid, body)
+            .await
+            .map_err(|e| enrich_client_error(e, "update_board"))?;
+
+        let result = json!({
+            "id": board.id,
+            "name": board.name,
+            "project_id": board.project_id,
+            "updated_at": board.updated_at,
+        });
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Delete a board. Requires confirm: true. Soft-deletes only the board row; \
+                       columns and tasks become unreachable from listings but their rows persist."
+    )]
+    async fn delete_board(
+        &self,
+        Parameters(params): Parameters<DeleteBoardParams>,
+    ) -> Result<String, String> {
+        require_confirm(params.confirm, "board", &params.board)?;
+
+        let board_id_str = self
+            .resolve_board_id(&params.workspace, &params.board)
+            .await?;
+
+        let board_uuid: uuid::Uuid = board_id_str
+            .parse()
+            .map_err(|_| format!("resolved board '{board_id_str}' is not a valid UUID"))?;
+
+        self.client
+            .delete_board(&params.workspace, board_uuid)
+            .await
+            .map_err(|e| enrich_client_error(e, "delete_board"))?;
+
+        let result = json!({
+            "deleted": true,
+            "board_id": board_uuid,
+        });
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Create a new column on a board. Optional color and ordering anchors (before/after)."
+    )]
+    async fn create_column(
+        &self,
+        Parameters(params): Parameters<CreateColumnParams>,
+    ) -> Result<String, String> {
+        let board_id_str = self
+            .resolve_board_id(&params.workspace, &params.board)
+            .await?;
+
+        let board_uuid: uuid::Uuid = board_id_str
+            .parse()
+            .map_err(|_| format!("resolved board '{board_id_str}' is not a valid UUID"))?;
+
+        let body = CreateColumnRequest {
+            name: params.name,
+            color: params.color,
+            before: params.before,
+            after: params.after,
+        };
+
+        let col = self
+            .client
+            .create_column(&params.workspace, board_uuid, body)
+            .await
+            .map_err(|e| enrich_client_error(e, "create_column"))?;
+
+        let result = project_column(col);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Update a column. Column resolved by name on the board. \
+                       Color: omit to leave unchanged, pass null to clear, pass a string to set."
+    )]
+    async fn update_column(
+        &self,
+        Parameters(params): Parameters<UpdateColumnParams>,
+    ) -> Result<String, String> {
+        let board_id_str = self
+            .resolve_board_id(&params.workspace, &params.board)
+            .await?;
+
+        let board_uuid: uuid::Uuid = board_id_str
+            .parse()
+            .map_err(|_| format!("resolved board '{board_id_str}' is not a valid UUID"))?;
+
+        let cols = self
+            .client
+            .list_columns(&params.workspace, board_uuid)
+            .await
+            .map_err(|e| enrich_client_error(e, "list_columns"))?;
+
+        let column_id = resolve_column_id_on_board(&params.column, &cols)?;
+
+        let color = map_present_value(params.color.as_ref(), None)?;
+
+        let body = UpdateColumnRequest {
+            name: params.name,
+            color,
+            before: params.before,
+            after: params.after,
+        };
+
+        let col = self
+            .client
+            .update_column(&params.workspace, board_uuid, column_id, body)
+            .await
+            .map_err(|e| enrich_client_error(e, "update_column"))?;
+
+        let result = project_column(col);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Delete a column. Requires confirm: true. The server refuses deletion \
+                       when the column still has tasks — move or delete the tasks first."
+    )]
+    async fn delete_column(
+        &self,
+        Parameters(params): Parameters<DeleteColumnParams>,
+    ) -> Result<String, String> {
+        require_confirm(params.confirm, "column", &params.column)?;
+
+        let board_id_str = self
+            .resolve_board_id(&params.workspace, &params.board)
+            .await?;
+
+        let board_uuid: uuid::Uuid = board_id_str
+            .parse()
+            .map_err(|_| format!("resolved board '{board_id_str}' is not a valid UUID"))?;
+
+        let cols = self
+            .client
+            .list_columns(&params.workspace, board_uuid)
+            .await
+            .map_err(|e| enrich_client_error(e, "list_columns"))?;
+
+        let column_id = resolve_column_id_on_board(&params.column, &cols)?;
+
+        self.client
+            .delete_column(&params.workspace, board_uuid, column_id)
+            .await
+            .map_err(|e| enrich_client_error(e, "delete_column"))?;
+
+        let result = json!({
+            "deleted": true,
+            "column_id": column_id,
+        });
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Create a workspace tag. Idempotent by case-insensitive name; \
+                       returns the existing tag when one already exists."
+    )]
+    async fn create_tag(
+        &self,
+        Parameters(params): Parameters<CreateTagParams>,
+    ) -> Result<String, String> {
+        let body = CreateTagRequest { name: params.name };
+
+        let tag = self
+            .client
+            .create_tag(&params.workspace, body)
+            .await
+            .map_err(|e| enrich_client_error(e, "create_tag"))?;
+
+        let result = project_tag(tag);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Update a tag's name and/or color. Omit color to leave it unchanged. \
+                       Note: a tag color cannot be cleared once set (set a new color to change it)."
+    )]
+    async fn update_tag(
+        &self,
+        Parameters(params): Parameters<UpdateTagParams>,
+    ) -> Result<String, String> {
+        let tag_id: uuid::Uuid = params
+            .tag_id
+            .parse()
+            .map_err(|_| format!("tag_id '{}' is not a valid UUID", params.tag_id))?;
+
+        let body = UpdateTagRequest {
+            name: params.name,
+            color: params.color,
+        };
+
+        let tag = self
+            .client
+            .update_tag(&params.workspace, tag_id, body)
+            .await
+            .map_err(|e| enrich_client_error(e, "update_tag"))?;
+
+        let result = project_tag(tag);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Soft-delete a workspace tag. Task label strings are preserved after deletion."
+    )]
+    async fn delete_tag(
+        &self,
+        Parameters(params): Parameters<DeleteTagParams>,
+    ) -> Result<String, String> {
+        let tag_id: uuid::Uuid = params
+            .tag_id
+            .parse()
+            .map_err(|_| format!("tag_id '{}' is not a valid UUID", params.tag_id))?;
+
+        self.client
+            .delete_tag(&params.workspace, tag_id)
+            .await
+            .map_err(|e| enrich_client_error(e, "delete_tag"))?;
+
+        let result = json!({
+            "deleted": true,
+            "tag_id": tag_id,
+        });
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
 }
 
 impl AtlasMcp {
@@ -2332,6 +2757,169 @@ mod tests {
         assert!(
             instructions.contains("`delete_folder`"),
             "instructions must mention delete_folder"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Batch 3c: board / column / tag write params
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn create_board_params_deserializes() {
+        let json = r#"{"workspace":"ws","project":"my-proj","name":"Sprint Board"}"#;
+        let params: CreateBoardParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.project, "my-proj");
+        assert_eq!(params.name, "Sprint Board");
+    }
+
+    #[test]
+    fn update_board_params_all_optional_name() {
+        let json = r#"{"workspace":"ws","board":"Sprint Board"}"#;
+        let params: UpdateBoardParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.board, "Sprint Board");
+        assert!(params.name.is_none());
+    }
+
+    #[test]
+    fn update_board_params_with_name() {
+        let json = r#"{"workspace":"ws","board":"old-name","name":"New Name"}"#;
+        let params: UpdateBoardParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.name.as_deref(), Some("New Name"));
+    }
+
+    #[test]
+    fn delete_board_params_requires_confirm() {
+        let json = r#"{"workspace":"ws","board":"Sprint Board","confirm":true}"#;
+        let params: DeleteBoardParams = serde_json::from_str(json).unwrap();
+        assert!(params.confirm);
+        assert_eq!(params.board, "Sprint Board");
+    }
+
+    #[test]
+    fn create_column_params_deserializes_minimal() {
+        let json = r#"{"workspace":"ws","board":"Sprint Board","name":"To Do"}"#;
+        let params: CreateColumnParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.name, "To Do");
+        assert!(params.color.is_none());
+        assert!(params.before.is_none());
+        assert!(params.after.is_none());
+    }
+
+    #[test]
+    fn create_column_params_deserializes_with_optional_fields() {
+        let json = r##"{"workspace":"ws","board":"Sprint Board","name":"In Progress","color":"#3B82F6","before":"abc123"}"##;
+        let params: CreateColumnParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.color.as_deref(), Some("#3B82F6"));
+        assert_eq!(params.before.as_deref(), Some("abc123"));
+    }
+
+    #[test]
+    fn update_column_params_color_absent_is_none() {
+        let json = r#"{"workspace":"ws","board":"Sprint Board","column":"To Do"}"#;
+        let params: UpdateColumnParams = serde_json::from_str(json).unwrap();
+        assert!(params.color.is_none());
+        assert!(params.name.is_none());
+    }
+
+    #[test]
+    fn update_column_params_color_explicit_null_is_some_null() {
+        let json = r#"{"workspace":"ws","board":"b","column":"col","color":null}"#;
+        let params: UpdateColumnParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.color, Some(serde_json::Value::Null));
+    }
+
+    #[test]
+    fn update_column_params_color_set() {
+        let json = r##"{"workspace":"ws","board":"b","column":"col","color":"#FF5733"}"##;
+        let params: UpdateColumnParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.color, Some(serde_json::json!("#FF5733")));
+    }
+
+    #[test]
+    fn update_task_params_clearable_absent_is_none() {
+        let json = r#"{"workspace":"ws","readable_id":"ATL-1"}"#;
+        let params: UpdateTaskParams = serde_json::from_str(json).unwrap();
+        assert!(params.priority.is_none());
+        assert!(params.due_date.is_none());
+        assert!(params.estimate.is_none());
+    }
+
+    #[test]
+    fn update_task_params_clearable_explicit_null_is_some_null() {
+        let json = r#"{"workspace":"ws","readable_id":"ATL-1","priority":null,"due_date":null,"estimate":null}"#;
+        let params: UpdateTaskParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.priority, Some(serde_json::Value::Null));
+        assert_eq!(params.due_date, Some(serde_json::Value::Null));
+        assert_eq!(params.estimate, Some(serde_json::Value::Null));
+    }
+
+    #[test]
+    fn update_task_params_clearable_set() {
+        let json = r#"{"workspace":"ws","readable_id":"ATL-1","priority":"high","estimate":5}"#;
+        let params: UpdateTaskParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.priority, Some(serde_json::json!("high")));
+        assert_eq!(params.estimate, Some(serde_json::json!(5)));
+        assert!(params.due_date.is_none());
+    }
+
+    #[test]
+    fn delete_column_params_requires_confirm() {
+        let json = r#"{"workspace":"ws","board":"Sprint Board","column":"Done","confirm":true}"#;
+        let params: DeleteColumnParams = serde_json::from_str(json).unwrap();
+        assert!(params.confirm);
+        assert_eq!(params.column, "Done");
+    }
+
+    #[test]
+    fn create_tag_params_deserializes() {
+        let json = r#"{"workspace":"ws","name":"backend"}"#;
+        let params: CreateTagParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.name, "backend");
+    }
+
+    #[test]
+    fn update_tag_params_all_optional() {
+        let json = r#"{"workspace":"ws","tag_id":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234"}"#;
+        let params: UpdateTagParams = serde_json::from_str(json).unwrap();
+        assert!(params.name.is_none());
+        assert!(params.color.is_none());
+    }
+
+    #[test]
+    fn update_tag_params_with_name_and_color() {
+        let json = r##"{"workspace":"ws","tag_id":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234","name":"frontend","color":"#3B82F6"}"##;
+        let params: UpdateTagParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.name.as_deref(), Some("frontend"));
+        assert_eq!(params.color.as_deref(), Some("#3B82F6"));
+    }
+
+    #[test]
+    fn delete_tag_params_deserializes() {
+        let json = r#"{"workspace":"ws","tag_id":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234"}"#;
+        let params: DeleteTagParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.tag_id, "018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234");
+    }
+
+    #[test]
+    fn get_info_instructions_reference_board_write_tools() {
+        let server = AtlasMcp::new("http://localhost:8080", "test-token").unwrap();
+        let info = server.get_info();
+        let instructions = info.instructions.as_deref().unwrap_or("");
+        assert!(
+            instructions.contains("`create_board`"),
+            "instructions must mention create_board"
+        );
+        assert!(
+            instructions.contains("`delete_column`"),
+            "instructions must mention delete_column"
+        );
+        assert!(
+            instructions.contains("`create_tag`"),
+            "instructions must mention create_tag"
+        );
+        assert!(
+            instructions.contains("`delete_tag`"),
+            "instructions must mention delete_tag"
         );
     }
 }
