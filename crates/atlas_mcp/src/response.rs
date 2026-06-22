@@ -843,6 +843,34 @@ pub(crate) fn map_present_value(
     }
 }
 
+/// Validates that an estimate value is non-negative.
+///
+/// Accepts any `i32 >= 0`. Returns an actionable error string for negative values.
+/// Called before the client request so the failure is cheap and local.
+pub(crate) fn validate_estimate(v: i32) -> Result<(), String> {
+    if v < 0 {
+        return Err(format!(
+            "invalid estimate '{v}': must be a non-negative integer"
+        ));
+    }
+    Ok(())
+}
+
+/// Validates an estimate carried as a `serde_json::Value` (used in PATCH paths).
+///
+/// Null (clear) and absent are allowed and pass through unchecked. Only a numeric
+/// value that is negative is rejected.
+pub(crate) fn validate_estimate_value(v: &serde_json::Value) -> Result<(), String> {
+    if let serde_json::Value::Number(n) = v
+        && n.as_i64().is_some_and(|i| i < 0)
+    {
+        return Err(format!(
+            "invalid estimate '{n}': must be a non-negative integer"
+        ));
+    }
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Write-side: client error enrichment
 // ---------------------------------------------------------------------------
@@ -2222,6 +2250,57 @@ mod tests {
         // Clearing a field never validates — the validator only fires for non-null.
         let result = map_present_value(Some(&Value::Null), Some(validate_priority)).unwrap();
         assert_eq!(result, Some(Value::Null));
+    }
+
+    // -----------------------------------------------------------------------
+    // validate_estimate / validate_estimate_value
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn validate_estimate_rejects_negative() {
+        let err = validate_estimate(-1).unwrap_err();
+        assert!(err.contains("-1"), "error must echo the bad value");
+        assert!(
+            err.contains("non-negative"),
+            "error must state the constraint"
+        );
+    }
+
+    #[test]
+    fn validate_estimate_accepts_zero() {
+        assert!(validate_estimate(0).is_ok());
+    }
+
+    #[test]
+    fn validate_estimate_accepts_positive() {
+        assert!(validate_estimate(5).is_ok());
+        assert!(validate_estimate(100).is_ok());
+    }
+
+    #[test]
+    fn validate_estimate_value_rejects_negative_number() {
+        let v = json!(-3);
+        let err = validate_estimate_value(&v).unwrap_err();
+        assert!(
+            err.contains("non-negative"),
+            "error must state the constraint"
+        );
+    }
+
+    #[test]
+    fn validate_estimate_value_accepts_zero_and_positive() {
+        assert!(validate_estimate_value(&json!(0)).is_ok());
+        assert!(validate_estimate_value(&json!(8)).is_ok());
+    }
+
+    #[test]
+    fn validate_estimate_value_passes_null() {
+        assert!(validate_estimate_value(&Value::Null).is_ok());
+    }
+
+    #[test]
+    fn validate_estimate_value_passes_absent_represented_as_non_number() {
+        assert!(validate_estimate_value(&json!("five")).is_ok());
     }
 
     // -----------------------------------------------------------------------

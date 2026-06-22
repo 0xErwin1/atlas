@@ -52,8 +52,8 @@ use response::{
     project_revision_content, project_revision_meta, project_saved_search, project_search_hit,
     project_status_template, project_tag, project_task_backlink, project_task_compact,
     project_task_full, project_task_row, project_task_view, project_workspace, require_confirm,
-    resolve_column_id_on_board, validate_assignee_type, validate_priority, validate_reference_kind,
-    validate_single_target, wrap_vec,
+    resolve_column_id_on_board, validate_assignee_type, validate_estimate, validate_estimate_value,
+    validate_priority, validate_reference_kind, validate_single_target, wrap_vec,
 };
 
 const ATLAS_INSTRUCTIONS: &str = "\
@@ -104,7 +104,7 @@ Tools by area (see each tool's own description for parameters):\n\
 ///
 /// In stdio mode, holds the single startup token for all tool calls.
 /// In HTTP mode, `stdio_token` is `None` and each tool call resolves its
-/// client from the per-request Bearer header (4b seam — see `resolve_client`).
+/// client from the per-request Bearer header via `resolve_client`.
 /// Cloning shares the same `Arc<reqwest::Client>` pool.
 #[derive(Clone)]
 pub struct AtlasMcp {
@@ -524,7 +524,7 @@ pub struct ListAttachmentsParams {
 }
 
 // ---------------------------------------------------------------------------
-// Write tool parameter structs — Task writes (batch 3a)
+// Write tool parameter structs — Task writes
 // ---------------------------------------------------------------------------
 
 /// Parameters accepted by the `create_task` tool.
@@ -785,7 +785,7 @@ pub struct DeleteFolderParams {
 }
 
 // ---------------------------------------------------------------------------
-// Batch 3c param structs — Board / Column / Tag writes
+// Board / Column / Tag write param structs
 // ---------------------------------------------------------------------------
 
 /// Parameters accepted by the `create_board` tool.
@@ -918,7 +918,7 @@ pub struct DeleteTagParams {
 }
 
 // ---------------------------------------------------------------------------
-// Batch 3d param structs — Graph writes: references, checklist, subtasks
+// Graph write param structs — references, checklist, subtasks
 // ---------------------------------------------------------------------------
 
 /// Parameters accepted by the `add_task_reference` tool.
@@ -1038,7 +1038,7 @@ pub struct PromoteSubtaskParams {
 }
 
 // ---------------------------------------------------------------------------
-// Batch 3e — Workspace-settings write param structs
+// Workspace-settings write param structs
 // ---------------------------------------------------------------------------
 
 /// Parameters accepted by the `create_project` tool.
@@ -1808,6 +1808,10 @@ impl AtlasMcp {
             validate_priority(p)?;
         }
 
+        if let Some(e) = params.estimate {
+            validate_estimate(e)?;
+        }
+
         let due_date = params
             .due_date
             .as_deref()
@@ -1864,6 +1868,11 @@ impl AtlasMcp {
 
         let priority = map_present_value(params.priority.as_ref(), Some(validate_priority))?;
         let due_date = map_present_value(params.due_date.as_ref(), None)?;
+
+        if let Some(v) = params.estimate.as_ref() {
+            validate_estimate_value(v)?;
+        }
+
         let estimate = map_present_value(params.estimate.as_ref(), None)?;
 
         let body = UpdateTaskRequest {
@@ -1894,18 +1903,19 @@ impl AtlasMcp {
     ) -> Result<String, String> {
         let client = self.resolve_client(&ctx)?;
 
-        let board_ref = params.board.as_deref().unwrap_or(&params.readable_id);
-
-        let board_id_str = if params.board.is_some() {
-            self.resolve_board_id(&client, &params.workspace, board_ref)
-                .await?
-        } else {
-            // No board supplied: fetch the task first to get its board_id.
-            let task = client
-                .get_task(&params.workspace, &params.readable_id)
-                .await
-                .map_err(|e| enrich_client_error(e, "get_task"))?;
-            task.board_id.to_string()
+        let board_id_str = match params.board.as_deref() {
+            Some(board_ref) => {
+                self.resolve_board_id(&client, &params.workspace, board_ref)
+                    .await?
+            }
+            None => {
+                // No board supplied: fetch the task first to get its board_id.
+                let task = client
+                    .get_task(&params.workspace, &params.readable_id)
+                    .await
+                    .map_err(|e| enrich_client_error(e, "get_task"))?;
+                task.board_id.to_string()
+            }
         };
 
         let board_uuid: uuid::Uuid = board_id_str
@@ -2629,7 +2639,7 @@ impl AtlasMcp {
     }
 
     // -----------------------------------------------------------------------
-    // Batch 3d — Graph writes: references, checklist, subtasks
+    // Graph writes: references, checklist, subtasks
     // -----------------------------------------------------------------------
 
     #[tool(
@@ -2864,7 +2874,7 @@ impl AtlasMcp {
     }
 
     // -----------------------------------------------------------------------
-    // Batch 3e — Project CRUD
+    // Project CRUD
     // -----------------------------------------------------------------------
 
     #[tool(description = "Create a new project in the workspace. \
@@ -2943,7 +2953,7 @@ impl AtlasMcp {
     }
 
     // -----------------------------------------------------------------------
-    // Batch 3e — Status template CRUD
+    // Status template CRUD
     // -----------------------------------------------------------------------
 
     #[tool(description = "Create a workspace status template. \
@@ -3031,7 +3041,7 @@ impl AtlasMcp {
     }
 
     // -----------------------------------------------------------------------
-    // Batch 3e — Saved search CRUD
+    // Saved search CRUD
     // -----------------------------------------------------------------------
 
     #[tool(description = "Create a saved search in the workspace. \
@@ -3109,7 +3119,7 @@ impl AtlasMcp {
     }
 
     // -----------------------------------------------------------------------
-    // Batch 3e — Task view CRUD
+    // Task view CRUD
     // -----------------------------------------------------------------------
 
     #[tool(description = "Create a task view (filter preset) in the workspace. \
@@ -3252,17 +3262,17 @@ impl AtlasMcp {
                         all_cols.extend(cols);
                     }
 
-                    if !boards.has_more {
-                        break;
+                    match boards.next_cursor {
+                        Some(next) if boards.has_more => board_cursor = Some(next),
+                        _ => break,
                     }
-                    board_cursor = boards.next_cursor;
                 }
             }
 
-            if !projects.has_more {
-                break;
+            match projects.next_cursor {
+                Some(next) if projects.has_more => project_cursor = Some(next),
+                _ => break,
             }
-            project_cursor = projects.next_cursor;
         }
 
         Ok(match_columns_by_name(status_name, &all_cols))
@@ -3305,17 +3315,17 @@ impl AtlasMcp {
                         }
                     }
 
-                    if !boards.has_more {
-                        break;
+                    match boards.next_cursor {
+                        Some(next) if boards.has_more => board_cursor = Some(next),
+                        _ => break,
                     }
-                    board_cursor = boards.next_cursor;
                 }
             }
 
-            if !projects.has_more {
-                break;
+            match projects.next_cursor {
+                Some(next) if projects.has_more => project_cursor = Some(next),
+                _ => break,
             }
-            project_cursor = projects.next_cursor;
         }
 
         Err(format!(
@@ -3681,7 +3691,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Batch 3b: document + folder write params
+    // Document + folder write params
     // -----------------------------------------------------------------------
 
     #[test]
@@ -3817,7 +3827,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Batch 3c: board / column / tag write params
+    // Board / column / tag write params
     // -----------------------------------------------------------------------
 
     #[test]
@@ -3980,7 +3990,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Batch 3d: graph write params
+    // Graph write params
     // -----------------------------------------------------------------------
 
     #[test]
@@ -4105,7 +4115,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Batch 3e param deserialization tests
+    // Workspace-settings write param deserialization tests
     // -----------------------------------------------------------------------
 
     #[test]
