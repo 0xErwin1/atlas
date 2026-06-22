@@ -3903,6 +3903,13 @@
                           "updated_at"
                         ],
                         "properties": {
+                          "column_name": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "description": "Current column (status) name. Present only when `kind = task`."
+                          },
                           "id": {
                             "type": "string",
                             "format": "uuid"
@@ -8266,6 +8273,13 @@
           "updated_at"
         ],
         "properties": {
+          "column_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Current column (status) name. Present only when `kind = task`."
+          },
           "id": {
             "type": "string",
             "format": "uuid"
@@ -8460,16 +8474,26 @@
           "description",
           "created_by",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "board_name",
+          "column_name"
         ],
         "properties": {
           "board_id": {
             "type": "string",
             "format": "uuid"
           },
+          "board_name": {
+            "type": "string",
+            "description": "Name of the board this task belongs to."
+          },
           "column_id": {
             "type": "string",
             "format": "uuid"
+          },
+          "column_name": {
+            "type": "string",
+            "description": "Name of the column (status) this task is currently in."
           },
           "created_at": {
             "type": "string",
