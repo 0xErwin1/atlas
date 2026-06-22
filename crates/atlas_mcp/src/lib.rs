@@ -14,7 +14,13 @@ use atlas_api::dtos::documents::{
     CreateDocumentRequest, MoveDocumentRequest, UpdateContentRequest, UpdateDocumentRequest,
 };
 use atlas_api::dtos::folders::{CreateFolderRequest, MoveFolderRequest, RenameFolderRequest};
+use atlas_api::dtos::saved_searches::{CreateSavedSearchRequest, RenameSavedSearchRequest};
+use atlas_api::dtos::status_templates::{CreateStatusTemplateRequest, UpdateStatusTemplateRequest};
 use atlas_api::dtos::tags::{CreateTagRequest, UpdateTagRequest};
+use atlas_api::dtos::task_views::{
+    CreateTaskViewRequest, TaskViewFiltersDto, UpdateTaskViewRequest,
+};
+use atlas_api::dtos::{CreateProjectRequest, UpdateProjectRequest};
 use atlas_client::AtlasClient;
 use rmcp::{
     ServerHandler,
@@ -45,10 +51,10 @@ use response::{
     project_document_compact, project_document_full, project_document_summary, project_folder,
     project_principal, project_project, project_promotion, project_reference,
     project_revision_content, project_revision_meta, project_saved_search, project_search_hit,
-    project_tag, project_task_backlink, project_task_compact, project_task_full, project_task_row,
-    project_task_view, project_workspace, require_confirm, resolve_column_id_on_board,
-    validate_assignee_type, validate_priority, validate_reference_kind, validate_single_target,
-    wrap_vec,
+    project_status_template, project_tag, project_task_backlink, project_task_compact,
+    project_task_full, project_task_row, project_task_view, project_workspace, require_confirm,
+    resolve_column_id_on_board, validate_assignee_type, validate_priority, validate_reference_kind,
+    validate_single_target, wrap_vec,
 };
 
 const ATLAS_INSTRUCTIONS: &str = "\
@@ -112,6 +118,19 @@ optional ordering), `delete_checklist_item` (plain delete, low-risk), \
 board+column; returns the new task and the updated checklist item). \
 For subtask mutations use: `create_subtask` (creates a subtask under a parent task), \
 `promote_subtask` (promotes a subtask to a top-level task, detaching it from the parent). \
+For project mutations use: `create_project` (name, slug, task_prefix required; optional \
+visibility and visibility_role), `update_project` (PATCH — omit fields to leave unchanged), \
+`delete_project` (requires confirm: true — soft-deletes only the project row; boards, \
+tasks, and documents inside are not cascaded but become unreachable from project listings). \
+For status template mutations use: `create_status_template` (name required; optional color \
+and ordering anchors), `update_status_template` (name and color optional PATCH; color \
+accepts null to clear; optional ordering anchors), `delete_status_template` (plain delete). \
+For saved search mutations use: `create_saved_search` (name + query required), \
+`rename_saved_search` (rename only; use `create_saved_search` to change the query), \
+`delete_saved_search` (plain delete). \
+For task view mutations use: `create_task_view` (name + filters object required; pass \
+an empty filters object for an all-workspace view), `update_task_view` (name + filters \
+both required — full replacement, not PATCH), `delete_task_view` (plain delete). \
 Prefer narrow queries over broad ones; follow up with targeted reads rather than \
 enumerating all results.";
 
@@ -949,6 +968,177 @@ pub struct PromoteSubtaskParams {
     pub workspace: String,
     /// Readable ID of the subtask to promote to a top-level task.
     pub readable_id: String,
+}
+
+// ---------------------------------------------------------------------------
+// Batch 3e — Workspace-settings write param structs
+// ---------------------------------------------------------------------------
+
+/// Parameters accepted by the `create_project` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CreateProjectParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Human-readable project name.
+    pub name: String,
+    /// URL-safe project slug (unique in the workspace).
+    pub slug: String,
+    /// Short prefix used for task IDs in this project (e.g. `ATL`).
+    pub task_prefix: String,
+    /// `private` | `workspace` (default) | `public`.
+    #[serde(default)]
+    pub visibility: Option<String>,
+    /// `viewer` | `editor` (default). Only meaningful when visibility is not `public`.
+    #[serde(default)]
+    pub visibility_role: Option<String>,
+}
+
+/// Parameters accepted by the `update_project` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct UpdateProjectParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Project slug to update.
+    pub slug: String,
+    /// New project name. Omit to leave unchanged.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// New visibility. Omit to leave unchanged.
+    #[serde(default)]
+    pub visibility: Option<String>,
+    /// New visibility_role. Omit to leave unchanged.
+    #[serde(default)]
+    pub visibility_role: Option<String>,
+    /// New task prefix. Omit to leave unchanged.
+    #[serde(default)]
+    pub task_prefix: Option<String>,
+}
+
+/// Parameters accepted by the `delete_project` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DeleteProjectParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Project slug to delete.
+    pub slug: String,
+    /// Must be `true` to proceed. Soft-deletes the project row; boards, tasks,
+    /// and documents inside are not cascaded but become unreachable from listings.
+    pub confirm: bool,
+}
+
+/// Parameters accepted by the `create_status_template` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CreateStatusTemplateParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Status template name.
+    pub name: String,
+    /// Optional color swatch identifier.
+    #[serde(default)]
+    pub color: Option<String>,
+    /// Optional ID of the existing template to insert before.
+    #[serde(default)]
+    pub before: Option<String>,
+    /// Optional ID of the existing template to insert after.
+    #[serde(default)]
+    pub after: Option<String>,
+}
+
+/// Parameters accepted by the `update_status_template` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct UpdateStatusTemplateParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// UUID of the status template to update.
+    pub id: String,
+    /// New name. Omit to leave unchanged.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// Color swatch. Omit to leave unchanged. Pass JSON null to clear.
+    #[serde(default, deserialize_with = "present_value")]
+    pub color: Option<serde_json::Value>,
+    /// Reorder: insert before this template ID.
+    #[serde(default)]
+    pub before: Option<String>,
+    /// Reorder: insert after this template ID.
+    #[serde(default)]
+    pub after: Option<String>,
+}
+
+/// Parameters accepted by the `delete_status_template` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DeleteStatusTemplateParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// UUID of the status template to delete.
+    pub id: String,
+}
+
+/// Parameters accepted by the `create_saved_search` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CreateSavedSearchParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Display name for the saved search.
+    pub name: String,
+    /// Query string (supports token filters such as `status:open tag:bug`).
+    pub query: String,
+}
+
+/// Parameters accepted by the `rename_saved_search` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct RenameSavedSearchParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// UUID of the saved search to rename.
+    pub id: String,
+    /// New display name.
+    pub name: String,
+}
+
+/// Parameters accepted by the `delete_saved_search` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DeleteSavedSearchParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// UUID of the saved search to delete.
+    pub id: String,
+}
+
+/// Parameters accepted by the `create_task_view` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CreateTaskViewParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Display name for the task view.
+    pub name: String,
+    /// Filter set as a JSON object. Pass `{}` for an all-workspace view.
+    /// Supported keys: `sort`, `priorities` (array), `labels` (array),
+    /// `column_ids` (array of UUIDs), `board_id` (UUID), `assignee` (string),
+    /// `actor_type` (\"user\" | \"api_key\").
+    pub filters: serde_json::Value,
+}
+
+/// Parameters accepted by the `update_task_view` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct UpdateTaskViewParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// UUID of the task view to update.
+    pub id: String,
+    /// New display name.
+    pub name: String,
+    /// New filter set (full replacement — all previous filters are replaced).
+    pub filters: serde_json::Value,
+}
+
+/// Parameters accepted by the `delete_task_view` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DeleteTaskViewParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// UUID of the task view to delete.
+    pub id: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -2494,6 +2684,314 @@ impl AtlasMcp {
         let result = project_task_compact(&task);
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
+
+    // -----------------------------------------------------------------------
+    // Batch 3e — Project CRUD
+    // -----------------------------------------------------------------------
+
+    #[tool(description = "Create a new project in the workspace. \
+        Returns the created project. \
+        Slug must be URL-safe and unique within the workspace.")]
+    async fn create_project(
+        &self,
+        Parameters(params): Parameters<CreateProjectParams>,
+    ) -> Result<String, String> {
+        let body = CreateProjectRequest {
+            name: params.name,
+            slug: params.slug,
+            task_prefix: params.task_prefix,
+            visibility: params.visibility,
+            visibility_role: params.visibility_role,
+        };
+
+        let project = self
+            .client
+            .create_project(&params.workspace, body)
+            .await
+            .map_err(|e| enrich_client_error(e, "create_project"))?;
+
+        let result = project_project(project);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Update a project's metadata (name, visibility, task_prefix). \
+        PATCH semantics: omit a field to leave it unchanged. \
+        Returns the updated project."
+    )]
+    async fn update_project(
+        &self,
+        Parameters(params): Parameters<UpdateProjectParams>,
+    ) -> Result<String, String> {
+        let body = UpdateProjectRequest {
+            name: params.name,
+            visibility: params.visibility,
+            visibility_role: params.visibility_role,
+            task_prefix: params.task_prefix,
+        };
+
+        let project = self
+            .client
+            .update_project(&params.workspace, &params.slug, body)
+            .await
+            .map_err(|e| enrich_client_error(e, "update_project"))?;
+
+        let result = project_project(project);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "Delete a project. Requires confirm: true. \
+        Soft-deletes only the project row; boards, tasks, and documents inside \
+        are not cascaded but become unreachable from project listings.")]
+    async fn delete_project(
+        &self,
+        Parameters(params): Parameters<DeleteProjectParams>,
+    ) -> Result<String, String> {
+        require_confirm(params.confirm, "project", &params.slug)?;
+
+        self.client
+            .delete_project(&params.workspace, &params.slug)
+            .await
+            .map_err(|e| enrich_client_error(e, "delete_project"))?;
+
+        let result = serde_json::json!({ "deleted": true, "slug": params.slug });
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    // -----------------------------------------------------------------------
+    // Batch 3e — Status template CRUD
+    // -----------------------------------------------------------------------
+
+    #[tool(description = "Create a workspace status template. \
+        Optional color swatch and ordering anchors (before/after). \
+        Returns the created template.")]
+    async fn create_status_template(
+        &self,
+        Parameters(params): Parameters<CreateStatusTemplateParams>,
+    ) -> Result<String, String> {
+        let body = CreateStatusTemplateRequest {
+            name: params.name,
+            color: params.color,
+            before: params.before,
+            after: params.after,
+        };
+
+        let template = self
+            .client
+            .create_status_template(&params.workspace, body)
+            .await
+            .map_err(|e| enrich_client_error(e, "create_status_template"))?;
+
+        let result = project_status_template(template);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "Update a workspace status template. \
+        name and color are optional PATCH fields; color accepts null to clear. \
+        Returns the updated template.")]
+    async fn update_status_template(
+        &self,
+        Parameters(params): Parameters<UpdateStatusTemplateParams>,
+    ) -> Result<String, String> {
+        let id: uuid::Uuid = params
+            .id
+            .parse()
+            .map_err(|_| format!("invalid UUID for id: '{}'", params.id))?;
+
+        let color = map_present_value(params.color.as_ref(), None)?;
+
+        let body = UpdateStatusTemplateRequest {
+            name: params.name,
+            color,
+            before: params.before,
+            after: params.after,
+        };
+
+        let template = self
+            .client
+            .update_status_template(&params.workspace, id, body)
+            .await
+            .map_err(|e| enrich_client_error(e, "update_status_template"))?;
+
+        let result = project_status_template(template);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Delete a workspace status template. Plain delete, no confirm required. \
+        Returns {deleted: true, id}."
+    )]
+    async fn delete_status_template(
+        &self,
+        Parameters(params): Parameters<DeleteStatusTemplateParams>,
+    ) -> Result<String, String> {
+        let id: uuid::Uuid = params
+            .id
+            .parse()
+            .map_err(|_| format!("invalid UUID for id: '{}'", params.id))?;
+
+        self.client
+            .delete_status_template(&params.workspace, id)
+            .await
+            .map_err(|e| enrich_client_error(e, "delete_status_template"))?;
+
+        let result = serde_json::json!({ "deleted": true, "id": id });
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    // -----------------------------------------------------------------------
+    // Batch 3e — Saved search CRUD
+    // -----------------------------------------------------------------------
+
+    #[tool(description = "Create a saved search in the workspace. \
+        Returns the created saved search with its id for future rename or delete.")]
+    async fn create_saved_search(
+        &self,
+        Parameters(params): Parameters<CreateSavedSearchParams>,
+    ) -> Result<String, String> {
+        let body = CreateSavedSearchRequest {
+            name: params.name,
+            query: params.query,
+        };
+
+        let search = self
+            .client
+            .create_saved_search(&params.workspace, body)
+            .await
+            .map_err(|e| enrich_client_error(e, "create_saved_search"))?;
+
+        let result = project_saved_search(search);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "Rename a saved search. \
+        To change the query, delete and recreate. \
+        Returns the updated saved search.")]
+    async fn rename_saved_search(
+        &self,
+        Parameters(params): Parameters<RenameSavedSearchParams>,
+    ) -> Result<String, String> {
+        let id: uuid::Uuid = params
+            .id
+            .parse()
+            .map_err(|_| format!("invalid UUID for id: '{}'", params.id))?;
+
+        let body = RenameSavedSearchRequest { name: params.name };
+
+        let search = self
+            .client
+            .rename_saved_search(&params.workspace, id, body)
+            .await
+            .map_err(|e| enrich_client_error(e, "rename_saved_search"))?;
+
+        let result = project_saved_search(search);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Delete a saved search. Plain delete, no confirm required. \
+        Returns {deleted: true, id}."
+    )]
+    async fn delete_saved_search(
+        &self,
+        Parameters(params): Parameters<DeleteSavedSearchParams>,
+    ) -> Result<String, String> {
+        let id: uuid::Uuid = params
+            .id
+            .parse()
+            .map_err(|_| format!("invalid UUID for id: '{}'", params.id))?;
+
+        self.client
+            .delete_saved_search(&params.workspace, id)
+            .await
+            .map_err(|e| enrich_client_error(e, "delete_saved_search"))?;
+
+        let result = serde_json::json!({ "deleted": true, "id": id });
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    // -----------------------------------------------------------------------
+    // Batch 3e — Task view CRUD
+    // -----------------------------------------------------------------------
+
+    #[tool(description = "Create a task view (filter preset) in the workspace. \
+        Pass an empty filters object {} for an all-workspace view. \
+        Returns the created task view.")]
+    async fn create_task_view(
+        &self,
+        Parameters(params): Parameters<CreateTaskViewParams>,
+    ) -> Result<String, String> {
+        let filters: TaskViewFiltersDto =
+            serde_json::from_value(params.filters).map_err(|e| format!("invalid filters: {e}"))?;
+
+        let body = CreateTaskViewRequest {
+            name: params.name,
+            filters,
+        };
+
+        let view = self
+            .client
+            .create_task_view(&params.workspace, body)
+            .await
+            .map_err(|e| enrich_client_error(e, "create_task_view"))?;
+
+        let result = project_task_view(view);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Update a task view. Both name and filters are required — \
+        this is a full replacement, not a PATCH. \
+        Returns the updated task view."
+    )]
+    async fn update_task_view(
+        &self,
+        Parameters(params): Parameters<UpdateTaskViewParams>,
+    ) -> Result<String, String> {
+        let id: uuid::Uuid = params
+            .id
+            .parse()
+            .map_err(|_| format!("invalid UUID for id: '{}'", params.id))?;
+
+        let filters: TaskViewFiltersDto =
+            serde_json::from_value(params.filters).map_err(|e| format!("invalid filters: {e}"))?;
+
+        let body = UpdateTaskViewRequest {
+            name: params.name,
+            filters,
+        };
+
+        let view = self
+            .client
+            .update_task_view(&params.workspace, id, body)
+            .await
+            .map_err(|e| enrich_client_error(e, "update_task_view"))?;
+
+        let result = project_task_view(view);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Delete a task view. Plain delete, no confirm required. \
+        Returns {deleted: true, id}."
+    )]
+    async fn delete_task_view(
+        &self,
+        Parameters(params): Parameters<DeleteTaskViewParams>,
+    ) -> Result<String, String> {
+        let id: uuid::Uuid = params
+            .id
+            .parse()
+            .map_err(|_| format!("invalid UUID for id: '{}'", params.id))?;
+
+        self.client
+            .delete_task_view(&params.workspace, id)
+            .await
+            .map_err(|e| enrich_client_error(e, "delete_task_view"))?;
+
+        let result = serde_json::json!({ "deleted": true, "id": id });
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
 }
 
 impl AtlasMcp {
@@ -3397,6 +3895,186 @@ mod tests {
         assert!(
             instructions.contains("`promote_subtask`"),
             "instructions must mention promote_subtask"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Batch 3e param deserialization tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn create_project_params_deserializes_required_fields() {
+        let json =
+            r#"{"workspace":"acme","name":"Platform","slug":"platform","task_prefix":"PLT"}"#;
+        let params: CreateProjectParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.name, "Platform");
+        assert_eq!(params.slug, "platform");
+        assert_eq!(params.task_prefix, "PLT");
+        assert!(params.visibility.is_none());
+        assert!(params.visibility_role.is_none());
+    }
+
+    #[test]
+    fn create_project_params_deserializes_optional_fields() {
+        let json = r#"{"workspace":"acme","name":"Private","slug":"private","task_prefix":"PRV","visibility":"private","visibility_role":"editor"}"#;
+        let params: CreateProjectParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.visibility.as_deref(), Some("private"));
+        assert_eq!(params.visibility_role.as_deref(), Some("editor"));
+    }
+
+    #[test]
+    fn update_project_params_all_optional_omitted() {
+        let json = r#"{"workspace":"acme","slug":"platform"}"#;
+        let params: UpdateProjectParams = serde_json::from_str(json).unwrap();
+        assert!(params.name.is_none());
+        assert!(params.visibility.is_none());
+        assert!(params.task_prefix.is_none());
+    }
+
+    #[test]
+    fn delete_project_params_deserializes() {
+        let json = r#"{"workspace":"acme","slug":"platform","confirm":true}"#;
+        let params: DeleteProjectParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.slug, "platform");
+        assert!(params.confirm);
+    }
+
+    #[test]
+    fn create_status_template_params_deserializes() {
+        let json = r#"{"workspace":"acme","name":"In Review","color":"yellow"}"#;
+        let params: CreateStatusTemplateParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.name, "In Review");
+        assert_eq!(params.color.as_deref(), Some("yellow"));
+        assert!(params.before.is_none());
+        assert!(params.after.is_none());
+    }
+
+    #[test]
+    fn update_status_template_color_absent_is_none() {
+        let json =
+            r#"{"workspace":"acme","id":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234","name":"Done"}"#;
+        let params: UpdateStatusTemplateParams = serde_json::from_str(json).unwrap();
+        assert!(
+            params.color.is_none(),
+            "absent color must be None (leave unchanged)"
+        );
+    }
+
+    #[test]
+    fn update_status_template_color_null_clears() {
+        let json =
+            r#"{"workspace":"acme","id":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234","color":null}"#;
+        let params: UpdateStatusTemplateParams = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            params.color,
+            Some(serde_json::Value::Null),
+            "explicit null must be Some(Null) to signal clear"
+        );
+    }
+
+    #[test]
+    fn update_status_template_color_set() {
+        let json =
+            r#"{"workspace":"acme","id":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234","color":"blue"}"#;
+        let params: UpdateStatusTemplateParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.color, Some(serde_json::Value::String("blue".into())));
+    }
+
+    #[test]
+    fn delete_status_template_params_deserializes() {
+        let json = r#"{"workspace":"acme","id":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234"}"#;
+        let params: DeleteStatusTemplateParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.id, "018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234");
+    }
+
+    #[test]
+    fn create_saved_search_params_deserializes() {
+        let json = r#"{"workspace":"acme","name":"Open bugs","query":"status:open tag:bug"}"#;
+        let params: CreateSavedSearchParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.name, "Open bugs");
+        assert_eq!(params.query, "status:open tag:bug");
+    }
+
+    #[test]
+    fn rename_saved_search_params_deserializes() {
+        let json = r#"{"workspace":"acme","id":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234","name":"High-priority bugs"}"#;
+        let params: RenameSavedSearchParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.name, "High-priority bugs");
+        assert_eq!(params.id, "018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234");
+    }
+
+    #[test]
+    fn delete_saved_search_params_deserializes() {
+        let json = r#"{"workspace":"acme","id":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234"}"#;
+        let params: DeleteSavedSearchParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.id, "018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234");
+    }
+
+    #[test]
+    fn create_task_view_params_deserializes_empty_filters() {
+        let json = r#"{"workspace":"acme","name":"All Tasks","filters":{}}"#;
+        let params: CreateTaskViewParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.name, "All Tasks");
+        assert!(params.filters.is_object());
+    }
+
+    #[test]
+    fn create_task_view_params_deserializes_with_filters() {
+        let json = r#"{"workspace":"acme","name":"High priority","filters":{"priorities":["high","urgent"],"sort":"priority_desc"}}"#;
+        let params: CreateTaskViewParams = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            params.filters.get("sort").and_then(|v| v.as_str()),
+            Some("priority_desc")
+        );
+    }
+
+    #[test]
+    fn update_task_view_params_deserializes() {
+        let json = r#"{"workspace":"acme","id":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234","name":"Renamed","filters":{}}"#;
+        let params: UpdateTaskViewParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.name, "Renamed");
+        assert_eq!(params.id, "018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234");
+    }
+
+    #[test]
+    fn delete_task_view_params_deserializes() {
+        let json = r#"{"workspace":"acme","id":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234"}"#;
+        let params: DeleteTaskViewParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.id, "018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234");
+    }
+
+    #[test]
+    fn get_info_instructions_reference_workspace_settings_write_tools() {
+        let server = AtlasMcp::new("http://localhost:8080", "test-token").unwrap();
+        let info = server.get_info();
+        let instructions = info.instructions.as_deref().unwrap_or("");
+        assert!(
+            instructions.contains("`create_project`"),
+            "instructions must mention create_project"
+        );
+        assert!(
+            instructions.contains("`delete_project`"),
+            "instructions must mention delete_project"
+        );
+        assert!(
+            instructions.contains("`create_status_template`"),
+            "instructions must mention create_status_template"
+        );
+        assert!(
+            instructions.contains("`create_saved_search`"),
+            "instructions must mention create_saved_search"
+        );
+        assert!(
+            instructions.contains("`rename_saved_search`"),
+            "instructions must mention rename_saved_search"
+        );
+        assert!(
+            instructions.contains("`create_task_view`"),
+            "instructions must mention create_task_view"
+        );
+        assert!(
+            instructions.contains("`delete_task_view`"),
+            "instructions must mention delete_task_view"
         );
     }
 }

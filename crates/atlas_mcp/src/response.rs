@@ -18,6 +18,7 @@ use atlas_api::{
         folders::FolderDto,
         saved_searches::SavedSearchDto,
         search::SearchHitDto,
+        status_templates::StatusTemplateDto,
         tags::TagDto,
         task_views::TaskViewDto,
         {PrincipalDto, ProjectDto, WorkspaceDto},
@@ -507,6 +508,30 @@ pub(crate) fn project_task_view(v: TaskViewDto) -> Value {
         "name": v.name,
         "filters": v.filters,
     })
+}
+
+// ---------------------------------------------------------------------------
+// Status template projection
+// ---------------------------------------------------------------------------
+
+/// Compact projection of a workspace status template.
+///
+/// `workspace_id` and `created_at` are dropped; `color` is omitted when absent
+/// since the DTO already marks it `skip_serializing_if = "Option::is_none"`.
+/// `position_key` is retained so callers can use `before`/`after` anchors on
+/// subsequent create/update calls.
+pub(crate) fn project_status_template(t: StatusTemplateDto) -> Value {
+    let mut map = serde_json::Map::new();
+    map.insert("id".into(), json!(t.id));
+    map.insert("name".into(), json!(t.name));
+    map.insert("position_key".into(), json!(t.position_key));
+    map.insert("updated_at".into(), json!(t.updated_at));
+
+    if let Some(color) = t.color {
+        map.insert("color".into(), json!(color));
+    }
+
+    Value::Object(map)
 }
 
 // ---------------------------------------------------------------------------
@@ -2349,5 +2374,51 @@ mod tests {
     fn promotion_omits_parent_reference_when_absent() {
         let val = project_promotion(make_promotion(false));
         assert!(val.get("parent_reference").is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // project_status_template
+    // -----------------------------------------------------------------------
+
+    use atlas_api::dtos::status_templates::StatusTemplateDto;
+
+    fn make_status_template(color: Option<&str>) -> StatusTemplateDto {
+        StatusTemplateDto {
+            id: fixed_uuid(),
+            workspace_id: fixed_uuid(),
+            name: "In Progress".into(),
+            color: color.map(String::from),
+            position_key: "a0".into(),
+            created_at: now(),
+            updated_at: now(),
+        }
+    }
+
+    #[test]
+    fn status_template_projection_includes_required_fields() {
+        let val = project_status_template(make_status_template(None));
+        assert_eq!(val["name"], "In Progress");
+        assert_eq!(val["position_key"], "a0");
+        assert!(!val["id"].is_null());
+        assert!(!val["updated_at"].is_null());
+    }
+
+    #[test]
+    fn status_template_projection_drops_workspace_id_and_created_at() {
+        let val = project_status_template(make_status_template(None));
+        assert!(val.get("workspace_id").is_none());
+        assert!(val.get("created_at").is_none());
+    }
+
+    #[test]
+    fn status_template_projection_includes_color_when_present() {
+        let val = project_status_template(make_status_template(Some("blue")));
+        assert_eq!(val["color"], "blue");
+    }
+
+    #[test]
+    fn status_template_projection_omits_color_when_absent() {
+        let val = project_status_template(make_status_template(None));
+        assert!(val.get("color").is_none());
     }
 }
