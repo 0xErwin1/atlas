@@ -34,6 +34,7 @@ const newColumnName = ref('');
 
 const editingId = ref<string | null>(null);
 const draftName = ref('');
+const draftColor = ref('');
 
 const deleteTargetId = ref<string | null>(null);
 
@@ -103,36 +104,44 @@ async function addColumn(): Promise<void> {
 function startRename(column: ColumnDto): void {
   editingId.value = column.id;
   draftName.value = column.name;
+  draftColor.value = resolveColumnSwatchId(column);
 }
 
 function cancelRename(): void {
   editingId.value = null;
   draftName.value = '';
+  draftColor.value = '';
 }
 
-async function saveRename(column: ColumnDto): Promise<void> {
+/**
+ * Persists the name and color edited together in the row's edit mode. Sends both
+ * in a single PATCH; only the changed fields are included so an untouched name
+ * or color is left as-is on the server.
+ */
+async function saveEdit(column: ColumnDto): Promise<void> {
   const slug = ws.value;
-  const next = draftName.value.trim();
-  if (slug === null || next === '' || next === column.name) {
+  if (slug === null) {
     cancelRename();
     return;
   }
 
-  const ok = await boards.updateColumn(slug, selectedBoardId.value, column.id, { name: next });
+  const nextName = draftName.value.trim();
+  const patch: { name?: string; color?: string } = {};
+  if (nextName !== '' && nextName !== column.name) patch.name = nextName;
+  if (draftColor.value !== resolveColumnSwatchId(column)) patch.color = draftColor.value;
+
+  if (patch.name === undefined && patch.color === undefined) {
+    cancelRename();
+    return;
+  }
+
+  const ok = await boards.updateColumn(slug, selectedBoardId.value, column.id, patch);
   if (ok) {
-    ui.showBanner('Status renamed', 'success');
+    ui.showBanner('Status updated', 'success');
     cancelRename();
   } else if (boards.error) {
     ui.showBanner(boards.error, 'error');
   }
-}
-
-async function recolor(column: ColumnDto, swatchId: string): Promise<void> {
-  const slug = ws.value;
-  if (slug === null) return;
-
-  const ok = await boards.updateColumn(slug, selectedBoardId.value, column.id, { color: swatchId });
-  if (!ok && boards.error) ui.showBanner(boards.error, 'error');
 }
 
 /**
@@ -175,7 +184,7 @@ async function confirmDelete(): Promise<void> {
   <div>
     <div class="atl-panel-head">
       <div class="atl-panel-title">Statuses</div>
-      <div class="atl-panel-sub">Edit the columns of a board — add, rename, reorder, recolor or delete</div>
+      <div class="atl-panel-sub">Edit the columns of a board — add, edit name &amp; color, reorder or delete</div>
     </div>
 
     <div class="atl-board-pick">
@@ -201,37 +210,34 @@ async function confirmDelete(): Promise<void> {
     <div v-else>
       <div class="atl-statuses-list">
         <div v-for="(column, index) in boards.columns" :key="column.id" class="atl-status-row">
-          <Popover placement="bottom-start" teleport>
-            <template #trigger="{ toggle }">
-              <button type="button" class="atl-dot-btn" title="Recolor status" @click="toggle">
-                <span class="atl-dot" :style="{ backgroundColor: swatchFg(column) }" />
-              </button>
-            </template>
-            <template #default="{ close }">
-              <ColorPicker
-                :selected="resolveColumnSwatchId(column)"
-                @select="(id) => { void recolor(column, id); close(); }"
-              />
-            </template>
-          </Popover>
-
-          <input
-            v-if="editingId === column.id"
-            v-model="draftName"
-            type="text"
-            class="atl-status-rename"
-            @keydown.enter="saveRename(column)"
-            @keydown.esc="cancelRename"
-          />
-          <span v-else class="atl-status-name">{{ column.name }}</span>
-
-          <span class="flex-1" />
-
           <template v-if="editingId === column.id">
-            <Btn variant="primary" @click="saveRename(column)">Save</Btn>
+            <Popover placement="bottom-start" teleport>
+              <template #trigger="{ toggle }">
+                <button type="button" class="atl-color-trigger" title="Pick a color" @click="toggle">
+                  <span class="atl-dot" :style="{ backgroundColor: swatchById(draftColor).fg }" />
+                </button>
+              </template>
+              <template #default>
+                <ColorPicker :selected="draftColor" @select="(id) => { draftColor = id; }" />
+              </template>
+            </Popover>
+
+            <input
+              v-model="draftName"
+              type="text"
+              class="atl-status-rename"
+              @keydown.enter="saveEdit(column)"
+              @keydown.esc="cancelRename"
+            />
+            <span class="flex-1" />
+            <Btn variant="primary" @click="saveEdit(column)">Save</Btn>
             <button type="button" class="atl-rowact" @click="cancelRename">Cancel</button>
           </template>
+
           <template v-else>
+            <span class="atl-dot" :style="{ backgroundColor: swatchFg(column) }" />
+            <span class="atl-status-name">{{ column.name }}</span>
+            <span class="flex-1" />
             <button
               type="button"
               class="atl-rowact icon"
@@ -250,7 +256,7 @@ async function confirmDelete(): Promise<void> {
             >
               <Icon name="chevron-down" :size="14" />
             </button>
-            <button type="button" class="atl-rowact icon" title="Rename" @click="startRename(column)">
+            <button type="button" class="atl-rowact icon" title="Edit name & color" @click="startRename(column)">
               <Icon name="pencil" :size="13" />
             </button>
             <button
@@ -352,19 +358,25 @@ async function confirmDelete(): Promise<void> {
   border-top: none;
 }
 
-.atl-dot-btn {
+.atl-color-trigger {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   padding: 0;
-  border: none;
-  background: transparent;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-raised);
   cursor: pointer;
 }
 
+.atl-color-trigger:hover {
+  border-color: var(--c-primary);
+}
+
 .atl-dot {
+  flex: none;
   width: 9px;
   height: 9px;
   border-radius: var(--r-full);

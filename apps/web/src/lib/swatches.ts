@@ -73,8 +73,51 @@ const SWATCH_BY_ID = new Map(SWATCHES.map((s) => [s.id, s]));
 // fresh tag gets a stable color instead of all-gray — still fully overridable.
 const DEFAULT_POOL = SWATCHES.filter((s) => s.id !== 'neutral');
 
+const HEX_COLOR = /^#[0-9A-Fa-f]{6}$/;
+
+interface Rgb {
+  r: number;
+  g: number;
+  b: number;
+}
+
+function hexToRgb(hex: string): Rgb | undefined {
+  if (!HEX_COLOR.test(hex)) return undefined;
+
+  const r = Number.parseInt(hex.slice(1, 3), 16);
+  const g = Number.parseInt(hex.slice(3, 5), 16);
+  const b = Number.parseInt(hex.slice(5, 7), 16);
+  return { r, g, b };
+}
+
+/**
+ * Builds a swatch from a user-entered `#RRGGBB` hex: the hex itself is the
+ * foreground (dot/text), with a translucent fill and border derived from it so
+ * a custom color reads on-theme like the named swatches. Returns undefined for
+ * anything that is not a well-formed 6-digit hex, letting the caller fall back.
+ */
+function hexSwatch(id: string): Swatch | undefined {
+  const rgb = hexToRgb(id);
+  if (rgb === undefined) return undefined;
+
+  const { r, g, b } = rgb;
+  return {
+    id,
+    label: id,
+    fg: id,
+    bg: `rgba(${r}, ${g}, ${b}, 0.12)`,
+    border: `rgba(${r}, ${g}, ${b}, 0.4)`,
+  };
+}
+
 export function swatchById(id: string | undefined): Swatch {
-  return (id !== undefined ? SWATCH_BY_ID.get(id) : undefined) ?? NEUTRAL_SWATCH;
+  if (id === undefined) return NEUTRAL_SWATCH;
+
+  if (id.startsWith('#')) {
+    return hexSwatch(id) ?? NEUTRAL_SWATCH;
+  }
+
+  return SWATCH_BY_ID.get(id) ?? NEUTRAL_SWATCH;
 }
 
 /**

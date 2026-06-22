@@ -6,6 +6,7 @@ import ColorPicker from '@/components/ui/ColorPicker.vue';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import Icon from '@/components/ui/Icon.vue';
 import Popover from '@/components/ui/Popover.vue';
+import { swatchById } from '@/lib/swatches';
 import { useTagsStore } from '@/stores/tags';
 import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
@@ -27,6 +28,7 @@ const creating = ref(false);
 
 const editingId = ref<string | null>(null);
 const draftName = ref('');
+const draftColor = ref('');
 const renaming = ref(false);
 
 const deleteTargetId = ref<string | null>(null);
@@ -63,39 +65,47 @@ async function createTag(): Promise<void> {
 function startRename(id: string, name: string): void {
   editingId.value = id;
   draftName.value = name;
+  draftColor.value = tagsStore.colorFor(name);
 }
 
 function cancelRename(): void {
   editingId.value = null;
   draftName.value = '';
+  draftColor.value = '';
 }
 
-async function saveRename(id: string, current: string): Promise<void> {
+/**
+ * Persists the name and color edited together in the row's edit mode. Sends both
+ * in a single PATCH; only the changed fields are included so an untouched name
+ * or color is left as-is on the server.
+ */
+async function saveEdit(id: string, current: string): Promise<void> {
   const slug = ws.value;
-  const next = draftName.value.trim();
-  if (slug === null || next === '' || next === current) {
+  if (slug === null) {
+    cancelRename();
+    return;
+  }
+
+  const nextName = draftName.value.trim();
+  const patch: { name?: string; color?: string } = {};
+  if (nextName !== '' && nextName !== current) patch.name = nextName;
+  if (draftColor.value !== tagsStore.colorFor(current)) patch.color = draftColor.value;
+
+  if (patch.name === undefined && patch.color === undefined) {
     cancelRename();
     return;
   }
 
   renaming.value = true;
-  const ok = await tagsStore.update(slug, id, { name: next });
+  const ok = await tagsStore.update(slug, id, patch);
   renaming.value = false;
 
   if (ok) {
-    ui.showBanner('Tag renamed', 'success');
+    ui.showBanner('Tag updated', 'success');
     cancelRename();
   } else if (tagsStore.error) {
     ui.showBanner(tagsStore.error, 'error');
   }
-}
-
-async function recolor(id: string, swatchId: string): Promise<void> {
-  const slug = ws.value;
-  if (slug === null) return;
-
-  const ok = await tagsStore.update(slug, id, { color: swatchId });
-  if (!ok && tagsStore.error) ui.showBanner(tagsStore.error, 'error');
 }
 
 async function confirmDelete(): Promise<void> {
@@ -136,36 +146,39 @@ async function confirmDelete(): Promise<void> {
 
     <div v-else class="atl-tag-list">
       <div v-for="tag in tagsStore.tags" :key="tag.id" class="atl-tag-row">
-        <Popover placement="bottom-start" teleport>
-          <template #trigger="{ toggle }">
-            <button type="button" class="atl-tag-swatch-btn" title="Recolor tag" @click="toggle">
-              <Chip :color="tagsStore.colorFor(tag.name)" icon="dot">{{ tag.name }}</Chip>
-            </button>
-          </template>
-          <template #default="{ close }">
-            <ColorPicker
-              :selected="tagsStore.colorFor(tag.name)"
-              @select="(id) => { void recolor(tag.id, id); close(); }"
-            />
-          </template>
-        </Popover>
-
-        <input
-          v-if="editingId === tag.id"
-          v-model="draftName"
-          type="text"
-          class="atl-tag-rename"
-          @keydown.enter="saveRename(tag.id, tag.name)"
-          @keydown.esc="cancelRename"
-        />
-        <span class="flex-1" />
-
         <template v-if="editingId === tag.id">
-          <Btn variant="primary" :disabled="renaming" @click="saveRename(tag.id, tag.name)">Save</Btn>
+          <Popover placement="bottom-start" teleport>
+            <template #trigger="{ toggle }">
+              <button type="button" class="atl-color-trigger" title="Pick a color" @click="toggle">
+                <span class="atl-dot" :style="{ backgroundColor: swatchById(draftColor).fg }" />
+              </button>
+            </template>
+            <template #default>
+              <ColorPicker :selected="draftColor" @select="(id) => { draftColor = id; }" />
+            </template>
+          </Popover>
+
+          <input
+            v-model="draftName"
+            type="text"
+            class="atl-tag-rename"
+            @keydown.enter="saveEdit(tag.id, tag.name)"
+            @keydown.esc="cancelRename"
+          />
+          <span class="flex-1" />
+          <Btn variant="primary" :disabled="renaming" @click="saveEdit(tag.id, tag.name)">Save</Btn>
           <button type="button" class="atl-rowact" @click="cancelRename">Cancel</button>
         </template>
+
         <template v-else>
-          <button type="button" class="atl-rowact" title="Rename" @click="startRename(tag.id, tag.name)">
+          <Chip :color="tagsStore.colorFor(tag.name)" icon="dot">{{ tag.name }}</Chip>
+          <span class="flex-1" />
+          <button
+            type="button"
+            class="atl-rowact"
+            title="Edit name & color"
+            @click="startRename(tag.id, tag.name)"
+          >
             <Icon name="pencil" :size="13" />
           </button>
           <button
@@ -265,12 +278,28 @@ async function confirmDelete(): Promise<void> {
   border-top: none;
 }
 
-.atl-tag-swatch-btn {
+.atl-color-trigger {
   display: inline-flex;
-  border: none;
-  background: transparent;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
   padding: 0;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-raised);
   cursor: pointer;
+}
+
+.atl-color-trigger:hover {
+  border-color: var(--c-primary);
+}
+
+.atl-dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: var(--r-full);
 }
 
 .atl-rowact {
