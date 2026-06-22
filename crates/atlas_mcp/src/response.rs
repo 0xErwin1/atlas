@@ -245,21 +245,29 @@ pub(crate) fn project_task_row(task: TaskSummaryDto) -> Value {
 
 /// Compact projection of a full task.
 ///
-/// `TaskDto` lacks `column_name` and `board_name` (API debt D-TASKNAME); the
-/// raw `column_id` UUID is included so the agent can resolve the name via
-/// `list_columns` if needed.
+/// `board_name`/`column_name` are omitted when empty: the read path (`get_task`)
+/// resolves them, but task mutation responses leave them blank, and an empty
+/// name would misrepresent the task as having no board/column.
 pub(crate) fn project_task_compact(task: &TaskDto) -> Value {
-    json!({
-        "readable_id": task.readable_id,
-        "title": task.title,
-        "column_id": task.column_id,
-        "priority": task.priority,
-        "labels": task.labels,
-        "estimate": task.estimate,
-        "due_date": task.due_date,
-        "parent_task_id": task.parent_task_id,
-        "updated_at": task.updated_at,
-    })
+    let mut map = serde_json::Map::new();
+    map.insert("readable_id".into(), json!(task.readable_id));
+    map.insert("title".into(), json!(task.title));
+
+    if !task.board_name.is_empty() {
+        map.insert("board_name".into(), json!(task.board_name));
+    }
+    if !task.column_name.is_empty() {
+        map.insert("column_name".into(), json!(task.column_name));
+    }
+
+    map.insert("priority".into(), json!(task.priority));
+    map.insert("labels".into(), json!(task.labels));
+    map.insert("estimate".into(), json!(task.estimate));
+    map.insert("due_date".into(), json!(task.due_date));
+    map.insert("parent_task_id".into(), json!(task.parent_task_id));
+    map.insert("updated_at".into(), json!(task.updated_at));
+
+    Value::Object(map)
 }
 
 /// Full projection: compact fields plus description and derived sub-resources.
@@ -1031,6 +1039,8 @@ mod tests {
             created_by: actor(),
             created_at: now(),
             updated_at: now(),
+            board_name: "Sprint Board".into(),
+            column_name: "In Review".into(),
         }
     }
 
@@ -1411,10 +1421,26 @@ mod tests {
     }
 
     #[test]
-    fn task_compact_includes_column_id() {
+    fn task_compact_includes_board_name_and_column_name() {
         let task = make_task_dto();
         let val = project_task_compact(&task);
-        assert!(!val["column_id"].is_null());
+        assert_eq!(val["board_name"], "Sprint Board");
+        assert_eq!(val["column_name"], "In Review");
+        assert!(
+            val.get("column_id").is_none(),
+            "column_id UUID must not be emitted now that names are present"
+        );
+    }
+
+    #[test]
+    fn task_compact_omits_empty_board_and_column_names() {
+        let mut task = make_task_dto();
+        task.board_name = String::new();
+        task.column_name = String::new();
+        let val = project_task_compact(&task);
+        assert!(val.get("board_name").is_none());
+        assert!(val.get("column_name").is_none());
+        assert!(val.get("readable_id").is_some());
     }
 
     #[test]

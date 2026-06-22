@@ -96,6 +96,10 @@ pub struct TaskDto {
     pub created_by: ActorDto,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
+    /// Name of the board this task belongs to.
+    pub board_name: String,
+    /// Name of the column (status) this task is currently in.
+    pub column_name: String,
 }
 
 /// Lightweight task summary for list endpoints.

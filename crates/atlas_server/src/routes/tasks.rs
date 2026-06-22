@@ -115,7 +115,7 @@ fn actor_to_dto(actor: &Actor) -> ActorDto {
     }
 }
 
-fn task_to_dto(t: Task) -> TaskDto {
+fn task_to_dto(t: Task, board_name: String, column_name: String) -> TaskDto {
     TaskDto {
         id: t.id.0,
         workspace_id: t.workspace_id.0,
@@ -134,6 +134,8 @@ fn task_to_dto(t: Task) -> TaskDto {
         created_by: actor_to_dto(&t.created_by),
         created_at: t.created_at,
         updated_at: t.updated_at,
+        board_name,
+        column_name,
     }
 }
 
@@ -556,7 +558,10 @@ pub(crate) async fn create_task(
         .await
         .map_err(ApiError::Domain)?;
 
-    Ok((StatusCode::CREATED, Json(task_to_dto(task))))
+    Ok((
+        StatusCode::CREATED,
+        Json(task_to_dto(task, String::new(), String::new())),
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -676,8 +681,20 @@ pub(crate) async fn list_tasks(
 )]
 pub(crate) async fn get_task(
     auth: Authorized<TaskRes, ViewerMin>,
+    State(state): State<AppState>,
 ) -> Result<Json<TaskDto>, ApiError> {
-    Ok(Json(task_to_dto(auth.resource.0)))
+    let actor = principal_to_actor(&auth.principal);
+    let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
+
+    let board_column_names =
+        board_column_names_by_task(&state, &ctx, std::slice::from_ref(&auth.resource.0)).await?;
+
+    let (_board_id, board_name, column_name) = board_column_names
+        .get(&auth.resource.0.column_id.0)
+        .cloned()
+        .unwrap_or_else(|| (auth.resource.0.board_id.0, String::new(), String::new()));
+
+    Ok(Json(task_to_dto(auth.resource.0, board_name, column_name)))
 }
 
 // ---------------------------------------------------------------------------
@@ -747,7 +764,7 @@ pub(crate) async fn update_task(
         .await
         .map_err(ApiError::Domain)?;
 
-    Ok(Json(task_to_dto(updated)))
+    Ok(Json(task_to_dto(updated, String::new(), String::new())))
 }
 
 // ---------------------------------------------------------------------------
@@ -844,7 +861,7 @@ pub(crate) async fn move_task(
         .await
         .map_err(ApiError::Domain)?;
 
-    Ok(Json(task_to_dto(moved)))
+    Ok(Json(task_to_dto(moved, String::new(), String::new())))
 }
 
 // ---------------------------------------------------------------------------
@@ -1583,7 +1600,7 @@ pub(crate) async fn promote_checklist_item(
 
     let promoted_readable_id = result.task.readable_id.clone();
     let dto = PromotionDto {
-        task: task_to_dto(result.task),
+        task: task_to_dto(result.task, String::new(), String::new()),
         parent_reference: Some(reference_to_dto(
             result.parent_reference,
             true,
@@ -1703,7 +1720,10 @@ pub(crate) async fn create_subtask(
         .await
         .map_err(ApiError::Domain)?;
 
-    Ok((StatusCode::CREATED, Json(task_to_dto(task))))
+    Ok((
+        StatusCode::CREATED,
+        Json(task_to_dto(task, String::new(), String::new())),
+    ))
 }
 
 #[utoipa::path(
@@ -1735,7 +1755,7 @@ pub(crate) async fn promote_subtask(
         .await
         .map_err(ApiError::Domain)?;
 
-    Ok(Json(task_to_dto(task)))
+    Ok(Json(task_to_dto(task, String::new(), String::new())))
 }
 
 // ---------------------------------------------------------------------------

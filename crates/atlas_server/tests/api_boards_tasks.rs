@@ -520,6 +520,75 @@ async fn delete_column_with_live_task_is_rejected() {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
+async fn get_task_returns_board_name_and_column_name() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "task-names-1").await;
+
+    client
+        .create_project(&ws.slug, project_req("task-names-proj", "TN"))
+        .await
+        .expect("create project");
+
+    let board = client
+        .create_board(
+            &ws.slug,
+            "task-names-proj",
+            CreateBoardRequest {
+                name: "My Board".to_string(),
+            },
+        )
+        .await
+        .expect("create board");
+
+    let col = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "In Progress".to_string(),
+                before: None,
+                after: None,
+                color: None,
+            },
+        )
+        .await
+        .expect("create column");
+
+    let created = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: col.id,
+                title: "Named Task".to_string(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create task");
+
+    let fetched = client
+        .get_task(&ws.slug, &created.readable_id)
+        .await
+        .expect("get task");
+
+    assert_eq!(
+        fetched.board_name, "My Board",
+        "get_task must return board_name matching the seeded board"
+    );
+    assert_eq!(
+        fetched.column_name, "In Progress",
+        "get_task must return column_name matching the seeded column"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
 async fn create_and_get_task_returns_201_and_task_data() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;
