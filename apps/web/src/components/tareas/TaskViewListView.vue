@@ -392,7 +392,7 @@ function onAssigneePick(task: TaskSummaryDto, value: string): void {
 }
 
 .atl-tl-inner {
-  max-width: 1100px;
+  width: 100%;
 }
 
 .atl-tl-colhead {
