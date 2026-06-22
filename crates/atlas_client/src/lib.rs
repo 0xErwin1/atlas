@@ -72,6 +72,23 @@ impl AtlasClient {
         }
     }
 
+    /// Constructs a client that reuses an existing `reqwest::Client` connection pool.
+    ///
+    /// `reqwest::Client` is Arc-backed internally, so cloning it is cheap — this
+    /// constructor takes ownership of the caller's clone and avoids spawning a new
+    /// DNS resolver or TLS stack for each logical atlas_mcp session.
+    pub fn with_shared_pool(
+        pool: reqwest::Client,
+        base_url: impl Into<String>,
+        token: impl Into<String>,
+    ) -> Self {
+        Self {
+            base_url: base_url.into(),
+            http: pool,
+            token: Some(token.into()),
+        }
+    }
+
     pub fn with_token(mut self, token: impl Into<String>) -> Self {
         self.token = Some(token.into());
         self

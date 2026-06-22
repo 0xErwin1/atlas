@@ -2,8 +2,6 @@
 
 mod response;
 
-use std::sync::Arc;
-
 use atlas_api::dtos::boards_tasks::{
     AddAssigneeRequest, CreateBoardRequest, CreateChecklistItemRequest, CreateColumnRequest,
     CreateReferenceRequest, CreateSubtaskRequest, CreateTaskRequest, MoveTaskRequest,
@@ -26,6 +24,7 @@ use rmcp::{
     ServerHandler,
     handler::server::wrapper::Parameters,
     model::{Implementation, ServerCapabilities, ServerInfo},
+    service::{RequestContext, RoleServer},
     tool, tool_handler, tool_router,
 };
 use schemars::JsonSchema;
@@ -103,20 +102,35 @@ Tools by area (see each tool's own description for parameters):\n\
 
 /// MCP server backed by an Atlas HTTP API endpoint.
 ///
-/// Holds a single shared client, built once on construction and reused across
-/// all tool calls. Cloning the handler shares the same underlying client.
+/// In stdio mode, holds the single startup token for all tool calls.
+/// In HTTP mode, `stdio_token` is `None` and each tool call resolves its
+/// client from the per-request Bearer header (4b seam — see `resolve_client`).
+/// Cloning shares the same `Arc<reqwest::Client>` pool.
 #[derive(Clone)]
 pub struct AtlasMcp {
-    client: Arc<AtlasClient>,
+    base_url: String,
+    shared_http: std::sync::Arc<reqwest::Client>,
+    /// Startup token from `ATLAS_TOKEN`; present in stdio mode, absent in HTTP mode.
+    stdio_token: Option<String>,
 }
 
 impl AtlasMcp {
-    /// Returns a reference to the underlying HTTP client, for pre-serve diagnostics.
-    pub fn client(&self) -> &AtlasClient {
-        &self.client
+    /// Returns an `AtlasClient` built from the startup token, for pre-serve diagnostics.
+    ///
+    /// Returns `Err` when called in HTTP mode (no startup token).
+    pub fn client(&self) -> Result<AtlasClient, &'static str> {
+        let token = self
+            .stdio_token
+            .as_deref()
+            .ok_or("client() called in HTTP mode where no startup token exists")?;
+        Ok(AtlasClient::with_shared_pool(
+            (*self.shared_http).clone(),
+            &self.base_url,
+            token,
+        ))
     }
 
-    /// Constructs an `AtlasMcp` with the given base URL and required API token.
+    /// Constructs an `AtlasMcp` for stdio mode with the given base URL and required API token.
     ///
     /// Returns an error if either argument is empty.
     pub fn new(base_url: impl Into<String>, token: impl Into<String>) -> anyhow::Result<Self> {
@@ -130,12 +144,47 @@ impl AtlasMcp {
             anyhow::bail!("ATLAS_TOKEN must not be empty");
         }
 
-        let mut client = AtlasClient::new(base_url);
-        client.set_token(token);
+        Ok(Self {
+            base_url,
+            shared_http: std::sync::Arc::new(reqwest::Client::new()),
+            stdio_token: Some(token),
+        })
+    }
+
+    /// Constructs an `AtlasMcp` for HTTP mode.
+    ///
+    /// No startup token is stored; each request supplies its own Bearer token,
+    /// resolved per call in `resolve_client`.
+    pub fn new_http(base_url: impl Into<String>) -> anyhow::Result<Self> {
+        let base_url = base_url.into();
+
+        if base_url.is_empty() {
+            anyhow::bail!("base_url must not be empty");
+        }
 
         Ok(Self {
-            client: Arc::new(client),
+            base_url,
+            shared_http: std::sync::Arc::new(reqwest::Client::new()),
+            stdio_token: None,
         })
+    }
+
+    /// Resolves the `AtlasClient` to use for this tool call.
+    ///
+    /// Uses the stored stdio token when present. HTTP mode (no stored token) is
+    /// not yet wired to read the per-request `Authorization: Bearer` token from
+    /// `ctx.extensions.get::<http::request::Parts>()`, so it errors for now.
+    fn resolve_client(&self, _ctx: &RequestContext<RoleServer>) -> Result<AtlasClient, String> {
+        match &self.stdio_token {
+            Some(token) => Ok(AtlasClient::with_shared_pool(
+                (*self.shared_http).clone(),
+                &self.base_url,
+                token,
+            )),
+            None => Err(
+                "no Atlas token available: HTTP mode requires a per-request Bearer token".to_string()
+            ),
+        }
     }
 }
 
@@ -1120,11 +1169,15 @@ impl AtlasMcp {
     }
 
     #[tool(description = "Search documents and tasks across an Atlas workspace")]
-    async fn search(&self, Parameters(params): Parameters<SearchParams>) -> Result<String, String> {
+    async fn search(
+        &self,
+        Parameters(params): Parameters<SearchParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
         let limit = params.limit.unwrap_or(20).clamp(1, 200);
 
-        let page = self
-            .client
+        let page = client
             .search(
                 &params.workspace,
                 &params.query,
@@ -1144,9 +1197,10 @@ impl AtlasMcp {
     async fn get_document(
         &self,
         Parameters(params): Parameters<GetDocumentParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
-        let doc = self
-            .client
+        let client = self.resolve_client(&ctx)?;
+        let doc = client
             .get_document(&params.workspace, &params.slug)
             .await
             .map_err(|e| format!("get_document '{}' failed: {e}", params.slug))?;
@@ -1163,7 +1217,10 @@ impl AtlasMcp {
     async fn list_tasks(
         &self,
         Parameters(params): Parameters<ListTasksParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
         let priorities = params
             .priority
             .as_deref()
@@ -1175,14 +1232,22 @@ impl AtlasMcp {
         let limit = params.limit.unwrap_or(20).clamp(1, 200);
 
         let column_ids = if let Some(status_name) = &params.status {
-            self.resolve_column_ids(&params.workspace, params.board.as_deref(), status_name)
-                .await?
+            self.resolve_column_ids(
+                &client,
+                &params.workspace,
+                params.board.as_deref(),
+                status_name,
+            )
+            .await?
         } else {
             Vec::new()
         };
 
         let board_id = if let Some(board) = &params.board {
-            Some(self.resolve_board_id(&params.workspace, board).await?)
+            Some(
+                self.resolve_board_id(&client, &params.workspace, board)
+                    .await?,
+            )
         } else {
             None
         };
@@ -1199,8 +1264,7 @@ impl AtlasMcp {
             limit: Some(limit),
         };
 
-        let page = self
-            .client
+        let page = client
             .list_workspace_tasks(&params.workspace, &query)
             .await
             .map_err(|e| format!("list_tasks failed: {e}"))?;
@@ -1213,9 +1277,11 @@ impl AtlasMcp {
     async fn get_task(
         &self,
         Parameters(params): Parameters<GetTaskParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
-        let task = self
-            .client
+        let client = self.resolve_client(&ctx)?;
+
+        let task = client
             .get_task(&params.workspace, &params.readable_id)
             .await
             .map_err(|e| format!("get_task '{}' failed: {e}", params.readable_id))?;
@@ -1223,15 +1289,13 @@ impl AtlasMcp {
         let result = match parse_detail(params.detail.as_deref()) {
             Detail::Compact => project_task_compact(&task),
             Detail::Full => {
-                let refs = self
-                    .client
+                let refs = client
                     .list_references(&params.workspace, &params.readable_id)
                     .await
                     .map(|v| v.into_iter().map(project_reference).collect::<Vec<_>>())
                     .map_err(|e| format!("list_references failed: {e}"));
 
-                let subtasks = self
-                    .client
+                let subtasks = client
                     .list_subtasks(&params.workspace, &params.readable_id)
                     .await
                     .map(|v| v.into_iter().map(project_task_row).collect::<Vec<_>>())
@@ -1248,11 +1312,12 @@ impl AtlasMcp {
     async fn list_documents(
         &self,
         Parameters(params): Parameters<ListDocumentsParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
         let limit = params.limit.unwrap_or(20).clamp(1, 200);
 
-        let page = self
-            .client
+        let page = client
             .list_documents(
                 &params.workspace,
                 &params.project,
@@ -1275,11 +1340,12 @@ impl AtlasMcp {
     async fn list_folders(
         &self,
         Parameters(params): Parameters<ListFoldersParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
         let limit = params.limit.unwrap_or(20).clamp(1, 200);
 
-        let page = self
-            .client
+        let page = client
             .list_folders(
                 &params.workspace,
                 &params.project,
@@ -1297,11 +1363,12 @@ impl AtlasMcp {
     async fn list_boards(
         &self,
         Parameters(params): Parameters<ListBoardsParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
         let limit = params.limit.unwrap_or(20).clamp(1, 200);
 
-        let page = self
-            .client
+        let page = client
             .list_boards(
                 &params.workspace,
                 &params.project,
@@ -1319,17 +1386,19 @@ impl AtlasMcp {
     async fn list_columns(
         &self,
         Parameters(params): Parameters<ListColumnsParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
         let board_id_str = self
-            .resolve_board_id(&params.workspace, &params.board)
+            .resolve_board_id(&client, &params.workspace, &params.board)
             .await?;
 
         let board_uuid: uuid::Uuid = board_id_str
             .parse()
             .map_err(|_| format!("resolved board_id '{board_id_str}' is not a valid UUID"))?;
 
-        let cols = self
-            .client
+        let cols = client
             .list_columns(&params.workspace, board_uuid)
             .await
             .map_err(|e| format!("list_columns for board '{}' failed: {e}", params.board))?;
@@ -1342,9 +1411,11 @@ impl AtlasMcp {
     async fn list_tags(
         &self,
         Parameters(params): Parameters<ListTagsParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
-        let tags = self
-            .client
+        let client = self.resolve_client(&ctx)?;
+
+        let tags = client
             .list_tags(&params.workspace)
             .await
             .map_err(|e| format!("list_tags for workspace '{}' failed: {e}", params.workspace))?;
@@ -1359,9 +1430,11 @@ impl AtlasMcp {
     async fn list_used_labels(
         &self,
         Parameters(params): Parameters<ListUsedLabelsParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
-        let labels = self
-            .client
+        let client = self.resolve_client(&ctx)?;
+
+        let labels = client
             .list_used_labels(&params.workspace)
             .await
             .map_err(|e| {
@@ -1381,9 +1454,11 @@ impl AtlasMcp {
     async fn list_members(
         &self,
         Parameters(params): Parameters<ListMembersParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
-        let members = self
-            .client
+        let client = self.resolve_client(&ctx)?;
+
+        let members = client
             .list_workspace_members(&params.workspace)
             .await
             .map_err(|e| {
@@ -1401,9 +1476,11 @@ impl AtlasMcp {
     async fn list_workspaces(
         &self,
         Parameters(_params): Parameters<ListWorkspacesParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
-        let workspaces = self
-            .client
+        let client = self.resolve_client(&ctx)?;
+
+        let workspaces = client
             .list_workspaces()
             .await
             .map_err(|e| format!("list_workspaces failed: {e}"))?;
@@ -1416,11 +1493,12 @@ impl AtlasMcp {
     async fn list_projects(
         &self,
         Parameters(params): Parameters<ListProjectsParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
         let limit = params.limit.unwrap_or(20).clamp(1, 200);
 
-        let page = self
-            .client
+        let page = client
             .list_projects(&params.workspace, params.cursor.as_deref(), Some(limit))
             .await
             .map_err(|e| {
@@ -1438,9 +1516,11 @@ impl AtlasMcp {
     async fn list_saved_searches(
         &self,
         Parameters(params): Parameters<ListSavedSearchesParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
-        let searches = self
-            .client
+        let client = self.resolve_client(&ctx)?;
+
+        let searches = client
             .list_saved_searches(&params.workspace)
             .await
             .map_err(|e| {
@@ -1458,9 +1538,11 @@ impl AtlasMcp {
     async fn list_task_views(
         &self,
         Parameters(params): Parameters<ListTaskViewsParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
-        let views = self
-            .client
+        let client = self.resolve_client(&ctx)?;
+
+        let views = client
             .list_task_views(&params.workspace)
             .await
             .map_err(|e| {
@@ -1480,9 +1562,11 @@ impl AtlasMcp {
     async fn get_task_references(
         &self,
         Parameters(params): Parameters<GetTaskReferencesParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
-        let refs = self
-            .client
+        let client = self.resolve_client(&ctx)?;
+
+        let refs = client
             .list_references(&params.workspace, &params.readable_id)
             .await
             .map_err(|e| {
@@ -1500,9 +1584,11 @@ impl AtlasMcp {
     async fn get_task_backlinks(
         &self,
         Parameters(params): Parameters<GetTaskBacklinksParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
-        let page = self
-            .client
+        let client = self.resolve_client(&ctx)?;
+
+        let page = client
             .list_task_backlinks(&params.workspace, &params.readable_id)
             .await
             .map_err(|e| {
@@ -1522,11 +1608,12 @@ impl AtlasMcp {
     async fn get_document_backlinks(
         &self,
         Parameters(params): Parameters<GetDocumentBacklinksParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
         let limit = params.limit.unwrap_or(20).clamp(1, 200);
 
-        let page = self
-            .client
+        let page = client
             .list_backlinks(
                 &params.workspace,
                 &params.slug,
@@ -1544,9 +1631,11 @@ impl AtlasMcp {
     async fn list_checklist(
         &self,
         Parameters(params): Parameters<ListChecklistParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
-        let items = self
-            .client
+        let client = self.resolve_client(&ctx)?;
+
+        let items = client
             .list_checklist(&params.workspace, &params.readable_id)
             .await
             .map_err(|e| format!("list_checklist for '{}' failed: {e}", params.readable_id))?;
@@ -1559,9 +1648,11 @@ impl AtlasMcp {
     async fn list_activity(
         &self,
         Parameters(params): Parameters<ListActivityParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
-        let page = self
-            .client
+        let client = self.resolve_client(&ctx)?;
+
+        let page = client
             .list_activity(&params.workspace, &params.readable_id)
             .await
             .map_err(|e| format!("list_activity for '{}' failed: {e}", params.readable_id))?;
@@ -1574,11 +1665,12 @@ impl AtlasMcp {
     async fn list_document_history(
         &self,
         Parameters(params): Parameters<ListDocumentHistoryParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
         let limit = params.limit.unwrap_or(20).clamp(1, 200);
 
-        let page = self
-            .client
+        let page = client
             .list_document_history(
                 &params.workspace,
                 &params.slug,
@@ -1598,9 +1690,11 @@ impl AtlasMcp {
     async fn get_document_revision(
         &self,
         Parameters(params): Parameters<GetDocumentRevisionParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
-        let rev = self
-            .client
+        let client = self.resolve_client(&ctx)?;
+
+        let rev = client
             .get_revision_content(&params.workspace, &params.slug, params.seq)
             .await
             .map_err(|e| {
@@ -1618,11 +1712,12 @@ impl AtlasMcp {
     async fn list_attachments(
         &self,
         Parameters(params): Parameters<ListAttachmentsParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
         let limit = params.limit.unwrap_or(20).clamp(1, 200);
 
-        let page = self
-            .client
+        let page = client
             .list_attachments(
                 &params.workspace,
                 &params.slug,
@@ -1640,16 +1735,18 @@ impl AtlasMcp {
     async fn create_task(
         &self,
         Parameters(params): Parameters<CreateTaskParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
         let board_id_str = self
-            .resolve_board_id(&params.workspace, &params.board)
+            .resolve_board_id(&client, &params.workspace, &params.board)
             .await?;
         let board_uuid: uuid::Uuid = board_id_str
             .parse()
             .map_err(|_| format!("resolved board '{board_id_str}' is not a valid UUID"))?;
 
-        let cols = self
-            .client
+        let cols = client
             .list_columns(&params.workspace, board_uuid)
             .await
             .map_err(|e| enrich_client_error(e, "list_columns"))?;
@@ -1694,8 +1791,7 @@ impl AtlasMcp {
             after: None,
         };
 
-        let task = self
-            .client
+        let task = client
             .create_task(&params.workspace, board_uuid, body)
             .await
             .map_err(|e| enrich_client_error(e, "create_task"))?;
@@ -1711,7 +1807,10 @@ impl AtlasMcp {
     async fn update_task(
         &self,
         Parameters(params): Parameters<UpdateTaskParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
         let priority = map_present_value(params.priority.as_ref(), Some(validate_priority))?;
         let due_date = map_present_value(params.due_date.as_ref(), None)?;
         let estimate = map_present_value(params.estimate.as_ref(), None)?;
@@ -1726,8 +1825,7 @@ impl AtlasMcp {
             properties: None,
         };
 
-        let task = self
-            .client
+        let task = client
             .update_task(&params.workspace, &params.readable_id, body)
             .await
             .map_err(|e| enrich_client_error(e, "update_task"))?;
@@ -1741,15 +1839,18 @@ impl AtlasMcp {
     async fn move_task(
         &self,
         Parameters(params): Parameters<MoveTaskParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
         let board_ref = params.board.as_deref().unwrap_or(&params.readable_id);
 
         let board_id_str = if params.board.is_some() {
-            self.resolve_board_id(&params.workspace, board_ref).await?
+            self.resolve_board_id(&client, &params.workspace, board_ref)
+                .await?
         } else {
             // No board supplied: fetch the task first to get its board_id.
-            let task = self
-                .client
+            let task = client
                 .get_task(&params.workspace, &params.readable_id)
                 .await
                 .map_err(|e| enrich_client_error(e, "get_task"))?;
@@ -1760,8 +1861,7 @@ impl AtlasMcp {
             .parse()
             .map_err(|_| format!("resolved board '{board_id_str}' is not a valid UUID"))?;
 
-        let cols = self
-            .client
+        let cols = client
             .list_columns(&params.workspace, board_uuid)
             .await
             .map_err(|e| enrich_client_error(e, "list_columns"))?;
@@ -1774,8 +1874,7 @@ impl AtlasMcp {
             after: None,
         };
 
-        let task = self
-            .client
+        let task = client
             .move_task(&params.workspace, &params.readable_id, body)
             .await
             .map_err(|e| enrich_client_error(e, "move_task"))?;
@@ -1789,10 +1888,12 @@ impl AtlasMcp {
     async fn delete_task(
         &self,
         Parameters(params): Parameters<DeleteTaskParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
         require_confirm(params.confirm, "task", &params.readable_id)?;
 
-        self.client
+        client
             .delete_task(&params.workspace, &params.readable_id)
             .await
             .map_err(|e| enrich_client_error(e, "delete_task"))?;
@@ -1808,7 +1909,9 @@ impl AtlasMcp {
     async fn add_task_assignee(
         &self,
         Parameters(params): Parameters<AddTaskAssigneeParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
         validate_assignee_type(&params.assignee_type)?;
 
         let assignee_id: uuid::Uuid = params
@@ -1821,8 +1924,7 @@ impl AtlasMcp {
             assignee_id,
         };
 
-        let assignee = self
-            .client
+        let assignee = client
             .add_assignee(&params.workspace, &params.readable_id, body)
             .await
             .map_err(|e| enrich_client_error(e, "add_task_assignee"))?;
@@ -1835,8 +1937,11 @@ impl AtlasMcp {
     async fn remove_task_assignee(
         &self,
         Parameters(params): Parameters<RemoveTaskAssigneeParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
-        self.client
+        let client = self.resolve_client(&ctx)?;
+
+        client
             .remove_assignee(&params.workspace, &params.readable_id, &params.assignee_ref)
             .await
             .map_err(|e| enrich_client_error(e, "remove_task_assignee"))?;
@@ -1854,7 +1959,10 @@ impl AtlasMcp {
     async fn create_document(
         &self,
         Parameters(params): Parameters<CreateDocumentParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
         let folder_id = params
             .folder_id
             .as_deref()
@@ -1870,8 +1978,7 @@ impl AtlasMcp {
             content: params.content,
         };
 
-        let doc = self
-            .client
+        let doc = client
             .create_document(&params.workspace, &params.project, body)
             .await
             .map_err(|e| enrich_client_error(e, "create_document"))?;
@@ -1886,7 +1993,10 @@ impl AtlasMcp {
     async fn update_document_metadata(
         &self,
         Parameters(params): Parameters<UpdateDocumentMetadataParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
         let folder_id = params
             .folder_id
             .as_deref()
@@ -1901,8 +2011,7 @@ impl AtlasMcp {
             folder_id,
         };
 
-        let doc = self
-            .client
+        let doc = client
             .update_document(&params.workspace, &params.slug, body)
             .await
             .map_err(|e| enrich_client_error(e, "update_document_metadata"))?;
@@ -1921,7 +2030,10 @@ impl AtlasMcp {
     async fn update_document_content(
         &self,
         Parameters(params): Parameters<UpdateDocumentContentParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
         let base_revision_id = params.base_revision_id.parse::<uuid::Uuid>().map_err(|_| {
             format!(
                 "base_revision_id '{}' is not a valid UUID",
@@ -1934,8 +2046,7 @@ impl AtlasMcp {
             base_revision_id,
         };
 
-        let doc = self
-            .client
+        let doc = client
             .update_content(&params.workspace, &params.slug, body)
             .await
             .map_err(|e| enrich_client_error(e, "update_document_content"))?;
@@ -1951,10 +2062,12 @@ impl AtlasMcp {
     async fn delete_document(
         &self,
         Parameters(params): Parameters<DeleteDocumentParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
         require_confirm(params.confirm, "document", &params.slug)?;
 
-        self.client
+        client
             .delete_document(&params.workspace, &params.slug)
             .await
             .map_err(|e| enrich_client_error(e, "delete_document"))?;
@@ -1972,7 +2085,10 @@ impl AtlasMcp {
     async fn move_document(
         &self,
         Parameters(params): Parameters<MoveDocumentParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
         let folder_id = params
             .folder_id
             .as_deref()
@@ -1984,8 +2100,7 @@ impl AtlasMcp {
 
         let body = MoveDocumentRequest { folder_id };
 
-        let doc = self
-            .client
+        let doc = client
             .move_document(&params.workspace, &params.slug, body)
             .await
             .map_err(|e| enrich_client_error(e, "move_document"))?;
@@ -2000,7 +2115,10 @@ impl AtlasMcp {
     async fn copy_document(
         &self,
         Parameters(params): Parameters<CopyDocumentParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
         let folder_id = params
             .folder_id
             .as_deref()
@@ -2010,8 +2128,7 @@ impl AtlasMcp {
             })
             .transpose()?;
 
-        let doc = self
-            .client
+        let doc = client
             .copy_document(&params.workspace, &params.slug, folder_id)
             .await
             .map_err(|e| enrich_client_error(e, "copy_document"))?;
@@ -2026,7 +2143,10 @@ impl AtlasMcp {
     async fn create_folder(
         &self,
         Parameters(params): Parameters<CreateFolderParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
         let parent_folder_id = params
             .parent_folder_id
             .as_deref()
@@ -2041,8 +2161,7 @@ impl AtlasMcp {
             parent_folder_id,
         };
 
-        let folder = self
-            .client
+        let folder = client
             .create_folder(&params.workspace, &params.project, body)
             .await
             .map_err(|e| enrich_client_error(e, "create_folder"))?;
@@ -2055,7 +2174,10 @@ impl AtlasMcp {
     async fn rename_folder(
         &self,
         Parameters(params): Parameters<RenameFolderParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
         let folder_id = params
             .folder_id
             .parse::<uuid::Uuid>()
@@ -2063,8 +2185,7 @@ impl AtlasMcp {
 
         let body = RenameFolderRequest { name: params.name };
 
-        let folder = self
-            .client
+        let folder = client
             .rename_folder(&params.workspace, folder_id, body)
             .await
             .map_err(|e| enrich_client_error(e, "rename_folder"))?;
@@ -2080,7 +2201,10 @@ impl AtlasMcp {
     async fn move_folder(
         &self,
         Parameters(params): Parameters<MoveFolderParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
         let folder_id = params
             .folder_id
             .parse::<uuid::Uuid>()
@@ -2097,8 +2221,7 @@ impl AtlasMcp {
 
         let body = MoveFolderRequest { parent_folder_id };
 
-        let folder = self
-            .client
+        let folder = client
             .move_folder(&params.workspace, folder_id, body)
             .await
             .map_err(|e| enrich_client_error(e, "move_folder"))?;
@@ -2114,7 +2237,10 @@ impl AtlasMcp {
     async fn copy_folder(
         &self,
         Parameters(params): Parameters<CopyFolderParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
         let folder_id = params
             .folder_id
             .parse::<uuid::Uuid>()
@@ -2129,8 +2255,7 @@ impl AtlasMcp {
             })
             .transpose()?;
 
-        let folder = self
-            .client
+        let folder = client
             .copy_folder(&params.workspace, folder_id, parent_folder_id)
             .await
             .map_err(|e| enrich_client_error(e, "copy_folder"))?;
@@ -2146,7 +2271,9 @@ impl AtlasMcp {
     async fn delete_folder(
         &self,
         Parameters(params): Parameters<DeleteFolderParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
         require_confirm(params.confirm, "folder", &params.folder_id)?;
 
         let folder_id = params
@@ -2154,7 +2281,7 @@ impl AtlasMcp {
             .parse::<uuid::Uuid>()
             .map_err(|_| format!("folder_id '{}' is not a valid UUID", params.folder_id))?;
 
-        self.client
+        client
             .delete_folder(&params.workspace, folder_id)
             .await
             .map_err(|e| enrich_client_error(e, "delete_folder"))?;
@@ -2170,11 +2297,13 @@ impl AtlasMcp {
     async fn create_board(
         &self,
         Parameters(params): Parameters<CreateBoardParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
         let body = CreateBoardRequest { name: params.name };
 
-        let board = self
-            .client
+        let board = client
             .create_board(&params.workspace, &params.project, body)
             .await
             .map_err(|e| enrich_client_error(e, "create_board"))?;
@@ -2192,9 +2321,12 @@ impl AtlasMcp {
     async fn update_board(
         &self,
         Parameters(params): Parameters<UpdateBoardParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
         let board_id_str = self
-            .resolve_board_id(&params.workspace, &params.board)
+            .resolve_board_id(&client, &params.workspace, &params.board)
             .await?;
 
         let board_uuid: uuid::Uuid = board_id_str
@@ -2203,8 +2335,7 @@ impl AtlasMcp {
 
         let body = UpdateBoardRequest { name: params.name };
 
-        let board = self
-            .client
+        let board = client
             .update_board(&params.workspace, board_uuid, body)
             .await
             .map_err(|e| enrich_client_error(e, "update_board"))?;
@@ -2225,18 +2356,20 @@ impl AtlasMcp {
     async fn delete_board(
         &self,
         Parameters(params): Parameters<DeleteBoardParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
         require_confirm(params.confirm, "board", &params.board)?;
 
         let board_id_str = self
-            .resolve_board_id(&params.workspace, &params.board)
+            .resolve_board_id(&client, &params.workspace, &params.board)
             .await?;
 
         let board_uuid: uuid::Uuid = board_id_str
             .parse()
             .map_err(|_| format!("resolved board '{board_id_str}' is not a valid UUID"))?;
 
-        self.client
+        client
             .delete_board(&params.workspace, board_uuid)
             .await
             .map_err(|e| enrich_client_error(e, "delete_board"))?;
@@ -2254,9 +2387,12 @@ impl AtlasMcp {
     async fn create_column(
         &self,
         Parameters(params): Parameters<CreateColumnParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
         let board_id_str = self
-            .resolve_board_id(&params.workspace, &params.board)
+            .resolve_board_id(&client, &params.workspace, &params.board)
             .await?;
 
         let board_uuid: uuid::Uuid = board_id_str
@@ -2270,8 +2406,7 @@ impl AtlasMcp {
             after: params.after,
         };
 
-        let col = self
-            .client
+        let col = client
             .create_column(&params.workspace, board_uuid, body)
             .await
             .map_err(|e| enrich_client_error(e, "create_column"))?;
@@ -2287,17 +2422,19 @@ impl AtlasMcp {
     async fn update_column(
         &self,
         Parameters(params): Parameters<UpdateColumnParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
         let board_id_str = self
-            .resolve_board_id(&params.workspace, &params.board)
+            .resolve_board_id(&client, &params.workspace, &params.board)
             .await?;
 
         let board_uuid: uuid::Uuid = board_id_str
             .parse()
             .map_err(|_| format!("resolved board '{board_id_str}' is not a valid UUID"))?;
 
-        let cols = self
-            .client
+        let cols = client
             .list_columns(&params.workspace, board_uuid)
             .await
             .map_err(|e| enrich_client_error(e, "list_columns"))?;
@@ -2313,8 +2450,7 @@ impl AtlasMcp {
             after: params.after,
         };
 
-        let col = self
-            .client
+        let col = client
             .update_column(&params.workspace, board_uuid, column_id, body)
             .await
             .map_err(|e| enrich_client_error(e, "update_column"))?;
@@ -2330,26 +2466,27 @@ impl AtlasMcp {
     async fn delete_column(
         &self,
         Parameters(params): Parameters<DeleteColumnParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
         require_confirm(params.confirm, "column", &params.column)?;
 
         let board_id_str = self
-            .resolve_board_id(&params.workspace, &params.board)
+            .resolve_board_id(&client, &params.workspace, &params.board)
             .await?;
 
         let board_uuid: uuid::Uuid = board_id_str
             .parse()
             .map_err(|_| format!("resolved board '{board_id_str}' is not a valid UUID"))?;
 
-        let cols = self
-            .client
+        let cols = client
             .list_columns(&params.workspace, board_uuid)
             .await
             .map_err(|e| enrich_client_error(e, "list_columns"))?;
 
         let column_id = resolve_column_id_on_board(&params.column, &cols)?;
 
-        self.client
+        client
             .delete_column(&params.workspace, board_uuid, column_id)
             .await
             .map_err(|e| enrich_client_error(e, "delete_column"))?;
@@ -2368,11 +2505,13 @@ impl AtlasMcp {
     async fn create_tag(
         &self,
         Parameters(params): Parameters<CreateTagParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
         let body = CreateTagRequest { name: params.name };
 
-        let tag = self
-            .client
+        let tag = client
             .create_tag(&params.workspace, body)
             .await
             .map_err(|e| enrich_client_error(e, "create_tag"))?;
@@ -2388,7 +2527,10 @@ impl AtlasMcp {
     async fn update_tag(
         &self,
         Parameters(params): Parameters<UpdateTagParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
         let tag_id: uuid::Uuid = params
             .tag_id
             .parse()
@@ -2399,8 +2541,7 @@ impl AtlasMcp {
             color: params.color,
         };
 
-        let tag = self
-            .client
+        let tag = client
             .update_tag(&params.workspace, tag_id, body)
             .await
             .map_err(|e| enrich_client_error(e, "update_tag"))?;
@@ -2415,13 +2556,16 @@ impl AtlasMcp {
     async fn delete_tag(
         &self,
         Parameters(params): Parameters<DeleteTagParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
         let tag_id: uuid::Uuid = params
             .tag_id
             .parse()
             .map_err(|_| format!("tag_id '{}' is not a valid UUID", params.tag_id))?;
 
-        self.client
+        client
             .delete_tag(&params.workspace, tag_id)
             .await
             .map_err(|e| enrich_client_error(e, "delete_tag"))?;
@@ -2445,7 +2589,9 @@ impl AtlasMcp {
     async fn add_task_reference(
         &self,
         Parameters(params): Parameters<AddTaskReferenceParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
         validate_reference_kind(&params.kind)?;
 
         let target_doc_uuid: Option<uuid::Uuid> = params
@@ -2468,8 +2614,7 @@ impl AtlasMcp {
             target_document_id: target_doc_uuid,
         };
 
-        let reference = self
-            .client
+        let reference = client
             .create_reference(&params.workspace, &params.readable_id, body)
             .await
             .map_err(|e| enrich_client_error(e, "add_task_reference"))?;
@@ -2483,13 +2628,16 @@ impl AtlasMcp {
     async fn remove_task_reference(
         &self,
         Parameters(params): Parameters<RemoveTaskReferenceParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
         let reference_id: uuid::Uuid = params
             .reference_id
             .parse()
             .map_err(|_| format!("reference_id '{}' is not a valid UUID", params.reference_id))?;
 
-        self.client
+        client
             .delete_reference(&params.workspace, &params.readable_id, reference_id)
             .await
             .map_err(|e| enrich_client_error(e, "remove_task_reference"))?;
@@ -2505,15 +2653,17 @@ impl AtlasMcp {
     async fn add_checklist_item(
         &self,
         Parameters(params): Parameters<AddChecklistItemParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
         let body = CreateChecklistItemRequest {
             title: params.title,
             before: params.before,
             after: params.after,
         };
 
-        let item = self
-            .client
+        let item = client
             .create_checklist_item(&params.workspace, &params.readable_id, body)
             .await
             .map_err(|e| enrich_client_error(e, "add_checklist_item"))?;
@@ -2529,7 +2679,10 @@ impl AtlasMcp {
     async fn update_checklist_item(
         &self,
         Parameters(params): Parameters<UpdateChecklistItemParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
         let item_id: uuid::Uuid = params
             .item_id
             .parse()
@@ -2542,8 +2695,7 @@ impl AtlasMcp {
             after: params.after,
         };
 
-        let item = self
-            .client
+        let item = client
             .update_checklist_item(&params.workspace, &params.readable_id, item_id, body)
             .await
             .map_err(|e| enrich_client_error(e, "update_checklist_item"))?;
@@ -2556,13 +2708,16 @@ impl AtlasMcp {
     async fn delete_checklist_item(
         &self,
         Parameters(params): Parameters<DeleteChecklistItemParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
         let item_id: uuid::Uuid = params
             .item_id
             .parse()
             .map_err(|_| format!("item_id '{}' is not a valid UUID", params.item_id))?;
 
-        self.client
+        client
             .delete_checklist_item(&params.workspace, &params.readable_id, item_id)
             .await
             .map_err(|e| enrich_client_error(e, "delete_checklist_item"))?;
@@ -2581,22 +2736,24 @@ impl AtlasMcp {
     async fn promote_checklist_item(
         &self,
         Parameters(params): Parameters<PromoteChecklistItemParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
         let item_id: uuid::Uuid = params
             .item_id
             .parse()
             .map_err(|_| format!("item_id '{}' is not a valid UUID", params.item_id))?;
 
         let board_id_str = self
-            .resolve_board_id(&params.workspace, &params.board)
+            .resolve_board_id(&client, &params.workspace, &params.board)
             .await?;
 
         let board_uuid: uuid::Uuid = board_id_str
             .parse()
             .map_err(|_| format!("resolved board '{board_id_str}' is not a valid UUID"))?;
 
-        let cols = self
-            .client
+        let cols = client
             .list_columns(&params.workspace, board_uuid)
             .await
             .map_err(|e| enrich_client_error(e, "list_columns"))?;
@@ -2608,8 +2765,7 @@ impl AtlasMcp {
             column_id,
         };
 
-        let promotion = self
-            .client
+        let promotion = client
             .promote_checklist_item(&params.workspace, &params.readable_id, item_id, body)
             .await
             .map_err(|e| enrich_client_error(e, "promote_checklist_item"))?;
@@ -2622,13 +2778,15 @@ impl AtlasMcp {
     async fn create_subtask(
         &self,
         Parameters(params): Parameters<CreateSubtaskParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
         let body = CreateSubtaskRequest {
             title: params.title,
         };
 
-        let task = self
-            .client
+        let task = client
             .create_subtask(&params.workspace, &params.readable_id, body)
             .await
             .map_err(|e| enrich_client_error(e, "create_subtask"))?;
@@ -2641,9 +2799,11 @@ impl AtlasMcp {
     async fn promote_subtask(
         &self,
         Parameters(params): Parameters<PromoteSubtaskParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
-        let task = self
-            .client
+        let client = self.resolve_client(&ctx)?;
+
+        let task = client
             .promote_subtask(&params.workspace, &params.readable_id)
             .await
             .map_err(|e| enrich_client_error(e, "promote_subtask"))?;
@@ -2662,7 +2822,10 @@ impl AtlasMcp {
     async fn create_project(
         &self,
         Parameters(params): Parameters<CreateProjectParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
         let body = CreateProjectRequest {
             name: params.name,
             slug: params.slug,
@@ -2671,8 +2834,7 @@ impl AtlasMcp {
             visibility_role: params.visibility_role,
         };
 
-        let project = self
-            .client
+        let project = client
             .create_project(&params.workspace, body)
             .await
             .map_err(|e| enrich_client_error(e, "create_project"))?;
@@ -2689,7 +2851,10 @@ impl AtlasMcp {
     async fn update_project(
         &self,
         Parameters(params): Parameters<UpdateProjectParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
         let body = UpdateProjectRequest {
             name: params.name,
             visibility: params.visibility,
@@ -2697,8 +2862,7 @@ impl AtlasMcp {
             task_prefix: params.task_prefix,
         };
 
-        let project = self
-            .client
+        let project = client
             .update_project(&params.workspace, &params.slug, body)
             .await
             .map_err(|e| enrich_client_error(e, "update_project"))?;
@@ -2713,10 +2877,12 @@ impl AtlasMcp {
     async fn delete_project(
         &self,
         Parameters(params): Parameters<DeleteProjectParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
         require_confirm(params.confirm, "project", &params.slug)?;
 
-        self.client
+        client
             .delete_project(&params.workspace, &params.slug)
             .await
             .map_err(|e| enrich_client_error(e, "delete_project"))?;
@@ -2735,7 +2901,10 @@ impl AtlasMcp {
     async fn create_status_template(
         &self,
         Parameters(params): Parameters<CreateStatusTemplateParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
         let body = CreateStatusTemplateRequest {
             name: params.name,
             color: params.color,
@@ -2743,8 +2912,7 @@ impl AtlasMcp {
             after: params.after,
         };
 
-        let template = self
-            .client
+        let template = client
             .create_status_template(&params.workspace, body)
             .await
             .map_err(|e| enrich_client_error(e, "create_status_template"))?;
@@ -2759,7 +2927,10 @@ impl AtlasMcp {
     async fn update_status_template(
         &self,
         Parameters(params): Parameters<UpdateStatusTemplateParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
         let id: uuid::Uuid = params
             .id
             .parse()
@@ -2774,8 +2945,7 @@ impl AtlasMcp {
             after: params.after,
         };
 
-        let template = self
-            .client
+        let template = client
             .update_status_template(&params.workspace, id, body)
             .await
             .map_err(|e| enrich_client_error(e, "update_status_template"))?;
@@ -2791,13 +2961,16 @@ impl AtlasMcp {
     async fn delete_status_template(
         &self,
         Parameters(params): Parameters<DeleteStatusTemplateParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
         let id: uuid::Uuid = params
             .id
             .parse()
             .map_err(|_| format!("invalid UUID for id: '{}'", params.id))?;
 
-        self.client
+        client
             .delete_status_template(&params.workspace, id)
             .await
             .map_err(|e| enrich_client_error(e, "delete_status_template"))?;
@@ -2815,14 +2988,16 @@ impl AtlasMcp {
     async fn create_saved_search(
         &self,
         Parameters(params): Parameters<CreateSavedSearchParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
         let body = CreateSavedSearchRequest {
             name: params.name,
             query: params.query,
         };
 
-        let search = self
-            .client
+        let search = client
             .create_saved_search(&params.workspace, body)
             .await
             .map_err(|e| enrich_client_error(e, "create_saved_search"))?;
@@ -2837,7 +3012,10 @@ impl AtlasMcp {
     async fn rename_saved_search(
         &self,
         Parameters(params): Parameters<RenameSavedSearchParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
         let id: uuid::Uuid = params
             .id
             .parse()
@@ -2845,8 +3023,7 @@ impl AtlasMcp {
 
         let body = RenameSavedSearchRequest { name: params.name };
 
-        let search = self
-            .client
+        let search = client
             .rename_saved_search(&params.workspace, id, body)
             .await
             .map_err(|e| enrich_client_error(e, "rename_saved_search"))?;
@@ -2862,13 +3039,16 @@ impl AtlasMcp {
     async fn delete_saved_search(
         &self,
         Parameters(params): Parameters<DeleteSavedSearchParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
         let id: uuid::Uuid = params
             .id
             .parse()
             .map_err(|_| format!("invalid UUID for id: '{}'", params.id))?;
 
-        self.client
+        client
             .delete_saved_search(&params.workspace, id)
             .await
             .map_err(|e| enrich_client_error(e, "delete_saved_search"))?;
@@ -2887,7 +3067,10 @@ impl AtlasMcp {
     async fn create_task_view(
         &self,
         Parameters(params): Parameters<CreateTaskViewParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
         let filters: TaskViewFiltersDto =
             serde_json::from_value(params.filters).map_err(|e| format!("invalid filters: {e}"))?;
 
@@ -2896,8 +3079,7 @@ impl AtlasMcp {
             filters,
         };
 
-        let view = self
-            .client
+        let view = client
             .create_task_view(&params.workspace, body)
             .await
             .map_err(|e| enrich_client_error(e, "create_task_view"))?;
@@ -2914,7 +3096,10 @@ impl AtlasMcp {
     async fn update_task_view(
         &self,
         Parameters(params): Parameters<UpdateTaskViewParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
         let id: uuid::Uuid = params
             .id
             .parse()
@@ -2928,8 +3113,7 @@ impl AtlasMcp {
             filters,
         };
 
-        let view = self
-            .client
+        let view = client
             .update_task_view(&params.workspace, id, body)
             .await
             .map_err(|e| enrich_client_error(e, "update_task_view"))?;
@@ -2945,13 +3129,16 @@ impl AtlasMcp {
     async fn delete_task_view(
         &self,
         Parameters(params): Parameters<DeleteTaskViewParams>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
         let id: uuid::Uuid = params
             .id
             .parse()
             .map_err(|_| format!("invalid UUID for id: '{}'", params.id))?;
 
-        self.client
+        client
             .delete_task_view(&params.workspace, id)
             .await
             .map_err(|e| enrich_client_error(e, "delete_task_view"))?;
@@ -2970,17 +3157,17 @@ impl AtlasMcp {
     /// mitigated by encouraging callers to supply `board`.
     async fn resolve_column_ids(
         &self,
+        client: &AtlasClient,
         ws: &str,
         board: Option<&str>,
         status_name: &str,
     ) -> Result<Vec<String>, String> {
         if let Some(board_ref) = board {
-            let board_id = self.resolve_board_id(ws, board_ref).await?;
+            let board_id = self.resolve_board_id(client, ws, board_ref).await?;
             let board_uuid: uuid::Uuid = board_id
                 .parse()
                 .map_err(|_| format!("resolved board_id '{board_id}' is not a valid UUID"))?;
-            let cols = self
-                .client
+            let cols = client
                 .list_columns(ws, board_uuid)
                 .await
                 .map_err(|e| format!("list_columns failed: {e}"))?;
@@ -2992,8 +3179,7 @@ impl AtlasMcp {
         let mut project_cursor: Option<String> = None;
 
         loop {
-            let projects = self
-                .client
+            let projects = client
                 .list_projects(ws, project_cursor.as_deref(), Some(200))
                 .await
                 .map_err(|e| format!("list_projects failed: {e}"))?;
@@ -3001,8 +3187,7 @@ impl AtlasMcp {
             for project in &projects.items {
                 let mut board_cursor: Option<String> = None;
                 loop {
-                    let boards = self
-                        .client
+                    let boards = client
                         .list_boards(ws, &project.slug, board_cursor.as_deref(), Some(200))
                         .await
                         .map_err(|e| {
@@ -3010,7 +3195,7 @@ impl AtlasMcp {
                         })?;
 
                     for board in &boards.items {
-                        let cols = self.client.list_columns(ws, board.id).await.map_err(|e| {
+                        let cols = client.list_columns(ws, board.id).await.map_err(|e| {
                             format!("list_columns for board '{}' failed: {e}", board.name)
                         })?;
                         all_cols.extend(cols);
@@ -3036,7 +3221,12 @@ impl AtlasMcp {
     ///
     /// When the input parses as a UUID it is returned directly. Otherwise walks
     /// all projects' boards to find the first partial name match.
-    async fn resolve_board_id(&self, ws: &str, board_ref: &str) -> Result<String, String> {
+    async fn resolve_board_id(
+        &self,
+        client: &AtlasClient,
+        ws: &str,
+        board_ref: &str,
+    ) -> Result<String, String> {
         if uuid::Uuid::parse_str(board_ref).is_ok() {
             return Ok(board_ref.to_string());
         }
@@ -3045,8 +3235,7 @@ impl AtlasMcp {
         let mut project_cursor: Option<String> = None;
 
         loop {
-            let projects = self
-                .client
+            let projects = client
                 .list_projects(ws, project_cursor.as_deref(), Some(200))
                 .await
                 .map_err(|e| format!("list_projects failed: {e}"))?;
@@ -3054,8 +3243,7 @@ impl AtlasMcp {
             for project in &projects.items {
                 let mut board_cursor: Option<String> = None;
                 loop {
-                    let boards = self
-                        .client
+                    let boards = client
                         .list_boards(ws, &project.slug, board_cursor.as_deref(), Some(200))
                         .await
                         .map_err(|e| format!("list_boards failed: {e}"))?;
@@ -3117,12 +3305,12 @@ mod tests {
     }
 
     #[test]
-    fn clone_shares_client_arc() {
+    fn clone_shares_http_pool() {
         let server = AtlasMcp::new("http://localhost:8080", "test-token").unwrap();
         let cloned = server.clone();
-        assert!(std::ptr::eq(
-            server.client() as *const AtlasClient,
-            cloned.client() as *const AtlasClient
+        assert!(std::sync::Arc::ptr_eq(
+            &server.shared_http,
+            &cloned.shared_http
         ));
     }
 

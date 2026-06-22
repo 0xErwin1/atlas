@@ -65,10 +65,13 @@ time              = "0.3"
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 
 # CLI
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive", "env"] }
 
 # MCP — pinned exact version confirmed at scaffold time
-rmcp = { version = "=1.7.0", features = ["server", "transport-io", "macros"] }
+rmcp = { version = "=1.7.0", features = ["server", "transport-io", "macros", "transport-streamable-http-server"] }
+
+# HTTP plumbing for MCP request-parts access in tool handlers
+http = "1"
 
 # Shared infra
 tempfile           = "3"
