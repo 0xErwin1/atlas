@@ -10,7 +10,11 @@ use atlas_api::{
         boards_tasks::{BoardSummaryDto, ColumnDto, ReferenceDto, TaskDto, TaskSummaryDto},
         documents::{DocumentDto, DocumentSummaryDto},
         folders::FolderDto,
+        saved_searches::SavedSearchDto,
         search::SearchHitDto,
+        tags::TagDto,
+        task_views::TaskViewDto,
+        {PrincipalDto, ProjectDto, WorkspaceDto},
     },
     pagination::Page,
 };
@@ -382,6 +386,114 @@ pub(crate) fn project_reference(r: ReferenceDto) -> Value {
 }
 
 // ---------------------------------------------------------------------------
+// Tag projection (list_tags rows)
+// ---------------------------------------------------------------------------
+
+/// Compact projection of a workspace tag.
+///
+/// `workspace_id` and timestamps are dropped; `color` is omitted when absent.
+pub(crate) fn project_tag(tag: TagDto) -> Value {
+    let mut map = serde_json::Map::new();
+    map.insert("id".into(), json!(tag.id));
+    map.insert("name".into(), json!(tag.name));
+
+    if let Some(color) = tag.color {
+        map.insert("color".into(), json!(color));
+    }
+
+    Value::Object(map)
+}
+
+// ---------------------------------------------------------------------------
+// Principal projection (list_members rows)
+// ---------------------------------------------------------------------------
+
+/// Compact projection of a workspace member or API-key principal.
+///
+/// Exposes `principal_type`, `id`, and `display` — the minimum needed to
+/// resolve a human name to the id format required by assignee filters.
+pub(crate) fn project_principal(p: PrincipalDto) -> Value {
+    json!({
+        "principal_type": p.principal_type,
+        "id": p.id,
+        "display": p.display,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Workspace projection (list_workspaces rows)
+// ---------------------------------------------------------------------------
+
+/// Compact projection of a workspace.
+///
+/// `created_at` is dropped; the agent needs the slug to scope subsequent calls.
+pub(crate) fn project_workspace(ws: WorkspaceDto) -> Value {
+    json!({
+        "id": ws.id,
+        "name": ws.name,
+        "slug": ws.slug,
+        "updated_at": ws.updated_at,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Project projection (list_projects rows)
+// ---------------------------------------------------------------------------
+
+/// Compact projection of a project.
+///
+/// `workspace_id` and `created_at` are dropped. `visibility_role` is omitted
+/// when absent (only present on non-public projects with an explicit grant role).
+pub(crate) fn project_project(p: ProjectDto) -> Value {
+    let mut map = serde_json::Map::new();
+    map.insert("id".into(), json!(p.id));
+    map.insert("name".into(), json!(p.name));
+    map.insert("slug".into(), json!(p.slug));
+    map.insert("task_prefix".into(), json!(p.task_prefix));
+    map.insert("visibility".into(), json!(p.visibility));
+    map.insert("updated_at".into(), json!(p.updated_at));
+
+    if let Some(role) = p.visibility_role {
+        map.insert("visibility_role".into(), json!(role));
+    }
+
+    Value::Object(map)
+}
+
+// ---------------------------------------------------------------------------
+// Saved search projection (list_saved_searches rows)
+// ---------------------------------------------------------------------------
+
+/// Compact projection of a saved search.
+///
+/// `workspace_id` and timestamps are dropped; `query` is retained so the agent
+/// can inspect or reuse the filter string directly.
+pub(crate) fn project_saved_search(s: SavedSearchDto) -> Value {
+    json!({
+        "id": s.id,
+        "name": s.name,
+        "query": s.query,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Task view projection (list_task_views rows)
+// ---------------------------------------------------------------------------
+
+/// Compact projection of a saved task view.
+///
+/// `workspace_id` and timestamps are dropped; `filters` is passed through
+/// verbatim — it is already a small structured object with skip_serializing_if
+/// guards that keep absent fields out.
+pub(crate) fn project_task_view(v: TaskViewDto) -> Value {
+    json!({
+        "id": v.id,
+        "name": v.name,
+        "filters": v.filters,
+    })
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -390,10 +502,14 @@ pub(crate) fn project_reference(r: ReferenceDto) -> Value {
 mod tests {
     use super::*;
     use atlas_api::dtos::{
+        PrincipalDto, ProjectDto, WorkspaceDto,
         boards_tasks::{BoardSummaryDto, ColumnDto, ReferenceDto, TaskDto, TaskSummaryDto},
         documents::{ActorDto, DocumentDto, DocumentSummaryDto},
         folders::FolderDto,
+        saved_searches::SavedSearchDto,
         search::{SearchHitDto, SearchKindDto},
+        tags::TagDto,
+        task_views::{TaskViewDto, TaskViewFiltersDto},
     };
     use chrono::Utc;
     use uuid::Uuid;
@@ -999,5 +1115,232 @@ mod tests {
     fn column_projection_omits_color_when_absent() {
         let val = project_column(make_column_dto(None));
         assert!(val.get("color").is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // project_tag
+    // -----------------------------------------------------------------------
+
+    fn make_tag(color: Option<&str>) -> TagDto {
+        TagDto {
+            id: fixed_uuid(),
+            workspace_id: fixed_uuid(),
+            name: "backend".into(),
+            color: color.map(String::from),
+            created_at: now(),
+            updated_at: now(),
+        }
+    }
+
+    #[test]
+    fn tag_projection_includes_id_and_name() {
+        let val = project_tag(make_tag(None));
+        assert_eq!(val["name"], "backend");
+        assert!(!val["id"].is_null());
+    }
+
+    #[test]
+    fn tag_projection_drops_workspace_id_and_timestamps() {
+        let val = project_tag(make_tag(None));
+        assert!(val.get("workspace_id").is_none());
+        assert!(val.get("created_at").is_none());
+        assert!(val.get("updated_at").is_none());
+    }
+
+    #[test]
+    fn tag_projection_includes_color_when_present() {
+        let val = project_tag(make_tag(Some("#3B82F6")));
+        assert_eq!(val["color"], "#3B82F6");
+    }
+
+    #[test]
+    fn tag_projection_omits_color_when_absent() {
+        let val = project_tag(make_tag(None));
+        assert!(val.get("color").is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // project_principal
+    // -----------------------------------------------------------------------
+
+    fn make_principal(principal_type: &str) -> PrincipalDto {
+        PrincipalDto {
+            principal_type: principal_type.into(),
+            id: fixed_uuid(),
+            display: "Alice".into(),
+        }
+    }
+
+    #[test]
+    fn principal_projection_includes_all_three_fields() {
+        let val = project_principal(make_principal("user"));
+        assert_eq!(val["principal_type"], "user");
+        assert!(!val["id"].is_null());
+        assert_eq!(val["display"], "Alice");
+    }
+
+    #[test]
+    fn principal_projection_works_for_api_key_type() {
+        let val = project_principal(make_principal("api_key"));
+        assert_eq!(val["principal_type"], "api_key");
+    }
+
+    // -----------------------------------------------------------------------
+    // project_workspace
+    // -----------------------------------------------------------------------
+
+    fn make_workspace() -> WorkspaceDto {
+        WorkspaceDto {
+            id: fixed_uuid(),
+            name: "My Workspace".into(),
+            slug: "my-ws".into(),
+            created_at: now(),
+            updated_at: now(),
+        }
+    }
+
+    #[test]
+    fn workspace_projection_includes_id_name_slug_updated_at() {
+        let val = project_workspace(make_workspace());
+        assert_eq!(val["name"], "My Workspace");
+        assert_eq!(val["slug"], "my-ws");
+        assert!(!val["id"].is_null());
+        assert!(!val["updated_at"].is_null());
+    }
+
+    #[test]
+    fn workspace_projection_drops_created_at() {
+        let val = project_workspace(make_workspace());
+        assert!(val.get("created_at").is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // project_project
+    // -----------------------------------------------------------------------
+
+    fn make_project(visibility_role: Option<&str>) -> ProjectDto {
+        ProjectDto {
+            id: fixed_uuid(),
+            workspace_id: fixed_uuid(),
+            name: "Atlas".into(),
+            slug: "atlas".into(),
+            task_prefix: "ATL".into(),
+            visibility: "workspace".into(),
+            visibility_role: visibility_role.map(String::from),
+            created_at: now(),
+            updated_at: now(),
+        }
+    }
+
+    #[test]
+    fn project_projection_includes_required_fields() {
+        let val = project_project(make_project(None));
+        assert_eq!(val["name"], "Atlas");
+        assert_eq!(val["slug"], "atlas");
+        assert_eq!(val["task_prefix"], "ATL");
+        assert_eq!(val["visibility"], "workspace");
+        assert!(!val["id"].is_null());
+        assert!(!val["updated_at"].is_null());
+    }
+
+    #[test]
+    fn project_projection_drops_workspace_id_and_created_at() {
+        let val = project_project(make_project(None));
+        assert!(val.get("workspace_id").is_none());
+        assert!(val.get("created_at").is_none());
+    }
+
+    #[test]
+    fn project_projection_includes_visibility_role_when_present() {
+        let val = project_project(make_project(Some("editor")));
+        assert_eq!(val["visibility_role"], "editor");
+    }
+
+    #[test]
+    fn project_projection_omits_visibility_role_when_absent() {
+        let val = project_project(make_project(None));
+        assert!(val.get("visibility_role").is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // project_saved_search
+    // -----------------------------------------------------------------------
+
+    fn make_saved_search() -> SavedSearchDto {
+        SavedSearchDto {
+            id: fixed_uuid(),
+            workspace_id: fixed_uuid(),
+            name: "Open bugs".into(),
+            query: "status:open tag:bug".into(),
+            created_at: now(),
+            updated_at: now(),
+        }
+    }
+
+    #[test]
+    fn saved_search_projection_includes_id_name_query() {
+        let val = project_saved_search(make_saved_search());
+        assert_eq!(val["name"], "Open bugs");
+        assert_eq!(val["query"], "status:open tag:bug");
+        assert!(!val["id"].is_null());
+    }
+
+    #[test]
+    fn saved_search_projection_drops_workspace_id_and_timestamps() {
+        let val = project_saved_search(make_saved_search());
+        assert!(val.get("workspace_id").is_none());
+        assert!(val.get("created_at").is_none());
+        assert!(val.get("updated_at").is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // project_task_view
+    // -----------------------------------------------------------------------
+
+    fn make_task_view(filters: TaskViewFiltersDto) -> TaskViewDto {
+        TaskViewDto {
+            id: fixed_uuid(),
+            workspace_id: fixed_uuid(),
+            name: "My open tasks".into(),
+            filters,
+            created_at: now(),
+            updated_at: now(),
+        }
+    }
+
+    #[test]
+    fn task_view_projection_includes_id_name_and_filters() {
+        let filters = TaskViewFiltersDto {
+            sort: Some("updated_at_desc".into()),
+            priorities: vec!["high".into()],
+            ..Default::default()
+        };
+        let val = project_task_view(make_task_view(filters));
+        assert_eq!(val["name"], "My open tasks");
+        assert!(!val["id"].is_null());
+        assert!(!val["filters"].is_null());
+        assert_eq!(val["filters"]["sort"], "updated_at_desc");
+    }
+
+    #[test]
+    fn task_view_projection_drops_workspace_id_and_timestamps() {
+        let val = project_task_view(make_task_view(TaskViewFiltersDto::default()));
+        assert!(val.get("workspace_id").is_none());
+        assert!(val.get("created_at").is_none());
+        assert!(val.get("updated_at").is_none());
+    }
+
+    #[test]
+    fn task_view_filters_empty_vec_fields_omitted_in_output() {
+        let val = project_task_view(make_task_view(TaskViewFiltersDto::default()));
+        let filters = &val["filters"];
+        assert!(
+            filters.get("priorities").is_none(),
+            "empty priorities Vec should be absent (skip_serializing_if)"
+        );
+        assert!(
+            filters.get("labels").is_none(),
+            "empty labels Vec should be absent"
+        );
     }
 }

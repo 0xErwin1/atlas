@@ -14,12 +14,14 @@ use rmcp::{
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
+use serde_json::json;
 
 use response::{
     Detail, envelope_page, match_columns_by_name, parse_csv, parse_detail, project_board_summary,
     project_column, project_document_compact, project_document_full, project_document_summary,
-    project_folder, project_reference, project_search_hit, project_task_compact, project_task_full,
-    project_task_row, wrap_vec,
+    project_folder, project_principal, project_project, project_reference, project_saved_search,
+    project_search_hit, project_tag, project_task_compact, project_task_full, project_task_row,
+    project_task_view, project_workspace, wrap_vec,
 };
 
 const ATLAS_INSTRUCTIONS: &str = "\
@@ -31,6 +33,11 @@ with status/board/assignee/label filters, and `get_task` for a single task's det
 Use `list_documents` to enumerate documents in a project, `list_folders` for the \
 folder hierarchy, `list_boards` to discover boards, and `list_columns` to map \
 column names to IDs for use in status filters. \
+For workspace context discovery use: `list_workspaces` to find available workspaces, \
+`list_projects` to enumerate projects in a workspace, `list_members` to resolve \
+member names to IDs for assignee filters, `list_tags` for the tag registry, \
+`list_used_labels` for labels currently in use on tasks, `list_saved_searches` and \
+`list_task_views` for the caller's saved filters. \
 Prefer narrow queries over broad ones; follow up with targeted reads rather than \
 enumerating all results.";
 
@@ -206,6 +213,60 @@ pub struct ListColumnsParams {
     pub workspace: String,
     /// Board name (partial match) or UUID. Returns all columns of that board.
     pub board: String,
+}
+
+/// Parameters accepted by the `list_tags` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ListTagsParams {
+    /// Workspace slug.
+    pub workspace: String,
+}
+
+/// Parameters accepted by the `list_used_labels` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ListUsedLabelsParams {
+    /// Workspace slug.
+    pub workspace: String,
+}
+
+/// Parameters accepted by the `list_members` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ListMembersParams {
+    /// Workspace slug.
+    pub workspace: String,
+}
+
+/// Parameters accepted by the `list_workspaces` tool.
+///
+/// No parameters required — returns all workspaces accessible to the caller.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ListWorkspacesParams {}
+
+/// Parameters accepted by the `list_projects` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ListProjectsParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Pass `next_cursor` from the previous response to fetch the next page.
+    #[serde(default)]
+    pub cursor: Option<String>,
+    /// Page size (default 20, max 200).
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+/// Parameters accepted by the `list_saved_searches` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ListSavedSearchesParams {
+    /// Workspace slug.
+    pub workspace: String,
+}
+
+/// Parameters accepted by the `list_task_views` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ListTaskViewsParams {
+    /// Workspace slug.
+    pub workspace: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -435,6 +496,142 @@ impl AtlasMcp {
             .map_err(|e| format!("list_columns for board '{}' failed: {e}", params.board))?;
 
         let result = wrap_vec(cols, project_column);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "List the registered tag registry for an Atlas workspace")]
+    async fn list_tags(
+        &self,
+        Parameters(params): Parameters<ListTagsParams>,
+    ) -> Result<String, String> {
+        let tags = self
+            .client
+            .list_tags(&params.workspace)
+            .await
+            .map_err(|e| format!("list_tags for workspace '{}' failed: {e}", params.workspace))?;
+
+        let result = wrap_vec(tags, project_tag);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "List labels currently applied to tasks in an Atlas workspace (may include unregistered labels)"
+    )]
+    async fn list_used_labels(
+        &self,
+        Parameters(params): Parameters<ListUsedLabelsParams>,
+    ) -> Result<String, String> {
+        let labels = self
+            .client
+            .list_used_labels(&params.workspace)
+            .await
+            .map_err(|e| {
+                format!(
+                    "list_used_labels for workspace '{}' failed: {e}",
+                    params.workspace
+                )
+            })?;
+
+        let result = wrap_vec(labels, |s| json!(s));
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "List workspace members and API-key principals; use IDs in assignee filters"
+    )]
+    async fn list_members(
+        &self,
+        Parameters(params): Parameters<ListMembersParams>,
+    ) -> Result<String, String> {
+        let members = self
+            .client
+            .list_workspace_members(&params.workspace)
+            .await
+            .map_err(|e| {
+                format!(
+                    "list_members for workspace '{}' failed: {e}",
+                    params.workspace
+                )
+            })?;
+
+        let result = wrap_vec(members, project_principal);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "List all Atlas workspaces accessible to the caller")]
+    async fn list_workspaces(
+        &self,
+        Parameters(_params): Parameters<ListWorkspacesParams>,
+    ) -> Result<String, String> {
+        let workspaces = self
+            .client
+            .list_workspaces()
+            .await
+            .map_err(|e| format!("list_workspaces failed: {e}"))?;
+
+        let result = wrap_vec(workspaces, project_workspace);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "List projects in an Atlas workspace (cursor-paginated)")]
+    async fn list_projects(
+        &self,
+        Parameters(params): Parameters<ListProjectsParams>,
+    ) -> Result<String, String> {
+        let limit = params.limit.unwrap_or(20).clamp(1, 200);
+
+        let page = self
+            .client
+            .list_projects(&params.workspace, params.cursor.as_deref(), Some(limit))
+            .await
+            .map_err(|e| {
+                format!(
+                    "list_projects for workspace '{}' failed: {e}",
+                    params.workspace
+                )
+            })?;
+
+        let result = envelope_page(page, project_project);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "List saved searches for an Atlas workspace")]
+    async fn list_saved_searches(
+        &self,
+        Parameters(params): Parameters<ListSavedSearchesParams>,
+    ) -> Result<String, String> {
+        let searches = self
+            .client
+            .list_saved_searches(&params.workspace)
+            .await
+            .map_err(|e| {
+                format!(
+                    "list_saved_searches for workspace '{}' failed: {e}",
+                    params.workspace
+                )
+            })?;
+
+        let result = wrap_vec(searches, project_saved_search);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "List saved task views (filter presets) for an Atlas workspace")]
+    async fn list_task_views(
+        &self,
+        Parameters(params): Parameters<ListTaskViewsParams>,
+    ) -> Result<String, String> {
+        let views = self
+            .client
+            .list_task_views(&params.workspace)
+            .await
+            .map_err(|e| {
+                format!(
+                    "list_task_views for workspace '{}' failed: {e}",
+                    params.workspace
+                )
+            })?;
+
+        let result = wrap_vec(views, project_task_view);
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 }
@@ -737,5 +934,63 @@ mod tests {
         let json = r#"{"workspace":"ws","board":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234"}"#;
         let params: ListColumnsParams = serde_json::from_str(json).unwrap();
         assert_eq!(params.board, "018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234");
+    }
+
+    #[test]
+    fn list_tags_params_deserializes() {
+        let json = r#"{"workspace":"my-ws"}"#;
+        let params: ListTagsParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.workspace, "my-ws");
+    }
+
+    #[test]
+    fn list_used_labels_params_deserializes() {
+        let json = r#"{"workspace":"my-ws"}"#;
+        let params: ListUsedLabelsParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.workspace, "my-ws");
+    }
+
+    #[test]
+    fn list_members_params_deserializes() {
+        let json = r#"{"workspace":"my-ws"}"#;
+        let params: ListMembersParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.workspace, "my-ws");
+    }
+
+    #[test]
+    fn list_workspaces_params_deserializes_empty_object() {
+        let json = r#"{}"#;
+        let _params: ListWorkspacesParams = serde_json::from_str(json).unwrap();
+    }
+
+    #[test]
+    fn list_projects_params_deserializes_minimal() {
+        let json = r#"{"workspace":"my-ws"}"#;
+        let params: ListProjectsParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.workspace, "my-ws");
+        assert!(params.cursor.is_none());
+        assert!(params.limit.is_none());
+    }
+
+    #[test]
+    fn list_projects_params_deserializes_with_pagination() {
+        let json = r#"{"workspace":"ws","cursor":"tok","limit":50}"#;
+        let params: ListProjectsParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.cursor.as_deref(), Some("tok"));
+        assert_eq!(params.limit, Some(50));
+    }
+
+    #[test]
+    fn list_saved_searches_params_deserializes() {
+        let json = r#"{"workspace":"my-ws"}"#;
+        let params: ListSavedSearchesParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.workspace, "my-ws");
+    }
+
+    #[test]
+    fn list_task_views_params_deserializes() {
+        let json = r#"{"workspace":"my-ws"}"#;
+        let params: ListTaskViewsParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.workspace, "my-ws");
     }
 }
