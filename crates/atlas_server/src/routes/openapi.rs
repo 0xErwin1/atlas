@@ -138,6 +138,7 @@ use atlas_api::{
         crate::routes::search::search,
         crate::routes::tags::list_tags,
         crate::routes::tags::create_tag,
+        crate::routes::tags::list_used_labels,
         crate::routes::tags::patch_tag,
         crate::routes::tags::delete_tag,
         crate::routes::saved_searches::list_saved_searches,

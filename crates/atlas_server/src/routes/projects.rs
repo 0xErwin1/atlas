@@ -23,7 +23,7 @@ use crate::{
     authz::{Authorized, EditorMin, ViewerMin, WorkspaceMember, authorized::ProjectRes},
     error::ApiError,
     persistence::repos::{PermissionGrantRepo, PgPermissionGrantRepo, PgProjectRepo, ProjectRepo},
-    routes::validation::validate_name,
+    routes::validation::{validate_name, validate_task_prefix},
     state::AppState,
 };
 
@@ -214,6 +214,10 @@ pub(crate) async fn update_project(
         validate_name("name", name)?;
     }
 
+    if let Some(ref prefix) = body.task_prefix {
+        validate_task_prefix("task_prefix", prefix)?;
+    }
+
     let new_visibility = if body.visibility.is_some() || body.visibility_role.is_some() {
         let vis = parse_visibility(body.visibility.as_deref(), body.visibility_role.as_deref())?;
 
@@ -236,6 +240,7 @@ pub(crate) async fn update_project(
     let update = UpdateProject {
         name: body.name,
         visibility: new_visibility,
+        task_prefix: body.task_prefix,
     };
 
     let actor = principal_to_actor(&auth.principal);
@@ -247,9 +252,7 @@ pub(crate) async fn update_project(
     let updated = repo
         .update(&ctx, auth.resource.0.id, update)
         .await
-        .map_err(|e| ApiError::Internal {
-            message: e.to_string(),
-        })?;
+        .map_err(ApiError::Domain)?;
 
     Ok(Json(project_to_dto(&updated)))
 }

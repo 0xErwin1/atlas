@@ -607,6 +607,12 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         openapi_path: Some("/v1/workspaces/{ws}/tags"),
     },
     RouteEntry {
+        method: "GET",
+        path_template: "/v1/workspaces/{ws}/tags/used",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/tags/used"),
+    },
+    RouteEntry {
         method: "PATCH",
         path_template: "/v1/workspaces/{ws}/tags/00000000-0000-0000-0000-000000000001",
         kind: RouteKind::WorkspaceMember,

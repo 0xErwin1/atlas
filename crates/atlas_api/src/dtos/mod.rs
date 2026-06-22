@@ -166,6 +166,7 @@ pub struct UpdateProjectRequest {
     pub name: Option<String>,
     pub visibility: Option<String>,
     pub visibility_role: Option<String>,
+    pub task_prefix: Option<String>,
 }
 
 /// Project representation.

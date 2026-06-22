@@ -168,6 +168,38 @@ pub(crate) async fn patch_tag(
 }
 
 // ---------------------------------------------------------------------------
+// GET /v1/workspaces/{ws}/tags/used
+// ---------------------------------------------------------------------------
+
+#[utoipa::path(
+    get,
+    path = "/v1/workspaces/{ws}/tags/used",
+    tag = "tags",
+    security(("bearer_auth" = [])),
+    params(("ws" = String, Path, description = "Workspace slug")),
+    responses(
+        (status = 200, description = "Distinct label strings used by non-deleted tasks", body = [String]),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Insufficient permissions"),
+    )
+)]
+pub(crate) async fn list_used_labels(
+    auth: Authorized<WorkspaceRes, ViewerMin>,
+    State(state): State<AppState>,
+) -> Result<Json<Vec<String>>, ApiError> {
+    let actor = principal_to_actor(&auth.principal);
+    let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
+    let repo = PgTagRepo::new((*state.db).clone());
+
+    let labels = repo
+        .list_used_labels(&ctx)
+        .await
+        .map_err(ApiError::Domain)?;
+
+    Ok(Json(labels))
+}
+
+// ---------------------------------------------------------------------------
 // DELETE /v1/workspaces/{ws}/tags/{tag_id}
 // ---------------------------------------------------------------------------
 

@@ -297,6 +297,7 @@ async fn viewer_cannot_update_project() {
                 name: Some("New Name".to_string()),
                 visibility: None,
                 visibility_role: None,
+                task_prefix: None,
             },
         )
         .await;

@@ -40,4 +40,13 @@ pub trait TagRepo: Send + Sync {
     /// keys. Returns `DomainError::NotFound` if `id` does not belong to this
     /// workspace or has already been deleted.
     async fn soft_delete(&self, ctx: &WorkspaceCtx, id: TagId) -> Result<(), DomainError>;
+
+    /// Returns the distinct label strings currently used by non-deleted tasks in
+    /// the workspace, sorted alphabetically.
+    ///
+    /// Labels here are free strings — they may or may not correspond to a
+    /// registered tag. The result is derived from `tasks.labels` via
+    /// `SELECT DISTINCT unnest(labels)` and includes labels that were never
+    /// registered in the tags table.
+    async fn list_used_labels(&self, ctx: &WorkspaceCtx) -> Result<Vec<String>, DomainError>;
 }

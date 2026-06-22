@@ -1135,6 +1135,15 @@ impl AtlasClient {
         self.decode_response(response, "list_tags").await
     }
 
+    /// `GET /v1/workspaces/{ws}/tags/used`
+    pub async fn list_used_labels(&self, ws: &str) -> Result<Vec<String>, ClientError> {
+        let response = self
+            .get(&format!("/v1/workspaces/{ws}/tags/used"))
+            .send()
+            .await?;
+        self.decode_response(response, "list_used_labels").await
+    }
+
     /// `PATCH /v1/workspaces/{ws}/tags/{tag_id}`
     ///
     /// Updates a tag's name and/or color. Returns the updated tag.

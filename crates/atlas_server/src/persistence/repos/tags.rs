@@ -6,8 +6,8 @@ use atlas_domain::{
 };
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ConnectionTrait, DatabaseConnection, EntityTrait, SqlErr,
-    Statement, TransactionTrait,
+    ActiveModelTrait, ActiveValue::Set, ConnectionTrait, DatabaseConnection, EntityTrait,
+    FromQueryResult, SqlErr, Statement, TransactionTrait,
 };
 
 use crate::persistence::entities::tags::{tag, tag_from};
@@ -201,6 +201,27 @@ impl TagRepo for PgTagRepo {
         txn.commit().await.map_err(db_err)?;
 
         Ok(updated)
+    }
+
+    async fn list_used_labels(&self, ctx: &WorkspaceCtx) -> Result<Vec<String>, DomainError> {
+        #[derive(Debug, FromQueryResult)]
+        struct LabelRow {
+            label: String,
+        }
+
+        let rows = LabelRow::find_by_statement(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT DISTINCT unnest(labels) AS label \
+             FROM tasks \
+             WHERE workspace_id = $1 AND deleted_at IS NULL \
+             ORDER BY 1",
+            [ctx.workspace_id.0.into()],
+        ))
+        .all(&self.conn)
+        .await
+        .map_err(db_err)?;
+
+        Ok(rows.into_iter().map(|r| r.label).collect())
     }
 
     /// Soft-deletes a tag by setting `deleted_at = now()`.

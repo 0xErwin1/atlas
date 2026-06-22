@@ -326,6 +326,10 @@ impl ProjectRepo for PgProjectRepo {
             active.visibility_role = Set(vis_role_str.map(|s| s.to_string()));
         }
 
+        if let Some(prefix) = update.task_prefix {
+            active.task_prefix = Set(prefix);
+        }
+
         active.updated_at = Set(Utc::now());
         let updated = active.update(&self.conn).await.map_err(db_err)?;
         Ok(project_from(updated))

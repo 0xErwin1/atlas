@@ -5321,7 +5321,7 @@ async fn patch_column_with_invalid_swatch_id_returns_422() {
             col.id,
             UpdateColumnRequest {
                 name: None,
-                color: Some(serde_json::Value::String("#ff0000".to_string())),
+                color: Some(serde_json::Value::String("hotpink".to_string())),
                 before: None,
                 after: None,
             },

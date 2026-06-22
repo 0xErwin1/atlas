@@ -137,6 +137,10 @@ pub fn app(state: AppState) -> Router {
             axum::routing::get(routes::tags::list_tags).post(routes::tags::create_tag),
         )
         .route(
+            "/v1/workspaces/{ws}/tags/used",
+            axum::routing::get(routes::tags::list_used_labels),
+        )
+        .route(
             "/v1/workspaces/{ws}/tags/{tag_id}",
             axum::routing::patch(routes::tags::patch_tag).delete(routes::tags::delete_tag),
         )

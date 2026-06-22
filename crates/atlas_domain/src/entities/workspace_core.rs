@@ -98,6 +98,7 @@ pub struct NewProject {
 pub struct UpdateProject {
     pub name: Option<String>,
     pub visibility: Option<Visibility>,
+    pub task_prefix: Option<String>,
 }
 
 impl Visibility {

@@ -97,22 +97,62 @@ pub(crate) fn validate_query(value: &str) -> Result<(), ApiError> {
     validate_long_text("query", value, MAX_QUERY_LEN)
 }
 
+/// Validates a `task_prefix` value against the DB CHECK constraint.
+///
+/// Accepted format: 2–10 characters, first character A–Z, remaining characters A–Z or 0–9.
+/// This mirrors the `projects_task_prefix_check` DB constraint exactly.
+pub(crate) fn validate_task_prefix(field: &str, value: &str) -> Result<(), ApiError> {
+    let bytes = value.as_bytes();
+    let len = bytes.len();
+
+    let first_ok = bytes
+        .first()
+        .map(|b| b.is_ascii_uppercase())
+        .unwrap_or(false);
+
+    let rest_ok = bytes
+        .get(1..)
+        .map(|rest| {
+            rest.iter()
+                .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
+        })
+        .unwrap_or(false);
+
+    if first_ok && rest_ok && (2..=10).contains(&len) {
+        return Ok(());
+    }
+
+    Err(ApiError::InvalidInput {
+        message: format!(
+            "{field} must be 2–10 characters, start with A–Z, and contain only A–Z or 0–9"
+        ),
+    })
+}
+
 /// Valid swatch IDs, mirroring `apps/web/src/lib/swatches.ts`.
 const VALID_SWATCH_IDS: &[&str] = &[
     "neutral", "blue", "green", "amber", "red", "magenta", "cyan",
 ];
 
-/// Validates a color value against the known swatch-id set.
+fn is_hex_color(s: &str) -> bool {
+    s.len() == 7 && s.starts_with('#') && s[1..].bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// Validates a color value against the known swatch-id set or a `#RRGGBB` hex color.
 ///
-/// Rejects unknown ids so a bad client cannot store arbitrary strings in the DB.
+/// Accepts the 7 swatch ids and any 6-digit hex string in the form `#RRGGBB`
+/// (case-insensitive). Rejects everything else so arbitrary strings cannot be stored.
 /// `None` is accepted (no color = use the default).
 pub(crate) fn validate_swatch(field: &str, id: &str) -> Result<(), ApiError> {
-    if VALID_SWATCH_IDS.contains(&id) {
+    if VALID_SWATCH_IDS.contains(&id) || is_hex_color(id) {
         return Ok(());
     }
 
     Err(ApiError::InvalidInput {
-        message: format!("{field} must be one of: {}", VALID_SWATCH_IDS.join(", ")),
+        message: format!(
+            "{field} must be one of: {} or a #RRGGBB hex color",
+            VALID_SWATCH_IDS.join(", ")
+        ),
     })
 }
 
