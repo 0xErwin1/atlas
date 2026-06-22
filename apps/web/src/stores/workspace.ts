@@ -12,6 +12,7 @@ export type PrincipalDto = components['schemas']['PrincipalDto'];
 export interface ProjectSummary {
   slug: string;
   name: string;
+  task_prefix: string;
   workspace_id: string;
 }
 
@@ -117,6 +118,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     projects.value = items.map((p) => ({
       slug: p.slug,
       name: p.name,
+      task_prefix: p.task_prefix,
       workspace_id: p.workspace_id,
     }));
   }
@@ -162,6 +164,31 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
     if (apiError !== undefined) {
       error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to rename project';
+      return false;
+    }
+
+    await loadProjects(ws);
+    return true;
+  }
+
+  /**
+   * Updates a project's name and/or task prefix. Pass only the fields that should
+   * change; the server ignores absent fields. Returns true on success and sets
+   * `error` (surfacing the API `hint`) on failure — callers show banners for 409
+   * duplicate-prefix and 422 bad-format responses.
+   */
+  async function updateProject(
+    ws: string,
+    slug: string,
+    patch: { name?: string; task_prefix?: string },
+  ): Promise<boolean> {
+    const { error: apiError } = await wrappedClient.PATCH('/v1/workspaces/{ws}/projects/{project_slug}', {
+      params: { path: { ws, project_slug: slug } },
+      body: patch,
+    });
+
+    if (apiError !== undefined) {
+      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to update project';
       return false;
     }
 
@@ -257,6 +284,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     loadProjects,
     createProject,
     renameProject,
+    updateProject,
     deleteProject,
     loadMembers,
   };
