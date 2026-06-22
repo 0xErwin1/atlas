@@ -381,6 +381,30 @@ watch(title, (t) => {
       </span>
       <button
         type="button"
+        title="Markdown source"
+        aria-label="Markdown source"
+        class="atl-gbtn"
+        :class="{ on: editorMode === 'source' }"
+        :aria-pressed="editorMode === 'source'"
+        style="width: 28px; height: 28px;"
+        @click="toggleEditorSource"
+      >
+        <Icon name="code" :size="15" />
+      </button>
+      <button
+        type="button"
+        title="Rendered view"
+        aria-label="Rendered view"
+        class="atl-gbtn"
+        :class="{ on: editorReading }"
+        :aria-pressed="editorReading"
+        style="width: 28px; height: 28px;"
+        @click="toggleEditorReading"
+      >
+        <Icon name="pencil" :size="15" />
+      </button>
+      <button
+        type="button"
         title="Share"
         aria-label="Share"
         class="atl-gbtn"
