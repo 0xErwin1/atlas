@@ -25,6 +25,7 @@ const ws = computed(() => workspace.activeWorkspaceSlug);
 
 const newName = ref('');
 const creating = ref(false);
+const registeringLabel = ref<string | null>(null);
 
 const editingId = ref<string | null>(null);
 const draftName = ref('');
@@ -37,12 +38,17 @@ const deleteTargetName = computed(
   () => tagsStore.tags.find((t) => t.id === deleteTargetId.value)?.name ?? '',
 );
 
+function loadAll(slug: string, force = false): void {
+  void tagsStore.load(slug, force);
+  void tagsStore.loadUsed(slug, force);
+}
+
 watch(ws, (slug) => {
-  if (slug !== null) void tagsStore.load(slug, true);
+  if (slug !== null) loadAll(slug, true);
 });
 
 onMounted(() => {
-  if (ws.value !== null) void tagsStore.load(ws.value);
+  if (ws.value !== null) loadAll(ws.value);
 });
 
 async function createTag(): Promise<void> {
@@ -60,6 +66,23 @@ async function createTag(): Promise<void> {
   } else if (tagsStore.error) {
     ui.showBanner(tagsStore.error, 'error');
   }
+}
+
+/**
+ * Promotes a usage-derived label into the managed registry. On success the
+ * label is now registered, so `unregisteredLabels` drops it and it surfaces in
+ * tier 1.
+ */
+async function registerLabel(label: string): Promise<void> {
+  const slug = ws.value;
+  if (slug === null || registeringLabel.value !== null) return;
+
+  registeringLabel.value = label;
+  const created = await tagsStore.create(slug, label);
+  registeringLabel.value = null;
+
+  if (created) ui.showBanner('Tag registered', 'success');
+  else if (tagsStore.error) ui.showBanner(tagsStore.error, 'error');
 }
 
 function startRename(id: string, name: string): void {
@@ -140,58 +163,95 @@ async function confirmDelete(): Promise<void> {
       </Btn>
     </div>
 
-    <div v-if="tagsStore.tags.length === 0" class="atl-tag-empty">
+    <div
+      v-if="tagsStore.tags.length === 0 && tagsStore.unregisteredLabels.length === 0"
+      class="atl-tag-empty"
+    >
       No tags yet. Create one above.
     </div>
 
-    <div v-else class="atl-tag-list">
-      <div v-for="tag in tagsStore.tags" :key="tag.id" class="atl-tag-row">
-        <template v-if="editingId === tag.id">
-          <Popover placement="bottom-start" teleport>
-            <template #trigger="{ toggle }">
-              <button type="button" class="atl-color-trigger" title="Pick a color" @click="toggle">
-                <span class="atl-dot" :style="{ backgroundColor: swatchById(draftColor).fg }" />
+    <template v-else>
+      <section class="atl-tag-section">
+        <div class="atl-section-head">Registered</div>
+
+        <div v-if="tagsStore.tags.length === 0" class="atl-tag-empty">
+          No registered tags yet.
+        </div>
+
+        <div v-else class="atl-tag-list">
+          <div v-for="tag in tagsStore.tags" :key="tag.id" class="atl-tag-row">
+            <template v-if="editingId === tag.id">
+              <Popover placement="bottom-start" teleport>
+                <template #trigger="{ toggle }">
+                  <button type="button" class="atl-color-trigger" title="Pick a color" @click="toggle">
+                    <span class="atl-dot" :style="{ backgroundColor: swatchById(draftColor).fg }" />
+                  </button>
+                </template>
+                <template #default>
+                  <ColorPicker :selected="draftColor" @select="(id) => { draftColor = id; }" />
+                </template>
+              </Popover>
+
+              <input
+                v-model="draftName"
+                type="text"
+                class="atl-tag-rename"
+                @keydown.enter="saveEdit(tag.id, tag.name)"
+                @keydown.esc="cancelRename"
+              />
+              <span class="flex-1" />
+              <Btn variant="primary" :disabled="renaming" @click="saveEdit(tag.id, tag.name)">Save</Btn>
+              <button type="button" class="atl-rowact" @click="cancelRename">Cancel</button>
+            </template>
+
+            <template v-else>
+              <Chip :color="tagsStore.colorFor(tag.name)" icon="dot">{{ tag.name }}</Chip>
+              <span class="flex-1" />
+              <button
+                type="button"
+                class="atl-rowact"
+                title="Edit name & color"
+                @click="startRename(tag.id, tag.name)"
+              >
+                <Icon name="pencil" :size="13" />
+              </button>
+              <button
+                type="button"
+                class="atl-rowact danger"
+                title="Delete tag"
+                @click="deleteTargetId = tag.id"
+              >
+                <Icon name="trash" :size="13" />
               </button>
             </template>
-            <template #default>
-              <ColorPicker :selected="draftColor" @select="(id) => { draftColor = id; }" />
-            </template>
-          </Popover>
+          </div>
+        </div>
+      </section>
 
-          <input
-            v-model="draftName"
-            type="text"
-            class="atl-tag-rename"
-            @keydown.enter="saveEdit(tag.id, tag.name)"
-            @keydown.esc="cancelRename"
-          />
-          <span class="flex-1" />
-          <Btn variant="primary" :disabled="renaming" @click="saveEdit(tag.id, tag.name)">Save</Btn>
-          <button type="button" class="atl-rowact" @click="cancelRename">Cancel</button>
-        </template>
+      <section v-if="tagsStore.unregisteredLabels.length > 0" class="atl-tag-section">
+        <div class="atl-section-head">Used in tasks — not registered</div>
+        <div class="atl-section-hint">
+          These labels appear on tasks but aren't in the registry. Register one to manage its
+          name and color.
+        </div>
 
-        <template v-else>
-          <Chip :color="tagsStore.colorFor(tag.name)" icon="dot">{{ tag.name }}</Chip>
-          <span class="flex-1" />
-          <button
-            type="button"
-            class="atl-rowact"
-            title="Edit name & color"
-            @click="startRename(tag.id, tag.name)"
-          >
-            <Icon name="pencil" :size="13" />
-          </button>
-          <button
-            type="button"
-            class="atl-rowact danger"
-            title="Delete tag"
-            @click="deleteTargetId = tag.id"
-          >
-            <Icon name="trash" :size="13" />
-          </button>
-        </template>
-      </div>
-    </div>
+        <div class="atl-tag-list atl-used-list">
+          <div v-for="label in tagsStore.unregisteredLabels" :key="label" class="atl-tag-row atl-used-row">
+            <Chip :color="tagsStore.colorFor(label)" icon="dot" class="atl-used-chip">{{ label }}</Chip>
+            <span class="flex-1" />
+            <button
+              type="button"
+              class="atl-rowact atl-register-btn"
+              title="Add this label to the registry"
+              :disabled="registeringLabel !== null"
+              @click="registerLabel(label)"
+            >
+              <Icon name="plus" :size="13" />Register
+            </button>
+          </div>
+        </div>
+      </section>
+    </template>
 
     <ConfirmDialog
       :open="deleteTargetId !== null"
@@ -257,6 +317,34 @@ async function confirmDelete(): Promise<void> {
   font-size: 13px;
   color: var(--c-muted);
   padding: 8px 2px;
+}
+
+.atl-tag-section + .atl-tag-section {
+  margin-top: 22px;
+}
+
+.atl-section-head {
+  font-size: 11px;
+  font-weight: var(--fw-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--c-muted);
+  margin-bottom: 8px;
+}
+
+.atl-section-hint {
+  font-size: 12px;
+  color: var(--c-muted);
+  margin: -2px 0 10px;
+  max-width: 430px;
+}
+
+.atl-used-list {
+  border-style: dashed;
+}
+
+.atl-used-row .atl-used-chip {
+  opacity: 0.7;
 }
 
 .atl-tag-list {

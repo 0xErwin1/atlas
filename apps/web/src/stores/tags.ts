@@ -14,12 +14,23 @@ export type TagDto = components['schemas']['TagDto'];
  */
 export const useTagsStore = defineStore('tags', () => {
   const tags = ref<TagDto[]>([]);
+  const usedLabels = ref<string[]>([]);
   const error = ref<string | null>(null);
   let loadedWs: string | null = null;
+  let loadedUsedWs: string | null = null;
 
   const names = computed(() => tags.value.map((t) => t.name));
 
   const byLowerName = computed(() => new Map(tags.value.map((t) => [t.name.toLowerCase(), t])));
+
+  /**
+   * Labels actually used on tasks that are NOT in the registry, compared
+   * case-insensitively so a registered tag never resurfaces here. These are the
+   * usage-derived labels a user can promote into the managed registry.
+   */
+  const unregisteredLabels = computed(() =>
+    usedLabels.value.filter((label) => !byLowerName.value.has(label.toLowerCase())),
+  );
 
   /**
    * The swatch id for a tag name. The backend color is the source of truth; a
@@ -46,6 +57,27 @@ export const useTagsStore = defineStore('tags', () => {
 
     tags.value = data;
     loadedWs = ws;
+  }
+
+  /**
+   * Loads the distinct labels actually used on the workspace's tasks. The
+   * registry merge (see `unregisteredLabels`) is done client-side, so this only
+   * needs the raw usage list.
+   */
+  async function loadUsed(ws: string, force = false): Promise<void> {
+    if (!force && loadedUsedWs === ws) return;
+
+    const { data, error: apiError } = await wrappedClient.GET('/v1/workspaces/{ws}/tags/used', {
+      params: { path: { ws } },
+    });
+
+    if (apiError !== undefined || data === undefined) {
+      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to load used labels';
+      return;
+    }
+
+    usedLabels.value = data;
+    loadedUsedWs = ws;
   }
 
   /**
@@ -145,5 +177,18 @@ export const useTagsStore = defineStore('tags', () => {
     return true;
   }
 
-  return { tags, names, error, load, ensure, create, update, remove, colorFor };
+  return {
+    tags,
+    usedLabels,
+    unregisteredLabels,
+    names,
+    error,
+    load,
+    loadUsed,
+    ensure,
+    create,
+    update,
+    remove,
+    colorFor,
+  };
 });
