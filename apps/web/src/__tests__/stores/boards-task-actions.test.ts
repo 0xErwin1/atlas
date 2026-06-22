@@ -83,6 +83,53 @@ describe('boards store — task context-menu actions', () => {
     expect(store.findTaskByReadableId('AB-1')).toBeDefined();
   });
 
+  it('assignTask succeeds and leaves both error channels clear', async () => {
+    const store = useBoardsStore();
+    POST.mockResolvedValueOnce({ error: undefined });
+
+    const ok = await store.assignTask('ws', 'AB-1', 'user', 'u1');
+
+    expect(ok).toBe(true);
+    expect(store.error).toBeNull();
+    expect(store.loadError).toBeNull();
+  });
+
+  it('assignTask 409 sets the action error, never loadError, so the board stays visible', async () => {
+    const store = useBoardsStore();
+    POST.mockResolvedValueOnce({ error: { status: 409, hint: 'Already assigned to this task' } });
+
+    const ok = await store.assignTask('ws', 'AB-1', 'user', 'u1');
+
+    expect(ok).toBe(false);
+    expect(store.error).toBe('Already assigned to this task');
+    expect(store.loadError).toBeNull();
+  });
+
+  it('unassignTask DELETEs the principal ref and clears both error channels', async () => {
+    const store = useBoardsStore();
+    DELETE.mockResolvedValueOnce({ error: undefined });
+
+    const ok = await store.unassignTask('ws', 'AB-1', 'user', 'u1');
+
+    expect(ok).toBe(true);
+    expect(DELETE).toHaveBeenCalledWith('/v1/workspaces/{ws}/tasks/{readable_id}/assignees/{assignee_ref}', {
+      params: { path: { ws: 'ws', readable_id: 'AB-1', assignee_ref: 'user:u1' } },
+    });
+    expect(store.error).toBeNull();
+    expect(store.loadError).toBeNull();
+  });
+
+  it('unassignTask sets the action error, never loadError, on failure', async () => {
+    const store = useBoardsStore();
+    DELETE.mockResolvedValueOnce({ error: { hint: 'nope' } });
+
+    const ok = await store.unassignTask('ws', 'AB-1', 'api_key', 'a1');
+
+    expect(ok).toBe(false);
+    expect(store.error).toBe('nope');
+    expect(store.loadError).toBeNull();
+  });
+
   it('moveTaskToColumn posts a move with null neighbours', async () => {
     const store = useBoardsStore();
     POST.mockResolvedValueOnce({ data: { id: 't1' }, error: undefined });
