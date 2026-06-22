@@ -17,11 +17,12 @@ use serde::Deserialize;
 use serde_json::json;
 
 use response::{
-    Detail, envelope_page, match_columns_by_name, parse_csv, parse_detail, project_backlink,
-    project_board_summary, project_column, project_document_compact, project_document_full,
-    project_document_summary, project_folder, project_principal, project_project,
-    project_reference, project_saved_search, project_search_hit, project_tag,
-    project_task_backlink, project_task_compact, project_task_full, project_task_row,
+    Detail, envelope_page, match_columns_by_name, parse_csv, parse_detail, project_activity_entry,
+    project_attachment, project_backlink, project_board_summary, project_checklist_item,
+    project_column, project_document_compact, project_document_full, project_document_summary,
+    project_folder, project_principal, project_project, project_reference,
+    project_revision_content, project_revision_meta, project_saved_search, project_search_hit,
+    project_tag, project_task_backlink, project_task_compact, project_task_full, project_task_row,
     project_task_view, project_workspace, wrap_vec,
 };
 
@@ -43,6 +44,12 @@ For link graph exploration use: `get_task_references` for a task's OUTBOUND refe
 (tasks/documents the task points to), `get_task_backlinks` for INBOUND references \
 (other tasks that point to this task), and `get_document_backlinks` for documents/tasks \
 that link to a given document. \
+For task depth use: `list_checklist` for a task's checklist items, `list_activity` for \
+its change history (who moved/assigned/commented). \
+For document depth use: `list_document_history` to browse revision metadata, \
+`get_document_revision` to fetch the full content of a specific historical revision \
+(by seq number from `list_document_history`), and `list_attachments` to enumerate \
+file attachments on a document. \
 Prefer narrow queries over broad ones; follow up with targeted reads rather than \
 enumerating all results.";
 
@@ -300,6 +307,65 @@ pub struct GetDocumentBacklinksParams {
     /// Workspace slug.
     pub workspace: String,
     /// Document slug or UUID. Returns all documents and tasks that contain a link to this document.
+    pub slug: String,
+    /// Pass `next_cursor` from the previous response to fetch the next page.
+    #[serde(default)]
+    pub cursor: Option<String>,
+    /// Page size (default 20, max 200).
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+/// Parameters accepted by the `list_checklist` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ListChecklistParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Task readable ID, e.g. `ATL-42`.
+    pub readable_id: String,
+}
+
+/// Parameters accepted by the `list_activity` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ListActivityParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Task readable ID, e.g. `ATL-42`.
+    pub readable_id: String,
+}
+
+/// Parameters accepted by the `list_document_history` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ListDocumentHistoryParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Document slug or UUID.
+    pub slug: String,
+    /// Pass `next_cursor` from the previous response to fetch the next page.
+    #[serde(default)]
+    pub cursor: Option<String>,
+    /// Page size (default 20, max 200).
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+/// Parameters accepted by the `get_document_revision` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetDocumentRevisionParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Document slug or UUID.
+    pub slug: String,
+    /// Revision sequence number from `list_document_history`.
+    pub seq: i64,
+}
+
+/// Parameters accepted by the `list_attachments` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ListAttachmentsParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Document slug or UUID whose attachments to list.
     pub slug: String,
     /// Pass `next_cursor` from the previous response to fetch the next page.
     #[serde(default)]
@@ -740,6 +806,102 @@ impl AtlasMcp {
         let result = envelope_page(page, project_backlink);
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
+
+    #[tool(description = "List checklist items for a task")]
+    async fn list_checklist(
+        &self,
+        Parameters(params): Parameters<ListChecklistParams>,
+    ) -> Result<String, String> {
+        let items = self
+            .client
+            .list_checklist(&params.workspace, &params.readable_id)
+            .await
+            .map_err(|e| format!("list_checklist for '{}' failed: {e}", params.readable_id))?;
+
+        let result = wrap_vec(items, project_checklist_item);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "List the activity log for a task (moves, assignments, field changes)")]
+    async fn list_activity(
+        &self,
+        Parameters(params): Parameters<ListActivityParams>,
+    ) -> Result<String, String> {
+        let page = self
+            .client
+            .list_activity(&params.workspace, &params.readable_id)
+            .await
+            .map_err(|e| format!("list_activity for '{}' failed: {e}", params.readable_id))?;
+
+        let result = envelope_page(page, project_activity_entry);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "List revision metadata for a document (history of edits)")]
+    async fn list_document_history(
+        &self,
+        Parameters(params): Parameters<ListDocumentHistoryParams>,
+    ) -> Result<String, String> {
+        let limit = params.limit.unwrap_or(20).clamp(1, 200);
+
+        let page = self
+            .client
+            .list_document_history(
+                &params.workspace,
+                &params.slug,
+                params.cursor.as_deref(),
+                Some(limit),
+            )
+            .await
+            .map_err(|e| format!("list_document_history for '{}' failed: {e}", params.slug))?;
+
+        let result = envelope_page(page, project_revision_meta);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Fetch the full markdown content of a specific document revision by seq number"
+    )]
+    async fn get_document_revision(
+        &self,
+        Parameters(params): Parameters<GetDocumentRevisionParams>,
+    ) -> Result<String, String> {
+        let rev = self
+            .client
+            .get_revision_content(&params.workspace, &params.slug, params.seq)
+            .await
+            .map_err(|e| {
+                format!(
+                    "get_document_revision '{}' seq={} failed: {e}",
+                    params.slug, params.seq
+                )
+            })?;
+
+        let result = project_revision_content(rev);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "List attachment metadata for a document (file name, type, size)")]
+    async fn list_attachments(
+        &self,
+        Parameters(params): Parameters<ListAttachmentsParams>,
+    ) -> Result<String, String> {
+        let limit = params.limit.unwrap_or(20).clamp(1, 200);
+
+        let page = self
+            .client
+            .list_attachments(
+                &params.workspace,
+                &params.slug,
+                params.cursor.as_deref(),
+                Some(limit),
+            )
+            .await
+            .map_err(|e| format!("list_attachments for '{}' failed: {e}", params.slug))?;
+
+        let result = envelope_page(page, project_attachment);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
 }
 
 impl AtlasMcp {
@@ -1150,6 +1312,75 @@ mod tests {
         assert!(
             instructions.contains("`get_document_backlinks`"),
             "instructions must mention get_document_backlinks"
+        );
+    }
+
+    #[test]
+    fn list_checklist_params_deserializes() {
+        let json = r#"{"workspace":"ws","readable_id":"ATL-5"}"#;
+        let params: ListChecklistParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.workspace, "ws");
+        assert_eq!(params.readable_id, "ATL-5");
+    }
+
+    #[test]
+    fn list_activity_params_deserializes() {
+        let json = r#"{"workspace":"ws","readable_id":"ATL-10"}"#;
+        let params: ListActivityParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.workspace, "ws");
+        assert_eq!(params.readable_id, "ATL-10");
+    }
+
+    #[test]
+    fn list_document_history_params_deserializes_minimal() {
+        let json = r#"{"workspace":"ws","slug":"my-doc"}"#;
+        let params: ListDocumentHistoryParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.slug, "my-doc");
+        assert!(params.cursor.is_none());
+        assert!(params.limit.is_none());
+    }
+
+    #[test]
+    fn get_document_revision_params_deserializes() {
+        let json = r#"{"workspace":"ws","slug":"my-doc","seq":7}"#;
+        let params: GetDocumentRevisionParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.slug, "my-doc");
+        assert_eq!(params.seq, 7);
+    }
+
+    #[test]
+    fn list_attachments_params_deserializes_minimal() {
+        let json = r#"{"workspace":"ws","slug":"my-doc"}"#;
+        let params: ListAttachmentsParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.slug, "my-doc");
+        assert!(params.cursor.is_none());
+        assert!(params.limit.is_none());
+    }
+
+    #[test]
+    fn get_info_instructions_reference_depth_tools() {
+        let server = AtlasMcp::new("http://localhost:8080", "test-token").unwrap();
+        let info = server.get_info();
+        let instructions = info.instructions.as_deref().unwrap_or("");
+        assert!(
+            instructions.contains("`list_checklist`"),
+            "instructions must mention list_checklist"
+        );
+        assert!(
+            instructions.contains("`list_activity`"),
+            "instructions must mention list_activity"
+        );
+        assert!(
+            instructions.contains("`list_document_history`"),
+            "instructions must mention list_document_history"
+        );
+        assert!(
+            instructions.contains("`get_document_revision`"),
+            "instructions must mention get_document_revision"
+        );
+        assert!(
+            instructions.contains("`list_attachments`"),
+            "instructions must mention list_attachments"
         );
     }
 }

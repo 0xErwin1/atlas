@@ -8,9 +8,13 @@
 use atlas_api::{
     dtos::{
         boards_tasks::{
-            BoardSummaryDto, ColumnDto, ReferenceDto, TaskBacklinkDto, TaskDto, TaskSummaryDto,
+            ActivityEntryDto, BoardSummaryDto, ChecklistItemDto, ColumnDto, ReferenceDto,
+            TaskBacklinkDto, TaskDto, TaskSummaryDto,
         },
-        documents::{BacklinkDto, DocumentDto, DocumentSummaryDto},
+        documents::{
+            ActorDto, AttachmentDto, BacklinkDto, DocumentDto, DocumentSummaryDto,
+            RevisionContentDto, RevisionMetaDto,
+        },
         folders::FolderDto,
         saved_searches::SavedSearchDto,
         search::SearchHitDto,
@@ -533,6 +537,129 @@ pub(crate) fn project_backlink(b: BacklinkDto) -> Value {
 }
 
 // ---------------------------------------------------------------------------
+// Actor helper (shared by revision, activity, attachment projections)
+// ---------------------------------------------------------------------------
+
+/// Projects an `ActorDto` to the compact MCP shape: `{type, display_name?}`.
+///
+/// `id` (UUID) is dropped; agents identify actors by type + display name.
+/// `display_name` is omitted when the server sends `None` (e.g. deleted principals).
+fn project_actor(a: ActorDto) -> Value {
+    let mut map = serde_json::Map::new();
+    map.insert("type".into(), json!(a.r#type));
+
+    if let Some(name) = a.display_name {
+        map.insert("display_name".into(), json!(name));
+    }
+
+    Value::Object(map)
+}
+
+// ---------------------------------------------------------------------------
+// Checklist item projection (list_checklist rows)
+// ---------------------------------------------------------------------------
+
+/// Projects a checklist item to the compact MCP shape.
+///
+/// `task_id` and `position_key` are internal ordering signals with no agent
+/// value. `promoted_readable_id` is preserved so the agent can navigate to
+/// the promoted task when the item has been converted.
+pub(crate) fn project_checklist_item(item: ChecklistItemDto) -> Value {
+    let mut map = serde_json::Map::new();
+    map.insert("id".into(), json!(item.id));
+    map.insert("title".into(), json!(item.title));
+    map.insert("checked".into(), json!(item.checked));
+
+    if let Some(rid) = item.promoted_readable_id {
+        map.insert("promoted_readable_id".into(), json!(rid));
+    }
+
+    Value::Object(map)
+}
+
+// ---------------------------------------------------------------------------
+// Activity entry projection (list_activity rows)
+// ---------------------------------------------------------------------------
+
+/// Projects a task activity entry to the compact MCP shape.
+///
+/// `id` (UUID) is dropped; entries are identified by `kind` + `created_at`.
+/// `payload` is passed through verbatim because its schema varies per `kind`
+/// and the agent interprets it in context.
+pub(crate) fn project_activity_entry(entry: ActivityEntryDto) -> Value {
+    json!({
+        "kind": entry.kind,
+        "actor": project_actor(entry.actor),
+        "payload": entry.payload,
+        "created_at": entry.created_at,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Document revision projections (list_document_history / get_document_revision)
+// ---------------------------------------------------------------------------
+
+/// Projects revision metadata (history list rows) to the compact MCP shape.
+///
+/// `id` (UUID) is dropped; the `seq` number is the stable handle for fetching
+/// content via `get_document_revision`. `is_anchor` flags checkpoint revisions
+/// that are always retained.
+pub(crate) fn project_revision_meta(rev: RevisionMetaDto) -> Value {
+    let mut map = serde_json::Map::new();
+    map.insert("seq".into(), json!(rev.seq));
+    map.insert("is_anchor".into(), json!(rev.is_anchor));
+
+    if let Some(actor) = rev.actor {
+        map.insert("actor".into(), project_actor(actor));
+    }
+
+    map.insert("created_at".into(), json!(rev.created_at));
+
+    Value::Object(map)
+}
+
+/// Projects a full revision's content to the MCP shape.
+///
+/// `id` (UUID) is dropped; `seq` + `content` are the load-bearing fields.
+pub(crate) fn project_revision_content(rev: RevisionContentDto) -> Value {
+    let mut map = serde_json::Map::new();
+    map.insert("seq".into(), json!(rev.seq));
+    map.insert("content".into(), json!(rev.content));
+
+    if let Some(actor) = rev.actor {
+        map.insert("actor".into(), project_actor(actor));
+    }
+
+    map.insert("created_at".into(), json!(rev.created_at));
+
+    Value::Object(map)
+}
+
+// ---------------------------------------------------------------------------
+// Attachment projection (list_attachments rows)
+// ---------------------------------------------------------------------------
+
+/// Projects attachment metadata to the compact MCP shape.
+///
+/// `document_id` and `sha256` are server-internal identifiers with no agent
+/// navigation value. `actor` is preserved so the agent knows who uploaded it.
+pub(crate) fn project_attachment(att: AttachmentDto) -> Value {
+    let mut map = serde_json::Map::new();
+    map.insert("id".into(), json!(att.id));
+    map.insert("file_name".into(), json!(att.file_name));
+    map.insert("content_type".into(), json!(att.content_type));
+    map.insert("size_bytes".into(), json!(att.size_bytes));
+
+    if let Some(actor) = att.actor {
+        map.insert("actor".into(), project_actor(actor));
+    }
+
+    map.insert("created_at".into(), json!(att.created_at));
+
+    Value::Object(map)
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -542,8 +669,14 @@ mod tests {
     use super::*;
     use atlas_api::dtos::{
         PrincipalDto, ProjectDto, WorkspaceDto,
-        boards_tasks::{BoardSummaryDto, ColumnDto, ReferenceDto, TaskDto, TaskSummaryDto},
-        documents::{ActorDto, DocumentDto, DocumentSummaryDto},
+        boards_tasks::{
+            ActivityEntryDto, BoardSummaryDto, ChecklistItemDto, ColumnDto, ReferenceDto, TaskDto,
+            TaskSummaryDto,
+        },
+        documents::{
+            ActorDto, AttachmentDto, DocumentDto, DocumentSummaryDto, RevisionContentDto,
+            RevisionMetaDto,
+        },
         folders::FolderDto,
         saved_searches::SavedSearchDto,
         search::{SearchHitDto, SearchKindDto},
@@ -1458,5 +1591,204 @@ mod tests {
     fn backlink_drops_source_document_id() {
         let val = project_backlink(make_backlink(None));
         assert!(val.get("source_document_id").is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // project_checklist_item
+    // -----------------------------------------------------------------------
+
+    fn make_actor(display: Option<&str>) -> ActorDto {
+        ActorDto {
+            r#type: "user".into(),
+            id: fixed_uuid(),
+            display_name: display.map(String::from),
+        }
+    }
+
+    fn make_checklist_item(checked: bool, promoted: Option<&str>) -> ChecklistItemDto {
+        ChecklistItemDto {
+            id: fixed_uuid(),
+            task_id: fixed_uuid(),
+            title: "Do the thing".into(),
+            checked,
+            position_key: "aaa".into(),
+            promoted_task_id: promoted.map(|_| fixed_uuid()),
+            promoted_readable_id: promoted.map(String::from),
+            created_at: chrono::DateTime::from_timestamp(0, 0).unwrap(),
+            updated_at: chrono::DateTime::from_timestamp(0, 0).unwrap(),
+        }
+    }
+
+    #[test]
+    fn checklist_item_includes_id_title_checked() {
+        let val = project_checklist_item(make_checklist_item(false, None));
+        assert!(val.get("id").is_some());
+        assert_eq!(val["title"], "Do the thing");
+        assert_eq!(val["checked"], false);
+    }
+
+    #[test]
+    fn checklist_item_includes_promoted_readable_id_when_present() {
+        let val = project_checklist_item(make_checklist_item(true, Some("ATL-99")));
+        assert_eq!(val["promoted_readable_id"], "ATL-99");
+    }
+
+    #[test]
+    fn checklist_item_omits_promoted_readable_id_when_absent() {
+        let val = project_checklist_item(make_checklist_item(false, None));
+        assert!(val.get("promoted_readable_id").is_none());
+    }
+
+    #[test]
+    fn checklist_item_drops_task_id_and_position_key() {
+        let val = project_checklist_item(make_checklist_item(false, None));
+        assert!(val.get("task_id").is_none());
+        assert!(val.get("position_key").is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // project_activity_entry
+    // -----------------------------------------------------------------------
+
+    fn make_activity(kind: &str) -> ActivityEntryDto {
+        ActivityEntryDto {
+            id: fixed_uuid(),
+            kind: kind.into(),
+            actor: make_actor(Some("Alice")),
+            payload: serde_json::json!({"column": "Done"}),
+            created_at: chrono::DateTime::from_timestamp(0, 0).unwrap(),
+        }
+    }
+
+    #[test]
+    fn activity_entry_includes_kind_actor_payload_created_at() {
+        let val = project_activity_entry(make_activity("moved"));
+        assert_eq!(val["kind"], "moved");
+        assert_eq!(val["actor"]["type"], "user");
+        assert_eq!(val["actor"]["display_name"], "Alice");
+        assert!(val.get("payload").is_some());
+        assert!(val.get("created_at").is_some());
+    }
+
+    #[test]
+    fn activity_entry_drops_id() {
+        let val = project_activity_entry(make_activity("created"));
+        assert!(val.get("id").is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // project_revision_meta
+    // -----------------------------------------------------------------------
+
+    fn make_revision_meta(seq: i64, actor: Option<ActorDto>) -> RevisionMetaDto {
+        RevisionMetaDto {
+            id: fixed_uuid(),
+            seq,
+            is_anchor: seq == 1,
+            actor,
+            created_at: chrono::DateTime::from_timestamp(0, 0).unwrap(),
+        }
+    }
+
+    #[test]
+    fn revision_meta_includes_seq_is_anchor_created_at() {
+        let val = project_revision_meta(make_revision_meta(5, None));
+        assert_eq!(val["seq"], 5);
+        assert_eq!(val["is_anchor"], false);
+        assert!(val.get("created_at").is_some());
+    }
+
+    #[test]
+    fn revision_meta_includes_actor_when_present() {
+        let val = project_revision_meta(make_revision_meta(1, Some(make_actor(Some("Bob")))));
+        assert_eq!(val["actor"]["display_name"], "Bob");
+        assert_eq!(val["is_anchor"], true);
+    }
+
+    #[test]
+    fn revision_meta_omits_actor_when_absent() {
+        let val = project_revision_meta(make_revision_meta(2, None));
+        assert!(val.get("actor").is_none());
+    }
+
+    #[test]
+    fn revision_meta_drops_id() {
+        let val = project_revision_meta(make_revision_meta(3, None));
+        assert!(val.get("id").is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // project_revision_content
+    // -----------------------------------------------------------------------
+
+    fn make_revision_content(seq: i64) -> RevisionContentDto {
+        RevisionContentDto {
+            id: fixed_uuid(),
+            seq,
+            content: "# Hello\nworld".into(),
+            actor: Some(make_actor(Some("Carol"))),
+            created_at: chrono::DateTime::from_timestamp(0, 0).unwrap(),
+        }
+    }
+
+    #[test]
+    fn revision_content_includes_seq_content_actor_created_at() {
+        let val = project_revision_content(make_revision_content(7));
+        assert_eq!(val["seq"], 7);
+        assert_eq!(val["content"], "# Hello\nworld");
+        assert_eq!(val["actor"]["display_name"], "Carol");
+        assert!(val.get("created_at").is_some());
+    }
+
+    #[test]
+    fn revision_content_drops_id() {
+        let val = project_revision_content(make_revision_content(7));
+        assert!(val.get("id").is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // project_attachment
+    // -----------------------------------------------------------------------
+
+    fn make_attachment(actor: Option<ActorDto>) -> AttachmentDto {
+        AttachmentDto {
+            id: fixed_uuid(),
+            document_id: fixed_uuid(),
+            file_name: "diagram.png".into(),
+            content_type: "image/png".into(),
+            size_bytes: 4096,
+            sha256: "abc123".into(),
+            actor,
+            created_at: chrono::DateTime::from_timestamp(0, 0).unwrap(),
+        }
+    }
+
+    #[test]
+    fn attachment_includes_id_file_name_content_type_size_created_at() {
+        let val = project_attachment(make_attachment(None));
+        assert!(val.get("id").is_some());
+        assert_eq!(val["file_name"], "diagram.png");
+        assert_eq!(val["content_type"], "image/png");
+        assert_eq!(val["size_bytes"], 4096);
+        assert!(val.get("created_at").is_some());
+    }
+
+    #[test]
+    fn attachment_includes_actor_when_present() {
+        let val = project_attachment(make_attachment(Some(make_actor(Some("Dave")))));
+        assert_eq!(val["actor"]["display_name"], "Dave");
+    }
+
+    #[test]
+    fn attachment_omits_actor_when_absent() {
+        let val = project_attachment(make_attachment(None));
+        assert!(val.get("actor").is_none());
+    }
+
+    #[test]
+    fn attachment_drops_document_id_and_sha256() {
+        let val = project_attachment(make_attachment(None));
+        assert!(val.get("document_id").is_none());
+        assert!(val.get("sha256").is_none());
     }
 }
