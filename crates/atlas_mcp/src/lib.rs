@@ -1352,7 +1352,13 @@ impl AtlasMcp {
                     .map(|v| v.into_iter().map(project_task_row).collect::<Vec<_>>())
                     .map_err(|e| format!("list_subtasks failed: {e}"));
 
-                project_task_full(&task, refs, subtasks)
+                let assignees = client
+                    .list_assignees(&params.workspace, &params.readable_id)
+                    .await
+                    .map(|v| v.into_iter().map(project_assignee).collect::<Vec<_>>())
+                    .map_err(|e| format!("list_assignees failed: {e}"));
+
+                project_task_full(&task, refs, subtasks, assignees)
             }
         };
 

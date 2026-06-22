@@ -272,13 +272,14 @@ pub(crate) fn project_task_compact(task: &TaskDto) -> Value {
 
 /// Full projection: compact fields plus description and derived sub-resources.
 ///
-/// `references` and `subtasks` are optional: when the backing call fails a
-/// step-attribution error field is included instead of failing the whole
-/// response. Callers supply pre-projected values or error strings.
+/// `references`, `subtasks`, and `assignees` are optional: when a backing call
+/// fails a step-attribution error field is included instead of failing the
+/// whole response. Callers supply pre-projected values or error strings.
 pub(crate) fn project_task_full(
     task: &TaskDto,
     references: Result<Vec<Value>, String>,
     subtasks: Result<Vec<Value>, String>,
+    assignees: Result<Vec<Value>, String>,
 ) -> Value {
     let compact = project_task_compact(task);
 
@@ -308,6 +309,15 @@ pub(crate) fn project_task_full(
         }
         Err(e) => {
             map.insert("subtasks_error".into(), json!(e));
+        }
+    }
+
+    match assignees {
+        Ok(a) => {
+            map.insert("assignees".into(), json!(a));
+        }
+        Err(e) => {
+            map.insert("assignees_error".into(), json!(e));
         }
     }
 
@@ -1447,7 +1457,7 @@ mod tests {
     fn task_full_includes_description_and_references() {
         let task = make_task_dto();
         let refs = vec![json!({"kind": "relates", "target_resolved": true})];
-        let val = project_task_full(&task, Ok(refs.clone()), Ok(vec![]));
+        let val = project_task_full(&task, Ok(refs.clone()), Ok(vec![]), Ok(vec![]));
         assert_eq!(val["description"], "A long description");
         assert_eq!(val["references"], json!(refs));
         assert!(val.get("references_error").is_none());
@@ -1456,7 +1466,7 @@ mod tests {
     #[test]
     fn task_full_step_attribution_on_references_error() {
         let task = make_task_dto();
-        let val = project_task_full(&task, Err("timeout".into()), Ok(vec![]));
+        let val = project_task_full(&task, Err("timeout".into()), Ok(vec![]), Ok(vec![]));
         assert!(val.get("references").is_none());
         assert_eq!(val["references_error"], "timeout");
         // Task body is still present despite the sub-call failure
@@ -1466,9 +1476,35 @@ mod tests {
     #[test]
     fn task_full_step_attribution_on_subtasks_error() {
         let task = make_task_dto();
-        let val = project_task_full(&task, Ok(vec![]), Err("not found".into()));
+        let val = project_task_full(&task, Ok(vec![]), Err("not found".into()), Ok(vec![]));
         assert!(val.get("subtasks").is_none());
         assert_eq!(val["subtasks_error"], "not found");
+    }
+
+    #[test]
+    fn task_full_includes_assignees_when_ok() {
+        let task = make_task_dto();
+        let assignees = vec![json!({"id": "u1", "username": "alice"})];
+        let val = project_task_full(&task, Ok(vec![]), Ok(vec![]), Ok(assignees.clone()));
+        assert_eq!(val["assignees"], json!(assignees));
+        assert!(val.get("assignees_error").is_none());
+    }
+
+    #[test]
+    fn task_full_step_attribution_on_assignees_error() {
+        let task = make_task_dto();
+        let val = project_task_full(
+            &task,
+            Ok(vec![]),
+            Ok(vec![]),
+            Err("list_assignees failed: connection reset".into()),
+        );
+        assert!(val.get("assignees").is_none());
+        assert_eq!(
+            val["assignees_error"],
+            "list_assignees failed: connection reset"
+        );
+        assert_eq!(val["title"], "Fix bug");
     }
 
     // -----------------------------------------------------------------------
