@@ -212,6 +212,7 @@ fn hit_to_dto(hit: atlas_domain::search::SearchHit) -> SearchHitDto {
         score: hit.score,
         updated_at: hit.updated_at,
         project_slug: hit.project_slug,
+        column_name: hit.column_name,
     }
 }
 

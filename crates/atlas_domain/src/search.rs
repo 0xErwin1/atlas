@@ -158,6 +158,8 @@ pub struct SearchHit {
     pub updated_at: chrono::DateTime<chrono::Utc>,
     /// Owning project slug; `None` for workspace-root documents with no project.
     pub project_slug: Option<String>,
+    /// Current column (status) name; `Some` only for task hits.
+    pub column_name: Option<String>,
 }
 
 // ---------------------------------------------------------------------------

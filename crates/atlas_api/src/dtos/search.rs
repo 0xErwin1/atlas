@@ -32,6 +32,9 @@ pub struct SearchHitDto {
     /// Owning project slug; absent for workspace-root documents with no project.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project_slug: Option<String>,
+    /// Current column (status) name. Present only when `kind = task`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub column_name: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -57,6 +60,7 @@ mod tests {
             score: 0.9,
             updated_at: now(),
             project_slug: None,
+            column_name: None,
         }
     }
 
@@ -70,6 +74,7 @@ mod tests {
             score: 0.9,
             updated_at: now(),
             project_slug: None,
+            column_name: None,
         }
     }
 

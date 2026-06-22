@@ -41,6 +41,7 @@ struct SearchRow {
     snippet: Option<String>,
     score: f32,
     updated_at: DateTime<Utc>,
+    column_name: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -243,9 +244,10 @@ impl SearchRepo for PgSearchRepo {
                 page.title,
                 {snippet_expr} AS snippet,
                 page.score,
-                page.updated_at
+                page.updated_at,
+                page.column_name
             FROM (
-                SELECT kind, id, readable_id, project_slug, title, snippet_source, score, updated_at
+                SELECT kind, id, readable_id, project_slug, title, snippet_source, score, updated_at, column_name
                 FROM ({union_sql}) combined
                 WHERE 1=1
                 {cursor_cond}
@@ -337,7 +339,8 @@ fn build_doc_arm(
             d.title,
             {snippet_source_expr} AS snippet_source,
             {score_expr} AS score,
-            d.updated_at
+            d.updated_at,
+            NULL::text AS column_name
         FROM documents d
         LEFT JOIN projects p ON p.id = d.project_id AND p.workspace_id = $1 AND p.deleted_at IS NULL
         WHERE d.workspace_id = $1
@@ -499,9 +502,11 @@ fn build_task_arm(
             t.title,
             {snippet_source_expr} AS snippet_source,
             {score_expr} AS score,
-            t.updated_at
+            t.updated_at,
+            bc.name AS column_name
         FROM tasks t
         LEFT JOIN projects p ON p.id = t.project_id AND p.workspace_id = $1 AND p.deleted_at IS NULL
+        LEFT JOIN board_columns bc ON bc.id = t.column_id AND bc.workspace_id = $1 AND bc.deleted_at IS NULL
         WHERE t.workspace_id = $1
           AND t.deleted_at IS NULL
           {fts_where}
@@ -728,6 +733,7 @@ fn row_to_hit(row: SearchRow) -> Result<SearchHit, DomainError> {
         score: row.score,
         updated_at: row.updated_at,
         project_slug: row.project_slug,
+        column_name: row.column_name,
     })
 }
 

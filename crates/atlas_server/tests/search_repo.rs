@@ -1738,6 +1738,94 @@ async fn member_sees_in_folder_non_private_project_document() {
 }
 
 // ---------------------------------------------------------------------------
+// D-SEARCHHIT: column_name is Some for task hits and None for document hits.
+//
+// This is the UNION ALL shape regression guard: if either arm omits the
+// column_name projection at the correct ordinal, or the inner/outer page
+// subqueries drop it, the field silently binds as NULL for all rows (a
+// mis-bind, not an error). The test forces a distinct value so a mis-bind
+// is caught immediately.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn task_hit_carries_column_name_document_hit_does_not() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, owner) = support::seed_workspace(&db, "srch-colname-owner").await;
+    let ctx = support::ctx(&ws, &owner);
+
+    let column_name = "In Progress";
+
+    let (project, board, _default_col) =
+        seed_project_and_board(&db, &ctx, "srch-colname-proj", "SCN").await;
+
+    let board_repo = PgBoardRepo::new(db.conn().clone());
+    let named_col = board_repo
+        .add_column(
+            &ctx,
+            board.id,
+            column_name.to_string(),
+            None,
+            PositionBetween {
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("seed named column");
+
+    let task_id = seed_task(
+        &db,
+        &ctx,
+        named_col.id,
+        board.id,
+        project.id,
+        "Column Name Task",
+        "uniquetoken_colname",
+    )
+    .await;
+
+    let _doc_id = seed_doc(&db, &ctx, "Column Name Doc", "uniquetoken_colname").await;
+
+    let repo = PgSearchRepo::new(db.conn().clone());
+    let principal = Principal::User(owner.id);
+    let hits = repo
+        .search(
+            &ctx,
+            &principal,
+            &make_search_query("uniquetoken_colname"),
+            50,
+            None,
+        )
+        .await
+        .expect("search");
+
+    let task_hit = hits
+        .iter()
+        .find(|h| h.id == task_id.0)
+        .expect("task hit must be present");
+
+    assert_eq!(
+        task_hit.column_name.as_deref(),
+        Some(column_name),
+        "task hit must carry column_name equal to the seeded column name; got: {:?}",
+        task_hit.column_name
+    );
+
+    for hit in &hits {
+        if hit.id != task_id.0 {
+            assert!(
+                hit.column_name.is_none(),
+                "document hit must have column_name = None; id={} got: {:?}",
+                hit.id,
+                hit.column_name
+            );
+        }
+    }
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
 // REQ-3 member visibility — Fix 2(b)
 //
 // A plain MemberRole::Member (no explicit grant) must NOT see a document that

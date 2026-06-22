@@ -158,6 +158,9 @@ pub(crate) fn project_search_hit(hit: SearchHitDto) -> Value {
     if let Some(slug) = hit.project_slug {
         map.insert("project_slug".into(), json!(slug));
     }
+    if let Some(col) = hit.column_name {
+        map.insert("column_name".into(), json!(col));
+    }
 
     Value::Object(map)
 }
@@ -1238,6 +1241,7 @@ mod tests {
             score: 0.8,
             updated_at: now(),
             project_slug: Some("my-project".into()),
+            column_name: None,
         };
         let val = project_search_hit(hit);
         assert_eq!(val["kind"], "task");
@@ -1259,12 +1263,50 @@ mod tests {
             score: 0.5,
             updated_at: now(),
             project_slug: None,
+            column_name: None,
         };
         let val = project_search_hit(hit);
         assert_eq!(val["kind"], "document");
         assert!(val.get("readable_id").is_none());
         assert!(val.get("snippet").is_none());
         assert!(val.get("project_slug").is_none());
+    }
+
+    #[test]
+    fn search_hit_task_emits_column_name_when_some() {
+        let hit = SearchHitDto {
+            id: fixed_uuid(),
+            kind: SearchKindDto::Task,
+            readable_id: Some("ATL-7".into()),
+            title: "Task in column".into(),
+            snippet: None,
+            score: 0.9,
+            updated_at: now(),
+            project_slug: None,
+            column_name: Some("In Progress".into()),
+        };
+        let val = project_search_hit(hit);
+        assert_eq!(val["column_name"], "In Progress");
+    }
+
+    #[test]
+    fn search_hit_document_omits_column_name_when_none() {
+        let hit = SearchHitDto {
+            id: fixed_uuid(),
+            kind: SearchKindDto::Document,
+            readable_id: None,
+            title: "Doc".into(),
+            snippet: None,
+            score: 0.5,
+            updated_at: now(),
+            project_slug: None,
+            column_name: None,
+        };
+        let val = project_search_hit(hit);
+        assert!(
+            val.get("column_name").is_none(),
+            "column_name must be absent when None"
+        );
     }
 
     // -----------------------------------------------------------------------
