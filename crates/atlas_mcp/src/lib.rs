@@ -8,6 +8,10 @@ use atlas_api::dtos::boards_tasks::{
     AddAssigneeRequest, CreateTaskRequest, MoveTaskRequest, TaskPropertiesDto, UpdateTaskRequest,
     WorkspaceTaskQueryParams,
 };
+use atlas_api::dtos::documents::{
+    CreateDocumentRequest, MoveDocumentRequest, UpdateContentRequest, UpdateDocumentRequest,
+};
+use atlas_api::dtos::folders::{CreateFolderRequest, MoveFolderRequest, RenameFolderRequest};
 use atlas_client::AtlasClient;
 use rmcp::{
     ServerHandler,
@@ -59,6 +63,17 @@ For task mutations use: `create_task` (board + column resolved by name), `update
 (PATCH semantics — omit a field to leave it unchanged, pass null to clear), `move_task` \
 (target column resolved by name; errors with the column list on a miss), `delete_task` \
 (requires confirm: true), `add_task_assignee` / `remove_task_assignee` for assignees. \
+For document mutations use: `create_document` (returns compact projection with head_revision_id), \
+`update_document_metadata` (title / folder, PATCH), `update_document_content` (CAS write — \
+call `get_document detail=full` first to get head_revision_id and content, edit locally, \
+then call with base_revision_id = head_revision_id; on revision_conflict apply \
+base_to_current_patch to your edit and retry with current_revision_id), \
+`delete_document` (requires confirm: true), `move_document` (folder_id or null for root), \
+`copy_document` (optional destination folder_id). \
+For folder mutations use: `create_folder`, `rename_folder`, `move_folder` \
+(parent_folder_id or null for project root; note no ordering support), \
+`copy_folder`, `delete_folder` (requires confirm: true — documents inside keep their \
+folder_id and may be orphaned from navigation). \
 Prefer narrow queries over broad ones; follow up with targeted reads rather than \
 enumerating all results.";
 
@@ -490,6 +505,159 @@ pub struct RemoveTaskAssigneeParams {
     pub readable_id: String,
     /// Assignee reference (UUID of the user or API key to remove).
     pub assignee_ref: String,
+}
+
+/// Parameters accepted by the `create_document` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CreateDocumentParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Project slug. The document is created inside this project.
+    pub project: String,
+    /// Document title.
+    pub title: String,
+    /// UUID string of the folder to place the document in. Omit to place at project root.
+    #[serde(default)]
+    pub folder_id: Option<String>,
+    /// Initial markdown content. Omit for an empty document.
+    #[serde(default)]
+    pub content: Option<String>,
+}
+
+/// Parameters accepted by the `update_document_metadata` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct UpdateDocumentMetadataParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Document slug or UUID.
+    pub slug: String,
+    /// New title. Omit to leave unchanged.
+    #[serde(default)]
+    pub title: Option<String>,
+    /// UUID string of the parent folder. Omit to leave unchanged.
+    #[serde(default)]
+    pub folder_id: Option<String>,
+}
+
+/// Parameters accepted by the `update_document_content` tool.
+///
+/// Uses compare-and-swap (CAS) semantics. Before calling this tool:
+/// 1. Call `get_document` with `detail=full` to obtain `head_revision_id` and the current content.
+/// 2. Edit the content locally.
+/// 3. Call this tool with `base_revision_id = head_revision_id`.
+///
+/// On a `revision_conflict` error, the response includes `current_revision_id`,
+/// `current_seq`, and `base_to_current_patch`. Apply the patch to your edited content
+/// and retry with `base_revision_id = current_revision_id`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct UpdateDocumentContentParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Document slug or UUID.
+    pub slug: String,
+    /// New full markdown content for the document.
+    pub content: String,
+    /// The `head_revision_id` UUID string from a previous `get_document` call. Must match
+    /// the current server-side head or the request returns a revision_conflict error.
+    pub base_revision_id: String,
+}
+
+/// Parameters accepted by the `delete_document` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DeleteDocumentParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Document slug or UUID.
+    pub slug: String,
+    /// Set to `true` to confirm deletion. This is a destructive, non-auto-reversible operation.
+    pub confirm: bool,
+}
+
+/// Parameters accepted by the `move_document` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct MoveDocumentParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Document slug or UUID.
+    pub slug: String,
+    /// UUID string of the destination folder. Omit to move to the project root.
+    #[serde(default)]
+    pub folder_id: Option<String>,
+}
+
+/// Parameters accepted by the `copy_document` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CopyDocumentParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Document slug or UUID of the source document.
+    pub slug: String,
+    /// UUID string of the destination folder for the copy. Omit to copy into the same folder as the source.
+    #[serde(default)]
+    pub folder_id: Option<String>,
+}
+
+/// Parameters accepted by the `create_folder` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CreateFolderParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Project slug. The folder is created inside this project.
+    pub project: String,
+    /// Folder name.
+    pub name: String,
+    /// UUID string of the parent folder. Omit to create at the project root.
+    #[serde(default)]
+    pub parent_folder_id: Option<String>,
+}
+
+/// Parameters accepted by the `rename_folder` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct RenameFolderParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// UUID string of the folder to rename.
+    pub folder_id: String,
+    /// New name for the folder.
+    pub name: String,
+}
+
+/// Parameters accepted by the `move_folder` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct MoveFolderParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// UUID string of the folder to move.
+    pub folder_id: String,
+    /// UUID string of the new parent folder. Omit to move to the project root.
+    /// Note: folder ordering is not supported — the moved folder's position within its
+    /// new parent is determined by the server.
+    #[serde(default)]
+    pub parent_folder_id: Option<String>,
+}
+
+/// Parameters accepted by the `copy_folder` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CopyFolderParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// UUID string of the folder to copy (recursively copies sub-folders and documents).
+    pub folder_id: String,
+    /// UUID string of the parent folder for the copy. Omit to copy under the same parent as the source.
+    #[serde(default)]
+    pub parent_folder_id: Option<String>,
+}
+
+/// Parameters accepted by the `delete_folder` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DeleteFolderParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// UUID string of the folder to delete.
+    pub folder_id: String,
+    /// Set to `true` to confirm deletion. The folder row is soft-deleted; documents inside
+    /// keep their folder_id and may become orphaned from navigation.
+    pub confirm: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -1231,6 +1399,324 @@ impl AtlasMcp {
         });
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
+
+    #[tool(
+        description = "Create a document in a project. Returns compact projection with head_revision_id."
+    )]
+    async fn create_document(
+        &self,
+        Parameters(params): Parameters<CreateDocumentParams>,
+    ) -> Result<String, String> {
+        let folder_id = params
+            .folder_id
+            .as_deref()
+            .map(|s| {
+                s.parse::<uuid::Uuid>()
+                    .map_err(|_| format!("folder_id '{s}' is not a valid UUID"))
+            })
+            .transpose()?;
+
+        let body = CreateDocumentRequest {
+            title: params.title,
+            folder_id,
+            content: params.content,
+        };
+
+        let doc = self
+            .client
+            .create_document(&params.workspace, &params.project, body)
+            .await
+            .map_err(|e| enrich_client_error(e, "create_document"))?;
+
+        let result = project_document_compact(doc);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Update document title or folder (metadata only). PATCH: omit fields to leave unchanged. Use update_document_content to change content."
+    )]
+    async fn update_document_metadata(
+        &self,
+        Parameters(params): Parameters<UpdateDocumentMetadataParams>,
+    ) -> Result<String, String> {
+        let folder_id = params
+            .folder_id
+            .as_deref()
+            .map(|s| {
+                s.parse::<uuid::Uuid>()
+                    .map_err(|_| format!("folder_id '{s}' is not a valid UUID"))
+            })
+            .transpose()?;
+
+        let body = UpdateDocumentRequest {
+            title: params.title,
+            folder_id,
+        };
+
+        let doc = self
+            .client
+            .update_document(&params.workspace, &params.slug, body)
+            .await
+            .map_err(|e| enrich_client_error(e, "update_document_metadata"))?;
+
+        let result = project_document_compact(doc);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Write new content to a document using compare-and-swap. \
+                       Read with get_document detail=full to get head_revision_id + content, \
+                       edit locally, then call with base_revision_id = head_revision_id. \
+                       On revision_conflict: apply base_to_current_patch to your edit and \
+                       retry with base_revision_id = current_revision_id."
+    )]
+    async fn update_document_content(
+        &self,
+        Parameters(params): Parameters<UpdateDocumentContentParams>,
+    ) -> Result<String, String> {
+        let base_revision_id = params.base_revision_id.parse::<uuid::Uuid>().map_err(|_| {
+            format!(
+                "base_revision_id '{}' is not a valid UUID",
+                params.base_revision_id
+            )
+        })?;
+
+        let body = UpdateContentRequest {
+            content: params.content,
+            base_revision_id,
+        };
+
+        let doc = self
+            .client
+            .update_content(&params.workspace, &params.slug, body)
+            .await
+            .map_err(|e| enrich_client_error(e, "update_document_content"))?;
+
+        let result = project_document_compact(doc);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Delete a document permanently. Requires confirm: true. \
+                       This operation is not auto-reversible."
+    )]
+    async fn delete_document(
+        &self,
+        Parameters(params): Parameters<DeleteDocumentParams>,
+    ) -> Result<String, String> {
+        require_confirm(params.confirm, "document", &params.slug)?;
+
+        self.client
+            .delete_document(&params.workspace, &params.slug)
+            .await
+            .map_err(|e| enrich_client_error(e, "delete_document"))?;
+
+        let result = json!({
+            "deleted": true,
+            "slug": params.slug,
+        });
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Move a document to a different folder. Omit folder_id to move to the project root."
+    )]
+    async fn move_document(
+        &self,
+        Parameters(params): Parameters<MoveDocumentParams>,
+    ) -> Result<String, String> {
+        let folder_id = params
+            .folder_id
+            .as_deref()
+            .map(|s| {
+                s.parse::<uuid::Uuid>()
+                    .map_err(|_| format!("folder_id '{s}' is not a valid UUID"))
+            })
+            .transpose()?;
+
+        let body = MoveDocumentRequest { folder_id };
+
+        let doc = self
+            .client
+            .move_document(&params.workspace, &params.slug, body)
+            .await
+            .map_err(|e| enrich_client_error(e, "move_document"))?;
+
+        let result = project_document_compact(doc);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Copy a document. Optional folder_id sets the destination; omit to copy into the same folder."
+    )]
+    async fn copy_document(
+        &self,
+        Parameters(params): Parameters<CopyDocumentParams>,
+    ) -> Result<String, String> {
+        let folder_id = params
+            .folder_id
+            .as_deref()
+            .map(|s| {
+                s.parse::<uuid::Uuid>()
+                    .map_err(|_| format!("folder_id '{s}' is not a valid UUID"))
+            })
+            .transpose()?;
+
+        let doc = self
+            .client
+            .copy_document(&params.workspace, &params.slug, folder_id)
+            .await
+            .map_err(|e| enrich_client_error(e, "copy_document"))?;
+
+        let result = project_document_compact(doc);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Create a folder inside a project. Optional parent_folder_id nests it; omit for project root."
+    )]
+    async fn create_folder(
+        &self,
+        Parameters(params): Parameters<CreateFolderParams>,
+    ) -> Result<String, String> {
+        let parent_folder_id = params
+            .parent_folder_id
+            .as_deref()
+            .map(|s| {
+                s.parse::<uuid::Uuid>()
+                    .map_err(|_| format!("parent_folder_id '{s}' is not a valid UUID"))
+            })
+            .transpose()?;
+
+        let body = CreateFolderRequest {
+            name: params.name,
+            parent_folder_id,
+        };
+
+        let folder = self
+            .client
+            .create_folder(&params.workspace, &params.project, body)
+            .await
+            .map_err(|e| enrich_client_error(e, "create_folder"))?;
+
+        let result = project_folder(folder);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "Rename a folder.")]
+    async fn rename_folder(
+        &self,
+        Parameters(params): Parameters<RenameFolderParams>,
+    ) -> Result<String, String> {
+        let folder_id = params
+            .folder_id
+            .parse::<uuid::Uuid>()
+            .map_err(|_| format!("folder_id '{}' is not a valid UUID", params.folder_id))?;
+
+        let body = RenameFolderRequest { name: params.name };
+
+        let folder = self
+            .client
+            .rename_folder(&params.workspace, folder_id, body)
+            .await
+            .map_err(|e| enrich_client_error(e, "rename_folder"))?;
+
+        let result = project_folder(folder);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Move a folder to a new parent. Omit parent_folder_id to move to the project root. \
+                       Note: ordering within the parent is not supported."
+    )]
+    async fn move_folder(
+        &self,
+        Parameters(params): Parameters<MoveFolderParams>,
+    ) -> Result<String, String> {
+        let folder_id = params
+            .folder_id
+            .parse::<uuid::Uuid>()
+            .map_err(|_| format!("folder_id '{}' is not a valid UUID", params.folder_id))?;
+
+        let parent_folder_id = params
+            .parent_folder_id
+            .as_deref()
+            .map(|s| {
+                s.parse::<uuid::Uuid>()
+                    .map_err(|_| format!("parent_folder_id '{s}' is not a valid UUID"))
+            })
+            .transpose()?;
+
+        let body = MoveFolderRequest { parent_folder_id };
+
+        let folder = self
+            .client
+            .move_folder(&params.workspace, folder_id, body)
+            .await
+            .map_err(|e| enrich_client_error(e, "move_folder"))?;
+
+        let result = project_folder(folder);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Copy a folder (recursively copies sub-folders and documents). \
+                       Optional parent_folder_id sets destination; omit to copy under the same parent."
+    )]
+    async fn copy_folder(
+        &self,
+        Parameters(params): Parameters<CopyFolderParams>,
+    ) -> Result<String, String> {
+        let folder_id = params
+            .folder_id
+            .parse::<uuid::Uuid>()
+            .map_err(|_| format!("folder_id '{}' is not a valid UUID", params.folder_id))?;
+
+        let parent_folder_id = params
+            .parent_folder_id
+            .as_deref()
+            .map(|s| {
+                s.parse::<uuid::Uuid>()
+                    .map_err(|_| format!("parent_folder_id '{s}' is not a valid UUID"))
+            })
+            .transpose()?;
+
+        let folder = self
+            .client
+            .copy_folder(&params.workspace, folder_id, parent_folder_id)
+            .await
+            .map_err(|e| enrich_client_error(e, "copy_folder"))?;
+
+        let result = project_folder(folder);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Delete a folder. Requires confirm: true. Documents inside keep \
+                       their folder_id and may be orphaned from navigation after deletion."
+    )]
+    async fn delete_folder(
+        &self,
+        Parameters(params): Parameters<DeleteFolderParams>,
+    ) -> Result<String, String> {
+        require_confirm(params.confirm, "folder", &params.folder_id)?;
+
+        let folder_id = params
+            .folder_id
+            .parse::<uuid::Uuid>()
+            .map_err(|_| format!("folder_id '{}' is not a valid UUID", params.folder_id))?;
+
+        self.client
+            .delete_folder(&params.workspace, folder_id)
+            .await
+            .map_err(|e| enrich_client_error(e, "delete_folder"))?;
+
+        let result = json!({
+            "deleted": true,
+            "folder_id": folder_id,
+        });
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
 }
 
 impl AtlasMcp {
@@ -1710,6 +2196,142 @@ mod tests {
         assert!(
             instructions.contains("`list_attachments`"),
             "instructions must mention list_attachments"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Batch 3b: document + folder write params
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn create_document_params_deserializes_minimal() {
+        let json = r#"{"workspace":"ws","project":"my-proj","title":"New Note"}"#;
+        let params: CreateDocumentParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.project, "my-proj");
+        assert_eq!(params.title, "New Note");
+        assert!(params.folder_id.is_none());
+        assert!(params.content.is_none());
+    }
+
+    #[test]
+    fn create_document_params_deserializes_full() {
+        let json = r##"{"workspace":"ws","project":"p","title":"T","folder_id":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234","content":"# Hello"}"##;
+        let params: CreateDocumentParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.content.as_deref(), Some("# Hello"));
+        assert!(params.folder_id.is_some());
+    }
+
+    #[test]
+    fn update_document_metadata_params_all_optional() {
+        let json = r#"{"workspace":"ws","slug":"my-doc"}"#;
+        let params: UpdateDocumentMetadataParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.slug, "my-doc");
+        assert!(params.title.is_none());
+        assert!(params.folder_id.is_none());
+    }
+
+    #[test]
+    fn update_document_metadata_params_with_title() {
+        let json = r#"{"workspace":"ws","slug":"my-doc","title":"Renamed"}"#;
+        let params: UpdateDocumentMetadataParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.title.as_deref(), Some("Renamed"));
+    }
+
+    #[test]
+    fn update_document_content_params_deserializes() {
+        let json = r##"{"workspace":"ws","slug":"my-doc","content":"# Updated","base_revision_id":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234"}"##;
+        let params: UpdateDocumentContentParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.slug, "my-doc");
+        assert_eq!(params.content, "# Updated");
+        assert_eq!(
+            params.base_revision_id,
+            "018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234"
+        );
+    }
+
+    #[test]
+    fn delete_document_params_deserializes() {
+        let json = r#"{"workspace":"ws","slug":"my-doc","confirm":true}"#;
+        let params: DeleteDocumentParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.slug, "my-doc");
+        assert!(params.confirm);
+    }
+
+    #[test]
+    fn move_document_params_optional_folder_id() {
+        let json = r#"{"workspace":"ws","slug":"my-doc"}"#;
+        let params: MoveDocumentParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.slug, "my-doc");
+        assert!(params.folder_id.is_none());
+    }
+
+    #[test]
+    fn copy_document_params_optional_folder_id() {
+        let json = r#"{"workspace":"ws","slug":"my-doc","folder_id":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234"}"#;
+        let params: CopyDocumentParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.slug, "my-doc");
+        assert!(params.folder_id.is_some());
+    }
+
+    #[test]
+    fn create_folder_params_deserializes_minimal() {
+        let json = r#"{"workspace":"ws","project":"my-proj","name":"Designs"}"#;
+        let params: CreateFolderParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.name, "Designs");
+        assert!(params.parent_folder_id.is_none());
+    }
+
+    #[test]
+    fn create_folder_params_deserializes_with_parent() {
+        let json = r#"{"workspace":"ws","project":"p","name":"Sub","parent_folder_id":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234"}"#;
+        let params: CreateFolderParams = serde_json::from_str(json).unwrap();
+        assert!(params.parent_folder_id.is_some());
+    }
+
+    #[test]
+    fn rename_folder_params_deserializes() {
+        let json = r#"{"workspace":"ws","folder_id":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234","name":"Renamed"}"#;
+        let params: RenameFolderParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.name, "Renamed");
+    }
+
+    #[test]
+    fn move_folder_params_optional_parent() {
+        let json = r#"{"workspace":"ws","folder_id":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234"}"#;
+        let params: MoveFolderParams = serde_json::from_str(json).unwrap();
+        assert!(params.parent_folder_id.is_none());
+    }
+
+    #[test]
+    fn copy_folder_params_optional_parent() {
+        let json = r#"{"workspace":"ws","folder_id":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234","parent_folder_id":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234"}"#;
+        let params: CopyFolderParams = serde_json::from_str(json).unwrap();
+        assert!(params.parent_folder_id.is_some());
+    }
+
+    #[test]
+    fn delete_folder_params_deserializes() {
+        let json = r#"{"workspace":"ws","folder_id":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234","confirm":true}"#;
+        let params: DeleteFolderParams = serde_json::from_str(json).unwrap();
+        assert!(params.confirm);
+    }
+
+    #[test]
+    fn get_info_instructions_reference_document_write_tools() {
+        let server = AtlasMcp::new("http://localhost:8080", "test-token").unwrap();
+        let info = server.get_info();
+        let instructions = info.instructions.as_deref().unwrap_or("");
+        assert!(
+            instructions.contains("`update_document_content`"),
+            "instructions must mention update_document_content"
+        );
+        assert!(
+            instructions.contains("`create_document`"),
+            "instructions must mention create_document"
+        );
+        assert!(
+            instructions.contains("`delete_folder`"),
+            "instructions must mention delete_folder"
         );
     }
 }

@@ -166,11 +166,16 @@ pub(crate) fn project_search_hit(hit: SearchHitDto) -> Value {
 // ---------------------------------------------------------------------------
 
 /// Compact projection: identifying metadata only; content and frontmatter omitted.
+///
+/// `head_revision_id` is the CAS token required by `update_document_content`.
+/// It is included here so agents can read the token after any write without
+/// needing a separate full-detail fetch.
 pub(crate) fn project_document_compact(doc: DocumentDto) -> Value {
     json!({
         "id": doc.id,
         "slug": doc.slug,
         "title": doc.title,
+        "head_revision_id": doc.head_revision_id,
         "head_seq": doc.head_seq,
         "updated_at": doc.updated_at,
         "folder_id": doc.folder_id,
@@ -179,11 +184,15 @@ pub(crate) fn project_document_compact(doc: DocumentDto) -> Value {
 }
 
 /// Full projection: compact fields plus markdown content and frontmatter.
+///
+/// `head_revision_id` enables the agent to proceed directly to
+/// `update_document_content` after reading content, without an extra fetch.
 pub(crate) fn project_document_full(doc: DocumentDto) -> Value {
     json!({
         "id": doc.id,
         "slug": doc.slug,
         "title": doc.title,
+        "head_revision_id": doc.head_revision_id,
         "head_seq": doc.head_seq,
         "updated_at": doc.updated_at,
         "folder_id": doc.folder_id,
@@ -1169,6 +1178,15 @@ mod tests {
     }
 
     #[test]
+    fn document_compact_includes_head_revision_id() {
+        let val = project_document_compact(make_doc());
+        assert_eq!(
+            val["head_revision_id"].as_str().unwrap(),
+            fixed_uuid().to_string()
+        );
+    }
+
+    #[test]
     fn document_compact_includes_slug_folder_project() {
         let doc = make_doc();
         let val = project_document_compact(doc);
@@ -1183,6 +1201,15 @@ mod tests {
         let val = project_document_full(doc);
         assert_eq!(val["content"], "# Hello");
         assert_eq!(val["frontmatter"]["author"], "alice");
+    }
+
+    #[test]
+    fn document_full_includes_head_revision_id() {
+        let val = project_document_full(make_doc());
+        assert_eq!(
+            val["head_revision_id"].as_str().unwrap(),
+            fixed_uuid().to_string()
+        );
     }
 
     #[test]
