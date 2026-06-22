@@ -10,6 +10,7 @@ export type BoardDto = components['schemas']['BoardDto'];
 export type BoardSummaryDto = components['schemas']['BoardSummaryDto'];
 export type ColumnDto = components['schemas']['ColumnDto'];
 export type TaskSummaryDto = components['schemas']['TaskSummaryDto'];
+export type ActorDto = components['schemas']['ActorDto'];
 export type TaskDto = components['schemas']['TaskDto'];
 
 /**
@@ -48,6 +49,12 @@ export const useBoardsStore = defineStore('boards', () => {
   const taskDetails = ref<Map<string, TaskDto>>(new Map());
   const detailsLoading = ref(false);
   const loading = ref(false);
+  // Two distinct error channels. `loadError` reflects a failure of the board's
+  // own load path (board / columns / tasks GETs) and is the only signal that
+  // gates the full-screen "Couldn't load board" panel. `error` is the transient
+  // action channel (assign, move, delete, …) surfaced as toasts; a failed action
+  // must never blank an already-loaded board.
+  const loadError = ref<string | null>(null);
   const error = ref<string | null>(null);
 
   // Stable empty-array reference per column. Returning a fresh `[]` for an empty
@@ -244,6 +251,7 @@ export const useBoardsStore = defineStore('boards', () => {
 
   async function loadBoard(ws: string, boardId: string): Promise<void> {
     loading.value = true;
+    loadError.value = null;
     error.value = null;
 
     const { data, error: apiError } = await wrappedClient.GET('/v1/workspaces/{ws}/boards/{board_id}', {
@@ -253,7 +261,7 @@ export const useBoardsStore = defineStore('boards', () => {
     loading.value = false;
 
     if (apiError !== undefined || data === undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to load board';
+      loadError.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to load board';
       return;
     }
 
@@ -267,7 +275,7 @@ export const useBoardsStore = defineStore('boards', () => {
     );
 
     if (apiError !== undefined || data === undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to load columns';
+      loadError.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to load columns';
       return;
     }
 
@@ -390,7 +398,7 @@ export const useBoardsStore = defineStore('boards', () => {
     );
 
     if (apiError !== undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to load tasks';
+      loadError.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to load tasks';
       return;
     }
 
@@ -658,8 +666,46 @@ export const useBoardsStore = defineStore('boards', () => {
     );
 
     if (apiError !== undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to assign task';
+      const problem = apiError as { hint?: string; status?: number } | undefined;
+      error.value =
+        problem?.status === 409
+          ? (problem.hint ?? 'Already assigned to this task')
+          : (problem?.hint ?? 'Failed to assign task');
       return false;
+    }
+
+    // Refresh the board's tasks so the new assignee's avatar shows immediately.
+    // Scoped to the active board; cross-board list views update on their next load.
+    if (board.value !== null) {
+      await loadTasks(ws, board.value.id);
+    }
+
+    return true;
+  }
+
+  /** Removes a workspace member (user) or agent (api_key) from a task's assignees. */
+  async function unassignTask(
+    ws: string,
+    readableId: string,
+    principalType: string,
+    principalId: string,
+  ): Promise<boolean> {
+    const { error: apiError } = await wrappedClient.DELETE(
+      '/v1/workspaces/{ws}/tasks/{readable_id}/assignees/{assignee_ref}',
+      {
+        params: {
+          path: { ws, readable_id: readableId, assignee_ref: `${principalType}:${principalId}` },
+        },
+      },
+    );
+
+    if (apiError !== undefined) {
+      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to unassign task';
+      return false;
+    }
+
+    if (board.value !== null) {
+      await loadTasks(ws, board.value.id);
     }
 
     return true;
@@ -816,6 +862,7 @@ export const useBoardsStore = defineStore('boards', () => {
     columns,
     loading,
     error,
+    loadError,
     taskDetails,
     detailsLoading,
     taskDetail,
@@ -845,6 +892,7 @@ export const useBoardsStore = defineStore('boards', () => {
     updateTask,
     deleteTask,
     assignTask,
+    unassignTask,
     duplicateTask,
     moveTaskToColumn,
     moveTaskToBoard,

@@ -112,7 +112,7 @@ describe('useBoardsStore', () => {
     const store = useBoardsStore();
     await store.loadTasks('ws', 'board-1');
 
-    expect(store.error).toBe('board not found');
+    expect(store.loadError).toBe('board not found');
   });
 
   it('reconcileTask moves a task to a new column and updates its id (REQ-W21)', () => {

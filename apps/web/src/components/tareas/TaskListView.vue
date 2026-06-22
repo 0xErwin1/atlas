@@ -12,8 +12,8 @@
  */
 import { computed, ref } from 'vue';
 import { VueDraggable } from 'vue-draggable-plus';
+import AssigneeAvatars from '@/components/tareas/AssigneeAvatars.vue';
 import TaskRowPicker, { type PickerOption } from '@/components/tareas/TaskRowPicker.vue';
-import Avatar from '@/components/ui/Avatar.vue';
 import Chip from '@/components/ui/Chip.vue';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import ContextMenu from '@/components/ui/ContextMenu.vue';
@@ -174,13 +174,6 @@ function taskIsDone(task: TaskSummaryDto): boolean {
   return column !== undefined && isDoneColumn(column);
 }
 
-function assigneeForTask(task: TaskSummaryDto): { name: string; agent: boolean } | null {
-  const actor = task.assignees?.[0];
-  if (actor === undefined) return null;
-  const agent = actor.type === 'api_key';
-  return { name: actor.display_name ?? (agent ? 'Agent' : 'User'), agent };
-}
-
 function statusNameForTask(task: TaskSummaryDto): string {
   const column = boards.columns.find((c) => c.id === task.column_id);
   return column?.name ?? '';
@@ -281,13 +274,22 @@ function priorityOptionsFor(task: TaskSummaryDto): PickerOption[] {
   return options;
 }
 
-const assigneeOptions = computed<PickerOption[]>(() =>
-  workspace.members.map((member) => ({
-    value: `${member.principal_type}:${member.id}`,
-    label: member.display,
-    icon: member.principal_type === 'api_key' ? 'bot' : 'user',
-  })),
-);
+function assignedRefs(task: TaskSummaryDto): Set<string> {
+  return new Set((task.assignees ?? []).map((a) => `${a.type}:${a.id}`));
+}
+
+function assigneeOptionsFor(task: TaskSummaryDto): PickerOption[] {
+  const assigned = assignedRefs(task);
+  return workspace.members.map((member) => {
+    const value = `${member.principal_type}:${member.id}`;
+    return {
+      value,
+      label: member.display,
+      icon: member.principal_type === 'api_key' ? 'bot' : 'user',
+      active: assigned.has(value),
+    };
+  });
+}
 
 async function onAssigneeOpen(task: TaskSummaryDto, value: boolean): Promise<void> {
   setPickerOpen('assignee', task, value);
@@ -306,6 +308,14 @@ function onPriorityPick(task: TaskSummaryDto, value: string): void {
 function onAssigneePick(task: TaskSummaryDto, value: string): void {
   const [type, id] = value.split(/:(.*)/s);
   if (type === undefined || id === undefined) return;
+
+  // Toggle: picking an already-assigned principal removes it instead of
+  // re-posting an assignment the server would reject as a 409 conflict.
+  if (assignedRefs(task).has(value)) {
+    void ti.runUnassign(task.readable_id, type, id);
+    return;
+  }
+
   void ti.runAssign(task.readable_id, type, id);
 }
 </script>
@@ -418,16 +428,19 @@ function onAssigneePick(task: TaskSummaryDto, value: string): void {
 
             <TaskRowPicker
               class="atl-tl-pick atl-tl-assignee"
-              :options="assigneeOptions"
+              :options="assigneeOptionsFor(task)"
               width="220px"
               :open="isPickerOpen('assignee', task)"
               @update:open="(v: boolean) => onAssigneeOpen(task, v)"
               @pick="(v: string) => onAssigneePick(task, v)"
             >
               <template #trigger>
-                <template v-if="assigneeForTask(task)">
-                  <Avatar :name="assigneeForTask(task)!.name" :agent="assigneeForTask(task)!.agent" :size="18" />
-                </template>
+                <AssigneeAvatars
+                  v-if="task.assignees && task.assignees.length"
+                  :assignees="task.assignees"
+                  :max="3"
+                  :size="18"
+                />
                 <span v-else class="atl-tl-noassignee" title="Assign">
                   <Icon name="user" :size="11" />
                 </span>
@@ -524,16 +537,19 @@ function onAssigneePick(task: TaskSummaryDto, value: string): void {
 
             <TaskRowPicker
               class="atl-tl-pick atl-tl-assignee"
-              :options="assigneeOptions"
+              :options="assigneeOptionsFor(task)"
               width="220px"
               :open="isPickerOpen('assignee', task)"
               @update:open="(v: boolean) => onAssigneeOpen(task, v)"
               @pick="(v: string) => onAssigneePick(task, v)"
             >
               <template #trigger>
-                <template v-if="assigneeForTask(task)">
-                  <Avatar :name="assigneeForTask(task)!.name" :agent="assigneeForTask(task)!.agent" :size="18" />
-                </template>
+                <AssigneeAvatars
+                  v-if="task.assignees && task.assignees.length"
+                  :assignees="task.assignees"
+                  :max="3"
+                  :size="18"
+                />
                 <span v-else class="atl-tl-noassignee" title="Assign">
                   <Icon name="user" :size="11" />
                 </span>

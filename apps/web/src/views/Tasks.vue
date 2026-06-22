@@ -383,9 +383,9 @@ watch(
 
     <template v-else>
       <ErrorState
-        v-if="boards.error"
+        v-if="boards.loadError"
         title="Couldn't load board"
-        :hint="boards.error"
+        :hint="boards.loadError"
         @retry="loadBoard"
       />
       <LoadingState v-else-if="boards.loading" label="Loading…" />

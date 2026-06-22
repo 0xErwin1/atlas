@@ -86,6 +86,12 @@ export function useTaskInteractions(ws: string) {
     else if (boards.error) ui.showBanner(boards.error, 'error');
   }
 
+  async function runUnassign(readableId: string, type: string, id: string): Promise<void> {
+    const ok = await boards.unassignTask(ws, readableId, type, id);
+    if (ok) ui.showBanner('Task unassigned', 'success');
+    else if (boards.error) ui.showBanner(boards.error, 'error');
+  }
+
   async function runDuplicate(readableId: string, boardId: string): Promise<void> {
     const created = await boards.duplicateTask(ws, boardId, readableId);
     if (created === null && boards.error) ui.showBanner(boards.error, 'error');
@@ -236,6 +242,7 @@ export function useTaskInteractions(ws: string) {
     runMoveToColumn,
     runMoveToBoard,
     runAssign,
+    runUnassign,
     runDuplicate,
     copyText,
     openRename,

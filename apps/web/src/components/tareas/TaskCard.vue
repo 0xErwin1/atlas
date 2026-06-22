@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import Avatar from '@/components/ui/Avatar.vue';
+import AssigneeAvatars from '@/components/tareas/AssigneeAvatars.vue';
 import Chip from '@/components/ui/Chip.vue';
 import type { TaskSummaryDto } from '@/stores/boards';
 import { useLabelColorsStore } from '@/stores/labelColors';
@@ -67,15 +67,12 @@ defineEmits<{
         {{ task.readable_id }}
       </span>
       <span class="flex-1" />
-      <span v-if="task.assignees && task.assignees.length" class="flex items-center" style="gap: 3px;">
-        <Avatar
-          v-for="a in task.assignees"
-          :key="`${a.type}:${a.id}`"
-          :name="a.display_name ?? ''"
-          :agent="a.type === 'api_key'"
-          :size="18"
-        />
-      </span>
+      <AssigneeAvatars
+        v-if="task.assignees && task.assignees.length"
+        :assignees="task.assignees"
+        :max="3"
+        :size="18"
+      />
     </div>
   </button>
 </template>
