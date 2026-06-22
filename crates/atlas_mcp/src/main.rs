@@ -58,26 +58,45 @@ async fn run_stdio(base_url: String) -> anyhow::Result<()> {
 
     let server = AtlasMcp::new(base_url, token)?;
 
-    let me = server
-        .client()
-        .map_err(|e| anyhow!("{e}"))?
-        .me()
-        .await
-        .map_err(|e| anyhow!("startup identity probe failed: {e}"))?;
-
-    if me.principal_type == "api_key" {
-        tracing::info!("authenticated as api_key agent");
-    } else {
-        tracing::warn!(
-            principal_type = %me.principal_type,
-            "token is not an API key; attribution will be a user, not an agent"
-        );
-    }
+    log_startup_identity(&server).await;
 
     let mcp_server = server.serve(stdio()).await?;
     mcp_server.waiting().await?;
 
     Ok(())
+}
+
+/// Best-effort identity probe for stdio mode.
+///
+/// Logs the authenticated principal to stderr but never aborts startup: a backend
+/// that is unreachable at launch or a rejected token must not break the MCP
+/// handshake (the client would only see an opaque connection error). Individual
+/// tool calls surface auth and connection failures with actionable messages.
+async fn log_startup_identity(server: &AtlasMcp) {
+    let client = match server.client() {
+        Ok(client) => client,
+        Err(e) => {
+            tracing::warn!("skipping startup identity probe: {e}");
+            return;
+        }
+    };
+
+    match client.me().await {
+        Ok(me) if me.principal_type == "api_key" => {
+            tracing::info!("authenticated as api_key agent");
+        }
+        Ok(me) => {
+            tracing::warn!(
+                principal_type = %me.principal_type,
+                "token is not an API key; attribution will be a user, not an agent"
+            );
+        }
+        Err(e) => {
+            tracing::warn!(
+                "startup identity probe failed; continuing (tool calls will report auth/connection errors): {e}"
+            );
+        }
+    }
 }
 
 /// Axum middleware that enforces `Authorization: Bearer atlas_<token>` on all requests.
