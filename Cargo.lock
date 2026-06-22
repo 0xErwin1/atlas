@@ -378,8 +378,10 @@ name = "atlas_mcp"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "atlas_api",
  "atlas_client",
  "atlas_domain",
+ "chrono",
  "rmcp",
  "schemars",
  "serde",
@@ -387,6 +389,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]

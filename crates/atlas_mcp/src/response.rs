@@ -1,0 +1,750 @@
+//! Pure projection and pagination helpers for MCP tool responses.
+//!
+//! All functions in this module are synchronous and have no I/O dependency,
+//! making them fully unit-testable without a live server. Tool bodies in
+//! `lib.rs` delegate all data-shaping work here so the testable surface is
+//! maximised.
+
+use atlas_api::{
+    dtos::{
+        boards_tasks::{ColumnDto, ReferenceDto, TaskDto, TaskSummaryDto},
+        documents::DocumentDto,
+        search::SearchHitDto,
+    },
+    pagination::Page,
+};
+use serde_json::{Value, json};
+
+// ---------------------------------------------------------------------------
+// Detail level
+// ---------------------------------------------------------------------------
+
+/// Whether to emit the compact (metadata-only) or full (adds heavy fields)
+/// projection of a resource.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Detail {
+    Compact,
+    Full,
+}
+
+/// Parses the `detail` tool parameter.
+///
+/// Accepts `"full"` (case-insensitive) to opt in; anything else (including
+/// absent) yields `Compact`. Lenient: unknown strings default to compact so
+/// agents cannot accidentally break a call with a typo.
+pub(crate) fn parse_detail(value: Option<&str>) -> Detail {
+    match value {
+        Some(s) if s.eq_ignore_ascii_case("full") => Detail::Full,
+        _ => Detail::Compact,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// CSV / list param parsing
+// ---------------------------------------------------------------------------
+
+/// Splits a comma-separated string into a trimmed, non-empty `Vec<String>`.
+///
+/// Empty input or whitespace-only input yields an empty vec.
+/// Individual items that are blank after trimming are skipped.
+pub(crate) fn parse_csv(s: &str) -> Vec<String> {
+    s.split(',')
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(String::from)
+        .collect()
+}
+
+// ---------------------------------------------------------------------------
+// Pagination envelope
+// ---------------------------------------------------------------------------
+
+/// Wraps a `Page<Value>` into the uniform agent-facing envelope:
+/// `{"items":[...], "next_cursor": <string|null>, "has_more": <bool>}`.
+///
+/// `Page<T>` already carries `next_cursor` and `has_more`; this function just
+/// re-serialises its already-projected `items` into the envelope shape.
+pub(crate) fn paginated_envelope(
+    items: Vec<Value>,
+    next_cursor: Option<String>,
+    has_more: bool,
+) -> Value {
+    json!({
+        "items": items,
+        "next_cursor": next_cursor,
+        "has_more": has_more,
+    })
+}
+
+/// Convenience: build a `Page<T>` envelope helper for endpoints that return a
+/// `Page<T>`. Projects each item with `project_fn`, then wraps in the envelope.
+pub(crate) fn envelope_page<T, F>(page: Page<T>, project_fn: F) -> Value
+where
+    F: Fn(T) -> Value,
+{
+    let items: Vec<Value> = page.items.into_iter().map(project_fn).collect();
+    paginated_envelope(items, page.next_cursor, page.has_more)
+}
+
+/// Convenience: build the envelope for `Vec`-returning endpoints (no cursor).
+///
+/// These are always returned with `next_cursor: null` and `has_more: false` so
+/// the agent never needs to special-case them.
+#[allow(dead_code)]
+pub(crate) fn wrap_vec<T, F>(items: Vec<T>, project_fn: F) -> Value
+where
+    F: Fn(T) -> Value,
+{
+    let projected: Vec<Value> = items.into_iter().map(project_fn).collect();
+    paginated_envelope(projected, None, false)
+}
+
+// ---------------------------------------------------------------------------
+// Column-name resolver
+// ---------------------------------------------------------------------------
+
+/// Returns the UUIDs of all columns whose name contains `name_fragment` as a
+/// case-insensitive substring.
+///
+/// Returns an empty vec when no column matches — callers should propagate this
+/// as an empty result rather than an error (the agent supplied an unrecognised
+/// status name). Multi-match is intentional: a workspace may have multiple
+/// boards each with a column called "To Do"; all matching UUIDs are returned so
+/// the filter covers all of them.
+pub(crate) fn match_columns_by_name(name_fragment: &str, cols: &[ColumnDto]) -> Vec<String> {
+    let needle = name_fragment.to_ascii_lowercase();
+    cols.iter()
+        .filter(|col| col.name.to_ascii_lowercase().contains(&needle))
+        .map(|col| col.id.to_string())
+        .collect()
+}
+
+// ---------------------------------------------------------------------------
+// Search hit projection
+// ---------------------------------------------------------------------------
+
+/// Compact projection of a search hit.
+///
+/// The `kind` enum is lowercased to a plain string (`"document"`, `"task"`).
+/// `readable_id`, `snippet`, and `project_slug` are absent when `None`.
+pub(crate) fn project_search_hit(hit: SearchHitDto) -> Value {
+    let kind = format!("{:?}", hit.kind).to_lowercase();
+
+    let mut map = serde_json::Map::new();
+    map.insert("id".into(), json!(hit.id));
+    map.insert("kind".into(), json!(kind));
+    map.insert("title".into(), json!(hit.title));
+    map.insert("score".into(), json!(hit.score));
+    map.insert("updated_at".into(), json!(hit.updated_at));
+
+    if let Some(rid) = hit.readable_id {
+        map.insert("readable_id".into(), json!(rid));
+    }
+    if let Some(snip) = hit.snippet {
+        map.insert("snippet".into(), json!(snip));
+    }
+    if let Some(slug) = hit.project_slug {
+        map.insert("project_slug".into(), json!(slug));
+    }
+
+    Value::Object(map)
+}
+
+// ---------------------------------------------------------------------------
+// Document projections
+// ---------------------------------------------------------------------------
+
+/// Compact projection: identifying metadata only; content and frontmatter omitted.
+pub(crate) fn project_document_compact(doc: DocumentDto) -> Value {
+    json!({
+        "id": doc.id,
+        "slug": doc.slug,
+        "title": doc.title,
+        "head_seq": doc.head_seq,
+        "updated_at": doc.updated_at,
+        "folder_id": doc.folder_id,
+        "project_id": doc.project_id,
+    })
+}
+
+/// Full projection: compact fields plus markdown content and frontmatter.
+pub(crate) fn project_document_full(doc: DocumentDto) -> Value {
+    json!({
+        "id": doc.id,
+        "slug": doc.slug,
+        "title": doc.title,
+        "head_seq": doc.head_seq,
+        "updated_at": doc.updated_at,
+        "folder_id": doc.folder_id,
+        "project_id": doc.project_id,
+        "content": doc.content,
+        "frontmatter": doc.frontmatter,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Task row projection (from TaskSummaryDto — list_tasks rows)
+// ---------------------------------------------------------------------------
+
+/// Compact projection of a task list row.
+///
+/// `TaskSummaryDto` already carries human-readable `board_name` and
+/// `column_name`, so the agent sees names rather than raw UUIDs in list output.
+pub(crate) fn project_task_row(task: TaskSummaryDto) -> Value {
+    let assignees: Vec<Value> = task
+        .assignees
+        .into_iter()
+        .map(|a| {
+            json!({
+                "type": a.r#type,
+                "display_name": a.display_name,
+            })
+        })
+        .collect();
+
+    json!({
+        "readable_id": task.readable_id,
+        "title": task.title,
+        "board_name": task.board_name,
+        "column_name": task.column_name,
+        "priority": task.priority,
+        "labels": task.labels,
+        "estimate": task.estimate,
+        "assignees": assignees,
+        "updated_at": task.updated_at,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Task projections (from TaskDto — get_task)
+// ---------------------------------------------------------------------------
+
+/// Compact projection of a full task.
+///
+/// `TaskDto` lacks `column_name` and `board_name` (API debt D-TASKNAME); the
+/// raw `column_id` UUID is included so the agent can resolve the name via
+/// `list_columns` if needed.
+pub(crate) fn project_task_compact(task: &TaskDto) -> Value {
+    json!({
+        "readable_id": task.readable_id,
+        "title": task.title,
+        "column_id": task.column_id,
+        "priority": task.priority,
+        "labels": task.labels,
+        "estimate": task.estimate,
+        "due_date": task.due_date,
+        "parent_task_id": task.parent_task_id,
+        "updated_at": task.updated_at,
+    })
+}
+
+/// Full projection: compact fields plus description and derived sub-resources.
+///
+/// `references` and `subtasks` are optional: when the backing call fails a
+/// step-attribution error field is included instead of failing the whole
+/// response. Callers supply pre-projected values or error strings.
+pub(crate) fn project_task_full(
+    task: &TaskDto,
+    references: Result<Vec<Value>, String>,
+    subtasks: Result<Vec<Value>, String>,
+) -> Value {
+    let compact = project_task_compact(task);
+
+    let mut map = match compact {
+        Value::Object(m) => m,
+        other => {
+            let mut m = serde_json::Map::new();
+            m.insert("_raw".into(), other);
+            m
+        }
+    };
+
+    map.insert("description".into(), json!(task.description));
+
+    match references {
+        Ok(refs) => {
+            map.insert("references".into(), json!(refs));
+        }
+        Err(e) => {
+            map.insert("references_error".into(), json!(e));
+        }
+    }
+
+    match subtasks {
+        Ok(subs) => {
+            map.insert("subtasks".into(), json!(subs));
+        }
+        Err(e) => {
+            map.insert("subtasks_error".into(), json!(e));
+        }
+    }
+
+    Value::Object(map)
+}
+
+// ---------------------------------------------------------------------------
+// Reference projection
+// ---------------------------------------------------------------------------
+
+/// Projects an outbound task reference to the compact MCP shape.
+pub(crate) fn project_reference(r: ReferenceDto) -> Value {
+    json!({
+        "kind": r.kind,
+        "target_readable_id": r.target_readable_id,
+        "target_document_id": r.target_document_id,
+        "target_title": r.target_title,
+        "target_resolved": r.target_resolved,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+#[allow(clippy::indexing_slicing)]
+mod tests {
+    use super::*;
+    use atlas_api::dtos::{
+        boards_tasks::{ColumnDto, ReferenceDto, TaskDto, TaskSummaryDto},
+        documents::{ActorDto, DocumentDto},
+        search::{SearchHitDto, SearchKindDto},
+    };
+    use chrono::Utc;
+    use uuid::Uuid;
+
+    fn now() -> chrono::DateTime<Utc> {
+        Utc::now()
+    }
+
+    fn fixed_uuid() -> Uuid {
+        Uuid::parse_str("018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234").unwrap()
+    }
+
+    fn actor() -> ActorDto {
+        ActorDto {
+            r#type: "user".into(),
+            id: fixed_uuid(),
+            display_name: Some("Alice".into()),
+        }
+    }
+
+    fn make_doc() -> DocumentDto {
+        DocumentDto {
+            id: fixed_uuid(),
+            workspace_id: fixed_uuid(),
+            project_id: Some(fixed_uuid()),
+            folder_id: Some(fixed_uuid()),
+            slug: Some("my-doc".into()),
+            title: "My Doc".into(),
+            content: "# Hello".into(),
+            head_revision_id: fixed_uuid(),
+            head_seq: 3,
+            frontmatter: serde_json::json!({"author": "alice"}),
+            created_at: now(),
+            updated_at: now(),
+        }
+    }
+
+    fn make_task_dto() -> TaskDto {
+        TaskDto {
+            id: fixed_uuid(),
+            workspace_id: fixed_uuid(),
+            project_id: fixed_uuid(),
+            board_id: fixed_uuid(),
+            column_id: fixed_uuid(),
+            parent_task_id: None,
+            readable_id: "ATL-1".into(),
+            title: "Fix bug".into(),
+            description: "A long description".into(),
+            priority: Some("high".into()),
+            due_date: None,
+            estimate: Some(3),
+            labels: vec!["backend".into()],
+            properties: None,
+            created_by: actor(),
+            created_at: now(),
+            updated_at: now(),
+        }
+    }
+
+    fn make_task_summary() -> TaskSummaryDto {
+        TaskSummaryDto {
+            id: fixed_uuid(),
+            readable_id: "ATL-2".into(),
+            board_id: fixed_uuid(),
+            column_id: fixed_uuid(),
+            title: "Task two".into(),
+            priority: Some("low".into()),
+            estimate: None,
+            labels: vec![],
+            assignees: vec![actor()],
+            board_name: "Main Board".into(),
+            column_name: "To Do".into(),
+            updated_at: now(),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // parse_detail
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn parse_detail_absent_yields_compact() {
+        assert_eq!(parse_detail(None), Detail::Compact);
+    }
+
+    #[test]
+    fn parse_detail_empty_string_yields_compact() {
+        assert_eq!(parse_detail(Some("")), Detail::Compact);
+    }
+
+    #[test]
+    fn parse_detail_full_lowercase_yields_full() {
+        assert_eq!(parse_detail(Some("full")), Detail::Full);
+    }
+
+    #[test]
+    fn parse_detail_full_uppercase_yields_full() {
+        assert_eq!(parse_detail(Some("FULL")), Detail::Full);
+    }
+
+    #[test]
+    fn parse_detail_compact_explicit_yields_compact() {
+        assert_eq!(parse_detail(Some("compact")), Detail::Compact);
+    }
+
+    #[test]
+    fn parse_detail_unknown_yields_compact() {
+        assert_eq!(parse_detail(Some("extended")), Detail::Compact);
+    }
+
+    // -----------------------------------------------------------------------
+    // parse_csv
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn parse_csv_empty_input() {
+        assert!(parse_csv("").is_empty());
+    }
+
+    #[test]
+    fn parse_csv_whitespace_only() {
+        assert!(parse_csv("  ").is_empty());
+    }
+
+    #[test]
+    fn parse_csv_single_item() {
+        assert_eq!(parse_csv("low"), vec!["low"]);
+    }
+
+    #[test]
+    fn parse_csv_multiple_items() {
+        assert_eq!(parse_csv("low,medium,high"), vec!["low", "medium", "high"]);
+    }
+
+    #[test]
+    fn parse_csv_trims_whitespace() {
+        assert_eq!(
+            parse_csv("low , medium , high"),
+            vec!["low", "medium", "high"]
+        );
+    }
+
+    #[test]
+    fn parse_csv_skips_blank_segments() {
+        assert_eq!(parse_csv("low,,high"), vec!["low", "high"]);
+    }
+
+    // -----------------------------------------------------------------------
+    // paginated_envelope / wrap_vec
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn paginated_envelope_with_cursor() {
+        let val = paginated_envelope(vec![json!({"id": 1})], Some("next-page-token".into()), true);
+        assert_eq!(val["next_cursor"], "next-page-token");
+        assert_eq!(val["has_more"], true);
+        assert_eq!(val["items"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn paginated_envelope_without_cursor() {
+        let val = paginated_envelope(vec![], None, false);
+        assert!(val["next_cursor"].is_null());
+        assert_eq!(val["has_more"], false);
+        assert!(val["items"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn wrap_vec_always_has_null_cursor() {
+        let cols = vec![json!({"name": "a"}), json!({"name": "b"})];
+        let val = paginated_envelope(cols, None, false);
+        assert!(val["next_cursor"].is_null());
+        assert_eq!(val["has_more"], false);
+        assert_eq!(val["items"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn envelope_page_threads_page_fields() {
+        use atlas_api::pagination::Page;
+        let page: Page<u32> = Page {
+            items: vec![1, 2],
+            next_cursor: Some("tok".into()),
+            has_more: true,
+        };
+        let val = envelope_page(page, |n| json!(n));
+        assert_eq!(val["next_cursor"], "tok");
+        assert_eq!(val["has_more"], true);
+        assert_eq!(val["items"], json!([1, 2]));
+    }
+
+    // -----------------------------------------------------------------------
+    // match_columns_by_name
+    // -----------------------------------------------------------------------
+
+    fn make_column(name: &str) -> ColumnDto {
+        ColumnDto {
+            id: Uuid::now_v7(),
+            board_id: fixed_uuid(),
+            name: name.into(),
+            position_key: "a".into(),
+            color: None,
+            created_at: now(),
+            updated_at: now(),
+        }
+    }
+
+    #[test]
+    fn match_columns_exact_match() {
+        let cols = vec![make_column("To Do"), make_column("Done")];
+        let ids = match_columns_by_name("To Do", &cols);
+        assert_eq!(ids.len(), 1);
+        assert_eq!(ids[0], cols[0].id.to_string());
+    }
+
+    #[test]
+    fn match_columns_partial_match() {
+        let cols = vec![
+            make_column("Todo"),
+            make_column("Todo Later"),
+            make_column("Done"),
+        ];
+        let ids = match_columns_by_name("todo", &cols);
+        assert_eq!(ids.len(), 2, "both 'Todo' and 'Todo Later' match 'todo'");
+    }
+
+    #[test]
+    fn match_columns_case_insensitive() {
+        let cols = vec![make_column("In Progress"), make_column("Blocked")];
+        let ids = match_columns_by_name("IN PROGRESS", &cols);
+        assert_eq!(ids.len(), 1);
+    }
+
+    #[test]
+    fn match_columns_no_match_returns_empty() {
+        let cols = vec![make_column("To Do"), make_column("Done")];
+        let ids = match_columns_by_name("nonexistent", &cols);
+        assert!(ids.is_empty());
+    }
+
+    #[test]
+    fn match_columns_multi_match_across_boards() {
+        // Two boards each have a "To Do" column with distinct UUIDs.
+        let c1 = make_column("To Do");
+        let c2 = make_column("To Do");
+        assert_ne!(c1.id, c2.id, "test setup: UUIDs must differ");
+        let ids = match_columns_by_name("to do", &[c1.clone(), c2.clone()]);
+        assert_eq!(ids.len(), 2);
+        assert!(ids.contains(&c1.id.to_string()));
+        assert!(ids.contains(&c2.id.to_string()));
+    }
+
+    // -----------------------------------------------------------------------
+    // project_search_hit
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn search_hit_compact_task_fields() {
+        let hit = SearchHitDto {
+            id: fixed_uuid(),
+            kind: SearchKindDto::Task,
+            readable_id: Some("ATL-5".into()),
+            title: "Test task".into(),
+            snippet: Some("<mark>test</mark>".into()),
+            score: 0.8,
+            updated_at: now(),
+            project_slug: Some("my-project".into()),
+        };
+        let val = project_search_hit(hit);
+        assert_eq!(val["kind"], "task");
+        assert_eq!(val["readable_id"], "ATL-5");
+        assert_eq!(val["snippet"], "<mark>test</mark>");
+        assert_eq!(val["project_slug"], "my-project");
+        // must NOT include workspace_id or other heavy fields
+        assert!(val.get("workspace_id").is_none());
+    }
+
+    #[test]
+    fn search_hit_document_omits_absent_optionals() {
+        let hit = SearchHitDto {
+            id: fixed_uuid(),
+            kind: SearchKindDto::Document,
+            readable_id: None,
+            title: "Doc".into(),
+            snippet: None,
+            score: 0.5,
+            updated_at: now(),
+            project_slug: None,
+        };
+        let val = project_search_hit(hit);
+        assert_eq!(val["kind"], "document");
+        assert!(val.get("readable_id").is_none());
+        assert!(val.get("snippet").is_none());
+        assert!(val.get("project_slug").is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // project_document_compact / full
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn document_compact_omits_content_and_frontmatter() {
+        let doc = make_doc();
+        let val = project_document_compact(doc);
+        assert!(
+            val.get("content").is_none(),
+            "compact must not include content"
+        );
+        assert!(
+            val.get("frontmatter").is_none(),
+            "compact must not include frontmatter"
+        );
+        assert_eq!(val["title"], "My Doc");
+        assert_eq!(val["head_seq"], 3);
+    }
+
+    #[test]
+    fn document_compact_includes_slug_folder_project() {
+        let doc = make_doc();
+        let val = project_document_compact(doc);
+        assert_eq!(val["slug"], "my-doc");
+        assert!(!val["folder_id"].is_null());
+        assert!(!val["project_id"].is_null());
+    }
+
+    #[test]
+    fn document_full_includes_content_and_frontmatter() {
+        let doc = make_doc();
+        let val = project_document_full(doc);
+        assert_eq!(val["content"], "# Hello");
+        assert_eq!(val["frontmatter"]["author"], "alice");
+    }
+
+    #[test]
+    fn document_full_includes_all_compact_fields() {
+        let doc = make_doc();
+        let val = project_document_full(doc);
+        assert_eq!(val["title"], "My Doc");
+        assert_eq!(val["head_seq"], 3);
+        assert!(!val["folder_id"].is_null());
+    }
+
+    // -----------------------------------------------------------------------
+    // project_task_row
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn task_row_includes_names_not_uuids() {
+        let summary = make_task_summary();
+        let val = project_task_row(summary);
+        assert_eq!(val["board_name"], "Main Board");
+        assert_eq!(val["column_name"], "To Do");
+        // Raw UUIDs must NOT be present in the row output
+        assert!(val.get("board_id").is_none());
+        assert!(val.get("column_id").is_none());
+        assert!(val.get("id").is_none());
+    }
+
+    #[test]
+    fn task_row_projects_assignees() {
+        let summary = make_task_summary();
+        let val = project_task_row(summary);
+        let assignees = val["assignees"].as_array().unwrap();
+        assert_eq!(assignees.len(), 1);
+        assert_eq!(assignees[0]["type"], "user");
+        assert_eq!(assignees[0]["display_name"], "Alice");
+    }
+
+    // -----------------------------------------------------------------------
+    // project_task_compact / full
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn task_compact_omits_description() {
+        let task = make_task_dto();
+        let val = project_task_compact(&task);
+        assert!(val.get("description").is_none());
+    }
+
+    #[test]
+    fn task_compact_includes_column_id() {
+        let task = make_task_dto();
+        let val = project_task_compact(&task);
+        assert!(!val["column_id"].is_null());
+    }
+
+    #[test]
+    fn task_full_includes_description_and_references() {
+        let task = make_task_dto();
+        let refs = vec![json!({"kind": "relates", "target_resolved": true})];
+        let val = project_task_full(&task, Ok(refs.clone()), Ok(vec![]));
+        assert_eq!(val["description"], "A long description");
+        assert_eq!(val["references"], json!(refs));
+        assert!(val.get("references_error").is_none());
+    }
+
+    #[test]
+    fn task_full_step_attribution_on_references_error() {
+        let task = make_task_dto();
+        let val = project_task_full(&task, Err("timeout".into()), Ok(vec![]));
+        assert!(val.get("references").is_none());
+        assert_eq!(val["references_error"], "timeout");
+        // Task body is still present despite the sub-call failure
+        assert_eq!(val["title"], "Fix bug");
+    }
+
+    #[test]
+    fn task_full_step_attribution_on_subtasks_error() {
+        let task = make_task_dto();
+        let val = project_task_full(&task, Ok(vec![]), Err("not found".into()));
+        assert!(val.get("subtasks").is_none());
+        assert_eq!(val["subtasks_error"], "not found");
+    }
+
+    // -----------------------------------------------------------------------
+    // project_reference
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn reference_projection_includes_kind_and_resolved() {
+        let r = ReferenceDto {
+            id: fixed_uuid(),
+            kind: "blocks".into(),
+            target_task_id: None,
+            target_readable_id: Some("ATL-3".into()),
+            target_document_id: None,
+            target_title: None,
+            target_resolved: true,
+            created_by: actor(),
+            created_at: now(),
+        };
+        let val = project_reference(r);
+        assert_eq!(val["kind"], "blocks");
+        assert_eq!(val["target_readable_id"], "ATL-3");
+        assert_eq!(val["target_resolved"], true);
+        // Heavy fields dropped
+        assert!(val.get("id").is_none());
+        assert!(val.get("created_by").is_none());
+    }
+}

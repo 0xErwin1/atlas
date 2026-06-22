@@ -1,7 +1,10 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+mod response;
+
 use std::sync::Arc;
 
+use atlas_api::dtos::boards_tasks::WorkspaceTaskQueryParams;
 use atlas_client::AtlasClient;
 use rmcp::{
     ServerHandler,
@@ -12,10 +15,18 @@ use rmcp::{
 use schemars::JsonSchema;
 use serde::Deserialize;
 
+use response::{
+    Detail, envelope_page, match_columns_by_name, parse_csv, parse_detail,
+    project_document_compact, project_document_full, project_reference, project_search_hit,
+    project_task_compact, project_task_full, project_task_row,
+};
+
 const ATLAS_INSTRUCTIONS: &str = "\
 Atlas is a personal knowledge base for notes and tasks. \
-Use `search_resources` to retrieve content by keyword or structured filters \
+Use `search` to retrieve content by keyword or structured filters \
 (status:open, tag:rust, etc.) before acting on it. \
+Use `get_document` to read a note's content, `list_tasks` to browse tasks \
+with status/board/assignee/label filters, and `get_task` for a single task's details. \
 Prefer narrow queries over broad ones; follow up with targeted reads rather than \
 enumerating all results.";
 
@@ -57,23 +68,91 @@ impl AtlasMcp {
     }
 }
 
-/// Parameters accepted by the `search_resources` tool.
+// ---------------------------------------------------------------------------
+// Parameter structs
+// ---------------------------------------------------------------------------
+
+/// Parameters accepted by the `search` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
-pub struct SearchResourcesParams {
+pub struct SearchParams {
     /// Workspace slug to search in.
     pub workspace: String,
-    /// Query string. Supports token filters like `status:open`, `tag:rust`.
+    /// Query string. Supports token filters: `status:open`, `tag:rust`, `priority:high`.
     pub query: String,
-    /// Kind filter: `all` (default), `note`, or `task`.
+    /// Kind: `all` (default), `note`, or `task`.
     #[serde(default)]
     pub type_filter: Option<String>,
-    /// Sort order: `relevance` (default) or `updated`.
+    /// Sort: `relevance` (default) or `updated`.
     #[serde(default)]
     pub sort: Option<String>,
-    /// Maximum number of results (default 50, clamped to [1, 200]).
+    /// Pass `next_cursor` from the previous response to fetch the next page.
+    #[serde(default)]
+    pub cursor: Option<String>,
+    /// Page size (default 20, max 200).
     #[serde(default)]
     pub limit: Option<u32>,
 }
+
+/// Parameters accepted by the `get_document` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetDocumentParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Document slug or UUID (both resolve).
+    pub slug: String,
+    /// `compact` (default) = metadata only; `full` = include markdown content + frontmatter.
+    #[serde(default)]
+    pub detail: Option<String>,
+}
+
+/// Parameters accepted by the `list_tasks` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ListTasksParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Column/status name, partial match (e.g. "todo" matches "Todo" or "Todo Later").
+    /// If `board` is given, resolved within that board; otherwise matched across all boards.
+    /// Providing `board` is strongly recommended to avoid an expensive workspace-wide walk.
+    #[serde(default)]
+    pub status: Option<String>,
+    /// Board name (partial match) or UUID to scope to one board.
+    #[serde(default)]
+    pub board: Option<String>,
+    /// `me` | `user:{uuid}` | `api_key:{uuid}`.
+    #[serde(default)]
+    pub assignee: Option<String>,
+    /// Comma-separated priorities: `low`, `medium`, `high`, `urgent`.
+    #[serde(default)]
+    pub priority: Option<String>,
+    /// Comma-separated labels; tasks must carry ALL listed labels.
+    #[serde(default)]
+    pub label: Option<String>,
+    /// Sort: `updated_at_desc` (default) | `updated_at_asc` | `priority_desc` | `title_asc`.
+    #[serde(default)]
+    pub sort: Option<String>,
+    /// Pass `next_cursor` from the previous response to fetch the next page.
+    #[serde(default)]
+    pub cursor: Option<String>,
+    /// Page size (default 20, max 200).
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+/// Parameters accepted by the `get_task` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetTaskParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Task readable ID, e.g. `ATL-42`.
+    pub readable_id: String,
+    /// `compact` (default) = identifying fields; `full` = adds description, references, subtasks.
+    #[serde(default)]
+    pub detail: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// Tool implementations
+// ---------------------------------------------------------------------------
 
 #[tool_router]
 impl AtlasMcp {
@@ -82,11 +161,10 @@ impl AtlasMcp {
         "pong".to_string()
     }
 
-    #[tool(description = "Search documents and tasks in an Atlas workspace")]
-    async fn search_resources(
-        &self,
-        Parameters(params): Parameters<SearchResourcesParams>,
-    ) -> Result<String, String> {
+    #[tool(description = "Search documents and tasks across an Atlas workspace")]
+    async fn search(&self, Parameters(params): Parameters<SearchParams>) -> Result<String, String> {
+        let limit = params.limit.unwrap_or(20).clamp(1, 200);
+
         let page = self
             .client
             .search(
@@ -94,30 +172,242 @@ impl AtlasMcp {
                 &params.query,
                 params.type_filter.as_deref(),
                 params.sort.as_deref(),
-                None,
-                params.limit,
+                params.cursor.as_deref(),
+                Some(limit),
             )
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| format!("search failed: {e}"))?;
 
-        let hits: Vec<serde_json::Value> = page
-            .items
-            .into_iter()
-            .map(|hit| {
-                serde_json::json!({
-                    "id": hit.id,
-                    "kind": format!("{:?}", hit.kind).to_lowercase(),
-                    "readable_id": hit.readable_id,
-                    "title": hit.title,
-                    "snippet": hit.snippet,
-                    "score": hit.score,
-                    "updated_at": hit.updated_at,
-                    "project_slug": hit.project_slug,
-                })
-            })
-            .collect();
+        let result = envelope_page(page, project_search_hit);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
 
-        serde_json::to_string(&hits).map_err(|e| e.to_string())
+    #[tool(description = "Retrieve an Atlas document by slug or UUID")]
+    async fn get_document(
+        &self,
+        Parameters(params): Parameters<GetDocumentParams>,
+    ) -> Result<String, String> {
+        let doc = self
+            .client
+            .get_document(&params.workspace, &params.slug)
+            .await
+            .map_err(|e| format!("get_document '{}' failed: {e}", params.slug))?;
+
+        let result = match parse_detail(params.detail.as_deref()) {
+            Detail::Compact => project_document_compact(doc),
+            Detail::Full => project_document_full(doc),
+        };
+
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "List tasks across an Atlas workspace with optional filters")]
+    async fn list_tasks(
+        &self,
+        Parameters(params): Parameters<ListTasksParams>,
+    ) -> Result<String, String> {
+        let priorities = params
+            .priority
+            .as_deref()
+            .map(parse_csv)
+            .unwrap_or_default();
+
+        let labels = params.label.as_deref().map(parse_csv).unwrap_or_default();
+
+        let limit = params.limit.unwrap_or(20).clamp(1, 200);
+
+        let column_ids = if let Some(status_name) = &params.status {
+            self.resolve_column_ids(&params.workspace, params.board.as_deref(), status_name)
+                .await?
+        } else {
+            Vec::new()
+        };
+
+        let board_id = if let Some(board) = &params.board {
+            Some(self.resolve_board_id(&params.workspace, board).await?)
+        } else {
+            None
+        };
+
+        let query = WorkspaceTaskQueryParams {
+            assignee: params.assignee,
+            actor: None,
+            column_ids,
+            priorities,
+            labels,
+            board_id,
+            sort: params.sort,
+            cursor: params.cursor,
+            limit: Some(limit),
+        };
+
+        let page = self
+            .client
+            .list_workspace_tasks(&params.workspace, &query)
+            .await
+            .map_err(|e| format!("list_tasks failed: {e}"))?;
+
+        let result = envelope_page(page, project_task_row);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "Retrieve a single Atlas task by readable ID")]
+    async fn get_task(
+        &self,
+        Parameters(params): Parameters<GetTaskParams>,
+    ) -> Result<String, String> {
+        let task = self
+            .client
+            .get_task(&params.workspace, &params.readable_id)
+            .await
+            .map_err(|e| format!("get_task '{}' failed: {e}", params.readable_id))?;
+
+        let result = match parse_detail(params.detail.as_deref()) {
+            Detail::Compact => project_task_compact(&task),
+            Detail::Full => {
+                let refs = self
+                    .client
+                    .list_references(&params.workspace, &params.readable_id)
+                    .await
+                    .map(|v| v.into_iter().map(project_reference).collect::<Vec<_>>())
+                    .map_err(|e| format!("list_references failed: {e}"));
+
+                let subtasks = self
+                    .client
+                    .list_subtasks(&params.workspace, &params.readable_id)
+                    .await
+                    .map(|v| v.into_iter().map(project_task_row).collect::<Vec<_>>())
+                    .map_err(|e| format!("list_subtasks failed: {e}"));
+
+                project_task_full(&task, refs, subtasks)
+            }
+        };
+
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+}
+
+impl AtlasMcp {
+    /// Resolves a status/column name to matching column UUIDs.
+    ///
+    /// When `board` is provided (name or UUID), resolves within that one board using a
+    /// single `list_columns` call. Otherwise walks all projects and all their boards to
+    /// collect all matching columns — an O(projects × boards) GET sequence that is
+    /// mitigated by encouraging callers to supply `board`.
+    async fn resolve_column_ids(
+        &self,
+        ws: &str,
+        board: Option<&str>,
+        status_name: &str,
+    ) -> Result<Vec<String>, String> {
+        if let Some(board_ref) = board {
+            let board_id = self.resolve_board_id(ws, board_ref).await?;
+            let board_uuid: uuid::Uuid = board_id
+                .parse()
+                .map_err(|_| format!("resolved board_id '{board_id}' is not a valid UUID"))?;
+            let cols = self
+                .client
+                .list_columns(ws, board_uuid)
+                .await
+                .map_err(|e| format!("list_columns failed: {e}"))?;
+            return Ok(match_columns_by_name(status_name, &cols));
+        }
+
+        // No board given: workspace-wide walk (D-WSCOL — O(projects + boards) GETs).
+        let mut all_cols = Vec::new();
+        let mut project_cursor: Option<String> = None;
+
+        loop {
+            let projects = self
+                .client
+                .list_projects(ws, project_cursor.as_deref(), Some(200))
+                .await
+                .map_err(|e| format!("list_projects failed: {e}"))?;
+
+            for project in &projects.items {
+                let mut board_cursor: Option<String> = None;
+                loop {
+                    let boards = self
+                        .client
+                        .list_boards(ws, &project.slug, board_cursor.as_deref(), Some(200))
+                        .await
+                        .map_err(|e| {
+                            format!("list_boards for project '{}' failed: {e}", project.slug)
+                        })?;
+
+                    for board in &boards.items {
+                        let cols = self.client.list_columns(ws, board.id).await.map_err(|e| {
+                            format!("list_columns for board '{}' failed: {e}", board.name)
+                        })?;
+                        all_cols.extend(cols);
+                    }
+
+                    if !boards.has_more {
+                        break;
+                    }
+                    board_cursor = boards.next_cursor;
+                }
+            }
+
+            if !projects.has_more {
+                break;
+            }
+            project_cursor = projects.next_cursor;
+        }
+
+        Ok(match_columns_by_name(status_name, &all_cols))
+    }
+
+    /// Resolves a board reference (name fragment or UUID string) to a UUID string.
+    ///
+    /// When the input parses as a UUID it is returned directly. Otherwise walks
+    /// all projects' boards to find the first partial name match.
+    async fn resolve_board_id(&self, ws: &str, board_ref: &str) -> Result<String, String> {
+        if uuid::Uuid::parse_str(board_ref).is_ok() {
+            return Ok(board_ref.to_string());
+        }
+
+        let needle = board_ref.to_ascii_lowercase();
+        let mut project_cursor: Option<String> = None;
+
+        loop {
+            let projects = self
+                .client
+                .list_projects(ws, project_cursor.as_deref(), Some(200))
+                .await
+                .map_err(|e| format!("list_projects failed: {e}"))?;
+
+            for project in &projects.items {
+                let mut board_cursor: Option<String> = None;
+                loop {
+                    let boards = self
+                        .client
+                        .list_boards(ws, &project.slug, board_cursor.as_deref(), Some(200))
+                        .await
+                        .map_err(|e| format!("list_boards failed: {e}"))?;
+
+                    for board in &boards.items {
+                        if board.name.to_ascii_lowercase().contains(&needle) {
+                            return Ok(board.id.to_string());
+                        }
+                    }
+
+                    if !boards.has_more {
+                        break;
+                    }
+                    board_cursor = boards.next_cursor;
+                }
+            }
+
+            if !projects.has_more {
+                break;
+            }
+            project_cursor = projects.next_cursor;
+        }
+
+        Err(format!(
+            "no board matching '{board_ref}' found in workspace '{ws}'"
+        ))
     }
 }
 
@@ -175,29 +465,76 @@ mod tests {
     }
 
     #[test]
+    fn get_info_instructions_reference_search_not_search_resources() {
+        let server = AtlasMcp::new("http://localhost:8080", "test-token").unwrap();
+        let info = server.get_info();
+        let instructions = info.instructions.as_deref().unwrap_or("");
+        assert!(
+            instructions.contains("`search`"),
+            "instructions must reference `search`, not `search_resources`"
+        );
+        assert!(
+            !instructions.contains("search_resources"),
+            "instructions must not mention search_resources"
+        );
+    }
+
+    #[test]
     fn ping_returns_pong() {
         let server = AtlasMcp::new("http://localhost:8080", "test-token").unwrap();
         assert_eq!(server.ping(), "pong");
     }
 
     #[test]
-    fn search_resources_params_deserializes() {
+    fn search_params_deserializes_minimal() {
         let json = r#"{"workspace":"my-ws","query":"hello"}"#;
-        let params: SearchResourcesParams = serde_json::from_str(json).unwrap();
+        let params: SearchParams = serde_json::from_str(json).unwrap();
         assert_eq!(params.workspace, "my-ws");
         assert_eq!(params.query, "hello");
-        assert!(params.type_filter.is_none());
-        assert!(params.sort.is_none());
+        assert!(params.cursor.is_none());
         assert!(params.limit.is_none());
     }
 
     #[test]
-    fn search_resources_params_deserializes_with_optionals() {
-        let json =
-            r#"{"workspace":"ws","query":"q","type_filter":"task","sort":"updated","limit":25}"#;
-        let params: SearchResourcesParams = serde_json::from_str(json).unwrap();
-        assert_eq!(params.type_filter.as_deref(), Some("task"));
-        assert_eq!(params.sort.as_deref(), Some("updated"));
-        assert_eq!(params.limit, Some(25));
+    fn search_params_deserializes_with_cursor() {
+        let json = r#"{"workspace":"ws","query":"q","cursor":"abc123","limit":10}"#;
+        let params: SearchParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.cursor.as_deref(), Some("abc123"));
+        assert_eq!(params.limit, Some(10));
+    }
+
+    #[test]
+    fn get_document_params_deserializes() {
+        let json = r#"{"workspace":"ws","slug":"my-doc","detail":"full"}"#;
+        let params: GetDocumentParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.slug, "my-doc");
+        assert_eq!(params.detail.as_deref(), Some("full"));
+    }
+
+    #[test]
+    fn list_tasks_params_deserializes_minimal() {
+        let json = r#"{"workspace":"ws"}"#;
+        let params: ListTasksParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.workspace, "ws");
+        assert!(params.status.is_none());
+        assert!(params.board.is_none());
+    }
+
+    #[test]
+    fn list_tasks_params_deserializes_with_filters() {
+        let json = r#"{"workspace":"ws","status":"In Progress","board":"main","priority":"high,urgent","label":"backend"}"#;
+        let params: ListTasksParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.status.as_deref(), Some("In Progress"));
+        assert_eq!(params.board.as_deref(), Some("main"));
+        assert_eq!(params.priority.as_deref(), Some("high,urgent"));
+        assert_eq!(params.label.as_deref(), Some("backend"));
+    }
+
+    #[test]
+    fn get_task_params_deserializes() {
+        let json = r#"{"workspace":"ws","readable_id":"ATL-42","detail":"compact"}"#;
+        let params: GetTaskParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.readable_id, "ATL-42");
+        assert_eq!(params.detail.as_deref(), Some("compact"));
     }
 }
