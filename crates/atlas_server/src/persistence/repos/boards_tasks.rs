@@ -1203,12 +1203,20 @@ impl TaskAssigneeRepo for PgTaskAssigneeRepo {
         ctx: &WorkspaceCtx,
         task_id: TaskId,
     ) -> Result<Vec<TaskAssignee>, DomainError> {
-        let rows = task_assignee::Entity::find()
-            .filter(task_assignee::Column::WorkspaceId.eq(ctx.workspace_id.0))
-            .filter(task_assignee::Column::TaskId.eq(task_id.0))
-            .all(&self.conn)
-            .await
-            .map_err(db_err)?;
+        let rows = task_assignee::Model::find_by_statement(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT ta.task_id, ta.workspace_id, ta.assignee_user_id, ta.assignee_api_key_id,
+                    ta.assigned_by_user_id, ta.assigned_by_api_key_id, ta.assigned_at
+             FROM task_assignees ta
+             LEFT JOIN api_keys ak ON ak.id = ta.assignee_api_key_id
+             WHERE ta.workspace_id = $1
+               AND ta.task_id = $2
+               AND (ta.assignee_api_key_id IS NULL OR ak.revoked_at IS NULL)",
+            [ctx.workspace_id.0.into(), task_id.0.into()],
+        ))
+        .all(&self.conn)
+        .await
+        .map_err(db_err)?;
 
         rows.into_iter()
             .map(|m| task_assignee_from(m).map_err(internal_err))
@@ -1224,14 +1232,39 @@ impl TaskAssigneeRepo for PgTaskAssigneeRepo {
             return Ok(Vec::new());
         }
 
-        let ids: Vec<uuid::Uuid> = task_ids.iter().map(|t| t.0).collect();
+        let mut values: Vec<sea_orm::Value> = Vec::new();
 
-        let rows = task_assignee::Entity::find()
-            .filter(task_assignee::Column::WorkspaceId.eq(ctx.workspace_id.0))
-            .filter(task_assignee::Column::TaskId.is_in(ids))
-            .all(&self.conn)
-            .await
-            .map_err(db_err)?;
+        // $1 — workspace_id
+        values.push(ctx.workspace_id.0.into());
+
+        // $2..$N — task_id IN list
+        let placeholders: String = task_ids
+            .iter()
+            .map(|t| {
+                values.push(t.0.into());
+                format!("${}", values.len())
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let sql = format!(
+            "SELECT ta.task_id, ta.workspace_id, ta.assignee_user_id, ta.assignee_api_key_id,
+                    ta.assigned_by_user_id, ta.assigned_by_api_key_id, ta.assigned_at
+             FROM task_assignees ta
+             LEFT JOIN api_keys ak ON ak.id = ta.assignee_api_key_id
+             WHERE ta.workspace_id = $1
+               AND ta.task_id IN ({placeholders})
+               AND (ta.assignee_api_key_id IS NULL OR ak.revoked_at IS NULL)"
+        );
+
+        let rows = task_assignee::Model::find_by_statement(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            sql,
+            values,
+        ))
+        .all(&self.conn)
+        .await
+        .map_err(db_err)?;
 
         rows.into_iter()
             .map(|m| task_assignee_from(m).map_err(internal_err))

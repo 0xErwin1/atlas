@@ -5404,3 +5404,140 @@ async fn patch_column_with_invalid_swatch_id_returns_422() {
 
     db.teardown().await;
 }
+
+// ---------------------------------------------------------------------------
+// Revoked api_key assignee visibility (bug fix)
+// ---------------------------------------------------------------------------
+
+/// A revoked api_key's task assignment must NOT appear in list_assignees after
+/// revocation, and the task_assignees row must be deleted atomically with the
+/// revoke operation.
+#[tokio::test]
+async fn revoked_api_key_assignee_is_hidden_after_revoke() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "rvk-key-asgn-1").await;
+
+    client
+        .create_project(&ws.slug, project_req("rvk-proj", "RVK"))
+        .await
+        .expect("create project");
+
+    let board = client
+        .create_board(
+            &ws.slug,
+            "rvk-proj",
+            CreateBoardRequest { name: "B".into() },
+        )
+        .await
+        .expect("board");
+
+    let col = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "C".into(),
+                before: None,
+                after: None,
+                color: None,
+            },
+        )
+        .await
+        .expect("col");
+
+    let task = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: col.id,
+                title: "Task with api key assignee".into(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("task");
+
+    let api_key = client
+        .create_api_key(
+            &ws.slug,
+            atlas_api::dtos::CreateApiKeyRequest {
+                name: "agent-to-revoke".to_string(),
+                expires_at: None,
+            },
+        )
+        .await
+        .expect("create api key");
+
+    client
+        .add_assignee(
+            &ws.slug,
+            &task.readable_id,
+            AddAssigneeRequest {
+                assignee_type: "api_key".into(),
+                assignee_id: api_key.id,
+            },
+        )
+        .await
+        .expect("add api key assignee");
+
+    // Verify the assignee is present before revoke.
+    let before = client
+        .list_assignees(&ws.slug, &task.readable_id)
+        .await
+        .expect("list assignees before revoke");
+    assert_eq!(before.len(), 1, "one assignee before revoke");
+    assert_eq!(before[0].assignee.id, api_key.id);
+
+    // Revoke the key — this should atomically delete its task_assignees rows.
+    client
+        .revoke_api_key(&ws.slug, api_key.id)
+        .await
+        .expect("revoke api key");
+
+    // Part A: list_assignees must return empty (read-side filter).
+    let after = client
+        .list_assignees(&ws.slug, &task.readable_id)
+        .await
+        .expect("list assignees after revoke");
+    assert!(
+        after.is_empty(),
+        "revoked key assignee must not appear in list_assignees, got: {after:?}"
+    );
+
+    // Part A: list_tasks (board) must not include the revoked assignee.
+    let page = client
+        .list_tasks(&ws.slug, board.id, None, None)
+        .await
+        .expect("list tasks after revoke");
+    let summary = page.items.first().expect("one task");
+    assert!(
+        summary.assignees.is_empty(),
+        "revoked key assignee must not appear in list_tasks summary, got: {:?}",
+        summary.assignees
+    );
+
+    // Part B: the task_assignees row must be physically deleted by revoke.
+    use sea_orm::{ConnectionTrait, Statement};
+    let row = db
+        .conn()
+        .query_one_raw(Statement::from_string(
+            sea_orm::DatabaseBackend::Postgres,
+            format!(
+                "SELECT COUNT(*) AS cnt FROM task_assignees \
+                 WHERE task_id = '{}' AND assignee_api_key_id = '{}'",
+                task.id, api_key.id
+            ),
+        ))
+        .await
+        .expect("query")
+        .expect("row");
+    let cnt: i64 = row.try_get("", "cnt").expect("cnt");
+    assert_eq!(cnt, 0, "task_assignees row must be deleted on revoke");
+
+    db.teardown().await;
+}

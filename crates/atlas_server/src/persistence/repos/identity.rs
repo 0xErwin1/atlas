@@ -6,8 +6,8 @@ use atlas_domain::{
 };
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait,
-    FromQueryResult, QueryFilter, Statement,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection,
+    EntityTrait, FromQueryResult, QueryFilter, Statement, TransactionTrait,
 };
 use uuid::Uuid;
 
@@ -521,18 +521,32 @@ impl ApiKeyRepo for PgApiKeyRepo {
 
     async fn revoke(&self, ctx: &WorkspaceCtx, id: ApiKeyId) -> Result<(), DomainError> {
         use sea_orm::IntoActiveModel;
+
+        let txn = self.conn.begin().await.map_err(db_err)?;
+
         let row = api_key::Entity::find_by_id(id.0)
             .filter(api_key::Column::WorkspaceId.eq(ctx.workspace_id.0))
-            .one(&self.conn)
+            .one(&txn)
             .await
             .map_err(db_err)?
             .ok_or(DomainError::NotFound {
                 entity: "api_key",
                 id: id.0,
             })?;
+
         let mut active = row.into_active_model();
         active.revoked_at = Set(Some(Utc::now()));
-        active.update(&self.conn).await.map_err(db_err)?;
+        active.update(&txn).await.map_err(db_err)?;
+
+        txn.execute_raw(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "DELETE FROM task_assignees WHERE assignee_api_key_id = $1",
+            [id.0.into()],
+        ))
+        .await
+        .map_err(db_err)?;
+
+        txn.commit().await.map_err(db_err)?;
         Ok(())
     }
 
