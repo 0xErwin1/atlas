@@ -80,6 +80,46 @@ async fn run_stdio(base_url: String) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Axum middleware that enforces `Authorization: Bearer atlas_<token>` on all requests.
+///
+/// Returns HTTP 401 when the header is absent or does not carry a valid `atlas_`-prefixed
+/// Bearer token. Passes through to the next handler when the header is present and valid.
+/// This provides early rejection at the HTTP boundary before rmcp processes the request.
+async fn bearer_auth_middleware(
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+
+    let auth_result = request
+        .headers()
+        .get(http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .map(atlas_mcp::parse_bearer_atlas_token);
+
+    match auth_result {
+        Some(Ok(_)) => next.run(request).await,
+        Some(Err(reason)) => {
+            tracing::warn!(reason = %reason, "rejected request with invalid Bearer token");
+            (
+                http::StatusCode::UNAUTHORIZED,
+                [("WWW-Authenticate", "Bearer realm=\"atlas-mcp\"")],
+                reason,
+            )
+                .into_response()
+        }
+        None => {
+            tracing::warn!("rejected request with missing Authorization header");
+            (
+                http::StatusCode::UNAUTHORIZED,
+                [("WWW-Authenticate", "Bearer realm=\"atlas-mcp\"")],
+                "Authorization header required: provide 'Authorization: Bearer atlas_<token>'",
+            )
+                .into_response()
+        }
+    }
+}
+
 async fn run_http(base_url: String, bind: String, port: u16) -> anyhow::Result<()> {
     use rmcp::transport::{
         StreamableHttpServerConfig,
@@ -102,7 +142,9 @@ async fn run_http(base_url: String, bind: String, port: u16) -> anyhow::Result<(
 
     let service = StreamableHttpService::new(move || Ok(handler.clone()), session_manager, config);
 
-    let router = axum::Router::new().nest_service("/mcp", service);
+    let router = axum::Router::new()
+        .nest_service("/mcp", service)
+        .layer(axum::middleware::from_fn(bearer_auth_middleware));
     let addr = (bind.as_str(), port);
     let listener = tokio::net::TcpListener::bind(addr)
         .await

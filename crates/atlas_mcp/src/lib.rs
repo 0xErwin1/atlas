@@ -171,21 +171,72 @@ impl AtlasMcp {
 
     /// Resolves the `AtlasClient` to use for this tool call.
     ///
-    /// Uses the stored stdio token when present. HTTP mode (no stored token) is
-    /// not yet wired to read the per-request `Authorization: Bearer` token from
-    /// `ctx.extensions.get::<http::request::Parts>()`, so it errors for now.
-    fn resolve_client(&self, _ctx: &RequestContext<RoleServer>) -> Result<AtlasClient, String> {
-        match &self.stdio_token {
-            Some(token) => Ok(AtlasClient::with_shared_pool(
+    /// In stdio mode the stored startup token is used. In HTTP mode the token is
+    /// extracted per-request from the `Authorization: Bearer <token>` header,
+    /// accessible via `ctx.extensions.get::<http::request::Parts>()`. Returns
+    /// `Err` when the header is absent, malformed, or carries a non-`atlas_`-prefixed token.
+    fn resolve_client(&self, ctx: &RequestContext<RoleServer>) -> Result<AtlasClient, String> {
+        if let Some(token) = &self.stdio_token {
+            return Ok(AtlasClient::with_shared_pool(
                 (*self.shared_http).clone(),
                 &self.base_url,
                 token,
-            )),
-            None => Err(
-                "no Atlas token available: HTTP mode requires a per-request Bearer token".to_string()
-            ),
+            ));
         }
+
+        let parts = ctx
+            .extensions
+            .get::<http::request::Parts>()
+            .ok_or_else(|| {
+                "missing HTTP request context: Bearer token cannot be read in this transport mode"
+                    .to_string()
+            })?;
+
+        let header_value = parts
+            .headers
+            .get(http::header::AUTHORIZATION)
+            .ok_or_else(|| {
+                "missing Authorization header: provide 'Authorization: Bearer atlas_<token>'"
+                    .to_string()
+            })?
+            .to_str()
+            .map_err(|_| "Authorization header contains invalid characters".to_string())?;
+
+        let token = parse_bearer_atlas_token(header_value)?;
+
+        Ok(AtlasClient::with_shared_pool(
+            (*self.shared_http).clone(),
+            &self.base_url,
+            token,
+        ))
     }
+}
+
+/// Parses and validates an `Authorization` header value of the form `Bearer atlas_<token>`.
+///
+/// Returns the validated token slice (without the `Bearer ` prefix) on success.
+/// Returns a descriptive error string if the value does not start with `Bearer `, if the
+/// token portion does not start with `atlas_`, or if the remaining token is empty.
+pub fn parse_bearer_atlas_token(header_value: &str) -> Result<&str, String> {
+    let token = header_value.strip_prefix("Bearer ").ok_or_else(|| {
+        "Authorization header must use the Bearer scheme: 'Authorization: Bearer atlas_<token>'"
+            .to_string()
+    })?;
+
+    if token.is_empty() {
+        return Err(
+            "Bearer token is empty: provide 'Authorization: Bearer atlas_<token>'".to_string(),
+        );
+    }
+
+    if !token.starts_with("atlas_") {
+        return Err(
+            "Bearer token must start with 'atlas_': received an unrecognized token format"
+                .to_string(),
+        );
+    }
+
+    Ok(token)
 }
 
 // ---------------------------------------------------------------------------
@@ -4231,5 +4282,80 @@ mod tests {
             instructions.contains("`delete_task_view`"),
             "instructions must mention delete_task_view"
         );
+    }
+
+    // --- parse_bearer_atlas_token ---
+
+    #[test]
+    fn bearer_valid_token_is_accepted() {
+        let result = parse_bearer_atlas_token("Bearer atlas_abc123");
+        assert_eq!(result.unwrap(), "atlas_abc123");
+    }
+
+    #[test]
+    fn bearer_valid_token_with_long_value() {
+        let value = "Bearer atlas_very-long-token-value-XYZ-1234567890";
+        let result = parse_bearer_atlas_token(value);
+        assert_eq!(
+            result.unwrap(),
+            "atlas_very-long-token-value-XYZ-1234567890"
+        );
+    }
+
+    #[test]
+    fn bearer_missing_scheme_prefix_is_rejected() {
+        let result = parse_bearer_atlas_token("atlas_abc123");
+        assert!(result.is_err());
+        let msg = result.unwrap_err();
+        assert!(msg.contains("Bearer"), "error must mention Bearer scheme");
+    }
+
+    #[test]
+    fn bearer_wrong_scheme_is_rejected() {
+        let result = parse_bearer_atlas_token("Token atlas_abc123");
+        assert!(result.is_err());
+        let msg = result.unwrap_err();
+        assert!(msg.contains("Bearer"), "error must mention Bearer scheme");
+    }
+
+    #[test]
+    fn bearer_empty_token_after_prefix_is_rejected() {
+        let result = parse_bearer_atlas_token("Bearer ");
+        assert!(result.is_err());
+        let msg = result.unwrap_err();
+        assert!(msg.contains("empty"), "error must indicate empty token");
+    }
+
+    #[test]
+    fn bearer_non_atlas_prefix_is_rejected() {
+        let result = parse_bearer_atlas_token("Bearer sk_some_other_token");
+        assert!(result.is_err());
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains("atlas_"),
+            "error must indicate the required prefix"
+        );
+    }
+
+    #[test]
+    fn bearer_empty_string_is_rejected() {
+        let result = parse_bearer_atlas_token("");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn bearer_only_prefix_no_token_chars_is_rejected() {
+        let result = parse_bearer_atlas_token("Bearer atlas_");
+        assert_eq!(
+            result.unwrap(),
+            "atlas_",
+            "atlas_ alone is accepted (validation of minimum length is atlas_server's responsibility)"
+        );
+    }
+
+    #[test]
+    fn bearer_extra_leading_whitespace_is_rejected() {
+        let result = parse_bearer_atlas_token(" Bearer atlas_abc");
+        assert!(result.is_err(), "leading whitespace should not be stripped");
     }
 }
