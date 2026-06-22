@@ -1,11 +1,29 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import Icon from '@/components/ui/Icon.vue';
+import { useBreakpoint } from '@/composables/useBreakpoint';
 import { useUiStore } from '@/stores/ui';
 
 const ui = useUiStore();
+const { isMobile } = useBreakpoint();
 
 const banner = computed(() => ui.banner);
+
+/**
+ * On mobile the toast must clear the bottom tab bar (MobileTabBar is 56px plus the
+ * safe-area inset) and never exceed the viewport width; on desktop it sits 16px
+ * from the bottom with the design's fixed width band. Centering is identical in
+ * both, so the enter/leave transform stays consistent.
+ */
+const placement = computed(() =>
+  isMobile.value
+    ? {
+        bottom: 'calc(56px + env(safe-area-inset-bottom, 0px) + 12px)',
+        minWidth: '0',
+        maxWidth: 'calc(100vw - 24px)',
+      }
+    : { bottom: '16px', minWidth: '320px', maxWidth: '560px' },
+);
 
 const TONE_STYLES: Record<string, { bg: string; fg: string; border: string; icon: string }> = {
   error: {
@@ -41,11 +59,11 @@ const TONE_STYLES: Record<string, { bg: string; fg: string; border: string; icon
       v-if="banner"
       class="fixed flex items-center gap-2"
       :style="`
-        bottom: 16px;
+        bottom: ${placement.bottom};
         left: 50%;
         transform: translateX(-50%);
-        min-width: 320px;
-        max-width: 560px;
+        min-width: ${placement.minWidth};
+        max-width: ${placement.maxWidth};
         padding: 10px 14px;
         border-radius: var(--r-md);
         background-color: ${TONE_STYLES[banner.type]?.bg ?? 'var(--c-raised)'};
