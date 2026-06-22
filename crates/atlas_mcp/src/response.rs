@@ -731,6 +731,63 @@ pub(crate) fn validate_assignee_type(v: &str) -> Result<(), String> {
     }
 }
 
+/// Validates a task reference kind.
+///
+/// Returns `Ok(())` for accepted values, or an `Err` listing the valid set.
+pub(crate) fn validate_reference_kind(v: &str) -> Result<(), String> {
+    match v {
+        "relates" | "blocks" | "parent" | "spec" => Ok(()),
+        _ => Err(format!(
+            "invalid kind '{v}'; valid values: relates, blocks, parent, spec"
+        )),
+    }
+}
+
+/// Validates that exactly one of task or document target is supplied for a reference.
+///
+/// Returns `Ok(())` when exactly one target is present, or an `Err` explaining
+/// that both/neither were supplied with instructions to correct the call.
+pub(crate) fn validate_single_target(
+    task: Option<&str>,
+    doc: Option<&uuid::Uuid>,
+) -> Result<(), String> {
+    match (task, doc) {
+        (Some(_), None) | (None, Some(_)) => Ok(()),
+        (Some(_), Some(_)) => Err(
+            "supply exactly one of target_task_readable_id or target_document_id, not both"
+                .to_string(),
+        ),
+        (None, None) => Err(
+            "supply exactly one of target_task_readable_id or target_document_id; neither was provided"
+                .to_string(),
+        ),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Promotion projection (promote_checklist_item)
+// ---------------------------------------------------------------------------
+
+/// Projects the `PromotionDto` returned by `promote_checklist_item`.
+///
+/// Includes the newly created task (compact), the checklist item that was
+/// promoted (for confirmation), and the optional parent reference created.
+pub(crate) fn project_promotion(p: atlas_api::dtos::boards_tasks::PromotionDto) -> Value {
+    let mut map = serde_json::Map::new();
+
+    map.insert("task".into(), project_task_compact(&p.task));
+    map.insert(
+        "checklist_item".into(),
+        project_checklist_item(p.checklist_item),
+    );
+
+    if let Some(r) = p.parent_reference {
+        map.insert("parent_reference".into(), project_reference(r));
+    }
+
+    Value::Object(map)
+}
+
 // ---------------------------------------------------------------------------
 // Write-side: PATCH present_value mapping
 // ---------------------------------------------------------------------------
@@ -2176,5 +2233,121 @@ mod tests {
     fn assignee_projection_drops_assigned_by() {
         let val = project_assignee(make_assignee());
         assert!(val.get("assigned_by").is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // validate_reference_kind
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn validate_reference_kind_valid_values_pass() {
+        for v in &["relates", "blocks", "parent", "spec"] {
+            assert!(validate_reference_kind(v).is_ok(), "'{v}' should be valid");
+        }
+    }
+
+    #[test]
+    fn validate_reference_kind_invalid_lists_options() {
+        let err = validate_reference_kind("linked").unwrap_err();
+        assert!(err.contains("linked"), "error must echo the bad value");
+        assert!(err.contains("relates"), "error must list valid values");
+        assert!(err.contains("blocks"), "error must list valid values");
+        assert!(err.contains("parent"), "error must list valid values");
+        assert!(err.contains("spec"), "error must list valid values");
+    }
+
+    // -----------------------------------------------------------------------
+    // validate_single_target
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn validate_single_target_task_only_passes() {
+        let result = validate_single_target(Some("ATL-1"), None);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn validate_single_target_doc_only_passes() {
+        let id = fixed_uuid();
+        let result = validate_single_target(None, Some(&id));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn validate_single_target_both_errors() {
+        let id = fixed_uuid();
+        let err = validate_single_target(Some("ATL-1"), Some(&id)).unwrap_err();
+        assert!(
+            err.contains("exactly one"),
+            "error must mention exactly one target"
+        );
+        assert!(err.contains("not both"), "error must say not both");
+    }
+
+    #[test]
+    fn validate_single_target_neither_errors() {
+        let err = validate_single_target(None, None).unwrap_err();
+        assert!(
+            err.contains("exactly one"),
+            "error must mention exactly one target"
+        );
+        assert!(
+            err.contains("neither"),
+            "error must say neither was provided"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // project_promotion
+    // -----------------------------------------------------------------------
+
+    use atlas_api::dtos::boards_tasks::PromotionDto;
+
+    fn make_promotion(with_reference: bool) -> PromotionDto {
+        let parent_reference = if with_reference {
+            Some(ReferenceDto {
+                id: fixed_uuid(),
+                kind: "parent".into(),
+                target_task_id: Some(fixed_uuid()),
+                target_readable_id: Some("ATL-10".into()),
+                target_document_id: None,
+                target_title: None,
+                target_resolved: true,
+                created_by: actor(),
+                created_at: now(),
+            })
+        } else {
+            None
+        };
+
+        PromotionDto {
+            task: make_task_dto(),
+            parent_reference,
+            checklist_item: make_checklist_item(false, None),
+        }
+    }
+
+    #[test]
+    fn promotion_includes_task_and_checklist_item() {
+        let val = project_promotion(make_promotion(false));
+        assert!(val.get("task").is_some(), "promotion must include task");
+        assert_eq!(val["task"]["readable_id"], "ATL-1");
+        assert!(
+            val.get("checklist_item").is_some(),
+            "promotion must include checklist_item"
+        );
+    }
+
+    #[test]
+    fn promotion_includes_parent_reference_when_present() {
+        let val = project_promotion(make_promotion(true));
+        assert!(val.get("parent_reference").is_some());
+        assert_eq!(val["parent_reference"]["kind"], "parent");
+    }
+
+    #[test]
+    fn promotion_omits_parent_reference_when_absent() {
+        let val = project_promotion(make_promotion(false));
+        assert!(val.get("parent_reference").is_none());
     }
 }

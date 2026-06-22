@@ -5,9 +5,10 @@ mod response;
 use std::sync::Arc;
 
 use atlas_api::dtos::boards_tasks::{
-    AddAssigneeRequest, CreateBoardRequest, CreateColumnRequest, CreateTaskRequest,
-    MoveTaskRequest, TaskPropertiesDto, UpdateBoardRequest, UpdateColumnRequest, UpdateTaskRequest,
-    WorkspaceTaskQueryParams,
+    AddAssigneeRequest, CreateBoardRequest, CreateChecklistItemRequest, CreateColumnRequest,
+    CreateReferenceRequest, CreateSubtaskRequest, CreateTaskRequest, MoveTaskRequest,
+    PromoteChecklistItemRequest, TaskPropertiesDto, UpdateBoardRequest, UpdateChecklistItemRequest,
+    UpdateColumnRequest, UpdateTaskRequest, WorkspaceTaskQueryParams,
 };
 use atlas_api::dtos::documents::{
     CreateDocumentRequest, MoveDocumentRequest, UpdateContentRequest, UpdateDocumentRequest,
@@ -42,11 +43,12 @@ use response::{
     parse_csv, parse_detail, project_activity_entry, project_assignee, project_attachment,
     project_backlink, project_board_summary, project_checklist_item, project_column,
     project_document_compact, project_document_full, project_document_summary, project_folder,
-    project_principal, project_project, project_reference, project_revision_content,
-    project_revision_meta, project_saved_search, project_search_hit, project_tag,
-    project_task_backlink, project_task_compact, project_task_full, project_task_row,
+    project_principal, project_project, project_promotion, project_reference,
+    project_revision_content, project_revision_meta, project_saved_search, project_search_hit,
+    project_tag, project_task_backlink, project_task_compact, project_task_full, project_task_row,
     project_task_view, project_workspace, require_confirm, resolve_column_id_on_board,
-    validate_assignee_type, validate_priority, wrap_vec,
+    validate_assignee_type, validate_priority, validate_reference_kind, validate_single_target,
+    wrap_vec,
 };
 
 const ATLAS_INSTRUCTIONS: &str = "\
@@ -99,6 +101,17 @@ For tag mutations use: `create_tag` (idempotent by case-insensitive name; return
 whether created or already existing), `update_tag` (rename and/or recolor; color can be \
 set but not cleared — omit color to leave it unchanged), `delete_tag` (soft-delete; task \
 label strings are preserved). \
+For reference mutations use: `add_task_reference` (creates a typed outbound reference from \
+a task to another task or document; kind must be one of relates|blocks|parent|spec; supply \
+exactly one of target_task_readable_id or target_document_id), `remove_task_reference` \
+(removes a reference by its UUID from `get_task_references`). \
+For checklist mutations use: `add_checklist_item` (appends an item; optional before/after \
+ordering anchors), `update_checklist_item` (PATCH — omit title/checked to leave unchanged; \
+optional ordering), `delete_checklist_item` (plain delete, low-risk), \
+`promote_checklist_item` (converts a checklist item into a full task on the specified \
+board+column; returns the new task and the updated checklist item). \
+For subtask mutations use: `create_subtask` (creates a subtask under a parent task), \
+`promote_subtask` (promotes a subtask to a top-level task, detaching it from the parent). \
 Prefer narrow queries over broad ones; follow up with targeted reads rather than \
 enumerating all results.";
 
@@ -816,6 +829,126 @@ pub struct DeleteTagParams {
     /// UUID string of the tag to delete. Soft-deletes the tag; existing task label strings
     /// are preserved even after the tag is deleted.
     pub tag_id: String,
+}
+
+// ---------------------------------------------------------------------------
+// Batch 3d param structs — Graph writes: references, checklist, subtasks
+// ---------------------------------------------------------------------------
+
+/// Parameters accepted by the `add_task_reference` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct AddTaskReferenceParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Readable ID of the task that owns the reference (e.g. `ATL-42`).
+    pub readable_id: String,
+    /// Reference kind. Must be one of: `relates`, `blocks`, `parent`, `spec`.
+    pub kind: String,
+    /// Readable ID of the target task (e.g. `ATL-10`). Supply exactly one of
+    /// `target_task_readable_id` or `target_document_id`.
+    #[serde(default)]
+    pub target_task_readable_id: Option<String>,
+    /// UUID string of the target document. Supply exactly one of
+    /// `target_task_readable_id` or `target_document_id`.
+    #[serde(default)]
+    pub target_document_id: Option<String>,
+}
+
+/// Parameters accepted by the `remove_task_reference` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct RemoveTaskReferenceParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Readable ID of the task that owns the reference.
+    pub readable_id: String,
+    /// UUID string of the reference to remove (from `get_task_references`).
+    pub reference_id: String,
+}
+
+/// Parameters accepted by the `add_checklist_item` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct AddChecklistItemParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Readable ID of the task to add the checklist item to.
+    pub readable_id: String,
+    /// Title of the new checklist item.
+    pub title: String,
+    /// Optional position anchor: position key of the item this new item should appear before.
+    #[serde(default)]
+    pub before: Option<String>,
+    /// Optional position anchor: position key of the item this new item should appear after.
+    #[serde(default)]
+    pub after: Option<String>,
+}
+
+/// Parameters accepted by the `update_checklist_item` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct UpdateChecklistItemParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Readable ID of the task that owns the checklist item.
+    pub readable_id: String,
+    /// UUID string of the checklist item to update.
+    pub item_id: String,
+    /// New title for the item. Omit to leave unchanged.
+    #[serde(default)]
+    pub title: Option<String>,
+    /// New checked state. Omit to leave unchanged.
+    #[serde(default)]
+    pub checked: Option<bool>,
+    /// Optional position anchor: position key of the item this item should move before.
+    #[serde(default)]
+    pub before: Option<String>,
+    /// Optional position anchor: position key of the item this item should move after.
+    #[serde(default)]
+    pub after: Option<String>,
+}
+
+/// Parameters accepted by the `delete_checklist_item` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DeleteChecklistItemParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Readable ID of the task that owns the checklist item.
+    pub readable_id: String,
+    /// UUID string of the checklist item to delete.
+    pub item_id: String,
+}
+
+/// Parameters accepted by the `promote_checklist_item` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct PromoteChecklistItemParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Readable ID of the task that owns the checklist item to promote.
+    pub readable_id: String,
+    /// UUID string of the checklist item to promote to a task.
+    pub item_id: String,
+    /// Board name (partial match) or UUID string for the new task's board.
+    pub board: String,
+    /// Column name (resolved on the board) for the new task.
+    pub column: String,
+}
+
+/// Parameters accepted by the `create_subtask` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CreateSubtaskParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Readable ID of the parent task.
+    pub readable_id: String,
+    /// Title of the new subtask.
+    pub title: String,
+}
+
+/// Parameters accepted by the `promote_subtask` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct PromoteSubtaskParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Readable ID of the subtask to promote to a top-level task.
+    pub readable_id: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -2142,6 +2275,225 @@ impl AtlasMcp {
         });
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
+
+    // -----------------------------------------------------------------------
+    // Batch 3d — Graph writes: references, checklist, subtasks
+    // -----------------------------------------------------------------------
+
+    #[tool(
+        description = "Add a typed reference from a task to another task or document. \
+                       kind must be one of: relates, blocks, parent, spec. \
+                       Supply exactly one of target_task_readable_id or target_document_id."
+    )]
+    async fn add_task_reference(
+        &self,
+        Parameters(params): Parameters<AddTaskReferenceParams>,
+    ) -> Result<String, String> {
+        validate_reference_kind(&params.kind)?;
+
+        let target_doc_uuid: Option<uuid::Uuid> = params
+            .target_document_id
+            .as_deref()
+            .map(|s| {
+                s.parse()
+                    .map_err(|_| format!("target_document_id '{s}' is not a valid UUID"))
+            })
+            .transpose()?;
+
+        validate_single_target(
+            params.target_task_readable_id.as_deref(),
+            target_doc_uuid.as_ref(),
+        )?;
+
+        let body = CreateReferenceRequest {
+            kind: params.kind,
+            target_task_readable_id: params.target_task_readable_id,
+            target_document_id: target_doc_uuid,
+        };
+
+        let reference = self
+            .client
+            .create_reference(&params.workspace, &params.readable_id, body)
+            .await
+            .map_err(|e| enrich_client_error(e, "add_task_reference"))?;
+
+        let result = project_reference(reference);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "Remove an outbound reference from a task. \
+                       reference_id is the UUID from get_task_references.")]
+    async fn remove_task_reference(
+        &self,
+        Parameters(params): Parameters<RemoveTaskReferenceParams>,
+    ) -> Result<String, String> {
+        let reference_id: uuid::Uuid = params
+            .reference_id
+            .parse()
+            .map_err(|_| format!("reference_id '{}' is not a valid UUID", params.reference_id))?;
+
+        self.client
+            .delete_reference(&params.workspace, &params.readable_id, reference_id)
+            .await
+            .map_err(|e| enrich_client_error(e, "remove_task_reference"))?;
+
+        let result = json!({
+            "removed": true,
+            "reference_id": reference_id,
+        });
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "Add a checklist item to a task. Optional before/after ordering anchors.")]
+    async fn add_checklist_item(
+        &self,
+        Parameters(params): Parameters<AddChecklistItemParams>,
+    ) -> Result<String, String> {
+        let body = CreateChecklistItemRequest {
+            title: params.title,
+            before: params.before,
+            after: params.after,
+        };
+
+        let item = self
+            .client
+            .create_checklist_item(&params.workspace, &params.readable_id, body)
+            .await
+            .map_err(|e| enrich_client_error(e, "add_checklist_item"))?;
+
+        let result = project_checklist_item(item);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Update a checklist item (PATCH). Omit title or checked to leave unchanged. \
+                       Optional before/after ordering anchors."
+    )]
+    async fn update_checklist_item(
+        &self,
+        Parameters(params): Parameters<UpdateChecklistItemParams>,
+    ) -> Result<String, String> {
+        let item_id: uuid::Uuid = params
+            .item_id
+            .parse()
+            .map_err(|_| format!("item_id '{}' is not a valid UUID", params.item_id))?;
+
+        let body = UpdateChecklistItemRequest {
+            title: params.title,
+            checked: params.checked,
+            before: params.before,
+            after: params.after,
+        };
+
+        let item = self
+            .client
+            .update_checklist_item(&params.workspace, &params.readable_id, item_id, body)
+            .await
+            .map_err(|e| enrich_client_error(e, "update_checklist_item"))?;
+
+        let result = project_checklist_item(item);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "Delete a checklist item from a task.")]
+    async fn delete_checklist_item(
+        &self,
+        Parameters(params): Parameters<DeleteChecklistItemParams>,
+    ) -> Result<String, String> {
+        let item_id: uuid::Uuid = params
+            .item_id
+            .parse()
+            .map_err(|_| format!("item_id '{}' is not a valid UUID", params.item_id))?;
+
+        self.client
+            .delete_checklist_item(&params.workspace, &params.readable_id, item_id)
+            .await
+            .map_err(|e| enrich_client_error(e, "delete_checklist_item"))?;
+
+        let result = json!({
+            "deleted": true,
+            "item_id": item_id,
+        });
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Promote a checklist item to a full task on the specified board and column. \
+                       Returns the new task and the updated checklist item."
+    )]
+    async fn promote_checklist_item(
+        &self,
+        Parameters(params): Parameters<PromoteChecklistItemParams>,
+    ) -> Result<String, String> {
+        let item_id: uuid::Uuid = params
+            .item_id
+            .parse()
+            .map_err(|_| format!("item_id '{}' is not a valid UUID", params.item_id))?;
+
+        let board_id_str = self
+            .resolve_board_id(&params.workspace, &params.board)
+            .await?;
+
+        let board_uuid: uuid::Uuid = board_id_str
+            .parse()
+            .map_err(|_| format!("resolved board '{board_id_str}' is not a valid UUID"))?;
+
+        let cols = self
+            .client
+            .list_columns(&params.workspace, board_uuid)
+            .await
+            .map_err(|e| enrich_client_error(e, "list_columns"))?;
+
+        let column_id = resolve_column_id_on_board(&params.column, &cols)?;
+
+        let body = PromoteChecklistItemRequest {
+            board_id: board_uuid,
+            column_id,
+        };
+
+        let promotion = self
+            .client
+            .promote_checklist_item(&params.workspace, &params.readable_id, item_id, body)
+            .await
+            .map_err(|e| enrich_client_error(e, "promote_checklist_item"))?;
+
+        let result = project_promotion(promotion);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "Create a subtask under a parent task.")]
+    async fn create_subtask(
+        &self,
+        Parameters(params): Parameters<CreateSubtaskParams>,
+    ) -> Result<String, String> {
+        let body = CreateSubtaskRequest {
+            title: params.title,
+        };
+
+        let task = self
+            .client
+            .create_subtask(&params.workspace, &params.readable_id, body)
+            .await
+            .map_err(|e| enrich_client_error(e, "create_subtask"))?;
+
+        let result = project_task_compact(&task);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "Promote a subtask to a top-level task, detaching it from its parent.")]
+    async fn promote_subtask(
+        &self,
+        Parameters(params): Parameters<PromoteSubtaskParams>,
+    ) -> Result<String, String> {
+        let task = self
+            .client
+            .promote_subtask(&params.workspace, &params.readable_id)
+            .await
+            .map_err(|e| enrich_client_error(e, "promote_subtask"))?;
+
+        let result = project_task_compact(&task);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
 }
 
 impl AtlasMcp {
@@ -2920,6 +3272,131 @@ mod tests {
         assert!(
             instructions.contains("`delete_tag`"),
             "instructions must mention delete_tag"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Batch 3d: graph write params
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn add_task_reference_params_task_target() {
+        let json = r#"{"workspace":"ws","readable_id":"ATL-1","kind":"relates","target_task_readable_id":"ATL-2"}"#;
+        let params: AddTaskReferenceParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.kind, "relates");
+        assert_eq!(params.target_task_readable_id.as_deref(), Some("ATL-2"));
+        assert!(params.target_document_id.is_none());
+    }
+
+    #[test]
+    fn add_task_reference_params_document_target() {
+        let json = r#"{"workspace":"ws","readable_id":"ATL-1","kind":"spec","target_document_id":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234"}"#;
+        let params: AddTaskReferenceParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.kind, "spec");
+        assert!(params.target_task_readable_id.is_none());
+        assert!(params.target_document_id.is_some());
+    }
+
+    #[test]
+    fn remove_task_reference_params_deserializes() {
+        let json = r#"{"workspace":"ws","readable_id":"ATL-1","reference_id":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234"}"#;
+        let params: RemoveTaskReferenceParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.readable_id, "ATL-1");
+        assert_eq!(params.reference_id, "018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234");
+    }
+
+    #[test]
+    fn add_checklist_item_params_minimal() {
+        let json = r#"{"workspace":"ws","readable_id":"ATL-1","title":"Write tests"}"#;
+        let params: AddChecklistItemParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.title, "Write tests");
+        assert!(params.before.is_none());
+        assert!(params.after.is_none());
+    }
+
+    #[test]
+    fn add_checklist_item_params_with_ordering() {
+        let json = r#"{"workspace":"ws","readable_id":"ATL-1","title":"Step 2","after":"aaa0"}"#;
+        let params: AddChecklistItemParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.after.as_deref(), Some("aaa0"));
+    }
+
+    #[test]
+    fn update_checklist_item_params_all_optional() {
+        let json = r#"{"workspace":"ws","readable_id":"ATL-1","item_id":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234"}"#;
+        let params: UpdateChecklistItemParams = serde_json::from_str(json).unwrap();
+        assert!(params.title.is_none());
+        assert!(params.checked.is_none());
+        assert!(params.before.is_none());
+        assert!(params.after.is_none());
+    }
+
+    #[test]
+    fn update_checklist_item_params_set_checked_and_title() {
+        let json = r#"{"workspace":"ws","readable_id":"ATL-1","item_id":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234","title":"New title","checked":true}"#;
+        let params: UpdateChecklistItemParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.title.as_deref(), Some("New title"));
+        assert_eq!(params.checked, Some(true));
+    }
+
+    #[test]
+    fn delete_checklist_item_params_deserializes() {
+        let json = r#"{"workspace":"ws","readable_id":"ATL-1","item_id":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234"}"#;
+        let params: DeleteChecklistItemParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.readable_id, "ATL-1");
+        assert_eq!(params.item_id, "018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234");
+    }
+
+    #[test]
+    fn promote_checklist_item_params_deserializes() {
+        let json = r#"{"workspace":"ws","readable_id":"ATL-1","item_id":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234","board":"Sprint Board","column":"To Do"}"#;
+        let params: PromoteChecklistItemParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.board, "Sprint Board");
+        assert_eq!(params.column, "To Do");
+    }
+
+    #[test]
+    fn create_subtask_params_deserializes() {
+        let json = r#"{"workspace":"ws","readable_id":"ATL-1","title":"Implement error handling"}"#;
+        let params: CreateSubtaskParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.title, "Implement error handling");
+    }
+
+    #[test]
+    fn promote_subtask_params_deserializes() {
+        let json = r#"{"workspace":"ws","readable_id":"ATL-5"}"#;
+        let params: PromoteSubtaskParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.readable_id, "ATL-5");
+    }
+
+    #[test]
+    fn get_info_instructions_reference_graph_write_tools() {
+        let server = AtlasMcp::new("http://localhost:8080", "test-token").unwrap();
+        let info = server.get_info();
+        let instructions = info.instructions.as_deref().unwrap_or("");
+        assert!(
+            instructions.contains("`add_task_reference`"),
+            "instructions must mention add_task_reference"
+        );
+        assert!(
+            instructions.contains("`remove_task_reference`"),
+            "instructions must mention remove_task_reference"
+        );
+        assert!(
+            instructions.contains("`add_checklist_item`"),
+            "instructions must mention add_checklist_item"
+        );
+        assert!(
+            instructions.contains("`promote_checklist_item`"),
+            "instructions must mention promote_checklist_item"
+        );
+        assert!(
+            instructions.contains("`create_subtask`"),
+            "instructions must mention create_subtask"
+        );
+        assert!(
+            instructions.contains("`promote_subtask`"),
+            "instructions must mention promote_subtask"
         );
     }
 }
