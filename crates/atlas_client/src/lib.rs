@@ -28,6 +28,9 @@ use atlas_api::{
         },
         saved_searches::{CreateSavedSearchRequest, RenameSavedSearchRequest, SavedSearchDto},
         search::SearchHitDto,
+        status_templates::{
+            CreateStatusTemplateRequest, StatusTemplateDto, UpdateStatusTemplateRequest,
+        },
         tags::{CreateTagRequest, TagDto, UpdateTagRequest},
         task_views::{CreateTaskViewRequest, TaskViewDto, UpdateTaskViewRequest},
     },
@@ -1306,6 +1309,96 @@ impl AtlasClient {
             .await
             .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
         Err(ClientError::Api(problem))
+    }
+
+    // ---- Status templates -------------------------------------------------------
+
+    /// `GET /v1/workspaces/{ws}/status-templates`
+    pub async fn list_status_templates(
+        &self,
+        ws: &str,
+    ) -> Result<Vec<StatusTemplateDto>, ClientError> {
+        let response = self
+            .get(&format!("/v1/workspaces/{ws}/status-templates"))
+            .send()
+            .await?;
+        self.decode_response(response, "list_status_templates")
+            .await
+    }
+
+    /// `POST /v1/workspaces/{ws}/status-templates`
+    pub async fn create_status_template(
+        &self,
+        ws: &str,
+        body: CreateStatusTemplateRequest,
+    ) -> Result<StatusTemplateDto, ClientError> {
+        let response = self
+            .post(&format!("/v1/workspaces/{ws}/status-templates"))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "create_status_template")
+            .await
+    }
+
+    /// `PATCH /v1/workspaces/{ws}/status-templates/{template_id}`
+    pub async fn update_status_template(
+        &self,
+        ws: &str,
+        template_id: uuid::Uuid,
+        body: UpdateStatusTemplateRequest,
+    ) -> Result<StatusTemplateDto, ClientError> {
+        let response = self
+            .patch(&format!(
+                "/v1/workspaces/{ws}/status-templates/{template_id}"
+            ))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "update_status_template")
+            .await
+    }
+
+    /// `DELETE /v1/workspaces/{ws}/status-templates/{template_id}`
+    pub async fn delete_status_template(
+        &self,
+        ws: &str,
+        template_id: uuid::Uuid,
+    ) -> Result<(), ClientError> {
+        let response = self
+            .delete(&format!(
+                "/v1/workspaces/{ws}/status-templates/{template_id}"
+            ))
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        if response.status().is_success() {
+            return Ok(());
+        }
+        let problem: ProblemDetails = response
+            .json()
+            .await
+            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
+        Err(ClientError::Api(problem))
+    }
+
+    /// `POST /v1/workspaces/{ws}/boards/{board_id}/apply-status-templates`
+    pub async fn apply_status_templates(
+        &self,
+        ws: &str,
+        board_id: uuid::Uuid,
+    ) -> Result<Vec<atlas_api::dtos::boards_tasks::ColumnDto>, ClientError> {
+        let response = self
+            .post(&format!(
+                "/v1/workspaces/{ws}/boards/{board_id}/apply-status-templates"
+            ))
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        self.decode_response(response, "apply_status_templates")
+            .await
     }
 
     /// `PATCH /v1/workspaces/{ws}/boards/{board_id}/columns/{column_id}`

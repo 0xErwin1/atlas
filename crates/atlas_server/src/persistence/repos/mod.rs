@@ -47,3 +47,9 @@ pub use tags::{PgTagRepo, TagRepo};
 mod task_views;
 
 pub use task_views::{PgTaskViewRepo, TaskViewRepo};
+#[allow(unreachable_pub)]
+mod status_templates;
+
+pub use status_templates::{
+    PgStatusTemplateRepo, StatusTemplateRepo, list_templates_for_workspace,
+};

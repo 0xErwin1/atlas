@@ -3,6 +3,7 @@ pub mod documents;
 pub mod identity;
 pub mod permissions;
 pub mod saved_searches;
+pub mod status_templates;
 pub mod tags;
 pub mod task_views;
 pub mod workspace_core;

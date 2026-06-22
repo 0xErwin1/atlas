@@ -56,6 +56,7 @@ define_id!(MembershipId);
 define_id!(TagId);
 define_id!(SavedSearchId);
 define_id!(TaskViewId);
+define_id!(StatusTemplateId);
 
 #[cfg(test)]
 mod tests {

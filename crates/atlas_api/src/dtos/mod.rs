@@ -3,6 +3,7 @@ pub mod documents;
 pub mod folders;
 pub mod saved_searches;
 pub mod search;
+pub mod status_templates;
 pub mod tags;
 pub mod task_views;
 

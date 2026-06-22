@@ -11,6 +11,7 @@ pub(crate) mod projects;
 pub mod registry;
 pub(crate) mod saved_searches;
 pub(crate) mod search;
+pub(crate) mod status_templates;
 pub(crate) mod tags;
 pub(crate) mod task_views;
 pub(crate) mod tasks;

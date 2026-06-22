@@ -144,6 +144,21 @@ pub fn app(state: AppState) -> Router {
             "/v1/workspaces/{ws}/tags/{tag_id}",
             axum::routing::patch(routes::tags::patch_tag).delete(routes::tags::delete_tag),
         )
+        // Status templates (workspace default-status registry)
+        .route(
+            "/v1/workspaces/{ws}/status-templates",
+            axum::routing::get(routes::status_templates::list_status_templates)
+                .post(routes::status_templates::create_status_template),
+        )
+        .route(
+            "/v1/workspaces/{ws}/status-templates/{template_id}",
+            axum::routing::patch(routes::status_templates::update_status_template)
+                .delete(routes::status_templates::delete_status_template),
+        )
+        .route(
+            "/v1/workspaces/{ws}/boards/{board_id}/apply-status-templates",
+            axum::routing::post(routes::status_templates::apply_status_templates),
+        )
         // Saved searches (per-owner personal search registry)
         .route(
             "/v1/workspaces/{ws}/saved-searches",

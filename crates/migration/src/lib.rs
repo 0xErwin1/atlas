@@ -17,6 +17,7 @@ pub mod m20260620_000014_saved_searches;
 pub mod m20260621_000015_task_views;
 pub mod m20260621_000016_column_color;
 pub mod m20260621_000017_tag_color;
+pub mod m20260622_000018_status_templates;
 
 use sea_orm_migration::prelude::*;
 
@@ -43,6 +44,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260621_000015_task_views::Migration),
             Box::new(m20260621_000016_column_color::Migration),
             Box::new(m20260621_000017_tag_color::Migration),
+            Box::new(m20260622_000018_status_templates::Migration),
         ]
     }
 }

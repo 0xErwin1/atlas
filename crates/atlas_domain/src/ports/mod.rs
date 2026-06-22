@@ -5,6 +5,7 @@ pub mod identity;
 pub mod permission_grant_repo;
 pub mod saved_searches;
 pub mod search;
+pub mod status_templates;
 pub mod tags;
 pub mod task_views;
 pub mod workspace_core;

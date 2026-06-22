@@ -24,6 +24,7 @@ use crate::persistence::entities::boards_tasks::{
     task_activity, task_activity_from, task_assignee, task_assignee_from, task_checklist_item,
     task_checklist_item_from, task_from, task_reference, task_reference_from,
 };
+use crate::persistence::entities::status_templates::status_template;
 
 pub use atlas_domain::ports::boards_tasks::{
     BoardRepo, TaskActivityRepo, TaskAssigneeRepo, TaskChecklistRepo, TaskReferenceRepo, TaskRepo,
@@ -42,8 +43,10 @@ impl PgBoardRepo {
 #[async_trait]
 impl BoardRepo for PgBoardRepo {
     async fn create_board(&self, ctx: &WorkspaceCtx, new: NewBoard) -> Result<Board, DomainError> {
+        let txn = self.conn.begin().await.map_err(db_err)?;
+
         let (by_user, by_key) = actor_columns(&ctx.actor);
-        let model = board::ActiveModel {
+        let board_model = board::ActiveModel {
             id: Set(BoardId::new().0),
             workspace_id: Set(ctx.workspace_id.0),
             project_id: Set(new.project_id.0),
@@ -54,11 +57,39 @@ impl BoardRepo for PgBoardRepo {
             updated_at: Set(Utc::now()),
             deleted_at: Set(None),
         };
-        model
-            .insert(&self.conn)
+        let inserted_board = board_model.insert(&txn).await.map_err(db_err)?;
+        let board_id = BoardId(inserted_board.id);
+
+        let templates = status_template::Entity::find()
+            .filter(status_template::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(status_template::Column::DeletedAt.is_null())
+            .order_by_asc(status_template::Column::PositionKey)
+            .all(&txn)
             .await
-            .map(board_from)
-            .map_err(db_err)
+            .map_err(db_err)?;
+
+        let mut prev: Option<String> = None;
+        for tpl in templates {
+            let position_key = position::between(prev.as_deref(), None);
+            let col_model = board_column::ActiveModel {
+                id: Set(ColumnId::new().0),
+                workspace_id: Set(ctx.workspace_id.0),
+                board_id: Set(board_id.0),
+                name: Set(tpl.name),
+                position_key: Set(position_key.clone()),
+                color: Set(tpl.color),
+                created_by_user_id: Set(by_user),
+                created_by_api_key_id: Set(by_key),
+                created_at: Set(Utc::now()),
+                updated_at: Set(Utc::now()),
+                deleted_at: Set(None),
+            };
+            col_model.insert(&txn).await.map_err(db_err)?;
+            prev = Some(position_key);
+        }
+
+        txn.commit().await.map_err(db_err)?;
+        Ok(board_from(inserted_board))
     }
 
     async fn find_board(
