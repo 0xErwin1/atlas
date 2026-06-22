@@ -1093,6 +1093,64 @@
         ]
       }
     },
+    "/v1/workspaces/{ws}/boards/{board_id}/apply-status-templates": {
+      "post": {
+        "tags": [
+          "status-templates"
+        ],
+        "operationId": "apply_status_templates",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "board_id",
+            "in": "path",
+            "description": "Board UUID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resulting column list after apply",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ColumnDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          },
+          "404": {
+            "description": "Board not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/v1/workspaces/{ws}/boards/{board_id}/columns": {
       "get": {
         "tags": [
@@ -3915,6 +3973,218 @@
         ]
       }
     },
+    "/v1/workspaces/{ws}/status-templates": {
+      "get": {
+        "tags": [
+          "status-templates"
+        ],
+        "operationId": "list_status_templates",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Workspace status templates ordered by position",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StatusTemplateDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "status-templates"
+        ],
+        "operationId": "create_status_template",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateStatusTemplateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Status template created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusTemplateDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          },
+          "422": {
+            "description": "Invalid input"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{ws}/status-templates/{template_id}": {
+      "delete": {
+        "tags": [
+          "status-templates"
+        ],
+        "operationId": "delete_status_template",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "template_id",
+            "in": "path",
+            "description": "Template ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Template soft-deleted"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          },
+          "404": {
+            "description": "Template not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "status-templates"
+        ],
+        "operationId": "update_status_template",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "template_id",
+            "in": "path",
+            "description": "Template ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateStatusTemplateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Status template updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusTemplateDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          },
+          "404": {
+            "description": "Template not found"
+          },
+          "422": {
+            "description": "Invalid input"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/v1/workspaces/{ws}/tags": {
       "get": {
         "tags": [
@@ -4002,6 +4272,51 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TagDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{ws}/tags/used": {
+      "get": {
+        "tags": [
+          "tags"
+        ],
+        "operationId": "list_used_labels",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Distinct label strings used by non-deleted tasks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
                 }
               }
             }
@@ -6514,6 +6829,36 @@
           }
         }
       },
+      "CreateStatusTemplateRequest": {
+        "type": "object",
+        "description": "Request body for `POST /v1/workspaces/{ws}/status-templates`.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "after": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "before": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
       "CreateSubtaskRequest": {
         "type": "object",
         "description": "Request body for `POST /v1/workspaces/{ws}/tasks/{readable_id}/subtasks`.",
@@ -7995,6 +8340,48 @@
           }
         }
       },
+      "StatusTemplateDto": {
+        "type": "object",
+        "description": "Workspace status template representation.",
+        "required": [
+          "id",
+          "workspace_id",
+          "name",
+          "position_key",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "position_key": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
       "TagDto": {
         "type": "object",
         "description": "Workspace tag representation.",
@@ -8498,6 +8885,12 @@
               "null"
             ]
           },
+          "task_prefix": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "visibility": {
             "type": [
               "string",
@@ -8505,6 +8898,31 @@
             ]
           },
           "visibility_role": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "UpdateStatusTemplateRequest": {
+        "type": "object",
+        "description": "Request body for `PATCH /v1/workspaces/{ws}/status-templates/{id}`.\n\n`name`: `None` = leave unchanged; `Some(v)` = rename.\n`color`: absent = leave unchanged; explicit `null` = clear; string = set.\n`before`/`after`: position anchors for reorder.",
+        "properties": {
+          "after": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "before": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "color": {},
+          "name": {
             "type": [
               "string",
               "null"
@@ -8738,6 +9156,10 @@
     {
       "name": "tags",
       "description": "Workspace tag registry"
+    },
+    {
+      "name": "status-templates",
+      "description": "Workspace default status templates"
     },
     {
       "name": "saved-searches",
