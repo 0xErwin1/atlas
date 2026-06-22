@@ -4,7 +4,10 @@ mod response;
 
 use std::sync::Arc;
 
-use atlas_api::dtos::boards_tasks::WorkspaceTaskQueryParams;
+use atlas_api::dtos::boards_tasks::{
+    AddAssigneeRequest, CreateTaskRequest, MoveTaskRequest, TaskPropertiesDto, UpdateTaskRequest,
+    WorkspaceTaskQueryParams,
+};
 use atlas_client::AtlasClient;
 use rmcp::{
     ServerHandler,
@@ -17,13 +20,15 @@ use serde::Deserialize;
 use serde_json::json;
 
 use response::{
-    Detail, envelope_page, match_columns_by_name, parse_csv, parse_detail, project_activity_entry,
-    project_attachment, project_backlink, project_board_summary, project_checklist_item,
-    project_column, project_document_compact, project_document_full, project_document_summary,
-    project_folder, project_principal, project_project, project_reference,
-    project_revision_content, project_revision_meta, project_saved_search, project_search_hit,
-    project_tag, project_task_backlink, project_task_compact, project_task_full, project_task_row,
-    project_task_view, project_workspace, wrap_vec,
+    Detail, enrich_client_error, envelope_page, map_present_value, match_columns_by_name,
+    parse_csv, parse_detail, project_activity_entry, project_assignee, project_attachment,
+    project_backlink, project_board_summary, project_checklist_item, project_column,
+    project_document_compact, project_document_full, project_document_summary, project_folder,
+    project_principal, project_project, project_reference, project_revision_content,
+    project_revision_meta, project_saved_search, project_search_hit, project_tag,
+    project_task_backlink, project_task_compact, project_task_full, project_task_row,
+    project_task_view, project_workspace, require_confirm, resolve_column_id_on_board,
+    validate_assignee_type, validate_priority, wrap_vec,
 };
 
 const ATLAS_INSTRUCTIONS: &str = "\
@@ -50,6 +55,10 @@ For document depth use: `list_document_history` to browse revision metadata, \
 `get_document_revision` to fetch the full content of a specific historical revision \
 (by seq number from `list_document_history`), and `list_attachments` to enumerate \
 file attachments on a document. \
+For task mutations use: `create_task` (board + column resolved by name), `update_task` \
+(PATCH semantics — omit a field to leave it unchanged, pass null to clear), `move_task` \
+(target column resolved by name; errors with the column list on a miss), `delete_task` \
+(requires confirm: true), `add_task_assignee` / `remove_task_assignee` for assignees. \
 Prefer narrow queries over broad ones; follow up with targeted reads rather than \
 enumerating all results.";
 
@@ -373,6 +382,114 @@ pub struct ListAttachmentsParams {
     /// Page size (default 20, max 200).
     #[serde(default)]
     pub limit: Option<u32>,
+}
+
+// ---------------------------------------------------------------------------
+// Write tool parameter structs — Task writes (batch 3a)
+// ---------------------------------------------------------------------------
+
+/// Parameters accepted by the `create_task` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CreateTaskParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Board name (partial match) or UUID containing the target column.
+    pub board: String,
+    /// Column name (exact or partial) within the board where the task is created.
+    pub column: String,
+    /// Task title.
+    pub title: String,
+    /// Optional markdown description.
+    #[serde(default)]
+    pub description: Option<String>,
+    /// Priority: `low`, `medium`, `high`, or `urgent`.
+    #[serde(default)]
+    pub priority: Option<String>,
+    /// Labels to attach to the task (replaces any existing labels).
+    #[serde(default)]
+    pub labels: Option<Vec<String>>,
+    /// Effort estimate in story-point units (non-negative integer).
+    #[serde(default)]
+    pub estimate: Option<i32>,
+    /// Due date in RFC 3339 format (e.g. `2024-12-31T23:59:59Z`).
+    #[serde(default)]
+    pub due_date: Option<String>,
+}
+
+/// Parameters accepted by the `update_task` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct UpdateTaskParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Task readable ID, e.g. `ATL-42`.
+    pub readable_id: String,
+    /// New title. Omit to leave unchanged.
+    #[serde(default)]
+    pub title: Option<String>,
+    /// New description. Omit to leave unchanged.
+    #[serde(default)]
+    pub description: Option<String>,
+    /// Priority. Omit to leave unchanged. Pass JSON null to clear. Value must be one of low, medium, high, urgent.
+    #[serde(default)]
+    pub priority: Option<serde_json::Value>,
+    /// Due date (RFC 3339). Omit to leave unchanged. Pass JSON null to clear.
+    #[serde(default)]
+    pub due_date: Option<serde_json::Value>,
+    /// Estimate (story points). Omit to leave unchanged. Pass JSON null to clear.
+    #[serde(default)]
+    pub estimate: Option<serde_json::Value>,
+    /// Labels. When provided, replaces the entire label set. Omit to leave unchanged.
+    #[serde(default)]
+    pub labels: Option<Vec<String>>,
+}
+
+/// Parameters accepted by the `move_task` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct MoveTaskParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Task readable ID, e.g. `ATL-42`.
+    pub readable_id: String,
+    /// Target column name. Must match exactly one column on the board; errors with the column list on a miss.
+    pub column: String,
+    /// Board name (partial match) or UUID to scope column resolution. Required when the column name is ambiguous across boards.
+    #[serde(default)]
+    pub board: Option<String>,
+}
+
+/// Parameters accepted by the `delete_task` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DeleteTaskParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Task readable ID, e.g. `ATL-42`.
+    pub readable_id: String,
+    /// Set to `true` to confirm deletion. This is a destructive, non-auto-reversible operation.
+    pub confirm: bool,
+}
+
+/// Parameters accepted by the `add_task_assignee` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct AddTaskAssigneeParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Task readable ID, e.g. `ATL-42`.
+    pub readable_id: String,
+    /// Assignee type: `user` or `api_key`.
+    pub assignee_type: String,
+    /// UUID string of the user or API key to assign (from `list_members`).
+    pub assignee_id: String,
+}
+
+/// Parameters accepted by the `remove_task_assignee` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct RemoveTaskAssigneeParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Task readable ID, e.g. `ATL-42`.
+    pub readable_id: String,
+    /// Assignee reference (UUID of the user or API key to remove).
+    pub assignee_ref: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -900,6 +1017,218 @@ impl AtlasMcp {
             .map_err(|e| format!("list_attachments for '{}' failed: {e}", params.slug))?;
 
         let result = envelope_page(page, project_attachment);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "Create a task on a board. Board and column are resolved by name.")]
+    async fn create_task(
+        &self,
+        Parameters(params): Parameters<CreateTaskParams>,
+    ) -> Result<String, String> {
+        let board_id_str = self
+            .resolve_board_id(&params.workspace, &params.board)
+            .await?;
+        let board_uuid: uuid::Uuid = board_id_str
+            .parse()
+            .map_err(|_| format!("resolved board '{board_id_str}' is not a valid UUID"))?;
+
+        let cols = self
+            .client
+            .list_columns(&params.workspace, board_uuid)
+            .await
+            .map_err(|e| enrich_client_error(e, "list_columns"))?;
+
+        let column_id = resolve_column_id_on_board(&params.column, &cols)?;
+
+        if let Some(ref p) = params.priority {
+            validate_priority(p)?;
+        }
+
+        let due_date = params
+            .due_date
+            .as_deref()
+            .map(|s| {
+                s.parse::<chrono::DateTime<chrono::Utc>>()
+                    .map_err(|_| format!("due_date '{s}' is not a valid RFC 3339 timestamp"))
+            })
+            .transpose()?;
+
+        let properties = if params.priority.is_some()
+            || params.labels.is_some()
+            || params.estimate.is_some()
+            || due_date.is_some()
+        {
+            Some(TaskPropertiesDto {
+                priority: params.priority,
+                due_date,
+                estimate: params.estimate,
+                labels: params.labels.unwrap_or_default(),
+                custom: None,
+            })
+        } else {
+            None
+        };
+
+        let body = CreateTaskRequest {
+            column_id,
+            title: params.title,
+            description: params.description,
+            properties,
+            before: None,
+            after: None,
+        };
+
+        let task = self
+            .client
+            .create_task(&params.workspace, board_uuid, body)
+            .await
+            .map_err(|e| enrich_client_error(e, "create_task"))?;
+
+        let result = project_task_compact(&task);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Update a task. PATCH semantics: omit a field to leave it unchanged; \
+                       pass JSON null to clear a clearable field (priority, due_date, estimate)."
+    )]
+    async fn update_task(
+        &self,
+        Parameters(params): Parameters<UpdateTaskParams>,
+    ) -> Result<String, String> {
+        let priority = map_present_value(params.priority.as_ref(), Some(validate_priority))?;
+        let due_date = map_present_value(params.due_date.as_ref(), None)?;
+        let estimate = map_present_value(params.estimate.as_ref(), None)?;
+
+        let body = UpdateTaskRequest {
+            title: params.title,
+            description: params.description,
+            priority,
+            due_date,
+            estimate,
+            labels: params.labels,
+            properties: None,
+        };
+
+        let task = self
+            .client
+            .update_task(&params.workspace, &params.readable_id, body)
+            .await
+            .map_err(|e| enrich_client_error(e, "update_task"))?;
+
+        let result = project_task_compact(&task);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "Move a task to a different column (resolved by name). \
+                       Errors with the board's column list when the column is not found.")]
+    async fn move_task(
+        &self,
+        Parameters(params): Parameters<MoveTaskParams>,
+    ) -> Result<String, String> {
+        let board_ref = params.board.as_deref().unwrap_or(&params.readable_id);
+
+        let board_id_str = if params.board.is_some() {
+            self.resolve_board_id(&params.workspace, board_ref).await?
+        } else {
+            // No board supplied: fetch the task first to get its board_id.
+            let task = self
+                .client
+                .get_task(&params.workspace, &params.readable_id)
+                .await
+                .map_err(|e| enrich_client_error(e, "get_task"))?;
+            task.board_id.to_string()
+        };
+
+        let board_uuid: uuid::Uuid = board_id_str
+            .parse()
+            .map_err(|_| format!("resolved board '{board_id_str}' is not a valid UUID"))?;
+
+        let cols = self
+            .client
+            .list_columns(&params.workspace, board_uuid)
+            .await
+            .map_err(|e| enrich_client_error(e, "list_columns"))?;
+
+        let column_id = resolve_column_id_on_board(&params.column, &cols)?;
+
+        let body = MoveTaskRequest {
+            column_id,
+            before: None,
+            after: None,
+        };
+
+        let task = self
+            .client
+            .move_task(&params.workspace, &params.readable_id, body)
+            .await
+            .map_err(|e| enrich_client_error(e, "move_task"))?;
+
+        let result = project_task_compact(&task);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "Delete a task permanently. Requires confirm: true. \
+                       This operation is not auto-reversible.")]
+    async fn delete_task(
+        &self,
+        Parameters(params): Parameters<DeleteTaskParams>,
+    ) -> Result<String, String> {
+        require_confirm(params.confirm, "task", &params.readable_id)?;
+
+        self.client
+            .delete_task(&params.workspace, &params.readable_id)
+            .await
+            .map_err(|e| enrich_client_error(e, "delete_task"))?;
+
+        let result = json!({
+            "deleted": true,
+            "readable_id": params.readable_id,
+        });
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "Add an assignee (user or API key) to a task.")]
+    async fn add_task_assignee(
+        &self,
+        Parameters(params): Parameters<AddTaskAssigneeParams>,
+    ) -> Result<String, String> {
+        validate_assignee_type(&params.assignee_type)?;
+
+        let assignee_id: uuid::Uuid = params
+            .assignee_id
+            .parse()
+            .map_err(|_| format!("assignee_id '{}' is not a valid UUID", params.assignee_id))?;
+
+        let body = AddAssigneeRequest {
+            assignee_type: params.assignee_type,
+            assignee_id,
+        };
+
+        let assignee = self
+            .client
+            .add_assignee(&params.workspace, &params.readable_id, body)
+            .await
+            .map_err(|e| enrich_client_error(e, "add_task_assignee"))?;
+
+        let result = project_assignee(assignee);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "Remove an assignee from a task by their UUID reference.")]
+    async fn remove_task_assignee(
+        &self,
+        Parameters(params): Parameters<RemoveTaskAssigneeParams>,
+    ) -> Result<String, String> {
+        self.client
+            .remove_assignee(&params.workspace, &params.readable_id, &params.assignee_ref)
+            .await
+            .map_err(|e| enrich_client_error(e, "remove_task_assignee"))?;
+
+        let result = json!({
+            "removed": true,
+            "assignee_ref": params.assignee_ref,
+        });
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 }

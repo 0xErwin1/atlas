@@ -8,8 +8,8 @@
 use atlas_api::{
     dtos::{
         boards_tasks::{
-            ActivityEntryDto, BoardSummaryDto, ChecklistItemDto, ColumnDto, ReferenceDto,
-            TaskBacklinkDto, TaskDto, TaskSummaryDto,
+            ActivityEntryDto, AssigneeDto, BoardSummaryDto, ChecklistItemDto, ColumnDto,
+            ReferenceDto, TaskBacklinkDto, TaskDto, TaskSummaryDto,
         },
         documents::{
             ActorDto, AttachmentDto, BacklinkDto, DocumentDto, DocumentSummaryDto,
@@ -24,6 +24,7 @@ use atlas_api::{
     },
     pagination::Page,
 };
+use atlas_client::ClientError;
 use serde_json::{Value, json};
 
 // ---------------------------------------------------------------------------
@@ -633,6 +634,176 @@ pub(crate) fn project_revision_content(rev: RevisionContentDto) -> Value {
     map.insert("created_at".into(), json!(rev.created_at));
 
     Value::Object(map)
+}
+
+// ---------------------------------------------------------------------------
+// Write-side: confirm guard
+// ---------------------------------------------------------------------------
+
+/// Enforces the caller's intent for destructive (non-auto-reversible) operations.
+///
+/// Returns `Ok(())` when `confirm` is `true`, or an actionable `Err` asking the
+/// caller to re-invoke with `confirm: true`. Called before any client mutation so
+/// the guard fires before any network round-trip.
+pub(crate) fn require_confirm(confirm: bool, resource: &str, id: &str) -> Result<(), String> {
+    if confirm {
+        return Ok(());
+    }
+    Err(format!(
+        "Refusing to delete {resource} '{id}'. \
+         This is destructive and not auto-reversible. \
+         Re-call with confirm: true to proceed."
+    ))
+}
+
+// ---------------------------------------------------------------------------
+// Write-side: column resolver (single-match, write-path semantics)
+// ---------------------------------------------------------------------------
+
+/// Resolves a column name to exactly one UUID on a given board.
+///
+/// Unlike `match_columns_by_name` (which returns all fuzzy matches for read
+/// filters), this function enforces single-match semantics required by write
+/// operations: 0 matches or >1 matches are both errors that include the board's
+/// full column list so the caller can correct the name immediately.
+pub(crate) fn resolve_column_id_on_board(
+    name: &str,
+    cols: &[ColumnDto],
+) -> Result<uuid::Uuid, String> {
+    let needle = name.to_ascii_lowercase();
+    let matches: Vec<&ColumnDto> = cols
+        .iter()
+        .filter(|c| c.name.to_ascii_lowercase().contains(&needle))
+        .collect();
+
+    let available: Vec<&str> = cols.iter().map(|c| c.name.as_str()).collect();
+    let available_list = available.join(", ");
+
+    match matches.as_slice() {
+        [] => Err(format!(
+            "column '{name}' not found on this board; available columns: [{available_list}]"
+        )),
+        [single] => Ok(single.id),
+        many => {
+            let matched_names: Vec<&str> = many.iter().map(|c| c.name.as_str()).collect();
+            Err(format!(
+                "column '{name}' is ambiguous; matches: [{}]; pass a more specific name",
+                matched_names.join(", ")
+            ))
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Write-side: enum validators
+// ---------------------------------------------------------------------------
+
+/// Validates a task priority string.
+///
+/// Returns `Ok(())` for accepted values, or an `Err` listing the valid set.
+pub(crate) fn validate_priority(v: &str) -> Result<(), String> {
+    match v {
+        "low" | "medium" | "high" | "urgent" => Ok(()),
+        _ => Err(format!(
+            "invalid priority '{v}'; valid values: low, medium, high, urgent"
+        )),
+    }
+}
+
+/// Validates a task assignee type.
+///
+/// Returns `Ok(())` for accepted values, or an `Err` listing the valid set.
+pub(crate) fn validate_assignee_type(v: &str) -> Result<(), String> {
+    match v {
+        "user" | "api_key" => Ok(()),
+        _ => Err(format!(
+            "invalid assignee_type '{v}'; valid values: user, api_key"
+        )),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Write-side: PATCH present_value mapping
+// ---------------------------------------------------------------------------
+
+/// Validator function signature for string field validators.
+pub(crate) type FieldValidator = fn(&str) -> Result<(), String>;
+
+/// Maps an MCP tri-state parameter to the present_value field in a PATCH request.
+///
+/// The tri-state contract: absent (`None`) = leave unchanged, `Some(Value::Null)` =
+/// clear the field, `Some(string/number)` = set the field. When a `validator` is
+/// supplied it runs only for non-null values; clearing always passes through.
+///
+/// Returns the ready-to-use `Option<Value>` to assign to the request DTO field.
+pub(crate) fn map_present_value(
+    field: Option<&serde_json::Value>,
+    validator: Option<FieldValidator>,
+) -> Result<Option<serde_json::Value>, String> {
+    match field {
+        None => Ok(None),
+        Some(Value::Null) => Ok(Some(Value::Null)),
+        Some(v) => {
+            if let (Some(validate), Some(s)) = (validator, v.as_str()) {
+                validate(s)?;
+            }
+            Ok(Some(v.clone()))
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Write-side: client error enrichment
+// ---------------------------------------------------------------------------
+
+/// Maps a `ClientError` to an agent-actionable string with context.
+///
+/// `ctx` identifies the operation (e.g. `"create_task"`) and is prefixed on
+/// transport and decode errors where the server's response is unavailable. API
+/// errors surface the server's `title` + `detail` + `hint` directly.
+pub(crate) fn enrich_client_error(e: ClientError, ctx: &str) -> String {
+    match e {
+        ClientError::Api(p) => {
+            let mut msg = format!("{}: {}", p.title, p.status);
+            if let Some(detail) = p.detail {
+                msg.push_str(&format!(" — {detail}"));
+            }
+            if let Some(hint) = p.hint {
+                msg.push_str(&format!(" (hint: {hint})"));
+            }
+            msg
+        }
+        ClientError::Conflict(c) => {
+            // Structured JSON so the agent can machine-read the patch and revision id.
+            json!({
+                "error": "revision_conflict",
+                "message": "The document changed since you read it. Apply base_to_current_patch \
+                            to your edit and retry update_document_content with \
+                            base_revision_id = current_revision_id.",
+                "current_revision_id": c.current_revision_id,
+                "current_seq": c.current_seq,
+                "base_to_current_patch": c.base_to_current_patch,
+            })
+            .to_string()
+        }
+        ClientError::Transport(e) => format!("{ctx}: transport error: {e}"),
+        ClientError::Decode { context, source } => {
+            format!("{ctx}: decode error in {context}: {source}")
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Write-side: assignee projection
+// ---------------------------------------------------------------------------
+
+/// Projects an `AssigneeDto` to the compact MCP shape.
+pub(crate) fn project_assignee(a: AssigneeDto) -> Value {
+    json!({
+        "type": a.assignee.r#type,
+        "display_name": a.assignee.display_name,
+        "assigned_at": a.assigned_at,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -1790,5 +1961,193 @@ mod tests {
         let val = project_attachment(make_attachment(None));
         assert!(val.get("document_id").is_none());
         assert!(val.get("sha256").is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // require_confirm
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn require_confirm_true_passes() {
+        assert!(require_confirm(true, "task", "ATL-42").is_ok());
+    }
+
+    #[test]
+    fn require_confirm_false_returns_actionable_error() {
+        let err = require_confirm(false, "task", "ATL-42").unwrap_err();
+        assert!(err.contains("ATL-42"), "error must name the resource id");
+        assert!(
+            err.contains("confirm: true"),
+            "error must instruct re-call with confirm: true"
+        );
+        assert!(err.contains("task"), "error must name the resource type");
+    }
+
+    // -----------------------------------------------------------------------
+    // resolve_column_id_on_board
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn resolve_column_exact_match_returns_id() {
+        let cols = vec![make_column("To Do"), make_column("Done")];
+        let id = resolve_column_id_on_board("To Do", &cols).unwrap();
+        assert_eq!(id, cols[0].id);
+    }
+
+    #[test]
+    fn resolve_column_partial_match_returns_id() {
+        let cols = vec![make_column("In Progress"), make_column("Done")];
+        let id = resolve_column_id_on_board("progress", &cols).unwrap();
+        assert_eq!(id, cols[0].id);
+    }
+
+    #[test]
+    fn resolve_column_case_insensitive() {
+        let cols = vec![make_column("In Progress")];
+        let id = resolve_column_id_on_board("IN PROGRESS", &cols).unwrap();
+        assert_eq!(id, cols[0].id);
+    }
+
+    #[test]
+    fn resolve_column_no_match_lists_available_columns() {
+        let cols = vec![make_column("To Do"), make_column("Done")];
+        let err = resolve_column_id_on_board("nonexistent", &cols).unwrap_err();
+        assert!(
+            err.contains("nonexistent"),
+            "error must echo the name searched"
+        );
+        assert!(err.contains("To Do"), "error must list available columns");
+        assert!(err.contains("Done"), "error must list available columns");
+    }
+
+    #[test]
+    fn resolve_column_ambiguous_match_errors_with_matched_names() {
+        let cols = vec![
+            make_column("Todo"),
+            make_column("Todo Later"),
+            make_column("Done"),
+        ];
+        let err = resolve_column_id_on_board("todo", &cols).unwrap_err();
+        assert!(err.contains("ambiguous"), "error must say ambiguous");
+        assert!(err.contains("Todo"), "error must list matched names");
+        assert!(err.contains("Todo Later"), "error must list matched names");
+    }
+
+    // -----------------------------------------------------------------------
+    // validate_priority
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn validate_priority_valid_values_pass() {
+        for v in &["low", "medium", "high", "urgent"] {
+            assert!(validate_priority(v).is_ok(), "'{v}' should be valid");
+        }
+    }
+
+    #[test]
+    fn validate_priority_invalid_value_lists_options() {
+        let err = validate_priority("critical").unwrap_err();
+        assert!(err.contains("critical"), "error must echo the bad value");
+        assert!(err.contains("low"), "error must list valid values");
+        assert!(err.contains("urgent"), "error must list valid values");
+    }
+
+    // -----------------------------------------------------------------------
+    // validate_assignee_type
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn validate_assignee_type_valid_values_pass() {
+        assert!(validate_assignee_type("user").is_ok());
+        assert!(validate_assignee_type("api_key").is_ok());
+    }
+
+    #[test]
+    fn validate_assignee_type_invalid_lists_options() {
+        let err = validate_assignee_type("group").unwrap_err();
+        assert!(err.contains("group"), "error must echo the bad value");
+        assert!(err.contains("user"), "error must list valid values");
+        assert!(err.contains("api_key"), "error must list valid values");
+    }
+
+    // -----------------------------------------------------------------------
+    // map_present_value
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn map_present_value_absent_yields_none() {
+        let result = map_present_value(None, None).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn map_present_value_explicit_null_yields_some_null() {
+        let result = map_present_value(Some(&Value::Null), None).unwrap();
+        assert_eq!(result, Some(Value::Null));
+    }
+
+    #[test]
+    fn map_present_value_string_value_yields_some_value() {
+        let v = json!("high");
+        let result = map_present_value(Some(&v), None).unwrap();
+        assert_eq!(result, Some(json!("high")));
+    }
+
+    #[test]
+    fn map_present_value_with_valid_priority_passes() {
+        let v = json!("high");
+        let result = map_present_value(Some(&v), Some(validate_priority)).unwrap();
+        assert_eq!(result, Some(json!("high")));
+    }
+
+    #[test]
+    fn map_present_value_with_invalid_priority_errors() {
+        let v = json!("bogus");
+        let err = map_present_value(Some(&v), Some(validate_priority)).unwrap_err();
+        assert!(err.contains("bogus"));
+        assert!(err.contains("low"));
+    }
+
+    #[test]
+    fn map_present_value_null_with_validator_bypasses_validation() {
+        // Clearing a field never validates — the validator only fires for non-null.
+        let result = map_present_value(Some(&Value::Null), Some(validate_priority)).unwrap();
+        assert_eq!(result, Some(Value::Null));
+    }
+
+    // -----------------------------------------------------------------------
+    // project_assignee
+    // -----------------------------------------------------------------------
+
+    use atlas_api::dtos::boards_tasks::AssigneeDto;
+
+    fn make_assignee() -> AssigneeDto {
+        AssigneeDto {
+            assignee: ActorDto {
+                r#type: "user".into(),
+                id: fixed_uuid(),
+                display_name: Some("Bob".into()),
+            },
+            assigned_by: ActorDto {
+                r#type: "api_key".into(),
+                id: fixed_uuid(),
+                display_name: None,
+            },
+            assigned_at: now(),
+        }
+    }
+
+    #[test]
+    fn assignee_projection_includes_type_display_name_assigned_at() {
+        let val = project_assignee(make_assignee());
+        assert_eq!(val["type"], "user");
+        assert_eq!(val["display_name"], "Bob");
+        assert!(val.get("assigned_at").is_some());
+    }
+
+    #[test]
+    fn assignee_projection_drops_assigned_by() {
+        let val = project_assignee(make_assignee());
+        assert!(val.get("assigned_by").is_none());
     }
 }
