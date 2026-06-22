@@ -7,8 +7,10 @@
 
 use atlas_api::{
     dtos::{
-        boards_tasks::{BoardSummaryDto, ColumnDto, ReferenceDto, TaskDto, TaskSummaryDto},
-        documents::{DocumentDto, DocumentSummaryDto},
+        boards_tasks::{
+            BoardSummaryDto, ColumnDto, ReferenceDto, TaskBacklinkDto, TaskDto, TaskSummaryDto,
+        },
+        documents::{BacklinkDto, DocumentDto, DocumentSummaryDto},
         folders::FolderDto,
         saved_searches::SavedSearchDto,
         search::SearchHitDto,
@@ -491,6 +493,43 @@ pub(crate) fn project_task_view(v: TaskViewDto) -> Value {
         "name": v.name,
         "filters": v.filters,
     })
+}
+
+// ---------------------------------------------------------------------------
+// Task backlink projection (get_task_backlinks rows)
+// ---------------------------------------------------------------------------
+
+/// Projects an inbound task backlink to the compact MCP shape.
+///
+/// `source_task_id` (UUID) is dropped; the agent uses `source_readable_id` to
+/// navigate to the source task.
+pub(crate) fn project_task_backlink(b: TaskBacklinkDto) -> Value {
+    json!({
+        "source_readable_id": b.source_readable_id,
+        "source_title": b.source_title,
+        "kind": b.kind,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Document backlink projection (get_document_backlinks rows)
+// ---------------------------------------------------------------------------
+
+/// Projects a document backlink to the compact MCP shape.
+///
+/// `source_document_id` (UUID) is dropped in favour of `source_slug` when
+/// present. `display_title` is the rendered link text, which may differ from
+/// the source document's title when the author used a custom alias.
+pub(crate) fn project_backlink(b: BacklinkDto) -> Value {
+    let mut map = serde_json::Map::new();
+    map.insert("source_title".into(), json!(b.source_title));
+    map.insert("display_title".into(), json!(b.display_title));
+
+    if let Some(slug) = b.source_slug {
+        map.insert("source_slug".into(), json!(slug));
+    }
+
+    Value::Object(map)
 }
 
 // ---------------------------------------------------------------------------
@@ -1342,5 +1381,82 @@ mod tests {
             filters.get("labels").is_none(),
             "empty labels Vec should be absent"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // project_task_backlink
+    // -----------------------------------------------------------------------
+
+    use atlas_api::dtos::boards_tasks::TaskBacklinkDto;
+
+    fn make_task_backlink(kind: &str) -> TaskBacklinkDto {
+        TaskBacklinkDto {
+            source_task_id: fixed_uuid(),
+            source_readable_id: "ATL-7".into(),
+            source_title: "Blocker task".into(),
+            kind: kind.into(),
+        }
+    }
+
+    #[test]
+    fn task_backlink_includes_readable_id_title_kind() {
+        let val = project_task_backlink(make_task_backlink("blocks"));
+        assert_eq!(val["source_readable_id"], "ATL-7");
+        assert_eq!(val["source_title"], "Blocker task");
+        assert_eq!(val["kind"], "blocks");
+    }
+
+    #[test]
+    fn task_backlink_drops_source_task_id() {
+        let val = project_task_backlink(make_task_backlink("relates"));
+        assert!(val.get("source_task_id").is_none());
+    }
+
+    #[test]
+    fn task_backlink_works_for_all_reference_kinds() {
+        for kind in &["relates", "blocks", "parent", "spec"] {
+            let val = project_task_backlink(make_task_backlink(kind));
+            assert_eq!(val["kind"], *kind);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // project_backlink
+    // -----------------------------------------------------------------------
+
+    use atlas_api::dtos::documents::BacklinkDto;
+
+    fn make_backlink(slug: Option<&str>) -> BacklinkDto {
+        BacklinkDto {
+            source_document_id: fixed_uuid(),
+            source_slug: slug.map(String::from),
+            source_title: "Source Doc".into(),
+            display_title: "Custom Link Text".into(),
+        }
+    }
+
+    #[test]
+    fn backlink_includes_source_title_and_display_title() {
+        let val = project_backlink(make_backlink(Some("source-doc")));
+        assert_eq!(val["source_title"], "Source Doc");
+        assert_eq!(val["display_title"], "Custom Link Text");
+    }
+
+    #[test]
+    fn backlink_includes_source_slug_when_present() {
+        let val = project_backlink(make_backlink(Some("source-doc")));
+        assert_eq!(val["source_slug"], "source-doc");
+    }
+
+    #[test]
+    fn backlink_omits_source_slug_when_absent() {
+        let val = project_backlink(make_backlink(None));
+        assert!(val.get("source_slug").is_none());
+    }
+
+    #[test]
+    fn backlink_drops_source_document_id() {
+        let val = project_backlink(make_backlink(None));
+        assert!(val.get("source_document_id").is_none());
     }
 }

@@ -17,10 +17,11 @@ use serde::Deserialize;
 use serde_json::json;
 
 use response::{
-    Detail, envelope_page, match_columns_by_name, parse_csv, parse_detail, project_board_summary,
-    project_column, project_document_compact, project_document_full, project_document_summary,
-    project_folder, project_principal, project_project, project_reference, project_saved_search,
-    project_search_hit, project_tag, project_task_compact, project_task_full, project_task_row,
+    Detail, envelope_page, match_columns_by_name, parse_csv, parse_detail, project_backlink,
+    project_board_summary, project_column, project_document_compact, project_document_full,
+    project_document_summary, project_folder, project_principal, project_project,
+    project_reference, project_saved_search, project_search_hit, project_tag,
+    project_task_backlink, project_task_compact, project_task_full, project_task_row,
     project_task_view, project_workspace, wrap_vec,
 };
 
@@ -38,6 +39,10 @@ For workspace context discovery use: `list_workspaces` to find available workspa
 member names to IDs for assignee filters, `list_tags` for the tag registry, \
 `list_used_labels` for labels currently in use on tasks, `list_saved_searches` and \
 `list_task_views` for the caller's saved filters. \
+For link graph exploration use: `get_task_references` for a task's OUTBOUND references \
+(tasks/documents the task points to), `get_task_backlinks` for INBOUND references \
+(other tasks that point to this task), and `get_document_backlinks` for documents/tasks \
+that link to a given document. \
 Prefer narrow queries over broad ones; follow up with targeted reads rather than \
 enumerating all results.";
 
@@ -267,6 +272,41 @@ pub struct ListSavedSearchesParams {
 pub struct ListTaskViewsParams {
     /// Workspace slug.
     pub workspace: String,
+}
+
+/// Parameters accepted by the `get_task_references` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetTaskReferencesParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Task readable ID, e.g. `ATL-42`. Returns OUTBOUND references — links this task creates
+    /// to other tasks or documents. Use `get_task_backlinks` to find tasks that point TO this one.
+    pub readable_id: String,
+}
+
+/// Parameters accepted by the `get_task_backlinks` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetTaskBacklinksParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Task readable ID, e.g. `ATL-42`. Returns INBOUND backlinks — other tasks that reference
+    /// this task. Use `get_task_references` to see what this task points to (outbound).
+    pub readable_id: String,
+}
+
+/// Parameters accepted by the `get_document_backlinks` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetDocumentBacklinksParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Document slug or UUID. Returns all documents and tasks that contain a link to this document.
+    pub slug: String,
+    /// Pass `next_cursor` from the previous response to fetch the next page.
+    #[serde(default)]
+    pub cursor: Option<String>,
+    /// Page size (default 20, max 200).
+    #[serde(default)]
+    pub limit: Option<u32>,
 }
 
 // ---------------------------------------------------------------------------
@@ -634,6 +674,72 @@ impl AtlasMcp {
         let result = wrap_vec(views, project_task_view);
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
+
+    #[tool(
+        description = "List OUTBOUND references from a task — tasks and documents this task links to"
+    )]
+    async fn get_task_references(
+        &self,
+        Parameters(params): Parameters<GetTaskReferencesParams>,
+    ) -> Result<String, String> {
+        let refs = self
+            .client
+            .list_references(&params.workspace, &params.readable_id)
+            .await
+            .map_err(|e| {
+                format!(
+                    "get_task_references for '{}' failed: {e}",
+                    params.readable_id
+                )
+            })?;
+
+        let result = wrap_vec(refs, project_reference);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "List INBOUND backlinks to a task — other tasks that reference this task")]
+    async fn get_task_backlinks(
+        &self,
+        Parameters(params): Parameters<GetTaskBacklinksParams>,
+    ) -> Result<String, String> {
+        let page = self
+            .client
+            .list_task_backlinks(&params.workspace, &params.readable_id)
+            .await
+            .map_err(|e| {
+                format!(
+                    "get_task_backlinks for '{}' failed: {e}",
+                    params.readable_id
+                )
+            })?;
+
+        let result = envelope_page(page, project_task_backlink);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "List documents and tasks that link to a given document (inbound backlinks)"
+    )]
+    async fn get_document_backlinks(
+        &self,
+        Parameters(params): Parameters<GetDocumentBacklinksParams>,
+    ) -> Result<String, String> {
+        let limit = params.limit.unwrap_or(20).clamp(1, 200);
+
+        let page = self
+            .client
+            .list_backlinks(
+                &params.workspace,
+                &params.slug,
+                params.cursor.as_deref(),
+                Some(limit),
+            )
+            .await
+            .map_err(|e| format!("get_document_backlinks for '{}' failed: {e}", params.slug))?;
+
+        let result = envelope_page(page, project_backlink);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
 }
 
 impl AtlasMcp {
@@ -992,5 +1098,58 @@ mod tests {
         let json = r#"{"workspace":"my-ws"}"#;
         let params: ListTaskViewsParams = serde_json::from_str(json).unwrap();
         assert_eq!(params.workspace, "my-ws");
+    }
+
+    #[test]
+    fn get_task_references_params_deserializes() {
+        let json = r#"{"workspace":"ws","readable_id":"ATL-42"}"#;
+        let params: GetTaskReferencesParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.workspace, "ws");
+        assert_eq!(params.readable_id, "ATL-42");
+    }
+
+    #[test]
+    fn get_task_backlinks_params_deserializes() {
+        let json = r#"{"workspace":"ws","readable_id":"ATL-7"}"#;
+        let params: GetTaskBacklinksParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.workspace, "ws");
+        assert_eq!(params.readable_id, "ATL-7");
+    }
+
+    #[test]
+    fn get_document_backlinks_params_deserializes_minimal() {
+        let json = r#"{"workspace":"ws","slug":"my-doc"}"#;
+        let params: GetDocumentBacklinksParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.workspace, "ws");
+        assert_eq!(params.slug, "my-doc");
+        assert!(params.cursor.is_none());
+        assert!(params.limit.is_none());
+    }
+
+    #[test]
+    fn get_document_backlinks_params_deserializes_with_pagination() {
+        let json = r#"{"workspace":"ws","slug":"doc","cursor":"tok","limit":50}"#;
+        let params: GetDocumentBacklinksParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.cursor.as_deref(), Some("tok"));
+        assert_eq!(params.limit, Some(50));
+    }
+
+    #[test]
+    fn get_info_instructions_reference_link_tools() {
+        let server = AtlasMcp::new("http://localhost:8080", "test-token").unwrap();
+        let info = server.get_info();
+        let instructions = info.instructions.as_deref().unwrap_or("");
+        assert!(
+            instructions.contains("`get_task_references`"),
+            "instructions must mention get_task_references"
+        );
+        assert!(
+            instructions.contains("`get_task_backlinks`"),
+            "instructions must mention get_task_backlinks"
+        );
+        assert!(
+            instructions.contains("`get_document_backlinks`"),
+            "instructions must mention get_document_backlinks"
+        );
     }
 }
