@@ -893,6 +893,48 @@ pub(crate) fn validate_estimate_value(v: &serde_json::Value) -> Result<(), Strin
 }
 
 // ---------------------------------------------------------------------------
+// MCP resource URI parsing
+// ---------------------------------------------------------------------------
+
+/// Parses an `atlas:///` document URI into `(workspace, slug)`.
+///
+/// Expected form: `atlas:///{workspace}/{slug}` where both segments are
+/// non-empty. The `atlas:///` prefix uses three slashes (empty host, absolute
+/// path), which is standard for custom opaque schemes. Extra path segments
+/// beyond the first two are rejected.
+///
+/// Returns `(workspace, slug)` on success, or a descriptive error string on
+/// any malformed input.
+pub(crate) fn parse_atlas_doc_uri(uri: &str) -> Result<(String, String), String> {
+    let path = uri
+        .strip_prefix("atlas:///")
+        .ok_or_else(|| format!("URI must start with 'atlas:///'; got: {uri}"))?;
+
+    if path.is_empty() {
+        return Err("URI path must not be empty after 'atlas:///'".to_string());
+    }
+
+    let mut parts = path.splitn(3, '/');
+
+    let workspace = parts
+        .next()
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| "URI missing workspace segment".to_string())?;
+
+    let slug = parts.next().filter(|s| !s.is_empty()).ok_or_else(|| {
+        "URI missing slug segment (expected 'atlas:///{workspace}/{slug}')".to_string()
+    })?;
+
+    if parts.next().is_some() {
+        return Err(format!(
+            "URI has too many path segments; expected exactly 2 (workspace/slug), got: {path}"
+        ));
+    }
+
+    Ok((workspace.to_string(), slug.to_string()))
+}
+
+// ---------------------------------------------------------------------------
 // Write-side: client error enrichment
 // ---------------------------------------------------------------------------
 

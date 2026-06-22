@@ -21,9 +21,13 @@ use atlas_api::dtos::task_views::{
 use atlas_api::dtos::{CreateProjectRequest, UpdateProjectRequest};
 use atlas_client::AtlasClient;
 use rmcp::{
-    ServerHandler,
+    ErrorData as McpError, ServerHandler,
     handler::server::wrapper::Parameters,
-    model::{Implementation, ServerCapabilities, ServerInfo},
+    model::{
+        AnnotateAble, Implementation, ListResourceTemplatesResult, RawResourceTemplate,
+        ReadResourceRequestParams, ReadResourceResult, ResourceContents, ServerCapabilities,
+        ServerInfo,
+    },
     service::{RequestContext, RoleServer},
     tool, tool_handler, tool_router,
 };
@@ -45,10 +49,10 @@ where
 
 use response::{
     Detail, enrich_client_error, envelope_page, map_present_value, match_columns_by_name,
-    parse_csv, parse_detail, project_activity_entry, project_assignee, project_attachment,
-    project_backlink, project_board_summary, project_checklist_item, project_column,
-    project_document_compact, project_document_full, project_document_summary, project_folder,
-    project_principal, project_project, project_promotion, project_reference,
+    parse_atlas_doc_uri, parse_csv, parse_detail, project_activity_entry, project_assignee,
+    project_attachment, project_backlink, project_board_summary, project_checklist_item,
+    project_column, project_document_compact, project_document_full, project_document_summary,
+    project_folder, project_principal, project_project, project_promotion, project_reference,
     project_revision_content, project_revision_meta, project_saved_search, project_search_hit,
     project_status_template, project_tag, project_task_backlink, project_task_compact,
     project_task_full, project_task_row, project_task_view, project_workspace, require_confirm,
@@ -3343,9 +3347,63 @@ impl AtlasMcp {
 #[tool_handler]
 impl ServerHandler for AtlasMcp {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
-            .with_server_info(Implementation::new("atlas-mcp", env!("CARGO_PKG_VERSION")))
-            .with_instructions(ATLAS_INSTRUCTIONS)
+        ServerInfo::new(
+            ServerCapabilities::builder()
+                .enable_tools()
+                .enable_resources()
+                .build(),
+        )
+        .with_server_info(Implementation::new("atlas-mcp", env!("CARGO_PKG_VERSION")))
+        .with_instructions(ATLAS_INSTRUCTIONS)
+    }
+
+    async fn list_resource_templates(
+        &self,
+        _request: Option<rmcp::model::PaginatedRequestParams>,
+        _ctx: RequestContext<RoleServer>,
+    ) -> Result<ListResourceTemplatesResult, McpError> {
+        let template = RawResourceTemplate::new("atlas:///{workspace}/{slug}", "atlas-document")
+            .with_title("Atlas Document")
+            .with_description(
+                "A markdown document in an Atlas workspace. \
+                 workspace = workspace slug, slug = document slug or UUID.",
+            )
+            .with_mime_type("text/markdown")
+            .no_annotation();
+
+        Ok(ListResourceTemplatesResult {
+            resource_templates: vec![template],
+            ..Default::default()
+        })
+    }
+
+    async fn read_resource(
+        &self,
+        request: ReadResourceRequestParams,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<ReadResourceResult, McpError> {
+        let uri = &request.uri;
+
+        let (workspace, slug) =
+            parse_atlas_doc_uri(uri).map_err(|e| McpError::invalid_params(e, None))?;
+
+        let client = self
+            .resolve_client(&ctx)
+            .map_err(|e| McpError::invalid_params(e, None))?;
+
+        let doc = client
+            .get_document(&workspace, &slug)
+            .await
+            .map_err(|e| McpError::internal_error(enrich_client_error(e, "read_resource"), None))?;
+
+        Ok(ReadResourceResult::new(vec![
+            ResourceContents::TextResourceContents {
+                uri: uri.clone(),
+                mime_type: Some("text/markdown".to_string()),
+                text: doc.content,
+                meta: None,
+            },
+        ]))
     }
 }
 
@@ -3391,6 +3449,79 @@ mod tests {
             info.instructions.as_deref().is_some_and(|s| !s.is_empty()),
             "instructions must be Some and non-empty"
         );
+    }
+
+    #[test]
+    fn get_info_advertises_resources_capability() {
+        let server = AtlasMcp::new("http://localhost:8080", "test-token").unwrap();
+        let info = server.get_info();
+        assert!(
+            info.capabilities.resources.is_some(),
+            "ServerCapabilities.resources must be Some after enable_resources()"
+        );
+    }
+
+    #[test]
+    fn parse_uri_valid_workspace_and_slug() {
+        let result = parse_atlas_doc_uri("atlas:///my-workspace/my-doc-slug");
+        assert_eq!(
+            result,
+            Ok(("my-workspace".to_string(), "my-doc-slug".to_string()))
+        );
+    }
+
+    #[test]
+    fn parse_uri_valid_uuid_slug() {
+        let result = parse_atlas_doc_uri("atlas:///acme/550e8400-e29b-41d4-a716-446655440000");
+        assert_eq!(
+            result,
+            Ok((
+                "acme".to_string(),
+                "550e8400-e29b-41d4-a716-446655440000".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn parse_uri_wrong_scheme_rejected() {
+        let result = parse_atlas_doc_uri("https:///ws/slug");
+        assert!(result.is_err());
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains("atlas:///"),
+            "error must mention the expected scheme"
+        );
+    }
+
+    #[test]
+    fn parse_uri_missing_slug_rejected() {
+        let result = parse_atlas_doc_uri("atlas:///only-workspace");
+        assert!(result.is_err());
+        let msg = result.unwrap_err();
+        assert!(msg.contains("slug"), "error must mention missing slug");
+    }
+
+    #[test]
+    fn parse_uri_empty_string_rejected() {
+        let result = parse_atlas_doc_uri("");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_uri_extra_path_segments_rejected() {
+        let result = parse_atlas_doc_uri("atlas:///ws/project/slug");
+        assert!(result.is_err());
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains("too many"),
+            "error must mention too many segments"
+        );
+    }
+
+    #[test]
+    fn parse_uri_empty_workspace_rejected() {
+        let result = parse_atlas_doc_uri("atlas:////slug");
+        assert!(result.is_err());
     }
 
     #[test]
