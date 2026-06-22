@@ -5,7 +5,6 @@ import ColorPicker from '@/components/ui/ColorPicker.vue';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
 import Icon from '@/components/ui/Icon.vue';
-import Popover from '@/components/ui/Popover.vue';
 import { resolveColumnSwatchId } from '@/lib/columnColor';
 import { swatchById } from '@/lib/swatches';
 import { type ColumnDto, useBoardsStore } from '@/stores/boards';
@@ -230,29 +229,32 @@ async function confirmDelete(): Promise<void> {
 
     <div v-else>
       <div class="atl-statuses-list">
-        <div v-for="(column, index) in boards.columns" :key="column.id" class="atl-status-row">
+        <div
+          v-for="(column, index) in boards.columns"
+          :key="column.id"
+          class="atl-status-row"
+          :class="{ editing: editingId === column.id }"
+        >
           <template v-if="editingId === column.id">
-            <Popover placement="bottom-start" teleport>
-              <template #trigger="{ toggle }">
-                <button type="button" class="atl-color-trigger" title="Pick a color" @click="toggle">
-                  <span class="atl-dot" :style="{ backgroundColor: swatchById(draftColor).fg }" />
-                </button>
-              </template>
-              <template #default>
-                <ColorPicker :selected="draftColor" @select="(id) => { draftColor = id; }" />
-              </template>
-            </Popover>
+            <div class="atl-edit-line">
+              <span class="atl-dot" :style="{ backgroundColor: swatchById(draftColor).fg }" />
+              <input
+                v-model="draftName"
+                type="text"
+                class="atl-status-rename"
+                @keydown.enter="saveEdit(column)"
+                @keydown.esc="cancelRename"
+              />
+              <span class="flex-1" />
+              <Btn variant="primary" @click="saveEdit(column)">Save</Btn>
+              <button type="button" class="atl-rowact" @click="cancelRename">Cancel</button>
+            </div>
 
-            <input
-              v-model="draftName"
-              type="text"
-              class="atl-status-rename"
-              @keydown.enter="saveEdit(column)"
-              @keydown.esc="cancelRename"
+            <ColorPicker
+              class="atl-edit-picker"
+              :selected="draftColor"
+              @select="(id) => { draftColor = id; }"
             />
-            <span class="flex-1" />
-            <Btn variant="primary" @click="saveEdit(column)">Save</Btn>
-            <button type="button" class="atl-rowact" @click="cancelRename">Cancel</button>
           </template>
 
           <template v-else>
@@ -384,21 +386,26 @@ async function confirmDelete(): Promise<void> {
   border-top: none;
 }
 
-.atl-color-trigger {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-sm);
-  background: var(--c-raised);
-  cursor: pointer;
+.atl-status-row.editing {
+  height: auto;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  padding-top: 12px;
+  padding-bottom: 14px;
 }
 
-.atl-color-trigger:hover {
-  border-color: var(--c-primary);
+.atl-edit-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.atl-edit-picker {
+  align-self: flex-start;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  background: var(--c-raised);
 }
 
 .atl-dot {

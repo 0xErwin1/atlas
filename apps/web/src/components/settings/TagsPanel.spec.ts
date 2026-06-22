@@ -32,6 +32,46 @@ describe('TagsPanel — edit mode folds name + color', () => {
     expect(wrapper.find('.atl-color-trigger').exists()).toBe(false);
   });
 
+  it('renders the color picker inline in edit mode, not inside a popover trigger', async () => {
+    setupStore();
+    const wrapper = mount(TagsPanel);
+    await wrapper.vm.$nextTick();
+
+    (wrapper.vm as unknown as { startRename: (id: string, name: string) => void }).startRename(
+      'tag-1',
+      'urgent',
+    );
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.find('.atl-tag-row.editing').exists()).toBe(true);
+    expect(wrapper.find('.atl-color-trigger').exists()).toBe(false);
+    expect(wrapper.find('.atl-edit-picker').exists()).toBe(true);
+    expect(wrapper.find('.atl-edit-picker').classes()).toContain('color-picker');
+    expect(wrapper.find('.atl-edit-picker .hex-text').exists()).toBe(true);
+  });
+
+  it('selecting a hex updates the draft color without leaving edit mode', async () => {
+    setupStore();
+    const wrapper = mount(TagsPanel);
+    await wrapper.vm.$nextTick();
+
+    const vm = wrapper.vm as unknown as {
+      startRename: (id: string, name: string) => void;
+      draftColor: string;
+      editingId: string | null;
+    };
+
+    vm.startRename('tag-1', 'urgent');
+    await wrapper.vm.$nextTick();
+
+    const hexInput = wrapper.find('.atl-edit-picker .hex-text');
+    await hexInput.setValue('#FF0000');
+
+    expect(vm.draftColor).toBe('#FF0000');
+    expect(vm.editingId).toBe('tag-1');
+    expect(wrapper.find('.atl-edit-picker').exists()).toBe(true);
+  });
+
   it('Save applies both the edited name and the picked color in one update call', async () => {
     const { tagsStore } = setupStore();
     const update = vi.spyOn(tagsStore, 'update').mockResolvedValue(true);

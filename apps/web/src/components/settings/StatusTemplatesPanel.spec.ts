@@ -79,6 +79,46 @@ describe('StatusTemplatesPanel', () => {
     expect(update).toHaveBeenCalledWith('acme', 't1', { name: 'Backlog' });
   });
 
+  it('renders the color picker inline in edit mode and a hex selection persists on save', async () => {
+    const { store } = setup();
+    const update = vi.spyOn(store, 'update').mockResolvedValue(true);
+
+    const wrapper = mount(StatusTemplatesPanel);
+    await wrapper.vm.$nextTick();
+
+    const vm = wrapper.vm as unknown as {
+      startEdit: (t: { id: string; name: string; color?: string | null; position_key: string }) => void;
+      draftColor: string;
+      editingId: string | null;
+      saveEdit: (t: {
+        id: string;
+        name: string;
+        color?: string | null;
+        position_key: string;
+      }) => Promise<void>;
+    };
+
+    const target = store.templates[0];
+    if (target === undefined) throw new Error('missing template fixture');
+
+    vm.startEdit(target);
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.find('.atl-status-row.editing').exists()).toBe(true);
+    expect(wrapper.find('.atl-color-trigger').exists()).toBe(false);
+    expect(wrapper.find('.atl-edit-picker').classes()).toContain('color-picker');
+
+    const hexInput = wrapper.find('.atl-edit-picker .hex-text');
+    await hexInput.setValue('#0A0B0C');
+
+    expect(vm.draftColor).toBe('#0A0B0C');
+    expect(vm.editingId).toBe('t1');
+
+    await vm.saveEdit(target);
+
+    expect(update).toHaveBeenCalledWith('acme', 't1', { color: '#0A0B0C' });
+  });
+
   it('applying to the selected board calls applyToBoard', async () => {
     const { store } = setup();
     const apply = vi.spyOn(store, 'applyToBoard').mockResolvedValue(true);

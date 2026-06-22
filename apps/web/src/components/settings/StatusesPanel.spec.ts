@@ -35,6 +35,48 @@ describe('StatusesPanel — edit mode folds name + color', () => {
     expect(wrapper.find('.atl-color-trigger').exists()).toBe(false);
   });
 
+  it('renders the color picker inline in edit mode, not inside a popover trigger', async () => {
+    setupStore();
+    const wrapper = mount(StatusesPanel);
+    (wrapper.vm as unknown as { selectedBoardId: string }).selectedBoardId = 'board-1';
+    await wrapper.vm.$nextTick();
+
+    (wrapper.vm as unknown as { startRename: (c: { id: string; name: string }) => void }).startRename({
+      id: 'col-1',
+      name: 'Todo',
+    });
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.find('.atl-status-row.editing').exists()).toBe(true);
+    expect(wrapper.find('.atl-color-trigger').exists()).toBe(false);
+    expect(wrapper.find('.atl-edit-picker').exists()).toBe(true);
+    expect(wrapper.find('.atl-edit-picker').classes()).toContain('color-picker');
+    expect(wrapper.find('.atl-edit-picker .hex-text').exists()).toBe(true);
+  });
+
+  it('selecting a hex updates the draft color without leaving edit mode', async () => {
+    setupStore();
+    const wrapper = mount(StatusesPanel);
+    (wrapper.vm as unknown as { selectedBoardId: string }).selectedBoardId = 'board-1';
+    await wrapper.vm.$nextTick();
+
+    const vm = wrapper.vm as unknown as {
+      startRename: (c: { id: string; name: string }) => void;
+      draftColor: string;
+      editingId: string | null;
+    };
+
+    vm.startRename({ id: 'col-1', name: 'Todo' });
+    await wrapper.vm.$nextTick();
+
+    const hexInput = wrapper.find('.atl-edit-picker .hex-text');
+    await hexInput.setValue('#1A2B3C');
+
+    expect(vm.draftColor).toBe('#1A2B3C');
+    expect(vm.editingId).toBe('col-1');
+    expect(wrapper.find('.atl-edit-picker').exists()).toBe(true);
+  });
+
   it('Save applies both the edited name and the picked color in one update call', async () => {
     const { boards } = setupStore();
     const updateColumn = vi.spyOn(boards, 'updateColumn').mockResolvedValue(true);
