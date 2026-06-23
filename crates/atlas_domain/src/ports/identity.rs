@@ -1,10 +1,10 @@
 use crate::{
     DomainError, WorkspaceCtx,
     entities::identity::{
-        ApiKey, MemberRole, NewApiKey, NewSession, NewUser, NewWorkspace, Session, User,
-        UserUiState, Workspace, WorkspaceMembership,
+        ActivationToken, ApiKey, MemberRole, NewActivationToken, NewApiKey, NewSession, NewUser,
+        NewWorkspace, Session, User, UserUiState, Workspace, WorkspaceMembership,
     },
-    ids::{ApiKeyId, SessionId, UserId, WorkspaceId},
+    ids::{ActivationTokenId, ApiKeyId, SessionId, UserId, WorkspaceId},
 };
 use async_trait::async_trait;
 
@@ -55,6 +55,29 @@ pub trait UserRepo: Send + Sync {
         id: UserId,
         is_system_admin: bool,
     ) -> Result<User, DomainError>;
+    /// Sets the user's `password_hash` and `activated_at = now()`, completing
+    /// the activation flow. Returns the updated user record.
+    async fn activate(&self, id: UserId, password_hash: String) -> Result<User, DomainError>;
+}
+
+/// Persistence for single-use account activation tokens.
+///
+/// Tokens are stored as a SHA-256 hex hash (`token_hash`); the plaintext is
+/// returned once by the create/regenerate route and never persisted.
+/// The active predicate is `consumed_at IS NULL AND expires_at > now()`.
+#[async_trait]
+pub trait ActivationTokenRepo: Send + Sync {
+    async fn create(&self, new: NewActivationToken) -> Result<ActivationToken, DomainError>;
+    /// Returns `Some` only when the token is unconsumed and not yet expired.
+    async fn find_active_by_token_hash(
+        &self,
+        hash: &str,
+    ) -> Result<Option<ActivationToken>, DomainError>;
+    /// Marks the token consumed (sets `consumed_at = now()`).
+    async fn consume(&self, id: ActivationTokenId) -> Result<(), DomainError>;
+    /// Invalidates every unconsumed token for the given user by setting
+    /// `consumed_at = now()`. Called before issuing a fresh token (regenerate).
+    async fn invalidate_unconsumed_for_user(&self, user_id: UserId) -> Result<(), DomainError>;
 }
 
 #[async_trait]

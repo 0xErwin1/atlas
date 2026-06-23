@@ -62,14 +62,11 @@ async fn bootstrap_password_not_stored_as_plaintext() {
         .expect("find root")
         .expect("root must exist");
 
-    assert_ne!(
-        root.password_hash, "my-secret-pw",
-        "password must be hashed"
-    );
-    assert!(
-        root.password_hash.starts_with("$argon2"),
-        "must be argon2id PHC string"
-    );
+    let hash = root
+        .password_hash
+        .expect("root must have a password hash set");
+    assert_ne!(hash, "my-secret-pw", "password must be hashed");
+    assert!(hash.starts_with("$argon2"), "must be argon2id PHC string");
     db.teardown().await;
 }
 

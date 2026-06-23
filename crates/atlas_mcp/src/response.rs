@@ -1796,6 +1796,7 @@ mod tests {
             id: fixed_uuid(),
             display: "Alice".into(),
             key_type: None,
+            role: None,
         }
     }
 

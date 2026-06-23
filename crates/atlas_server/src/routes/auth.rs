@@ -80,9 +80,24 @@ pub(crate) async fn login(
         return Err(ApiError::Unauthorized);
     };
 
-    let is_valid = password::verify(body.password, user.password_hash.clone())
+    // A pending user has no password hash. Run a dummy verify so the timing
+    // cost matches the normal path, preventing a timing oracle that would let
+    // an attacker distinguish "pending account" from "wrong password".
+    let hash_to_check = user
+        .password_hash
+        .clone()
+        .unwrap_or_else(|| DUMMY_HASH.clone());
+
+    let is_valid = password::verify(body.password, hash_to_check)
         .await
         .map_err(|_| ApiError::Unauthorized)?;
+
+    // Check activation status AFTER the verify cost is paid (timing parity).
+    if user.activated_at.is_none() {
+        return Err(ApiError::AccountNotActivated {
+            message: "This account has not been activated yet. Use the activation link to set your password.".into(),
+        });
+    }
 
     if !is_valid {
         return Err(ApiError::Unauthorized);
@@ -265,7 +280,11 @@ pub(crate) async fn change_password(
         })?
         .ok_or(ApiError::Unauthorized)?;
 
-    let is_valid = password::verify(body.current_password, user.password_hash.clone())
+    let Some(current_hash) = user.password_hash.clone() else {
+        return Err(ApiError::Unauthorized);
+    };
+
+    let is_valid = password::verify(body.current_password, current_hash)
         .await
         .map_err(|_| ApiError::Unauthorized)?;
 
@@ -360,6 +379,7 @@ fn user_to_dto(user: &atlas_domain::entities::identity::User) -> UserDto {
         is_root: user.is_root,
         is_system_admin: user.is_system_admin,
         disabled_at: user.disabled_at,
+        activated_at: user.activated_at,
         created_at: user.created_at,
         updated_at: user.updated_at,
     }

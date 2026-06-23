@@ -16,9 +16,10 @@ mod tags;
 mod workspace_core;
 
 pub use identity::{
-    ApiKey, ApiKeyRepo, MembershipRepo, NewApiKey, NewSession, NewUser, NewWorkspace, PgApiKeyRepo,
-    PgMembershipRepo, PgSessionRepo, PgUiStateRepo, PgUserRepo, PgWorkspaceRepo, Session,
-    SessionRepo, UiStateRepo, User, UserRepo, UserUiState, Workspace, WorkspaceRepo,
+    ActivationTokenRepo, ApiKey, ApiKeyRepo, MembershipRepo, NewActivationToken, NewApiKey,
+    NewSession, NewUser, NewWorkspace, PgActivationTokenRepo, PgApiKeyRepo, PgMembershipRepo,
+    PgSessionRepo, PgUiStateRepo, PgUserRepo, PgWorkspaceRepo, Session, SessionRepo, UiStateRepo,
+    User, UserRepo, UserUiState, Workspace, WorkspaceRepo,
 };
 
 pub use attachment_store::DiskAttachmentStore;

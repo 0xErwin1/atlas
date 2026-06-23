@@ -1706,12 +1706,14 @@ async fn viewer_cannot_create_document() {
             username: "doc-perm-viewer".to_string(),
             display_name: "Viewer".to_string(),
             email: None,
-            password_hash: hash,
+            password_hash: Some(hash),
             is_root: false,
             is_system_admin: false,
         })
         .await
         .expect("create viewer");
+
+    support::activate_user_in_db(&db, viewer_user.id.0).await;
 
     let ctx = WorkspaceCtx::new(ws.id, Actor::User(viewer_user.id));
     db.membership_repo()
@@ -1877,12 +1879,14 @@ async fn member_client_with_optional_project_grant(
             username: username.to_string(),
             display_name: username.to_string(),
             email: None,
-            password_hash: hash,
+            password_hash: Some(hash),
             is_root: false,
             is_system_admin: false,
         })
         .await
         .expect("create member");
+
+    support::activate_user_in_db(db, user.id.0).await;
 
     let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
     db.membership_repo()

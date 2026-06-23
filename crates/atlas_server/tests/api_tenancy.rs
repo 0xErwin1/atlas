@@ -177,12 +177,14 @@ async fn member_of_both_workspaces_cannot_cross_scope_projects() {
             username: "ten-dual-member".to_string(),
             display_name: "Dual Member".to_string(),
             email: None,
-            password_hash: hash,
+            password_hash: Some(hash),
             is_root: false,
             is_system_admin: false,
         })
         .await
         .expect("create dual user");
+
+    support::activate_user_in_db(&db, dual_user.id.0).await;
 
     let ctx_a = WorkspaceCtx::new(ws_a.id, Actor::User(dual_user.id));
     db.membership_repo()

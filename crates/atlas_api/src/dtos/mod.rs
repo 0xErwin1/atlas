@@ -55,6 +55,8 @@ pub struct UserDto {
     pub is_root: bool,
     pub is_system_admin: bool,
     pub disabled_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// `None` means the account has not yet been activated.
+    pub activated_at: Option<chrono::DateTime<chrono::Utc>>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }

@@ -41,15 +41,23 @@ pub async fn run_bootstrap(cfg: &BootstrapConfig, conn: &DatabaseConnection) -> 
     let workspace_id = WorkspaceId::new();
     let root_user_id = UserId::new();
 
+    // Keep the hash in scope so we can pass it to activate().
     let root = user_repo
         .create(NewUser {
             username: "root".to_string(),
             display_name: "Root".to_string(),
             email: None,
-            password_hash,
+            password_hash: Some(password_hash.clone()),
             is_root: true,
             is_system_admin: false,
         })
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Root is created by the system administrator, not via the invitation flow,
+    // so activate immediately using the same hash.
+    user_repo
+        .activate(root.id, password_hash)
         .await
         .map_err(|e| e.to_string())?;
 

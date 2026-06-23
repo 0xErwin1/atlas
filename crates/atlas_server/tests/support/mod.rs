@@ -6,9 +6,10 @@ use atlas_client::AtlasClient;
 use atlas_domain::{Actor, WorkspaceCtx, ids::WorkspaceId};
 use atlas_server::{
     persistence::repos::{
-        MembershipRepo, NewUser, NewWorkspace, PgApiKeyRepo, PgBoardRepo, PgDocumentRepo,
-        PgFolderRepo, PgMembershipRepo, PgProjectRepo, PgPropertyDefinitionRepo, PgSessionRepo,
-        PgTaskRepo, PgUserRepo, PgWorkspaceRepo, User, UserRepo, Workspace, WorkspaceRepo,
+        MembershipRepo, NewUser, NewWorkspace, PgActivationTokenRepo, PgApiKeyRepo, PgBoardRepo,
+        PgDocumentRepo, PgFolderRepo, PgMembershipRepo, PgProjectRepo, PgPropertyDefinitionRepo,
+        PgSessionRepo, PgTaskRepo, PgUserRepo, PgWorkspaceRepo, User, UserRepo, Workspace,
+        WorkspaceRepo,
     },
     state::AppState,
 };
@@ -79,6 +80,12 @@ impl TestDb {
         }
     }
 
+    pub(crate) fn activation_token_repo(&self) -> PgActivationTokenRepo {
+        PgActivationTokenRepo {
+            conn: self.conn.clone(),
+        }
+    }
+
     pub(crate) fn membership_repo(&self) -> PgMembershipRepo {
         PgMembershipRepo {
             conn: self.conn.clone(),
@@ -129,6 +136,17 @@ impl TestDb {
     }
 }
 
+/// Marks a user as activated in the database. Test helpers use this after
+/// creating a user that needs to be able to log in during a test.
+pub(crate) async fn activate_user_in_db(db: &TestDb, user_id: uuid::Uuid) {
+    db.conn()
+        .execute_unprepared(&format!(
+            "UPDATE users SET activated_at = now() WHERE id = '{user_id}'"
+        ))
+        .await
+        .expect("activate user");
+}
+
 pub(crate) async fn seed_workspace(db: &TestDb, username: &str) -> (Workspace, User) {
     use atlas_domain::entities::identity::MemberRole;
 
@@ -141,12 +159,14 @@ pub(crate) async fn seed_workspace(db: &TestDb, username: &str) -> (Workspace, U
             username: username.to_string(),
             display_name: username.to_string(),
             email: None,
-            password_hash: "$argon2id$v=19$m=19456,t=2,p=1$test$hash".into(),
+            password_hash: Some("$argon2id$v=19$m=19456,t=2,p=1$test$hash".into()),
             is_root: false,
             is_system_admin: false,
         })
         .await
         .expect("seed user");
+
+    activate_user_in_db(db, user.id.0).await;
 
     let slug = format!("ws-{username}");
     let ws_id = WorkspaceId::new();
@@ -262,12 +282,14 @@ pub(crate) async fn login_user(
             username: username.to_string(),
             display_name: username.to_string(),
             email: None,
-            password_hash,
+            password_hash: Some(password_hash),
             is_root: false,
             is_system_admin: false,
         })
         .await
         .expect("create user");
+
+    activate_user_in_db(db, user.id.0).await;
 
     let mut client = AtlasClient::new(server.base_url().to_string());
     client
@@ -308,12 +330,14 @@ pub(crate) async fn login_user_with_workspace(
             username: username.to_string(),
             display_name: username.to_string(),
             email: None,
-            password_hash,
+            password_hash: Some(password_hash),
             is_root: false,
             is_system_admin: false,
         })
         .await
         .expect("create user");
+
+    activate_user_in_db(db, user.id.0).await;
 
     let ws_id = WorkspaceId::new();
     let ws_slug = format!("ws-{username}");
@@ -362,17 +386,19 @@ pub(crate) async fn login_root_user(server: &TestServer, db: &TestDb) -> AtlasCl
         .expect("hash password");
 
     let user_repo = db.user_repo();
-    user_repo
+    let root = user_repo
         .create(NewUser {
             username: username.clone(),
             display_name: "Root".to_string(),
             email: None,
-            password_hash,
+            password_hash: Some(password_hash),
             is_root: true,
             is_system_admin: false,
         })
         .await
         .expect("create root user");
+
+    activate_user_in_db(db, root.id.0).await;
 
     let mut client = AtlasClient::new(server.base_url().to_string());
     client

@@ -75,7 +75,7 @@ pub(crate) async fn create_user(
             username: body.username,
             display_name: body.display_name,
             email: body.email,
-            password_hash,
+            password_hash: Some(password_hash),
             is_root: false,
             is_system_admin: false,
         })
@@ -312,6 +312,7 @@ fn user_to_dto(user: &atlas_domain::entities::identity::User) -> UserDto {
         is_root: user.is_root,
         is_system_admin: user.is_system_admin,
         disabled_at: user.disabled_at,
+        activated_at: user.activated_at,
         created_at: user.created_at,
         updated_at: user.updated_at,
     }

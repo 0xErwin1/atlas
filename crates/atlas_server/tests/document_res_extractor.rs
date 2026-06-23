@@ -342,7 +342,7 @@ async fn folder_scope_grant_yields_effective_access_on_document_in_that_folder()
             username: "docres-fg-viewer".to_string(),
             display_name: "Viewer".to_string(),
             email: None,
-            password_hash: "$argon2id$v=19$m=19456,t=2,p=1$test$hash".into(),
+            password_hash: Some("$argon2id$v=19$m=19456,t=2,p=1$test$hash".into()),
             is_root: false,
             is_system_admin: false,
         })
@@ -443,7 +443,7 @@ async fn folder_scope_grant_on_ancestor_yields_effective_access_on_nested_docume
             username: "docres-fg-nested-viewer".to_string(),
             display_name: "NestedViewer".to_string(),
             email: None,
-            password_hash: "$argon2id$v=19$m=19456,t=2,p=1$test$hash".into(),
+            password_hash: Some("$argon2id$v=19$m=19456,t=2,p=1$test$hash".into()),
             is_root: false,
             is_system_admin: false,
         })

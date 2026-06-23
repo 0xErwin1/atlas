@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use atlas_domain::{
     Actor, DomainError, WorkspaceCtx,
     entities::identity::{ApiKeyType, MemberRole, WorkspaceMembership},
-    ids::{ApiKeyId, MembershipId, SessionId, UserId, WorkspaceId},
+    ids::{ActivationTokenId, ApiKeyId, MembershipId, SessionId, UserId, WorkspaceId},
 };
 use chrono::Utc;
 use sea_orm::{
@@ -12,16 +12,19 @@ use sea_orm::{
 use uuid::Uuid;
 
 use crate::persistence::entities::identity::{
-    api_key, api_key_from, membership, membership_from, session, session_from, user, user_from,
-    user_ui_state, user_ui_state_from, workspace, workspace_from,
+    activation_token, activation_token_from, api_key, api_key_from, membership, membership_from,
+    session, session_from, user, user_from, user_ui_state, user_ui_state_from, workspace,
+    workspace_from,
 };
 
 pub use atlas_domain::entities::identity::{
-    ApiKey, NewApiKey, NewSession, NewUser, NewWorkspace, Session, User, UserUiState, Workspace,
+    ActivationToken, ApiKey, NewActivationToken, NewApiKey, NewSession, NewUser, NewWorkspace,
+    Session, User, UserUiState, Workspace,
 };
 
 pub use atlas_domain::ports::identity::{
-    ApiKeyRepo, MembershipRepo, SessionRepo, UiStateRepo, UserRepo, WorkspaceRepo,
+    ActivationTokenRepo, ApiKeyRepo, MembershipRepo, SessionRepo, UiStateRepo, UserRepo,
+    WorkspaceRepo,
 };
 
 pub struct PgWorkspaceRepo {
@@ -156,6 +159,7 @@ impl UserRepo for PgUserRepo {
             is_root: Set(new.is_root),
             is_system_admin: Set(new.is_system_admin),
             disabled_at: Set(None),
+            activated_at: Set(None),
             created_at: Set(Utc::now()),
             updated_at: Set(Utc::now()),
         };
@@ -173,10 +177,11 @@ impl UserRepo for PgUserRepo {
             username: String,
             display_name: String,
             email: Option<String>,
-            password_hash: String,
+            password_hash: Option<String>,
             is_root: bool,
             is_system_admin: bool,
             disabled_at: Option<chrono::DateTime<Utc>>,
+            activated_at: Option<chrono::DateTime<Utc>>,
             created_at: chrono::DateTime<Utc>,
             updated_at: chrono::DateTime<Utc>,
         }
@@ -184,7 +189,8 @@ impl UserRepo for PgUserRepo {
         let lower = username.to_lowercase();
         let rows = Row::find_by_statement(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT id, username, display_name, email, password_hash, is_root, is_system_admin, disabled_at, created_at, updated_at
+            "SELECT id, username, display_name, email, password_hash, is_root, is_system_admin, \
+                    disabled_at, activated_at, created_at, updated_at \
              FROM users WHERE lower(username) = $1 LIMIT 1",
             [lower.into()],
         ))
@@ -201,6 +207,7 @@ impl UserRepo for PgUserRepo {
             is_root: r.is_root,
             is_system_admin: r.is_system_admin,
             disabled_at: r.disabled_at,
+            activated_at: r.activated_at,
             created_at: r.created_at,
             updated_at: r.updated_at,
         }))
@@ -293,10 +300,31 @@ impl UserRepo for PgUserRepo {
                 id: id.0,
             })?;
         let mut active = row.into_active_model();
-        active.password_hash = Set(hash);
+        active.password_hash = Set(Some(hash));
         active.updated_at = Set(Utc::now());
         active.update(&self.conn).await.map_err(db_err)?;
         Ok(())
+    }
+
+    async fn activate(&self, id: UserId, password_hash: String) -> Result<User, DomainError> {
+        use sea_orm::IntoActiveModel;
+        let row = user::Entity::find_by_id(id.0)
+            .one(&self.conn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "user",
+                id: id.0,
+            })?;
+        let mut active = row.into_active_model();
+        active.password_hash = Set(Some(password_hash));
+        active.activated_at = Set(Some(Utc::now()));
+        active.updated_at = Set(Utc::now());
+        active
+            .update(&self.conn)
+            .await
+            .map(user_from)
+            .map_err(db_err)
     }
 
     async fn update_profile(
@@ -885,6 +913,73 @@ impl UiStateRepo for PgUiStateRepo {
             .ok_or(DomainError::Internal {
                 message: "user_ui_state row missing after upsert".into(),
             })
+    }
+}
+
+pub struct PgActivationTokenRepo {
+    pub conn: DatabaseConnection,
+}
+
+#[async_trait]
+impl ActivationTokenRepo for PgActivationTokenRepo {
+    async fn create(&self, new: NewActivationToken) -> Result<ActivationToken, DomainError> {
+        let model = activation_token::ActiveModel {
+            id: Set(ActivationTokenId::new().0),
+            user_id: Set(new.user_id.0),
+            token_hash: Set(new.token_hash),
+            expires_at: Set(new.expires_at),
+            consumed_at: Set(None),
+            created_at: Set(Utc::now()),
+        };
+        model
+            .insert(&self.conn)
+            .await
+            .map(activation_token_from)
+            .map_err(db_err)
+    }
+
+    async fn find_active_by_token_hash(
+        &self,
+        hash: &str,
+    ) -> Result<Option<ActivationToken>, DomainError> {
+        activation_token::Entity::find()
+            .filter(activation_token::Column::TokenHash.eq(hash))
+            .filter(activation_token::Column::ConsumedAt.is_null())
+            .filter(activation_token::Column::ExpiresAt.gt(Utc::now()))
+            .one(&self.conn)
+            .await
+            .map(|opt| opt.map(activation_token_from))
+            .map_err(db_err)
+    }
+
+    async fn consume(&self, id: ActivationTokenId) -> Result<(), DomainError> {
+        use sea_orm::IntoActiveModel;
+        let row = activation_token::Entity::find_by_id(id.0)
+            .one(&self.conn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "activation_token",
+                id: id.0,
+            })?;
+        let mut active = row.into_active_model();
+        active.consumed_at = Set(Some(Utc::now()));
+        active.update(&self.conn).await.map_err(db_err)?;
+        Ok(())
+    }
+
+    async fn invalidate_unconsumed_for_user(&self, user_id: UserId) -> Result<(), DomainError> {
+        self.conn
+            .execute_raw(Statement::from_sql_and_values(
+                sea_orm::DatabaseBackend::Postgres,
+                "UPDATE user_activation_tokens \
+                 SET consumed_at = now() \
+                 WHERE user_id = $1 AND consumed_at IS NULL",
+                [user_id.0.into()],
+            ))
+            .await
+            .map_err(db_err)?;
+        Ok(())
     }
 }
 

@@ -46,6 +46,11 @@ pub enum ApiError {
     Internal {
         message: String,
     },
+    /// The user's account exists but has not yet been activated via the
+    /// activation link. The caller should use the link to set a password.
+    AccountNotActivated {
+        message: String,
+    },
 }
 
 impl IntoResponse for ApiError {
@@ -141,6 +146,15 @@ impl IntoResponse for ApiError {
                         .with_detail("An internal error occurred."),
                 )
             }
+            ApiError::AccountNotActivated { .. } => (
+                StatusCode::FORBIDDEN,
+                ProblemDetails::new(
+                    "urn:atlas:error:account-not-activated",
+                    "Account Not Activated",
+                    403,
+                )
+                .with_hint("Use the activation link sent to you to set your password and activate your account."),
+            ),
             ApiError::Domain(domain_err) => return domain_error_response(domain_err),
         };
 

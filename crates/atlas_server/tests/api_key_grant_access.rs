@@ -324,7 +324,7 @@ async fn granted_api_key_cannot_manage_grants() {
             username: "b2-03-target".to_string(),
             display_name: "Target".to_string(),
             email: None,
-            password_hash: "$argon2id$v=19$m=19456,t=2,p=1$test$hash".into(),
+            password_hash: Some("$argon2id$v=19$m=19456,t=2,p=1$test$hash".into()),
             is_root: false,
             is_system_admin: false,
         })

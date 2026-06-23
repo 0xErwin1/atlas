@@ -1,4 +1,4 @@
-use crate::ids::{ApiKeyId, MembershipId, SessionId, UserId, WorkspaceId};
+use crate::ids::{ActivationTokenId, ApiKeyId, MembershipId, SessionId, UserId, WorkspaceId};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -24,10 +24,13 @@ pub struct User {
     pub username: String,
     pub display_name: String,
     pub email: Option<String>,
-    pub password_hash: String,
+    /// `None` for a pending (uninvited) account that has not yet set a password.
+    pub password_hash: Option<String>,
     pub is_root: bool,
     pub is_system_admin: bool,
     pub disabled_at: Option<DateTime<Utc>>,
+    /// `None` means the account is pending activation. `Some` means activated.
+    pub activated_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -37,9 +40,31 @@ pub struct NewUser {
     pub username: String,
     pub display_name: String,
     pub email: Option<String>,
-    pub password_hash: String,
+    /// `None` when creating a pending account (no credential yet).
+    pub password_hash: Option<String>,
     pub is_root: bool,
     pub is_system_admin: bool,
+}
+
+/// A single-use activation token minted when creating a pending account.
+///
+/// The token hash is stored at rest; the plaintext is returned once to the
+/// caller and never persisted.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActivationToken {
+    pub id: ActivationTokenId,
+    pub user_id: UserId,
+    pub token_hash: String,
+    pub expires_at: DateTime<Utc>,
+    pub consumed_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub struct NewActivationToken {
+    pub user_id: UserId,
+    pub token_hash: String,
+    pub expires_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

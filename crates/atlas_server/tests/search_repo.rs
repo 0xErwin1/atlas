@@ -321,7 +321,7 @@ async fn seed_user(db: &support::TestDb, username: &str) -> UserId {
             username: username.to_string(),
             display_name: username.to_string(),
             email: None,
-            password_hash: "$argon2id$v=19$m=19456,t=2,p=1$test$hash".into(),
+            password_hash: Some("$argon2id$v=19$m=19456,t=2,p=1$test$hash".into()),
             is_root: false,
             is_system_admin: false,
         })
@@ -909,7 +909,7 @@ async fn intra_workspace_no_grant_excludes_document() {
             username: "srch-perm-stranger".to_string(),
             display_name: "Stranger".to_string(),
             email: None,
-            password_hash: "$argon2id$v=19$m=19456,t=2,p=1$test$hash".into(),
+            password_hash: Some("$argon2id$v=19$m=19456,t=2,p=1$test$hash".into()),
             is_root: false,
             is_system_admin: false,
         })
@@ -979,7 +979,7 @@ async fn direct_document_grant_surfaces_hit() {
             username: "srch-docgrant-grantee".to_string(),
             display_name: "Grantee".to_string(),
             email: None,
-            password_hash: "$argon2id$v=19$m=19456,t=2,p=1$test$hash".into(),
+            password_hash: Some("$argon2id$v=19$m=19456,t=2,p=1$test$hash".into()),
             is_root: false,
             is_system_admin: false,
         })
@@ -1029,7 +1029,7 @@ async fn task_board_grant_surfaces_hit() {
             username: "srch-board-grantee".to_string(),
             display_name: "BoardGrantee".to_string(),
             email: None,
-            password_hash: "$argon2id$v=19$m=19456,t=2,p=1$test$hash".into(),
+            password_hash: Some("$argon2id$v=19$m=19456,t=2,p=1$test$hash".into()),
             is_root: false,
             is_system_admin: false,
         })
@@ -1040,7 +1040,7 @@ async fn task_board_grant_surfaces_hit() {
             username: "srch-board-stranger".to_string(),
             display_name: "BoardStranger".to_string(),
             email: None,
-            password_hash: "$argon2id$v=19$m=19456,t=2,p=1$test$hash".into(),
+            password_hash: Some("$argon2id$v=19$m=19456,t=2,p=1$test$hash".into()),
             is_root: false,
             is_system_admin: false,
         })
@@ -1120,7 +1120,7 @@ async fn workspace_scope_grant_surfaces_all_documents() {
             username: "srch-wsscope-grantee".to_string(),
             display_name: "WsScopeGrantee".to_string(),
             email: None,
-            password_hash: "$argon2id$v=19$m=19456,t=2,p=1$test$hash".into(),
+            password_hash: Some("$argon2id$v=19$m=19456,t=2,p=1$test$hash".into()),
             is_root: false,
             is_system_admin: false,
         })

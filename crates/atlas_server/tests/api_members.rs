@@ -30,7 +30,7 @@ async fn add_member(
             username: username.to_string(),
             display_name: username.to_string(),
             email: None,
-            password_hash: "$argon2id$v=19$m=19456,t=2,p=1$test$hash".into(),
+            password_hash: Some("$argon2id$v=19$m=19456,t=2,p=1$test$hash".into()),
             is_root: false,
             is_system_admin: false,
         })
@@ -146,12 +146,13 @@ async fn list_members_visible_to_plain_member() {
                 username: "members-plain-login".to_string(),
                 display_name: "members-plain-login".to_string(),
                 email: None,
-                password_hash: hash,
+                password_hash: Some(hash),
                 is_root: false,
                 is_system_admin: false,
             })
             .await
             .expect("create login user");
+        support::activate_user_in_db(&db, user.id.0).await;
         let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
         db.membership_repo()
             .add(&ctx, user.id, MemberRole::Member)
@@ -292,12 +293,14 @@ async fn login_member_with_role(
             username: username.to_string(),
             display_name: username.to_string(),
             email: None,
-            password_hash: hash,
+            password_hash: Some(hash),
             is_root: false,
             is_system_admin: false,
         })
         .await
         .expect("create user");
+
+    support::activate_user_in_db(db, user.id.0).await;
 
     let ctx = WorkspaceCtx::new(ws_id, Actor::User(user.id));
     db.membership_repo()
@@ -331,17 +334,20 @@ async fn login_break_glass_user(
         .await
         .expect("hash");
 
-    db.user_repo()
+    let bg_user = db
+        .user_repo()
         .create(NewUser {
             username: username.to_string(),
             display_name: username.to_string(),
             email: None,
-            password_hash: hash,
+            password_hash: Some(hash),
             is_root,
             is_system_admin,
         })
         .await
         .expect("create break-glass user");
+
+    support::activate_user_in_db(db, bg_user.id.0).await;
 
     let mut client = AtlasClient::new(server.base_url().to_string());
     client
@@ -941,7 +947,7 @@ async fn patch_target_not_member_returns_404() {
             username: "pat-target-404-stranger".into(),
             display_name: "stranger".into(),
             email: None,
-            password_hash: "$argon2id$v=19$m=19456,t=2,p=1$test$hash".into(),
+            password_hash: Some("$argon2id$v=19$m=19456,t=2,p=1$test$hash".into()),
             is_root: false,
             is_system_admin: false,
         })
@@ -1225,7 +1231,7 @@ async fn delete_target_not_member_returns_404() {
             username: "del-target-404-stranger".into(),
             display_name: "stranger".into(),
             email: None,
-            password_hash: "$argon2id$v=19$m=19456,t=2,p=1$test$hash".into(),
+            password_hash: Some("$argon2id$v=19$m=19456,t=2,p=1$test$hash".into()),
             is_root: false,
             is_system_admin: false,
         })

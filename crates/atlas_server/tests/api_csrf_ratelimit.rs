@@ -57,17 +57,19 @@ async fn csrf_cookie_mutation_without_header_is_rejected() {
     let hash = atlas_server::auth::password::hash(password.to_string())
         .await
         .expect("hash");
-    db.user_repo()
+    let csrf_user = db
+        .user_repo()
         .create(atlas_server::persistence::repos::NewUser {
             username: "csrf-test-user".to_string(),
             display_name: "csrf-test-user".to_string(),
             email: None,
-            password_hash: hash,
+            password_hash: Some(hash),
             is_root: false,
             is_system_admin: false,
         })
         .await
         .expect("create user");
+    support::activate_user_in_db(&db, csrf_user.id.0).await;
 
     let (_token, maybe_cookie) = raw_login(server.base_url(), "csrf-test-user", password).await;
     let session_cookie = maybe_cookie.expect("login must set atlas_session cookie");
@@ -99,17 +101,19 @@ async fn csrf_cookie_mutation_with_header_succeeds() {
     let hash = atlas_server::auth::password::hash(password.to_string())
         .await
         .expect("hash");
-    db.user_repo()
+    let csrf_ok_user = db
+        .user_repo()
         .create(atlas_server::persistence::repos::NewUser {
             username: "csrf-ok-user".to_string(),
             display_name: "csrf-ok-user".to_string(),
             email: None,
-            password_hash: hash,
+            password_hash: Some(hash),
             is_root: false,
             is_system_admin: false,
         })
         .await
         .expect("create user");
+    support::activate_user_in_db(&db, csrf_ok_user.id.0).await;
 
     let (_token, maybe_cookie) = raw_login(server.base_url(), "csrf-ok-user", password).await;
     let session_cookie = maybe_cookie.expect("login must set atlas_session cookie");

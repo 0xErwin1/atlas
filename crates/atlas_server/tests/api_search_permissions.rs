@@ -434,12 +434,14 @@ async fn cross_tenant_task_isolation() {
                 username: "b3-alice-auth".to_string(),
                 display_name: "Alice".to_string(),
                 email: None,
-                password_hash: hash,
+                password_hash: Some(hash),
                 is_root: false,
                 is_system_admin: false,
             })
             .await
             .expect("create alice");
+
+        support::activate_user_in_db(&db, user.id.0).await;
 
         let member_ctx = WorkspaceCtx::new(ws_a.id, Actor::User(user.id));
         db.membership_repo()

@@ -862,12 +862,14 @@ async fn move_folder_underprivileged_destination_returns_404() {
             username: "mv-unpriv-caller".to_string(),
             display_name: "mv-unpriv-caller".to_string(),
             email: None,
-            password_hash: hash,
+            password_hash: Some(hash),
             is_root: false,
             is_system_admin: false,
         })
         .await
         .expect("create caller user");
+
+    support::activate_user_in_db(&db, caller_domain_user.id.0).await;
 
     let ctx = WorkspaceCtx::new(ws.id, Actor::User(caller_domain_user.id));
     db.membership_repo()

@@ -1,7 +1,10 @@
 use atlas_domain::entities::identity::{
-    ApiKey, ApiKeyType, MemberRole, Session, User, UserUiState, Workspace, WorkspaceMembership,
+    ActivationToken, ApiKey, ApiKeyType, MemberRole, Session, User, UserUiState, Workspace,
+    WorkspaceMembership,
 };
-use atlas_domain::ids::{ApiKeyId, MembershipId, SessionId, UserId, WorkspaceId};
+use atlas_domain::ids::{
+    ActivationTokenId, ApiKeyId, MembershipId, SessionId, UserId, WorkspaceId,
+};
 use chrono::{DateTime, Utc};
 use sea_orm::entity::prelude::*;
 
@@ -36,12 +39,34 @@ pub mod user {
         pub username: String,
         pub display_name: String,
         pub email: Option<String>,
-        pub password_hash: String,
+        pub password_hash: Option<String>,
         pub is_root: bool,
         pub is_system_admin: bool,
         pub disabled_at: Option<DateTime<Utc>>,
+        pub activated_at: Option<DateTime<Utc>>,
         pub created_at: DateTime<Utc>,
         pub updated_at: DateTime<Utc>,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
+pub mod activation_token {
+    use super::*;
+
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+    #[sea_orm(table_name = "user_activation_tokens")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        pub user_id: Uuid,
+        pub token_hash: String,
+        pub expires_at: DateTime<Utc>,
+        pub consumed_at: Option<DateTime<Utc>>,
+        pub created_at: DateTime<Utc>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -165,8 +190,20 @@ pub fn user_from(m: user::Model) -> User {
         is_root: m.is_root,
         is_system_admin: m.is_system_admin,
         disabled_at: m.disabled_at,
+        activated_at: m.activated_at,
         created_at: m.created_at,
         updated_at: m.updated_at,
+    }
+}
+
+pub fn activation_token_from(m: activation_token::Model) -> ActivationToken {
+    ActivationToken {
+        id: ActivationTokenId(m.id),
+        user_id: UserId(m.user_id),
+        token_hash: m.token_hash,
+        expires_at: m.expires_at,
+        consumed_at: m.consumed_at,
+        created_at: m.created_at,
     }
 }
 

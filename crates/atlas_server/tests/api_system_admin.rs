@@ -26,17 +26,22 @@ async fn create_user_with_flags(
         .await
         .expect("hash");
 
-    db.user_repo()
+    let user = db
+        .user_repo()
         .create(NewUser {
             username: username.to_string(),
             display_name: username.to_string(),
             email: None,
-            password_hash: hash,
+            password_hash: Some(hash),
             is_root,
             is_system_admin,
         })
         .await
-        .expect("create user")
+        .expect("create user");
+
+    support::activate_user_in_db(db, user.id.0).await;
+
+    user
 }
 
 async fn login_as(server: &support::TestServer, username: &str) -> AtlasClient {
