@@ -2876,6 +2876,133 @@
         ]
       }
     },
+    "/v1/workspaces/{ws}/members/{user_id}": {
+      "delete": {
+        "tags": [
+          "members"
+        ],
+        "summary": "Removes a member from the workspace.",
+        "description": "Enforces the same ordered authorization checks as `update_member_role`, adapted for\nDELETE:\n- Step 3: admin cannot remove an owner.\n- Step 4: no one (including break-glass) can remove the last owner → 409.",
+        "operationId": "remove_member",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "path",
+            "description": "Target member user ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Member removed"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient privileges"
+          },
+          "404": {
+            "description": "Workspace or target member not found"
+          },
+          "409": {
+            "description": "Last-owner lockout"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "members"
+        ],
+        "summary": "Changes a workspace member's role.",
+        "description": "Enforces strictly ordered authorization checks:\n1. `WorkspaceOwnerOrAdmin` extractor gates structural access (resolves caller class).\n2. Target membership is loaded; 404 if the target is not a member.\n3. Role-permission matrix: admins cannot touch owners or promote to owner; others\n   are allowed subject to step 4.\n4. Last-owner-lockout (independent of step 3, applies to break-glass too): demoting\n   the sole remaining owner → 409. This is a data-integrity invariant, not a\n   permission — break-glass is NOT exempt.\n5. Apply `update_role`. Idempotent: same-role PATCH validates the full matrix first.\n\nSteps 3 and 4 are independent and strictly ordered. Never collapse them.",
+        "operationId": "update_member_role",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "path",
+            "description": "Target member user ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMemberRoleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Role updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrincipalDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed JSON body"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient privileges"
+          },
+          "404": {
+            "description": "Workspace or target member not found"
+          },
+          "409": {
+            "description": "Last-owner lockout"
+          },
+          "422": {
+            "description": "Unknown role string"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/v1/workspaces/{ws}/projects": {
       "get": {
         "tags": [
@@ -8147,6 +8274,13 @@
           "principal_type": {
             "type": "string",
             "description": "`\"user\"` for a workspace member, `\"api_key\"` for an agent."
+          },
+          "role": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Workspace membership role (`\"owner\"` | `\"admin\"` | `\"member\"`).\nPresent for `user` principals; absent for `api_key` principals."
           }
         }
       },
@@ -9149,6 +9283,18 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "UpdateMemberRoleRequest": {
+        "type": "object",
+        "description": "Request body for `PATCH /v1/workspaces/{ws}/members/{user_id}`.",
+        "required": [
+          "role"
+        ],
+        "properties": {
+          "role": {
+            "type": "string"
           }
         }
       },

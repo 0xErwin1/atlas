@@ -268,6 +268,47 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     members.value = data;
   }
 
+  /**
+   * Changes a workspace member's role (owner/admin/member) and reloads the
+   * member list on success. Surfaces the backend `hint` in `error` for the
+   * panel to display — the server is authoritative, so a 403 (insufficient
+   * privileges) or 409 (`urn:atlas:error:last-owner`) is reported as-is.
+   * Returns true on success.
+   */
+  async function updateMemberRole(ws: string, userId: string, role: string): Promise<boolean> {
+    const { error: apiError } = await wrappedClient.PATCH('/v1/workspaces/{ws}/members/{user_id}', {
+      params: { path: { ws, user_id: userId } },
+      body: { role },
+    });
+
+    if (apiError !== undefined) {
+      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to update member role';
+      return false;
+    }
+
+    await loadMembers(ws);
+    return true;
+  }
+
+  /**
+   * Removes a member from the workspace and reloads the member list on success.
+   * Surfaces the backend `hint` in `error` (e.g. 403 not allowed, 409 last
+   * owner). Returns true on success.
+   */
+  async function removeMember(ws: string, userId: string): Promise<boolean> {
+    const { error: apiError } = await wrappedClient.DELETE('/v1/workspaces/{ws}/members/{user_id}', {
+      params: { path: { ws, user_id: userId } },
+    });
+
+    if (apiError !== undefined) {
+      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to remove member';
+      return false;
+    }
+
+    await loadMembers(ws);
+    return true;
+  }
+
   return {
     activeWorkspaceSlug,
     projects,
@@ -287,5 +328,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     updateProject,
     deleteProject,
     loadMembers,
+    updateMemberRole,
+    removeMember,
   };
 });
