@@ -48,6 +48,13 @@ pub trait UserRepo: Send + Sync {
         email: Option<String>,
         display_name: Option<String>,
     ) -> Result<User, DomainError>;
+    /// Sets the `is_system_admin` flag for a user. Only root may call this path;
+    /// the route layer enforces the guard.
+    async fn set_system_admin(
+        &self,
+        id: UserId,
+        is_system_admin: bool,
+    ) -> Result<User, DomainError>;
 }
 
 #[async_trait]

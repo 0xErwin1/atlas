@@ -68,6 +68,7 @@ async fn add_user_to_workspace(
             email: None,
             password_hash: hash,
             is_root: false,
+            is_system_admin: false,
         })
         .await
         .expect("create user");
@@ -113,6 +114,7 @@ async fn create_non_member_user(
             email: None,
             password_hash: hash,
             is_root: false,
+            is_system_admin: false,
         })
         .await
         .expect("create user");

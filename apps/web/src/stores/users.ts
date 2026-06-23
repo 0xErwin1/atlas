@@ -33,7 +33,7 @@ export const useUsersStore = defineStore('users', () => {
       }
       users.value = data;
     } catch {
-      error.value = 'Can’t reach the server';
+      error.value = "Can't reach the server";
       users.value = [];
     } finally {
       loading.value = false;
@@ -57,7 +57,7 @@ export const useUsersStore = defineStore('users', () => {
       users.value = [...users.value, data];
       return data;
     } catch {
-      error.value = 'Can’t reach the server';
+      error.value = "Can't reach the server";
       return null;
     }
   }
@@ -75,7 +75,7 @@ export const useUsersStore = defineStore('users', () => {
       await loadUsers();
       return true;
     } catch {
-      error.value = 'Can’t reach the server';
+      error.value = "Can't reach the server";
       return false;
     }
   }
@@ -94,10 +94,30 @@ export const useUsersStore = defineStore('users', () => {
       }
       return true;
     } catch {
-      error.value = 'Can’t reach the server';
+      error.value = "Can't reach the server";
       return false;
     }
   }
 
-  return { users, loading, error, loadUsers, createUser, setDisabled, resetPassword };
+  async function setSystemAdmin(id: string, value: boolean): Promise<UserDto | null> {
+    error.value = null;
+
+    try {
+      const { data, error: e } = await wrappedClient.POST('/v1/users/{user_id}/system-admin', {
+        params: { path: { user_id: id } },
+        body: { is_system_admin: value },
+      });
+      if (e || !data) {
+        error.value = hintOf(e, 'Failed to update system-admin status');
+        return null;
+      }
+      users.value = users.value.map((u) => (u.id === id ? data : u));
+      return data;
+    } catch {
+      error.value = "Can't reach the server";
+      return null;
+    }
+  }
+
+  return { users, loading, error, loadUsers, createUser, setDisabled, resetPassword, setSystemAdmin };
 });

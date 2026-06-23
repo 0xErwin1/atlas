@@ -70,6 +70,10 @@ pub fn app(state: AppState) -> Router {
             "/v1/users/{user_id}/reset-password",
             axum::routing::post(routes::users::reset_password),
         )
+        .route(
+            "/v1/users/{user_id}/system-admin",
+            axum::routing::post(routes::users::set_system_admin),
+        )
         // Workspace
         .route(
             "/v1/workspaces",

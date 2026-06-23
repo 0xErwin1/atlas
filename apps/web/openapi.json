@@ -422,7 +422,7 @@
             "description": "Unauthenticated"
           },
           "403": {
-            "description": "Not a root/admin user"
+            "description": "Not a root/admin user, or target is protected"
           }
         },
         "security": [
@@ -504,7 +504,63 @@
             "description": "Unauthenticated"
           },
           "403": {
-            "description": "Not a root/admin user"
+            "description": "Not a root/admin user, or target is protected"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/v1/users/{user_id}/system-admin": {
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "operationId": "set_system_admin",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "description": "User ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetSystemAdminRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "User system-admin status updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Cannot target self or a root user"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Root access required"
           }
         },
         "security": [
@@ -7240,7 +7296,8 @@
         "required": [
           "principal_type",
           "username",
-          "is_root"
+          "is_root",
+          "is_system_admin"
         ],
         "properties": {
           "display_name": {
@@ -7263,6 +7320,9 @@
             "format": "uuid"
           },
           "is_root": {
+            "type": "boolean"
+          },
+          "is_system_admin": {
             "type": "boolean"
           },
           "principal_type": {
@@ -8354,6 +8414,18 @@
           }
         }
       },
+      "SetSystemAdminRequest": {
+        "type": "object",
+        "description": "Request body for `POST /v1/users/{user_id}/system-admin`.",
+        "required": [
+          "is_system_admin"
+        ],
+        "properties": {
+          "is_system_admin": {
+            "type": "boolean"
+          }
+        }
+      },
       "StatusTemplateDto": {
         "type": "object",
         "description": "Workspace status template representation.",
@@ -9051,6 +9123,7 @@
           "username",
           "display_name",
           "is_root",
+          "is_system_admin",
           "created_at",
           "updated_at"
         ],
@@ -9080,6 +9153,9 @@
             "format": "uuid"
           },
           "is_root": {
+            "type": "boolean"
+          },
+          "is_system_admin": {
             "type": "boolean"
           },
           "updated_at": {

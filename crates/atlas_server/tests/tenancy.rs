@@ -591,6 +591,7 @@ async fn membership_repo_workspace_isolation() {
             email: None,
             password_hash: "$argon2id$v=19$m=19456,t=2,p=1$test$hash".into(),
             is_root: false,
+            is_system_admin: false,
         })
         .await
         .expect("create extra user");

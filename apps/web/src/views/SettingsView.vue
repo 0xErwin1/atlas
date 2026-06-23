@@ -51,6 +51,7 @@ interface NavGroup {
 }
 
 const isRoot = computed(() => auth.user?.is_root === true);
+const isAdmin = computed(() => isRoot.value || auth.user?.is_system_admin === true);
 
 // Nav structure. Adding a future WORKSPACE group (general/statuses/tags) or a
 // workspaces entry under ADMINISTRATION is a one-liner here plus the matching
@@ -76,7 +77,7 @@ const navGroups = computed<NavGroup[]>(() => {
     },
   ];
 
-  if (isRoot.value) {
+  if (isAdmin.value) {
     groups.push({
       label: 'Administration',
       entries: [

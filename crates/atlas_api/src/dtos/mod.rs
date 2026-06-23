@@ -53,6 +53,7 @@ pub struct UserDto {
     pub display_name: String,
     pub email: Option<String>,
     pub is_root: bool,
+    pub is_system_admin: bool,
     pub disabled_at: Option<chrono::DateTime<chrono::Utc>>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
@@ -91,6 +92,14 @@ pub struct MeResponse {
     pub id: Option<uuid::Uuid>,
     pub display_name: Option<String>,
     pub is_root: bool,
+    pub is_system_admin: bool,
+}
+
+/// Request body for `POST /v1/users/{user_id}/system-admin`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct SetSystemAdminRequest {
+    pub is_system_admin: bool,
 }
 
 /// Response from `GET /v1/meta`. Server build information for the About screen.

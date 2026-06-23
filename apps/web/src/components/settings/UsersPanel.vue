@@ -16,6 +16,8 @@ const usersStore = useUsersStore();
 const auth = useAuthStore();
 const ui = useUiStore();
 
+const currentUserIsRoot = computed(() => auth.user?.is_root === true);
+
 type Mode = 'list' | 'new' | 'reset';
 const mode = ref<Mode>('list');
 
@@ -27,11 +29,21 @@ function isSelf(u: UserDto): boolean {
   return auth.user?.id != null && u.id === auth.user.id;
 }
 
-// A root can't be disabled if it is the last active one — mirrors the server guard.
+// Mirrors server-side disable guards.
 function canDisable(u: UserDto): boolean {
   if (isSelf(u)) return false;
   if (u.is_root && u.disabled_at == null && activeRootCount.value <= 1) return false;
+  if (!currentUserIsRoot.value && (u.is_root || u.is_system_admin)) return false;
   return true;
+}
+
+function disableTitle(u: UserDto): string {
+  if (isSelf(u)) return "Can't disable yourself";
+  if (u.is_root && u.disabled_at == null && activeRootCount.value <= 1)
+    return "Can't disable the last active root";
+  if (!currentUserIsRoot.value && (u.is_root || u.is_system_admin))
+    return 'System-admins cannot disable root or peer system-admin users';
+  return 'Disable user';
 }
 
 function initials(u: UserDto): string {
@@ -118,7 +130,7 @@ const resetSchema = z
     password: z.string().min(8, 'Use at least 8 characters'),
     confirm: z.string().min(1, 'Confirm the new password'),
   })
-  .refine((v) => v.password === v.confirm, { path: ['confirm'], message: 'Passwords don’t match' });
+  .refine((v) => v.password === v.confirm, { path: ['confirm'], message: "Passwords don't match" });
 
 function startReset(u: UserDto): void {
   resetTarget.value = u;
@@ -145,6 +157,21 @@ async function submitReset(): Promise<void> {
   if (ok) {
     ui.showBanner(`Password reset for ${target.display_name}`, 'success');
     mode.value = 'list';
+  } else if (usersStore.error) {
+    ui.showBanner(usersStore.error, 'error');
+  }
+}
+
+// ── System-admin toggle (root only) ────────────────────────────────
+async function toggleSystemAdmin(u: UserDto): Promise<void> {
+  const updated = await usersStore.setSystemAdmin(u.id, !u.is_system_admin);
+  if (updated) {
+    ui.showBanner(
+      updated.is_system_admin
+        ? `${u.display_name} promoted to system-admin`
+        : `${u.display_name} demoted from system-admin`,
+      'success',
+    );
   } else if (usersStore.error) {
     ui.showBanner(usersStore.error, 'error');
   }
@@ -251,7 +278,7 @@ async function confirmDisable(): Promise<void> {
           label="Confirm new password"
           type="password"
           :model-value="resetForm.confirm"
-          helper="The user isn’t notified — share the new password with them directly."
+          helper="The user isn't notified — share the new password with them directly."
           :error="resetErrors.confirm"
           @update:model-value="(v) => { resetForm.confirm = v; resetErrors.confirm = null; }"
         />
@@ -300,6 +327,7 @@ async function confirmDisable(): Promise<void> {
                   {{ u.display_name }}
                 </span>
                 <span v-if="u.is_root" class="atl-tag-root">ROOT</span>
+                <span v-else-if="u.is_system_admin" class="atl-tag-sysadmin">SYSADMIN</span>
               </div>
               <div style="font-size: 11.5px; color: var(--c-muted); font-family: var(--font-mono);">
                 @{{ u.username }}
@@ -311,9 +339,18 @@ async function confirmDisable(): Promise<void> {
             <Chip v-else tone="success">Active</Chip>
           </div>
           <div style="flex: 1; font-size: 12px; color: var(--c-muted);">{{ fmtDate(u.created_at) }}</div>
-          <div style="flex: 0 0 156px; display: flex; justify-content: flex-end; gap: 6px;">
+          <div style="flex: 0 0 196px; display: flex; justify-content: flex-end; gap: 6px;">
             <span v-if="isSelf(u)" class="atl-you">you</span>
             <template v-else>
+              <button
+                v-if="currentUserIsRoot && !u.is_root"
+                type="button"
+                class="atl-rowact"
+                :title="u.is_system_admin ? 'Remove system-admin' : 'Make system-admin'"
+                @click="toggleSystemAdmin(u)"
+              >
+                <Icon :name="u.is_system_admin ? 'shield-off' : 'shield'" :size="13" />
+              </button>
               <button type="button" class="atl-rowact" title="Reset password" @click="startReset(u)">
                 <Icon name="key" :size="13" />
               </button>
@@ -325,7 +362,7 @@ async function confirmDisable(): Promise<void> {
                 type="button"
                 class="atl-revoke"
                 :disabled="!canDisable(u)"
-                :title="canDisable(u) ? 'Disable user' : 'Can’t disable the last active root'"
+                :title="disableTitle(u)"
                 :style="{ opacity: canDisable(u) ? 1 : 0.4, cursor: canDisable(u) ? 'pointer' : 'not-allowed' }"
                 @click="canDisable(u) && (disableTarget = u)"
               >
@@ -338,7 +375,7 @@ async function confirmDisable(): Promise<void> {
 
       <div class="atl-users-note">
         <Icon name="shield" :size="13" style="color: var(--c-primary);" />
-        You can’t disable yourself or the last remaining root. Use the key icon to reset another user’s password.
+        You can't disable yourself or the last remaining root. The shield icon (root only) promotes or demotes system-admin access.
       </div>
     </div>
 
@@ -347,7 +384,7 @@ async function confirmDisable(): Promise<void> {
       tone="warning"
       :width="460"
       title="Disable this user?"
-      message="They’re signed out everywhere and can no longer access Atlas until re-enabled."
+      message="They're signed out everywhere and can no longer access Atlas until re-enabled."
       :detail="disableTarget ? `${disableTarget.display_name} · @${disableTarget.username}` : undefined"
       detail-icon="user"
       note="Disabling them also disables the API keys they created — agents using those keys lose access immediately. Re-enabling restores both."
@@ -389,6 +426,18 @@ async function confirmDisable(): Promise<void> {
   color: var(--c-primary);
   border: 1px solid rgba(255, 180, 84, 0.45);
   background: rgba(255, 180, 84, 0.12);
+  border-radius: var(--r-sm);
+  padding: 1px 5px;
+  font-family: var(--font-mono);
+}
+
+.atl-tag-sysadmin {
+  font-size: 9.5px;
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.06em;
+  color: var(--c-muted);
+  border: 1px solid var(--c-border);
+  background: var(--c-raised);
   border-radius: var(--r-sm);
   padding: 1px 5px;
   font-family: var(--font-mono);

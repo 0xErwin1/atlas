@@ -154,6 +154,7 @@ impl UserRepo for PgUserRepo {
             email: Set(new.email),
             password_hash: Set(new.password_hash),
             is_root: Set(new.is_root),
+            is_system_admin: Set(new.is_system_admin),
             disabled_at: Set(None),
             created_at: Set(Utc::now()),
             updated_at: Set(Utc::now()),
@@ -174,6 +175,7 @@ impl UserRepo for PgUserRepo {
             email: Option<String>,
             password_hash: String,
             is_root: bool,
+            is_system_admin: bool,
             disabled_at: Option<chrono::DateTime<Utc>>,
             created_at: chrono::DateTime<Utc>,
             updated_at: chrono::DateTime<Utc>,
@@ -182,7 +184,7 @@ impl UserRepo for PgUserRepo {
         let lower = username.to_lowercase();
         let rows = Row::find_by_statement(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT id, username, display_name, email, password_hash, is_root, disabled_at, created_at, updated_at
+            "SELECT id, username, display_name, email, password_hash, is_root, is_system_admin, disabled_at, created_at, updated_at
              FROM users WHERE lower(username) = $1 LIMIT 1",
             [lower.into()],
         ))
@@ -197,6 +199,7 @@ impl UserRepo for PgUserRepo {
             email: r.email,
             password_hash: r.password_hash,
             is_root: r.is_root,
+            is_system_admin: r.is_system_admin,
             disabled_at: r.disabled_at,
             created_at: r.created_at,
             updated_at: r.updated_at,
@@ -320,6 +323,32 @@ impl UserRepo for PgUserRepo {
         if let Some(display_name) = display_name {
             active.display_name = Set(display_name);
         }
+        active.updated_at = Set(Utc::now());
+
+        active
+            .update(&self.conn)
+            .await
+            .map(user_from)
+            .map_err(db_err)
+    }
+
+    async fn set_system_admin(
+        &self,
+        id: UserId,
+        is_system_admin: bool,
+    ) -> Result<User, DomainError> {
+        use sea_orm::IntoActiveModel;
+        let row = user::Entity::find_by_id(id.0)
+            .one(&self.conn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "user",
+                id: id.0,
+            })?;
+
+        let mut active = row.into_active_model();
+        active.is_system_admin = Set(is_system_admin);
         active.updated_at = Set(Utc::now());
 
         active

@@ -64,6 +64,7 @@ async fn csrf_cookie_mutation_without_header_is_rejected() {
             email: None,
             password_hash: hash,
             is_root: false,
+            is_system_admin: false,
         })
         .await
         .expect("create user");
@@ -105,6 +106,7 @@ async fn csrf_cookie_mutation_with_header_succeeds() {
             email: None,
             password_hash: hash,
             is_root: false,
+            is_system_admin: false,
         })
         .await
         .expect("create user");

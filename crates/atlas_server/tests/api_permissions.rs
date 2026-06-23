@@ -71,6 +71,7 @@ async fn add_member(
             email: None,
             password_hash: hash,
             is_root: false,
+            is_system_admin: false,
         })
         .await
         .expect("create user");

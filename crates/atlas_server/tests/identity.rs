@@ -17,6 +17,7 @@ async fn user_password_hash_is_not_plaintext() {
             email: None,
             password_hash: "$argon2id$v=19$m=19456,t=2,p=1$test$hash".into(),
             is_root: false,
+            is_system_admin: false,
         })
         .await
         .expect("create user");

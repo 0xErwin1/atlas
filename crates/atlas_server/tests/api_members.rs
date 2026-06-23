@@ -26,6 +26,7 @@ async fn add_member(
             email: None,
             password_hash: "$argon2id$v=19$m=19456,t=2,p=1$test$hash".into(),
             is_root: false,
+            is_system_admin: false,
         })
         .await
         .expect("create user");
@@ -120,6 +121,7 @@ async fn list_members_visible_to_plain_member() {
                 email: None,
                 password_hash: hash,
                 is_root: false,
+                is_system_admin: false,
             })
             .await
             .expect("create login user");

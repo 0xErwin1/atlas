@@ -1708,6 +1708,7 @@ async fn viewer_cannot_create_document() {
             email: None,
             password_hash: hash,
             is_root: false,
+            is_system_admin: false,
         })
         .await
         .expect("create viewer");
@@ -1879,6 +1880,7 @@ async fn member_client_with_optional_project_grant(
             email: None,
             password_hash: hash,
             is_root: false,
+            is_system_admin: false,
         })
         .await
         .expect("create member");

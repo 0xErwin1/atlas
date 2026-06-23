@@ -26,6 +26,7 @@ pub struct User {
     pub email: Option<String>,
     pub password_hash: String,
     pub is_root: bool,
+    pub is_system_admin: bool,
     pub disabled_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -38,6 +39,7 @@ pub struct NewUser {
     pub email: Option<String>,
     pub password_hash: String,
     pub is_root: bool,
+    pub is_system_admin: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

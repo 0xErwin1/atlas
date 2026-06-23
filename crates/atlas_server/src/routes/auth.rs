@@ -208,6 +208,7 @@ pub(crate) async fn me(
                 id: Some(user.id.0),
                 display_name: Some(user.display_name),
                 is_root: user.is_root,
+                is_system_admin: user.is_system_admin,
             }
         }
         Principal::ApiKey(_key_id) => MeResponse {
@@ -217,6 +218,7 @@ pub(crate) async fn me(
             id: None,
             display_name: None,
             is_root: false,
+            is_system_admin: false,
         },
     };
 
@@ -356,6 +358,7 @@ fn user_to_dto(user: &atlas_domain::entities::identity::User) -> UserDto {
         display_name: user.display_name.clone(),
         email: user.email.clone(),
         is_root: user.is_root,
+        is_system_admin: user.is_system_admin,
         disabled_at: user.disabled_at,
         created_at: user.created_at,
         updated_at: user.updated_at,

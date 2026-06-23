@@ -48,6 +48,7 @@ pub async fn run_bootstrap(cfg: &BootstrapConfig, conn: &DatabaseConnection) -> 
             email: None,
             password_hash,
             is_root: true,
+            is_system_admin: false,
         })
         .await
         .map_err(|e| e.to_string())?;

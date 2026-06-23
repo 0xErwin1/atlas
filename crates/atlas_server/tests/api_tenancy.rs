@@ -192,6 +192,7 @@ async fn member_of_both_workspaces_cannot_cross_scope_projects() {
             email: None,
             password_hash: hash,
             is_root: false,
+            is_system_admin: false,
         })
         .await
         .expect("create dual user");

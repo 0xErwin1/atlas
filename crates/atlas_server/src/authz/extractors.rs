@@ -320,13 +320,69 @@ impl FromRequestParts<AppState> for RequireUserAdmin {
             return Err(ApiError::Unauthorized);
         }
 
+        if !(user.is_root || user.is_system_admin) {
+            return Err(ApiError::Forbidden {
+                message: "Admin access required".into(),
+            });
+        }
+
+        Ok(RequireUserAdmin { user })
+    }
+}
+
+/// Proof that the request's principal is an authenticated user with `is_root = true`.
+///
+/// This is the break-glass guard for operations that only the single root account
+/// may perform — specifically, promoting and demoting system-admins. A system-admin
+/// cannot satisfy this extractor; only `is_root` passes.
+pub struct RequireRoot {
+    pub user: User,
+}
+
+impl FromRequestParts<AppState> for RequireRoot {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        let principal = parts
+            .extensions
+            .get::<Principal>()
+            .cloned()
+            .ok_or(ApiError::Unauthorized)?;
+
+        let user_id = match principal {
+            Principal::User(uid) => uid,
+            Principal::ApiKey(_) => {
+                return Err(ApiError::Forbidden {
+                    message: "API keys cannot perform root-only actions".into(),
+                });
+            }
+        };
+
+        let user_repo = PgUserRepo {
+            conn: (*state.db).clone(),
+        };
+        let user = user_repo
+            .find_by_id(user_id)
+            .await
+            .map_err(|e| ApiError::Internal {
+                message: e.to_string(),
+            })?
+            .ok_or(ApiError::Unauthorized)?;
+
+        if user.disabled_at.is_some() {
+            return Err(ApiError::Unauthorized);
+        }
+
         if !user.is_root {
             return Err(ApiError::Forbidden {
                 message: "Root access required".into(),
             });
         }
 
-        Ok(RequireUserAdmin { user })
+        Ok(RequireRoot { user })
     }
 }
 

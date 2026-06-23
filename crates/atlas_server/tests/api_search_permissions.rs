@@ -435,6 +435,7 @@ async fn cross_tenant_task_isolation() {
                 email: None,
                 password_hash: hash,
                 is_root: false,
+                is_system_admin: false,
             })
             .await
             .expect("create alice");

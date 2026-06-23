@@ -323,6 +323,7 @@ async fn seed_user(db: &support::TestDb, username: &str) -> UserId {
             email: None,
             password_hash: "$argon2id$v=19$m=19456,t=2,p=1$test$hash".into(),
             is_root: false,
+            is_system_admin: false,
         })
         .await
         .expect("seed user");
@@ -910,6 +911,7 @@ async fn intra_workspace_no_grant_excludes_document() {
             email: None,
             password_hash: "$argon2id$v=19$m=19456,t=2,p=1$test$hash".into(),
             is_root: false,
+            is_system_admin: false,
         })
         .await
         .expect("seed stranger");
@@ -979,6 +981,7 @@ async fn direct_document_grant_surfaces_hit() {
             email: None,
             password_hash: "$argon2id$v=19$m=19456,t=2,p=1$test$hash".into(),
             is_root: false,
+            is_system_admin: false,
         })
         .await
         .expect("seed grantee");
@@ -1028,6 +1031,7 @@ async fn task_board_grant_surfaces_hit() {
             email: None,
             password_hash: "$argon2id$v=19$m=19456,t=2,p=1$test$hash".into(),
             is_root: false,
+            is_system_admin: false,
         })
         .await
         .expect("seed grantee");
@@ -1038,6 +1042,7 @@ async fn task_board_grant_surfaces_hit() {
             email: None,
             password_hash: "$argon2id$v=19$m=19456,t=2,p=1$test$hash".into(),
             is_root: false,
+            is_system_admin: false,
         })
         .await
         .expect("seed stranger");
@@ -1117,6 +1122,7 @@ async fn workspace_scope_grant_surfaces_all_documents() {
             email: None,
             password_hash: "$argon2id$v=19$m=19456,t=2,p=1$test$hash".into(),
             is_root: false,
+            is_system_admin: false,
         })
         .await
         .expect("seed grantee");
