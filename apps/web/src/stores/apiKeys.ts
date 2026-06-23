@@ -6,6 +6,7 @@ import { collectPaged } from '@/lib/pagination';
 
 export type ApiKeyDto = components['schemas']['ApiKeyDto'];
 export type ApiKeyCreated = components['schemas']['ApiKeyCreated'];
+export type ApiKeyGrantDto = components['schemas']['ApiKeyGrantDto'];
 export type CreateUserApiKeyRequest = components['schemas']['CreateUserApiKeyRequest'];
 export type InitialGrantRequest = components['schemas']['InitialGrantRequest'];
 
@@ -91,5 +92,45 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
     }
   }
 
-  return { keys, loading, error, loadKeys, createKey, revokeKey };
+  async function loadKeyGrants(keyId: string): Promise<ApiKeyGrantDto[] | null> {
+    error.value = null;
+
+    try {
+      const { data, error: e } = await wrappedClient.GET('/v1/api-keys/{key_id}/grants', {
+        params: { path: { key_id: keyId } },
+      });
+
+      if (e || !data) {
+        error.value = hintOf(e, 'Failed to load key grants');
+        return null;
+      }
+
+      return data;
+    } catch {
+      error.value = "Can't reach the server";
+      return null;
+    }
+  }
+
+  async function revokeKeyGrant(keyId: string, grantId: string): Promise<boolean> {
+    error.value = null;
+
+    try {
+      const { error: e } = await wrappedClient.DELETE('/v1/api-keys/{key_id}/grants/{grant_id}', {
+        params: { path: { key_id: keyId, grant_id: grantId } },
+      });
+
+      if (e) {
+        error.value = hintOf(e, 'Failed to revoke grant');
+        return false;
+      }
+
+      return true;
+    } catch {
+      error.value = "Can't reach the server";
+      return false;
+    }
+  }
+
+  return { keys, loading, error, loadKeys, createKey, revokeKey, loadKeyGrants, revokeKeyGrant };
 });

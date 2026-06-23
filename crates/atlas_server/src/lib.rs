@@ -98,6 +98,14 @@ pub fn app(state: AppState) -> Router {
             "/v1/api-keys/{key_id}",
             axum::routing::delete(routes::api_keys::revoke_user_api_key),
         )
+        .route(
+            "/v1/api-keys/{key_id}/grants",
+            axum::routing::get(routes::api_keys::list_api_key_grants),
+        )
+        .route(
+            "/v1/api-keys/{key_id}/grants/{grant_id}",
+            axum::routing::delete(routes::api_keys::delete_api_key_grant),
+        )
         // Projects
         .route(
             "/v1/workspaces/{ws}/projects",

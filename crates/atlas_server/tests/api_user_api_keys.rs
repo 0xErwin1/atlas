@@ -360,6 +360,237 @@ async fn revoke_user_api_key_nonexistent_returns_error() {
 }
 
 // ---------------------------------------------------------------------------
+// GET /v1/api-keys/{id}/grants
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn list_api_key_grants_returns_workspace_and_project_grants() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner, ws, _) = login_user_with_workspace(&server, &db, "grants-list-owner").await;
+
+    let created = owner
+        .create_user_api_key(user_key_req("grants-agent"))
+        .await
+        .expect("create key");
+
+    owner
+        .create_workspace_grant(
+            &ws.slug,
+            atlas_api::dtos::CreateGrantRequest {
+                principal: atlas_api::dtos::GrantPrincipal {
+                    r#type: "api_key".to_string(),
+                    id: created.id,
+                },
+                role: "editor".to_string(),
+            },
+        )
+        .await
+        .expect("grant key to workspace");
+
+    owner
+        .create_project(
+            &ws.slug,
+            atlas_api::dtos::CreateProjectRequest {
+                name: "Key Grants Proj".to_string(),
+                slug: "key-grants-proj".to_string(),
+                task_prefix: "KGP".to_string(),
+                visibility: None,
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create project");
+
+    owner
+        .create_project_grant(
+            &ws.slug,
+            "key-grants-proj",
+            atlas_api::dtos::CreateGrantRequest {
+                principal: atlas_api::dtos::GrantPrincipal {
+                    r#type: "api_key".to_string(),
+                    id: created.id,
+                },
+                role: "viewer".to_string(),
+            },
+        )
+        .await
+        .expect("grant key to project");
+
+    let grants = owner
+        .list_api_key_grants(created.id)
+        .await
+        .expect("list api key grants");
+
+    assert_eq!(grants.len(), 2, "key must have 2 grants");
+
+    let ws_grant = grants
+        .iter()
+        .find(|g| g.resource_kind == "workspace")
+        .expect("workspace grant must be present");
+    assert_eq!(ws_grant.role, "editor");
+    assert_eq!(ws_grant.workspace_slug, ws.slug);
+    assert!(ws_grant.project_slug.is_none());
+
+    let proj_grant = grants
+        .iter()
+        .find(|g| g.resource_kind == "project")
+        .expect("project grant must be present");
+    assert_eq!(proj_grant.role, "viewer");
+    assert_eq!(proj_grant.workspace_slug, ws.slug);
+    assert_eq!(proj_grant.project_slug.as_deref(), Some("key-grants-proj"));
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn list_api_key_grants_non_owner_returns_403() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner, ws, _) = login_user_with_workspace(&server, &db, "grants-nonowner-owner").await;
+    let (other, _) = login_user(&server, &db, "grants-nonowner-other").await;
+
+    let created = owner
+        .create_user_api_key(user_key_req("grants-agent-nonowner"))
+        .await
+        .expect("create key");
+
+    owner
+        .create_workspace_grant(
+            &ws.slug,
+            atlas_api::dtos::CreateGrantRequest {
+                principal: atlas_api::dtos::GrantPrincipal {
+                    r#type: "api_key".to_string(),
+                    id: created.id,
+                },
+                role: "editor".to_string(),
+            },
+        )
+        .await
+        .expect("grant key");
+
+    let err = other
+        .list_api_key_grants(created.id)
+        .await
+        .expect_err("non-owner must be rejected");
+
+    match err {
+        atlas_client::ClientError::Api(p) => assert!(
+            p.status == 403 || p.status == 404,
+            "expected 403 or 404 for non-owner, got {}",
+            p.status
+        ),
+        other => panic!("unexpected error: {other:?}"),
+    }
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
+// DELETE /v1/api-keys/{id}/grants/{grant_id}
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn delete_api_key_grant_removes_grant() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner, ws, _) = login_user_with_workspace(&server, &db, "grant-del-owner").await;
+
+    let created = owner
+        .create_user_api_key(user_key_req("grant-del-agent"))
+        .await
+        .expect("create key");
+
+    owner
+        .create_workspace_grant(
+            &ws.slug,
+            atlas_api::dtos::CreateGrantRequest {
+                principal: atlas_api::dtos::GrantPrincipal {
+                    r#type: "api_key".to_string(),
+                    id: created.id,
+                },
+                role: "editor".to_string(),
+            },
+        )
+        .await
+        .expect("grant key");
+
+    let grants_before = owner
+        .list_api_key_grants(created.id)
+        .await
+        .expect("list before delete");
+    assert_eq!(grants_before.len(), 1);
+
+    let grant_id = grants_before[0].id;
+
+    owner
+        .delete_api_key_grant(created.id, grant_id)
+        .await
+        .expect("delete grant");
+
+    let grants_after = owner
+        .list_api_key_grants(created.id)
+        .await
+        .expect("list after delete");
+    assert!(grants_after.is_empty(), "grant must be gone after delete");
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn delete_api_key_grant_non_owner_returns_403() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner, ws, _) = login_user_with_workspace(&server, &db, "grant-del-nonown-owner").await;
+    let (other, _) = login_user(&server, &db, "grant-del-nonown-other").await;
+
+    let created = owner
+        .create_user_api_key(user_key_req("grant-del-nonown-agent"))
+        .await
+        .expect("create key");
+
+    owner
+        .create_workspace_grant(
+            &ws.slug,
+            atlas_api::dtos::CreateGrantRequest {
+                principal: atlas_api::dtos::GrantPrincipal {
+                    r#type: "api_key".to_string(),
+                    id: created.id,
+                },
+                role: "editor".to_string(),
+            },
+        )
+        .await
+        .expect("grant key");
+
+    let grants = owner
+        .list_api_key_grants(created.id)
+        .await
+        .expect("list grants");
+    let grant_id = grants[0].id;
+
+    let err = other
+        .delete_api_key_grant(created.id, grant_id)
+        .await
+        .expect_err("non-owner must be rejected");
+
+    match err {
+        atlas_client::ClientError::Api(p) => assert!(
+            p.status == 403 || p.status == 404,
+            "expected 403 or 404 for non-owner, got {}",
+            p.status
+        ),
+        other => panic!("unexpected error: {other:?}"),
+    }
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
 // Attribution: key_type in member/principal DTOs
 // ---------------------------------------------------------------------------
 

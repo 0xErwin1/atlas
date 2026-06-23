@@ -366,4 +366,44 @@ impl PermissionGrantRepo for PgPermissionGrantRepo {
 
         rows.into_iter().map(grant_from).collect()
     }
+
+    async fn list_for_api_key(
+        &self,
+        api_key_id: ApiKeyId,
+    ) -> Result<Vec<PermissionGrant>, DomainError> {
+        let rows = permission_grant::Entity::find()
+            .filter(permission_grant::Column::ApiKeyId.eq(api_key_id.0))
+            .order_by_asc(permission_grant::Column::Id)
+            .all(&self.conn)
+            .await
+            .map_err(db_err)?;
+
+        rows.into_iter().map(grant_from).collect()
+    }
+
+    async fn delete_for_api_key(
+        &self,
+        grant_id: PermissionGrantId,
+        api_key_id: ApiKeyId,
+    ) -> Result<bool, DomainError> {
+        let existing = permission_grant::Entity::find()
+            .filter(permission_grant::Column::Id.eq(grant_id.0))
+            .filter(permission_grant::Column::ApiKeyId.eq(api_key_id.0))
+            .one(&self.conn)
+            .await
+            .map_err(db_err)?;
+
+        if existing.is_none() {
+            return Ok(false);
+        }
+
+        permission_grant::Entity::delete_many()
+            .filter(permission_grant::Column::Id.eq(grant_id.0))
+            .filter(permission_grant::Column::ApiKeyId.eq(api_key_id.0))
+            .exec(&self.conn)
+            .await
+            .map_err(db_err)?;
+
+        Ok(true)
+    }
 }

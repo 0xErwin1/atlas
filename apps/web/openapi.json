@@ -195,6 +195,104 @@
         ]
       }
     },
+    "/v1/api-keys/{key_id}/grants": {
+      "get": {
+        "tags": [
+          "api-keys"
+        ],
+        "operationId": "list_api_key_grants",
+        "parameters": [
+          {
+            "name": "key_id",
+            "in": "path",
+            "description": "API key id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Grants belonging to this API key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ApiKeyGrantDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Not the key owner"
+          },
+          "404": {
+            "description": "Key not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/v1/api-keys/{key_id}/grants/{grant_id}": {
+      "delete": {
+        "tags": [
+          "api-keys"
+        ],
+        "operationId": "delete_api_key_grant",
+        "parameters": [
+          {
+            "name": "key_id",
+            "in": "path",
+            "description": "API key id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "grant_id",
+            "in": "path",
+            "description": "Grant id to revoke",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Grant revoked"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Not the key owner"
+          },
+          "404": {
+            "description": "Key or grant not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/v1/auth/change-password": {
       "post": {
         "tags": [
@@ -6296,6 +6394,46 @@
           "type": {
             "type": "string",
             "description": "Key purpose: `\"agent\"` | `\"cli\"` | `\"bot\"` | `\"integration\"`."
+          }
+        }
+      },
+      "ApiKeyGrantDto": {
+        "type": "object",
+        "description": "A single grant belonging to an API key, with resolved resource labels.\n\nReturned by `GET /v1/api-keys/{key_id}/grants` so the keys panel can display\nhuman-readable resource names without additional lookups.",
+        "required": [
+          "id",
+          "role",
+          "resource_kind",
+          "resource_label",
+          "workspace_slug"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "project_slug": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Project slug (present for project-scoped grants)."
+          },
+          "resource_kind": {
+            "type": "string",
+            "description": "`\"workspace\"` | `\"project\"` | `\"folder\"` | `\"document\"` | `\"board\"`"
+          },
+          "resource_label": {
+            "type": "string",
+            "description": "Human-readable label: workspace/project name, or id+kind for sub-resources."
+          },
+          "role": {
+            "type": "string",
+            "description": "`\"viewer\"` | `\"editor\"`"
+          },
+          "workspace_slug": {
+            "type": "string",
+            "description": "Workspace slug (always present — all grants live inside a workspace)."
           }
         }
       },

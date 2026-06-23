@@ -2,11 +2,11 @@
 
 use atlas_api::{
     dtos::{
-        ApiKeyCreated, ApiKeyDto, ChangePasswordRequest, CreateGrantRequest, CreateProjectRequest,
-        CreateUserApiKeyRequest, CreateUserRequest, CreateWorkspaceRequest, GrantDto,
-        HealthResponse, LoginRequest, LoginResponse, MeResponse, PrincipalDto, ProjectDto,
-        ResetPasswordRequest, ServerMetaDto, UiStateDto, UpdateMeRequest, UpdateProjectRequest,
-        UpdateUiStateRequest, UpdateWorkspaceRequest, UserDto, WorkspaceDto,
+        ApiKeyCreated, ApiKeyDto, ApiKeyGrantDto, ChangePasswordRequest, CreateGrantRequest,
+        CreateProjectRequest, CreateUserApiKeyRequest, CreateUserRequest, CreateWorkspaceRequest,
+        GrantDto, HealthResponse, LoginRequest, LoginResponse, MeResponse, PrincipalDto,
+        ProjectDto, ResetPasswordRequest, ServerMetaDto, UiStateDto, UpdateMeRequest,
+        UpdateProjectRequest, UpdateUiStateRequest, UpdateWorkspaceRequest, UserDto, WorkspaceDto,
         boards_tasks::{
             ActivityEntryDto, AddAssigneeRequest, AssigneeDto, BoardDto, BoardSummaryDto,
             ChecklistItemDto, ColumnDto, CreateBoardRequest, CreateChecklistItemRequest,
@@ -353,6 +353,39 @@ impl AtlasClient {
     pub async fn revoke_user_api_key(&self, key_id: uuid::Uuid) -> Result<(), ClientError> {
         let response = self
             .delete(&format!("/v1/api-keys/{key_id}"))
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        if response.status().is_success() {
+            return Ok(());
+        }
+        let problem: ProblemDetails = response
+            .json()
+            .await
+            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
+        Err(ClientError::Api(problem))
+    }
+
+    /// `GET /v1/api-keys/{key_id}/grants`
+    pub async fn list_api_key_grants(
+        &self,
+        key_id: uuid::Uuid,
+    ) -> Result<Vec<ApiKeyGrantDto>, ClientError> {
+        let response = self
+            .get(&format!("/v1/api-keys/{key_id}/grants"))
+            .send()
+            .await?;
+        self.decode_response(response, "list_api_key_grants").await
+    }
+
+    /// `DELETE /v1/api-keys/{key_id}/grants/{grant_id}`
+    pub async fn delete_api_key_grant(
+        &self,
+        key_id: uuid::Uuid,
+        grant_id: uuid::Uuid,
+    ) -> Result<(), ClientError> {
+        let response = self
+            .delete(&format!("/v1/api-keys/{key_id}/grants/{grant_id}"))
             .header("x-atlas-csrf", "1")
             .send()
             .await?;

@@ -304,3 +304,24 @@ pub struct UpdateUiStateRequest {
     #[cfg_attr(feature = "openapi", schema(value_type = Object))]
     pub state: serde_json::Value,
 }
+
+/// A single grant belonging to an API key, with resolved resource labels.
+///
+/// Returned by `GET /v1/api-keys/{key_id}/grants` so the keys panel can display
+/// human-readable resource names without additional lookups.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct ApiKeyGrantDto {
+    pub id: uuid::Uuid,
+    /// `"viewer"` | `"editor"`
+    pub role: String,
+    /// `"workspace"` | `"project"` | `"folder"` | `"document"` | `"board"`
+    pub resource_kind: String,
+    /// Human-readable label: workspace/project name, or id+kind for sub-resources.
+    pub resource_label: String,
+    /// Workspace slug (always present — all grants live inside a workspace).
+    pub workspace_slug: String,
+    /// Project slug (present for project-scoped grants).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_slug: Option<String>,
+}

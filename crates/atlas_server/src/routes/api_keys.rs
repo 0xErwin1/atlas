@@ -5,19 +5,31 @@ use axum::{
     response::IntoResponse,
 };
 use serde::Deserialize;
+use std::collections::HashMap;
 
 #[derive(Deserialize)]
 pub(crate) struct TopLevelRevokeKeyPath {
     pub(crate) key_id: uuid::Uuid,
 }
 
+#[derive(Deserialize)]
+pub(crate) struct ApiKeyGrantPath {
+    pub(crate) key_id: uuid::Uuid,
+    pub(crate) grant_id: uuid::Uuid,
+}
+
 use atlas_api::{
-    dtos::{ApiKeyCreated, ApiKeyDto, CreateUserApiKeyRequest, InitialGrantRequest},
+    dtos::{
+        ApiKeyCreated, ApiKeyDto, ApiKeyGrantDto, CreateUserApiKeyRequest, InitialGrantRequest,
+    },
     pagination::{Cursor, Page},
 };
 use atlas_domain::{
-    entities::{identity::ApiKeyType, permissions::NewPermissionGrant},
-    ids::{ApiKeyId, UserId},
+    entities::{
+        identity::ApiKeyType,
+        permissions::{NewPermissionGrant, PermissionGrant, PermissionGrantId},
+    },
+    ids::{ApiKeyId, ProjectId, UserId, WorkspaceId},
     permissions::{Principal, ResourceRole, ShareDenied, authorize_grant_target},
 };
 
@@ -29,7 +41,7 @@ use crate::{
     error::ApiError,
     persistence::repos::{
         ApiKeyRepo, NewApiKey, PermissionGrantRepo, PgApiKeyRepo, PgPermissionGrantRepo,
-        PgWorkspaceRepo, WorkspaceRepo,
+        PgProjectRepo, PgWorkspaceRepo, ProjectRepo, WorkspaceRepo,
     },
     state::AppState,
 };
@@ -147,6 +159,279 @@ pub(crate) async fn create_user_api_key(
             created_at: key.created_at,
         }),
     ))
+}
+
+/// Resolves workspace name/slug and optional project name/slug for a set of grants.
+///
+/// Returns a map of `workspace_id → (slug, name)` and a map of
+/// `project_id → (slug, name)` for every workspace/project referenced in the
+/// given grants. Unknown ids are omitted; callers fall back to the raw id.
+async fn resolve_resource_labels(
+    state: &AppState,
+    grants: &[PermissionGrant],
+    caller: UserId,
+) -> Result<
+    (
+        HashMap<WorkspaceId, (String, String)>,
+        HashMap<ProjectId, (String, String)>,
+    ),
+    ApiError,
+> {
+    let ws_ids: Vec<WorkspaceId> = {
+        let mut seen = std::collections::HashSet::new();
+        grants
+            .iter()
+            .filter(|g| seen.insert(g.workspace_id.0))
+            .map(|g| g.workspace_id)
+            .collect()
+    };
+
+    let ws_repo = PgWorkspaceRepo {
+        conn: (*state.db).clone(),
+    };
+
+    let mut ws_map: HashMap<WorkspaceId, (String, String)> = HashMap::new();
+    for ws_id in ws_ids {
+        if let Ok(Some(ws)) = ws_repo.find_by_id(ws_id).await {
+            ws_map.insert(ws_id, (ws.slug, ws.name));
+        }
+    }
+
+    let project_grants: Vec<(ProjectId, WorkspaceId)> = grants
+        .iter()
+        .filter_map(|g| g.project_id.map(|pid| (pid, g.workspace_id)))
+        .collect();
+
+    let mut project_map: HashMap<ProjectId, (String, String)> = HashMap::new();
+    for (project_id, workspace_id) in project_grants {
+        if project_map.contains_key(&project_id) {
+            continue;
+        }
+        let proj_repo = PgProjectRepo {
+            conn: (*state.db).clone(),
+        };
+        let ctx = atlas_domain::WorkspaceCtx::new(workspace_id, atlas_domain::Actor::User(caller));
+        if let Ok(Some(proj)) = proj_repo.find(&ctx, project_id).await {
+            project_map.insert(project_id, (proj.slug, proj.name));
+        }
+    }
+
+    Ok((ws_map, project_map))
+}
+
+fn grant_to_api_key_grant_dto(
+    grant: &PermissionGrant,
+    ws_map: &HashMap<WorkspaceId, (String, String)>,
+    project_map: &HashMap<ProjectId, (String, String)>,
+) -> ApiKeyGrantDto {
+    let role = match grant.role {
+        ResourceRole::Viewer => "viewer".to_string(),
+        ResourceRole::Editor => "editor".to_string(),
+        ResourceRole::Admin => "admin".to_string(),
+    };
+
+    let workspace_slug = ws_map
+        .get(&grant.workspace_id)
+        .map(|(slug, _)| slug.clone())
+        .unwrap_or_else(|| grant.workspace_id.0.to_string());
+
+    if let Some(pid) = grant.project_id {
+        let (project_slug, project_name) = project_map
+            .get(&pid)
+            .map(|(slug, name)| (slug.clone(), name.clone()))
+            .unwrap_or_else(|| (pid.0.to_string(), pid.0.to_string()));
+
+        return ApiKeyGrantDto {
+            id: grant.id.0,
+            role,
+            resource_kind: "project".to_string(),
+            resource_label: project_name,
+            workspace_slug,
+            project_slug: Some(project_slug),
+        };
+    }
+
+    if let Some(fid) = grant.folder_id {
+        return ApiKeyGrantDto {
+            id: grant.id.0,
+            role,
+            resource_kind: "folder".to_string(),
+            resource_label: format!("folder:{}", fid.0),
+            workspace_slug,
+            project_slug: None,
+        };
+    }
+
+    if let Some(did) = grant.document_id {
+        return ApiKeyGrantDto {
+            id: grant.id.0,
+            role,
+            resource_kind: "document".to_string(),
+            resource_label: format!("document:{}", did.0),
+            workspace_slug,
+            project_slug: None,
+        };
+    }
+
+    if let Some(bid) = grant.board_id {
+        return ApiKeyGrantDto {
+            id: grant.id.0,
+            role,
+            resource_kind: "board".to_string(),
+            resource_label: format!("board:{}", bid.0),
+            workspace_slug,
+            project_slug: None,
+        };
+    }
+
+    let ws_label = ws_map
+        .get(&grant.workspace_id)
+        .map(|(_, name)| name.clone())
+        .unwrap_or_else(|| grant.workspace_id.0.to_string());
+
+    ApiKeyGrantDto {
+        id: grant.id.0,
+        role,
+        resource_kind: "workspace".to_string(),
+        resource_label: ws_label,
+        workspace_slug,
+        project_slug: None,
+    }
+}
+
+#[utoipa::path(
+    get,
+    path = "/v1/api-keys/{key_id}/grants",
+    tag = "api-keys",
+    security(("bearer_auth" = [])),
+    params(("key_id" = uuid::Uuid, Path, description = "API key id")),
+    responses(
+        (status = 200, description = "Grants belonging to this API key", body = Vec<ApiKeyGrantDto>),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Not the key owner"),
+        (status = 404, description = "Key not found"),
+    )
+)]
+pub(crate) async fn list_api_key_grants(
+    State(state): State<AppState>,
+    Extension(principal): Extension<AuthPrincipal>,
+    Path(params): Path<TopLevelRevokeKeyPath>,
+) -> Result<Json<Vec<ApiKeyGrantDto>>, ApiError> {
+    let user_id = match principal {
+        AuthPrincipal::User(uid) => uid,
+        AuthPrincipal::ApiKey(_) => {
+            return Err(ApiError::Forbidden {
+                message: "API keys cannot list grants".into(),
+            });
+        }
+    };
+
+    let key_id = ApiKeyId(params.key_id);
+    let api_key_repo = PgApiKeyRepo {
+        conn: (*state.db).clone(),
+    };
+
+    let key = api_key_repo
+        .get_by_id(key_id)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?
+        .ok_or(ApiError::NotFound)?;
+
+    if key.created_by_user_id != user_id {
+        return Err(ApiError::Forbidden {
+            message: "you can only view grants for API keys you own".into(),
+        });
+    }
+
+    let grant_repo = PgPermissionGrantRepo {
+        conn: (*state.db).clone(),
+    };
+
+    let grants = grant_repo
+        .list_for_api_key(key_id)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?;
+
+    let (ws_map, project_map) = resolve_resource_labels(&state, &grants, user_id).await?;
+
+    let dtos: Vec<ApiKeyGrantDto> = grants
+        .iter()
+        .map(|g| grant_to_api_key_grant_dto(g, &ws_map, &project_map))
+        .collect();
+
+    Ok(Json(dtos))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/v1/api-keys/{key_id}/grants/{grant_id}",
+    tag = "api-keys",
+    security(("bearer_auth" = [])),
+    params(
+        ("key_id" = uuid::Uuid, Path, description = "API key id"),
+        ("grant_id" = uuid::Uuid, Path, description = "Grant id to revoke"),
+    ),
+    responses(
+        (status = 204, description = "Grant revoked"),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Not the key owner"),
+        (status = 404, description = "Key or grant not found"),
+    )
+)]
+pub(crate) async fn delete_api_key_grant(
+    State(state): State<AppState>,
+    Extension(principal): Extension<AuthPrincipal>,
+    Path(params): Path<ApiKeyGrantPath>,
+) -> Result<StatusCode, ApiError> {
+    let user_id = match principal {
+        AuthPrincipal::User(uid) => uid,
+        AuthPrincipal::ApiKey(_) => {
+            return Err(ApiError::Forbidden {
+                message: "API keys cannot revoke grants".into(),
+            });
+        }
+    };
+
+    let key_id = ApiKeyId(params.key_id);
+    let api_key_repo = PgApiKeyRepo {
+        conn: (*state.db).clone(),
+    };
+
+    let key = api_key_repo
+        .get_by_id(key_id)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?
+        .ok_or(ApiError::NotFound)?;
+
+    if key.created_by_user_id != user_id {
+        return Err(ApiError::Forbidden {
+            message: "you can only revoke grants for API keys you own".into(),
+        });
+    }
+
+    let grant_id = PermissionGrantId(params.grant_id);
+    let grant_repo = PgPermissionGrantRepo {
+        conn: (*state.db).clone(),
+    };
+
+    let deleted = grant_repo
+        .delete_for_api_key(grant_id, key_id)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?;
+
+    if !deleted {
+        return Err(ApiError::NotFound);
+    }
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// Creates a workspace-scope grant for a newly created key. Rejects admin roles

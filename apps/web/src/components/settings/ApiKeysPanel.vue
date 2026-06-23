@@ -1,17 +1,20 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import { z } from 'zod';
+import ShareDialog from '@/components/share/ShareDialog.vue';
 import AgentBadge from '@/components/ui/AgentBadge.vue';
 import Btn from '@/components/ui/Btn.vue';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import FormField from '@/components/ui/FormField.vue';
 import Icon from '@/components/ui/Icon.vue';
 import { validateForm } from '@/lib/validation';
-import { type ApiKeyCreated, useApiKeysStore } from '@/stores/apiKeys';
+import { type ApiKeyCreated, type ApiKeyGrantDto, useApiKeysStore } from '@/stores/apiKeys';
 import { useUiStore } from '@/stores/ui';
+import { useWorkspaceStore } from '@/stores/workspace';
 
 const keysStore = useApiKeysStore();
 const ui = useUiStore();
+const wsStore = useWorkspaceStore();
 
 type Mode = 'list' | 'new' | 'secret';
 const mode = ref<Mode>('list');
@@ -36,7 +39,7 @@ const revokeTarget = ref<{ id: string; name: string } | null>(null);
 const revokeDetail = computed(() => {
   const target = revokeTarget.value;
   if (target === null) return undefined;
-  return `${target.name} · ${target.id.slice(0, 8)}…`;
+  return `${target.name} · ${target.id.slice(0, 8)}...`;
 });
 
 const nameSchema = z.object({ name: z.string().trim().min(1, 'Name is required') });
@@ -121,6 +124,95 @@ async function confirmRevoke(): Promise<void> {
   const ok = await keysStore.revokeKey(target.id);
   if (ok) ui.showBanner('API key revoked', 'success');
   else if (keysStore.error) ui.showBanner(keysStore.error, 'error');
+}
+
+// ---------------------------------------------------------------------------
+// Per-key grants section
+// ---------------------------------------------------------------------------
+
+const expandedKeyId = ref<string | null>(null);
+const keyGrants = ref<Record<string, ApiKeyGrantDto[]>>({});
+const grantsLoading = ref<Record<string, boolean>>({});
+
+const shareDialogOpen = ref(false);
+const shareDialogKey = ref<{ id: string; ws: string } | null>(null);
+
+function toggleExpand(keyId: string): void {
+  if (expandedKeyId.value === keyId) {
+    expandedKeyId.value = null;
+    return;
+  }
+
+  expandedKeyId.value = keyId;
+
+  if (keyGrants.value[keyId] === undefined) {
+    void loadGrants(keyId);
+  }
+}
+
+async function loadGrants(keyId: string): Promise<void> {
+  grantsLoading.value = { ...grantsLoading.value, [keyId]: true };
+
+  const grants = await keysStore.loadKeyGrants(keyId);
+
+  grantsLoading.value = { ...grantsLoading.value, [keyId]: false };
+
+  if (grants !== null) {
+    keyGrants.value = { ...keyGrants.value, [keyId]: grants };
+  }
+}
+
+async function revokeGrant(keyId: string, grantId: string): Promise<void> {
+  const ok = await keysStore.revokeKeyGrant(keyId, grantId);
+
+  if (!ok) {
+    if (keysStore.error) ui.showBanner(keysStore.error, 'error');
+    return;
+  }
+
+  await loadGrants(keyId);
+}
+
+function openGrantDialog(keyId: string, wsSlug: string): void {
+  shareDialogKey.value = { id: keyId, ws: wsSlug };
+  shareDialogOpen.value = true;
+}
+
+function closeGrantDialog(): void {
+  shareDialogOpen.value = false;
+
+  if (shareDialogKey.value !== null) {
+    void loadGrants(shareDialogKey.value.id);
+    shareDialogKey.value = null;
+  }
+}
+
+function grantsFor(keyId: string): ApiKeyGrantDto[] {
+  return keyGrants.value[keyId] ?? [];
+}
+
+function resourceIcon(kind: string): string {
+  const icons: Record<string, string> = {
+    workspace: 'building-2',
+    project: 'folder',
+    folder: 'folder',
+    document: 'file-text',
+    board: 'layout-dashboard',
+  };
+  return icons[kind] ?? 'circle';
+}
+
+function grantLabel(g: ApiKeyGrantDto): string {
+  if (g.resource_kind === 'workspace') return g.resource_label;
+  if (g.resource_kind === 'project') return `${g.workspace_slug} / ${g.resource_label}`;
+  return `${g.workspace_slug} / ${g.resource_label}`;
+}
+
+function defaultWsForKey(keyId: string): string {
+  const grants = grantsFor(keyId);
+  const first = grants[0];
+  if (first !== undefined) return first.workspace_slug;
+  return wsStore.activeWorkspaceSlug ?? '';
 }
 </script>
 
@@ -237,24 +329,92 @@ async function confirmRevoke(): Promise<void> {
           <div style="flex: 1;">Type</div>
           <div style="flex: 1.4;">Created</div>
           <div style="flex: 1.4;">Last used</div>
-          <div style="flex: 0 0 84px;"></div>
+          <div style="flex: 0 0 100px;"></div>
         </div>
-        <div v-for="k in keysStore.keys" :key="k.id" class="atl-keys-row">
-          <div style="flex: 0 0 26px;"><Icon name="key" :size="15" style="color: var(--c-chart-5);" /></div>
-          <div class="atl-key-name">{{ k.name }}</div>
-          <div style="flex: 1;">
-            <AgentBadge :label="typeLabel(k.type).toUpperCase()" />
+
+        <template v-for="k in keysStore.keys" :key="k.id">
+          <div
+            class="atl-keys-row"
+            :class="{ 'atl-keys-row--expanded': expandedKeyId === k.id }"
+            style="cursor: pointer;"
+            @click="toggleExpand(k.id)"
+          >
+            <div style="flex: 0 0 26px;">
+              <Icon name="key" :size="15" style="color: var(--c-chart-5);" />
+            </div>
+            <div class="atl-key-name">{{ k.name }}</div>
+            <div style="flex: 1;">
+              <AgentBadge :label="typeLabel(k.type).toUpperCase()" />
+            </div>
+            <div class="atl-key-meta">{{ fmtDate(k.created_at) }}</div>
+            <div class="atl-key-meta" :style="{ color: k.last_used_at ? 'var(--c-foreground)' : 'var(--c-muted)' }">
+              {{ fmtDate(k.last_used_at) }}
+            </div>
+            <div style="flex: 0 0 100px; display: flex; justify-content: flex-end; gap: 6px;" @click.stop>
+              <button
+                type="button"
+                class="atl-icon-btn"
+                :title="expandedKeyId === k.id ? 'Collapse' : 'Manage access'"
+                @click="toggleExpand(k.id)"
+              >
+                <Icon :name="expandedKeyId === k.id ? 'chevron-up' : 'shield'" :size="14" />
+              </button>
+              <button
+                type="button"
+                class="atl-revoke"
+                @click="revokeTarget = { id: k.id, name: k.name }"
+              >
+                Revoke
+              </button>
+            </div>
           </div>
-          <div class="atl-key-meta">{{ fmtDate(k.created_at) }}</div>
-          <div class="atl-key-meta" :style="{ color: k.last_used_at ? 'var(--c-foreground)' : 'var(--c-muted)' }">
-            {{ fmtDate(k.last_used_at) }}
+
+          <!-- Grants section (inline expand) -->
+          <div v-if="expandedKeyId === k.id" class="atl-grants-panel">
+            <div v-if="grantsLoading[k.id]" class="atl-grants-loading">
+              Loading access&hellip;
+            </div>
+
+            <div v-else>
+              <div v-if="grantsFor(k.id).length === 0" class="atl-grants-empty">
+                <Icon name="lock" :size="13" style="color: var(--c-muted);" />
+                <span>No access granted. Use "Grant access" to add this key to a workspace or project.</span>
+              </div>
+
+              <div v-else class="atl-grants-list">
+                <div
+                  v-for="g in grantsFor(k.id)"
+                  :key="g.id"
+                  class="atl-grant-row"
+                >
+                  <Icon :name="resourceIcon(g.resource_kind)" :size="13" style="color: var(--c-muted); flex: 0 0 auto;" />
+                  <span class="atl-grant-label">{{ grantLabel(g) }}</span>
+                  <span class="atl-grant-role">{{ g.role }}</span>
+                  <button
+                    type="button"
+                    class="atl-grant-revoke"
+                    title="Revoke this grant"
+                    @click="revokeGrant(k.id, g.id)"
+                  >
+                    <Icon name="x" :size="12" />
+                  </button>
+                </div>
+              </div>
+
+              <div class="atl-grants-footer">
+                <button
+                  type="button"
+                  class="atl-grant-add"
+                  :disabled="defaultWsForKey(k.id) === ''"
+                  @click="openGrantDialog(k.id, defaultWsForKey(k.id))"
+                >
+                  <Icon name="plus" :size="13" />
+                  Grant access
+                </button>
+              </div>
+            </div>
           </div>
-          <div style="flex: 0 0 84px; display: flex; justify-content: flex-end;">
-            <button type="button" class="atl-revoke" @click="revokeTarget = { id: k.id, name: k.name }">
-              Revoke
-            </button>
-          </div>
-        </div>
+        </template>
       </div>
 
       <div class="atl-keys-helper">
@@ -275,6 +435,13 @@ async function confirmRevoke(): Promise<void> {
       confirm-icon="trash-2"
       @confirm="confirmRevoke"
       @cancel="revokeTarget = null"
+    />
+
+    <ShareDialog
+      v-if="shareDialogOpen && shareDialogKey !== null"
+      :open="shareDialogOpen"
+      :ws="shareDialogKey.ws"
+      @close="closeGrantDialog"
     />
   </div>
 </template>
@@ -363,6 +530,15 @@ async function confirmRevoke(): Promise<void> {
   height: 40px;
   padding: 0 12px;
   border-top: 1px solid var(--c-border);
+  transition: background 0.1s;
+}
+
+.atl-keys-row:hover {
+  background: var(--c-raised);
+}
+
+.atl-keys-row--expanded {
+  background: var(--c-raised);
 }
 
 .atl-key-name {
@@ -381,6 +557,24 @@ async function confirmRevoke(): Promise<void> {
   color: var(--c-muted);
 }
 
+.atl-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 24px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--c-muted);
+  cursor: pointer;
+}
+
+.atl-icon-btn:hover {
+  background: var(--c-background);
+  color: var(--c-foreground);
+}
+
 .atl-revoke {
   height: 24px;
   padding: 0 10px;
@@ -394,6 +588,119 @@ async function confirmRevoke(): Promise<void> {
 
 .atl-revoke:hover {
   background: var(--c-raised);
+}
+
+/* Grants panel (inline below the key row) */
+.atl-grants-panel {
+  border-top: 1px solid var(--c-border);
+  background: var(--c-background);
+  padding: 10px 40px 10px 40px;
+}
+
+.atl-grants-loading {
+  font-size: 12px;
+  color: var(--c-muted);
+  padding: 6px 0;
+}
+
+.atl-grants-empty {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--c-muted);
+  padding: 4px 0;
+}
+
+.atl-grants-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.atl-grant-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 28px;
+  padding: 0 6px;
+  border-radius: var(--r-md);
+}
+
+.atl-grant-row:hover {
+  background: var(--c-raised);
+}
+
+.atl-grant-label {
+  flex: 1;
+  font-size: 12.5px;
+  color: var(--c-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.atl-grant-role {
+  font-size: 11px;
+  font-weight: var(--fw-semibold);
+  color: var(--c-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border: 1px solid var(--c-border);
+  border-radius: 3px;
+}
+
+.atl-grant-revoke {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--c-muted);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.atl-grant-row:hover .atl-grant-revoke {
+  opacity: 1;
+}
+
+.atl-grant-revoke:hover {
+  background: var(--c-danger-bg, rgba(239, 68, 68, 0.1));
+  color: var(--c-danger);
+}
+
+.atl-grants-footer {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--c-border);
+}
+
+.atl-grant-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--c-foreground);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.atl-grant-add:hover {
+  background: var(--c-raised);
+}
+
+.atl-grant-add:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .atl-keys-empty {

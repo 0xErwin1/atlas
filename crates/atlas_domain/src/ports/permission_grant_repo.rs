@@ -44,4 +44,19 @@ pub trait PermissionGrantRepo: Send + Sync {
         after_id: Option<Uuid>,
         limit: u64,
     ) -> Result<Vec<PermissionGrant>, DomainError>;
+
+    /// List all grants that belong to a specific API key, across all workspaces.
+    async fn list_for_api_key(
+        &self,
+        api_key_id: crate::ids::ApiKeyId,
+    ) -> Result<Vec<PermissionGrant>, DomainError>;
+
+    /// Delete a grant by its id, ownership-checked — the grant must belong to the
+    /// given api_key_id. Returns Ok(false) when the grant was not found or does not
+    /// belong to the key (caller should treat that as 404).
+    async fn delete_for_api_key(
+        &self,
+        grant_id: PermissionGrantId,
+        api_key_id: crate::ids::ApiKeyId,
+    ) -> Result<bool, DomainError>;
 }
