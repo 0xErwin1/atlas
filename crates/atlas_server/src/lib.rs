@@ -369,12 +369,30 @@ pub fn app(state: AppState) -> Router {
         ))
         .with_state(state.clone());
 
+    // burst_size(5) and per_second(1) are non-zero, so finish() always returns Some here.
+    #[allow(clippy::expect_used)]
+    let activate_config = {
+        let mut b = GovernorConfigBuilder::default();
+        let cfg = b
+            .per_second(1)
+            .burst_size(5)
+            .finish()
+            .expect("governor config");
+        std::sync::Arc::new(cfg)
+    };
+
     let public = Router::new()
         .route("/health", get(routes::health::health))
         .route("/version", get(routes::health::version))
         .route(
             "/v1/auth/login",
             axum::routing::post(routes::auth::login).layer(GovernorLayer::new(login_config)),
+        )
+        .route(
+            "/v1/activate/{token}",
+            get(routes::activate::get_activation_info)
+                .post(routes::activate::post_activate)
+                .layer(GovernorLayer::new(activate_config)),
         )
         .route("/openapi.json", get(routes::openapi::openapi_json))
         .merge(routes::openapi::scalar_router())

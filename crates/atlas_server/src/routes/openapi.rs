@@ -53,6 +53,8 @@ use atlas_api::{
         crate::routes::health::health,
         crate::routes::health::version,
         crate::routes::health::meta,
+        crate::routes::activate::get_activation_info,
+        crate::routes::activate::post_activate,
         crate::routes::auth::login,
         crate::routes::auth::logout,
         crate::routes::auth::me,

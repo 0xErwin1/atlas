@@ -370,7 +370,7 @@ pub(crate) async fn update_me(
     Ok(Json(user_to_dto(&user)))
 }
 
-fn user_to_dto(user: &atlas_domain::entities::identity::User) -> UserDto {
+pub(crate) fn user_to_dto(user: &atlas_domain::entities::identity::User) -> UserDto {
     UserDto {
         id: user.id.0,
         username: user.username.clone(),

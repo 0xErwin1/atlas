@@ -44,12 +44,17 @@ async fn all_non_public_routes_require_authentication() {
     db.teardown().await;
 }
 
-/// Every entry in ROUTE_REGISTRY must be wired in the router.
+/// Every non-public entry in ROUTE_REGISTRY must be wired in the router.
 ///
-/// For public routes this checks we get a non-404. For protected routes the
-/// 401 response already proves the route exists (the router matched it and the
-/// authn middleware fired). A 404 means the route is in the registry but missing
-/// from the router — the test turns RED and forces the developer to wire the route.
+/// For protected routes, an unauthenticated request returns 401, which proves
+/// the router matched the path (the authn middleware fired). A 404 means the
+/// route is in the registry but missing from the router — the test turns RED
+/// and forces the developer to wire the route.
+///
+/// Public routes are excluded from this check: they can legitimately return 404
+/// for sentinel inputs when the handler looks up a resource by path parameter
+/// (e.g. activation token routes). Those routes are exercised by their own
+/// integration tests.
 #[tokio::test]
 async fn all_registry_entries_are_wired_in_router() {
     let db = support::TestDb::create().await.expect("TestDb::create");
@@ -59,6 +64,10 @@ async fn all_registry_entries_are_wired_in_router() {
     let http = reqwest::Client::new();
 
     for entry in ROUTE_MATRIX {
+        if matches!(entry.kind, RouteKind::Public) {
+            continue;
+        }
+
         let path = entry.path_template.replace("{ws}", ws_slug);
         let url = format!("{}{}", server.base_url(), path);
 

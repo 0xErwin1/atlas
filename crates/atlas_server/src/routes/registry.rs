@@ -55,6 +55,18 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         kind: RouteKind::Public,
         openapi_path: Some("/v1/auth/login"),
     },
+    RouteEntry {
+        method: "GET",
+        path_template: "/v1/activate/nonexistent-token-sentinel",
+        kind: RouteKind::Public,
+        openapi_path: Some("/v1/activate/{token}"),
+    },
+    RouteEntry {
+        method: "POST",
+        path_template: "/v1/activate/nonexistent-token-sentinel",
+        kind: RouteKind::Public,
+        openapi_path: Some("/v1/activate/{token}"),
+    },
     // ---- Auth (any authenticated principal) ----
     RouteEntry {
         method: "POST",
