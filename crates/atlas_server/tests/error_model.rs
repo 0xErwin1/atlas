@@ -106,6 +106,48 @@ async fn problem_stamp_fills_request_id_from_header() {
 }
 
 #[tokio::test]
+async fn last_owner_error_produces_409_with_own_urn() {
+    let app = router_with_handler(get(|| async {
+        Err::<(), ApiError>(ApiError::LastOwner {
+            message: "A workspace must keep at least one owner".into(),
+        })
+    }));
+
+    let response = app
+        .oneshot(Request::builder().uri("/test").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .unwrap()
+        .to_str()
+        .unwrap();
+    assert!(
+        content_type.contains("application/problem+json"),
+        "content-type must be application/problem+json, got: {content_type}"
+    );
+
+    let body_bytes = axum::body::to_bytes(response.into_body(), 4096)
+        .await
+        .unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    assert_eq!(
+        body["type"], "urn:atlas:error:last-owner",
+        "type must be the last-owner urn, not the generic revision-conflict urn"
+    );
+    assert_eq!(body["status"], 409);
+    assert!(
+        body["hint"].is_string(),
+        "hint must be present to guide the caller"
+    );
+}
+
+#[tokio::test]
 async fn problem_stamp_fills_instance_with_request_path() {
     let app = router_with_handler(get(|| async {
         Err::<(), ApiError>(ApiError::Unauthorized)

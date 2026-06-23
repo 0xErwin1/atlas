@@ -144,4 +144,15 @@ pub trait MembershipRepo: Send + Sync {
     ) -> Result<Option<WorkspaceMembership>, DomainError>;
     async fn list(&self, ctx: &WorkspaceCtx) -> Result<Vec<WorkspaceMembership>, DomainError>;
     async fn remove(&self, ctx: &WorkspaceCtx, user_id: UserId) -> Result<(), DomainError>;
+    /// Updates the `role` of an existing membership and bumps `updated_at`.
+    ///
+    /// Returns the updated membership. Returns `DomainError::NotFound` when no
+    /// membership row exists for `(ctx.workspace_id, user_id)` — including the
+    /// window between a `find` and this call (see design note on the accepted race).
+    async fn update_role(
+        &self,
+        ctx: &WorkspaceCtx,
+        user_id: UserId,
+        role: MemberRole,
+    ) -> Result<WorkspaceMembership, DomainError>;
 }

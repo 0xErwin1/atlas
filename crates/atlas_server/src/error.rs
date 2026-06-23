@@ -32,6 +32,14 @@ pub enum ApiError {
     Conflict,
     /// CAS revision conflict with full patch payload for the 409 response body.
     RevisionConflict(RevisionConflict),
+    /// The requested operation would remove the last owner from a workspace.
+    ///
+    /// A workspace must keep at least one owner at all times. This check applies
+    /// to all callers including break-glass (root/system-admin) — it is a
+    /// data-integrity invariant, not a permission.
+    LastOwner {
+        message: String,
+    },
     PayloadTooLarge {
         message: String,
     },
@@ -113,6 +121,18 @@ impl IntoResponse for ApiError {
                 );
                 return response;
             }
+            ApiError::LastOwner { message } => (
+                StatusCode::CONFLICT,
+                ProblemDetails::new(
+                    "urn:atlas:error:last-owner",
+                    "Last Owner",
+                    409,
+                )
+                .with_detail(message)
+                .with_hint(
+                    "Promote another member to owner before demoting or removing the last owner.",
+                ),
+            ),
             ApiError::Internal { message } => {
                 tracing::error!(error = %message, "internal error");
                 (

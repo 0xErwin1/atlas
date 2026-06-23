@@ -181,6 +181,74 @@ async fn list_members_visible_to_plain_member() {
 }
 
 #[tokio::test]
+async fn list_members_returns_role_for_user_members_and_no_role_for_api_key_principals() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner_client, ws, owner_user) =
+        login_user_with_workspace(&server, &db, "members-role-owner").await;
+
+    let member = add_member(&db, ws.id, "members-role-member", MemberRole::Admin).await;
+
+    let agent = add_agent(&db, ws.id, owner_user.id, "role-ci-bot").await;
+    let grant_repo = atlas_server::persistence::repos::PgPermissionGrantRepo {
+        conn: db.conn().clone(),
+    };
+    use atlas_domain::entities::permissions::NewPermissionGrant;
+    use atlas_domain::permissions::ResourceRole;
+    grant_repo
+        .upsert(NewPermissionGrant {
+            workspace_id: ws.id,
+            user_id: None,
+            api_key_id: Some(agent.id),
+            project_id: None,
+            folder_id: None,
+            document_id: None,
+            board_id: None,
+            role: ResourceRole::Editor,
+            created_by_user_id: Some(owner_user.id),
+            created_by_api_key_id: None,
+        })
+        .await
+        .expect("grant agent workspace access");
+
+    let members = owner_client
+        .list_workspace_members(&ws.slug)
+        .await
+        .expect("list members");
+
+    let owner_entry = members
+        .iter()
+        .find(|p| p.principal_type == "user" && p.id == owner_user.id.0)
+        .expect("owner entry must be present");
+    assert_eq!(
+        owner_entry.role.as_deref(),
+        Some("owner"),
+        "owner member must have role='owner'"
+    );
+
+    let member_entry = members
+        .iter()
+        .find(|p| p.principal_type == "user" && p.id == member.id.0)
+        .expect("admin member entry must be present");
+    assert_eq!(
+        member_entry.role.as_deref(),
+        Some("admin"),
+        "admin member must have role='admin'"
+    );
+
+    let agent_entry = members
+        .iter()
+        .find(|p| p.principal_type == "api_key" && p.id == agent.id.0)
+        .expect("api_key entry must be present");
+    assert!(
+        agent_entry.role.is_none(),
+        "api_key principal must have no role field, got: {:?}",
+        agent_entry.role
+    );
+}
+
+#[tokio::test]
 async fn list_members_cross_tenant_returns_not_found() {
     let db = TestDb::create().await.expect("TestDb::create");
     let server = TestServer::spawn(&db).await;

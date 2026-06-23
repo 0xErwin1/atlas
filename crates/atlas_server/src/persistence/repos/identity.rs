@@ -810,6 +810,36 @@ impl MembershipRepo for PgMembershipRepo {
             .map(|_| ())
             .map_err(db_err)
     }
+
+    async fn update_role(
+        &self,
+        ctx: &WorkspaceCtx,
+        user_id: UserId,
+        role: MemberRole,
+    ) -> Result<WorkspaceMembership, DomainError> {
+        let existing = membership::Entity::find()
+            .filter(membership::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(membership::Column::UserId.eq(user_id.0))
+            .one(&self.conn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "WorkspaceMembership",
+                id: user_id.0,
+            })?;
+
+        let mut active: membership::ActiveModel = existing.into();
+        active.role = Set(role.as_str().to_string());
+        active.updated_at = Set(Utc::now());
+
+        active
+            .update(&self.conn)
+            .await
+            .map_err(db_err)
+            .and_then(|m: membership::Model| {
+                membership_from(m).map_err(|e| DomainError::Internal { message: e })
+            })
+    }
 }
 
 pub struct PgUiStateRepo {

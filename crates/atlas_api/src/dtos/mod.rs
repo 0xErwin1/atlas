@@ -258,6 +258,17 @@ pub struct PrincipalDto {
     /// For `api_key` principals: the key purpose (`"agent"` | `"cli"` | `"bot"` | `"integration"`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub key_type: Option<String>,
+    /// Workspace membership role (`"owner"` | `"admin"` | `"member"`).
+    /// Present for `user` principals; absent for `api_key` principals.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+}
+
+/// Request body for `PATCH /v1/workspaces/{ws}/members/{user_id}`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct UpdateMemberRoleRequest {
+    pub role: String,
 }
 
 /// Request body for `POST /v1/workspaces`.
