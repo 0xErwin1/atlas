@@ -12,6 +12,12 @@ function redirectTarget(to: { query: Record<string, unknown> }): string {
 }
 
 router.beforeEach(async (to, _from) => {
+  // Public routes (e.g. the activation page) render without auth and never
+  // bounce to login — the invitee has no session yet.
+  if (to.meta.public === true) {
+    return true;
+  }
+
   const { useAuthStore } = await import('@/stores/auth');
   const auth = useAuthStore();
 

@@ -11,6 +11,12 @@ export const routes: RouteRecordRaw[] = [
     component: () => import('@/views/Login.vue'),
   },
   {
+    path: '/activate/:token',
+    name: 'activate',
+    component: () => import('@/views/ActivateView.vue'),
+    meta: { public: true },
+  },
+  {
     path: '/n/:slug?',
     name: 'notes',
     component: () => import('@/views/Notes.vue'),

@@ -4,6 +4,7 @@ import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
 
 export type UserDto = components['schemas']['UserDto'];
+export type CreateUserResponse = components['schemas']['CreateUserResponse'];
 
 interface ApiProblem {
   title?: string;
@@ -13,6 +14,16 @@ interface ApiProblem {
 function hintOf(error: unknown, fallback: string): string {
   const p = error as ApiProblem | undefined;
   return p?.hint ?? p?.title ?? fallback;
+}
+
+/**
+ * Turns the bare single-use activation path returned by the API
+ * (`/activate/<token>`) into a full URL on the current origin so it can be
+ * shared with the invitee as-is.
+ */
+export function activationUrl(path: string): string {
+  if (/^https?:\/\//i.test(path)) return path;
+  return `${window.location.origin}${path.startsWith('/') ? '' : '/'}${path}`;
 }
 
 export const useUsersStore = defineStore('users', () => {
@@ -43,9 +54,10 @@ export const useUsersStore = defineStore('users', () => {
   async function createUser(body: {
     username: string;
     display_name: string;
-    password: string;
     email: string | null;
-  }): Promise<UserDto | null> {
+    workspace: string;
+    role: string;
+  }): Promise<CreateUserResponse | null> {
     error.value = null;
 
     try {
@@ -54,8 +66,31 @@ export const useUsersStore = defineStore('users', () => {
         error.value = hintOf(e, 'Failed to create user');
         return null;
       }
-      users.value = [...users.value, data];
+      users.value = [...users.value, data.user];
       return data;
+    } catch {
+      error.value = "Can't reach the server";
+      return null;
+    }
+  }
+
+  /**
+   * Issues a fresh one-time activation link for a pending user, invalidating any
+   * prior link. Returns the new link path, or null on failure (`error` is set —
+   * a 409 means the user already activated).
+   */
+  async function regenerateActivationLink(id: string): Promise<string | null> {
+    error.value = null;
+
+    try {
+      const { data, error: e } = await wrappedClient.POST('/v1/users/{user_id}/activation-link', {
+        params: { path: { user_id: id } },
+      });
+      if (e || !data) {
+        error.value = hintOf(e, 'Failed to regenerate activation link');
+        return null;
+      }
+      return data.activation_link;
     } catch {
       error.value = "Can't reach the server";
       return null;
@@ -119,5 +154,15 @@ export const useUsersStore = defineStore('users', () => {
     }
   }
 
-  return { users, loading, error, loadUsers, createUser, setDisabled, resetPassword, setSystemAdmin };
+  return {
+    users,
+    loading,
+    error,
+    loadUsers,
+    createUser,
+    regenerateActivationLink,
+    setDisabled,
+    resetPassword,
+    setSystemAdmin,
+  };
 });
