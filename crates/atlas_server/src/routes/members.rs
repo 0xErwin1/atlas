@@ -13,6 +13,7 @@ use crate::{
     persistence::repos::{
         ApiKeyRepo, MembershipRepo, PgApiKeyRepo, PgMembershipRepo, PgUserRepo, UserRepo,
     },
+    routes::account_status,
     state::AppState,
 };
 
@@ -56,14 +57,21 @@ pub(crate) async fn list_workspace_members(
     let mut principals = Vec::with_capacity(memberships.len());
 
     for membership in &memberships {
-        let display = user_repo
+        let user = user_repo
             .find_by_id(membership.user_id)
             .await
             .map_err(|e| ApiError::Internal {
                 message: e.to_string(),
-            })?
-            .map(|u| u.display_name)
+            })?;
+
+        let display = user
+            .as_ref()
+            .map(|u| u.display_name.clone())
             .unwrap_or_default();
+
+        let status = user
+            .as_ref()
+            .map(|u| account_status(u.disabled_at, u.activated_at).to_string());
 
         principals.push(PrincipalDto {
             principal_type: "user".to_string(),
@@ -71,6 +79,7 @@ pub(crate) async fn list_workspace_members(
             display,
             key_type: None,
             role: Some(membership.role.as_str().to_string()),
+            account_status: status,
         });
     }
 
@@ -90,6 +99,7 @@ pub(crate) async fn list_workspace_members(
             display: key.name.clone(),
             key_type: Some(key.type_.as_str().to_string()),
             role: None,
+            account_status: None,
         });
     }
 
@@ -163,14 +173,20 @@ pub(crate) async fn update_member_role(
     let user_repo = PgUserRepo {
         conn: (*state.db).clone(),
     };
-    let display = user_repo
+    let user = user_repo
         .find_by_id(target_user_id)
         .await
         .map_err(|e| ApiError::Internal {
             message: e.to_string(),
-        })?
-        .map(|u| u.display_name)
+        })?;
+
+    let display = user
+        .as_ref()
+        .map(|u| u.display_name.clone())
         .unwrap_or_default();
+    let status = user
+        .as_ref()
+        .map(|u| account_status(u.disabled_at, u.activated_at).to_string());
 
     let updated = membership_repo
         .update_role(&ctx, target_user_id, new_role)
@@ -185,6 +201,7 @@ pub(crate) async fn update_member_role(
         display,
         key_type: None,
         role: Some(updated.role.as_str().to_string()),
+        account_status: status,
     }))
 }
 

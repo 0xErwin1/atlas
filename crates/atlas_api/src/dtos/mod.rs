@@ -309,6 +309,10 @@ pub struct PrincipalDto {
     /// Present for `user` principals; absent for `api_key` principals.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub role: Option<String>,
+    /// Account lifecycle state for user principals: `"active"`, `"deactivated"`, or `"pending"`.
+    /// Absent for `api_key` principals.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account_status: Option<String>,
 }
 
 /// Request body for `PATCH /v1/workspaces/{ws}/members/{user_id}`.

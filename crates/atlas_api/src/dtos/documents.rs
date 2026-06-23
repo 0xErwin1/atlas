@@ -68,6 +68,10 @@ pub struct ActorDto {
     /// For `api_key` actors: the key purpose (`"agent"` | `"cli"` | `"bot"` | `"integration"`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub key_type: Option<String>,
+    /// Account lifecycle state for user assignees: `"active"`, `"deactivated"`, or `"pending"`.
+    /// Absent for api_key actors and for all attribution contexts (created_by, assigned_by, etc.).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account_status: Option<String>,
 }
 
 /// Full document representation.

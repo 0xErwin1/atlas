@@ -67,6 +67,7 @@ fn board_to_dto(b: Board) -> BoardDto {
             id: actor_id,
             display_name: None,
             key_type: None,
+            account_status: None,
         },
         created_at: b.created_at,
         updated_at: b.updated_at,

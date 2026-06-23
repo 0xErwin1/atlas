@@ -1198,6 +1198,16 @@ impl TaskAssigneeRepo for PgTaskAssigneeRepo {
         PgTaskAssigneeRepo::add_in(&self.conn, ctx, new).await
     }
 
+    /// Returns all task assignees for a single task.
+    ///
+    /// Keep-visible invariant (Slack/ClickUp model): user assignees are intentionally
+    /// NOT filtered by `disabled_at`. A disabled user must still appear on tasks they
+    /// are assigned to, marked with `account_status = "deactivated"` at the display
+    /// layer. Adding a `LEFT JOIN users ... AND u.disabled_at IS NULL` here would
+    /// silently break that contract — do not add it.
+    ///
+    /// Revoked api-keys ARE hidden (the `ak.revoked_at IS NULL` filter stays) because
+    /// key revocation is tier-2 and behaves differently from account deactivation.
     async fn list_for_task(
         &self,
         ctx: &WorkspaceCtx,
@@ -1223,6 +1233,10 @@ impl TaskAssigneeRepo for PgTaskAssigneeRepo {
             .collect()
     }
 
+    /// Returns all task assignees for a batch of tasks (board/list view path).
+    ///
+    /// Keep-visible invariant: same as `list_for_task` — user assignees are NOT
+    /// filtered by `disabled_at`. See that function's doc for the full rationale.
     async fn list_for_tasks(
         &self,
         ctx: &WorkspaceCtx,

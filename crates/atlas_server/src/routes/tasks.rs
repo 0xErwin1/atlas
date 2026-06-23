@@ -108,12 +108,14 @@ fn actor_to_dto(actor: &Actor) -> ActorDto {
             id: uid.0,
             display_name: None,
             key_type: None,
+            account_status: None,
         },
         Actor::ApiKey(kid) => ActorDto {
             r#type: "api_key".into(),
             id: kid.0,
             display_name: None,
             key_type: None,
+            account_status: None,
         },
     }
 }
@@ -172,10 +174,13 @@ fn assignee_ref_to_actor(r: AssigneeRef) -> Actor {
     }
 }
 
-/// Builds an `ActorDto` with the actor's display name resolved from the database
-/// (a user's `display_name` or an api key's `name`). The base `actor_to_dto` only
-/// carries the id, so without this the client has no name to show and falls back
-/// to a generic "User"/"Agent" label.
+use super::account_status;
+
+/// Builds an `ActorDto` for attribution contexts (created_by, assigned_by, etc.).
+///
+/// Attribution actors carry only id and display name. `account_status` is always
+/// absent here — it is a display signal for the assignee/member UI, not for audit
+/// trails or activity feeds.
 async fn resolve_actor_dto(state: &AppState, _ctx: &WorkspaceCtx, actor: &Actor) -> ActorDto {
     match actor {
         Actor::User(uid) => {
@@ -193,6 +198,7 @@ async fn resolve_actor_dto(state: &AppState, _ctx: &WorkspaceCtx, actor: &Actor)
                 id: uid.0,
                 display_name,
                 key_type: None,
+                account_status: None,
             }
         }
         Actor::ApiKey(kid) => {
@@ -205,6 +211,45 @@ async fn resolve_actor_dto(state: &AppState, _ctx: &WorkspaceCtx, actor: &Actor)
                 id: kid.0,
                 display_name: key.as_ref().map(|k| k.name.clone()),
                 key_type: key.as_ref().map(|k| k.type_.as_str().to_string()),
+                account_status: None,
+            }
+        }
+    }
+}
+
+/// Builds an `ActorDto` for user-assignee display paths.
+///
+/// Unlike `resolve_actor_dto`, this function populates `account_status` for user
+/// actors so the client can mark deactivated and pending assignees without hiding them.
+/// Api-key actors get `account_status: None` (tier-2 principals use `revoked_at`).
+async fn resolve_assignee_actor_dto(state: &AppState, actor: &Actor) -> ActorDto {
+    match actor {
+        Actor::User(uid) => {
+            let repo = PgUserRepo {
+                conn: (*state.db).clone(),
+            };
+            let user = repo.find_by_id(*uid).await.ok().flatten();
+            ActorDto {
+                r#type: "user".into(),
+                id: uid.0,
+                display_name: user.as_ref().map(|u| u.display_name.clone()),
+                key_type: None,
+                account_status: user
+                    .as_ref()
+                    .map(|u| account_status(u.disabled_at, u.activated_at).to_string()),
+            }
+        }
+        Actor::ApiKey(kid) => {
+            let repo = PgApiKeyRepo {
+                conn: (*state.db).clone(),
+            };
+            let key = repo.get_by_id(*kid).await.ok().flatten();
+            ActorDto {
+                r#type: "api_key".into(),
+                id: kid.0,
+                display_name: key.as_ref().map(|k| k.name.clone()),
+                key_type: key.as_ref().map(|k| k.type_.as_str().to_string()),
+                account_status: None,
             }
         }
     }
@@ -212,7 +257,7 @@ async fn resolve_actor_dto(state: &AppState, _ctx: &WorkspaceCtx, actor: &Actor)
 
 async fn assignee_to_dto(state: &AppState, ctx: &WorkspaceCtx, a: TaskAssignee) -> AssigneeDto {
     AssigneeDto {
-        assignee: resolve_actor_dto(state, ctx, &assignee_ref_to_actor(a.assignee)).await,
+        assignee: resolve_assignee_actor_dto(state, &assignee_ref_to_actor(a.assignee)).await,
         assigned_by: resolve_actor_dto(state, ctx, &a.assigned_by).await,
         assigned_at: a.assigned_at,
     }
@@ -247,14 +292,16 @@ async fn board_assignees_by_task(
     user_ids.sort_by_key(|u| u.0);
     user_ids.dedup_by_key(|u| u.0);
 
-    let user_names: HashMap<uuid::Uuid, String> = PgUserRepo {
+    // list_by_ids returns the full User — carry it in the map so we can derive
+    // account_status without an extra query.
+    let user_map: HashMap<uuid::Uuid, atlas_domain::entities::identity::User> = PgUserRepo {
         conn: (*state.db).clone(),
     }
     .list_by_ids(&user_ids)
     .await
     .map_err(ApiError::Domain)?
     .into_iter()
-    .map(|u| (u.id.0, u.display_name))
+    .map(|u| (u.id.0, u))
     .collect();
 
     let key_info: HashMap<uuid::Uuid, (String, String)> = if needs_keys {
@@ -275,12 +322,17 @@ async fn board_assignees_by_task(
     for r in rows {
         let actor = assignee_ref_to_actor(r.assignee);
         let dto = match &actor {
-            Actor::User(uid) => ActorDto {
-                r#type: "user".into(),
-                id: uid.0,
-                display_name: user_names.get(&uid.0).cloned(),
-                key_type: None,
-            },
+            Actor::User(uid) => {
+                let user = user_map.get(&uid.0);
+                ActorDto {
+                    r#type: "user".into(),
+                    id: uid.0,
+                    display_name: user.map(|u| u.display_name.clone()),
+                    key_type: None,
+                    account_status: user
+                        .map(|u| account_status(u.disabled_at, u.activated_at).to_string()),
+                }
+            }
             Actor::ApiKey(kid) => {
                 let info = key_info.get(&kid.0);
                 ActorDto {
@@ -288,6 +340,7 @@ async fn board_assignees_by_task(
                     id: kid.0,
                     display_name: info.map(|(name, _)| name.clone()),
                     key_type: info.map(|(_, kt)| kt.clone()),
+                    account_status: None,
                 }
             }
         };
@@ -387,10 +440,14 @@ fn parse_assignee_ref(s: &str) -> Result<AssigneeRef, ApiError> {
     Err(ApiError::NotFound)
 }
 
-/// Checks that an `AssigneeRef` is a member of `ctx.workspace_id`.
+/// Checks that an `AssigneeRef` is a member of `ctx.workspace_id` and, for user
+/// assignees, that the account is not disabled.
 ///
-/// A user must have a membership row; an api_key must have a grant in the workspace.
-/// Either missing → 404 to conceal principal existence across workspaces.
+/// Rules:
+/// - A user must have a membership row; missing → 404 (conceal existence).
+/// - A disabled user (`disabled_at IS NOT NULL`) → 422 InvalidInput. Pending users
+///   (activated_at IS NULL, not disabled) remain assignable.
+/// - An api_key must have a grant in the workspace; missing → 404.
 async fn validate_assignee_is_workspace_member(
     assignee: &AssigneeRef,
     ctx: &WorkspaceCtx,
@@ -409,6 +466,22 @@ async fn validate_assignee_is_workspace_member(
                 })?;
             if member.is_none() {
                 return Err(ApiError::NotFound);
+            }
+
+            let user_repo = PgUserRepo {
+                conn: (*state.db).clone(),
+            };
+            let user = user_repo
+                .find_by_id(*uid)
+                .await
+                .map_err(|e| ApiError::Internal {
+                    message: e.to_string(),
+                })?;
+            if user.map(|u| u.disabled_at.is_some()).unwrap_or(false) {
+                return Err(ApiError::InvalidInput {
+                    message: "Cannot assign a deactivated user; re-enable the account first."
+                        .to_string(),
+                });
             }
         }
         AssigneeRef::ApiKey(kid) => {

@@ -20,3 +20,26 @@ pub(crate) mod ui_state;
 pub(crate) mod users;
 pub(crate) mod validation;
 pub(crate) mod workspaces;
+
+/// Derives the account lifecycle state from a user's disable/activation timestamps.
+///
+/// Precedence: deactivated wins over pending (a disabled, never-activated account
+/// reads "deactivated", not "pending"). This is the single source of truth for the
+/// derivation rule — call it at every resolution site, never inline the ternary.
+///
+/// Invariant (keep + mark): disabled and pending users are NOT hidden from assignee
+/// reads or member lists; they are marked with this derived state instead. Do NOT
+/// add `disabled_at IS NULL` filters to assignee or member SQL queries — that would
+/// silently break this contract.
+pub(crate) fn account_status(
+    disabled_at: Option<chrono::DateTime<chrono::Utc>>,
+    activated_at: Option<chrono::DateTime<chrono::Utc>>,
+) -> &'static str {
+    if disabled_at.is_some() {
+        "deactivated"
+    } else if activated_at.is_none() {
+        "pending"
+    } else {
+        "active"
+    }
+}
