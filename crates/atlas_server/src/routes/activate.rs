@@ -31,7 +31,7 @@ use crate::{
 /// A min-length of 8 is the only rule applied here. It is checked before
 /// argon2 hashing so the token is not consumed when the password is too weak.
 pub(crate) fn validate_password_strength(pw: &str) -> Result<(), ApiError> {
-    if pw.len() < 8 {
+    if pw.chars().count() < 8 {
         return Err(ApiError::InvalidInput {
             message: "Password must be at least 8 characters long.".into(),
         });
@@ -171,6 +171,35 @@ pub(crate) async fn post_activate(
     let token_id = ActivationTokenId(token_row.id);
     let user_id = UserId(token_row.user_id);
 
+    // A disabled user must not be able to self-activate. Re-read the user inside
+    // the transaction and reject with the SAME generic 404 used for an invalid
+    // token, so the response is not a "this account is disabled" oracle.
+    #[derive(Debug, FromQueryResult)]
+    struct UserStateRow {
+        disabled_at: Option<chrono::DateTime<Utc>>,
+    }
+
+    let user_state_rows = UserStateRow::find_by_statement(Statement::from_sql_and_values(
+        sea_orm::DatabaseBackend::Postgres,
+        "SELECT disabled_at FROM users WHERE id = $1 LIMIT 1",
+        [user_id.0.into()],
+    ))
+    .all(&txn)
+    .await
+    .map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    let user_is_disabled = user_state_rows
+        .first()
+        .map(|r| r.disabled_at.is_some())
+        .unwrap_or(true);
+
+    if user_is_disabled {
+        txn.rollback().await.ok();
+        return Err(ApiError::NotFound);
+    }
+
     let consume_result = txn
         .execute_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
@@ -189,20 +218,30 @@ pub(crate) async fn post_activate(
         return Err(ApiError::NotFound);
     }
 
-    txn.execute_raw(Statement::from_sql_and_values(
-        sea_orm::DatabaseBackend::Postgres,
-        "UPDATE users SET password_hash = $1, activated_at = $2, updated_at = $3 WHERE id = $4",
-        [
-            password_hash.into(),
-            now.into(),
-            now.into(),
-            user_id.0.into(),
-        ],
-    ))
-    .await
-    .map_err(|e| ApiError::Internal {
-        message: e.to_string(),
-    })?;
+    // Guard on `activated_at IS NULL`: a stray still-live token must never
+    // silently reset an already-activated user's password. If the user is no
+    // longer pending, no row matches and we roll back with the generic 404.
+    let activate_result = txn
+        .execute_raw(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "UPDATE users SET password_hash = $1, activated_at = $2, updated_at = $3 \
+             WHERE id = $4 AND activated_at IS NULL",
+            [
+                password_hash.into(),
+                now.into(),
+                now.into(),
+                user_id.0.into(),
+            ],
+        ))
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?;
+
+    if activate_result.rows_affected() == 0 {
+        txn.rollback().await.ok();
+        return Err(ApiError::NotFound);
+    }
 
     let session_id = SessionId::new();
     txn.execute_raw(Statement::from_sql_and_values(

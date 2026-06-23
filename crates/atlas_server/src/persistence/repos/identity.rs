@@ -953,18 +953,29 @@ impl ActivationTokenRepo for PgActivationTokenRepo {
     }
 
     async fn consume(&self, id: ActivationTokenId) -> Result<(), DomainError> {
-        use sea_orm::IntoActiveModel;
-        let row = activation_token::Entity::find_by_id(id.0)
-            .one(&self.conn)
+        // Guard on `consumed_at IS NULL` so this can never double-consume a
+        // token under a race. The production activate path uses its own guarded
+        // SQL; this trait method (test-only callers) is aligned to the same
+        // invariant. A missing or already-consumed token is a NotFound.
+        let result = self
+            .conn
+            .execute_raw(Statement::from_sql_and_values(
+                sea_orm::DatabaseBackend::Postgres,
+                "UPDATE user_activation_tokens \
+                 SET consumed_at = $1 \
+                 WHERE id = $2 AND consumed_at IS NULL",
+                [Utc::now().into(), id.0.into()],
+            ))
             .await
-            .map_err(db_err)?
-            .ok_or(DomainError::NotFound {
+            .map_err(db_err)?;
+
+        if result.rows_affected() == 0 {
+            return Err(DomainError::NotFound {
                 entity: "activation_token",
                 id: id.0,
-            })?;
-        let mut active = row.into_active_model();
-        active.consumed_at = Set(Some(Utc::now()));
-        active.update(&self.conn).await.map_err(db_err)?;
+            });
+        }
+
         Ok(())
     }
 

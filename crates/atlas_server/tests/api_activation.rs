@@ -9,9 +9,8 @@ mod support;
 
 use atlas_api::dtos::LoginRequest;
 use atlas_client::AtlasClient;
-use atlas_server::{
-    error::ApiError,
-    persistence::repos::{ActivationTokenRepo, NewActivationToken, NewUser, UserRepo},
+use atlas_server::persistence::repos::{
+    ActivationTokenRepo, NewActivationToken, NewUser, UserRepo,
 };
 use chrono::{Duration, Utc};
 use sea_orm::ConnectionTrait;
@@ -356,10 +355,12 @@ async fn find_by_username_roundtrips_none_password_hash_for_pending_user() {
     );
 }
 
-// ── T04/T13: login rejects pending users with 403 AccountNotActivated ────────
+// ── login does not leak account state: a pending user is indistinguishable ───
+// from an unknown user or a wrong password — all return 401. Returning 403 for
+// a pending account before checking the password was an account-state oracle.
 
 #[tokio::test]
-async fn login_pending_user_returns_403_account_not_activated() {
+async fn login_pending_user_returns_401_not_an_oracle() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;
 
@@ -372,7 +373,7 @@ async fn login_pending_user_returns_403_account_not_activated() {
         .await
         .expect("insert pending user");
 
-    let result = AtlasClient::new(server.base_url())
+    let pending_result = AtlasClient::new(server.base_url())
         .login(LoginRequest {
             username: "pending-login".into(),
             password: "anypassword".into(),
@@ -380,17 +381,31 @@ async fn login_pending_user_returns_403_account_not_activated() {
         .await;
 
     assert!(
-        matches!(result, Err(atlas_client::ClientError::Api(ref p)) if p.status == 403),
-        "pending user login must return 403, got: {result:?}"
+        matches!(pending_result, Err(atlas_client::ClientError::Api(ref p)) if p.status == 401),
+        "pending user login must return 401 (no account-state oracle), got: {pending_result:?}"
     );
 
-    let problem = match result {
-        Err(atlas_client::ClientError::Api(p)) => p,
-        _ => panic!("expected Api error"),
+    // An unknown username must produce the SAME status — otherwise the pending
+    // 401 vs unknown-user response would itself be an enumeration oracle.
+    let unknown_result = AtlasClient::new(server.base_url())
+        .login(LoginRequest {
+            username: "no-such-user-oracle".into(),
+            password: "anypassword".into(),
+        })
+        .await;
+
+    let pending_status = match pending_result {
+        Err(atlas_client::ClientError::Api(p)) => p.status,
+        other => panic!("expected Api error for pending login, got: {other:?}"),
     };
+    let unknown_status = match unknown_result {
+        Err(atlas_client::ClientError::Api(p)) => p.status,
+        other => panic!("expected Api error for unknown login, got: {other:?}"),
+    };
+
     assert_eq!(
-        problem.r#type, "urn:atlas:error:account-not-activated",
-        "error type must be account-not-activated urn"
+        pending_status, unknown_status,
+        "pending and unknown-user logins must be indistinguishable (both 401)"
     );
 
     db.teardown().await;
@@ -447,60 +462,6 @@ async fn login_unknown_user_returns_401_not_403() {
     );
 
     db.teardown().await;
-}
-
-// ── T05: ApiError::AccountNotActivated serializes correctly ──────────────────
-
-#[tokio::test]
-async fn account_not_activated_error_serializes_403_with_urn() {
-    use axum::{
-        body::Body,
-        http::{Request, StatusCode},
-        routing::get,
-    };
-    use tower::ServiceExt;
-
-    let app = atlas_server::test_app_with_route(
-        "/test-not-activated",
-        get(|| async {
-            Err::<(), ApiError>(ApiError::AccountNotActivated {
-                message: "account is pending activation".into(),
-            })
-        }),
-    );
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/test-not-activated")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
-
-    let content_type = response
-        .headers()
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_owned();
-
-    assert!(
-        content_type.contains("application/problem+json"),
-        "content-type must be application/problem+json, got: {content_type}"
-    );
-
-    let body_bytes = axum::body::to_bytes(response.into_body(), 4096)
-        .await
-        .unwrap();
-    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
-
-    assert_eq!(body["type"], "urn:atlas:error:account-not-activated");
-    assert_eq!(body["status"], 403);
-    assert!(body["title"].is_string(), "title must be present");
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1390,4 +1351,178 @@ fn registry_has_get_and_post_activate_entries() {
         post_entry.is_some(),
         "ROUTE_REGISTRY must contain POST /v1/activate/{{token}} (Public)"
     );
+}
+
+// ── A disabled pending user cannot self-activate (generic 404, no oracle) ─────
+
+#[tokio::test]
+async fn post_activate_disabled_pending_user_returns_404_and_no_state_change() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+
+    let token = seed_pending_user_with_token(&db, &server, "disabled-activate").await;
+
+    let user = db
+        .user_repo()
+        .find_by_username("disabled-activate")
+        .await
+        .expect("find_by_username")
+        .expect("user must exist");
+
+    db.user_repo().disable(user.id).await.expect("disable user");
+
+    let http = reqwest::Client::new();
+    let resp = http
+        .post(format!("{}/v1/activate/{token}", server.base_url()))
+        .json(&serde_json::json!({ "password": "DisabledTry123!" }))
+        .send()
+        .await
+        .expect("POST activate disabled user");
+
+    assert_eq!(
+        resp.status().as_u16(),
+        404,
+        "a disabled pending user must get the same generic 404 as an invalid token"
+    );
+
+    let after = db
+        .user_repo()
+        .find_by_username("disabled-activate")
+        .await
+        .expect("find_by_username")
+        .expect("user must still exist");
+
+    assert!(
+        after.activated_at.is_none(),
+        "disabled user must NOT be activated by the rejected POST"
+    );
+    assert!(
+        after.password_hash.is_none(),
+        "disabled user must NOT have a password set by the rejected POST"
+    );
+
+    // Token must remain unconsumed: re-enable and confirm GET still resolves it.
+    db.user_repo().enable(user.id).await.expect("enable user");
+
+    let get_resp = http
+        .get(format!("{}/v1/activate/{token}", server.base_url()))
+        .send()
+        .await
+        .expect("GET after rejected activate");
+
+    assert_eq!(
+        get_resp.status().as_u16(),
+        200,
+        "token must still be valid (not consumed) after the disabled-user rejection"
+    );
+
+    db.teardown().await;
+}
+
+// ── An already-activated user cannot be silently re-activated by a stray token ─
+
+#[tokio::test]
+async fn post_activate_already_activated_user_returns_404_and_preserves_password() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+
+    let token = seed_pending_user_with_token(&db, &server, "already-active").await;
+
+    // Activate the user out-of-band, simulating a stray still-live token whose
+    // user has since been activated through another path.
+    let user = db
+        .user_repo()
+        .find_by_username("already-active")
+        .await
+        .expect("find_by_username")
+        .expect("user must exist");
+
+    db.user_repo()
+        .activate(user.id, "out-of-band-hash".to_string())
+        .await
+        .expect("activate out-of-band");
+
+    let http = reqwest::Client::new();
+    let resp = http
+        .post(format!("{}/v1/activate/{token}", server.base_url()))
+        .json(&serde_json::json!({ "password": "StrayTokenReset9!" }))
+        .send()
+        .await
+        .expect("POST activate already-activated user");
+
+    assert_eq!(
+        resp.status().as_u16(),
+        404,
+        "a stray token on an already-activated user must return generic 404"
+    );
+
+    let after = db
+        .user_repo()
+        .find_by_username("already-active")
+        .await
+        .expect("find_by_username")
+        .expect("user must still exist");
+
+    assert_eq!(
+        after.password_hash.as_deref(),
+        Some("out-of-band-hash"),
+        "the stray token must NOT have reset the already-activated user's password"
+    );
+
+    db.teardown().await;
+}
+
+// ── Password length counts characters, not bytes (multibyte 8-char password) ──
+
+#[tokio::test]
+async fn post_activate_multibyte_eight_char_password_is_accepted() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+
+    let token = seed_pending_user_with_token(&db, &server, "multibyte-pw").await;
+
+    // 8 characters, but well over 8 bytes in UTF-8 — a byte-count rule would
+    // wrongly accept this; a 7-character multibyte password would wrongly pass
+    // a byte rule. Here we assert the 8-CHARACTER password is accepted.
+    let http = reqwest::Client::new();
+    let resp = http
+        .post(format!("{}/v1/activate/{token}", server.base_url()))
+        .json(&serde_json::json!({ "password": "áéíóúñçü" }))
+        .send()
+        .await
+        .expect("POST multibyte password");
+
+    assert_eq!(
+        resp.status().as_u16(),
+        200,
+        "an 8-character (multibyte) password must be accepted (chars, not bytes)"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn post_activate_seven_char_multibyte_password_returns_422() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+
+    let token = seed_pending_user_with_token(&db, &server, "multibyte-pw-short").await;
+
+    // 7 characters but > 8 bytes in UTF-8: a byte-count rule would WRONGLY
+    // accept this. A character-count rule correctly rejects it as too short.
+    let http = reqwest::Client::new();
+    let resp = http
+        .post(format!("{}/v1/activate/{token}", server.base_url()))
+        .json(&serde_json::json!({ "password": "áéíóúñç" }))
+        .send()
+        .await
+        .expect("POST 7-char multibyte password");
+
+    assert_eq!(
+        resp.status().as_u16(),
+        422,
+        "a 7-character password must be rejected even if it exceeds 8 bytes"
+    );
+
+    db.teardown().await;
 }

@@ -11,7 +11,6 @@ use atlas_api::dtos::{
     SetSystemAdminRequest, UserDto,
 };
 use atlas_domain::{
-    Actor, WorkspaceCtx,
     entities::identity::{MemberRole, NewUser},
     ids::UserId,
 };
@@ -21,9 +20,8 @@ use crate::{
     authz::{RequireRoot, RequireUserAdmin},
     error::ApiError,
     persistence::repos::{
-        ActivationTokenRepo, MembershipRepo, NewActivationToken, PgActivationTokenRepo,
-        PgMembershipRepo, PgSessionRepo, PgUserRepo, PgWorkspaceRepo, SessionRepo, UserRepo,
-        WorkspaceRepo,
+        ActivationTokenRepo, NewActivationToken, PgActivationTokenRepo, PgSessionRepo, PgUserRepo,
+        PgWorkspaceRepo, SessionRepo, UserRepo, WorkspaceRepo,
     },
     state::AppState,
 };
@@ -78,16 +76,7 @@ pub(crate) async fn create_user(
 ) -> Result<impl IntoResponse, ApiError> {
     let role = parse_member_role(&body.role)?;
 
-    let user_repo = PgUserRepo {
-        conn: (*state.db).clone(),
-    };
     let ws_repo = PgWorkspaceRepo {
-        conn: (*state.db).clone(),
-    };
-    let membership_repo = PgMembershipRepo {
-        conn: (*state.db).clone(),
-    };
-    let token_repo = PgActivationTokenRepo {
         conn: (*state.db).clone(),
     };
 
@@ -101,42 +90,30 @@ pub(crate) async fn create_user(
             message: format!("workspace '{}' not found", body.workspace),
         })?;
 
-    let user = user_repo
-        .create(NewUser {
+    let plaintext = generate_session_token();
+    let token_hash = hash_token(&plaintext);
+    let expires_at = Utc::now() + Duration::days(ACTIVATION_TOKEN_TTL_DAYS);
+
+    // The user, membership, and activation-token writes are one atomic unit: a
+    // partial failure would otherwise leave an orphaned pending user with no
+    // membership or no usable activation link.
+    let user = create_pending_user_txn(
+        &state,
+        NewUser {
             username: body.username,
             display_name: body.display_name,
             email: body.email,
             password_hash: None,
             is_root: false,
             is_system_admin: false,
-        })
-        .await
-        .map_err(|e| ApiError::Internal {
-            message: e.to_string(),
-        })?;
-
-    let ctx = WorkspaceCtx::new(workspace.id, Actor::User(admin.user.id));
-    membership_repo
-        .add(&ctx, user.id, role)
-        .await
-        .map_err(|e| ApiError::Internal {
-            message: e.to_string(),
-        })?;
-
-    let plaintext = generate_session_token();
-    let token_hash = hash_token(&plaintext);
-    let expires_at = Utc::now() + Duration::days(ACTIVATION_TOKEN_TTL_DAYS);
-
-    token_repo
-        .create(NewActivationToken {
-            user_id: user.id,
-            token_hash,
-            expires_at,
-        })
-        .await
-        .map_err(|e| ApiError::Internal {
-            message: e.to_string(),
-        })?;
+        },
+        workspace.id,
+        admin.user.id,
+        role,
+        &token_hash,
+        expires_at,
+    )
+    .await?;
 
     let activation_link = build_activation_link(&plaintext);
 
@@ -445,6 +422,154 @@ fn parse_member_role(role: &str) -> Result<MemberRole, ApiError> {
             message: format!("unknown role '{other}'; use 'admin' or 'member'"),
         }),
     }
+}
+
+/// Creates a pending user, its workspace membership, and its activation token
+/// in a single database transaction.
+///
+/// Atomicity invariant: all three writes commit together or not at all. A
+/// failure after the user INSERT must never leave an orphaned pending user
+/// without a membership or a usable activation link, so they share one txn.
+///
+/// A unique-constraint violation on the username (`users_username_lower_uq`) is
+/// mapped to a 409 Conflict rather than a 500. The DB constraint is the only
+/// gate: a `find_by_username` pre-check is deliberately avoided because it would
+/// create a username-enumeration oracle.
+#[allow(clippy::too_many_arguments)]
+async fn create_pending_user_txn(
+    state: &AppState,
+    new: NewUser,
+    workspace_id: atlas_domain::ids::WorkspaceId,
+    actor_user_id: UserId,
+    role: MemberRole,
+    token_hash: &str,
+    token_expires_at: chrono::DateTime<Utc>,
+) -> Result<atlas_domain::entities::identity::User, ApiError> {
+    use atlas_domain::ids::{ActivationTokenId, MembershipId};
+    use sea_orm::{ConnectionTrait, Statement, TransactionTrait};
+
+    // The actor context is validated by the RequireUserAdmin extractor at the
+    // handler boundary; membership rows carry only workspace_id + user_id.
+    let _ = actor_user_id;
+
+    let user_id = UserId::new();
+    let now = Utc::now();
+
+    let txn = (*state.db).begin().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    let user_insert = txn
+        .execute_raw(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "INSERT INTO users \
+                (id, username, display_name, email, password_hash, is_root, is_system_admin, \
+                 disabled_at, activated_at, created_at, updated_at) \
+             VALUES ($1, $2, $3, $4, NULL, $5, $6, NULL, NULL, $7, $8)",
+            [
+                user_id.0.into(),
+                new.username.into(),
+                new.display_name.into(),
+                new.email.into(),
+                new.is_root.into(),
+                new.is_system_admin.into(),
+                now.into(),
+                now.into(),
+            ],
+        ))
+        .await;
+
+    if let Err(err) = user_insert {
+        txn.rollback().await.ok();
+
+        if is_unique_violation(&err) {
+            return Err(ApiError::Domain(
+                atlas_domain::error::DomainError::AlreadyExists {
+                    message: "a user with this username already exists".into(),
+                },
+            ));
+        }
+
+        return Err(ApiError::Internal {
+            message: err.to_string(),
+        });
+    }
+
+    let membership_id = MembershipId::new();
+    txn.execute_raw(Statement::from_sql_and_values(
+        sea_orm::DatabaseBackend::Postgres,
+        "INSERT INTO workspace_memberships \
+            (id, workspace_id, user_id, role, created_at, updated_at) \
+         VALUES ($1, $2, $3, $4, $5, $6)",
+        [
+            membership_id.0.into(),
+            workspace_id.0.into(),
+            user_id.0.into(),
+            role.as_str().into(),
+            now.into(),
+            now.into(),
+        ],
+    ))
+    .await
+    .map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    let token_id = ActivationTokenId::new();
+    txn.execute_raw(Statement::from_sql_and_values(
+        sea_orm::DatabaseBackend::Postgres,
+        "INSERT INTO user_activation_tokens \
+            (id, user_id, token_hash, expires_at, consumed_at, created_at) \
+         VALUES ($1, $2, $3, $4, NULL, $5)",
+        [
+            token_id.0.into(),
+            user_id.0.into(),
+            token_hash.into(),
+            token_expires_at.into(),
+            now.into(),
+        ],
+    ))
+    .await
+    .map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    txn.commit().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    let user_repo = PgUserRepo {
+        conn: (*state.db).clone(),
+    };
+
+    user_repo
+        .find_by_id(user_id)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?
+        .ok_or(ApiError::Internal {
+            message: "user not found after create commit".into(),
+        })
+}
+
+/// Detects a Postgres unique-constraint violation (SQLSTATE 23505) from a
+/// sea-orm error, including the case sea-orm has already classified.
+fn is_unique_violation(err: &sea_orm::DbErr) -> bool {
+    use sea_orm::{RuntimeErr, SqlErr};
+
+    if matches!(err.sql_err(), Some(SqlErr::UniqueConstraintViolation(_))) {
+        return true;
+    }
+
+    matches!(
+        err,
+        sea_orm::DbErr::Query(RuntimeErr::SqlxError(e))
+            if e.as_database_error()
+                .and_then(|db| db.code())
+                .as_deref()
+                == Some("23505")
+    )
 }
 
 /// Builds the activation link path from a plaintext token.

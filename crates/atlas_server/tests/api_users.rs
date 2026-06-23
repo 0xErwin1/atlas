@@ -127,7 +127,60 @@ async fn create_user_with_unknown_workspace_returns_422() {
     db.teardown().await;
 }
 
-// ── T15: created pending user cannot log in (403 AccountNotActivated) ─────────
+// ── duplicate username on create_user → 409, not 500 ─────────────────────────
+
+#[tokio::test]
+async fn create_user_duplicate_username_returns_409() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+    let root = support::login_root_user(&server, &db).await;
+    let (_, ws, _) = login_user_with_workspace(&server, &db, "owner-for-dup").await;
+
+    root.create_user(CreateUserRequest {
+        username: "dup-user".to_string(),
+        display_name: "Dup User".to_string(),
+        email: None,
+        workspace: ws.slug.clone(),
+        role: "member".to_string(),
+    })
+    .await
+    .expect("first create_user");
+
+    let second = root
+        .create_user(CreateUserRequest {
+            username: "dup-user".to_string(),
+            display_name: "Dup User Again".to_string(),
+            email: None,
+            workspace: ws.slug.clone(),
+            role: "member".to_string(),
+        })
+        .await;
+
+    assert!(
+        matches!(second, Err(atlas_client::ClientError::Api(ref p)) if p.status == 409),
+        "duplicate username must return 409, got {second:?}"
+    );
+
+    // The unique index is on lower(username): a case-variant duplicate also 409s.
+    let case_variant = root
+        .create_user(CreateUserRequest {
+            username: "DUP-USER".to_string(),
+            display_name: "Dup Upper".to_string(),
+            email: None,
+            workspace: ws.slug.clone(),
+            role: "member".to_string(),
+        })
+        .await;
+
+    assert!(
+        matches!(case_variant, Err(atlas_client::ClientError::Api(ref p)) if p.status == 409),
+        "case-variant duplicate username must also return 409, got {case_variant:?}"
+    );
+
+    db.teardown().await;
+}
+
+// ── T15: created pending user cannot log in (401, no account-state oracle) ────
 
 #[tokio::test]
 async fn pending_user_created_via_api_cannot_login() {
@@ -154,8 +207,8 @@ async fn pending_user_created_via_api_cannot_login() {
         .await;
 
     assert!(
-        matches!(result, Err(atlas_client::ClientError::Api(ref p)) if p.status == 403),
-        "pending user must return 403 on login, got: {result:?}"
+        matches!(result, Err(atlas_client::ClientError::Api(ref p)) if p.status == 401),
+        "pending user must return 401 on login (no account-state oracle), got: {result:?}"
     );
 
     db.teardown().await;

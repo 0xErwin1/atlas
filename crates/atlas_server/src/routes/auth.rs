@@ -81,8 +81,11 @@ pub(crate) async fn login(
     };
 
     // A pending user has no password hash. Run a dummy verify so the timing
-    // cost matches the normal path, preventing a timing oracle that would let
-    // an attacker distinguish "pending account" from "wrong password".
+    // cost matches the normal path, then reject uniformly with 401. A pending
+    // account, an unknown user, and a wrong password are all indistinguishable:
+    // returning a distinct account-state error here would be an enumeration
+    // oracle. A valid password can only exist on an activated account (the hash
+    // is set at activation), so no legitimate login is lost by this uniformity.
     let hash_to_check = user
         .password_hash
         .clone()
@@ -91,13 +94,6 @@ pub(crate) async fn login(
     let is_valid = password::verify(body.password, hash_to_check)
         .await
         .map_err(|_| ApiError::Unauthorized)?;
-
-    // Check activation status AFTER the verify cost is paid (timing parity).
-    if user.activated_at.is_none() {
-        return Err(ApiError::AccountNotActivated {
-            message: "This account has not been activated yet. Use the activation link to set your password.".into(),
-        });
-    }
 
     if !is_valid {
         return Err(ApiError::Unauthorized);
