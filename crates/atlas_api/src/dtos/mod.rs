@@ -116,6 +116,9 @@ pub struct ServerMetaDto {
 }
 
 /// Request body for `POST /v1/users`.
+///
+/// Creates a pending account with no password. The returned `activation_link`
+/// must be shared with the invitee so they can set their own password.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct CreateUserRequest {
@@ -123,6 +126,48 @@ pub struct CreateUserRequest {
     pub display_name: String,
     #[serde(default)]
     pub email: Option<String>,
+    /// Workspace slug where the new user will be added.
+    pub workspace: String,
+    /// Membership role: `"admin"` or `"member"` (owner is rejected with 422).
+    pub role: String,
+}
+
+/// Response from `POST /v1/users`.
+///
+/// `activation_link` is the plaintext single-use link shown exactly once.
+/// It is not stored — only the hash is kept server-side.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct CreateUserResponse {
+    pub user: UserDto,
+    /// Single-use activation path (e.g. `/activate/<token>`). Share this with the invitee.
+    pub activation_link: String,
+}
+
+/// Response from `POST /v1/users/{user_id}/activation-link`.
+///
+/// `activation_link` is a freshly issued single-use link. Prior unconsumed tokens
+/// for the same user are invalidated.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct ActivationLinkResponse {
+    /// Single-use activation path (e.g. `/activate/<token>`). Share this with the invitee.
+    pub activation_link: String,
+}
+
+/// Minimal user info returned by `GET /v1/activate/{token}` so the activation
+/// page can display a personalised heading without requiring authentication.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct ActivationInfoDto {
+    pub username: String,
+    pub display_name: String,
+}
+
+/// Request body for `POST /v1/activate/{token}`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct ActivatePasswordRequest {
     pub password: String,
 }
 

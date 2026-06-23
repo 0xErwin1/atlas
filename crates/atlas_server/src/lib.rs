@@ -71,6 +71,10 @@ pub fn app(state: AppState) -> Router {
             axum::routing::post(routes::users::reset_password),
         )
         .route(
+            "/v1/users/{user_id}/activation-link",
+            axum::routing::post(routes::users::regenerate_activation_link),
+        )
+        .route(
             "/v1/users/{user_id}/system-admin",
             axum::routing::post(routes::users::set_system_admin),
         )

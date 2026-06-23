@@ -2,11 +2,12 @@
 
 use atlas_api::{
     dtos::{
-        ApiKeyCreated, ApiKeyDto, ApiKeyGrantDto, ChangePasswordRequest, CreateGrantRequest,
-        CreateProjectRequest, CreateUserApiKeyRequest, CreateUserRequest, CreateWorkspaceRequest,
-        GrantDto, HealthResponse, LoginRequest, LoginResponse, MeResponse, PrincipalDto,
-        ProjectDto, ResetPasswordRequest, ServerMetaDto, UiStateDto, UpdateMeRequest,
-        UpdateProjectRequest, UpdateUiStateRequest, UpdateWorkspaceRequest, UserDto, WorkspaceDto,
+        ActivationLinkResponse, ApiKeyCreated, ApiKeyDto, ApiKeyGrantDto, ChangePasswordRequest,
+        CreateGrantRequest, CreateProjectRequest, CreateUserApiKeyRequest, CreateUserRequest,
+        CreateUserResponse, CreateWorkspaceRequest, GrantDto, HealthResponse, LoginRequest,
+        LoginResponse, MeResponse, PrincipalDto, ProjectDto, ResetPasswordRequest, ServerMetaDto,
+        UiStateDto, UpdateMeRequest, UpdateProjectRequest, UpdateUiStateRequest,
+        UpdateWorkspaceRequest, UserDto, WorkspaceDto,
         boards_tasks::{
             ActivityEntryDto, AddAssigneeRequest, AssigneeDto, BoardDto, BoardSummaryDto,
             ChecklistItemDto, ColumnDto, CreateBoardRequest, CreateChecklistItemRequest,
@@ -261,9 +262,31 @@ impl AtlasClient {
     }
 
     /// `POST /v1/users`
-    pub async fn create_user(&self, body: CreateUserRequest) -> Result<UserDto, ClientError> {
-        let response = self.post("/v1/users").json(&body).send().await?;
+    pub async fn create_user(
+        &self,
+        body: CreateUserRequest,
+    ) -> Result<CreateUserResponse, ClientError> {
+        let response = self
+            .post("/v1/users")
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
         self.decode_response(response, "create_user").await
+    }
+
+    /// `POST /v1/users/{user_id}/activation-link`
+    pub async fn regenerate_activation_link(
+        &self,
+        user_id: uuid::Uuid,
+    ) -> Result<ActivationLinkResponse, ClientError> {
+        let response = self
+            .post(&format!("/v1/users/{user_id}/activation-link"))
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        self.decode_response(response, "regenerate_activation_link")
+            .await
     }
 
     /// `POST /v1/users/{user_id}/disable`

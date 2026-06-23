@@ -212,17 +212,20 @@ async fn create_user_with_email_persists_and_returns_it() {
     let server = TestServer::spawn(&db).await;
 
     let root = login_root_user(&server, &db).await;
+    let (_, ws, _) = login_user_with_workspace(&server, &db, "email-ws-owner").await;
 
-    let created: UserDto = root
+    let resp = root
         .create_user(CreateUserRequest {
             username: "email-user".to_string(),
             display_name: "Email User".to_string(),
             email: Some("email-user@example.com".to_string()),
-            password: "Password1!".to_string(),
+            workspace: ws.slug.clone(),
+            role: "member".to_string(),
         })
         .await
         .expect("create_user");
 
+    let created = resp.user;
     assert_eq!(created.email.as_deref(), Some("email-user@example.com"));
 
     let listed: Vec<UserDto> = root.list_users().await.expect("list_users");
@@ -241,18 +244,20 @@ async fn create_user_without_email_defaults_to_none() {
     let server = TestServer::spawn(&db).await;
 
     let root = login_root_user(&server, &db).await;
+    let (_, ws, _) = login_user_with_workspace(&server, &db, "no-email-ws-owner").await;
 
-    let created: UserDto = root
+    let resp = root
         .create_user(CreateUserRequest {
             username: "no-email-user".to_string(),
             display_name: "No Email".to_string(),
             email: None,
-            password: "Password1!".to_string(),
+            workspace: ws.slug.clone(),
+            role: "member".to_string(),
         })
         .await
         .expect("create_user");
 
-    assert_eq!(created.email, None);
+    assert_eq!(resp.user.email, None);
 
     db.teardown().await;
 }

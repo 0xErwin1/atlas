@@ -132,6 +132,12 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
     },
     RouteEntry {
         method: "POST",
+        path_template: "/v1/users/00000000-0000-0000-0000-000000000001/activation-link",
+        kind: RouteKind::AuthnRequired,
+        openapi_path: Some("/v1/users/{user_id}/activation-link"),
+    },
+    RouteEntry {
+        method: "POST",
         path_template: "/v1/users/00000000-0000-0000-0000-000000000001/system-admin",
         kind: RouteKind::AuthnRequired,
         openapi_path: Some("/v1/users/{user_id}/system-admin"),

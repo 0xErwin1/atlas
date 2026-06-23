@@ -113,7 +113,7 @@ async fn system_admin_can_list_users() {
     db.teardown().await;
 }
 
-/// A system-admin can create a user.
+/// A system-admin can create a user (new pending-user contract: workspace+role, no password).
 #[tokio::test]
 async fn system_admin_can_create_user() {
     let db = TestDb::create().await.expect("TestDb::create");
@@ -122,17 +122,29 @@ async fn system_admin_can_create_user() {
     create_user_with_flags(&db, "sa-create-admin", false, true).await;
     let sysadmin = login_as(&server, "sa-create-admin").await;
 
+    // Seed a workspace so the create_user request has a valid workspace slug.
+    let (ws, _) = support::seed_workspace(&db, "sa-create-ws-owner").await;
+
     let result = sysadmin
         .create_user(CreateUserRequest {
             username: "sa-created-plain".to_string(),
             display_name: "Created by SA".to_string(),
             email: None,
-            password: "Password1!".to_string(),
+            workspace: ws.slug.clone(),
+            role: "member".to_string(),
         })
         .await;
     assert!(
         result.is_ok(),
         "system-admin should be able to create users, got {result:?}"
+    );
+    assert!(
+        result
+            .as_ref()
+            .unwrap()
+            .activation_link
+            .contains("/activate/"),
+        "create_user must return an activation_link"
     );
 
     db.teardown().await;
