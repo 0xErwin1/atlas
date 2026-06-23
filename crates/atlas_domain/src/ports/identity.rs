@@ -93,7 +93,18 @@ pub trait ApiKeyRepo: Send + Sync {
         token_hash: &str,
     ) -> Result<Option<ApiKey>, DomainError>;
     async fn revoke(&self, ctx: &WorkspaceCtx, id: ApiKeyId) -> Result<(), DomainError>;
+    /// Lists non-revoked keys scoped to the workspace via the deprecated workspace_id FK.
+    /// Kept for callers that have not yet migrated to grant-based listing (C2b).
     async fn list(&self, ctx: &WorkspaceCtx) -> Result<Vec<ApiKey>, DomainError>;
+    /// Lists all non-revoked keys owned by the given user, across all workspaces.
+    async fn list_for_user(&self, user_id: UserId) -> Result<Vec<ApiKey>, DomainError>;
+    /// Looks up a single key by its id, regardless of workspace.
+    async fn get_by_id(&self, id: ApiKeyId) -> Result<Option<ApiKey>, DomainError>;
+    /// Lists all non-revoked keys that hold at least one grant in the given workspace.
+    async fn list_granted_in_workspace(
+        &self,
+        workspace_id: WorkspaceId,
+    ) -> Result<Vec<ApiKey>, DomainError>;
 }
 
 /// Persistence for per-user UI state. Scoped to a single user (not a workspace),

@@ -406,8 +406,9 @@ async fn agent_with_grant_sees_private_project_in_list() {
     db.teardown().await;
 }
 
-/// An API key with NO explicit grant must NOT see workspace-visibility projects.
-/// Visibility only contributes for user principals; agents are grant-only.
+/// An API key with NO explicit grant must be denied at the workspace gate.
+/// Grant-based access means visibility rules never apply to ungranted keys:
+/// they receive a uniform 404 (concealment) on every workspace endpoint.
 #[tokio::test]
 async fn agent_without_grant_cannot_see_workspace_visibility_project() {
     let db = support::TestDb::create().await.expect("TestDb::create");
@@ -416,7 +417,7 @@ async fn agent_without_grant_cannot_see_workspace_visibility_project() {
     let (owner, ws, _) =
         support::login_user_with_workspace(&server, &db, "perm-agentnogrant-owner").await;
 
-    let project = owner
+    owner
         .create_project(
             &ws.slug,
             CreateProjectRequest {
@@ -444,15 +445,12 @@ async fn agent_without_grant_cannot_see_workspace_visibility_project() {
     let agent_client =
         atlas_client::AtlasClient::new(server.base_url()).with_token(key_created.secret.clone());
 
-    let page = agent_client
-        .list_projects(&ws.slug, None, None)
-        .await
-        .expect("agent list request must succeed");
-
-    let found = page.items.iter().any(|p| p.id == project.id);
+    // A key with no grant receives a uniform 404 at the workspace gate — it cannot
+    // even reach the project list, which is a stronger guarantee than per-row filtering.
+    let result = agent_client.list_projects(&ws.slug, None, None).await;
     assert!(
-        !found,
-        "agent with no grant must NOT see workspace-visibility project in the list"
+        matches!(result, Err(atlas_client::ClientError::Api(ref p)) if p.status == 404),
+        "agent with no grant must be denied at the workspace gate (404), got: {result:?}"
     );
 
     db.teardown().await;

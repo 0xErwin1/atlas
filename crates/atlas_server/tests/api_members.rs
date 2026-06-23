@@ -8,8 +8,14 @@
 mod support;
 
 use atlas_client::ClientError;
-use atlas_domain::{Actor, WorkspaceCtx, entities::identity::MemberRole};
-use atlas_server::persistence::repos::{ApiKeyRepo, MembershipRepo, NewApiKey, NewUser, UserRepo};
+use atlas_domain::{
+    Actor, WorkspaceCtx, entities::identity::MemberRole, entities::permissions::NewPermissionGrant,
+    permissions::ResourceRole,
+};
+use atlas_server::persistence::repos::{
+    ApiKeyRepo, MembershipRepo, NewApiKey, NewUser, PermissionGrantRepo, PgPermissionGrantRepo,
+    UserRepo,
+};
 use support::{TestDb, TestServer, login_user_with_workspace};
 
 async fn add_member(
@@ -69,6 +75,26 @@ async fn list_members_returns_users_and_agents() {
 
     let member = add_member(&db, ws.id, "members-second", MemberRole::Member).await;
     let agent = add_agent(&db, ws.id, owner_user.id, "ci-bot").await;
+
+    // Keys now appear in the members list only when they hold a workspace grant.
+    let grant_repo = PgPermissionGrantRepo {
+        conn: db.conn().clone(),
+    };
+    grant_repo
+        .upsert(NewPermissionGrant {
+            workspace_id: ws.id,
+            user_id: None,
+            api_key_id: Some(agent.id),
+            project_id: None,
+            folder_id: None,
+            document_id: None,
+            board_id: None,
+            role: ResourceRole::Editor,
+            created_by_user_id: Some(owner_user.id),
+            created_by_api_key_id: None,
+        })
+        .await
+        .expect("grant agent workspace access");
 
     let members = owner
         .list_workspace_members(&ws.slug)

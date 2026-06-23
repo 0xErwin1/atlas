@@ -30,9 +30,8 @@ use crate::{
             workspace_core::folder,
         },
         repos::{
-            ApiKeyRepo, MembershipRepo, PermissionGrantRepo, PgApiKeyRepo, PgMembershipRepo,
-            PgPermissionGrantRepo, PgProjectRepo, PgUserRepo, PgWorkspaceRepo, ProjectRepo,
-            UserRepo, WorkspaceRepo,
+            MembershipRepo, PermissionGrantRepo, PgMembershipRepo, PgPermissionGrantRepo,
+            PgProjectRepo, PgUserRepo, PgWorkspaceRepo, ProjectRepo, UserRepo, WorkspaceRepo,
         },
     },
     state::AppState,
@@ -713,21 +712,21 @@ where
                 (Principal::User(*uid), role)
             }
             MiddlewarePrincipal::ApiKey(kid) => {
-                let api_key_repo = PgApiKeyRepo {
+                // Workspace access for api keys is grant-based: the key must hold at least
+                // one permission_grants row in this workspace. The subsequent resolve_effective_role
+                // call already returns None for an ungranted key, but the early gate here
+                // surfaces a consistent 404 before resource resolution runs.
+                let grant_repo = PgPermissionGrantRepo {
                     conn: (*state.db).clone(),
                 };
-                let ctx = atlas_domain::WorkspaceCtx::new(
-                    workspace.id,
-                    atlas_domain::Actor::ApiKey(*kid),
-                );
-                let keys = api_key_repo
-                    .list(&ctx)
+                let has_grant = grant_repo
+                    .principal_has_any_grant_in_workspace(workspace.id, None, Some(*kid))
                     .await
                     .map_err(|e| ApiError::Internal {
                         message: e.to_string(),
                     })?;
 
-                if !keys.iter().any(|k| k.id == *kid) {
+                if !has_grant {
                     return Err(ApiError::NotFound);
                 }
 

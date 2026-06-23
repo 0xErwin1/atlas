@@ -1,7 +1,7 @@
 use axum::{Json, extract::State};
 
 use atlas_api::dtos::PrincipalDto;
-use atlas_domain::{Actor, WorkspaceCtx};
+use atlas_domain::Actor;
 
 use crate::{
     authz::WorkspaceMember,
@@ -35,7 +35,7 @@ pub(crate) async fn list_workspace_members(
         (None, Some(key_id)) => Actor::ApiKey(*key_id),
         (None, None) => return Err(ApiError::Unauthorized),
     };
-    let ctx = WorkspaceCtx::new(member.workspace.id, actor);
+    let ctx = atlas_domain::WorkspaceCtx::new(member.workspace.id, actor);
 
     let conn = (*state.db).clone();
     let membership_repo = PgMembershipRepo { conn: conn.clone() };
@@ -68,8 +68,10 @@ pub(crate) async fn list_workspace_members(
         });
     }
 
+    // List api keys that have at least one grant in this workspace, rather than
+    // keys bound by the deprecated workspace_id FK.
     let api_keys = api_key_repo
-        .list(&ctx)
+        .list_granted_in_workspace(member.workspace.id)
         .await
         .map_err(|e| ApiError::Internal {
             message: e.to_string(),

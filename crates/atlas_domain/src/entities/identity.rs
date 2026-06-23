@@ -60,13 +60,53 @@ pub struct NewSession {
     pub expires_at: DateTime<Utc>,
 }
 
+/// The declared purpose of an API key. Does not vary the agent cap (always ≤ editor);
+/// stored for attribution and future per-type policy.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ApiKeyType {
+    #[default]
+    Agent,
+    Cli,
+    Bot,
+    Integration,
+}
+
+impl ApiKeyType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ApiKeyType::Agent => "agent",
+            ApiKeyType::Cli => "cli",
+            ApiKeyType::Bot => "bot",
+            ApiKeyType::Integration => "integration",
+        }
+    }
+}
+
+impl std::str::FromStr for ApiKeyType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "agent" => Ok(ApiKeyType::Agent),
+            "cli" => Ok(ApiKeyType::Cli),
+            "bot" => Ok(ApiKeyType::Bot),
+            "integration" => Ok(ApiKeyType::Integration),
+            other => Err(format!("unknown api key type: {other}")),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiKey {
     pub id: ApiKeyId,
-    pub workspace_id: WorkspaceId,
+    /// Deprecated binding to a single workspace. `None` for keys created after migration 020.
+    /// Access is now determined exclusively by `permission_grants`.
+    pub workspace_id: Option<WorkspaceId>,
     pub created_by_user_id: UserId,
     pub name: String,
     pub token_hash: String,
+    pub type_: ApiKeyType,
     pub expires_at: Option<DateTime<Utc>>,
     pub last_used_at: Option<DateTime<Utc>>,
     pub revoked_at: Option<DateTime<Utc>>,

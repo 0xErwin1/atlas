@@ -19,6 +19,7 @@ pub mod m20260621_000016_column_color;
 pub mod m20260621_000017_tag_color;
 pub mod m20260622_000018_status_templates;
 pub mod m20260622_000019_user_system_admin;
+pub mod m20260623_000020_apikey_identity;
 
 use sea_orm_migration::prelude::*;
 
@@ -47,6 +48,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260621_000017_tag_color::Migration),
             Box::new(m20260622_000018_status_templates::Migration),
             Box::new(m20260622_000019_user_system_admin::Migration),
+            Box::new(m20260623_000020_apikey_identity::Migration),
         ]
     }
 }

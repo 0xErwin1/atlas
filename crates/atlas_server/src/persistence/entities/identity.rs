@@ -1,5 +1,5 @@
 use atlas_domain::entities::identity::{
-    ApiKey, MemberRole, Session, User, UserUiState, Workspace, WorkspaceMembership,
+    ApiKey, ApiKeyType, MemberRole, Session, User, UserUiState, Workspace, WorkspaceMembership,
 };
 use atlas_domain::ids::{ApiKeyId, MembershipId, SessionId, UserId, WorkspaceId};
 use chrono::{DateTime, Utc};
@@ -80,10 +80,12 @@ pub mod api_key {
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: Uuid,
-        pub workspace_id: Uuid,
+        pub workspace_id: Option<Uuid>,
         pub created_by_user_id: Uuid,
         pub name: String,
         pub token_hash: String,
+        #[sea_orm(column_name = "type")]
+        pub type_: String,
         pub expires_at: Option<DateTime<Utc>>,
         pub last_used_at: Option<DateTime<Utc>>,
         pub revoked_at: Option<DateTime<Utc>>,
@@ -183,10 +185,11 @@ pub fn session_from(m: session::Model) -> Session {
 pub fn api_key_from(m: api_key::Model) -> ApiKey {
     ApiKey {
         id: ApiKeyId(m.id),
-        workspace_id: WorkspaceId(m.workspace_id),
+        workspace_id: m.workspace_id.map(WorkspaceId),
         created_by_user_id: UserId(m.created_by_user_id),
         name: m.name,
         token_hash: m.token_hash,
+        type_: m.type_.parse::<ApiKeyType>().unwrap_or_default(),
         expires_at: m.expires_at,
         last_used_at: m.last_used_at,
         revoked_at: m.revoked_at,

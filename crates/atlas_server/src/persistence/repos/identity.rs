@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use atlas_domain::{
     Actor, DomainError, WorkspaceCtx,
-    entities::identity::{MemberRole, WorkspaceMembership},
+    entities::identity::{ApiKeyType, MemberRole, WorkspaceMembership},
     ids::{ApiKeyId, MembershipId, SessionId, UserId, WorkspaceId},
 };
 use chrono::Utc;
@@ -485,10 +485,11 @@ impl ApiKeyRepo for PgApiKeyRepo {
         };
         let model = api_key::ActiveModel {
             id: Set(ApiKeyId::new().0),
-            workspace_id: Set(ctx.workspace_id.0),
+            workspace_id: Set(Some(ctx.workspace_id.0)),
             created_by_user_id: Set(created_by_user_id),
             name: Set(new.name),
             token_hash: Set(new.token_hash),
+            type_: Set(ApiKeyType::Agent.as_str().to_string()),
             expires_at: Set(new.expires_at),
             last_used_at: Set(None),
             revoked_at: Set(None),
@@ -508,10 +509,11 @@ impl ApiKeyRepo for PgApiKeyRepo {
         #[derive(Debug, sea_orm::FromQueryResult)]
         struct Row {
             id: uuid::Uuid,
-            workspace_id: uuid::Uuid,
+            workspace_id: Option<uuid::Uuid>,
             created_by_user_id: uuid::Uuid,
             name: String,
             token_hash: String,
+            type_: String,
             expires_at: Option<chrono::DateTime<Utc>>,
             last_used_at: Option<chrono::DateTime<Utc>>,
             revoked_at: Option<chrono::DateTime<Utc>>,
@@ -521,7 +523,7 @@ impl ApiKeyRepo for PgApiKeyRepo {
         let rows = Row::find_by_statement(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
             "SELECT k.id, k.workspace_id, k.created_by_user_id, k.name, k.token_hash,
-                    k.expires_at, k.last_used_at, k.revoked_at, k.created_at
+                    k.type AS type_, k.expires_at, k.last_used_at, k.revoked_at, k.created_at
              FROM api_keys k
              JOIN users u ON u.id = k.created_by_user_id
              WHERE k.token_hash = $1
@@ -537,10 +539,11 @@ impl ApiKeyRepo for PgApiKeyRepo {
 
         Ok(rows.into_iter().next().map(|r| ApiKey {
             id: ApiKeyId(r.id),
-            workspace_id: crate::persistence::repos::identity::WorkspaceId(r.workspace_id),
-            created_by_user_id: crate::persistence::repos::identity::UserId(r.created_by_user_id),
+            workspace_id: r.workspace_id.map(WorkspaceId),
+            created_by_user_id: UserId(r.created_by_user_id),
             name: r.name,
             token_hash: r.token_hash,
+            type_: r.type_.parse::<ApiKeyType>().unwrap_or_default(),
             expires_at: r.expires_at,
             last_used_at: r.last_used_at,
             revoked_at: r.revoked_at,
@@ -587,6 +590,74 @@ impl ApiKeyRepo for PgApiKeyRepo {
             .await
             .map(|rows| rows.into_iter().map(api_key_from).collect())
             .map_err(db_err)
+    }
+
+    async fn list_for_user(&self, user_id: UserId) -> Result<Vec<ApiKey>, DomainError> {
+        api_key::Entity::find()
+            .filter(api_key::Column::CreatedByUserId.eq(user_id.0))
+            .filter(api_key::Column::RevokedAt.is_null())
+            .all(&self.conn)
+            .await
+            .map(|rows| rows.into_iter().map(api_key_from).collect())
+            .map_err(db_err)
+    }
+
+    async fn get_by_id(&self, id: ApiKeyId) -> Result<Option<ApiKey>, DomainError> {
+        api_key::Entity::find_by_id(id.0)
+            .one(&self.conn)
+            .await
+            .map(|opt| opt.map(api_key_from))
+            .map_err(db_err)
+    }
+
+    async fn list_granted_in_workspace(
+        &self,
+        workspace_id: WorkspaceId,
+    ) -> Result<Vec<ApiKey>, DomainError> {
+        #[derive(Debug, sea_orm::FromQueryResult)]
+        struct Row {
+            id: uuid::Uuid,
+            workspace_id: Option<uuid::Uuid>,
+            created_by_user_id: uuid::Uuid,
+            name: String,
+            token_hash: String,
+            type_: String,
+            expires_at: Option<chrono::DateTime<Utc>>,
+            last_used_at: Option<chrono::DateTime<Utc>>,
+            revoked_at: Option<chrono::DateTime<Utc>>,
+            created_at: chrono::DateTime<Utc>,
+        }
+
+        let rows = Row::find_by_statement(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT DISTINCT k.id, k.workspace_id, k.created_by_user_id, k.name, k.token_hash,
+                    k.type AS type_, k.expires_at, k.last_used_at, k.revoked_at, k.created_at
+             FROM api_keys k
+             JOIN permission_grants g ON g.api_key_id = k.id
+             WHERE g.workspace_id = $1
+               AND k.revoked_at IS NULL
+             ORDER BY k.created_at",
+            [workspace_id.0.into()],
+        ))
+        .all(&self.conn)
+        .await
+        .map_err(db_err)?;
+
+        Ok(rows
+            .into_iter()
+            .map(|r| ApiKey {
+                id: ApiKeyId(r.id),
+                workspace_id: r.workspace_id.map(WorkspaceId),
+                created_by_user_id: UserId(r.created_by_user_id),
+                name: r.name,
+                token_hash: r.token_hash,
+                type_: r.type_.parse::<ApiKeyType>().unwrap_or_default(),
+                expires_at: r.expires_at,
+                last_used_at: r.last_used_at,
+                revoked_at: r.revoked_at,
+                created_at: r.created_at,
+            })
+            .collect())
     }
 }
 

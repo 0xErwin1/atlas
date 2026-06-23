@@ -13,8 +13,8 @@ use crate::{
     auth::middleware::Principal,
     error::ApiError,
     persistence::repos::{
-        MembershipRepo, PgMembershipRepo, PgUserRepo, PgWorkspaceRepo, UserRepo, Workspace,
-        WorkspaceRepo,
+        MembershipRepo, PgMembershipRepo, PgPermissionGrantRepo, PgUserRepo, PgWorkspaceRepo,
+        UserRepo, Workspace, WorkspaceRepo,
     },
     state::AppState,
 };
@@ -105,21 +105,17 @@ impl FromRequestParts<AppState> for WorkspaceMember {
                 })
             }
             Principal::ApiKey(key_id) => {
-                let api_key_repo = crate::persistence::repos::PgApiKeyRepo {
+                let grant_repo = PgPermissionGrantRepo {
                     conn: (*state.db).clone(),
                 };
-                let ctx = atlas_domain::WorkspaceCtx::new(
-                    workspace.id,
-                    atlas_domain::Actor::ApiKey(key_id),
-                );
-                let keys = crate::persistence::repos::ApiKeyRepo::list(&api_key_repo, &ctx)
+                let has_grant = grant_repo
+                    .principal_has_any_grant_in_workspace(workspace.id, None, Some(key_id))
                     .await
                     .map_err(|e| ApiError::Internal {
                         message: e.to_string(),
                     })?;
 
-                let belongs = keys.iter().any(|k| k.id == key_id);
-                if !belongs {
+                if !has_grant {
                     return Err(ApiError::NotFound);
                 }
 
@@ -240,23 +236,6 @@ impl FromRequestParts<AppState> for WorkspaceAccess {
                 })
             }
             Principal::ApiKey(key_id) => {
-                let api_key_repo = crate::persistence::repos::PgApiKeyRepo {
-                    conn: (*state.db).clone(),
-                };
-                let ctx = atlas_domain::WorkspaceCtx::new(
-                    workspace.id,
-                    atlas_domain::Actor::ApiKey(key_id),
-                );
-                let keys = crate::persistence::repos::ApiKeyRepo::list(&api_key_repo, &ctx)
-                    .await
-                    .map_err(|e| ApiError::Internal {
-                        message: e.to_string(),
-                    })?;
-
-                if !keys.iter().any(|k| k.id == key_id) {
-                    return Err(ApiError::NotFound);
-                }
-
                 let has_grant = grant_repo
                     .principal_has_any_grant_in_workspace(workspace.id, None, Some(key_id))
                     .await
