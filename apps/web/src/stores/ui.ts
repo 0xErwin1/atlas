@@ -89,6 +89,7 @@ export const useUiStore = defineStore('ui', () => {
 
   const shareOpen = ref(false);
   const shareResourceLabel = ref('');
+  const shareProjectSlug = ref<string | null>(null);
 
   // Editor reading width: false = readable column, true = full viewport width.
   const editorWide = ref(loadEditorWide());
@@ -144,13 +145,15 @@ export const useUiStore = defineStore('ui', () => {
     }
   }
 
-  function openShare(resourceLabel: string) {
+  function openShare(resourceLabel: string, projectSlug?: string) {
     shareResourceLabel.value = resourceLabel;
+    shareProjectSlug.value = projectSlug ?? null;
     shareOpen.value = true;
   }
 
   function closeShare() {
     shareOpen.value = false;
+    shareProjectSlug.value = null;
   }
 
   const paletteOpen = ref(false);
@@ -237,6 +240,7 @@ export const useUiStore = defineStore('ui', () => {
     banner,
     shareOpen,
     shareResourceLabel,
+    shareProjectSlug,
     editorWide,
     toggleEditorWide,
     theme,

@@ -9,16 +9,19 @@ export type GrantDto = components['schemas']['GrantDto'];
 export type GrantPrincipal = components['schemas']['GrantPrincipal'];
 export type PrincipalDto = components['schemas']['PrincipalDto'];
 
+export type ShareResource =
+  | { kind: 'workspace'; ws: string }
+  | { kind: 'project'; ws: string; projectSlug: string };
+
 function hintOf(apiError: unknown, fallback: string): string {
   return (apiError as { hint?: string } | undefined)?.hint ?? fallback;
 }
 
 /**
- * Share store: the single caller of the workspace grants routes for the share
- * dialog (REQ-W26/W27). Lists/adds/removes grants and changes a principal's
- * role. The agent cap (E03 guard) is enforced here too — a non-user principal
- * can never be sent admin, even if a caller asks for it; the request is refused
- * before the network call.
+ * Share store: manages grants for both workspace and project resources.
+ * The resource descriptor (ShareResource) determines which endpoints are
+ * called. The agent cap (E03 guard) is enforced here — a non-user principal
+ * can never be sent admin, even if a caller asks for it.
  */
 export const useShareStore = defineStore('share', () => {
   const grants = ref<GrantDto[]>([]);
@@ -26,15 +29,36 @@ export const useShareStore = defineStore('share', () => {
   const loading = ref(false);
   const error = ref<string | null>(null);
 
-  async function load(ws: string): Promise<void> {
+  async function load(resource: ShareResource): Promise<void> {
     loading.value = true;
     error.value = null;
 
-    const { items, error: apiError } = await collectPaged<GrantDto>((cursor) =>
-      wrappedClient.GET('/v1/workspaces/{ws}/grants', {
-        params: { path: { ws }, query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) } },
-      }),
-    );
+    let items: GrantDto[];
+    let apiError: unknown;
+
+    if (resource.kind === 'workspace') {
+      const result = await collectPaged<GrantDto>((cursor) =>
+        wrappedClient.GET('/v1/workspaces/{ws}/grants', {
+          params: {
+            path: { ws: resource.ws },
+            query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) },
+          },
+        }),
+      );
+      items = result.items;
+      apiError = result.error;
+    } else {
+      const result = await collectPaged<GrantDto>((cursor) =>
+        wrappedClient.GET('/v1/workspaces/{ws}/projects/{project_slug}/grants', {
+          params: {
+            path: { ws: resource.ws, project_slug: resource.projectSlug },
+            query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) },
+          },
+        }),
+      );
+      items = result.items;
+      apiError = result.error;
+    }
 
     loading.value = false;
 
@@ -59,27 +83,42 @@ export const useShareStore = defineStore('share', () => {
     members.value = data;
   }
 
-  async function addGrant(ws: string, principal: GrantPrincipal, role: GrantRole): Promise<boolean> {
+  async function addGrant(
+    resource: ShareResource,
+    principal: GrantPrincipal,
+    role: GrantRole,
+  ): Promise<boolean> {
     if (!isRoleAllowedFor(principal.type, role)) {
       error.value = 'Agents and scripts cannot be granted the Admin role.';
       return false;
     }
 
-    const { error: apiError } = await wrappedClient.POST('/v1/workspaces/{ws}/grants', {
-      params: { path: { ws } },
-      body: { principal, role },
-    });
+    let apiError: unknown;
+
+    if (resource.kind === 'workspace') {
+      const result = await wrappedClient.POST('/v1/workspaces/{ws}/grants', {
+        params: { path: { ws: resource.ws } },
+        body: { principal, role },
+      });
+      apiError = result.error;
+    } else {
+      const result = await wrappedClient.POST('/v1/workspaces/{ws}/projects/{project_slug}/grants', {
+        params: { path: { ws: resource.ws, project_slug: resource.projectSlug } },
+        body: { principal, role },
+      });
+      apiError = result.error;
+    }
 
     if (apiError !== undefined) {
       error.value = hintOf(apiError, 'Failed to grant access');
       return false;
     }
 
-    await load(ws);
+    await load(resource);
     return true;
   }
 
-  async function changeRole(ws: string, grantId: string, role: GrantRole): Promise<boolean> {
+  async function changeRole(resource: ShareResource, grantId: string, role: GrantRole): Promise<boolean> {
     const existing = grants.value.find((g) => g.id === grantId);
 
     if (existing === undefined) {
@@ -87,20 +126,33 @@ export const useShareStore = defineStore('share', () => {
       return false;
     }
 
-    return addGrant(ws, existing.principal, role);
+    return addGrant(resource, existing.principal, role);
   }
 
-  async function removeGrant(ws: string, grantId: string): Promise<boolean> {
-    const { error: apiError } = await wrappedClient.DELETE('/v1/workspaces/{ws}/grants/{grant_id}', {
-      params: { path: { ws, grant_id: grantId } },
-    });
+  async function removeGrant(resource: ShareResource, grantId: string): Promise<boolean> {
+    let apiError: unknown;
+
+    if (resource.kind === 'workspace') {
+      const result = await wrappedClient.DELETE('/v1/workspaces/{ws}/grants/{grant_id}', {
+        params: { path: { ws: resource.ws, grant_id: grantId } },
+      });
+      apiError = result.error;
+    } else {
+      const result = await wrappedClient.DELETE(
+        '/v1/workspaces/{ws}/projects/{project_slug}/grants/{grant_id}',
+        {
+          params: { path: { ws: resource.ws, project_slug: resource.projectSlug, grant_id: grantId } },
+        },
+      );
+      apiError = result.error;
+    }
 
     if (apiError !== undefined) {
       error.value = hintOf(apiError, 'Failed to remove access');
       return false;
     }
 
-    await load(ws);
+    await load(resource);
     return true;
   }
 

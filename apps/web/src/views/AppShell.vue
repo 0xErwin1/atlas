@@ -132,6 +132,7 @@ const showMainOnMobile = computed(() => props.mobileDetail || !hasSidebar.value)
     <ShareDialog
       :open="ui.shareOpen"
       :ws="ws"
+      :project-slug="ui.shareProjectSlug ?? undefined"
       :resource-label="ui.shareResourceLabel"
       @close="ui.closeShare()"
     />
@@ -178,6 +179,7 @@ const showMainOnMobile = computed(() => props.mobileDetail || !hasSidebar.value)
     <ShareDialog
       :open="ui.shareOpen"
       :ws="ws"
+      :project-slug="ui.shareProjectSlug ?? undefined"
       :resource-label="ui.shareResourceLabel"
       @close="ui.closeShare()"
     />

@@ -8,7 +8,8 @@ import Icon from '@/components/ui/Icon.vue';
 import Popover from '@/components/ui/Popover.vue';
 import { useBreakpoint } from '@/composables/useBreakpoint';
 import type { GrantRole } from '@/lib/grantRoles';
-import { type GrantDto, type PrincipalDto, useShareStore } from '@/stores/share';
+import { useApiKeysStore } from '@/stores/apiKeys';
+import { type GrantDto, type PrincipalDto, type ShareResource, useShareStore } from '@/stores/share';
 
 export type Visibility = 'private' | 'workspace' | 'public';
 
@@ -16,10 +17,13 @@ const props = withDefaults(
   defineProps<{
     open: boolean;
     ws: string;
+    /** When set, the dialog manages project grants instead of workspace grants. */
+    projectSlug?: string;
     resourceLabel?: string;
     visibility?: Visibility;
   }>(),
   {
+    projectSlug: undefined,
     resourceLabel: '',
     visibility: 'workspace',
   },
@@ -30,10 +34,17 @@ const emit = defineEmits<{
 }>();
 
 const share = useShareStore();
+const apiKeys = useApiKeysStore();
 const { isMobile } = useBreakpoint();
 
 const memberQuery = ref('');
 const linkCopied = ref(false);
+
+const resource = computed<ShareResource>(() =>
+  props.projectSlug !== undefined
+    ? { kind: 'project', ws: props.ws, projectSlug: props.projectSlug }
+    : { kind: 'workspace', ws: props.ws },
+);
 
 async function copyLink(): Promise<void> {
   try {
@@ -48,12 +59,13 @@ async function copyLink(): Promise<void> {
 }
 
 watch(
-  () => [props.open, props.ws] as const,
-  ([open, ws]) => {
+  () => [props.open, props.ws, props.projectSlug] as const,
+  ([open, ,]) => {
     if (open) {
       memberQuery.value = '';
-      void share.load(ws);
-      void share.loadMembers(ws);
+      void share.load(resource.value);
+      void share.loadMembers(props.ws);
+      void apiKeys.loadKeys();
     }
   },
   { immediate: true },
@@ -65,8 +77,21 @@ function roleLabel(role: string): string {
   return role.charAt(0).toUpperCase() + role.slice(1);
 }
 
+/**
+ * Resolved display name for a grant row. For api_key principals the id is a
+ * UUID; we join client-side against the loaded keys and members lists so the
+ * user sees the key name rather than a bare UUID.
+ */
 function principalLabel(g: GrantDto): string {
-  return isAgent(g) ? 'Agent' : g.principal.id;
+  if (g.principal.type === 'user') return g.principal.id;
+
+  const fromKeys = apiKeys.keys.find((k) => k.id === g.principal.id);
+  if (fromKeys !== undefined) return fromKeys.name;
+
+  const fromMembers = share.members.find((m) => m.id === g.principal.id);
+  if (fromMembers !== undefined) return fromMembers.display;
+
+  return g.principal.id;
 }
 
 function badgeFor(g: GrantDto): string | null {
@@ -82,27 +107,57 @@ const VISIBILITY_OPTS: Array<{ value: Visibility; icon: string; label: string; d
 ];
 
 async function onSelectRole(g: GrantDto, role: GrantRole) {
-  await share.changeRole(props.ws, g.id, role);
+  await share.changeRole(resource.value, g.id, role);
 }
 
 async function onRemove(g: GrantDto) {
-  await share.removeGrant(props.ws, g.id);
+  await share.removeGrant(resource.value, g.id);
 }
 
 const grants = computed(() => share.grants);
 
 const grantedIds = computed(() => new Set(share.grants.map((g) => g.principal.id)));
 
+/**
+ * Picker candidates: workspace members (users + already-granted keys) merged
+ * with the caller's own api keys that don't yet have a grant on this resource.
+ * De-duplicated by id so a key already in members doesn't appear twice.
+ */
+const allCandidates = computed<PrincipalDto[]>(() => {
+  const seen = new Set<string>();
+  const result: PrincipalDto[] = [];
+
+  for (const m of share.members) {
+    seen.add(m.id);
+    result.push(m);
+  }
+
+  for (const k of apiKeys.keys) {
+    if (!seen.has(k.id)) {
+      result.push({
+        id: k.id,
+        display: k.name,
+        principal_type: 'api_key',
+        key_type: k.type,
+      } satisfies PrincipalDto);
+    }
+  }
+
+  return result;
+});
+
 const memberMatches = computed<PrincipalDto[]>(() => {
   const q = memberQuery.value.trim().toLowerCase();
   if (q === '') return [];
 
-  return share.members.filter((m) => !grantedIds.value.has(m.id) && m.display.toLowerCase().includes(q));
+  return allCandidates.value.filter(
+    (m) => !grantedIds.value.has(m.id) && m.display.toLowerCase().includes(q),
+  );
 });
 
 async function selectMember(member: PrincipalDto): Promise<void> {
   const principal = { type: member.principal_type, id: member.id };
-  const ok = await share.addGrant(props.ws, principal, 'viewer');
+  const ok = await share.addGrant(resource.value, principal, 'viewer');
 
   if (ok) {
     memberQuery.value = '';
@@ -188,7 +243,7 @@ async function invite(): Promise<void> {
               class="inline-flex items-center"
               style="gap: 5px; flex: 0 0 auto; font-size: var(--fs-sm); color: var(--c-foreground); border: 1px solid var(--c-border); border-radius: 2px; padding: 3px 8px; background-color: var(--c-secondary);"
             >
-              Editor
+              Viewer
               <Icon name="chevron-down" :size="12" :style="{ color: 'var(--c-muted)' }" />
             </span>
 
@@ -371,7 +426,7 @@ async function invite(): Promise<void> {
         <div
           style="font-size: var(--fs-xs); color: var(--c-muted); margin-top: 6px; line-height: 1.4;"
         >
-          General access reflects the current scope. Switching it from here isn’t available yet.
+          General access reflects the current scope. Switching it from here isn't available yet.
         </div>
       </div>
 

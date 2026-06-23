@@ -52,6 +52,11 @@ describe('ShareDialog (REQ-W26/W27)', () => {
           ],
         });
       }
+      if (path === '/v1/api-keys') {
+        return Promise.resolve({
+          data: { items: [], has_more: false },
+        });
+      }
       return Promise.resolve({
         data: {
           items: [grant('g1', 'user', 'u1', 'editor'), grant('g2', 'api_key', 'k1', 'editor')],
