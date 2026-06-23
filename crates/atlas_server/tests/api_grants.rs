@@ -7,11 +7,13 @@
 
 mod support;
 
-use atlas_api::dtos::{CreateGrantRequest, CreateProjectRequest, GrantPrincipal};
+use atlas_api::dtos::{
+    CreateGrantRequest, CreateProjectRequest, CreateUserApiKeyRequest, GrantPrincipal,
+};
 use atlas_client::ClientError;
 use atlas_domain::{Actor, WorkspaceCtx, entities::identity::MemberRole};
 use atlas_server::persistence::repos::{ApiKeyRepo, MembershipRepo, NewApiKey, NewUser, UserRepo};
-use support::{TestDb, TestServer, login_user_with_workspace};
+use support::{TestDb, TestServer, login_user, login_user_with_workspace};
 
 async fn add_agent(
     db: &TestDb,
@@ -419,4 +421,133 @@ async fn create_workspace_grant_editor_to_agent_succeeds() {
             .any(|g| g.principal.id == agent.id.0 && g.role == "editor"),
         "editor grant to an agent must be persisted"
     );
+}
+
+// ---------------------------------------------------------------------------
+// C2 workspace-independent (top-level) key grant tests
+// ---------------------------------------------------------------------------
+
+fn toplevel_key_req(name: &str) -> CreateUserApiKeyRequest {
+    CreateUserApiKeyRequest {
+        name: name.to_string(),
+        r#type: None,
+        expires_at: None,
+        initial_grant: None,
+    }
+}
+
+#[tokio::test]
+async fn grant_toplevel_api_key_to_workspace_succeeds() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner, ws, _) = login_user_with_workspace(&server, &db, "tl-key-ws-owner").await;
+
+    let created = owner
+        .create_user_api_key(toplevel_key_req("tl-agent-ws"))
+        .await
+        .expect("create top-level api key");
+
+    let grant = owner
+        .create_workspace_grant(&ws.slug, agent_grant_req(created.id, "editor"))
+        .await
+        .expect("granting a top-level key to its owner's workspace must succeed");
+
+    assert_eq!(grant.principal.id, created.id);
+    assert_eq!(grant.role, "editor");
+
+    let page = owner
+        .list_workspace_grants(&ws.slug, None, None)
+        .await
+        .expect("list workspace grants");
+
+    assert!(
+        page.items
+            .iter()
+            .any(|g| g.principal.id == created.id && g.role == "editor"),
+        "grant must appear in workspace grant list"
+    );
+}
+
+#[tokio::test]
+async fn grant_toplevel_api_key_to_project_succeeds() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner, ws, _) = login_user_with_workspace(&server, &db, "tl-key-proj-owner").await;
+
+    owner
+        .create_project(&ws.slug, proj_req("TL Key Project", "tl-key-proj"))
+        .await
+        .expect("create project");
+
+    let created = owner
+        .create_user_api_key(toplevel_key_req("tl-agent-proj"))
+        .await
+        .expect("create top-level api key");
+
+    let grant = owner
+        .create_project_grant(
+            &ws.slug,
+            "tl-key-proj",
+            agent_grant_req(created.id, "viewer"),
+        )
+        .await
+        .expect("granting a top-level key to its owner's project must succeed");
+
+    assert_eq!(grant.principal.id, created.id);
+    assert_eq!(grant.role, "viewer");
+}
+
+#[tokio::test]
+async fn grant_api_key_not_owned_by_caller_is_rejected() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner, ws, _) = login_user_with_workspace(&server, &db, "tl-key-owner-check").await;
+
+    let (other, other_user) = login_user(&server, &db, "tl-key-other-user").await;
+    let _ = other_user;
+
+    let other_key = other
+        .create_user_api_key(toplevel_key_req("other-tl-agent"))
+        .await
+        .expect("create other user's top-level api key");
+
+    let err = owner
+        .create_workspace_grant(&ws.slug, agent_grant_req(other_key.id, "editor"))
+        .await
+        .expect_err("granting another user's key must be rejected");
+
+    match err {
+        ClientError::Api(p) => assert!(
+            p.status == 422 || p.status == 403,
+            "expected 422 or 403 for non-owner grant, got {}",
+            p.status
+        ),
+        other => panic!("unexpected error: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn grant_toplevel_api_key_admin_is_still_rejected() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner, ws, _) = login_user_with_workspace(&server, &db, "tl-key-admin-cap").await;
+
+    let created = owner
+        .create_user_api_key(toplevel_key_req("tl-admin-cap-key"))
+        .await
+        .expect("create top-level api key");
+
+    let err = owner
+        .create_workspace_grant(&ws.slug, agent_grant_req(created.id, "admin"))
+        .await
+        .expect_err("admin grant to an api key must be rejected");
+
+    match err {
+        ClientError::Api(p) => assert_eq!(p.status, 403, "expected 403, got {}", p.status),
+        other => panic!("unexpected error: {other:?}"),
+    }
 }

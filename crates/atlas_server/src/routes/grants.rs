@@ -77,7 +77,7 @@ pub(crate) async fn create_project_grant(
         .map_err(share_denied_to_api_error)?;
 
     let (user_id, api_key_id) =
-        parse_principal(&body.principal, &auth.workspace.id, &state).await?;
+        parse_principal(&body.principal, &auth.workspace.id, &auth.principal, &state).await?;
 
     authorize_grant_target(&target_principal(user_id, api_key_id), role_in_play)
         .map_err(share_denied_to_api_error)?;
@@ -252,7 +252,7 @@ pub(crate) async fn create_workspace_grant(
         .map_err(share_denied_to_api_error)?;
 
     let (user_id, api_key_id) =
-        parse_principal(&body.principal, &auth.workspace.id, &state).await?;
+        parse_principal(&body.principal, &auth.workspace.id, &auth.principal, &state).await?;
 
     authorize_grant_target(&target_principal(user_id, api_key_id), role_in_play)
         .map_err(share_denied_to_api_error)?;
@@ -411,9 +411,17 @@ fn parse_role(role: &str) -> Result<ResourceRole, ApiError> {
     }
 }
 
+/// Resolves and validates a grant principal.
+///
+/// For `user` principals, membership in the target workspace is required.
+/// For `api_key` principals, the key is looked up by id (workspace-independent)
+/// and the caller must own it — `created_by_user_id` must match the acting user.
+/// This ownership requirement means a user can only grant access for their own keys;
+/// cross-user key grants are out of scope and would require an explicit delegation model.
 async fn parse_principal(
     principal: &GrantPrincipal,
     workspace_id: &atlas_domain::ids::WorkspaceId,
+    caller: &Principal,
     state: &AppState,
 ) -> Result<(Option<UserId>, Option<ApiKeyId>), ApiError> {
     match principal.r#type.as_str() {
@@ -442,19 +450,38 @@ async fn parse_principal(
             let api_key_repo = crate::persistence::repos::PgApiKeyRepo {
                 conn: (*state.db).clone(),
             };
-            let ctx =
-                atlas_domain::WorkspaceCtx::new(*workspace_id, atlas_domain::Actor::ApiKey(kid));
-            let keys = api_key_repo
-                .list(&ctx)
+
+            let key = api_key_repo
+                .get_by_id(kid)
                 .await
                 .map_err(|e| ApiError::Internal {
                     message: e.to_string(),
+                })?
+                .ok_or_else(|| ApiError::InvalidInput {
+                    message: "api key not found or has been revoked".into(),
                 })?;
-            if !keys.iter().any(|k| k.id == kid) {
+
+            if key.revoked_at.is_some() {
                 return Err(ApiError::InvalidInput {
-                    message: "api key does not belong to this workspace".into(),
+                    message: "api key not found or has been revoked".into(),
                 });
             }
+
+            let caller_user_id = match caller {
+                Principal::User(uid) => *uid,
+                Principal::ApiKey(_) => {
+                    return Err(ApiError::Forbidden {
+                        message: "agents cannot manage grants".into(),
+                    });
+                }
+            };
+
+            if key.created_by_user_id != caller_user_id {
+                return Err(ApiError::InvalidInput {
+                    message: "you can only grant API keys you own".into(),
+                });
+            }
+
             Ok((None, Some(kid)))
         }
         other => Err(ApiError::InvalidInput {
