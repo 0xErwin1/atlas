@@ -19,7 +19,6 @@ const EXPECTED_SCHEMAS: &[&str] = &[
     "ResetPasswordRequest",
     "CreateUserRequest",
     "UserDto",
-    "CreateApiKeyRequest",
     "ApiKeyCreated",
     "ApiKeyDto",
     "CreateProjectRequest",

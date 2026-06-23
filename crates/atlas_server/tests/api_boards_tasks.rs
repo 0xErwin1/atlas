@@ -8,7 +8,7 @@
 mod support;
 
 use atlas_api::dtos::{
-    CreateProjectRequest,
+    CreateProjectRequest, CreateUserApiKeyRequest, InitialGrantRequest,
     boards_tasks::{
         AddAssigneeRequest, CreateBoardRequest, CreateChecklistItemRequest, CreateColumnRequest,
         CreateReferenceRequest, CreateTaskRequest, MoveTaskRequest, PromoteChecklistItemRequest,
@@ -5464,13 +5464,15 @@ async fn revoked_api_key_assignee_is_hidden_after_revoke() {
         .expect("task");
 
     let api_key = client
-        .create_api_key(
-            &ws.slug,
-            atlas_api::dtos::CreateApiKeyRequest {
-                name: "agent-to-revoke".to_string(),
-                expires_at: None,
-            },
-        )
+        .create_user_api_key(CreateUserApiKeyRequest {
+            name: "agent-to-revoke".to_string(),
+            r#type: None,
+            expires_at: None,
+            initial_grant: Some(InitialGrantRequest {
+                workspace: ws.slug.clone(),
+                role: "editor".to_string(),
+            }),
+        })
         .await
         .expect("create api key");
 
@@ -5496,7 +5498,7 @@ async fn revoked_api_key_assignee_is_hidden_after_revoke() {
 
     // Revoke the key — this should atomically delete its task_assignees rows.
     client
-        .revoke_api_key(&ws.slug, api_key.id)
+        .revoke_user_api_key(api_key.id)
         .await
         .expect("revoke api key");
 

@@ -8,8 +8,8 @@
 mod support;
 
 use atlas_api::dtos::{
-    CreateApiKeyRequest, CreateGrantRequest, CreateProjectRequest, CreateUserApiKeyRequest,
-    GrantPrincipal, UpdateProjectRequest,
+    CreateGrantRequest, CreateProjectRequest, CreateUserApiKeyRequest, GrantPrincipal,
+    UpdateProjectRequest,
 };
 use atlas_domain::{Actor, WorkspaceCtx, entities::identity::MemberRole};
 use atlas_server::persistence::repos::{MembershipRepo, NewUser, PermissionGrantRepo, UserRepo};
@@ -108,13 +108,12 @@ async fn agent_cannot_share_project() {
         .expect("create project");
 
     let key_created = owner
-        .create_api_key(
-            &ws.slug,
-            CreateApiKeyRequest {
-                name: "test-agent-key".to_string(),
-                expires_at: None,
-            },
-        )
+        .create_user_api_key(CreateUserApiKeyRequest {
+            name: "test-agent-key".to_string(),
+            r#type: None,
+            expires_at: None,
+            initial_grant: None,
+        })
         .await
         .expect("create api key");
 
@@ -357,13 +356,12 @@ async fn agent_with_grant_sees_private_project_in_list() {
         .expect("create private project");
 
     let key_created = owner
-        .create_api_key(
-            &ws.slug,
-            CreateApiKeyRequest {
-                name: "agent-visibility-key".to_string(),
-                expires_at: None,
-            },
-        )
+        .create_user_api_key(CreateUserApiKeyRequest {
+            name: "agent-visibility-key".to_string(),
+            r#type: None,
+            expires_at: None,
+            initial_grant: None,
+        })
         .await
         .expect("create api key");
 
@@ -574,13 +572,12 @@ async fn share_denied_403_does_not_leak_variant_name() {
         .expect("create project");
 
     let key_created = owner
-        .create_api_key(
-            &ws.slug,
-            CreateApiKeyRequest {
-                name: "sharedeny-key".to_string(),
-                expires_at: None,
-            },
-        )
+        .create_user_api_key(CreateUserApiKeyRequest {
+            name: "sharedeny-key".to_string(),
+            r#type: None,
+            expires_at: None,
+            initial_grant: None,
+        })
         .await
         .expect("create api key");
 

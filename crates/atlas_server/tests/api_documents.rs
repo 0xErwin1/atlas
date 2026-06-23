@@ -8,7 +8,7 @@
 mod support;
 
 use atlas_api::dtos::{
-    CreateApiKeyRequest,
+    CreateUserApiKeyRequest,
     documents::{
         CreateDocumentRequest, MoveDocumentRequest, UpdateContentRequest, UpdateDocumentRequest,
     },
@@ -1792,13 +1792,12 @@ async fn api_key_actor_write_sets_actor_type_api_key() {
         .expect("create document");
 
     let key_created = owner
-        .create_api_key(
-            &ws.slug,
-            CreateApiKeyRequest {
-                name: "test-key".to_string(),
-                expires_at: None,
-            },
-        )
+        .create_user_api_key(CreateUserApiKeyRequest {
+            name: "test-key".to_string(),
+            r#type: None,
+            expires_at: None,
+            initial_grant: None,
+        })
         .await
         .expect("create api key");
 

@@ -187,25 +187,6 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         kind: RouteKind::AuthnRequired,
         openapi_path: Some("/v1/api-keys/{key_id}"),
     },
-    // ---- Deprecated workspace-scoped API key routes (kept for web until C2c) ----
-    RouteEntry {
-        method: "POST",
-        path_template: "/v1/workspaces/{ws}/api-keys",
-        kind: RouteKind::WorkspaceMember,
-        openapi_path: Some("/v1/workspaces/{ws}/api-keys"),
-    },
-    RouteEntry {
-        method: "GET",
-        path_template: "/v1/workspaces/{ws}/api-keys",
-        kind: RouteKind::WorkspaceMember,
-        openapi_path: Some("/v1/workspaces/{ws}/api-keys"),
-    },
-    RouteEntry {
-        method: "POST",
-        path_template: "/v1/workspaces/{ws}/api-keys/00000000-0000-0000-0000-000000000001/revoke",
-        kind: RouteKind::WorkspaceMember,
-        openapi_path: Some("/v1/workspaces/{ws}/api-keys/{key_id}/revoke"),
-    },
     RouteEntry {
         method: "POST",
         path_template: "/v1/workspaces/{ws}/projects",

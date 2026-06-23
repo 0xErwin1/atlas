@@ -4,12 +4,12 @@ use utoipa_scalar::{Scalar, Servable as _};
 
 use atlas_api::{
     dtos::{
-        ApiKeyCreated, ApiKeyDto, ChangePasswordRequest, CreateApiKeyRequest, CreateGrantRequest,
-        CreateProjectRequest, CreateUserApiKeyRequest, CreateUserRequest, CreateWorkspaceRequest,
-        GrantDto, GrantPrincipal, InitialGrantRequest, LoginRequest, LoginResponse, MeResponse,
-        PrincipalDto, ProjectDto, ResetPasswordRequest, ServerMetaDto, SetSystemAdminRequest,
-        UiStateDto, UpdateMeRequest, UpdateProjectRequest, UpdateUiStateRequest,
-        UpdateWorkspaceRequest, UserDto, WorkspaceDto,
+        ApiKeyCreated, ApiKeyDto, ChangePasswordRequest, CreateGrantRequest, CreateProjectRequest,
+        CreateUserApiKeyRequest, CreateUserRequest, CreateWorkspaceRequest, GrantDto,
+        GrantPrincipal, InitialGrantRequest, LoginRequest, LoginResponse, MeResponse, PrincipalDto,
+        ProjectDto, ResetPasswordRequest, ServerMetaDto, SetSystemAdminRequest, UiStateDto,
+        UpdateMeRequest, UpdateProjectRequest, UpdateUiStateRequest, UpdateWorkspaceRequest,
+        UserDto, WorkspaceDto,
         boards_tasks::{
             ActivityEntryDto, AddAssigneeRequest, AssigneeDto, BoardDto, BoardSummaryDto,
             ChecklistItemDto, ColumnDto, CreateBoardRequest, CreateChecklistItemRequest,
@@ -73,9 +73,6 @@ use atlas_api::{
         crate::routes::api_keys::create_user_api_key,
         crate::routes::api_keys::list_user_api_keys,
         crate::routes::api_keys::revoke_user_api_key,
-        crate::routes::api_keys::create_api_key,
-        crate::routes::api_keys::list_api_keys,
-        crate::routes::api_keys::revoke_api_key,
         crate::routes::projects::create_project,
         crate::routes::projects::list_projects,
         crate::routes::projects::get_project,
@@ -177,7 +174,6 @@ use atlas_api::{
         SetSystemAdminRequest,
         CreateUserRequest,
         UserDto,
-        CreateApiKeyRequest,
         CreateUserApiKeyRequest,
         InitialGrantRequest,
         ApiKeyCreated,

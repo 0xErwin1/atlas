@@ -124,14 +124,6 @@ pub struct CreateUserRequest {
     pub password: String,
 }
 
-/// Request body for `POST /v1/workspaces/{ws}/api-keys` (deprecated workspace-scoped route).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(ToSchema))]
-pub struct CreateApiKeyRequest {
-    pub name: String,
-    pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
-}
-
 /// Optional initial workspace grant included in a `POST /v1/api-keys` request.
 ///
 /// When present, a workspace-scope grant at the given role is created atomically
@@ -159,7 +151,7 @@ pub struct CreateUserApiKeyRequest {
     pub initial_grant: Option<InitialGrantRequest>,
 }
 
-/// Response for `POST /v1/workspaces/{ws}/api-keys` (secret returned exactly once).
+/// Response for `POST /v1/api-keys` (secret returned exactly once).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct ApiKeyCreated {

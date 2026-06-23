@@ -98,16 +98,6 @@ pub fn app(state: AppState) -> Router {
             "/v1/api-keys/{key_id}",
             axum::routing::delete(routes::api_keys::revoke_user_api_key),
         )
-        // API keys — deprecated workspace-scoped routes (kept for web until C2c)
-        .route(
-            "/v1/workspaces/{ws}/api-keys",
-            axum::routing::post(routes::api_keys::create_api_key)
-                .get(routes::api_keys::list_api_keys),
-        )
-        .route(
-            "/v1/workspaces/{ws}/api-keys/{key_id}/revoke",
-            axum::routing::post(routes::api_keys::revoke_api_key),
-        )
         // Projects
         .route(
             "/v1/workspaces/{ws}/projects",

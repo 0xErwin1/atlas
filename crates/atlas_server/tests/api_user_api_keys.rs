@@ -10,6 +10,15 @@ mod support;
 use atlas_api::dtos::{CreateUserApiKeyRequest, InitialGrantRequest};
 use support::{TestDb, TestServer, login_user, login_user_with_workspace};
 
+fn key_req(name: &str) -> CreateUserApiKeyRequest {
+    CreateUserApiKeyRequest {
+        name: name.to_string(),
+        r#type: None,
+        expires_at: None,
+        initial_grant: None,
+    }
+}
+
 fn user_key_req(name: &str) -> CreateUserApiKeyRequest {
     CreateUserApiKeyRequest {
         name: name.to_string(),
@@ -96,18 +105,12 @@ async fn api_key_principal_cannot_create_user_api_key() {
     let db = TestDb::create().await.expect("TestDb::create");
     let server = TestServer::spawn(&db).await;
 
-    let (owner, ws, _) = login_user_with_workspace(&server, &db, "cuk-user4").await;
+    let (owner, _ws, _) = login_user_with_workspace(&server, &db, "cuk-user4").await;
 
     let ws_key = owner
-        .create_api_key(
-            &ws.slug,
-            atlas_api::dtos::CreateApiKeyRequest {
-                name: "agent-key".to_string(),
-                expires_at: None,
-            },
-        )
+        .create_user_api_key(key_req("agent-key"))
         .await
-        .expect("create workspace key");
+        .expect("create agent key");
 
     let agent = atlas_client::AtlasClient::new(server.base_url()).with_token(ws_key.secret);
 
@@ -253,18 +256,12 @@ async fn api_key_principal_cannot_list_user_api_keys() {
     let db = TestDb::create().await.expect("TestDb::create");
     let server = TestServer::spawn(&db).await;
 
-    let (owner, ws, _) = login_user_with_workspace(&server, &db, "list-agent").await;
+    let (owner, _ws, _) = login_user_with_workspace(&server, &db, "list-agent").await;
 
     let ws_key = owner
-        .create_api_key(
-            &ws.slug,
-            atlas_api::dtos::CreateApiKeyRequest {
-                name: "list-agent-key".to_string(),
-                expires_at: None,
-            },
-        )
+        .create_user_api_key(key_req("list-agent-key"))
         .await
-        .expect("create workspace key");
+        .expect("create agent key");
 
     let agent = atlas_client::AtlasClient::new(server.base_url()).with_token(ws_key.secret);
 

@@ -7,16 +7,9 @@
 
 mod support;
 
-use atlas_api::dtos::CreateApiKeyRequest;
+use atlas_api::dtos::CreateUserApiKeyRequest;
 use atlas_client::ClientError;
 use support::{TestDb, TestServer, login_user_with_workspace};
-
-fn key_req(name: &str) -> CreateApiKeyRequest {
-    CreateApiKeyRequest {
-        name: name.to_string(),
-        expires_at: None,
-    }
-}
 
 #[tokio::test]
 async fn human_creates_workspace_and_it_appears_in_list() {
@@ -47,12 +40,17 @@ async fn api_key_principal_cannot_create_workspace() {
     let db = TestDb::create().await.expect("TestDb::create");
     let server = TestServer::spawn(&db).await;
 
-    let (owner, ws, _user) = login_user_with_workspace(&server, &db, "cw-agent-owner").await;
+    let (owner, _ws, _user) = login_user_with_workspace(&server, &db, "cw-agent-owner").await;
 
     let created_key = owner
-        .create_api_key(&ws.slug, key_req("agent-key"))
+        .create_user_api_key(CreateUserApiKeyRequest {
+            name: "agent-key".to_string(),
+            r#type: None,
+            expires_at: None,
+            initial_grant: None,
+        })
         .await
-        .expect("create_api_key");
+        .expect("create_user_api_key");
 
     let agent = atlas_client::AtlasClient::new(server.base_url()).with_token(created_key.secret);
 

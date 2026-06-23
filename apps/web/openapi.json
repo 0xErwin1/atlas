@@ -873,163 +873,6 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/api-keys": {
-      "get": {
-        "tags": [
-          "api-keys"
-        ],
-        "operationId": "list_api_keys",
-        "parameters": [
-          {
-            "name": "ws",
-            "in": "path",
-            "description": "Workspace slug",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "cursor",
-            "in": "query",
-            "description": "Pagination cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "description": "Page size (max 200)",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "minimum": 0
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Paginated API key list",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Page_ApiKeyDto"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "403": {
-            "description": "Insufficient permissions"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ]
-      },
-      "post": {
-        "tags": [
-          "api-keys"
-        ],
-        "operationId": "create_api_key",
-        "parameters": [
-          {
-            "name": "ws",
-            "in": "path",
-            "description": "Workspace slug",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateApiKeyRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "description": "API key created (secret shown once)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiKeyCreated"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "403": {
-            "description": "Insufficient permissions"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ]
-      }
-    },
-    "/v1/workspaces/{ws}/api-keys/{key_id}/revoke": {
-      "post": {
-        "tags": [
-          "api-keys"
-        ],
-        "operationId": "revoke_api_key",
-        "parameters": [
-          {
-            "name": "ws",
-            "in": "path",
-            "description": "Workspace slug",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "key_id",
-            "in": "path",
-            "description": "API key id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "API key revoked"
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "403": {
-            "description": "Insufficient permissions"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ]
-      }
-    },
     "/v1/workspaces/{ws}/attachments/{attachment_id}": {
       "get": {
         "tags": [
@@ -6371,7 +6214,7 @@
       },
       "ApiKeyCreated": {
         "type": "object",
-        "description": "Response for `POST /v1/workspaces/{ws}/api-keys` (secret returned exactly once).",
+        "description": "Response for `POST /v1/api-keys` (secret returned exactly once).",
         "required": [
           "id",
           "name",
@@ -6820,25 +6663,6 @@
               "null"
             ],
             "format": "uuid"
-          }
-        }
-      },
-      "CreateApiKeyRequest": {
-        "type": "object",
-        "description": "Request body for `POST /v1/workspaces/{ws}/api-keys` (deprecated workspace-scoped route).",
-        "required": [
-          "name"
-        ],
-        "properties": {
-          "expires_at": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "date-time"
-          },
-          "name": {
-            "type": "string"
           }
         }
       },

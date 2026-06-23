@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import { z } from 'zod';
+import AgentBadge from '@/components/ui/AgentBadge.vue';
 import Btn from '@/components/ui/Btn.vue';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import FormField from '@/components/ui/FormField.vue';
@@ -8,18 +9,22 @@ import Icon from '@/components/ui/Icon.vue';
 import { validateForm } from '@/lib/validation';
 import { type ApiKeyCreated, useApiKeysStore } from '@/stores/apiKeys';
 import { useUiStore } from '@/stores/ui';
-import { useWorkspaceStore } from '@/stores/workspace';
 
 const keysStore = useApiKeysStore();
 const ui = useUiStore();
-const workspace = useWorkspaceStore();
-
-const ws = computed(() => workspace.activeWorkspaceSlug ?? '');
 
 type Mode = 'list' | 'new' | 'secret';
 const mode = ref<Mode>('list');
 
-const form = reactive({ name: '', expires: '' });
+type KeyType = 'agent' | 'cli' | 'bot' | 'integration';
+const KEY_TYPES: { value: KeyType; label: string }[] = [
+  { value: 'agent', label: 'Agent' },
+  { value: 'cli', label: 'CLI' },
+  { value: 'bot', label: 'Bot' },
+  { value: 'integration', label: 'Integration' },
+];
+
+const form = reactive({ name: '', type: 'agent' as KeyType, expires: '' });
 const formErrors = reactive<{ name: string | null }>({ name: null });
 const saving = ref(false);
 
@@ -31,9 +36,6 @@ const revokeTarget = ref<{ id: string; name: string } | null>(null);
 const revokeDetail = computed(() => {
   const target = revokeTarget.value;
   if (target === null) return undefined;
-  // The list never exposes the secret prefix (it is shown only once at
-  // creation). The key id is the only stable identifier we can surface, so the
-  // fragment is taken from it rather than from a fabricated secret prefix.
   return `${target.name} · ${target.id.slice(0, 8)}…`;
 });
 
@@ -45,12 +47,17 @@ function fmtDate(iso: string | null | undefined): string {
   return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: '2-digit' });
 }
 
+function typeLabel(t: string): string {
+  return KEY_TYPES.find((k) => k.value === t)?.label ?? t.toUpperCase();
+}
+
 onMounted(() => {
-  if (ws.value !== '') keysStore.loadKeys(ws.value);
+  keysStore.loadKeys();
 });
 
 function startNew(): void {
   form.name = '';
+  form.type = 'agent';
   form.expires = '';
   formErrors.name = null;
   mode.value = 'new';
@@ -72,7 +79,12 @@ async function submitNew(): Promise<void> {
   const expiresAt = form.expires === '' ? null : new Date(form.expires).toISOString();
 
   saving.value = true;
-  const res = await keysStore.createKey(ws.value, result.data.name, expiresAt);
+  const res = await keysStore.createKey({
+    name: result.data.name,
+    type: form.type,
+    expires_at: expiresAt,
+    initial_grant: null,
+  });
   saving.value = false;
 
   if (res === null) {
@@ -98,7 +110,7 @@ async function copySecret(): Promise<void> {
 async function doneSecret(): Promise<void> {
   created.value = null;
   mode.value = 'list';
-  await keysStore.loadKeys(ws.value);
+  await keysStore.loadKeys();
 }
 
 async function confirmRevoke(): Promise<void> {
@@ -106,7 +118,7 @@ async function confirmRevoke(): Promise<void> {
   revokeTarget.value = null;
   if (target === null) return;
 
-  const ok = await keysStore.revokeKey(ws.value, target.id);
+  const ok = await keysStore.revokeKey(target.id);
   if (ok) ui.showBanner('API key revoked', 'success');
   else if (keysStore.error) ui.showBanner(keysStore.error, 'error');
 }
@@ -124,12 +136,12 @@ async function confirmRevoke(): Promise<void> {
       <div class="atl-secret-box">
         <div class="atl-secret-warn">
           <Icon name="triangle-alert" :size="14" style="flex: 0 0 auto;" />
-          Copy this now — you won’t be able to see it again.
+          Copy this now — you won't be able to see it again.
         </div>
         <div style="padding: 14px; background: var(--c-raised);">
           <div style="font-size: 12px; color: var(--c-muted); margin-bottom: 8px;">
             Secret for key
-            <span style="font-family: var(--font-mono); color: var(--c-foreground);">“{{ created.name }}”</span>
+            <span style="font-family: var(--font-mono); color: var(--c-foreground);">"{{ created.name }}"</span>
           </div>
           <div class="flex items-center" style="gap: 8px;">
             <div class="atl-secret-value">{{ created.secret }}</div>
@@ -149,7 +161,7 @@ async function confirmRevoke(): Promise<void> {
     <div v-else-if="mode === 'new'">
       <div class="atl-panel-head">
         <div class="atl-panel-title">New API key</div>
-        <div class="atl-panel-sub">Provisions an agent identity, capped at editor.</div>
+        <div class="atl-panel-sub">Provisions an identity capped at editor access.</div>
       </div>
 
       <div class="flex flex-col" style="gap: 14px; max-width: 430px;">
@@ -161,6 +173,19 @@ async function confirmRevoke(): Promise<void> {
           :error="formErrors.name"
           @update:model-value="(v) => { form.name = v; formErrors.name = null; }"
         />
+
+        <div class="atl-field">
+          <label class="atl-field-label">Type</label>
+          <div class="atl-select-box">
+            <select
+              v-model="form.type"
+              class="atl-select-input"
+            >
+              <option v-for="t in KEY_TYPES" :key="t.value" :value="t.value">{{ t.label }}</option>
+            </select>
+          </div>
+        </div>
+
         <FormField
           label="Expires (optional)"
           type="date"
@@ -189,7 +214,7 @@ async function confirmRevoke(): Promise<void> {
       </div>
 
       <div v-if="keysStore.loading" style="font-size: 13px; color: var(--c-muted); padding: 8px;">
-        Loading…
+        Loading&hellip;
       </div>
 
       <div v-else-if="keysStore.keys.length === 0" class="atl-keys-empty">
@@ -198,7 +223,7 @@ async function confirmRevoke(): Promise<void> {
           No API keys yet
         </div>
         <div style="font-size: 12.5px; color: var(--c-muted); margin-top: 5px; max-width: 300px; line-height: 1.5;">
-          Create a key to let an agent act on your behalf. Agents act capped at editor.
+          Create a key to let an agent or script act on your behalf. Keys are capped at editor.
         </div>
         <div style="margin-top: 16px;">
           <Btn variant="primary" @click="startNew"><Icon name="plus" :size="14" />New key</Btn>
@@ -209,16 +234,20 @@ async function confirmRevoke(): Promise<void> {
         <div class="atl-keys-head">
           <div style="flex: 0 0 26px;"></div>
           <div style="flex: 2;">Name</div>
+          <div style="flex: 1;">Type</div>
           <div style="flex: 1.4;">Created</div>
-          <div style="flex: 1.4;">Expires</div>
+          <div style="flex: 1.4;">Last used</div>
           <div style="flex: 0 0 84px;"></div>
         </div>
         <div v-for="k in keysStore.keys" :key="k.id" class="atl-keys-row">
           <div style="flex: 0 0 26px;"><Icon name="key" :size="15" style="color: var(--c-chart-5);" /></div>
           <div class="atl-key-name">{{ k.name }}</div>
+          <div style="flex: 1;">
+            <AgentBadge :label="typeLabel(k.type).toUpperCase()" />
+          </div>
           <div class="atl-key-meta">{{ fmtDate(k.created_at) }}</div>
-          <div class="atl-key-meta" :style="{ color: k.expires_at ? 'var(--c-foreground)' : 'var(--c-muted)' }">
-            {{ fmtDate(k.expires_at) }}
+          <div class="atl-key-meta" :style="{ color: k.last_used_at ? 'var(--c-foreground)' : 'var(--c-muted)' }">
+            {{ fmtDate(k.last_used_at) }}
           </div>
           <div style="flex: 0 0 84px; display: flex; justify-content: flex-end;">
             <button type="button" class="atl-revoke" @click="revokeTarget = { id: k.id, name: k.name }">
@@ -230,7 +259,7 @@ async function confirmRevoke(): Promise<void> {
 
       <div class="atl-keys-helper">
         <Icon name="sparkles" :size="13" style="color: var(--c-chart-5);" />
-        <span>Keys provision <span style="color: var(--c-chart-5); font-weight: var(--fw-semibold);">agent</span> identities — agents act capped at editor.</span>
+        <span>Keys are account-level and workspace-independent — grant them access per workspace.</span>
       </div>
     </div>
 
@@ -241,7 +270,7 @@ async function confirmRevoke(): Promise<void> {
       message="The key stops working immediately. Any agent or script still using it loses access at once."
       :detail="revokeDetail"
       detail-icon="key"
-      note="This can’t be undone — you’ll need to issue a new key and update anything that relied on it."
+      note="This can't be undone — you'll need to issue a new key and update anything that relied on it."
       confirm-label="Revoke key"
       confirm-icon="trash-2"
       @confirm="confirmRevoke"
@@ -271,6 +300,43 @@ async function confirmRevoke(): Promise<void> {
   font-size: 12px;
   color: var(--c-muted);
   margin-top: 3px;
+}
+
+.atl-field {
+  display: flex;
+  flex-direction: column;
+}
+
+.atl-field-label {
+  display: block;
+  font-size: 10px;
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--c-muted);
+  margin-bottom: 5px;
+}
+
+.atl-select-box {
+  display: flex;
+  align-items: center;
+  height: var(--h-input);
+  padding: 0 4px 0 10px;
+  background-color: var(--c-input);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+}
+
+.atl-select-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--c-foreground);
+  font-size: var(--fs-base);
+  font-family: var(--font-ui);
+  cursor: pointer;
 }
 
 .atl-keys-table {

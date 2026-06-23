@@ -64,19 +64,6 @@ async fn cross_tenant_get_workspace_returns_404() {
 }
 
 #[tokio::test]
-async fn cross_tenant_list_api_keys_returns_404() {
-    let (client_a, db, _server, ws_b_slug) = setup().await;
-
-    let result = client_a.list_api_keys(&ws_b_slug, None, None).await;
-
-    assert!(
-        matches!(result, Err(atlas_client::ClientError::Api(ref p)) if p.status == 404),
-        "cross-tenant api-key list must return 404, got: {result:?}"
-    );
-    db.teardown().await;
-}
-
-#[tokio::test]
 async fn cross_tenant_list_projects_returns_404() {
     let (client_a, db, _server, ws_b_slug) = setup().await;
 

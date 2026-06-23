@@ -7,8 +7,9 @@
 
 mod support;
 
-use atlas_api::dtos::task_views::{
-    CreateTaskViewRequest, TaskViewFiltersDto, UpdateTaskViewRequest,
+use atlas_api::dtos::{
+    CreateUserApiKeyRequest, InitialGrantRequest,
+    task_views::{CreateTaskViewRequest, TaskViewFiltersDto, UpdateTaskViewRequest},
 };
 use atlas_client::ClientError;
 
@@ -269,13 +270,15 @@ async fn create_task_view_allows_same_name_for_different_owners() {
         .expect("user creates task view");
 
     let key_created = user_client
-        .create_api_key(
-            &ws.slug,
-            atlas_api::dtos::CreateApiKeyRequest {
-                name: "test-key".to_string(),
-                expires_at: None,
-            },
-        )
+        .create_user_api_key(CreateUserApiKeyRequest {
+            name: "test-key".to_string(),
+            r#type: None,
+            expires_at: None,
+            initial_grant: Some(InitialGrantRequest {
+                workspace: ws.slug.clone(),
+                role: "editor".to_string(),
+            }),
+        })
         .await
         .expect("create api key");
 
@@ -326,13 +329,15 @@ async fn list_task_views_is_owner_scoped_sorted_and_excludes_deleted() {
 
     // Create an api_key owner's view (should not appear in user's list)
     let key_created = client
-        .create_api_key(
-            &ws.slug,
-            atlas_api::dtos::CreateApiKeyRequest {
-                name: "other-owner-key".to_string(),
-                expires_at: None,
-            },
-        )
+        .create_user_api_key(CreateUserApiKeyRequest {
+            name: "other-owner-key".to_string(),
+            r#type: None,
+            expires_at: None,
+            initial_grant: Some(InitialGrantRequest {
+                workspace: ws.slug.clone(),
+                role: "editor".to_string(),
+            }),
+        })
         .await
         .expect("create api key");
 
@@ -435,13 +440,15 @@ async fn get_task_view_returns_404_for_non_owned_id() {
         .expect("create");
 
     let key_created = client_a
-        .create_api_key(
-            &ws.slug,
-            atlas_api::dtos::CreateApiKeyRequest {
-                name: "intruder-key".to_string(),
-                expires_at: None,
-            },
-        )
+        .create_user_api_key(CreateUserApiKeyRequest {
+            name: "intruder-key".to_string(),
+            r#type: None,
+            expires_at: None,
+            initial_grant: Some(InitialGrantRequest {
+                workspace: ws.slug.clone(),
+                role: "editor".to_string(),
+            }),
+        })
         .await
         .expect("create api key");
 
@@ -607,13 +614,15 @@ async fn update_task_view_returns_404_for_non_owned_id() {
         .expect("create");
 
     let key_created = client_a
-        .create_api_key(
-            &ws.slug,
-            atlas_api::dtos::CreateApiKeyRequest {
-                name: "intruder-key".to_string(),
-                expires_at: None,
-            },
-        )
+        .create_user_api_key(CreateUserApiKeyRequest {
+            name: "intruder-key".to_string(),
+            r#type: None,
+            expires_at: None,
+            initial_grant: Some(InitialGrantRequest {
+                workspace: ws.slug.clone(),
+                role: "editor".to_string(),
+            }),
+        })
         .await
         .expect("create api key");
 
@@ -709,13 +718,15 @@ async fn delete_task_view_returns_404_for_non_owned_id() {
         .expect("create");
 
     let key_created = client_a
-        .create_api_key(
-            &ws.slug,
-            atlas_api::dtos::CreateApiKeyRequest {
-                name: "intruder-key".to_string(),
-                expires_at: None,
-            },
-        )
+        .create_user_api_key(CreateUserApiKeyRequest {
+            name: "intruder-key".to_string(),
+            r#type: None,
+            expires_at: None,
+            initial_grant: Some(InitialGrantRequest {
+                workspace: ws.slug.clone(),
+                role: "editor".to_string(),
+            }),
+        })
         .await
         .expect("create api key");
 

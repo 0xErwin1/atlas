@@ -11,7 +11,7 @@ use atlas_api::dtos::boards_tasks::{
     AddAssigneeRequest, CreateBoardRequest, CreateColumnRequest, CreateSubtaskRequest,
     CreateTaskRequest, WorkspaceTaskQueryParams,
 };
-use atlas_api::dtos::{CreateGrantRequest, CreateProjectRequest, GrantPrincipal};
+use atlas_api::dtos::{CreateProjectRequest, CreateUserApiKeyRequest, InitialGrantRequest};
 use atlas_client::ClientError;
 
 // ---------------------------------------------------------------------------
@@ -52,36 +52,22 @@ async fn seed_workspace(
 ) -> WorkspaceSeed {
     let (user_client, ws, user) = support::login_user_with_workspace(server, db, username).await;
 
-    // Create an api key belonging to the workspace owner
     let key_created = user_client
-        .create_api_key(
-            &ws.slug,
-            atlas_api::dtos::CreateApiKeyRequest {
-                name: "test-agent".to_string(),
-                expires_at: None,
-            },
-        )
+        .create_user_api_key(CreateUserApiKeyRequest {
+            name: "test-agent".to_string(),
+            r#type: None,
+            expires_at: None,
+            initial_grant: Some(InitialGrantRequest {
+                workspace: ws.slug.clone(),
+                role: "editor".to_string(),
+            }),
+        })
         .await
-        .expect("create api key");
+        .expect("create api key with workspace grant");
 
     let api_key_id = key_created.id;
     let api_key_client = atlas_client::AtlasClient::new(server.base_url().to_string())
         .with_token(key_created.secret.clone());
-
-    // Grant the api_key workspace-level editor access so it can create tasks
-    user_client
-        .create_workspace_grant(
-            &ws.slug,
-            CreateGrantRequest {
-                principal: GrantPrincipal {
-                    r#type: "api_key".to_string(),
-                    id: api_key_id,
-                },
-                role: "editor".to_string(),
-            },
-        )
-        .await
-        .expect("grant api_key workspace editor");
 
     // Create a project + two boards + two columns each
     let project = user_client

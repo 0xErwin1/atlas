@@ -6,6 +6,8 @@ import { collectPaged } from '@/lib/pagination';
 
 export type ApiKeyDto = components['schemas']['ApiKeyDto'];
 export type ApiKeyCreated = components['schemas']['ApiKeyCreated'];
+export type CreateUserApiKeyRequest = components['schemas']['CreateUserApiKeyRequest'];
+export type InitialGrantRequest = components['schemas']['InitialGrantRequest'];
 
 interface ApiProblem {
   title?: string;
@@ -22,14 +24,14 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
   const loading = ref(false);
   const error = ref<string | null>(null);
 
-  async function loadKeys(ws: string): Promise<void> {
+  async function loadKeys(): Promise<void> {
     loading.value = true;
     error.value = null;
 
     try {
       const { items, error: e } = await collectPaged<ApiKeyDto>((cursor) =>
-        wrappedClient.GET('/v1/workspaces/{ws}/api-keys', {
-          params: { path: { ws }, query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) } },
+        wrappedClient.GET('/v1/api-keys', {
+          params: { query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) } },
         }),
       );
 
@@ -39,27 +41,21 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
         return;
       }
 
-      // Only active keys are shown; revoked ones stay in the audit trail server-side.
       keys.value = items.filter((k) => k.revoked_at == null);
     } catch {
-      error.value = 'Can’t reach the server';
+      error.value = "Can't reach the server";
       keys.value = [];
     } finally {
       loading.value = false;
     }
   }
 
-  async function createKey(
-    ws: string,
-    name: string,
-    expiresAt: string | null,
-  ): Promise<ApiKeyCreated | null> {
+  async function createKey(req: CreateUserApiKeyRequest): Promise<ApiKeyCreated | null> {
     error.value = null;
 
     try {
-      const { data, error: e } = await wrappedClient.POST('/v1/workspaces/{ws}/api-keys', {
-        params: { path: { ws } },
-        body: { name, expires_at: expiresAt },
+      const { data, error: e } = await wrappedClient.POST('/v1/api-keys', {
+        body: req,
       });
 
       if (e || !data) {
@@ -69,17 +65,17 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
 
       return data;
     } catch {
-      error.value = 'Can’t reach the server';
+      error.value = "Can't reach the server";
       return null;
     }
   }
 
-  async function revokeKey(ws: string, id: string): Promise<boolean> {
+  async function revokeKey(id: string): Promise<boolean> {
     error.value = null;
 
     try {
-      const { error: e } = await wrappedClient.POST('/v1/workspaces/{ws}/api-keys/{key_id}/revoke', {
-        params: { path: { ws, key_id: id } },
+      const { error: e } = await wrappedClient.DELETE('/v1/api-keys/{key_id}', {
+        params: { path: { key_id: id } },
       });
 
       if (e) {
@@ -90,7 +86,7 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
       keys.value = keys.value.filter((k) => k.id !== id);
       return true;
     } catch {
-      error.value = 'Can’t reach the server';
+      error.value = "Can't reach the server";
       return false;
     }
   }
