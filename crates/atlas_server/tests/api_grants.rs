@@ -26,6 +26,7 @@ async fn add_agent(
             NewApiKey {
                 name: name.to_string(),
                 token_hash: format!("hash-{name}"),
+                type_: atlas_domain::entities::identity::ApiKeyType::Agent,
                 expires_at: None,
             },
         )

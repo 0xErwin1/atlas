@@ -88,7 +88,17 @@ pub fn app(state: AppState) -> Router {
             "/v1/admin/workspaces",
             get(routes::workspaces::admin_list_workspaces),
         )
-        // API keys
+        // API keys — top-level (user-owned, workspace-independent)
+        .route(
+            "/v1/api-keys",
+            axum::routing::post(routes::api_keys::create_user_api_key)
+                .get(routes::api_keys::list_user_api_keys),
+        )
+        .route(
+            "/v1/api-keys/{key_id}",
+            axum::routing::delete(routes::api_keys::revoke_user_api_key),
+        )
+        // API keys — deprecated workspace-scoped routes (kept for web until C2c)
         .route(
             "/v1/workspaces/{ws}/api-keys",
             axum::routing::post(routes::api_keys::create_api_key)

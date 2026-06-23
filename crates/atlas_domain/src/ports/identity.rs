@@ -88,11 +88,19 @@ pub trait SessionRepo: Send + Sync {
 #[async_trait]
 pub trait ApiKeyRepo: Send + Sync {
     async fn create(&self, ctx: &WorkspaceCtx, new: NewApiKey) -> Result<ApiKey, DomainError>;
+    /// Creates an API key owned by `user_id`, with `workspace_id = NULL`.
+    /// Returns the created key (without the secret — the caller holds the plaintext).
+    async fn create_for_user(&self, user_id: UserId, new: NewApiKey)
+    -> Result<ApiKey, DomainError>;
     async fn find_active_by_token_hash(
         &self,
         token_hash: &str,
     ) -> Result<Option<ApiKey>, DomainError>;
     async fn revoke(&self, ctx: &WorkspaceCtx, id: ApiKeyId) -> Result<(), DomainError>;
+    /// Revokes a key by id after verifying the caller owns it (or is root/system-admin).
+    /// Returns `DomainError::NotFound` when the key does not exist or is already revoked.
+    /// Returns `DomainError::Forbidden` when `user_id` does not own the key.
+    async fn revoke_for_user(&self, user_id: UserId, id: ApiKeyId) -> Result<(), DomainError>;
     /// Lists non-revoked keys scoped to the workspace via the deprecated workspace_id FK.
     /// Kept for callers that have not yet migrated to grant-based listing (C2b).
     async fn list(&self, ctx: &WorkspaceCtx) -> Result<Vec<ApiKey>, DomainError>;

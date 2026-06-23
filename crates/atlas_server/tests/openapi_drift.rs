@@ -101,6 +101,9 @@ const EXPECTED_SCHEMAS: &[&str] = &[
     "Page_ActivityEntryDto",
     "Page_BoardSummaryDto",
     "Page_ApiKeyDto",
+    "CreateUserApiKeyRequest",
+    "InitialGrantRequest",
+    "SetSystemAdminRequest",
 ];
 
 #[test]

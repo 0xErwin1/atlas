@@ -65,6 +65,7 @@ pub(crate) async fn list_workspace_members(
             principal_type: "user".to_string(),
             id: membership.user_id.0,
             display,
+            key_type: None,
         });
     }
 
@@ -82,6 +83,7 @@ pub(crate) async fn list_workspace_members(
             principal_type: "api_key".to_string(),
             id: key.id.0,
             display: key.name.clone(),
+            key_type: Some(key.type_.as_str().to_string()),
         });
     }
 

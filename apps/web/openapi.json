@@ -61,6 +61,140 @@
         ]
       }
     },
+    "/v1/api-keys": {
+      "get": {
+        "tags": [
+          "api-keys"
+        ],
+        "operationId": "list_user_api_keys",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Pagination cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size (max 200)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of the caller's API keys",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_ApiKeyDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "API keys cannot list keys"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "api-keys"
+        ],
+        "operationId": "create_user_api_key",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUserApiKeyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "API key created (secret shown once)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyCreated"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid key type or role"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "API keys cannot create keys"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/v1/api-keys/{key_id}": {
+      "delete": {
+        "tags": [
+          "api-keys"
+        ],
+        "operationId": "revoke_user_api_key",
+        "parameters": [
+          {
+            "name": "key_id",
+            "in": "path",
+            "description": "API key id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "API key revoked"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Cannot revoke another user's key"
+          },
+          "404": {
+            "description": "Key not found or already revoked"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/v1/auth/change-password": {
       "post": {
         "tags": [
@@ -6204,8 +6338,16 @@
             "type": "string",
             "format": "uuid"
           },
+          "key_type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "For `api_key` actors: the key purpose (`\"agent\"` | `\"cli\"` | `\"bot\"` | `\"integration\"`)."
+          },
           "type": {
-            "type": "string"
+            "type": "string",
+            "description": "`\"user\"` or `\"api_key\"`."
           }
         }
       },
@@ -6234,6 +6376,7 @@
           "id",
           "name",
           "secret",
+          "type",
           "created_at"
         ],
         "properties": {
@@ -6258,6 +6401,10 @@
           "secret": {
             "type": "string",
             "description": "The full `atlas_`-prefixed secret. Shown exactly once; not stored."
+          },
+          "type": {
+            "type": "string",
+            "description": "Key purpose: `\"agent\"` | `\"cli\"` | `\"bot\"` | `\"integration\"`."
           }
         }
       },
@@ -6267,6 +6414,7 @@
         "required": [
           "id",
           "name",
+          "type",
           "created_at"
         ],
         "properties": {
@@ -6301,6 +6449,10 @@
               "null"
             ],
             "format": "date-time"
+          },
+          "type": {
+            "type": "string",
+            "description": "Key purpose: `\"agent\"` | `\"cli\"` | `\"bot\"` | `\"integration\"`."
           }
         }
       },
@@ -6673,7 +6825,7 @@
       },
       "CreateApiKeyRequest": {
         "type": "object",
-        "description": "Request body for `POST /v1/workspaces/{ws}/api-keys`.",
+        "description": "Request body for `POST /v1/workspaces/{ws}/api-keys` (deprecated workspace-scoped route).",
         "required": [
           "name"
         ],
@@ -7007,6 +7159,43 @@
           }
         }
       },
+      "CreateUserApiKeyRequest": {
+        "type": "object",
+        "description": "Request body for `POST /v1/api-keys` (top-level, user-owned key creation).",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "expires_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "initial_grant": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/InitialGrantRequest",
+                "description": "Optional initial grant so the key is immediately usable in one workspace."
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Key purpose: `\"agent\"` | `\"cli\"` | `\"bot\"` | `\"integration\"`. Defaults to `\"agent\"`."
+          }
+        }
+      },
       "CreateUserRequest": {
         "type": "object",
         "description": "Request body for `POST /v1/users`.",
@@ -7252,6 +7441,24 @@
           }
         }
       },
+      "InitialGrantRequest": {
+        "type": "object",
+        "description": "Optional initial workspace grant included in a `POST /v1/api-keys` request.\n\nWhen present, a workspace-scope grant at the given role is created atomically\nwith the key so the key is immediately usable in that workspace.",
+        "required": [
+          "workspace",
+          "role"
+        ],
+        "properties": {
+          "role": {
+            "type": "string",
+            "description": "Role: `\"viewer\"` or `\"editor\"` (admin is rejected by the agent cap)."
+          },
+          "workspace": {
+            "type": "string",
+            "description": "Workspace slug for the initial grant."
+          }
+        }
+      },
       "LoginRequest": {
         "type": "object",
         "description": "Request body for `POST /v1/auth/login`.",
@@ -7457,6 +7664,7 @@
               "required": [
                 "id",
                 "name",
+                "type",
                 "created_at"
               ],
               "properties": {
@@ -7491,6 +7699,10 @@
                     "null"
                   ],
                   "format": "date-time"
+                },
+                "type": {
+                  "type": "string",
+                  "description": "Key purpose: `\"agent\"` | `\"cli\"` | `\"bot\"` | `\"integration\"`."
                 }
               }
             }
@@ -7962,6 +8174,13 @@
           "id": {
             "type": "string",
             "format": "uuid"
+          },
+          "key_type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "For `api_key` principals: the key purpose (`\"agent\"` | `\"cli\"` | `\"bot\"` | `\"integration\"`)."
           },
           "principal_type": {
             "type": "string",

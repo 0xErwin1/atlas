@@ -3,10 +3,10 @@
 use atlas_api::{
     dtos::{
         ApiKeyCreated, ApiKeyDto, ChangePasswordRequest, CreateApiKeyRequest, CreateGrantRequest,
-        CreateProjectRequest, CreateUserRequest, CreateWorkspaceRequest, GrantDto, HealthResponse,
-        LoginRequest, LoginResponse, MeResponse, PrincipalDto, ProjectDto, ResetPasswordRequest,
-        ServerMetaDto, UiStateDto, UpdateMeRequest, UpdateProjectRequest, UpdateUiStateRequest,
-        UpdateWorkspaceRequest, UserDto, WorkspaceDto,
+        CreateProjectRequest, CreateUserApiKeyRequest, CreateUserRequest, CreateWorkspaceRequest,
+        GrantDto, HealthResponse, LoginRequest, LoginResponse, MeResponse, PrincipalDto,
+        ProjectDto, ResetPasswordRequest, ServerMetaDto, UiStateDto, UpdateMeRequest,
+        UpdateProjectRequest, UpdateUiStateRequest, UpdateWorkspaceRequest, UserDto, WorkspaceDto,
         boards_tasks::{
             ActivityEntryDto, AddAssigneeRequest, AssigneeDto, BoardDto, BoardSummaryDto,
             ChecklistItemDto, ColumnDto, CreateBoardRequest, CreateChecklistItemRequest,
@@ -355,6 +355,48 @@ impl AtlasClient {
     pub async fn revoke_api_key(&self, ws: &str, key_id: uuid::Uuid) -> Result<(), ClientError> {
         let response = self
             .post(&format!("/v1/workspaces/{ws}/api-keys/{key_id}/revoke"))
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        if response.status().is_success() {
+            return Ok(());
+        }
+        let problem: ProblemDetails = response
+            .json()
+            .await
+            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
+        Err(ClientError::Api(problem))
+    }
+
+    /// `POST /v1/api-keys`
+    pub async fn create_user_api_key(
+        &self,
+        body: CreateUserApiKeyRequest,
+    ) -> Result<ApiKeyCreated, ClientError> {
+        let response = self
+            .post("/v1/api-keys")
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "create_user_api_key").await
+    }
+
+    /// `GET /v1/api-keys`
+    pub async fn list_user_api_keys(
+        &self,
+        cursor: Option<&str>,
+        limit: Option<u32>,
+    ) -> Result<Page<ApiKeyDto>, ClientError> {
+        let path = build_paginated_path("/v1/api-keys", cursor, limit);
+        let response = self.get(&path).send().await?;
+        self.decode_response(response, "list_user_api_keys").await
+    }
+
+    /// `DELETE /v1/api-keys/{key_id}`
+    pub async fn revoke_user_api_key(&self, key_id: uuid::Uuid) -> Result<(), ClientError> {
+        let response = self
+            .delete(&format!("/v1/api-keys/{key_id}"))
             .header("x-atlas-csrf", "1")
             .send()
             .await?;

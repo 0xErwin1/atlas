@@ -60,10 +60,14 @@ pub struct CopyDocumentRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct ActorDto {
+    /// `"user"` or `"api_key"`.
     pub r#type: String,
     pub id: uuid::Uuid,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
+    /// For `api_key` actors: the key purpose (`"agent"` | `"cli"` | `"bot"` | `"integration"`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key_type: Option<String>,
 }
 
 /// Full document representation.

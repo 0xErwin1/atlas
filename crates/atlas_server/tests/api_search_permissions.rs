@@ -171,6 +171,7 @@ async fn create_api_key_for_ws(
         NewApiKey {
             name: name.to_string(),
             token_hash,
+            type_: atlas_domain::entities::identity::ApiKeyType::Agent,
             expires_at: None,
         },
     )

@@ -1052,6 +1052,7 @@ mod tests {
             r#type: "user".into(),
             id: fixed_uuid(),
             display_name: Some("Alice".into()),
+            key_type: None,
         }
     }
 
@@ -1794,6 +1795,7 @@ mod tests {
             principal_type: principal_type.into(),
             id: fixed_uuid(),
             display: "Alice".into(),
+            key_type: None,
         }
     }
 
@@ -2056,6 +2058,7 @@ mod tests {
             r#type: "user".into(),
             id: fixed_uuid(),
             display_name: display.map(String::from),
+            key_type: None,
         }
     }
 
@@ -2461,11 +2464,13 @@ mod tests {
                 r#type: "user".into(),
                 id: fixed_uuid(),
                 display_name: Some("Bob".into()),
+                key_type: None,
             },
             assigned_by: ActorDto {
                 r#type: "api_key".into(),
                 id: fixed_uuid(),
                 display_name: None,
+                key_type: None,
             },
             assigned_at: now(),
         }

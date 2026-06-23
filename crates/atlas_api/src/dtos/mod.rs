@@ -124,12 +124,39 @@ pub struct CreateUserRequest {
     pub password: String,
 }
 
-/// Request body for `POST /v1/workspaces/{ws}/api-keys`.
+/// Request body for `POST /v1/workspaces/{ws}/api-keys` (deprecated workspace-scoped route).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct CreateApiKeyRequest {
     pub name: String,
     pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+/// Optional initial workspace grant included in a `POST /v1/api-keys` request.
+///
+/// When present, a workspace-scope grant at the given role is created atomically
+/// with the key so the key is immediately usable in that workspace.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct InitialGrantRequest {
+    /// Workspace slug for the initial grant.
+    pub workspace: String,
+    /// Role: `"viewer"` or `"editor"` (admin is rejected by the agent cap).
+    pub role: String,
+}
+
+/// Request body for `POST /v1/api-keys` (top-level, user-owned key creation).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct CreateUserApiKeyRequest {
+    pub name: String,
+    /// Key purpose: `"agent"` | `"cli"` | `"bot"` | `"integration"`. Defaults to `"agent"`.
+    #[serde(default)]
+    pub r#type: Option<String>,
+    pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// Optional initial grant so the key is immediately usable in one workspace.
+    #[serde(default)]
+    pub initial_grant: Option<InitialGrantRequest>,
 }
 
 /// Response for `POST /v1/workspaces/{ws}/api-keys` (secret returned exactly once).
@@ -140,6 +167,8 @@ pub struct ApiKeyCreated {
     pub name: String,
     /// The full `atlas_`-prefixed secret. Shown exactly once; not stored.
     pub secret: String,
+    /// Key purpose: `"agent"` | `"cli"` | `"bot"` | `"integration"`.
+    pub r#type: String,
     pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
@@ -150,6 +179,8 @@ pub struct ApiKeyCreated {
 pub struct ApiKeyDto {
     pub id: uuid::Uuid,
     pub name: String,
+    /// Key purpose: `"agent"` | `"cli"` | `"bot"` | `"integration"`.
+    pub r#type: String,
     pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
     pub last_used_at: Option<chrono::DateTime<chrono::Utc>>,
     pub revoked_at: Option<chrono::DateTime<chrono::Utc>>,
@@ -232,6 +263,9 @@ pub struct PrincipalDto {
     pub id: uuid::Uuid,
     /// Display name: the user's display name, or the api key's name.
     pub display: String,
+    /// For `api_key` principals: the key purpose (`"agent"` | `"cli"` | `"bot"` | `"integration"`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key_type: Option<String>,
 }
 
 /// Request body for `POST /v1/workspaces`.

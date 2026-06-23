@@ -8,8 +8,8 @@
 mod support;
 
 use atlas_api::dtos::{
-    CreateApiKeyRequest, CreateGrantRequest, CreateProjectRequest, GrantPrincipal,
-    UpdateProjectRequest,
+    CreateApiKeyRequest, CreateGrantRequest, CreateProjectRequest, CreateUserApiKeyRequest,
+    GrantPrincipal, UpdateProjectRequest,
 };
 use atlas_domain::{Actor, WorkspaceCtx, entities::identity::MemberRole};
 use atlas_server::persistence::repos::{MembershipRepo, NewUser, PermissionGrantRepo, UserRepo};
@@ -432,15 +432,14 @@ async fn agent_without_grant_cannot_see_workspace_visibility_project() {
         .expect("create workspace-visibility project");
 
     let key_created = owner
-        .create_api_key(
-            &ws.slug,
-            CreateApiKeyRequest {
-                name: "no-grant-agent-key".to_string(),
-                expires_at: None,
-            },
-        )
+        .create_user_api_key(CreateUserApiKeyRequest {
+            name: "no-grant-agent-key".to_string(),
+            r#type: None,
+            expires_at: None,
+            initial_grant: None,
+        })
         .await
-        .expect("create api key");
+        .expect("create api key without grant");
 
     let agent_client =
         atlas_client::AtlasClient::new(server.base_url()).with_token(key_created.secret.clone());

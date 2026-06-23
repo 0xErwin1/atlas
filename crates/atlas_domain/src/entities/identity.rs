@@ -117,6 +117,7 @@ pub struct ApiKey {
 pub struct NewApiKey {
     pub name: String,
     pub token_hash: String,
+    pub type_: ApiKeyType,
     pub expires_at: Option<DateTime<Utc>>,
 }
 

@@ -47,6 +47,7 @@ async fn create_ungrant_key(
             NewApiKey {
                 name: name.to_string(),
                 token_hash: hash,
+                type_: atlas_domain::entities::identity::ApiKeyType::Agent,
                 expires_at: None,
             },
         )
@@ -453,6 +454,7 @@ async fn data_migration_backfills_grant_for_existing_workspace_key() {
             NewApiKey {
                 name: "migrated-key".to_string(),
                 token_hash: "atlas_migrated_hash_b205".to_string(),
+                type_: atlas_domain::entities::identity::ApiKeyType::Agent,
                 expires_at: None,
             },
         )

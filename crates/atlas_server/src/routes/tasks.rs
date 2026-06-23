@@ -42,8 +42,9 @@ use crate::{
     error::ApiError,
     persistence::repos::{
         ApiKeyRepo, DocumentRepo, MembershipRepo, PgApiKeyRepo, PgBoardRepo, PgDocumentRepo,
-        PgMembershipRepo, PgTaskAssigneeRepo, PgTaskChecklistRepo, PgTaskReferenceRepo, PgTaskRepo,
-        PgUserRepo, TaskAssigneeRepo, TaskChecklistRepo, TaskReferenceRepo, TaskRepo, UserRepo,
+        PgMembershipRepo, PgPermissionGrantRepo, PgTaskAssigneeRepo, PgTaskChecklistRepo,
+        PgTaskReferenceRepo, PgTaskRepo, PgUserRepo, TaskAssigneeRepo, TaskChecklistRepo,
+        TaskReferenceRepo, TaskRepo, UserRepo,
     },
     routes::validation::{
         validate_custom_entry_count, validate_description, validate_labels, validate_name,
@@ -106,11 +107,13 @@ fn actor_to_dto(actor: &Actor) -> ActorDto {
             r#type: "user".into(),
             id: uid.0,
             display_name: None,
+            key_type: None,
         },
         Actor::ApiKey(kid) => ActorDto {
             r#type: "api_key".into(),
             id: kid.0,
             display_name: None,
+            key_type: None,
         },
     }
 }
@@ -173,32 +176,38 @@ fn assignee_ref_to_actor(r: AssigneeRef) -> Actor {
 /// (a user's `display_name` or an api key's `name`). The base `actor_to_dto` only
 /// carries the id, so without this the client has no name to show and falls back
 /// to a generic "User"/"Agent" label.
-async fn resolve_actor_dto(state: &AppState, ctx: &WorkspaceCtx, actor: &Actor) -> ActorDto {
-    let display_name = match actor {
+async fn resolve_actor_dto(state: &AppState, _ctx: &WorkspaceCtx, actor: &Actor) -> ActorDto {
+    match actor {
         Actor::User(uid) => {
             let repo = PgUserRepo {
                 conn: (*state.db).clone(),
             };
-            repo.find_by_id(*uid)
+            let display_name = repo
+                .find_by_id(*uid)
                 .await
                 .ok()
                 .flatten()
-                .map(|u| u.display_name)
+                .map(|u| u.display_name);
+            ActorDto {
+                r#type: "user".into(),
+                id: uid.0,
+                display_name,
+                key_type: None,
+            }
         }
         Actor::ApiKey(kid) => {
             let repo = PgApiKeyRepo {
                 conn: (*state.db).clone(),
             };
-            repo.list(ctx)
-                .await
-                .ok()
-                .and_then(|keys| keys.into_iter().find(|k| k.id == *kid).map(|k| k.name))
+            let key = repo.get_by_id(*kid).await.ok().flatten();
+            ActorDto {
+                r#type: "api_key".into(),
+                id: kid.0,
+                display_name: key.as_ref().map(|k| k.name.clone()),
+                key_type: key.as_ref().map(|k| k.type_.as_str().to_string()),
+            }
         }
-    };
-
-    let mut dto = actor_to_dto(actor);
-    dto.display_name = display_name;
-    dto
+    }
 }
 
 async fn assignee_to_dto(state: &AppState, ctx: &WorkspaceCtx, a: TaskAssignee) -> AssigneeDto {
@@ -248,15 +257,15 @@ async fn board_assignees_by_task(
     .map(|u| (u.id.0, u.display_name))
     .collect();
 
-    let key_names: HashMap<uuid::Uuid, String> = if needs_keys {
+    let key_info: HashMap<uuid::Uuid, (String, String)> = if needs_keys {
         PgApiKeyRepo {
             conn: (*state.db).clone(),
         }
-        .list(ctx)
+        .list_granted_in_workspace(ctx.workspace_id)
         .await
         .map_err(ApiError::Domain)?
         .into_iter()
-        .map(|k| (k.id.0, k.name))
+        .map(|k| (k.id.0, (k.name, k.type_.as_str().to_string())))
         .collect()
     } else {
         HashMap::new()
@@ -265,10 +274,22 @@ async fn board_assignees_by_task(
     let mut by_task: HashMap<uuid::Uuid, Vec<ActorDto>> = HashMap::new();
     for r in rows {
         let actor = assignee_ref_to_actor(r.assignee);
-        let mut dto = actor_to_dto(&actor);
-        dto.display_name = match &actor {
-            Actor::User(uid) => user_names.get(&uid.0).cloned(),
-            Actor::ApiKey(kid) => key_names.get(&kid.0).cloned(),
+        let dto = match &actor {
+            Actor::User(uid) => ActorDto {
+                r#type: "user".into(),
+                id: uid.0,
+                display_name: user_names.get(&uid.0).cloned(),
+                key_type: None,
+            },
+            Actor::ApiKey(kid) => {
+                let info = key_info.get(&kid.0);
+                ActorDto {
+                    r#type: "api_key".into(),
+                    id: kid.0,
+                    display_name: info.map(|(name, _)| name.clone()),
+                    key_type: info.map(|(_, kt)| kt.clone()),
+                }
+            }
         };
         by_task.entry(r.task_id.0).or_default().push(dto);
     }
@@ -368,9 +389,8 @@ fn parse_assignee_ref(s: &str) -> Result<AssigneeRef, ApiError> {
 
 /// Checks that an `AssigneeRef` is a member of `ctx.workspace_id`.
 ///
-/// A user must have a membership row; an api_key must belong to the workspace
-/// (not revoked). Either missing → 404 to conceal principal existence across
-/// workspaces.
+/// A user must have a membership row; an api_key must have a grant in the workspace.
+/// Either missing → 404 to conceal principal existence across workspaces.
 async fn validate_assignee_is_workspace_member(
     assignee: &AssigneeRef,
     ctx: &WorkspaceCtx,
@@ -392,16 +412,16 @@ async fn validate_assignee_is_workspace_member(
             }
         }
         AssigneeRef::ApiKey(kid) => {
-            let api_key_repo = PgApiKeyRepo {
+            let grant_repo = PgPermissionGrantRepo {
                 conn: (*state.db).clone(),
             };
-            let keys = api_key_repo
-                .list(ctx)
+            let has_grant = grant_repo
+                .principal_has_any_grant_in_workspace(ctx.workspace_id, None, Some(*kid))
                 .await
                 .map_err(|e| ApiError::Internal {
                     message: e.to_string(),
                 })?;
-            if !keys.iter().any(|k| k.id == *kid) {
+            if !has_grant {
                 return Err(ApiError::NotFound);
             }
         }

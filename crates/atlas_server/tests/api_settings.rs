@@ -183,6 +183,7 @@ async fn change_password_rejects_api_key_principal() {
             NewApiKey {
                 name: "settings-bot".to_string(),
                 token_hash,
+                type_: atlas_domain::entities::identity::ApiKeyType::Agent,
                 expires_at: None,
             },
         )
@@ -347,6 +348,7 @@ async fn update_me_rejects_api_key_principal() {
             NewApiKey {
                 name: "profile-bot".to_string(),
                 token_hash,
+                type_: atlas_domain::entities::identity::ApiKeyType::Agent,
                 expires_at: None,
             },
         )

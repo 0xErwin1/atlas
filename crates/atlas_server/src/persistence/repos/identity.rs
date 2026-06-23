@@ -489,7 +489,31 @@ impl ApiKeyRepo for PgApiKeyRepo {
             created_by_user_id: Set(created_by_user_id),
             name: Set(new.name),
             token_hash: Set(new.token_hash),
-            type_: Set(ApiKeyType::Agent.as_str().to_string()),
+            type_: Set(new.type_.as_str().to_string()),
+            expires_at: Set(new.expires_at),
+            last_used_at: Set(None),
+            revoked_at: Set(None),
+            created_at: Set(Utc::now()),
+        };
+        model
+            .insert(&self.conn)
+            .await
+            .map(api_key_from)
+            .map_err(db_err)
+    }
+
+    async fn create_for_user(
+        &self,
+        user_id: UserId,
+        new: NewApiKey,
+    ) -> Result<ApiKey, DomainError> {
+        let model = api_key::ActiveModel {
+            id: Set(ApiKeyId::new().0),
+            workspace_id: Set(None),
+            created_by_user_id: Set(user_id.0),
+            name: Set(new.name),
+            token_hash: Set(new.token_hash),
+            type_: Set(new.type_.as_str().to_string()),
             expires_at: Set(new.expires_at),
             last_used_at: Set(None),
             revoked_at: Set(None),
@@ -565,6 +589,43 @@ impl ApiKeyRepo for PgApiKeyRepo {
                 entity: "api_key",
                 id: id.0,
             })?;
+
+        let mut active = row.into_active_model();
+        active.revoked_at = Set(Some(Utc::now()));
+        active.update(&txn).await.map_err(db_err)?;
+
+        txn.execute_raw(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "DELETE FROM task_assignees WHERE assignee_api_key_id = $1",
+            [id.0.into()],
+        ))
+        .await
+        .map_err(db_err)?;
+
+        txn.commit().await.map_err(db_err)?;
+        Ok(())
+    }
+
+    async fn revoke_for_user(&self, user_id: UserId, id: ApiKeyId) -> Result<(), DomainError> {
+        use sea_orm::IntoActiveModel;
+
+        let txn = self.conn.begin().await.map_err(db_err)?;
+
+        let row = api_key::Entity::find_by_id(id.0)
+            .filter(api_key::Column::RevokedAt.is_null())
+            .one(&txn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "api_key",
+                id: id.0,
+            })?;
+
+        if row.created_by_user_id != user_id.0 {
+            return Err(DomainError::Forbidden {
+                message: "api key is not owned by this user".into(),
+            });
+        }
 
         let mut active = row.into_active_model();
         active.revoked_at = Set(Some(Utc::now()));

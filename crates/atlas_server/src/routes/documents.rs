@@ -1311,12 +1311,14 @@ fn make_actor_dto(user_id: Option<uuid::Uuid>, api_key_id: Option<uuid::Uuid>) -
             r#type: "user".into(),
             id: uid,
             display_name: None,
+            key_type: None,
         })
     } else {
         api_key_id.map(|kid| ActorDto {
             r#type: "api_key".into(),
             id: kid,
             display_name: None,
+            key_type: None,
         })
     }
 }
