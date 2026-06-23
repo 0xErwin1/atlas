@@ -5,7 +5,7 @@ use axum::{
 use std::collections::HashMap;
 
 use atlas_domain::{
-    entities::identity::{User, WorkspaceMembership},
+    entities::identity::{MemberRole, User, WorkspaceMembership},
     ids::{ApiKeyId, UserId},
 };
 
@@ -362,6 +362,129 @@ impl FromRequestParts<AppState> for RequireRoot {
         }
 
         Ok(RequireRoot { user })
+    }
+}
+
+/// Which class of caller the `WorkspaceOwnerOrAdmin` extractor resolved.
+///
+/// Break-glass (`is_root || is_system_admin`) can manage any workspace regardless of
+/// membership. Owner and Admin are workspace-role–bound. The handler uses this to enforce
+/// the per-action permission matrix without re-loading the caller's membership.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CallerClass {
+    BreakGlass,
+    Owner,
+    Admin,
+}
+
+/// Proof that the caller may perform member-management actions in the workspace.
+///
+/// Structural gate for `PATCH` and `DELETE` on `/v1/workspaces/{ws}/members/{user_id}`.
+/// It resolves one of three caller classes:
+/// - `BreakGlass`: `user.is_root || user.is_system_admin` — no membership required in
+///   this workspace; can act on any workspace.
+/// - `Owner`: caller has `MemberRole::Owner` in this workspace.
+/// - `Admin`: caller has `MemberRole::Admin` in this workspace.
+///
+/// Rejected cases:
+/// - No `Principal` extension → 401 Unauthorized.
+/// - `Principal::ApiKey` → 403 (api keys cannot manage members).
+/// - User with `MemberRole::Member` or no membership (and not break-glass) → 403.
+pub struct WorkspaceOwnerOrAdmin {
+    pub workspace: Workspace,
+    pub caller_user_id: UserId,
+    pub caller_class: CallerClass,
+}
+
+impl FromRequestParts<AppState> for WorkspaceOwnerOrAdmin {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        let principal = parts
+            .extensions
+            .get::<Principal>()
+            .cloned()
+            .ok_or(ApiError::Unauthorized)?;
+
+        let user_id = match principal {
+            Principal::User(uid) => uid,
+            Principal::ApiKey(_) => {
+                return Err(ApiError::Forbidden {
+                    message: "API keys cannot manage workspace members".into(),
+                });
+            }
+        };
+
+        let Path(params): Path<HashMap<String, String>> = Path::from_request_parts(parts, state)
+            .await
+            .map_err(|_| ApiError::NotFound)?;
+
+        let ws_slug = params.get("ws").ok_or(ApiError::NotFound)?.clone();
+
+        let user_repo = PgUserRepo {
+            conn: (*state.db).clone(),
+        };
+        let user = user_repo
+            .find_by_id(user_id)
+            .await
+            .map_err(|e| ApiError::Internal {
+                message: e.to_string(),
+            })?
+            .ok_or(ApiError::Unauthorized)?;
+
+        if user.disabled_at.is_some() {
+            return Err(ApiError::Unauthorized);
+        }
+
+        let ws_repo = PgWorkspaceRepo {
+            conn: (*state.db).clone(),
+        };
+        let workspace = ws_repo
+            .find_by_slug(&ws_slug)
+            .await
+            .map_err(|e| ApiError::Internal {
+                message: e.to_string(),
+            })?
+            .ok_or(ApiError::NotFound)?;
+
+        if user.is_root || user.is_system_admin {
+            return Ok(WorkspaceOwnerOrAdmin {
+                workspace,
+                caller_user_id: user_id,
+                caller_class: CallerClass::BreakGlass,
+            });
+        }
+
+        let membership_repo = PgMembershipRepo {
+            conn: (*state.db).clone(),
+        };
+        let ctx = atlas_domain::WorkspaceCtx::new(workspace.id, atlas_domain::Actor::User(user_id));
+        let membership =
+            membership_repo
+                .find(&ctx, user_id)
+                .await
+                .map_err(|e| ApiError::Internal {
+                    message: e.to_string(),
+                })?;
+
+        let caller_class = match membership.map(|m| m.role) {
+            Some(MemberRole::Owner) => CallerClass::Owner,
+            Some(MemberRole::Admin) => CallerClass::Admin,
+            Some(MemberRole::Member) | None => {
+                return Err(ApiError::Forbidden {
+                    message: "Only workspace owners and admins can manage members".into(),
+                });
+            }
+        };
+
+        Ok(WorkspaceOwnerOrAdmin {
+            workspace,
+            caller_user_id: user_id,
+            caller_class,
+        })
     }
 }
 

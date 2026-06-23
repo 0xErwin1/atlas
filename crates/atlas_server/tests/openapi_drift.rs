@@ -104,6 +104,7 @@ const EXPECTED_SCHEMAS: &[&str] = &[
     "InitialGrantRequest",
     "SetSystemAdminRequest",
     "ApiKeyGrantDto",
+    "UpdateMemberRoleRequest",
 ];
 
 #[test]

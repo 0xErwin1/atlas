@@ -637,6 +637,44 @@ impl AtlasClient {
             .await
     }
 
+    /// `PATCH /v1/workspaces/{ws}/members/{user_id}`
+    pub async fn update_member_role(
+        &self,
+        ws: &str,
+        user_id: uuid::Uuid,
+        role: &str,
+    ) -> Result<PrincipalDto, ClientError> {
+        use atlas_api::dtos::UpdateMemberRoleRequest;
+        let response = self
+            .patch(&format!("/v1/workspaces/{ws}/members/{user_id}"))
+            .header("x-atlas-csrf", "1")
+            .json(&UpdateMemberRoleRequest {
+                role: role.to_string(),
+            })
+            .send()
+            .await?;
+        self.decode_response(response, "update_member_role").await
+    }
+
+    /// `DELETE /v1/workspaces/{ws}/members/{user_id}`
+    ///
+    /// Returns the raw HTTP status code so callers can assert on 204.
+    pub async fn remove_member(&self, ws: &str, user_id: uuid::Uuid) -> Result<(), ClientError> {
+        let response = self
+            .delete(&format!("/v1/workspaces/{ws}/members/{user_id}"))
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        if response.status().is_success() {
+            return Ok(());
+        }
+        let problem: atlas_api::problem::ProblemDetails =
+            response.json().await.unwrap_or_else(|_| {
+                atlas_api::problem::ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0)
+            });
+        Err(ClientError::Api(problem))
+    }
+
     /// `GET /v1/workspaces/{ws}/search`
     ///
     /// Calls the unified full-text search endpoint. `q` is required; the

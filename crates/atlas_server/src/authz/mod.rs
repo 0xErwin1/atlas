@@ -6,4 +6,7 @@ pub use authorized::{
     WorkspaceRes, authorize_board_destination, authorize_folder_destination, build_board_chain,
     build_document_chain, build_folder_chain, resolve_effective_role, resolve_folder_ancestry,
 };
-pub use extractors::{RequireRoot, RequireUserAdmin, WorkspaceAccess, WorkspaceMember};
+pub use extractors::{
+    CallerClass, RequireRoot, RequireUserAdmin, WorkspaceAccess, WorkspaceMember,
+    WorkspaceOwnerOrAdmin,
+};

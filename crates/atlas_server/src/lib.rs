@@ -143,6 +143,11 @@ pub fn app(state: AppState) -> Router {
             "/v1/workspaces/{ws}/members",
             get(routes::members::list_workspace_members),
         )
+        .route(
+            "/v1/workspaces/{ws}/members/{user_id}",
+            axum::routing::patch(routes::members::update_member_role)
+                .delete(routes::members::remove_member),
+        )
         // Tags (workspace tag registry)
         .route(
             "/v1/workspaces/{ws}/tags",
