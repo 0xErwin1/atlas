@@ -79,6 +79,24 @@ function roleTagClass(role: Role): string {
   return 'atl-role-member';
 }
 
+type AccountStatus = 'deactivated' | 'pending';
+
+// Only deactivated/pending members are badged. `active` and a missing
+// account_status (older payloads) render no status badge.
+function statusOf(m: PrincipalDto): AccountStatus | null {
+  if (m.account_status === 'deactivated') return 'deactivated';
+  if (m.account_status === 'pending') return 'pending';
+  return null;
+}
+
+function statusLabel(status: AccountStatus): string {
+  return status === 'deactivated' ? 'Deactivated' : 'Pending';
+}
+
+function statusTagClass(status: AccountStatus): string {
+  return status === 'deactivated' ? 'atl-status-deactivated' : 'atl-status-pending';
+}
+
 // Demoting or removing the sole remaining owner always fails server-side
 // (urn:atlas:error:last-owner). Disable those controls so the UI never offers
 // an action that is guaranteed to 409.
@@ -194,8 +212,14 @@ async function confirmRemove(): Promise<void> {
           </div>
         </div>
 
-        <div style="flex: 0 0 120px;">
+        <div style="flex: 0 0 120px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
           <span class="atl-role-badge" :class="roleTagClass(roleOf(m))">{{ roleLabel(roleOf(m)) }}</span>
+          <span
+            v-if="statusOf(m) !== null"
+            class="atl-role-badge atl-status-badge"
+            :class="statusTagClass(statusOf(m)!)"
+            :title="statusOf(m) === 'deactivated' ? 'This account is deactivated' : 'Pending activation'"
+          >{{ statusLabel(statusOf(m)!) }}</span>
         </div>
 
         <div style="flex: 0 0 150px; display: flex; justify-content: flex-end; align-items: center; gap: 6px;">
@@ -335,6 +359,18 @@ async function confirmRemove(): Promise<void> {
   color: var(--c-muted);
   border: 1px solid var(--c-border);
   background: transparent;
+}
+
+.atl-status-deactivated {
+  color: var(--c-danger);
+  border: 1px solid color-mix(in srgb, var(--c-danger) 45%, transparent);
+  background: color-mix(in srgb, var(--c-danger) 12%, transparent);
+}
+
+.atl-status-pending {
+  color: var(--c-primary);
+  border: 1px solid color-mix(in srgb, var(--c-primary) 45%, transparent);
+  background: color-mix(in srgb, var(--c-primary) 12%, transparent);
 }
 
 .atl-role-select-box {

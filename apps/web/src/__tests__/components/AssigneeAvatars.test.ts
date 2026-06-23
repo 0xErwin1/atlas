@@ -11,6 +11,13 @@ const actor = (id: string, type: string, displayName: string): ActorDto => ({
   display_name: displayName,
 });
 
+const actorWithStatus = (id: string, type: string, displayName: string, accountStatus: string): ActorDto => ({
+  id,
+  type,
+  display_name: displayName,
+  account_status: accountStatus,
+});
+
 describe('AssigneeAvatars', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
@@ -67,6 +74,48 @@ describe('AssigneeAvatars', () => {
     const first = wrapper.find('.atl-assignees > span');
     expect(first.attributes('title')).toContain('(you)');
     expect(first.classes()).toContain('atl-assignee-me');
+  });
+
+  it('marks a deactivated assignee with a muted avatar, a status dot, and a tooltip', () => {
+    const wrapper = mount(AssigneeAvatars, {
+      props: {
+        assignees: [actorWithStatus('u1', 'user', 'Alice', 'deactivated')],
+        max: 3,
+      },
+    });
+
+    const slot = wrapper.find('.atl-assignee');
+    expect(slot.classes()).toContain('atl-assignee-inactive');
+    expect(slot.attributes('title')).toBe('Alice — Deactivated');
+    expect(wrapper.find('.atl-assignee-status-deactivated').exists()).toBe(true);
+  });
+
+  it('marks a pending assignee with the pending status dot and tooltip', () => {
+    const wrapper = mount(AssigneeAvatars, {
+      props: {
+        assignees: [actorWithStatus('u1', 'user', 'Bob', 'pending')],
+        max: 3,
+      },
+    });
+
+    const slot = wrapper.find('.atl-assignee');
+    expect(slot.classes()).toContain('atl-assignee-inactive');
+    expect(slot.attributes('title')).toBe('Bob — Pending activation');
+    expect(wrapper.find('.atl-assignee-status-pending').exists()).toBe(true);
+  });
+
+  it('leaves active assignees and payloads without account_status unchanged', () => {
+    const wrapper = mount(AssigneeAvatars, {
+      props: {
+        assignees: [actor('u1', 'user', 'Alice'), actorWithStatus('u2', 'user', 'Bob', 'active')],
+        max: 3,
+      },
+    });
+
+    expect(wrapper.find('.atl-assignee-inactive').exists()).toBe(false);
+    expect(wrapper.find('.atl-assignee-status-dot').exists()).toBe(false);
+    const first = wrapper.find('.atl-assignee');
+    expect(first.attributes('title')).toBe('Alice');
   });
 
   it('does not match a same-id actor of a different principal type as the current user', () => {

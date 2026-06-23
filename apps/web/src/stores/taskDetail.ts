@@ -101,7 +101,11 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     );
 
     if (apiError !== undefined || data === undefined) {
-      error.value = hintOf(apiError, 'Failed to add assignee');
+      const problem = apiError as { detail?: string; status?: number } | undefined;
+      error.value =
+        problem?.status === 422
+          ? (problem.detail ?? 'Cannot assign this user')
+          : hintOf(apiError, 'Failed to add assignee');
       return false;
     }
 

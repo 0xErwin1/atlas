@@ -6573,6 +6573,13 @@
           "id"
         ],
         "properties": {
+          "account_status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Account lifecycle state for user assignees: `\"active\"`, `\"deactivated\"`, or `\"pending\"`.\nAbsent for api_key actors and for all attribution contexts (created_by, assigned_by, etc.)."
+          },
           "display_name": {
             "type": [
               "string",
@@ -8456,6 +8463,13 @@
           "display"
         ],
         "properties": {
+          "account_status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Account lifecycle state for user principals: `\"active\"`, `\"deactivated\"`, or `\"pending\"`.\nAbsent for `api_key` principals."
+          },
           "display": {
             "type": "string",
             "description": "Display name: the user's display name, or the api key's name."

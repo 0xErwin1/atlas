@@ -105,6 +105,22 @@ describe('boards store — task context-menu actions', () => {
     expect(store.loadError).toBeNull();
   });
 
+  it('assignTask 422 surfaces the actionable detail for a deactivated user', async () => {
+    const store = useBoardsStore();
+    POST.mockResolvedValueOnce({
+      error: {
+        status: 422,
+        detail: 'Cannot assign a deactivated user; re-enable the account first.',
+      },
+    });
+
+    const ok = await store.assignTask('ws', 'AB-1', 'user', 'u1');
+
+    expect(ok).toBe(false);
+    expect(store.error).toBe('Cannot assign a deactivated user; re-enable the account first.');
+    expect(store.loadError).toBeNull();
+  });
+
   it('unassignTask DELETEs the principal ref and clears both error channels', async () => {
     const store = useBoardsStore();
     DELETE.mockResolvedValueOnce({ error: undefined });

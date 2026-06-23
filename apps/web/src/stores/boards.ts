@@ -666,11 +666,14 @@ export const useBoardsStore = defineStore('boards', () => {
     );
 
     if (apiError !== undefined) {
-      const problem = apiError as { hint?: string; status?: number } | undefined;
-      error.value =
-        problem?.status === 409
-          ? (problem.hint ?? 'Already assigned to this task')
-          : (problem?.hint ?? 'Failed to assign task');
+      const problem = apiError as { hint?: string; detail?: string; status?: number } | undefined;
+      if (problem?.status === 409) {
+        error.value = problem.hint ?? 'Already assigned to this task';
+      } else if (problem?.status === 422) {
+        error.value = problem.detail ?? problem.hint ?? 'Cannot assign this user';
+      } else {
+        error.value = problem?.hint ?? 'Failed to assign task';
+      }
       return false;
     }
 

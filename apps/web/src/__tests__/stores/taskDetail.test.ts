@@ -201,6 +201,25 @@ describe('useTaskDetailStore', () => {
     expect(store.assignees).toHaveLength(1);
   });
 
+  it('addAssignee surfaces the 422 detail when assigning a deactivated user', async () => {
+    const store = useTaskDetailStore();
+    store._setForTest({ assignees: [assignee('u1', 'user', 'Ann')] });
+
+    POST.mockResolvedValueOnce({
+      data: undefined,
+      error: {
+        status: 422,
+        detail: 'Cannot assign a deactivated user; re-enable the account first.',
+      },
+    });
+
+    const ok = await store.addAssignee('ws', 'ATL-1', { assignee_id: 'u2', assignee_type: 'user' });
+
+    expect(ok).toBe(false);
+    expect(store.error).toBe('Cannot assign a deactivated user; re-enable the account first.');
+    expect(store.assignees).toHaveLength(1);
+  });
+
   it('removeAssignee optimistically removes, rolls back on error', async () => {
     const store = useTaskDetailStore();
     store._setForTest({

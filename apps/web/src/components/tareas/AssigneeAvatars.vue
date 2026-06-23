@@ -28,6 +28,26 @@ function displayName(actor: ActorDto): string {
   return actor.display_name ?? (actor.type === 'api_key' ? 'Agent' : 'User');
 }
 
+type AccountStatus = 'deactivated' | 'pending';
+
+// Only deactivated/pending users carry a marker. `active` and a missing
+// account_status (older payloads, api_key actors) render unchanged.
+function markedStatus(actor: ActorDto): AccountStatus | null {
+  if (actor.account_status === 'deactivated') return 'deactivated';
+  if (actor.account_status === 'pending') return 'pending';
+  return null;
+}
+
+function statusLabel(status: AccountStatus): string {
+  return status === 'deactivated' ? 'Deactivated' : 'Pending activation';
+}
+
+function avatarTitle(actor: ActorDto): string {
+  const base = isCurrentUser(actor) ? `${displayName(actor)} (you)` : displayName(actor);
+  const status = markedStatus(actor);
+  return status === null ? base : `${base} — ${statusLabel(status)}`;
+}
+
 // Current user first (so the viewer recognizes their own tasks), the rest in
 // their original order. A stable partition keeps the server ordering otherwise.
 const ordered = computed<ActorDto[]>(() => {
@@ -48,11 +68,20 @@ const overflowNames = computed<string>(() => ordered.value.slice(props.max).map(
     <span
       v-for="actor in visible"
       :key="`${actor.type}:${actor.id}`"
-      class="inline-flex"
-      :class="{ 'atl-assignee-me': isCurrentUser(actor) }"
-      :title="isCurrentUser(actor) ? `${displayName(actor)} (you)` : displayName(actor)"
+      class="atl-assignee relative inline-flex"
+      :class="{
+        'atl-assignee-me': isCurrentUser(actor),
+        'atl-assignee-inactive': markedStatus(actor) !== null,
+      }"
+      :title="avatarTitle(actor)"
     >
       <Avatar :name="displayName(actor)" :agent="actor.type === 'api_key'" :size="size" />
+      <span
+        v-if="markedStatus(actor) !== null"
+        class="atl-assignee-status-dot"
+        :class="`atl-assignee-status-${markedStatus(actor)}`"
+        aria-hidden="true"
+      />
     </span>
 
     <span
@@ -81,5 +110,28 @@ const overflowNames = computed<string>(() => ordered.value.slice(props.max).map(
 .atl-assignee-me {
   border-radius: 2px;
   box-shadow: 0 0 0 1.5px var(--c-primary);
+}
+
+.atl-assignee-inactive {
+  filter: grayscale(1);
+  opacity: 0.55;
+}
+
+.atl-assignee-status-dot {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1.5px var(--c-background);
+}
+
+.atl-assignee-status-deactivated {
+  background: var(--c-muted);
+}
+
+.atl-assignee-status-pending {
+  background: var(--c-primary);
 }
 </style>
