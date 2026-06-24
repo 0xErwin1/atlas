@@ -674,65 +674,75 @@ where
             })?
             .ok_or(ApiError::NotFound)?;
 
-        let (domain_principal, membership_role) = match &middleware_principal {
-            MiddlewarePrincipal::User(uid) => {
-                let user_repo = PgUserRepo {
-                    conn: (*state.db).clone(),
-                };
-                let user = user_repo
-                    .find_by_id(*uid)
-                    .await
-                    .map_err(|e| ApiError::Internal {
-                        message: e.to_string(),
-                    })?
-                    .ok_or(ApiError::Unauthorized)?;
+        let (domain_principal, membership_role) =
+            match &middleware_principal {
+                MiddlewarePrincipal::User(uid) => {
+                    let user_repo = PgUserRepo {
+                        conn: (*state.db).clone(),
+                    };
+                    let user = user_repo
+                        .find_by_id(*uid)
+                        .await
+                        .map_err(|e| ApiError::Internal {
+                            message: e.to_string(),
+                        })?
+                        .ok_or(ApiError::Unauthorized)?;
 
-                if user.disabled_at.is_some() {
-                    return Err(ApiError::Unauthorized);
+                    if user.disabled_at.is_some() {
+                        return Err(ApiError::Unauthorized);
+                    }
+
+                    // is_root and is_system_admin synthesize Admin membership to gain
+                    // global admin access to every workspace's content without being a member.
+                    // This is a security-load-bearing short-circuit: weakening this check
+                    // would silently remove global-admin content visibility.
+                    if user.is_root || user.is_system_admin {
+                        let role = Some(atlas_domain::entities::identity::MemberRole::Admin);
+                        (Principal::User(*uid), role)
+                    } else {
+                        let membership_repo = PgMembershipRepo {
+                            conn: (*state.db).clone(),
+                        };
+                        let ctx = atlas_domain::WorkspaceCtx::new(
+                            workspace.id,
+                            atlas_domain::Actor::User(*uid),
+                        );
+                        let membership = membership_repo.find(&ctx, *uid).await.map_err(|e| {
+                            ApiError::Internal {
+                                message: e.to_string(),
+                            }
+                        })?;
+
+                        if membership.is_none() {
+                            return Err(ApiError::NotFound);
+                        }
+
+                        let role = membership.map(|m| m.role);
+                        (Principal::User(*uid), role)
+                    }
                 }
-
-                let membership_repo = PgMembershipRepo {
-                    conn: (*state.db).clone(),
-                };
-                let ctx =
-                    atlas_domain::WorkspaceCtx::new(workspace.id, atlas_domain::Actor::User(*uid));
-                let membership =
-                    membership_repo
-                        .find(&ctx, *uid)
+                MiddlewarePrincipal::ApiKey(kid) => {
+                    // Workspace access for api keys is grant-based: the key must hold at least
+                    // one permission_grants row in this workspace. The subsequent resolve_effective_role
+                    // call already returns None for an ungranted key, but the early gate here
+                    // surfaces a consistent 404 before resource resolution runs.
+                    let grant_repo = PgPermissionGrantRepo {
+                        conn: (*state.db).clone(),
+                    };
+                    let has_grant = grant_repo
+                        .principal_has_any_grant_in_workspace(workspace.id, None, Some(*kid))
                         .await
                         .map_err(|e| ApiError::Internal {
                             message: e.to_string(),
                         })?;
 
-                if membership.is_none() {
-                    return Err(ApiError::NotFound);
+                    if !has_grant {
+                        return Err(ApiError::NotFound);
+                    }
+
+                    (Principal::ApiKey(*kid), None)
                 }
-
-                let role = membership.map(|m| m.role);
-                (Principal::User(*uid), role)
-            }
-            MiddlewarePrincipal::ApiKey(kid) => {
-                // Workspace access for api keys is grant-based: the key must hold at least
-                // one permission_grants row in this workspace. The subsequent resolve_effective_role
-                // call already returns None for an ungranted key, but the early gate here
-                // surfaces a consistent 404 before resource resolution runs.
-                let grant_repo = PgPermissionGrantRepo {
-                    conn: (*state.db).clone(),
-                };
-                let has_grant = grant_repo
-                    .principal_has_any_grant_in_workspace(workspace.id, None, Some(*kid))
-                    .await
-                    .map_err(|e| ApiError::Internal {
-                        message: e.to_string(),
-                    })?;
-
-                if !has_grant {
-                    return Err(ApiError::NotFound);
-                }
-
-                (Principal::ApiKey(*kid), None)
-            }
-        };
+            };
 
         let path_map_value =
             serde_json::to_value(&path_params.0).map_err(|e| ApiError::Internal {

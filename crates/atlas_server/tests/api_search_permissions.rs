@@ -670,7 +670,7 @@ async fn api_key_no_grant_sees_no_rows_at_sql_level() {
         warnings: vec![],
     };
     let hits = repo
-        .search(&ctx, &principal, &query, 50, None)
+        .search(&ctx, &principal, &query, 50, None, false)
         .await
         .expect("search");
 

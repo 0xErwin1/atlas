@@ -57,6 +57,7 @@ impl SearchRepo for PgSearchRepo {
         query: &SearchQuery,
         limit: u64,
         after: Option<SearchAfter>,
+        bypass: bool,
     ) -> Result<Vec<SearchHit>, DomainError> {
         use sea_orm::Statement;
 
@@ -82,13 +83,22 @@ impl SearchRepo for PgSearchRepo {
             Principal::User(uid) => {
                 principal_col = "user_id";
                 values.push(uid.0.into());
-                owner_admin_clause = "EXISTS (
-                        SELECT 1 FROM workspace_memberships
-                        WHERE workspace_id = $1
-                          AND user_id = $2
-                          AND role IN ('owner', 'admin')
-                    )"
-                .to_string();
+
+                if bypass {
+                    // Global-admin bypass: short-circuit the permission predicate so
+                    // every non-deleted row in the workspace is visible, mirroring
+                    // the "Owner/Admin sees all" semantics a real member already gets.
+                    owner_admin_clause = "TRUE".to_string();
+                } else {
+                    owner_admin_clause = "EXISTS (
+                            SELECT 1 FROM workspace_memberships
+                            WHERE workspace_id = $1
+                              AND user_id = $2
+                              AND role IN ('owner', 'admin')
+                        )"
+                    .to_string();
+                }
+
                 member_clause = "EXISTS (
                         SELECT 1 FROM workspace_memberships
                         WHERE workspace_id = $1

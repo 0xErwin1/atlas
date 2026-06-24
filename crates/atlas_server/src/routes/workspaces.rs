@@ -17,7 +17,9 @@ use crate::{
     auth::middleware::Principal,
     authz::{RequireUserAdmin, WorkspaceMember},
     error::ApiError,
-    persistence::repos::{MembershipRepo, PgMembershipRepo, PgWorkspaceRepo, WorkspaceRepo},
+    persistence::repos::{
+        MembershipRepo, PgMembershipRepo, PgUserRepo, PgWorkspaceRepo, UserRepo, WorkspaceRepo,
+    },
     routes::validation::validate_name,
     state::AppState,
 };
@@ -110,16 +112,37 @@ pub(crate) async fn list_workspaces(
         Principal::ApiKey(_) => return Ok(Json(Vec::new())),
     };
 
+    let user_repo = PgUserRepo {
+        conn: (*state.db).clone(),
+    };
+    let user = user_repo
+        .find_by_id(user_id)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?
+        .ok_or(ApiError::Unauthorized)?;
+
+    if user.disabled_at.is_some() {
+        return Err(ApiError::Unauthorized);
+    }
+
     let ws_repo = PgWorkspaceRepo {
         conn: (*state.db).clone(),
     };
 
-    let workspaces = ws_repo
-        .list_for_user(user_id)
-        .await
-        .map_err(|_| ApiError::Internal {
-            message: "workspace lookup failed".into(),
-        })?;
+    let workspaces = if user.is_root || user.is_system_admin {
+        ws_repo.list_all().await.map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?
+    } else {
+        ws_repo
+            .list_for_user(user_id)
+            .await
+            .map_err(|_| ApiError::Internal {
+                message: "workspace lookup failed".into(),
+            })?
+    };
 
     let dtos = workspaces.iter().map(workspace_to_dto).collect();
 

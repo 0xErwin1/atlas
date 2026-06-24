@@ -441,6 +441,7 @@ async fn plain_member_does_not_see_private_project_document() {
             &make_search_query("uniquetoken_privproj"),
             50,
             None,
+            false,
         )
         .await
         .expect("member search");
@@ -502,6 +503,7 @@ async fn plain_member_with_project_grant_sees_private_project_document() {
             &make_search_query("uniquetoken_privgrant"),
             50,
             None,
+            false,
         )
         .await
         .expect("member search");
@@ -561,6 +563,7 @@ async fn plain_member_sees_workspace_visible_project_document() {
             &make_search_query("uniquetoken_wsvis"),
             50,
             None,
+            false,
         )
         .await
         .expect("member search");
@@ -610,6 +613,7 @@ async fn owner_sees_private_project_document() {
             &make_search_query("uniquetoken_ownerpriv"),
             50,
             None,
+            false,
         )
         .await
         .expect("owner search");
@@ -709,6 +713,7 @@ async fn plain_member_task_visibility_follows_project() {
             &make_task_only_query("uniquetoken_taskvis"),
             50,
             None,
+            false,
         )
         .await
         .expect("member task search");
@@ -754,6 +759,7 @@ async fn snippet_carries_mark_highlight() {
             &make_search_query("uniquetoken_headline"),
             50,
             None,
+            false,
         )
         .await
         .expect("owner search");
@@ -814,6 +820,7 @@ async fn task_of_soft_deleted_project_still_surfaces_for_owner() {
             &make_task_only_query("uniquetoken_softdel"),
             50,
             None,
+            false,
         )
         .await
         .expect("owner search");
@@ -865,7 +872,7 @@ async fn cross_tenant_document_isolation() {
     let query = make_search_query("uniquetoken_xten_secret");
 
     let hits = repo
-        .search(&ctx, &principal, &query, 50, None)
+        .search(&ctx, &principal, &query, 50, None, false)
         .await
         .expect("search");
 
@@ -936,6 +943,7 @@ async fn intra_workspace_no_grant_excludes_document() {
             &make_search_query("uniquetoken_perm_private"),
             50,
             None,
+            false,
         )
         .await
         .expect("owner search");
@@ -951,6 +959,7 @@ async fn intra_workspace_no_grant_excludes_document() {
             &make_search_query("uniquetoken_perm_private"),
             50,
             None,
+            false,
         )
         .await
         .expect("stranger search");
@@ -1000,6 +1009,7 @@ async fn direct_document_grant_surfaces_hit() {
             &make_search_query("uniquetoken_docgrant"),
             50,
             None,
+            false,
         )
         .await
         .expect("grantee search");
@@ -1075,6 +1085,7 @@ async fn task_board_grant_surfaces_hit() {
             &make_search_query("uniquetoken_boardtask"),
             50,
             None,
+            false,
         )
         .await
         .expect("grantee search");
@@ -1093,6 +1104,7 @@ async fn task_board_grant_surfaces_hit() {
             &make_search_query("uniquetoken_boardtask"),
             50,
             None,
+            false,
         )
         .await
         .expect("stranger search");
@@ -1142,6 +1154,7 @@ async fn workspace_scope_grant_surfaces_all_documents() {
             &make_search_query("uniquetoken_wsscope"),
             50,
             None,
+            false,
         )
         .await
         .expect("grantee search");
@@ -1188,7 +1201,7 @@ async fn pagination_relevance_no_duplicates_or_gaps() {
 
     loop {
         let hits = repo
-            .search(&ctx, &principal, &query, 2 + 1, after)
+            .search(&ctx, &principal, &query, 2 + 1, after, false)
             .await
             .expect("search page");
 
@@ -1250,7 +1263,7 @@ async fn pagination_updated_no_duplicates_or_gaps() {
 
     loop {
         let hits = repo
-            .search(&ctx, &principal, &query, 2 + 1, after)
+            .search(&ctx, &principal, &query, 2 + 1, after, false)
             .await
             .expect("search page");
 
@@ -1315,6 +1328,7 @@ async fn type_filter_documents_excludes_tasks() {
             &make_doc_only_query("uniquetoken_typef"),
             50,
             None,
+            false,
         )
         .await
         .expect("doc-only search");
@@ -1335,6 +1349,7 @@ async fn type_filter_documents_excludes_tasks() {
             &make_task_only_query("uniquetoken_typef"),
             50,
             None,
+            false,
         )
         .await
         .expect("task-only search");
@@ -1411,7 +1426,7 @@ async fn status_filter_narrows_tasks_by_column_name() {
         ));
 
     let hits = repo
-        .search(&ctx, &principal, &status_query, 50, None)
+        .search(&ctx, &principal, &status_query, 50, None, false)
         .await
         .expect("status search");
 
@@ -1529,7 +1544,7 @@ async fn tag_filter_narrows_documents_and_tasks() {
         .push(atlas_domain::search::SearchFilter::Tag("rust".to_string()));
 
     let hits = repo
-        .search(&ctx, &principal, &tag_query, 50, None)
+        .search(&ctx, &principal, &tag_query, 50, None, false)
         .await
         .expect("tag search");
 
@@ -1580,6 +1595,7 @@ async fn title_only_match_yields_absent_snippet() {
             &make_search_query("uniquetoken_titlesnip9xqz"),
             50,
             None,
+            false,
         )
         .await
         .expect("owner search");
@@ -1631,6 +1647,7 @@ async fn task_hits_carry_readable_id_documents_do_not() {
             &make_search_query("uniquetoken_rid"),
             50,
             None,
+            false,
         )
         .await
         .expect("search");
@@ -1731,6 +1748,7 @@ async fn member_sees_in_folder_non_private_project_document() {
             &make_search_query("uniquetoken_foldvis"),
             50,
             None,
+            false,
         )
         .await
         .expect("member search");
@@ -1801,6 +1819,7 @@ async fn task_hit_carries_column_name_document_hit_does_not() {
             &make_search_query("uniquetoken_colname"),
             50,
             None,
+            false,
         )
         .await
         .expect("search");
@@ -1876,6 +1895,7 @@ async fn member_gets_nothing_via_visibility_for_workspace_root_document() {
             &make_search_query("uniquetoken_rootdoc9qzx"),
             50,
             None,
+            false,
         )
         .await
         .expect("member search");

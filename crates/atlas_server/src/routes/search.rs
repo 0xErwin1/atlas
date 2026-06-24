@@ -89,10 +89,11 @@ pub(crate) async fn search(
     let actor = principal_to_actor(&auth.principal);
     let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
     let principal = auth.principal;
+    let bypass = auth.bypass;
 
     let repo = PgSearchRepo::new((*state.db).clone());
     let hits = repo
-        .search(&ctx, &principal, &query, limit + 1, after)
+        .search(&ctx, &principal, &query, limit + 1, after, bypass)
         .await
         .map_err(ApiError::Domain)?;
 

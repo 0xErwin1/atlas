@@ -42,6 +42,10 @@ pub trait SearchRepo: Send + Sync {
     /// the LIMIT applies after permission-visible rows only.
     ///
     /// `after.key` is guaranteed to match `query.sort` (validated by the route).
+    ///
+    /// When `bypass` is true, the per-row SQL permission predicate is short-circuited
+    /// so every non-deleted row in the workspace is visible. This must only be set
+    /// by the route layer when the principal is `is_root || is_system_admin`.
     async fn search(
         &self,
         ctx: &WorkspaceCtx,
@@ -49,6 +53,7 @@ pub trait SearchRepo: Send + Sync {
         query: &SearchQuery,
         limit: u64,
         after: Option<SearchAfter>,
+        bypass: bool,
     ) -> Result<Vec<SearchHit>, DomainError>;
 }
 

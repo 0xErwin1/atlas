@@ -78,6 +78,18 @@ impl FromRequestParts<AppState> for WorkspaceMember {
                     return Err(ApiError::Unauthorized);
                 }
 
+                // is_root and is_system_admin get global admin access to every workspace
+                // without being a member. This is a security-load-bearing short-circuit:
+                // weakening this check would silently remove global-admin visibility.
+                if user.is_root || user.is_system_admin {
+                    return Ok(WorkspaceMember {
+                        workspace,
+                        user: Some(user),
+                        api_key_id: None,
+                        membership: None,
+                    });
+                }
+
                 let membership_repo = PgMembershipRepo {
                     conn: (*state.db).clone(),
                 };
@@ -146,6 +158,10 @@ pub struct WorkspaceAccess {
     pub principal: atlas_domain::permissions::Principal,
     pub workspace: Workspace,
     pub membership: Option<atlas_domain::entities::identity::MemberRole>,
+    /// True only when a `is_root || is_system_admin` user bypasses the normal
+    /// membership/grant gate. Never true for an ApiKey principal.
+    /// Consumed by the search route to short-circuit the SQL permission predicate.
+    pub bypass: bool,
 }
 
 impl FromRequestParts<AppState> for WorkspaceAccess {
@@ -199,6 +215,17 @@ impl FromRequestParts<AppState> for WorkspaceAccess {
                     return Err(ApiError::Unauthorized);
                 }
 
+                // is_root and is_system_admin bypass membership and grant checks.
+                // bypass = true signals the search SQL to short-circuit the permission predicate.
+                if user.is_root || user.is_system_admin {
+                    return Ok(WorkspaceAccess {
+                        principal: atlas_domain::permissions::Principal::User(user_id),
+                        workspace,
+                        membership: Some(atlas_domain::entities::identity::MemberRole::Admin),
+                        bypass: true,
+                    });
+                }
+
                 let membership_repo = PgMembershipRepo {
                     conn: (*state.db).clone(),
                 };
@@ -233,6 +260,7 @@ impl FromRequestParts<AppState> for WorkspaceAccess {
                     principal: atlas_domain::permissions::Principal::User(user_id),
                     workspace,
                     membership: role,
+                    bypass: false,
                 })
             }
             Principal::ApiKey(key_id) => {
@@ -251,6 +279,7 @@ impl FromRequestParts<AppState> for WorkspaceAccess {
                     principal: atlas_domain::permissions::Principal::ApiKey(key_id),
                     workspace,
                     membership: None,
+                    bypass: false,
                 })
             }
         }
