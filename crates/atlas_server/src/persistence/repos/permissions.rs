@@ -191,46 +191,52 @@ impl PgPermissionGrantRepo {
     }
 }
 
-#[async_trait]
-impl PermissionGrantRepo for PgPermissionGrantRepo {
-    async fn upsert(&self, grant: NewPermissionGrant) -> Result<PermissionGrant, DomainError> {
+impl PgPermissionGrantRepo {
+    /// Upserts a permission grant using the provided connection or transaction and
+    /// returns the resulting row. Both the INSERT and the SELECT-back run on the
+    /// same connection so the read sees the uncommitted write.
+    ///
+    /// Used to run the upsert atomically alongside an audit-log write inside a
+    /// transaction, so the audit row is written iff the mutation commits.
+    pub async fn upsert_in<C: ConnectionTrait>(
+        conn: &C,
+        grant: NewPermissionGrant,
+    ) -> Result<PermissionGrant, DomainError> {
         let id = PermissionGrantId::new();
         let now = Utc::now();
         let role_str = role_to_str(grant.role);
 
-        self.conn
-            .execute_raw(sea_orm::Statement::from_sql_and_values(
-                sea_orm::DatabaseBackend::Postgres,
-                r#"
-                INSERT INTO permission_grants
-                    (id, workspace_id, user_id, api_key_id,
-                     project_id, folder_id, document_id, board_id,
-                     role, created_by_user_id, created_by_api_key_id,
-                     created_at, updated_at)
-                VALUES
-                    ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12)
-                ON CONFLICT (workspace_id, user_id, api_key_id, project_id, folder_id, document_id, board_id)
-                DO UPDATE SET role = EXCLUDED.role, updated_at = EXCLUDED.updated_at
-                "#,
-                [
-                    id.0.into(),
-                    grant.workspace_id.0.into(),
-                    grant.user_id.map(|u| u.0).into(),
-                    grant.api_key_id.map(|k| k.0).into(),
-                    grant.project_id.map(|p| p.0).into(),
-                    grant.folder_id.map(|f| f.0).into(),
-                    grant.document_id.map(|d| d.0).into(),
-                    grant.board_id.map(|b| b.0).into(),
-                    role_str.into(),
-                    grant.created_by_user_id.map(|u| u.0).into(),
-                    grant.created_by_api_key_id.map(|k| k.0).into(),
-                    now.into(),
-                ],
-            ))
-            .await
-            .map_err(db_err)?;
+        conn.execute_raw(sea_orm::Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            r#"
+            INSERT INTO permission_grants
+                (id, workspace_id, user_id, api_key_id,
+                 project_id, folder_id, document_id, board_id,
+                 role, created_by_user_id, created_by_api_key_id,
+                 created_at, updated_at)
+            VALUES
+                ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12)
+            ON CONFLICT (workspace_id, user_id, api_key_id, project_id, folder_id, document_id, board_id)
+            DO UPDATE SET role = EXCLUDED.role, updated_at = EXCLUDED.updated_at
+            "#,
+            [
+                id.0.into(),
+                grant.workspace_id.0.into(),
+                grant.user_id.map(|u| u.0).into(),
+                grant.api_key_id.map(|k| k.0).into(),
+                grant.project_id.map(|p| p.0).into(),
+                grant.folder_id.map(|f| f.0).into(),
+                grant.document_id.map(|d| d.0).into(),
+                grant.board_id.map(|b| b.0).into(),
+                role_str.into(),
+                grant.created_by_user_id.map(|u| u.0).into(),
+                grant.created_by_api_key_id.map(|k| k.0).into(),
+                now.into(),
+            ],
+        ))
+        .await
+        .map_err(db_err)?;
 
-        // Fetch the row back (handles both insert and update cases).
         let row = permission_grant::Entity::find()
             .filter(permission_grant::Column::WorkspaceId.eq(grant.workspace_id.0))
             .filter(match grant.user_id {
@@ -257,7 +263,7 @@ impl PermissionGrantRepo for PgPermissionGrantRepo {
                 Some(bid) => permission_grant::Column::BoardId.eq(bid.0),
                 None => permission_grant::Column::BoardId.is_null(),
             })
-            .one(&self.conn)
+            .one(conn)
             .await
             .map_err(db_err)?
             .ok_or_else(|| DomainError::Internal {
@@ -265,6 +271,32 @@ impl PermissionGrantRepo for PgPermissionGrantRepo {
             })?;
 
         grant_from(row)
+    }
+
+    /// Deletes a permission grant by id + workspace using the provided connection or
+    /// transaction.
+    ///
+    /// Used to run the delete atomically alongside an audit-log write inside a
+    /// transaction, so the audit row is written iff the mutation commits.
+    pub async fn delete_in<C: ConnectionTrait>(
+        conn: &C,
+        grant_id: PermissionGrantId,
+        workspace_id: WorkspaceId,
+    ) -> Result<(), DomainError> {
+        permission_grant::Entity::delete_many()
+            .filter(permission_grant::Column::Id.eq(grant_id.0))
+            .filter(permission_grant::Column::WorkspaceId.eq(workspace_id.0))
+            .exec(conn)
+            .await
+            .map_err(db_err)?;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl PermissionGrantRepo for PgPermissionGrantRepo {
+    async fn upsert(&self, grant: NewPermissionGrant) -> Result<PermissionGrant, DomainError> {
+        PgPermissionGrantRepo::upsert_in(&self.conn, grant).await
     }
 
     async fn load_grants_for_resolution(
@@ -282,11 +314,8 @@ impl PermissionGrantRepo for PgPermissionGrantRepo {
             role: String,
         }
 
-        // Build the parameterised query.  Each dynamic value becomes a $N binding
-        // so the driver handles quoting and the query is immune to value-injection.
         let mut values: Vec<sea_orm::Value> = Vec::new();
 
-        // $1 — workspace_id
         values.push(query.workspace_id.0.into());
         let ws_param = values.len();
 
@@ -392,13 +421,7 @@ impl PermissionGrantRepo for PgPermissionGrantRepo {
         grant_id: PermissionGrantId,
         workspace_id: WorkspaceId,
     ) -> Result<(), DomainError> {
-        permission_grant::Entity::delete_many()
-            .filter(permission_grant::Column::Id.eq(grant_id.0))
-            .filter(permission_grant::Column::WorkspaceId.eq(workspace_id.0))
-            .exec(&self.conn)
-            .await
-            .map_err(db_err)?;
-        Ok(())
+        PgPermissionGrantRepo::delete_in(&self.conn, grant_id, workspace_id).await
     }
 
     async fn list_for_resource(

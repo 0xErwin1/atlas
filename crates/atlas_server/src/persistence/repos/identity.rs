@@ -870,6 +870,60 @@ impl MembershipRepo for PgMembershipRepo {
     }
 }
 
+impl PgMembershipRepo {
+    /// Removes a workspace membership using the provided connection or transaction.
+    ///
+    /// Used when the caller needs to run the delete atomically inside an existing
+    /// transaction alongside an audit-log write.
+    pub async fn remove_in<C: ConnectionTrait>(
+        conn: &C,
+        ctx: &WorkspaceCtx,
+        user_id: UserId,
+    ) -> Result<(), DomainError> {
+        membership::Entity::delete_many()
+            .filter(membership::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(membership::Column::UserId.eq(user_id.0))
+            .exec(conn)
+            .await
+            .map(|_| ())
+            .map_err(db_err)
+    }
+
+    /// Updates a workspace member's role using the provided connection or transaction.
+    ///
+    /// Used when the caller needs to run the update atomically inside an existing
+    /// transaction alongside an audit-log write.
+    pub async fn update_role_in<C: ConnectionTrait>(
+        conn: &C,
+        ctx: &WorkspaceCtx,
+        user_id: UserId,
+        role: MemberRole,
+    ) -> Result<WorkspaceMembership, DomainError> {
+        let existing = membership::Entity::find()
+            .filter(membership::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(membership::Column::UserId.eq(user_id.0))
+            .one(conn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "WorkspaceMembership",
+                id: user_id.0,
+            })?;
+
+        let mut active: membership::ActiveModel = existing.into();
+        active.role = Set(role.as_str().to_string());
+        active.updated_at = Set(Utc::now());
+
+        active
+            .update(conn)
+            .await
+            .map_err(db_err)
+            .and_then(|m: membership::Model| {
+                membership_from(m).map_err(|e| DomainError::Internal { message: e })
+            })
+    }
+}
+
 pub struct PgUiStateRepo {
     pub conn: DatabaseConnection,
 }

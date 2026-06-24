@@ -3,15 +3,23 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
 };
+use sea_orm::TransactionTrait;
 
 use atlas_api::dtos::{PrincipalDto, UpdateMemberRoleRequest};
-use atlas_domain::{Actor, entities::identity::MemberRole};
+use atlas_domain::{
+    Actor,
+    entities::{
+        identity::MemberRole,
+        security_audit::{NewSecurityAuditEvent, SecurityAction},
+    },
+};
 
 use crate::{
     authz::{CallerClass, WorkspaceMember, WorkspaceOwnerOrAdmin},
     error::ApiError,
     persistence::repos::{
-        ApiKeyRepo, MembershipRepo, PgApiKeyRepo, PgMembershipRepo, PgUserRepo, UserRepo,
+        ApiKeyRepo, MembershipRepo, PgApiKeyRepo, PgMembershipRepo, PgSecurityAuditRepo,
+        PgUserRepo, UserRepo,
     },
     routes::account_status,
     state::AppState,
@@ -188,12 +196,39 @@ pub(crate) async fn update_member_role(
         .as_ref()
         .map(|u| account_status(u.disabled_at, u.activated_at).to_string());
 
-    let updated = membership_repo
-        .update_role(&ctx, target_user_id, new_role)
+    let txn = (*state.db).begin().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    let updated = PgMembershipRepo::update_role_in(&txn, &ctx, target_user_id, new_role)
         .await
         .map_err(|e| ApiError::Internal {
             message: e.to_string(),
         })?;
+
+    // The audit row and the role update commit or roll back together.
+    PgSecurityAuditRepo::append_in(
+        &txn,
+        NewSecurityAuditEvent {
+            workspace_id: Some(caller.workspace.id),
+            actor: Actor::User(caller.caller_user_id),
+            action: SecurityAction::MembershipRoleChanged,
+            target_type: "user".to_string(),
+            target_id: Some(target_user_id.0),
+            metadata: serde_json::json!({
+                "old_role": target_role.as_str(),
+                "new_role": updated.role.as_str(),
+            }),
+        },
+    )
+    .await
+    .map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    txn.commit().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
 
     Ok(Json(PrincipalDto {
         principal_type: "user".to_string(),
@@ -257,12 +292,38 @@ pub(crate) async fn remove_member(
         check_last_owner_lockout(&membership_repo, &ctx, target_user_id).await?;
     }
 
-    membership_repo
-        .remove(&ctx, target_user_id)
+    let txn = (*state.db).begin().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    PgMembershipRepo::remove_in(&txn, &ctx, target_user_id)
         .await
         .map_err(|e| ApiError::Internal {
             message: e.to_string(),
         })?;
+
+    // The audit row and the removal commit or roll back together.
+    PgSecurityAuditRepo::append_in(
+        &txn,
+        NewSecurityAuditEvent {
+            workspace_id: Some(caller.workspace.id),
+            actor: Actor::User(caller.caller_user_id),
+            action: SecurityAction::MembershipRemoved,
+            target_type: "user".to_string(),
+            target_id: Some(target_user_id.0),
+            metadata: serde_json::json!({
+                "role": target_role.as_str(),
+            }),
+        },
+    )
+    .await
+    .map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    txn.commit().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
 
     Ok(StatusCode::NO_CONTENT)
 }

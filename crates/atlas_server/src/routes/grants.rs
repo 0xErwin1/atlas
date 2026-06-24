@@ -4,6 +4,7 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
+use sea_orm::TransactionTrait;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -27,7 +28,11 @@ use atlas_api::{
     pagination::{Cursor, Page},
 };
 use atlas_domain::{
-    entities::permissions::NewPermissionGrant,
+    Actor,
+    entities::{
+        permissions::NewPermissionGrant,
+        security_audit::{NewSecurityAuditEvent, SecurityAction},
+    },
     ids::{ApiKeyId, UserId},
     permissions::{
         Principal, ResourceRef, ResourceRole, ShareDenied, authorize_grant_target, authorize_share,
@@ -40,7 +45,9 @@ use crate::{
         authorized::{ProjectRes, WorkspaceRes},
     },
     error::ApiError,
-    persistence::repos::{ApiKeyRepo, MembershipRepo, PermissionGrantRepo, PgPermissionGrantRepo},
+    persistence::repos::{
+        ApiKeyRepo, MembershipRepo, PermissionGrantRepo, PgPermissionGrantRepo, PgSecurityAuditRepo,
+    },
     state::AppState,
 };
 
@@ -91,26 +98,62 @@ pub(crate) async fn create_project_grant(
         Principal::User(_) => None,
     };
 
-    let grant_repo = PgPermissionGrantRepo {
-        conn: (*state.db).clone(),
+    let actor = match &auth.principal {
+        Principal::User(uid) => Actor::User(*uid),
+        Principal::ApiKey(kid) => Actor::ApiKey(*kid),
     };
-    let grant = grant_repo
-        .upsert(NewPermissionGrant {
-            workspace_id: auth.workspace.id,
-            user_id,
-            api_key_id,
-            project_id: Some(auth.resource.0.id),
-            folder_id: None,
-            document_id: None,
-            board_id: None,
-            role: role_in_play,
-            created_by_user_id,
-            created_by_api_key_id,
-        })
+
+    let new_grant = NewPermissionGrant {
+        workspace_id: auth.workspace.id,
+        user_id,
+        api_key_id,
+        project_id: Some(auth.resource.0.id),
+        folder_id: None,
+        document_id: None,
+        board_id: None,
+        role: role_in_play,
+        created_by_user_id,
+        created_by_api_key_id,
+    };
+
+    let (grantee_type, grantee_id) = grantee_fields(new_grant.user_id, new_grant.api_key_id);
+
+    let txn = (*state.db).begin().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    let grant = PgPermissionGrantRepo::upsert_in(&txn, new_grant)
         .await
         .map_err(|e| ApiError::Internal {
             message: e.to_string(),
         })?;
+
+    // The audit row and the upsert commit or roll back together.
+    PgSecurityAuditRepo::append_in(
+        &txn,
+        NewSecurityAuditEvent {
+            workspace_id: Some(auth.workspace.id),
+            actor,
+            action: SecurityAction::GrantCreated,
+            target_type: "grant".to_string(),
+            target_id: Some(grant.id.0),
+            metadata: serde_json::json!({
+                "resource_type": "project",
+                "resource_id": auth.resource.0.id.0,
+                "role": role_str(role_in_play),
+                "grantee_type": grantee_type,
+                "grantee_id": grantee_id,
+            }),
+        },
+    )
+    .await
+    .map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    txn.commit().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
 
     Ok((
         StatusCode::CREATED,
@@ -218,12 +261,48 @@ pub(crate) async fn delete_project_grant(
     authorize_share(&auth.principal, auth.effective, target_grant.role)
         .map_err(share_denied_to_api_error)?;
 
-    grant_repo
-        .delete(grant_id, auth.workspace.id)
+    let actor = match &auth.principal {
+        Principal::User(uid) => Actor::User(*uid),
+        Principal::ApiKey(kid) => Actor::ApiKey(*kid),
+    };
+
+    let (grantee_type, grantee_id) = grantee_fields(target_grant.user_id, target_grant.api_key_id);
+
+    let txn = (*state.db).begin().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    PgPermissionGrantRepo::delete_in(&txn, grant_id, auth.workspace.id)
         .await
         .map_err(|e| ApiError::Internal {
             message: e.to_string(),
         })?;
+
+    // The audit row and the delete commit or roll back together.
+    PgSecurityAuditRepo::append_in(
+        &txn,
+        NewSecurityAuditEvent {
+            workspace_id: Some(auth.workspace.id),
+            actor,
+            action: SecurityAction::GrantRevoked,
+            target_type: "grant".to_string(),
+            target_id: Some(grant_uuid),
+            metadata: serde_json::json!({
+                "resource_type": "project",
+                "resource_id": auth.resource.0.id.0,
+                "grantee_type": grantee_type,
+                "grantee_id": grantee_id,
+            }),
+        },
+    )
+    .await
+    .map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    txn.commit().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -266,26 +345,62 @@ pub(crate) async fn create_workspace_grant(
         Principal::User(_) => None,
     };
 
-    let grant_repo = PgPermissionGrantRepo {
-        conn: (*state.db).clone(),
+    let actor = match &auth.principal {
+        Principal::User(uid) => Actor::User(*uid),
+        Principal::ApiKey(kid) => Actor::ApiKey(*kid),
     };
-    let grant = grant_repo
-        .upsert(NewPermissionGrant {
-            workspace_id: auth.workspace.id,
-            user_id,
-            api_key_id,
-            project_id: None,
-            folder_id: None,
-            document_id: None,
-            board_id: None,
-            role: role_in_play,
-            created_by_user_id,
-            created_by_api_key_id,
-        })
+
+    let new_grant = NewPermissionGrant {
+        workspace_id: auth.workspace.id,
+        user_id,
+        api_key_id,
+        project_id: None,
+        folder_id: None,
+        document_id: None,
+        board_id: None,
+        role: role_in_play,
+        created_by_user_id,
+        created_by_api_key_id,
+    };
+
+    let (grantee_type, grantee_id) = grantee_fields(new_grant.user_id, new_grant.api_key_id);
+
+    let txn = (*state.db).begin().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    let grant = PgPermissionGrantRepo::upsert_in(&txn, new_grant)
         .await
         .map_err(|e| ApiError::Internal {
             message: e.to_string(),
         })?;
+
+    // The audit row and the upsert commit or roll back together.
+    PgSecurityAuditRepo::append_in(
+        &txn,
+        NewSecurityAuditEvent {
+            workspace_id: Some(auth.workspace.id),
+            actor,
+            action: SecurityAction::GrantCreated,
+            target_type: "grant".to_string(),
+            target_id: Some(grant.id.0),
+            metadata: serde_json::json!({
+                "resource_type": "workspace",
+                "resource_id": auth.workspace.id.0,
+                "role": role_str(role_in_play),
+                "grantee_type": grantee_type,
+                "grantee_id": grantee_id,
+            }),
+        },
+    )
+    .await
+    .map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    txn.commit().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
 
     Ok((
         StatusCode::CREATED,
@@ -390,14 +505,61 @@ pub(crate) async fn delete_workspace_grant(
     authorize_share(&auth.principal, auth.effective, target_grant.role)
         .map_err(share_denied_to_api_error)?;
 
-    grant_repo
-        .delete(grant_id, auth.workspace.id)
+    let actor = match &auth.principal {
+        Principal::User(uid) => Actor::User(*uid),
+        Principal::ApiKey(kid) => Actor::ApiKey(*kid),
+    };
+
+    let (grantee_type, grantee_id) = grantee_fields(target_grant.user_id, target_grant.api_key_id);
+
+    let txn = (*state.db).begin().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    PgPermissionGrantRepo::delete_in(&txn, grant_id, auth.workspace.id)
         .await
         .map_err(|e| ApiError::Internal {
             message: e.to_string(),
         })?;
 
+    // The audit row and the delete commit or roll back together.
+    PgSecurityAuditRepo::append_in(
+        &txn,
+        NewSecurityAuditEvent {
+            workspace_id: Some(auth.workspace.id),
+            actor,
+            action: SecurityAction::GrantRevoked,
+            target_type: "grant".to_string(),
+            target_id: Some(grant_uuid),
+            metadata: serde_json::json!({
+                "resource_type": "workspace",
+                "resource_id": auth.workspace.id.0,
+                "grantee_type": grantee_type,
+                "grantee_id": grantee_id,
+            }),
+        },
+    )
+    .await
+    .map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    txn.commit().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
     Ok(StatusCode::NO_CONTENT)
+}
+
+fn grantee_fields(
+    user_id: Option<UserId>,
+    api_key_id: Option<ApiKeyId>,
+) -> (&'static str, uuid::Uuid) {
+    match (user_id, api_key_id) {
+        (Some(uid), _) => ("user", uid.0),
+        (_, Some(kid)) => ("api_key", kid.0),
+        (None, None) => ("unknown", uuid::Uuid::nil()),
+    }
 }
 
 fn parse_role(role: &str) -> Result<ResourceRole, ApiError> {
