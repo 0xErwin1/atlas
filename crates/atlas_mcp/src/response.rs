@@ -651,6 +651,20 @@ pub(crate) fn project_activity_entry(entry: ActivityEntryDto) -> Value {
     })
 }
 
+/// Projects a workspace activity entry to the compact MCP shape.
+///
+/// Includes `task_readable_id` so the agent can navigate to the task or
+/// understand which task the event belongs to. `id` (UUID) is dropped.
+pub(crate) fn project_workspace_activity_entry(entry: ActivityEntryDto) -> Value {
+    json!({
+        "task_readable_id": entry.task_readable_id,
+        "kind": entry.kind,
+        "actor": project_actor(entry.actor),
+        "payload": entry.payload,
+        "created_at": entry.created_at,
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Document revision projections (list_document_history / get_document_revision)
 // ---------------------------------------------------------------------------
@@ -2136,6 +2150,32 @@ mod tests {
     #[test]
     fn activity_entry_drops_id() {
         let val = project_activity_entry(make_activity("created"));
+        assert!(val.get("id").is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // project_workspace_activity_entry
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn workspace_activity_entry_includes_task_readable_id() {
+        let val = project_workspace_activity_entry(make_activity("created"));
+        assert_eq!(val["task_readable_id"], "ATL-1");
+    }
+
+    #[test]
+    fn workspace_activity_entry_includes_kind_actor_payload_created_at() {
+        let val = project_workspace_activity_entry(make_activity("moved"));
+        assert_eq!(val["kind"], "moved");
+        assert_eq!(val["actor"]["type"], "user");
+        assert_eq!(val["actor"]["display_name"], "Alice");
+        assert!(val.get("payload").is_some());
+        assert!(val.get("created_at").is_some());
+    }
+
+    #[test]
+    fn workspace_activity_entry_drops_id() {
+        let val = project_workspace_activity_entry(make_activity("created"));
         assert!(val.get("id").is_none());
     }
 

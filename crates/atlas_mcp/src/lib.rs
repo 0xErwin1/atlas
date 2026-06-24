@@ -55,9 +55,10 @@ use response::{
     project_folder, project_principal, project_project, project_promotion, project_reference,
     project_revision_content, project_revision_meta, project_saved_search, project_search_hit,
     project_status_template, project_tag, project_task_backlink, project_task_compact,
-    project_task_full, project_task_row, project_task_view, project_workspace, require_confirm,
-    resolve_column_id_on_board, validate_assignee_type, validate_estimate, validate_estimate_value,
-    validate_priority, validate_reference_kind, validate_single_target, wrap_vec,
+    project_task_full, project_task_row, project_task_view, project_workspace,
+    project_workspace_activity_entry, require_confirm, resolve_column_id_on_board,
+    validate_assignee_type, validate_estimate, validate_estimate_value, validate_priority,
+    validate_reference_kind, validate_single_target, wrap_vec,
 };
 
 const ATLAS_INSTRUCTIONS: &str = "\
@@ -87,8 +88,8 @@ Tools by area (see each tool's own description for parameters):\n\
 - Workspace context: `list_workspaces`, `list_projects`, `list_members`, `list_tags`, \
 `list_used_labels`, `list_saved_searches`, `list_task_views`.\n\
 - Links and depth: `get_task_references`, `get_task_backlinks`, `get_document_backlinks`, \
-`list_checklist`, `list_activity`, `list_document_history`, `get_document_revision`, \
-`list_attachments`.\n\
+`list_checklist`, `list_activity`, `list_workspace_activity`, `list_document_history`, \
+`get_document_revision`, `list_attachments`.\n\
 - Task writes: `create_task`, `update_task`, `move_task`, `delete_task`, \
 `add_task_assignee`, `remove_task_assignee`.\n\
 - Document and folder writes: `create_document`, `update_document_metadata`, \
@@ -484,6 +485,28 @@ pub struct ListActivityParams {
     pub workspace: String,
     /// Task readable ID, e.g. `ATL-42`.
     pub readable_id: String,
+}
+
+/// Parameters accepted by the `list_workspace_activity` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ListWorkspaceActivityParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Filter by actor type: `user` (human) or `api_key` (agent).
+    #[serde(default)]
+    pub actor: Option<String>,
+    /// Lower bound (inclusive) on event time (ISO 8601 / RFC 3339).
+    #[serde(default)]
+    pub from: Option<String>,
+    /// Upper bound (inclusive) on event time (ISO 8601 / RFC 3339).
+    #[serde(default)]
+    pub to: Option<String>,
+    /// Pass `next_cursor` from the previous response to fetch the next page.
+    #[serde(default)]
+    pub cursor: Option<String>,
+    /// Page size (default 50, max 200).
+    #[serde(default)]
+    pub limit: Option<u32>,
 }
 
 /// Parameters accepted by the `list_document_history` tool.
@@ -1719,6 +1742,50 @@ impl AtlasMcp {
             .map_err(|e| format!("list_activity for '{}' failed: {e}", params.readable_id))?;
 
         let result = envelope_page(page, project_activity_entry);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "List the access-filtered activity feed for an entire workspace. \
+                       Each entry shows who did what on which task (task_readable_id, kind, \
+                       actor with display_name and account_status, payload, created_at). \
+                       Server-side filtering ensures the caller only sees events for tasks \
+                       they can access. Supports actor-type (user|api_key), date range, \
+                       and cursor pagination."
+    )]
+    async fn list_workspace_activity(
+        &self,
+        Parameters(params): Parameters<ListWorkspaceActivityParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+        let limit = params.limit.unwrap_or(50).clamp(1, 200);
+
+        let page = if params.cursor.is_some() {
+            client
+                .list_workspace_activity_with_cursor(
+                    &params.workspace,
+                    params.actor.as_deref(),
+                    params.from.as_deref(),
+                    params.cursor.as_deref(),
+                    Some(limit),
+                )
+                .await
+                .map_err(|e| format!("list_workspace_activity failed: {e}"))?
+        } else {
+            client
+                .list_workspace_activity(
+                    &params.workspace,
+                    params.actor.as_deref(),
+                    params.from.as_deref(),
+                    params.to.as_deref(),
+                    Some(limit),
+                )
+                .await
+                .map_err(|e| format!("list_workspace_activity failed: {e}"))?
+        };
+
+        let result = envelope_page(page, project_workspace_activity_entry);
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
@@ -3775,6 +3842,29 @@ mod tests {
     }
 
     #[test]
+    fn list_workspace_activity_params_deserializes_minimal() {
+        let json = r#"{"workspace":"ws"}"#;
+        let params: ListWorkspaceActivityParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.workspace, "ws");
+        assert!(params.actor.is_none());
+        assert!(params.from.is_none());
+        assert!(params.to.is_none());
+        assert!(params.cursor.is_none());
+        assert!(params.limit.is_none());
+    }
+
+    #[test]
+    fn list_workspace_activity_params_deserializes_full() {
+        let json = r#"{"workspace":"ws","actor":"user","from":"2024-01-01T00:00:00Z","to":"2024-12-31T23:59:59Z","cursor":"abc","limit":25}"#;
+        let params: ListWorkspaceActivityParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.actor.as_deref(), Some("user"));
+        assert_eq!(params.from.as_deref(), Some("2024-01-01T00:00:00Z"));
+        assert_eq!(params.to.as_deref(), Some("2024-12-31T23:59:59Z"));
+        assert_eq!(params.cursor.as_deref(), Some("abc"));
+        assert_eq!(params.limit, Some(25));
+    }
+
+    #[test]
     fn list_document_history_params_deserializes_minimal() {
         let json = r#"{"workspace":"ws","slug":"my-doc"}"#;
         let params: ListDocumentHistoryParams = serde_json::from_str(json).unwrap();
@@ -3824,6 +3914,10 @@ mod tests {
         assert!(
             instructions.contains("`list_attachments`"),
             "instructions must mention list_attachments"
+        );
+        assert!(
+            instructions.contains("`list_workspace_activity`"),
+            "instructions must mention list_workspace_activity"
         );
     }
 

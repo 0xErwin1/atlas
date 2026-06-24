@@ -886,3 +886,170 @@ async fn workspace_activity_dto_includes_task_readable_id() {
         "workspace feed entry must carry the correct task_readable_id"
     );
 }
+
+/// TEST 13 — An ungranted api_key calling the workspace feed on a workspace-visible
+/// project gets 0 items. api_keys have NO visibility branch — visibility only applies
+/// to human members. An api_key without an explicit grant to a resource sees nothing,
+/// even if the project is workspace-visible.
+///
+/// Setup: workspace-visible project P2 (api_key has NO grant to P2 or the workspace).
+/// The api_key holds only a board-level grant to a private project P1 board,
+/// which allows it to enter the workspace extractor but gives no access to P2.
+#[tokio::test]
+async fn workspace_activity_ungranted_api_key_cannot_see_workspace_visible_project() {
+    let db = support::TestDb::create().await.expect("db");
+    let server = support::TestServer::spawn(&db).await;
+
+    let (owner_client, ws, _owner) =
+        support::login_user_with_workspace(&server, &db, "owner-ak13").await;
+
+    let vis_project = owner_client
+        .create_project(&ws.slug, mk_project_req_workspace("vis-ak13", "VA3"))
+        .await
+        .expect("create workspace-visible project");
+
+    let vis_board = seed_board(&owner_client, &ws.slug, &vis_project.slug, "Vis Board").await;
+    let vis_col = seed_column(&owner_client, &ws.slug, vis_board.id, "Todo").await;
+    seed_task(
+        &owner_client,
+        &ws.slug,
+        vis_board.id,
+        vis_col.id,
+        "visible task",
+    )
+    .await;
+
+    let priv_project = owner_client
+        .create_project(&ws.slug, mk_project_req_private("priv-ak13", "PA3"))
+        .await
+        .expect("create private project");
+
+    let priv_board = seed_board(&owner_client, &ws.slug, &priv_project.slug, "Priv Board").await;
+    let priv_col = seed_column(&owner_client, &ws.slug, priv_board.id, "Todo").await;
+    seed_task(
+        &owner_client,
+        &ws.slug,
+        priv_board.id,
+        priv_col.id,
+        "priv task",
+    )
+    .await;
+
+    let key_created = owner_client
+        .create_user_api_key(atlas_api::dtos::CreateUserApiKeyRequest {
+            name: "agent-ak13".to_string(),
+            r#type: Some("agent".to_string()),
+            expires_at: None,
+            initial_grant: None,
+        })
+        .await
+        .expect("create api key");
+
+    let grant_repo = PgPermissionGrantRepo {
+        conn: db.conn().clone(),
+    };
+    grant_repo
+        .upsert(NewPermissionGrant {
+            workspace_id: ws.id,
+            user_id: None,
+            api_key_id: Some(atlas_domain::ids::ApiKeyId(key_created.id)),
+            project_id: None,
+            folder_id: None,
+            document_id: None,
+            board_id: Some(BoardId(priv_board.id)),
+            role: ResourceRole::Viewer,
+            created_by_user_id: None,
+            created_by_api_key_id: None,
+        })
+        .await
+        .expect("grant board to api_key");
+
+    let api_key_client = atlas_client::AtlasClient::new(server.base_url().to_string())
+        .with_token(key_created.secret.clone());
+
+    let page = api_key_client
+        .list_workspace_activity(&ws.slug, None, None, None, None)
+        .await
+        .expect("list activity");
+
+    assert_eq!(
+        page.items
+            .iter()
+            .filter(|e| e.task_readable_id.starts_with("VA3-"))
+            .count(),
+        0,
+        "api_key must not see workspace-visible project activity without an explicit grant"
+    );
+}
+
+/// TEST 14 — A root user who is a workspace member (with Member role, not Owner/Admin)
+/// sees ALL workspace activity via the is_root bypass in the scope computation.
+/// This locks the break-glass bypass: is_root alone is sufficient for the admin
+/// shortcut, independent of the membership role.
+#[tokio::test]
+async fn workspace_activity_root_member_sees_all_via_admin_bypass() {
+    let db = support::TestDb::create().await.expect("db");
+    let server = support::TestServer::spawn(&db).await;
+
+    let (owner_client, ws, owner_user) =
+        support::login_user_with_workspace(&server, &db, "owner-root14").await;
+
+    let priv_project = owner_client
+        .create_project(&ws.slug, mk_project_req_private("priv-root14", "PR4"))
+        .await
+        .expect("create private project");
+
+    let board = seed_board(&owner_client, &ws.slug, &priv_project.slug, "Priv Board").await;
+    let col = seed_column(&owner_client, &ws.slug, board.id, "Todo").await;
+    seed_task(&owner_client, &ws.slug, board.id, col.id, "private task").await;
+
+    let hash = atlas_server::auth::password::hash("RootPassword1!".to_string())
+        .await
+        .expect("hash");
+    let root_user = db
+        .user_repo()
+        .create(NewUser {
+            username: "root-member-14".to_string(),
+            display_name: "root-member-14".to_string(),
+            email: None,
+            password_hash: Some(hash),
+            is_root: true,
+            is_system_admin: false,
+        })
+        .await
+        .expect("create root user");
+    support::activate_user_in_db(&db, root_user.id.0).await;
+
+    let ctx = WorkspaceCtx::new(ws.id, Actor::User(owner_user.id));
+    PgMembershipRepo {
+        conn: db.conn().clone(),
+    }
+    .add(&ctx, root_user.id, MemberRole::Member)
+    .await
+    .expect("add root user as plain Member");
+
+    let mut root_client = atlas_client::AtlasClient::new(server.base_url().to_string());
+    root_client
+        .login(atlas_api::dtos::LoginRequest {
+            username: "root-member-14".to_string(),
+            password: "RootPassword1!".to_string(),
+        })
+        .await
+        .expect("root login");
+
+    let page = root_client
+        .list_workspace_activity(&ws.slug, None, None, None, None)
+        .await
+        .expect("list activity");
+
+    assert!(
+        !page.items.is_empty(),
+        "root member must see all workspace activity including private project; got 0"
+    );
+    assert!(
+        page.items
+            .iter()
+            .any(|e| e.task_readable_id.starts_with("PR4-")),
+        "root member must see the private project's activity entries"
+    );
+}
