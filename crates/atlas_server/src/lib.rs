@@ -289,6 +289,10 @@ pub fn app(state: AppState) -> Router {
             "/v1/workspaces/{ws}/tasks/{readable_id}/activity",
             axum::routing::get(routes::tasks::list_activity),
         )
+        .route(
+            "/v1/workspaces/{ws}/activity",
+            axum::routing::get(routes::tasks::list_workspace_activity),
+        )
         // Documents
         .route(
             "/v1/workspaces/{ws}/projects/{project_slug}/documents",

@@ -6,10 +6,47 @@ use crate::{
         TaskActivity, TaskAssignee, TaskChecklistItem, TaskChecklistItemPatch, TaskPatch,
         TaskReference,
     },
-    entities::task_views::TaskViewFilters,
-    ids::{BoardId, ChecklistItemId, ColumnId, ProjectId, TaskId, TaskReferenceId},
+    entities::task_views::{ActorTypeFilter, TaskViewFilters},
+    ids::{BoardId, ChecklistItemId, ColumnId, ProjectId, TaskActivityId, TaskId, TaskReferenceId},
 };
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
+
+/// Resolved access scope for workspace activity queries.
+///
+/// Computed handler-side by calling the real `permissions::resolve()` per project
+/// over a single grant load. The repo is dumb: it filters by the id sets + admin
+/// flag. The authz decision lives entirely in the handler, made by the real
+/// resolve(). This struct must NOT be relaxed to a plain workspace filter — it is
+/// the privacy guard that prevents leaking activity from projects/boards the caller
+/// cannot see.
+#[derive(Debug, Clone)]
+pub struct WorkspaceActivityScope {
+    /// When true the repo returns all workspace activity, bypassing id-set filters.
+    /// Set for Owner/Admin members and break-glass (root/system_admin) callers.
+    pub is_admin: bool,
+    /// Projects whose activity the caller may see, computed by resolve() per project.
+    pub project_ids: Vec<ProjectId>,
+    /// Boards whose task activity the caller may see via a direct board grant in a
+    /// private project (board-only grants reach tasks even without a project grant).
+    pub board_ids: Vec<BoardId>,
+}
+
+/// Optional filters for the workspace activity feed.
+#[derive(Debug, Clone, Default)]
+pub struct WorkspaceActivityFilters {
+    pub actor_type: Option<ActorTypeFilter>,
+    pub from: Option<DateTime<Utc>>,
+    pub to: Option<DateTime<Utc>>,
+}
+
+/// A workspace activity row: one activity entry plus the task's readable id
+/// (obtained via the JOIN tasks → task_activity in the feed query).
+#[derive(Debug, Clone)]
+pub struct WorkspaceActivityRow {
+    pub activity: TaskActivity,
+    pub task_readable_id: String,
+}
 
 /// Opaque domain cursor for workspace-scoped task listing.
 ///
@@ -300,4 +337,26 @@ pub trait TaskActivityRepo: Send + Sync {
         ctx: &WorkspaceCtx,
         task_id: TaskId,
     ) -> Result<Option<ActivityKind>, DomainError>;
+
+    /// Lists activity for the whole workspace, access-filtered by the resolved
+    /// scope.
+    ///
+    /// The accessible project/board id sets in `scope` are computed handler-side
+    /// by the real `permissions::resolve()` (one call per project over a single
+    /// grant load). The repo applies them as `t.project_id = ANY($projects) OR
+    /// t.board_id = ANY($boards)` plus the admin bypass. This must NOT be relaxed
+    /// to a plain workspace filter — that would leak private-board activity to every
+    /// member.
+    ///
+    /// Keyset cursor: `after` is the exclusive upper bound `(created_at, id)` for
+    /// descending order. Returns up to `limit` rows; caller overfetches by 1 to
+    /// determine `has_more`.
+    async fn list_for_workspace(
+        &self,
+        ctx: &WorkspaceCtx,
+        scope: WorkspaceActivityScope,
+        filters: WorkspaceActivityFilters,
+        after: Option<(DateTime<Utc>, TaskActivityId)>,
+        limit: u64,
+    ) -> Result<Vec<WorkspaceActivityRow>, DomainError>;
 }

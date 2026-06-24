@@ -26,12 +26,14 @@ use atlas_domain::{
         PositionBetween, Priority, Task, TaskActivity, TaskAssignee, TaskChecklistItem, TaskPatch,
         TaskReference,
     },
+    entities::identity::MemberRole,
     entities::task_views::{ActorTypeFilter, AssigneeFilter, TaskSort, TaskViewFilters},
     ids::{
         ApiKeyId, BoardId, ChecklistItemId, ColumnId, DocumentId, TaskActivityId, TaskId,
         TaskReferenceId, UserId,
     },
-    permissions::Principal,
+    permissions::{ChainSegment, Principal, ResolutionInput, ResourceChain, ResourceRef},
+    ports::boards_tasks::{WorkspaceActivityFilters, WorkspaceActivityScope},
 };
 
 use crate::{
@@ -42,9 +44,10 @@ use crate::{
     error::ApiError,
     persistence::repos::{
         ApiKeyRepo, DocumentRepo, MembershipRepo, PgApiKeyRepo, PgBoardRepo, PgDocumentRepo,
-        PgMembershipRepo, PgPermissionGrantRepo, PgTaskAssigneeRepo, PgTaskChecklistRepo,
-        PgTaskReferenceRepo, PgTaskRepo, PgUserRepo, TaskAssigneeRepo, TaskChecklistRepo,
-        TaskReferenceRepo, TaskRepo, UserRepo,
+        PgMembershipRepo, PgPermissionGrantRepo, PgProjectRepo, PgTaskActivityRepo,
+        PgTaskAssigneeRepo, PgTaskChecklistRepo, PgTaskReferenceRepo, PgTaskRepo, PgUserRepo,
+        ProjectRepo, TaskActivityRepo, TaskAssigneeRepo, TaskChecklistRepo, TaskReferenceRepo,
+        TaskRepo, UserRepo,
     },
     routes::validation::{
         validate_custom_entry_count, validate_description, validate_labels, validate_name,
@@ -417,14 +420,101 @@ fn checklist_item_to_dto(item: TaskChecklistItem) -> ChecklistItemDto {
     }
 }
 
-fn activity_to_dto(a: TaskActivity) -> ActivityEntryDto {
-    ActivityEntryDto {
-        id: a.id.0,
-        kind: a.kind.as_str().to_string(),
-        actor: actor_to_dto(&a.actor),
-        payload: serde_json::to_value(&a.payload).unwrap_or(serde_json::Value::Null),
-        created_at: a.created_at,
+/// Batch-loads display info for all distinct actors in a page of activity entries
+/// and converts them to DTOs with enriched actor fields (display_name, key_type,
+/// account_status).
+///
+/// Activity actors use the same enrichment shape as assignee actors (display_name
+/// + key_type + account_status) because the workspace activity feed is a
+///   people-facing audit view where the deactivated/pending badge is meaningful.
+///
+/// `task_readable_id` is the same for all entries when called from the per-task
+/// feed; the workspace feed caller supplies per-entry readable ids via the
+/// `WorkspaceActivityRow` type.
+async fn enrich_activity_entries(
+    state: &AppState,
+    ctx: &WorkspaceCtx,
+    entries: Vec<TaskActivity>,
+    shared_readable_id: &str,
+) -> Result<Vec<ActivityEntryDto>, ApiError> {
+    use std::collections::HashMap;
+
+    let mut user_ids: Vec<UserId> = Vec::new();
+    let mut needs_keys = false;
+
+    for e in &entries {
+        match &e.actor {
+            Actor::User(uid) => user_ids.push(*uid),
+            Actor::ApiKey(_) => needs_keys = true,
+        }
     }
+
+    user_ids.sort_by_key(|u| u.0);
+    user_ids.dedup_by_key(|u| u.0);
+
+    let user_map: HashMap<uuid::Uuid, atlas_domain::entities::identity::User> = PgUserRepo {
+        conn: (*state.db).clone(),
+    }
+    .list_by_ids(&user_ids)
+    .await
+    .map_err(ApiError::Domain)?
+    .into_iter()
+    .map(|u| (u.id.0, u))
+    .collect();
+
+    let key_info: HashMap<uuid::Uuid, (String, String)> = if needs_keys {
+        PgApiKeyRepo {
+            conn: (*state.db).clone(),
+        }
+        .list_granted_in_workspace(ctx.workspace_id)
+        .await
+        .map_err(ApiError::Domain)?
+        .into_iter()
+        .map(|k| (k.id.0, (k.name, k.type_.as_str().to_string())))
+        .collect()
+    } else {
+        HashMap::new()
+    };
+
+    let dtos = entries
+        .into_iter()
+        .map(|a| {
+            let actor_dto = match &a.actor {
+                Actor::User(uid) => {
+                    let user = user_map.get(&uid.0);
+                    ActorDto {
+                        r#type: "user".into(),
+                        id: uid.0,
+                        display_name: user.map(|u| u.display_name.clone()),
+                        key_type: None,
+                        account_status: user
+                            .map(|u| account_status(u.disabled_at, u.activated_at).to_string()),
+                    }
+                }
+                Actor::ApiKey(kid) => {
+                    let info = key_info.get(&kid.0);
+                    ActorDto {
+                        r#type: "api_key".into(),
+                        id: kid.0,
+                        display_name: info.map(|(name, _)| name.clone()),
+                        key_type: info.map(|(_, kt)| kt.clone()),
+                        account_status: None,
+                    }
+                }
+            };
+            ActivityEntryDto {
+                id: a.id.0,
+                kind: a.kind.as_str().to_string(),
+                actor: actor_dto,
+                payload: serde_json::to_value(&a.payload).unwrap_or(serde_json::Value::Null),
+                created_at: a.created_at,
+                task_id: a.task_id.0,
+                task_readable_id: shared_readable_id.to_string(),
+            }
+        })
+        .collect();
+
+    Ok(dtos)
 }
 
 /// Parses the `{assignee_ref}` path segment (`user:{uuid}` or `api_key:{uuid}`).
@@ -1888,9 +1978,13 @@ pub(crate) async fn list_activity(
         .and_then(Cursor::decode)
         .map(|c| TaskActivityId(c.0));
 
+    let task = &auth.resource.0;
+    let task_id = task.id;
+    let task_readable_id = task.readable_id.clone();
+
     let mut entries = state
         .task_service()
-        .list_activity(&ctx, auth.resource.0.id, after_id, limit + 1)
+        .list_activity(&ctx, task_id, after_id, limit + 1)
         .await
         .map_err(ApiError::Domain)?;
 
@@ -1905,8 +1999,330 @@ pub(crate) async fn list_activity(
         None
     };
 
-    let dtos = entries.into_iter().map(activity_to_dto).collect();
+    let dtos = enrich_activity_entries(&state, &ctx, entries, &task_readable_id).await?;
     Ok(Json(Page::new(dtos, next_cursor, has_more)))
+}
+
+// ---------------------------------------------------------------------------
+// GET /v1/workspaces/{ws}/activity
+// ---------------------------------------------------------------------------
+
+/// Query parameters for the workspace activity feed.
+#[derive(Deserialize)]
+pub(crate) struct WorkspaceActivityQuery {
+    pub actor: Option<String>,
+    pub from: Option<chrono::DateTime<chrono::Utc>>,
+    pub to: Option<chrono::DateTime<chrono::Utc>>,
+    pub cursor: Option<String>,
+    pub limit: Option<u32>,
+}
+
+#[utoipa::path(
+    get,
+    path = "/v1/workspaces/{ws}/activity",
+    tag = "tasks",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+        ("actor" = Option<String>, Query, description = "Actor type filter: 'user' or 'api_key'"),
+        ("from" = Option<String>, Query, description = "Lower bound (inclusive) on created_at (ISO 8601)"),
+        ("to" = Option<String>, Query, description = "Upper bound (inclusive) on created_at (ISO 8601)"),
+        ("cursor" = Option<String>, Query, description = "Pagination cursor"),
+        ("limit" = Option<u32>, Query, description = "Page size (max 200, default 50)"),
+    ),
+    responses(
+        (status = 200, description = "Access-filtered workspace activity feed", body = Page<ActivityEntryDto>),
+        (status = 400, description = "Invalid query parameter"),
+        (status = 401, description = "Unauthenticated"),
+        (status = 404, description = "Workspace not found or caller is not a member"),
+    )
+)]
+pub(crate) async fn list_workspace_activity(
+    member: WorkspaceMember,
+    State(state): State<AppState>,
+    Query(q): Query<WorkspaceActivityQuery>,
+) -> Result<Json<Page<ActivityEntryDto>>, ApiError> {
+    let limit = q.limit.unwrap_or(50).clamp(1, 200) as u64;
+
+    let actor = match (&member.user, &member.api_key_id) {
+        (Some(user), _) => Actor::User(user.id),
+        (None, Some(kid)) => Actor::ApiKey(*kid),
+        _ => return Err(ApiError::Unauthorized),
+    };
+
+    let actor_type = q
+        .actor
+        .as_deref()
+        .map(|s| match s {
+            "user" => Ok(ActorTypeFilter::User),
+            "api_key" => Ok(ActorTypeFilter::ApiKey),
+            other => Err(ApiError::InvalidInput {
+                message: format!("invalid actor filter '{other}'; must be 'user' or 'api_key'"),
+            }),
+        })
+        .transpose()?;
+
+    // Keyset cursor: "(created_at_micros,id)" encoded as a SearchCursor.
+    let after = q
+        .cursor
+        .as_deref()
+        .map(|s| {
+            SearchCursor::decode(s).ok_or_else(|| ApiError::InvalidInput {
+                message: "invalid cursor".to_string(),
+            })
+        })
+        .transpose()?
+        .map(|sc| {
+            let micros = match sc.key {
+                SortKey::Updated(m) => m,
+                SortKey::Relevance(_) => {
+                    return Err(ApiError::InvalidInput {
+                        message: "cursor is not compatible with activity listing".to_string(),
+                    });
+                }
+            };
+            let ts = chrono::DateTime::from_timestamp_micros(micros).ok_or_else(|| {
+                ApiError::InvalidInput {
+                    message: "invalid cursor timestamp".to_string(),
+                }
+            })?;
+            Ok((ts, TaskActivityId(sc.id)))
+        })
+        .transpose()?;
+
+    let ctx = WorkspaceCtx::new(member.workspace.id, actor);
+
+    // The access-filter invariant: compute which projects/boards the caller can see
+    // by calling the real permissions::resolve() per project, NOT by re-encoding
+    // authz rules in SQL. The SQL filter uses the resulting id sets.
+    let scope = compute_workspace_activity_scope(&state, &member, &ctx).await?;
+
+    let filters = WorkspaceActivityFilters {
+        actor_type,
+        from: q.from,
+        to: q.to,
+    };
+
+    let repo = PgTaskActivityRepo {
+        conn: (*state.db).clone(),
+    };
+    let mut rows = repo
+        .list_for_workspace(&ctx, scope, filters, after, limit + 1)
+        .await
+        .map_err(ApiError::Domain)?;
+
+    let has_more = rows.len() > limit as usize;
+    if has_more {
+        rows.truncate(limit as usize);
+    }
+
+    let next_cursor = if has_more {
+        rows.last().map(|r| {
+            let micros = r.activity.created_at.timestamp_micros();
+            SearchCursor {
+                key: SortKey::Updated(micros),
+                id: r.activity.id.0,
+            }
+        })
+    } else {
+        None
+    };
+
+    let (activities, readable_ids): (Vec<_>, Vec<_>) = rows
+        .into_iter()
+        .map(|r| (r.activity, r.task_readable_id))
+        .unzip();
+
+    let dtos = enrich_workspace_activity_entries(&state, &ctx, activities, readable_ids).await?;
+    Ok(Json(Page::new_search(dtos, next_cursor, has_more)))
+}
+
+/// Determines which projects and boards the caller can access within the workspace.
+///
+/// This is the load-bearing security boundary for the workspace activity feed.
+/// Access is computed by calling the real `permissions::resolve()` per project,
+/// using a single grant load from `list_all_for_principal_in_workspace`. This
+/// approach is intentional: we do NOT re-encode permission rules in SQL. The
+/// SQL filter uses the resulting id sets as a pure data filter.
+///
+/// Admin bypass (Owner/Admin membership, or root/system_admin) skips the per-project
+/// loop and returns `is_admin = true`, which causes the SQL to omit id-set filtering.
+async fn compute_workspace_activity_scope(
+    state: &AppState,
+    member: &WorkspaceMember,
+    ctx: &WorkspaceCtx,
+) -> Result<WorkspaceActivityScope, ApiError> {
+    let is_admin = match (&member.user, &member.membership) {
+        (Some(user), _) if user.is_root || user.is_system_admin => true,
+        (_, Some(m)) if matches!(m.role, MemberRole::Owner | MemberRole::Admin) => true,
+        _ => false,
+    };
+
+    if is_admin {
+        return Ok(WorkspaceActivityScope {
+            is_admin: true,
+            project_ids: vec![],
+            board_ids: vec![],
+        });
+    }
+
+    let (principal, user_id, api_key_id) = match (&member.user, &member.api_key_id) {
+        (Some(user), _) => (Principal::User(user.id), Some(user.id), None),
+        (None, Some(kid)) => (Principal::ApiKey(*kid), None, Some(*kid)),
+        _ => {
+            return Err(ApiError::Unauthorized);
+        }
+    };
+
+    let membership_role = member.membership.as_ref().map(|m| m.role.clone());
+
+    let grant_repo = PgPermissionGrantRepo {
+        conn: (*state.db).clone(),
+    };
+
+    // Load all grants for this principal across the workspace once.
+    let all_grants = grant_repo
+        .list_all_for_principal_in_workspace(ctx.workspace_id, user_id, api_key_id)
+        .await
+        .map_err(ApiError::Domain)?;
+
+    // Enumerate all projects and resolve access per project.
+    let project_repo = PgProjectRepo {
+        conn: (*state.db).clone(),
+    };
+    let all_projects = project_repo.list(ctx).await.map_err(ApiError::Domain)?;
+
+    let mut accessible_project_ids = Vec::new();
+    let mut accessible_board_ids: Vec<BoardId> = Vec::new();
+
+    // Extract board-only grants from the flat grant list.
+    for (resource, _role) in &all_grants {
+        if let ResourceRef::Board(bid) = resource {
+            accessible_board_ids.push(*bid);
+        }
+    }
+
+    for project in &all_projects {
+        let vis = project.visibility.clone();
+        let chain = ResourceChain {
+            segments: vec![
+                ChainSegment {
+                    resource: ResourceRef::Project(project.id),
+                    visibility: Some(vis),
+                },
+                ChainSegment {
+                    resource: ResourceRef::Workspace,
+                    visibility: None,
+                },
+            ],
+        };
+
+        let input = ResolutionInput {
+            principal: &principal,
+            membership: membership_role.clone(),
+            chain: &chain,
+            grants: &all_grants,
+        };
+
+        if atlas_domain::permissions::resolve(&input).is_some() {
+            accessible_project_ids.push(project.id);
+        }
+    }
+
+    Ok(WorkspaceActivityScope {
+        is_admin: false,
+        project_ids: accessible_project_ids,
+        board_ids: accessible_board_ids,
+    })
+}
+
+/// Batch-loads actor enrichment for workspace activity rows where each entry may
+/// have a different task_readable_id.
+async fn enrich_workspace_activity_entries(
+    state: &AppState,
+    ctx: &WorkspaceCtx,
+    activities: Vec<TaskActivity>,
+    readable_ids: Vec<String>,
+) -> Result<Vec<ActivityEntryDto>, ApiError> {
+    use std::collections::HashMap;
+
+    let mut user_ids: Vec<UserId> = Vec::new();
+    let mut needs_keys = false;
+
+    for a in &activities {
+        match &a.actor {
+            Actor::User(uid) => user_ids.push(*uid),
+            Actor::ApiKey(_) => needs_keys = true,
+        }
+    }
+
+    user_ids.sort_by_key(|u| u.0);
+    user_ids.dedup_by_key(|u| u.0);
+
+    let user_map: HashMap<uuid::Uuid, atlas_domain::entities::identity::User> = PgUserRepo {
+        conn: (*state.db).clone(),
+    }
+    .list_by_ids(&user_ids)
+    .await
+    .map_err(ApiError::Domain)?
+    .into_iter()
+    .map(|u| (u.id.0, u))
+    .collect();
+
+    let key_info: HashMap<uuid::Uuid, (String, String)> = if needs_keys {
+        PgApiKeyRepo {
+            conn: (*state.db).clone(),
+        }
+        .list_granted_in_workspace(ctx.workspace_id)
+        .await
+        .map_err(ApiError::Domain)?
+        .into_iter()
+        .map(|k| (k.id.0, (k.name, k.type_.as_str().to_string())))
+        .collect()
+    } else {
+        HashMap::new()
+    };
+
+    let dtos = activities
+        .into_iter()
+        .zip(readable_ids)
+        .map(|(a, task_readable_id)| {
+            let actor_dto = match &a.actor {
+                Actor::User(uid) => {
+                    let user = user_map.get(&uid.0);
+                    ActorDto {
+                        r#type: "user".into(),
+                        id: uid.0,
+                        display_name: user.map(|u| u.display_name.clone()),
+                        key_type: None,
+                        account_status: user
+                            .map(|u| account_status(u.disabled_at, u.activated_at).to_string()),
+                    }
+                }
+                Actor::ApiKey(kid) => {
+                    let info = key_info.get(&kid.0);
+                    ActorDto {
+                        r#type: "api_key".into(),
+                        id: kid.0,
+                        display_name: info.map(|(name, _)| name.clone()),
+                        key_type: info.map(|(_, kt)| kt.clone()),
+                        account_status: None,
+                    }
+                }
+            };
+            ActivityEntryDto {
+                id: a.id.0,
+                kind: a.kind.as_str().to_string(),
+                actor: actor_dto,
+                payload: serde_json::to_value(&a.payload).unwrap_or(serde_json::Value::Null),
+                created_at: a.created_at,
+                task_id: a.task_id.0,
+                task_readable_id,
+            }
+        })
+        .collect();
+
+    Ok(dtos)
 }
 
 // ---------------------------------------------------------------------------

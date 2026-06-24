@@ -592,6 +592,12 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/v1/workspaces/{ws}/tasks/{readable_id}/activity"),
     },
+    RouteEntry {
+        method: "GET",
+        path_template: "/v1/workspaces/{ws}/activity",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/activity"),
+    },
     // ---- Folder routes ----
     RouteEntry {
         method: "POST",

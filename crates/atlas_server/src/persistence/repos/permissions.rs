@@ -65,6 +65,80 @@ pub struct PgPermissionGrantRepo {
 }
 
 impl PgPermissionGrantRepo {
+    /// Returns all grants the principal holds anywhere in the given workspace.
+    ///
+    /// Used by the workspace activity feed handler to collect board-only grants
+    /// that would not be returned by `load_grants_for_resolution` when no
+    /// specific board_id is passed (because board grants have a non-null board_id
+    /// and are not matched by the `num_nonnulls = 0` workspace-scope predicate).
+    pub async fn list_all_for_principal_in_workspace(
+        &self,
+        workspace_id: WorkspaceId,
+        user_id: Option<UserId>,
+        api_key_id: Option<ApiKeyId>,
+    ) -> Result<Vec<(ResourceRef, ResourceRole)>, DomainError> {
+        use sea_orm::FromQueryResult;
+
+        #[derive(Debug, FromQueryResult)]
+        struct Row {
+            project_id: Option<Uuid>,
+            folder_id: Option<Uuid>,
+            document_id: Option<Uuid>,
+            board_id: Option<Uuid>,
+            role: String,
+        }
+
+        let mut values: Vec<sea_orm::Value> = Vec::new();
+        values.push(workspace_id.0.into());
+
+        let principal_condition = if let Some(uid) = user_id {
+            values.push(uid.0.into());
+            format!("user_id = ${}", values.len())
+        } else if let Some(kid) = api_key_id {
+            values.push(kid.0.into());
+            format!("api_key_id = ${}", values.len())
+        } else {
+            return Ok(vec![]);
+        };
+
+        let sql = format!(
+            r#"
+            SELECT project_id, folder_id, document_id, board_id, role
+            FROM permission_grants
+            WHERE workspace_id = $1
+              AND {principal_condition}
+            "#,
+        );
+
+        let rows = Row::find_by_statement(sea_orm::Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            sql,
+            values,
+        ))
+        .all(&self.conn)
+        .await
+        .map_err(db_err)?;
+
+        let mut result = Vec::with_capacity(rows.len());
+        for row in rows {
+            let role = role_from_str(&row.role)?;
+            let resource = if let Some(pid) = row.project_id {
+                ResourceRef::Project(ProjectId(pid))
+            } else if let Some(fid) = row.folder_id {
+                ResourceRef::Folder(FolderId(fid))
+            } else if let Some(did) = row.document_id {
+                ResourceRef::Document(DocumentId(did))
+            } else if let Some(bid) = row.board_id {
+                ResourceRef::Board(BoardId(bid))
+            } else {
+                ResourceRef::Workspace
+            };
+            result.push((resource, role));
+        }
+
+        Ok(result)
+    }
+
     /// Returns whether the principal holds at least one grant anywhere in the
     /// workspace (workspace-scope, project, folder, document, or board). Used by
     /// the workspace-access gate to admit grant-bearing non-members.

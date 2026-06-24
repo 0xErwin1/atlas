@@ -1940,6 +1940,36 @@ impl AtlasClient {
         self.decode_response(response, "list_activity").await
     }
 
+    /// `GET /v1/workspaces/{ws}/activity`
+    pub async fn list_workspace_activity(
+        &self,
+        ws: &str,
+        actor: Option<&str>,
+        from: Option<&str>,
+        to: Option<&str>,
+        limit: Option<u32>,
+    ) -> Result<Page<ActivityEntryDto>, ClientError> {
+        let path = build_workspace_activity_path(ws, actor, from, to, None, limit);
+        let response = self.get(&path).send().await?;
+        self.decode_response(response, "list_workspace_activity")
+            .await
+    }
+
+    /// `GET /v1/workspaces/{ws}/activity` with explicit cursor
+    pub async fn list_workspace_activity_with_cursor(
+        &self,
+        ws: &str,
+        actor: Option<&str>,
+        from: Option<&str>,
+        cursor: Option<&str>,
+        limit: Option<u32>,
+    ) -> Result<Page<ActivityEntryDto>, ClientError> {
+        let path = build_workspace_activity_path(ws, actor, from, None, cursor, limit);
+        let response = self.get(&path).send().await?;
+        self.decode_response(response, "list_workspace_activity_with_cursor")
+            .await
+    }
+
     /// `POST /v1/auth/logout`
     pub async fn logout(&self) -> Result<(), ClientError> {
         let response = self
@@ -2043,6 +2073,38 @@ fn build_workspace_tasks_path(ws: &str, q: &WorkspaceTaskQueryParams) -> String 
         params.push(format!("limit={l}"));
     }
 
+    if params.is_empty() {
+        base
+    } else {
+        format!("{}?{}", base, params.join("&"))
+    }
+}
+
+fn build_workspace_activity_path(
+    ws: &str,
+    actor: Option<&str>,
+    from: Option<&str>,
+    to: Option<&str>,
+    cursor: Option<&str>,
+    limit: Option<u32>,
+) -> String {
+    let base = format!("/v1/workspaces/{ws}/activity");
+    let mut params: Vec<String> = Vec::new();
+    if let Some(a) = actor {
+        params.push(format!("actor={a}"));
+    }
+    if let Some(f) = from {
+        params.push(format!("from={}", encode_query_value(f)));
+    }
+    if let Some(t) = to {
+        params.push(format!("to={}", encode_query_value(t)));
+    }
+    if let Some(c) = cursor {
+        params.push(format!("cursor={c}"));
+    }
+    if let Some(l) = limit {
+        params.push(format!("limit={l}"));
+    }
     if params.is_empty() {
         base
     } else {

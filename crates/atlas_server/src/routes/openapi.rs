@@ -125,6 +125,7 @@ use atlas_api::{
         crate::routes::tasks::create_subtask,
         crate::routes::tasks::promote_subtask,
         crate::routes::tasks::list_activity,
+        crate::routes::tasks::list_workspace_activity,
         crate::routes::documents::create_document,
         crate::routes::documents::list_documents,
         crate::routes::documents::get_document,

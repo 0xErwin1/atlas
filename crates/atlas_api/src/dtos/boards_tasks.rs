@@ -230,6 +230,10 @@ pub struct ActivityEntryDto {
     /// Typed-per-verb payload; schema varies by `kind`.
     pub payload: serde_json::Value,
     pub created_at: chrono::DateTime<chrono::Utc>,
+    /// The task this activity entry belongs to.
+    pub task_id: uuid::Uuid,
+    /// Human-readable task identifier (e.g. "ATL-42").
+    pub task_readable_id: String,
 }
 
 // ---------------------------------------------------------------------------

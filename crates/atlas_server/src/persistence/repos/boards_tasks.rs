@@ -9,7 +9,9 @@ use atlas_domain::{
     },
     entities::task_views::{ActorTypeFilter, AssigneeFilter, TaskSort, TaskViewFilters},
     ids::{BoardId, ChecklistItemId, ColumnId, ProjectId, TaskActivityId, TaskId, TaskReferenceId},
-    ports::boards_tasks::TaskListCursor,
+    ports::boards_tasks::{
+        TaskListCursor, WorkspaceActivityFilters, WorkspaceActivityRow, WorkspaceActivityScope,
+    },
     position,
 };
 use chrono::Utc;
@@ -1670,6 +1672,176 @@ impl TaskActivityRepo for PgTaskActivityRepo {
 
         opt.map(|m| activity_kind_from_str(&m.kind).map_err(internal_err))
             .transpose()
+    }
+
+    async fn list_for_workspace(
+        &self,
+        ctx: &WorkspaceCtx,
+        scope: WorkspaceActivityScope,
+        filters: WorkspaceActivityFilters,
+        after: Option<(chrono::DateTime<Utc>, TaskActivityId)>,
+        limit: u64,
+    ) -> Result<Vec<WorkspaceActivityRow>, DomainError> {
+        use sea_orm::FromQueryResult;
+
+        #[derive(Debug, FromQueryResult)]
+        struct Row {
+            id: uuid::Uuid,
+            task_id: uuid::Uuid,
+            workspace_id: uuid::Uuid,
+            kind: String,
+            payload: serde_json::Value,
+            created_by_user_id: Option<uuid::Uuid>,
+            created_by_api_key_id: Option<uuid::Uuid>,
+            created_at: chrono::DateTime<Utc>,
+            task_readable_id: String,
+        }
+
+        let mut values: Vec<sea_orm::Value> = Vec::new();
+
+        // $1 — workspace_id
+        values.push(ctx.workspace_id.0.into());
+        let ws_param = values.len();
+
+        // Admin bypass: return all without id-set filtering.
+        let scope_cond = if scope.is_admin {
+            String::new()
+        } else {
+            let project_cond = if scope.project_ids.is_empty() {
+                "FALSE".to_string()
+            } else {
+                let placeholders: String = scope
+                    .project_ids
+                    .iter()
+                    .map(|pid| {
+                        values.push(pid.0.into());
+                        format!("${}", values.len())
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("t.project_id = ANY(ARRAY[{placeholders}]::uuid[])")
+            };
+
+            let board_cond = if scope.board_ids.is_empty() {
+                "FALSE".to_string()
+            } else {
+                let placeholders: String = scope
+                    .board_ids
+                    .iter()
+                    .map(|bid| {
+                        values.push(bid.0.into());
+                        format!("${}", values.len())
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("t.board_id = ANY(ARRAY[{placeholders}]::uuid[])")
+            };
+
+            format!("AND ({project_cond} OR {board_cond})")
+        };
+
+        // Actor-type filter
+        let actor_cond = match filters.actor_type {
+            Some(ActorTypeFilter::User) => "AND a.created_by_user_id IS NOT NULL".to_string(),
+            Some(ActorTypeFilter::ApiKey) => "AND a.created_by_api_key_id IS NOT NULL".to_string(),
+            None => String::new(),
+        };
+
+        // Date range filters
+        let from_cond = if let Some(from) = filters.from {
+            values.push(from.into());
+            format!("AND a.created_at >= ${}", values.len())
+        } else {
+            String::new()
+        };
+
+        let to_cond = if let Some(to) = filters.to {
+            values.push(to.into());
+            format!("AND a.created_at <= ${}", values.len())
+        } else {
+            String::new()
+        };
+
+        // Keyset pagination cursor: (created_at DESC, id DESC)
+        let cursor_cond = if let Some((ts, aid)) = after {
+            values.push(ts.into());
+            let ts_param = values.len();
+            values.push(aid.0.into());
+            let id_param = values.len();
+            format!("AND (a.created_at, a.id) < (${ts_param}, ${id_param})")
+        } else {
+            String::new()
+        };
+
+        values.push((limit as i64).into());
+        let limit_param = values.len();
+
+        let sql = format!(
+            r#"
+            SELECT
+                a.id,
+                a.task_id,
+                a.workspace_id,
+                a.kind,
+                a.payload,
+                a.created_by_user_id,
+                a.created_by_api_key_id,
+                a.created_at,
+                t.readable_id AS task_readable_id
+            FROM task_activity a
+            JOIN tasks t ON t.id = a.task_id AND t.workspace_id = a.workspace_id
+            WHERE a.workspace_id = ${ws_param}
+              AND t.deleted_at IS NULL
+              {scope_cond}
+              {actor_cond}
+              {from_cond}
+              {to_cond}
+              {cursor_cond}
+            ORDER BY a.created_at DESC, a.id DESC
+            LIMIT ${limit_param}
+            "#,
+        );
+
+        let rows = Row::find_by_statement(sea_orm::Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            sql,
+            values,
+        ))
+        .all(&self.conn)
+        .await
+        .map_err(db_err)?;
+
+        rows.into_iter()
+            .map(|row| {
+                let kind = activity_kind_from_str(&row.kind).map_err(internal_err)?;
+                let actor = if let Some(uid) = row.created_by_user_id {
+                    Actor::User(atlas_domain::ids::UserId(uid))
+                } else if let Some(kid) = row.created_by_api_key_id {
+                    Actor::ApiKey(atlas_domain::ids::ApiKeyId(kid))
+                } else {
+                    return Err(DomainError::Internal {
+                        message: "task_activity row has no actor".into(),
+                    });
+                };
+                let payload: atlas_domain::entities::boards_tasks::ActivityPayload =
+                    serde_json::from_value(row.payload).map_err(|e| DomainError::Internal {
+                        message: format!("deserialize activity payload: {e}"),
+                    })?;
+                let activity = TaskActivity {
+                    id: TaskActivityId(row.id),
+                    task_id: TaskId(row.task_id),
+                    workspace_id: atlas_domain::ids::WorkspaceId(row.workspace_id),
+                    kind,
+                    payload,
+                    actor,
+                    created_at: row.created_at,
+                };
+                Ok(WorkspaceActivityRow {
+                    activity,
+                    task_readable_id: row.task_readable_id,
+                })
+            })
+            .collect()
     }
 }
 

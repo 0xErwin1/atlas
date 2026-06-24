@@ -21,6 +21,7 @@ pub mod m20260622_000018_status_templates;
 pub mod m20260622_000019_user_system_admin;
 pub mod m20260623_000020_apikey_identity;
 pub mod m20260623_000021_user_activation;
+pub mod m20260623_000022_workspace_activity_index;
 
 use sea_orm_migration::prelude::*;
 
@@ -51,6 +52,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260622_000019_user_system_admin::Migration),
             Box::new(m20260623_000020_apikey_identity::Migration),
             Box::new(m20260623_000021_user_activation::Migration),
+            Box::new(m20260623_000022_workspace_activity_index::Migration),
         ]
     }
 }

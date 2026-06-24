@@ -1053,6 +1053,7 @@ mod tests {
             id: fixed_uuid(),
             display_name: Some("Alice".into()),
             key_type: None,
+            account_status: None,
         }
     }
 
@@ -1797,6 +1798,7 @@ mod tests {
             display: "Alice".into(),
             key_type: None,
             role: None,
+            account_status: None,
         }
     }
 
@@ -2060,6 +2062,7 @@ mod tests {
             id: fixed_uuid(),
             display_name: display.map(String::from),
             key_type: None,
+            account_status: None,
         }
     }
 
@@ -2115,6 +2118,8 @@ mod tests {
             actor: make_actor(Some("Alice")),
             payload: serde_json::json!({"column": "Done"}),
             created_at: chrono::DateTime::from_timestamp(0, 0).unwrap(),
+            task_id: fixed_uuid(),
+            task_readable_id: "ATL-1".into(),
         }
     }
 
@@ -2466,12 +2471,14 @@ mod tests {
                 id: fixed_uuid(),
                 display_name: Some("Bob".into()),
                 key_type: None,
+                account_status: None,
             },
             assigned_by: ActorDto {
                 r#type: "api_key".into(),
                 id: fixed_uuid(),
                 display_name: None,
                 key_type: None,
+                account_status: None,
             },
             assigned_at: now(),
         }
