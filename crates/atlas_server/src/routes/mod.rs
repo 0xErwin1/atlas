@@ -1,5 +1,6 @@
 pub(crate) mod activate;
 pub(crate) mod api_keys;
+pub(crate) mod audit;
 pub(crate) mod auth;
 pub(crate) mod boards;
 pub(crate) mod documents;

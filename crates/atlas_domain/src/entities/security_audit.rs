@@ -1,4 +1,5 @@
 use crate::actor::Actor;
+use crate::entities::task_views::ActorTypeFilter;
 use crate::ids::{SecurityAuditId, WorkspaceId};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -85,6 +86,7 @@ pub struct AuditCursor {
 #[derive(Debug, Clone, Default)]
 pub struct AuditFilters {
     pub actor_user_id: Option<crate::ids::UserId>,
+    pub actor_type: Option<ActorTypeFilter>,
     pub action: Option<String>,
     pub from: Option<DateTime<Utc>>,
     pub to: Option<DateTime<Utc>>,
@@ -132,6 +134,7 @@ mod tests {
     fn audit_filters_default_has_all_nones() {
         let f = AuditFilters::default();
         assert!(f.actor_user_id.is_none());
+        assert!(f.actor_type.is_none());
         assert!(f.action.is_none());
         assert!(f.from.is_none());
         assert!(f.to.is_none());

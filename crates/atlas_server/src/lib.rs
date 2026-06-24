@@ -92,6 +92,8 @@ pub fn app(state: AppState) -> Router {
             "/v1/admin/workspaces",
             get(routes::workspaces::admin_list_workspaces),
         )
+        // Admin security audit log (root/system_admin only)
+        .route("/v1/admin/audit", get(routes::audit::list_platform_audit))
         // API keys — top-level (user-owned, workspace-independent)
         .route(
             "/v1/api-keys",
@@ -292,6 +294,11 @@ pub fn app(state: AppState) -> Router {
         .route(
             "/v1/workspaces/{ws}/activity",
             axum::routing::get(routes::tasks::list_workspace_activity),
+        )
+        // Workspace security audit log (owner/admin only)
+        .route(
+            "/v1/workspaces/{ws}/audit",
+            axum::routing::get(routes::audit::list_workspace_audit),
         )
         // Documents
         .route(

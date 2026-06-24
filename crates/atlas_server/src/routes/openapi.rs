@@ -11,6 +11,7 @@ use atlas_api::{
         PrincipalDto, ProjectDto, ResetPasswordRequest, ServerMetaDto, SetSystemAdminRequest,
         UiStateDto, UpdateMeRequest, UpdateMemberRoleRequest, UpdateProjectRequest,
         UpdateUiStateRequest, UpdateWorkspaceRequest, UserDto, WorkspaceDto,
+        audit::AuditEntryDto,
         boards_tasks::{
             ActivityEntryDto, AddAssigneeRequest, AssigneeDto, BoardDto, BoardSummaryDto,
             ChecklistItemDto, ColumnDto, CreateBoardRequest, CreateChecklistItemRequest,
@@ -74,6 +75,8 @@ use atlas_api::{
         crate::routes::workspaces::get_workspace,
         crate::routes::workspaces::update_workspace,
         crate::routes::workspaces::admin_list_workspaces,
+        crate::routes::audit::list_workspace_audit,
+        crate::routes::audit::list_platform_audit,
         crate::routes::api_keys::create_user_api_key,
         crate::routes::api_keys::list_user_api_keys,
         crate::routes::api_keys::revoke_user_api_key,
@@ -243,6 +246,7 @@ use atlas_api::{
         PromotionDto,
         PromoteChecklistItemRequest,
         ActivityEntryDto,
+        AuditEntryDto,
         SearchHitDto,
         SearchKindDto,
         CreateFolderRequest,
@@ -265,6 +269,7 @@ use atlas_api::{
         UpdateTaskViewRequest,
     )),
     tags(
+        (name = "audit", description = "Security audit log"),
         (name = "auth", description = "Authentication and session management"),
         (name = "users", description = "User management (root-only)"),
         (name = "meta", description = "Server metadata"),

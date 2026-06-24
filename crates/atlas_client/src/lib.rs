@@ -1970,6 +1970,67 @@ impl AtlasClient {
             .await
     }
 
+    /// `GET /v1/workspaces/{ws}/audit`
+    pub async fn list_workspace_audit(
+        &self,
+        ws: &str,
+        actor: Option<&str>,
+        action: Option<&str>,
+        from: Option<&str>,
+        to: Option<&str>,
+        limit: Option<u32>,
+    ) -> Result<Page<atlas_api::dtos::audit::AuditEntryDto>, ClientError> {
+        let path = build_audit_path(
+            &format!("/v1/workspaces/{ws}/audit"),
+            actor,
+            action,
+            from,
+            to,
+            None,
+            limit,
+        );
+        let response = self.get(&path).send().await?;
+        self.decode_response(response, "list_workspace_audit").await
+    }
+
+    /// `GET /v1/workspaces/{ws}/audit` with explicit cursor
+    pub async fn list_workspace_audit_with_cursor(
+        &self,
+        ws: &str,
+        actor: Option<&str>,
+        action: Option<&str>,
+        from: Option<&str>,
+        cursor: Option<&str>,
+        limit: Option<u32>,
+    ) -> Result<Page<atlas_api::dtos::audit::AuditEntryDto>, ClientError> {
+        let path = build_audit_path(
+            &format!("/v1/workspaces/{ws}/audit"),
+            actor,
+            action,
+            from,
+            None,
+            cursor,
+            limit,
+        );
+        let response = self.get(&path).send().await?;
+        self.decode_response(response, "list_workspace_audit_with_cursor")
+            .await
+    }
+
+    /// `GET /v1/admin/audit`
+    pub async fn list_platform_audit(
+        &self,
+        actor: Option<&str>,
+        action: Option<&str>,
+        from: Option<&str>,
+        to: Option<&str>,
+        limit: Option<u32>,
+    ) -> Result<Page<atlas_api::dtos::audit::AuditEntryDto>, ClientError> {
+        let path = build_audit_path("/v1/admin/audit", actor, action, from, to, None, limit);
+        let response = self.get(&path).send().await?;
+        self.decode_response(response, "list_platform_audit").await
+    }
+
     /// `POST /v1/auth/logout`
     pub async fn logout(&self) -> Result<(), ClientError> {
         let response = self
@@ -2075,6 +2136,41 @@ fn build_workspace_tasks_path(ws: &str, q: &WorkspaceTaskQueryParams) -> String 
 
     if params.is_empty() {
         base
+    } else {
+        format!("{}?{}", base, params.join("&"))
+    }
+}
+
+fn build_audit_path(
+    base: &str,
+    actor: Option<&str>,
+    action: Option<&str>,
+    from: Option<&str>,
+    to: Option<&str>,
+    cursor: Option<&str>,
+    limit: Option<u32>,
+) -> String {
+    let mut params: Vec<String> = Vec::new();
+    if let Some(a) = actor {
+        params.push(format!("actor={a}"));
+    }
+    if let Some(a) = action {
+        params.push(format!("action={}", encode_query_value(a)));
+    }
+    if let Some(f) = from {
+        params.push(format!("from={}", encode_query_value(f)));
+    }
+    if let Some(t) = to {
+        params.push(format!("to={}", encode_query_value(t)));
+    }
+    if let Some(c) = cursor {
+        params.push(format!("cursor={c}"));
+    }
+    if let Some(l) = limit {
+        params.push(format!("limit={l}"));
+    }
+    if params.is_empty() {
+        base.to_string()
     } else {
         format!("{}?{}", base, params.join("&"))
     }

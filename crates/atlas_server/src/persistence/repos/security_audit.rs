@@ -4,6 +4,7 @@ use atlas_domain::{
     entities::security_audit::{
         AuditCursor, AuditFilters, NewSecurityAuditEvent, SecurityAuditEvent,
     },
+    entities::task_views::ActorTypeFilter,
     ids::WorkspaceId,
     ports::security_audit::SecurityAuditRepo,
 };
@@ -88,6 +89,12 @@ impl SecurityAuditRepo for PgSecurityAuditRepo {
             String::new()
         };
 
+        let actor_type_cond = match filters.actor_type {
+            Some(ActorTypeFilter::User) => "AND actor_user_id IS NOT NULL".to_string(),
+            Some(ActorTypeFilter::ApiKey) => "AND actor_api_key_id IS NOT NULL".to_string(),
+            None => String::new(),
+        };
+
         let action_cond = if let Some(ref a) = filters.action {
             values.push(a.clone().into());
             format!("AND action = ${}", values.len())
@@ -129,6 +136,7 @@ impl SecurityAuditRepo for PgSecurityAuditRepo {
             FROM security_audit_log
             WHERE workspace_id = ${ws_param}
               {actor_cond}
+              {actor_type_cond}
               {action_cond}
               {from_cond}
               {to_cond}
@@ -190,6 +198,12 @@ impl SecurityAuditRepo for PgSecurityAuditRepo {
             String::new()
         };
 
+        let actor_type_cond = match filters.actor_type {
+            Some(ActorTypeFilter::User) => "AND actor_user_id IS NOT NULL".to_string(),
+            Some(ActorTypeFilter::ApiKey) => "AND actor_api_key_id IS NOT NULL".to_string(),
+            None => String::new(),
+        };
+
         let action_cond = if let Some(ref a) = filters.action {
             values.push(a.clone().into());
             format!("AND action = ${}", values.len())
@@ -231,6 +245,7 @@ impl SecurityAuditRepo for PgSecurityAuditRepo {
             FROM security_audit_log
             WHERE workspace_id IS NULL
               {actor_cond}
+              {actor_type_cond}
               {action_cond}
               {from_cond}
               {to_cond}

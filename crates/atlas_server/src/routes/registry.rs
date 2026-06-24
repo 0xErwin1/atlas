@@ -186,6 +186,12 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         kind: RouteKind::AuthnRequired,
         openapi_path: Some("/v1/admin/workspaces"),
     },
+    RouteEntry {
+        method: "GET",
+        path_template: "/v1/admin/audit",
+        kind: RouteKind::AuthnRequired,
+        openapi_path: Some("/v1/admin/audit"),
+    },
     // ---- Top-level API key routes (user-owned, workspace-independent) ----
     RouteEntry {
         method: "POST",
@@ -597,6 +603,12 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         path_template: "/v1/workspaces/{ws}/activity",
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/v1/workspaces/{ws}/activity"),
+    },
+    RouteEntry {
+        method: "GET",
+        path_template: "/v1/workspaces/{ws}/audit",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/audit"),
     },
     // ---- Folder routes ----
     RouteEntry {
