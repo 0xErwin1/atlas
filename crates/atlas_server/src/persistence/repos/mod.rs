@@ -11,6 +11,8 @@ mod permissions;
 #[allow(unreachable_pub)]
 mod search;
 #[allow(unreachable_pub)]
+mod security_audit;
+#[allow(unreachable_pub)]
 mod tags;
 #[allow(unreachable_pub)]
 mod workspace_core;
@@ -38,6 +40,7 @@ pub use workspace_core::{
 };
 
 pub use permissions::{PermissionGrantRepo, PgPermissionGrantRepo};
+pub use security_audit::{PgSecurityAuditRepo, SecurityAuditRepoTrait as SecurityAuditRepo};
 #[allow(unreachable_pub)]
 mod saved_searches;
 

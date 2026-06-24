@@ -58,6 +58,7 @@ define_id!(SavedSearchId);
 define_id!(TaskViewId);
 define_id!(StatusTemplateId);
 define_id!(ActivationTokenId);
+define_id!(SecurityAuditId);
 
 #[cfg(test)]
 mod tests {
