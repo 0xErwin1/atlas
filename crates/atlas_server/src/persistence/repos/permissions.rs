@@ -327,9 +327,31 @@ impl PermissionGrantRepo for PgPermissionGrantRepo {
         values.push(query.workspace_id.0.into());
         let ws_param = values.len();
 
+        // Group grants are gathered into the same max-role candidate set as direct
+        // user grants. Grants whose group is soft-deleted are excluded as a
+        // defense-in-depth layer on top of build_resolution_query's membership
+        // filter; this covers a group deleted between the two queries.
         let principal_condition = if let Some(uid) = query.user_id {
             values.push(uid.into());
-            format!("user_id = ${}", values.len())
+            let uid_param = values.len();
+
+            if query.group_ids.is_empty() {
+                format!("user_id = ${uid_param}")
+            } else {
+                let group_placeholders: String = query
+                    .group_ids
+                    .iter()
+                    .map(|id| {
+                        values.push((*id).into());
+                        format!("${}", values.len())
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                format!(
+                    "(user_id = ${uid_param} OR (group_id = ANY(ARRAY[{group_placeholders}]::uuid[]) AND NOT EXISTS (SELECT 1 FROM groups g WHERE g.id = permission_grants.group_id AND g.deleted_at IS NOT NULL)))"
+                )
+            }
         } else if let Some(kid) = query.api_key_id {
             values.push(kid.into());
             format!("api_key_id = ${}", values.len())

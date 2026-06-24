@@ -33,7 +33,7 @@ use atlas_domain::{
         permissions::NewPermissionGrant,
         security_audit::{NewSecurityAuditEvent, SecurityAction},
     },
-    ids::{ApiKeyId, UserId},
+    ids::{ApiKeyId, GroupId, UserId},
     permissions::{
         Principal, ResourceRef, ResourceRole, ShareDenied, authorize_grant_target, authorize_share,
     },
@@ -46,7 +46,8 @@ use crate::{
     },
     error::ApiError,
     persistence::repos::{
-        ApiKeyRepo, MembershipRepo, PermissionGrantRepo, PgPermissionGrantRepo, PgSecurityAuditRepo,
+        ApiKeyRepo, MembershipRepo, PermissionGrantRepo, PgGroupRepo, PgPermissionGrantRepo,
+        PgSecurityAuditRepo,
     },
     state::AppState,
 };
@@ -83,11 +84,14 @@ pub(crate) async fn create_project_grant(
     authorize_share(&auth.principal, auth.effective, role_in_play)
         .map_err(share_denied_to_api_error)?;
 
-    let (user_id, api_key_id) =
+    let (user_id, api_key_id, group_id) =
         parse_principal(&body.principal, &auth.workspace.id, &auth.principal, &state).await?;
 
-    authorize_grant_target(&target_principal(user_id, api_key_id), role_in_play)
-        .map_err(share_denied_to_api_error)?;
+    authorize_grant_target(
+        &target_principal(user_id, api_key_id, group_id),
+        role_in_play,
+    )
+    .map_err(share_denied_to_api_error)?;
 
     let created_by_user_id = match &auth.principal {
         Principal::User(uid) => Some(*uid),
@@ -112,7 +116,7 @@ pub(crate) async fn create_project_grant(
         workspace_id: auth.workspace.id,
         user_id,
         api_key_id,
-        group_id: None,
+        group_id,
         project_id: Some(auth.resource.0.id),
         folder_id: None,
         document_id: None,
@@ -122,7 +126,8 @@ pub(crate) async fn create_project_grant(
         created_by_api_key_id,
     };
 
-    let (grantee_type, grantee_id) = grantee_fields(new_grant.user_id, new_grant.api_key_id);
+    let (grantee_type, grantee_id) =
+        grantee_fields(new_grant.user_id, new_grant.api_key_id, new_grant.group_id);
 
     let txn = (*state.db).begin().await.map_err(|e| ApiError::Internal {
         message: e.to_string(),
@@ -277,7 +282,11 @@ pub(crate) async fn delete_project_grant(
         }
     };
 
-    let (grantee_type, grantee_id) = grantee_fields(target_grant.user_id, target_grant.api_key_id);
+    let (grantee_type, grantee_id) = grantee_fields(
+        target_grant.user_id,
+        target_grant.api_key_id,
+        target_grant.group_id,
+    );
 
     let txn = (*state.db).begin().await.map_err(|e| ApiError::Internal {
         message: e.to_string(),
@@ -341,11 +350,14 @@ pub(crate) async fn create_workspace_grant(
     authorize_share(&auth.principal, auth.effective, role_in_play)
         .map_err(share_denied_to_api_error)?;
 
-    let (user_id, api_key_id) =
+    let (user_id, api_key_id, group_id) =
         parse_principal(&body.principal, &auth.workspace.id, &auth.principal, &state).await?;
 
-    authorize_grant_target(&target_principal(user_id, api_key_id), role_in_play)
-        .map_err(share_denied_to_api_error)?;
+    authorize_grant_target(
+        &target_principal(user_id, api_key_id, group_id),
+        role_in_play,
+    )
+    .map_err(share_denied_to_api_error)?;
 
     let created_by_user_id = match &auth.principal {
         Principal::User(uid) => Some(*uid),
@@ -370,7 +382,7 @@ pub(crate) async fn create_workspace_grant(
         workspace_id: auth.workspace.id,
         user_id,
         api_key_id,
-        group_id: None,
+        group_id,
         project_id: None,
         folder_id: None,
         document_id: None,
@@ -380,7 +392,8 @@ pub(crate) async fn create_workspace_grant(
         created_by_api_key_id,
     };
 
-    let (grantee_type, grantee_id) = grantee_fields(new_grant.user_id, new_grant.api_key_id);
+    let (grantee_type, grantee_id) =
+        grantee_fields(new_grant.user_id, new_grant.api_key_id, new_grant.group_id);
 
     let txn = (*state.db).begin().await.map_err(|e| ApiError::Internal {
         message: e.to_string(),
@@ -532,7 +545,11 @@ pub(crate) async fn delete_workspace_grant(
         }
     };
 
-    let (grantee_type, grantee_id) = grantee_fields(target_grant.user_id, target_grant.api_key_id);
+    let (grantee_type, grantee_id) = grantee_fields(
+        target_grant.user_id,
+        target_grant.api_key_id,
+        target_grant.group_id,
+    );
 
     let txn = (*state.db).begin().await.map_err(|e| ApiError::Internal {
         message: e.to_string(),
@@ -576,11 +593,13 @@ pub(crate) async fn delete_workspace_grant(
 fn grantee_fields(
     user_id: Option<UserId>,
     api_key_id: Option<ApiKeyId>,
+    group_id: Option<GroupId>,
 ) -> (&'static str, uuid::Uuid) {
-    match (user_id, api_key_id) {
-        (Some(uid), _) => ("user", uid.0),
-        (_, Some(kid)) => ("api_key", kid.0),
-        (None, None) => ("unknown", uuid::Uuid::nil()),
+    match (user_id, api_key_id, group_id) {
+        (Some(uid), _, _) => ("user", uid.0),
+        (_, Some(kid), _) => ("api_key", kid.0),
+        (_, _, Some(gid)) => ("group", gid.0),
+        (None, None, None) => ("unknown", uuid::Uuid::nil()),
     }
 }
 
@@ -602,12 +621,14 @@ fn parse_role(role: &str) -> Result<ResourceRole, ApiError> {
 /// and the caller must own it — `created_by_user_id` must match the acting user.
 /// This ownership requirement means a user can only grant access for their own keys;
 /// cross-user key grants are out of scope and would require an explicit delegation model.
+/// For `group` principals, the group must belong to the target workspace and must
+/// not be soft-deleted.
 async fn parse_principal(
     principal: &GrantPrincipal,
     workspace_id: &atlas_domain::ids::WorkspaceId,
     caller: &Principal,
     state: &AppState,
-) -> Result<(Option<UserId>, Option<ApiKeyId>), ApiError> {
+) -> Result<(Option<UserId>, Option<ApiKeyId>, Option<GroupId>), ApiError> {
     match principal.r#type.as_str() {
         "user" => {
             let uid = UserId(principal.id);
@@ -627,7 +648,7 @@ async fn parse_principal(
                     message: "user is not a member of this workspace".into(),
                 });
             }
-            Ok((Some(uid), None))
+            Ok((Some(uid), None, None))
         }
         "api_key" => {
             let kid = ApiKeyId(principal.id);
@@ -666,19 +687,51 @@ async fn parse_principal(
                 });
             }
 
-            Ok((None, Some(kid)))
+            Ok((None, Some(kid), None))
+        }
+        "group" => {
+            let gid = GroupId(principal.id);
+            let group_repo = PgGroupRepo {
+                conn: (*state.db).clone(),
+            };
+
+            use atlas_domain::ports::group_repo::GroupRepo as GroupRepoTrait;
+            let group = group_repo
+                .get(gid, *workspace_id)
+                .await
+                .map_err(|e| ApiError::Internal {
+                    message: e.to_string(),
+                })?
+                .ok_or_else(|| ApiError::InvalidInput {
+                    message: "group not found in this workspace or has been deleted".into(),
+                })?;
+
+            if group.deleted_at.is_some() {
+                return Err(ApiError::InvalidInput {
+                    message: "group not found in this workspace or has been deleted".into(),
+                });
+            }
+
+            Ok((None, None, Some(gid)))
         }
         other => Err(ApiError::InvalidInput {
-            message: format!("invalid principal type: {other}; expected 'user' or 'api_key'"),
+            message: format!(
+                "invalid principal type: {other}; expected 'user', 'api_key', or 'group'"
+            ),
         }),
     }
 }
 
-fn target_principal(user_id: Option<UserId>, api_key_id: Option<ApiKeyId>) -> Principal {
-    match (user_id, api_key_id) {
-        (_, Some(kid)) => Principal::ApiKey(kid),
-        (Some(uid), None) => Principal::User(uid),
-        (None, None) => Principal::User(UserId(uuid::Uuid::nil())),
+fn target_principal(
+    user_id: Option<UserId>,
+    api_key_id: Option<ApiKeyId>,
+    group_id: Option<GroupId>,
+) -> Principal {
+    match (user_id, api_key_id, group_id) {
+        (_, Some(kid), _) => Principal::ApiKey(kid),
+        (Some(uid), None, _) => Principal::User(uid),
+        (None, None, Some(gid)) => Principal::Group(gid),
+        (None, None, None) => Principal::User(UserId(uuid::Uuid::nil())),
     }
 }
 

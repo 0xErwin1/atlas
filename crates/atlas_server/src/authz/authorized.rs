@@ -802,7 +802,7 @@ pub async fn resolve_effective_role(
     workspace: &Workspace,
     chain: &ResourceChain,
 ) -> Result<Option<ResourceRole>, ApiError> {
-    let grant_query = build_resolution_query(principal, workspace, chain);
+    let grant_query = build_resolution_query(db, principal, workspace, chain).await?;
     let grant_repo = PgPermissionGrantRepo { conn: db.clone() };
     let grants = grant_repo
         .load_grants_for_resolution(grant_query)
@@ -821,11 +821,12 @@ pub async fn resolve_effective_role(
     Ok(atlas_domain::permissions::resolve(&input))
 }
 
-fn build_resolution_query(
+async fn build_resolution_query(
+    db: &sea_orm::DatabaseConnection,
     principal: &Principal,
     workspace: &Workspace,
     chain: &ResourceChain,
-) -> ResolutionQuery {
+) -> Result<ResolutionQuery, ApiError> {
     let user_id = match principal {
         Principal::User(uid) => Some(uid.0),
         Principal::ApiKey(_) | Principal::Group(_) => None,
@@ -833,6 +834,41 @@ fn build_resolution_query(
     let api_key_id = match principal {
         Principal::ApiKey(kid) => Some(kid.0),
         Principal::User(_) | Principal::Group(_) => None,
+    };
+
+    // For user principals, gather the live group ids this user belongs to in the
+    // workspace. These are merged into the grant lookup so group grants contribute
+    // to the same max-role resolution as direct grants.
+    // Api keys are never in groups; their resolution path gathers no group grants.
+    let group_ids = if let Some(uid) = user_id {
+        use sea_orm::FromQueryResult;
+
+        #[derive(Debug, FromQueryResult)]
+        struct GroupRow {
+            group_id: uuid::Uuid,
+        }
+
+        let rows = GroupRow::find_by_statement(sea_orm::Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            r#"
+            SELECT gm.group_id
+            FROM group_members gm
+            JOIN groups g ON g.id = gm.group_id
+            WHERE gm.user_id = $1
+              AND g.workspace_id = $2
+              AND g.deleted_at IS NULL
+            "#,
+            [uid.into(), workspace.id.0.into()],
+        ))
+        .all(db)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?;
+
+        rows.into_iter().map(|r| r.group_id).collect()
+    } else {
+        vec![]
     };
 
     let mut chain_projects = Vec::new();
@@ -850,14 +886,14 @@ fn build_resolution_query(
         }
     }
 
-    ResolutionQuery {
+    Ok(ResolutionQuery {
         workspace_id: workspace.id,
         user_id,
         api_key_id,
-        group_ids: vec![],
+        group_ids,
         chain_projects,
         chain_folders,
         doc_id,
         board_id,
-    }
+    })
 }
