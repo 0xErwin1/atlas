@@ -15,13 +15,20 @@ use uuid::Uuid;
 use atlas_api::dtos::{ActivatePasswordRequest, ActivationInfoDto, LoginResponse};
 use atlas_domain::ids::{ActivationTokenId, SessionId, UserId};
 
+use atlas_domain::{
+    Actor,
+    entities::security_audit::{NewSecurityAuditEvent, SecurityAction},
+};
+
 use crate::{
     auth::{
         password,
         tokens::{generate_session_token, hash_token},
     },
     error::ApiError,
-    persistence::repos::{ActivationTokenRepo, PgActivationTokenRepo, PgUserRepo, UserRepo},
+    persistence::repos::{
+        ActivationTokenRepo, PgActivationTokenRepo, PgSecurityAuditRepo, PgUserRepo, UserRepo,
+    },
     routes::auth::user_to_dto,
     state::AppState,
 };
@@ -256,6 +263,23 @@ pub(crate) async fn post_activate(
             now.into(),
         ],
     ))
+    .await
+    .map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    // Actor == target: the activating user is the same person acting on themselves.
+    PgSecurityAuditRepo::append_in(
+        &txn,
+        NewSecurityAuditEvent {
+            workspace_id: None,
+            actor: Actor::User(user_id),
+            action: SecurityAction::AccountActivated,
+            target_type: "user".to_string(),
+            target_id: Some(user_id.0),
+            metadata: serde_json::json!({}),
+        },
+    )
     .await
     .map_err(|e| ApiError::Internal {
         message: e.to_string(),

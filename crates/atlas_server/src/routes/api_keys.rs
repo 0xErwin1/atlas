@@ -25,13 +25,16 @@ use atlas_api::{
     pagination::{Cursor, Page},
 };
 use atlas_domain::{
+    Actor,
     entities::{
         identity::ApiKeyType,
         permissions::{NewPermissionGrant, PermissionGrant, PermissionGrantId},
+        security_audit::{NewSecurityAuditEvent, SecurityAction},
     },
     ids::{ApiKeyId, ProjectId, UserId, WorkspaceId},
     permissions::{Principal, ResourceRole, ShareDenied, authorize_grant_target},
 };
+use sea_orm::TransactionTrait;
 
 use crate::{
     auth::{
@@ -41,7 +44,7 @@ use crate::{
     error::ApiError,
     persistence::repos::{
         ApiKeyRepo, NewApiKey, PermissionGrantRepo, PgApiKeyRepo, PgPermissionGrantRepo,
-        PgProjectRepo, PgWorkspaceRepo, ProjectRepo, WorkspaceRepo,
+        PgProjectRepo, PgSecurityAuditRepo, PgWorkspaceRepo, ProjectRepo, WorkspaceRepo,
     },
     state::AppState,
 };
@@ -125,24 +128,45 @@ pub(crate) async fn create_user_api_key(
     let secret = generate_api_key();
     let token_hash = hash_token(&secret);
 
-    let repo = PgApiKeyRepo {
-        conn: (*state.db).clone(),
+    let new_key = NewApiKey {
+        name: body.name,
+        token_hash,
+        type_: key_type,
+        expires_at: body.expires_at,
     };
 
-    let key = repo
-        .create_for_user(
-            user_id,
-            NewApiKey {
-                name: body.name,
-                token_hash,
-                type_: key_type,
-                expires_at: body.expires_at,
-            },
-        )
+    let txn = (*state.db).begin().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    let key = PgApiKeyRepo::create_for_user_in(&txn, user_id, new_key)
         .await
         .map_err(|e| ApiError::Internal {
             message: e.to_string(),
         })?;
+
+    PgSecurityAuditRepo::append_in(
+        &txn,
+        NewSecurityAuditEvent {
+            workspace_id: None,
+            actor: Actor::User(user_id),
+            action: SecurityAction::ApiKeyCreated,
+            target_type: "api_key".to_string(),
+            target_id: Some(key.id.0),
+            metadata: serde_json::json!({
+                "key_type": key.type_.as_str(),
+                "key_name": key.name,
+            }),
+        },
+    )
+    .await
+    .map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    txn.commit().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
 
     if let Some(grant_req) = body.initial_grant {
         create_initial_grant(&state, user_id, key.id, &grant_req).await?;
@@ -580,11 +604,12 @@ pub(crate) async fn revoke_user_api_key(
     };
 
     let key_id = ApiKeyId(params.key_id);
-    let repo = PgApiKeyRepo {
-        conn: (*state.db).clone(),
-    };
 
-    repo.revoke_for_user(user_id, key_id)
+    let txn = (*state.db).begin().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    let key = PgApiKeyRepo::revoke_for_user_in(&txn, user_id, key_id)
         .await
         .map_err(|e| match e {
             atlas_domain::DomainError::NotFound { .. } => ApiError::NotFound,
@@ -593,6 +618,26 @@ pub(crate) async fn revoke_user_api_key(
                 message: other.to_string(),
             },
         })?;
+
+    PgSecurityAuditRepo::append_in(
+        &txn,
+        NewSecurityAuditEvent {
+            workspace_id: None,
+            actor: Actor::User(user_id),
+            action: SecurityAction::ApiKeyRevoked,
+            target_type: "api_key".to_string(),
+            target_id: Some(key_id.0),
+            metadata: serde_json::json!({ "key_type": key.type_.as_str() }),
+        },
+    )
+    .await
+    .map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    txn.commit().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
 
     Ok(StatusCode::NO_CONTENT)
 }

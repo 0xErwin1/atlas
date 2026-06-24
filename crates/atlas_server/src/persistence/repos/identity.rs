@@ -387,6 +387,90 @@ impl UserRepo for PgUserRepo {
     }
 }
 
+impl PgUserRepo {
+    /// Disables the given user using the provided connection or transaction.
+    ///
+    /// Used when the mutation must be atomic with an audit-log append inside
+    /// an existing transaction.
+    pub async fn disable_in<C: ConnectionTrait>(conn: &C, id: UserId) -> Result<(), DomainError> {
+        use sea_orm::IntoActiveModel;
+        let row = user::Entity::find_by_id(id.0)
+            .one(conn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "user",
+                id: id.0,
+            })?;
+        let mut active = row.into_active_model();
+        active.disabled_at = Set(Some(Utc::now()));
+        active.updated_at = Set(Utc::now());
+        active.update(conn).await.map_err(db_err)?;
+        Ok(())
+    }
+
+    /// Enables the given user using the provided connection or transaction.
+    pub async fn enable_in<C: ConnectionTrait>(conn: &C, id: UserId) -> Result<(), DomainError> {
+        use sea_orm::IntoActiveModel;
+        let row = user::Entity::find_by_id(id.0)
+            .one(conn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "user",
+                id: id.0,
+            })?;
+        let mut active = row.into_active_model();
+        active.disabled_at = Set(None);
+        active.updated_at = Set(Utc::now());
+        active.update(conn).await.map_err(db_err)?;
+        Ok(())
+    }
+
+    /// Updates `password_hash` using the provided connection or transaction.
+    pub async fn set_password_hash_in<C: ConnectionTrait>(
+        conn: &C,
+        id: UserId,
+        hash: String,
+    ) -> Result<(), DomainError> {
+        use sea_orm::IntoActiveModel;
+        let row = user::Entity::find_by_id(id.0)
+            .one(conn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "user",
+                id: id.0,
+            })?;
+        let mut active = row.into_active_model();
+        active.password_hash = Set(Some(hash));
+        active.updated_at = Set(Utc::now());
+        active.update(conn).await.map_err(db_err)?;
+        Ok(())
+    }
+
+    /// Updates `is_system_admin` using the provided connection or transaction.
+    pub async fn set_system_admin_in<C: ConnectionTrait>(
+        conn: &C,
+        id: UserId,
+        is_system_admin: bool,
+    ) -> Result<User, DomainError> {
+        use sea_orm::IntoActiveModel;
+        let row = user::Entity::find_by_id(id.0)
+            .one(conn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "user",
+                id: id.0,
+            })?;
+        let mut active = row.into_active_model();
+        active.is_system_admin = Set(is_system_admin);
+        active.updated_at = Set(Utc::now());
+        active.update(conn).await.map(user_from).map_err(db_err)
+    }
+}
+
 pub struct PgSessionRepo {
     pub conn: DatabaseConnection,
 }
@@ -751,6 +835,76 @@ impl ApiKeyRepo for PgApiKeyRepo {
 }
 
 impl PgApiKeyRepo {
+    /// Creates a user-owned API key using the provided connection or transaction.
+    ///
+    /// Used when the insert must be atomic with an audit-log append inside an
+    /// existing transaction.
+    pub async fn create_for_user_in<C: ConnectionTrait>(
+        conn: &C,
+        user_id: UserId,
+        new: NewApiKey,
+    ) -> Result<ApiKey, DomainError> {
+        let model = api_key::ActiveModel {
+            id: Set(ApiKeyId::new().0),
+            workspace_id: Set(None),
+            created_by_user_id: Set(user_id.0),
+            name: Set(new.name),
+            token_hash: Set(new.token_hash),
+            type_: Set(new.type_.as_str().to_string()),
+            expires_at: Set(new.expires_at),
+            last_used_at: Set(None),
+            revoked_at: Set(None),
+            created_at: Set(Utc::now()),
+        };
+        model.insert(conn).await.map(api_key_from).map_err(db_err)
+    }
+
+    /// Revokes a user-owned API key using the provided connection or transaction.
+    ///
+    /// Mirrors `revoke_for_user` but accepts any `ConnectionTrait` so the revoke
+    /// (including the task-assignee cleanup) can participate in an existing txn
+    /// alongside an audit-log append. Returns the key record as it existed before
+    /// the revoke for use in the audit event metadata.
+    pub async fn revoke_for_user_in<C: ConnectionTrait>(
+        conn: &C,
+        user_id: UserId,
+        id: ApiKeyId,
+    ) -> Result<ApiKey, DomainError> {
+        use sea_orm::IntoActiveModel;
+
+        let row = api_key::Entity::find_by_id(id.0)
+            .filter(api_key::Column::RevokedAt.is_null())
+            .one(conn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "api_key",
+                id: id.0,
+            })?;
+
+        if row.created_by_user_id != user_id.0 {
+            return Err(DomainError::Forbidden {
+                message: "api key is not owned by this user".into(),
+            });
+        }
+
+        let key_snapshot = api_key_from(row.clone());
+
+        let mut active = row.into_active_model();
+        active.revoked_at = Set(Some(Utc::now()));
+        active.update(conn).await.map_err(db_err)?;
+
+        conn.execute_raw(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "DELETE FROM task_assignees WHERE assignee_api_key_id = $1",
+            [id.0.into()],
+        ))
+        .await
+        .map_err(db_err)?;
+
+        Ok(key_snapshot)
+    }
+
     /// Updates `last_used_at = now()` for the given api key, throttled to at most
     /// once per 60 seconds (same debounce the session `touch` uses).
     pub async fn touch(&self, id: ApiKeyId) -> Result<(), DomainError> {

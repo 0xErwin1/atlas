@@ -5,13 +5,18 @@ use axum::{
     response::IntoResponse,
 };
 use chrono::{Duration, Utc};
+use sea_orm::TransactionTrait;
 
 use atlas_api::dtos::{
     ActivationLinkResponse, CreateUserRequest, CreateUserResponse, ResetPasswordRequest,
     SetSystemAdminRequest, UserDto,
 };
 use atlas_domain::{
-    entities::identity::{MemberRole, NewUser},
+    Actor,
+    entities::{
+        identity::{MemberRole, NewUser},
+        security_audit::{NewSecurityAuditEvent, SecurityAction},
+    },
     ids::UserId,
 };
 
@@ -20,7 +25,7 @@ use crate::{
     authz::{RequireRoot, RequireUserAdmin},
     error::ApiError,
     persistence::repos::{
-        ActivationTokenRepo, NewActivationToken, PgActivationTokenRepo, PgSessionRepo, PgUserRepo,
+        ActivationTokenRepo, PgActivationTokenRepo, PgSecurityAuditRepo, PgSessionRepo, PgUserRepo,
         PgWorkspaceRepo, SessionRepo, UserRepo, WorkspaceRepo,
     },
     state::AppState,
@@ -139,7 +144,7 @@ pub(crate) async fn create_user(
     )
 )]
 pub(crate) async fn regenerate_activation_link(
-    _admin: RequireUserAdmin,
+    admin: RequireUserAdmin,
     State(state): State<AppState>,
     Path(user_id): Path<uuid::Uuid>,
 ) -> Result<Json<ActivationLinkResponse>, ApiError> {
@@ -175,16 +180,50 @@ pub(crate) async fn regenerate_activation_link(
     let token_hash = hash_token(&plaintext);
     let expires_at = Utc::now() + Duration::days(ACTIVATION_TOKEN_TTL_DAYS);
 
-    token_repo
-        .create(NewActivationToken {
-            user_id,
-            token_hash,
-            expires_at,
-        })
+    let txn = (*state.db).begin().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    {
+        use sea_orm::ConnectionTrait;
+        txn.execute_raw(sea_orm::Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "INSERT INTO user_activation_tokens \
+                (id, user_id, token_hash, expires_at, consumed_at, created_at) \
+             VALUES ($1, $2, $3, $4, NULL, $5)",
+            [
+                atlas_domain::ids::ActivationTokenId::new().0.into(),
+                user_id.0.into(),
+                token_hash.into(),
+                expires_at.into(),
+                Utc::now().into(),
+            ],
+        ))
         .await
         .map_err(|e| ApiError::Internal {
             message: e.to_string(),
         })?;
+    }
+
+    PgSecurityAuditRepo::append_in(
+        &txn,
+        NewSecurityAuditEvent {
+            workspace_id: None,
+            actor: Actor::User(admin.user.id),
+            action: SecurityAction::UserActivationRegenerated,
+            target_type: "user".to_string(),
+            target_id: Some(user_id.0),
+            metadata: serde_json::json!({}),
+        },
+    )
+    .await
+    .map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    txn.commit().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
 
     let activation_link = build_activation_link(&plaintext);
 
@@ -234,12 +273,35 @@ pub(crate) async fn disable_user(
         }
     }
 
-    user_repo
-        .disable(user_id)
+    let txn = (*state.db).begin().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    PgUserRepo::disable_in(&txn, user_id)
         .await
         .map_err(|e| ApiError::Internal {
             message: e.to_string(),
         })?;
+
+    PgSecurityAuditRepo::append_in(
+        &txn,
+        NewSecurityAuditEvent {
+            workspace_id: None,
+            actor: Actor::User(admin.user.id),
+            action: SecurityAction::UserDisabled,
+            target_type: "user".to_string(),
+            target_id: Some(user_id.0),
+            metadata: serde_json::json!({}),
+        },
+    )
+    .await
+    .map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    txn.commit().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
 
     session_repo
         .revoke_all_for_user(user_id)
@@ -264,20 +326,41 @@ pub(crate) async fn disable_user(
     )
 )]
 pub(crate) async fn enable_user(
-    _admin: RequireUserAdmin,
+    admin: RequireUserAdmin,
     State(state): State<AppState>,
     Path(user_id): Path<uuid::Uuid>,
 ) -> Result<StatusCode, ApiError> {
-    let user_repo = PgUserRepo {
-        conn: (*state.db).clone(),
-    };
+    let user_id = UserId(user_id);
 
-    user_repo
-        .enable(UserId(user_id))
+    let txn = (*state.db).begin().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    PgUserRepo::enable_in(&txn, user_id)
         .await
         .map_err(|e| ApiError::Internal {
             message: e.to_string(),
         })?;
+
+    PgSecurityAuditRepo::append_in(
+        &txn,
+        NewSecurityAuditEvent {
+            workspace_id: None,
+            actor: Actor::User(admin.user.id),
+            action: SecurityAction::UserEnabled,
+            target_type: "user".to_string(),
+            target_id: Some(user_id.0),
+            metadata: serde_json::json!({}),
+        },
+    )
+    .await
+    .map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    txn.commit().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -335,12 +418,35 @@ pub(crate) async fn reset_password(
         }
     }
 
-    user_repo
-        .set_password_hash(user_id, new_hash)
+    let txn = (*state.db).begin().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    PgUserRepo::set_password_hash_in(&txn, user_id, new_hash)
         .await
         .map_err(|e| ApiError::Internal {
             message: e.to_string(),
         })?;
+
+    PgSecurityAuditRepo::append_in(
+        &txn,
+        NewSecurityAuditEvent {
+            workspace_id: None,
+            actor: Actor::User(admin.user.id),
+            action: SecurityAction::UserPasswordReset,
+            target_type: "user".to_string(),
+            target_id: Some(user_id.0),
+            metadata: serde_json::json!({}),
+        },
+    )
+    .await
+    .map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    txn.commit().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
 
     session_repo
         .revoke_all_for_user(user_id)
@@ -398,12 +504,35 @@ pub(crate) async fn set_system_admin(
         });
     }
 
-    let updated = user_repo
-        .set_system_admin(target_id, body.is_system_admin)
+    let txn = (*state.db).begin().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    let updated = PgUserRepo::set_system_admin_in(&txn, target_id, body.is_system_admin)
         .await
         .map_err(|e| ApiError::Internal {
             message: e.to_string(),
         })?;
+
+    PgSecurityAuditRepo::append_in(
+        &txn,
+        NewSecurityAuditEvent {
+            workspace_id: None,
+            actor: Actor::User(root.user.id),
+            action: SecurityAction::UserSystemAdminSet,
+            target_type: "user".to_string(),
+            target_id: Some(target_id.0),
+            metadata: serde_json::json!({ "is_system_admin": body.is_system_admin }),
+        },
+    )
+    .await
+    .map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    txn.commit().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
 
     Ok(Json(user_to_dto(&updated)))
 }
@@ -447,10 +576,6 @@ async fn create_pending_user_txn(
 ) -> Result<atlas_domain::entities::identity::User, ApiError> {
     use atlas_domain::ids::{ActivationTokenId, MembershipId};
     use sea_orm::{ConnectionTrait, Statement, TransactionTrait};
-
-    // The actor context is validated by the RequireUserAdmin extractor at the
-    // handler boundary; membership rows carry only workspace_id + user_id.
-    let _ = actor_user_id;
 
     let user_id = UserId::new();
     let now = Utc::now();
@@ -529,6 +654,25 @@ async fn create_pending_user_txn(
             now.into(),
         ],
     ))
+    .await
+    .map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    PgSecurityAuditRepo::append_in(
+        &txn,
+        NewSecurityAuditEvent {
+            workspace_id: None,
+            actor: Actor::User(actor_user_id),
+            action: SecurityAction::UserCreated,
+            target_type: "user".to_string(),
+            target_id: Some(user_id.0),
+            metadata: serde_json::json!({
+                "workspace_id": workspace_id.0.to_string(),
+                "initial_role": role.as_str(),
+            }),
+        },
+    )
     .await
     .map_err(|e| ApiError::Internal {
         message: e.to_string(),
