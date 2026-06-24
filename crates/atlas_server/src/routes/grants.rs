@@ -91,22 +91,28 @@ pub(crate) async fn create_project_grant(
 
     let created_by_user_id = match &auth.principal {
         Principal::User(uid) => Some(*uid),
-        Principal::ApiKey(_) => None,
+        Principal::ApiKey(_) | Principal::Group(_) => None,
     };
     let created_by_api_key_id = match &auth.principal {
         Principal::ApiKey(kid) => Some(*kid),
-        Principal::User(_) => None,
+        Principal::User(_) | Principal::Group(_) => None,
     };
 
     let actor = match &auth.principal {
         Principal::User(uid) => Actor::User(*uid),
         Principal::ApiKey(kid) => Actor::ApiKey(*kid),
+        Principal::Group(_) => {
+            return Err(ApiError::Forbidden {
+                message: "groups cannot be grant actors".into(),
+            });
+        }
     };
 
     let new_grant = NewPermissionGrant {
         workspace_id: auth.workspace.id,
         user_id,
         api_key_id,
+        group_id: None,
         project_id: Some(auth.resource.0.id),
         folder_id: None,
         document_id: None,
@@ -264,6 +270,11 @@ pub(crate) async fn delete_project_grant(
     let actor = match &auth.principal {
         Principal::User(uid) => Actor::User(*uid),
         Principal::ApiKey(kid) => Actor::ApiKey(*kid),
+        Principal::Group(_) => {
+            return Err(ApiError::Forbidden {
+                message: "groups cannot be grant actors".into(),
+            });
+        }
     };
 
     let (grantee_type, grantee_id) = grantee_fields(target_grant.user_id, target_grant.api_key_id);
@@ -338,22 +349,28 @@ pub(crate) async fn create_workspace_grant(
 
     let created_by_user_id = match &auth.principal {
         Principal::User(uid) => Some(*uid),
-        Principal::ApiKey(_) => None,
+        Principal::ApiKey(_) | Principal::Group(_) => None,
     };
     let created_by_api_key_id = match &auth.principal {
         Principal::ApiKey(kid) => Some(*kid),
-        Principal::User(_) => None,
+        Principal::User(_) | Principal::Group(_) => None,
     };
 
     let actor = match &auth.principal {
         Principal::User(uid) => Actor::User(*uid),
         Principal::ApiKey(kid) => Actor::ApiKey(*kid),
+        Principal::Group(_) => {
+            return Err(ApiError::Forbidden {
+                message: "groups cannot be grant actors".into(),
+            });
+        }
     };
 
     let new_grant = NewPermissionGrant {
         workspace_id: auth.workspace.id,
         user_id,
         api_key_id,
+        group_id: None,
         project_id: None,
         folder_id: None,
         document_id: None,
@@ -508,6 +525,11 @@ pub(crate) async fn delete_workspace_grant(
     let actor = match &auth.principal {
         Principal::User(uid) => Actor::User(*uid),
         Principal::ApiKey(kid) => Actor::ApiKey(*kid),
+        Principal::Group(_) => {
+            return Err(ApiError::Forbidden {
+                message: "groups cannot be grant actors".into(),
+            });
+        }
     };
 
     let (grantee_type, grantee_id) = grantee_fields(target_grant.user_id, target_grant.api_key_id);
@@ -631,7 +653,7 @@ async fn parse_principal(
 
             let caller_user_id = match caller {
                 Principal::User(uid) => *uid,
-                Principal::ApiKey(_) => {
+                Principal::ApiKey(_) | Principal::Group(_) => {
                     return Err(ApiError::Forbidden {
                         message: "agents cannot manage grants".into(),
                     });
@@ -703,6 +725,8 @@ fn grant_domain_to_dto(grant: &atlas_domain::entities::permissions::PermissionGr
         ("user".to_string(), uid.0)
     } else if let Some(kid) = grant.api_key_id {
         ("api_key".to_string(), kid.0)
+    } else if let Some(gid) = grant.group_id {
+        ("group".to_string(), gid.0)
     } else {
         ("unknown".to_string(), uuid::Uuid::nil())
     };

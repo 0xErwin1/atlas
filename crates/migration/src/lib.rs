@@ -23,6 +23,7 @@ pub mod m20260623_000020_apikey_identity;
 pub mod m20260623_000021_user_activation;
 pub mod m20260623_000022_workspace_activity_index;
 pub mod m20260624_000023_security_audit_log;
+pub mod m20260624_000024_groups;
 
 use sea_orm_migration::prelude::*;
 
@@ -55,6 +56,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260623_000021_user_activation::Migration),
             Box::new(m20260623_000022_workspace_activity_index::Migration),
             Box::new(m20260624_000023_security_audit_log::Migration),
+            Box::new(m20260624_000024_groups::Migration),
         ]
     }
 }

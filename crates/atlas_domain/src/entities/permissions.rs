@@ -1,4 +1,6 @@
-use crate::ids::{ApiKeyId, BoardId, DocumentId, FolderId, ProjectId, UserId, WorkspaceId};
+use crate::ids::{
+    ApiKeyId, BoardId, DocumentId, FolderId, GroupId, ProjectId, UserId, WorkspaceId,
+};
 use crate::permissions::ResourceRole;
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
@@ -24,6 +26,7 @@ pub struct PermissionGrant {
     pub workspace_id: WorkspaceId,
     pub user_id: Option<UserId>,
     pub api_key_id: Option<ApiKeyId>,
+    pub group_id: Option<GroupId>,
     pub project_id: Option<ProjectId>,
     pub folder_id: Option<FolderId>,
     pub document_id: Option<DocumentId>,
@@ -40,6 +43,7 @@ pub struct NewPermissionGrant {
     pub workspace_id: WorkspaceId,
     pub user_id: Option<UserId>,
     pub api_key_id: Option<ApiKeyId>,
+    pub group_id: Option<GroupId>,
     pub project_id: Option<ProjectId>,
     pub folder_id: Option<FolderId>,
     pub document_id: Option<DocumentId>,

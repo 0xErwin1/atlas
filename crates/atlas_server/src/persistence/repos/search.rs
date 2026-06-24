@@ -112,6 +112,12 @@ impl SearchRepo for PgSearchRepo {
                 owner_admin_clause = "FALSE".to_string();
                 member_clause = "FALSE".to_string();
             }
+            Principal::Group(_) => {
+                principal_col = "user_id";
+                values.push(uuid::Uuid::nil().into());
+                owner_admin_clause = "FALSE".to_string();
+                member_clause = "FALSE".to_string();
+            }
         }
 
         let has_task_only_filter = query.filters.iter().any(|f| {

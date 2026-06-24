@@ -489,6 +489,7 @@ async fn data_migration_backfills_grant_for_existing_workspace_key() {
             workspace_id: ws.id,
             user_id: None,
             api_key_id: Some(key.id),
+            group_id: None,
             project_id: None,
             folder_id: None,
             document_id: None,

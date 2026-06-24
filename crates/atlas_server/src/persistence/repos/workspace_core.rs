@@ -224,6 +224,13 @@ impl ProjectRepo for PgProjectRepo {
                 visibility_clause = "FALSE".to_string();
                 membership_clause = "FALSE".to_string();
             }
+            Principal::Group(_) => {
+                principal_col = "user_id";
+                values.push(uuid::Uuid::nil().into());
+
+                visibility_clause = "FALSE".to_string();
+                membership_clause = "FALSE".to_string();
+            }
         }
 
         let cursor_cond = if let Some(cursor) = after_id {

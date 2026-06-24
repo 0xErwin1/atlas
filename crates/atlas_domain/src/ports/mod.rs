@@ -1,6 +1,7 @@
 pub mod attachment_store;
 pub mod boards_tasks;
 pub mod documents;
+pub mod group_repo;
 pub mod identity;
 pub mod permission_grant_repo;
 pub mod saved_searches;

@@ -1,18 +1,20 @@
 use async_trait::async_trait;
 use atlas_domain::{
     DomainError,
+    entities::groups::{Group, GroupMember, NewGroup},
     entities::permissions::{NewPermissionGrant, PermissionGrant, PermissionGrantId},
-    ids::{ApiKeyId, BoardId, DocumentId, FolderId, ProjectId, UserId, WorkspaceId},
+    ids::{ApiKeyId, BoardId, DocumentId, FolderId, GroupId, ProjectId, UserId, WorkspaceId},
     permissions::{ResourceRef, ResourceRole},
+    ports::group_repo::GroupRepo as GroupRepoTrait,
 };
 use chrono::Utc;
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
-    QuerySelect,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection,
+    EntityTrait, QueryFilter, QueryOrder, QuerySelect,
 };
 use uuid::Uuid;
 
-use crate::persistence::entities::permissions::permission_grant;
+use crate::persistence::entities::permissions::{group, group_member, permission_grant};
 
 pub use atlas_domain::ports::permission_grant_repo::{PermissionGrantRepo, ResolutionQuery};
 
@@ -42,6 +44,7 @@ fn grant_from(m: permission_grant::Model) -> Result<PermissionGrant, DomainError
         workspace_id: WorkspaceId(m.workspace_id),
         user_id: m.user_id.map(UserId),
         api_key_id: m.api_key_id.map(ApiKeyId),
+        group_id: m.group_id.map(GroupId),
         project_id: m.project_id.map(ProjectId),
         folder_id: m.folder_id.map(FolderId),
         document_id: m.document_id.map(DocumentId),
@@ -210,13 +213,13 @@ impl PgPermissionGrantRepo {
             sea_orm::DatabaseBackend::Postgres,
             r#"
             INSERT INTO permission_grants
-                (id, workspace_id, user_id, api_key_id,
+                (id, workspace_id, user_id, api_key_id, group_id,
                  project_id, folder_id, document_id, board_id,
                  role, created_by_user_id, created_by_api_key_id,
                  created_at, updated_at)
             VALUES
-                ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12)
-            ON CONFLICT (workspace_id, user_id, api_key_id, project_id, folder_id, document_id, board_id)
+                ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $13)
+            ON CONFLICT (workspace_id, user_id, api_key_id, group_id, project_id, folder_id, document_id, board_id)
             DO UPDATE SET role = EXCLUDED.role, updated_at = EXCLUDED.updated_at
             "#,
             [
@@ -224,6 +227,7 @@ impl PgPermissionGrantRepo {
                 grant.workspace_id.0.into(),
                 grant.user_id.map(|u| u.0).into(),
                 grant.api_key_id.map(|k| k.0).into(),
+                grant.group_id.map(|g| g.0).into(),
                 grant.project_id.map(|p| p.0).into(),
                 grant.folder_id.map(|f| f.0).into(),
                 grant.document_id.map(|d| d.0).into(),
@@ -246,6 +250,10 @@ impl PgPermissionGrantRepo {
             .filter(match grant.api_key_id {
                 Some(kid) => permission_grant::Column::ApiKeyId.eq(kid.0),
                 None => permission_grant::Column::ApiKeyId.is_null(),
+            })
+            .filter(match grant.group_id {
+                Some(gid) => permission_grant::Column::GroupId.eq(gid.0),
+                None => permission_grant::Column::GroupId.is_null(),
             })
             .filter(match grant.project_id {
                 Some(pid) => permission_grant::Column::ProjectId.eq(pid.0),
@@ -502,5 +510,197 @@ impl PermissionGrantRepo for PgPermissionGrantRepo {
             .map_err(db_err)?;
 
         Ok(true)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// PgGroupRepo
+// ---------------------------------------------------------------------------
+
+pub struct PgGroupRepo {
+    pub conn: DatabaseConnection,
+}
+
+impl PgGroupRepo {
+    pub async fn create_in<C: ConnectionTrait>(
+        conn: &C,
+        new_group: NewGroup,
+    ) -> Result<Group, DomainError> {
+        let id = GroupId::new();
+        let now = Utc::now();
+
+        let model = group::ActiveModel {
+            id: Set(id.0),
+            workspace_id: Set(new_group.workspace_id.0),
+            name: Set(new_group.name),
+            created_by: Set(new_group.created_by.0),
+            created_at: Set(now),
+            updated_at: Set(now),
+            deleted_at: Set(None),
+        };
+
+        let inserted = model.insert(conn).await.map_err(|e| {
+            if matches!(
+                e.sql_err(),
+                Some(sea_orm::SqlErr::UniqueConstraintViolation(_))
+            ) {
+                DomainError::AlreadyExists {
+                    message: "a group with this name already exists in the workspace".into(),
+                }
+            } else {
+                db_err(e)
+            }
+        })?;
+
+        Ok(group_model_to_domain(inserted))
+    }
+
+    pub async fn soft_delete_in<C: ConnectionTrait>(
+        conn: &C,
+        id: GroupId,
+        workspace_id: WorkspaceId,
+    ) -> Result<bool, DomainError> {
+        let now = Utc::now();
+
+        let existing = group::Entity::find()
+            .filter(group::Column::Id.eq(id.0))
+            .filter(group::Column::WorkspaceId.eq(workspace_id.0))
+            .filter(group::Column::DeletedAt.is_null())
+            .one(conn)
+            .await
+            .map_err(db_err)?;
+
+        let Some(row) = existing else {
+            return Ok(false);
+        };
+
+        let mut active: group::ActiveModel = row.into();
+        active.deleted_at = Set(Some(now));
+        active.updated_at = Set(now);
+        active.update(conn).await.map_err(db_err)?;
+
+        Ok(true)
+    }
+
+    pub async fn add_member_in<C: ConnectionTrait>(
+        conn: &C,
+        group_id: GroupId,
+        user_id: UserId,
+    ) -> Result<GroupMember, DomainError> {
+        let now = Utc::now();
+
+        let model = group_member::ActiveModel {
+            group_id: Set(group_id.0),
+            user_id: Set(user_id.0),
+            created_at: Set(now),
+        };
+
+        model.insert(conn).await.map_err(db_err)?;
+
+        Ok(GroupMember {
+            group_id,
+            user_id,
+            created_at: now,
+        })
+    }
+
+    pub async fn remove_member_in<C: ConnectionTrait>(
+        conn: &C,
+        group_id: GroupId,
+        user_id: UserId,
+    ) -> Result<bool, DomainError> {
+        let result = group_member::Entity::delete_many()
+            .filter(group_member::Column::GroupId.eq(group_id.0))
+            .filter(group_member::Column::UserId.eq(user_id.0))
+            .exec(conn)
+            .await
+            .map_err(db_err)?;
+
+        Ok(result.rows_affected > 0)
+    }
+}
+
+fn group_model_to_domain(m: group::Model) -> Group {
+    Group {
+        id: GroupId(m.id),
+        workspace_id: WorkspaceId(m.workspace_id),
+        name: m.name,
+        created_by: UserId(m.created_by),
+        created_at: m.created_at,
+        updated_at: m.updated_at,
+        deleted_at: m.deleted_at,
+    }
+}
+
+#[async_trait]
+impl GroupRepoTrait for PgGroupRepo {
+    async fn create(&self, new_group: NewGroup) -> Result<Group, DomainError> {
+        PgGroupRepo::create_in(&self.conn, new_group).await
+    }
+
+    async fn get(
+        &self,
+        id: GroupId,
+        workspace_id: WorkspaceId,
+    ) -> Result<Option<Group>, DomainError> {
+        let row = group::Entity::find()
+            .filter(group::Column::Id.eq(id.0))
+            .filter(group::Column::WorkspaceId.eq(workspace_id.0))
+            .filter(group::Column::DeletedAt.is_null())
+            .one(&self.conn)
+            .await
+            .map_err(db_err)?;
+
+        Ok(row.map(group_model_to_domain))
+    }
+
+    async fn list(&self, workspace_id: WorkspaceId) -> Result<Vec<Group>, DomainError> {
+        let rows = group::Entity::find()
+            .filter(group::Column::WorkspaceId.eq(workspace_id.0))
+            .filter(group::Column::DeletedAt.is_null())
+            .order_by_asc(group::Column::Name)
+            .all(&self.conn)
+            .await
+            .map_err(db_err)?;
+
+        Ok(rows.into_iter().map(group_model_to_domain).collect())
+    }
+
+    async fn soft_delete(
+        &self,
+        id: GroupId,
+        workspace_id: WorkspaceId,
+    ) -> Result<bool, DomainError> {
+        PgGroupRepo::soft_delete_in(&self.conn, id, workspace_id).await
+    }
+
+    async fn add_member(
+        &self,
+        group_id: GroupId,
+        user_id: UserId,
+    ) -> Result<GroupMember, DomainError> {
+        PgGroupRepo::add_member_in(&self.conn, group_id, user_id).await
+    }
+
+    async fn remove_member(&self, group_id: GroupId, user_id: UserId) -> Result<bool, DomainError> {
+        PgGroupRepo::remove_member_in(&self.conn, group_id, user_id).await
+    }
+
+    async fn list_members(&self, group_id: GroupId) -> Result<Vec<GroupMember>, DomainError> {
+        let rows = group_member::Entity::find()
+            .filter(group_member::Column::GroupId.eq(group_id.0))
+            .order_by_asc(group_member::Column::CreatedAt)
+            .all(&self.conn)
+            .await
+            .map_err(db_err)?;
+
+        Ok(rows
+            .into_iter()
+            .map(|m| GroupMember {
+                group_id: GroupId(m.group_id),
+                user_id: UserId(m.user_id),
+                created_at: m.created_at,
+            })
+            .collect())
     }
 }

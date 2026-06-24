@@ -828,11 +828,11 @@ fn build_resolution_query(
 ) -> ResolutionQuery {
     let user_id = match principal {
         Principal::User(uid) => Some(uid.0),
-        Principal::ApiKey(_) => None,
+        Principal::ApiKey(_) | Principal::Group(_) => None,
     };
     let api_key_id = match principal {
         Principal::ApiKey(kid) => Some(kid.0),
-        Principal::User(_) => None,
+        Principal::User(_) | Principal::Group(_) => None,
     };
 
     let mut chain_projects = Vec::new();
@@ -854,6 +854,7 @@ fn build_resolution_query(
         workspace_id: workspace.id,
         user_id,
         api_key_id,
+        group_ids: vec![],
         chain_projects,
         chain_folders,
         doc_id,

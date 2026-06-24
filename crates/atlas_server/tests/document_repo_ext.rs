@@ -239,6 +239,7 @@ async fn grant_to_api_key(
         workspace_id: ws.id,
         user_id: None,
         api_key_id: Some(api_key_id),
+        group_id: None,
         project_id,
         folder_id,
         document_id: None,

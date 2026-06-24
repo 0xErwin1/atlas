@@ -221,6 +221,9 @@ fn principal_to_actor(principal: &atlas_domain::permissions::Principal) -> Actor
     match principal {
         atlas_domain::permissions::Principal::User(uid) => Actor::User(*uid),
         atlas_domain::permissions::Principal::ApiKey(kid) => Actor::ApiKey(*kid),
+        atlas_domain::permissions::Principal::Group(_) => {
+            Actor::User(atlas_domain::ids::UserId(uuid::Uuid::nil()))
+        }
     }
 }
 

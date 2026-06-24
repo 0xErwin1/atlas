@@ -12,6 +12,9 @@ pub struct ResolutionQuery {
     pub user_id: Option<Uuid>,
     /// Set for ApiKey principals.
     pub api_key_id: Option<Uuid>,
+    /// Group IDs the user belongs to in this workspace.
+    /// Populated by B2 (build_resolution_query); defaults empty — no group grants gathered.
+    pub group_ids: Vec<Uuid>,
     pub chain_projects: Vec<Uuid>,
     pub chain_folders: Vec<Uuid>,
     pub doc_id: Option<Uuid>,

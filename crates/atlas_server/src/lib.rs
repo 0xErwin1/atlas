@@ -154,6 +154,24 @@ pub fn app(state: AppState) -> Router {
             axum::routing::patch(routes::members::update_member_role)
                 .delete(routes::members::remove_member),
         )
+        // Groups (workspace principal groups)
+        .route(
+            "/v1/workspaces/{ws}/groups",
+            axum::routing::post(routes::groups::create_group).get(routes::groups::list_groups),
+        )
+        .route(
+            "/v1/workspaces/{ws}/groups/{group_id}",
+            axum::routing::delete(routes::groups::delete_group),
+        )
+        .route(
+            "/v1/workspaces/{ws}/groups/{group_id}/members",
+            axum::routing::post(routes::groups::add_group_member)
+                .get(routes::groups::list_group_members),
+        )
+        .route(
+            "/v1/workspaces/{ws}/groups/{group_id}/members/{user_id}",
+            axum::routing::delete(routes::groups::remove_group_member),
+        )
         // Tags (workspace tag registry)
         .route(
             "/v1/workspaces/{ws}/tags",

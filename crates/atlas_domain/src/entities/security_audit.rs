@@ -24,6 +24,10 @@ pub enum SecurityAction {
     UserPasswordReset,
     UserActivationRegenerated,
     AccountActivated,
+    GroupCreated,
+    GroupDeleted,
+    GroupMemberAdded,
+    GroupMemberRemoved,
 }
 
 impl SecurityAction {
@@ -43,6 +47,10 @@ impl SecurityAction {
             SecurityAction::UserPasswordReset => "user.password_reset",
             SecurityAction::UserActivationRegenerated => "user.activation_regenerated",
             SecurityAction::AccountActivated => "account.activated",
+            SecurityAction::GroupCreated => "group.created",
+            SecurityAction::GroupDeleted => "group.deleted",
+            SecurityAction::GroupMemberAdded => "group.member_added",
+            SecurityAction::GroupMemberRemoved => "group.member_removed",
         }
     }
 }
@@ -119,6 +127,10 @@ mod tests {
                 "user.activation_regenerated",
             ),
             (SecurityAction::AccountActivated, "account.activated"),
+            (SecurityAction::GroupCreated, "group.created"),
+            (SecurityAction::GroupDeleted, "group.deleted"),
+            (SecurityAction::GroupMemberAdded, "group.member_added"),
+            (SecurityAction::GroupMemberRemoved, "group.member_removed"),
         ];
 
         for (action, expected) in cases {

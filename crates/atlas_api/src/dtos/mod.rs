@@ -2,6 +2,7 @@ pub mod audit;
 pub mod boards_tasks;
 pub mod documents;
 pub mod folders;
+pub mod groups;
 pub mod saved_searches;
 pub mod search;
 pub mod status_templates;

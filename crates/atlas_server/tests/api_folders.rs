@@ -886,6 +886,7 @@ async fn move_folder_underprivileged_destination_returns_404() {
             workspace_id: ws.id,
             user_id: Some(caller_domain_user.id),
             api_key_id: None,
+            group_id: None,
             project_id: None,
             folder_id: Some(atlas_domain::ids::FolderId(source.id)),
             document_id: None,

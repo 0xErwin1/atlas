@@ -158,6 +158,11 @@ impl DocumentRepo for PgDocumentRepo {
                 values.push(kid.0.into()); // $2
                 membership_clause = "FALSE".to_string();
             }
+            Principal::Group(_) => {
+                principal_col = "user_id";
+                values.push(uuid::Uuid::nil().into());
+                membership_clause = "FALSE".to_string();
+            }
         }
 
         let cursor_cond = if let Some(cursor) = after_id {

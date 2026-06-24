@@ -82,11 +82,11 @@ pub(crate) async fn create_project(
     };
     let created_by_user_id = match &auth.principal {
         Principal::User(uid) => Some(*uid),
-        Principal::ApiKey(_) => None,
+        Principal::ApiKey(_) | Principal::Group(_) => None,
     };
     let created_by_api_key_id = match &auth.principal {
         Principal::ApiKey(kid) => Some(*kid),
-        Principal::User(_) => None,
+        Principal::User(_) | Principal::Group(_) => None,
     };
 
     let grant_repo = PgPermissionGrantRepo {
@@ -97,6 +97,7 @@ pub(crate) async fn create_project(
             workspace_id: auth.workspace.id,
             user_id: created_by_user_id,
             api_key_id: created_by_api_key_id,
+            group_id: None,
             project_id: Some(project.id),
             folder_id: None,
             document_id: None,
@@ -347,6 +348,7 @@ fn principal_to_actor(principal: &Principal) -> Actor {
     match principal {
         Principal::User(uid) => Actor::User(*uid),
         Principal::ApiKey(kid) => Actor::ApiKey(*kid),
+        Principal::Group(_) => Actor::User(atlas_domain::ids::UserId(uuid::Uuid::nil())),
     }
 }
 

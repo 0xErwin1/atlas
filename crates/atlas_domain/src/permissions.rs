@@ -1,7 +1,7 @@
 use crate::entities::boards_tasks::ReferenceKind;
 use crate::entities::identity::MemberRole;
 use crate::error::DomainError;
-use crate::ids::{ApiKeyId, BoardId, DocumentId, FolderId, ProjectId, TaskId, UserId};
+use crate::ids::{ApiKeyId, BoardId, DocumentId, FolderId, GroupId, ProjectId, TaskId, UserId};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -15,6 +15,7 @@ pub enum ResourceRole {
 pub enum Principal {
     User(UserId),
     ApiKey(ApiKeyId),
+    Group(GroupId),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -91,6 +92,7 @@ pub fn resolve(input: &ResolutionInput<'_>) -> Option<ResourceRole> {
         }
 
         // Visibility contribution: only for User principals with workspace membership.
+        // Group is a grant target, not an auth principal, so it never contributes visibility.
         if matches!(input.principal, Principal::User(_))
             && input.membership.is_some()
             && let Some(vis) = &segment.visibility
@@ -122,7 +124,7 @@ fn visibility_role_to_resource_role(vis: &VisibilityRole) -> ResourceRole {
 fn apply_agent_cap(principal: &Principal, role: Option<ResourceRole>) -> Option<ResourceRole> {
     match principal {
         Principal::ApiKey(_) => role.map(|r| r.min(ResourceRole::Editor)),
-        Principal::User(_) => role,
+        Principal::User(_) | Principal::Group(_) => role,
     }
 }
 
@@ -155,7 +157,7 @@ pub fn authorize_share(
     actor_effective: ResourceRole,
     role_in_play: ResourceRole,
 ) -> Result<(), ShareDenied> {
-    if matches!(actor, Principal::ApiKey(_)) {
+    if matches!(actor, Principal::ApiKey(_) | Principal::Group(_)) {
         return Err(ShareDenied::AgentsNeverManageGrants);
     }
 

@@ -23,6 +23,7 @@ fn principal_to_actor(principal: &Principal) -> Actor {
     match principal {
         Principal::User(uid) => Actor::User(*uid),
         Principal::ApiKey(kid) => Actor::ApiKey(*kid),
+        Principal::Group(_) => Actor::User(atlas_domain::ids::UserId(uuid::Uuid::nil())),
     }
 }
 

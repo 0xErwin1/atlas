@@ -27,6 +27,7 @@ use atlas_api::{
             CopyFolderRequest, CreateFolderRequest, FolderDto, MoveFolderRequest,
             RenameFolderRequest,
         },
+        groups::{AddGroupMemberRequest, CreateGroupRequest, GroupDto, GroupMemberDto},
         saved_searches::{CreateSavedSearchRequest, RenameSavedSearchRequest, SavedSearchDto},
         search::SearchHitDto,
         status_templates::{
@@ -2063,6 +2064,102 @@ impl AtlasClient {
         }
 
         Ok(())
+    }
+
+    // ---- Groups ----------------------------------------------------------------
+
+    /// `POST /v1/workspaces/{ws}/groups`
+    pub async fn create_group(
+        &self,
+        ws: &str,
+        body: CreateGroupRequest,
+    ) -> Result<GroupDto, ClientError> {
+        let response = self
+            .post(&format!("/v1/workspaces/{ws}/groups"))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "create_group").await
+    }
+
+    /// `GET /v1/workspaces/{ws}/groups`
+    pub async fn list_groups(&self, ws: &str) -> Result<Vec<GroupDto>, ClientError> {
+        let response = self
+            .get(&format!("/v1/workspaces/{ws}/groups"))
+            .send()
+            .await?;
+        self.decode_response(response, "list_groups").await
+    }
+
+    /// `DELETE /v1/workspaces/{ws}/groups/{group_id}`
+    pub async fn delete_group(&self, ws: &str, group_id: uuid::Uuid) -> Result<(), ClientError> {
+        let response = self
+            .delete(&format!("/v1/workspaces/{ws}/groups/{group_id}"))
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        if response.status().is_success() {
+            return Ok(());
+        }
+        let problem: ProblemDetails = response
+            .json()
+            .await
+            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
+        Err(ClientError::Api(problem))
+    }
+
+    /// `POST /v1/workspaces/{ws}/groups/{group_id}/members`
+    pub async fn add_group_member(
+        &self,
+        ws: &str,
+        group_id: uuid::Uuid,
+        body: AddGroupMemberRequest,
+    ) -> Result<GroupMemberDto, ClientError> {
+        let response = self
+            .post(&format!("/v1/workspaces/{ws}/groups/{group_id}/members"))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "add_group_member").await
+    }
+
+    /// `DELETE /v1/workspaces/{ws}/groups/{group_id}/members/{user_id}`
+    pub async fn remove_group_member(
+        &self,
+        ws: &str,
+        group_id: uuid::Uuid,
+        user_id: uuid::Uuid,
+    ) -> Result<(), ClientError> {
+        let response = self
+            .delete(&format!(
+                "/v1/workspaces/{ws}/groups/{group_id}/members/{user_id}"
+            ))
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        if response.status().is_success() {
+            return Ok(());
+        }
+        let problem: ProblemDetails = response
+            .json()
+            .await
+            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
+        Err(ClientError::Api(problem))
+    }
+
+    /// `GET /v1/workspaces/{ws}/groups/{group_id}/members`
+    pub async fn list_group_members(
+        &self,
+        ws: &str,
+        group_id: uuid::Uuid,
+    ) -> Result<Vec<GroupMemberDto>, ClientError> {
+        let response = self
+            .get(&format!("/v1/workspaces/{ws}/groups/{group_id}/members"))
+            .send()
+            .await?;
+        self.decode_response(response, "list_group_members").await
     }
 }
 

@@ -39,7 +39,7 @@ pub use workspace_core::{
     PropertyDefinitionRepo,
 };
 
-pub use permissions::{PermissionGrantRepo, PgPermissionGrantRepo};
+pub use permissions::{PermissionGrantRepo, PgGroupRepo, PgPermissionGrantRepo};
 pub use security_audit::{PgSecurityAuditRepo, SecurityAuditRepoTrait as SecurityAuditRepo};
 #[allow(unreachable_pub)]
 mod saved_searches;

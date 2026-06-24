@@ -497,6 +497,7 @@ async fn create_initial_grant(
             workspace_id: workspace.id,
             user_id: None,
             api_key_id: Some(key_id),
+            group_id: None,
             project_id: None,
             folder_id: None,
             document_id: None,

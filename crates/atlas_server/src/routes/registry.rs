@@ -747,6 +747,43 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/v1/workspaces/{ws}/saved-searches/{id}"),
     },
+    // ---- Groups ----
+    RouteEntry {
+        method: "POST",
+        path_template: "/v1/workspaces/{ws}/groups",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/groups"),
+    },
+    RouteEntry {
+        method: "GET",
+        path_template: "/v1/workspaces/{ws}/groups",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/groups"),
+    },
+    RouteEntry {
+        method: "DELETE",
+        path_template: "/v1/workspaces/{ws}/groups/00000000-0000-0000-0000-000000000001",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/groups/{group_id}"),
+    },
+    RouteEntry {
+        method: "POST",
+        path_template: "/v1/workspaces/{ws}/groups/00000000-0000-0000-0000-000000000001/members",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/groups/{group_id}/members"),
+    },
+    RouteEntry {
+        method: "GET",
+        path_template: "/v1/workspaces/{ws}/groups/00000000-0000-0000-0000-000000000001/members",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/groups/{group_id}/members"),
+    },
+    RouteEntry {
+        method: "DELETE",
+        path_template: "/v1/workspaces/{ws}/groups/00000000-0000-0000-0000-000000000001/members/00000000-0000-0000-0000-000000000002",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/groups/{group_id}/members/{user_id}"),
+    },
     // ---- Task views ----
     RouteEntry {
         method: "GET",

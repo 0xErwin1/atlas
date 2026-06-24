@@ -142,6 +142,7 @@ async fn agent_cannot_share_project() {
             workspace_id: ws.id,
             user_id: None,
             api_key_id: Some(ApiKeyId(key_created_id)),
+            group_id: None,
             project_id: Some(ProjectId(project.id)),
             folder_id: None,
             document_id: None,
@@ -212,6 +213,7 @@ async fn editor_cannot_grant_admin() {
             workspace_id: ws.id,
             user_id: Some(editor_user.id),
             api_key_id: None,
+            group_id: None,
             project_id: Some(
                 owner
                     .get_project(&ws.slug, "editor-guard-proj")
@@ -280,6 +282,7 @@ async fn viewer_cannot_update_project() {
             workspace_id: ws.id,
             user_id: Some(viewer_user.id),
             api_key_id: None,
+            group_id: None,
             project_id: Some(project.id.into()),
             folder_id: None,
             document_id: None,
@@ -381,6 +384,7 @@ async fn agent_with_grant_sees_private_project_in_list() {
             workspace_id: ws.id,
             user_id: None,
             api_key_id: Some(ApiKeyId(key_created_id)),
+            group_id: None,
             project_id: Some(ProjectId(project.id)),
             folder_id: None,
             document_id: None,
@@ -533,6 +537,7 @@ async fn user_with_workspace_scoped_grant_sees_private_projects_in_list() {
             workspace_id: ws.id,
             user_id: Some(grantee_user.id),
             api_key_id: None,
+            group_id: None,
             project_id: None,
             folder_id: None,
             document_id: None,
@@ -593,6 +598,7 @@ async fn share_denied_403_does_not_leak_variant_name() {
             workspace_id: ws.id,
             user_id: None,
             api_key_id: Some(ApiKeyId(key_created.id)),
+            group_id: None,
             project_id: Some(ProjectId(project.id)),
             folder_id: None,
             document_id: None,

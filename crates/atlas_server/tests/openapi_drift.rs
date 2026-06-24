@@ -111,6 +111,10 @@ const EXPECTED_SCHEMAS: &[&str] = &[
     "ActivationLinkResponse",
     "ActivationInfoDto",
     "ActivatePasswordRequest",
+    "CreateGroupRequest",
+    "GroupDto",
+    "GroupMemberDto",
+    "AddGroupMemberRequest",
 ];
 
 #[test]
