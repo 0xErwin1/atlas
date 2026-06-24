@@ -1,5 +1,5 @@
 export type GrantRole = 'viewer' | 'editor' | 'admin';
-export type PrincipalType = 'user' | 'api_key';
+export type PrincipalType = 'user' | 'api_key' | 'group';
 
 const ALL_ROLES: GrantRole[] = ['viewer', 'editor', 'admin'];
 
@@ -13,14 +13,18 @@ export const MAX_AGENT_ROLE: GrantRole = 'editor';
 
 const AGENT_ROLES: GrantRole[] = ['viewer', 'editor'];
 
+/**
+ * Whether the principal type carries the agent cap. Only api_key principals are
+ * agents; users and groups (a set of users) are uncapped. Unknown types are
+ * treated as agents (conservative — no admin).
+ */
 function isAgentPrincipal(principalType: string): boolean {
-  return principalType !== 'user';
+  return principalType !== 'user' && principalType !== 'group';
 }
 
 /**
- * Roles selectable for the given principal type. A user gets all three; any
- * non-user principal (api_key / unknown) is capped at editor — admin is never
- * offered.
+ * Roles selectable for the given principal type. Users and groups get all three;
+ * an agent (api_key / unknown) is capped at editor — admin is never offered.
  */
 export function availableRolesFor(principalType: string): GrantRole[] {
   return isAgentPrincipal(principalType) ? [...AGENT_ROLES] : [...ALL_ROLES];

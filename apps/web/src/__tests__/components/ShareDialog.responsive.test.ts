@@ -23,6 +23,15 @@ vi.mock('@/stores/apiKeys', () => ({
   }),
 }));
 
+vi.mock('@/stores/groups', () => ({
+  useGroupsStore: () => ({
+    groups: [],
+    loading: false,
+    error: null,
+    load: vi.fn(),
+  }),
+}));
+
 import ShareDialog from '@/components/share/ShareDialog.vue';
 
 function setViewportWidth(width: number): void {

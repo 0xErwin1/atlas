@@ -6,6 +6,7 @@ import AccountPanel from '@/components/settings/AccountPanel.vue';
 import ActivityPanel from '@/components/settings/ActivityPanel.vue';
 import AdminWorkspacesPanel from '@/components/settings/AdminWorkspacesPanel.vue';
 import ApiKeysPanel from '@/components/settings/ApiKeysPanel.vue';
+import GroupsPanel from '@/components/settings/GroupsPanel.vue';
 import MembersPanel from '@/components/settings/MembersPanel.vue';
 import PlatformAuditPanel from '@/components/settings/PlatformAuditPanel.vue';
 import ProjectsPanel from '@/components/settings/ProjectsPanel.vue';
@@ -32,6 +33,7 @@ export type SettingsSection =
   | 'tags'
   | 'projects'
   | 'members'
+  | 'groups'
   | 'activity'
   | 'audit'
   | 'users'
@@ -70,6 +72,12 @@ const canSeeAudit = computed(
   () => isAdmin.value || wsStore.myWorkspaceRole === 'owner' || wsStore.myWorkspaceRole === 'admin',
 );
 
+// Group management is WorkspaceOwnerOrAdmin (+ break-glass superadmin) server-side;
+// plain members get no entry and resolve to the default section if they URL in.
+const canManageGroups = computed(
+  () => isAdmin.value || wsStore.myWorkspaceRole === 'owner' || wsStore.myWorkspaceRole === 'admin',
+);
+
 // Nav structure. Adding a future WORKSPACE group (general/statuses/tags) or a
 // workspaces entry under ADMINISTRATION is a one-liner here plus the matching
 // panel branch in the template — kept deliberately declarative for F-PANELS.
@@ -83,6 +91,10 @@ const navGroups = computed<NavGroup[]>(() => {
     { section: 'members', icon: 'users', label: 'Members' },
     { section: 'activity', icon: 'history', label: 'Activity' },
   ];
+
+  if (canManageGroups.value) {
+    workspaceEntries.splice(6, 0, { section: 'groups', icon: 'users', label: 'Groups' });
+  }
 
   if (canSeeAudit.value) {
     workspaceEntries.push({ section: 'audit', icon: 'shield', label: 'Security log' });
@@ -195,6 +207,7 @@ watch(
       <TagsPanel v-else-if="activeSection === 'tags'" />
       <ProjectsPanel v-else-if="activeSection === 'projects'" />
       <MembersPanel v-else-if="activeSection === 'members'" />
+      <GroupsPanel v-else-if="activeSection === 'groups'" />
       <ActivityPanel v-else-if="activeSection === 'activity'" />
       <WorkspaceAuditPanel v-else-if="activeSection === 'audit'" />
       <UsersPanel v-else-if="activeSection === 'users'" />

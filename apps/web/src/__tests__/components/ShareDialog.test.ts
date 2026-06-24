@@ -57,6 +57,9 @@ describe('ShareDialog (REQ-W26/W27)', () => {
           data: { items: [], has_more: false },
         });
       }
+      if (path === '/v1/workspaces/{ws}/groups') {
+        return Promise.resolve({ data: [] });
+      }
       return Promise.resolve({
         data: {
           items: [grant('g1', 'user', 'u1', 'editor'), grant('g2', 'api_key', 'k1', 'editor')],

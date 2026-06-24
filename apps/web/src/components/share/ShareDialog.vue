@@ -9,6 +9,7 @@ import Popover from '@/components/ui/Popover.vue';
 import { useBreakpoint } from '@/composables/useBreakpoint';
 import type { GrantRole } from '@/lib/grantRoles';
 import { useApiKeysStore } from '@/stores/apiKeys';
+import { useGroupsStore } from '@/stores/groups';
 import { type GrantDto, type PrincipalDto, type ShareResource, useShareStore } from '@/stores/share';
 
 export type Visibility = 'private' | 'workspace' | 'public';
@@ -35,6 +36,7 @@ const emit = defineEmits<{
 
 const share = useShareStore();
 const apiKeys = useApiKeysStore();
+const groups = useGroupsStore();
 const { isMobile } = useBreakpoint();
 
 const memberQuery = ref('');
@@ -66,24 +68,32 @@ watch(
       void share.load(resource.value);
       void share.loadMembers(props.ws);
       void apiKeys.loadKeys();
+      void groups.load(props.ws);
     }
   },
   { immediate: true },
 );
 
-const isAgent = (g: GrantDto) => g.principal.type !== 'user';
+const isGroup = (g: GrantDto) => g.principal.type === 'group';
+// Only api_key (and unknown) principals are agents; groups are sets of users.
+const isAgent = (g: GrantDto) => g.principal.type !== 'user' && g.principal.type !== 'group';
 
 function roleLabel(role: string): string {
   return role.charAt(0).toUpperCase() + role.slice(1);
 }
 
 /**
- * Resolved display name for a grant row. For api_key principals the id is a
- * UUID; we join client-side against the loaded keys and members lists so the
- * user sees the key name rather than a bare UUID.
+ * Resolved display name for a grant row. For api_key and group principals the id
+ * is a UUID; we join client-side against the loaded keys, members, and groups
+ * lists so the user sees a readable name rather than a bare UUID.
  */
 function principalLabel(g: GrantDto): string {
   if (g.principal.type === 'user') return g.principal.id;
+
+  if (g.principal.type === 'group') {
+    const fromGroups = groups.groups.find((gr) => gr.id === g.principal.id);
+    return fromGroups !== undefined ? fromGroups.name : g.principal.id;
+  }
 
   const fromKeys = apiKeys.keys.find((k) => k.id === g.principal.id);
   if (fromKeys !== undefined) return fromKeys.name;
@@ -95,6 +105,7 @@ function principalLabel(g: GrantDto): string {
 }
 
 function badgeFor(g: GrantDto): string | null {
+  if (g.principal.type === 'group') return 'GROUP';
   if (g.principal.type === 'api_key') return 'SCRIPT';
   if (isAgent(g)) return 'AGENT';
   return null;
@@ -120,8 +131,8 @@ const grantedIds = computed(() => new Set(share.grants.map((g) => g.principal.id
 
 /**
  * Picker candidates: workspace members (users + already-granted keys) merged
- * with the caller's own api keys that don't yet have a grant on this resource.
- * De-duplicated by id so a key already in members doesn't appear twice.
+ * with the caller's own api keys and the workspace's groups that don't yet have
+ * a grant on this resource. De-duplicated by id.
  */
 const allCandidates = computed<PrincipalDto[]>(() => {
   const seen = new Set<string>();
@@ -139,6 +150,16 @@ const allCandidates = computed<PrincipalDto[]>(() => {
         display: k.name,
         principal_type: 'api_key',
         key_type: k.type,
+      } satisfies PrincipalDto);
+    }
+  }
+
+  for (const gr of groups.groups) {
+    if (!seen.has(gr.id)) {
+      result.push({
+        id: gr.id,
+        display: gr.name,
+        principal_type: 'group',
       } satisfies PrincipalDto);
     }
   }
@@ -230,7 +251,7 @@ async function invite(): Promise<void> {
                 v-model="memberQuery"
                 type="text"
                 data-member-search
-                placeholder="Add people or agents by name, email, or @handle"
+                placeholder="Add people, groups, or agents by name, email, or @handle"
                 autocomplete="off"
                 class="flex-1 min-w-0"
                 style="height: 100%; border: none; outline: none; background: transparent; font-size: var(--fs-base); color: var(--c-foreground);"
@@ -297,12 +318,24 @@ async function invite(): Promise<void> {
               "
               @click="selectMember(m)"
             >
-              <Avatar :agent="m.principal_type !== 'user'" :size="22" :name="m.display" />
+              <span
+                v-if="m.principal_type === 'group'"
+                class="atl-group-glyph inline-flex items-center justify-center shrink-0"
+                style="width: 22px; height: 22px;"
+                aria-hidden="true"
+              >
+                <Icon name="users" :size="13" />
+              </span>
+              <Avatar v-else :agent="m.principal_type !== 'user'" :size="22" :name="m.display" />
               <span class="flex-1 min-w-0 truncate" style="font-size: var(--fs-base); font-weight: var(--fw-medium);">
                 {{ m.display }}
               </span>
               <AgentBadge
-                v-if="m.principal_type !== 'user'"
+                v-if="m.principal_type === 'group'"
+                label="GROUP"
+              />
+              <AgentBadge
+                v-else-if="m.principal_type !== 'user'"
                 :label="m.principal_type === 'api_key' ? 'SCRIPT' : 'AGENT'"
               />
             </button>
@@ -328,7 +361,7 @@ async function invite(): Promise<void> {
         <div
           style="font-size: 10px; font-weight: var(--fw-semibold); letter-spacing: 0.06em; text-transform: uppercase; color: var(--c-muted); margin-bottom: 4px;"
         >
-          People &amp; agents with access
+          People, groups &amp; agents with access
         </div>
 
         <div
@@ -339,7 +372,15 @@ async function invite(): Promise<void> {
           class="flex items-center relative"
           style="gap: 10px; padding: 8px 0;"
         >
-          <Avatar :agent="isAgent(g)" :size="24" :name="principalLabel(g)" />
+          <span
+            v-if="isGroup(g)"
+            class="atl-group-glyph inline-flex items-center justify-center shrink-0"
+            style="width: 24px; height: 24px;"
+            aria-hidden="true"
+          >
+            <Icon name="users" :size="14" />
+          </span>
+          <Avatar v-else :agent="isAgent(g)" :size="24" :name="principalLabel(g)" />
           <div class="flex-1 min-w-0">
             <div
               class="flex items-center"
@@ -464,3 +505,12 @@ async function invite(): Promise<void> {
     </div>
   </div>
 </template>
+
+<style scoped>
+.atl-group-glyph {
+  border-radius: 2px;
+  color: var(--c-primary);
+  background: color-mix(in srgb, var(--c-primary) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--c-primary) 40%, transparent);
+}
+</style>
