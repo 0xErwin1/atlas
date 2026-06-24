@@ -248,6 +248,15 @@ pub(crate) async fn disable_user(
     Path(user_id): Path<uuid::Uuid>,
 ) -> Result<StatusCode, ApiError> {
     let user_id = UserId(user_id);
+
+    // Self-protection wins unconditionally — even a root/global-admin cannot
+    // disable themselves. Another admin must do it.
+    if admin.user.id == user_id {
+        return Err(ApiError::Forbidden {
+            message: "you cannot disable your own account; ask another admin".into(),
+        });
+    }
+
     let user_repo = PgUserRepo {
         conn: (*state.db).clone(),
     };
@@ -331,6 +340,14 @@ pub(crate) async fn enable_user(
     Path(user_id): Path<uuid::Uuid>,
 ) -> Result<StatusCode, ApiError> {
     let user_id = UserId(user_id);
+
+    // Self-protection wins unconditionally — even a root/global-admin cannot
+    // enable themselves. Another admin must do it.
+    if admin.user.id == user_id {
+        return Err(ApiError::Forbidden {
+            message: "you cannot enable your own account; ask another admin".into(),
+        });
+    }
 
     let txn = (*state.db).begin().await.map_err(|e| ApiError::Internal {
         message: e.to_string(),

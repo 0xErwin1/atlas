@@ -156,6 +156,15 @@ pub(crate) async fn update_member_role(
     let target_user_id = atlas_domain::ids::UserId(target_user_uuid);
     let new_role = parse_role(&body.role)?;
 
+    // Self-protection fires before check_patch_permission and before any
+    // break-glass bypass, so even a system_admin (global admin) cannot change
+    // their own workspace role. Another admin must do it.
+    if caller.caller_user_id == target_user_id {
+        return Err(ApiError::Forbidden {
+            message: "you cannot change your own workspace role; ask another admin".into(),
+        });
+    }
+
     let conn = (*state.db).clone();
     let membership_repo = PgMembershipRepo { conn: conn.clone() };
 

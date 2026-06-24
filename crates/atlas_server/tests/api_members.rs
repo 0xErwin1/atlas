@@ -808,10 +808,14 @@ async fn patch_owner_demotes_non_last_owner_returns_200() {
     db.teardown().await;
 }
 
-// ── T23: PATCH — owner demotes LAST owner → 409 ─────────────────────────────
+// ── T23: PATCH — owner attempts self-demotion when last owner → 403 ──────────
+//
+// After B2 (self-protection guards), the self-check fires before last-owner
+// lockout, so self-demotion yields 403 Forbidden regardless of lockout state.
+// Last-owner lockout (409) is tested in T24 via a break-glass caller.
 
 #[tokio::test]
-async fn patch_owner_demotes_last_owner_returns_409() {
+async fn patch_owner_demotes_last_owner_returns_403() {
     let db = TestDb::create().await.expect("TestDb::create");
     let server = TestServer::spawn(&db).await;
 
@@ -822,7 +826,7 @@ async fn patch_owner_demotes_last_owner_returns_409() {
         .update_member_role(&ws.slug, owner_user.id.0, "admin")
         .await;
 
-    assert_last_owner(result, "owner demoting self (last owner)");
+    assert_forbidden(result, "owner demoting self (self-protection wins)");
 
     db.teardown().await;
 }
