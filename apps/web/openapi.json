@@ -1107,6 +1107,98 @@
         ]
       }
     },
+    "/v1/workspaces/{ws}/activity": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "operationId": "list_workspace_activity",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "actor",
+            "in": "query",
+            "description": "Actor type filter: 'user' or 'api_key'",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Lower bound (inclusive) on created_at (ISO 8601)",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Upper bound (inclusive) on created_at (ISO 8601)",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Pagination cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size (max 200, default 50)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Access-filtered workspace activity feed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_ActivityEntryDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameter"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "404": {
+            "description": "Workspace not found or caller is not a member"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/v1/workspaces/{ws}/attachments/{attachment_id}": {
       "get": {
         "tags": [
@@ -6542,7 +6634,9 @@
           "kind",
           "actor",
           "payload",
-          "created_at"
+          "created_at",
+          "task_id",
+          "task_readable_id"
         ],
         "properties": {
           "actor": {
@@ -6562,6 +6656,15 @@
           },
           "payload": {
             "description": "Typed-per-verb payload; schema varies by `kind`."
+          },
+          "task_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The task this activity entry belongs to."
+          },
+          "task_readable_id": {
+            "type": "string",
+            "description": "Human-readable task identifier (e.g. \"ATL-42\")."
           }
         }
       },
@@ -7909,7 +8012,9 @@
                 "kind",
                 "actor",
                 "payload",
-                "created_at"
+                "created_at",
+                "task_id",
+                "task_readable_id"
               ],
               "properties": {
                 "actor": {
@@ -7929,6 +8034,15 @@
                 },
                 "payload": {
                   "description": "Typed-per-verb payload; schema varies by `kind`."
+                },
+                "task_id": {
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "The task this activity entry belongs to."
+                },
+                "task_readable_id": {
+                  "type": "string",
+                  "description": "Human-readable task identifier (e.g. \"ATL-42\")."
                 }
               }
             }

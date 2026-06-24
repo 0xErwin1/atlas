@@ -10,6 +10,8 @@ const entry = (id: string, kind: string, actorType: string, name: string): Activ
   actor: { id: `a-${id}`, type: actorType, display_name: name },
   payload: {},
   created_at: '12m ago',
+  task_id: `t-${id}`,
+  task_readable_id: `ATL-${id}`,
 });
 
 describe('ActivityFeed actor attribution (REQ-W22)', () => {

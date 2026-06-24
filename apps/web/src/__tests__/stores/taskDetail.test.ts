@@ -65,6 +65,8 @@ const activityEntry = (id: string, kind: string, actorType: string, name: string
   actor: actor(`a-${id}`, actorType, name),
   payload: {},
   created_at: '2026-01-01T00:00:00Z',
+  task_id: `t-${id}`,
+  task_readable_id: `ATL-${id}`,
 });
 
 describe('useTaskDetailStore', () => {

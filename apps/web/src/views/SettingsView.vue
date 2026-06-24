@@ -3,6 +3,7 @@ import { computed, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import AboutPanel from '@/components/settings/AboutPanel.vue';
 import AccountPanel from '@/components/settings/AccountPanel.vue';
+import ActivityPanel from '@/components/settings/ActivityPanel.vue';
 import AdminWorkspacesPanel from '@/components/settings/AdminWorkspacesPanel.vue';
 import ApiKeysPanel from '@/components/settings/ApiKeysPanel.vue';
 import MembersPanel from '@/components/settings/MembersPanel.vue';
@@ -28,6 +29,7 @@ export type SettingsSection =
   | 'tags'
   | 'projects'
   | 'members'
+  | 'activity'
   | 'users'
   | 'workspaces'
   | 'about';
@@ -76,6 +78,7 @@ const navGroups = computed<NavGroup[]>(() => {
         { section: 'tags', icon: 'tag', label: 'Tags' },
         { section: 'projects', icon: 'folder', label: 'Projects' },
         { section: 'members', icon: 'users', label: 'Members' },
+        { section: 'activity', icon: 'history', label: 'Activity' },
       ],
     },
   ];
@@ -164,6 +167,7 @@ watch(
       <TagsPanel v-else-if="activeSection === 'tags'" />
       <ProjectsPanel v-else-if="activeSection === 'projects'" />
       <MembersPanel v-else-if="activeSection === 'members'" />
+      <ActivityPanel v-else-if="activeSection === 'activity'" />
       <UsersPanel v-else-if="activeSection === 'users'" />
       <AdminWorkspacesPanel v-else-if="activeSection === 'workspaces'" />
       <AboutPanel v-else-if="activeSection === 'about'" />
