@@ -113,6 +113,98 @@
         }
       }
     },
+    "/v1/admin/audit": {
+      "get": {
+        "tags": [
+          "audit"
+        ],
+        "operationId": "list_platform_audit",
+        "parameters": [
+          {
+            "name": "actor",
+            "in": "query",
+            "description": "Actor type filter: 'user' or 'api_key'",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "description": "Filter by action verb",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Lower bound on created_at (ISO 8601)",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Upper bound on created_at (ISO 8601)",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Keyset pagination cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size (max 200, default 50)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Platform security audit log (workspace_id IS NULL)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_AuditEntryDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameter"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Not root or system_admin"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/v1/admin/workspaces": {
       "get": {
         "tags": [
@@ -1282,6 +1374,110 @@
           },
           "404": {
             "description": "Attachment not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{ws}/audit": {
+      "get": {
+        "tags": [
+          "audit"
+        ],
+        "operationId": "list_workspace_audit",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "actor",
+            "in": "query",
+            "description": "Actor type filter: 'user' or 'api_key'",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "description": "Filter by action verb (e.g. 'membership.role_changed')",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Lower bound on created_at (ISO 8601)",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Upper bound on created_at (ISO 8601)",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Keyset pagination cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size (max 200, default 50)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Workspace security audit log",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_AuditEntryDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameter"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Caller is not workspace owner or admin"
+          },
+          "404": {
+            "description": "Workspace not found"
           }
         },
         "security": [
@@ -6922,6 +7118,61 @@
           }
         }
       },
+      "AuditEntryDto": {
+        "type": "object",
+        "description": "A single security audit log entry.",
+        "required": [
+          "id",
+          "actor",
+          "action",
+          "target_type",
+          "metadata",
+          "created_at"
+        ],
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/ActorDto"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "target_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "target_label": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Human-readable label for the target (e.g. user display_name or api key name),\nresolved cheaply when target_type is \"user\" or \"api_key\"."
+          },
+          "target_type": {
+            "type": "string"
+          },
+          "workspace_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
       "BacklinkDto": {
         "type": "object",
         "description": "A document that links to this document (backlink).",
@@ -8113,6 +8364,83 @@
                 "type": {
                   "type": "string",
                   "description": "Key purpose: `\"agent\"` | `\"cli\"` | `\"bot\"` | `\"integration\"`."
+                }
+              }
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "Page_AuditEntryDto": {
+        "type": "object",
+        "description": "Paginated response envelope.",
+        "required": [
+          "items",
+          "has_more"
+        ],
+        "properties": {
+          "has_more": {
+            "type": "boolean"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "A single security audit log entry.",
+              "required": [
+                "id",
+                "actor",
+                "action",
+                "target_type",
+                "metadata",
+                "created_at"
+              ],
+              "properties": {
+                "action": {
+                  "type": "string"
+                },
+                "actor": {
+                  "$ref": "#/components/schemas/ActorDto"
+                },
+                "created_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "metadata": {
+                  "type": "object"
+                },
+                "target_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                },
+                "target_label": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Human-readable label for the target (e.g. user display_name or api key name),\nresolved cheaply when target_type is \"user\" or \"api_key\"."
+                },
+                "target_type": {
+                  "type": "string"
+                },
+                "workspace_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
                 }
               }
             }
@@ -9864,6 +10192,10 @@
     }
   },
   "tags": [
+    {
+      "name": "audit",
+      "description": "Security audit log"
+    },
     {
       "name": "auth",
       "description": "Authentication and session management"

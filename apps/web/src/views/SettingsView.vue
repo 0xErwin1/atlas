@@ -7,11 +7,13 @@ import ActivityPanel from '@/components/settings/ActivityPanel.vue';
 import AdminWorkspacesPanel from '@/components/settings/AdminWorkspacesPanel.vue';
 import ApiKeysPanel from '@/components/settings/ApiKeysPanel.vue';
 import MembersPanel from '@/components/settings/MembersPanel.vue';
+import PlatformAuditPanel from '@/components/settings/PlatformAuditPanel.vue';
 import ProjectsPanel from '@/components/settings/ProjectsPanel.vue';
 import StatusesPanel from '@/components/settings/StatusesPanel.vue';
 import StatusTemplatesPanel from '@/components/settings/StatusTemplatesPanel.vue';
 import TagsPanel from '@/components/settings/TagsPanel.vue';
 import UsersPanel from '@/components/settings/UsersPanel.vue';
+import WorkspaceAuditPanel from '@/components/settings/WorkspaceAuditPanel.vue';
 import WorkspaceGeneralPanel from '@/components/settings/WorkspaceGeneralPanel.vue';
 import Icon from '@/components/ui/Icon.vue';
 import { useAuthStore } from '@/stores/auth';
@@ -30,8 +32,10 @@ export type SettingsSection =
   | 'projects'
   | 'members'
   | 'activity'
+  | 'audit'
   | 'users'
   | 'workspaces'
+  | 'platform-audit'
   | 'about';
 
 const DEFAULT_SECTION: SettingsSection = 'account';
@@ -79,6 +83,7 @@ const navGroups = computed<NavGroup[]>(() => {
         { section: 'projects', icon: 'folder', label: 'Projects' },
         { section: 'members', icon: 'users', label: 'Members' },
         { section: 'activity', icon: 'history', label: 'Activity' },
+        { section: 'audit', icon: 'shield', label: 'Security log' },
       ],
     },
   ];
@@ -89,6 +94,7 @@ const navGroups = computed<NavGroup[]>(() => {
       entries: [
         { section: 'users', icon: 'users', label: 'Users', rootOnly: true },
         { section: 'workspaces', icon: 'layers', label: 'Workspaces', rootOnly: true },
+        { section: 'platform-audit', icon: 'shield-alert', label: 'Platform audit', rootOnly: true },
         { section: 'about', icon: 'info', label: 'About', rootOnly: true },
       ],
     });
@@ -168,8 +174,10 @@ watch(
       <ProjectsPanel v-else-if="activeSection === 'projects'" />
       <MembersPanel v-else-if="activeSection === 'members'" />
       <ActivityPanel v-else-if="activeSection === 'activity'" />
+      <WorkspaceAuditPanel v-else-if="activeSection === 'audit'" />
       <UsersPanel v-else-if="activeSection === 'users'" />
       <AdminWorkspacesPanel v-else-if="activeSection === 'workspaces'" />
+      <PlatformAuditPanel v-else-if="activeSection === 'platform-audit'" />
       <AboutPanel v-else-if="activeSection === 'about'" />
     </div>
   </AppShell>
