@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, watch } from 'vue';
+import { computed, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import AboutPanel from '@/components/settings/AboutPanel.vue';
 import AccountPanel from '@/components/settings/AccountPanel.vue';
@@ -17,6 +17,7 @@ import WorkspaceAuditPanel from '@/components/settings/WorkspaceAuditPanel.vue';
 import WorkspaceGeneralPanel from '@/components/settings/WorkspaceGeneralPanel.vue';
 import Icon from '@/components/ui/Icon.vue';
 import { useAuthStore } from '@/stores/auth';
+import { useWorkspaceStore } from '@/stores/workspace';
 import AppShell from '@/views/AppShell.vue';
 
 // Section slugs are the contract between the URL (/settings/:section) and the
@@ -43,6 +44,7 @@ const DEFAULT_SECTION: SettingsSection = 'account';
 const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
+const wsStore = useWorkspaceStore();
 
 interface NavEntry {
   section: SettingsSection;
@@ -61,10 +63,31 @@ interface NavGroup {
 const isRoot = computed(() => auth.user?.is_root === true);
 const isAdmin = computed(() => isRoot.value || auth.user?.is_system_admin === true);
 
+// The workspace security log (audit) 403s for plain members, so it is only
+// shown to a workspace owner/admin or to a global admin (root / system admin).
+// A global admin may have no membership in this workspace, hence the isAdmin arm.
+const canSeeAudit = computed(
+  () => isAdmin.value || wsStore.myWorkspaceRole === 'owner' || wsStore.myWorkspaceRole === 'admin',
+);
+
 // Nav structure. Adding a future WORKSPACE group (general/statuses/tags) or a
 // workspaces entry under ADMINISTRATION is a one-liner here plus the matching
 // panel branch in the template — kept deliberately declarative for F-PANELS.
 const navGroups = computed<NavGroup[]>(() => {
+  const workspaceEntries: NavEntry[] = [
+    { section: 'general', icon: 'settings', label: 'General' },
+    { section: 'statuses', icon: 'kanban', label: 'Statuses' },
+    { section: 'default-statuses', icon: 'kanban', label: 'Default statuses' },
+    { section: 'tags', icon: 'tag', label: 'Tags' },
+    { section: 'projects', icon: 'folder', label: 'Projects' },
+    { section: 'members', icon: 'users', label: 'Members' },
+    { section: 'activity', icon: 'history', label: 'Activity' },
+  ];
+
+  if (canSeeAudit.value) {
+    workspaceEntries.push({ section: 'audit', icon: 'shield', label: 'Security log' });
+  }
+
   const groups: NavGroup[] = [
     {
       label: 'Account',
@@ -75,16 +98,7 @@ const navGroups = computed<NavGroup[]>(() => {
     },
     {
       label: 'Workspace',
-      entries: [
-        { section: 'general', icon: 'settings', label: 'General' },
-        { section: 'statuses', icon: 'kanban', label: 'Statuses' },
-        { section: 'default-statuses', icon: 'kanban', label: 'Default statuses' },
-        { section: 'tags', icon: 'tag', label: 'Tags' },
-        { section: 'projects', icon: 'folder', label: 'Projects' },
-        { section: 'members', icon: 'users', label: 'Members' },
-        { section: 'activity', icon: 'history', label: 'Activity' },
-        { section: 'audit', icon: 'shield', label: 'Security log' },
-      ],
+      entries: workspaceEntries,
     },
   ];
 
@@ -122,6 +136,14 @@ const activeSection = computed<SettingsSection>(() => {
 function selectSection(section: SettingsSection): void {
   router.push({ name: 'settings', params: { section } });
 }
+
+// The audit gate reads the caller's workspace role from the member list; load it
+// once so the Security log entry is decided correctly even when no other view
+// has populated members yet. A global admin is already covered by isAdmin.
+onMounted(() => {
+  const ws = wsStore.activeWorkspaceSlug;
+  if (ws !== null && wsStore.members.length === 0) void wsStore.loadMembers(ws);
+});
 
 // Keep the URL honest: a missing or unresolved section is normalised to the
 // section actually rendered, so /settings and /settings/<unknown> land on

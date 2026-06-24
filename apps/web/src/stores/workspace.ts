@@ -1,8 +1,9 @@
 import { defineStore } from 'pinia';
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import type { components } from '@/api/types';
 import { wrappedClient } from '@/api/wrapper';
 import { collectPaged } from '@/lib/pagination';
+import { useAuthStore } from '@/stores/auth';
 
 type ProjectDto = components['schemas']['Page_ProjectDto']['items'][number];
 
@@ -43,6 +44,24 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const adminWorkspaces = ref<WorkspaceDto[]>([]);
   const members = ref<PrincipalDto[]>([]);
   const error = ref<string | null>(null);
+
+  const auth = useAuthStore();
+
+  /**
+   * The signed-in user's role in the active workspace, derived from the loaded
+   * member list (the server does not put the workspace role on the auth user).
+   * Null when the user has no membership row here — which is the case for a
+   * break-glass global admin who never joined this workspace.
+   */
+  const myWorkspaceRole = computed<'owner' | 'admin' | 'member' | null>(() => {
+    const id = auth.user?.id;
+    if (id == null) return null;
+
+    const self = members.value.find((m) => m.id === id);
+    const role = self?.role;
+    if (role === 'owner' || role === 'admin' || role === 'member') return role;
+    return null;
+  });
 
   function setActiveWorkspace(slug: string) {
     activeWorkspaceSlug.value = slug;
@@ -315,6 +334,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     workspaces,
     adminWorkspaces,
     members,
+    myWorkspaceRole,
     error,
     setActiveWorkspace,
     switchWorkspace,
