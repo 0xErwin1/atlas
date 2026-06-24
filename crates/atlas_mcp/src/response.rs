@@ -1027,6 +1027,49 @@ pub(crate) fn project_attachment(att: AttachmentDto) -> Value {
 }
 
 // ---------------------------------------------------------------------------
+// Audit entry projection
+// ---------------------------------------------------------------------------
+
+/// Projects a single `AuditEntryDto` to the compact MCP shape.
+///
+/// `id` (UUID) is dropped — internal database identifier with no agent value.
+/// `workspace_id` is dropped — always implicit from the tool's workspace param.
+/// The `actor` sub-object surfaces `type`, `display_name`, `key_type`, and
+/// `account_status` so the agent can identify who acted and whether their
+/// account is still active.
+pub(crate) fn project_audit_entry(entry: atlas_api::dtos::audit::AuditEntryDto) -> Value {
+    let mut actor_map = serde_json::Map::new();
+    actor_map.insert("type".into(), json!(entry.actor.r#type));
+
+    if let Some(name) = entry.actor.display_name {
+        actor_map.insert("display_name".into(), json!(name));
+    }
+    if let Some(kt) = entry.actor.key_type {
+        actor_map.insert("key_type".into(), json!(kt));
+    }
+    if let Some(status) = entry.actor.account_status {
+        actor_map.insert("account_status".into(), json!(status));
+    }
+
+    let mut map = serde_json::Map::new();
+    map.insert("action".into(), json!(entry.action));
+    map.insert("actor".into(), Value::Object(actor_map));
+    map.insert("target_type".into(), json!(entry.target_type));
+
+    if let Some(tid) = entry.target_id {
+        map.insert("target_id".into(), json!(tid));
+    }
+    if let Some(label) = entry.target_label {
+        map.insert("target_label".into(), json!(label));
+    }
+
+    map.insert("metadata".into(), entry.metadata);
+    map.insert("created_at".into(), json!(entry.created_at));
+
+    Value::Object(map)
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -2698,5 +2741,160 @@ mod tests {
     fn status_template_projection_omits_color_when_absent() {
         let val = project_status_template(make_status_template(None));
         assert!(val.get("color").is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // project_audit_entry
+    // -----------------------------------------------------------------------
+
+    use atlas_api::dtos::audit::AuditEntryDto;
+
+    fn make_audit_entry_user(
+        action: &str,
+        target_type: &str,
+        target_id: Option<Uuid>,
+        target_label: Option<&str>,
+        metadata: serde_json::Value,
+    ) -> AuditEntryDto {
+        AuditEntryDto {
+            id: fixed_uuid(),
+            workspace_id: Some(fixed_uuid()),
+            actor: ActorDto {
+                r#type: "user".into(),
+                id: fixed_uuid(),
+                display_name: Some("Alice".into()),
+                key_type: None,
+                account_status: Some("active".into()),
+            },
+            action: action.into(),
+            target_type: target_type.into(),
+            target_id,
+            target_label: target_label.map(String::from),
+            metadata,
+            created_at: chrono::DateTime::from_timestamp(0, 0).unwrap(),
+        }
+    }
+
+    fn make_audit_entry_api_key(action: &str) -> AuditEntryDto {
+        AuditEntryDto {
+            id: fixed_uuid(),
+            workspace_id: None,
+            actor: ActorDto {
+                r#type: "api_key".into(),
+                id: fixed_uuid(),
+                display_name: Some("ci-bot".into()),
+                key_type: Some("bot".into()),
+                account_status: None,
+            },
+            action: action.into(),
+            target_type: "api_key".into(),
+            target_id: Some(fixed_uuid()),
+            target_label: None,
+            metadata: serde_json::json!({}),
+            created_at: chrono::DateTime::from_timestamp(0, 0).unwrap(),
+        }
+    }
+
+    #[test]
+    fn audit_entry_drops_internal_id() {
+        let entry = make_audit_entry_user("membership.role_changed", "user", None, None, json!({}));
+        let val = project_audit_entry(entry);
+        assert!(val.get("id").is_none(), "internal id must be dropped");
+    }
+
+    #[test]
+    fn audit_entry_drops_workspace_id() {
+        let entry = make_audit_entry_user("membership.role_changed", "user", None, None, json!({}));
+        let val = project_audit_entry(entry);
+        assert!(
+            val.get("workspace_id").is_none(),
+            "workspace_id must be dropped"
+        );
+    }
+
+    #[test]
+    fn audit_entry_user_actor_surfaces_display_name_and_account_status() {
+        let entry = make_audit_entry_user(
+            "membership.role_changed",
+            "user",
+            Some(fixed_uuid()),
+            Some("Bob"),
+            json!({"old_role": "member", "new_role": "admin"}),
+        );
+        let val = project_audit_entry(entry);
+        assert_eq!(val["actor"]["type"], "user");
+        assert_eq!(val["actor"]["display_name"], "Alice");
+        assert_eq!(val["actor"]["account_status"], "active");
+        assert!(val["actor"].get("key_type").is_none());
+    }
+
+    #[test]
+    fn audit_entry_api_key_actor_surfaces_key_type_no_account_status() {
+        let entry = make_audit_entry_api_key("api_key.revoked");
+        let val = project_audit_entry(entry);
+        assert_eq!(val["actor"]["type"], "api_key");
+        assert_eq!(val["actor"]["display_name"], "ci-bot");
+        assert_eq!(val["actor"]["key_type"], "bot");
+        assert!(val["actor"].get("account_status").is_none());
+    }
+
+    #[test]
+    fn audit_entry_includes_action_target_type_created_at() {
+        let entry = make_audit_entry_user("membership.role_changed", "user", None, None, json!({}));
+        let val = project_audit_entry(entry);
+        assert_eq!(val["action"], "membership.role_changed");
+        assert_eq!(val["target_type"], "user");
+        assert!(val.get("created_at").is_some());
+    }
+
+    #[test]
+    fn audit_entry_includes_target_id_when_present() {
+        let tid = fixed_uuid();
+        let entry = make_audit_entry_user("user.disabled", "user", Some(tid), None, json!({}));
+        let val = project_audit_entry(entry);
+        assert_eq!(val["target_id"].as_str().unwrap(), tid.to_string());
+    }
+
+    #[test]
+    fn audit_entry_omits_target_id_when_absent() {
+        let entry = make_audit_entry_user("user.disabled", "user", None, None, json!({}));
+        let val = project_audit_entry(entry);
+        assert!(val.get("target_id").is_none());
+    }
+
+    #[test]
+    fn audit_entry_includes_target_label_when_present() {
+        let entry = make_audit_entry_user(
+            "membership.removed",
+            "user",
+            Some(fixed_uuid()),
+            Some("bob"),
+            json!({}),
+        );
+        let val = project_audit_entry(entry);
+        assert_eq!(val["target_label"], "bob");
+    }
+
+    #[test]
+    fn audit_entry_omits_target_label_when_absent() {
+        let entry = make_audit_entry_api_key("api_key.created");
+        let val = project_audit_entry(entry);
+        assert!(val.get("target_label").is_none());
+    }
+
+    #[test]
+    fn audit_entry_metadata_passthrough() {
+        let meta = json!({"old_role": "member", "new_role": "admin"});
+        let entry =
+            make_audit_entry_user("membership.role_changed", "user", None, None, meta.clone());
+        let val = project_audit_entry(entry);
+        assert_eq!(val["metadata"], meta);
+    }
+
+    #[test]
+    fn audit_entry_empty_metadata_passthrough() {
+        let entry = make_audit_entry_user("user.disabled", "user", None, None, json!({}));
+        let val = project_audit_entry(entry);
+        assert_eq!(val["metadata"], json!({}));
     }
 }

@@ -50,15 +50,15 @@ where
 use response::{
     Detail, enrich_client_error, envelope_page, map_present_value, match_columns_by_name,
     parse_atlas_doc_uri, parse_csv, parse_detail, project_activity_entry, project_assignee,
-    project_attachment, project_backlink, project_board_summary, project_checklist_item,
-    project_column, project_document_compact, project_document_full, project_document_summary,
-    project_folder, project_principal, project_project, project_promotion, project_reference,
-    project_revision_content, project_revision_meta, project_saved_search, project_search_hit,
-    project_status_template, project_tag, project_task_backlink, project_task_compact,
-    project_task_full, project_task_row, project_task_view, project_workspace,
-    project_workspace_activity_entry, require_confirm, resolve_column_id_on_board,
-    validate_assignee_type, validate_estimate, validate_estimate_value, validate_priority,
-    validate_reference_kind, validate_single_target, wrap_vec,
+    project_attachment, project_audit_entry, project_backlink, project_board_summary,
+    project_checklist_item, project_column, project_document_compact, project_document_full,
+    project_document_summary, project_folder, project_principal, project_project,
+    project_promotion, project_reference, project_revision_content, project_revision_meta,
+    project_saved_search, project_search_hit, project_status_template, project_tag,
+    project_task_backlink, project_task_compact, project_task_full, project_task_row,
+    project_task_view, project_workspace, project_workspace_activity_entry, require_confirm,
+    resolve_column_id_on_board, validate_assignee_type, validate_estimate, validate_estimate_value,
+    validate_priority, validate_reference_kind, validate_single_target, wrap_vec,
 };
 
 const ATLAS_INSTRUCTIONS: &str = "\
@@ -90,6 +90,7 @@ Tools by area (see each tool's own description for parameters):\n\
 - Links and depth: `get_task_references`, `get_task_backlinks`, `get_document_backlinks`, \
 `list_checklist`, `list_activity`, `list_workspace_activity`, `list_document_history`, \
 `get_document_revision`, `list_attachments`.\n\
+- Security audit (owner/admin only): `get_workspace_audit`, `get_platform_audit`.\n\
 - Task writes: `create_task`, `update_task`, `move_task`, `delete_task`, \
 `add_task_assignee`, `remove_task_assignee`.\n\
 - Document and folder writes: `create_document`, `update_document_metadata`, \
@@ -495,6 +496,54 @@ pub struct ListWorkspaceActivityParams {
     /// Filter by actor type: `user` (human) or `api_key` (agent).
     #[serde(default)]
     pub actor: Option<String>,
+    /// Lower bound (inclusive) on event time (ISO 8601 / RFC 3339).
+    #[serde(default)]
+    pub from: Option<String>,
+    /// Upper bound (inclusive) on event time (ISO 8601 / RFC 3339).
+    #[serde(default)]
+    pub to: Option<String>,
+    /// Pass `next_cursor` from the previous response to fetch the next page.
+    #[serde(default)]
+    pub cursor: Option<String>,
+    /// Page size (default 50, max 200).
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+/// Parameters accepted by the `get_workspace_audit` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetWorkspaceAuditParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Filter by actor type: `user` (human) or `api_key` (agent).
+    #[serde(default)]
+    pub actor: Option<String>,
+    /// Filter by action verb (e.g. `membership.role_changed`).
+    #[serde(default)]
+    pub action: Option<String>,
+    /// Lower bound (inclusive) on event time (ISO 8601 / RFC 3339).
+    #[serde(default)]
+    pub from: Option<String>,
+    /// Upper bound (inclusive) on event time (ISO 8601 / RFC 3339).
+    #[serde(default)]
+    pub to: Option<String>,
+    /// Pass `next_cursor` from the previous response to fetch the next page.
+    #[serde(default)]
+    pub cursor: Option<String>,
+    /// Page size (default 50, max 200).
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+/// Parameters accepted by the `get_platform_audit` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetPlatformAuditParams {
+    /// Filter by actor type: `user` (human) or `api_key` (agent).
+    #[serde(default)]
+    pub actor: Option<String>,
+    /// Filter by action verb (e.g. `user.disabled`).
+    #[serde(default)]
+    pub action: Option<String>,
     /// Lower bound (inclusive) on event time (ISO 8601 / RFC 3339).
     #[serde(default)]
     pub from: Option<String>,
@@ -3284,6 +3333,99 @@ impl AtlasMcp {
         let result = serde_json::json!({ "deleted": true, "id": id });
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
+
+    #[tool(
+        description = "List the security audit log for a workspace (owner/admin only). \
+                       Returns who performed each privileged action (membership changes, \
+                       permission grants, API key lifecycle), with enriched actor details \
+                       (display_name, account_status for users; key_type for API keys). \
+                       Returns 403 if the caller is not a workspace owner or admin — \
+                       audit requires workspace owner/admin or platform admin. \
+                       Supports actor-type (user|api_key), action verb, date range, \
+                       and cursor pagination."
+    )]
+    async fn get_workspace_audit(
+        &self,
+        Parameters(params): Parameters<GetWorkspaceAuditParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+        let limit = params.limit.unwrap_or(50).clamp(1, 200);
+
+        let page = if params.cursor.is_some() {
+            client
+                .list_workspace_audit_with_cursor(
+                    &params.workspace,
+                    params.actor.as_deref(),
+                    params.action.as_deref(),
+                    params.from.as_deref(),
+                    params.cursor.as_deref(),
+                    Some(limit),
+                )
+                .await
+                .map_err(|e| enrich_client_error(e, "get_workspace_audit"))?
+        } else {
+            client
+                .list_workspace_audit(
+                    &params.workspace,
+                    params.actor.as_deref(),
+                    params.action.as_deref(),
+                    params.from.as_deref(),
+                    params.to.as_deref(),
+                    Some(limit),
+                )
+                .await
+                .map_err(|e| enrich_client_error(e, "get_workspace_audit"))?
+        };
+
+        let result = envelope_page(page, project_audit_entry);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "List the platform-wide security audit log (platform admin only). \
+                       Returns platform-scoped events (user lifecycle: created, disabled, \
+                       enabled, password reset, activation; system-admin flag changes). \
+                       Returns 403 if the caller is not a platform admin — \
+                       audit requires workspace owner/admin or platform admin. \
+                       Supports actor-type (user|api_key), action verb, date range, \
+                       and cursor pagination."
+    )]
+    async fn get_platform_audit(
+        &self,
+        Parameters(params): Parameters<GetPlatformAuditParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+        let limit = params.limit.unwrap_or(50).clamp(1, 200);
+
+        let page = if params.cursor.is_some() {
+            client
+                .list_platform_audit_with_cursor(
+                    params.actor.as_deref(),
+                    params.action.as_deref(),
+                    params.from.as_deref(),
+                    params.cursor.as_deref(),
+                    Some(limit),
+                )
+                .await
+                .map_err(|e| enrich_client_error(e, "get_platform_audit"))?
+        } else {
+            client
+                .list_platform_audit(
+                    params.actor.as_deref(),
+                    params.action.as_deref(),
+                    params.from.as_deref(),
+                    params.to.as_deref(),
+                    Some(limit),
+                )
+                .await
+                .map_err(|e| enrich_client_error(e, "get_platform_audit"))?
+        };
+
+        let result = envelope_page(page, project_audit_entry);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
 }
 
 impl AtlasMcp {
@@ -3865,6 +4007,55 @@ mod tests {
     }
 
     #[test]
+    fn get_workspace_audit_params_deserializes_minimal() {
+        let json = r#"{"workspace":"ws"}"#;
+        let params: GetWorkspaceAuditParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.workspace, "ws");
+        assert!(params.actor.is_none());
+        assert!(params.action.is_none());
+        assert!(params.from.is_none());
+        assert!(params.to.is_none());
+        assert!(params.cursor.is_none());
+        assert!(params.limit.is_none());
+    }
+
+    #[test]
+    fn get_workspace_audit_params_deserializes_full() {
+        let json = r#"{"workspace":"ws","actor":"user","action":"membership.role_changed","from":"2024-01-01T00:00:00Z","to":"2024-12-31T23:59:59Z","cursor":"abc","limit":25}"#;
+        let params: GetWorkspaceAuditParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.actor.as_deref(), Some("user"));
+        assert_eq!(params.action.as_deref(), Some("membership.role_changed"));
+        assert_eq!(params.from.as_deref(), Some("2024-01-01T00:00:00Z"));
+        assert_eq!(params.to.as_deref(), Some("2024-12-31T23:59:59Z"));
+        assert_eq!(params.cursor.as_deref(), Some("abc"));
+        assert_eq!(params.limit, Some(25));
+    }
+
+    #[test]
+    fn get_platform_audit_params_deserializes_minimal() {
+        let json = r#"{}"#;
+        let params: GetPlatformAuditParams = serde_json::from_str(json).unwrap();
+        assert!(params.actor.is_none());
+        assert!(params.action.is_none());
+        assert!(params.from.is_none());
+        assert!(params.to.is_none());
+        assert!(params.cursor.is_none());
+        assert!(params.limit.is_none());
+    }
+
+    #[test]
+    fn get_platform_audit_params_deserializes_full() {
+        let json = r#"{"actor":"api_key","action":"user.disabled","from":"2024-06-01T00:00:00Z","to":"2024-06-30T23:59:59Z","cursor":"xyz","limit":10}"#;
+        let params: GetPlatformAuditParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.actor.as_deref(), Some("api_key"));
+        assert_eq!(params.action.as_deref(), Some("user.disabled"));
+        assert_eq!(params.from.as_deref(), Some("2024-06-01T00:00:00Z"));
+        assert_eq!(params.to.as_deref(), Some("2024-06-30T23:59:59Z"));
+        assert_eq!(params.cursor.as_deref(), Some("xyz"));
+        assert_eq!(params.limit, Some(10));
+    }
+
+    #[test]
     fn list_document_history_params_deserializes_minimal() {
         let json = r#"{"workspace":"ws","slug":"my-doc"}"#;
         let params: ListDocumentHistoryParams = serde_json::from_str(json).unwrap();
@@ -3918,6 +4109,14 @@ mod tests {
         assert!(
             instructions.contains("`list_workspace_activity`"),
             "instructions must mention list_workspace_activity"
+        );
+        assert!(
+            instructions.contains("`get_workspace_audit`"),
+            "instructions must mention get_workspace_audit"
+        );
+        assert!(
+            instructions.contains("`get_platform_audit`"),
+            "instructions must mention get_platform_audit"
         );
     }
 

@@ -2031,6 +2031,21 @@ impl AtlasClient {
         self.decode_response(response, "list_platform_audit").await
     }
 
+    /// `GET /v1/admin/audit` with explicit cursor
+    pub async fn list_platform_audit_with_cursor(
+        &self,
+        actor: Option<&str>,
+        action: Option<&str>,
+        from: Option<&str>,
+        cursor: Option<&str>,
+        limit: Option<u32>,
+    ) -> Result<Page<atlas_api::dtos::audit::AuditEntryDto>, ClientError> {
+        let path = build_audit_path("/v1/admin/audit", actor, action, from, None, cursor, limit);
+        let response = self.get(&path).send().await?;
+        self.decode_response(response, "list_platform_audit_with_cursor")
+            .await
+    }
+
     /// `POST /v1/auth/logout`
     pub async fn logout(&self) -> Result<(), ClientError> {
         let response = self
