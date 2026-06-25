@@ -101,52 +101,65 @@ pub(crate) async fn create_workspace(
         (status = 401, description = "Unauthenticated"),
     )
 )]
-/// Returns the workspaces the authenticated principal is a member of.
-/// API keys are workspace-scoped and do not use this endpoint; the result is always empty for them.
+/// Returns the workspaces the authenticated principal can access.
+///
+/// For users: their member workspaces (or all workspaces for root/system_admin).
+/// For api_keys: the distinct workspaces where the key holds at least one permission grant.
 pub(crate) async fn list_workspaces(
     State(state): State<AppState>,
     Extension(principal): Extension<Principal>,
 ) -> Result<Json<Vec<WorkspaceDto>>, ApiError> {
-    let user_id = match principal {
-        Principal::User(uid) => uid,
-        Principal::ApiKey(_) => return Ok(Json(Vec::new())),
-    };
-
-    let user_repo = PgUserRepo {
-        conn: (*state.db).clone(),
-    };
-    let user = user_repo
-        .find_by_id(user_id)
-        .await
-        .map_err(|e| ApiError::Internal {
-            message: e.to_string(),
-        })?
-        .ok_or(ApiError::Unauthorized)?;
-
-    if user.disabled_at.is_some() {
-        return Err(ApiError::Unauthorized);
-    }
-
     let ws_repo = PgWorkspaceRepo {
         conn: (*state.db).clone(),
     };
 
-    let workspaces = if user.is_root || user.is_system_admin {
-        ws_repo.list_all().await.map_err(|e| ApiError::Internal {
-            message: e.to_string(),
-        })?
-    } else {
-        ws_repo
-            .list_for_user(user_id)
-            .await
-            .map_err(|_| ApiError::Internal {
-                message: "workspace lookup failed".into(),
-            })?
-    };
+    match principal {
+        Principal::ApiKey(kid) => {
+            let workspaces =
+                ws_repo
+                    .list_for_api_key(kid)
+                    .await
+                    .map_err(|e| ApiError::Internal {
+                        message: e.to_string(),
+                    })?;
 
-    let dtos = workspaces.iter().map(workspace_to_dto).collect();
+            let dtos = workspaces.iter().map(workspace_to_dto).collect();
+            Ok(Json(dtos))
+        }
 
-    Ok(Json(dtos))
+        Principal::User(user_id) => {
+            let user_repo = PgUserRepo {
+                conn: (*state.db).clone(),
+            };
+            let user = user_repo
+                .find_by_id(user_id)
+                .await
+                .map_err(|e| ApiError::Internal {
+                    message: e.to_string(),
+                })?
+                .ok_or(ApiError::Unauthorized)?;
+
+            if user.disabled_at.is_some() {
+                return Err(ApiError::Unauthorized);
+            }
+
+            let workspaces = if user.is_root || user.is_system_admin {
+                ws_repo.list_all().await.map_err(|e| ApiError::Internal {
+                    message: e.to_string(),
+                })?
+            } else {
+                ws_repo
+                    .list_for_user(user_id)
+                    .await
+                    .map_err(|_| ApiError::Internal {
+                        message: "workspace lookup failed".into(),
+                    })?
+            };
+
+            let dtos = workspaces.iter().map(workspace_to_dto).collect();
+            Ok(Json(dtos))
+        }
+    }
 }
 
 #[utoipa::path(

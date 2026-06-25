@@ -14,6 +14,10 @@ pub trait WorkspaceRepo: Send + Sync {
     async fn find_by_id(&self, id: WorkspaceId) -> Result<Option<Workspace>, DomainError>;
     async fn find_by_slug(&self, slug: &str) -> Result<Option<Workspace>, DomainError>;
     async fn list_for_user(&self, user_id: UserId) -> Result<Vec<Workspace>, DomainError>;
+    /// Returns the distinct workspaces where the api_key holds at least one
+    /// permission grant. This is the grant-based equivalent of `list_for_user`
+    /// for non-human principals.
+    async fn list_for_api_key(&self, api_key_id: ApiKeyId) -> Result<Vec<Workspace>, DomainError>;
     /// Returns the slugs of every workspace, used to resolve slug collisions
     /// when deriving a new workspace slug from its name.
     async fn list_slugs(&self) -> Result<Vec<String>, DomainError>;

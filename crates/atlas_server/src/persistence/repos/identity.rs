@@ -89,6 +89,37 @@ impl WorkspaceRepo for PgWorkspaceRepo {
         Ok(workspaces)
     }
 
+    async fn list_for_api_key(&self, api_key_id: ApiKeyId) -> Result<Vec<Workspace>, DomainError> {
+        use sea_orm::FromQueryResult;
+
+        #[derive(Debug, FromQueryResult)]
+        struct WorkspaceIdRow {
+            workspace_id: Uuid,
+        }
+
+        let rows = WorkspaceIdRow::find_by_statement(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT DISTINCT workspace_id FROM permission_grants WHERE api_key_id = $1",
+            [api_key_id.0.into()],
+        ))
+        .all(&self.conn)
+        .await
+        .map_err(db_err)?;
+
+        let mut workspaces = Vec::new();
+        for row in rows {
+            if let Some(ws) = workspace::Entity::find_by_id(row.workspace_id)
+                .one(&self.conn)
+                .await
+                .map_err(db_err)?
+            {
+                workspaces.push(workspace_from(ws));
+            }
+        }
+
+        Ok(workspaces)
+    }
+
     async fn list_slugs(&self) -> Result<Vec<String>, DomainError> {
         #[derive(Debug, FromQueryResult)]
         struct SlugRow {
