@@ -72,6 +72,57 @@ async fn list_workspaces_returns_401_for_unauthenticated() {
     }
 }
 
+/// A freshly created workspace is seeded with a default project, the default
+/// status templates, and a default board whose columns mirror those templates,
+/// so Tasks and Notes are usable immediately instead of presenting an empty,
+/// broken-looking workspace.
+#[tokio::test]
+async fn create_workspace_seeds_a_default_project_and_board() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (client, _ws, _user) = login_user_with_workspace(&server, &db, "ws-seed-owner").await;
+
+    let created = client
+        .create_workspace("Seed Target")
+        .await
+        .expect("create_workspace");
+
+    let projects = client
+        .list_projects(&created.slug, None, None)
+        .await
+        .expect("list_projects");
+    assert_eq!(
+        projects.items.len(),
+        1,
+        "a new workspace must have exactly one seeded project"
+    );
+    let project = &projects.items[0];
+    assert_eq!(project.slug, "general");
+
+    let boards = client
+        .list_boards(&created.slug, &project.slug, None, None)
+        .await
+        .expect("list_boards");
+    assert_eq!(
+        boards.items.len(),
+        1,
+        "a new workspace must have exactly one seeded board"
+    );
+    let board = &boards.items[0];
+
+    let columns = client
+        .list_columns(&created.slug, board.id)
+        .await
+        .expect("list_columns");
+    let names: Vec<&str> = columns.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(
+        names,
+        vec!["To Do", "In Progress", "Done"],
+        "default board columns derive from the seeded status templates, in order"
+    );
+}
+
 // ---- B3: workspace rename ----
 
 #[tokio::test]

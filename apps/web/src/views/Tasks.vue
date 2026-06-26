@@ -161,6 +161,10 @@ async function loadBoard(): Promise<void> {
   selectedReadableId.value = null;
 
   if (boardId.value === null) {
+    // No board is selected (e.g. a freshly entered or empty workspace). Drop any
+    // load error left over from a previous board so the empty state shows instead
+    // of a stale "Couldn't load board" panel.
+    boards.loadError = null;
     await resolveDefaultBoard();
     return;
   }
@@ -215,6 +219,14 @@ async function loadView(): Promise<void> {
   const params = paramsForView(vid, customView?.filters);
   await workspaceTasks.load(ws.value, params);
 }
+
+// A board id is only valid within its own workspace. When the active workspace
+// changes, clear board-scoped state so a board (or a stale load error) from the
+// previous workspace never bleeds into the next one. Registered before the load
+// watcher so the reset runs first on a workspace switch.
+watch(ws, () => {
+  boards.reset();
+});
 
 watch(
   [boardId, viewId, ws],

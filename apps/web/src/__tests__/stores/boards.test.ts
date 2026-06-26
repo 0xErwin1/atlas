@@ -115,6 +115,23 @@ describe('useBoardsStore', () => {
     expect(store.loadError).toBe('board not found');
   });
 
+  it('reset clears a stale load error and board-scoped state (cross-workspace bleed)', async () => {
+    GET.mockResolvedValue({ data: undefined, error: { hint: 'board not found' } });
+
+    const store = useBoardsStore();
+    await store.loadTasks('ws', 'board-1');
+    store._setTasksForTest({ c1: [task('t1', 'ATL-1', 'c1')] });
+
+    expect(store.loadError).toBe('board not found');
+
+    store.reset();
+
+    expect(store.loadError).toBeNull();
+    expect(store.board).toBeNull();
+    expect(store.columns).toHaveLength(0);
+    expect(store.tasksByColumn('c1')).toHaveLength(0);
+  });
+
   it('reconcileTask moves a task to a new column and updates its id (REQ-W21)', () => {
     const store = useBoardsStore();
 

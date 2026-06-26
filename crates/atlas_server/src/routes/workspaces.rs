@@ -8,9 +8,13 @@ use axum::{
 use atlas_api::dtos::{CreateWorkspaceRequest, UpdateWorkspaceRequest, WorkspaceDto};
 use atlas_domain::{
     Actor, WorkspaceCtx,
+    entities::boards_tasks::NewBoard,
     entities::identity::{MemberRole, NewWorkspace},
-    ids::WorkspaceId,
-    resolve_collision, slugify,
+    entities::status_templates::NewStatusTemplate,
+    entities::workspace_core::NewProject,
+    ids::{UserId, WorkspaceId},
+    permissions::{Visibility, VisibilityRole},
+    position, resolve_collision, slugify,
 };
 
 use crate::{
@@ -18,11 +22,19 @@ use crate::{
     authz::{RequireUserAdmin, WorkspaceMember},
     error::ApiError,
     persistence::repos::{
-        MembershipRepo, PgMembershipRepo, PgUserRepo, PgWorkspaceRepo, UserRepo, WorkspaceRepo,
+        BoardRepo, MembershipRepo, PgBoardRepo, PgMembershipRepo, PgProjectRepo,
+        PgStatusTemplateRepo, PgUserRepo, PgWorkspaceRepo, ProjectRepo, StatusTemplateRepo,
+        UserRepo, WorkspaceRepo,
     },
     routes::validation::validate_name,
     state::AppState,
 };
+
+/// Status columns every new workspace starts with, in board order. The default
+/// board derives its columns from these, so a freshly created workspace has a
+/// usable kanban out of the box instead of an empty, column-less board.
+const DEFAULT_STATUSES: &[(&str, &str)] =
+    &[("To Do", "neutral"), ("In Progress", "blue"), ("Done", "green")];
 
 #[utoipa::path(
     post,
@@ -88,7 +100,73 @@ pub(crate) async fn create_workspace(
             message: e.to_string(),
         })?;
 
+    seed_default_content(&state, workspace.id, user_id).await?;
+
     Ok((StatusCode::CREATED, Json(workspace_to_dto(&workspace))))
+}
+
+/// Seeds a new workspace with the scaffolding that makes it usable on first open:
+/// a default project, the default status templates, and a default board (whose
+/// columns are derived from those templates). The creator already has Owner
+/// membership, which resolves to Admin on all workspace content, so no explicit
+/// grant is needed here.
+///
+/// Best-effort consistency: each step runs in its own repository call rather than
+/// one transaction, matching the surrounding create flow. A partial failure leaves
+/// the workspace under-seeded but still valid; the UI renders missing scaffolding
+/// as empty states, never as an error.
+async fn seed_default_content(
+    state: &AppState,
+    workspace_id: WorkspaceId,
+    creator: UserId,
+) -> Result<(), ApiError> {
+    let ctx = WorkspaceCtx::new(workspace_id, Actor::User(creator));
+
+    let project = PgProjectRepo {
+        conn: (*state.db).clone(),
+    }
+    .create(
+        &ctx,
+        NewProject {
+            name: "General".to_string(),
+            slug: "general".to_string(),
+            task_prefix: "GEN".to_string(),
+            visibility: Visibility::Workspace(VisibilityRole::Editor),
+        },
+    )
+    .await
+    .map_err(ApiError::Domain)?;
+
+    let template_repo = PgStatusTemplateRepo::new((*state.db).clone());
+    let mut prev_key: Option<String> = None;
+    for (name, color) in DEFAULT_STATUSES {
+        let position_key = position::between(prev_key.as_deref(), None);
+        template_repo
+            .create(
+                &ctx,
+                NewStatusTemplate {
+                    name: (*name).to_string(),
+                    color: Some((*color).to_string()),
+                    position_key: position_key.clone(),
+                },
+            )
+            .await
+            .map_err(ApiError::Domain)?;
+        prev_key = Some(position_key);
+    }
+
+    PgBoardRepo::new((*state.db).clone())
+        .create_board(
+            &ctx,
+            NewBoard {
+                project_id: project.id,
+                name: "Board".to_string(),
+            },
+        )
+        .await
+        .map_err(ApiError::Domain)?;
+
+    Ok(())
 }
 
 #[utoipa::path(

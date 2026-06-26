@@ -859,6 +859,26 @@ export const useBoardsStore = defineStore('boards', () => {
     tasks.value = m;
   }
 
+  /**
+   * Clears all board-scoped state. Called when the active workspace changes so a
+   * board (and especially a stale `loadError`) from the previous workspace never
+   * bleeds into the next one: a board id is only valid within its own workspace,
+   * so loading it against a different workspace 404s, and that error must not
+   * survive the switch.
+   */
+  function reset(): void {
+    board.value = null;
+    boardSummaries.value = [];
+    boardsByProject.value = new Map();
+    columns.value = [];
+    tasks.value = new Map();
+    taskDetails.value = new Map();
+    loading.value = false;
+    detailsLoading.value = false;
+    loadError.value = null;
+    error.value = null;
+  }
+
   return {
     board,
     boardSummaries,
@@ -866,6 +886,7 @@ export const useBoardsStore = defineStore('boards', () => {
     loading,
     error,
     loadError,
+    reset,
     taskDetails,
     detailsLoading,
     taskDetail,

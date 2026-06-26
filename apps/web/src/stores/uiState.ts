@@ -39,22 +39,23 @@ export const useUiStateStore = defineStore('uiState', () => {
     }, 600);
   }
 
-  // Collapsed sidebar folders are stored as a list of ids; absence means the
-  // folder is expanded (the default), so a fresh user sees everything open.
-  function collapsedFolders(): string[] {
-    const v = data.value.collapsedFolders;
+  // Expanded sidebar folders are stored as a list of ids; absence means the
+  // folder is collapsed (the default), so a fresh user sees the tree closed and
+  // opens only what they need.
+  function expandedFolders(): string[] {
+    const v = data.value.expandedFolders;
     return Array.isArray(v) ? (v as string[]) : [];
   }
 
   function isFolderCollapsed(id: string): boolean {
-    return collapsedFolders().includes(id);
+    return !expandedFolders().includes(id);
   }
 
   function setFolderCollapsed(id: string, collapsed: boolean): void {
-    const next = new Set(collapsedFolders());
-    if (collapsed) next.add(id);
-    else next.delete(id);
-    data.value = { ...data.value, collapsedFolders: [...next] };
+    const next = new Set(expandedFolders());
+    if (collapsed) next.delete(id);
+    else next.add(id);
+    data.value = { ...data.value, expandedFolders: [...next] };
     scheduleSave();
   }
 
