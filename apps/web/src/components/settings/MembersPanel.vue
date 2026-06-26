@@ -4,6 +4,7 @@ import AgentBadge from '@/components/ui/AgentBadge.vue';
 import Avatar from '@/components/ui/Avatar.vue';
 import Btn from '@/components/ui/Btn.vue';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
+import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
 import Icon from '@/components/ui/Icon.vue';
 import { useAuthStore } from '@/stores/auth';
 import { useUiStore } from '@/stores/ui';
@@ -19,6 +20,8 @@ const ROLES: { value: Role; label: string }[] = [
   { value: 'admin', label: 'Admin' },
   { value: 'member', label: 'Member' },
 ];
+
+const roleOptions: DropdownOption[] = ROLES.map((r) => ({ value: r.value, label: r.label }));
 
 const loading = ref(false);
 const busyId = ref<string | null>(null);
@@ -198,8 +201,8 @@ const assignableUsers = computed<UserDto[]>(() => wsStore.assignableUsers);
 // backend returns 403 otherwise, so admins never see the option.
 const canGrantOwner = computed(() => isBreakGlass.value || wsStore.myWorkspaceRole === 'owner');
 
-const addableRoles = computed<{ value: Role; label: string }[]>(() =>
-  ROLES.filter((r) => r.value !== 'owner' || canGrantOwner.value),
+const addableRoles = computed<DropdownOption[]>(() =>
+  roleOptions.filter((r) => r.value !== 'owner' || canGrantOwner.value),
 );
 
 function userIsPending(u: UserDto): boolean {
@@ -312,17 +315,12 @@ async function confirmAdd(): Promise<void> {
 
           <div style="flex: 0 0 150px; display: flex; justify-content: flex-end; align-items: center; gap: 6px;">
             <template v-if="canManage">
-              <div class="atl-role-select-box">
-                <select
-                  class="atl-role-select"
-                  :value="roleOf(m)"
-                  :disabled="roleSelectDisabled(m)"
-                  :title="isLastOwner(m) ? 'A workspace must keep at least one owner' : 'Change role'"
-                  @change="changeRole(m, ($event.target as HTMLSelectElement).value as Role)"
-                >
-                  <option v-for="r in ROLES" :key="r.value" :value="r.value">{{ r.label }}</option>
-                </select>
-              </div>
+              <Dropdown
+                :options="roleOptions"
+                :model-value="roleOf(m)"
+                :disabled="roleSelectDisabled(m)"
+                @change="(v) => changeRole(m, v as Role)"
+              />
               <button
                 type="button"
                 class="atl-member-remove"
@@ -491,15 +489,12 @@ async function confirmAdd(): Promise<void> {
               </div>
 
               <div class="atl-members-section-label" style="margin: 14px 0 6px;">Role</div>
-              <div class="atl-role-select-box" style="height: 32px; width: 100%;">
-                <select
-                  v-model="selectedRole"
-                  class="atl-role-select"
-                  data-add-role
-                  style="flex: 1; width: 100%;"
-                >
-                  <option v-for="r in addableRoles" :key="r.value" :value="r.value">{{ r.label }}</option>
-                </select>
+              <div data-add-role>
+                <Dropdown
+                  :options="addableRoles"
+                  :model-value="selectedRole"
+                  @change="(v) => { selectedRole = v as Role; }"
+                />
               </div>
             </template>
           </div>
@@ -637,31 +632,6 @@ async function confirmAdd(): Promise<void> {
   color: var(--c-primary);
   border: 1px solid color-mix(in srgb, var(--c-primary) 45%, transparent);
   background: color-mix(in srgb, var(--c-primary) 12%, transparent);
-}
-
-.atl-role-select-box {
-  display: flex;
-  align-items: center;
-  height: 24px;
-  padding: 0 2px 0 8px;
-  background-color: var(--c-input);
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
-}
-
-.atl-role-select {
-  background: transparent;
-  border: none;
-  outline: none;
-  color: var(--c-foreground);
-  font-size: 12px;
-  font-family: var(--font-ui);
-  cursor: pointer;
-}
-
-.atl-role-select:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
 }
 
 .atl-member-remove {

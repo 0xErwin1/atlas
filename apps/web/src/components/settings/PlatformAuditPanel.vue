@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import Avatar from '@/components/ui/Avatar.vue';
+import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
 import Icon from '@/components/ui/Icon.vue';
 import { auditPhrase } from '@/lib/auditPhrase';
 import { relativeTime } from '@/lib/relativeTime';
@@ -37,6 +38,11 @@ const CATEGORY_OPTIONS: CategoryOption[] = [
     actions: ['api_key.created', 'api_key.revoked', 'api_key_grant.revoked'],
   },
 ];
+
+const categoryOptions: DropdownOption[] = CATEGORY_OPTIONS.map((o) => ({
+  value: o.value,
+  label: o.label,
+}));
 
 const fromDate = ref('');
 const toDate = ref('');
@@ -197,16 +203,12 @@ watch(sentinel, () => observeSentinel());
       </div>
 
       <div class="atl-controls-right">
-        <select
-          v-model="category"
-          class="atl-category-select"
-          aria-label="Filter by action category"
-          @change="applyCategory"
-        >
-          <option v-for="option in CATEGORY_OPTIONS" :key="option.value" :value="option.value">
-            {{ option.label }}
-          </option>
-        </select>
+        <Dropdown
+          data-category-filter
+          :options="categoryOptions"
+          :model-value="category"
+          @change="(v) => { category = v; applyCategory(); }"
+        />
 
         <div class="atl-date-range">
           <input
@@ -363,18 +365,6 @@ watch(sentinel, () => observeSentinel());
   color: var(--c-foreground);
   font-weight: var(--fw-semibold);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
-}
-
-.atl-category-select {
-  height: 28px;
-  padding: 0 8px;
-  background: var(--c-input);
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
-  color: var(--c-foreground);
-  font-size: 12px;
-  font-family: var(--font-ui);
-  cursor: pointer;
 }
 
 .atl-date-range {

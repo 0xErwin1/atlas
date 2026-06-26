@@ -5,6 +5,7 @@ import WorkspaceAccessEditor, { type RoleOption } from '@/components/settings/Wo
 import AgentBadge from '@/components/ui/AgentBadge.vue';
 import Btn from '@/components/ui/Btn.vue';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
+import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
 import FormField from '@/components/ui/FormField.vue';
 import Icon from '@/components/ui/Icon.vue';
 import { validateForm } from '@/lib/validation';
@@ -26,6 +27,8 @@ const KEY_TYPES: { value: KeyType; label: string }[] = [
   { value: 'bot', label: 'Bot' },
   { value: 'integration', label: 'Integration' },
 ];
+
+const keyTypeOptions: DropdownOption[] = KEY_TYPES.map((t) => ({ value: t.value, label: t.label }));
 
 const form = reactive({ name: '', type: 'agent' as KeyType, expires: '' });
 const formErrors = reactive<{ name: string | null }>({ name: null });
@@ -358,14 +361,12 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
 
         <div class="atl-field">
           <label class="atl-field-label">Type</label>
-          <div class="atl-select-box">
-            <select
-              v-model="form.type"
-              class="atl-select-input"
-            >
-              <option v-for="t in KEY_TYPES" :key="t.value" :value="t.value">{{ t.label }}</option>
-            </select>
-          </div>
+          <Dropdown
+            data-new-type
+            :options="keyTypeOptions"
+            :model-value="form.type"
+            @change="(v) => { form.type = v as KeyType; }"
+          />
         </div>
 
         <FormField
@@ -631,28 +632,6 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
   text-transform: uppercase;
   color: var(--c-muted);
   margin-bottom: 5px;
-}
-
-.atl-select-box {
-  display: flex;
-  align-items: center;
-  height: var(--h-input);
-  padding: 0 4px 0 10px;
-  background-color: var(--c-input);
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
-}
-
-.atl-select-input {
-  flex: 1;
-  min-width: 0;
-  background: transparent;
-  border: none;
-  outline: none;
-  color: var(--c-foreground);
-  font-size: var(--fs-base);
-  font-family: var(--font-ui);
-  cursor: pointer;
 }
 
 .atl-keys-table {

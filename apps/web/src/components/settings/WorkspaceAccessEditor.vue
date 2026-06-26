@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
+import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
 import Icon from '@/components/ui/Icon.vue';
 
 export interface WorkspaceRef {
@@ -42,11 +43,17 @@ const emit = defineEmits<{
 
 const NONE = '';
 
-// Bumping this nonce remounts the selects, restoring their displayed value to
-// the prop after a remove is cancelled (the DOM value changed, the data did not).
-const resetNonce = ref(0);
-
 const removeTarget = ref<WorkspaceRef | null>(null);
+
+/**
+ * The "None" entry (remove access) followed by the assignable roles. The
+ * displayed value is driven entirely by `:model-value`, so selecting None never
+ * changes the control optimistically — it only opens the remove confirmation.
+ */
+const roleOptions = computed<DropdownOption[]>(() => [
+  { value: NONE, label: props.noAccessLabel },
+  ...props.options,
+]);
 
 function roleOf(slug: string): string {
   return props.roles[slug] ?? NONE;
@@ -74,7 +81,6 @@ function confirmRemove(): void {
 
 function cancelRemove(): void {
   removeTarget.value = null;
-  resetNonce.value += 1;
 }
 </script>
 
@@ -90,17 +96,12 @@ function cancelRemove(): void {
         <Icon name="building-2" :size="13" style="color: var(--c-muted); flex: 0 0 auto;" />
         <span class="atl-wsa-name">{{ ws.name }}</span>
 
-        <div class="atl-select-box atl-wsa-select-box">
-          <select
-            :key="`${ws.slug}-${resetNonce}`"
-            class="atl-select-input atl-wsa-select"
-            data-wsa-role
-            :value="roleOf(ws.slug)"
-            @change="onChange(ws, ($event.target as HTMLSelectElement).value)"
-          >
-            <option :value="NONE">{{ noAccessLabel }}</option>
-            <option v-for="o in options" :key="o.value" :value="o.value">{{ o.label }}</option>
-          </select>
+        <div class="atl-wsa-control" data-wsa-role>
+          <Dropdown
+            :options="roleOptions"
+            :model-value="roleOf(ws.slug)"
+            @change="(value) => onChange(ws, value)"
+          />
         </div>
       </div>
     </div>
@@ -154,33 +155,10 @@ function cancelRemove(): void {
   white-space: nowrap;
 }
 
-.atl-select-box {
+.atl-wsa-control {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
-  background-color: var(--c-input);
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
-}
-
-.atl-wsa-select-box {
-  flex: 0 0 auto;
-  height: 26px;
-  padding: 0 2px 0 8px;
-}
-
-.atl-select-input {
-  flex: 1;
-  min-width: 0;
-  background: transparent;
-  border: none;
-  outline: none;
-  color: var(--c-foreground);
-  font-family: var(--font-ui);
-  cursor: pointer;
-}
-
-.atl-wsa-select {
-  font-size: 12px;
 }
 
 .atl-wsa-empty {

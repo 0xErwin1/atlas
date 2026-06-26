@@ -1,7 +1,9 @@
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { nextTick } from 'vue';
 import MembersPanel from '@/components/settings/MembersPanel.vue';
+import Dropdown from '@/components/ui/Dropdown.vue';
 import { useAuthStore } from '@/stores/auth';
 import { type PrincipalDto, type UserDto, useWorkspaceStore } from '@/stores/workspace';
 
@@ -13,6 +15,26 @@ function dialogEl<T extends Element = HTMLElement>(selector: string): T | null {
 
 function dialogAll(selector: string): HTMLElement[] {
   return Array.from(document.body.querySelectorAll<HTMLElement>(selector));
+}
+
+// The dialog role control is a Dropdown teleported with the dialog to <body>;
+// drive it through the document with native events.
+async function openRoleDropdown(): Promise<void> {
+  dialogEl('[data-add-role] button')?.dispatchEvent(new Event('click', { bubbles: true }));
+  await nextTick();
+}
+
+function roleOptionLabels(): string[] {
+  return dialogAll('[data-add-role] li[role="option"]').map((li) => li.textContent?.trim() ?? '');
+}
+
+async function pickRole(label: string): Promise<void> {
+  await openRoleDropdown();
+  const option = dialogAll('[data-add-role] li[role="option"]').find(
+    (li) => li.textContent?.trim() === label,
+  );
+  option?.dispatchEvent(new Event('click', { bubbles: true }));
+  await nextTick();
 }
 
 function userMember(id: string, display: string, role: string): PrincipalDto {
@@ -90,11 +112,11 @@ describe('MembersPanel — sections', () => {
     expect(agentRows[0]?.text()).toContain('CI Bot');
     expect(agentRows[0]?.text()).toContain('AGENT');
 
-    expect(wrapper.find('[data-agent-row] select').exists()).toBe(false);
+    expect(wrapper.find('[data-agent-row]').findComponent(Dropdown).exists()).toBe(false);
     expect(wrapper.find('[data-agent-row] .atl-member-remove').exists()).toBe(false);
 
     // The human member still keeps its role dropdown.
-    expect(wrapper.find('[data-member-row] select').exists()).toBe(true);
+    expect(wrapper.find('[data-member-row]').findComponent(Dropdown).exists()).toBe(true);
 
     void workspace;
   });
@@ -145,11 +167,7 @@ describe('MembersPanel — add member dialog', () => {
     dialogEl('[data-add-user-option]')?.dispatchEvent(new Event('click', { bubbles: true }));
     await wrapper.vm.$nextTick();
 
-    const select = dialogEl<HTMLSelectElement>('[data-add-role]');
-    if (select === null) throw new Error('role select not found');
-    select.value = 'admin';
-    select.dispatchEvent(new Event('change', { bubbles: true }));
-    await wrapper.vm.$nextTick();
+    await pickRole('Admin');
 
     dialogEl('[data-action="confirm-add"]')?.dispatchEvent(new Event('click', { bubbles: true }));
     await wrapper.vm.$nextTick();
@@ -169,10 +187,12 @@ describe('MembersPanel — add member dialog', () => {
 
     await openDialog(wrapper);
 
-    const roleValues = dialogAll('[data-add-role] option').map((o) => o.getAttribute('value'));
-    expect(roleValues).toContain('admin');
-    expect(roleValues).toContain('member');
-    expect(roleValues).not.toContain('owner');
+    await openRoleDropdown();
+
+    const labels = roleOptionLabels();
+    expect(labels).toContain('Admin');
+    expect(labels).toContain('Member');
+    expect(labels).not.toContain('Owner');
   });
 
   it('offers the owner role option when the caller is an owner', async () => {
@@ -186,8 +206,9 @@ describe('MembersPanel — add member dialog', () => {
 
     await openDialog(wrapper);
 
-    const roleValues = dialogAll('[data-add-role] option').map((o) => o.getAttribute('value'));
-    expect(roleValues).toContain('owner');
+    await openRoleDropdown();
+
+    expect(roleOptionLabels()).toContain('Owner');
   });
 
   it('shows a friendly empty state when there are no assignable users', async () => {

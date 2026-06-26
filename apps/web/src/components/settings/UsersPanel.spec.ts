@@ -1,4 +1,4 @@
-import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
+import { type DOMWrapper, flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import UsersPanel from '@/components/settings/UsersPanel.vue';
@@ -13,6 +13,26 @@ function dialogEl<T extends Element = HTMLElement>(selector: string): T | null {
 
 function clickDialog(selector: string): void {
   dialogEl(selector)?.dispatchEvent(new Event('click', { bubbles: true }));
+}
+
+// Each workspace row's role control is a Dropdown: open its trigger, then click
+// the option matching the label.
+async function pickRole(row: DOMWrapper<Element>, label: string): Promise<void> {
+  await row.find('button').trigger('click');
+  const option = row.findAll('li[role="option"]').find((li) => li.text() === label);
+  if (option === undefined) throw new Error(`option not found: ${label}`);
+  await option.trigger('click');
+}
+
+async function roleOptionLabels(row: DOMWrapper<Element>): Promise<string[]> {
+  await row.find('button').trigger('click');
+  return row.findAll('li[role="option"]').map((li) => li.text());
+}
+
+function wsRowAt(wrapper: VueWrapper, index: number): DOMWrapper<Element> {
+  const row = wrapper.findAll('[data-wsa-row]')[index];
+  if (row === undefined) throw new Error(`workspace row not found: ${index}`);
+  return row;
 }
 
 function user(over: Partial<UserDto> = {}): UserDto {
@@ -171,10 +191,7 @@ describe('UsersPanel — workspace access editor', () => {
     expect(rows).toHaveLength(2);
 
     // Second row is Beta (unassigned). Assign it the member role.
-    const betaSelect = wrapper.findAll<HTMLSelectElement>('[data-wsa-role]')[1];
-    if (betaSelect === undefined) throw new Error('beta select not found');
-    betaSelect.element.value = 'member';
-    await betaSelect.trigger('change');
+    await pickRole(wsRowAt(wrapper, 1), 'Member');
     await flushPromises();
 
     expect(add).toHaveBeenCalledWith('beta', 'u1', 'member');
@@ -187,10 +204,7 @@ describe('UsersPanel — workspace access editor', () => {
     const wrapper = mountPanel();
     await expandFirst(wrapper);
 
-    const acmeSelect = wrapper.findAll<HTMLSelectElement>('[data-wsa-role]')[0];
-    if (acmeSelect === undefined) throw new Error('acme select not found');
-    acmeSelect.element.value = 'member';
-    await acmeSelect.trigger('change');
+    await pickRole(wsRowAt(wrapper, 0), 'Member');
     await flushPromises();
 
     expect(update).toHaveBeenCalledWith('acme', 'u1', 'member');
@@ -203,10 +217,7 @@ describe('UsersPanel — workspace access editor', () => {
     const wrapper = mountPanel();
     await expandFirst(wrapper);
 
-    const acmeSelect = wrapper.findAll<HTMLSelectElement>('[data-wsa-role]')[0];
-    if (acmeSelect === undefined) throw new Error('acme select not found');
-    acmeSelect.element.value = '';
-    await acmeSelect.trigger('change');
+    await pickRole(wsRowAt(wrapper, 0), 'None');
 
     expect(remove).not.toHaveBeenCalled();
 
@@ -222,11 +233,8 @@ describe('UsersPanel — workspace access editor', () => {
     const wrapper = mountPanel();
     await expandFirst(wrapper);
 
-    const options = wrapper
-      .find('[data-wsa-role]')
-      .findAll('option')
-      .map((o) => o.element.value);
-    expect(options).toContain('owner');
-    expect(options).toContain('');
+    const labels = await roleOptionLabels(wsRowAt(wrapper, 0));
+    expect(labels).toContain('Owner');
+    expect(labels).toContain('None');
   });
 });

@@ -1,4 +1,4 @@
-import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
+import { type DOMWrapper, flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ApiKeysPanel from '@/components/settings/ApiKeysPanel.vue';
@@ -39,6 +39,20 @@ function workspace(slug: string, name: string): WorkspaceDto {
 }
 
 const ADMIN_WORKSPACES = [workspace('acme', 'Acme'), workspace('beta', 'Beta')];
+
+// Each workspace row's role control is a Dropdown: open its trigger, then click
+// the option matching the label.
+async function pickRole(row: DOMWrapper<Element>, label: string): Promise<void> {
+  await row.find('button').trigger('click');
+  const option = row.findAll('li[role="option"]').find((li) => li.text() === label);
+  if (option === undefined) throw new Error(`option not found: ${label}`);
+  await option.trigger('click');
+}
+
+async function roleOptionLabels(row: DOMWrapper<Element>): Promise<string[]> {
+  await row.find('button').trigger('click');
+  return row.findAll('li[role="option"]').map((li) => li.text());
+}
 
 function setup(keys: ApiKeyDto[], grants: ApiKeyGrantDto[] = []) {
   setActivePinia(createPinia());
@@ -191,10 +205,13 @@ describe('ApiKeysPanel — manage expander and workspace-access editor', () => {
 
     const wrapper = await mountExpanded();
 
-    const optionValues = wrapper.findAll('[data-wsa-role] option').map((o) => o.attributes('value'));
-    expect(optionValues).not.toContain('admin');
-    expect(optionValues).toContain('viewer');
-    expect(optionValues).toContain('editor');
+    const row = wrapper.findAll('[data-wsa-row]')[0];
+    if (row === undefined) throw new Error('expected a workspace row');
+
+    const labels = await roleOptionLabels(row);
+    expect(labels).not.toContain('Admin');
+    expect(labels).toContain('Viewer');
+    expect(labels).toContain('Editor');
   });
 
   it('assigning a role calls setKeyWorkspaceRole(keyId, slug, role)', async () => {
@@ -203,10 +220,10 @@ describe('ApiKeysPanel — manage expander and workspace-access editor', () => {
 
     const wrapper = await mountExpanded();
 
-    const select = wrapper.findAll('[data-wsa-role]')[1];
-    if (select === undefined) throw new Error('expected a workspace row select');
+    const row = wrapper.findAll('[data-wsa-row]')[1];
+    if (row === undefined) throw new Error('expected a workspace row');
 
-    await select.setValue('editor');
+    await pickRole(row, 'Editor');
 
     expect(setRole).toHaveBeenCalledWith('k1', 'beta', 'editor');
   });

@@ -6,6 +6,7 @@ import Avatar from '@/components/ui/Avatar.vue';
 import Btn from '@/components/ui/Btn.vue';
 import Chip from '@/components/ui/Chip.vue';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
+import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
 import FormField from '@/components/ui/FormField.vue';
 import Icon from '@/components/ui/Icon.vue';
 import { validateForm } from '@/lib/validation';
@@ -24,10 +25,14 @@ const currentUserIsRoot = computed(() => auth.user?.is_root === true);
 type Mode = 'list' | 'new' | 'reset' | 'link';
 const mode = ref<Mode>('list');
 
-const ROLES: { value: string; label: string }[] = [
+const ROLES: DropdownOption[] = [
   { value: 'member', label: 'Member' },
   { value: 'admin', label: 'Admin' },
 ];
+
+const workspaceOptions = computed<DropdownOption[]>(() =>
+  wsStore.adminWorkspaces.map((w) => ({ value: w.slug, label: w.name })),
+);
 
 function isPending(u: UserDto): boolean {
   return u.activated_at == null;
@@ -399,23 +404,13 @@ async function confirmDisable(): Promise<void> {
 
         <div class="atl-field">
           <label class="atl-field-label">Workspace</label>
-          <div
-            class="atl-select-box"
-            :style="{ borderColor: formErrors.workspace ? 'var(--c-danger)' : 'var(--c-border)' }"
-          >
-            <select
-              v-model="form.workspace"
-              class="atl-select-input"
-              @change="formErrors.workspace = null"
-            >
-              <option v-if="wsStore.adminWorkspaces.length === 0" value="" disabled>
-                No workspaces available
-              </option>
-              <option v-for="w in wsStore.adminWorkspaces" :key="w.slug" :value="w.slug">
-                {{ w.name }}
-              </option>
-            </select>
-          </div>
+          <Dropdown
+            data-new-workspace
+            :options="workspaceOptions"
+            :model-value="form.workspace"
+            placeholder="No workspaces available"
+            @change="(v) => { form.workspace = v; formErrors.workspace = null; }"
+          />
           <div v-if="formErrors.workspace" class="atl-select-error">
             <Icon name="triangle-alert" :size="12" />{{ formErrors.workspace }}
           </div>
@@ -423,11 +418,12 @@ async function confirmDisable(): Promise<void> {
 
         <div class="atl-field">
           <label class="atl-field-label">Role</label>
-          <div class="atl-select-box">
-            <select v-model="form.role" class="atl-select-input">
-              <option v-for="r in ROLES" :key="r.value" :value="r.value">{{ r.label }}</option>
-            </select>
-          </div>
+          <Dropdown
+            data-new-role
+            :options="ROLES"
+            :model-value="form.role"
+            @change="(v) => { form.role = v; }"
+          />
         </div>
       </div>
 
@@ -1052,28 +1048,6 @@ async function confirmDisable(): Promise<void> {
   text-transform: uppercase;
   color: var(--c-muted);
   margin-bottom: 5px;
-}
-
-.atl-select-box {
-  display: flex;
-  align-items: center;
-  height: var(--h-input);
-  padding: 0 4px 0 10px;
-  background-color: var(--c-input);
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
-}
-
-.atl-select-input {
-  flex: 1;
-  min-width: 0;
-  background: transparent;
-  border: none;
-  outline: none;
-  color: var(--c-foreground);
-  font-size: var(--fs-base);
-  font-family: var(--font-ui);
-  cursor: pointer;
 }
 
 .atl-select-error {
