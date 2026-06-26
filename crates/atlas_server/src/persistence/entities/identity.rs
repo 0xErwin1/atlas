@@ -115,6 +115,7 @@ pub mod api_key {
         pub last_used_at: Option<DateTime<Utc>>,
         pub revoked_at: Option<DateTime<Utc>>,
         pub created_at: DateTime<Utc>,
+        pub is_global: bool,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -231,6 +232,7 @@ pub fn api_key_from(m: api_key::Model) -> ApiKey {
         last_used_at: m.last_used_at,
         revoked_at: m.revoked_at,
         created_at: m.created_at,
+        is_global: m.is_global,
     }
 }
 

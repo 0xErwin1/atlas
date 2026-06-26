@@ -637,6 +637,7 @@ impl ApiKeyRepo for PgApiKeyRepo {
             last_used_at: Set(None),
             revoked_at: Set(None),
             created_at: Set(Utc::now()),
+            is_global: Set(false),
         };
         model
             .insert(&self.conn)
@@ -661,6 +662,7 @@ impl ApiKeyRepo for PgApiKeyRepo {
             last_used_at: Set(None),
             revoked_at: Set(None),
             created_at: Set(Utc::now()),
+            is_global: Set(false),
         };
         model
             .insert(&self.conn)
@@ -685,12 +687,14 @@ impl ApiKeyRepo for PgApiKeyRepo {
             last_used_at: Option<chrono::DateTime<Utc>>,
             revoked_at: Option<chrono::DateTime<Utc>>,
             created_at: chrono::DateTime<Utc>,
+            is_global: bool,
         }
 
         let rows = Row::find_by_statement(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
             "SELECT k.id, k.workspace_id, k.created_by_user_id, k.name, k.token_hash,
-                    k.type AS type_, k.expires_at, k.last_used_at, k.revoked_at, k.created_at
+                    k.type AS type_, k.expires_at, k.last_used_at, k.revoked_at, k.created_at,
+                    k.is_global
              FROM api_keys k
              JOIN users u ON u.id = k.created_by_user_id
              WHERE k.token_hash = $1
@@ -715,6 +719,7 @@ impl ApiKeyRepo for PgApiKeyRepo {
             last_used_at: r.last_used_at,
             revoked_at: r.revoked_at,
             created_at: r.created_at,
+            is_global: r.is_global,
         }))
     }
 
@@ -830,12 +835,14 @@ impl ApiKeyRepo for PgApiKeyRepo {
             last_used_at: Option<chrono::DateTime<Utc>>,
             revoked_at: Option<chrono::DateTime<Utc>>,
             created_at: chrono::DateTime<Utc>,
+            is_global: bool,
         }
 
         let rows = Row::find_by_statement(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
             "SELECT DISTINCT k.id, k.workspace_id, k.created_by_user_id, k.name, k.token_hash,
-                    k.type AS type_, k.expires_at, k.last_used_at, k.revoked_at, k.created_at
+                    k.type AS type_, k.expires_at, k.last_used_at, k.revoked_at, k.created_at,
+                    k.is_global
              FROM api_keys k
              JOIN permission_grants g ON g.api_key_id = k.id
              WHERE g.workspace_id = $1
@@ -860,6 +867,7 @@ impl ApiKeyRepo for PgApiKeyRepo {
                 last_used_at: r.last_used_at,
                 revoked_at: r.revoked_at,
                 created_at: r.created_at,
+                is_global: r.is_global,
             })
             .collect())
     }
@@ -886,8 +894,38 @@ impl PgApiKeyRepo {
             last_used_at: Set(None),
             revoked_at: Set(None),
             created_at: Set(Utc::now()),
+            is_global: Set(false),
         };
         model.insert(conn).await.map(api_key_from).map_err(db_err)
+    }
+
+    /// Sets the `is_global` flag on a user-owned key using the provided connection
+    /// or transaction, so the update and its audit append share one transaction.
+    ///
+    /// Scoped to `user_id`: returns `DomainError::NotFound` when the key does not
+    /// exist or is owned by someone else, so a non-owner cannot probe key existence.
+    pub async fn set_global_for_user_in<C: ConnectionTrait>(
+        conn: &C,
+        user_id: UserId,
+        id: ApiKeyId,
+        is_global: bool,
+    ) -> Result<ApiKey, DomainError> {
+        use sea_orm::IntoActiveModel;
+
+        let key = api_key::Entity::find_by_id(id.0)
+            .filter(api_key::Column::CreatedByUserId.eq(user_id.0))
+            .one(conn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "api_key",
+                id: id.0,
+            })?;
+
+        let mut active = key.into_active_model();
+        active.is_global = Set(is_global);
+
+        active.update(conn).await.map(api_key_from).map_err(db_err)
     }
 
     /// Revokes a user-owned API key using the provided connection or transaction.
@@ -1056,6 +1094,33 @@ impl MembershipRepo for PgMembershipRepo {
 }
 
 impl PgMembershipRepo {
+    /// Inserts a workspace membership using the provided connection or transaction.
+    ///
+    /// Used when the caller needs to run the insert atomically inside an existing
+    /// transaction alongside an audit-log write.
+    pub async fn add_in<C: ConnectionTrait>(
+        conn: &C,
+        ctx: &WorkspaceCtx,
+        user_id: UserId,
+        role: MemberRole,
+    ) -> Result<WorkspaceMembership, DomainError> {
+        let model = membership::ActiveModel {
+            id: Set(MembershipId::new().0),
+            workspace_id: Set(ctx.workspace_id.0),
+            user_id: Set(user_id.0),
+            role: Set(role.as_str().to_string()),
+            created_at: Set(Utc::now()),
+            updated_at: Set(Utc::now()),
+        };
+        model
+            .insert(conn)
+            .await
+            .map_err(db_err)
+            .and_then(|m: membership::Model| {
+                membership_from(m).map_err(|e| DomainError::Internal { message: e })
+            })
+    }
+
     /// Removes a workspace membership using the provided connection or transaction.
     ///
     /// Used when the caller needs to run the delete atomically inside an existing

@@ -591,3 +591,106 @@ async fn revoking_grant_denies_key_access() {
 
     db.teardown().await;
 }
+
+// ---------------------------------------------------------------------------
+// Global agents: a key marked global inherits its creator's reach (capped at
+// editor), across every workspace the creator can reach and no others.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn global_agent_reaches_creators_workspaces_not_others_and_is_reversible() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (a_client, w1, a_user) = login_user_with_workspace(&server, &db, "glob-a-owner").await;
+    let (_proj_slug, board_id, col_id, _task_rid) =
+        seed_board_with_task(&server, &db, &a_client, &w1.slug, "glob-a-proj", "GLA").await;
+
+    // A different owner's workspace that A is not a member of.
+    let (_b_client, w2, _b_user) = login_user_with_workspace(&server, &db, "glob-b-owner").await;
+
+    let (key_id, secret) = create_ungrant_key(&db, w1.id, a_user.id, "glob-a-key").await;
+    let agent = atlas_client::AtlasClient::new(server.base_url()).with_token(secret);
+
+    // Baseline: a non-global key with no grant is denied in W1.
+    let result = agent.list_workspace_tasks(&w1.slug, &Default::default()).await;
+    assert!(
+        matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
+        "non-global ungranted key must be denied in W1, got: {result:?}"
+    );
+
+    // Mark the key global (the owner does this).
+    let dto = a_client
+        .set_api_key_global(key_id, true)
+        .await
+        .expect("owner marks key global");
+    assert!(dto.is_global, "response must reflect is_global=true");
+
+    // The creator owns W1, so the global agent reaches it at editor: it can read
+    // and write without holding any grant.
+    agent
+        .list_workspace_tasks(&w1.slug, &Default::default())
+        .await
+        .expect("global agent reads W1 (creator is owner)");
+    agent
+        .create_task(
+            &w1.slug,
+            board_id,
+            CreateTaskRequest {
+                column_id: col_id,
+                title: "agent task".to_string(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("global agent writes W1 at editor");
+
+    // The creator is not a member of W2, so the global agent cannot reach it.
+    let result = agent.list_workspace_tasks(&w2.slug, &Default::default()).await;
+    assert!(
+        matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
+        "global agent must not reach a workspace its creator cannot, got: {result:?}"
+    );
+
+    // Reversible: turning global off restores the ungranted-deny behavior in W1.
+    a_client
+        .set_api_key_global(key_id, false)
+        .await
+        .expect("owner unmarks global");
+    let result = agent.list_workspace_tasks(&w1.slug, &Default::default()).await;
+    assert!(
+        matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
+        "after global off, ungranted key must be denied again, got: {result:?}"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn set_api_key_global_is_owner_scoped() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (a_client, w1, a_user) = login_user_with_workspace(&server, &db, "glob-c-owner").await;
+    let (key_id, _secret) = create_ungrant_key(&db, w1.id, a_user.id, "glob-c-key").await;
+
+    // The owner can toggle global on their own key.
+    a_client
+        .set_api_key_global(key_id, true)
+        .await
+        .expect("owner toggles own key");
+
+    // A different user cannot toggle someone else's key: 404 (no existence probe).
+    let (other_client, _w2, _other) =
+        login_user_with_workspace(&server, &db, "glob-c-other").await;
+    let result = other_client.set_api_key_global(key_id, false).await;
+    assert!(
+        matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
+        "non-owner must not toggle another user's key, got: {result:?}"
+    );
+
+    db.teardown().await;
+}

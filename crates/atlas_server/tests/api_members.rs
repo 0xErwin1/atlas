@@ -1250,3 +1250,267 @@ async fn delete_target_not_member_returns_404() {
 
     db.teardown().await;
 }
+
+// ── ADD MEMBER ───────────────────────────────────────────────────────────────
+
+/// Creates an existing, activated, non-member user the picker could assign.
+async fn create_non_member_user(
+    db: &TestDb,
+    username: &str,
+) -> atlas_domain::entities::identity::User {
+    let user = db
+        .user_repo()
+        .create(NewUser {
+            username: username.to_string(),
+            display_name: username.to_string(),
+            email: None,
+            password_hash: Some("$argon2id$v=19$m=19456,t=2,p=1$test$hash".into()),
+            is_root: false,
+            is_system_admin: false,
+        })
+        .await
+        .expect("create user");
+
+    support::activate_user_in_db(db, user.id.0).await;
+    user
+}
+
+// ── A1: owner adds an existing non-member as member → 201, then visible ──────
+
+#[tokio::test]
+async fn add_member_owner_adds_existing_user_returns_201() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner_client, ws, _owner_user) =
+        login_user_with_workspace(&server, &db, "add-owner-201-ws").await;
+
+    let stranger = create_non_member_user(&db, "add-owner-201-stranger").await;
+
+    let result = owner_client
+        .add_member(&ws.slug, stranger.id.0, "member")
+        .await;
+
+    let added = result.expect("owner adding an existing user must succeed");
+    assert_eq!(added.id, stranger.id.0, "returned principal must be target");
+    assert_eq!(
+        added.role.as_deref(),
+        Some("member"),
+        "returned principal must carry the granted role"
+    );
+
+    let members = owner_client
+        .list_workspace_members(&ws.slug)
+        .await
+        .expect("list members");
+    assert!(
+        members
+            .iter()
+            .any(|p| p.principal_type == "user" && p.id == stranger.id.0),
+        "the newly added user must appear in the members list"
+    );
+
+    db.teardown().await;
+}
+
+// ── A2: adding a user who is already a member → 409 ─────────────────────────
+
+#[tokio::test]
+async fn add_member_already_member_returns_409() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner_client, ws, _owner_user) =
+        login_user_with_workspace(&server, &db, "add-conflict-409-ws").await;
+
+    let existing = add_member(&db, ws.id, "add-conflict-409-existing", MemberRole::Member).await;
+
+    let result = owner_client
+        .add_member(&ws.slug, existing.id.0, "member")
+        .await;
+
+    match result {
+        Err(ClientError::Api(p)) => assert_eq!(
+            p.status, 409,
+            "adding an existing member must return 409, got {}: {}",
+            p.status, p.title
+        ),
+        other => panic!("expected 409, got {other:?}"),
+    }
+
+    db.teardown().await;
+}
+
+// ── A3: adding a non-existent user id → 404 ─────────────────────────────────
+
+#[tokio::test]
+async fn add_member_nonexistent_user_returns_404() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner_client, ws, _owner_user) =
+        login_user_with_workspace(&server, &db, "add-404-ws").await;
+
+    let ghost = uuid::Uuid::new_v4();
+
+    let result = owner_client.add_member(&ws.slug, ghost, "member").await;
+
+    assert_not_found(result, "adding a non-existent user");
+
+    db.teardown().await;
+}
+
+// ── A4: admin caller adds owner → 403; owner caller adds owner → 201 ────────
+
+#[tokio::test]
+async fn add_member_admin_grants_owner_returns_403_owner_succeeds() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner_client, ws, _owner_user) =
+        login_user_with_workspace(&server, &db, "add-owner-matrix-ws").await;
+
+    let (admin_client, _admin_user) = login_member_with_role(
+        &server,
+        &db,
+        ws.id,
+        "add-owner-matrix-admin",
+        MemberRole::Admin,
+    )
+    .await;
+
+    let target_for_admin = create_non_member_user(&db, "add-owner-matrix-target-a").await;
+
+    let admin_result = admin_client
+        .add_member(&ws.slug, target_for_admin.id.0, "owner")
+        .await;
+
+    assert_forbidden(admin_result, "admin adding a user as owner");
+
+    let target_for_owner = create_non_member_user(&db, "add-owner-matrix-target-b").await;
+
+    let owner_result = owner_client
+        .add_member(&ws.slug, target_for_owner.id.0, "owner")
+        .await;
+
+    let added = owner_result.expect("owner adding a user as owner must succeed");
+    assert_eq!(
+        added.role.as_deref(),
+        Some("owner"),
+        "owner-added member must carry the owner role"
+    );
+
+    db.teardown().await;
+}
+
+// ── A5: plain member caller POSTs members → 403 (extractor rejects) ─────────
+
+#[tokio::test]
+async fn add_member_plain_member_caller_returns_403() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (_owner, ws, _owner_user) =
+        login_user_with_workspace(&server, &db, "add-member-caller-403-ws").await;
+
+    let (member_client, _member_user) = login_member_with_role(
+        &server,
+        &db,
+        ws.id,
+        "add-member-caller-403-member",
+        MemberRole::Member,
+    )
+    .await;
+
+    let stranger = create_non_member_user(&db, "add-member-caller-403-target").await;
+
+    let result = member_client
+        .add_member(&ws.slug, stranger.id.0, "member")
+        .await;
+
+    assert_forbidden(result, "plain member POST members");
+
+    db.teardown().await;
+}
+
+// ── A6: adding a disabled user → 422 ────────────────────────────────────────
+
+#[tokio::test]
+async fn add_member_disabled_user_returns_422() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner_client, ws, _owner_user) =
+        login_user_with_workspace(&server, &db, "add-disabled-422-ws").await;
+
+    let disabled = create_non_member_user(&db, "add-disabled-422-target").await;
+    db.user_repo()
+        .disable(disabled.id)
+        .await
+        .expect("disable user");
+
+    let result = owner_client
+        .add_member(&ws.slug, disabled.id.0, "member")
+        .await;
+
+    match result {
+        Err(ClientError::Api(p)) => assert_eq!(
+            p.status, 422,
+            "adding a disabled user must return 422, got {}: {}",
+            p.status, p.title
+        ),
+        other => panic!("expected 422, got {other:?}"),
+    }
+
+    db.teardown().await;
+}
+
+// ── ASSIGNABLE USERS ────────────────────────────────────────────────────────
+
+// ── A7: assignable-users excludes members and disabled, includes a new active
+
+#[tokio::test]
+async fn assignable_users_excludes_members_and_disabled() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner_client, ws, owner_user) =
+        login_user_with_workspace(&server, &db, "assignable-ws").await;
+
+    // A current member — must be excluded.
+    let existing_member = add_member(&db, ws.id, "assignable-existing-member", MemberRole::Member).await;
+
+    // A disabled, non-member user — must be excluded.
+    let disabled = create_non_member_user(&db, "assignable-disabled").await;
+    db.user_repo()
+        .disable(disabled.id)
+        .await
+        .expect("disable user");
+
+    // A never-added, active user — must be included.
+    let candidate = create_non_member_user(&db, "assignable-candidate").await;
+
+    let users = owner_client
+        .list_assignable_users(&ws.slug)
+        .await
+        .expect("list assignable users");
+
+    assert!(
+        users.iter().any(|u| u.id == candidate.id.0),
+        "a never-added active user must be assignable"
+    );
+    assert!(
+        !users.iter().any(|u| u.id == existing_member.id.0),
+        "an existing member must NOT be assignable"
+    );
+    assert!(
+        !users.iter().any(|u| u.id == owner_user.id.0),
+        "the owner (a member) must NOT be assignable"
+    );
+    assert!(
+        !users.iter().any(|u| u.id == disabled.id.0),
+        "a disabled user must NOT be assignable"
+    );
+
+    db.teardown().await;
+}

@@ -10,12 +10,14 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SecurityAction {
+    MembershipAdded,
     MembershipRoleChanged,
     MembershipRemoved,
     GrantCreated,
     GrantRevoked,
     ApiKeyCreated,
     ApiKeyRevoked,
+    ApiKeyGlobalChanged,
     ApiKeyGrantRevoked,
     UserCreated,
     UserDisabled,
@@ -33,12 +35,14 @@ pub enum SecurityAction {
 impl SecurityAction {
     pub fn as_str(self) -> &'static str {
         match self {
+            SecurityAction::MembershipAdded => "membership.added",
             SecurityAction::MembershipRoleChanged => "membership.role_changed",
             SecurityAction::MembershipRemoved => "membership.removed",
             SecurityAction::GrantCreated => "grant.created",
             SecurityAction::GrantRevoked => "grant.revoked",
             SecurityAction::ApiKeyCreated => "api_key.created",
             SecurityAction::ApiKeyRevoked => "api_key.revoked",
+            SecurityAction::ApiKeyGlobalChanged => "api_key.global_changed",
             SecurityAction::ApiKeyGrantRevoked => "api_key_grant.revoked",
             SecurityAction::UserCreated => "user.created",
             SecurityAction::UserDisabled => "user.disabled",
@@ -107,6 +111,7 @@ mod tests {
     #[test]
     fn security_action_as_str_round_trips() {
         let cases = [
+            (SecurityAction::MembershipAdded, "membership.added"),
             (
                 SecurityAction::MembershipRoleChanged,
                 "membership.role_changed",
@@ -116,6 +121,7 @@ mod tests {
             (SecurityAction::GrantRevoked, "grant.revoked"),
             (SecurityAction::ApiKeyCreated, "api_key.created"),
             (SecurityAction::ApiKeyRevoked, "api_key.revoked"),
+            (SecurityAction::ApiKeyGlobalChanged, "api_key.global_changed"),
             (SecurityAction::ApiKeyGrantRevoked, "api_key_grant.revoked"),
             (SecurityAction::UserCreated, "user.created"),
             (SecurityAction::UserDisabled, "user.disabled"),

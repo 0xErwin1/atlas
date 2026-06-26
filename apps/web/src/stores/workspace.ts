@@ -9,6 +9,7 @@ type ProjectDto = components['schemas']['Page_ProjectDto']['items'][number];
 
 export type WorkspaceDto = components['schemas']['WorkspaceDto'];
 export type PrincipalDto = components['schemas']['PrincipalDto'];
+export type UserDto = components['schemas']['UserDto'];
 
 export interface ProjectSummary {
   slug: string;
@@ -43,6 +44,9 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   // panel. Kept separate from `workspaces` (the caller's own memberships).
   const adminWorkspaces = ref<WorkspaceDto[]>([]);
   const members = ref<PrincipalDto[]>([]);
+  // Users eligible to be added to the active workspace (not already members and
+  // not disabled). Populated on demand by the add-member dialog.
+  const assignableUsers = ref<UserDto[]>([]);
   const error = ref<string | null>(null);
 
   const auth = useAuthStore();
@@ -328,12 +332,51 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     return true;
   }
 
+  /**
+   * Loads the users that can be added to the workspace (not already members and
+   * not disabled) into `assignableUsers`. Clears the list on failure so the
+   * add-member picker never shows stale candidates.
+   */
+  async function loadAssignableUsers(ws: string): Promise<void> {
+    const { data, error: apiError } = await wrappedClient.GET('/v1/workspaces/{ws}/assignable-users', {
+      params: { path: { ws } },
+    });
+
+    if (apiError !== undefined || data === undefined) {
+      assignableUsers.value = [];
+      return;
+    }
+
+    assignableUsers.value = data;
+  }
+
+  /**
+   * Adds an existing user to the workspace at the given role. Surfaces the
+   * backend `hint` in `error` on failure (e.g. 403 admin granting owner, 404
+   * user not found, 409 already a member, 422 disabled user). Returns true on
+   * success — the caller reloads the member list.
+   */
+  async function addMember(ws: string, userId: string, role: string): Promise<boolean> {
+    const { error: apiError } = await wrappedClient.POST('/v1/workspaces/{ws}/members', {
+      params: { path: { ws } },
+      body: { user_id: userId, role },
+    });
+
+    if (apiError !== undefined) {
+      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to add member';
+      return false;
+    }
+
+    return true;
+  }
+
   return {
     activeWorkspaceSlug,
     projects,
     workspaces,
     adminWorkspaces,
     members,
+    assignableUsers,
     myWorkspaceRole,
     error,
     setActiveWorkspace,
@@ -350,5 +393,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     loadMembers,
     updateMemberRole,
     removeMember,
+    loadAssignableUsers,
+    addMember,
   };
 });

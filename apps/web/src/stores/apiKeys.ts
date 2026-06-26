@@ -71,6 +71,32 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
     }
   }
 
+  async function setKeyGlobal(keyId: string, isGlobal: boolean): Promise<boolean> {
+    error.value = null;
+
+    try {
+      const { data, error: e } = await wrappedClient.PATCH('/v1/api-keys/{key_id}', {
+        params: { path: { key_id: keyId } },
+        body: { is_global: isGlobal },
+      });
+
+      if (e || !data) {
+        error.value = hintOf(e, 'Failed to update API key');
+        return false;
+      }
+
+      const existing = keys.value.find((k) => k.id === keyId);
+      if (existing !== undefined) {
+        existing.is_global = data.is_global;
+      }
+
+      return true;
+    } catch {
+      error.value = "Can't reach the server";
+      return false;
+    }
+  }
+
   async function revokeKey(id: string): Promise<boolean> {
     error.value = null;
 
@@ -132,5 +158,15 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
     }
   }
 
-  return { keys, loading, error, loadKeys, createKey, revokeKey, loadKeyGrants, revokeKeyGrant };
+  return {
+    keys,
+    loading,
+    error,
+    loadKeys,
+    createKey,
+    setKeyGlobal,
+    revokeKey,
+    loadKeyGrants,
+    revokeKeyGrant,
+  };
 });

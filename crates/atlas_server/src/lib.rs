@@ -102,7 +102,8 @@ pub fn app(state: AppState) -> Router {
         )
         .route(
             "/v1/api-keys/{key_id}",
-            axum::routing::delete(routes::api_keys::revoke_user_api_key),
+            axum::routing::delete(routes::api_keys::revoke_user_api_key)
+                .patch(routes::api_keys::update_user_api_key),
         )
         .route(
             "/v1/api-keys/{key_id}/grants",
@@ -147,7 +148,11 @@ pub fn app(state: AppState) -> Router {
         // Workspace members (principals addressable by a grant)
         .route(
             "/v1/workspaces/{ws}/members",
-            get(routes::members::list_workspace_members),
+            get(routes::members::list_workspace_members).post(routes::members::add_member),
+        )
+        .route(
+            "/v1/workspaces/{ws}/assignable-users",
+            get(routes::members::list_assignable_users),
         )
         .route(
             "/v1/workspaces/{ws}/members/{user_id}",

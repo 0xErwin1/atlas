@@ -13,8 +13,8 @@ use crate::{
     auth::middleware::Principal,
     error::ApiError,
     persistence::repos::{
-        MembershipRepo, PgMembershipRepo, PgPermissionGrantRepo, PgUserRepo, PgWorkspaceRepo,
-        UserRepo, Workspace, WorkspaceRepo,
+        MembershipRepo, PgMembershipRepo, PgUserRepo, PgWorkspaceRepo, UserRepo, Workspace,
+        WorkspaceRepo,
     },
     state::AppState,
 };
@@ -117,17 +117,11 @@ impl FromRequestParts<AppState> for WorkspaceMember {
                 })
             }
             Principal::ApiKey(key_id) => {
-                let grant_repo = PgPermissionGrantRepo {
-                    conn: (*state.db).clone(),
-                };
-                let has_grant = grant_repo
-                    .principal_has_any_grant_in_workspace(workspace.id, None, Some(key_id))
-                    .await
-                    .map_err(|e| ApiError::Internal {
-                        message: e.to_string(),
-                    })?;
-
-                if !has_grant {
+                if !crate::authz::authorized::api_key_can_access_workspace(
+                    &state.db, key_id, &workspace,
+                )
+                .await?
+                {
                     return Err(ApiError::NotFound);
                 }
 
@@ -264,14 +258,11 @@ impl FromRequestParts<AppState> for WorkspaceAccess {
                 })
             }
             Principal::ApiKey(key_id) => {
-                let has_grant = grant_repo
-                    .principal_has_any_grant_in_workspace(workspace.id, None, Some(key_id))
-                    .await
-                    .map_err(|e| ApiError::Internal {
-                        message: e.to_string(),
-                    })?;
-
-                if !has_grant {
+                if !crate::authz::authorized::api_key_can_access_workspace(
+                    &state.db, key_id, &workspace,
+                )
+                .await?
+                {
                     return Err(ApiError::NotFound);
                 }
 

@@ -5,13 +5,14 @@ use axum::{
 };
 use sea_orm::TransactionTrait;
 
-use atlas_api::dtos::{PrincipalDto, UpdateMemberRoleRequest};
+use atlas_api::dtos::{AddMemberRequest, PrincipalDto, UpdateMemberRoleRequest, UserDto};
 use atlas_domain::{
     Actor,
     entities::{
         identity::MemberRole,
         security_audit::{NewSecurityAuditEvent, SecurityAction},
     },
+    error::DomainError,
 };
 
 use crate::{
@@ -112,6 +113,188 @@ pub(crate) async fn list_workspace_members(
     }
 
     Ok(Json(principals))
+}
+
+/// Adds an existing user to the workspace at the requested role.
+///
+/// Mirrors the authorization discipline of `update_member_role`:
+/// 1. `WorkspaceOwnerOrAdmin` gates structural access (resolves caller class).
+/// 2. Role string is parsed; an unknown value → 422.
+/// 3. Role-grant matrix: an admin may add `member` or `admin`, never `owner`;
+///    only an owner (or break-glass) may add an `owner`.
+/// 4. The target user must exist (404) and must not be disabled (422 — a
+///    deactivated account cannot be assigned).
+/// 5. The user must not already be a member → 409 Conflict.
+/// 6. The membership insert and its audit row share one transaction.
+#[utoipa::path(
+    post,
+    path = "/v1/workspaces/{ws}/members",
+    tag = "members",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+    ),
+    request_body = AddMemberRequest,
+    responses(
+        (status = 201, description = "User added to the workspace", body = PrincipalDto),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Insufficient privileges to grant the requested role"),
+        (status = 404, description = "Workspace or target user not found"),
+        (status = 409, description = "User is already a member"),
+        (status = 422, description = "Unknown role string, or target user is disabled"),
+    )
+)]
+pub(crate) async fn add_member(
+    caller: WorkspaceOwnerOrAdmin,
+    Path(_ws): Path<String>,
+    State(state): State<AppState>,
+    Json(body): Json<AddMemberRequest>,
+) -> Result<(StatusCode, Json<PrincipalDto>), ApiError> {
+    let target_user_id = atlas_domain::ids::UserId(body.user_id);
+    let new_role = parse_role(&body.role)?;
+
+    check_add_permission(caller.caller_class, &new_role)?;
+
+    let user_repo = PgUserRepo {
+        conn: (*state.db).clone(),
+    };
+    let target_user = user_repo
+        .find_by_id(target_user_id)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?
+        .ok_or(ApiError::NotFound)?;
+
+    if target_user.disabled_at.is_some() {
+        return Err(ApiError::InvalidInput {
+            message: "cannot add a deactivated account to a workspace; re-enable the user first"
+                .into(),
+        });
+    }
+
+    let ctx =
+        atlas_domain::WorkspaceCtx::new(caller.workspace.id, Actor::User(caller.caller_user_id));
+
+    let membership_repo = PgMembershipRepo {
+        conn: (*state.db).clone(),
+    };
+    let existing = membership_repo
+        .find(&ctx, target_user_id)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?;
+
+    if existing.is_some() {
+        return Err(ApiError::Domain(DomainError::AlreadyExists {
+            message: "user is already a member of this workspace".into(),
+        }));
+    }
+
+    let txn = (*state.db).begin().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    // The membership row and the audit row commit or roll back together.
+    let added = PgMembershipRepo::add_in(&txn, &ctx, target_user_id, new_role)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?;
+
+    PgSecurityAuditRepo::append_in(
+        &txn,
+        NewSecurityAuditEvent {
+            workspace_id: Some(caller.workspace.id),
+            actor: Actor::User(caller.caller_user_id),
+            action: SecurityAction::MembershipAdded,
+            target_type: "user".to_string(),
+            target_id: Some(target_user_id.0),
+            metadata: serde_json::json!({
+                "role": added.role.as_str(),
+            }),
+        },
+    )
+    .await
+    .map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    txn.commit().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    let status = account_status(target_user.disabled_at, target_user.activated_at).to_string();
+
+    Ok((
+        StatusCode::CREATED,
+        Json(PrincipalDto {
+            principal_type: "user".to_string(),
+            id: target_user_id.0,
+            display: target_user.display_name.clone(),
+            key_type: None,
+            role: Some(added.role.as_str().to_string()),
+            account_status: Some(status),
+        }),
+    ))
+}
+
+/// Lists users who can be added to the workspace.
+///
+/// Returns the active (non-disabled) users that are NOT already members of this
+/// workspace. The `users` table holds only human accounts, so api keys are
+/// excluded by construction. Mirrors the `GET /v1/users` shape (`Vec<UserDto>`).
+#[utoipa::path(
+    get,
+    path = "/v1/workspaces/{ws}/assignable-users",
+    tag = "members",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+    ),
+    responses(
+        (status = 200, description = "Users that can be added as members", body = [UserDto]),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Insufficient privileges"),
+        (status = 404, description = "Workspace not found"),
+    )
+)]
+pub(crate) async fn list_assignable_users(
+    caller: WorkspaceOwnerOrAdmin,
+    State(state): State<AppState>,
+) -> Result<Json<Vec<UserDto>>, ApiError> {
+    let ctx =
+        atlas_domain::WorkspaceCtx::new(caller.workspace.id, Actor::User(caller.caller_user_id));
+
+    let membership_repo = PgMembershipRepo {
+        conn: (*state.db).clone(),
+    };
+    let user_repo = PgUserRepo {
+        conn: (*state.db).clone(),
+    };
+
+    let memberships = membership_repo
+        .list(&ctx)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?;
+
+    let member_ids: std::collections::HashSet<_> =
+        memberships.iter().map(|m| m.user_id).collect();
+
+    let users = user_repo.list().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    let assignable = users
+        .iter()
+        .filter(|u| u.disabled_at.is_none() && !member_ids.contains(&u.id))
+        .map(crate::routes::users::user_to_dto)
+        .collect();
+
+    Ok(Json(assignable))
 }
 
 /// Changes a workspace member's role.
@@ -346,6 +529,20 @@ fn parse_role(s: &str) -> Result<MemberRole, ApiError> {
             message: format!("unknown role '{s}'; valid values are owner, admin, member"),
         }),
     }
+}
+
+/// Authorizes adding a member at `new_role`.
+///
+/// An admin caller may grant `member` or `admin`, but never `owner`; only an
+/// owner (or break-glass) may add an owner. This mirrors the `new_role == Owner`
+/// branch of `check_patch_permission`.
+fn check_add_permission(caller_class: CallerClass, new_role: &MemberRole) -> Result<(), ApiError> {
+    if caller_class == CallerClass::Admin && *new_role == MemberRole::Owner {
+        return Err(ApiError::Forbidden {
+            message: "Only an owner can grant the owner role".into(),
+        });
+    }
+    Ok(())
 }
 
 fn check_patch_permission(

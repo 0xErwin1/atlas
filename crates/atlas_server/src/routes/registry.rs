@@ -212,6 +212,12 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         openapi_path: Some("/v1/api-keys/{key_id}"),
     },
     RouteEntry {
+        method: "PATCH",
+        path_template: "/v1/api-keys/00000000-0000-0000-0000-000000000001",
+        kind: RouteKind::AuthnRequired,
+        openapi_path: Some("/v1/api-keys/{key_id}"),
+    },
+    RouteEntry {
         method: "GET",
         path_template: "/v1/api-keys/00000000-0000-0000-0000-000000000001/grants",
         kind: RouteKind::AuthnRequired,
@@ -294,6 +300,18 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         path_template: "/v1/workspaces/{ws}/members",
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/v1/workspaces/{ws}/members"),
+    },
+    RouteEntry {
+        method: "POST",
+        path_template: "/v1/workspaces/{ws}/members",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/members"),
+    },
+    RouteEntry {
+        method: "GET",
+        path_template: "/v1/workspaces/{ws}/assignable-users",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/assignable-users"),
     },
     RouteEntry {
         method: "PATCH",

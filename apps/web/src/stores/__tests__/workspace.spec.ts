@@ -1,10 +1,10 @@
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { GET, PATCH } = vi.hoisted(() => ({ GET: vi.fn(), PATCH: vi.fn() }));
+const { GET, PATCH, POST } = vi.hoisted(() => ({ GET: vi.fn(), PATCH: vi.fn(), POST: vi.fn() }));
 
 vi.mock('@/api/wrapper', () => ({
-  wrappedClient: { GET, PATCH },
+  wrappedClient: { GET, PATCH, POST },
 }));
 
 import { useWorkspaceStore } from '@/stores/workspace';
@@ -99,5 +99,73 @@ describe('useWorkspaceStore — updateProject', () => {
 
     expect(ok).toBe(false);
     expect(store.error).toBe('Prefix already used by another project');
+  });
+});
+
+describe('useWorkspaceStore — loadAssignableUsers', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    vi.clearAllMocks();
+  });
+
+  it('populates assignableUsers from the GET response', async () => {
+    GET.mockResolvedValueOnce({
+      data: [
+        { id: 'u1', username: 'alice', display_name: 'Alice', activated_at: '2024-01-01T00:00:00Z' },
+        { id: 'u2', username: 'bob', display_name: 'Bob', activated_at: null },
+      ],
+      error: undefined,
+    });
+
+    const store = useWorkspaceStore();
+    await store.loadAssignableUsers('ws1');
+
+    expect(GET).toHaveBeenCalledWith('/v1/workspaces/{ws}/assignable-users', {
+      params: { path: { ws: 'ws1' } },
+    });
+    expect(store.assignableUsers).toHaveLength(2);
+    expect(store.assignableUsers[0]?.username).toBe('alice');
+  });
+
+  it('clears assignableUsers when the API returns an error', async () => {
+    GET.mockResolvedValueOnce({ data: undefined, error: { hint: 'forbidden' } });
+
+    const store = useWorkspaceStore();
+    store.assignableUsers = [
+      { id: 'u9', username: 'stale', display_name: 'Stale', activated_at: null } as never,
+    ];
+    await store.loadAssignableUsers('ws1');
+
+    expect(store.assignableUsers).toEqual([]);
+  });
+});
+
+describe('useWorkspaceStore — addMember', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    vi.clearAllMocks();
+  });
+
+  it('posts user_id and role, and returns true on success', async () => {
+    POST.mockResolvedValueOnce({ data: { id: 'u1' }, error: undefined });
+
+    const store = useWorkspaceStore();
+    const ok = await store.addMember('ws1', 'u1', 'admin');
+
+    expect(ok).toBe(true);
+    expect(POST).toHaveBeenCalledWith('/v1/workspaces/{ws}/members', {
+      params: { path: { ws: 'ws1' } },
+      body: { user_id: 'u1', role: 'admin' },
+    });
+  });
+
+  it('sets store error from the hint and returns false on failure', async () => {
+    POST.mockResolvedValueOnce({ data: undefined, error: { hint: 'User is already a member' } });
+
+    const store = useWorkspaceStore();
+    const ok = await store.addMember('ws1', 'u1', 'member');
+
+    expect(ok).toBe(false);
+    expect(store.error).toBe('User is already a member');
   });
 });

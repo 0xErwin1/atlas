@@ -8,11 +8,12 @@ use axum::{
 use serde::de::DeserializeOwned;
 
 use atlas_domain::{
+    Actor, WorkspaceCtx,
     entities::boards_tasks::{Board, Task},
     entities::documents::Document,
-    entities::identity::Workspace,
+    entities::identity::{MemberRole, Workspace},
     entities::workspace_core::Project,
-    ids::{FolderId, UserId},
+    ids::{ApiKeyId, FolderId, UserId},
     permissions::{
         ChainSegment, Principal, ResolutionInput, ResourceChain, ResourceRef, ResourceRole,
         Visibility,
@@ -30,8 +31,9 @@ use crate::{
             workspace_core::folder,
         },
         repos::{
-            MembershipRepo, PermissionGrantRepo, PgMembershipRepo, PgPermissionGrantRepo,
-            PgProjectRepo, PgUserRepo, PgWorkspaceRepo, ProjectRepo, UserRepo, WorkspaceRepo,
+            ApiKeyRepo, MembershipRepo, PermissionGrantRepo, PgApiKeyRepo, PgMembershipRepo,
+            PgPermissionGrantRepo, PgProjectRepo, PgUserRepo, PgWorkspaceRepo, ProjectRepo,
+            UserRepo, WorkspaceRepo,
         },
     },
     state::AppState,
@@ -722,21 +724,10 @@ where
                     }
                 }
                 MiddlewarePrincipal::ApiKey(kid) => {
-                    // Workspace access for api keys is grant-based: the key must hold at least
-                    // one permission_grants row in this workspace. The subsequent resolve_effective_role
-                    // call already returns None for an ungranted key, but the early gate here
-                    // surfaces a consistent 404 before resource resolution runs.
-                    let grant_repo = PgPermissionGrantRepo {
-                        conn: (*state.db).clone(),
-                    };
-                    let has_grant = grant_repo
-                        .principal_has_any_grant_in_workspace(workspace.id, None, Some(*kid))
-                        .await
-                        .map_err(|e| ApiError::Internal {
-                            message: e.to_string(),
-                        })?;
-
-                    if !has_grant {
+                    // Workspace access for an api key: it must hold a grant in this workspace, or
+                    // be global with a creator that can reach it. resolve_effective_role is the
+                    // downstream authority and returns None (→ 404) when the creator has no reach.
+                    if !api_key_can_access_workspace(&state.db, *kid, &workspace).await? {
                         return Err(ApiError::NotFound);
                     }
 
@@ -798,7 +789,27 @@ where
 pub async fn resolve_effective_role(
     db: &sea_orm::DatabaseConnection,
     principal: &Principal,
-    membership: Option<atlas_domain::entities::identity::MemberRole>,
+    membership: Option<MemberRole>,
+    workspace: &Workspace,
+    chain: &ResourceChain,
+) -> Result<Option<ResourceRole>, ApiError> {
+    // Agents resolve through their creator: an api key never exceeds the role its
+    // creator holds on the same resource, and a global key inherits that reach
+    // everywhere instead of needing per-workspace grants.
+    if let Principal::ApiKey(kid) = principal {
+        return resolve_agent_effective_role(db, *kid, workspace, chain).await;
+    }
+
+    resolve_grant_role(db, principal, membership, workspace, chain).await
+}
+
+/// Resolves a principal's role purely from its own grants, group grants,
+/// visibility, and (for users) workspace membership. This is the raw grant
+/// resolution, before any agent-specific ceiling is applied.
+async fn resolve_grant_role(
+    db: &sea_orm::DatabaseConnection,
+    principal: &Principal,
+    membership: Option<MemberRole>,
     workspace: &Workspace,
     chain: &ResourceChain,
 ) -> Result<Option<ResourceRole>, ApiError> {
@@ -819,6 +830,153 @@ pub async fn resolve_effective_role(
     };
 
     Ok(atlas_domain::permissions::resolve(&input))
+}
+
+/// Resolves an api key's effective role under two invariants:
+///
+/// 1. An agent never exceeds its creator's effective role on the same resource.
+/// 2. A `is_global` key inherits the creator's reach on every resource (no grant
+///    needed); a non-global key is the intersection of its own grants and the
+///    creator's reach.
+///
+/// The agent editor cap then applies on top, so an agent is always
+/// `min(Editor, creator_role, [grant_role])`. A revoked-down or removed creator
+/// drops the agent's access in lockstep, since the creator role is recomputed per
+/// request rather than snapshotted.
+async fn resolve_agent_effective_role(
+    db: &sea_orm::DatabaseConnection,
+    kid: ApiKeyId,
+    workspace: &Workspace,
+    chain: &ResourceChain,
+) -> Result<Option<ResourceRole>, ApiError> {
+    let key_repo = PgApiKeyRepo { conn: db.clone() };
+    let Some(key) = key_repo.get_by_id(kid).await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?
+    else {
+        return Ok(None);
+    };
+
+    let creator_membership =
+        effective_membership_for_user(db, key.created_by_user_id, workspace).await?;
+    let creator_principal = Principal::User(key.created_by_user_id);
+    let creator_role =
+        resolve_grant_role(db, &creator_principal, creator_membership, workspace, chain).await?;
+
+    let base = if key.is_global {
+        creator_role
+    } else {
+        let grant_role =
+            resolve_grant_role(db, &Principal::ApiKey(kid), None, workspace, chain).await?;
+        min_role(grant_role, creator_role)
+    };
+
+    Ok(base.map(|r| r.min(ResourceRole::Editor)))
+}
+
+/// The effective workspace membership a user would resolve with: `Admin` for a
+/// global superadmin (root/system-admin), `None` for a disabled or missing user,
+/// otherwise their stored membership role (or `None` when they are not a member).
+async fn effective_membership_for_user(
+    db: &sea_orm::DatabaseConnection,
+    user_id: UserId,
+    workspace: &Workspace,
+) -> Result<Option<MemberRole>, ApiError> {
+    let user_repo = PgUserRepo { conn: db.clone() };
+    let Some(user) = user_repo.find_by_id(user_id).await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?
+    else {
+        return Ok(None);
+    };
+
+    if user.disabled_at.is_some() {
+        return Ok(None);
+    }
+
+    if user.is_root || user.is_system_admin {
+        return Ok(Some(MemberRole::Admin));
+    }
+
+    let membership_repo = PgMembershipRepo { conn: db.clone() };
+    let ctx = WorkspaceCtx::new(workspace.id, Actor::User(user_id));
+    let membership = membership_repo
+        .find(&ctx, user_id)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?;
+
+    Ok(membership.map(|m| m.role))
+}
+
+/// Intersection of two optional roles: both must grant access, and the lower role
+/// wins. `None` on either side means no access.
+fn min_role(a: Option<ResourceRole>, b: Option<ResourceRole>) -> Option<ResourceRole> {
+    match (a, b) {
+        (Some(x), Some(y)) => Some(x.min(y)),
+        _ => None,
+    }
+}
+
+/// Workspace-entry gate for an api key, shared by every workspace extractor: the
+/// key is admitted when it holds a grant anywhere in the workspace, or when it is
+/// global and its creator can reach the workspace. Per-resource role (and the
+/// editor cap) is still enforced downstream by `resolve_effective_role`.
+pub async fn api_key_can_access_workspace(
+    db: &sea_orm::DatabaseConnection,
+    key_id: ApiKeyId,
+    workspace: &Workspace,
+) -> Result<bool, ApiError> {
+    let grant_repo = PgPermissionGrantRepo { conn: db.clone() };
+    let has_grant = grant_repo
+        .principal_has_any_grant_in_workspace(workspace.id, None, Some(key_id))
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?;
+
+    if has_grant {
+        return Ok(true);
+    }
+
+    let key_repo = PgApiKeyRepo { conn: db.clone() };
+    let Some(key) = key_repo.get_by_id(key_id).await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?
+    else {
+        return Ok(false);
+    };
+
+    if !key.is_global {
+        return Ok(false);
+    }
+
+    creator_can_reach_workspace(db, key.created_by_user_id, workspace).await
+}
+
+/// Whether a user can reach a workspace at all: a global superadmin or a member
+/// (both surface via `effective_membership_for_user`), or a non-member who holds
+/// at least one grant in the workspace.
+async fn creator_can_reach_workspace(
+    db: &sea_orm::DatabaseConnection,
+    user_id: UserId,
+    workspace: &Workspace,
+) -> Result<bool, ApiError> {
+    if effective_membership_for_user(db, user_id, workspace)
+        .await?
+        .is_some()
+    {
+        return Ok(true);
+    }
+
+    let grant_repo = PgPermissionGrantRepo { conn: db.clone() };
+    grant_repo
+        .principal_has_any_grant_in_workspace(workspace.id, Some(user_id), None)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })
 }
 
 async fn build_resolution_query(

@@ -390,6 +390,26 @@ impl AtlasClient {
         Err(ClientError::Api(problem))
     }
 
+    /// `PATCH /v1/api-keys/{key_id}` — toggles the key's global reach.
+    pub async fn set_api_key_global(
+        &self,
+        key_id: uuid::Uuid,
+        is_global: bool,
+    ) -> Result<ApiKeyDto, ClientError> {
+        use atlas_api::dtos::UpdateApiKeyRequest;
+
+        let body = UpdateApiKeyRequest {
+            is_global: Some(is_global),
+        };
+        let response = self
+            .patch(&format!("/v1/api-keys/{key_id}"))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "set_api_key_global").await
+    }
+
     /// `GET /v1/api-keys/{key_id}/grants`
     pub async fn list_api_key_grants(
         &self,
@@ -658,6 +678,42 @@ impl AtlasClient {
             .send()
             .await?;
         self.decode_response(response, "list_workspace_members")
+            .await
+    }
+
+    /// `POST /v1/workspaces/{ws}/members`
+    ///
+    /// Adds an existing user to the workspace at `role`. Returns the new member
+    /// as a `PrincipalDto` on success (HTTP 201).
+    pub async fn add_member(
+        &self,
+        ws: &str,
+        user_id: uuid::Uuid,
+        role: &str,
+    ) -> Result<PrincipalDto, ClientError> {
+        use atlas_api::dtos::AddMemberRequest;
+        let response = self
+            .post(&format!("/v1/workspaces/{ws}/members"))
+            .header("x-atlas-csrf", "1")
+            .json(&AddMemberRequest {
+                user_id,
+                role: role.to_string(),
+            })
+            .send()
+            .await?;
+        self.decode_response(response, "add_member").await
+    }
+
+    /// `GET /v1/workspaces/{ws}/assignable-users`
+    ///
+    /// Lists the active, non-disabled users who are not yet members of the
+    /// workspace — the candidates the member picker can add.
+    pub async fn list_assignable_users(&self, ws: &str) -> Result<Vec<UserDto>, ClientError> {
+        let response = self
+            .get(&format!("/v1/workspaces/{ws}/assignable-users"))
+            .send()
+            .await?;
+        self.decode_response(response, "list_assignable_users")
             .await
     }
 

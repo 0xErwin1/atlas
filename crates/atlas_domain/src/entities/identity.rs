@@ -136,6 +136,10 @@ pub struct ApiKey {
     pub last_used_at: Option<DateTime<Utc>>,
     pub revoked_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
+    /// When true, the key inherits its creator's reach across every workspace
+    /// (capped at editor and never above the creator's own role), instead of
+    /// being limited to workspaces where it holds an explicit grant.
+    pub is_global: bool,
 }
 
 #[derive(Debug, Clone)]

@@ -20,7 +20,8 @@ pub(crate) struct ApiKeyGrantPath {
 
 use atlas_api::{
     dtos::{
-        ApiKeyCreated, ApiKeyDto, ApiKeyGrantDto, CreateUserApiKeyRequest, InitialGrantRequest,
+        ApiKeyCreated, ApiKeyDto, ApiKeyGrantDto, CreateUserApiKeyRequest, GrantedByDto,
+        InitialGrantRequest, UpdateApiKeyRequest,
     },
     pagination::{Cursor, Page},
 };
@@ -44,7 +45,8 @@ use crate::{
     error::ApiError,
     persistence::repos::{
         ApiKeyRepo, NewApiKey, PermissionGrantRepo, PgApiKeyRepo, PgPermissionGrantRepo,
-        PgProjectRepo, PgSecurityAuditRepo, PgWorkspaceRepo, ProjectRepo, WorkspaceRepo,
+        PgProjectRepo, PgSecurityAuditRepo, PgUserRepo, PgWorkspaceRepo, ProjectRepo, UserRepo,
+        WorkspaceRepo,
     },
     state::AppState,
 };
@@ -90,6 +92,7 @@ fn key_to_dto(k: &atlas_domain::entities::identity::ApiKey) -> ApiKeyDto {
         last_used_at: k.last_used_at,
         revoked_at: k.revoked_at,
         created_at: k.created_at,
+        is_global: k.is_global,
     }
 }
 
@@ -243,11 +246,101 @@ async fn resolve_resource_labels(
     Ok((ws_map, project_map))
 }
 
+/// Resolves the display label of every principal that created one of `grants`.
+///
+/// Returns a map of `user_id → display_name` and a map of `api_key_id → key name`
+/// covering each distinct `created_by_user_id` / `created_by_api_key_id` referenced
+/// by the grants. Unknown ids are omitted; callers treat a miss as no recorded creator.
+async fn resolve_granters(
+    state: &AppState,
+    grants: &[PermissionGrant],
+) -> Result<(HashMap<UserId, String>, HashMap<ApiKeyId, String>), ApiError> {
+    let user_ids: Vec<UserId> = {
+        let mut seen = std::collections::HashSet::new();
+        grants
+            .iter()
+            .filter_map(|g| g.created_by_user_id)
+            .filter(|uid| seen.insert(uid.0))
+            .collect()
+    };
+
+    let key_ids: Vec<ApiKeyId> = {
+        let mut seen = std::collections::HashSet::new();
+        grants
+            .iter()
+            .filter_map(|g| g.created_by_api_key_id)
+            .filter(|kid| seen.insert(kid.0))
+            .collect()
+    };
+
+    let user_repo = PgUserRepo {
+        conn: (*state.db).clone(),
+    };
+
+    let mut user_map: HashMap<UserId, String> = HashMap::new();
+    for uid in user_ids {
+        if let Ok(Some(user)) = user_repo.find_by_id(uid).await {
+            user_map.insert(uid, user.display_name);
+        }
+    }
+
+    let key_repo = PgApiKeyRepo {
+        conn: (*state.db).clone(),
+    };
+
+    let mut key_map: HashMap<ApiKeyId, String> = HashMap::new();
+    for kid in key_ids {
+        if let Ok(Some(key)) = key_repo.get_by_id(kid).await {
+            key_map.insert(kid, key.name);
+        }
+    }
+
+    Ok((user_map, key_map))
+}
+
+/// Builds the `granted_by` attribution for a grant from precomputed granter maps.
+///
+/// A `created_by_user_id` resolves to a `"user"` principal, a `created_by_api_key_id`
+/// to an `"api_key"` principal; a grant with neither (legacy/system) yields `None`.
+fn granted_by_for(
+    grant: &PermissionGrant,
+    user_map: &HashMap<UserId, String>,
+    key_map: &HashMap<ApiKeyId, String>,
+) -> Option<GrantedByDto> {
+    if let Some(uid) = grant.created_by_user_id {
+        return Some(GrantedByDto {
+            id: uid.0,
+            display: user_map
+                .get(&uid)
+                .cloned()
+                .unwrap_or_else(|| uid.0.to_string()),
+            principal_type: "user".to_string(),
+        });
+    }
+
+    if let Some(kid) = grant.created_by_api_key_id {
+        return Some(GrantedByDto {
+            id: kid.0,
+            display: key_map
+                .get(&kid)
+                .cloned()
+                .unwrap_or_else(|| kid.0.to_string()),
+            principal_type: "api_key".to_string(),
+        });
+    }
+
+    None
+}
+
 fn grant_to_api_key_grant_dto(
     grant: &PermissionGrant,
     ws_map: &HashMap<WorkspaceId, (String, String)>,
     project_map: &HashMap<ProjectId, (String, String)>,
+    user_map: &HashMap<UserId, String>,
+    key_map: &HashMap<ApiKeyId, String>,
 ) -> ApiKeyGrantDto {
+    let granted_by = granted_by_for(grant, user_map, key_map);
+
     let role = match grant.role {
         ResourceRole::Viewer => "viewer".to_string(),
         ResourceRole::Editor => "editor".to_string(),
@@ -272,6 +365,7 @@ fn grant_to_api_key_grant_dto(
             resource_label: project_name,
             workspace_slug,
             project_slug: Some(project_slug),
+            granted_by,
         };
     }
 
@@ -283,6 +377,7 @@ fn grant_to_api_key_grant_dto(
             resource_label: format!("folder:{}", fid.0),
             workspace_slug,
             project_slug: None,
+            granted_by,
         };
     }
 
@@ -294,6 +389,7 @@ fn grant_to_api_key_grant_dto(
             resource_label: format!("document:{}", did.0),
             workspace_slug,
             project_slug: None,
+            granted_by,
         };
     }
 
@@ -305,6 +401,7 @@ fn grant_to_api_key_grant_dto(
             resource_label: format!("board:{}", bid.0),
             workspace_slug,
             project_slug: None,
+            granted_by,
         };
     }
 
@@ -320,6 +417,7 @@ fn grant_to_api_key_grant_dto(
         resource_label: ws_label,
         workspace_slug,
         project_slug: None,
+        granted_by,
     }
 }
 
@@ -381,10 +479,11 @@ pub(crate) async fn list_api_key_grants(
         })?;
 
     let (ws_map, project_map) = resolve_resource_labels(&state, &grants, user_id).await?;
+    let (user_map, key_map) = resolve_granters(&state, &grants).await?;
 
     let dtos: Vec<ApiKeyGrantDto> = grants
         .iter()
-        .map(|g| grant_to_api_key_grant_dto(g, &ws_map, &project_map))
+        .map(|g| grant_to_api_key_grant_dto(g, &ws_map, &project_map, &user_map, &key_map))
         .collect();
 
     Ok(Json(dtos))
@@ -641,4 +740,91 @@ pub(crate) async fn revoke_user_api_key(
     })?;
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Updates a user-owned API key. Currently only the `is_global` flag is mutable.
+///
+/// Any owner of the key may toggle global reach; the agent never gains more than
+/// its creator can reach (and stays capped at editor), so this is bounded by the
+/// owner's own permissions rather than being a privilege escalation.
+#[utoipa::path(
+    patch,
+    path = "/v1/api-keys/{key_id}",
+    tag = "api-keys",
+    security(("bearer_auth" = [])),
+    params(("key_id" = uuid::Uuid, Path, description = "API key id")),
+    request_body = UpdateApiKeyRequest,
+    responses(
+        (status = 200, description = "API key updated", body = ApiKeyDto),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "API keys cannot manage API keys"),
+        (status = 404, description = "Key not found or not owned by the caller"),
+    )
+)]
+pub(crate) async fn update_user_api_key(
+    State(state): State<AppState>,
+    Extension(principal): Extension<AuthPrincipal>,
+    Path(params): Path<TopLevelRevokeKeyPath>,
+    Json(body): Json<UpdateApiKeyRequest>,
+) -> Result<Json<ApiKeyDto>, ApiError> {
+    let user_id = match principal {
+        AuthPrincipal::User(uid) => uid,
+        AuthPrincipal::ApiKey(_) => {
+            return Err(ApiError::Forbidden {
+                message: "API keys cannot manage API keys".into(),
+            });
+        }
+    };
+
+    let key_id = ApiKeyId(params.key_id);
+
+    let Some(is_global) = body.is_global else {
+        let key = PgApiKeyRepo {
+            conn: (*state.db).clone(),
+        }
+        .get_by_id(key_id)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?
+        .filter(|k| k.created_by_user_id == user_id)
+        .ok_or(ApiError::NotFound)?;
+
+        return Ok(Json(key_to_dto(&key)));
+    };
+
+    let txn = (*state.db).begin().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    let key = PgApiKeyRepo::set_global_for_user_in(&txn, user_id, key_id, is_global)
+        .await
+        .map_err(|e| match e {
+            atlas_domain::DomainError::NotFound { .. } => ApiError::NotFound,
+            other => ApiError::Internal {
+                message: other.to_string(),
+            },
+        })?;
+
+    PgSecurityAuditRepo::append_in(
+        &txn,
+        NewSecurityAuditEvent {
+            workspace_id: None,
+            actor: Actor::User(user_id),
+            action: SecurityAction::ApiKeyGlobalChanged,
+            target_type: "api_key".to_string(),
+            target_id: Some(key_id.0),
+            metadata: serde_json::json!({ "is_global": is_global }),
+        },
+    )
+    .await
+    .map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    txn.commit().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    Ok(Json(key_to_dto(&key)))
 }

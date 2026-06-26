@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import Icon from '@/components/ui/Icon.vue';
-import { type GrantRole, isRoleAllowedFor } from '@/lib/grantRoles';
+import { availableRolesFor, type GrantRole } from '@/lib/grantRoles';
 
 const props = defineProps<{
   principalType: string;
@@ -19,20 +19,21 @@ interface RoleRow {
   icon: string;
 }
 
-const ROWS: RoleRow[] = [
+const ALL_ROWS: RoleRow[] = [
   { value: 'viewer', label: 'Viewer', icon: 'eye' },
   { value: 'editor', label: 'Editor', icon: 'type' },
   { value: 'admin', label: 'Admin', icon: 'settings' },
 ];
 
-const isAgent = computed(() => props.principalType !== 'user');
+// Agents (api_key / unknown) are capped at editor; admin is never offered to them.
+const rows = computed<RoleRow[]>(() => {
+  const allowed = availableRolesFor(props.principalType);
+  return ALL_ROWS.filter((row) => allowed.includes(row.value));
+});
 
-function allowed(role: GrantRole): boolean {
-  return isRoleAllowedFor(props.principalType, role);
-}
+const isAgent = computed(() => props.principalType !== 'user' && props.principalType !== 'group');
 
 function choose(role: GrantRole) {
-  if (!allowed(role)) return;
   emit('select', role);
 }
 </script>
@@ -40,45 +41,32 @@ function choose(role: GrantRole) {
 <template>
   <div style="padding: 4px;">
     <button
-      v-for="row in ROWS"
+      v-for="row in rows"
       :key="row.value"
       type="button"
       role="menuitemradio"
       :data-role-option="row.value"
-      :data-selectable-role="allowed(row.value) ? row.value : undefined"
+      :data-selectable-role="row.value"
       :aria-checked="props.role === row.value"
-      :aria-disabled="!allowed(row.value)"
-      :disabled="!allowed(row.value)"
-      class="flex items-center gap-2 w-full text-left"
-      :class="allowed(row.value) ? 'atl-row' : undefined"
+      class="atl-row flex items-center gap-2 w-full text-left"
       :style="{
         height: '28px',
         padding: '0 9px',
         border: 'none',
         borderRadius: 'var(--r-md)',
         fontSize: 'var(--fs-sm)',
-        cursor: allowed(row.value) ? 'pointer' : 'not-allowed',
+        cursor: 'pointer',
         color: 'var(--c-foreground)',
         background: props.role === row.value ? 'var(--c-selection)' : 'transparent',
         boxShadow: props.role === row.value ? 'inset 2px 0 0 var(--c-primary)' : 'none',
-        opacity: allowed(row.value) ? 1 : 0.55,
         fontWeight: props.role === row.value ? 'var(--fw-semibold)' : 'var(--fw-medium)',
       }"
       @click="choose(row.value)"
     >
-      <Icon
-        :name="!allowed(row.value) && row.value === 'admin' ? 'lock' : row.icon"
-        :size="13"
-      />
+      <Icon :name="row.icon" :size="13" />
       <span class="flex-1">{{ row.label }}</span>
-      <span
-        v-if="!allowed(row.value) && row.value === 'admin'"
-        style="font-size: 10px; font-weight: var(--fw-bold); font-family: var(--font-mono); color: var(--c-muted);"
-      >
-        Editor max
-      </span>
       <Icon
-        v-else-if="props.role === row.value"
+        v-if="props.role === row.value"
         name="check"
         :size="13"
         :style="{ color: 'var(--c-primary)' }"
@@ -95,7 +83,7 @@ function choose(role: GrantRole) {
         margin: 0;
       "
     >
-      Agents &amp; scripts can’t be Admin or manage grants (v2).
+      Agents &amp; scripts are capped at Editor max — they can’t be Admin or manage grants (v2).
     </p>
 
     <div style="height: 1px; background-color: var(--c-border); margin: 4px 2px;" />

@@ -226,6 +226,17 @@ pub struct ApiKeyDto {
     pub last_used_at: Option<chrono::DateTime<chrono::Utc>>,
     pub revoked_at: Option<chrono::DateTime<chrono::Utc>>,
     pub created_at: chrono::DateTime<chrono::Utc>,
+    /// When true, the key reaches every workspace its creator can reach (capped at
+    /// editor), instead of only workspaces where it holds an explicit grant.
+    pub is_global: bool,
+}
+
+/// Request body for `PATCH /v1/api-keys/{key_id}`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct UpdateApiKeyRequest {
+    /// Toggles the key's global reach. Omit to leave unchanged.
+    pub is_global: Option<bool>,
 }
 
 /// Request body for `POST /v1/workspaces/{ws}/projects`.
@@ -324,6 +335,18 @@ pub struct UpdateMemberRoleRequest {
     pub role: String,
 }
 
+/// Request body for `POST /v1/workspaces/{ws}/members`.
+///
+/// Adds an existing user to the workspace at the given role. `role` is one of
+/// `"owner"` | `"admin"` | `"member"`; granting `owner` requires an owner (or
+/// break-glass) caller.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct AddMemberRequest {
+    pub user_id: uuid::Uuid,
+    pub role: String,
+}
+
 /// Request body for `POST /v1/workspaces`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
@@ -369,6 +392,20 @@ pub struct UpdateUiStateRequest {
     pub state: serde_json::Value,
 }
 
+/// The principal that created a grant, resolved to a human-readable label.
+///
+/// Distinguishes a human granter (`principal_type` `"user"`, `display` is the
+/// user's display name) from an agent granter (`principal_type` `"api_key"`,
+/// `display` is the key's name) so the UI can render the two unambiguously.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct GrantedByDto {
+    pub id: uuid::Uuid,
+    pub display: String,
+    /// `"user"` | `"api_key"`
+    pub principal_type: String,
+}
+
 /// A single grant belonging to an API key, with resolved resource labels.
 ///
 /// Returned by `GET /v1/api-keys/{key_id}/grants` so the keys panel can display
@@ -388,4 +425,7 @@ pub struct ApiKeyGrantDto {
     /// Project slug (present for project-scoped grants).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project_slug: Option<String>,
+    /// Who created this grant. `None` for legacy/system grants with no recorded creator.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub granted_by: Option<GrantedByDto>,
 }

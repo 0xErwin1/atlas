@@ -8,7 +8,7 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import FormField from '@/components/ui/FormField.vue';
 import Icon from '@/components/ui/Icon.vue';
 import { validateForm } from '@/lib/validation';
-import { type ApiKeyCreated, type ApiKeyGrantDto, useApiKeysStore } from '@/stores/apiKeys';
+import { type ApiKeyCreated, type ApiKeyDto, type ApiKeyGrantDto, useApiKeysStore } from '@/stores/apiKeys';
 import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 
@@ -214,6 +214,72 @@ function defaultWsForKey(keyId: string): string {
   if (first !== undefined) return first.workspace_slug;
   return wsStore.activeWorkspaceSlug ?? '';
 }
+
+// ---------------------------------------------------------------------------
+// Reach overview, global toggle and copy-id
+// ---------------------------------------------------------------------------
+
+const globalPending = ref<Record<string, boolean>>({});
+const copiedKeyId = ref<string | null>(null);
+
+function pluralKind(kind: string, count: number): string {
+  return count === 1 ? kind : `${kind}s`;
+}
+
+/**
+ * Terse, human-readable summary of a non-global key's reach, grouped by role and
+ * resource kind, e.g. "Editor in 2 workspaces · Viewer in 1 board".
+ */
+function accessSummary(keyId: string): string {
+  const grants = grantsFor(keyId);
+  if (grants.length === 0) return 'No workspace access yet';
+
+  const groups = new Map<string, { role: string; kind: string; count: number }>();
+
+  for (const g of grants) {
+    const groupKey = `${g.role}|${g.resource_kind}`;
+    const existing = groups.get(groupKey);
+    if (existing !== undefined) existing.count += 1;
+    else groups.set(groupKey, { role: g.role, kind: g.resource_kind, count: 1 });
+  }
+
+  const segments: string[] = [];
+  for (const { role, kind, count } of groups.values()) {
+    const roleLabel = role.charAt(0).toUpperCase() + role.slice(1);
+    segments.push(`${roleLabel} in ${count} ${pluralKind(kind, count)}`);
+  }
+
+  return segments.join(' · ');
+}
+
+async function onToggleGlobal(key: ApiKeyDto): Promise<void> {
+  if (globalPending.value[key.id] === true) return;
+
+  globalPending.value = { ...globalPending.value, [key.id]: true };
+
+  const ok = await keysStore.setKeyGlobal(key.id, !key.is_global);
+
+  globalPending.value = { ...globalPending.value, [key.id]: false };
+
+  if (!ok && keysStore.error) ui.showBanner(keysStore.error, 'error');
+}
+
+async function copyKeyId(id: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(id);
+    copiedKeyId.value = id;
+    setTimeout(() => {
+      if (copiedKeyId.value === id) copiedKeyId.value = null;
+    }, 1500);
+  } catch {
+    ui.showBanner('Clipboard is not available', 'error');
+  }
+}
+
+function grantedByLabel(g: ApiKeyGrantDto): string | null {
+  if (g.granted_by === undefined || g.granted_by === null) return null;
+  return g.granted_by.display;
+}
 </script>
 
 <template>
@@ -371,6 +437,55 @@ function defaultWsForKey(keyId: string): string {
 
           <!-- Grants section (inline expand) -->
           <div v-if="expandedKeyId === k.id" class="atl-grants-panel">
+            <div class="atl-key-overview">
+              <div class="atl-key-id-line">
+                <span class="atl-key-id-label">Key ID</span>
+                <code class="atl-key-id">{{ k.id }}</code>
+                <button
+                  type="button"
+                  class="atl-copyid"
+                  :title="copiedKeyId === k.id ? 'Copied' : 'Copy ID'"
+                  @click="copyKeyId(k.id)"
+                >
+                  <Icon :name="copiedKeyId === k.id ? 'check' : 'copy'" :size="12" />
+                  {{ copiedKeyId === k.id ? 'Copied' : 'Copy ID' }}
+                </button>
+              </div>
+
+              <div class="atl-access-line">
+                <span class="atl-access-term">Reach</span>
+                <span v-if="k.is_global" class="atl-global-pill">
+                  <Icon name="globe" :size="12" />
+                  Global — every workspace you can reach (editor)
+                </span>
+                <span v-else-if="!grantsLoading[k.id]" class="atl-access-summary">
+                  {{ accessSummary(k.id) }}
+                </span>
+              </div>
+
+              <div class="atl-global-toggle">
+                <button
+                  type="button"
+                  role="switch"
+                  class="atl-switch"
+                  :class="{ 'atl-switch--on': k.is_global }"
+                  :aria-checked="k.is_global"
+                  :disabled="globalPending[k.id] === true"
+                  aria-label="Global agent"
+                  @click="onToggleGlobal(k)"
+                >
+                  <span class="atl-switch-knob" />
+                </button>
+                <div class="atl-global-copy">
+                  <div class="atl-global-label">Global agent</div>
+                  <div class="atl-global-help">
+                    Reaches every workspace you can reach, capped at editor. The agent never
+                    exceeds your own permissions.
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div v-if="grantsLoading[k.id]" class="atl-grants-loading">
               Loading access&hellip;
             </div>
@@ -388,7 +503,16 @@ function defaultWsForKey(keyId: string): string {
                   class="atl-grant-row"
                 >
                   <Icon :name="resourceIcon(g.resource_kind)" :size="13" style="color: var(--c-muted); flex: 0 0 auto;" />
-                  <span class="atl-grant-label">{{ grantLabel(g) }}</span>
+                  <div class="atl-grant-main">
+                    <span class="atl-grant-label">{{ grantLabel(g) }}</span>
+                    <span v-if="grantedByLabel(g) !== null" class="atl-grant-by">
+                      granted by {{ grantedByLabel(g) }}
+                      <AgentBadge
+                        v-if="g.granted_by?.principal_type === 'api_key'"
+                        label="AGENT"
+                      />
+                    </span>
+                  </div>
                   <span class="atl-grant-role">{{ g.role }}</span>
                   <button
                     type="button"
@@ -597,6 +721,159 @@ function defaultWsForKey(keyId: string): string {
   padding: 10px 40px 10px 40px;
 }
 
+.atl-key-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 10px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--c-border);
+}
+
+.atl-key-id-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.atl-key-id-label {
+  font-size: 10px;
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--c-muted);
+  flex: 0 0 auto;
+}
+
+.atl-key-id {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--c-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.atl-copyid {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--c-muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.atl-copyid:hover {
+  background: var(--c-raised);
+  color: var(--c-foreground);
+}
+
+.atl-access-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.atl-access-term {
+  font-size: 10px;
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--c-muted);
+  flex: 0 0 auto;
+}
+
+.atl-access-summary {
+  font-size: 12.5px;
+  color: var(--c-foreground);
+}
+
+.atl-global-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: var(--fw-medium);
+  color: var(--c-agent);
+  background: var(--c-agent-bg);
+  border: 1px solid var(--c-agent-border);
+  border-radius: var(--r-md);
+  padding: 2px 8px;
+}
+
+.atl-global-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.atl-switch {
+  flex: 0 0 auto;
+  position: relative;
+  width: 34px;
+  height: 20px;
+  margin-top: 1px;
+  padding: 0;
+  border: 1px solid var(--c-border);
+  border-radius: 9999px;
+  background: var(--c-input);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.atl-switch--on {
+  background: var(--c-agent);
+  border-color: var(--c-agent);
+}
+
+.atl-switch:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.atl-switch-knob {
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: var(--c-foreground);
+  transform: translateY(-50%);
+  transition: left 0.15s;
+}
+
+.atl-switch--on .atl-switch-knob {
+  left: 17px;
+  background: var(--c-on-agent, #fff);
+}
+
+.atl-global-copy {
+  min-width: 0;
+}
+
+.atl-global-label {
+  font-size: 12.5px;
+  font-weight: var(--fw-semibold);
+  color: var(--c-foreground);
+}
+
+.atl-global-help {
+  font-size: 11.5px;
+  color: var(--c-muted);
+  line-height: 1.45;
+  margin-top: 2px;
+  max-width: 440px;
+}
+
 .atl-grants-loading {
   font-size: 12px;
   color: var(--c-muted);
@@ -622,8 +899,8 @@ function defaultWsForKey(keyId: string): string {
   display: flex;
   align-items: center;
   gap: 7px;
-  height: 28px;
-  padding: 0 6px;
+  min-height: 28px;
+  padding: 4px 6px;
   border-radius: var(--r-md);
 }
 
@@ -631,13 +908,28 @@ function defaultWsForKey(keyId: string): string {
   background: var(--c-raised);
 }
 
-.atl-grant-label {
+.atl-grant-main {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.atl-grant-label {
   font-size: 12.5px;
   color: var(--c-foreground);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.atl-grant-by {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--c-muted);
 }
 
 .atl-grant-role {

@@ -445,6 +445,58 @@ async fn list_api_key_grants_returns_workspace_and_project_grants() {
 }
 
 #[tokio::test]
+async fn list_api_key_grants_includes_granted_by_user() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner, ws, owner_user) =
+        login_user_with_workspace(&server, &db, "grants-grantedby-owner").await;
+
+    let created = owner
+        .create_user_api_key(user_key_req("grants-grantedby-agent"))
+        .await
+        .expect("create key");
+
+    owner
+        .create_workspace_grant(
+            &ws.slug,
+            atlas_api::dtos::CreateGrantRequest {
+                principal: atlas_api::dtos::GrantPrincipal {
+                    r#type: "api_key".to_string(),
+                    id: created.id,
+                },
+                role: "editor".to_string(),
+            },
+        )
+        .await
+        .expect("grant key to workspace");
+
+    let grants = owner
+        .list_api_key_grants(created.id)
+        .await
+        .expect("list api key grants");
+
+    assert_eq!(grants.len(), 1, "key must have 1 grant");
+
+    let granted_by = grants[0]
+        .granted_by
+        .as_ref()
+        .expect("granted_by must be present for a user-created grant");
+
+    assert_eq!(granted_by.id, owner_user.id.0, "granter id must be the owner");
+    assert_eq!(
+        granted_by.display, owner_user.display_name,
+        "granter display must be the owner's display name"
+    );
+    assert_eq!(
+        granted_by.principal_type, "user",
+        "granter principal_type must be 'user'"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
 async fn list_api_key_grants_non_owner_returns_403() {
     let db = TestDb::create().await.expect("TestDb::create");
     let server = TestServer::spawn(&db).await;

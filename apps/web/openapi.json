@@ -372,6 +372,62 @@
             "bearer_auth": []
           }
         ]
+      },
+      "patch": {
+        "tags": [
+          "api-keys"
+        ],
+        "summary": "Updates a user-owned API key. Currently only the `is_global` flag is mutable.",
+        "description": "Any owner of the key may toggle global reach; the agent never gains more than\nits creator can reach (and stays capped at editor), so this is bounded by the\nowner's own permissions rather than being a privilege escalation.",
+        "operationId": "update_user_api_key",
+        "parameters": [
+          {
+            "name": "key_id",
+            "in": "path",
+            "description": "API key id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateApiKeyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "API key updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "API keys cannot manage API keys"
+          },
+          "404": {
+            "description": "Key not found or not owned by the caller"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
       }
     },
     "/v1/api-keys/{key_id}/grants": {
@@ -1035,7 +1091,8 @@
         "tags": [
           "workspaces"
         ],
-        "summary": "Returns the workspaces the authenticated principal is a member of.\nAPI keys are workspace-scoped and do not use this endpoint; the result is always empty for them.",
+        "summary": "Returns the workspaces the authenticated principal can access.",
+        "description": "For users: their member workspaces (or all workspaces for root/system_admin).\nFor api_keys: the distinct workspaces where the key holds at least one permission grant.",
         "operationId": "list_workspaces",
         "responses": {
           "200": {
@@ -1282,6 +1339,56 @@
           },
           "404": {
             "description": "Workspace not found or caller is not a member"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{ws}/assignable-users": {
+      "get": {
+        "tags": [
+          "members"
+        ],
+        "summary": "Lists users who can be added to the workspace.",
+        "description": "Returns the active (non-disabled) users that are NOT already members of this\nworkspace. The `users` table holds only human accounts, so api keys are\nexcluded by construction. Mirrors the `GET /v1/users` shape (`Vec<UserDto>`).",
+        "operationId": "list_assignable_users",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Users that can be added as members",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UserDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient privileges"
+          },
+          "404": {
+            "description": "Workspace not found"
           }
         },
         "security": [
@@ -3625,6 +3732,67 @@
           },
           "404": {
             "description": "Workspace not found or principal is not a member"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "members"
+        ],
+        "summary": "Adds an existing user to the workspace at the requested role.",
+        "description": "Mirrors the authorization discipline of `update_member_role`:\n1. `WorkspaceOwnerOrAdmin` gates structural access (resolves caller class).\n2. Role string is parsed; an unknown value → 422.\n3. Role-grant matrix: an admin may add `member` or `admin`, never `owner`;\n   only an owner (or break-glass) may add an `owner`.\n4. The target user must exist (404) and must not be disabled (422 — a\n   deactivated account cannot be assigned).\n5. The user must not already be a member → 409 Conflict.\n6. The membership insert and its audit row share one transaction.",
+        "operationId": "add_member",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddMemberRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "User added to the workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrincipalDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient privileges to grant the requested role"
+          },
+          "404": {
+            "description": "Workspace or target user not found"
+          },
+          "409": {
+            "description": "User is already a member"
+          },
+          "422": {
+            "description": "Unknown role string, or target user is disabled"
           }
         },
         "security": [
@@ -7267,6 +7435,23 @@
           }
         }
       },
+      "AddMemberRequest": {
+        "type": "object",
+        "description": "Request body for `POST /v1/workspaces/{ws}/members`.\n\nAdds an existing user to the workspace at the given role. `role` is one of\n`\"owner\"` | `\"admin\"` | `\"member\"`; granting `owner` requires an owner (or\nbreak-glass) caller.",
+        "required": [
+          "user_id",
+          "role"
+        ],
+        "properties": {
+          "role": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
       "ApiKeyCreated": {
         "type": "object",
         "description": "Response for `POST /v1/api-keys` (secret returned exactly once).",
@@ -7313,7 +7498,8 @@
           "id",
           "name",
           "type",
-          "created_at"
+          "created_at",
+          "is_global"
         ],
         "properties": {
           "created_at": {
@@ -7330,6 +7516,10 @@
           "id": {
             "type": "string",
             "format": "uuid"
+          },
+          "is_global": {
+            "type": "boolean",
+            "description": "When true, the key reaches every workspace its creator can reach (capped at\neditor), instead of only workspaces where it holds an explicit grant."
           },
           "last_used_at": {
             "type": [
@@ -7365,6 +7555,17 @@
           "workspace_slug"
         ],
         "properties": {
+          "granted_by": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/GrantedByDto",
+                "description": "Who created this grant. `None` for legacy/system grants with no recorded creator."
+              }
+            ]
+          },
           "id": {
             "type": "string",
             "format": "uuid"
@@ -8450,6 +8651,28 @@
           }
         }
       },
+      "GrantedByDto": {
+        "type": "object",
+        "description": "The principal that created a grant, resolved to a human-readable label.\n\nDistinguishes a human granter (`principal_type` `\"user\"`, `display` is the\nuser's display name) from an agent granter (`principal_type` `\"api_key\"`,\n`display` is the key's name) so the UI can render the two unambiguously.",
+        "required": [
+          "id",
+          "display",
+          "principal_type"
+        ],
+        "properties": {
+          "display": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "principal_type": {
+            "type": "string",
+            "description": "`\"user\"` | `\"api_key\"`"
+          }
+        }
+      },
       "GroupDto": {
         "type": "object",
         "description": "Group representation.",
@@ -8745,7 +8968,8 @@
                 "id",
                 "name",
                 "type",
-                "created_at"
+                "created_at",
+                "is_global"
               ],
               "properties": {
                 "created_at": {
@@ -8762,6 +8986,10 @@
                 "id": {
                   "type": "string",
                   "format": "uuid"
+                },
+                "is_global": {
+                  "type": "boolean",
+                  "description": "When true, the key reaches every workspace its creator can reach (capped at\neditor), instead of only workspaces where it holds an explicit grant."
                 },
                 "last_used_at": {
                   "type": [
@@ -10237,6 +10465,19 @@
         "properties": {
           "state": {
             "type": "object"
+          }
+        }
+      },
+      "UpdateApiKeyRequest": {
+        "type": "object",
+        "description": "Request body for `PATCH /v1/api-keys/{key_id}`.",
+        "properties": {
+          "is_global": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Toggles the key's global reach. Omit to leave unchanged."
           }
         }
       },

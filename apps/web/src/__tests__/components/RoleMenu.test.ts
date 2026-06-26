@@ -28,6 +28,16 @@ describe('RoleMenu (REQ-W27 — agents capped at editor, E03 guard)', () => {
     expect(wrapper.find('[data-selectable-role="admin"]').exists()).toBe(false);
   });
 
+  it('omits the Admin option entirely for an api_key agent but offers it for a group', () => {
+    const agent = mount(RoleMenu, { props: { principalType: 'api_key', role: 'editor' } });
+    expect(agent.find('[data-role-option="admin"]').exists()).toBe(false);
+    expect(agent.find('[data-role-option="viewer"]').exists()).toBe(true);
+    expect(agent.find('[data-role-option="editor"]').exists()).toBe(true);
+
+    const group = mount(RoleMenu, { props: { principalType: 'group', role: 'editor' } });
+    expect(group.find('[data-role-option="admin"]').exists()).toBe(true);
+  });
+
   it('does not emit a select event when an agent Admin option is clicked', async () => {
     const wrapper = mount(RoleMenu, { props: { principalType: 'api_key', role: 'editor' } });
 
