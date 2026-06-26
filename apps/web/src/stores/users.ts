@@ -5,6 +5,10 @@ import { wrappedClient } from '@/api/wrapper';
 
 export type UserDto = components['schemas']['UserDto'];
 export type CreateUserResponse = components['schemas']['CreateUserResponse'];
+export type UserMembershipDto = components['schemas']['UserMembershipDto'];
+
+/** A user's workspace memberships as a `slug -> role` lookup. */
+export type MembershipMap = Record<string, string>;
 
 interface ApiProblem {
   title?: string;
@@ -30,6 +34,9 @@ export const useUsersStore = defineStore('users', () => {
   const users = ref<UserDto[]>([]);
   const loading = ref(false);
   const error = ref<string | null>(null);
+  // Per-user workspace memberships, keyed by user id, each a `slug -> role`
+  // lookup. Populated on demand when a user row is expanded.
+  const memberships = ref<Record<string, MembershipMap>>({});
 
   async function loadUsers(): Promise<void> {
     loading.value = true;
@@ -134,6 +141,34 @@ export const useUsersStore = defineStore('users', () => {
     }
   }
 
+  /**
+   * Loads a user's workspace memberships and caches them under `memberships[id]`
+   * as a `slug -> role` map for the workspace-access editor. Returns the map, or
+   * null on failure (with `error` set).
+   */
+  async function loadMemberships(id: string): Promise<MembershipMap | null> {
+    error.value = null;
+
+    try {
+      const { data, error: e } = await wrappedClient.GET('/v1/users/{user_id}/memberships', {
+        params: { path: { user_id: id } },
+      });
+      if (e || !data) {
+        error.value = hintOf(e, 'Failed to load memberships');
+        return null;
+      }
+
+      const map: MembershipMap = {};
+      for (const m of data) map[m.workspace_slug] = m.role;
+
+      memberships.value = { ...memberships.value, [id]: map };
+      return map;
+    } catch {
+      error.value = "Can't reach the server";
+      return null;
+    }
+  }
+
   async function setSystemAdmin(id: string, value: boolean): Promise<UserDto | null> {
     error.value = null;
 
@@ -158,11 +193,13 @@ export const useUsersStore = defineStore('users', () => {
     users,
     loading,
     error,
+    memberships,
     loadUsers,
     createUser,
     regenerateActivationLink,
     setDisabled,
     resetPassword,
     setSystemAdmin,
+    loadMemberships,
   };
 });

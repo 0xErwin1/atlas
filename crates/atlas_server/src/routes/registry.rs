@@ -154,6 +154,12 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         kind: RouteKind::AuthnRequired,
         openapi_path: Some("/v1/users/{user_id}/system-admin"),
     },
+    RouteEntry {
+        method: "GET",
+        path_template: "/v1/users/00000000-0000-0000-0000-000000000001/memberships",
+        kind: RouteKind::AuthnRequired,
+        openapi_path: Some("/v1/users/{user_id}/memberships"),
+    },
     // ---- Workspace-scoped routes ----
     RouteEntry {
         method: "GET",

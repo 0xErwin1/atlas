@@ -78,6 +78,10 @@ pub fn app(state: AppState) -> Router {
             "/v1/users/{user_id}/system-admin",
             axum::routing::post(routes::users::set_system_admin),
         )
+        .route(
+            "/v1/users/{user_id}/memberships",
+            get(routes::users::list_user_memberships),
+        )
         // Workspace
         .route(
             "/v1/workspaces",

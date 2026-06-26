@@ -1,10 +1,10 @@
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { PATCH } = vi.hoisted(() => ({ PATCH: vi.fn() }));
+const { PATCH, POST } = vi.hoisted(() => ({ PATCH: vi.fn(), POST: vi.fn() }));
 
 vi.mock('@/api/wrapper', () => ({
-  wrappedClient: { PATCH },
+  wrappedClient: { PATCH, POST },
 }));
 
 import { type ApiKeyDto, useApiKeysStore } from '@/stores/apiKeys';
@@ -60,5 +60,36 @@ describe('useApiKeysStore — setKeyGlobal', () => {
     expect(ok).toBe(false);
     expect(store.error).toBe('Not allowed');
     expect(store.keys[0]?.is_global).toBe(false);
+  });
+});
+
+describe('useApiKeysStore — setKeyWorkspaceRole', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    vi.clearAllMocks();
+  });
+
+  it('POSTs the api_key principal grant to the right workspace and returns true', async () => {
+    POST.mockResolvedValueOnce({ data: {}, error: undefined });
+
+    const store = useApiKeysStore();
+    const ok = await store.setKeyWorkspaceRole('k1', 'beta', 'editor');
+
+    expect(ok).toBe(true);
+    expect(POST).toHaveBeenCalledWith('/v1/workspaces/{ws}/grants', {
+      params: { path: { ws: 'beta' } },
+      body: { principal: { type: 'api_key', id: 'k1' }, role: 'editor' },
+    });
+    expect(store.error).toBeNull();
+  });
+
+  it('sets the error and returns false on failure', async () => {
+    POST.mockResolvedValueOnce({ data: undefined, error: { hint: 'Forbidden' } });
+
+    const store = useApiKeysStore();
+    const ok = await store.setKeyWorkspaceRole('k1', 'beta', 'editor');
+
+    expect(ok).toBe(false);
+    expect(store.error).toBe('Forbidden');
   });
 });

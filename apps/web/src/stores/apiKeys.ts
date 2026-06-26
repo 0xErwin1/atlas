@@ -138,6 +138,33 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
     }
   }
 
+  /**
+   * Grants (or upserts) a workspace-scope role for this key in the given
+   * workspace. The grants endpoint is idempotent on the (principal, resource)
+   * pair, so the same call both creates and updates a role. The caller reloads
+   * the key's grants on success. Sets `error` and returns false on failure.
+   */
+  async function setKeyWorkspaceRole(keyId: string, slug: string, role: string): Promise<boolean> {
+    error.value = null;
+
+    try {
+      const { error: e } = await wrappedClient.POST('/v1/workspaces/{ws}/grants', {
+        params: { path: { ws: slug } },
+        body: { principal: { type: 'api_key', id: keyId }, role },
+      });
+
+      if (e) {
+        error.value = hintOf(e, 'Failed to grant access');
+        return false;
+      }
+
+      return true;
+    } catch {
+      error.value = "Can't reach the server";
+      return false;
+    }
+  }
+
   async function revokeKeyGrant(keyId: string, grantId: string): Promise<boolean> {
     error.value = null;
 
@@ -167,6 +194,7 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
     setKeyGlobal,
     revokeKey,
     loadKeyGrants,
+    setKeyWorkspaceRole,
     revokeKeyGrant,
   };
 });

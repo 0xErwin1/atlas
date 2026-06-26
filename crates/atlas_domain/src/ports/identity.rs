@@ -14,6 +14,14 @@ pub trait WorkspaceRepo: Send + Sync {
     async fn find_by_id(&self, id: WorkspaceId) -> Result<Option<Workspace>, DomainError>;
     async fn find_by_slug(&self, slug: &str) -> Result<Option<Workspace>, DomainError>;
     async fn list_for_user(&self, user_id: UserId) -> Result<Vec<Workspace>, DomainError>;
+    /// Returns every workspace the user is a member of, paired with the
+    /// membership role. Unlike `list_for_user`, this carries the per-workspace
+    /// role so an admin "workspace access" editor can show and assign a user's
+    /// role across workspaces without switching the active workspace.
+    async fn list_memberships_for_user(
+        &self,
+        user_id: UserId,
+    ) -> Result<Vec<(Workspace, MemberRole)>, DomainError>;
     /// Returns the distinct workspaces where the api_key holds at least one
     /// permission grant. This is the grant-based equivalent of `list_for_user`
     /// for non-human principals.

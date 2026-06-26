@@ -89,6 +89,33 @@ impl WorkspaceRepo for PgWorkspaceRepo {
         Ok(workspaces)
     }
 
+    async fn list_memberships_for_user(
+        &self,
+        user_id: UserId,
+    ) -> Result<Vec<(Workspace, MemberRole)>, DomainError> {
+        let memberships = membership::Entity::find()
+            .filter(membership::Column::UserId.eq(user_id.0))
+            .all(&self.conn)
+            .await
+            .map_err(db_err)?;
+
+        let mut result = Vec::new();
+        for m in memberships {
+            let membership =
+                membership_from(m).map_err(|message| DomainError::Internal { message })?;
+
+            if let Some(ws) = workspace::Entity::find_by_id(membership.workspace_id.0)
+                .one(&self.conn)
+                .await
+                .map_err(db_err)?
+            {
+                result.push((workspace_from(ws), membership.role));
+            }
+        }
+
+        Ok(result)
+    }
+
     async fn list_for_api_key(&self, api_key_id: ApiKeyId) -> Result<Vec<Workspace>, DomainError> {
         use sea_orm::FromQueryResult;
 

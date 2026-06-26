@@ -7,7 +7,7 @@ use atlas_api::{
         CreateUserResponse, CreateWorkspaceRequest, GrantDto, HealthResponse, LoginRequest,
         LoginResponse, MeResponse, PrincipalDto, ProjectDto, ResetPasswordRequest, ServerMetaDto,
         UiStateDto, UpdateMeRequest, UpdateProjectRequest, UpdateUiStateRequest,
-        UpdateWorkspaceRequest, UserDto, WorkspaceDto,
+        UpdateWorkspaceRequest, UserDto, UserMembershipDto, WorkspaceDto,
         boards_tasks::{
             ActivityEntryDto, AddAssigneeRequest, AssigneeDto, BoardDto, BoardSummaryDto,
             ChecklistItemDto, ColumnDto, CreateBoardRequest, CreateChecklistItemRequest,
@@ -346,6 +346,21 @@ impl AtlasClient {
             .await
             .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
         Err(ClientError::Api(problem))
+    }
+
+    /// `GET /v1/users/{user_id}/memberships`
+    ///
+    /// Lists every workspace the target user belongs to, with the membership
+    /// role. Requires root/admin privileges.
+    pub async fn list_user_memberships(
+        &self,
+        user_id: uuid::Uuid,
+    ) -> Result<Vec<UserMembershipDto>, ClientError> {
+        let response = self
+            .get(&format!("/v1/users/{user_id}/memberships"))
+            .send()
+            .await?;
+        self.decode_response(response, "list_user_memberships").await
     }
 
     /// `POST /v1/api-keys`

@@ -9,7 +9,7 @@ use sea_orm::TransactionTrait;
 
 use atlas_api::dtos::{
     ActivationLinkResponse, CreateUserRequest, CreateUserResponse, ResetPasswordRequest,
-    SetSystemAdminRequest, UserDto,
+    SetSystemAdminRequest, UserDto, UserMembershipDto,
 };
 use atlas_domain::{
     Actor,
@@ -552,6 +552,61 @@ pub(crate) async fn set_system_admin(
     })?;
 
     Ok(Json(user_to_dto(&updated)))
+}
+
+#[utoipa::path(
+    get,
+    path = "/v1/users/{user_id}/memberships",
+    tag = "users",
+    security(("bearer_auth" = [])),
+    params(("user_id" = uuid::Uuid, Path, description = "User ID")),
+    responses(
+        (status = 200, description = "Workspaces the user belongs to, with role", body = [UserMembershipDto]),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Not a root/admin user"),
+        (status = 404, description = "User not found"),
+    )
+)]
+pub(crate) async fn list_user_memberships(
+    _admin: RequireUserAdmin,
+    State(state): State<AppState>,
+    Path(user_id): Path<uuid::Uuid>,
+) -> Result<Json<Vec<UserMembershipDto>>, ApiError> {
+    let user_id = UserId(user_id);
+
+    let user_repo = PgUserRepo {
+        conn: (*state.db).clone(),
+    };
+    let ws_repo = PgWorkspaceRepo {
+        conn: (*state.db).clone(),
+    };
+
+    user_repo
+        .find_by_id(user_id)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?
+        .ok_or(ApiError::NotFound)?;
+
+    let memberships =
+        ws_repo
+            .list_memberships_for_user(user_id)
+            .await
+            .map_err(|e| ApiError::Internal {
+                message: e.to_string(),
+            })?;
+
+    let dtos = memberships
+        .into_iter()
+        .map(|(workspace, role)| UserMembershipDto {
+            workspace_slug: workspace.slug,
+            workspace_name: workspace.name,
+            role: role.as_str().to_string(),
+        })
+        .collect();
+
+    Ok(Json(dtos))
 }
 
 /// Parses a membership role string. Only "admin" and "member" are accepted;

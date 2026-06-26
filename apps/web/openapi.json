@@ -984,6 +984,55 @@
         ]
       }
     },
+    "/v1/users/{user_id}/memberships": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "operationId": "list_user_memberships",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "description": "User ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Workspaces the user belongs to, with role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UserMembershipDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Not a root/admin user"
+          },
+          "404": {
+            "description": "User not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/v1/users/{user_id}/reset-password": {
       "post": {
         "tags": [
@@ -1092,7 +1141,7 @@
           "workspaces"
         ],
         "summary": "Returns the workspaces the authenticated principal can access.",
-        "description": "For users: their member workspaces (or all workspaces for root/system_admin).\nFor api_keys: the distinct workspaces where the key holds at least one permission grant.",
+        "description": "For users: their member workspaces (or all workspaces for root/system_admin).\nFor api_keys: a global key mirrors its creator's reach (so it does NOT need\nper-workspace grants); a non-global key lists the workspaces where it holds at\nleast one grant.",
         "operationId": "list_workspaces",
         "responses": {
           "200": {
@@ -10814,6 +10863,27 @@
             "format": "date-time"
           },
           "username": {
+            "type": "string"
+          }
+        }
+      },
+      "UserMembershipDto": {
+        "type": "object",
+        "description": "One workspace a user belongs to, with the membership role.\n\nReturned by `GET /v1/users/{user_id}/memberships` to power the admin\nworkspace-access editor, which assigns a user across workspaces.",
+        "required": [
+          "workspace_slug",
+          "workspace_name",
+          "role"
+        ],
+        "properties": {
+          "role": {
+            "type": "string",
+            "description": "Membership role: `\"owner\"` | `\"admin\"` | `\"member\"`."
+          },
+          "workspace_name": {
+            "type": "string"
+          },
+          "workspace_slug": {
             "type": "string"
           }
         }

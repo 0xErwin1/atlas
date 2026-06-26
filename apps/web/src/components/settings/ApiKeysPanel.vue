@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import { z } from 'zod';
-import ShareDialog from '@/components/share/ShareDialog.vue';
+import WorkspaceAccessEditor, { type RoleOption } from '@/components/settings/WorkspaceAccessEditor.vue';
 import AgentBadge from '@/components/ui/AgentBadge.vue';
 import Btn from '@/components/ui/Btn.vue';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
@@ -56,6 +56,7 @@ function typeLabel(t: string): string {
 
 onMounted(() => {
   keysStore.loadKeys();
+  wsStore.loadAdminWorkspaces();
 });
 
 function startNew(): void {
@@ -134,8 +135,11 @@ const expandedKeyId = ref<string | null>(null);
 const keyGrants = ref<Record<string, ApiKeyGrantDto[]>>({});
 const grantsLoading = ref<Record<string, boolean>>({});
 
-const shareDialogOpen = ref(false);
-const shareDialogKey = ref<{ id: string; ws: string } | null>(null);
+// Agents are capped at editor — the Admin role is never offered for a key.
+const wsAccessOptions: RoleOption[] = [
+  { value: 'viewer', label: 'Viewer' },
+  { value: 'editor', label: 'Editor' },
+];
 
 function toggleExpand(keyId: string): void {
   if (expandedKeyId.value === keyId) {
@@ -173,22 +177,49 @@ async function revokeGrant(keyId: string, grantId: string): Promise<void> {
   await loadGrants(keyId);
 }
 
-function openGrantDialog(keyId: string, wsSlug: string): void {
-  shareDialogKey.value = { id: keyId, ws: wsSlug };
-  shareDialogOpen.value = true;
+function grantsFor(keyId: string): ApiKeyGrantDto[] {
+  return keyGrants.value[keyId] ?? [];
 }
 
-function closeGrantDialog(): void {
-  shareDialogOpen.value = false;
+/** `slug -> role` lookup built from the key's workspace-scope grants only. */
+function wsRolesFor(keyId: string): Record<string, string> {
+  const map: Record<string, string> = {};
+  for (const g of grantsFor(keyId)) {
+    if (g.resource_kind === 'workspace') map[g.workspace_slug] = g.role;
+  }
+  return map;
+}
 
-  if (shareDialogKey.value !== null) {
-    void loadGrants(shareDialogKey.value.id);
-    shareDialogKey.value = null;
+/** Sub-resource grants (project/folder/document/board) — shown read-only with a labeled revoke. */
+function subResourceGrantsFor(keyId: string): ApiKeyGrantDto[] {
+  return grantsFor(keyId).filter((g) => g.resource_kind !== 'workspace');
+}
+
+async function onKeyWsAssign(keyId: string, slug: string, role: string): Promise<void> {
+  const ok = await keysStore.setKeyWorkspaceRole(keyId, slug, role);
+
+  if (ok) {
+    await loadGrants(keyId);
+    ui.showBanner('Access updated', 'success');
+  } else if (keysStore.error) {
+    ui.showBanner(keysStore.error, 'error');
+    await loadGrants(keyId);
   }
 }
 
-function grantsFor(keyId: string): ApiKeyGrantDto[] {
-  return keyGrants.value[keyId] ?? [];
+async function onKeyWsRemove(keyId: string, slug: string): Promise<void> {
+  const target = grantsFor(keyId).find((g) => g.resource_kind === 'workspace' && g.workspace_slug === slug);
+  if (target === undefined) return;
+
+  const ok = await keysStore.revokeKeyGrant(keyId, target.id);
+
+  if (ok) {
+    await loadGrants(keyId);
+    ui.showBanner('Access removed', 'success');
+  } else if (keysStore.error) {
+    ui.showBanner(keysStore.error, 'error');
+    await loadGrants(keyId);
+  }
 }
 
 function resourceIcon(kind: string): string {
@@ -206,13 +237,6 @@ function grantLabel(g: ApiKeyGrantDto): string {
   if (g.resource_kind === 'workspace') return g.resource_label;
   if (g.resource_kind === 'project') return `${g.workspace_slug} / ${g.resource_label}`;
   return `${g.workspace_slug} / ${g.resource_label}`;
-}
-
-function defaultWsForKey(keyId: string): string {
-  const grants = grantsFor(keyId);
-  const first = grants[0];
-  if (first !== undefined) return first.workspace_slug;
-  return wsStore.activeWorkspaceSlug ?? '';
 }
 
 // ---------------------------------------------------------------------------
@@ -395,7 +419,7 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
           <div style="flex: 1;">Type</div>
           <div style="flex: 1.4;">Created</div>
           <div style="flex: 1.4;">Last used</div>
-          <div style="flex: 0 0 100px;"></div>
+          <div style="flex: 0 0 200px;"></div>
         </div>
 
         <template v-for="k in keysStore.keys" :key="k.id">
@@ -416,14 +440,16 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
             <div class="atl-key-meta" :style="{ color: k.last_used_at ? 'var(--c-foreground)' : 'var(--c-muted)' }">
               {{ fmtDate(k.last_used_at) }}
             </div>
-            <div style="flex: 0 0 100px; display: flex; justify-content: flex-end; gap: 6px;" @click.stop>
+            <div style="flex: 0 0 200px; display: flex; justify-content: flex-end; gap: 6px;" @click.stop>
               <button
                 type="button"
-                class="atl-icon-btn"
-                :title="expandedKeyId === k.id ? 'Collapse' : 'Manage access'"
+                class="atl-rowact"
+                data-action="manage"
                 @click="toggleExpand(k.id)"
               >
-                <Icon :name="expandedKeyId === k.id ? 'chevron-up' : 'shield'" :size="14" />
+                <Icon name="sliders-horizontal" :size="13" />
+                Manage
+                <Icon :name="expandedKeyId === k.id ? 'chevron-up' : 'chevron-down'" :size="13" />
               </button>
               <button
                 type="button"
@@ -490,53 +516,59 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
               Loading access&hellip;
             </div>
 
-            <div v-else>
-              <div v-if="grantsFor(k.id).length === 0" class="atl-grants-empty">
-                <Icon name="lock" :size="13" style="color: var(--c-muted);" />
-                <span>No access granted. Use "Grant access" to add this key to a workspace or project.</span>
+            <!-- Global keys reach everything via their creator: per-workspace grants are meaningless. -->
+            <div v-else-if="k.is_global" class="atl-grants-empty" data-global-note>
+              <Icon name="globe" :size="13" style="color: var(--c-muted); flex: 0 0 auto;" />
+              <span>
+                Global reach — this key already reaches every workspace you can.
+                Per-workspace grants aren't needed.
+              </span>
+            </div>
+
+            <template v-else>
+              <div class="atl-manage-block">
+                <div class="atl-manage-label">Workspace access</div>
+                <WorkspaceAccessEditor
+                  :workspaces="wsStore.adminWorkspaces"
+                  :roles="wsRolesFor(k.id)"
+                  :options="wsAccessOptions"
+                  @assign="(slug, role) => onKeyWsAssign(k.id, slug, role)"
+                  @remove="(slug) => onKeyWsRemove(k.id, slug)"
+                />
               </div>
 
-              <div v-else class="atl-grants-list">
-                <div
-                  v-for="g in grantsFor(k.id)"
-                  :key="g.id"
-                  class="atl-grant-row"
-                >
-                  <Icon :name="resourceIcon(g.resource_kind)" :size="13" style="color: var(--c-muted); flex: 0 0 auto;" />
-                  <div class="atl-grant-main">
-                    <span class="atl-grant-label">{{ grantLabel(g) }}</span>
-                    <span v-if="grantedByLabel(g) !== null" class="atl-grant-by">
-                      granted by {{ grantedByLabel(g) }}
-                      <AgentBadge
-                        v-if="g.granted_by?.principal_type === 'api_key'"
-                        label="AGENT"
-                      />
-                    </span>
-                  </div>
-                  <span class="atl-grant-role">{{ g.role }}</span>
-                  <button
-                    type="button"
-                    class="atl-grant-revoke"
-                    title="Revoke this grant"
-                    @click="revokeGrant(k.id, g.id)"
+              <!-- Sub-resource grants the key already holds — preserved here so they aren't lost. -->
+              <div v-if="subResourceGrantsFor(k.id).length > 0" class="atl-manage-block">
+                <div class="atl-manage-label">Other access</div>
+                <div class="atl-grants-list">
+                  <div
+                    v-for="g in subResourceGrantsFor(k.id)"
+                    :key="g.id"
+                    class="atl-grant-row"
                   >
-                    <Icon name="x" :size="12" />
-                  </button>
+                    <Icon :name="resourceIcon(g.resource_kind)" :size="13" style="color: var(--c-muted); flex: 0 0 auto;" />
+                    <div class="atl-grant-main">
+                      <span class="atl-grant-label">{{ grantLabel(g) }}</span>
+                      <span v-if="grantedByLabel(g) !== null" class="atl-grant-by">
+                        granted by {{ grantedByLabel(g) }}
+                        <AgentBadge
+                          v-if="g.granted_by?.principal_type === 'api_key'"
+                          label="AGENT"
+                        />
+                      </span>
+                    </div>
+                    <span class="atl-grant-role">{{ g.role }}</span>
+                    <button
+                      type="button"
+                      class="atl-revoke atl-grant-revoke-btn"
+                      @click="revokeGrant(k.id, g.id)"
+                    >
+                      Revoke
+                    </button>
+                  </div>
                 </div>
               </div>
-
-              <div class="atl-grants-footer">
-                <button
-                  type="button"
-                  class="atl-grant-add"
-                  :disabled="defaultWsForKey(k.id) === ''"
-                  @click="openGrantDialog(k.id, defaultWsForKey(k.id))"
-                >
-                  <Icon name="plus" :size="13" />
-                  Grant access
-                </button>
-              </div>
-            </div>
+            </template>
           </div>
         </template>
       </div>
@@ -559,13 +591,6 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
       confirm-icon="trash-2"
       @confirm="confirmRevoke"
       @cancel="revokeTarget = null"
-    />
-
-    <ShareDialog
-      v-if="shareDialogOpen && shareDialogKey !== null"
-      :open="shareDialogOpen"
-      :ws="shareDialogKey.ws"
-      @close="closeGrantDialog"
     />
   </div>
 </template>
@@ -681,22 +706,22 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
   color: var(--c-muted);
 }
 
-.atl-icon-btn {
+.atl-rowact {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 26px;
+  gap: 5px;
   height: 24px;
+  padding: 0 8px;
   border: 1px solid var(--c-border);
   border-radius: var(--r-md);
   background: transparent;
-  color: var(--c-muted);
+  color: var(--c-foreground);
   cursor: pointer;
+  font-size: 12px;
 }
 
-.atl-icon-btn:hover {
+.atl-rowact:hover {
   background: var(--c-background);
-  color: var(--c-foreground);
 }
 
 .atl-revoke {
@@ -880,6 +905,21 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
   padding: 6px 0;
 }
 
+.atl-manage-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.atl-manage-label {
+  font-size: 10px;
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--c-muted);
+}
+
 .atl-grants-empty {
   display: flex;
   align-items: center;
@@ -943,56 +983,11 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
   border-radius: 3px;
 }
 
-.atl-grant-revoke {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border: none;
-  border-radius: var(--r-md);
-  background: transparent;
-  color: var(--c-muted);
-  cursor: pointer;
-  opacity: 0;
-}
-
-.atl-grant-row:hover .atl-grant-revoke {
-  opacity: 1;
-}
-
-.atl-grant-revoke:hover {
-  background: var(--c-danger-bg, rgba(239, 68, 68, 0.1));
-  color: var(--c-danger);
-}
-
-.atl-grants-footer {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--c-border);
-}
-
-.atl-grant-add {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 26px;
-  padding: 0 10px;
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
-  background: transparent;
-  color: var(--c-foreground);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.atl-grant-add:hover {
-  background: var(--c-raised);
-}
-
-.atl-grant-add:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
+.atl-grant-revoke-btn {
+  flex: 0 0 auto;
+  height: 22px;
+  padding: 0 8px;
+  font-size: 11px;
 }
 
 .atl-keys-empty {

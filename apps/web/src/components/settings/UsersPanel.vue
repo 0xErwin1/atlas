@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import { z } from 'zod';
+import WorkspaceAccessEditor, { type RoleOption } from '@/components/settings/WorkspaceAccessEditor.vue';
 import Avatar from '@/components/ui/Avatar.vue';
 import Btn from '@/components/ui/Btn.vue';
 import Chip from '@/components/ui/Chip.vue';
@@ -229,8 +230,90 @@ async function submitReset(): Promise<void> {
   }
 }
 
+// ── Manage panel (expand) ──────────────────────────────────────────
+const expandedUserId = ref<string | null>(null);
+const membershipsLoading = ref<Record<string, boolean>>({});
+
+function toggleManage(u: UserDto): void {
+  if (expandedUserId.value === u.id) {
+    expandedUserId.value = null;
+    return;
+  }
+
+  expandedUserId.value = u.id;
+
+  if (usersStore.memberships[u.id] === undefined) {
+    void loadMemberships(u);
+  }
+}
+
+async function loadMemberships(u: UserDto): Promise<void> {
+  membershipsLoading.value = { ...membershipsLoading.value, [u.id]: true };
+  await usersStore.loadMemberships(u.id);
+  membershipsLoading.value = { ...membershipsLoading.value, [u.id]: false };
+
+  if (usersStore.error) ui.showBanner(usersStore.error, 'error');
+}
+
+// ── Workspace-access editor ────────────────────────────────────────
+// Root grants owner; everyone else is capped at admin (the backend rejects an
+// admin granting owner with 403, so the option is hidden rather than offered).
+const wsAccessOptions = computed<RoleOption[]>(() => {
+  const base: RoleOption[] = [
+    { value: 'member', label: 'Member' },
+    { value: 'admin', label: 'Admin' },
+  ];
+  if (currentUserIsRoot.value) base.push({ value: 'owner', label: 'Owner' });
+  return base;
+});
+
+async function onWsAssign(u: UserDto, slug: string, role: string): Promise<void> {
+  const current = usersStore.memberships[u.id]?.[slug];
+
+  const ok =
+    current === undefined || current === ''
+      ? await wsStore.addMember(slug, u.id, role)
+      : await wsStore.updateMemberRole(slug, u.id, role);
+
+  if (ok) {
+    await usersStore.loadMemberships(u.id);
+    ui.showBanner(`${u.display_name}'s access updated`, 'success');
+  } else if (wsStore.error) {
+    ui.showBanner(wsStore.error, 'error');
+    await usersStore.loadMemberships(u.id);
+  }
+}
+
+async function onWsRemove(u: UserDto, slug: string): Promise<void> {
+  const ok = await wsStore.removeMember(slug, u.id);
+
+  if (ok) {
+    await usersStore.loadMemberships(u.id);
+    ui.showBanner(`${u.display_name}'s access removed`, 'success');
+  } else if (wsStore.error) {
+    ui.showBanner(wsStore.error, 'error');
+    await usersStore.loadMemberships(u.id);
+  }
+}
+
 // ── System-admin toggle (root only) ────────────────────────────────
-async function toggleSystemAdmin(u: UserDto): Promise<void> {
+const sysAdminTarget = ref<UserDto | null>(null);
+
+const sysAdminPromoting = computed(() =>
+  sysAdminTarget.value ? !sysAdminTarget.value.is_system_admin : false,
+);
+
+const sysAdminDetail = computed(() =>
+  sysAdminTarget.value
+    ? `${sysAdminTarget.value.display_name} · @${sysAdminTarget.value.username}`
+    : undefined,
+);
+
+async function confirmSystemAdmin(): Promise<void> {
+  const u = sysAdminTarget.value;
+  sysAdminTarget.value = null;
+  if (u === null) return;
+
   const updated = await usersStore.setSystemAdmin(u.id, !u.is_system_admin);
   if (updated) {
     ui.showBanner(
@@ -242,6 +325,21 @@ async function toggleSystemAdmin(u: UserDto): Promise<void> {
   } else if (usersStore.error) {
     ui.showBanner(usersStore.error, 'error');
   }
+}
+
+// ── Reset password (confirm before revealing the form) ─────────────
+const resetConfirmTarget = ref<UserDto | null>(null);
+
+const resetConfirmDetail = computed(() =>
+  resetConfirmTarget.value
+    ? `${resetConfirmTarget.value.display_name} · @${resetConfirmTarget.value.username}`
+    : undefined,
+);
+
+function onResetConfirmed(): void {
+  const u = resetConfirmTarget.value;
+  resetConfirmTarget.value = null;
+  if (u !== null) startReset(u);
 }
 
 // ── Enable / disable ───────────────────────────────────────────────
@@ -444,88 +542,152 @@ async function confirmDisable(): Promise<void> {
           <div style="flex: 2;">User</div>
           <div style="flex: 0 0 130px;">Status</div>
           <div style="flex: 1;">Created</div>
-          <div style="flex: 0 0 156px;"></div>
+          <div style="flex: 0 0 220px;"></div>
         </div>
-        <div
-          v-for="u in usersStore.users"
-          :key="u.id"
-          class="atl-users-row"
-          :style="{ opacity: u.disabled_at ? 0.72 : 1 }"
-        >
-          <div style="flex: 2; display: flex; align-items: center; gap: 10px; min-width: 0;">
-            <Avatar :name="initials(u)" :size="26" />
-            <div style="min-width: 0;">
-              <div class="flex items-center" style="gap: 6px;">
-                <span style="font-size: 13px; font-weight: var(--fw-semibold); color: var(--c-foreground);">
-                  {{ u.display_name }}
-                </span>
-                <span v-if="u.is_root" class="atl-tag-root">ROOT</span>
-                <span v-else-if="u.is_system_admin" class="atl-tag-sysadmin">SYSADMIN</span>
-              </div>
-              <div style="font-size: 11.5px; color: var(--c-muted); font-family: var(--font-mono);">
-                @{{ u.username }}
+
+        <template v-for="u in usersStore.users" :key="u.id">
+          <div
+            class="atl-users-row"
+            :class="{ 'atl-users-row--expanded': expandedUserId === u.id }"
+            :style="{ opacity: u.disabled_at ? 0.72 : 1 }"
+            data-user-row
+          >
+            <div style="flex: 2; display: flex; align-items: center; gap: 10px; min-width: 0;">
+              <Avatar :name="initials(u)" :size="26" />
+              <div style="min-width: 0;">
+                <div class="flex items-center" style="gap: 6px;">
+                  <span style="font-size: 13px; font-weight: var(--fw-semibold); color: var(--c-foreground);">
+                    {{ u.display_name }}
+                  </span>
+                  <span v-if="u.is_root" class="atl-tag-root">ROOT</span>
+                  <span v-else-if="u.is_system_admin" class="atl-tag-sysadmin">SYSADMIN</span>
+                </div>
+                <div style="font-size: 11.5px; color: var(--c-muted); font-family: var(--font-mono);">
+                  @{{ u.username }}
+                </div>
               </div>
             </div>
+            <div style="flex: 0 0 130px;">
+              <Chip v-if="u.disabled_at" tone="neutral">Disabled</Chip>
+              <Chip v-else-if="isPending(u)" tone="warning">Pending</Chip>
+              <Chip v-else tone="success">Active</Chip>
+            </div>
+            <div style="flex: 1; font-size: 12px; color: var(--c-muted);">{{ fmtDate(u.created_at) }}</div>
+            <div style="flex: 0 0 220px; display: flex; justify-content: flex-end; gap: 6px;">
+              <span v-if="isSelf(u)" class="atl-you">you</span>
+              <template v-else>
+                <button
+                  type="button"
+                  class="atl-rowact"
+                  data-action="manage"
+                  @click="toggleManage(u)"
+                >
+                  <Icon name="sliders-horizontal" :size="13" />
+                  Manage
+                  <Icon :name="expandedUserId === u.id ? 'chevron-up' : 'chevron-down'" :size="13" />
+                </button>
+                <button v-if="u.disabled_at" type="button" class="atl-rowact" @click="enable(u)">
+                  Enable
+                </button>
+                <button
+                  v-else
+                  type="button"
+                  class="atl-revoke"
+                  :disabled="!canDisable(u)"
+                  :title="disableTitle(u)"
+                  :style="{ opacity: canDisable(u) ? 1 : 0.4, cursor: canDisable(u) ? 'pointer' : 'not-allowed' }"
+                  @click="canDisable(u) && (disableTarget = u)"
+                >
+                  Disable
+                </button>
+              </template>
+            </div>
           </div>
-          <div style="flex: 0 0 130px;">
-            <Chip v-if="u.disabled_at" tone="neutral">Disabled</Chip>
-            <Chip v-else-if="isPending(u)" tone="warning">Pending</Chip>
-            <Chip v-else tone="success">Active</Chip>
-          </div>
-          <div style="flex: 1; font-size: 12px; color: var(--c-muted);">{{ fmtDate(u.created_at) }}</div>
-          <div style="flex: 0 0 196px; display: flex; justify-content: flex-end; gap: 6px;">
-            <span v-if="isSelf(u)" class="atl-you">you</span>
-            <template v-else>
-              <button
-                v-if="currentUserIsRoot && !u.is_root"
-                type="button"
-                class="atl-rowact"
-                :title="u.is_system_admin ? 'Remove system-admin' : 'Make system-admin'"
-                @click="toggleSystemAdmin(u)"
-              >
-                <Icon :name="u.is_system_admin ? 'shield-off' : 'shield'" :size="13" />
-              </button>
-              <button
-                v-if="isPending(u) && !u.disabled_at"
-                type="button"
-                class="atl-rowact"
-                title="Regenerate activation link"
-                :disabled="regenerating"
-                @click="regenerateLink(u)"
-              >
-                <Icon name="link" :size="13" />
-              </button>
-              <button
+
+          <!-- Manage panel (inline expand) -->
+          <div v-if="expandedUserId === u.id" class="atl-grants-panel" data-manage-panel>
+            <div class="atl-user-identity">
+              <Avatar :name="initials(u)" :size="30" />
+              <div style="min-width: 0;">
+                <div class="atl-identity-name">{{ u.display_name }}</div>
+                <div class="atl-identity-handle">@{{ u.username }}</div>
+              </div>
+            </div>
+
+            <!-- System admin -->
+            <div v-if="currentUserIsRoot && !u.is_root" class="atl-manage-block">
+              <div class="atl-global-toggle">
+                <button
+                  type="button"
+                  role="switch"
+                  class="atl-switch"
+                  :class="{ 'atl-switch--on': u.is_system_admin }"
+                  :aria-checked="u.is_system_admin"
+                  aria-label="System admin"
+                  data-action="toggle-sysadmin"
+                  @click="sysAdminTarget = u"
+                >
+                  <span class="atl-switch-knob" />
+                </button>
+                <div class="atl-global-copy">
+                  <div class="atl-global-label">System admin</div>
+                  <div class="atl-global-help">
+                    Full platform access — manage users, every workspace, and audit logs.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Account actions -->
+            <div class="atl-manage-block">
+              <div class="atl-manage-label">Account</div>
+              <div class="atl-manage-actions">
+                <button
+                  v-if="isPending(u) && !u.disabled_at"
+                  type="button"
+                  class="atl-manage-btn"
+                  data-action="regenerate-link"
+                  :disabled="regenerating"
+                  @click="regenerateLink(u)"
+                >
+                  <Icon name="link" :size="13" />
+                  Regenerate activation link
+                </button>
+                <button
+                  v-else
+                  type="button"
+                  class="atl-manage-btn"
+                  data-action="reset-password"
+                  @click="resetConfirmTarget = u"
+                >
+                  <Icon name="key" :size="13" />
+                  Reset password
+                </button>
+              </div>
+            </div>
+
+            <!-- Workspace access -->
+            <div class="atl-manage-block">
+              <div class="atl-manage-label">Workspace access</div>
+              <div v-if="membershipsLoading[u.id]" class="atl-grants-loading">
+                Loading access&hellip;
+              </div>
+              <WorkspaceAccessEditor
                 v-else
-                type="button"
-                class="atl-rowact"
-                title="Reset password"
-                @click="startReset(u)"
-              >
-                <Icon name="key" :size="13" />
-              </button>
-              <button v-if="u.disabled_at" type="button" class="atl-rowact" @click="enable(u)">
-                Enable
-              </button>
-              <button
-                v-else
-                type="button"
-                class="atl-revoke"
-                :disabled="!canDisable(u)"
-                :title="disableTitle(u)"
-                :style="{ opacity: canDisable(u) ? 1 : 0.4, cursor: canDisable(u) ? 'pointer' : 'not-allowed' }"
-                @click="canDisable(u) && (disableTarget = u)"
-              >
-                Disable
-              </button>
-            </template>
+                :workspaces="wsStore.adminWorkspaces"
+                :roles="usersStore.memberships[u.id] ?? {}"
+                :options="wsAccessOptions"
+                @assign="(slug, role) => onWsAssign(u, slug, role)"
+                @remove="(slug) => onWsRemove(u, slug)"
+              />
+            </div>
           </div>
-        </div>
+        </template>
       </div>
 
       <div class="atl-users-note">
         <Icon name="shield" :size="13" style="color: var(--c-primary);" />
-        You can't disable yourself or the last remaining root. The shield icon (root only) promotes or demotes system-admin access.
+        You can't disable yourself or the last remaining root. Open Manage to promote or demote system-admin access (root only) and edit a user's workspace access.
       </div>
     </div>
 
@@ -542,6 +704,42 @@ async function confirmDisable(): Promise<void> {
       confirm-icon="lock"
       @confirm="confirmDisable"
       @cancel="disableTarget = null"
+    />
+
+    <ConfirmDialog
+      :open="sysAdminTarget !== null"
+      tone="primary"
+      :width="460"
+      :title="sysAdminPromoting ? 'Promote to system-admin?' : 'Remove system-admin?'"
+      :message="
+        sysAdminPromoting
+          ? 'Grants full platform access — manage every user, every workspace, and the audit logs.'
+          : 'Revokes platform-wide access. They keep only their own workspace memberships.'
+      "
+      :detail="sysAdminDetail"
+      detail-icon="shield"
+      :confirm-label="sysAdminPromoting ? 'Promote' : 'Remove access'"
+      :confirm-icon="sysAdminPromoting ? 'shield' : 'shield-off'"
+      @confirm="confirmSystemAdmin"
+      @cancel="sysAdminTarget = null"
+    />
+
+    <ConfirmDialog
+      :open="resetConfirmTarget !== null"
+      tone="warning"
+      :width="460"
+      title="Reset this user's password?"
+      :message="
+        resetConfirmTarget
+          ? `Sets a new password for ${resetConfirmTarget.display_name} directly. They are NOT notified — you'll share the new password with them.`
+          : undefined
+      "
+      :detail="resetConfirmDetail"
+      detail-icon="user"
+      confirm-label="Continue"
+      confirm-icon="key"
+      @confirm="onResetConfirmed"
+      @cancel="resetConfirmTarget = null"
     />
   </div>
 </template>
@@ -617,6 +815,160 @@ async function confirmDisable(): Promise<void> {
   height: 46px;
   padding: 0 12px;
   border-top: 1px solid var(--c-border);
+  transition: background 0.1s;
+}
+
+.atl-users-row:hover {
+  background: var(--c-raised);
+}
+
+.atl-users-row--expanded {
+  background: var(--c-raised);
+}
+
+/* Manage panel (inline below the user row) — mirrors ApiKeysPanel grants panel */
+.atl-grants-panel {
+  border-top: 1px solid var(--c-border);
+  background: var(--c-background);
+  padding: 12px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.atl-user-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--c-border);
+}
+
+.atl-identity-name {
+  font-size: 13px;
+  font-weight: var(--fw-semibold);
+  color: var(--c-foreground);
+}
+
+.atl-identity-handle {
+  font-size: 11.5px;
+  color: var(--c-muted);
+  font-family: var(--font-mono);
+}
+
+.atl-manage-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.atl-manage-label {
+  font-size: 10px;
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--c-muted);
+}
+
+.atl-manage-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.atl-manage-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 11px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--c-foreground);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.atl-manage-btn:hover:enabled {
+  background: var(--c-raised);
+}
+
+.atl-manage-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.atl-grants-loading {
+  font-size: 12px;
+  color: var(--c-muted);
+  padding: 4px 0;
+}
+
+/* Toggle switch — identical markup/styling to ApiKeysPanel "Global agent". */
+.atl-global-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.atl-switch {
+  flex: 0 0 auto;
+  position: relative;
+  width: 34px;
+  height: 20px;
+  margin-top: 1px;
+  padding: 0;
+  border: 1px solid var(--c-border);
+  border-radius: 9999px;
+  background: var(--c-input);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.atl-switch--on {
+  background: var(--c-agent);
+  border-color: var(--c-agent);
+}
+
+.atl-switch:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.atl-switch-knob {
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: var(--c-foreground);
+  transform: translateY(-50%);
+  transition: left 0.15s;
+}
+
+.atl-switch--on .atl-switch-knob {
+  left: 17px;
+  background: var(--c-on-agent, #fff);
+}
+
+.atl-global-copy {
+  min-width: 0;
+}
+
+.atl-global-label {
+  font-size: 12.5px;
+  font-weight: var(--fw-semibold);
+  color: var(--c-foreground);
+}
+
+.atl-global-help {
+  font-size: 11.5px;
+  color: var(--c-muted);
+  line-height: 1.45;
+  margin-top: 2px;
+  max-width: 440px;
 }
 
 .atl-you {
@@ -632,6 +984,7 @@ async function confirmDisable(): Promise<void> {
 .atl-rowact {
   display: inline-flex;
   align-items: center;
+  gap: 5px;
   height: 24px;
   padding: 0 8px;
   border: 1px solid var(--c-border);

@@ -99,6 +99,19 @@ pub struct MeResponse {
     pub is_system_admin: bool,
 }
 
+/// One workspace a user belongs to, with the membership role.
+///
+/// Returned by `GET /v1/users/{user_id}/memberships` to power the admin
+/// workspace-access editor, which assigns a user across workspaces.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct UserMembershipDto {
+    pub workspace_slug: String,
+    pub workspace_name: String,
+    /// Membership role: `"owner"` | `"admin"` | `"member"`.
+    pub role: String,
+}
+
 /// Request body for `POST /v1/users/{user_id}/system-admin`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]

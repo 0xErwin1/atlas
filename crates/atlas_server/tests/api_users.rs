@@ -398,3 +398,118 @@ async fn disable_requires_admin() {
 
     db.teardown().await;
 }
+
+// ── list_user_memberships: every workspace the user belongs to, with role ─────
+
+#[tokio::test]
+async fn list_user_memberships_returns_workspaces_with_roles() {
+    use atlas_domain::{
+        Actor, WorkspaceCtx, entities::identity::MemberRole, ids::WorkspaceId,
+    };
+    use atlas_server::persistence::repos::{
+        MembershipRepo, NewUser, NewWorkspace, UserRepo, WorkspaceRepo,
+    };
+
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let root = support::login_root_user(&server, &db).await;
+
+    let target = db
+        .user_repo()
+        .create(NewUser {
+            username: "membership-target".to_string(),
+            display_name: "Membership Target".to_string(),
+            email: None,
+            password_hash: Some("$argon2id$v=19$m=19456,t=2,p=1$test$hash".into()),
+            is_root: false,
+            is_system_admin: false,
+        })
+        .await
+        .expect("create target user");
+
+    let ws_alpha = db
+        .workspace_repo()
+        .create(NewWorkspace {
+            id: WorkspaceId::new(),
+            name: "Alpha".to_string(),
+            slug: "ws-alpha".to_string(),
+        })
+        .await
+        .expect("create ws alpha");
+
+    let ws_beta = db
+        .workspace_repo()
+        .create(NewWorkspace {
+            id: WorkspaceId::new(),
+            name: "Beta".to_string(),
+            slug: "ws-beta".to_string(),
+        })
+        .await
+        .expect("create ws beta");
+
+    db.membership_repo()
+        .add(
+            &WorkspaceCtx::new(ws_alpha.id, Actor::User(target.id)),
+            target.id,
+            MemberRole::Member,
+        )
+        .await
+        .expect("add member to ws alpha");
+
+    db.membership_repo()
+        .add(
+            &WorkspaceCtx::new(ws_beta.id, Actor::User(target.id)),
+            target.id,
+            MemberRole::Admin,
+        )
+        .await
+        .expect("add admin to ws beta");
+
+    let memberships = root
+        .list_user_memberships(target.id.0)
+        .await
+        .expect("list memberships");
+
+    assert_eq!(
+        memberships.len(),
+        2,
+        "expected two memberships, got {memberships:?}"
+    );
+
+    let alpha = memberships
+        .iter()
+        .find(|m| m.workspace_slug == "ws-alpha")
+        .expect("alpha membership present");
+    assert_eq!(alpha.workspace_name, "Alpha");
+    assert_eq!(alpha.role, "member");
+
+    let beta = memberships
+        .iter()
+        .find(|m| m.workspace_slug == "ws-beta")
+        .expect("beta membership present");
+    assert_eq!(beta.workspace_name, "Beta");
+    assert_eq!(beta.role, "admin");
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn list_user_memberships_requires_admin() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (non_admin, _ws, _user) =
+        login_user_with_workspace(&server, &db, "non-admin-memberships").await;
+    let (_, _, target) =
+        login_user_with_workspace(&server, &db, "memberships-target-403").await;
+
+    let result = non_admin.list_user_memberships(target.id.0).await;
+
+    assert!(
+        matches!(result, Err(atlas_client::ClientError::Api(ref p)) if p.status == 403),
+        "expected 403 but got {result:?}"
+    );
+
+    db.teardown().await;
+}
