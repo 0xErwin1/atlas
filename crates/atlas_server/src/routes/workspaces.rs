@@ -9,7 +9,7 @@ use atlas_api::dtos::{CreateWorkspaceRequest, UpdateWorkspaceRequest, WorkspaceD
 use atlas_domain::{
     Actor, WorkspaceCtx,
     entities::boards_tasks::NewBoard,
-    entities::identity::{MemberRole, NewWorkspace},
+    entities::identity::{MemberRole, NewWorkspace, Workspace},
     entities::status_templates::NewStatusTemplate,
     entities::workspace_core::NewProject,
     ids::{UserId, WorkspaceId},
@@ -22,9 +22,9 @@ use crate::{
     authz::{RequireUserAdmin, WorkspaceMember},
     error::ApiError,
     persistence::repos::{
-        BoardRepo, MembershipRepo, PgBoardRepo, PgMembershipRepo, PgProjectRepo,
-        PgStatusTemplateRepo, PgUserRepo, PgWorkspaceRepo, ProjectRepo, StatusTemplateRepo,
-        UserRepo, WorkspaceRepo,
+        ApiKeyRepo, BoardRepo, MembershipRepo, PgApiKeyRepo, PgBoardRepo, PgMembershipRepo,
+        PgProjectRepo, PgStatusTemplateRepo, PgUserRepo, PgWorkspaceRepo, ProjectRepo,
+        StatusTemplateRepo, UserRepo, WorkspaceRepo,
     },
     routes::validation::validate_name,
     state::AppState,
@@ -182,61 +182,100 @@ async fn seed_default_content(
 /// Returns the workspaces the authenticated principal can access.
 ///
 /// For users: their member workspaces (or all workspaces for root/system_admin).
-/// For api_keys: the distinct workspaces where the key holds at least one permission grant.
+/// For api_keys: a global key mirrors its creator's reach (so it does NOT need
+/// per-workspace grants); a non-global key lists the workspaces where it holds at
+/// least one grant.
 pub(crate) async fn list_workspaces(
     State(state): State<AppState>,
     Extension(principal): Extension<Principal>,
 ) -> Result<Json<Vec<WorkspaceDto>>, ApiError> {
-    let ws_repo = PgWorkspaceRepo {
-        conn: (*state.db).clone(),
-    };
-
-    match principal {
+    let workspaces = match principal {
         Principal::ApiKey(kid) => {
-            let workspaces =
-                ws_repo
-                    .list_for_api_key(kid)
-                    .await
-                    .map_err(|e| ApiError::Internal {
-                        message: e.to_string(),
-                    })?;
-
-            let dtos = workspaces.iter().map(workspace_to_dto).collect();
-            Ok(Json(dtos))
-        }
-
-        Principal::User(user_id) => {
-            let user_repo = PgUserRepo {
+            let key = PgApiKeyRepo {
                 conn: (*state.db).clone(),
-            };
-            let user = user_repo
-                .find_by_id(user_id)
+            }
+            .get_by_id(kid)
+            .await
+            .map_err(|e| ApiError::Internal {
+                message: e.to_string(),
+            })?
+            .ok_or(ApiError::Unauthorized)?;
+
+            if key.is_global {
+                reachable_workspaces_for_user(&state, key.created_by_user_id).await?
+            } else {
+                PgWorkspaceRepo {
+                    conn: (*state.db).clone(),
+                }
+                .list_for_api_key(kid)
                 .await
                 .map_err(|e| ApiError::Internal {
                     message: e.to_string(),
                 })?
-                .ok_or(ApiError::Unauthorized)?;
+            }
+        }
+
+        Principal::User(user_id) => {
+            let user = PgUserRepo {
+                conn: (*state.db).clone(),
+            }
+            .find_by_id(user_id)
+            .await
+            .map_err(|e| ApiError::Internal {
+                message: e.to_string(),
+            })?
+            .ok_or(ApiError::Unauthorized)?;
 
             if user.disabled_at.is_some() {
                 return Err(ApiError::Unauthorized);
             }
 
-            let workspaces = if user.is_root || user.is_system_admin {
-                ws_repo.list_all().await.map_err(|e| ApiError::Internal {
-                    message: e.to_string(),
-                })?
-            } else {
-                ws_repo
-                    .list_for_user(user_id)
-                    .await
-                    .map_err(|_| ApiError::Internal {
-                        message: "workspace lookup failed".into(),
-                    })?
-            };
-
-            let dtos = workspaces.iter().map(workspace_to_dto).collect();
-            Ok(Json(dtos))
+            reachable_workspaces_for_user(&state, user_id).await?
         }
+    };
+
+    Ok(Json(workspaces.iter().map(workspace_to_dto).collect()))
+}
+
+/// The workspaces a user can reach: every workspace for a root/system-admin,
+/// otherwise their member workspaces. Returns an empty list for a missing or
+/// disabled user, so a global agent whose creator is gone or disabled reaches
+/// nothing — keeping `list_workspaces` consistent with the per-request authz.
+async fn reachable_workspaces_for_user(
+    state: &AppState,
+    user_id: UserId,
+) -> Result<Vec<Workspace>, ApiError> {
+    let Some(user) = PgUserRepo {
+        conn: (*state.db).clone(),
+    }
+    .find_by_id(user_id)
+    .await
+    .map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?
+    else {
+        return Ok(Vec::new());
+    };
+
+    if user.disabled_at.is_some() {
+        return Ok(Vec::new());
+    }
+
+    let ws_repo = PgWorkspaceRepo {
+        conn: (*state.db).clone(),
+    };
+
+    if user.is_root || user.is_system_admin {
+        ws_repo.list_all().await.map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })
+    } else {
+        ws_repo
+            .list_for_user(user_id)
+            .await
+            .map_err(|_| ApiError::Internal {
+                message: "workspace lookup failed".into(),
+            })
     }
 }
 

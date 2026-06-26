@@ -11,7 +11,7 @@ use atlas_api::dtos::{CreateGrantRequest, GrantPrincipal, UpdateWorkspaceRequest
 use atlas_client::ClientError;
 use atlas_domain::{Actor, WorkspaceCtx, entities::permissions::NewPermissionGrant};
 use atlas_server::persistence::repos::{
-    ApiKeyRepo, NewApiKey, PermissionGrantRepo, PgPermissionGrantRepo,
+    ApiKeyRepo, NewApiKey, PermissionGrantRepo, PgPermissionGrantRepo, UserRepo,
 };
 use support::{TestDb, TestServer, login_user_with_workspace};
 
@@ -505,6 +505,59 @@ async fn list_workspaces_user_still_sees_own_workspaces_after_fix() {
         !workspaces.iter().any(|w| w.slug == ws_b.slug),
         "user must NOT see another tenant's workspace '{}' after the fix",
         ws_b.slug
+    );
+
+    db.teardown().await;
+}
+
+/// A global key created by root lists EVERY workspace (its creator's reach), not
+/// just the workspaces where it holds a grant — a global key needs no grants.
+#[tokio::test]
+async fn global_api_key_created_by_root_lists_all_workspaces() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (_a, ws_a, _ua) = login_user_with_workspace(&server, &db, "glob-ls-a").await;
+    let (_b, ws_b, _ub) = login_user_with_workspace(&server, &db, "glob-ls-b").await;
+
+    let root = support::login_root_user(&server, &db).await;
+    let root_user = db
+        .user_repo()
+        .find_root()
+        .await
+        .expect("find_root")
+        .expect("root user exists");
+
+    let plain = "atlas_glob_ls_secret";
+    let key = db
+        .api_key_repo()
+        .create_for_user(
+            root_user.id,
+            NewApiKey {
+                name: "glob-ls-key".to_string(),
+                token_hash: atlas_server::auth::tokens::hash_token(plain),
+                type_: atlas_domain::entities::identity::ApiKeyType::Agent,
+                expires_at: None,
+            },
+        )
+        .await
+        .expect("create root-owned key");
+
+    root.set_api_key_global(key.id.0, true)
+        .await
+        .expect("root marks own key global");
+
+    let agent = atlas_client::AtlasClient::new(server.base_url().to_string()).with_token(plain);
+    let workspaces = agent.list_workspaces().await.expect("list_workspaces");
+    let slugs: Vec<String> = workspaces.iter().map(|w| w.slug.clone()).collect();
+
+    assert!(
+        slugs.iter().any(|s| s == &ws_a.slug),
+        "global key must list ws_a; got {slugs:?}"
+    );
+    assert!(
+        slugs.iter().any(|s| s == &ws_b.slug),
+        "global key must list ws_b; got {slugs:?}"
     );
 
     db.teardown().await;
