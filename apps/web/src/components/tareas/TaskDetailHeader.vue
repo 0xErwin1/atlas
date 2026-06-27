@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { computed, ref } from 'vue';
 import TaskViewModeSwitch from '@/components/tareas/TaskViewModeSwitch.vue';
+import ContextMenu, { type MenuItem } from '@/components/ui/ContextMenu.vue';
 import Icon from '@/components/ui/Icon.vue';
 import { type TaskViewMode, useUiStore } from '@/stores/ui';
 
@@ -43,6 +45,41 @@ const emit = defineEmits<{
 }>();
 
 const ui = useUiStore();
+
+const menuOpen = ref(false);
+const menuX = ref(0);
+const menuY = ref(0);
+
+const MENU_WIDTH = 210;
+
+function openMenu(event: MouseEvent): void {
+  const btn = event.currentTarget as HTMLElement | null;
+  if (btn !== null) {
+    const rect = btn.getBoundingClientRect();
+    menuX.value = rect.right - MENU_WIDTH;
+    menuY.value = rect.bottom + 4;
+  }
+  menuOpen.value = true;
+}
+
+function taskUrl(): string {
+  return `${window.location.origin}/t/task/${props.readableId}`;
+}
+
+async function copy(text: string, label: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+    ui.showBanner(`${label} copied`, 'success');
+  } catch {
+    ui.showBanner('Clipboard is not available', 'error');
+  }
+}
+
+const menuItems = computed<MenuItem[]>(() => [
+  { label: 'Copy link', icon: 'link', action: () => copy(taskUrl(), 'Link') },
+  { label: 'Copy ID', icon: 'hash', action: () => copy(props.readableId, 'ID') },
+  { label: 'Open in new tab', icon: 'external-link', action: () => window.open(taskUrl(), '_blank') },
+]);
 </script>
 
 <template>
@@ -130,10 +167,19 @@ const ui = useUiStore();
       style="width: 24px; height: 24px;"
       title="More"
       aria-label="More actions"
-      @click="ui.showBanner('That action is coming soon', 'info')"
+      @click="openMenu"
     >
       <Icon name="more-horizontal" :size="16" />
     </button>
+
+    <ContextMenu
+      :open="menuOpen"
+      :x="menuX"
+      :y="menuY"
+      :items="menuItems"
+      :width="MENU_WIDTH"
+      @close="menuOpen = false"
+    />
 
     <button
       v-if="showClose"
