@@ -615,6 +615,9 @@ export const useBoardsStore = defineStore('boards', () => {
       due_date?: string | null;
       estimate?: number | null;
       labels?: string[];
+      // The custom-field value map (keyed by property-definition key); replaces
+      // the task's stored properties wholesale, so callers send the merged map.
+      properties?: Record<string, unknown> | null;
     },
   ): Promise<boolean> {
     const { data, error: apiError } = await wrappedClient.PATCH('/v1/workspaces/{ws}/tasks/{readable_id}', {

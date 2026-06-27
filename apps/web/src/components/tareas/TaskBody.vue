@@ -6,6 +6,7 @@ import ActivityFeed from '@/components/tareas/ActivityFeed.vue';
 import AssigneeList from '@/components/tareas/AssigneeList.vue';
 import AttachmentList from '@/components/tareas/AttachmentList.vue';
 import Checklist from '@/components/tareas/Checklist.vue';
+import CustomFieldsSection from '@/components/tareas/CustomFieldsSection.vue';
 import ReferenceAdd from '@/components/tareas/ReferenceAdd.vue';
 import ReferenceList from '@/components/tareas/ReferenceList.vue';
 import SubtaskList from '@/components/tareas/SubtaskList.vue';
@@ -239,7 +240,6 @@ async function onRemoveReference(referenceId: string): Promise<void> {
 
 const statusOpen = ref(false);
 const addStatusOpen = ref(false);
-const customFieldsOpen = ref(true);
 
 async function onCreateStatus(value: string): Promise<void> {
   addStatusOpen.value = false;
@@ -533,35 +533,8 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
       />
     </div>
 
-    <div class="atl-tv-cf" style="margin-top: 22px;">
-      <div class="atl-tv-cf-head">
-        <button
-          type="button"
-          class="atl-tv-cf-toggle"
-          :aria-expanded="customFieldsOpen"
-          @click="customFieldsOpen = !customFieldsOpen"
-        >
-          <Icon
-            name="chevron-down"
-            :size="13"
-            :style="{ transform: customFieldsOpen ? 'none' : 'rotate(-90deg)', transition: 'transform 0.12s' }"
-          />
-          Custom fields
-        </button>
-        <span style="flex: 1;" />
-        <button type="button" class="atl-gbtn" style="width: 22px; height: 22px;" title="Search fields" @click="comingSoon">
-          <Icon name="search" :size="13" />
-        </button>
-        <button type="button" class="atl-gbtn" style="width: 22px; height: 22px;" title="Add field" @click="comingSoon">
-          <Icon name="plus" :size="14" />
-        </button>
-      </div>
-      <div v-if="customFieldsOpen" class="atl-tv-cf-body">
-        <div class="atl-tv-cf-empty">
-          No custom fields yet.
-          <button type="button" class="atl-tv-link" @click="comingSoon">Add one</button>
-        </div>
-      </div>
+    <div style="margin-top: 22px;">
+      <CustomFieldsSection :ws="ws" :task="task" />
     </div>
 
     <div v-if="detail.attachments.length" style="margin-top: 22px;">
@@ -849,44 +822,6 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
   height: 7px;
   border-radius: var(--r-full);
   flex: 0 0 auto;
-}
-
-.atl-tv-cf-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-
-.atl-tv-cf-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-semibold);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--c-muted);
-}
-
-.atl-tv-cf-body {
-  border: 1px solid var(--c-border);
-  border-radius: 4px;
-  padding: 4px;
-}
-
-.atl-tv-cf-empty {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 38px;
-  padding: 0 8px;
-  font-size: var(--fs-sm);
-  color: var(--c-muted);
 }
 
 .atl-tv-actions {
