@@ -1,5 +1,6 @@
 import { type DOMWrapper, mount, type VueWrapper } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { nextTick } from 'vue';
 import WorkspaceAccessEditor, {
   type RoleOption,
   type WorkspaceRef,
@@ -10,13 +11,20 @@ function dialogEl<T extends Element = HTMLElement>(selector: string): T | null {
   return document.body.querySelector<T>(selector);
 }
 
-// The role control is now a Dropdown: click its trigger button to open the
-// listbox, then click the option whose label matches.
+// The role control is now a Dropdown whose listbox teleports to <body>: click
+// the row's trigger button to open it, then click the teleported option whose
+// label matches.
 async function pickRole(row: DOMWrapper<Element>, label: string): Promise<void> {
   await row.find('button').trigger('click');
-  const option = row.findAll('li[role="option"]').find((li) => li.text() === label);
+  await nextTick();
+
+  const option = Array.from(document.body.querySelectorAll<HTMLElement>('li[role="option"]')).find(
+    (li) => li.textContent?.trim() === label,
+  );
   if (option === undefined) throw new Error(`option not found: ${label}`);
-  await option.trigger('click');
+
+  option.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  await nextTick();
 }
 
 function roleTrigger(row: DOMWrapper<Element>): string {

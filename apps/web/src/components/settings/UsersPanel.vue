@@ -545,8 +545,9 @@ async function confirmDisable(): Promise<void> {
           <div
             class="atl-users-row"
             :class="{ 'atl-users-row--expanded': expandedUserId === u.id }"
-            :style="{ opacity: u.disabled_at ? 0.72 : 1 }"
+            :style="{ opacity: u.disabled_at ? 0.72 : 1, cursor: isSelf(u) ? 'default' : 'pointer' }"
             data-user-row
+            @click="!isSelf(u) && toggleManage(u)"
           >
             <div style="flex: 2; display: flex; align-items: center; gap: 10px; min-width: 0;">
               <Avatar :name="initials(u)" :size="26" />
@@ -569,7 +570,7 @@ async function confirmDisable(): Promise<void> {
               <Chip v-else tone="success">Active</Chip>
             </div>
             <div style="flex: 1; font-size: 12px; color: var(--c-muted);">{{ fmtDate(u.created_at) }}</div>
-            <div style="flex: 0 0 220px; display: flex; justify-content: flex-end; gap: 6px;">
+            <div style="flex: 0 0 220px; display: flex; justify-content: flex-end; gap: 6px;" @click.stop>
               <span v-if="isSelf(u)" class="atl-you">you</span>
               <template v-else>
                 <button

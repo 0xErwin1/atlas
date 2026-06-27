@@ -24,15 +24,15 @@ async function openRoleDropdown(): Promise<void> {
   await nextTick();
 }
 
+// The Dropdown's listbox teleports to <body> as a sibling of the dialog (not
+// nested under [data-add-role]), so the options are matched at the body root.
 function roleOptionLabels(): string[] {
-  return dialogAll('[data-add-role] li[role="option"]').map((li) => li.textContent?.trim() ?? '');
+  return dialogAll('li[role="option"]').map((li) => li.textContent?.trim() ?? '');
 }
 
 async function pickRole(label: string): Promise<void> {
   await openRoleDropdown();
-  const option = dialogAll('[data-add-role] li[role="option"]').find(
-    (li) => li.textContent?.trim() === label,
-  );
+  const option = dialogAll('li[role="option"]').find((li) => li.textContent?.trim() === label);
   option?.dispatchEvent(new Event('click', { bubbles: true }));
   await nextTick();
 }

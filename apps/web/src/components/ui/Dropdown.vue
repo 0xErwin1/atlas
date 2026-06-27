@@ -49,7 +49,7 @@ const selectedLabel = (): string => selectedOption()?.label ?? props.placeholder
 </script>
 
 <template>
-  <Popover placement="bottom-start">
+  <Popover placement="bottom-start" teleport>
     <template #trigger="{ open, toggle }">
       <button
         type="button"

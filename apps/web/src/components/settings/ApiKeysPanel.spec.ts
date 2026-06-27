@@ -1,6 +1,7 @@
 import { type DOMWrapper, flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { nextTick } from 'vue';
 import ApiKeysPanel from '@/components/settings/ApiKeysPanel.vue';
 import WorkspaceAccessEditor from '@/components/settings/WorkspaceAccessEditor.vue';
 import { type ApiKeyDto, type ApiKeyGrantDto, useApiKeysStore } from '@/stores/apiKeys';
@@ -40,18 +41,27 @@ function workspace(slug: string, name: string): WorkspaceDto {
 
 const ADMIN_WORKSPACES = [workspace('acme', 'Acme'), workspace('beta', 'Beta')];
 
-// Each workspace row's role control is a Dropdown: open its trigger, then click
-// the option matching the label.
+// Each workspace row's role control is a Dropdown whose listbox teleports to
+// <body>: open its trigger, then click the teleported option matching the label.
 async function pickRole(row: DOMWrapper<Element>, label: string): Promise<void> {
   await row.find('button').trigger('click');
-  const option = row.findAll('li[role="option"]').find((li) => li.text() === label);
+  await nextTick();
+
+  const option = Array.from(document.body.querySelectorAll<HTMLElement>('li[role="option"]')).find(
+    (li) => li.textContent?.trim() === label,
+  );
   if (option === undefined) throw new Error(`option not found: ${label}`);
-  await option.trigger('click');
+
+  option.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  await nextTick();
 }
 
 async function roleOptionLabels(row: DOMWrapper<Element>): Promise<string[]> {
   await row.find('button').trigger('click');
-  return row.findAll('li[role="option"]').map((li) => li.text());
+  await nextTick();
+  return Array.from(document.body.querySelectorAll<HTMLElement>('li[role="option"]')).map(
+    (li) => li.textContent?.trim() ?? '',
+  );
 }
 
 function setup(keys: ApiKeyDto[], grants: ApiKeyGrantDto[] = []) {
@@ -73,7 +83,7 @@ function setup(keys: ApiKeyDto[], grants: ApiKeyGrantDto[] = []) {
 let activeWrapper: VueWrapper | null = null;
 
 async function mountExpanded(): Promise<VueWrapper> {
-  const wrapper = mount(ApiKeysPanel);
+  const wrapper = mount(ApiKeysPanel, { attachTo: document.body });
   activeWrapper = wrapper;
   await flushPromises();
   await wrapper.find('.atl-keys-row').trigger('click');
@@ -84,6 +94,7 @@ async function mountExpanded(): Promise<VueWrapper> {
 afterEach(() => {
   activeWrapper?.unmount();
   activeWrapper = null;
+  document.body.innerHTML = '';
 });
 
 describe('ApiKeysPanel — agent reach overview', () => {
