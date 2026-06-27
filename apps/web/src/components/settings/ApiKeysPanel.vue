@@ -12,6 +12,7 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
 import FormField from '@/components/ui/FormField.vue';
 import Icon from '@/components/ui/Icon.vue';
+import { useLoadingMap } from '@/composables/useLoadingMap';
 import { formatDate } from '@/lib/format';
 import { grantRoleOptions } from '@/lib/grantRoles';
 import { validateForm } from '@/lib/validation';
@@ -136,7 +137,7 @@ async function confirmRevoke(): Promise<void> {
 
 const expandedKeyId = ref<string | null>(null);
 const keyGrants = ref<Record<string, ApiKeyGrantDto[]>>({});
-const grantsLoading = ref<Record<string, boolean>>({});
+const grantsLoading = useLoadingMap();
 
 // Agents are capped at editor — the Admin role is never offered for a key.
 const wsAccessOptions: RoleOption[] = grantRoleOptions('api_key');
@@ -155,11 +156,11 @@ function toggleExpand(keyId: string): void {
 }
 
 async function loadGrants(keyId: string): Promise<void> {
-  grantsLoading.value = { ...grantsLoading.value, [keyId]: true };
+  grantsLoading.set(keyId, true);
 
   const grants = await keysStore.loadKeyGrants(keyId);
 
-  grantsLoading.value = { ...grantsLoading.value, [keyId]: false };
+  grantsLoading.set(keyId, false);
 
   if (grants !== null) {
     keyGrants.value = { ...keyGrants.value, [keyId]: grants };
@@ -464,7 +465,7 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
                   <Icon name="globe" :size="12" />
                   Global — every workspace you can reach (editor)
                 </span>
-                <span v-else-if="!grantsLoading[k.id]" class="atl-access-summary">
+                <span v-else-if="!grantsLoading.isLoading(k.id)" class="atl-access-summary">
                   {{ accessSummary(k.id) }}
                 </span>
               </div>
@@ -492,7 +493,7 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
               </div>
             </div>
 
-            <div v-if="grantsLoading[k.id]" class="atl-grants-loading">
+            <div v-if="grantsLoading.isLoading(k.id)" class="atl-grants-loading">
               Loading access&hellip;
             </div>
 

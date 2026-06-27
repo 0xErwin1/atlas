@@ -13,6 +13,7 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
 import FormField from '@/components/ui/FormField.vue';
 import Icon from '@/components/ui/Icon.vue';
+import { useLoadingMap } from '@/composables/useLoadingMap';
 import { formatDate, initials as nameInitials } from '@/lib/format';
 import { validateForm } from '@/lib/validation';
 import { workspaceRoleOptions } from '@/lib/workspaceRoles';
@@ -230,7 +231,7 @@ async function submitReset(): Promise<void> {
 
 // ── Manage panel (expand) ──────────────────────────────────────────
 const expandedUserId = ref<string | null>(null);
-const membershipsLoading = ref<Record<string, boolean>>({});
+const membershipsLoading = useLoadingMap();
 
 function toggleManage(u: UserDto): void {
   if (expandedUserId.value === u.id) {
@@ -246,9 +247,9 @@ function toggleManage(u: UserDto): void {
 }
 
 async function loadMemberships(u: UserDto): Promise<void> {
-  membershipsLoading.value = { ...membershipsLoading.value, [u.id]: true };
+  membershipsLoading.set(u.id, true);
   await usersStore.loadMemberships(u.id);
-  membershipsLoading.value = { ...membershipsLoading.value, [u.id]: false };
+  membershipsLoading.set(u.id, false);
 
   if (usersStore.error) ui.showBanner(usersStore.error, 'error');
 }
@@ -640,7 +641,7 @@ async function confirmDisable(): Promise<void> {
               <!-- Workspace access -->
               <div class="atl-manage-block">
                 <div class="atl-manage-label">Workspace access</div>
-                <div v-if="membershipsLoading[u.id]" class="atl-grants-loading">
+                <div v-if="membershipsLoading.isLoading(u.id)" class="atl-grants-loading">
                   Loading access&hellip;
                 </div>
                 <WorkspaceAccessEditor
