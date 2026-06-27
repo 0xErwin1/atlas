@@ -31,6 +31,11 @@
 }
 
 :root {
+  /* Tell the UA to render native controls (date pickers, calendars, the
+     scrollbar gutter) dark, so their built-in glyphs stay legible on the dark
+     palette. The light theme flips this below. */
+  color-scheme: dark;
+
   /* Palette */
   --c-background: #0A0E14;
   --c-panel: #0F1419;
@@ -148,6 +153,7 @@
    mirror translation applied when <html data-theme="light">. Only the palette
    and semantic colors change; typography, spacing, radii and shadows are shared. */
 :root[data-theme='light'] {
+  color-scheme: light;
   --c-background: #FCFCFC;
   --c-panel: #F3F4F6;
   --c-raised: #ECEEF1;

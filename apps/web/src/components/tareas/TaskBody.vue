@@ -723,8 +723,8 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
 }
 
 .atl-tv-input {
-  height: 26px;
-  padding: 0 8px;
+  height: 28px;
+  padding: 0 10px;
   background: var(--c-raised);
   border: 1px solid var(--c-border);
   border-radius: var(--r-md);
@@ -732,10 +732,26 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
   font-family: var(--font-mono);
   font-size: var(--fs-sm);
   outline: none;
+  transition:
+    border-color 0.12s ease,
+    box-shadow 0.12s ease;
 }
 
-.atl-tv-input:focus {
-  border-color: var(--c-primary);
+.atl-tv-input:hover {
+  border-color: var(--c-muted);
+}
+
+/* The native date picker's calendar glyph follows the theme via `color-scheme`
+   (set per theme in tokens.css); tint it muted and brighten it on hover/focus. */
+.atl-tv-input[type='date']::-webkit-calendar-picker-indicator {
+  opacity: 0.55;
+  cursor: pointer;
+  transition: opacity 0.12s ease;
+}
+
+.atl-tv-input[type='date']:hover::-webkit-calendar-picker-indicator,
+.atl-tv-input[type='date']:focus::-webkit-calendar-picker-indicator {
+  opacity: 0.9;
 }
 
 /* Numeric fields (estimate) carry no spin buttons — the value is typed, not nudged. */
