@@ -18,3 +18,5 @@ vite.config.d.ts
 .claude/worktrees
 # Local Pi runtime state
 .agent/
+# Local attachment store (ATLAS_ATTACHMENT_ROOT default)
+/data/
