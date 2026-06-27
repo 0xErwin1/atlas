@@ -15,6 +15,9 @@ const props = withDefaults(
     showNav?: boolean;
     hasPrev?: boolean;
     hasNext?: boolean;
+    /** Right inspector collapse toggle, shown only in the full-screen view. */
+    showInspectorToggle?: boolean;
+    inspectorOpen?: boolean;
   }>(),
   {
     breadcrumbs: () => [],
@@ -24,6 +27,8 @@ const props = withDefaults(
     showNav: false,
     hasPrev: false,
     hasNext: false,
+    showInspectorToggle: false,
+    inspectorOpen: true,
   },
 );
 
@@ -34,6 +39,7 @@ const emit = defineEmits<{
   prev: [];
   next: [];
   change: [mode: TaskViewMode];
+  toggleInspector: [];
 }>();
 
 const ui = useUiStore();
@@ -104,6 +110,18 @@ const ui = useUiStore();
       @click="emit('expand')"
     >
       <Icon name="maximize-2" :size="15" />
+    </button>
+
+    <button
+      v-if="showInspectorToggle"
+      type="button"
+      class="atl-gbtn"
+      style="width: 26px; height: 26px;"
+      :title="inspectorOpen ? 'Hide details panel' : 'Show details panel'"
+      :aria-label="inspectorOpen ? 'Hide details panel' : 'Show details panel'"
+      @click="emit('toggleInspector')"
+    >
+      <Icon :name="inspectorOpen ? 'panel-right-close' : 'panel-right-open'" :size="16" />
     </button>
 
     <button

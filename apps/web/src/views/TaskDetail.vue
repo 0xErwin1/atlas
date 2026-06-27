@@ -92,15 +92,18 @@ watch([readableId, ws], load, { immediate: true });
       :breadcrumbs="breadcrumbs"
       show-back
       :show-close="false"
+      :show-inspector-toggle="!isMobile"
+      :inspector-open="ui.taskInspectorOpen"
       @back="backToBoard()"
       @change="onChangeMode"
+      @toggle-inspector="ui.toggleTaskInspector()"
     />
 
     <div v-if="task" class="flex flex-1 min-h-0">
       <div class="flex-1 overflow-y-auto" :style="isMobile ? 'padding: 16px;' : 'padding: 24px 40px;'">
         <TaskBody :task="task" :ws="ws" layout="wide" :show-secondary="isMobile" />
       </div>
-      <TaskInspector v-if="!isMobile" :task="task" :ws="ws" />
+      <TaskInspector v-if="!isMobile && ui.taskInspectorOpen" :task="task" :ws="ws" />
     </div>
     <div v-else class="flex-1 overflow-y-auto" style="padding: 24px 40px;">
       <ErrorState

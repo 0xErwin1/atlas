@@ -25,6 +25,15 @@ const EDITOR_WIDE_STORAGE_KEY = 'atlas:editor-wide';
 const THEME_STORAGE_KEY = 'atlas:theme';
 const SIDEBAR_STORAGE_KEY = 'atlas:sidebar-collapsed';
 const TASK_VIEW_MODE_STORAGE_KEY = 'atlas.taskview.mode';
+const TASK_INSPECTOR_STORAGE_KEY = 'atlas:task-inspector-open';
+
+function loadTaskInspectorOpen(): boolean {
+  try {
+    return localStorage.getItem(TASK_INSPECTOR_STORAGE_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
 
 function loadTaskViewMode(): TaskViewMode {
   try {
@@ -212,6 +221,19 @@ export const useUiStore = defineStore('ui', () => {
     taskViewModeOverride.value = null;
   }
 
+  // Whether the full-screen task detail's right inspector dock is shown. Persisted
+  // so collapsing it for more body width sticks across tasks/sessions.
+  const taskInspectorOpen = ref(loadTaskInspectorOpen());
+
+  function toggleTaskInspector() {
+    taskInspectorOpen.value = !taskInspectorOpen.value;
+    try {
+      localStorage.setItem(TASK_INSPECTOR_STORAGE_KEY, taskInspectorOpen.value ? '1' : '0');
+    } catch {
+      // ignore storage errors
+    }
+  }
+
   // Which layout the board's tasks render in (kanban board, list, table,
   // calendar, timeline) and how non-board layouts group rows. Session state.
   const taskView = ref<TaskBoardView>('board');
@@ -280,6 +302,8 @@ export const useUiStore = defineStore('ui', () => {
     setTaskViewMode,
     openTaskInMode,
     clearTaskViewModeOverride,
+    taskInspectorOpen,
+    toggleTaskInspector,
     taskView,
     setTaskView,
     taskGroupBy,
