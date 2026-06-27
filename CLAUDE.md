@@ -13,4 +13,4 @@ Do not duplicate project rules here. Keep `AGENTS.md` as the single source of tr
 
 ## Hard rule — reuse, never duplicate
 
-Do not reimplement or copy-paste UI (or any) patterns. Use the shared components/primitives (`Dropdown`, `Popover`, `ConfirmDialog`, `FormField`, `ExpandableRow`, …); the moment a pattern recurs, extract one component and have every call site use it. Duplicated markup/CSS/logic is a defect to remove, not extend. Full rule: `AGENTS.md` → Web frontend, and `CODE_STYLE.md` → TypeScript / Vue → Patterns.
+Do not reimplement or copy-paste UI (or any) patterns. Use the shared components/primitives (`Dropdown`, `Popover`, `ConfirmDialog`, `FormField`, `SettingsTable`, `ExpandableRow`, `PanelHeader`, `RowAction`, `EmptyState`, …) and the shared logic helpers (`errorHint`, `initials`/`formatDate`, the role helpers in `lib/workspaceRoles`/`lib/grantRoles`, `useLoadingMap`, …); the moment a pattern recurs, extract one component or helper and have every call site use it. Duplicated markup/CSS/logic is a defect to remove, not extend. Full rule: `AGENTS.md` → Web frontend, and `CODE_STYLE.md` → TypeScript / Vue → Patterns.
