@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { z } from 'zod';
+import PanelHeader from '@/components/settings/PanelHeader.vue';
 import Btn from '@/components/ui/Btn.vue';
 import FormField from '@/components/ui/FormField.vue';
 import Icon from '@/components/ui/Icon.vue';
@@ -56,10 +57,7 @@ async function save(): Promise<void> {
 
 <template>
   <div>
-    <div class="atl-panel-head">
-      <div class="atl-panel-title">General</div>
-      <div class="atl-panel-sub">Rename this workspace — its URL slug stays the same</div>
-    </div>
+    <PanelHeader title="General" subtitle="Rename this workspace — its URL slug stays the same" />
 
     <div class="flex flex-col" style="gap: 14px; max-width: 430px;">
       <FormField
@@ -83,22 +81,6 @@ async function save(): Promise<void> {
 </template>
 
 <style scoped>
-.atl-panel-head {
-  margin-bottom: 16px;
-}
-
-.atl-panel-title {
-  font-size: 15px;
-  font-weight: var(--fw-bold);
-  color: var(--c-foreground);
-}
-
-.atl-panel-sub {
-  font-size: 12px;
-  color: var(--c-muted);
-  margin-top: 3px;
-}
-
 .atl-slug-note {
   display: flex;
   align-items: center;

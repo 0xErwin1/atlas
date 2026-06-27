@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import PanelHeader from '@/components/settings/PanelHeader.vue';
 import EmptyState from '@/components/states/EmptyState.vue';
 import Avatar from '@/components/ui/Avatar.vue';
 import Icon from '@/components/ui/Icon.vue';
@@ -138,12 +139,10 @@ watch(activeWs, (ws, prev) => {
 
 <template>
   <div>
-    <div class="atl-panel-head">
-      <div class="atl-panel-title">Activity</div>
-      <div class="atl-panel-sub">
-        Who did what across this workspace. You only see activity on tasks you can access.
-      </div>
-    </div>
+    <PanelHeader
+      title="Activity"
+      subtitle="Who did what across this workspace. You only see activity on tasks you can access."
+    />
 
     <div class="atl-activity-controls">
       <div class="atl-actor-tabs" role="tablist" aria-label="Filter by actor">
@@ -257,22 +256,6 @@ watch(activeWs, (ws, prev) => {
 </template>
 
 <style scoped>
-.atl-panel-head {
-  margin-bottom: 16px;
-}
-
-.atl-panel-title {
-  font-size: 15px;
-  font-weight: var(--fw-bold);
-  color: var(--c-foreground);
-}
-
-.atl-panel-sub {
-  font-size: 12px;
-  color: var(--c-muted);
-  margin-top: 3px;
-}
-
 .atl-activity-controls {
   display: flex;
   align-items: center;

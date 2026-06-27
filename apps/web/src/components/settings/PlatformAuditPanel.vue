@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import PanelHeader from '@/components/settings/PanelHeader.vue';
 import EmptyState from '@/components/states/EmptyState.vue';
 import Avatar from '@/components/ui/Avatar.vue';
 import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
@@ -179,13 +180,10 @@ watch(sentinel, () => observeSentinel());
 
 <template>
   <div>
-    <div class="atl-panel-head">
-      <div class="atl-panel-title">Platform audit</div>
-      <div class="atl-panel-sub">
-        Platform-level security events &mdash; user creation, account changes, and API key activity.
-        Visible to platform administrators.
-      </div>
-    </div>
+    <PanelHeader
+      title="Platform audit"
+      subtitle="Platform-level security events &mdash; user creation, account changes, and API key activity. Visible to platform administrators."
+    />
 
     <div class="atl-activity-controls">
       <div class="atl-actor-tabs" role="tablist" aria-label="Filter by actor">
@@ -303,22 +301,6 @@ watch(sentinel, () => observeSentinel());
 </template>
 
 <style scoped>
-.atl-panel-head {
-  margin-bottom: 16px;
-}
-
-.atl-panel-title {
-  font-size: 15px;
-  font-weight: var(--fw-bold);
-  color: var(--c-foreground);
-}
-
-.atl-panel-sub {
-  font-size: 12px;
-  color: var(--c-muted);
-  margin-top: 3px;
-}
-
 .atl-activity-controls {
   display: flex;
   align-items: center;

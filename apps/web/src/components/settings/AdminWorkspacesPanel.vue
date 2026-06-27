@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
+import PanelHeader from '@/components/settings/PanelHeader.vue';
 import Btn from '@/components/ui/Btn.vue';
 import Icon from '@/components/ui/Icon.vue';
 import { useUiStore } from '@/stores/ui';
@@ -52,10 +53,7 @@ async function saveEdit(ws: WorkspaceDto): Promise<void> {
 
 <template>
   <div>
-    <div class="atl-panel-head">
-      <div class="atl-panel-title">Workspaces</div>
-      <div class="atl-panel-sub">Every workspace in the system — rename any of them</div>
-    </div>
+    <PanelHeader title="Workspaces" subtitle="Every workspace in the system — rename any of them" />
 
     <div class="atl-ws-table">
       <div class="atl-ws-head">
@@ -101,22 +99,6 @@ async function saveEdit(ws: WorkspaceDto): Promise<void> {
 </template>
 
 <style scoped>
-.atl-panel-head {
-  margin-bottom: 16px;
-}
-
-.atl-panel-title {
-  font-size: 15px;
-  font-weight: var(--fw-bold);
-  color: var(--c-foreground);
-}
-
-.atl-panel-sub {
-  font-size: 12px;
-  color: var(--c-muted);
-  margin-top: 3px;
-}
-
 .atl-ws-table {
   border: 1px solid var(--c-border);
   border-radius: 4px;

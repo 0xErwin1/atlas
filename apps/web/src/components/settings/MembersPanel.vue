@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
+import PanelHeader from '@/components/settings/PanelHeader.vue';
 import EmptyState from '@/components/states/EmptyState.vue';
 import AgentBadge from '@/components/ui/AgentBadge.vue';
 import Avatar from '@/components/ui/Avatar.vue';
@@ -236,21 +237,19 @@ async function confirmAdd(): Promise<void> {
 
 <template>
   <div>
-    <div class="atl-panel-head">
-      <div style="flex: 1; min-width: 0;">
-        <div class="atl-panel-title">Members</div>
-        <div class="atl-panel-sub">Manage who belongs to this workspace and what they can do</div>
-      </div>
-      <Btn
-        v-if="canManage"
-        variant="primary"
-        data-action="add-member"
-        @click="openAdd"
-      >
-        <Icon name="user-plus" :size="14" />
-        Add member
-      </Btn>
-    </div>
+    <PanelHeader title="Members" subtitle="Manage who belongs to this workspace and what they can do">
+      <template #actions>
+        <Btn
+          v-if="canManage"
+          variant="primary"
+          data-action="add-member"
+          @click="openAdd"
+        >
+          <Icon name="user-plus" :size="14" />
+          Add member
+        </Btn>
+      </template>
+    </PanelHeader>
 
     <div v-if="loading" style="font-size: 13px; color: var(--c-muted); padding: 8px;">
       Loading&hellip;
@@ -495,13 +494,6 @@ async function confirmAdd(): Promise<void> {
 </template>
 
 <style scoped>
-.atl-panel-head {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
 .atl-members-section-label {
   font-size: 10px;
   font-weight: var(--fw-semibold);
@@ -509,18 +501,6 @@ async function confirmAdd(): Promise<void> {
   text-transform: uppercase;
   color: var(--c-muted);
   margin-bottom: 7px;
-}
-
-.atl-panel-title {
-  font-size: 15px;
-  font-weight: var(--fw-bold);
-  color: var(--c-foreground);
-}
-
-.atl-panel-sub {
-  font-size: 12px;
-  color: var(--c-muted);
-  margin-top: 3px;
 }
 
 .atl-members-table {

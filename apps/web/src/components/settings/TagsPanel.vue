@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
+import PanelHeader from '@/components/settings/PanelHeader.vue';
 import Btn from '@/components/ui/Btn.vue';
 import Chip from '@/components/ui/Chip.vue';
 import ColorPicker from '@/components/ui/ColorPicker.vue';
@@ -144,10 +145,10 @@ async function confirmDelete(): Promise<void> {
 
 <template>
   <div>
-    <div class="atl-panel-head">
-      <div class="atl-panel-title">Tags</div>
-      <div class="atl-panel-sub">The shared tag registry — rename to update every task that uses it</div>
-    </div>
+    <PanelHeader
+      title="Tags"
+      subtitle="The shared tag registry — rename to update every task that uses it"
+    />
 
     <div class="atl-tag-new">
       <input
@@ -271,22 +272,6 @@ async function confirmDelete(): Promise<void> {
 </template>
 
 <style scoped>
-.atl-panel-head {
-  margin-bottom: 16px;
-}
-
-.atl-panel-title {
-  font-size: 15px;
-  font-weight: var(--fw-bold);
-  color: var(--c-foreground);
-}
-
-.atl-panel-sub {
-  font-size: 12px;
-  color: var(--c-muted);
-  margin-top: 3px;
-}
-
 .atl-tag-new {
   display: flex;
   gap: 8px;

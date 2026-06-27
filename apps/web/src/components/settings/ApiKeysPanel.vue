@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { z } from 'zod';
 import ExpandableRow from '@/components/settings/ExpandableRow.vue';
+import PanelHeader from '@/components/settings/PanelHeader.vue';
 import SettingsTable from '@/components/settings/SettingsTable.vue';
 import WorkspaceAccessEditor, { type RoleOption } from '@/components/settings/WorkspaceAccessEditor.vue';
 import EmptyState from '@/components/states/EmptyState.vue';
@@ -309,10 +310,7 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
   <div>
     <!-- Secret shown exactly once -->
     <div v-if="mode === 'secret' && created">
-      <div class="atl-panel-head">
-        <div class="atl-panel-title">API keys</div>
-        <div class="atl-panel-sub">Let agents and scripts act on your behalf</div>
-      </div>
+      <PanelHeader title="API keys" subtitle="Let agents and scripts act on your behalf" />
 
       <div class="atl-secret-box">
         <div class="atl-secret-warn">
@@ -340,10 +338,7 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
 
     <!-- New key form -->
     <div v-else-if="mode === 'new'">
-      <div class="atl-panel-head">
-        <div class="atl-panel-title">New API key</div>
-        <div class="atl-panel-sub">Provisions an identity capped at editor access.</div>
-      </div>
+      <PanelHeader title="New API key" subtitle="Provisions an identity capped at editor access." />
 
       <div class="flex flex-col" style="gap: 14px; max-width: 430px;">
         <FormField
@@ -382,15 +377,13 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
 
     <!-- List / empty -->
     <div v-else>
-      <div class="atl-panel-head atl-panel-head-row">
-        <div>
-          <div class="atl-panel-title">API keys</div>
-          <div class="atl-panel-sub">Let agents and scripts act on your behalf</div>
-        </div>
-        <Btn variant="primary" @click="startNew">
-          <Icon name="plus" :size="14" />New key
-        </Btn>
-      </div>
+      <PanelHeader title="API keys" subtitle="Let agents and scripts act on your behalf">
+        <template #actions>
+          <Btn variant="primary" @click="startNew">
+            <Icon name="plus" :size="14" />New key
+          </Btn>
+        </template>
+      </PanelHeader>
 
       <div v-if="keysStore.loading" style="font-size: 13px; color: var(--c-muted); padding: 8px;">
         Loading&hellip;
@@ -583,28 +576,6 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
 </template>
 
 <style scoped>
-.atl-panel-head {
-  margin-bottom: 16px;
-}
-
-.atl-panel-head-row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-}
-
-.atl-panel-title {
-  font-size: 15px;
-  font-weight: var(--fw-bold);
-  color: var(--c-foreground);
-}
-
-.atl-panel-sub {
-  font-size: 12px;
-  color: var(--c-muted);
-  margin-top: 3px;
-}
-
 .atl-field {
   display: flex;
   flex-direction: column;

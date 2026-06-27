@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
+import PanelHeader from '@/components/settings/PanelHeader.vue';
 import Btn from '@/components/ui/Btn.vue';
 import ColorPicker from '@/components/ui/ColorPicker.vue';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
@@ -202,10 +203,10 @@ async function confirmDelete(): Promise<void> {
 
 <template>
   <div>
-    <div class="atl-panel-head">
-      <div class="atl-panel-title">Statuses</div>
-      <div class="atl-panel-sub">Edit the columns of a board — add, edit name &amp; color, reorder or delete</div>
-    </div>
+    <PanelHeader
+      title="Statuses"
+      subtitle="Edit the columns of a board — add, edit name &amp; color, reorder or delete"
+    />
 
     <div class="atl-board-pick">
       <span class="atl-field-label">Board</span>
@@ -332,22 +333,6 @@ async function confirmDelete(): Promise<void> {
 </template>
 
 <style scoped>
-.atl-panel-head {
-  margin-bottom: 16px;
-}
-
-.atl-panel-title {
-  font-size: 15px;
-  font-weight: var(--fw-bold);
-  color: var(--c-foreground);
-}
-
-.atl-panel-sub {
-  font-size: 12px;
-  color: var(--c-muted);
-  margin-top: 3px;
-}
-
 .atl-board-pick {
   display: flex;
   align-items: center;

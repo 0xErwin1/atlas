@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { z } from 'zod';
 import ExpandableRow from '@/components/settings/ExpandableRow.vue';
+import PanelHeader from '@/components/settings/PanelHeader.vue';
 import SettingsTable from '@/components/settings/SettingsTable.vue';
 import WorkspaceAccessEditor, { type RoleOption } from '@/components/settings/WorkspaceAccessEditor.vue';
 import Avatar from '@/components/ui/Avatar.vue';
@@ -357,12 +358,10 @@ async function confirmDisable(): Promise<void> {
   <div>
     <!-- New user -->
     <div v-if="mode === 'new'">
-      <div class="atl-panel-head">
-        <div class="atl-panel-title">New user</div>
-        <div class="atl-panel-sub">
-          Creates a pending account and a one-time activation link — the user sets their own password.
-        </div>
-      </div>
+      <PanelHeader
+        title="New user"
+        subtitle="Creates a pending account and a one-time activation link — the user sets their own password."
+      />
 
       <div class="flex flex-col" style="gap: 14px; max-width: 430px;">
         <FormField
@@ -423,10 +422,10 @@ async function confirmDisable(): Promise<void> {
 
     <!-- Activation link shown exactly once -->
     <div v-else-if="mode === 'link' && linkTarget">
-      <div class="atl-panel-head">
-        <div class="atl-panel-title">Activation link</div>
-        <div class="atl-panel-sub">Share this with the user so they can set their password and sign in</div>
-      </div>
+      <PanelHeader
+        title="Activation link"
+        subtitle="Share this with the user so they can set their password and sign in"
+      />
 
       <div class="atl-reset-id">
         <Avatar :name="initials(linkTarget)" :size="30" />
@@ -462,10 +461,7 @@ async function confirmDisable(): Promise<void> {
 
     <!-- Reset password -->
     <div v-else-if="mode === 'reset' && resetTarget">
-      <div class="atl-panel-head">
-        <div class="atl-panel-title">Reset password</div>
-        <div class="atl-panel-sub">Set a new password for another user</div>
-      </div>
+      <PanelHeader title="Reset password" subtitle="Set a new password for another user" />
 
       <div class="atl-reset-id">
         <Avatar :name="initials(resetTarget)" :size="30" />
@@ -507,13 +503,11 @@ async function confirmDisable(): Promise<void> {
 
     <!-- List -->
     <div v-else>
-      <div class="atl-panel-head atl-panel-head-row">
-        <div>
-          <div class="atl-panel-title">Users</div>
-          <div class="atl-panel-sub">Create and manage Atlas accounts</div>
-        </div>
-        <Btn variant="primary" @click="startNew"><Icon name="plus" :size="14" />New user</Btn>
-      </div>
+      <PanelHeader title="Users" subtitle="Create and manage Atlas accounts">
+        <template #actions>
+          <Btn variant="primary" @click="startNew"><Icon name="plus" :size="14" />New user</Btn>
+        </template>
+      </PanelHeader>
 
       <div v-if="usersStore.loading" style="font-size: 13px; color: var(--c-muted); padding: 8px;">
         Loading…
@@ -722,28 +716,6 @@ async function confirmDisable(): Promise<void> {
 </template>
 
 <style scoped>
-.atl-panel-head {
-  margin-bottom: 16px;
-}
-
-.atl-panel-head-row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-}
-
-.atl-panel-title {
-  font-size: 15px;
-  font-weight: var(--fw-bold);
-  color: var(--c-foreground);
-}
-
-.atl-panel-sub {
-  font-size: 12px;
-  color: var(--c-muted);
-  margin-top: 3px;
-}
-
 .atl-tag-root {
   font-size: 9.5px;
   font-weight: var(--fw-bold);

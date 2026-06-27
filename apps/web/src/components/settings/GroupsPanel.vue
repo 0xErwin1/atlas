@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
+import PanelHeader from '@/components/settings/PanelHeader.vue';
 import EmptyState from '@/components/states/EmptyState.vue';
 import Btn from '@/components/ui/Btn.vue';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
@@ -145,12 +146,10 @@ async function confirmDelete(): Promise<void> {
 
 <template>
   <div>
-    <div class="atl-panel-head">
-      <div class="atl-panel-title">Groups</div>
-      <div class="atl-panel-sub">
-        Bundle workspace members into groups, then grant a whole group access at once
-      </div>
-    </div>
+    <PanelHeader
+      title="Groups"
+      subtitle="Bundle workspace members into groups, then grant a whole group access at once"
+    />
 
     <form class="atl-group-create" @submit.prevent="createGroup">
       <input
@@ -289,22 +288,6 @@ async function confirmDelete(): Promise<void> {
 </template>
 
 <style scoped>
-.atl-panel-head {
-  margin-bottom: 16px;
-}
-
-.atl-panel-title {
-  font-size: 15px;
-  font-weight: var(--fw-bold);
-  color: var(--c-foreground);
-}
-
-.atl-panel-sub {
-  font-size: 12px;
-  color: var(--c-muted);
-  margin-top: 3px;
-}
-
 .atl-group-create {
   display: flex;
   align-items: center;

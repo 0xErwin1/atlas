@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
+import PanelHeader from '@/components/settings/PanelHeader.vue';
 import Btn from '@/components/ui/Btn.vue';
 import FormField from '@/components/ui/FormField.vue';
 import Icon from '@/components/ui/Icon.vue';
@@ -118,10 +119,10 @@ async function saveEdit(slug: string): Promise<void> {
 
 <template>
   <div>
-    <div class="atl-panel-head">
-      <div class="atl-panel-title">Projects</div>
-      <div class="atl-panel-sub">Rename a project or change the prefix used when generating task IDs</div>
-    </div>
+    <PanelHeader
+      title="Projects"
+      subtitle="Rename a project or change the prefix used when generating task IDs"
+    />
 
     <div v-if="workspace.projects.length === 0" class="atl-proj-empty">
       No projects in this workspace yet.
@@ -186,22 +187,6 @@ async function saveEdit(slug: string): Promise<void> {
 </template>
 
 <style scoped>
-.atl-panel-head {
-  margin-bottom: 20px;
-}
-
-.atl-panel-title {
-  font-size: 15px;
-  font-weight: var(--fw-bold);
-  color: var(--c-foreground);
-}
-
-.atl-panel-sub {
-  font-size: 12px;
-  color: var(--c-muted);
-  margin-top: 3px;
-}
-
 .atl-proj-empty {
   font-size: 13px;
   color: var(--c-muted);

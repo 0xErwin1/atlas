@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
+import PanelHeader from '@/components/settings/PanelHeader.vue';
 import Btn from '@/components/ui/Btn.vue';
 import ColorPicker from '@/components/ui/ColorPicker.vue';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
@@ -186,10 +187,10 @@ async function applyToBoard(): Promise<void> {
 
 <template>
   <div>
-    <div class="atl-panel-head">
-      <div class="atl-panel-title">Default statuses</div>
-      <div class="atl-panel-sub">Default statuses new boards start with; apply them to an existing board below.</div>
-    </div>
+    <PanelHeader
+      title="Default statuses"
+      subtitle="Default statuses new boards start with; apply them to an existing board below."
+    />
 
     <div class="atl-statuses-list">
       <div
@@ -314,22 +315,6 @@ async function applyToBoard(): Promise<void> {
 </template>
 
 <style scoped>
-.atl-panel-head {
-  margin-bottom: 16px;
-}
-
-.atl-panel-title {
-  font-size: 15px;
-  font-weight: var(--fw-bold);
-  color: var(--c-foreground);
-}
-
-.atl-panel-sub {
-  font-size: 12px;
-  color: var(--c-muted);
-  margin-top: 3px;
-}
-
 .atl-statuses-empty {
   font-size: 13px;
   color: var(--c-muted);

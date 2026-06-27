@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import { wrappedClient } from '@/api/wrapper';
+import PanelHeader from '@/components/settings/PanelHeader.vue';
 
 const version = ref<string | null>(null);
 const build = ref<string | null>(null);
@@ -25,10 +26,7 @@ onMounted(async () => {
 
 <template>
   <div>
-    <div class="atl-panel-head">
-      <div class="atl-panel-title">About</div>
-      <div class="atl-panel-sub">Server build information</div>
-    </div>
+    <PanelHeader title="About" subtitle="Server build information" />
 
     <div class="atl-about">
       <div class="atl-about-row">
@@ -48,22 +46,6 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.atl-panel-head {
-  margin-bottom: 16px;
-}
-
-.atl-panel-title {
-  font-size: 15px;
-  font-weight: var(--fw-bold);
-  color: var(--c-foreground);
-}
-
-.atl-panel-sub {
-  font-size: 12px;
-  color: var(--c-muted);
-  margin-top: 3px;
-}
-
 .atl-about {
   border-bottom: 1px solid var(--c-border);
 }
