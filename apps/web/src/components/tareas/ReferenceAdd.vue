@@ -1,15 +1,16 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
 import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
 import Icon from '@/components/ui/Icon.vue';
 import type { SearchHitDto } from '@/stores/search';
-import { useUiStore } from '@/stores/ui';
 
 type CreateReferenceRequest = components['schemas']['CreateReferenceRequest'];
 
-const props = defineProps<{ ws: string }>();
+const props = withDefaults(defineProps<{ ws: string; defaultKind?: string }>(), {
+  defaultKind: 'relates',
+});
 
 const emit = defineEmits<{ add: [body: CreateReferenceRequest] }>();
 
@@ -20,38 +21,10 @@ const KIND_OPTIONS: DropdownOption[] = [
   { value: 'spec', label: 'Spec', icon: 'file-text' },
 ];
 
-const ui = useUiStore();
-
-const kind = ref('relates');
+const kind = ref(props.defaultKind);
 const query = ref('');
 const results = ref<SearchHitDto[]>([]);
 const searching = ref(false);
-const inputRef = ref<HTMLInputElement | null>(null);
-
-/**
- * Picks up a pending "start a reference" request (e.g. the body's "Link or add
- * dependency" button), preselecting its kind and focusing the search. Consumed
- * once so it never reapplies on a later mount or unrelated state change.
- */
-function applyDraft(): void {
-  const draft = ui.consumeReferenceDraft();
-  if (draft === null) return;
-
-  kind.value = draft.kind;
-  void nextTick(() => {
-    inputRef.value?.focus();
-    inputRef.value?.scrollIntoView({ block: 'nearest' });
-  });
-}
-
-watch(
-  () => ui.referenceDraft,
-  (draft) => {
-    if (draft !== null) applyDraft();
-  },
-);
-
-onMounted(applyDraft);
 
 // The server requires a document target for `spec` and a task target for the
 // others, so the picker only searches the valid target type for the kind.
@@ -104,7 +77,6 @@ function pick(hit: SearchHitDto): void {
       <div class="atl-refadd-search">
         <Icon name="search" :size="13" style="color: var(--c-muted); flex: 0 0 auto;" />
         <input
-          ref="inputRef"
           v-model="query"
           type="text"
           :placeholder="placeholder"

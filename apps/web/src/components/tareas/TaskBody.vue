@@ -7,6 +7,7 @@ import AssigneeList from '@/components/tareas/AssigneeList.vue';
 import AttachmentList from '@/components/tareas/AttachmentList.vue';
 import Checklist from '@/components/tareas/Checklist.vue';
 import CustomFieldsSection from '@/components/tareas/CustomFieldsSection.vue';
+import LinkDependencyDialog from '@/components/tareas/LinkDependencyDialog.vue';
 import ReferenceAdd from '@/components/tareas/ReferenceAdd.vue';
 import ReferenceList from '@/components/tareas/ReferenceList.vue';
 import SubtaskList from '@/components/tareas/SubtaskList.vue';
@@ -256,17 +257,11 @@ async function onCreateStatus(value: string): Promise<void> {
   await onChangeStatus(created.id);
 }
 
-function comingSoon(): void {
-  ui.showBanner('That action is coming soon', 'info');
-}
-
 function openAskAi(action: AiAction): void {
   ui.openAskAi(props.task, statusName.value, action);
 }
 
-function onAddDependency(): void {
-  ui.requestReferenceDraft('blocks');
-}
+const linkDialogOpen = ref(false);
 
 const fileInput = ref<HTMLInputElement | null>(null);
 const uploading = ref(false);
@@ -292,19 +287,6 @@ async function onFileSelected(event: Event): Promise<void> {
 async function onRemoveAttachment(attachmentId: string): Promise<void> {
   const ok = await detail.removeAttachment(props.ws, props.task.readable_id, attachmentId);
   if (!ok) fail(detail.error);
-}
-
-/** Footer quick-actions; "Add sub-task" focuses the sub-task input, the rest defer. */
-function focusSubtaskInput(): void {
-  const el = document.querySelector<HTMLInputElement>('.atl-sub-add');
-  if (el !== null) el.focus();
-  else comingSoon();
-}
-
-function focusChecklistInput(): void {
-  const el = document.querySelector<HTMLInputElement>('.atl-checklist-add');
-  if (el !== null) el.focus();
-  else comingSoon();
 }
 
 async function onChecklistToggle(itemId: string): Promise<void> {
@@ -550,14 +532,8 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
     <input ref="fileInput" type="file" class="hidden" @change="onFileSelected" />
 
     <div class="atl-tv-actions">
-      <button type="button" class="atl-tv-action" @click="focusSubtaskInput">
-        <Icon name="tasks" :size="14" style="color: var(--c-muted);" />Add sub-task
-      </button>
-      <button type="button" class="atl-tv-action" @click="onAddDependency">
+      <button type="button" class="atl-tv-action" @click="linkDialogOpen = true">
         <Icon name="link" :size="14" style="color: var(--c-muted);" />Link or add dependency
-      </button>
-      <button type="button" class="atl-tv-action" @click="focusChecklistInput">
-        <Icon name="check" :size="14" style="color: var(--c-muted);" />Create checklist
       </button>
       <button type="button" class="atl-tv-action" :disabled="uploading" @click="onAttachClick">
         <Icon name="paperclip" :size="14" style="color: var(--c-muted);" />{{ uploading ? 'Uploading…' : 'Attach file' }}
@@ -584,6 +560,13 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
       confirm-label="Create status"
       @confirm="onCreateStatus"
       @cancel="addStatusOpen = false"
+    />
+
+    <LinkDependencyDialog
+      v-if="linkDialogOpen"
+      :ws="ws"
+      :readable-id="task.readable_id"
+      @close="linkDialogOpen = false"
     />
   </div>
 </template>

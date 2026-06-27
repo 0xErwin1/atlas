@@ -295,21 +295,6 @@ export const useUiStore = defineStore('ui', () => {
     askAiOpen.value = false;
   }
 
-  // A one-shot request to start a new task reference (the detail's "Link or add
-  // dependency" action), carrying the kind to preselect. The ReferenceAdd that is
-  // — or, in the full view, becomes — visible consumes it once and focuses itself.
-  const referenceDraft = ref<{ kind: string } | null>(null);
-
-  function requestReferenceDraft(kind: string) {
-    referenceDraft.value = { kind };
-  }
-
-  function consumeReferenceDraft(): { kind: string } | null {
-    const draft = referenceDraft.value;
-    referenceDraft.value = null;
-    return draft;
-  }
-
   return {
     inspectorOpen,
     inspectorTab,
@@ -354,8 +339,5 @@ export const useUiStore = defineStore('ui', () => {
     askAiAction,
     openAskAi,
     closeAskAi,
-    referenceDraft,
-    requestReferenceDraft,
-    consumeReferenceDraft,
   };
 });
