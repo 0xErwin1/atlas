@@ -289,6 +289,20 @@ pub fn app(state: AppState) -> Router {
             axum::routing::delete(routes::tasks::delete_reference),
         )
         .route(
+            "/v1/workspaces/{ws}/tasks/{readable_id}/attachments",
+            axum::routing::post(routes::tasks::upload_attachment)
+                .get(routes::tasks::list_attachments)
+                .layer(axum::extract::DefaultBodyLimit::disable()),
+        )
+        .route(
+            "/v1/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}/content",
+            get(routes::tasks::download_attachment),
+        )
+        .route(
+            "/v1/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}",
+            axum::routing::delete(routes::tasks::delete_attachment),
+        )
+        .route(
             "/v1/workspaces/{ws}/tasks/{readable_id}/backlinks",
             axum::routing::get(routes::tasks::list_backlinks),
         )

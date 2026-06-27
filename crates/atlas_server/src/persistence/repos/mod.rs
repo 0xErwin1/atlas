@@ -1,6 +1,8 @@
 #[allow(unreachable_pub)]
 mod attachment_store;
 #[allow(unreachable_pub)]
+mod s3_attachment_store;
+#[allow(unreachable_pub)]
 mod boards_tasks;
 #[allow(unreachable_pub)]
 mod documents;
@@ -25,6 +27,7 @@ pub use identity::{
 };
 
 pub use attachment_store::DiskAttachmentStore;
+pub use s3_attachment_store::{S3AttachmentStore, S3Config};
 pub use boards_tasks::{
     BoardRepo, PgBoardRepo, PgTaskActivityRepo, PgTaskAssigneeRepo, PgTaskChecklistRepo,
     PgTaskReferenceRepo, PgTaskRepo, TaskActivityRepo, TaskAssigneeRepo, TaskChecklistRepo,

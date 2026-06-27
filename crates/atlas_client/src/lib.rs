@@ -13,7 +13,7 @@ use atlas_api::{
             ChecklistItemDto, ColumnDto, CreateBoardRequest, CreateChecklistItemRequest,
             CreateColumnRequest, CreateReferenceRequest, CreateSubtaskRequest, CreateTaskRequest,
             MoveTaskRequest, PromoteChecklistItemRequest, PromotionDto, ReferenceDto,
-            TaskBacklinkDto, TaskDto, TaskSummaryDto, UpdateBoardRequest,
+            TaskAttachmentDto, TaskBacklinkDto, TaskDto, TaskSummaryDto, UpdateBoardRequest,
             UpdateChecklistItemRequest, UpdateColumnRequest, UpdateTaskRequest,
             WorkspaceTaskQueryParams,
         },
@@ -1139,6 +1139,120 @@ impl AtlasClient {
     ) -> Result<(), ClientError> {
         let response = self
             .delete(&format!("/v1/workspaces/{ws}/attachments/{attachment_id}"))
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        if response.status().is_success() {
+            return Ok(());
+        }
+        let problem: ProblemDetails = response
+            .json()
+            .await
+            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
+        Err(ClientError::Api(problem))
+    }
+
+    /// `POST /v1/workspaces/{ws}/tasks/{readable_id}/attachments`
+    ///
+    /// Uploads a file as `multipart/form-data` with a single part named `file`.
+    /// The multipart body is assembled by hand so the client does not need
+    /// reqwest's `multipart` feature.
+    pub async fn upload_task_attachment(
+        &self,
+        ws: &str,
+        readable_id: &str,
+        file_name: &str,
+        content_type: &str,
+        data: Vec<u8>,
+    ) -> Result<TaskAttachmentDto, ClientError> {
+        let boundary = format!("atlasboundary{}", uuid::Uuid::now_v7().as_simple());
+
+        let mut body: Vec<u8> = Vec::new();
+        body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+        body.extend_from_slice(
+            format!("Content-Disposition: form-data; name=\"file\"; filename=\"{file_name}\"\r\n")
+                .as_bytes(),
+        );
+        body.extend_from_slice(format!("Content-Type: {content_type}\r\n\r\n").as_bytes());
+        body.extend_from_slice(&data);
+        body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+
+        let response = self
+            .post(&format!(
+                "/v1/workspaces/{ws}/tasks/{readable_id}/attachments"
+            ))
+            .header("x-atlas-csrf", "1")
+            .header(
+                "content-type",
+                format!("multipart/form-data; boundary={boundary}"),
+            )
+            .body(body)
+            .send()
+            .await?;
+        self.decode_response(response, "upload_task_attachment").await
+    }
+
+    /// `GET /v1/workspaces/{ws}/tasks/{readable_id}/attachments`
+    pub async fn list_task_attachments(
+        &self,
+        ws: &str,
+        readable_id: &str,
+    ) -> Result<Vec<TaskAttachmentDto>, ClientError> {
+        let response = self
+            .get(&format!(
+                "/v1/workspaces/{ws}/tasks/{readable_id}/attachments"
+            ))
+            .send()
+            .await?;
+        self.decode_response(response, "list_task_attachments").await
+    }
+
+    /// `GET /v1/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}/content`
+    ///
+    /// Returns the streamed bytes together with the response `Content-Type`, so a
+    /// caller can assert the content round-trips.
+    pub async fn download_task_attachment(
+        &self,
+        ws: &str,
+        readable_id: &str,
+        attachment_id: uuid::Uuid,
+    ) -> Result<(Vec<u8>, Option<String>), ClientError> {
+        let response = self
+            .get(&format!(
+                "/v1/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}/content"
+            ))
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let problem: ProblemDetails = response
+                .json()
+                .await
+                .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
+            return Err(ClientError::Api(problem));
+        }
+
+        let content_type = response
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string());
+
+        let bytes = response.bytes().await?;
+        Ok((bytes.to_vec(), content_type))
+    }
+
+    /// `DELETE /v1/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}`
+    pub async fn delete_task_attachment(
+        &self,
+        ws: &str,
+        readable_id: &str,
+        attachment_id: uuid::Uuid,
+    ) -> Result<(), ClientError> {
+        let response = self
+            .delete(&format!(
+                "/v1/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}"
+            ))
             .header("x-atlas-csrf", "1")
             .send()
             .await?;

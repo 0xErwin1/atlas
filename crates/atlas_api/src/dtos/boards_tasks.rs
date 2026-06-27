@@ -145,6 +145,25 @@ pub struct AssigneeDto {
 }
 
 // ---------------------------------------------------------------------------
+// Attachment DTOs
+// ---------------------------------------------------------------------------
+
+/// Metadata for a file attached to a task.
+///
+/// The binary content is not inlined; it is fetched separately from the task's
+/// attachment content endpoint, which streams the bytes through the API.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct TaskAttachmentDto {
+    pub id: uuid::Uuid,
+    pub file_name: String,
+    pub content_type: String,
+    pub size_bytes: i64,
+    pub created_by: ActorDto,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+// ---------------------------------------------------------------------------
 // Reference DTOs
 // ---------------------------------------------------------------------------
 

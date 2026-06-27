@@ -563,6 +563,34 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         openapi_path: Some("/v1/workspaces/{ws}/tasks/{readable_id}/references/{reference_id}"),
     },
     RouteEntry {
+        method: "POST",
+        path_template: "/v1/workspaces/{ws}/tasks/ATL-0/attachments",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/tasks/{readable_id}/attachments"),
+    },
+    RouteEntry {
+        method: "GET",
+        path_template: "/v1/workspaces/{ws}/tasks/ATL-0/attachments",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/tasks/{readable_id}/attachments"),
+    },
+    RouteEntry {
+        method: "GET",
+        path_template: "/v1/workspaces/{ws}/tasks/ATL-0/attachments/00000000-0000-0000-0000-000000000001/content",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some(
+            "/v1/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}/content",
+        ),
+    },
+    RouteEntry {
+        method: "DELETE",
+        path_template: "/v1/workspaces/{ws}/tasks/ATL-0/attachments/00000000-0000-0000-0000-000000000001",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some(
+            "/v1/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}",
+        ),
+    },
+    RouteEntry {
         method: "GET",
         path_template: "/v1/workspaces/{ws}/tasks/ATL-0/backlinks",
         kind: RouteKind::WorkspaceMember,

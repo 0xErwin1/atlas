@@ -2,9 +2,10 @@
 
 use axum::{
     Json,
-    extract::{Path, Query, State},
-    http::StatusCode,
-    response::IntoResponse,
+    body::Body,
+    extract::{Multipart, Path, Query, State},
+    http::{StatusCode, header},
+    response::{IntoResponse, Response},
 };
 use serde::Deserialize;
 
@@ -13,8 +14,8 @@ use atlas_api::{
         ActivityEntryDto, AddAssigneeRequest, AssigneeDto, ChecklistItemDto,
         CreateChecklistItemRequest, CreateReferenceRequest, CreateSubtaskRequest,
         CreateTaskRequest, MoveTaskRequest, PromoteChecklistItemRequest, PromotionDto,
-        ReferenceDto, TaskBacklinkDto, TaskDto, TaskSummaryDto, UpdateChecklistItemRequest,
-        UpdateTaskRequest, WorkspaceTaskQueryParams,
+        ReferenceDto, TaskAttachmentDto, TaskBacklinkDto, TaskDto, TaskSummaryDto,
+        UpdateChecklistItemRequest, UpdateTaskRequest, WorkspaceTaskQueryParams,
     },
     dtos::documents::ActorDto,
     pagination::{Cursor, Page, SearchCursor, SortKey},
@@ -26,11 +27,12 @@ use atlas_domain::{
         PositionBetween, Priority, Task, TaskActivity, TaskAssignee, TaskChecklistItem, TaskPatch,
         TaskReference,
     },
+    entities::documents::{AttachmentOwner, NewAttachment},
     entities::identity::MemberRole,
     entities::task_views::{ActorTypeFilter, AssigneeFilter, TaskSort, TaskViewFilters},
     ids::{
-        ApiKeyId, BoardId, ChecklistItemId, ColumnId, DocumentId, TaskActivityId, TaskId,
-        TaskReferenceId, UserId,
+        ApiKeyId, AttachmentId, BoardId, ChecklistItemId, ColumnId, DocumentId, TaskActivityId,
+        TaskId, TaskReferenceId, UserId,
     },
     permissions::{ChainSegment, Principal, ResolutionInput, ResourceChain, ResourceRef},
     ports::boards_tasks::{WorkspaceActivityFilters, WorkspaceActivityScope},
@@ -43,12 +45,13 @@ use crate::{
     },
     error::ApiError,
     persistence::repos::{
-        ApiKeyRepo, DocumentRepo, MembershipRepo, PgApiKeyRepo, PgBoardRepo, PgDocumentRepo,
-        PgMembershipRepo, PgPermissionGrantRepo, PgProjectRepo, PgTaskActivityRepo,
-        PgTaskAssigneeRepo, PgTaskChecklistRepo, PgTaskReferenceRepo, PgTaskRepo, PgUserRepo,
-        ProjectRepo, TaskActivityRepo, TaskAssigneeRepo, TaskChecklistRepo, TaskReferenceRepo,
-        TaskRepo, UserRepo,
+        ApiKeyRepo, AttachmentRepo, DocumentRepo, MembershipRepo, PgApiKeyRepo, PgAttachmentRepo,
+        PgBoardRepo, PgDocumentRepo, PgMembershipRepo, PgPermissionGrantRepo, PgProjectRepo,
+        PgTaskActivityRepo, PgTaskAssigneeRepo, PgTaskChecklistRepo, PgTaskReferenceRepo,
+        PgTaskRepo, PgUserRepo, ProjectRepo, TaskActivityRepo, TaskAssigneeRepo, TaskChecklistRepo,
+        TaskReferenceRepo, TaskRepo, UserRepo,
     },
+    routes::documents::content_disposition_attachment,
     routes::validation::{
         validate_custom_entry_count, validate_description, validate_labels, validate_name,
     },
@@ -91,6 +94,15 @@ pub(crate) struct ChecklistItemPath {
     #[allow(dead_code)]
     readable_id: String,
     item_id: uuid::Uuid,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct TaskAttachmentPath {
+    #[allow(dead_code)]
+    ws: String,
+    #[allow(dead_code)]
+    readable_id: String,
+    attachment_id: uuid::Uuid,
 }
 
 // ---------------------------------------------------------------------------
@@ -168,6 +180,25 @@ fn reference_to_dto(
         target_resolved,
         created_by: actor_to_dto(&r.created_by),
         created_at: r.created_at,
+    }
+}
+
+fn attachment_to_dto(a: atlas_domain::entities::documents::Attachment) -> TaskAttachmentDto {
+    let created_by = if let Some(uid) = a.created_by_user_id {
+        actor_to_dto(&Actor::User(uid))
+    } else if let Some(kid) = a.created_by_api_key_id {
+        actor_to_dto(&Actor::ApiKey(kid))
+    } else {
+        actor_to_dto(&Actor::User(UserId(uuid::Uuid::nil())))
+    };
+
+    TaskAttachmentDto {
+        id: a.id.0,
+        file_name: a.file_name,
+        content_type: a.content_type,
+        size_bytes: a.size_bytes,
+        created_by,
+        created_at: a.created_at,
     }
 }
 
@@ -1451,6 +1482,289 @@ pub(crate) async fn delete_reference(
     state
         .task_service()
         .remove_reference(&ctx, auth.resource.0.id, ref_id)
+        .await
+        .map_err(ApiError::Domain)?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ---------------------------------------------------------------------------
+// POST /v1/workspaces/{ws}/tasks/{readable_id}/attachments
+// ---------------------------------------------------------------------------
+
+#[utoipa::path(
+    post,
+    path = "/v1/workspaces/{ws}/tasks/{readable_id}/attachments",
+    tag = "tasks",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+        ("readable_id" = String, Path, description = "Task readable ID"),
+    ),
+    request_body(
+        content = String,
+        description = "Multipart form-data carrying the file in a part named `file`",
+        content_type = "multipart/form-data"
+    ),
+    responses(
+        (status = 201, description = "Attachment created", body = TaskAttachmentDto),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Insufficient permissions"),
+        (status = 404, description = "Task not found"),
+        (status = 413, description = "Payload too large"),
+        (status = 422, description = "Missing file part or invalid file name"),
+    )
+)]
+/// Uploads a file and attaches it to the resolved task.
+///
+/// The body is `multipart/form-data` with the file in a part named `file`. Bytes are
+/// streamed and accumulated up to `max_attachment_bytes`; the first chunk that would
+/// exceed the cap aborts the upload with 413 so an oversize body is never fully
+/// buffered. The stored blob is content-addressed, so re-uploading identical bytes
+/// reuses the existing object.
+pub(crate) async fn upload_attachment(
+    auth: Authorized<TaskRes, EditorMin>,
+    State(state): State<AppState>,
+    mut multipart: Multipart,
+) -> Result<impl IntoResponse, ApiError> {
+    let max = state.max_attachment_bytes;
+
+    let mut captured: Option<(String, String, Vec<u8>)> = None;
+
+    while let Some(mut field) = multipart.next_field().await.map_err(|e| {
+        ApiError::InvalidInput {
+            message: format!("invalid multipart body: {e}"),
+        }
+    })? {
+        if field.name() != Some("file") {
+            continue;
+        }
+
+        let file_name = field.file_name().map(|s| s.to_string()).unwrap_or_default();
+
+        let content_type = field
+            .content_type()
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "application/octet-stream".to_string());
+
+        validate_name("file_name", &file_name)?;
+
+        let mut data: Vec<u8> = Vec::new();
+
+        while let Some(chunk) = field.chunk().await.map_err(|e| ApiError::InvalidInput {
+            message: format!("error reading upload: {e}"),
+        })? {
+            if data.len() as u64 + chunk.len() as u64 > max {
+                return Err(ApiError::PayloadTooLarge {
+                    message: format!("attachment exceeds maximum size of {max} bytes"),
+                });
+            }
+            data.extend_from_slice(&chunk);
+        }
+
+        captured = Some((file_name, content_type, data));
+        break;
+    }
+
+    let (file_name, content_type, data) = captured.ok_or_else(|| ApiError::InvalidInput {
+        message: "multipart form must contain a 'file' part".into(),
+    })?;
+
+    let sha256 = state
+        .attachments
+        .put(&data)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?;
+
+    let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
+
+    let attachment_repo = PgAttachmentRepo {
+        conn: (*state.db).clone(),
+    };
+
+    let attachment = attachment_repo
+        .record(
+            &ctx,
+            NewAttachment {
+                document_id: None,
+                task_id: Some(auth.resource.0.id),
+                file_name,
+                content_type,
+                size_bytes: data.len() as i64,
+                sha256,
+            },
+        )
+        .await
+        .map_err(ApiError::Domain)?;
+
+    Ok((StatusCode::CREATED, Json(attachment_to_dto(attachment))))
+}
+
+// ---------------------------------------------------------------------------
+// GET /v1/workspaces/{ws}/tasks/{readable_id}/attachments
+// ---------------------------------------------------------------------------
+
+#[utoipa::path(
+    get,
+    path = "/v1/workspaces/{ws}/tasks/{readable_id}/attachments",
+    tag = "tasks",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+        ("readable_id" = String, Path, description = "Task readable ID"),
+    ),
+    responses(
+        (status = 200, description = "Attachment list", body = Vec<TaskAttachmentDto>),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Insufficient permissions"),
+        (status = 404, description = "Task not found"),
+    )
+)]
+pub(crate) async fn list_attachments(
+    auth: Authorized<TaskRes, ViewerMin>,
+    State(state): State<AppState>,
+) -> Result<Json<Vec<TaskAttachmentDto>>, ApiError> {
+    let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
+
+    let attachment_repo = PgAttachmentRepo {
+        conn: (*state.db).clone(),
+    };
+
+    let items = attachment_repo
+        .list_for_owner(&ctx, AttachmentOwner::Task(auth.resource.0.id))
+        .await
+        .map_err(ApiError::Domain)?;
+
+    let dtos = items.into_iter().map(attachment_to_dto).collect();
+    Ok(Json(dtos))
+}
+
+// ---------------------------------------------------------------------------
+// GET /v1/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}/content
+// ---------------------------------------------------------------------------
+
+#[utoipa::path(
+    get,
+    path = "/v1/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}/content",
+    operation_id = "download_task_attachment",
+    tag = "tasks",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+        ("readable_id" = String, Path, description = "Task readable ID"),
+        ("attachment_id" = String, Path, description = "Attachment UUID"),
+    ),
+    responses(
+        (status = 200, description = "Binary attachment content"),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Insufficient permissions"),
+        (status = 404, description = "Task or attachment not found"),
+    )
+)]
+/// Streams an attachment's bytes through the API for the resolved task.
+///
+/// The attachment must belong to this task; an attachment owned by another task (or
+/// a document) resolves to 404 rather than leaking across owners. Bytes are fetched
+/// from the configured `AttachmentStore`, so this works for both the disk and S3
+/// backends.
+pub(crate) async fn download_attachment(
+    auth: Authorized<TaskRes, ViewerMin>,
+    Path(p): Path<TaskAttachmentPath>,
+    State(state): State<AppState>,
+) -> Result<Response, ApiError> {
+    let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
+
+    let attachment_repo = PgAttachmentRepo {
+        conn: (*state.db).clone(),
+    };
+
+    let attachment = attachment_repo
+        .find(&ctx, AttachmentId(p.attachment_id))
+        .await
+        .map_err(ApiError::Domain)?
+        .ok_or(ApiError::NotFound)?;
+
+    if attachment.task_id != Some(auth.resource.0.id) {
+        return Err(ApiError::NotFound);
+    }
+
+    let bytes = state
+        .attachments
+        .get(&attachment.sha256)
+        .await
+        .map_err(|e| match e {
+            atlas_domain::DomainError::NotFound { .. } => ApiError::NotFound,
+            other => ApiError::Internal {
+                message: other.to_string(),
+            },
+        })?;
+
+    let content_disposition = content_disposition_attachment(&attachment.file_name);
+
+    let response = Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, attachment.content_type.clone())
+        .header(header::CONTENT_DISPOSITION, content_disposition)
+        .header("x-content-type-options", "nosniff")
+        .body(Body::from(bytes))
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?;
+
+    Ok(response)
+}
+
+// ---------------------------------------------------------------------------
+// DELETE /v1/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}
+// ---------------------------------------------------------------------------
+
+#[utoipa::path(
+    delete,
+    path = "/v1/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}",
+    operation_id = "delete_task_attachment",
+    tag = "tasks",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+        ("readable_id" = String, Path, description = "Task readable ID"),
+        ("attachment_id" = String, Path, description = "Attachment UUID"),
+    ),
+    responses(
+        (status = 204, description = "Attachment deleted"),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Insufficient permissions"),
+        (status = 404, description = "Task or attachment not found"),
+    )
+)]
+/// Soft-deletes a task attachment row.
+///
+/// Only the DB row is marked deleted; the content-addressed blob is left in place
+/// because the same bytes may be referenced by other attachments.
+pub(crate) async fn delete_attachment(
+    auth: Authorized<TaskRes, EditorMin>,
+    Path(p): Path<TaskAttachmentPath>,
+    State(state): State<AppState>,
+) -> Result<StatusCode, ApiError> {
+    let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
+
+    let attachment_repo = PgAttachmentRepo {
+        conn: (*state.db).clone(),
+    };
+
+    let attachment = attachment_repo
+        .find(&ctx, AttachmentId(p.attachment_id))
+        .await
+        .map_err(ApiError::Domain)?
+        .ok_or(ApiError::NotFound)?;
+
+    if attachment.task_id != Some(auth.resource.0.id) {
+        return Err(ApiError::NotFound);
+    }
+
+    attachment_repo
+        .soft_delete(&ctx, AttachmentId(p.attachment_id))
         .await
         .map_err(ApiError::Domain)?;
 

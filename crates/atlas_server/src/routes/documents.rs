@@ -1263,7 +1263,7 @@ fn attachment_to_dto(a: atlas_domain::entities::documents::Attachment) -> Attach
 /// characters, or non-ASCII bytes. We emit an ASCII `filename=` fallback (control
 /// chars stripped, quotes and backslashes escaped) plus an RFC 5987 `filename*`
 /// carrying the full UTF-8 name percent-encoded, which modern clients prefer.
-fn content_disposition_attachment(file_name: &str) -> String {
+pub(crate) fn content_disposition_attachment(file_name: &str) -> String {
     let ascii_fallback: String = file_name
         .chars()
         .filter(|c| !c.is_control())

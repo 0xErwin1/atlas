@@ -6498,6 +6498,250 @@
         ]
       }
     },
+    "/v1/workspaces/{ws}/tasks/{readable_id}/attachments": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "operationId": "list_attachments",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "readable_id",
+            "in": "path",
+            "description": "Task readable ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Attachment list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TaskAttachmentDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          },
+          "404": {
+            "description": "Task not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Uploads a file and attaches it to the resolved task.",
+        "description": "The body is `multipart/form-data` with the file in a part named `file`. Bytes are\nstreamed and accumulated up to `max_attachment_bytes`; the first chunk that would\nexceed the cap aborts the upload with 413 so an oversize body is never fully\nbuffered. The stored blob is content-addressed, so re-uploading identical bytes\nreuses the existing object.",
+        "operationId": "upload_attachment",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "readable_id",
+            "in": "path",
+            "description": "Task readable ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "Multipart form-data carrying the file in a part named `file`",
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Attachment created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskAttachmentDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          },
+          "404": {
+            "description": "Task not found"
+          },
+          "413": {
+            "description": "Payload too large"
+          },
+          "422": {
+            "description": "Missing file part or invalid file name"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}": {
+      "delete": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Soft-deletes a task attachment row.",
+        "description": "Only the DB row is marked deleted; the content-addressed blob is left in place\nbecause the same bytes may be referenced by other attachments.",
+        "operationId": "delete_task_attachment",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "readable_id",
+            "in": "path",
+            "description": "Task readable ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "attachment_id",
+            "in": "path",
+            "description": "Attachment UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Attachment deleted"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          },
+          "404": {
+            "description": "Task or attachment not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}/content": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Streams an attachment's bytes through the API for the resolved task.",
+        "description": "The attachment must belong to this task; an attachment owned by another task (or\na document) resolves to 404 rather than leaking across owners. Bytes are fetched\nfrom the configured `AttachmentStore`, so this works for both the disk and S3\nbackends.",
+        "operationId": "download_task_attachment",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "readable_id",
+            "in": "path",
+            "description": "Task readable ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "attachment_id",
+            "in": "path",
+            "description": "Attachment UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Binary attachment content"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          },
+          "404": {
+            "description": "Task or attachment not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/v1/workspaces/{ws}/tasks/{readable_id}/backlinks": {
       "get": {
         "tags": [
@@ -10170,6 +10414,41 @@
           "workspace_id": {
             "type": "string",
             "format": "uuid"
+          }
+        }
+      },
+      "TaskAttachmentDto": {
+        "type": "object",
+        "description": "Metadata for a file attached to a task.\n\nThe binary content is not inlined; it is fetched separately from the task's\nattachment content endpoint, which streams the bytes through the API.",
+        "required": [
+          "id",
+          "file_name",
+          "content_type",
+          "size_bytes",
+          "created_by",
+          "created_at"
+        ],
+        "properties": {
+          "content_type": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_by": {
+            "$ref": "#/components/schemas/ActorDto"
+          },
+          "file_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
