@@ -209,6 +209,16 @@ pub fn app(state: AppState) -> Router {
             "/v1/workspaces/{ws}/boards/{board_id}/apply-status-templates",
             axum::routing::post(routes::status_templates::apply_status_templates),
         )
+        // Property definitions (workspace custom-field registry)
+        .route(
+            "/v1/workspaces/{ws}/property-definitions",
+            axum::routing::get(routes::property_definitions::list_property_definitions)
+                .post(routes::property_definitions::create_property_definition),
+        )
+        .route(
+            "/v1/workspaces/{ws}/property-definitions/{property_definition_id}",
+            axum::routing::delete(routes::property_definitions::delete_property_definition),
+        )
         // Saved searches (per-owner personal search registry)
         .route(
             "/v1/workspaces/{ws}/saved-searches",

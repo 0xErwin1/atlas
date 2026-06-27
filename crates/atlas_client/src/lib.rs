@@ -28,6 +28,7 @@ use atlas_api::{
             RenameFolderRequest,
         },
         groups::{AddGroupMemberRequest, CreateGroupRequest, GroupDto, GroupMemberDto},
+        property_definitions::{CreatePropertyDefinitionRequest, PropertyDefinitionDto},
         saved_searches::{CreateSavedSearchRequest, RenameSavedSearchRequest, SavedSearchDto},
         search::SearchHitDto,
         status_templates::{
@@ -1466,6 +1467,62 @@ impl AtlasClient {
     pub async fn delete_tag(&self, ws: &str, tag_id: uuid::Uuid) -> Result<(), ClientError> {
         let response = self
             .delete(&format!("/v1/workspaces/{ws}/tags/{tag_id}"))
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        if response.status().is_success() {
+            return Ok(());
+        }
+        let problem: ProblemDetails = response
+            .json()
+            .await
+            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
+        Err(ClientError::Api(problem))
+    }
+
+    /// `GET /v1/workspaces/{ws}/property-definitions`
+    ///
+    /// Optionally filters by applicability (`task` | `document` | `both`).
+    pub async fn list_property_definitions(
+        &self,
+        ws: &str,
+        applies_to: Option<&str>,
+    ) -> Result<Vec<PropertyDefinitionDto>, ClientError> {
+        let mut path = format!("/v1/workspaces/{ws}/property-definitions");
+        if let Some(applies_to) = applies_to {
+            path.push_str(&format!("?applies_to={applies_to}"));
+        }
+        let response = self.get(&path).send().await?;
+        self.decode_response(response, "list_property_definitions")
+            .await
+    }
+
+    /// `POST /v1/workspaces/{ws}/property-definitions`
+    pub async fn create_property_definition(
+        &self,
+        ws: &str,
+        body: CreatePropertyDefinitionRequest,
+    ) -> Result<PropertyDefinitionDto, ClientError> {
+        let response = self
+            .post(&format!("/v1/workspaces/{ws}/property-definitions"))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "create_property_definition")
+            .await
+    }
+
+    /// `DELETE /v1/workspaces/{ws}/property-definitions/{property_definition_id}`
+    pub async fn delete_property_definition(
+        &self,
+        ws: &str,
+        property_definition_id: uuid::Uuid,
+    ) -> Result<(), ClientError> {
+        let response = self
+            .delete(&format!(
+                "/v1/workspaces/{ws}/property-definitions/{property_definition_id}"
+            ))
             .header("x-atlas-csrf", "1")
             .send()
             .await?;

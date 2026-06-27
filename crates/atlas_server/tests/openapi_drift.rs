@@ -87,6 +87,8 @@ const EXPECTED_SCHEMAS: &[&str] = &[
     "StatusTemplateDto",
     "CreateStatusTemplateRequest",
     "UpdateStatusTemplateRequest",
+    "PropertyDefinitionDto",
+    "CreatePropertyDefinitionRequest",
     "SavedSearchDto",
     "CreateSavedSearchRequest",
     "RenameSavedSearchRequest",

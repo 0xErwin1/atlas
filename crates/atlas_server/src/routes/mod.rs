@@ -11,6 +11,7 @@ pub(crate) mod health;
 pub(crate) mod members;
 pub mod openapi;
 pub(crate) mod projects;
+pub(crate) mod property_definitions;
 pub mod registry;
 pub(crate) mod saved_searches;
 pub(crate) mod search;

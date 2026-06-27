@@ -4831,6 +4831,167 @@
         ]
       }
     },
+    "/v1/workspaces/{ws}/property-definitions": {
+      "get": {
+        "tags": [
+          "property-definitions"
+        ],
+        "operationId": "list_property_definitions",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "applies_to",
+            "in": "query",
+            "description": "Filter by applicability: task | document | both",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Workspace property definitions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PropertyDefinitionDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          },
+          "422": {
+            "description": "Invalid applies_to filter"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "property-definitions"
+        ],
+        "operationId": "create_property_definition",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePropertyDefinitionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Property definition created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PropertyDefinitionDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          },
+          "409": {
+            "description": "A field with the derived key already exists"
+          },
+          "422": {
+            "description": "Invalid input"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{ws}/property-definitions/{property_definition_id}": {
+      "delete": {
+        "tags": [
+          "property-definitions"
+        ],
+        "operationId": "delete_property_definition",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "property_definition_id",
+            "in": "path",
+            "description": "Property definition ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Property definition soft-deleted"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          },
+          "404": {
+            "description": "Property definition not found or not in workspace"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/v1/workspaces/{ws}/saved-searches": {
       "get": {
         "tags": [
@@ -8482,6 +8643,33 @@
           }
         }
       },
+      "CreatePropertyDefinitionRequest": {
+        "type": "object",
+        "description": "Request body for `POST /v1/workspaces/{ws}/property-definitions`.\n\nThe `key` is derived server-side from `name`; callers do not supply it.",
+        "required": [
+          "name",
+          "kind"
+        ],
+        "properties": {
+          "applies_to": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "One of `document` | `task` | `both`. Defaults to `task` when omitted."
+          },
+          "kind": {
+            "type": "string",
+            "description": "One of `text` | `number` | `boolean` | `date` | `select` | `multi_select`."
+          },
+          "name": {
+            "type": "string"
+          },
+          "options": {
+            "description": "Required for `select`/`multi_select` (a non-empty array of unique\nnon-empty strings); must be absent/null for the other kinds."
+          }
+        }
+      },
       "CreateReferenceRequest": {
         "type": "object",
         "description": "Request body for `POST /v1/workspaces/{ws}/tasks/{readable_id}/references`.",
@@ -10028,6 +10216,46 @@
           }
         }
       },
+      "PropertyDefinitionDto": {
+        "type": "object",
+        "description": "Workspace property definition (custom field) representation.",
+        "required": [
+          "id",
+          "key",
+          "name",
+          "kind",
+          "applies_to",
+          "created_at"
+        ],
+        "properties": {
+          "applies_to": {
+            "type": "string",
+            "description": "One of `document` | `task` | `both`."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "key": {
+            "type": "string",
+            "description": "Stable machine key derived from the name (`^[a-z][a-z0-9_]{0,63}$`)."
+          },
+          "kind": {
+            "type": "string",
+            "description": "One of `text` | `number` | `boolean` | `date` | `select` | `multi_select`."
+          },
+          "name": {
+            "type": "string"
+          },
+          "options": {
+            "description": "For `select`/`multi_select`: the allowed string options. Absent for the\nother kinds."
+          }
+        }
+      },
       "ReferenceDto": {
         "type": "object",
         "description": "A typed outbound reference from a task to another task or document.",
@@ -11268,6 +11496,10 @@
     {
       "name": "status-templates",
       "description": "Workspace default status templates"
+    },
+    {
+      "name": "property-definitions",
+      "description": "Workspace custom-field registry"
     },
     {
       "name": "saved-searches",

@@ -30,6 +30,7 @@ use atlas_domain::{
     entities::documents::{AttachmentOwner, NewAttachment},
     entities::identity::MemberRole,
     entities::task_views::{ActorTypeFilter, AssigneeFilter, TaskSort, TaskViewFilters},
+    entities::workspace_core::{AppliesTo, PropertyDefinition},
     ids::{
         ApiKeyId, AttachmentId, BoardId, ChecklistItemId, ColumnId, DocumentId, TaskActivityId,
         TaskId, TaskReferenceId, UserId,
@@ -47,13 +48,14 @@ use crate::{
     persistence::repos::{
         ApiKeyRepo, AttachmentRepo, DocumentRepo, MembershipRepo, PgApiKeyRepo, PgAttachmentRepo,
         PgBoardRepo, PgDocumentRepo, PgMembershipRepo, PgPermissionGrantRepo, PgProjectRepo,
-        PgTaskActivityRepo, PgTaskAssigneeRepo, PgTaskChecklistRepo, PgTaskReferenceRepo,
-        PgTaskRepo, PgUserRepo, ProjectRepo, TaskActivityRepo, TaskAssigneeRepo, TaskChecklistRepo,
-        TaskReferenceRepo, TaskRepo, UserRepo,
+        PgPropertyDefinitionRepo, PgTaskActivityRepo, PgTaskAssigneeRepo, PgTaskChecklistRepo,
+        PgTaskReferenceRepo, PgTaskRepo, PgUserRepo, ProjectRepo, PropertyDefinitionRepo,
+        TaskActivityRepo, TaskAssigneeRepo, TaskChecklistRepo, TaskReferenceRepo, TaskRepo, UserRepo,
     },
     routes::documents::content_disposition_attachment,
     routes::validation::{
-        validate_custom_entry_count, validate_description, validate_labels, validate_name,
+        validate_custom_entry_count, validate_custom_properties, validate_description,
+        validate_labels, validate_name,
     },
     state::AppState,
 };
@@ -115,6 +117,23 @@ fn principal_to_actor(principal: &Principal) -> Actor {
         Principal::ApiKey(kid) => Actor::ApiKey(*kid),
         Principal::Group(_) => Actor::User(atlas_domain::ids::UserId(uuid::Uuid::nil())),
     }
+}
+
+/// Loads the workspace's non-deleted property definitions that apply to tasks
+/// (`applies_to` of `task` or `both`), used to schema-validate a task's custom
+/// property values.
+async fn task_property_definitions(
+    state: &AppState,
+    ctx: &WorkspaceCtx,
+) -> Result<Vec<PropertyDefinition>, ApiError> {
+    let repo = PgPropertyDefinitionRepo {
+        conn: (*state.db).clone(),
+    };
+
+    let mut definitions = repo.list(ctx).await.map_err(ApiError::Domain)?;
+    definitions.retain(|d| matches!(d.applies_to, AppliesTo::Task | AppliesTo::Both));
+
+    Ok(definitions)
 }
 
 fn actor_to_dto(actor: &Actor) -> ActorDto {
@@ -747,6 +766,8 @@ pub(crate) async fn create_task(
 
     if let Some(ref custom) = props.custom {
         validate_custom_entry_count(custom)?;
+        let definitions = task_property_definitions(&state, &ctx).await?;
+        validate_custom_properties(custom, &definitions)?;
     }
 
     let task = state
@@ -961,6 +982,8 @@ pub(crate) async fn update_task(
 
     if let Some(ref props) = body.properties {
         validate_custom_entry_count(props)?;
+        let definitions = task_property_definitions(&state, &ctx).await?;
+        validate_custom_properties(props, &definitions)?;
     }
 
     let patch = TaskPatch {
