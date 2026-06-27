@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import EmptyState from '@/components/states/EmptyState.vue';
 import Avatar from '@/components/ui/Avatar.vue';
 import Icon from '@/components/ui/Icon.vue';
 import { activityPhrase } from '@/lib/activityPhrase';
@@ -192,15 +193,13 @@ watch(activeWs, (ws, prev) => {
       Loading&hellip;
     </div>
 
-    <div v-else-if="isEmpty" class="atl-activity-empty">
-      <div class="atl-activity-empty-icon"><Icon name="history" :size="22" /></div>
-      <div style="font-size: 14px; font-weight: var(--fw-semibold); color: var(--c-foreground);">
-        No activity yet
-      </div>
-      <div style="font-size: 12.5px; color: var(--c-muted); margin-top: 5px; max-width: 320px; line-height: 1.5;">
-        Changes to tasks you can access &mdash; moves, assignments, edits &mdash; will appear here.
-      </div>
-    </div>
+    <EmptyState
+      v-else-if="isEmpty"
+      compact
+      icon="history"
+      title="No activity yet"
+      hint="Changes to tasks you can access &mdash; moves, assignments, edits &mdash; will appear here."
+    />
 
     <div v-else class="atl-activity-feed">
       <div v-for="entry in entries" :key="entry.id" class="atl-activity-row">
@@ -480,30 +479,6 @@ watch(activeWs, (ws, prev) => {
 
 .atl-activity-more:hover {
   background: var(--c-raised);
-}
-
-.atl-activity-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding: 54px 20px;
-  border: 1px dashed var(--c-border);
-  border-radius: 4px;
-}
-
-.atl-activity-empty-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--c-muted);
-  background: var(--c-raised);
-  border: 1px solid var(--c-border);
-  margin-bottom: 14px;
 }
 
 .atl-activity-error {

@@ -4,6 +4,7 @@ import { z } from 'zod';
 import ExpandableRow from '@/components/settings/ExpandableRow.vue';
 import SettingsTable from '@/components/settings/SettingsTable.vue';
 import WorkspaceAccessEditor, { type RoleOption } from '@/components/settings/WorkspaceAccessEditor.vue';
+import EmptyState from '@/components/states/EmptyState.vue';
 import AgentBadge from '@/components/ui/AgentBadge.vue';
 import Btn from '@/components/ui/Btn.vue';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
@@ -395,18 +396,17 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
         Loading&hellip;
       </div>
 
-      <div v-else-if="keysStore.keys.length === 0" class="atl-keys-empty">
-        <div class="atl-keys-empty-icon"><Icon name="key" :size="22" /></div>
-        <div style="font-size: 14px; font-weight: var(--fw-semibold); color: var(--c-foreground);">
-          No API keys yet
-        </div>
-        <div style="font-size: 12.5px; color: var(--c-muted); margin-top: 5px; max-width: 300px; line-height: 1.5;">
-          Create a key to let an agent or script act on your behalf. Keys are capped at editor.
-        </div>
-        <div style="margin-top: 16px;">
+      <EmptyState
+        v-else-if="keysStore.keys.length === 0"
+        compact
+        icon="key"
+        title="No API keys yet"
+        hint="Create a key to let an agent or script act on your behalf. Keys are capped at editor."
+      >
+        <template #actions>
           <Btn variant="primary" @click="startNew"><Icon name="plus" :size="14" />New key</Btn>
-        </div>
-      </div>
+        </template>
+      </EmptyState>
 
       <SettingsTable v-else>
         <template #head>
@@ -893,30 +893,6 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
   height: 22px;
   padding: 0 8px;
   font-size: 11px;
-}
-
-.atl-keys-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding: 54px 20px;
-  border: 1px dashed var(--c-border);
-  border-radius: 4px;
-}
-
-.atl-keys-empty-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--c-chart-5);
-  background: var(--c-agent-bg);
-  border: 1px solid var(--c-agent-border);
-  margin-bottom: 14px;
 }
 
 .atl-keys-helper {

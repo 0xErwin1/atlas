@@ -10,19 +10,34 @@ withDefaults(
     framed?: boolean;
     /** Mono context label shown in the framed card's top bar (e.g. "Atlas · Notes"). */
     topLabel?: string;
+    /**
+     * Inline compact variant for settings panels: a dashed-border card with a
+     * boxed icon and smaller type, used in place of the full-height page empty.
+     */
+    compact?: boolean;
   }>(),
   {
     hint: undefined,
     icon: 'file',
     framed: false,
     topLabel: undefined,
+    compact: false,
   },
 );
 </script>
 
 <template>
+  <div v-if="compact" data-state="empty" class="atl-empty-compact">
+    <div class="atl-empty-compact-icon"><Icon :name="icon" :size="22" /></div>
+    <div class="atl-empty-compact-title">{{ title }}</div>
+    <div v-if="hint" class="atl-empty-compact-hint">{{ hint }}</div>
+    <div v-if="$slots.actions" class="atl-empty-compact-actions">
+      <slot name="actions" />
+    </div>
+  </div>
+
   <div
-    v-if="framed"
+    v-else-if="framed"
     data-state="empty"
     class="flex flex-col"
     style="width: 100%; height: 100%; background-color: var(--c-background); border: 1px solid var(--c-border); border-radius: 3px; overflow: hidden;"
@@ -89,3 +104,47 @@ withDefaults(
     </div>
   </div>
 </template>
+
+<style scoped>
+.atl-empty-compact {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 54px 20px;
+  border: 1px dashed var(--c-border);
+  border-radius: 4px;
+}
+
+.atl-empty-compact-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--c-muted);
+  background: var(--c-raised);
+  border: 1px solid var(--c-border);
+  margin-bottom: 14px;
+}
+
+.atl-empty-compact-title {
+  font-size: 14px;
+  font-weight: var(--fw-semibold);
+  color: var(--c-foreground);
+}
+
+.atl-empty-compact-hint {
+  font-size: 12.5px;
+  color: var(--c-muted);
+  margin-top: 5px;
+  max-width: 320px;
+  line-height: 1.5;
+}
+
+.atl-empty-compact-actions {
+  margin-top: 16px;
+}
+</style>

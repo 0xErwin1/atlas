@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
+import EmptyState from '@/components/states/EmptyState.vue';
 import AgentBadge from '@/components/ui/AgentBadge.vue';
 import Avatar from '@/components/ui/Avatar.vue';
 import Btn from '@/components/ui/Btn.vue';
@@ -258,15 +259,13 @@ async function confirmAdd(): Promise<void> {
     <template v-else>
       <div class="atl-members-section-label">Members</div>
 
-      <div v-if="userMembers.length === 0" class="atl-members-empty">
-        <div class="atl-members-empty-icon"><Icon name="users" :size="22" /></div>
-        <div style="font-size: 14px; font-weight: var(--fw-semibold); color: var(--c-foreground);">
-          No members yet
-        </div>
-        <div style="font-size: 12.5px; color: var(--c-muted); margin-top: 5px; max-width: 300px; line-height: 1.5;">
-          Workspace members appear here with their role. Owners and admins can change roles or remove members.
-        </div>
-      </div>
+      <EmptyState
+        v-if="userMembers.length === 0"
+        compact
+        icon="users"
+        title="No members yet"
+        hint="Workspace members appear here with their role. Owners and admins can change roles or remove members."
+      />
 
       <div v-else class="atl-members-table" data-section="members">
         <div class="atl-members-head">
@@ -419,20 +418,15 @@ async function confirmAdd(): Promise<void> {
               Loading&hellip;
             </div>
 
-            <div
+            <EmptyState
               v-else-if="assignableUsers.length === 0"
+              compact
+              icon="users"
+              title="No one to add"
+              hint="Everyone is already a member, or no other active users exist."
               data-add-empty
-              class="atl-members-empty"
               style="padding: 32px 20px;"
-            >
-              <div class="atl-members-empty-icon"><Icon name="users" :size="22" /></div>
-              <div style="font-size: 14px; font-weight: var(--fw-semibold); color: var(--c-foreground);">
-                No one to add
-              </div>
-              <div style="font-size: 12.5px; color: var(--c-muted); margin-top: 5px; max-width: 280px; line-height: 1.5;">
-                Everyone is already a member, or no other active users exist.
-              </div>
-            </div>
+            />
 
             <template v-else>
               <div class="atl-members-section-label" style="margin-bottom: 6px;">User</div>
@@ -630,30 +624,6 @@ async function confirmAdd(): Promise<void> {
 
 .atl-member-remove:hover:enabled {
   background: var(--c-raised);
-}
-
-.atl-members-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding: 54px 20px;
-  border: 1px dashed var(--c-border);
-  border-radius: 4px;
-}
-
-.atl-members-empty-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--c-muted);
-  background: var(--c-raised);
-  border: 1px solid var(--c-border);
-  margin-bottom: 14px;
 }
 
 .atl-members-note {

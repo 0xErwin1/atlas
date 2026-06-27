@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
+import EmptyState from '@/components/states/EmptyState.vue';
 import Btn from '@/components/ui/Btn.vue';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import Icon from '@/components/ui/Icon.vue';
@@ -171,15 +172,13 @@ async function confirmDelete(): Promise<void> {
       Loading&hellip;
     </div>
 
-    <div v-else-if="groupsStore.groups.length === 0" class="atl-members-empty">
-      <div class="atl-members-empty-icon"><Icon name="users" :size="22" /></div>
-      <div style="font-size: 14px; font-weight: var(--fw-semibold); color: var(--c-foreground);">
-        No groups yet
-      </div>
-      <div style="font-size: 12.5px; color: var(--c-muted); margin-top: 5px; max-width: 320px; line-height: 1.5;">
-        Create a group to grant several members access at once. Groups can be shared on workspaces and projects just like people.
-      </div>
-    </div>
+    <EmptyState
+      v-else-if="groupsStore.groups.length === 0"
+      compact
+      icon="users"
+      title="No groups yet"
+      hint="Create a group to grant several members access at once. Groups can be shared on workspaces and projects just like people."
+    />
 
     <div v-else class="atl-groups-list">
       <div v-for="group in groupsStore.groups" :key="group.id" class="atl-group-card" data-group-row>
@@ -533,30 +532,6 @@ async function confirmDelete(): Promise<void> {
 
 .atl-member-remove:hover:enabled {
   background: var(--c-panel);
-}
-
-.atl-members-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding: 54px 20px;
-  border: 1px dashed var(--c-border);
-  border-radius: 4px;
-}
-
-.atl-members-empty-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--c-muted);
-  background: var(--c-raised);
-  border: 1px solid var(--c-border);
-  margin-bottom: 14px;
 }
 
 .atl-members-note {
