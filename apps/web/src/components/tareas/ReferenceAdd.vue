@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
 import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
@@ -8,8 +8,9 @@ import type { SearchHitDto } from '@/stores/search';
 
 type CreateReferenceRequest = components['schemas']['CreateReferenceRequest'];
 
-const props = withDefaults(defineProps<{ ws: string; defaultKind?: string }>(), {
+const props = withDefaults(defineProps<{ ws: string; defaultKind?: string; large?: boolean }>(), {
   defaultKind: 'relates',
+  large: false,
 });
 
 const emit = defineEmits<{ add: [body: CreateReferenceRequest] }>();
@@ -25,6 +26,13 @@ const kind = ref(props.defaultKind);
 const query = ref('');
 const results = ref<SearchHitDto[]>([]);
 const searching = ref(false);
+const inputRef = ref<HTMLInputElement | null>(null);
+
+// In the dialog (large) variant the search is the primary action, so focus it on
+// mount the way the command palette does.
+onMounted(() => {
+  if (props.large) inputRef.value?.focus();
+});
 
 // The server requires a document target for `spec` and a task target for the
 // others, so the picker only searches the valid target type for the kind.
@@ -71,40 +79,44 @@ function pick(hit: SearchHitDto): void {
 </script>
 
 <template>
-  <div class="atl-refadd">
+  <div class="atl-refadd" :class="{ lg: large }">
     <div class="flex items-center" style="gap: 8px;">
       <Dropdown :options="KIND_OPTIONS" :model-value="kind" @change="(v) => (kind = v)" />
-      <div class="atl-refadd-search">
-        <Icon name="search" :size="13" style="color: var(--c-muted); flex: 0 0 auto;" />
+      <div class="atl-refadd-search" :class="{ lg: large }">
+        <Icon name="search" :size="large ? 17 : 13" style="color: var(--c-muted); flex: 0 0 auto;" />
         <input
+          ref="inputRef"
           v-model="query"
           type="text"
           :placeholder="placeholder"
           class="atl-refadd-input"
+          :class="{ lg: large }"
         />
       </div>
     </div>
 
-    <div v-if="results.length > 0" class="atl-refadd-results">
+    <div v-if="results.length > 0" class="atl-refadd-results" :class="{ lg: large }">
       <button
         v-for="hit in results"
         :key="hit.id"
         type="button"
         class="atl-refadd-result"
+        :class="{ lg: large }"
         @click="pick(hit)"
       >
         <Icon
           :name="hit.kind === 'task' ? 'square-kanban' : 'file-text'"
-          :size="13"
+          :size="large ? 15 : 13"
           style="color: var(--c-muted); flex: 0 0 auto;"
         />
-        <span class="atl-refadd-title">{{ hit.title }}</span>
+        <span class="atl-refadd-title" :class="{ lg: large }">{{ hit.title }}</span>
         <span v-if="hit.readable_id" class="atl-refadd-id">{{ hit.readable_id }}</span>
       </button>
     </div>
     <div
       v-else-if="query.trim() !== '' && !searching"
-      style="font-size: var(--fs-xs); color: var(--c-muted); padding: 6px 2px;"
+      class="atl-refadd-empty"
+      :class="{ lg: large }"
     >
       No matches.
     </div>
@@ -185,5 +197,41 @@ function pick(hit: SearchHitDto): void {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   color: var(--c-muted);
+}
+
+.atl-refadd-empty {
+  font-size: var(--fs-xs);
+  color: var(--c-muted);
+  padding: 6px 2px;
+}
+
+/* Large variant — used inside the Link-or-add-dependency dialog so the search
+   reads at the same level as the app's command palette. */
+.atl-refadd-search.lg {
+  height: 42px;
+  padding: 0 13px;
+  gap: 9px;
+}
+
+.atl-refadd-input.lg {
+  font-size: var(--fs-lg);
+}
+
+.atl-refadd-results.lg {
+  margin-top: 10px;
+  max-height: 46vh;
+}
+
+.atl-refadd-result.lg {
+  padding: 10px 12px;
+}
+
+.atl-refadd-title.lg {
+  font-size: var(--fs-base);
+}
+
+.atl-refadd-empty.lg {
+  font-size: var(--fs-sm);
+  padding: 12px 4px;
 }
 </style>

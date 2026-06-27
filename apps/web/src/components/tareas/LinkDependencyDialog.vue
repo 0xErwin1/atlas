@@ -46,8 +46,8 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
 <template>
   <Teleport to="body">
     <div
-      class="fixed inset-0 flex items-center justify-center"
-      style="background: var(--c-overlay); z-index: 300;"
+      class="fixed inset-0 flex justify-center"
+      style="background: var(--c-overlay); z-index: 60; padding-top: 12vh;"
       @mousedown.self="emit('close')"
     >
       <div role="dialog" aria-label="Link or add dependency" class="atl-link-dialog" @mousedown.stop>
@@ -68,7 +68,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
         </div>
 
         <div class="atl-link-body">
-          <ReferenceAdd :ws="ws" default-kind="blocks" @add="onAdd" />
+          <ReferenceAdd :ws="ws" default-kind="blocks" large @add="onAdd" />
         </div>
       </div>
     </div>
@@ -77,8 +77,11 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
 
 <style scoped>
 .atl-link-dialog {
-  width: 460px;
+  width: 520px;
   max-width: calc(100vw - 32px);
+  max-height: 76vh;
+  display: flex;
+  flex-direction: column;
   background: var(--c-panel);
   border: 1px solid var(--c-border);
   border-radius: var(--r-lg);
@@ -101,6 +104,9 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
 }
 
 .atl-link-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   padding: 14px 16px 18px;
 }
 </style>
