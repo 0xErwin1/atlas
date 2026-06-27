@@ -10,6 +10,8 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
 import FormField from '@/components/ui/FormField.vue';
 import Icon from '@/components/ui/Icon.vue';
+import { formatDate } from '@/lib/format';
+import { grantRoleOptions } from '@/lib/grantRoles';
 import { validateForm } from '@/lib/validation';
 import { type ApiKeyCreated, type ApiKeyDto, type ApiKeyGrantDto, useApiKeysStore } from '@/stores/apiKeys';
 import { useUiStore } from '@/stores/ui';
@@ -48,12 +50,6 @@ const revokeDetail = computed(() => {
 });
 
 const nameSchema = z.object({ name: z.string().trim().min(1, 'Name is required') });
-
-function fmtDate(iso: string | null | undefined): string {
-  if (!iso) return 'Never';
-  const d = new Date(iso);
-  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: '2-digit' });
-}
 
 function typeLabel(t: string): string {
   return KEY_TYPES.find((k) => k.value === t)?.label ?? t.toUpperCase();
@@ -141,10 +137,7 @@ const keyGrants = ref<Record<string, ApiKeyGrantDto[]>>({});
 const grantsLoading = ref<Record<string, boolean>>({});
 
 // Agents are capped at editor — the Admin role is never offered for a key.
-const wsAccessOptions: RoleOption[] = [
-  { value: 'viewer', label: 'Viewer' },
-  { value: 'editor', label: 'Editor' },
-];
+const wsAccessOptions: RoleOption[] = grantRoleOptions('api_key');
 
 function toggleExpand(keyId: string): void {
   if (expandedKeyId.value === keyId) {
@@ -440,9 +433,9 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
             <div style="flex: 1;">
               <AgentBadge :label="typeLabel(k.type).toUpperCase()" />
             </div>
-            <div class="atl-key-meta">{{ fmtDate(k.created_at) }}</div>
+            <div class="atl-key-meta">{{ formatDate(k.created_at, 'Never') }}</div>
             <div class="atl-key-meta" :style="{ color: k.last_used_at ? 'var(--c-foreground)' : 'var(--c-muted)' }">
-              {{ fmtDate(k.last_used_at) }}
+              {{ formatDate(k.last_used_at, 'Never') }}
             </div>
           </template>
 

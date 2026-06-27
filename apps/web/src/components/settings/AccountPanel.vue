@@ -7,6 +7,7 @@ import Btn from '@/components/ui/Btn.vue';
 import FormField from '@/components/ui/FormField.vue';
 import Icon from '@/components/ui/Icon.vue';
 import { useProblem } from '@/composables/useProblem';
+import { initials as nameInitials } from '@/lib/format';
 import { validateForm } from '@/lib/validation';
 import { type Problem, useAuthStore } from '@/stores/auth';
 import { useUiStore } from '@/stores/ui';
@@ -19,14 +20,7 @@ const displayName = computed(() => auth.user?.display_name ?? auth.user?.usernam
 const username = computed(() => auth.user?.username ?? '');
 const isRoot = computed(() => auth.user?.is_root === true);
 
-const initials = computed(() => {
-  const base = (auth.user?.display_name ?? auth.user?.username ?? '?').trim();
-  const parts = base.split(/\s+/).filter(Boolean);
-  const first = parts[0];
-  const second = parts[1];
-  if (first && second) return (first.charAt(0) + second.charAt(0)).toUpperCase();
-  return base.slice(0, 2).toUpperCase();
-});
+const initials = computed(() => nameInitials(auth.user?.display_name ?? auth.user?.username));
 
 function problemText(problem: Problem): string {
   const p = useProblem(problem);

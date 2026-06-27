@@ -11,7 +11,9 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
 import FormField from '@/components/ui/FormField.vue';
 import Icon from '@/components/ui/Icon.vue';
+import { formatDate, initials as nameInitials } from '@/lib/format';
 import { validateForm } from '@/lib/validation';
+import { workspaceRoleOptions } from '@/lib/workspaceRoles';
 import { useAuthStore } from '@/stores/auth';
 import { useUiStore } from '@/stores/ui';
 import { activationUrl, type UserDto, useUsersStore } from '@/stores/users';
@@ -27,10 +29,7 @@ const currentUserIsRoot = computed(() => auth.user?.is_root === true);
 type Mode = 'list' | 'new' | 'reset' | 'link';
 const mode = ref<Mode>('list');
 
-const ROLES: DropdownOption[] = [
-  { value: 'member', label: 'Member' },
-  { value: 'admin', label: 'Admin' },
-];
+const ROLES: DropdownOption[] = workspaceRoleOptions();
 
 const workspaceOptions = computed<DropdownOption[]>(() =>
   wsStore.adminWorkspaces.map((w) => ({ value: w.slug, label: w.name })),
@@ -66,17 +65,7 @@ function disableTitle(u: UserDto): string {
 }
 
 function initials(u: UserDto): string {
-  const base = (u.display_name || u.username || '?').trim();
-  const parts = base.split(/\s+/).filter(Boolean);
-  const a = parts[0];
-  const b = parts[1];
-  if (a && b) return (a.charAt(0) + b.charAt(0)).toUpperCase();
-  return base.slice(0, 2).toUpperCase();
-}
-
-function fmtDate(iso: string | null | undefined): string {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: '2-digit' });
+  return nameInitials(u.display_name || u.username);
 }
 
 onMounted(() => {
@@ -265,14 +254,9 @@ async function loadMemberships(u: UserDto): Promise<void> {
 // ── Workspace-access editor ────────────────────────────────────────
 // Root grants owner; everyone else is capped at admin (the backend rejects an
 // admin granting owner with 403, so the option is hidden rather than offered).
-const wsAccessOptions = computed<RoleOption[]>(() => {
-  const base: RoleOption[] = [
-    { value: 'member', label: 'Member' },
-    { value: 'admin', label: 'Admin' },
-  ];
-  if (currentUserIsRoot.value) base.push({ value: 'owner', label: 'Owner' });
-  return base;
-});
+const wsAccessOptions = computed<RoleOption[]>(() =>
+  workspaceRoleOptions({ includeOwner: currentUserIsRoot.value }),
+);
 
 async function onWsAssign(u: UserDto, slug: string, role: string): Promise<void> {
   const current = usersStore.memberships[u.id]?.[slug];
@@ -573,7 +557,7 @@ async function confirmDisable(): Promise<void> {
               <Chip v-else-if="isPending(u)" tone="warning">Pending</Chip>
               <Chip v-else tone="success">Active</Chip>
             </div>
-            <div style="flex: 1; font-size: 12px; color: var(--c-muted);">{{ fmtDate(u.created_at) }}</div>
+            <div style="flex: 1; font-size: 12px; color: var(--c-muted);">{{ formatDate(u.created_at) }}</div>
           </template>
 
           <template #actions>

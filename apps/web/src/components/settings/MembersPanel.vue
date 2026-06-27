@@ -6,6 +6,14 @@ import Btn from '@/components/ui/Btn.vue';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
 import Icon from '@/components/ui/Icon.vue';
+import { initials } from '@/lib/format';
+import {
+  coerceWorkspaceRole,
+  workspaceRoleLabel as roleLabel,
+  workspaceRoleTagClass as roleTagClass,
+  type WorkspaceRole,
+  workspaceRoleOptions,
+} from '@/lib/workspaceRoles';
 import { useAuthStore } from '@/stores/auth';
 import { useUiStore } from '@/stores/ui';
 import { type PrincipalDto, type UserDto, useWorkspaceStore } from '@/stores/workspace';
@@ -14,14 +22,8 @@ const wsStore = useWorkspaceStore();
 const auth = useAuthStore();
 const ui = useUiStore();
 
-type Role = 'owner' | 'admin' | 'member';
-const ROLES: { value: Role; label: string }[] = [
-  { value: 'owner', label: 'Owner' },
-  { value: 'admin', label: 'Admin' },
-  { value: 'member', label: 'Member' },
-];
-
-const roleOptions: DropdownOption[] = ROLES.map((r) => ({ value: r.value, label: r.label }));
+type Role = WorkspaceRole;
+const roleOptions: DropdownOption[] = workspaceRoleOptions({ includeOwner: true });
 
 const loading = ref(false);
 const busyId = ref<string | null>(null);
@@ -41,13 +43,7 @@ const agentMembers = computed<PrincipalDto[]>(() =>
 const activeWs = computed(() => wsStore.activeWorkspaceSlug ?? '');
 
 function roleOf(m: PrincipalDto): Role {
-  const r = m.role;
-  if (r === 'owner' || r === 'admin' || r === 'member') return r;
-  return 'member';
-}
-
-function roleLabel(role: Role): string {
-  return ROLES.find((r) => r.value === role)?.label ?? role;
+  return coerceWorkspaceRole(m.role);
 }
 
 function isSelf(m: PrincipalDto): boolean {
@@ -73,21 +69,6 @@ const canManage = computed(
 );
 
 const ownerCount = computed(() => userMembers.value.filter((m) => roleOf(m) === 'owner').length);
-
-function initials(m: PrincipalDto): string {
-  const base = (m.display || '?').trim();
-  const parts = base.split(/\s+/).filter(Boolean);
-  const a = parts[0];
-  const b = parts[1];
-  if (a && b) return (a.charAt(0) + b.charAt(0)).toUpperCase();
-  return base.slice(0, 2).toUpperCase();
-}
-
-function roleTagClass(role: Role): string {
-  if (role === 'owner') return 'atl-role-owner';
-  if (role === 'admin') return 'atl-role-admin';
-  return 'atl-role-member';
-}
 
 type AccountStatus = 'deactivated' | 'pending';
 
@@ -296,7 +277,7 @@ async function confirmAdd(): Promise<void> {
 
         <div v-for="m in userMembers" :key="m.id" class="atl-members-row" data-member-row>
           <div style="flex: 2; display: flex; align-items: center; gap: 10px; min-width: 0;">
-            <Avatar :name="initials(m)" :size="26" />
+            <Avatar :name="initials(m.display)" :size="26" />
             <div class="flex items-center" style="gap: 6px; min-width: 0;">
               <span class="atl-member-name">{{ m.display }}</span>
               <span v-if="isSelf(m)" class="atl-you">you</span>

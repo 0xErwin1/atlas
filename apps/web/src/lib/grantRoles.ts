@@ -1,7 +1,21 @@
+import type { DropdownOption } from '@/components/ui/Dropdown.vue';
+
 export type GrantRole = 'viewer' | 'editor' | 'admin';
 export type PrincipalType = 'user' | 'api_key' | 'group';
 
 const ALL_ROLES: GrantRole[] = ['viewer', 'editor', 'admin'];
+
+const GRANT_ROLE_LABELS: Record<GrantRole, string> = {
+  viewer: 'Viewer',
+  editor: 'Editor',
+  admin: 'Admin',
+};
+
+const GRANT_ROLE_ICONS: Record<GrantRole, string> = {
+  viewer: 'eye',
+  editor: 'type',
+  admin: 'settings',
+};
 
 /**
  * The highest role an agent (api_key) principal may ever hold. This is the E03
@@ -37,4 +51,24 @@ export function availableRolesFor(principalType: string): GrantRole[] {
  */
 export function isRoleAllowedFor(principalType: string, role: GrantRole): boolean {
   return availableRolesFor(principalType).includes(role);
+}
+
+export function grantRoleLabel(role: string): string {
+  return role in GRANT_ROLE_LABELS ? GRANT_ROLE_LABELS[role as GrantRole] : role;
+}
+
+export function grantRoleIcon(role: GrantRole): string {
+  return GRANT_ROLE_ICONS[role];
+}
+
+/**
+ * Selectable grant roles for the principal type as dropdown options, in
+ * privilege order and already filtered by the agent cap (`availableRolesFor`).
+ */
+export function grantRoleOptions(principalType: string): DropdownOption[] {
+  return availableRolesFor(principalType).map((value) => ({
+    value,
+    label: GRANT_ROLE_LABELS[value],
+    icon: GRANT_ROLE_ICONS[value],
+  }));
 }

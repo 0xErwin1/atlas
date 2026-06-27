@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import Icon from '@/components/ui/Icon.vue';
-import { availableRolesFor, type GrantRole } from '@/lib/grantRoles';
+import { availableRolesFor, type GrantRole, grantRoleIcon, grantRoleLabel } from '@/lib/grantRoles';
 
 const props = defineProps<{
   principalType: string;
@@ -13,23 +13,15 @@ const emit = defineEmits<{
   remove: [];
 }>();
 
-interface RoleRow {
-  value: GrantRole;
-  label: string;
-  icon: string;
-}
-
-const ALL_ROWS: RoleRow[] = [
-  { value: 'viewer', label: 'Viewer', icon: 'eye' },
-  { value: 'editor', label: 'Editor', icon: 'type' },
-  { value: 'admin', label: 'Admin', icon: 'settings' },
-];
-
-// Agents (api_key / unknown) are capped at editor; admin is never offered to them.
-const rows = computed<RoleRow[]>(() => {
-  const allowed = availableRolesFor(props.principalType);
-  return ALL_ROWS.filter((row) => allowed.includes(row.value));
-});
+// Agents (api_key / unknown) are capped at editor; admin is never offered to
+// them. `availableRolesFor` owns that cap, the label/icon maps own the display.
+const rows = computed(() =>
+  availableRolesFor(props.principalType).map((value) => ({
+    value,
+    label: grantRoleLabel(value),
+    icon: grantRoleIcon(value),
+  })),
+);
 
 const isAgent = computed(() => props.principalType !== 'user' && props.principalType !== 'group');
 

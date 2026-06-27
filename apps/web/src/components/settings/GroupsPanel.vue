@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import Btn from '@/components/ui/Btn.vue';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import Icon from '@/components/ui/Icon.vue';
+import { initials } from '@/lib/format';
 import { type GroupDto, useGroupsStore } from '@/stores/groups';
 import { useUiStore } from '@/stores/ui';
 import { type PrincipalDto, useWorkspaceStore } from '@/stores/workspace';
@@ -30,15 +31,6 @@ const userMembers = computed<PrincipalDto[]>(() =>
 
 function displayName(userId: string): string {
   return wsStore.members.find((m) => m.id === userId)?.display ?? userId;
-}
-
-function initials(name: string): string {
-  const base = (name || '?').trim();
-  const parts = base.split(/\s+/).filter(Boolean);
-  const a = parts[0];
-  const b = parts[1];
-  if (a && b) return (a.charAt(0) + b.charAt(0)).toUpperCase();
-  return base.slice(0, 2).toUpperCase();
 }
 
 const memberUserIds = computed(() => new Set(groupsStore.members.map((m) => m.user_id)));
