@@ -95,8 +95,10 @@ function onChangeMode(mode: TaskViewMode): void {
 
 <style scoped>
 .atl-tv-dock {
-  width: 460px;
-  flex: 0 0 460px;
+  /* Responsive: shrink with the viewport so opening a task on a narrow window
+     doesn't crush the board behind it, but never wider than the design's 460px. */
+  width: clamp(320px, 34vw, 460px);
+  flex: 0 0 clamp(320px, 34vw, 460px);
   display: flex;
   flex-direction: column;
   min-width: 0;
