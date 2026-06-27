@@ -7,6 +7,7 @@ import ContextSidebar from '@/components/shell/ContextSidebar.vue';
 import InspectorDock from '@/components/shell/InspectorDock.vue';
 import MobileTabBar from '@/components/shell/MobileTabBar.vue';
 import EmptyState from '@/components/states/EmptyState.vue';
+import AskAiDialog from '@/components/tareas/AskAiDialog.vue';
 import BottomSheet from '@/components/ui/BottomSheet.vue';
 import Icon from '@/components/ui/Icon.vue';
 import { useBreakpoint } from '@/composables/useBreakpoint';
@@ -136,6 +137,14 @@ const showMainOnMobile = computed(() => props.mobileDetail || !hasSidebar.value)
       :resource-label="ui.shareResourceLabel"
       @close="ui.closeShare()"
     />
+
+    <AskAiDialog
+      :open="ui.askAiOpen"
+      :task="ui.askAiTask"
+      :status-name="ui.askAiStatus"
+      :action="ui.askAiAction"
+      @close="ui.closeAskAi()"
+    />
   </div>
 
   <div
@@ -182,6 +191,14 @@ const showMainOnMobile = computed(() => props.mobileDetail || !hasSidebar.value)
       :project-slug="ui.shareProjectSlug ?? undefined"
       :resource-label="ui.shareResourceLabel"
       @close="ui.closeShare()"
+    />
+
+    <AskAiDialog
+      :open="ui.askAiOpen"
+      :task="ui.askAiTask"
+      :status-name="ui.askAiStatus"
+      :action="ui.askAiAction"
+      @close="ui.closeAskAi()"
     />
   </div>
 </template>

@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
+import type { AiAction, AiPromptTask } from '@/lib/aiPrompt';
 
 export type InspectorTab = 'properties' | 'backlinks' | 'activity' | 'share';
 export type BannerType = 'error' | 'warning' | 'info' | 'success';
@@ -274,6 +275,26 @@ export const useUiStore = defineStore('ui', () => {
     taskFilter.value = { statuses: [], priorities: [], assigneeIds: [], labels: [] };
   }
 
+  // "Ask AI" hand-off dialog. Global so it can be opened both from the task
+  // detail banner and from a task row's context menu, while a single instance is
+  // mounted in the app shell. The task snapshot carries whatever fields the
+  // caller has (the summary lacks the description); the prompt builder copes.
+  const askAiOpen = ref(false);
+  const askAiTask = ref<AiPromptTask | null>(null);
+  const askAiStatus = ref<string | null>(null);
+  const askAiAction = ref<AiAction>('summarize');
+
+  function openAskAi(task: AiPromptTask, statusName: string | null, action: AiAction) {
+    askAiTask.value = task;
+    askAiStatus.value = statusName;
+    askAiAction.value = action;
+    askAiOpen.value = true;
+  }
+
+  function closeAskAi() {
+    askAiOpen.value = false;
+  }
+
   return {
     inspectorOpen,
     inspectorTab,
@@ -312,5 +333,11 @@ export const useUiStore = defineStore('ui', () => {
     hasActiveFilter,
     setTaskFilter,
     clearTaskFilter,
+    askAiOpen,
+    askAiTask,
+    askAiStatus,
+    askAiAction,
+    openAskAi,
+    closeAskAi,
   };
 });

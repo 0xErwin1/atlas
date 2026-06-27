@@ -1,6 +1,7 @@
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import type { MenuItem } from '@/components/ui/ContextMenu.vue';
+import { AI_ACTIONS } from '@/lib/aiPrompt';
 import type { ColumnDto, TaskSummaryDto } from '@/stores/boards';
 import { useBoardsStore } from '@/stores/boards';
 import { type TaskViewMode, useUiStore } from '@/stores/ui';
@@ -173,6 +174,7 @@ export function useTaskInteractions(ws: string) {
         icon: 'external-link',
         action: () => window.open(`${window.location.origin}${taskHref(readableId)}`, '_blank'),
       },
+      buildAskAiItem(task),
       { sep: true },
       { label: 'Rename', icon: 'pencil', action: () => openRename(task) },
       { label: 'Change status', icon: 'square-kanban', children: statusChildren },
@@ -215,6 +217,23 @@ export function useTaskInteractions(ws: string) {
         { label: 'Floating dialog', icon: 'app-window', action: () => onOpenAs(readableId, 'modal') },
         { label: 'Full screen', icon: 'maximize', action: () => onOpenAs(readableId, 'full') },
       ],
+    };
+  }
+
+  /**
+   * "Ask AI" submenu: opens the global hand-off dialog pre-set to an action. The
+   * board summary supplies the status (column_name) and the fields the prompt
+   * builder needs; the description is filled in only on the task detail banner.
+   */
+  function buildAskAiItem(task: TaskSummaryDto): MenuItem {
+    return {
+      label: 'Ask AI',
+      icon: 'sparkles',
+      children: AI_ACTIONS.map((a) => ({
+        label: a.label,
+        icon: a.icon,
+        action: () => ui.openAskAi(task, task.column_name, a.value),
+      })),
     };
   }
 

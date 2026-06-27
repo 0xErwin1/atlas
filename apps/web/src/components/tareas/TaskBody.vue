@@ -17,6 +17,7 @@ import Popover from '@/components/ui/Popover.vue';
 import PromptDialog from '@/components/ui/PromptDialog.vue';
 import TagInput from '@/components/ui/TagInput.vue';
 import { useInlineEdit } from '@/composables/useInlineEdit';
+import type { AiAction } from '@/lib/aiPrompt';
 import { swatchById } from '@/lib/swatches';
 import { useBoardsStore } from '@/stores/boards';
 import { useLabelColorsStore } from '@/stores/labelColors';
@@ -258,6 +259,10 @@ function comingSoon(): void {
   ui.showBanner('That action is coming soon', 'info');
 }
 
+function openAskAi(action: AiAction): void {
+  ui.openAskAi(props.task, statusName.value, action);
+}
+
 /** Footer quick-actions; "Add sub-task" focuses the sub-task input, the rest defer. */
 function focusSubtaskInput(): void {
   const el = document.querySelector<HTMLInputElement>('.atl-sub-add');
@@ -346,10 +351,11 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
     <div class="atl-tv-agenthint">
       <Icon name="sparkles" :size="15" style="color: var(--c-agent); flex: 0 0 auto;" />
       <span>
-        Ask <b style="color: var(--c-agent);">Claude</b> to
-        <a class="atl-tv-link" @click="comingSoon">summarize</a>,
-        <a class="atl-tv-link" @click="comingSoon">generate sub-tasks</a>, or
-        <a class="atl-tv-link" @click="comingSoon">find similar tasks</a>
+        Ask <b style="color: var(--c-agent);">AI</b> to
+        <a class="atl-tv-link" @click="openAskAi('summarize')">summarize</a>,
+        <a class="atl-tv-link" @click="openAskAi('subtasks')">generate sub-tasks</a>,
+        <a class="atl-tv-link" @click="openAskAi('similar')">find similar tasks</a>, or
+        <a class="atl-tv-link" @click="openAskAi('start')">start it</a>
       </span>
     </div>
 
