@@ -114,6 +114,7 @@ No ESLint or Prettier — Biome replaces both.
 
 ### Patterns
 
+- **Reuse, don't reimplement — no duplication (non-negotiable).** Before writing UI, use the shared primitive; never copy its markup, styles, or behavior into a panel. Canonical primitives: single-select dropdown → `Dropdown` (`src/components/ui/Dropdown.vue`); anchored menu / popover surface → `Popover`; confirmation → `ConfirmDialog`; form field + validation → `FormField` + `validateForm`; expandable settings row (collapsed summary + inline manage panel, whole-row click) → `ExpandableRow` (`src/components/settings/ExpandableRow.vue`). The moment a visual or behavioral pattern appears a *second* time, extract one component and have every call site use it. Duplicated markup or CSS across components is a defect to remove, not to extend — this includes "same thing styled by copy-pasted classes". When you reach for a `<select>`, a hand-built menu, a custom toggle, or a re-styled row, stop and use (or extract) the shared component instead.
 - **Generated API client.** `apps/web/src/api/types.d.ts` is generated from the served OpenAPI by `just gen-types`. Never hand-edit it; regenerate after a backend contract change.
 - **Form validation.** Validate with [zod](https://zod.dev/) through the shared `FormField` (`src/components/ui/FormField.vue`) and `validateForm` (`src/lib/validation.ts`). Show the API problem `hint` on failure; do not rely on native browser validation bubbles.
 - **Comments.** Same rule as Rust: default to none; explain only a non-obvious *why*.

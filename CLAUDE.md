@@ -10,3 +10,7 @@ When instructions conflict, use this order of precedence:
 4. Existing codebase conventions.
 
 Do not duplicate project rules here. Keep `AGENTS.md` as the single source of truth for repository-specific agent behavior.
+
+## Hard rule — reuse, never duplicate
+
+Do not reimplement or copy-paste UI (or any) patterns. Use the shared components/primitives (`Dropdown`, `Popover`, `ConfirmDialog`, `FormField`, `ExpandableRow`, …); the moment a pattern recurs, extract one component and have every call site use it. Duplicated markup/CSS/logic is a defect to remove, not extend. Full rule: `AGENTS.md` → Web frontend, and `CODE_STYLE.md` → TypeScript / Vue → Patterns.
