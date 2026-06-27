@@ -11,7 +11,9 @@ use atlas_api::dtos::property_definitions::{
 };
 use atlas_domain::{
     Actor, DomainError, WorkspaceCtx,
-    entities::workspace_core::{AppliesTo, NewPropertyDefinition, PropertyDefinition, PropertyKind},
+    entities::workspace_core::{
+        AppliesTo, NewPropertyDefinition, PropertyDefinition, PropertyKind,
+    },
     ids::PropertyDefinitionId,
     permissions::Principal,
 };
@@ -114,8 +116,7 @@ fn is_valid_key(key: &str) -> bool {
         _ => return false,
     }
 
-    key.len() <= 64
-        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+    key.len() <= 64 && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
 }
 
 /// Validates the `options` payload against the field kind.
@@ -239,7 +240,9 @@ pub(crate) async fn list_property_definitions(
         definitions.retain(|d| applies_to_matches(&d.applies_to, &filter));
     }
 
-    Ok(Json(definitions.into_iter().map(definition_to_dto).collect()))
+    Ok(Json(
+        definitions.into_iter().map(definition_to_dto).collect(),
+    ))
 }
 
 // ---------------------------------------------------------------------------

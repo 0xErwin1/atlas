@@ -1478,7 +1478,8 @@ async fn assignable_users_excludes_members_and_disabled() {
         login_user_with_workspace(&server, &db, "assignable-ws").await;
 
     // A current member — must be excluded.
-    let existing_member = add_member(&db, ws.id, "assignable-existing-member", MemberRole::Member).await;
+    let existing_member =
+        add_member(&db, ws.id, "assignable-existing-member", MemberRole::Member).await;
 
     // A disabled, non-member user — must be excluded.
     let disabled = create_non_member_user(&db, "assignable-disabled").await;

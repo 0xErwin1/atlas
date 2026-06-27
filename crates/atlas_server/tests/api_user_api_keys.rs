@@ -483,7 +483,10 @@ async fn list_api_key_grants_includes_granted_by_user() {
         .as_ref()
         .expect("granted_by must be present for a user-created grant");
 
-    assert_eq!(granted_by.id, owner_user.id.0, "granter id must be the owner");
+    assert_eq!(
+        granted_by.id, owner_user.id.0,
+        "granter id must be the owner"
+    );
     assert_eq!(
         granted_by.display, owner_user.display_name,
         "granter display must be the owner's display name"

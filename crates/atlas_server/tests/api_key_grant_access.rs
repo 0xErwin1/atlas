@@ -613,7 +613,9 @@ async fn global_agent_reaches_creators_workspaces_not_others_and_is_reversible()
     let agent = atlas_client::AtlasClient::new(server.base_url()).with_token(secret);
 
     // Baseline: a non-global key with no grant is denied in W1.
-    let result = agent.list_workspace_tasks(&w1.slug, &Default::default()).await;
+    let result = agent
+        .list_workspace_tasks(&w1.slug, &Default::default())
+        .await;
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
         "non-global ungranted key must be denied in W1, got: {result:?}"
@@ -649,7 +651,9 @@ async fn global_agent_reaches_creators_workspaces_not_others_and_is_reversible()
         .expect("global agent writes W1 at editor");
 
     // The creator is not a member of W2, so the global agent cannot reach it.
-    let result = agent.list_workspace_tasks(&w2.slug, &Default::default()).await;
+    let result = agent
+        .list_workspace_tasks(&w2.slug, &Default::default())
+        .await;
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
         "global agent must not reach a workspace its creator cannot, got: {result:?}"
@@ -660,7 +664,9 @@ async fn global_agent_reaches_creators_workspaces_not_others_and_is_reversible()
         .set_api_key_global(key_id, false)
         .await
         .expect("owner unmarks global");
-    let result = agent.list_workspace_tasks(&w1.slug, &Default::default()).await;
+    let result = agent
+        .list_workspace_tasks(&w1.slug, &Default::default())
+        .await;
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
         "after global off, ungranted key must be denied again, got: {result:?}"
@@ -684,8 +690,7 @@ async fn set_api_key_global_is_owner_scoped() {
         .expect("owner toggles own key");
 
     // A different user cannot toggle someone else's key: 404 (no existence probe).
-    let (other_client, _w2, _other) =
-        login_user_with_workspace(&server, &db, "glob-c-other").await;
+    let (other_client, _w2, _other) = login_user_with_workspace(&server, &db, "glob-c-other").await;
     let result = other_client.set_api_key_global(key_id, false).await;
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),

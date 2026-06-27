@@ -95,8 +95,7 @@ impl AppState {
 /// R2) and requires its connection variables; a missing required variable fails
 /// startup with a message that names the variable but never echoes a secret value.
 async fn build_attachment_store() -> Result<Arc<dyn AttachmentStore>, anyhow::Error> {
-    let backend =
-        std::env::var("ATLAS_ATTACHMENT_BACKEND").unwrap_or_else(|_| "disk".to_string());
+    let backend = std::env::var("ATLAS_ATTACHMENT_BACKEND").unwrap_or_else(|_| "disk".to_string());
 
     match backend.as_str() {
         "disk" => {
@@ -137,9 +136,8 @@ async fn build_attachment_store() -> Result<Arc<dyn AttachmentStore>, anyhow::Er
 /// variable. The variable's value is never included in the error so a missing
 /// secret cannot leak through startup logs.
 fn require_env(var: &str) -> Result<String, anyhow::Error> {
-    std::env::var(var).map_err(|_| {
-        anyhow::anyhow!("ATLAS_ATTACHMENT_BACKEND=s3 requires {var} to be set")
-    })
+    std::env::var(var)
+        .map_err(|_| anyhow::anyhow!("ATLAS_ATTACHMENT_BACKEND=s3 requires {var} to be set"))
 }
 
 fn read_env_i64(var: &str, default: i64) -> i64 {

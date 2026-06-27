@@ -403,9 +403,7 @@ async fn disable_requires_admin() {
 
 #[tokio::test]
 async fn list_user_memberships_returns_workspaces_with_roles() {
-    use atlas_domain::{
-        Actor, WorkspaceCtx, entities::identity::MemberRole, ids::WorkspaceId,
-    };
+    use atlas_domain::{Actor, WorkspaceCtx, entities::identity::MemberRole, ids::WorkspaceId};
     use atlas_server::persistence::repos::{
         MembershipRepo, NewUser, NewWorkspace, UserRepo, WorkspaceRepo,
     };
@@ -501,8 +499,7 @@ async fn list_user_memberships_requires_admin() {
 
     let (non_admin, _ws, _user) =
         login_user_with_workspace(&server, &db, "non-admin-memberships").await;
-    let (_, _, target) =
-        login_user_with_workspace(&server, &db, "memberships-target-403").await;
+    let (_, _, target) = login_user_with_workspace(&server, &db, "memberships-target-403").await;
 
     let result = non_admin.list_user_memberships(target.id.0).await;
 

@@ -1,8 +1,6 @@
 #[allow(unreachable_pub)]
 mod attachment_store;
 #[allow(unreachable_pub)]
-mod s3_attachment_store;
-#[allow(unreachable_pub)]
 mod boards_tasks;
 #[allow(unreachable_pub)]
 mod documents;
@@ -10,6 +8,8 @@ mod documents;
 mod identity;
 #[allow(unreachable_pub)]
 mod permissions;
+#[allow(unreachable_pub)]
+mod s3_attachment_store;
 #[allow(unreachable_pub)]
 mod search;
 #[allow(unreachable_pub)]
@@ -27,7 +27,6 @@ pub use identity::{
 };
 
 pub use attachment_store::DiskAttachmentStore;
-pub use s3_attachment_store::{S3AttachmentStore, S3Config};
 pub use boards_tasks::{
     BoardRepo, PgBoardRepo, PgTaskActivityRepo, PgTaskAssigneeRepo, PgTaskChecklistRepo,
     PgTaskReferenceRepo, PgTaskRepo, TaskActivityRepo, TaskAssigneeRepo, TaskChecklistRepo,
@@ -37,6 +36,7 @@ pub use documents::{
     AttachmentRepo, DocumentLinkRepo, DocumentRepo, PgAttachmentRepo, PgDocumentLinkRepo,
     PgDocumentRepo,
 };
+pub use s3_attachment_store::{S3AttachmentStore, S3Config};
 pub use workspace_core::{
     FolderRepo, PgFolderRepo, PgProjectRepo, PgPropertyDefinitionRepo, ProjectRepo,
     PropertyDefinitionRepo,

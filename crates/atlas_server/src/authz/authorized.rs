@@ -850,9 +850,12 @@ async fn resolve_agent_effective_role(
     chain: &ResourceChain,
 ) -> Result<Option<ResourceRole>, ApiError> {
     let key_repo = PgApiKeyRepo { conn: db.clone() };
-    let Some(key) = key_repo.get_by_id(kid).await.map_err(|e| ApiError::Internal {
-        message: e.to_string(),
-    })?
+    let Some(key) = key_repo
+        .get_by_id(kid)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?
     else {
         return Ok(None);
     };
@@ -883,9 +886,12 @@ async fn effective_membership_for_user(
     workspace: &Workspace,
 ) -> Result<Option<MemberRole>, ApiError> {
     let user_repo = PgUserRepo { conn: db.clone() };
-    let Some(user) = user_repo.find_by_id(user_id).await.map_err(|e| ApiError::Internal {
-        message: e.to_string(),
-    })?
+    let Some(user) = user_repo
+        .find_by_id(user_id)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?
     else {
         return Ok(None);
     };
@@ -941,9 +947,12 @@ pub async fn api_key_can_access_workspace(
     }
 
     let key_repo = PgApiKeyRepo { conn: db.clone() };
-    let Some(key) = key_repo.get_by_id(key_id).await.map_err(|e| ApiError::Internal {
-        message: e.to_string(),
-    })?
+    let Some(key) = key_repo
+        .get_by_id(key_id)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?
     else {
         return Ok(false);
     };

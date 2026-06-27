@@ -586,9 +586,7 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         method: "DELETE",
         path_template: "/v1/workspaces/{ws}/tasks/ATL-0/attachments/00000000-0000-0000-0000-000000000001",
         kind: RouteKind::WorkspaceMember,
-        openapi_path: Some(
-            "/v1/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}",
-        ),
+        openapi_path: Some("/v1/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}"),
     },
     RouteEntry {
         method: "GET",

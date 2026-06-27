@@ -50,7 +50,8 @@ use crate::{
         PgBoardRepo, PgDocumentRepo, PgMembershipRepo, PgPermissionGrantRepo, PgProjectRepo,
         PgPropertyDefinitionRepo, PgTaskActivityRepo, PgTaskAssigneeRepo, PgTaskChecklistRepo,
         PgTaskReferenceRepo, PgTaskRepo, PgUserRepo, ProjectRepo, PropertyDefinitionRepo,
-        TaskActivityRepo, TaskAssigneeRepo, TaskChecklistRepo, TaskReferenceRepo, TaskRepo, UserRepo,
+        TaskActivityRepo, TaskAssigneeRepo, TaskChecklistRepo, TaskReferenceRepo, TaskRepo,
+        UserRepo,
     },
     routes::documents::content_disposition_attachment,
     routes::validation::{
@@ -1555,11 +1556,14 @@ pub(crate) async fn upload_attachment(
 
     let mut captured: Option<(String, String, Vec<u8>)> = None;
 
-    while let Some(mut field) = multipart.next_field().await.map_err(|e| {
-        ApiError::InvalidInput {
-            message: format!("invalid multipart body: {e}"),
-        }
-    })? {
+    while let Some(mut field) =
+        multipart
+            .next_field()
+            .await
+            .map_err(|e| ApiError::InvalidInput {
+                message: format!("invalid multipart body: {e}"),
+            })?
+    {
         if field.name() != Some("file") {
             continue;
         }

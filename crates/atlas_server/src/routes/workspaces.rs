@@ -33,8 +33,11 @@ use crate::{
 /// Status columns every new workspace starts with, in board order. The default
 /// board derives its columns from these, so a freshly created workspace has a
 /// usable kanban out of the box instead of an empty, column-less board.
-const DEFAULT_STATUSES: &[(&str, &str)] =
-    &[("To Do", "neutral"), ("In Progress", "blue"), ("Done", "green")];
+const DEFAULT_STATUSES: &[(&str, &str)] = &[
+    ("To Do", "neutral"),
+    ("In Progress", "blue"),
+    ("Done", "green"),
+];
 
 #[utoipa::path(
     post,

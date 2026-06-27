@@ -589,13 +589,12 @@ pub(crate) async fn list_user_memberships(
         })?
         .ok_or(ApiError::NotFound)?;
 
-    let memberships =
-        ws_repo
-            .list_memberships_for_user(user_id)
-            .await
-            .map_err(|e| ApiError::Internal {
-                message: e.to_string(),
-            })?;
+    let memberships = ws_repo
+        .list_memberships_for_user(user_id)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?;
 
     let dtos = memberships
         .into_iter()

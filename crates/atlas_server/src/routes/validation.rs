@@ -109,12 +109,13 @@ pub(crate) fn validate_custom_properties(
             continue;
         }
 
-        let definition = definitions
-            .iter()
-            .find(|d| &d.key == key)
-            .ok_or_else(|| ApiError::InvalidInput {
-                message: format!("unknown custom field '{key}'"),
-            })?;
+        let definition =
+            definitions
+                .iter()
+                .find(|d| &d.key == key)
+                .ok_or_else(|| ApiError::InvalidInput {
+                    message: format!("unknown custom field '{key}'"),
+                })?;
 
         validate_custom_value(key, value, definition)?;
     }
@@ -148,7 +149,9 @@ fn validate_custom_value(
             }
         }
         PropertyKind::Date => {
-            let s = value.as_str().ok_or_else(|| type_error("an RFC 3339 date string"))?;
+            let s = value
+                .as_str()
+                .ok_or_else(|| type_error("an RFC 3339 date string"))?;
             if chrono::DateTime::parse_from_rfc3339(s).is_err() {
                 return Err(type_error("an RFC 3339 date string"));
             }
@@ -163,12 +166,16 @@ fn validate_custom_value(
             }
         }
         PropertyKind::MultiSelect => {
-            let array = value.as_array().ok_or_else(|| type_error("an array of strings"))?;
+            let array = value
+                .as_array()
+                .ok_or_else(|| type_error("an array of strings"))?;
             let allowed = definition_options(definition);
 
             let mut seen = std::collections::HashSet::new();
             for entry in array {
-                let s = entry.as_str().ok_or_else(|| type_error("an array of strings"))?;
+                let s = entry
+                    .as_str()
+                    .ok_or_else(|| type_error("an array of strings"))?;
 
                 if !allowed.iter().any(|o| o == s) {
                     return Err(ApiError::InvalidInput {

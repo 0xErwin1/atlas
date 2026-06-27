@@ -281,8 +281,7 @@ pub(crate) async fn list_assignable_users(
             message: e.to_string(),
         })?;
 
-    let member_ids: std::collections::HashSet<_> =
-        memberships.iter().map(|m| m.user_id).collect();
+    let member_ids: std::collections::HashSet<_> = memberships.iter().map(|m| m.user_id).collect();
 
     let users = user_repo.list().await.map_err(|e| ApiError::Internal {
         message: e.to_string(),

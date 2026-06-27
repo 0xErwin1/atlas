@@ -361,7 +361,8 @@ impl AtlasClient {
             .get(&format!("/v1/users/{user_id}/memberships"))
             .send()
             .await?;
-        self.decode_response(response, "list_user_memberships").await
+        self.decode_response(response, "list_user_memberships")
+            .await
     }
 
     /// `POST /v1/api-keys`
@@ -1190,7 +1191,8 @@ impl AtlasClient {
             .body(body)
             .send()
             .await?;
-        self.decode_response(response, "upload_task_attachment").await
+        self.decode_response(response, "upload_task_attachment")
+            .await
     }
 
     /// `GET /v1/workspaces/{ws}/tasks/{readable_id}/attachments`
@@ -1205,7 +1207,8 @@ impl AtlasClient {
             ))
             .send()
             .await?;
-        self.decode_response(response, "list_task_attachments").await
+        self.decode_response(response, "list_task_attachments")
+            .await
     }
 
     /// `GET /v1/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}/content`

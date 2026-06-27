@@ -14,10 +14,7 @@ use atlas_api::dtos::{
 use atlas_client::{AtlasClient, ClientError};
 use serde_json::json;
 
-async fn seed_board_column(
-    client: &AtlasClient,
-    ws_slug: &str,
-) -> (uuid::Uuid, uuid::Uuid) {
+async fn seed_board_column(client: &AtlasClient, ws_slug: &str) -> (uuid::Uuid, uuid::Uuid) {
     let project = client
         .create_project(
             ws_slug,
@@ -58,7 +55,11 @@ async fn seed_board_column(
     (board.id, col.id)
 }
 
-fn def(name: &str, kind: &str, options: Option<serde_json::Value>) -> CreatePropertyDefinitionRequest {
+fn def(
+    name: &str,
+    kind: &str,
+    options: Option<serde_json::Value>,
+) -> CreatePropertyDefinitionRequest {
     CreatePropertyDefinitionRequest {
         name: name.to_string(),
         kind: kind.to_string(),
@@ -80,7 +81,11 @@ async fn create_and_list_property_definitions() {
     let severity = client
         .create_property_definition(
             &ws.slug,
-            def("Severity", "select", Some(json!(["low", "high", "critical"]))),
+            def(
+                "Severity",
+                "select",
+                Some(json!(["low", "high", "critical"])),
+            ),
         )
         .await
         .expect("create select definition");
@@ -120,7 +125,11 @@ async fn create_and_list_property_definitions() {
         .list_property_definitions(&ws.slug, None)
         .await
         .expect("list all");
-    assert_eq!(all.len(), 6, "all six definitions are returned without a filter");
+    assert_eq!(
+        all.len(),
+        6,
+        "all six definitions are returned without a filter"
+    );
 
     let task_scoped = client
         .list_property_definitions(&ws.slug, Some("task"))
@@ -216,7 +225,11 @@ async fn task_custom_values_validated_on_create_and_update() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "propdef-task").await;
 
     for d in [
-        def("Severity", "select", Some(json!(["low", "high", "critical"]))),
+        def(
+            "Severity",
+            "select",
+            Some(json!(["low", "high", "critical"])),
+        ),
         def("Score", "number", None),
         def("Reviewed", "boolean", None),
         def("Tags", "multi_select", Some(json!(["a", "b", "c"]))),

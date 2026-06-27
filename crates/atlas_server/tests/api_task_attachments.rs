@@ -29,8 +29,7 @@ fn project_req(slug: &str, prefix: &str) -> CreateProjectRequest {
 async fn task_attachment_upload_list_download_delete_roundtrip() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;
-    let (client, ws, _) =
-        support::login_user_with_workspace(&server, &db, "task-attach-1").await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "task-attach-1").await;
 
     client
         .create_project(&ws.slug, project_req("attach-proj", "AT"))

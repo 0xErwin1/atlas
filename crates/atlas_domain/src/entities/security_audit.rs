@@ -121,7 +121,10 @@ mod tests {
             (SecurityAction::GrantRevoked, "grant.revoked"),
             (SecurityAction::ApiKeyCreated, "api_key.created"),
             (SecurityAction::ApiKeyRevoked, "api_key.revoked"),
-            (SecurityAction::ApiKeyGlobalChanged, "api_key.global_changed"),
+            (
+                SecurityAction::ApiKeyGlobalChanged,
+                "api_key.global_changed",
+            ),
             (SecurityAction::ApiKeyGrantRevoked, "api_key_grant.revoked"),
             (SecurityAction::UserCreated, "user.created"),
             (SecurityAction::UserDisabled, "user.disabled"),
