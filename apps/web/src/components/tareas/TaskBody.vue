@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router';
 import type { components } from '@/api/types.d.ts';
 import ActivityFeed from '@/components/tareas/ActivityFeed.vue';
 import AssigneeList from '@/components/tareas/AssigneeList.vue';
+import AttachmentList from '@/components/tareas/AttachmentList.vue';
 import Checklist from '@/components/tareas/Checklist.vue';
 import ReferenceAdd from '@/components/tareas/ReferenceAdd.vue';
 import ReferenceList from '@/components/tareas/ReferenceList.vue';
@@ -261,6 +262,32 @@ function comingSoon(): void {
 
 function openAskAi(action: AiAction): void {
   ui.openAskAi(props.task, statusName.value, action);
+}
+
+const fileInput = ref<HTMLInputElement | null>(null);
+const uploading = ref(false);
+
+function onAttachClick(): void {
+  fileInput.value?.click();
+}
+
+async function onFileSelected(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = '';
+  if (file === undefined) return;
+
+  uploading.value = true;
+  const ok = await detail.uploadAttachment(props.ws, props.task.readable_id, file);
+  uploading.value = false;
+
+  if (ok) ui.showBanner('Attachment uploaded', 'success');
+  else fail(detail.error);
+}
+
+async function onRemoveAttachment(attachmentId: string): Promise<void> {
+  const ok = await detail.removeAttachment(props.ws, props.task.readable_id, attachmentId);
+  if (!ok) fail(detail.error);
 }
 
 /** Footer quick-actions; "Add sub-task" focuses the sub-task input, the rest defer. */
@@ -533,6 +560,18 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
       </div>
     </div>
 
+    <div v-if="detail.attachments.length" style="margin-top: 22px;">
+      <div class="atl-tv-section-label">Attachments</div>
+      <AttachmentList
+        :attachments="detail.attachments"
+        :ws="ws"
+        :readable-id="task.readable_id"
+        @remove="onRemoveAttachment"
+      />
+    </div>
+
+    <input ref="fileInput" type="file" class="hidden" @change="onFileSelected" />
+
     <div class="atl-tv-actions">
       <button type="button" class="atl-tv-action" @click="focusSubtaskInput">
         <Icon name="tasks" :size="14" style="color: var(--c-muted);" />Add sub-task
@@ -543,8 +582,8 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
       <button type="button" class="atl-tv-action" @click="focusChecklistInput">
         <Icon name="check" :size="14" style="color: var(--c-muted);" />Create checklist
       </button>
-      <button type="button" class="atl-tv-action" @click="comingSoon">
-        <Icon name="paperclip" :size="14" style="color: var(--c-muted);" />Attach file
+      <button type="button" class="atl-tv-action" :disabled="uploading" @click="onAttachClick">
+        <Icon name="paperclip" :size="14" style="color: var(--c-muted);" />{{ uploading ? 'Uploading…' : 'Attach file' }}
       </button>
     </div>
 
