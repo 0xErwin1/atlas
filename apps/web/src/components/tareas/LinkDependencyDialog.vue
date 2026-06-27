@@ -46,7 +46,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
 <template>
   <Teleport to="body">
     <div
-      class="fixed inset-0 flex justify-center"
+      class="fixed inset-0 flex justify-center items-start"
       style="background: var(--c-overlay); z-index: 60; padding-top: 12vh;"
       @mousedown.self="emit('close')"
     >
