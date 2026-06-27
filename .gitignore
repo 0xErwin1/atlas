@@ -16,3 +16,5 @@ apps/web/src/**/*.js.map
 vite.config.js
 vite.config.d.ts
 .claude/worktrees
+# Local Pi runtime state
+.agent/
