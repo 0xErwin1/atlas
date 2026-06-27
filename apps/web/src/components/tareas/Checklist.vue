@@ -59,7 +59,7 @@ function pickColumn(itemId: string, columnId: string): void {
         margin-bottom: 6px;
       "
     >
-      Sub-tasks · {{ doneCount }} / {{ items.length }}
+      Checklist · {{ doneCount }} / {{ items.length }}
     </div>
 
     <div
@@ -153,8 +153,8 @@ function pickColumn(itemId: string, columnId: string): void {
 
       <button
         type="button"
-        title="Delete sub-task"
-        aria-label="Delete sub-task"
+        title="Delete item"
+        aria-label="Delete item"
         class="shrink-0 cursor-pointer opacity-0 group-hover:opacity-100 flex items-center justify-center"
         style="
           width: 22px;
@@ -175,7 +175,7 @@ function pickColumn(itemId: string, columnId: string): void {
       <input
         v-model="draft"
         type="text"
-        placeholder="Add a sub-task…"
+        placeholder="Add an item…"
         class="atl-checklist-add"
         @keydown.enter.prevent="submitDraft"
         @blur="submitDraft"

@@ -25,7 +25,7 @@ describe('Checklist (REQ-W22)', () => {
       props: { items: [item('a', 'One', true), item('b', 'Two', false), item('c', 'Three', false)], columns },
     });
 
-    expect(wrapper.text()).toContain('Sub-tasks · 1 / 3');
+    expect(wrapper.text()).toContain('Checklist · 1 / 3');
   });
 
   it('emits toggle with the item id when the checkbox is clicked', async () => {
@@ -64,7 +64,7 @@ describe('Checklist (REQ-W22)', () => {
   it('emits remove with the item id when the delete button is clicked', async () => {
     const wrapper = mount(Checklist, { props: { items: [item('a', 'One', false)], columns } });
 
-    await wrapper.get('button[aria-label="Delete sub-task"]').trigger('click');
+    await wrapper.get('button[aria-label="Delete item"]').trigger('click');
 
     expect(wrapper.emitted('remove')).toEqual([['a']]);
   });
