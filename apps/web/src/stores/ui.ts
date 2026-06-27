@@ -185,13 +185,31 @@ export const useUiStore = defineStore('ui', () => {
   // full screen. Persisted so the user's preference sticks across tasks/sessions.
   const taskViewMode = ref<TaskViewMode>(loadTaskViewMode());
 
+  // A one-off presentation override, e.g. the context menu's "Open as…": it
+  // applies to the task being opened now without touching the persisted default.
+  // Session-only — never written to localStorage, and dropped on a normal open.
+  const taskViewModeOverride = ref<TaskViewMode | null>(null);
+
+  const effectiveTaskViewMode = computed<TaskViewMode>(
+    () => taskViewModeOverride.value ?? taskViewMode.value,
+  );
+
   function setTaskViewMode(mode: TaskViewMode) {
     taskViewMode.value = mode;
+    taskViewModeOverride.value = null;
     try {
       localStorage.setItem(TASK_VIEW_MODE_STORAGE_KEY, mode);
     } catch {
       // ignore storage errors
     }
+  }
+
+  function openTaskInMode(mode: TaskViewMode) {
+    taskViewModeOverride.value = mode;
+  }
+
+  function clearTaskViewModeOverride() {
+    taskViewModeOverride.value = null;
   }
 
   // Which layout the board's tasks render in (kanban board, list, table,
@@ -258,7 +276,10 @@ export const useUiStore = defineStore('ui', () => {
     sidebarCollapsed,
     toggleSidebar,
     taskViewMode,
+    effectiveTaskViewMode,
     setTaskViewMode,
+    openTaskInMode,
+    clearTaskViewModeOverride,
     taskView,
     setTaskView,
     taskGroupBy,

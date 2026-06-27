@@ -24,7 +24,7 @@ const ui = useUiStore();
 const boards = useBoardsStore();
 
 const shareLabel = computed(() => `${props.task.readable_id} · task`);
-const isModal = computed(() => ui.taskViewMode === 'modal');
+const isModal = computed(() => ui.effectiveTaskViewMode === 'modal');
 
 // The board's tasks flattened in column order, so the dock's prev/next arrows
 // walk the same sequence the user sees on the board.

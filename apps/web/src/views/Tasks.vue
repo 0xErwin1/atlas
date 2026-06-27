@@ -21,7 +21,7 @@ import { useBoardsStore } from '@/stores/boards';
 import { useTaskDetailStore } from '@/stores/taskDetail';
 import { useTasksStore } from '@/stores/tasks';
 import { useTaskViewsStore } from '@/stores/taskViews';
-import type { TaskGroupBy } from '@/stores/ui';
+import type { TaskGroupBy, TaskViewMode } from '@/stores/ui';
 import { useUiStore } from '@/stores/ui';
 import { useUiStateStore } from '@/stores/uiState';
 import { useWorkspaceStore } from '@/stores/workspace';
@@ -89,8 +89,8 @@ const paneTask = computed(() => {
   return open && open.readable_id === selectedReadableId.value ? open : null;
 });
 
-const paneVisible = computed(() => paneTask.value !== null && ui.taskViewMode !== 'full');
-const boardDimmed = computed(() => paneVisible.value && ui.taskViewMode === 'modal');
+const paneVisible = computed(() => paneTask.value !== null && ui.effectiveTaskViewMode !== 'full');
+const boardDimmed = computed(() => paneVisible.value && ui.effectiveTaskViewMode === 'modal');
 
 // The active board layout. Every view takes the same (ws, selected) contract and
 // emits select/open, so the toolbar and detail pane wire identically across them.
@@ -123,11 +123,16 @@ function ensureTaskDetails(view = ui.taskView): void {
 
 watch(() => ui.taskView, ensureTaskDetails);
 
-async function onSelect(readableId: string): Promise<void> {
-  // The persisted preference may be full screen — then the board has no inline
-  // pane; open the standalone route instead. On mobile the inline dock/dialog is
-  // too cramped, so a tapped card always opens the full-screen route.
-  if (isMobile.value || ui.taskViewMode === 'full') {
+async function onSelect(readableId: string, mode?: TaskViewMode): Promise<void> {
+  // A `mode` comes from the context menu's "Open as…" — a one-off presentation
+  // that does not touch the saved default. A plain row click carries no mode, so
+  // it drops any leftover override and falls back to the persisted preference.
+  if (mode !== undefined) ui.openTaskInMode(mode);
+  else ui.clearTaskViewModeOverride();
+
+  // Full screen has no inline pane; open the standalone route instead. On mobile
+  // the inline dock/dialog is too cramped, so a tapped card always opens full.
+  if (isMobile.value || ui.effectiveTaskViewMode === 'full') {
     openTask(readableId);
     return;
   }
@@ -142,6 +147,7 @@ async function onSelect(readableId: string): Promise<void> {
 
 function closePane(): void {
   selectedReadableId.value = null;
+  ui.clearTaskViewModeOverride();
 }
 
 function expandToFull(): void {

@@ -28,11 +28,14 @@ import { swatchById } from '@/lib/swatches';
 import type { ColumnDto, TaskSummaryDto } from '@/stores/boards';
 import { useBoardsStore } from '@/stores/boards';
 import { useLabelColorsStore } from '@/stores/labelColors';
-import { useUiStore } from '@/stores/ui';
+import { type TaskViewMode, useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 
 const props = defineProps<{ ws: string; selectedReadableId: string | null }>();
-const emit = defineEmits<{ select: [readableId: string]; open: [readableId: string] }>();
+const emit = defineEmits<{
+  select: [readableId: string, mode?: TaskViewMode];
+  open: [readableId: string];
+}>();
 
 const boards = useBoardsStore();
 const workspace = useWorkspaceStore();
@@ -220,6 +223,7 @@ const menuItems = computed(() => {
     columns: boards.columns,
     allowDuplicate: boardId !== undefined,
     onOpen: (rid) => emit('open', rid),
+    onOpenAs: (rid, mode) => emit('select', rid, mode),
   });
 });
 

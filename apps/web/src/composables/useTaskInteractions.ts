@@ -3,7 +3,7 @@ import { useRouter } from 'vue-router';
 import type { MenuItem } from '@/components/ui/ContextMenu.vue';
 import type { ColumnDto, TaskSummaryDto } from '@/stores/boards';
 import { useBoardsStore } from '@/stores/boards';
-import { useUiStore } from '@/stores/ui';
+import { type TaskViewMode, useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 
 const PRIORITIES = ['urgent', 'high', 'medium', 'low'] as const;
@@ -24,6 +24,12 @@ export interface TaskMenuCtx {
   allowDuplicate: boolean;
   /** Called when the user picks "Open". */
   onOpen: (readableId: string) => void;
+  /**
+   * Called when the user picks "Open as…" → a specific presentation. Opens the
+   * task in `mode` for this one time only, without changing the saved default.
+   * Optional: hosts without an inline pane may omit it (the submenu is hidden).
+   */
+  onOpenAs?: (readableId: string, mode: TaskViewMode) => void;
 }
 
 /**
@@ -151,7 +157,7 @@ export function useTaskInteractions(ws: string) {
    * (where the task lives in a different store).
    */
   function buildMenuItems(ctx: TaskMenuCtx): MenuItem[] {
-    const { task, boardId, columns, allowDuplicate, onOpen } = ctx;
+    const { task, boardId, columns, allowDuplicate, onOpen, onOpenAs } = ctx;
     const readableId = task.readable_id;
 
     const statusChildren = buildStatusChildren(task, columns, readableId);
@@ -161,6 +167,7 @@ export function useTaskInteractions(ws: string) {
 
     return [
       { label: 'Open', icon: 'square-arrow-out-up-right', action: () => onOpen(readableId) },
+      ...(onOpenAs !== undefined ? [buildOpenAsItem(readableId, onOpenAs)] : []),
       {
         label: 'Open in new tab',
         icon: 'external-link',
@@ -189,6 +196,26 @@ export function useTaskInteractions(ws: string) {
       { sep: true },
       { label: 'Delete', icon: 'trash-2', danger: true, action: () => (confirmOpen.value = true) },
     ];
+  }
+
+  /**
+   * "Open as…" submenu: opens the task in a chosen presentation for this time
+   * only. The mode order mirrors the persisted TaskViewModeSwitch (dock,
+   * dialog, full) so the icons read the same across the app.
+   */
+  function buildOpenAsItem(
+    readableId: string,
+    onOpenAs: (readableId: string, mode: TaskViewMode) => void,
+  ): MenuItem {
+    return {
+      label: 'Open as…',
+      icon: 'panel-right',
+      children: [
+        { label: 'Side panel', icon: 'panel-right', action: () => onOpenAs(readableId, 'sidebar') },
+        { label: 'Floating dialog', icon: 'app-window', action: () => onOpenAs(readableId, 'modal') },
+        { label: 'Full screen', icon: 'maximize', action: () => onOpenAs(readableId, 'full') },
+      ],
+    };
   }
 
   function buildStatusChildren(task: TaskSummaryDto, columns: ColumnDto[], readableId: string): MenuItem[] {
