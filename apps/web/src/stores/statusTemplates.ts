@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
+import { errorHint } from '@/lib/apiError';
 
 export type StatusTemplateDto = components['schemas']['StatusTemplateDto'];
 
@@ -27,7 +28,7 @@ export const useStatusTemplatesStore = defineStore('statusTemplates', () => {
     });
 
     if (apiError !== undefined || data === undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to load status templates';
+      error.value = errorHint(apiError, 'Failed to load status templates');
       return;
     }
 
@@ -48,7 +49,7 @@ export const useStatusTemplatesStore = defineStore('statusTemplates', () => {
     });
 
     if (apiError !== undefined || data === undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to create status template';
+      error.value = errorHint(apiError, 'Failed to create status template');
       return null;
     }
 
@@ -75,7 +76,7 @@ export const useStatusTemplatesStore = defineStore('statusTemplates', () => {
     );
 
     if (apiError !== undefined || data === undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to update status template';
+      error.value = errorHint(apiError, 'Failed to update status template');
       return false;
     }
 
@@ -102,7 +103,7 @@ export const useStatusTemplatesStore = defineStore('statusTemplates', () => {
     );
 
     if (apiError !== undefined || data === undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to reorder status template';
+      error.value = errorHint(apiError, 'Failed to reorder status template');
       return false;
     }
 
@@ -118,7 +119,7 @@ export const useStatusTemplatesStore = defineStore('statusTemplates', () => {
     );
 
     if (apiError !== undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to delete status template';
+      error.value = errorHint(apiError, 'Failed to delete status template');
       return false;
     }
 
@@ -138,7 +139,7 @@ export const useStatusTemplatesStore = defineStore('statusTemplates', () => {
     );
 
     if (apiError !== undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to apply status templates';
+      error.value = errorHint(apiError, 'Failed to apply status templates');
       return false;
     }
 

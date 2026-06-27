@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
+import { errorHint } from '@/lib/apiError';
 import { collectPaged } from '@/lib/pagination';
 
 export type DocumentSummary = components['schemas']['Page_DocumentSummaryDto']['items'][number];
@@ -40,7 +41,7 @@ export const useDocumentsStore = defineStore('documents', () => {
     loading.value = false;
 
     if (apiError !== undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to load documents';
+      error.value = errorHint(apiError, 'Failed to load documents');
       return;
     }
 
@@ -77,7 +78,7 @@ export const useDocumentsStore = defineStore('documents', () => {
     );
 
     if (apiError !== undefined || data === undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to create document';
+      error.value = errorHint(apiError, 'Failed to create document');
       return null;
     }
 
@@ -92,7 +93,7 @@ export const useDocumentsStore = defineStore('documents', () => {
     });
 
     if (apiError !== undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to rename document';
+      error.value = errorHint(apiError, 'Failed to rename document');
       return false;
     }
 
@@ -106,7 +107,7 @@ export const useDocumentsStore = defineStore('documents', () => {
     });
 
     if (apiError !== undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to delete document';
+      error.value = errorHint(apiError, 'Failed to delete document');
       return false;
     }
 
@@ -126,7 +127,7 @@ export const useDocumentsStore = defineStore('documents', () => {
     });
 
     if (apiError !== undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to move document';
+      error.value = errorHint(apiError, 'Failed to move document');
       return false;
     }
 
@@ -146,7 +147,7 @@ export const useDocumentsStore = defineStore('documents', () => {
     });
 
     if (apiError !== undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to copy document';
+      error.value = errorHint(apiError, 'Failed to copy document');
       return false;
     }
 

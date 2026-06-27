@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
+import { errorHint } from '@/lib/apiError';
 
 export type TaskDto = components['schemas']['TaskDto'];
 
@@ -26,7 +27,7 @@ export const useTasksStore = defineStore('tasks', () => {
     loading.value = false;
 
     if (apiError !== undefined || data === undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to load task';
+      error.value = errorHint(apiError, 'Failed to load task');
       return;
     }
 
@@ -42,7 +43,7 @@ export const useTasksStore = defineStore('tasks', () => {
     });
 
     if (apiError !== undefined || data === undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to update description';
+      error.value = errorHint(apiError, 'Failed to update description');
       return false;
     }
 

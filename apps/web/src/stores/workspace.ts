@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 import type { components } from '@/api/types';
 import { wrappedClient } from '@/api/wrapper';
+import { errorHint } from '@/lib/apiError';
 import { collectPaged } from '@/lib/pagination';
 import { useAuthStore } from '@/stores/auth';
 
@@ -115,7 +116,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     });
 
     if (apiError !== undefined || data === undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to create workspace';
+      error.value = errorHint(apiError, 'Failed to create workspace');
       return null;
     }
 
@@ -170,7 +171,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     });
 
     if (apiError !== undefined || data === undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to create project';
+      error.value = errorHint(apiError, 'Failed to create project');
       return null;
     }
 
@@ -186,7 +187,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     });
 
     if (apiError !== undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to rename project';
+      error.value = errorHint(apiError, 'Failed to rename project');
       return false;
     }
 
@@ -211,7 +212,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     });
 
     if (apiError !== undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to update project';
+      error.value = errorHint(apiError, 'Failed to update project');
       return false;
     }
 
@@ -229,7 +230,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     });
 
     if (apiError !== undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to delete project';
+      error.value = errorHint(apiError, 'Failed to delete project');
       return false;
     }
 
@@ -250,7 +251,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     });
 
     if (apiError !== undefined || data === undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to rename workspace';
+      error.value = errorHint(apiError, 'Failed to rename workspace');
       return false;
     }
 
@@ -270,7 +271,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
     if (apiError !== undefined || data === undefined) {
       adminWorkspaces.value = [];
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to load workspaces';
+      error.value = errorHint(apiError, 'Failed to load workspaces');
       return;
     }
 
@@ -305,7 +306,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     });
 
     if (apiError !== undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to update member role';
+      error.value = errorHint(apiError, 'Failed to update member role');
       return false;
     }
 
@@ -324,7 +325,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     });
 
     if (apiError !== undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to remove member';
+      error.value = errorHint(apiError, 'Failed to remove member');
       return false;
     }
 
@@ -363,7 +364,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     });
 
     if (apiError !== undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to add member';
+      error.value = errorHint(apiError, 'Failed to add member');
       return false;
     }
 

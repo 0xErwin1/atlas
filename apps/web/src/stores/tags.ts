@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
+import { errorHint } from '@/lib/apiError';
 import { defaultSwatchId } from '@/lib/swatches';
 
 export type TagDto = components['schemas']['TagDto'];
@@ -51,7 +52,7 @@ export const useTagsStore = defineStore('tags', () => {
     });
 
     if (apiError !== undefined || data === undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to load tags';
+      error.value = errorHint(apiError, 'Failed to load tags');
       return;
     }
 
@@ -72,7 +73,7 @@ export const useTagsStore = defineStore('tags', () => {
     });
 
     if (apiError !== undefined || data === undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to load used labels';
+      error.value = errorHint(apiError, 'Failed to load used labels');
       return;
     }
 
@@ -98,7 +99,7 @@ export const useTagsStore = defineStore('tags', () => {
     });
 
     if (apiError !== undefined || data === undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to create tag';
+      error.value = errorHint(apiError, 'Failed to create tag');
       return null;
     }
 
@@ -127,7 +128,7 @@ export const useTagsStore = defineStore('tags', () => {
     });
 
     if (apiError !== undefined || data === undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to create tag';
+      error.value = errorHint(apiError, 'Failed to create tag');
       return null;
     }
 
@@ -154,7 +155,7 @@ export const useTagsStore = defineStore('tags', () => {
     });
 
     if (apiError !== undefined || data === undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to update tag';
+      error.value = errorHint(apiError, 'Failed to update tag');
       return false;
     }
 
@@ -169,7 +170,7 @@ export const useTagsStore = defineStore('tags', () => {
     });
 
     if (apiError !== undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to delete tag';
+      error.value = errorHint(apiError, 'Failed to delete tag');
       return false;
     }
 

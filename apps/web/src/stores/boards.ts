@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
+import { errorHint } from '@/lib/apiError';
 import { collectPaged } from '@/lib/pagination';
 import { useLabelColorsStore } from '@/stores/labelColors';
 import { useUiStore } from '@/stores/ui';
@@ -149,7 +150,7 @@ export const useBoardsStore = defineStore('boards', () => {
     );
 
     if (apiError !== undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to load boards';
+      error.value = errorHint(apiError, 'Failed to load boards');
       return;
     }
 
@@ -167,7 +168,7 @@ export const useBoardsStore = defineStore('boards', () => {
     );
 
     if (apiError !== undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to load boards';
+      error.value = errorHint(apiError, 'Failed to load boards');
       return;
     }
 
@@ -187,7 +188,7 @@ export const useBoardsStore = defineStore('boards', () => {
     );
 
     if (apiError !== undefined || data === undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to create board';
+      error.value = errorHint(apiError, 'Failed to create board');
       return null;
     }
 
@@ -207,7 +208,7 @@ export const useBoardsStore = defineStore('boards', () => {
     });
 
     if (apiError !== undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to rename board';
+      error.value = errorHint(apiError, 'Failed to rename board');
       return false;
     }
 
@@ -221,7 +222,7 @@ export const useBoardsStore = defineStore('boards', () => {
     });
 
     if (apiError !== undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to delete board';
+      error.value = errorHint(apiError, 'Failed to delete board');
       return false;
     }
 
@@ -241,7 +242,7 @@ export const useBoardsStore = defineStore('boards', () => {
     );
 
     if (apiError !== undefined || data === undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to create task';
+      error.value = errorHint(apiError, 'Failed to create task');
       return null;
     }
 
@@ -261,7 +262,7 @@ export const useBoardsStore = defineStore('boards', () => {
     loading.value = false;
 
     if (apiError !== undefined || data === undefined) {
-      loadError.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to load board';
+      loadError.value = errorHint(apiError, 'Failed to load board');
       return;
     }
 
@@ -275,7 +276,7 @@ export const useBoardsStore = defineStore('boards', () => {
     );
 
     if (apiError !== undefined || data === undefined) {
-      loadError.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to load columns';
+      loadError.value = errorHint(apiError, 'Failed to load columns');
       return;
     }
 
@@ -300,7 +301,7 @@ export const useBoardsStore = defineStore('boards', () => {
     );
 
     if (apiError !== undefined || data === undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to create status';
+      error.value = errorHint(apiError, 'Failed to create status');
       return null;
     }
 
@@ -329,7 +330,7 @@ export const useBoardsStore = defineStore('boards', () => {
     );
 
     if (apiError !== undefined || data === undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to update status';
+      error.value = errorHint(apiError, 'Failed to update status');
       return false;
     }
 
@@ -359,7 +360,7 @@ export const useBoardsStore = defineStore('boards', () => {
     );
 
     if (apiError !== undefined || data === undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to reorder status';
+      error.value = errorHint(apiError, 'Failed to reorder status');
       return false;
     }
 
@@ -377,7 +378,7 @@ export const useBoardsStore = defineStore('boards', () => {
     );
 
     if (apiError !== undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to delete status';
+      error.value = errorHint(apiError, 'Failed to delete status');
       return false;
     }
 
@@ -398,7 +399,7 @@ export const useBoardsStore = defineStore('boards', () => {
     );
 
     if (apiError !== undefined) {
-      loadError.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to load tasks';
+      loadError.value = errorHint(apiError, 'Failed to load tasks');
       return;
     }
 
@@ -622,7 +623,7 @@ export const useBoardsStore = defineStore('boards', () => {
     });
 
     if (apiError !== undefined || data === undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to update task';
+      error.value = errorHint(apiError, 'Failed to update task');
       return false;
     }
 
@@ -642,7 +643,7 @@ export const useBoardsStore = defineStore('boards', () => {
     });
 
     if (apiError !== undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to delete task';
+      error.value = errorHint(apiError, 'Failed to delete task');
       return false;
     }
 
@@ -703,7 +704,7 @@ export const useBoardsStore = defineStore('boards', () => {
     );
 
     if (apiError !== undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to unassign task';
+      error.value = errorHint(apiError, 'Failed to unassign task');
       return false;
     }
 
@@ -727,7 +728,7 @@ export const useBoardsStore = defineStore('boards', () => {
     );
 
     if (getErr !== undefined || source === undefined) {
-      error.value = (getErr as { hint?: string } | undefined)?.hint ?? 'Failed to read task';
+      error.value = errorHint(getErr, 'Failed to read task');
       return null;
     }
 
@@ -744,7 +745,7 @@ export const useBoardsStore = defineStore('boards', () => {
     );
 
     if (createErr !== undefined || created === undefined) {
-      error.value = (createErr as { hint?: string } | undefined)?.hint ?? 'Failed to duplicate task';
+      error.value = errorHint(createErr, 'Failed to duplicate task');
       return null;
     }
 
@@ -771,7 +772,7 @@ export const useBoardsStore = defineStore('boards', () => {
     });
 
     if (apiError !== undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to move task';
+      error.value = errorHint(apiError, 'Failed to move task');
       return false;
     }
 
@@ -791,7 +792,7 @@ export const useBoardsStore = defineStore('boards', () => {
     );
 
     if (apiError !== undefined || data === undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to read target board';
+      error.value = errorHint(apiError, 'Failed to read target board');
       return false;
     }
 

@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
+import { errorHint } from '@/lib/apiError';
 
 export type TaskSummaryDto = components['schemas']['TaskSummaryDto'];
 export type TaskViewFiltersDto = components['schemas']['TaskViewFiltersDto'];
@@ -79,7 +80,7 @@ export const useWorkspaceTasksStore = defineStore('workspaceTasks', () => {
     loading.value = false;
 
     if (apiError !== undefined || data === undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to load tasks';
+      error.value = errorHint(apiError, 'Failed to load tasks');
       return;
     }
 

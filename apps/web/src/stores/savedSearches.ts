@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
+import { errorHint } from '@/lib/apiError';
 
 export type SavedSearchDto = components['schemas']['SavedSearchDto'];
 
@@ -18,7 +19,7 @@ export const useSavedSearchesStore = defineStore('savedSearches', () => {
     });
 
     if (apiError !== undefined || data === undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to load saved searches';
+      error.value = errorHint(apiError, 'Failed to load saved searches');
       return;
     }
 
@@ -36,7 +37,7 @@ export const useSavedSearchesStore = defineStore('savedSearches', () => {
     });
 
     if (apiError !== undefined || data === undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to save search';
+      error.value = errorHint(apiError, 'Failed to save search');
       return null;
     }
 
@@ -51,7 +52,7 @@ export const useSavedSearchesStore = defineStore('savedSearches', () => {
     });
 
     if (apiError !== undefined || data === undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to rename saved search';
+      error.value = errorHint(apiError, 'Failed to rename saved search');
       return false;
     }
 
@@ -68,7 +69,7 @@ export const useSavedSearchesStore = defineStore('savedSearches', () => {
     });
 
     if (apiError !== undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to delete saved search';
+      error.value = errorHint(apiError, 'Failed to delete saved search');
       return false;
     }
 

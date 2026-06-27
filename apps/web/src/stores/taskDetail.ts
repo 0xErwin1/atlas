@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
+import { errorHint } from '@/lib/apiError';
 
 export type AssigneeDto = components['schemas']['AssigneeDto'];
 export type ReferenceDto = components['schemas']['ReferenceDto'];
@@ -20,20 +21,6 @@ export interface PromoteResult {
   ok: boolean;
   readableId?: string;
   hint?: string;
-}
-
-interface ApiError {
-  hint?: string;
-}
-
-function hintOf(err: unknown, fallback: string): string {
-  if (typeof err === 'object' && err !== null) {
-    const hint = (err as ApiError).hint;
-    if (typeof hint === 'string' && hint.length > 0) {
-      return hint;
-    }
-  }
-  return fallback;
 }
 
 /**
@@ -85,7 +72,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
 
     const firstError = a.error ?? r.error ?? s.error ?? cl.error ?? act.error;
     if (firstError !== undefined) {
-      error.value = hintOf(firstError, 'Failed to load task detail');
+      error.value = errorHint(firstError, 'Failed to load task detail');
     }
   }
 
@@ -105,7 +92,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
       error.value =
         problem?.status === 422
           ? (problem.detail ?? 'Cannot assign this user')
-          : hintOf(apiError, 'Failed to add assignee');
+          : errorHint(apiError, 'Failed to add assignee');
       return false;
     }
 
@@ -133,7 +120,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
 
     if (apiError !== undefined) {
       assignees.value = snapshot;
-      error.value = hintOf(apiError, 'Failed to remove assignee');
+      error.value = errorHint(apiError, 'Failed to remove assignee');
       return false;
     }
 
@@ -171,7 +158,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
       const rolledBack = [...checklist.value];
       rolledBack[idx] = item;
       checklist.value = rolledBack;
-      error.value = hintOf(apiError, 'Failed to update checklist item');
+      error.value = errorHint(apiError, 'Failed to update checklist item');
       return false;
     }
 
@@ -199,7 +186,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     );
 
     if (apiError !== undefined || data === undefined) {
-      error.value = hintOf(apiError, 'Failed to promote checklist item');
+      error.value = errorHint(apiError, 'Failed to promote checklist item');
       return { ok: false, hint: error.value };
     }
 
@@ -222,7 +209,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     );
 
     if (apiError !== undefined || data === undefined) {
-      error.value = hintOf(apiError, 'Failed to add sub-task');
+      error.value = errorHint(apiError, 'Failed to add sub-task');
       return false;
     }
 
@@ -239,7 +226,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     );
 
     if (apiError !== undefined) {
-      error.value = hintOf(apiError, 'Failed to delete sub-task');
+      error.value = errorHint(apiError, 'Failed to delete sub-task');
       return false;
     }
 
@@ -256,7 +243,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     );
 
     if (apiError !== undefined || data === undefined) {
-      error.value = hintOf(apiError, 'Failed to add sub-task');
+      error.value = errorHint(apiError, 'Failed to add sub-task');
       return false;
     }
 
@@ -311,7 +298,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
         rolledBack[idx] = previous;
         subtasks.value = rolledBack;
       }
-      error.value = hintOf(apiError, 'Failed to update sub-task');
+      error.value = errorHint(apiError, 'Failed to update sub-task');
       return false;
     }
 
@@ -326,7 +313,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     });
 
     if (apiError !== undefined) {
-      error.value = hintOf(apiError, 'Failed to promote sub-task');
+      error.value = errorHint(apiError, 'Failed to promote sub-task');
       return false;
     }
 
@@ -347,7 +334,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     );
 
     if (apiError !== undefined || data === undefined) {
-      error.value = hintOf(apiError, 'Failed to add reference');
+      error.value = errorHint(apiError, 'Failed to add reference');
       return false;
     }
 
@@ -368,7 +355,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
 
     if (apiError !== undefined) {
       references.value = snapshot;
-      error.value = hintOf(apiError, 'Failed to remove reference');
+      error.value = errorHint(apiError, 'Failed to remove reference');
       return false;
     }
 

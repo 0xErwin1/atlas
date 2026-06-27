@@ -2,13 +2,10 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
+import { errorHint } from '@/lib/apiError';
 
 export type GroupDto = components['schemas']['GroupDto'];
 export type GroupMemberDto = components['schemas']['GroupMemberDto'];
-
-function hintOf(apiError: unknown, fallback: string): string {
-  return (apiError as { hint?: string; title?: string } | undefined)?.hint ?? fallback;
-}
 
 /**
  * Groups store: workspace-scoped principal groups. Backs both the share dialog
@@ -32,7 +29,7 @@ export const useGroupsStore = defineStore('groups', () => {
     loading.value = false;
 
     if (apiError !== undefined || data === undefined) {
-      error.value = hintOf(apiError, 'Failed to load groups');
+      error.value = errorHint(apiError, 'Failed to load groups');
       return;
     }
 
@@ -48,7 +45,7 @@ export const useGroupsStore = defineStore('groups', () => {
     });
 
     if (apiError !== undefined) {
-      error.value = hintOf(apiError, 'Failed to create group');
+      error.value = errorHint(apiError, 'Failed to create group');
       return false;
     }
 
@@ -64,7 +61,7 @@ export const useGroupsStore = defineStore('groups', () => {
     });
 
     if (apiError !== undefined) {
-      error.value = hintOf(apiError, 'Failed to delete group');
+      error.value = errorHint(apiError, 'Failed to delete group');
       return false;
     }
 
@@ -81,7 +78,7 @@ export const useGroupsStore = defineStore('groups', () => {
     );
 
     if (apiError !== undefined || data === undefined) {
-      error.value = hintOf(apiError, 'Failed to load group members');
+      error.value = errorHint(apiError, 'Failed to load group members');
       members.value = [];
       return;
     }
@@ -98,7 +95,7 @@ export const useGroupsStore = defineStore('groups', () => {
     });
 
     if (apiError !== undefined) {
-      error.value = hintOf(apiError, 'Failed to add member');
+      error.value = errorHint(apiError, 'Failed to add member');
       return false;
     }
 
@@ -115,7 +112,7 @@ export const useGroupsStore = defineStore('groups', () => {
     );
 
     if (apiError !== undefined) {
-      error.value = hintOf(apiError, 'Failed to remove member');
+      error.value = errorHint(apiError, 'Failed to remove member');
       return false;
     }
 

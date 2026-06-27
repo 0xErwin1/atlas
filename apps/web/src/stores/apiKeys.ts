@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
+import { errorHint } from '@/lib/apiError';
 import { collectPaged } from '@/lib/pagination';
 
 export type ApiKeyDto = components['schemas']['ApiKeyDto'];
@@ -9,16 +10,6 @@ export type ApiKeyCreated = components['schemas']['ApiKeyCreated'];
 export type ApiKeyGrantDto = components['schemas']['ApiKeyGrantDto'];
 export type CreateUserApiKeyRequest = components['schemas']['CreateUserApiKeyRequest'];
 export type InitialGrantRequest = components['schemas']['InitialGrantRequest'];
-
-interface ApiProblem {
-  title?: string;
-  hint?: string;
-}
-
-function hintOf(error: unknown, fallback: string): string {
-  const p = error as ApiProblem | undefined;
-  return p?.hint ?? p?.title ?? fallback;
-}
 
 export const useApiKeysStore = defineStore('apiKeys', () => {
   const keys = ref<ApiKeyDto[]>([]);
@@ -37,7 +28,7 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
       );
 
       if (e !== undefined) {
-        error.value = hintOf(e, 'Failed to load API keys');
+        error.value = errorHint(e, 'Failed to load API keys');
         keys.value = [];
         return;
       }
@@ -60,7 +51,7 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
       });
 
       if (e || !data) {
-        error.value = hintOf(e, 'Failed to create API key');
+        error.value = errorHint(e, 'Failed to create API key');
         return null;
       }
 
@@ -81,7 +72,7 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
       });
 
       if (e || !data) {
-        error.value = hintOf(e, 'Failed to update API key');
+        error.value = errorHint(e, 'Failed to update API key');
         return false;
       }
 
@@ -106,7 +97,7 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
       });
 
       if (e) {
-        error.value = hintOf(e, 'Failed to revoke API key');
+        error.value = errorHint(e, 'Failed to revoke API key');
         return false;
       }
 
@@ -127,7 +118,7 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
       });
 
       if (e || !data) {
-        error.value = hintOf(e, 'Failed to load key grants');
+        error.value = errorHint(e, 'Failed to load key grants');
         return null;
       }
 
@@ -154,7 +145,7 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
       });
 
       if (e) {
-        error.value = hintOf(e, 'Failed to grant access');
+        error.value = errorHint(e, 'Failed to grant access');
         return false;
       }
 
@@ -174,7 +165,7 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
       });
 
       if (e) {
-        error.value = hintOf(e, 'Failed to revoke grant');
+        error.value = errorHint(e, 'Failed to revoke grant');
         return false;
       }
 

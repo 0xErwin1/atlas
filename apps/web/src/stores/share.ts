@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
+import { errorHint } from '@/lib/apiError';
 import { type GrantRole, isRoleAllowedFor } from '@/lib/grantRoles';
 import { collectPaged } from '@/lib/pagination';
 
@@ -12,10 +13,6 @@ export type PrincipalDto = components['schemas']['PrincipalDto'];
 export type ShareResource =
   | { kind: 'workspace'; ws: string }
   | { kind: 'project'; ws: string; projectSlug: string };
-
-function hintOf(apiError: unknown, fallback: string): string {
-  return (apiError as { hint?: string } | undefined)?.hint ?? fallback;
-}
 
 /**
  * Share store: manages grants for both workspace and project resources.
@@ -63,7 +60,7 @@ export const useShareStore = defineStore('share', () => {
     loading.value = false;
 
     if (apiError !== undefined) {
-      error.value = hintOf(apiError, 'Failed to load access');
+      error.value = errorHint(apiError, 'Failed to load access');
       return;
     }
 
@@ -76,7 +73,7 @@ export const useShareStore = defineStore('share', () => {
     });
 
     if (apiError !== undefined || data === undefined) {
-      error.value = hintOf(apiError, 'Failed to load workspace members');
+      error.value = errorHint(apiError, 'Failed to load workspace members');
       return;
     }
 
@@ -110,7 +107,7 @@ export const useShareStore = defineStore('share', () => {
     }
 
     if (apiError !== undefined) {
-      error.value = hintOf(apiError, 'Failed to grant access');
+      error.value = errorHint(apiError, 'Failed to grant access');
       return false;
     }
 
@@ -148,7 +145,7 @@ export const useShareStore = defineStore('share', () => {
     }
 
     if (apiError !== undefined) {
-      error.value = hintOf(apiError, 'Failed to remove access');
+      error.value = errorHint(apiError, 'Failed to remove access');
       return false;
     }
 

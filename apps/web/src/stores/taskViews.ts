@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
+import { errorHint } from '@/lib/apiError';
 
 export type TaskViewDto = components['schemas']['TaskViewDto'];
 export type TaskViewFiltersDto = components['schemas']['TaskViewFiltersDto'];
@@ -27,7 +28,7 @@ export const useTaskViewsStore = defineStore('taskViews', () => {
     });
 
     if (apiError !== undefined || data === undefined || !Array.isArray(data)) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to load task views';
+      error.value = errorHint(apiError, 'Failed to load task views');
       return;
     }
 
@@ -45,7 +46,7 @@ export const useTaskViewsStore = defineStore('taskViews', () => {
     });
 
     if (apiError !== undefined || data === undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to create task view';
+      error.value = errorHint(apiError, 'Failed to create task view');
       return null;
     }
 
@@ -64,7 +65,7 @@ export const useTaskViewsStore = defineStore('taskViews', () => {
     });
 
     if (apiError !== undefined || data === undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to update task view';
+      error.value = errorHint(apiError, 'Failed to update task view');
       return false;
     }
 
@@ -81,7 +82,7 @@ export const useTaskViewsStore = defineStore('taskViews', () => {
     });
 
     if (apiError !== undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to delete task view';
+      error.value = errorHint(apiError, 'Failed to delete task view');
       return false;
     }
 

@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
+import { errorHint } from '@/lib/apiError';
 
 export type UserDto = components['schemas']['UserDto'];
 export type CreateUserResponse = components['schemas']['CreateUserResponse'];
@@ -9,16 +10,6 @@ export type UserMembershipDto = components['schemas']['UserMembershipDto'];
 
 /** A user's workspace memberships as a `slug -> role` lookup. */
 export type MembershipMap = Record<string, string>;
-
-interface ApiProblem {
-  title?: string;
-  hint?: string;
-}
-
-function hintOf(error: unknown, fallback: string): string {
-  const p = error as ApiProblem | undefined;
-  return p?.hint ?? p?.title ?? fallback;
-}
 
 /**
  * Turns the bare single-use activation path returned by the API
@@ -45,7 +36,7 @@ export const useUsersStore = defineStore('users', () => {
     try {
       const { data, error: e } = await wrappedClient.GET('/v1/users', {});
       if (e || !data) {
-        error.value = hintOf(e, 'Failed to load users');
+        error.value = errorHint(e, 'Failed to load users');
         users.value = [];
         return;
       }
@@ -70,7 +61,7 @@ export const useUsersStore = defineStore('users', () => {
     try {
       const { data, error: e } = await wrappedClient.POST('/v1/users', { body });
       if (e || !data) {
-        error.value = hintOf(e, 'Failed to create user');
+        error.value = errorHint(e, 'Failed to create user');
         return null;
       }
       users.value = [...users.value, data.user];
@@ -94,7 +85,7 @@ export const useUsersStore = defineStore('users', () => {
         params: { path: { user_id: id } },
       });
       if (e || !data) {
-        error.value = hintOf(e, 'Failed to regenerate activation link');
+        error.value = errorHint(e, 'Failed to regenerate activation link');
         return null;
       }
       return data.activation_link;
@@ -111,7 +102,7 @@ export const useUsersStore = defineStore('users', () => {
     try {
       const { error: e } = await wrappedClient.POST(path, { params: { path: { user_id: id } } });
       if (e) {
-        error.value = hintOf(e, 'Failed to update user');
+        error.value = errorHint(e, 'Failed to update user');
         return false;
       }
       await loadUsers();
@@ -131,7 +122,7 @@ export const useUsersStore = defineStore('users', () => {
         body: { new_password: newPassword },
       });
       if (e) {
-        error.value = hintOf(e, 'Failed to reset password');
+        error.value = errorHint(e, 'Failed to reset password');
         return false;
       }
       return true;
@@ -154,7 +145,7 @@ export const useUsersStore = defineStore('users', () => {
         params: { path: { user_id: id } },
       });
       if (e || !data) {
-        error.value = hintOf(e, 'Failed to load memberships');
+        error.value = errorHint(e, 'Failed to load memberships');
         return null;
       }
 
@@ -178,7 +169,7 @@ export const useUsersStore = defineStore('users', () => {
         body: { is_system_admin: value },
       });
       if (e || !data) {
-        error.value = hintOf(e, 'Failed to update system-admin status');
+        error.value = errorHint(e, 'Failed to update system-admin status');
         return null;
       }
       users.value = users.value.map((u) => (u.id === id ? data : u));

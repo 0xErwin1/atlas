@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
+import { errorHint } from '@/lib/apiError';
 
 export type AuditEntryDto = components['schemas']['AuditEntryDto'];
 
@@ -77,7 +78,7 @@ export const useAuditStore = defineStore('audit', () => {
     });
 
     if (apiError !== undefined || data === undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to load the security log';
+      error.value = errorHint(apiError, 'Failed to load the security log');
       return null;
     }
 
@@ -92,8 +93,7 @@ export const useAuditStore = defineStore('audit', () => {
     });
 
     if (apiError !== undefined || data === undefined) {
-      error.value =
-        (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to load the platform audit log';
+      error.value = errorHint(apiError, 'Failed to load the platform audit log');
       return null;
     }
 

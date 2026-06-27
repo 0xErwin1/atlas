@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
+import { errorHint } from '@/lib/apiError';
 
 export type SearchHitDto = components['schemas']['SearchHitDto'];
 export type SearchKind = components['schemas']['SearchKindDto'];
@@ -100,7 +101,7 @@ export const useSearchStore = defineStore('search', () => {
     });
 
     if (apiError !== undefined || data === undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Search failed';
+      error.value = errorHint(apiError, 'Search failed');
       return null;
     }
 

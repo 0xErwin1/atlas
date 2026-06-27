@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
+import { errorHint } from '@/lib/apiError';
 import { collectPaged } from '@/lib/pagination';
 
 export type FolderDto = components['schemas']['FolderDto'];
@@ -32,8 +33,7 @@ export const useFoldersStore = defineStore('folders', () => {
     loading.value = false;
 
     if (apiError !== undefined) {
-      error.value =
-        (apiError as { hint?: string; title?: string } | undefined)?.hint ?? 'Failed to load folders';
+      error.value = errorHint(apiError, 'Failed to load folders');
       return;
     }
 
@@ -55,7 +55,7 @@ export const useFoldersStore = defineStore('folders', () => {
     );
 
     if (apiError !== undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to create folder';
+      error.value = errorHint(apiError, 'Failed to create folder');
       return false;
     }
 
@@ -70,7 +70,7 @@ export const useFoldersStore = defineStore('folders', () => {
     });
 
     if (apiError !== undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to rename folder';
+      error.value = errorHint(apiError, 'Failed to rename folder');
       return false;
     }
 
@@ -84,7 +84,7 @@ export const useFoldersStore = defineStore('folders', () => {
     });
 
     if (apiError !== undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to delete folder';
+      error.value = errorHint(apiError, 'Failed to delete folder');
       return false;
     }
 
@@ -104,7 +104,7 @@ export const useFoldersStore = defineStore('folders', () => {
     });
 
     if (apiError !== undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to move folder';
+      error.value = errorHint(apiError, 'Failed to move folder');
       return false;
     }
 
@@ -124,7 +124,7 @@ export const useFoldersStore = defineStore('folders', () => {
     });
 
     if (apiError !== undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to copy folder';
+      error.value = errorHint(apiError, 'Failed to copy folder');
       return false;
     }
 

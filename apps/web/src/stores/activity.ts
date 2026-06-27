@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
+import { errorHint } from '@/lib/apiError';
 
 export type ActivityEntryDto = components['schemas']['ActivityEntryDto'];
 
@@ -70,7 +71,7 @@ export const useActivityStore = defineStore('activity', () => {
     });
 
     if (apiError !== undefined || data === undefined) {
-      error.value = (apiError as { hint?: string } | undefined)?.hint ?? 'Failed to load activity';
+      error.value = errorHint(apiError, 'Failed to load activity');
       return null;
     }
 
