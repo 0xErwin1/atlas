@@ -6503,7 +6503,7 @@
         "tags": [
           "tasks"
         ],
-        "operationId": "list_attachments",
+        "operationId": "list_task_attachments",
         "parameters": [
           {
             "name": "ws",
@@ -6560,7 +6560,7 @@
         ],
         "summary": "Uploads a file and attaches it to the resolved task.",
         "description": "The body is `multipart/form-data` with the file in a part named `file`. Bytes are\nstreamed and accumulated up to `max_attachment_bytes`; the first chunk that would\nexceed the cap aborts the upload with 413 so an oversize body is never fully\nbuffered. The stored blob is content-addressed, so re-uploading identical bytes\nreuses the existing object.",
-        "operationId": "upload_attachment",
+        "operationId": "upload_task_attachment",
         "parameters": [
           {
             "name": "ws",

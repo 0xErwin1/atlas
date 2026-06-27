@@ -1495,6 +1495,7 @@ pub(crate) async fn delete_reference(
 #[utoipa::path(
     post,
     path = "/v1/workspaces/{ws}/tasks/{readable_id}/attachments",
+    operation_id = "upload_task_attachment",
     tag = "tasks",
     security(("bearer_auth" = [])),
     params(
@@ -1609,6 +1610,7 @@ pub(crate) async fn upload_attachment(
 #[utoipa::path(
     get,
     path = "/v1/workspaces/{ws}/tasks/{readable_id}/attachments",
+    operation_id = "list_task_attachments",
     tag = "tasks",
     security(("bearer_auth" = [])),
     params(
