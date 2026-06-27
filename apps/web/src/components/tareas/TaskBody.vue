@@ -264,6 +264,10 @@ function openAskAi(action: AiAction): void {
   ui.openAskAi(props.task, statusName.value, action);
 }
 
+function onAddDependency(): void {
+  ui.requestReferenceDraft('blocks');
+}
+
 const fileInput = ref<HTMLInputElement | null>(null);
 const uploading = ref(false);
 
@@ -576,7 +580,7 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
       <button type="button" class="atl-tv-action" @click="focusSubtaskInput">
         <Icon name="tasks" :size="14" style="color: var(--c-muted);" />Add sub-task
       </button>
-      <button type="button" class="atl-tv-action" @click="comingSoon">
+      <button type="button" class="atl-tv-action" @click="onAddDependency">
         <Icon name="link" :size="14" style="color: var(--c-muted);" />Link or add dependency
       </button>
       <button type="button" class="atl-tv-action" @click="focusChecklistInput">

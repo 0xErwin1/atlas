@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 import type { components } from '@/api/types.d.ts';
 import SharePanel from '@/components/share/SharePanel.vue';
 import ActivityFeed from '@/components/tareas/ActivityFeed.vue';
@@ -39,6 +39,15 @@ const TABS: Array<{ id: Tab; label: string; icon: string }> = [
   { id: 'share', label: 'Share', icon: 'user' },
 ];
 const active = ref('activity');
+
+// A "Link or add dependency" request from the task body surfaces the References
+// tab so its ReferenceAdd mounts and can consume the pending draft.
+watch(
+  () => ui.referenceDraft,
+  (draft) => {
+    if (draft !== null) active.value = 'references';
+  },
+);
 
 const creator = props.task.created_by;
 const creatorName = creator.display_name ?? (creator.type === 'api_key' ? 'Agent' : 'User');
