@@ -54,7 +54,10 @@ watch([query, kind], () => {
     searching.value = true;
     try {
       const { data } = await wrappedClient.GET('/v1/workspaces/{ws}/search', {
-        params: { path: { ws: props.ws }, query: { q: term, type: targetType.value, sort: 'relevance' } },
+        params: {
+          path: { ws: props.ws },
+          query: { q: term, type: targetType.value, sort: 'relevance', prefix: true },
+        },
       });
       results.value = data?.items ?? [];
     } catch {

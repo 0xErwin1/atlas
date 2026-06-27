@@ -670,6 +670,7 @@ async fn api_key_no_grant_sees_no_rows_at_sql_level() {
         sort: SearchSort::Relevance,
         type_filter: TypeSet::all(),
         warnings: vec![],
+        prefix: false,
     };
     let hits = repo
         .search(&ctx, &principal, &query, 50, None, false)

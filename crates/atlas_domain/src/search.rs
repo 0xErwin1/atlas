@@ -139,6 +139,10 @@ pub struct SearchQuery {
     pub sort: SearchSort,
     pub type_filter: TypeSet,
     pub warnings: Vec<SearchWarning>,
+    /// When true, each free-text word is matched as a prefix (typeahead) instead
+    /// of a whole word. Opt-in: defaults to `false` so the default whole-word
+    /// behaviour is preserved.
+    pub prefix: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -260,6 +264,7 @@ pub fn parse_query(raw: &str) -> SearchQuery {
         sort,
         type_filter,
         warnings,
+        prefix: false,
     }
 }
 

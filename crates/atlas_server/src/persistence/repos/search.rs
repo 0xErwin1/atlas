@@ -28,6 +28,31 @@ const HEADLINE_OPTS: &str =
 const HEADLINE_MAX_CHARS: usize = 50_000;
 
 // ---------------------------------------------------------------------------
+// Prefix tsquery construction
+// ---------------------------------------------------------------------------
+
+/// Builds a `to_tsquery`-compatible prefix query from free text.
+///
+/// Each whitespace-separated token is reduced to its alphanumeric characters
+/// (dropping anything that carries tsquery meaning — `& | ! ( ) : * ' \``),
+/// empty results are discarded, and every surviving token `t` becomes `t:*`
+/// (a lexeme prefix match). Tokens are joined with `" & "`. Returns an empty
+/// string when nothing survives, which the caller treats as a no-text query.
+fn to_prefix_tsquery(text: &str) -> String {
+    text.split_whitespace()
+        .map(|token| {
+            token
+                .chars()
+                .filter(|c| c.is_alphanumeric())
+                .collect::<String>()
+        })
+        .filter(|token| !token.is_empty())
+        .map(|token| format!("{token}:*"))
+        .collect::<Vec<_>>()
+        .join(" & ")
+}
+
+// ---------------------------------------------------------------------------
 // Result row (both arms expose the same column list for UNION ALL)
 // ---------------------------------------------------------------------------
 
@@ -134,10 +159,26 @@ impl SearchRepo for PgSearchRepo {
             return Ok(vec![]);
         }
 
-        let has_text = !query.text.trim().is_empty();
+        // In prefix mode the raw text is rewritten into a `to_tsquery` prefix
+        // expression (`word:*`); otherwise the raw text is passed verbatim to
+        // `websearch_to_tsquery`. Both the FTS predicate and the headline use
+        // this single effective value, so highlighting matches the predicate.
+        let effective_tsq = if query.prefix {
+            to_prefix_tsquery(&query.text)
+        } else {
+            query.text.clone()
+        };
+
+        let tsq_fn: &'static str = if query.prefix {
+            "to_tsquery"
+        } else {
+            "websearch_to_tsquery"
+        };
+
+        let has_text = !effective_tsq.trim().is_empty();
 
         let tsq_param: usize = if has_text {
-            values.push(query.text.clone().into());
+            values.push(effective_tsq.into());
             values.len()
         } else {
             0
@@ -210,6 +251,7 @@ impl SearchRepo for PgSearchRepo {
             principal_col,
             has_text,
             tsq_param,
+            tsq_fn,
             project_filter_subquery: &project_filter_subquery,
             updated_after_cond: &updated_after_cond,
             updated_before_cond: &updated_before_cond,
@@ -244,7 +286,7 @@ impl SearchRepo for PgSearchRepo {
         // stays inside the inner query because it drives ORDER BY.
         let snippet_expr = if has_text {
             format!(
-                "ts_headline('simple', page.snippet_source, websearch_to_tsquery('simple', ${tsq_param}), '{HEADLINE_OPTS}')"
+                "ts_headline('simple', page.snippet_source, {tsq_fn}('simple', ${tsq_param}), '{HEADLINE_OPTS}')"
             )
         } else {
             "NULL::text".to_string()
@@ -298,6 +340,9 @@ struct ArmCtx<'a> {
     principal_col: &'a str,
     has_text: bool,
     tsq_param: usize,
+    /// SQL function used to build the tsquery: `to_tsquery` in prefix mode,
+    /// `websearch_to_tsquery` otherwise. Shared by both arms and the headline.
+    tsq_fn: &'static str,
     project_filter_subquery: &'a str,
     updated_after_cond: &'a str,
     updated_before_cond: &'a str,
@@ -314,7 +359,7 @@ fn build_doc_arm(
 ) -> String {
     // The tsquery expression is inlined rather than aliased to avoid a
     // per-row subquery; Postgres evaluates it once for the plan node.
-    let tsq_expr = format!("websearch_to_tsquery('simple', ${})", ctx.tsq_param);
+    let tsq_expr = format!("{}('simple', ${})", ctx.tsq_fn, ctx.tsq_param);
 
     let fts_where = if ctx.has_text {
         format!("AND d.search_vector @@ {tsq_expr}")
@@ -476,7 +521,7 @@ fn build_task_arm(
     priority_values: &[String],
     assignee_values: &[String],
 ) -> String {
-    let tsq_expr = format!("websearch_to_tsquery('simple', ${})", ctx.tsq_param);
+    let tsq_expr = format!("{}('simple', ${})", ctx.tsq_fn, ctx.tsq_param);
 
     let fts_where = if ctx.has_text {
         format!("AND t.search_vector @@ {tsq_expr}")

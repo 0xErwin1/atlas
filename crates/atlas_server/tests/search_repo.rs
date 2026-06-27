@@ -43,6 +43,7 @@ fn make_search_query(text: &str) -> SearchQuery {
         sort: SearchSort::Relevance,
         type_filter: TypeSet::all(),
         warnings: vec![],
+        prefix: false,
     }
 }
 
@@ -53,6 +54,7 @@ fn make_updated_query(text: &str) -> SearchQuery {
         sort: SearchSort::UpdatedDesc,
         type_filter: TypeSet::all(),
         warnings: vec![],
+        prefix: false,
     }
 }
 
@@ -66,6 +68,7 @@ fn make_doc_only_query(text: &str) -> SearchQuery {
             tasks: false,
         },
         warnings: vec![],
+        prefix: false,
     }
 }
 
@@ -79,6 +82,18 @@ fn make_task_only_query(text: &str) -> SearchQuery {
             tasks: true,
         },
         warnings: vec![],
+        prefix: false,
+    }
+}
+
+fn make_prefix_query(text: &str) -> SearchQuery {
+    SearchQuery {
+        text: text.to_string(),
+        filters: vec![],
+        sort: SearchSort::Relevance,
+        type_filter: TypeSet::all(),
+        warnings: vec![],
+        prefix: true,
     }
 }
 
@@ -1907,6 +1922,90 @@ async fn member_gets_nothing_via_visibility_for_workspace_root_document() {
     assert!(
         !hits.iter().any(|h| h.id == doc_id.0),
         "plain member must NOT see a workspace-root document (no project) via visibility; got: {hits:?}"
+    );
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
+// Opt-in prefix matching — the reference picker's typeahead.
+//
+// A partial word ("atl") must match a task containing "atlas" when prefix=true,
+// and the match must be workspace-wide: the matching task lives on a DIFFERENT
+// board/project than the "current" board, proving cross-board reach. Without
+// prefix the SAME partial word must NOT match (whole-word behaviour preserved).
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn prefix_search_matches_partial_word_across_boards() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, owner) = support::seed_workspace(&db, "srch-prefix-owner").await;
+    let ctx = support::ctx(&ws, &owner);
+
+    // "current" board — the one the user is looking at; its task does NOT carry
+    // the target word, so a hit can only come from the OTHER board.
+    let (cur_project, cur_board, cur_col) =
+        seed_project_and_board(&db, &ctx, "srch-prefix-current", "SPC").await;
+    let _current_task = seed_task(
+        &db,
+        &ctx,
+        cur_col.id,
+        cur_board.id,
+        cur_project.id,
+        "Current Board Task",
+        "unrelated body text",
+    )
+    .await;
+
+    // other board — holds a task whose description contains "atlas".
+    let (other_project, other_board, other_col) =
+        seed_project_and_board(&db, &ctx, "srch-prefix-other", "SPO").await;
+    let atlas_task = seed_task(
+        &db,
+        &ctx,
+        other_col.id,
+        other_board.id,
+        other_project.id,
+        "Other Board Task",
+        "this references the atlas project plan",
+    )
+    .await;
+
+    let repo = PgSearchRepo::new(db.conn().clone());
+    let principal = Principal::User(owner.id);
+
+    // With prefix=true: "atl" matches "atlas" on the OTHER board.
+    let prefix_hits = repo
+        .search(
+            &ctx,
+            &principal,
+            &make_prefix_query("atl"),
+            50,
+            None,
+            false,
+        )
+        .await
+        .expect("prefix search");
+    assert!(
+        prefix_hits.iter().any(|h| h.id == atlas_task.0),
+        "prefix search for 'atl' must match the cross-board task containing 'atlas'; got: {prefix_hits:?}"
+    );
+
+    // Without prefix: "atl" is a whole word and must NOT match "atlas".
+    let whole_word_hits = repo
+        .search(
+            &ctx,
+            &principal,
+            &make_search_query("atl"),
+            50,
+            None,
+            false,
+        )
+        .await
+        .expect("whole-word search");
+    assert!(
+        !whole_word_hits.iter().any(|h| h.id == atlas_task.0),
+        "whole-word search for 'atl' must NOT match 'atlas'; got: {whole_word_hits:?}"
     );
 
     db.teardown().await;

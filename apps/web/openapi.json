@@ -5266,6 +5266,15 @@
               "format": "int32",
               "minimum": 0
             }
+          },
+          {
+            "name": "prefix",
+            "in": "query",
+            "description": "When true, match each query word as a prefix (typeahead). Default false.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {

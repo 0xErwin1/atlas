@@ -36,6 +36,8 @@ pub(crate) struct SearchQueryParams {
     pub cursor: Option<String>,
     /// Maximum results per page. Default 50, clamped to [1, 200].
     pub limit: Option<u32>,
+    /// When true, match each query word as a prefix (typeahead). Default false.
+    pub prefix: Option<bool>,
 }
 
 // ---------------------------------------------------------------------------
@@ -54,6 +56,7 @@ pub(crate) struct SearchQueryParams {
         ("sort" = Option<String>, Query, description = "Sort order: relevance (default) | updated"),
         ("cursor" = Option<String>, Query, description = "Opaque pagination cursor; must match the sort of the issuing request"),
         ("limit" = Option<u32>, Query, description = "Page size, default 50, clamped to [1,200]"),
+        ("prefix" = Option<bool>, Query, description = "When true, match each query word as a prefix (typeahead). Default false."),
     ),
     responses(
         (status = 200, description = "Search results page", body = inline(Page<SearchHitDto>)),
@@ -79,6 +82,7 @@ pub(crate) async fn search(
         params.type_filter.as_deref(),
         params.sort.as_deref(),
     );
+    query.prefix = params.prefix.unwrap_or(false);
 
     let after = resolve_cursor(params.cursor.as_deref(), &query)?;
 
@@ -243,6 +247,7 @@ mod tests {
             sort: SearchSort::Relevance,
             type_filter: TypeSet::all(),
             warnings: vec![],
+            prefix: false,
         }
     }
 
