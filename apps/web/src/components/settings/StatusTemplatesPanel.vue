@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import PanelHeader from '@/components/settings/PanelHeader.vue';
+import RowAction from '@/components/settings/RowAction.vue';
 import Btn from '@/components/ui/Btn.vue';
 import ColorPicker from '@/components/ui/ColorPicker.vue';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
@@ -211,7 +212,7 @@ async function applyToBoard(): Promise<void> {
             />
             <span class="flex-1" />
             <Btn variant="primary" @click="saveEdit(template)">Save</Btn>
-            <button type="button" class="atl-rowact" @click="cancelEdit">Cancel</button>
+            <RowAction @click="cancelEdit">Cancel</RowAction>
           </div>
 
           <ColorPicker
@@ -225,35 +226,33 @@ async function applyToBoard(): Promise<void> {
           <span class="atl-dot" :style="{ backgroundColor: swatchFg(template) }" />
           <span class="atl-status-name">{{ template.name }}</span>
           <span class="flex-1" />
-          <button
-            type="button"
-            class="atl-rowact icon"
+          <RowAction
+            icon-only
             title="Move up"
             :disabled="index === 0"
             @click="move(template, -1)"
           >
             <Icon name="chevron-up" :size="14" />
-          </button>
-          <button
-            type="button"
-            class="atl-rowact icon"
+          </RowAction>
+          <RowAction
+            icon-only
             title="Move down"
             :disabled="index === templatesStore.templates.length - 1"
             @click="move(template, 1)"
           >
             <Icon name="chevron-down" :size="14" />
-          </button>
-          <button type="button" class="atl-rowact icon" title="Edit name & color" @click="startEdit(template)">
+          </RowAction>
+          <RowAction icon-only title="Edit name & color" @click="startEdit(template)">
             <Icon name="pencil" :size="13" />
-          </button>
-          <button
-            type="button"
-            class="atl-rowact icon danger"
+          </RowAction>
+          <RowAction
+            icon-only
+            tone="danger"
             title="Delete status"
             @click="deleteTargetId = template.id"
           >
             <Icon name="trash" :size="13" />
-          </button>
+          </RowAction>
         </template>
       </div>
     </div>
@@ -272,7 +271,7 @@ async function applyToBoard(): Promise<void> {
         @keydown.esc="adding = false"
       />
       <Btn variant="primary" :disabled="newName.trim() === ''" @click="addTemplate">Add</Btn>
-      <button type="button" class="atl-rowact" @click="adding = false">Cancel</button>
+      <RowAction @click="adding = false">Cancel</RowAction>
     </div>
     <Btn v-else variant="secondary" style="margin-top: 12px;" @click="adding = true">
       <Icon name="plus" :size="14" />Add status
@@ -397,38 +396,6 @@ async function applyToBoard(): Promise<void> {
   align-items: center;
   gap: 8px;
   margin-top: 12px;
-}
-
-.atl-rowact {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 26px;
-  padding: 0 8px;
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
-  background: transparent;
-  color: var(--c-foreground);
-  cursor: pointer;
-  font-size: 12px;
-}
-
-.atl-rowact.icon {
-  width: 28px;
-  padding: 0;
-}
-
-.atl-rowact:hover:enabled {
-  background: var(--c-raised);
-}
-
-.atl-rowact:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.atl-rowact.danger {
-  color: var(--c-danger);
 }
 
 .atl-apply-section {

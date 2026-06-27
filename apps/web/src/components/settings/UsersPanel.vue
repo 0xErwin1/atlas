@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { z } from 'zod';
 import ExpandableRow from '@/components/settings/ExpandableRow.vue';
 import PanelHeader from '@/components/settings/PanelHeader.vue';
+import RowAction from '@/components/settings/RowAction.vue';
 import SettingsTable from '@/components/settings/SettingsTable.vue';
 import WorkspaceAccessEditor, { type RoleOption } from '@/components/settings/WorkspaceAccessEditor.vue';
 import Avatar from '@/components/ui/Avatar.vue';
@@ -557,9 +558,9 @@ async function confirmDisable(): Promise<void> {
           <template #actions>
             <span v-if="isSelf(u)" class="atl-you">you</span>
             <template v-else>
-              <button v-if="u.disabled_at" type="button" class="atl-rowact" @click="enable(u)">
+              <RowAction v-if="u.disabled_at" @click="enable(u)">
                 Enable
-              </button>
+              </RowAction>
               <button
                 v-else
                 type="button"
@@ -891,24 +892,6 @@ async function confirmDisable(): Promise<void> {
   padding: 2px 8px;
 }
 
-.atl-rowact {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 24px;
-  padding: 0 8px;
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
-  background: transparent;
-  color: var(--c-foreground);
-  cursor: pointer;
-  font-size: 12px;
-}
-
-.atl-rowact:hover {
-  background: var(--c-raised);
-}
-
 .atl-revoke {
   height: 24px;
   padding: 0 10px;
@@ -942,11 +925,6 @@ async function confirmDisable(): Promise<void> {
   border: 1px solid var(--c-border);
   border-radius: 4px;
   margin-bottom: 18px;
-}
-
-.atl-rowact:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
 }
 
 .atl-field {

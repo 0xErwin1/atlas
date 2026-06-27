@@ -126,7 +126,7 @@ describe('TagsPanel — used-but-unregistered tier', () => {
     const wrapper = mount(TagsPanel);
     await wrapper.vm.$nextTick();
 
-    await wrapper.find('.atl-used-row .atl-register-btn').trigger('click');
+    await wrapper.find('.atl-used-row [data-action="register-label"]').trigger('click');
 
     expect(create).toHaveBeenCalledWith('acme', 'backend');
   });

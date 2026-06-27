@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import PanelHeader from '@/components/settings/PanelHeader.vue';
+import RowAction from '@/components/settings/RowAction.vue';
 import Btn from '@/components/ui/Btn.vue';
 import Icon from '@/components/ui/Icon.vue';
 import { useUiStore } from '@/stores/ui';
@@ -80,11 +81,11 @@ async function saveEdit(ws: WorkspaceDto): Promise<void> {
         <div style="flex: 0 0 96px; display: flex; justify-content: flex-end; gap: 6px;">
           <template v-if="editingSlug === ws.slug">
             <Btn variant="primary" :disabled="saving" @click="saveEdit(ws)">Save</Btn>
-            <button type="button" class="atl-rowact" @click="cancelEdit">Cancel</button>
+            <RowAction @click="cancelEdit">Cancel</RowAction>
           </template>
-          <button v-else type="button" class="atl-rowact" title="Rename" @click="startEdit(ws)">
+          <RowAction v-else title="Rename" @click="startEdit(ws)">
             <Icon name="pencil" :size="13" />
-          </button>
+          </RowAction>
         </div>
       </div>
 
@@ -149,20 +150,4 @@ async function saveEdit(ws: WorkspaceDto): Promise<void> {
   outline: none;
 }
 
-.atl-rowact {
-  display: inline-flex;
-  align-items: center;
-  height: 24px;
-  padding: 0 8px;
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
-  background: transparent;
-  color: var(--c-foreground);
-  cursor: pointer;
-  font-size: 12px;
-}
-
-.atl-rowact:hover {
-  background: var(--c-raised);
-}
 </style>

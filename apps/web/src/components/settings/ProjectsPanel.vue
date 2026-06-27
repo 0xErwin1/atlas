@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import PanelHeader from '@/components/settings/PanelHeader.vue';
+import RowAction from '@/components/settings/RowAction.vue';
 import Btn from '@/components/ui/Btn.vue';
 import FormField from '@/components/ui/FormField.vue';
 import Icon from '@/components/ui/Icon.vue';
@@ -162,7 +163,7 @@ async function saveEdit(slug: string): Promise<void> {
               <Btn variant="primary" :disabled="saving" @click="saveEdit(project.slug)">
                 <Icon name="check" :size="14" />Save
               </Btn>
-              <button type="button" class="atl-rowact" @click="cancelEdit">Cancel</button>
+              <RowAction @click="cancelEdit">Cancel</RowAction>
             </div>
           </div>
         </template>
@@ -172,14 +173,12 @@ async function saveEdit(slug: string): Promise<void> {
             <span class="atl-proj-name">{{ project.name }}</span>
             <code class="atl-proj-prefix">{{ project.task_prefix }}</code>
           </div>
-          <button
-            type="button"
-            class="atl-rowact"
+          <RowAction
             title="Edit project"
             @click="startEdit(project.slug)"
           >
             <Icon name="pencil" :size="13" />
-          </button>
+          </RowAction>
         </template>
       </div>
     </div>
@@ -267,20 +266,4 @@ async function saveEdit(slug: string): Promise<void> {
   gap: 8px;
 }
 
-.atl-rowact {
-  display: inline-flex;
-  align-items: center;
-  height: 24px;
-  padding: 0 8px;
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
-  background: transparent;
-  color: var(--c-foreground);
-  cursor: pointer;
-  font-size: 12px;
-}
-
-.atl-rowact:hover {
-  background: var(--c-raised);
-}
 </style>

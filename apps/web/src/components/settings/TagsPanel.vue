@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import PanelHeader from '@/components/settings/PanelHeader.vue';
+import RowAction from '@/components/settings/RowAction.vue';
 import Btn from '@/components/ui/Btn.vue';
 import Chip from '@/components/ui/Chip.vue';
 import ColorPicker from '@/components/ui/ColorPicker.vue';
@@ -197,7 +198,7 @@ async function confirmDelete(): Promise<void> {
                 />
                 <span class="flex-1" />
                 <Btn variant="primary" :disabled="renaming" @click="saveEdit(tag.id, tag.name)">Save</Btn>
-                <button type="button" class="atl-rowact" @click="cancelRename">Cancel</button>
+                <RowAction @click="cancelRename">Cancel</RowAction>
               </div>
 
               <ColorPicker
@@ -210,22 +211,19 @@ async function confirmDelete(): Promise<void> {
             <template v-else>
               <Chip :color="tagsStore.colorFor(tag.name)" icon="dot">{{ tag.name }}</Chip>
               <span class="flex-1" />
-              <button
-                type="button"
-                class="atl-rowact"
+              <RowAction
                 title="Edit name & color"
                 @click="startRename(tag.id, tag.name)"
               >
                 <Icon name="pencil" :size="13" />
-              </button>
-              <button
-                type="button"
-                class="atl-rowact danger"
+              </RowAction>
+              <RowAction
+                tone="danger"
                 title="Delete tag"
                 @click="deleteTargetId = tag.id"
               >
                 <Icon name="trash" :size="13" />
-              </button>
+              </RowAction>
             </template>
           </div>
         </div>
@@ -242,15 +240,14 @@ async function confirmDelete(): Promise<void> {
           <div v-for="label in tagsStore.unregisteredLabels" :key="label" class="atl-tag-row atl-used-row">
             <Chip :color="tagsStore.colorFor(label)" icon="dot" class="atl-used-chip">{{ label }}</Chip>
             <span class="flex-1" />
-            <button
-              type="button"
-              class="atl-rowact atl-register-btn"
+            <RowAction
+              data-action="register-label"
               title="Add this label to the registry"
               :disabled="registeringLabel !== null"
               @click="registerLabel(label)"
             >
               <Icon name="plus" :size="13" />Register
-            </button>
+            </RowAction>
           </div>
         </div>
       </section>
@@ -382,24 +379,4 @@ async function confirmDelete(): Promise<void> {
   border-radius: var(--r-full);
 }
 
-.atl-rowact {
-  display: inline-flex;
-  align-items: center;
-  height: 24px;
-  padding: 0 8px;
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
-  background: transparent;
-  color: var(--c-foreground);
-  cursor: pointer;
-  font-size: 12px;
-}
-
-.atl-rowact:hover {
-  background: var(--c-raised);
-}
-
-.atl-rowact.danger {
-  color: var(--c-danger);
-}
 </style>
