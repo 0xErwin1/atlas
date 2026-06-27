@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import { z } from 'zod';
+import ExpandableRow from '@/components/settings/ExpandableRow.vue';
+import SettingsTable from '@/components/settings/SettingsTable.vue';
 import WorkspaceAccessEditor, { type RoleOption } from '@/components/settings/WorkspaceAccessEditor.vue';
 import AgentBadge from '@/components/ui/AgentBadge.vue';
 import Btn from '@/components/ui/Btn.vue';
@@ -413,23 +415,24 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
         </div>
       </div>
 
-      <div v-else class="atl-keys-table">
-        <div class="atl-keys-head">
+      <SettingsTable v-else>
+        <template #head>
           <div style="flex: 0 0 26px;"></div>
           <div style="flex: 2;">Name</div>
           <div style="flex: 1;">Type</div>
           <div style="flex: 1.4;">Created</div>
           <div style="flex: 1.4;">Last used</div>
           <div style="flex: 0 0 200px;"></div>
-        </div>
+        </template>
 
-        <template v-for="k in keysStore.keys" :key="k.id">
-          <div
-            class="atl-keys-row"
-            :class="{ 'atl-keys-row--expanded': expandedKeyId === k.id }"
-            style="cursor: pointer;"
-            @click="toggleExpand(k.id)"
-          >
+        <ExpandableRow
+          v-for="k in keysStore.keys"
+          :key="k.id"
+          :expanded="expandedKeyId === k.id"
+          :style="{ height: '40px', '--erow-actions-basis': '200px' }"
+          @toggle="toggleExpand(k.id)"
+        >
+          <template #summary>
             <div style="flex: 0 0 26px;">
               <Icon name="key" :size="15" style="color: var(--c-chart-5);" />
             </div>
@@ -441,29 +444,19 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
             <div class="atl-key-meta" :style="{ color: k.last_used_at ? 'var(--c-foreground)' : 'var(--c-muted)' }">
               {{ fmtDate(k.last_used_at) }}
             </div>
-            <div style="flex: 0 0 200px; display: flex; justify-content: flex-end; gap: 6px;" @click.stop>
-              <button
-                type="button"
-                class="atl-rowact"
-                data-action="manage"
-                @click="toggleExpand(k.id)"
-              >
-                <Icon name="sliders-horizontal" :size="13" />
-                Manage
-                <Icon :name="expandedKeyId === k.id ? 'chevron-up' : 'chevron-down'" :size="13" />
-              </button>
-              <button
-                type="button"
-                class="atl-revoke"
-                @click="revokeTarget = { id: k.id, name: k.name }"
-              >
-                Revoke
-              </button>
-            </div>
-          </div>
+          </template>
 
-          <!-- Grants section (inline expand) -->
-          <div v-if="expandedKeyId === k.id" class="atl-grants-panel">
+          <template #actions>
+            <button
+              type="button"
+              class="atl-revoke"
+              @click="revokeTarget = { id: k.id, name: k.name }"
+            >
+              Revoke
+            </button>
+          </template>
+
+          <template #panel>
             <div class="atl-key-overview">
               <div class="atl-key-id-line">
                 <span class="atl-key-id-label">Key ID</span>
@@ -570,9 +563,9 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
                 </div>
               </div>
             </template>
-          </div>
-        </template>
-      </div>
+          </template>
+        </ExpandableRow>
+      </SettingsTable>
 
       <div class="atl-keys-helper">
         <Icon name="sparkles" :size="13" style="color: var(--c-chart-5);" />
@@ -634,41 +627,6 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
   margin-bottom: 5px;
 }
 
-.atl-keys-table {
-  border: 1px solid var(--c-border);
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.atl-keys-head {
-  display: flex;
-  align-items: center;
-  height: 28px;
-  padding: 0 12px;
-  font-size: 10px;
-  font-weight: var(--fw-semibold);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--c-muted);
-}
-
-.atl-keys-row {
-  display: flex;
-  align-items: center;
-  height: 40px;
-  padding: 0 12px;
-  border-top: 1px solid var(--c-border);
-  transition: background 0.1s;
-}
-
-.atl-keys-row:hover {
-  background: var(--c-raised);
-}
-
-.atl-keys-row--expanded {
-  background: var(--c-raised);
-}
-
 .atl-key-name {
   flex: 2;
   font-size: 13px;
@@ -685,24 +643,6 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
   color: var(--c-muted);
 }
 
-.atl-rowact {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 24px;
-  padding: 0 8px;
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
-  background: transparent;
-  color: var(--c-foreground);
-  cursor: pointer;
-  font-size: 12px;
-}
-
-.atl-rowact:hover {
-  background: var(--c-background);
-}
-
 .atl-revoke {
   height: 24px;
   padding: 0 10px;
@@ -716,13 +656,6 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
 
 .atl-revoke:hover {
   background: var(--c-raised);
-}
-
-/* Grants panel (inline below the key row) */
-.atl-grants-panel {
-  border-top: 1px solid var(--c-border);
-  background: var(--c-background);
-  padding: 10px 40px 10px 40px;
 }
 
 .atl-key-overview {

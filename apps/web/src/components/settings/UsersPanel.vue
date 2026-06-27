@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import { z } from 'zod';
+import ExpandableRow from '@/components/settings/ExpandableRow.vue';
+import SettingsTable from '@/components/settings/SettingsTable.vue';
 import WorkspaceAccessEditor, { type RoleOption } from '@/components/settings/WorkspaceAccessEditor.vue';
 import Avatar from '@/components/ui/Avatar.vue';
 import Btn from '@/components/ui/Btn.vue';
@@ -533,22 +535,24 @@ async function confirmDisable(): Promise<void> {
         Loading…
       </div>
 
-      <div v-else class="atl-users-table">
-        <div class="atl-users-head">
+      <SettingsTable v-else>
+        <template #head>
           <div style="flex: 2;">User</div>
           <div style="flex: 0 0 130px;">Status</div>
           <div style="flex: 1;">Created</div>
           <div style="flex: 0 0 220px;"></div>
-        </div>
+        </template>
 
-        <template v-for="u in usersStore.users" :key="u.id">
-          <div
-            class="atl-users-row"
-            :class="{ 'atl-users-row--expanded': expandedUserId === u.id }"
-            :style="{ opacity: u.disabled_at ? 0.72 : 1, cursor: isSelf(u) ? 'default' : 'pointer' }"
-            data-user-row
-            @click="!isSelf(u) && toggleManage(u)"
-          >
+        <ExpandableRow
+          v-for="u in usersStore.users"
+          :key="u.id"
+          :expanded="expandedUserId === u.id"
+          :expandable="!isSelf(u)"
+          :style="{ height: '46px', opacity: u.disabled_at ? 0.72 : 1, '--erow-actions-basis': '220px' }"
+          data-user-row
+          @toggle="toggleManage(u)"
+        >
+          <template #summary>
             <div style="flex: 2; display: flex; align-items: center; gap: 10px; min-width: 0;">
               <Avatar :name="initials(u)" :size="26" />
               <div style="min-width: 0;">
@@ -570,117 +574,109 @@ async function confirmDisable(): Promise<void> {
               <Chip v-else tone="success">Active</Chip>
             </div>
             <div style="flex: 1; font-size: 12px; color: var(--c-muted);">{{ fmtDate(u.created_at) }}</div>
-            <div style="flex: 0 0 220px; display: flex; justify-content: flex-end; gap: 6px;" @click.stop>
-              <span v-if="isSelf(u)" class="atl-you">you</span>
-              <template v-else>
-                <button
-                  type="button"
-                  class="atl-rowact"
-                  data-action="manage"
-                  @click="toggleManage(u)"
-                >
-                  <Icon name="sliders-horizontal" :size="13" />
-                  Manage
-                  <Icon :name="expandedUserId === u.id ? 'chevron-up' : 'chevron-down'" :size="13" />
-                </button>
-                <button v-if="u.disabled_at" type="button" class="atl-rowact" @click="enable(u)">
-                  Enable
-                </button>
-                <button
-                  v-else
-                  type="button"
-                  class="atl-revoke"
-                  :disabled="!canDisable(u)"
-                  :title="disableTitle(u)"
-                  :style="{ opacity: canDisable(u) ? 1 : 0.4, cursor: canDisable(u) ? 'pointer' : 'not-allowed' }"
-                  @click="canDisable(u) && (disableTarget = u)"
-                >
-                  Disable
-                </button>
-              </template>
-            </div>
-          </div>
+          </template>
 
-          <!-- Manage panel (inline expand) -->
-          <div v-if="expandedUserId === u.id" class="atl-grants-panel" data-manage-panel>
-            <div class="atl-user-identity">
-              <Avatar :name="initials(u)" :size="30" />
-              <div style="min-width: 0;">
-                <div class="atl-identity-name">{{ u.display_name }}</div>
-                <div class="atl-identity-handle">@{{ u.username }}</div>
+          <template #actions>
+            <span v-if="isSelf(u)" class="atl-you">you</span>
+            <template v-else>
+              <button v-if="u.disabled_at" type="button" class="atl-rowact" @click="enable(u)">
+                Enable
+              </button>
+              <button
+                v-else
+                type="button"
+                class="atl-revoke"
+                :disabled="!canDisable(u)"
+                :title="disableTitle(u)"
+                :style="{ opacity: canDisable(u) ? 1 : 0.4, cursor: canDisable(u) ? 'pointer' : 'not-allowed' }"
+                @click="canDisable(u) && (disableTarget = u)"
+              >
+                Disable
+              </button>
+            </template>
+          </template>
+
+          <template #panel>
+            <div class="atl-manage-stack" data-manage-panel>
+              <div class="atl-user-identity">
+                <Avatar :name="initials(u)" :size="30" />
+                <div style="min-width: 0;">
+                  <div class="atl-identity-name">{{ u.display_name }}</div>
+                  <div class="atl-identity-handle">@{{ u.username }}</div>
+                </div>
               </div>
-            </div>
 
-            <!-- System admin -->
-            <div v-if="currentUserIsRoot && !u.is_root" class="atl-manage-block">
-              <div class="atl-global-toggle">
-                <button
-                  type="button"
-                  role="switch"
-                  class="atl-switch"
-                  :class="{ 'atl-switch--on': u.is_system_admin }"
-                  :aria-checked="u.is_system_admin"
-                  aria-label="System admin"
-                  data-action="toggle-sysadmin"
-                  @click="sysAdminTarget = u"
-                >
-                  <span class="atl-switch-knob" />
-                </button>
-                <div class="atl-global-copy">
-                  <div class="atl-global-label">System admin</div>
-                  <div class="atl-global-help">
-                    Full platform access — manage users, every workspace, and audit logs.
+              <!-- System admin -->
+              <div v-if="currentUserIsRoot && !u.is_root" class="atl-manage-block">
+                <div class="atl-global-toggle">
+                  <button
+                    type="button"
+                    role="switch"
+                    class="atl-switch"
+                    :class="{ 'atl-switch--on': u.is_system_admin }"
+                    :aria-checked="u.is_system_admin"
+                    aria-label="System admin"
+                    data-action="toggle-sysadmin"
+                    @click="sysAdminTarget = u"
+                  >
+                    <span class="atl-switch-knob" />
+                  </button>
+                  <div class="atl-global-copy">
+                    <div class="atl-global-label">System admin</div>
+                    <div class="atl-global-help">
+                      Full platform access — manage users, every workspace, and audit logs.
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
 
-            <!-- Account actions -->
-            <div class="atl-manage-block">
-              <div class="atl-manage-label">Account</div>
-              <div class="atl-manage-actions">
-                <button
-                  v-if="isPending(u) && !u.disabled_at"
-                  type="button"
-                  class="atl-manage-btn"
-                  data-action="regenerate-link"
-                  :disabled="regenerating"
-                  @click="regenerateLink(u)"
-                >
-                  <Icon name="link" :size="13" />
-                  Regenerate activation link
-                </button>
-                <button
+              <!-- Account actions -->
+              <div class="atl-manage-block">
+                <div class="atl-manage-label">Account</div>
+                <div class="atl-manage-actions">
+                  <button
+                    v-if="isPending(u) && !u.disabled_at"
+                    type="button"
+                    class="atl-manage-btn"
+                    data-action="regenerate-link"
+                    :disabled="regenerating"
+                    @click="regenerateLink(u)"
+                  >
+                    <Icon name="link" :size="13" />
+                    Regenerate activation link
+                  </button>
+                  <button
+                    v-else
+                    type="button"
+                    class="atl-manage-btn"
+                    data-action="reset-password"
+                    @click="resetConfirmTarget = u"
+                  >
+                    <Icon name="key" :size="13" />
+                    Reset password
+                  </button>
+                </div>
+              </div>
+
+              <!-- Workspace access -->
+              <div class="atl-manage-block">
+                <div class="atl-manage-label">Workspace access</div>
+                <div v-if="membershipsLoading[u.id]" class="atl-grants-loading">
+                  Loading access&hellip;
+                </div>
+                <WorkspaceAccessEditor
                   v-else
-                  type="button"
-                  class="atl-manage-btn"
-                  data-action="reset-password"
-                  @click="resetConfirmTarget = u"
-                >
-                  <Icon name="key" :size="13" />
-                  Reset password
-                </button>
+                  :workspaces="wsStore.adminWorkspaces"
+                  :roles="usersStore.memberships[u.id] ?? {}"
+                  :options="wsAccessOptions"
+                  @assign="(slug, role) => onWsAssign(u, slug, role)"
+                  @remove="(slug) => onWsRemove(u, slug)"
+                />
               </div>
             </div>
-
-            <!-- Workspace access -->
-            <div class="atl-manage-block">
-              <div class="atl-manage-label">Workspace access</div>
-              <div v-if="membershipsLoading[u.id]" class="atl-grants-loading">
-                Loading access&hellip;
-              </div>
-              <WorkspaceAccessEditor
-                v-else
-                :workspaces="wsStore.adminWorkspaces"
-                :roles="usersStore.memberships[u.id] ?? {}"
-                :options="wsAccessOptions"
-                @assign="(slug, role) => onWsAssign(u, slug, role)"
-                @remove="(slug) => onWsRemove(u, slug)"
-              />
-            </div>
-          </div>
-        </template>
-      </div>
+          </template>
+        </ExpandableRow>
+      </SettingsTable>
 
       <div class="atl-users-note">
         <Icon name="shield" :size="13" style="color: var(--c-primary);" />
@@ -788,46 +784,7 @@ async function confirmDisable(): Promise<void> {
   font-family: var(--font-mono);
 }
 
-.atl-users-table {
-  border: 1px solid var(--c-border);
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.atl-users-head {
-  display: flex;
-  align-items: center;
-  height: 28px;
-  padding: 0 12px;
-  font-size: 10px;
-  font-weight: var(--fw-semibold);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--c-muted);
-}
-
-.atl-users-row {
-  display: flex;
-  align-items: center;
-  height: 46px;
-  padding: 0 12px;
-  border-top: 1px solid var(--c-border);
-  transition: background 0.1s;
-}
-
-.atl-users-row:hover {
-  background: var(--c-raised);
-}
-
-.atl-users-row--expanded {
-  background: var(--c-raised);
-}
-
-/* Manage panel (inline below the user row) — mirrors ApiKeysPanel grants panel */
-.atl-grants-panel {
-  border-top: 1px solid var(--c-border);
-  background: var(--c-background);
-  padding: 12px 40px;
+.atl-manage-stack {
   display: flex;
   flex-direction: column;
   gap: 14px;

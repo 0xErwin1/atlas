@@ -86,7 +86,7 @@ async function mountExpanded(): Promise<VueWrapper> {
   const wrapper = mount(ApiKeysPanel, { attachTo: document.body });
   activeWrapper = wrapper;
   await flushPromises();
-  await wrapper.find('.atl-keys-row').trigger('click');
+  await wrapper.find('[data-row]').trigger('click');
   await flushPromises();
   return wrapper;
 }
