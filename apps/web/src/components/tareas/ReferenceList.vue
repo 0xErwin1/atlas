@@ -17,6 +17,7 @@ const KIND_TONE: Record<string, ChipTone> = {
   blocks: 'danger',
   parent: 'agent',
   spec: 'success',
+  docs: 'warning',
 };
 
 interface Row {

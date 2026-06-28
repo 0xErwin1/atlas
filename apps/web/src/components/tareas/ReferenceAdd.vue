@@ -20,6 +20,7 @@ const KIND_OPTIONS: DropdownOption[] = [
   { value: 'blocks', label: 'Blocks', icon: 'ban' },
   { value: 'parent', label: 'Parent', icon: 'git-branch' },
   { value: 'spec', label: 'Spec', icon: 'file-text' },
+  { value: 'docs', label: 'Documentation', icon: 'book-text' },
 ];
 
 const kind = ref(props.defaultKind);
@@ -34,9 +35,11 @@ onMounted(() => {
   if (props.large) inputRef.value?.focus();
 });
 
-// The server requires a document target for `spec` and a task target for the
-// others, so the picker only searches the valid target type for the kind.
-const targetType = computed<'note' | 'task'>(() => (kind.value === 'spec' ? 'note' : 'task'));
+// The server requires a document target for `spec`/`docs` and a task target for
+// the others, so the picker only searches the valid target type for the kind.
+const targetType = computed<'note' | 'task'>(() =>
+  kind.value === 'spec' || kind.value === 'docs' ? 'note' : 'task',
+);
 const placeholder = computed(() => (targetType.value === 'note' ? 'Link a note…' : 'Link a task…'));
 
 let debounce: ReturnType<typeof setTimeout> | null = null;

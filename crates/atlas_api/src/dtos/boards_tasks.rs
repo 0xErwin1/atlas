@@ -172,7 +172,7 @@ pub struct TaskAttachmentDto {
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct ReferenceDto {
     pub id: uuid::Uuid,
-    /// "relates" | "blocks" | "parent" | "spec"
+    /// "relates" | "blocks" | "parent" | "spec" | "docs"
     pub kind: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target_task_id: Option<uuid::Uuid>,
@@ -197,7 +197,7 @@ pub struct TaskBacklinkDto {
     pub source_task_id: uuid::Uuid,
     pub source_readable_id: String,
     pub source_title: String,
-    /// "relates" | "blocks" | "parent" | "spec"
+    /// "relates" | "blocks" | "parent" | "spec" | "docs"
     pub kind: String,
 }
 
@@ -384,7 +384,7 @@ pub struct AddAssigneeRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct CreateReferenceRequest {
-    /// "relates" | "blocks" | "parent" | "spec"
+    /// "relates" | "blocks" | "parent" | "spec" | "docs"
     pub kind: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target_task_readable_id: Option<String>,

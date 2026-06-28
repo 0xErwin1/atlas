@@ -153,6 +153,7 @@ pub enum ReferenceKind {
     Blocks,
     Parent,
     Spec,
+    Docs,
 }
 
 impl ReferenceKind {
@@ -162,6 +163,7 @@ impl ReferenceKind {
             ReferenceKind::Blocks => "blocks",
             ReferenceKind::Parent => "parent",
             ReferenceKind::Spec => "spec",
+            ReferenceKind::Docs => "docs",
         }
     }
 }

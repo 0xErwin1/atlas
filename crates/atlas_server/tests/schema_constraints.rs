@@ -373,7 +373,7 @@ async fn seed_task_chain(
     (proj_id, task_id)
 }
 
-/// A `spec` reference must point at a document, never a task.
+/// A `spec`/`docs` reference must point at a document, never a task.
 /// A `blocks`/`relates`/`parent` reference must point at a task, never a document.
 #[tokio::test]
 async fn task_reference_kind_must_match_target_type() {
@@ -460,6 +460,38 @@ async fn task_reference_kind_must_match_target_type() {
     assert!(
         blocks_to_task.is_ok(),
         "a 'blocks' reference pointing at a task must be accepted: {blocks_to_task:?}"
+    );
+
+    let docs_to_doc = db
+        .conn()
+        .execute_unprepared(&format!(
+            r#"INSERT INTO task_references
+               (id, workspace_id, source_task_id, kind, target_task_id, target_document_id,
+                created_by_user_id, created_at)
+               VALUES (gen_random_uuid(), '{ws_id}', '{source_task_id}', 'docs',
+                NULL, '{doc_id}', '{user_id}', now())"#
+        ))
+        .await;
+
+    assert!(
+        docs_to_doc.is_ok(),
+        "a 'docs' reference pointing at a document must be accepted: {docs_to_doc:?}"
+    );
+
+    let docs_to_task = db
+        .conn()
+        .execute_unprepared(&format!(
+            r#"INSERT INTO task_references
+               (id, workspace_id, source_task_id, kind, target_task_id, target_document_id,
+                created_by_user_id, created_at)
+               VALUES (gen_random_uuid(), '{ws_id}', '{source_task_id}', 'docs',
+                '{other_task_id}', NULL, '{user_id}', now())"#
+        ))
+        .await;
+
+    assert!(
+        docs_to_task.is_err(),
+        "a 'docs' reference pointing at a task must be rejected by the DB"
     );
 
     db.teardown().await;

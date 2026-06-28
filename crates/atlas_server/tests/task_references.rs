@@ -290,3 +290,48 @@ async fn spec_reference_with_task_id_is_rejected() {
 
     db.teardown().await;
 }
+
+#[tokio::test]
+async fn valid_docs_reference_with_document_target_is_accepted() {
+    use sea_orm::ConnectionTrait;
+
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "ref-docs-user").await;
+    let ctx = support::ctx(&ws, &user);
+
+    let (_, _, task_a) = seed_project_board_task(&db, &ctx, "ref-docs", "RDC").await;
+
+    let doc_id = uuid::Uuid::now_v7();
+    db.conn()
+        .execute_unprepared(&format!(
+            r#"INSERT INTO documents
+               (id, workspace_id, title, content, current_revision_seq,
+                created_by_user_id, created_at, updated_at)
+               VALUES ('{doc_id}', '{ws_id}', 'Docs', '', 0, '{user_id}', now(), now())"#,
+            ws_id = ws.id.0,
+            user_id = user.id.0,
+        ))
+        .await
+        .expect("seed document");
+
+    let ref_repo = PgTaskReferenceRepo::new(db.conn().clone());
+
+    let reference = ref_repo
+        .create(
+            &ctx,
+            NewTaskReference {
+                source_task_id: task_a.id,
+                kind: ReferenceKind::Docs,
+                target_task_id: None,
+                target_document_id: Some(DocumentId(doc_id)),
+            },
+        )
+        .await
+        .expect("valid Docs reference must be created");
+
+    assert_eq!(reference.kind, ReferenceKind::Docs);
+    assert_eq!(reference.target_document_id, Some(DocumentId(doc_id)));
+    assert_eq!(reference.target_task_id, None);
+
+    db.teardown().await;
+}

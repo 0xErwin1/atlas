@@ -1375,10 +1375,11 @@ pub(crate) async fn create_reference(
         "blocks" => ReferenceKind::Blocks,
         "parent" => ReferenceKind::Parent,
         "spec" => ReferenceKind::Spec,
+        "docs" => ReferenceKind::Docs,
         other => {
             return Err(ApiError::InvalidInput {
                 message: format!(
-                    "unknown reference kind: {other}; must be relates|blocks|parent|spec"
+                    "unknown reference kind: {other}; must be relates|blocks|parent|spec|docs"
                 ),
             });
         }

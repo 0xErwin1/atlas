@@ -266,6 +266,7 @@ pub fn task_reference_from(m: task_reference::Model) -> Result<TaskReference, St
         "blocks" => ReferenceKind::Blocks,
         "parent" => ReferenceKind::Parent,
         "spec" => ReferenceKind::Spec,
+        "docs" => ReferenceKind::Docs,
         other => return Err(format!("unknown ReferenceKind: {other}")),
     };
     Ok(TaskReference {

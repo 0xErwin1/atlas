@@ -8688,7 +8688,7 @@
         "properties": {
           "kind": {
             "type": "string",
-            "description": "\"relates\" | \"blocks\" | \"parent\" | \"spec\""
+            "description": "\"relates\" | \"blocks\" | \"parent\" | \"spec\" | \"docs\""
           },
           "target_document_id": {
             "type": [
@@ -10289,7 +10289,7 @@
           },
           "kind": {
             "type": "string",
-            "description": "\"relates\" | \"blocks\" | \"parent\" | \"spec\""
+            "description": "\"relates\" | \"blocks\" | \"parent\" | \"spec\" | \"docs\""
           },
           "target_document_id": {
             "type": [
@@ -10701,7 +10701,7 @@
         "properties": {
           "kind": {
             "type": "string",
-            "description": "\"relates\" | \"blocks\" | \"parent\" | \"spec\""
+            "description": "\"relates\" | \"blocks\" | \"parent\" | \"spec\" | \"docs\""
           },
           "source_readable_id": {
             "type": "string"

@@ -175,7 +175,7 @@ pub fn authorize_share(
 /// Validates that a task reference has exactly one target consistent with its kind,
 /// and that the source task does not reference itself.
 ///
-/// Spec → document target; Relates/Blocks/Parent → task target.
+/// Spec/Docs → document target; Relates/Blocks/Parent → task target.
 /// Multi-node Parent cycles (A→B→A) are not detected here; they require DB
 /// ancestry traversal and are left as a follow-up.
 pub fn validate_reference(
@@ -205,10 +205,10 @@ pub fn validate_reference(
     }
 
     match kind {
-        ReferenceKind::Spec => {
+        ReferenceKind::Spec | ReferenceKind::Docs => {
             if target_document_id.is_none() {
                 return Err(DomainError::InvalidInput {
-                    message: "Spec reference requires a document target".into(),
+                    message: format!("{} reference requires a document target", kind.as_str()),
                 });
             }
         }
