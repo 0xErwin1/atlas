@@ -71,6 +71,10 @@ export function activityPhrase(kind: string, payload: Payload): string {
       return 'removed a checklist item from';
     case 'checklist_promoted':
       return 'promoted a checklist item on';
+    case 'document_mentioned': {
+      const title = stringField(variantData(kind, payload), 'title');
+      return title !== null ? `referenced the document "${title}" in` : 'referenced a document in';
+    }
     default:
       return humaniseKind(kind);
   }

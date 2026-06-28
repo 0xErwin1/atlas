@@ -255,6 +255,7 @@ pub enum ActivityKind {
     ChecklistUpdated,
     ChecklistRemoved,
     ChecklistPromoted,
+    DocumentMentioned,
     Deleted,
 }
 
@@ -272,6 +273,7 @@ impl ActivityKind {
             ActivityKind::ChecklistUpdated => "checklist_updated",
             ActivityKind::ChecklistRemoved => "checklist_removed",
             ActivityKind::ChecklistPromoted => "checklist_promoted",
+            ActivityKind::DocumentMentioned => "document_mentioned",
             ActivityKind::Deleted => "deleted",
         }
     }
@@ -320,6 +322,13 @@ pub enum ActivityPayload {
     ChecklistPromoted {
         item_id: ChecklistItemId,
         promoted_task_id: TaskId,
+    },
+    /// A `[[wikilink]]` to a document appeared in the task description. `document_id`
+    /// is the resolved target, or `None` for a pending link to a not-yet-existing
+    /// document (mirrors the pending-link rule in `document_links`).
+    DocumentMentioned {
+        document_id: Option<DocumentId>,
+        title: String,
     },
     Deleted,
 }

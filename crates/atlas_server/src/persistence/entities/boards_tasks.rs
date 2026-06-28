@@ -351,6 +351,7 @@ pub fn activity_kind_from_str(s: &str) -> Result<ActivityKind, String> {
         "checklist_updated" => Ok(ActivityKind::ChecklistUpdated),
         "checklist_removed" => Ok(ActivityKind::ChecklistRemoved),
         "checklist_promoted" => Ok(ActivityKind::ChecklistPromoted),
+        "document_mentioned" => Ok(ActivityKind::DocumentMentioned),
         "deleted" => Ok(ActivityKind::Deleted),
         other => Err(format!("unknown ActivityKind: {other}")),
     }
@@ -441,6 +442,7 @@ mod tests {
             "checklist_updated",
             "checklist_removed",
             "checklist_promoted",
+            "document_mentioned",
             "deleted",
         ];
         for k in &kinds {

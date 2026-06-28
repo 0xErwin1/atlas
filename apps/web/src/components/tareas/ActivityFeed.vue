@@ -20,6 +20,7 @@ const VERB: Record<string, string> = {
   checklist_updated: 'updated a checklist item',
   checklist_removed: 'removed a checklist item',
   checklist_promoted: 'promoted a checklist item to a task',
+  document_mentioned: 'referenced a document',
   deleted: 'deleted the task',
 };
 

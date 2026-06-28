@@ -9,8 +9,8 @@ mod support;
 
 use atlas_domain::{
     entities::boards_tasks::{
-        ActivityKind, AssigneeRef, NewBoard, NewTask, NewTaskChecklistItem, NewTaskReference,
-        PositionBetween, Priority, ReferenceKind, TaskPatch,
+        ActivityKind, ActivityPayload, AssigneeRef, NewBoard, NewTask, NewTaskChecklistItem,
+        NewTaskReference, PositionBetween, Priority, ReferenceKind, TaskPatch,
     },
     entities::workspace_core::NewProject,
     permissions::{Visibility, VisibilityRole},
@@ -1261,6 +1261,141 @@ async fn promote_checklist_item_concurrent_double_promote_is_rejected() {
         0,
         "no inbound Parent reference must exist after a rejected promote; got {}",
         inbound.len()
+    );
+
+    db.teardown().await;
+}
+
+fn mentioned_titles(entries: &[atlas_domain::entities::boards_tasks::TaskActivity]) -> Vec<String> {
+    entries
+        .iter()
+        .filter_map(|e| match &e.payload {
+            ActivityPayload::DocumentMentioned { title, .. } => Some(title.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn task_service_create_with_wikilink_emits_document_mentioned_activity() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "svc-mention-user").await;
+    let ctx = support::ctx(&ws, &user);
+
+    let (proj, board, col) = seed_project_board_col(&db, &ctx, "svc-mention", "MN").await;
+    let svc = make_svc(&db);
+
+    let task = svc
+        .create(
+            &ctx,
+            NewTask {
+                project_id: proj.id,
+                board_id: board.id,
+                column_id: col.id,
+                title: "With link".into(),
+                description: "See [[Design Doc]] for details".into(),
+                priority: None,
+                due_date: None,
+                estimate: None,
+                labels: vec![],
+                properties: None,
+                position: PositionBetween {
+                    before: None,
+                    after: None,
+                },
+            },
+        )
+        .await
+        .expect("create task");
+
+    let activity_repo = PgTaskActivityRepo::new(db.conn().clone());
+    let entries = activity_repo
+        .list_for_task(&ctx, task.id, None, 50)
+        .await
+        .expect("list activity");
+
+    assert!(
+        entries.iter().any(|e| e.kind == ActivityKind::Created),
+        "create must still emit Created"
+    );
+    assert_eq!(
+        mentioned_titles(&entries),
+        vec!["Design Doc".to_string()],
+        "a wikilink in the initial description must emit one DocumentMentioned"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn task_service_patch_emits_document_mentioned_only_for_new_wikilinks() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "svc-mention2-user").await;
+    let ctx = support::ctx(&ws, &user);
+
+    let (proj, board, col) = seed_project_board_col(&db, &ctx, "svc-mention2", "MO").await;
+    let svc = make_svc(&db);
+
+    let task = svc
+        .create(
+            &ctx,
+            NewTask {
+                project_id: proj.id,
+                board_id: board.id,
+                column_id: col.id,
+                title: "Evolving".into(),
+                description: "Start with [[Doc A]]".into(),
+                priority: None,
+                due_date: None,
+                estimate: None,
+                labels: vec![],
+                properties: None,
+                position: PositionBetween {
+                    before: None,
+                    after: None,
+                },
+            },
+        )
+        .await
+        .expect("create task");
+
+    // Adds [[Doc B]] while keeping [[Doc A]]: only Doc B is new.
+    svc.patch(
+        &ctx,
+        task.id,
+        TaskPatch {
+            description: Some("Start with [[Doc A]] and now [[Doc B]]".into()),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("patch adds a wikilink");
+
+    // Edits prose without touching the wikilinks: nothing new.
+    svc.patch(
+        &ctx,
+        task.id,
+        TaskPatch {
+            description: Some("Reworded, still [[Doc A]] and [[Doc B]]".into()),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("patch without new wikilink");
+
+    let activity_repo = PgTaskActivityRepo::new(db.conn().clone());
+    let entries = activity_repo
+        .list_for_task(&ctx, task.id, None, 50)
+        .await
+        .expect("list activity");
+
+    let mut titles = mentioned_titles(&entries);
+    titles.sort();
+
+    assert_eq!(
+        titles,
+        vec!["Doc A".to_string(), "Doc B".to_string()],
+        "each wikilink must be announced exactly once across its lifetime, never re-emitted"
     );
 
     db.teardown().await;

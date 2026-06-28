@@ -779,6 +779,12 @@ async fn sync_task_description_links(
     task_id: TaskId,
     description: &str,
 ) -> Result<(), DomainError> {
+    let previous_titles: std::collections::HashSet<String> =
+        PgDocumentLinkRepo::list_titles_for_task_source_in(conn, ctx, task_id)
+            .await?
+            .into_iter()
+            .collect();
+
     let raw_links = parse_wikilinks(description);
 
     let mut extracted = Vec::with_capacity(raw_links.len());
@@ -800,7 +806,31 @@ async fn sync_task_description_links(
         });
     }
 
-    PgDocumentLinkRepo::replace_for_task_source_in(conn, ctx, task_id, extracted).await
+    let newly_mentioned: Vec<ExtractedLink> = extracted
+        .iter()
+        .filter(|link| !previous_titles.contains(&link.target_title))
+        .cloned()
+        .collect();
+
+    PgDocumentLinkRepo::replace_for_task_source_in(conn, ctx, task_id, extracted).await?;
+
+    for link in newly_mentioned {
+        PgTaskActivityRepo::append_in(
+            conn,
+            ctx,
+            NewTaskActivity {
+                task_id,
+                kind: ActivityKind::DocumentMentioned,
+                payload: ActivityPayload::DocumentMentioned {
+                    document_id: link.target_document_id,
+                    title: link.target_title,
+                },
+            },
+        )
+        .await?;
+    }
+
+    Ok(())
 }
 
 fn collect_field_changes(

@@ -664,6 +664,25 @@ impl PgDocumentLinkRepo {
     /// The delete and the N inserts run on `conn`, which may be the caller's
     /// `DatabaseTransaction`, so wikilink persistence joins the task write and
     /// activity append in a single atomic unit (no torn link state).
+    /// Lists the current wikilink target titles for a task source, inside an
+    /// existing transaction. Used to diff the previous link set against a new one
+    /// so only newly-added wikilinks emit a `DocumentMentioned` activity, rather
+    /// than re-emitting every link on each description edit.
+    pub async fn list_titles_for_task_source_in(
+        conn: &impl ConnectionTrait,
+        ctx: &WorkspaceCtx,
+        source: TaskId,
+    ) -> Result<Vec<String>, DomainError> {
+        let rows = document_link::Entity::find()
+            .filter(document_link::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(document_link::Column::SourceTaskId.eq(source.0))
+            .all(conn)
+            .await
+            .map_err(db_err)?;
+
+        Ok(rows.into_iter().map(|r| r.target_title).collect())
+    }
+
     pub async fn replace_for_task_source_in(
         conn: &impl ConnectionTrait,
         ctx: &WorkspaceCtx,

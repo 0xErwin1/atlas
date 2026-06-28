@@ -32,6 +32,17 @@ describe('activityPhrase', () => {
     expect(activityPhrase('reference_removed', {})).toBe('removed a reference from');
   });
 
+  it('enriches document_mentioned with the document title when present', () => {
+    const payload = { document_mentioned: { document_id: 'd1', title: 'Design Doc' } };
+    expect(activityPhrase('document_mentioned', payload)).toBe('referenced the document "Design Doc" in');
+  });
+
+  it('falls back when document_mentioned payload lacks a title', () => {
+    expect(activityPhrase('document_mentioned', { document_mentioned: { document_id: 'd1' } })).toBe(
+      'referenced a document in',
+    );
+  });
+
   it('humanises an unknown kind rather than rendering a raw token', () => {
     expect(activityPhrase('some_new_verb', {})).toBe('some new verb');
     expect(activityPhrase('', null)).toBe('updated this task');

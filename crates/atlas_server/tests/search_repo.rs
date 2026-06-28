@@ -1976,14 +1976,7 @@ async fn prefix_search_matches_partial_word_across_boards() {
 
     // With prefix=true: "atl" matches "atlas" on the OTHER board.
     let prefix_hits = repo
-        .search(
-            &ctx,
-            &principal,
-            &make_prefix_query("atl"),
-            50,
-            None,
-            false,
-        )
+        .search(&ctx, &principal, &make_prefix_query("atl"), 50, None, false)
         .await
         .expect("prefix search");
     assert!(
@@ -1993,14 +1986,7 @@ async fn prefix_search_matches_partial_word_across_boards() {
 
     // Without prefix: "atl" is a whole word and must NOT match "atlas".
     let whole_word_hits = repo
-        .search(
-            &ctx,
-            &principal,
-            &make_search_query("atl"),
-            50,
-            None,
-            false,
-        )
+        .search(&ctx, &principal, &make_search_query("atl"), 50, None, false)
         .await
         .expect("whole-word search");
     assert!(
@@ -2040,7 +2026,14 @@ async fn search_by_task_code_matches_readable_id() {
 
     // The first task of a fresh project carries readable_id "COD-1".
     let exact_hits = repo
-        .search(&ctx, &principal, &make_search_query("COD-1"), 50, None, false)
+        .search(
+            &ctx,
+            &principal,
+            &make_search_query("COD-1"),
+            50,
+            None,
+            false,
+        )
         .await
         .expect("code search");
     assert!(
@@ -2050,7 +2043,14 @@ async fn search_by_task_code_matches_readable_id() {
 
     // Case-insensitive prefix on the code resolves it too.
     let prefix_hits = repo
-        .search(&ctx, &principal, &make_search_query("cod-"), 50, None, false)
+        .search(
+            &ctx,
+            &principal,
+            &make_search_query("cod-"),
+            50,
+            None,
+            false,
+        )
         .await
         .expect("code prefix search");
     assert!(
