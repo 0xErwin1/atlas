@@ -52,6 +52,13 @@ fn to_prefix_tsquery(text: &str) -> String {
         .join(" & ")
 }
 
+/// Whether the query looks like a task code (e.g. `ATL-10`), i.e. it carries a
+/// digit or a hyphen. Used to gate readable_id matching so a plain word never
+/// floods results with every prefix-numbered task while a code still resolves.
+fn is_code_like(text: &str) -> bool {
+    text.chars().any(|c| c.is_ascii_digit() || c == '-')
+}
+
 // ---------------------------------------------------------------------------
 // Result row (both arms expose the same column list for UNION ALL)
 // ---------------------------------------------------------------------------
@@ -184,6 +191,14 @@ impl SearchRepo for PgSearchRepo {
             0
         };
 
+        // A code-like query (e.g. `ATL-10`) also matches a task by readable_id —
+        // which the FTS vector does not index — so typing a task code resolves it.
+        let code_query: Option<String> = if has_text && is_code_like(&query.text) {
+            Some(query.text.trim().to_string())
+        } else {
+            None
+        };
+
         let project_filter_subquery = build_project_filter_subquery(&query.filters, &mut values);
         let updated_after_cond = build_updated_after_cond(&query.filters, &mut values);
         let updated_before_cond = build_updated_before_cond(&query.filters, &mut values);
@@ -271,6 +286,7 @@ impl SearchRepo for PgSearchRepo {
                 &status_values,
                 &priority_values,
                 &assignee_values,
+                code_query.as_deref(),
             ));
         }
 
@@ -520,17 +536,35 @@ fn build_task_arm(
     status_values: &[String],
     priority_values: &[String],
     assignee_values: &[String],
+    code_query: Option<&str>,
 ) -> String {
     let tsq_expr = format!("{}('simple', ${})", ctx.tsq_fn, ctx.tsq_param);
 
+    // Case-insensitive prefix match on the task code (readable_id), e.g. `ATL-1`
+    // surfaces ATL-10. Only present for a code-like query (see `is_code_like`),
+    // since readable_id is not part of the FTS vector.
+    let code_cond: Option<String> = code_query.map(|code| {
+        values.push(format!("{code}%").into());
+        format!("upper(t.readable_id) LIKE upper(${})", values.len())
+    });
+
     let fts_where = if ctx.has_text {
-        format!("AND t.search_vector @@ {tsq_expr}")
+        match &code_cond {
+            Some(code) => format!("AND (t.search_vector @@ {tsq_expr} OR {code})"),
+            None => format!("AND t.search_vector @@ {tsq_expr}"),
+        }
     } else {
         String::new()
     };
 
     let score_expr = if ctx.has_text {
-        format!("ts_rank_cd(t.search_vector, {tsq_expr})")
+        match &code_cond {
+            // A code hit ranks above any text rank so the exact task lands first.
+            Some(code) => format!(
+                "ts_rank_cd(t.search_vector, {tsq_expr}) + CASE WHEN {code} THEN 1000::real ELSE 0::real END"
+            ),
+            None => format!("ts_rank_cd(t.search_vector, {tsq_expr})"),
+        }
     } else {
         "0::real".to_string()
     };

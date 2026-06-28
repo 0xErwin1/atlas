@@ -2010,3 +2010,53 @@ async fn prefix_search_matches_partial_word_across_boards() {
 
     db.teardown().await;
 }
+
+// ---------------------------------------------------------------------------
+// A code-like query (e.g. ATL-10) resolves a task by its readable_id, which the
+// FTS vector does not index. The title/description deliberately omit the code,
+// so a hit can only come from the readable_id match.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn search_by_task_code_matches_readable_id() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, owner) = support::seed_workspace(&db, "srch-code-owner").await;
+    let ctx = support::ctx(&ws, &owner);
+
+    let (project, board, col) = seed_project_and_board(&db, &ctx, "srch-code", "COD").await;
+    let coded_task = seed_task(
+        &db,
+        &ctx,
+        col.id,
+        board.id,
+        project.id,
+        "Refactor the storage layer",
+        "no code mentioned in the body",
+    )
+    .await;
+
+    let repo = PgSearchRepo::new(db.conn().clone());
+    let principal = Principal::User(owner.id);
+
+    // The first task of a fresh project carries readable_id "COD-1".
+    let exact_hits = repo
+        .search(&ctx, &principal, &make_search_query("COD-1"), 50, None, false)
+        .await
+        .expect("code search");
+    assert!(
+        exact_hits.iter().any(|h| h.id == coded_task.0),
+        "search for 'COD-1' must resolve the task by readable_id; got: {exact_hits:?}"
+    );
+
+    // Case-insensitive prefix on the code resolves it too.
+    let prefix_hits = repo
+        .search(&ctx, &principal, &make_search_query("cod-"), 50, None, false)
+        .await
+        .expect("code prefix search");
+    assert!(
+        prefix_hits.iter().any(|h| h.id == coded_task.0),
+        "search for 'cod-' must resolve the task by readable_id (case-insensitive prefix); got: {prefix_hits:?}"
+    );
+
+    db.teardown().await;
+}
