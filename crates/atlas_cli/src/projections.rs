@@ -8,6 +8,7 @@
     )
 )]
 
+use atlas_api::dtos::audit::AuditEntryDto;
 use atlas_api::dtos::boards_tasks::{
     ActivityEntryDto, AssigneeDto, BoardSummaryDto, ChecklistItemDto, ColumnDto, PromotionDto,
     ReferenceDto, TaskBacklinkDto, TaskDto, TaskSummaryDto,
@@ -24,8 +25,9 @@ use atlas_api::dtos::status_templates::StatusTemplateDto;
 use atlas_api::dtos::tags::TagDto;
 use atlas_api::dtos::task_views::{TaskViewDto, TaskViewFiltersDto};
 use atlas_api::dtos::{
-    ActivationLinkResponse, ApiKeyCreated, ApiKeyDto, ApiKeyGrantDto, CreateUserResponse,
-    GrantedByDto, PrincipalDto, ProjectDto, UserDto, UserMembershipDto, WorkspaceDto,
+    ActivationLinkResponse, ApiKeyCreated, ApiKeyDto, ApiKeyGrantDto, CreateUserResponse, GrantDto,
+    GrantPrincipal, GrantedByDto, PrincipalDto, ProjectDto, UserDto, UserMembershipDto,
+    WorkspaceDto,
 };
 use chrono::{DateTime, Utc};
 use serde::Serialize;
@@ -1838,6 +1840,128 @@ impl TableRow for PropertyDefinitionProjection {
 }
 
 // ---------------------------------------------------------------------------
+// Permission grant projections (Batch 5-C)
+// ---------------------------------------------------------------------------
+
+/// Projection for a permission grant (`grants workspace/project list`, `create`).
+///
+/// Mirrors `GrantDto` fields verbatim. `principal` carries the grantee type
+/// and UUID. `id` is retained so callers can use it with `revoke`.
+#[derive(Debug, Serialize)]
+pub(crate) struct GrantProjection {
+    pub(crate) id: Uuid,
+    pub(crate) principal: GrantPrincipal,
+    pub(crate) role: String,
+    pub(crate) created_at: DateTime<Utc>,
+}
+
+impl From<GrantDto> for GrantProjection {
+    fn from(g: GrantDto) -> Self {
+        Self {
+            id: g.id,
+            principal: g.principal,
+            role: g.role,
+            created_at: g.created_at,
+        }
+    }
+}
+
+impl TableRow for GrantProjection {
+    fn headers() -> &'static [&'static str] {
+        &["ID", "Principal Type", "Principal ID", "Role", "Created At"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        vec![
+            self.id.to_string(),
+            self.principal.r#type.clone(),
+            self.principal.id.to_string(),
+            self.role.clone(),
+            self.created_at.format("%Y-%m-%d").to_string(),
+        ]
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Audit entry projections (Batch 5-C)
+// ---------------------------------------------------------------------------
+
+/// Actor sub-projection for `AuditEntryProjection`, mirroring the actor
+/// object in the MCP `project_audit_entry` shape.
+///
+/// `id` is dropped (internal UUID with no client-navigation value).
+/// Optional fields are omitted when absent.
+#[derive(Debug, Serialize)]
+pub(crate) struct AuditActorProjection {
+    #[serde(rename = "type")]
+    pub(crate) type_: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) display_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) key_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) account_status: Option<String>,
+}
+
+/// Projection for a security audit log entry, mirroring the MCP
+/// `project_audit_entry` shape exactly.
+///
+/// `id` and `workspace_id` are dropped — internal identifiers with no
+/// agent-navigation value. `metadata` is passed through verbatim.
+#[derive(Debug, Serialize)]
+pub(crate) struct AuditEntryProjection {
+    pub(crate) actor: AuditActorProjection,
+    pub(crate) action: String,
+    pub(crate) target_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) target_id: Option<Uuid>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) target_label: Option<String>,
+    pub(crate) metadata: serde_json::Value,
+    pub(crate) created_at: DateTime<Utc>,
+}
+
+impl From<AuditEntryDto> for AuditEntryProjection {
+    fn from(entry: AuditEntryDto) -> Self {
+        let actor = AuditActorProjection {
+            type_: entry.actor.r#type,
+            display_name: entry.actor.display_name,
+            key_type: entry.actor.key_type,
+            account_status: entry.actor.account_status,
+        };
+        Self {
+            actor,
+            action: entry.action,
+            target_type: entry.target_type,
+            target_id: entry.target_id,
+            target_label: entry.target_label,
+            metadata: entry.metadata,
+            created_at: entry.created_at,
+        }
+    }
+}
+
+impl TableRow for AuditEntryProjection {
+    fn headers() -> &'static [&'static str] {
+        &["Action", "Actor", "Target Type", "Created At"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        let actor_label = self
+            .actor
+            .display_name
+            .clone()
+            .unwrap_or_else(|| self.actor.type_.clone());
+        vec![
+            self.action.clone(),
+            actor_label,
+            self.target_type.clone(),
+            self.created_at.format("%Y-%m-%d %H:%M").to_string(),
+        ]
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -3385,5 +3509,172 @@ mod tests {
         let value = serde_json::to_value(&proj).unwrap();
         let opts = value["options"].as_array().unwrap();
         assert_eq!(opts.len(), 3);
+    }
+
+    // -----------------------------------------------------------------------
+    // Grant projections (WU-29)
+    // -----------------------------------------------------------------------
+
+    fn make_grant_dto() -> atlas_api::dtos::GrantDto {
+        atlas_api::dtos::GrantDto {
+            id: Uuid::now_v7(),
+            principal: atlas_api::dtos::GrantPrincipal {
+                r#type: "user".to_owned(),
+                id: Uuid::now_v7(),
+            },
+            role: "viewer".to_owned(),
+            created_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn grant_projection_contract_fields() {
+        let proj = GrantProjection::from(make_grant_dto());
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_projection_fields(&value, &["id", "principal", "role", "created_at"], &[]);
+    }
+
+    #[test]
+    fn grant_projection_principal_type_serializes_as_type_key() {
+        let proj = GrantProjection::from(make_grant_dto());
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_eq!(value["principal"]["type"], "user");
+        assert!(value["principal"].get("id").is_some());
+    }
+
+    #[test]
+    fn grant_projection_role_preserved() {
+        let proj = GrantProjection::from(make_grant_dto());
+        assert_eq!(proj.role, "viewer");
+    }
+
+    // -----------------------------------------------------------------------
+    // Audit entry projections (WU-29)
+    // -----------------------------------------------------------------------
+
+    fn make_audit_entry_dto(
+        actor_type: &str,
+        display_name: Option<&str>,
+        target_id: Option<Uuid>,
+        target_label: Option<&str>,
+    ) -> atlas_api::dtos::audit::AuditEntryDto {
+        atlas_api::dtos::audit::AuditEntryDto {
+            id: Uuid::now_v7(),
+            workspace_id: Some(Uuid::now_v7()),
+            actor: atlas_api::dtos::documents::ActorDto {
+                r#type: actor_type.to_owned(),
+                id: Uuid::now_v7(),
+                display_name: display_name.map(str::to_owned),
+                key_type: if actor_type == "api_key" {
+                    Some("agent".to_owned())
+                } else {
+                    None
+                },
+                account_status: if actor_type == "user" {
+                    Some("active".to_owned())
+                } else {
+                    None
+                },
+            },
+            action: "membership.role_changed".to_owned(),
+            target_type: "user".to_owned(),
+            target_id,
+            target_label: target_label.map(str::to_owned),
+            metadata: serde_json::json!({"old_role": "member", "new_role": "admin"}),
+            created_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn audit_entry_projection_drops_id_and_workspace_id() {
+        let proj =
+            AuditEntryProjection::from(make_audit_entry_dto("user", Some("Alice"), None, None));
+        let value = serde_json::to_value(&proj).unwrap();
+        assert!(value.get("id").is_none(), "id must be dropped");
+        assert!(
+            value.get("workspace_id").is_none(),
+            "workspace_id must be dropped"
+        );
+    }
+
+    #[test]
+    fn audit_entry_projection_contract_required_fields() {
+        let proj =
+            AuditEntryProjection::from(make_audit_entry_dto("user", Some("Alice"), None, None));
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_projection_fields(
+            &value,
+            &["actor", "action", "target_type", "metadata", "created_at"],
+            &["target_id", "target_label"],
+        );
+    }
+
+    #[test]
+    fn audit_entry_projection_actor_type_and_display_name() {
+        let proj =
+            AuditEntryProjection::from(make_audit_entry_dto("user", Some("Alice"), None, None));
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_eq!(value["actor"]["type"], "user");
+        assert_eq!(value["actor"]["display_name"], "Alice");
+        assert_eq!(value["actor"]["account_status"], "active");
+        assert!(
+            value["actor"].get("id").is_none(),
+            "actor.id must be dropped"
+        );
+    }
+
+    #[test]
+    fn audit_entry_projection_api_key_actor_surfaces_key_type() {
+        let proj =
+            AuditEntryProjection::from(make_audit_entry_dto("api_key", Some("ci-bot"), None, None));
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_eq!(value["actor"]["type"], "api_key");
+        assert_eq!(value["actor"]["key_type"], "agent");
+        assert!(
+            value["actor"].get("account_status").is_none(),
+            "account_status absent for api_key actor"
+        );
+    }
+
+    #[test]
+    fn audit_entry_projection_target_id_absent_when_none() {
+        let proj =
+            AuditEntryProjection::from(make_audit_entry_dto("user", Some("Alice"), None, None));
+        let value = serde_json::to_value(&proj).unwrap();
+        assert!(value.get("target_id").is_none());
+    }
+
+    #[test]
+    fn audit_entry_projection_target_id_present_when_some() {
+        let tid = Uuid::now_v7();
+        let proj = AuditEntryProjection::from(make_audit_entry_dto(
+            "user",
+            Some("Alice"),
+            Some(tid),
+            None,
+        ));
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_eq!(value["target_id"].as_str().unwrap(), tid.to_string());
+    }
+
+    #[test]
+    fn audit_entry_projection_target_label_present_when_some() {
+        let proj = AuditEntryProjection::from(make_audit_entry_dto(
+            "user",
+            Some("Alice"),
+            Some(Uuid::now_v7()),
+            Some("bob"),
+        ));
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_eq!(value["target_label"], "bob");
+    }
+
+    #[test]
+    fn audit_entry_projection_metadata_passthrough() {
+        let proj =
+            AuditEntryProjection::from(make_audit_entry_dto("user", Some("Alice"), None, None));
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_eq!(value["metadata"]["old_role"], "member");
+        assert_eq!(value["metadata"]["new_role"], "admin");
     }
 }
