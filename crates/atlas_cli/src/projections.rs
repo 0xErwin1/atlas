@@ -8,9 +8,12 @@
     )
 )]
 
-use atlas_api::dtos::boards_tasks::{TaskDto, TaskSummaryDto};
+use atlas_api::dtos::boards_tasks::{BoardSummaryDto, ColumnDto, TaskDto, TaskSummaryDto};
 use atlas_api::dtos::documents::{ActorDto, DocumentDto, DocumentSummaryDto};
+use atlas_api::dtos::folders::FolderDto;
 use atlas_api::dtos::search::{SearchHitDto, SearchKindDto};
+use atlas_api::dtos::tags::TagDto;
+use atlas_api::dtos::{PrincipalDto, ProjectDto, WorkspaceDto};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use uuid::Uuid;
@@ -143,7 +146,11 @@ pub(crate) struct TaskSummaryProjection {
 
 impl From<TaskSummaryDto> for TaskSummaryProjection {
     fn from(dto: TaskSummaryDto) -> Self {
-        let assignees = dto.assignees.into_iter().map(AssigneeProjection::from).collect();
+        let assignees = dto
+            .assignees
+            .into_iter()
+            .map(AssigneeProjection::from)
+            .collect();
 
         Self {
             readable_id: dto.readable_id,
@@ -161,7 +168,9 @@ impl From<TaskSummaryDto> for TaskSummaryProjection {
 
 impl TableRow for TaskSummaryProjection {
     fn headers() -> &'static [&'static str] {
-        &["ID", "Title", "Board", "Column", "Priority", "Labels", "Est.", "Updated"]
+        &[
+            "ID", "Title", "Board", "Column", "Priority", "Labels", "Est.", "Updated",
+        ]
     }
 
     fn row(&self) -> Vec<String> {
@@ -230,7 +239,9 @@ impl From<TaskDto> for TaskCompactProjection {
 
 impl TableRow for TaskCompactProjection {
     fn headers() -> &'static [&'static str] {
-        &["ID", "Title", "Board", "Column", "Priority", "Labels", "Est.", "Due", "Updated"]
+        &[
+            "ID", "Title", "Board", "Column", "Priority", "Labels", "Est.", "Due", "Updated",
+        ]
     }
 
     fn row(&self) -> Vec<String> {
@@ -347,7 +358,9 @@ impl TaskFullProjection {
 
 impl TableRow for TaskFullProjection {
     fn headers() -> &'static [&'static str] {
-        &["ID", "Title", "Board", "Column", "Priority", "Labels", "Est.", "Due", "Updated"]
+        &[
+            "ID", "Title", "Board", "Column", "Priority", "Labels", "Est.", "Due", "Updated",
+        ]
     }
 
     fn row(&self) -> Vec<String> {
@@ -551,6 +564,276 @@ impl TableRow for DeleteDocProjection {
 
     fn row(&self) -> Vec<String> {
         vec![self.deleted.to_string(), self.slug.clone()]
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Structure projections (Batch 3)
+// ---------------------------------------------------------------------------
+
+/// Workspace projection mirroring `project_workspace` from the MCP.
+///
+/// `created_at` is dropped; the slug is the primary reference for subsequent
+/// scoped calls.
+#[derive(Debug, Serialize)]
+pub(crate) struct WorkspaceProjection {
+    pub(crate) id: Uuid,
+    pub(crate) name: String,
+    pub(crate) slug: String,
+    pub(crate) updated_at: DateTime<Utc>,
+}
+
+impl From<WorkspaceDto> for WorkspaceProjection {
+    fn from(ws: WorkspaceDto) -> Self {
+        Self {
+            id: ws.id,
+            name: ws.name,
+            slug: ws.slug,
+            updated_at: ws.updated_at,
+        }
+    }
+}
+
+impl TableRow for WorkspaceProjection {
+    fn headers() -> &'static [&'static str] {
+        &["ID", "Name", "Slug", "Updated"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        vec![
+            self.id.to_string(),
+            self.name.clone(),
+            self.slug.clone(),
+            self.updated_at.format("%Y-%m-%d").to_string(),
+        ]
+    }
+}
+
+/// Project projection mirroring `project_project` from the MCP.
+///
+/// `workspace_id` and `created_at` are dropped. `visibility_role` is omitted
+/// when absent (only present on non-public projects with an explicit grant role).
+#[derive(Debug, Serialize)]
+pub(crate) struct ProjectProjection {
+    pub(crate) id: Uuid,
+    pub(crate) name: String,
+    pub(crate) slug: String,
+    pub(crate) task_prefix: String,
+    pub(crate) visibility: String,
+    pub(crate) updated_at: DateTime<Utc>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) visibility_role: Option<String>,
+}
+
+impl From<ProjectDto> for ProjectProjection {
+    fn from(p: ProjectDto) -> Self {
+        Self {
+            id: p.id,
+            name: p.name,
+            slug: p.slug,
+            task_prefix: p.task_prefix,
+            visibility: p.visibility,
+            updated_at: p.updated_at,
+            visibility_role: p.visibility_role,
+        }
+    }
+}
+
+impl TableRow for ProjectProjection {
+    fn headers() -> &'static [&'static str] {
+        &["ID", "Name", "Slug", "Prefix", "Visibility", "Updated"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        vec![
+            self.id.to_string(),
+            self.name.clone(),
+            self.slug.clone(),
+            self.task_prefix.clone(),
+            self.visibility.clone(),
+            self.updated_at.format("%Y-%m-%d").to_string(),
+        ]
+    }
+}
+
+/// Board list-row projection mirroring `project_board_summary` from the MCP.
+///
+/// `created_at` is dropped; `id` and `name` are the primary references.
+#[derive(Debug, Serialize)]
+pub(crate) struct BoardProjection {
+    pub(crate) id: Uuid,
+    pub(crate) name: String,
+    pub(crate) updated_at: DateTime<Utc>,
+}
+
+impl From<BoardSummaryDto> for BoardProjection {
+    fn from(b: BoardSummaryDto) -> Self {
+        Self {
+            id: b.id,
+            name: b.name,
+            updated_at: b.updated_at,
+        }
+    }
+}
+
+impl TableRow for BoardProjection {
+    fn headers() -> &'static [&'static str] {
+        &["ID", "Name", "Updated"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        vec![
+            self.id.to_string(),
+            self.name.clone(),
+            self.updated_at.format("%Y-%m-%d").to_string(),
+        ]
+    }
+}
+
+/// Column projection mirroring `project_column` from the MCP.
+///
+/// `board_id`, `position_key`, and timestamps are dropped. `color` is omitted
+/// when absent.
+#[derive(Debug, Serialize)]
+pub(crate) struct ColumnProjection {
+    pub(crate) id: Uuid,
+    pub(crate) name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) color: Option<String>,
+}
+
+impl From<ColumnDto> for ColumnProjection {
+    fn from(col: ColumnDto) -> Self {
+        Self {
+            id: col.id,
+            name: col.name,
+            color: col.color,
+        }
+    }
+}
+
+impl TableRow for ColumnProjection {
+    fn headers() -> &'static [&'static str] {
+        &["ID", "Name", "Color"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        vec![
+            self.id.to_string(),
+            self.name.clone(),
+            self.color.clone().unwrap_or_default(),
+        ]
+    }
+}
+
+/// Tag projection mirroring `project_tag` from the MCP.
+///
+/// `workspace_id` and timestamps are dropped. `color` is omitted when absent.
+#[derive(Debug, Serialize)]
+pub(crate) struct TagProjection {
+    pub(crate) id: Uuid,
+    pub(crate) name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) color: Option<String>,
+}
+
+impl From<TagDto> for TagProjection {
+    fn from(tag: TagDto) -> Self {
+        Self {
+            id: tag.id,
+            name: tag.name,
+            color: tag.color,
+        }
+    }
+}
+
+impl TableRow for TagProjection {
+    fn headers() -> &'static [&'static str] {
+        &["ID", "Name", "Color"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        vec![
+            self.id.to_string(),
+            self.name.clone(),
+            self.color.clone().unwrap_or_default(),
+        ]
+    }
+}
+
+/// Member/principal projection mirroring `project_principal` from the MCP.
+///
+/// Exposes `principal_type`, `id`, and `display` — the minimum needed to
+/// resolve a human name to the id format required by assignee filters.
+#[derive(Debug, Serialize)]
+pub(crate) struct MemberProjection {
+    pub(crate) principal_type: String,
+    pub(crate) id: Uuid,
+    pub(crate) display: String,
+}
+
+impl From<PrincipalDto> for MemberProjection {
+    fn from(p: PrincipalDto) -> Self {
+        Self {
+            principal_type: p.principal_type,
+            id: p.id,
+            display: p.display,
+        }
+    }
+}
+
+impl TableRow for MemberProjection {
+    fn headers() -> &'static [&'static str] {
+        &["Type", "ID", "Display"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        vec![
+            self.principal_type.clone(),
+            self.id.to_string(),
+            self.display.clone(),
+        ]
+    }
+}
+
+/// Folder projection mirroring `project_folder` from the MCP.
+///
+/// `workspace_id`, `project_id`, and `created_at` are dropped.
+/// `parent_folder_id` is omitted when absent.
+#[derive(Debug, Serialize)]
+pub(crate) struct FolderProjection {
+    pub(crate) id: Uuid,
+    pub(crate) name: String,
+    pub(crate) updated_at: DateTime<Utc>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) parent_folder_id: Option<Uuid>,
+}
+
+impl From<FolderDto> for FolderProjection {
+    fn from(f: FolderDto) -> Self {
+        Self {
+            id: f.id,
+            name: f.name,
+            updated_at: f.updated_at,
+            parent_folder_id: f.parent_folder_id,
+        }
+    }
+}
+
+impl TableRow for FolderProjection {
+    fn headers() -> &'static [&'static str] {
+        &["ID", "Name", "Updated", "Parent"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        vec![
+            self.id.to_string(),
+            self.name.clone(),
+            self.updated_at.format("%Y-%m-%d").to_string(),
+            self.parent_folder_id
+                .map(|id| id.to_string())
+                .unwrap_or_default(),
+        ]
     }
 }
 
@@ -779,7 +1062,15 @@ mod tests {
         let value = serde_json::to_value(&proj).unwrap();
         assert_projection_fields(
             &value,
-            &["readable_id", "title", "board_name", "column_name", "labels", "assignees", "updated_at"],
+            &[
+                "readable_id",
+                "title",
+                "board_name",
+                "column_name",
+                "labels",
+                "assignees",
+                "updated_at",
+            ],
             &["priority", "estimate"],
         );
     }
@@ -803,7 +1094,13 @@ mod tests {
         assert_projection_fields(
             &value,
             &["readable_id", "title", "priority", "labels", "updated_at"],
-            &["board_name", "column_name", "estimate", "due_date", "parent_task_id"],
+            &[
+                "board_name",
+                "column_name",
+                "estimate",
+                "due_date",
+                "parent_task_id",
+            ],
         );
     }
 
@@ -812,8 +1109,14 @@ mod tests {
         let dto = make_task_dto("", "");
         let proj = TaskCompactProjection::from(dto);
         let value = serde_json::to_value(&proj).unwrap();
-        assert!(value.get("board_name").is_none(), "board_name must be absent when empty");
-        assert!(value.get("column_name").is_none(), "column_name must be absent when empty");
+        assert!(
+            value.get("board_name").is_none(),
+            "board_name must be absent when empty"
+        );
+        assert!(
+            value.get("column_name").is_none(),
+            "column_name must be absent when empty"
+        );
     }
 
     #[test]
@@ -832,11 +1135,26 @@ mod tests {
         let value = serde_json::to_value(&proj).unwrap();
         assert_projection_fields(
             &value,
-            &["readable_id", "title", "description", "labels", "updated_at"],
             &[
-                "board_name", "column_name", "priority", "estimate", "due_date", "parent_task_id",
-                "references", "references_error", "subtasks", "subtasks_error",
-                "assignees", "assignees_error",
+                "readable_id",
+                "title",
+                "description",
+                "labels",
+                "updated_at",
+            ],
+            &[
+                "board_name",
+                "column_name",
+                "priority",
+                "estimate",
+                "due_date",
+                "parent_task_id",
+                "references",
+                "references_error",
+                "subtasks",
+                "subtasks_error",
+                "assignees",
+                "assignees_error",
             ],
         );
     }
@@ -851,10 +1169,22 @@ mod tests {
             Ok(vec![]),
         );
         let value = serde_json::to_value(&proj).unwrap();
-        assert!(value.get("references").is_none(), "references must be absent on error");
-        assert!(value["references_error"].is_string(), "references_error must be set");
-        assert!(value.get("subtasks_error").is_none(), "subtasks_error must be absent on success");
-        assert!(value["subtasks"].is_array(), "subtasks must be present on success");
+        assert!(
+            value.get("references").is_none(),
+            "references must be absent on error"
+        );
+        assert!(
+            value["references_error"].is_string(),
+            "references_error must be set"
+        );
+        assert!(
+            value.get("subtasks_error").is_none(),
+            "subtasks_error must be absent on success"
+        );
+        assert!(
+            value["subtasks"].is_array(),
+            "subtasks must be present on success"
+        );
     }
 
     #[test]
@@ -866,7 +1196,10 @@ mod tests {
         let value = serde_json::to_value(&proj).unwrap();
         assert_eq!(value["deleted"], true);
         assert_eq!(value["readable_id"], "ATL-1");
-        assert!(value.get("id").is_none(), "must not contain a generic 'id' key");
+        assert!(
+            value.get("id").is_none(),
+            "must not contain a generic 'id' key"
+        );
         assert_projection_fields(&value, &["deleted", "readable_id"], &[]);
     }
 
@@ -909,7 +1242,16 @@ mod tests {
         let value = serde_json::to_value(&proj).unwrap();
         assert_projection_fields(
             &value,
-            &["id", "slug", "title", "head_revision_id", "head_seq", "updated_at", "folder_id", "project_id"],
+            &[
+                "id",
+                "slug",
+                "title",
+                "head_revision_id",
+                "head_seq",
+                "updated_at",
+                "folder_id",
+                "project_id",
+            ],
             &[],
         );
     }
@@ -919,7 +1261,10 @@ mod tests {
         let dto = make_document_dto(None, None);
         let proj = DocCompactProjection::from(dto);
         let value = serde_json::to_value(&proj).unwrap();
-        assert!(value["slug"].is_null(), "slug must be null (not absent) when None");
+        assert!(
+            value["slug"].is_null(),
+            "slug must be null (not absent) when None"
+        );
     }
 
     #[test]
@@ -927,7 +1272,10 @@ mod tests {
         let dto = make_document_dto(Some("x"), None);
         let proj = DocCompactProjection::from(dto);
         let value = serde_json::to_value(&proj).unwrap();
-        assert!(value["folder_id"].is_null(), "folder_id must be null when None");
+        assert!(
+            value["folder_id"].is_null(),
+            "folder_id must be null when None"
+        );
     }
 
     #[test]
@@ -938,8 +1286,16 @@ mod tests {
         assert_projection_fields(
             &value,
             &[
-                "id", "slug", "title", "head_revision_id", "head_seq", "updated_at",
-                "folder_id", "project_id", "content", "frontmatter",
+                "id",
+                "slug",
+                "title",
+                "head_revision_id",
+                "head_seq",
+                "updated_at",
+                "folder_id",
+                "project_id",
+                "content",
+                "frontmatter",
             ],
             &[],
         );
@@ -963,7 +1319,10 @@ mod tests {
         let value = serde_json::to_value(&proj).unwrap();
         assert_eq!(value["deleted"], true);
         assert_eq!(value["slug"], "my-doc");
-        assert!(value.get("id").is_none(), "must not contain a generic 'id' key");
+        assert!(
+            value.get("id").is_none(),
+            "must not contain a generic 'id' key"
+        );
         assert_projection_fields(&value, &["deleted", "slug"], &[]);
     }
 
@@ -984,7 +1343,10 @@ mod tests {
         let dto = make_document_summary_dto(None);
         let proj = DocSummaryProjection::from(dto);
         let value = serde_json::to_value(&proj).unwrap();
-        assert!(value.get("slug").is_none(), "slug must be absent (not null) when None");
+        assert!(
+            value.get("slug").is_none(),
+            "slug must be absent (not null) when None"
+        );
     }
 
     #[test]
@@ -993,5 +1355,256 @@ mod tests {
         let proj = DocSummaryProjection::from(dto);
         let value = serde_json::to_value(&proj).unwrap();
         assert_eq!(value["slug"], "notes");
+    }
+
+    // -----------------------------------------------------------------------
+    // Structure projections (T41 — WU-17)
+    // -----------------------------------------------------------------------
+
+    fn make_workspace_dto() -> WorkspaceDto {
+        WorkspaceDto {
+            id: Uuid::now_v7(),
+            name: "My Workspace".to_owned(),
+            slug: "my-ws".to_owned(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    fn make_project_dto(visibility_role: Option<&str>) -> ProjectDto {
+        ProjectDto {
+            id: Uuid::now_v7(),
+            workspace_id: Uuid::now_v7(),
+            name: "Atlas".to_owned(),
+            slug: "atlas".to_owned(),
+            task_prefix: "ATL".to_owned(),
+            visibility: "workspace".to_owned(),
+            visibility_role: visibility_role.map(str::to_owned),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    fn make_board_summary_dto() -> BoardSummaryDto {
+        BoardSummaryDto {
+            id: Uuid::now_v7(),
+            name: "Dev Board".to_owned(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    fn make_column_dto(color: Option<&str>) -> ColumnDto {
+        ColumnDto {
+            id: Uuid::now_v7(),
+            board_id: Uuid::now_v7(),
+            name: "To Do".to_owned(),
+            position_key: "a0".to_owned(),
+            color: color.map(str::to_owned),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    fn make_tag_dto(color: Option<&str>) -> TagDto {
+        TagDto {
+            id: Uuid::now_v7(),
+            workspace_id: Uuid::now_v7(),
+            name: "rust".to_owned(),
+            color: color.map(str::to_owned),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    fn make_principal_dto() -> PrincipalDto {
+        PrincipalDto {
+            principal_type: "user".to_owned(),
+            id: Uuid::now_v7(),
+            display: "Alice".to_owned(),
+            key_type: None,
+            role: Some("member".to_owned()),
+            account_status: Some("active".to_owned()),
+        }
+    }
+
+    fn make_folder_dto(parent: Option<Uuid>) -> FolderDto {
+        FolderDto {
+            id: Uuid::now_v7(),
+            workspace_id: Uuid::now_v7(),
+            project_id: Some(Uuid::now_v7()),
+            parent_folder_id: parent,
+            name: "Notes".to_owned(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn workspace_projection_contract_fields() {
+        let dto = make_workspace_dto();
+        let proj = WorkspaceProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_projection_fields(&value, &["id", "name", "slug", "updated_at"], &[]);
+    }
+
+    #[test]
+    fn workspace_projection_no_created_at() {
+        let dto = make_workspace_dto();
+        let proj = WorkspaceProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert!(
+            value.get("created_at").is_none(),
+            "created_at must be dropped"
+        );
+    }
+
+    #[test]
+    fn project_projection_contract_required_and_optional() {
+        let dto = make_project_dto(None);
+        let proj = ProjectProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_projection_fields(
+            &value,
+            &[
+                "id",
+                "name",
+                "slug",
+                "task_prefix",
+                "visibility",
+                "updated_at",
+            ],
+            &["visibility_role"],
+        );
+    }
+
+    #[test]
+    fn project_projection_visibility_role_absent_when_none() {
+        let dto = make_project_dto(None);
+        let proj = ProjectProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert!(
+            value.get("visibility_role").is_none(),
+            "visibility_role must be absent when None"
+        );
+    }
+
+    #[test]
+    fn project_projection_visibility_role_present_when_some() {
+        let dto = make_project_dto(Some("editor"));
+        let proj = ProjectProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_eq!(value["visibility_role"], "editor");
+    }
+
+    #[test]
+    fn board_projection_contract_fields() {
+        let dto = make_board_summary_dto();
+        let proj = BoardProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_projection_fields(&value, &["id", "name", "updated_at"], &[]);
+    }
+
+    #[test]
+    fn column_projection_contract_fields() {
+        let dto = make_column_dto(None);
+        let proj = ColumnProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_projection_fields(&value, &["id", "name"], &["color"]);
+    }
+
+    #[test]
+    fn column_projection_color_absent_when_none() {
+        let dto = make_column_dto(None);
+        let proj = ColumnProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert!(
+            value.get("color").is_none(),
+            "color must be absent when None"
+        );
+    }
+
+    #[test]
+    fn column_projection_color_present_when_some() {
+        let dto = make_column_dto(Some("#FF5733"));
+        let proj = ColumnProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_eq!(value["color"], "#FF5733");
+    }
+
+    #[test]
+    fn tag_projection_contract_fields() {
+        let dto = make_tag_dto(None);
+        let proj = TagProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_projection_fields(&value, &["id", "name"], &["color"]);
+    }
+
+    #[test]
+    fn tag_projection_color_absent_when_none() {
+        let dto = make_tag_dto(None);
+        let proj = TagProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert!(
+            value.get("color").is_none(),
+            "color must be absent when None"
+        );
+    }
+
+    #[test]
+    fn tag_projection_color_present_when_some() {
+        let dto = make_tag_dto(Some("#3B82F6"));
+        let proj = TagProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_eq!(value["color"], "#3B82F6");
+    }
+
+    #[test]
+    fn member_projection_contract_fields() {
+        let dto = make_principal_dto();
+        let proj = MemberProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_projection_fields(&value, &["principal_type", "id", "display"], &[]);
+    }
+
+    #[test]
+    fn member_projection_drops_role_and_key_type() {
+        let dto = make_principal_dto();
+        let proj = MemberProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert!(value.get("role").is_none(), "role must be dropped");
+        assert!(value.get("key_type").is_none(), "key_type must be dropped");
+        assert!(
+            value.get("account_status").is_none(),
+            "account_status must be dropped"
+        );
+    }
+
+    #[test]
+    fn folder_projection_contract_fields() {
+        let dto = make_folder_dto(None);
+        let proj = FolderProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_projection_fields(&value, &["id", "name", "updated_at"], &["parent_folder_id"]);
+    }
+
+    #[test]
+    fn folder_projection_parent_absent_when_none() {
+        let dto = make_folder_dto(None);
+        let proj = FolderProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert!(
+            value.get("parent_folder_id").is_none(),
+            "parent_folder_id must be absent when None"
+        );
+    }
+
+    #[test]
+    fn folder_projection_parent_present_when_some() {
+        let parent = Uuid::now_v7();
+        let dto = make_folder_dto(Some(parent));
+        let proj = FolderProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_eq!(value["parent_folder_id"], parent.to_string());
     }
 }
