@@ -17,6 +17,7 @@ use atlas_client::ClientError;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use uuid::Uuid;
 
+use crate::commands::bulk;
 use crate::ctx::Ctx;
 use crate::error::CliError;
 use crate::output;
@@ -193,19 +194,25 @@ async fn run_get(ctx: &Ctx, args: DocsGetArgs) -> Result<(), CliError> {
 // ---------------------------------------------------------------------------
 
 /// Arguments for `atlas docs create`.
+///
+/// When `--stdin` is set, one JSON object per line is read from stdin and each
+/// becomes a separate create call. The expected line shape is:
+/// `{"project":"slug","title":"...","folder_id":"<uuid-or-null>","content":"..."}`.
+/// In that mode `--project` and `--title` are ignored.
 #[derive(Parser)]
 pub(crate) struct DocsCreateArgs {
     /// Workspace slug.
     #[arg(long)]
     pub(crate) workspace: Option<String>,
 
-    /// Project slug where the document will be created (required).
-    #[arg(long)]
-    pub(crate) project: String,
+    /// Project slug where the document will be created (required in single-item
+    /// mode; ignored when --stdin is set).
+    #[arg(long, required_unless_present = "stdin")]
+    pub(crate) project: Option<String>,
 
-    /// Document title (required).
-    #[arg(long)]
-    pub(crate) title: String,
+    /// Document title (required in single-item mode; ignored when --stdin is set).
+    #[arg(long, required_unless_present = "stdin")]
+    pub(crate) title: Option<String>,
 
     /// Parent folder UUID (optional).
     #[arg(long)]
@@ -214,20 +221,72 @@ pub(crate) struct DocsCreateArgs {
     /// Initial markdown content (optional; creates an empty document if omitted).
     #[arg(long)]
     pub(crate) content: Option<String>,
+
+    /// Read one JSON object per line from stdin; each line becomes a separate
+    /// create call. When set, `--project` and `--title` are ignored.
+    #[arg(long)]
+    pub(crate) stdin: bool,
 }
 
 async fn run_create(ctx: &Ctx, args: DocsCreateArgs) -> Result<(), CliError> {
+    if args.stdin {
+        return run_create_stdin(ctx, args).await;
+    }
+    run_create_single(ctx, args).await
+}
+
+async fn run_create_single(ctx: &Ctx, args: DocsCreateArgs) -> Result<(), CliError> {
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
 
+    let project = args
+        .project
+        .ok_or_else(|| CliError::Validation("--project is required".to_owned()))?;
+
+    let title = args
+        .title
+        .ok_or_else(|| CliError::Validation("--title is required".to_owned()))?;
+
     let body = CreateDocumentRequest {
-        title: args.title,
+        title,
         folder_id: args.folder_id,
         content: args.content,
     };
 
-    let doc = ctx.client.create_document(ws, &args.project, body).await?;
+    let doc = ctx.client.create_document(ws, &project, body).await?;
     let proj = DocCompactProjection::from(doc);
     output::emit(ctx.output, &proj)
+}
+
+async fn run_create_stdin(ctx: &Ctx, args: DocsCreateArgs) -> Result<(), CliError> {
+    let ws = ctx.require_workspace(args.workspace.as_deref())?;
+    let (items, mut any_failed) = bulk::parse_stdin_batch::<bulk::BulkDocCreateLine>()?;
+
+    for item in items {
+        match ctx
+            .client
+            .create_document(ws, &item.project, item.body)
+            .await
+        {
+            Ok(doc) => {
+                let proj = DocCompactProjection::from(doc);
+                let value = serde_json::to_value(&proj)
+                    .map_err(|e| CliError::Io(std::io::Error::other(e.to_string())))?;
+                bulk::emit_batch_line(&value)?;
+            }
+            Err(e) => {
+                eprintln!("error: {e}");
+                any_failed = true;
+            }
+        }
+    }
+
+    if any_failed {
+        Err(CliError::Validation(
+            "batch: one or more items failed (see stderr)".to_owned(),
+        ))
+    } else {
+        Ok(())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -235,11 +294,16 @@ async fn run_create(ctx: &Ctx, args: DocsCreateArgs) -> Result<(), CliError> {
 // ---------------------------------------------------------------------------
 
 /// Arguments for `atlas docs update-metadata`.
+///
+/// When `--stdin` is set, one JSON object per line is read from stdin and each
+/// becomes a separate update call. The expected line shape is:
+/// `{"slug":"my-doc","title":"New title","folder_id":"<uuid-or-null>"}`.
+/// In that mode the positional `slug` argument is ignored.
 #[derive(Parser)]
 pub(crate) struct DocsUpdateMetadataArgs {
-    /// Document slug.
-    #[arg(index = 1)]
-    pub(crate) slug: String,
+    /// Document slug (required in single-item mode; ignored when --stdin is set).
+    #[arg(index = 1, required_unless_present = "stdin")]
+    pub(crate) slug: Option<String>,
 
     /// Workspace slug.
     #[arg(long)]
@@ -252,19 +316,65 @@ pub(crate) struct DocsUpdateMetadataArgs {
     /// New parent folder UUID (omit to leave unchanged).
     #[arg(long)]
     pub(crate) folder_id: Option<Uuid>,
+
+    /// Read one JSON object per line from stdin; each line becomes a separate
+    /// update call. When set, the positional `slug` argument is ignored.
+    #[arg(long)]
+    pub(crate) stdin: bool,
 }
 
 async fn run_update_metadata(ctx: &Ctx, args: DocsUpdateMetadataArgs) -> Result<(), CliError> {
+    if args.stdin {
+        return run_update_metadata_stdin(ctx, args).await;
+    }
+
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
+    let slug = args
+        .slug
+        .as_deref()
+        .ok_or_else(|| CliError::Validation("slug is required in single-item mode".to_owned()))?
+        .to_owned();
 
     let body = UpdateDocumentRequest {
         title: args.title,
         folder_id: args.folder_id,
     };
 
-    let doc = ctx.client.update_document(ws, &args.slug, body).await?;
+    let doc = ctx.client.update_document(ws, &slug, body).await?;
     let proj = DocCompactProjection::from(doc);
     output::emit(ctx.output, &proj)
+}
+
+async fn run_update_metadata_stdin(
+    ctx: &Ctx,
+    args: DocsUpdateMetadataArgs,
+) -> Result<(), CliError> {
+    let ws = ctx.require_workspace(args.workspace.as_deref())?;
+    let (items, mut any_failed) = bulk::parse_stdin_batch::<bulk::BulkDocUpdateMetadataLine>()?;
+
+    for item in items {
+        let slug = item.slug.clone();
+        match ctx.client.update_document(ws, &slug, item.body).await {
+            Ok(doc) => {
+                let proj = DocCompactProjection::from(doc);
+                let value = serde_json::to_value(&proj)
+                    .map_err(|e| CliError::Io(std::io::Error::other(e.to_string())))?;
+                bulk::emit_batch_line(&value)?;
+            }
+            Err(e) => {
+                eprintln!("error: {e}");
+                any_failed = true;
+            }
+        }
+    }
+
+    if any_failed {
+        Err(CliError::Validation(
+            "batch: one or more items failed (see stderr)".to_owned(),
+        ))
+    } else {
+        Ok(())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -592,8 +702,8 @@ mod tests {
         .unwrap();
         if let crate::cli::Commands::Docs(args) = cli.command {
             if let DocsCmd::Create(create_args) = args.command {
-                assert_eq!(create_args.project, "my-project");
-                assert_eq!(create_args.title, "My Document");
+                assert_eq!(create_args.project.as_deref(), Some("my-project"));
+                assert_eq!(create_args.title.as_deref(), Some("My Document"));
             } else {
                 panic!("expected Create");
             }
@@ -625,7 +735,7 @@ mod tests {
         .unwrap();
         if let crate::cli::Commands::Docs(args) = cli.command {
             if let DocsCmd::UpdateMetadata(update_args) = args.command {
-                assert_eq!(update_args.slug, "some-slug");
+                assert_eq!(update_args.slug.as_deref(), Some("some-slug"));
             } else {
                 panic!("expected UpdateMetadata");
             }
@@ -869,5 +979,99 @@ mod tests {
         } else {
             panic!("expected Docs");
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // T66/T67: WU-32 parse tests — docs create/update-metadata --stdin
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn docs_create_stdin_flag_parses_without_required_flags() {
+        let cli = Cli::try_parse_from(["atlas", "docs", "create", "--stdin", "--workspace", "ws"])
+            .unwrap();
+        if let crate::cli::Commands::Docs(args) = cli.command {
+            if let DocsCmd::Create(create_args) = args.command {
+                assert!(create_args.stdin, "--stdin must be true");
+                assert!(
+                    create_args.project.is_none(),
+                    "project must be None in stdin mode"
+                );
+                assert!(
+                    create_args.title.is_none(),
+                    "title must be None in stdin mode"
+                );
+            } else {
+                panic!("expected Create");
+            }
+        } else {
+            panic!("expected Docs");
+        }
+    }
+
+    #[test]
+    fn docs_create_without_stdin_requires_project() {
+        let result = Cli::try_parse_from([
+            "atlas",
+            "docs",
+            "create",
+            "--workspace",
+            "ws",
+            "--title",
+            "T",
+        ]);
+        assert!(
+            result.is_err(),
+            "--project is required when --stdin is absent"
+        );
+    }
+
+    #[test]
+    fn docs_create_without_stdin_requires_title() {
+        let result = Cli::try_parse_from([
+            "atlas",
+            "docs",
+            "create",
+            "--workspace",
+            "ws",
+            "--project",
+            "P",
+        ]);
+        assert!(
+            result.is_err(),
+            "--title is required when --stdin is absent"
+        );
+    }
+
+    #[test]
+    fn docs_update_metadata_stdin_flag_parses_without_slug() {
+        let cli = Cli::try_parse_from([
+            "atlas",
+            "docs",
+            "update-metadata",
+            "--stdin",
+            "--workspace",
+            "ws",
+        ])
+        .unwrap();
+        if let crate::cli::Commands::Docs(args) = cli.command {
+            if let DocsCmd::UpdateMetadata(update_args) = args.command {
+                assert!(update_args.stdin, "--stdin must be true");
+                assert!(
+                    update_args.slug.is_none(),
+                    "slug must be None in stdin mode"
+                );
+            } else {
+                panic!("expected UpdateMetadata");
+            }
+        } else {
+            panic!("expected Docs");
+        }
+    }
+
+    #[test]
+    fn docs_update_metadata_single_item_requires_slug() {
+        let result =
+            Cli::try_parse_from(["atlas", "docs", "update-metadata", "--title", "New title"]);
+        assert!(result.is_err(), "slug is required when --stdin is absent");
     }
 }

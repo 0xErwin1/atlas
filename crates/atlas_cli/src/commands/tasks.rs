@@ -16,6 +16,7 @@ use atlas_api::dtos::boards_tasks::{
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use uuid::Uuid;
 
+use crate::commands::bulk;
 use crate::ctx::Ctx;
 use crate::error::CliError;
 use crate::output;
@@ -283,23 +284,29 @@ async fn run_get(ctx: &Ctx, args: TasksGetArgs) -> Result<(), CliError> {
 // ---------------------------------------------------------------------------
 
 /// Arguments for `atlas tasks create`.
+///
+/// When `--stdin` is set, one JSON object per line is read from stdin and each
+/// becomes a separate create call. The expected line shape is:
+/// `{"board_id":"<uuid>","column_id":"<uuid>","title":"...","description":"...","properties":{...}}`
+/// In that mode `--board`, `--column`, and `--title` are ignored.
 #[derive(Parser)]
 pub(crate) struct TasksCreateArgs {
     /// Workspace slug.
     #[arg(long)]
     pub(crate) workspace: Option<String>,
 
-    /// Task title (required).
-    #[arg(long)]
-    pub(crate) title: String,
+    /// Task title (required in single-item mode; ignored when --stdin is set).
+    #[arg(long, required_unless_present = "stdin")]
+    pub(crate) title: Option<String>,
 
-    /// Board name or UUID (required).
-    #[arg(long)]
-    pub(crate) board: String,
+    /// Board name or UUID (required in single-item mode; ignored when --stdin is set).
+    #[arg(long, required_unless_present = "stdin")]
+    pub(crate) board: Option<String>,
 
-    /// Column name on the board (required; resolved by case-insensitive substring).
-    #[arg(long)]
-    pub(crate) column: String,
+    /// Column name on the board (required in single-item mode; ignored when
+    /// --stdin is set; resolved by case-insensitive substring).
+    #[arg(long, required_unless_present = "stdin")]
+    pub(crate) column: Option<String>,
 
     /// Task description (markdown).
     #[arg(long)]
@@ -320,10 +327,34 @@ pub(crate) struct TasksCreateArgs {
     /// Due date (ISO 8601, e.g. `2026-01-31T00:00:00Z`).
     #[arg(long)]
     pub(crate) due_date: Option<String>,
+
+    /// Read one JSON object per line from stdin; each line becomes a separate
+    /// create call. When set, `--board`, `--column`, and `--title` are ignored.
+    #[arg(long)]
+    pub(crate) stdin: bool,
 }
 
 async fn run_create(ctx: &Ctx, args: TasksCreateArgs) -> Result<(), CliError> {
+    if args.stdin {
+        return run_create_stdin(ctx, args).await;
+    }
+    run_create_single(ctx, args).await
+}
+
+async fn run_create_single(ctx: &Ctx, args: TasksCreateArgs) -> Result<(), CliError> {
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
+
+    let title = args
+        .title
+        .ok_or_else(|| CliError::Validation("--title is required".to_owned()))?;
+
+    let board = args
+        .board
+        .ok_or_else(|| CliError::Validation("--board is required".to_owned()))?;
+
+    let column = args
+        .column
+        .ok_or_else(|| CliError::Validation("--column is required".to_owned()))?;
 
     if let Some(pri) = &args.priority {
         helpers::validate_priority(pri).map_err(CliError::Validation)?;
@@ -332,7 +363,7 @@ async fn run_create(ctx: &Ctx, args: TasksCreateArgs) -> Result<(), CliError> {
         helpers::validate_estimate(est).map_err(CliError::Validation)?;
     }
 
-    let board_id_str = helpers::resolve_board_id(&ctx.client, ws, &args.board)
+    let board_id_str = helpers::resolve_board_id(&ctx.client, ws, &board)
         .await
         .map_err(CliError::from)?;
 
@@ -346,7 +377,7 @@ async fn run_create(ctx: &Ctx, args: TasksCreateArgs) -> Result<(), CliError> {
 
     let cols = ctx.client.list_columns(ws, board_uuid).await?;
     let column_uuid =
-        helpers::resolve_column_id_on_board(&args.column, &cols).map_err(CliError::Validation)?;
+        helpers::resolve_column_id_on_board(&column, &cols).map_err(CliError::Validation)?;
 
     let due_date = args
         .due_date
@@ -376,7 +407,7 @@ async fn run_create(ctx: &Ctx, args: TasksCreateArgs) -> Result<(), CliError> {
 
     let body = CreateTaskRequest {
         column_id: column_uuid,
-        title: args.title,
+        title,
         description: args.description,
         properties,
         before: None,
@@ -388,16 +419,51 @@ async fn run_create(ctx: &Ctx, args: TasksCreateArgs) -> Result<(), CliError> {
     output::emit(ctx.output, &proj)
 }
 
+async fn run_create_stdin(ctx: &Ctx, args: TasksCreateArgs) -> Result<(), CliError> {
+    let ws = ctx.require_workspace(args.workspace.as_deref())?;
+    let (items, mut any_failed) = bulk::parse_stdin_batch::<bulk::BulkTaskCreateLine>()?;
+
+    for item in items {
+        match ctx.client.create_task(ws, item.board_id, item.body).await {
+            Ok(task) => {
+                let proj = TaskCompactProjection::from(task);
+                let value = serde_json::to_value(&proj)
+                    .map_err(|e| CliError::Io(std::io::Error::other(e.to_string())))?;
+                bulk::emit_batch_line(&value)?;
+            }
+            Err(e) => {
+                eprintln!("error: {e}");
+                any_failed = true;
+            }
+        }
+    }
+
+    if any_failed {
+        Err(CliError::Validation(
+            "batch: one or more items failed (see stderr)".to_owned(),
+        ))
+    } else {
+        Ok(())
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Update
 // ---------------------------------------------------------------------------
 
 /// Arguments for `atlas tasks update`.
+///
+/// When `--stdin` is set, one JSON object per line is read from stdin and each
+/// becomes a separate update call. The expected line shape is:
+/// `{"readable_id":"ATL-42","title":"...","priority":"high"}` (PATCH semantics:
+/// absent fields are unchanged; `null` for `priority`/`due_date`/`estimate` clears
+/// the field). In that mode the positional `readable_id` argument is ignored.
 #[derive(Parser)]
 pub(crate) struct TasksUpdateArgs {
-    /// Task readable ID, e.g. `ATL-42`.
-    #[arg(index = 1)]
-    pub(crate) readable_id: String,
+    /// Task readable ID, e.g. `ATL-42` (required in single-item mode; ignored
+    /// when --stdin is set).
+    #[arg(index = 1, required_unless_present = "stdin")]
+    pub(crate) readable_id: Option<String>,
 
     /// Workspace slug.
     #[arg(long)]
@@ -438,6 +504,11 @@ pub(crate) struct TasksUpdateArgs {
     /// Clear the estimate field (set to null).
     #[arg(long)]
     pub(crate) clear_estimate: bool,
+
+    /// Read one JSON object per line from stdin; each line becomes a separate
+    /// update call. When set, the positional `readable_id` argument is ignored.
+    #[arg(long)]
+    pub(crate) stdin: bool,
 }
 
 /// Builds the `UpdateTaskRequest` from the parsed update arguments.
@@ -497,12 +568,52 @@ pub(crate) fn build_update_body(args: &TasksUpdateArgs) -> Result<UpdateTaskRequ
 }
 
 async fn run_update(ctx: &Ctx, args: TasksUpdateArgs) -> Result<(), CliError> {
+    if args.stdin {
+        return run_update_stdin(ctx, args).await;
+    }
+
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
-    let readable_id = args.readable_id.clone();
+    let readable_id = args
+        .readable_id
+        .as_deref()
+        .ok_or_else(|| {
+            CliError::Validation("readable_id is required in single-item mode".to_owned())
+        })?
+        .to_owned();
     let body = build_update_body(&args)?;
     let task = ctx.client.update_task(ws, &readable_id, body).await?;
     let proj = TaskCompactProjection::from(task);
     output::emit(ctx.output, &proj)
+}
+
+async fn run_update_stdin(ctx: &Ctx, args: TasksUpdateArgs) -> Result<(), CliError> {
+    let ws = ctx.require_workspace(args.workspace.as_deref())?;
+    let (items, mut any_failed) = bulk::parse_stdin_batch::<bulk::BulkTaskUpdateLine>()?;
+
+    for item in items {
+        let readable_id = item.readable_id.clone();
+        let body = item.into_request();
+        match ctx.client.update_task(ws, &readable_id, body).await {
+            Ok(task) => {
+                let proj = TaskCompactProjection::from(task);
+                let value = serde_json::to_value(&proj)
+                    .map_err(|e| CliError::Io(std::io::Error::other(e.to_string())))?;
+                bulk::emit_batch_line(&value)?;
+            }
+            Err(e) => {
+                eprintln!("error: {e}");
+                any_failed = true;
+            }
+        }
+    }
+
+    if any_failed {
+        Err(CliError::Validation(
+            "batch: one or more items failed (see stderr)".to_owned(),
+        ))
+    } else {
+        Ok(())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1392,7 +1503,7 @@ mod tests {
     #[test]
     fn build_update_body_rejects_invalid_priority_before_network() {
         let args = TasksUpdateArgs {
-            readable_id: "ATL-1".to_owned(),
+            readable_id: Some("ATL-1".to_owned()),
             workspace: None,
             title: None,
             description: None,
@@ -1403,6 +1514,7 @@ mod tests {
             clear_priority: false,
             clear_due_date: false,
             clear_estimate: false,
+            stdin: false,
         };
         let err = build_update_body(&args).unwrap_err();
         assert!(matches!(err, CliError::Validation(_)));
@@ -1411,7 +1523,7 @@ mod tests {
     #[test]
     fn build_update_body_with_only_title_omits_skip_serializing_fields() {
         let args = TasksUpdateArgs {
-            readable_id: "ATL-1".to_owned(),
+            readable_id: Some("ATL-1".to_owned()),
             workspace: None,
             title: Some("New title".to_owned()),
             description: None,
@@ -1422,6 +1534,7 @@ mod tests {
             clear_priority: false,
             clear_due_date: false,
             clear_estimate: false,
+            stdin: false,
         };
         let body = build_update_body(&args).unwrap();
         let json = serde_json::to_value(&body).unwrap();
@@ -1454,7 +1567,7 @@ mod tests {
     #[test]
     fn build_update_body_clear_priority_sends_null() {
         let args = TasksUpdateArgs {
-            readable_id: "ATL-1".to_owned(),
+            readable_id: Some("ATL-1".to_owned()),
             workspace: None,
             title: None,
             description: None,
@@ -1465,6 +1578,7 @@ mod tests {
             clear_priority: true,
             clear_due_date: false,
             clear_estimate: false,
+            stdin: false,
         };
         let body = build_update_body(&args).unwrap();
         let json = serde_json::to_value(&body).unwrap();
@@ -1899,6 +2013,139 @@ mod tests {
                 }
             } else {
                 panic!("expected Subtasks");
+            }
+        } else {
+            panic!("expected Tasks");
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // T66/T67: WU-32 parse tests — tasks create/update --stdin
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn tasks_create_stdin_flag_parses_without_required_flags() {
+        let cli = Cli::try_parse_from(["atlas", "tasks", "create", "--stdin", "--workspace", "ws"])
+            .unwrap();
+        if let crate::cli::Commands::Tasks(args) = cli.command {
+            if let TasksCmd::Create(c_args) = args.command {
+                assert!(c_args.stdin, "--stdin must be true");
+                assert!(c_args.board.is_none(), "board must be None in stdin mode");
+                assert!(c_args.title.is_none(), "title must be None in stdin mode");
+            } else {
+                panic!("expected Create");
+            }
+        } else {
+            panic!("expected Tasks");
+        }
+    }
+
+    #[test]
+    fn tasks_create_without_stdin_requires_board() {
+        let result = Cli::try_parse_from([
+            "atlas",
+            "tasks",
+            "create",
+            "--workspace",
+            "ws",
+            "--title",
+            "T",
+            "--column",
+            "Col",
+        ]);
+        assert!(
+            result.is_err(),
+            "--board is required when --stdin is absent"
+        );
+    }
+
+    #[test]
+    fn tasks_create_without_stdin_requires_title() {
+        let result = Cli::try_parse_from([
+            "atlas",
+            "tasks",
+            "create",
+            "--workspace",
+            "ws",
+            "--board",
+            "B",
+            "--column",
+            "Col",
+        ]);
+        assert!(
+            result.is_err(),
+            "--title is required when --stdin is absent"
+        );
+    }
+
+    #[test]
+    fn tasks_create_single_item_all_required_flags_parse() {
+        let cli = Cli::try_parse_from([
+            "atlas",
+            "tasks",
+            "create",
+            "--workspace",
+            "ws",
+            "--board",
+            "Dev",
+            "--column",
+            "Todo",
+            "--title",
+            "My task",
+        ])
+        .unwrap();
+        if let crate::cli::Commands::Tasks(args) = cli.command {
+            if let TasksCmd::Create(c_args) = args.command {
+                assert!(!c_args.stdin);
+                assert_eq!(c_args.board.as_deref(), Some("Dev"));
+                assert_eq!(c_args.column.as_deref(), Some("Todo"));
+                assert_eq!(c_args.title.as_deref(), Some("My task"));
+            } else {
+                panic!("expected Create");
+            }
+        } else {
+            panic!("expected Tasks");
+        }
+    }
+
+    #[test]
+    fn tasks_update_stdin_flag_parses_without_readable_id() {
+        let cli = Cli::try_parse_from(["atlas", "tasks", "update", "--stdin", "--workspace", "ws"])
+            .unwrap();
+        if let crate::cli::Commands::Tasks(args) = cli.command {
+            if let TasksCmd::Update(u_args) = args.command {
+                assert!(u_args.stdin, "--stdin must be true");
+                assert!(
+                    u_args.readable_id.is_none(),
+                    "readable_id must be None in stdin mode"
+                );
+            } else {
+                panic!("expected Update");
+            }
+        } else {
+            panic!("expected Tasks");
+        }
+    }
+
+    #[test]
+    fn tasks_update_single_item_requires_readable_id() {
+        let result = Cli::try_parse_from(["atlas", "tasks", "update", "--title", "X"]);
+        assert!(
+            result.is_err(),
+            "readable_id is required when --stdin is absent"
+        );
+    }
+
+    #[test]
+    fn tasks_update_single_item_readable_id_parses() {
+        let cli =
+            Cli::try_parse_from(["atlas", "tasks", "update", "ATL-42", "--title", "X"]).unwrap();
+        if let crate::cli::Commands::Tasks(args) = cli.command {
+            if let TasksCmd::Update(u_args) = args.command {
+                assert_eq!(u_args.readable_id.as_deref(), Some("ATL-42"));
+                assert!(!u_args.stdin);
+            } else {
+                panic!("expected Update");
             }
         } else {
             panic!("expected Tasks");
