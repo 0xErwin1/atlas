@@ -1,6 +1,13 @@
+pub(crate) mod boards;
+pub(crate) mod columns;
 pub(crate) mod docs;
+pub(crate) mod folders;
+pub(crate) mod members;
+pub(crate) mod projects;
 pub(crate) mod search;
+pub(crate) mod tags;
 pub(crate) mod tasks;
+pub(crate) mod workspaces;
 
 use crate::cli::Commands;
 use crate::ctx::Ctx;
@@ -16,5 +23,12 @@ pub(crate) async fn dispatch(ctx: &Ctx, cmd: Commands) -> Result<(), CliError> {
         Commands::Search(args) => search::run(ctx, args).await,
         Commands::Tasks(args) => tasks::run(ctx, args.command).await,
         Commands::Docs(args) => docs::run(ctx, args.command).await,
+        Commands::Workspaces(args) => workspaces::run(ctx, args.command).await,
+        Commands::Projects(args) => projects::run(ctx, args.command).await,
+        Commands::Boards(args) => boards::run(ctx, args.command).await,
+        Commands::Columns(args) => columns::run(ctx, args.command).await,
+        Commands::Tags(args) => tags::run(ctx, args.command).await,
+        Commands::Members(args) => members::run(ctx, args.command).await,
+        Commands::Folders(args) => folders::run(ctx, args.command).await,
     }
 }

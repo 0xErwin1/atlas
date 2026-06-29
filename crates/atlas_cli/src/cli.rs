@@ -2,8 +2,15 @@
 
 use clap::{Parser, Subcommand};
 
+use crate::commands::boards::BoardsArgs;
+use crate::commands::columns::ColumnsArgs;
 use crate::commands::docs::DocsArgs;
+use crate::commands::folders::FoldersArgs;
+use crate::commands::members::MembersArgs;
+use crate::commands::projects::ProjectsArgs;
+use crate::commands::tags::TagsArgs;
 use crate::commands::tasks::TasksArgs;
+use crate::commands::workspaces::WorkspacesArgs;
 
 /// Atlas CLI — personal knowledge base client.
 #[derive(Parser)]
@@ -39,6 +46,20 @@ pub(crate) enum Commands {
     Tasks(TasksArgs),
     /// Manage documents (list, get, create, update-metadata, update-content, delete).
     Docs(DocsArgs),
+    /// Inspect workspaces (list, get).
+    Workspaces(WorkspacesArgs),
+    /// Inspect projects (list, get).
+    Projects(ProjectsArgs),
+    /// Inspect boards (list).
+    Boards(BoardsArgs),
+    /// Inspect columns on a board (list).
+    Columns(ColumnsArgs),
+    /// Inspect workspace tags (list).
+    Tags(TagsArgs),
+    /// Inspect workspace members (list).
+    Members(MembersArgs),
+    /// Inspect folders (list, get).
+    Folders(FoldersArgs),
 }
 
 /// Arguments for the `search` subcommand.
