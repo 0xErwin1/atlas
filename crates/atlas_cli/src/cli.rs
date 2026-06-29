@@ -2,6 +2,7 @@
 
 use clap::{Parser, Subcommand};
 
+use crate::commands::activity::ActivityArgs;
 use crate::commands::boards::BoardsArgs;
 use crate::commands::columns::ColumnsArgs;
 use crate::commands::docs::DocsArgs;
@@ -60,6 +61,8 @@ pub(crate) enum Commands {
     Members(MembersArgs),
     /// Inspect folders (list, get).
     Folders(FoldersArgs),
+    /// List workspace-level activity (audit log).
+    Activity(ActivityArgs),
 }
 
 /// Arguments for the `search` subcommand.

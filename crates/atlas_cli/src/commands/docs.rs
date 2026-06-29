@@ -21,7 +21,8 @@ use crate::ctx::Ctx;
 use crate::error::CliError;
 use crate::output;
 use crate::projections::{
-    DeleteDocProjection, DocCompactProjection, DocFullProjection, DocSummaryProjection,
+    DeleteDocProjection, DocBacklinkProjection, DocCompactProjection, DocFullProjection,
+    DocHistoryProjection, DocRevisionProjection, DocSummaryProjection,
 };
 
 const LIMIT_MIN: u32 = 1;
@@ -63,6 +64,14 @@ pub(crate) enum DocsCmd {
     UpdateContent(DocsUpdateContentArgs),
     /// Delete a document (requires --confirm).
     Delete(DocsDeleteArgs),
+    /// List documents that link to this document (backlinks).
+    Backlinks(DocsBacklinksArgs),
+    /// List the revision history of a document.
+    History(DocsHistoryArgs),
+    /// Fetch the full content of a specific revision by sequence number.
+    Revision(DocsRevisionArgs),
+    /// Fetch the frontmatter of a document.
+    Frontmatter(DocsFrontmatterArgs),
 }
 
 /// Dispatches a parsed `DocsCmd` to its handler.
@@ -74,6 +83,10 @@ pub(crate) async fn run(ctx: &Ctx, cmd: DocsCmd) -> Result<(), CliError> {
         DocsCmd::UpdateMetadata(args) => run_update_metadata(ctx, args).await,
         DocsCmd::UpdateContent(args) => run_update_content(ctx, args).await,
         DocsCmd::Delete(args) => run_delete(ctx, args).await,
+        DocsCmd::Backlinks(args) => run_backlinks(ctx, args).await,
+        DocsCmd::History(args) => run_history(ctx, args).await,
+        DocsCmd::Revision(args) => run_revision(ctx, args).await,
+        DocsCmd::Frontmatter(args) => run_frontmatter(ctx, args).await,
     }
 }
 
@@ -104,9 +117,10 @@ pub(crate) struct DocsListArgs {
 async fn run_list(ctx: &Ctx, args: DocsListArgs) -> Result<(), CliError> {
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
 
-    let project = args.project.as_deref().ok_or_else(|| {
-        CliError::Validation("--project is required for docs list".to_owned())
-    })?;
+    let project = args
+        .project
+        .as_deref()
+        .ok_or_else(|| CliError::Validation("--project is required for docs list".to_owned()))?;
 
     let limit = args
         .limit
@@ -129,7 +143,12 @@ async fn run_list(ctx: &Ctx, args: DocsListArgs) -> Result<(), CliError> {
         .map(DocSummaryProjection::from)
         .collect();
 
-    output::emit_list(ctx.output, &items, page.next_cursor.as_deref(), page.has_more)
+    output::emit_list(
+        ctx.output,
+        &items,
+        page.next_cursor.as_deref(),
+        page.has_more,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -307,7 +326,9 @@ async fn run_update_content(ctx: &Ctx, args: DocsUpdateContentArgs) -> Result<()
                 dto.current_revision_id, dto.current_seq
             );
             if !dto.base_to_current_patch.is_empty() {
-                eprintln!("patch is available: apply base_to_current_patch and retry with the new revision id");
+                eprintln!(
+                    "patch is available: apply base_to_current_patch and retry with the new revision id"
+                );
             }
             Err(CliError::Conflict(Box::new(dto)))
         }
@@ -355,6 +376,144 @@ async fn run_delete(ctx: &Ctx, args: DocsDeleteArgs) -> Result<(), CliError> {
 }
 
 // ---------------------------------------------------------------------------
+// Backlinks (WU-24)
+// ---------------------------------------------------------------------------
+
+/// Arguments for `atlas docs backlinks`.
+#[derive(Parser)]
+pub(crate) struct DocsBacklinksArgs {
+    /// Document slug.
+    #[arg(index = 1)]
+    pub(crate) slug: String,
+
+    /// Workspace slug.
+    #[arg(long)]
+    pub(crate) workspace: Option<String>,
+
+    /// Maximum number of results (clamped to 1..=200; default 20).
+    #[arg(long)]
+    pub(crate) limit: Option<u32>,
+}
+
+async fn run_backlinks(ctx: &Ctx, args: DocsBacklinksArgs) -> Result<(), CliError> {
+    let ws = ctx.require_workspace(args.workspace.as_deref())?;
+    let limit = args
+        .limit
+        .unwrap_or(LIMIT_DEFAULT)
+        .clamp(LIMIT_MIN, LIMIT_MAX);
+    let page = ctx
+        .client
+        .list_backlinks(ws, &args.slug, None, Some(limit))
+        .await?;
+    let projections: Vec<DocBacklinkProjection> = page
+        .items
+        .into_iter()
+        .map(DocBacklinkProjection::from)
+        .collect();
+    output::emit_list(
+        ctx.output,
+        &projections,
+        page.next_cursor.as_deref(),
+        page.has_more,
+    )
+}
+
+// ---------------------------------------------------------------------------
+// History (WU-24)
+// ---------------------------------------------------------------------------
+
+/// Arguments for `atlas docs history`.
+#[derive(Parser)]
+pub(crate) struct DocsHistoryArgs {
+    /// Document slug.
+    #[arg(index = 1)]
+    pub(crate) slug: String,
+
+    /// Workspace slug.
+    #[arg(long)]
+    pub(crate) workspace: Option<String>,
+
+    /// Maximum number of revisions to return (clamped to 1..=200; default 20).
+    #[arg(long)]
+    pub(crate) limit: Option<u32>,
+}
+
+async fn run_history(ctx: &Ctx, args: DocsHistoryArgs) -> Result<(), CliError> {
+    let ws = ctx.require_workspace(args.workspace.as_deref())?;
+    let limit = args
+        .limit
+        .unwrap_or(LIMIT_DEFAULT)
+        .clamp(LIMIT_MIN, LIMIT_MAX);
+    let page = ctx
+        .client
+        .list_document_history(ws, &args.slug, None, Some(limit))
+        .await?;
+    let projections: Vec<DocHistoryProjection> = page
+        .items
+        .into_iter()
+        .map(DocHistoryProjection::from)
+        .collect();
+    output::emit_list(
+        ctx.output,
+        &projections,
+        page.next_cursor.as_deref(),
+        page.has_more,
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Revision (WU-24)
+// ---------------------------------------------------------------------------
+
+/// Arguments for `atlas docs revision`.
+#[derive(Parser)]
+pub(crate) struct DocsRevisionArgs {
+    /// Document slug.
+    #[arg(index = 1)]
+    pub(crate) slug: String,
+
+    /// Workspace slug.
+    #[arg(long)]
+    pub(crate) workspace: Option<String>,
+
+    /// Revision sequence number (required).
+    #[arg(long)]
+    pub(crate) seq: i64,
+}
+
+async fn run_revision(ctx: &Ctx, args: DocsRevisionArgs) -> Result<(), CliError> {
+    let ws = ctx.require_workspace(args.workspace.as_deref())?;
+    let rev = ctx
+        .client
+        .get_revision_content(ws, &args.slug, args.seq)
+        .await?;
+    let proj = DocRevisionProjection::from(rev);
+    output::emit(ctx.output, &proj)
+}
+
+// ---------------------------------------------------------------------------
+// Frontmatter (WU-24)
+// ---------------------------------------------------------------------------
+
+/// Arguments for `atlas docs frontmatter`.
+#[derive(Parser)]
+pub(crate) struct DocsFrontmatterArgs {
+    /// Document slug.
+    #[arg(index = 1)]
+    pub(crate) slug: String,
+
+    /// Workspace slug.
+    #[arg(long)]
+    pub(crate) workspace: Option<String>,
+}
+
+async fn run_frontmatter(ctx: &Ctx, args: DocsFrontmatterArgs) -> Result<(), CliError> {
+    let ws = ctx.require_workspace(args.workspace.as_deref())?;
+    let fm = ctx.client.get_frontmatter(ws, &args.slug).await?;
+    output::print_json(&fm.data)
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -369,9 +528,8 @@ mod tests {
 
     #[test]
     fn docs_get_slug_parses() {
-        let cli =
-            Cli::try_parse_from(["atlas", "docs", "get", "some-slug", "--workspace", "ws"])
-                .unwrap();
+        let cli = Cli::try_parse_from(["atlas", "docs", "get", "some-slug", "--workspace", "ws"])
+            .unwrap();
         if let crate::cli::Commands::Docs(args) = cli.command {
             assert!(matches!(args.command, DocsCmd::Get(_)));
         } else {
@@ -540,10 +698,7 @@ mod tests {
         if let crate::cli::Commands::Docs(args) = cli.command {
             if let DocsCmd::UpdateContent(uc_args) = args.command {
                 assert_eq!(uc_args.slug, "my-doc");
-                assert_eq!(
-                    uc_args.base_revision_id,
-                    rev_id.parse::<Uuid>().unwrap()
-                );
+                assert_eq!(uc_args.base_revision_id, rev_id.parse::<Uuid>().unwrap());
             } else {
                 panic!("expected UpdateContent");
             }
@@ -554,15 +709,8 @@ mod tests {
 
     #[test]
     fn docs_delete_parsed_without_confirm_has_confirm_false() {
-        let cli = Cli::try_parse_from([
-            "atlas",
-            "docs",
-            "delete",
-            "my-doc",
-            "--workspace",
-            "ws",
-        ])
-        .unwrap();
+        let cli = Cli::try_parse_from(["atlas", "docs", "delete", "my-doc", "--workspace", "ws"])
+            .unwrap();
         if let crate::cli::Commands::Docs(args) = cli.command {
             if let DocsCmd::Delete(del_args) = args.command {
                 assert!(!del_args.confirm);
@@ -583,17 +731,16 @@ mod tests {
         };
         // Confirm guard fires before any workspace or network resolution.
         // We check confirm directly — the runtime guard fires before any I/O.
-        assert!(!args.confirm, "confirm must be false when --confirm is absent");
+        assert!(
+            !args.confirm,
+            "confirm must be false when --confirm is absent"
+        );
     }
 
     #[test]
     fn cli_error_conflict_exit_code_is_1() {
         use atlas_api::dtos::documents::ConflictProblemDto;
-        let dto = ConflictProblemDto::new(
-            Uuid::now_v7(),
-            3,
-            "--- a\n+++ b".to_owned(),
-        );
+        let dto = ConflictProblemDto::new(Uuid::now_v7(), 3, "--- a\n+++ b".to_owned());
         let e = CliError::Conflict(Box::new(dto));
         assert_eq!(e.exit_code(), 1);
     }
@@ -609,5 +756,118 @@ mod tests {
         assert_eq!(value["deleted"], true);
         assert_eq!(value["slug"], "x");
         assert!(value.get("id").is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // T52 / WU-24: Parse tests — backlinks, history, revision, frontmatter
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn docs_backlinks_parses() {
+        let cli =
+            Cli::try_parse_from(["atlas", "docs", "backlinks", "my-doc", "--workspace", "ws"])
+                .unwrap();
+        if let crate::cli::Commands::Docs(args) = cli.command {
+            if let DocsCmd::Backlinks(bl_args) = args.command {
+                assert_eq!(bl_args.slug, "my-doc");
+            } else {
+                panic!("expected Backlinks");
+            }
+        } else {
+            panic!("expected Docs");
+        }
+    }
+
+    #[test]
+    fn docs_history_parses() {
+        let cli = Cli::try_parse_from(["atlas", "docs", "history", "my-doc", "--workspace", "ws"])
+            .unwrap();
+        if let crate::cli::Commands::Docs(args) = cli.command {
+            if let DocsCmd::History(h_args) = args.command {
+                assert_eq!(h_args.slug, "my-doc");
+                assert!(h_args.limit.is_none());
+            } else {
+                panic!("expected History");
+            }
+        } else {
+            panic!("expected Docs");
+        }
+    }
+
+    #[test]
+    fn docs_history_limit_parses() {
+        let cli = Cli::try_parse_from([
+            "atlas",
+            "docs",
+            "history",
+            "my-doc",
+            "--workspace",
+            "ws",
+            "--limit",
+            "10",
+        ])
+        .unwrap();
+        if let crate::cli::Commands::Docs(args) = cli.command {
+            if let DocsCmd::History(h_args) = args.command {
+                assert_eq!(h_args.limit, Some(10));
+            } else {
+                panic!("expected History");
+            }
+        } else {
+            panic!("expected Docs");
+        }
+    }
+
+    #[test]
+    fn docs_revision_requires_seq() {
+        let result =
+            Cli::try_parse_from(["atlas", "docs", "revision", "my-doc", "--workspace", "ws"]);
+        assert!(result.is_err(), "--seq is required for docs revision");
+    }
+
+    #[test]
+    fn docs_revision_parses_seq() {
+        let cli = Cli::try_parse_from([
+            "atlas",
+            "docs",
+            "revision",
+            "my-doc",
+            "--workspace",
+            "ws",
+            "--seq",
+            "5",
+        ])
+        .unwrap();
+        if let crate::cli::Commands::Docs(args) = cli.command {
+            if let DocsCmd::Revision(r_args) = args.command {
+                assert_eq!(r_args.seq, 5);
+            } else {
+                panic!("expected Revision");
+            }
+        } else {
+            panic!("expected Docs");
+        }
+    }
+
+    #[test]
+    fn docs_frontmatter_parses() {
+        let cli = Cli::try_parse_from([
+            "atlas",
+            "docs",
+            "frontmatter",
+            "my-doc",
+            "--workspace",
+            "ws",
+        ])
+        .unwrap();
+        if let crate::cli::Commands::Docs(args) = cli.command {
+            if let DocsCmd::Frontmatter(fm_args) = args.command {
+                assert_eq!(fm_args.slug, "my-doc");
+            } else {
+                panic!("expected Frontmatter");
+            }
+        } else {
+            panic!("expected Docs");
+        }
     }
 }

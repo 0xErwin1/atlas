@@ -1,3 +1,4 @@
+pub(crate) mod activity;
 pub(crate) mod boards;
 pub(crate) mod columns;
 pub(crate) mod docs;
@@ -30,5 +31,6 @@ pub(crate) async fn dispatch(ctx: &Ctx, cmd: Commands) -> Result<(), CliError> {
         Commands::Tags(args) => tags::run(ctx, args.command).await,
         Commands::Members(args) => members::run(ctx, args.command).await,
         Commands::Folders(args) => folders::run(ctx, args.command).await,
+        Commands::Activity(args) => activity::run(ctx, args.command).await,
     }
 }
