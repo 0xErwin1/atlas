@@ -3,14 +3,17 @@
 use clap::{Parser, Subcommand};
 
 use crate::commands::activity::ActivityArgs;
+use crate::commands::api_keys::ApiKeysArgs;
 use crate::commands::boards::BoardsArgs;
 use crate::commands::columns::ColumnsArgs;
 use crate::commands::docs::DocsArgs;
 use crate::commands::folders::FoldersArgs;
+use crate::commands::groups::GroupsArgs;
 use crate::commands::members::MembersArgs;
 use crate::commands::projects::ProjectsArgs;
 use crate::commands::tags::TagsArgs;
 use crate::commands::tasks::TasksArgs;
+use crate::commands::users::UsersArgs;
 use crate::commands::workspaces::WorkspacesArgs;
 
 /// Atlas CLI — personal knowledge base client.
@@ -63,6 +66,12 @@ pub(crate) enum Commands {
     Folders(FoldersArgs),
     /// List workspace-level activity (audit log).
     Activity(ActivityArgs),
+    /// Manage system users (admin; list, create, disable, enable, reset-password, regenerate-link, memberships).
+    Users(UsersArgs),
+    /// Manage personal API keys (list, create, revoke, set-global, grants, delete-grant).
+    ApiKeys(ApiKeysArgs),
+    /// Manage workspace groups (list, create, delete, add-member, remove-member, members).
+    Groups(GroupsArgs),
 }
 
 /// Arguments for the `search` subcommand.
