@@ -11,7 +11,11 @@ use crate::commands::folders::FoldersArgs;
 use crate::commands::groups::GroupsArgs;
 use crate::commands::members::MembersArgs;
 use crate::commands::projects::ProjectsArgs;
+use crate::commands::property_definitions::PropertyDefinitionsArgs;
+use crate::commands::saved_searches::SavedSearchesArgs;
+use crate::commands::status_templates::StatusTemplatesArgs;
 use crate::commands::tags::TagsArgs;
+use crate::commands::task_views::TaskViewsArgs;
 use crate::commands::tasks::TasksArgs;
 use crate::commands::users::UsersArgs;
 use crate::commands::workspaces::WorkspacesArgs;
@@ -72,6 +76,14 @@ pub(crate) enum Commands {
     ApiKeys(ApiKeysArgs),
     /// Manage workspace groups (list, create, delete, add-member, remove-member, members).
     Groups(GroupsArgs),
+    /// Manage workspace status templates (list, create, update, delete, apply).
+    StatusTemplates(StatusTemplatesArgs),
+    /// Manage workspace saved searches (list, create, rename, delete).
+    SavedSearches(SavedSearchesArgs),
+    /// Manage workspace task views (list, get, create, update, delete).
+    TaskViews(TaskViewsArgs),
+    /// Manage workspace property definitions / custom fields (list, create, delete).
+    PropertyDefinitions(PropertyDefinitionsArgs),
 }
 
 /// Arguments for the `search` subcommand.
