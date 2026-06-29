@@ -8,6 +8,7 @@
     )
 )]
 
+pub(crate) mod create;
 pub(crate) mod frontmatter;
 pub(crate) mod manifest;
 pub(crate) mod mapping;
