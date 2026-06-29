@@ -234,7 +234,7 @@ pub(crate) fn rewrite_wikilinks(body: &str) -> String {
             continue;
         }
 
-        let title = strip_alias(inner);
+        let title = link_target_title(inner);
         out.push_str("[[");
         out.push_str(&title);
         out.push_str("]]");
@@ -244,11 +244,16 @@ pub(crate) fn rewrite_wikilinks(body: &str) -> String {
     out
 }
 
-/// Strips alias and heading from a raw Obsidian wikilink inner string.
+/// Reduces a raw Obsidian wikilink inner string to the bare note title Atlas
+/// can resolve.
 ///
-/// Order: strip alias (take the part before the first `|`) then strip heading
-/// (take the part before the first `#`). Result is trimmed.
-fn strip_alias(inner: &str) -> String {
+/// Steps, in order: strip the alias (part before the first `|`), strip the
+/// heading anchor (part before the first `#`), then reduce a path-style target
+/// to its last path component. Obsidian resolves `[[folder/note]]` by basename,
+/// but Atlas resolves `[[Title]]` only by `slugify(Title)`; since a note title
+/// can never contain `/`, a `/` always denotes a vault path, so taking the last
+/// component lets the link resolve instead of silently breaking.
+fn link_target_title(inner: &str) -> String {
     let without_alias = match inner.split_once('|') {
         Some((title_part, _)) => title_part,
         None => inner,
@@ -257,7 +262,14 @@ fn strip_alias(inner: &str) -> String {
         Some((title_part, _)) => title_part,
         None => without_alias,
     };
-    without_heading.trim().to_string()
+    let trimmed = without_heading.trim();
+
+    let basename = match trimmed.rsplit_once('/') {
+        Some((_, last)) if !last.trim().is_empty() => last,
+        _ => trimmed,
+    };
+
+    basename.trim().to_string()
 }
 
 /// Collects distinct wikilink targets from the rewritten body.
@@ -360,6 +372,29 @@ mod tests {
     #[test]
     fn wikilink_strip_heading_and_alias() {
         assert_eq!(rewrite_wikilinks("[[Title#heading|alias]]"), "[[Title]]");
+    }
+
+    #[test]
+    fn wikilink_path_reduced_to_basename() {
+        assert_eq!(rewrite_wikilinks("[[concepts/parsing]]"), "[[parsing]]");
+    }
+
+    #[test]
+    fn wikilink_nested_path_reduced_to_basename() {
+        assert_eq!(rewrite_wikilinks("[[a/b/c/note]]"), "[[note]]");
+    }
+
+    #[test]
+    fn wikilink_path_with_alias_and_heading_reduced() {
+        assert_eq!(
+            rewrite_wikilinks("[[entities/vulkan-api#Usage|Vulkan]]"),
+            "[[vulkan-api]]"
+        );
+    }
+
+    #[test]
+    fn wikilink_trailing_slash_falls_back_to_full() {
+        assert_eq!(rewrite_wikilinks("[[folder/]]"), "[[folder/]]");
     }
 
     #[test]
