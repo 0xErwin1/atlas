@@ -7,7 +7,9 @@
         clippy::indexing_slicing
     )
 )]
-// Items in this module are consumed by the scan→plan pipeline wired in B0b.
+// B3 fields: VaultDoc.frontmatter (doc_type, status, depends, tags used for
+// epic/task mapping) and VaultDoc.raw_content (kept for export round-trip)
+// are populated but not read until Batch B3.
 #![allow(dead_code)]
 
 use std::ffi::OsStr;

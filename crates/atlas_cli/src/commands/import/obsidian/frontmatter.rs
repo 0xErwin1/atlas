@@ -7,8 +7,8 @@
         clippy::indexing_slicing
     )
 )]
-// Items in this module are used by parser.rs and will be called from the
-// run_obsidian entrypoint once Batch B0b wires the scan→plan pipeline.
+// B3 fields: ImportFrontmatter.doc_type, status, depends, tags, and raw are
+// used by the epic/task mapping layer added in Batch B3.
 #![allow(dead_code)]
 
 use std::collections::BTreeMap;

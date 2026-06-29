@@ -9,8 +9,12 @@
 )]
 
 pub(crate) mod frontmatter;
+pub(crate) mod manifest;
+pub(crate) mod mapping;
 pub(crate) mod parser;
+pub(crate) mod plan;
 
+use std::io::{BufRead, Write};
 use std::path::PathBuf;
 
 use clap::Parser;
@@ -44,9 +48,71 @@ pub(crate) struct ObsidianImportArgs {
 
 /// Entry point for `atlas import obsidian`.
 ///
-/// Stub — full implementation lands in Batch B0b once the pure scan/plan layer
-/// (B0a) is complete.
-pub(crate) async fn run_obsidian(_ctx: &Ctx, _args: ObsidianImportArgs) -> Result<(), CliError> {
+/// Flow: (1) resolve workspace; (2) verify the project exists; (3) load the
+/// manifest; (4) scan the vault; (5) build the import plan; (6) if `--dry-run`,
+/// print the plan and return; (7) if interactive, prompt for confirmation;
+/// (8) execute the plan (stub until B1).
+pub(crate) async fn run_obsidian(ctx: &Ctx, args: ObsidianImportArgs) -> Result<(), CliError> {
+    use atlas_client::ClientError;
+
+    let ws = ctx.require_workspace(args.workspace.as_deref())?;
+
+    match ctx.client.get_project(ws, &args.project).await {
+        Ok(_) => {}
+        Err(ClientError::Api(p)) if p.status == 404 => {
+            return Err(CliError::Validation(format!(
+                "project '{}' does not exist",
+                args.project
+            )));
+        }
+        Err(e) => return Err(CliError::from(e)),
+    }
+
+    let manifest_path = args.path.join(".atlas-import.json");
+    let mut manifest = manifest::Manifest::load(&manifest_path)?;
+
+    let docs = parser::scan_vault(&args.path)?;
+    let import_plan = plan::build_plan(&docs, &manifest);
+
+    if args.dry_run {
+        return plan::print_plan(&import_plan, ctx.output);
+    }
+
+    if !args.yes {
+        eprint!("Import into project '{}' — proceed? [y/N] ", args.project);
+        std::io::stderr().flush().ok();
+        if !read_yes(std::io::stdin().lock()) {
+            eprintln!("Import aborted.");
+            return Ok(());
+        }
+    }
+
+    execute(ctx, &import_plan, &mut manifest).await
+}
+
+/// Returns `true` when the user responds with `y` or `Y`.
+///
+/// Any other input, including a read error or EOF, is treated as a rejection.
+/// Factored as a `BufRead`-generic function so the confirmation logic can be
+/// tested without a live TTY.
+pub(crate) fn read_yes(mut reader: impl BufRead) -> bool {
+    let mut line = String::new();
+    match reader.read_line(&mut line) {
+        Ok(0) => false,
+        Ok(_) => line.trim().eq_ignore_ascii_case("y"),
+        Err(_) => false,
+    }
+}
+
+/// Executes the import plan against the Atlas API.
+///
+/// B1: Implements folder creation (depth-first), document create/CAS-update,
+/// attachment upload, and manifest persistence.
+async fn execute(
+    _ctx: &Ctx,
+    _plan: &plan::ImportPlan,
+    _manifest: &mut manifest::Manifest,
+) -> Result<(), CliError> {
     Ok(())
 }
 
@@ -65,6 +131,8 @@ mod tests {
         #[command(subcommand)]
         command: Commands,
     }
+
+    // -- CLI parsing -----------------------------------------------------------
 
     #[test]
     fn obsidian_import_parses_required_args() {
@@ -118,5 +186,37 @@ mod tests {
             result.is_err(),
             "import obsidian without --project must fail"
         );
+    }
+
+    // -- read_yes --------------------------------------------------------------
+
+    #[test]
+    fn read_yes_accepts_lowercase_y() {
+        assert!(read_yes("y\n".as_bytes()));
+    }
+
+    #[test]
+    fn read_yes_accepts_uppercase_y() {
+        assert!(read_yes("Y\n".as_bytes()));
+    }
+
+    #[test]
+    fn read_yes_rejects_n() {
+        assert!(!read_yes("n\n".as_bytes()));
+    }
+
+    #[test]
+    fn read_yes_rejects_empty_line() {
+        assert!(!read_yes("\n".as_bytes()));
+    }
+
+    #[test]
+    fn read_yes_rejects_eof() {
+        assert!(!read_yes("".as_bytes()));
+    }
+
+    #[test]
+    fn read_yes_rejects_yes_spelled_out() {
+        assert!(!read_yes("yes\n".as_bytes()));
     }
 }
