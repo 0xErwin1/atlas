@@ -2,6 +2,8 @@
 
 use clap::{Parser, Subcommand};
 
+use crate::commands::tasks::TasksArgs;
+
 /// Atlas CLI — personal knowledge base client.
 #[derive(Parser)]
 #[command(name = "atlas", about = "Atlas CLI")]
@@ -32,6 +34,8 @@ pub(crate) enum Commands {
     Version,
     /// Search across documents and tasks in a workspace.
     Search(SearchArgs),
+    /// Manage tasks (create, list, get, update, move, delete).
+    Tasks(TasksArgs),
 }
 
 /// Arguments for the `search` subcommand.

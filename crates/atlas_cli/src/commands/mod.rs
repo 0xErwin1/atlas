@@ -1,4 +1,5 @@
 pub(crate) mod search;
+pub(crate) mod tasks;
 
 use crate::cli::Commands;
 use crate::ctx::Ctx;
@@ -12,5 +13,6 @@ pub(crate) async fn dispatch(ctx: &Ctx, cmd: Commands) -> Result<(), CliError> {
             Ok(())
         }
         Commands::Search(args) => search::run(ctx, args).await,
+        Commands::Tasks(args) => tasks::run(ctx, args.command).await,
     }
 }
