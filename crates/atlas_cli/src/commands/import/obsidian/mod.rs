@@ -88,7 +88,15 @@ pub(crate) async fn run_obsidian(ctx: &Ctx, args: ObsidianImportArgs) -> Result<
         }
     }
 
-    execute(ctx, &import_plan, &mut manifest).await
+    execute(
+        ctx,
+        &import_plan,
+        &mut manifest,
+        ws,
+        &args.project,
+        &manifest_path,
+    )
+    .await
 }
 
 /// Returns `true` when the user responds with `y` or `Y`.
@@ -107,13 +115,42 @@ pub(crate) fn read_yes(mut reader: impl BufRead) -> bool {
 
 /// Executes the import plan against the Atlas API.
 ///
-/// B1: Implements folder creation (depth-first), document create/CAS-update,
-/// attachment upload, and manifest persistence.
+/// Phase order: folders (depth-first) → documents (create/update/skip) →
+/// boards and tasks (stub, B3) → attachments (stub, B4). The manifest is
+/// saved inside each phase after every successful operation so a crash at
+/// any point leaves a valid, resumable state.
 async fn execute(
-    _ctx: &Ctx,
-    _plan: &plan::ImportPlan,
-    _manifest: &mut manifest::Manifest,
+    ctx: &Ctx,
+    plan: &plan::ImportPlan,
+    manifest: &mut manifest::Manifest,
+    ws: &str,
+    project: &str,
+    manifest_path: &std::path::Path,
 ) -> Result<(), CliError> {
+    create::execute_folders(
+        &ctx.client,
+        ws,
+        project,
+        &plan.folders,
+        manifest,
+        manifest_path,
+    )
+    .await?;
+
+    create::execute_documents(
+        &ctx.client,
+        ws,
+        project,
+        &plan.documents,
+        manifest,
+        manifest_path,
+        ctx.output,
+    )
+    .await?;
+
+    create::execute_boards_and_tasks().await?;
+    create::execute_attachments().await?;
+
     Ok(())
 }
 
