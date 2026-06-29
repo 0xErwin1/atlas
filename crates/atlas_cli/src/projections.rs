@@ -11,10 +11,11 @@
 use atlas_api::dtos::audit::AuditEntryDto;
 use atlas_api::dtos::boards_tasks::{
     ActivityEntryDto, AssigneeDto, BoardSummaryDto, ChecklistItemDto, ColumnDto, PromotionDto,
-    ReferenceDto, TaskBacklinkDto, TaskDto, TaskSummaryDto,
+    ReferenceDto, TaskAttachmentDto, TaskBacklinkDto, TaskDto, TaskSummaryDto,
 };
 use atlas_api::dtos::documents::{
-    ActorDto, BacklinkDto, DocumentDto, DocumentSummaryDto, RevisionContentDto, RevisionMetaDto,
+    ActorDto, AttachmentDto, BacklinkDto, DocumentDto, DocumentSummaryDto, RevisionContentDto,
+    RevisionMetaDto,
 };
 use atlas_api::dtos::folders::FolderDto;
 use atlas_api::dtos::groups::{GroupDto, GroupMemberDto};
@@ -1212,6 +1213,63 @@ impl TableRow for DocBacklinkProjection {
             self.source_title.clone(),
             self.display_title.clone(),
             self.source_slug.clone().unwrap_or_default(),
+        ]
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Attachment projection (docs + tasks)
+// ---------------------------------------------------------------------------
+
+/// CLI projection for a document or task attachment.
+///
+/// Normalises `file_name → filename` and `size_bytes → size` for a uniform
+/// shape regardless of whether the source is a document or task attachment.
+#[derive(Debug, Serialize)]
+pub(crate) struct AttachProjection {
+    pub(crate) id: Uuid,
+    pub(crate) filename: String,
+    pub(crate) content_type: String,
+    pub(crate) size: i64,
+    pub(crate) created_at: DateTime<Utc>,
+}
+
+impl From<AttachmentDto> for AttachProjection {
+    fn from(dto: AttachmentDto) -> Self {
+        Self {
+            id: dto.id,
+            filename: dto.file_name,
+            content_type: dto.content_type,
+            size: dto.size_bytes,
+            created_at: dto.created_at,
+        }
+    }
+}
+
+impl From<TaskAttachmentDto> for AttachProjection {
+    fn from(dto: TaskAttachmentDto) -> Self {
+        Self {
+            id: dto.id,
+            filename: dto.file_name,
+            content_type: dto.content_type,
+            size: dto.size_bytes,
+            created_at: dto.created_at,
+        }
+    }
+}
+
+impl TableRow for AttachProjection {
+    fn headers() -> &'static [&'static str] {
+        &["ID", "Filename", "Content-Type", "Size", "Created"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        vec![
+            self.id.to_string(),
+            self.filename.clone(),
+            self.content_type.clone(),
+            self.size.to_string(),
+            self.created_at.format("%Y-%m-%d").to_string(),
         ]
     }
 }
@@ -3676,5 +3734,81 @@ mod tests {
         let value = serde_json::to_value(&proj).unwrap();
         assert_eq!(value["metadata"]["old_role"], "member");
         assert_eq!(value["metadata"]["new_role"], "admin");
+    }
+
+    // -----------------------------------------------------------------------
+    // AttachProjection (WU-34)
+    // -----------------------------------------------------------------------
+
+    fn make_attachment_dto() -> atlas_api::dtos::documents::AttachmentDto {
+        atlas_api::dtos::documents::AttachmentDto {
+            id: Uuid::now_v7(),
+            document_id: Uuid::now_v7(),
+            file_name: "report.pdf".to_owned(),
+            content_type: "application/pdf".to_owned(),
+            size_bytes: 2048,
+            sha256: "deadbeef".to_owned(),
+            actor: None,
+            created_at: Utc::now(),
+        }
+    }
+
+    fn make_task_attachment_dto() -> atlas_api::dtos::boards_tasks::TaskAttachmentDto {
+        atlas_api::dtos::boards_tasks::TaskAttachmentDto {
+            id: Uuid::now_v7(),
+            file_name: "screenshot.png".to_owned(),
+            content_type: "image/png".to_owned(),
+            size_bytes: 512,
+            created_by: make_actor_dto(), // reuses the existing helper in this test module
+            created_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn attach_projection_contract_fields() {
+        let proj = AttachProjection::from(make_attachment_dto());
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_projection_fields(
+            &value,
+            &["id", "filename", "content_type", "size", "created_at"],
+            &[],
+        );
+    }
+
+    #[test]
+    fn attach_projection_from_doc_attachment_drops_internal_fields() {
+        let proj = AttachProjection::from(make_attachment_dto());
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_eq!(value["filename"], "report.pdf");
+        assert_eq!(value["size"], 2048);
+        assert!(
+            value.get("document_id").is_none(),
+            "document_id must be dropped"
+        );
+        assert!(value.get("sha256").is_none(), "sha256 must be dropped");
+        assert!(
+            value.get("file_name").is_none(),
+            "raw file_name must be absent"
+        );
+        assert!(
+            value.get("size_bytes").is_none(),
+            "raw size_bytes must be absent"
+        );
+    }
+
+    #[test]
+    fn attach_projection_from_task_attachment_drops_created_by() {
+        let proj = AttachProjection::from(make_task_attachment_dto());
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_eq!(value["filename"], "screenshot.png");
+        assert_eq!(value["size"], 512);
+        assert!(
+            value.get("created_by").is_none(),
+            "created_by must be dropped"
+        );
+        assert!(
+            value.get("size_bytes").is_none(),
+            "raw size_bytes must be absent"
+        );
     }
 }

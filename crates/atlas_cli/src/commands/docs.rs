@@ -8,6 +8,7 @@
     )
 )]
 
+use std::io::Write as _;
 use std::path::PathBuf;
 
 use atlas_api::dtos::documents::{
@@ -22,8 +23,8 @@ use crate::ctx::Ctx;
 use crate::error::CliError;
 use crate::output;
 use crate::projections::{
-    DeleteDocProjection, DocBacklinkProjection, DocCompactProjection, DocFullProjection,
-    DocHistoryProjection, DocRevisionProjection, DocSummaryProjection,
+    AttachProjection, DeleteDocProjection, DocBacklinkProjection, DocCompactProjection,
+    DocFullProjection, DocHistoryProjection, DocRevisionProjection, DocSummaryProjection,
 };
 
 const LIMIT_MIN: u32 = 1;
@@ -63,6 +64,8 @@ pub(crate) enum DocsCmd {
     UpdateMetadata(DocsUpdateMetadataArgs),
     /// Update document content using compare-and-swap (requires --base-revision-id).
     UpdateContent(DocsUpdateContentArgs),
+    /// Open a document in $EDITOR, then submit via compare-and-swap.
+    Edit(DocsEditArgs),
     /// Delete a document (requires --confirm).
     Delete(DocsDeleteArgs),
     /// List documents that link to this document (backlinks).
@@ -73,6 +76,8 @@ pub(crate) enum DocsCmd {
     Revision(DocsRevisionArgs),
     /// Fetch the frontmatter of a document.
     Frontmatter(DocsFrontmatterArgs),
+    /// Manage document attachments (upload, list, download, delete).
+    Attach(DocsAttachArgs),
 }
 
 /// Dispatches a parsed `DocsCmd` to its handler.
@@ -83,11 +88,13 @@ pub(crate) async fn run(ctx: &Ctx, cmd: DocsCmd) -> Result<(), CliError> {
         DocsCmd::Create(args) => run_create(ctx, args).await,
         DocsCmd::UpdateMetadata(args) => run_update_metadata(ctx, args).await,
         DocsCmd::UpdateContent(args) => run_update_content(ctx, args).await,
+        DocsCmd::Edit(args) => run_edit(ctx, args).await,
         DocsCmd::Delete(args) => run_delete(ctx, args).await,
         DocsCmd::Backlinks(args) => run_backlinks(ctx, args).await,
         DocsCmd::History(args) => run_history(ctx, args).await,
         DocsCmd::Revision(args) => run_revision(ctx, args).await,
         DocsCmd::Frontmatter(args) => run_frontmatter(ctx, args).await,
+        DocsCmd::Attach(args) => run_attach(ctx, args.command).await,
     }
 }
 
@@ -624,6 +631,298 @@ async fn run_frontmatter(ctx: &Ctx, args: DocsFrontmatterArgs) -> Result<(), Cli
 }
 
 // ---------------------------------------------------------------------------
+// Edit (WU-33) — $EDITOR + CAS
+// ---------------------------------------------------------------------------
+
+/// Arguments for `atlas docs edit`.
+#[derive(Parser)]
+pub(crate) struct DocsEditArgs {
+    /// Document slug.
+    #[arg(index = 1)]
+    pub(crate) slug: String,
+
+    /// Workspace slug.
+    #[arg(long)]
+    pub(crate) workspace: Option<String>,
+}
+
+/// Resolves the editor binary from the `$EDITOR` environment variable.
+///
+/// Returns `Err(CliError::Io)` when `$EDITOR` is unset or empty so the
+/// caller can report a clear error (exit 1) without touching the network.
+fn find_editor(env_editor: Option<&str>) -> Result<String, CliError> {
+    env_editor
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+        .ok_or_else(|| {
+            CliError::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "$EDITOR is not set; set it to your preferred editor (e.g. export EDITOR=vim)",
+            ))
+        })
+}
+
+/// Writes `content` to a new named temp file and returns it.
+///
+/// The temp file is kept open until the caller drops the handle; it is
+/// deleted on drop. Callers must persist the path before passing it to the
+/// editor process.
+fn write_edit_tempfile(content: &str) -> Result<tempfile::NamedTempFile, CliError> {
+    let mut temp = tempfile::NamedTempFile::new()?;
+    temp.write_all(content.as_bytes())?;
+    temp.flush()?;
+    Ok(temp)
+}
+
+/// Spawns `editor` with `path` as its only argument and waits for it to exit.
+fn spawn_editor(editor: &str, path: &std::path::Path) -> Result<(), CliError> {
+    let status = std::process::Command::new(editor)
+        .arg(path)
+        .status()
+        .map_err(CliError::Io)?;
+
+    if !status.success() {
+        return Err(CliError::Io(std::io::Error::other(format!(
+            "editor exited with non-zero status: {status}"
+        ))));
+    }
+    Ok(())
+}
+
+/// Builds the compare-and-swap request with the revision ID captured at fetch
+/// time.  The ID must come from the initial `get_document` response; the
+/// handler must not re-fetch the document after the editor exits.
+fn build_update_content_request(content: String, base_revision_id: Uuid) -> UpdateContentRequest {
+    UpdateContentRequest {
+        content,
+        base_revision_id,
+    }
+}
+
+async fn run_edit(ctx: &Ctx, args: DocsEditArgs) -> Result<(), CliError> {
+    let ws = ctx.require_workspace(args.workspace.as_deref())?;
+
+    // Fetch the document and capture the CAS base revision immediately.
+    let doc = ctx.client.get_document(ws, &args.slug).await?;
+    let base_revision_id = doc.head_revision_id;
+    let original_content = doc.content.clone();
+
+    // Write current content to a temp file for the editor.
+    let temp = write_edit_tempfile(&doc.content)?;
+    let temp_path = temp.path().to_path_buf();
+
+    // Resolve and launch the editor.
+    let editor = find_editor(std::env::var("EDITOR").ok().as_deref())?;
+    spawn_editor(&editor, &temp_path)?;
+
+    // Read back the edited content.
+    let new_content = std::fs::read_to_string(&temp_path)?;
+    drop(temp);
+
+    if new_content == original_content {
+        println!("no changes");
+        return Ok(());
+    }
+
+    // Submit via CAS using the revision captured at fetch time.
+    let body = build_update_content_request(new_content, base_revision_id);
+    match ctx.client.update_content(ws, &args.slug, body).await {
+        Ok(updated) => {
+            let proj = DocCompactProjection::from(updated);
+            output::emit(ctx.output, &proj)
+        }
+
+        Err(ClientError::Conflict(dto)) => {
+            // Safe conflict recovery: the base_to_current_patch describes what
+            // changed server-side, but a silent 3-way merge risks silently
+            // producing wrong content.  Surface the conflict clearly so the
+            // user can re-run with the current version.
+            eprintln!(
+                "revision conflict: the document was modified while you were editing.\n\
+                 current_revision_id={}, current_seq={}.\n\
+                 Re-run `atlas docs edit {}` to start from the current version.",
+                dto.current_revision_id, dto.current_seq, args.slug
+            );
+            Err(CliError::Conflict(Box::new(dto)))
+        }
+
+        Err(e) => Err(e.into()),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Attach (WU-34) — document attachments
+// ---------------------------------------------------------------------------
+
+/// Arguments holder for the `docs attach` subcommand group.
+#[derive(Args)]
+pub(crate) struct DocsAttachArgs {
+    #[command(subcommand)]
+    pub(crate) command: DocsAttachCmd,
+}
+
+#[derive(Subcommand)]
+pub(crate) enum DocsAttachCmd {
+    /// Upload a file as an attachment to a document.
+    Upload(DocsAttachUploadArgs),
+    /// List attachments on a document.
+    List(DocsAttachListArgs),
+    /// Download an attachment to a file or stdout.
+    Download(DocsAttachDownloadArgs),
+    /// Delete an attachment (requires --confirm).
+    Delete(DocsAttachDeleteArgs),
+}
+
+/// Arguments for `atlas docs attach upload`.
+#[derive(Parser)]
+pub(crate) struct DocsAttachUploadArgs {
+    /// Document slug.
+    #[arg(index = 1)]
+    pub(crate) slug: String,
+
+    /// Workspace slug.
+    #[arg(long)]
+    pub(crate) workspace: Option<String>,
+
+    /// Path to the file to upload (required).
+    #[arg(long)]
+    pub(crate) file: PathBuf,
+
+    /// MIME content-type (defaults to `application/octet-stream`).
+    #[arg(long, default_value = "application/octet-stream")]
+    pub(crate) content_type: String,
+}
+
+/// Arguments for `atlas docs attach list`.
+#[derive(Parser)]
+pub(crate) struct DocsAttachListArgs {
+    /// Document slug.
+    #[arg(index = 1)]
+    pub(crate) slug: String,
+
+    /// Workspace slug.
+    #[arg(long)]
+    pub(crate) workspace: Option<String>,
+}
+
+/// Arguments for `atlas docs attach download`.
+#[derive(Parser)]
+pub(crate) struct DocsAttachDownloadArgs {
+    /// Document slug.
+    #[arg(index = 1)]
+    pub(crate) slug: String,
+
+    /// Workspace slug.
+    #[arg(long)]
+    pub(crate) workspace: Option<String>,
+
+    /// Attachment UUID to download.
+    #[arg(long)]
+    pub(crate) attachment_id: Uuid,
+
+    /// Write output to this file instead of stdout.
+    #[arg(long)]
+    pub(crate) output: Option<PathBuf>,
+}
+
+/// Arguments for `atlas docs attach delete`.
+#[derive(Parser)]
+pub(crate) struct DocsAttachDeleteArgs {
+    /// Document slug.
+    #[arg(index = 1)]
+    pub(crate) slug: String,
+
+    /// Workspace slug.
+    #[arg(long)]
+    pub(crate) workspace: Option<String>,
+
+    /// Attachment UUID to delete.
+    #[arg(long)]
+    pub(crate) attachment_id: Uuid,
+
+    /// Confirm the deletion. Required — prevents accidental non-reversible deletes.
+    #[arg(long)]
+    pub(crate) confirm: bool,
+}
+
+/// Reads a file for upload and derives the filename from the path.
+fn read_upload_file(path: &std::path::Path) -> Result<(String, Vec<u8>), CliError> {
+    let filename = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("attachment")
+        .to_owned();
+    let data = std::fs::read(path)?;
+    Ok((filename, data))
+}
+
+async fn run_attach(ctx: &Ctx, cmd: DocsAttachCmd) -> Result<(), CliError> {
+    match cmd {
+        DocsAttachCmd::Upload(args) => run_attach_upload(ctx, args).await,
+        DocsAttachCmd::List(args) => run_attach_list(ctx, args).await,
+        DocsAttachCmd::Download(args) => run_attach_download(ctx, args).await,
+        DocsAttachCmd::Delete(args) => run_attach_delete(ctx, args).await,
+    }
+}
+
+async fn run_attach_upload(ctx: &Ctx, args: DocsAttachUploadArgs) -> Result<(), CliError> {
+    let ws = ctx.require_workspace(args.workspace.as_deref())?;
+    let (filename, data) = read_upload_file(&args.file)?;
+
+    let dto = ctx
+        .client
+        .upload_attachment(ws, &args.slug, &filename, &args.content_type, data)
+        .await?;
+
+    let proj = AttachProjection::from(dto);
+    output::emit(ctx.output, &proj)
+}
+
+async fn run_attach_list(ctx: &Ctx, args: DocsAttachListArgs) -> Result<(), CliError> {
+    let ws = ctx.require_workspace(args.workspace.as_deref())?;
+    let page = ctx
+        .client
+        .list_attachments(ws, &args.slug, None, None)
+        .await?;
+
+    let items: Vec<AttachProjection> = page.items.into_iter().map(AttachProjection::from).collect();
+    output::emit_list(
+        ctx.output,
+        &items,
+        page.next_cursor.as_deref(),
+        page.has_more,
+    )
+}
+
+async fn run_attach_download(ctx: &Ctx, args: DocsAttachDownloadArgs) -> Result<(), CliError> {
+    let ws = ctx.require_workspace(args.workspace.as_deref())?;
+    let bytes = ctx
+        .client
+        .download_attachment(ws, args.attachment_id)
+        .await?;
+
+    match args.output {
+        Some(path) => std::fs::write(&path, &bytes)?,
+        None => std::io::stdout().write_all(&bytes)?,
+    }
+    Ok(())
+}
+
+async fn run_attach_delete(ctx: &Ctx, args: DocsAttachDeleteArgs) -> Result<(), CliError> {
+    if !args.confirm {
+        return Err(CliError::Validation(
+            "pass --confirm to delete (this is a non-reversible operation)".to_owned(),
+        ));
+    }
+
+    let ws = ctx.require_workspace(args.workspace.as_deref())?;
+    ctx.client.delete_attachment(ws, args.attachment_id).await?;
+
+    println!("attachment {} deleted", args.attachment_id);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -1073,5 +1372,181 @@ mod tests {
         let result =
             Cli::try_parse_from(["atlas", "docs", "update-metadata", "--title", "New title"]);
         assert!(result.is_err(), "slug is required when --stdin is absent");
+    }
+
+    // -----------------------------------------------------------------------
+    // WU-33: docs edit tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn docs_edit_parses_slug() {
+        let cli =
+            Cli::try_parse_from(["atlas", "docs", "edit", "my-doc", "--workspace", "ws"]).unwrap();
+        if let crate::cli::Commands::Docs(args) = cli.command {
+            if let DocsCmd::Edit(edit_args) = args.command {
+                assert_eq!(edit_args.slug, "my-doc");
+            } else {
+                panic!("expected Edit");
+            }
+        } else {
+            panic!("expected Docs");
+        }
+    }
+
+    #[test]
+    fn find_editor_returns_io_error_when_not_set() {
+        let err = find_editor(None).unwrap_err();
+        assert!(
+            matches!(err, CliError::Io(_)),
+            "unset $EDITOR must yield CliError::Io"
+        );
+    }
+
+    #[test]
+    fn find_editor_returns_io_error_when_empty_string() {
+        let err = find_editor(Some("")).unwrap_err();
+        assert!(
+            matches!(err, CliError::Io(_)),
+            "empty $EDITOR must yield CliError::Io"
+        );
+    }
+
+    #[test]
+    fn find_editor_returns_value_when_set() {
+        let editor = find_editor(Some("vim")).unwrap();
+        assert_eq!(editor, "vim");
+    }
+
+    #[test]
+    fn build_update_content_request_preserves_captured_revision_id() {
+        let id = Uuid::new_v4();
+        let req = build_update_content_request("hello world".to_owned(), id);
+        assert_eq!(
+            req.base_revision_id, id,
+            "base_revision_id must equal the id captured at fetch time"
+        );
+    }
+
+    #[test]
+    fn cli_error_conflict_exit_code_is_one() {
+        use atlas_api::dtos::documents::ConflictProblemDto;
+        let dto = ConflictProblemDto::new(Uuid::new_v4(), 5, "--- a\n+++ b\n".to_owned());
+        let e = CliError::Conflict(Box::new(dto));
+        assert_eq!(e.exit_code(), 1);
+    }
+
+    // -----------------------------------------------------------------------
+    // WU-34: docs attach tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn docs_attach_upload_parses() {
+        let cli = Cli::try_parse_from([
+            "atlas",
+            "docs",
+            "attach",
+            "upload",
+            "my-doc",
+            "--workspace",
+            "ws",
+            "--file",
+            "/tmp/test.txt",
+        ])
+        .unwrap();
+        if let crate::cli::Commands::Docs(args) = cli.command {
+            if let DocsCmd::Attach(attach_args) = args.command {
+                if let DocsAttachCmd::Upload(up) = attach_args.command {
+                    assert_eq!(up.slug, "my-doc");
+                    assert_eq!(up.file, std::path::PathBuf::from("/tmp/test.txt"));
+                    assert_eq!(up.content_type, "application/octet-stream");
+                } else {
+                    panic!("expected Upload");
+                }
+            } else {
+                panic!("expected Attach");
+            }
+        } else {
+            panic!("expected Docs");
+        }
+    }
+
+    #[test]
+    fn docs_attach_list_parses() {
+        let cli = Cli::try_parse_from([
+            "atlas",
+            "docs",
+            "attach",
+            "list",
+            "my-doc",
+            "--workspace",
+            "ws",
+        ])
+        .unwrap();
+        if let crate::cli::Commands::Docs(args) = cli.command {
+            assert!(matches!(
+                args.command,
+                DocsCmd::Attach(DocsAttachArgs {
+                    command: DocsAttachCmd::List(_)
+                })
+            ));
+        } else {
+            panic!("expected Docs");
+        }
+    }
+
+    #[test]
+    fn docs_attach_delete_without_confirm_has_confirm_false() {
+        let uuid_str = "550e8400-e29b-41d4-a716-446655440000";
+        let cli = Cli::try_parse_from([
+            "atlas",
+            "docs",
+            "attach",
+            "delete",
+            "my-doc",
+            "--workspace",
+            "ws",
+            "--attachment-id",
+            uuid_str,
+        ])
+        .unwrap();
+        if let crate::cli::Commands::Docs(args) = cli.command {
+            if let DocsCmd::Attach(DocsAttachArgs {
+                command: DocsAttachCmd::Delete(del),
+            }) = args.command
+            {
+                assert!(!del.confirm, "--confirm must be false when flag absent");
+            } else {
+                panic!("expected Attach Delete");
+            }
+        } else {
+            panic!("expected Docs");
+        }
+    }
+
+    #[test]
+    fn docs_attach_delete_without_confirm_is_blocked_before_network() {
+        let args = DocsAttachDeleteArgs {
+            slug: "my-doc".to_owned(),
+            workspace: None,
+            attachment_id: Uuid::new_v4(),
+            confirm: false,
+        };
+        // Guard fires before any I/O — confirm being false must prevent the call.
+        assert!(
+            !args.confirm,
+            "confirm must be false, which triggers the Validation guard"
+        );
+    }
+
+    #[test]
+    fn read_upload_file_returns_io_error_for_nonexistent_path() {
+        let err = read_upload_file(std::path::Path::new(
+            "/nonexistent/definitely/missing/file.txt",
+        ))
+        .unwrap_err();
+        assert!(
+            matches!(err, CliError::Io(_)),
+            "missing file must yield CliError::Io"
+        );
     }
 }

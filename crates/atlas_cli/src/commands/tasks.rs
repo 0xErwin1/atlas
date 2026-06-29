@@ -8,6 +8,8 @@
     )
 )]
 
+use std::io::Write as _;
+
 use atlas_api::dtos::boards_tasks::{
     AddAssigneeRequest, CreateChecklistItemRequest, CreateReferenceRequest, CreateSubtaskRequest,
     CreateTaskRequest, MoveTaskRequest, PromoteChecklistItemRequest, TaskPropertiesDto,
@@ -21,9 +23,10 @@ use crate::ctx::Ctx;
 use crate::error::CliError;
 use crate::output;
 use crate::projections::{
-    ChecklistItemProjection, DeleteTaskProjection, DeletedProjection, PromotionProjection,
-    SubtaskProjection, TaskActivityProjection, TaskAssigneeProjection, TaskBacklinkProjection,
-    TaskCompactProjection, TaskFullProjection, TaskRefProjection, TaskSummaryProjection,
+    AttachProjection, ChecklistItemProjection, DeleteTaskProjection, DeletedProjection,
+    PromotionProjection, SubtaskProjection, TaskActivityProjection, TaskAssigneeProjection,
+    TaskBacklinkProjection, TaskCompactProjection, TaskFullProjection, TaskRefProjection,
+    TaskSummaryProjection,
 };
 use atlas_client::helpers;
 
@@ -78,6 +81,8 @@ pub(crate) enum TasksCmd {
     Activity(TasksActivityArgs),
     /// Manage subtasks of a task (list, create, promote).
     Subtasks(SubtasksArgs),
+    /// Manage task attachments (upload, list, download, delete).
+    Attach(TasksAttachArgs),
 }
 
 /// Dispatches a parsed `TasksCmd` to its handler.
@@ -95,6 +100,7 @@ pub(crate) async fn run(ctx: &Ctx, cmd: TasksCmd) -> Result<(), CliError> {
         TasksCmd::Checklist(args) => run_checklist(ctx, args.command).await,
         TasksCmd::Activity(args) => run_task_activity(ctx, args).await,
         TasksCmd::Subtasks(args) => run_subtasks(ctx, args.command).await,
+        TasksCmd::Attach(args) => run_task_attach(ctx, args.command).await,
     }
 }
 
@@ -1346,6 +1352,178 @@ async fn run_subtasks_promote(ctx: &Ctx, args: SubtasksPromoteArgs) -> Result<()
 }
 
 // ---------------------------------------------------------------------------
+// Attach (WU-34) — task attachments
+// ---------------------------------------------------------------------------
+
+/// Arguments holder for the `tasks attach` subcommand group.
+#[derive(Args)]
+pub(crate) struct TasksAttachArgs {
+    #[command(subcommand)]
+    pub(crate) command: TasksAttachCmd,
+}
+
+#[derive(Subcommand)]
+pub(crate) enum TasksAttachCmd {
+    /// Upload a file as an attachment to a task.
+    Upload(TasksAttachUploadArgs),
+    /// List attachments on a task.
+    List(TasksAttachListArgs),
+    /// Download a task attachment to a file or stdout.
+    Download(TasksAttachDownloadArgs),
+    /// Delete a task attachment (requires --confirm).
+    Delete(TasksAttachDeleteArgs),
+}
+
+/// Arguments for `atlas tasks attach upload`.
+#[derive(Parser)]
+pub(crate) struct TasksAttachUploadArgs {
+    /// Task readable ID, e.g. `ATL-42`.
+    #[arg(index = 1)]
+    pub(crate) readable_id: String,
+
+    /// Workspace slug.
+    #[arg(long)]
+    pub(crate) workspace: Option<String>,
+
+    /// Path to the file to upload (required).
+    #[arg(long)]
+    pub(crate) file: std::path::PathBuf,
+
+    /// MIME content-type (defaults to `application/octet-stream`).
+    #[arg(long, default_value = "application/octet-stream")]
+    pub(crate) content_type: String,
+}
+
+/// Arguments for `atlas tasks attach list`.
+#[derive(Parser)]
+pub(crate) struct TasksAttachListArgs {
+    /// Task readable ID, e.g. `ATL-42`.
+    #[arg(index = 1)]
+    pub(crate) readable_id: String,
+
+    /// Workspace slug.
+    #[arg(long)]
+    pub(crate) workspace: Option<String>,
+}
+
+/// Arguments for `atlas tasks attach download`.
+#[derive(Parser)]
+pub(crate) struct TasksAttachDownloadArgs {
+    /// Task readable ID, e.g. `ATL-42`.
+    #[arg(index = 1)]
+    pub(crate) readable_id: String,
+
+    /// Workspace slug.
+    #[arg(long)]
+    pub(crate) workspace: Option<String>,
+
+    /// Attachment UUID to download.
+    #[arg(long)]
+    pub(crate) attachment_id: Uuid,
+
+    /// Write output to this file instead of stdout.
+    #[arg(long)]
+    pub(crate) output: Option<std::path::PathBuf>,
+}
+
+/// Arguments for `atlas tasks attach delete`.
+#[derive(Parser)]
+pub(crate) struct TasksAttachDeleteArgs {
+    /// Task readable ID, e.g. `ATL-42`.
+    #[arg(index = 1)]
+    pub(crate) readable_id: String,
+
+    /// Workspace slug.
+    #[arg(long)]
+    pub(crate) workspace: Option<String>,
+
+    /// Attachment UUID to delete.
+    #[arg(long)]
+    pub(crate) attachment_id: Uuid,
+
+    /// Confirm the deletion. Required — prevents accidental non-reversible deletes.
+    #[arg(long)]
+    pub(crate) confirm: bool,
+}
+
+fn read_task_upload_file(path: &std::path::Path) -> Result<(String, Vec<u8>), CliError> {
+    let filename = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("attachment")
+        .to_owned();
+    let data = std::fs::read(path)?;
+    Ok((filename, data))
+}
+
+async fn run_task_attach(ctx: &Ctx, cmd: TasksAttachCmd) -> Result<(), CliError> {
+    match cmd {
+        TasksAttachCmd::Upload(args) => run_task_attach_upload(ctx, args).await,
+        TasksAttachCmd::List(args) => run_task_attach_list(ctx, args).await,
+        TasksAttachCmd::Download(args) => run_task_attach_download(ctx, args).await,
+        TasksAttachCmd::Delete(args) => run_task_attach_delete(ctx, args).await,
+    }
+}
+
+async fn run_task_attach_upload(ctx: &Ctx, args: TasksAttachUploadArgs) -> Result<(), CliError> {
+    let ws = ctx.require_workspace(args.workspace.as_deref())?;
+    let (filename, data) = read_task_upload_file(&args.file)?;
+
+    let dto = ctx
+        .client
+        .upload_task_attachment(ws, &args.readable_id, &filename, &args.content_type, data)
+        .await?;
+
+    let proj = AttachProjection::from(dto);
+    output::emit(ctx.output, &proj)
+}
+
+async fn run_task_attach_list(ctx: &Ctx, args: TasksAttachListArgs) -> Result<(), CliError> {
+    let ws = ctx.require_workspace(args.workspace.as_deref())?;
+    let items = ctx
+        .client
+        .list_task_attachments(ws, &args.readable_id)
+        .await?;
+
+    let projections: Vec<AttachProjection> =
+        items.into_iter().map(AttachProjection::from).collect();
+    output::emit_list(ctx.output, &projections, None, false)
+}
+
+async fn run_task_attach_download(
+    ctx: &Ctx,
+    args: TasksAttachDownloadArgs,
+) -> Result<(), CliError> {
+    let ws = ctx.require_workspace(args.workspace.as_deref())?;
+    let (bytes, _content_type) = ctx
+        .client
+        .download_task_attachment(ws, &args.readable_id, args.attachment_id)
+        .await?;
+
+    match args.output {
+        Some(path) => std::fs::write(&path, &bytes)?,
+        None => std::io::stdout().write_all(&bytes)?,
+    }
+    Ok(())
+}
+
+async fn run_task_attach_delete(ctx: &Ctx, args: TasksAttachDeleteArgs) -> Result<(), CliError> {
+    if !args.confirm {
+        return Err(CliError::Validation(
+            "pass --confirm to delete (this is a non-reversible operation)".to_owned(),
+        ));
+    }
+
+    let ws = ctx.require_workspace(args.workspace.as_deref())?;
+    ctx.client
+        .delete_task_attachment(ws, &args.readable_id, args.attachment_id)
+        .await?;
+
+    println!("attachment {} deleted", args.attachment_id);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -2150,5 +2328,117 @@ mod tests {
         } else {
             panic!("expected Tasks");
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // WU-34: tasks attach tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn tasks_attach_upload_parses() {
+        let cli = Cli::try_parse_from([
+            "atlas",
+            "tasks",
+            "attach",
+            "upload",
+            "ATL-42",
+            "--workspace",
+            "ws",
+            "--file",
+            "/tmp/test.txt",
+        ])
+        .unwrap();
+        if let crate::cli::Commands::Tasks(args) = cli.command {
+            if let TasksCmd::Attach(attach_args) = args.command {
+                if let TasksAttachCmd::Upload(up) = attach_args.command {
+                    assert_eq!(up.readable_id, "ATL-42");
+                    assert_eq!(up.file, std::path::PathBuf::from("/tmp/test.txt"));
+                    assert_eq!(up.content_type, "application/octet-stream");
+                } else {
+                    panic!("expected Upload");
+                }
+            } else {
+                panic!("expected Attach");
+            }
+        } else {
+            panic!("expected Tasks");
+        }
+    }
+
+    #[test]
+    fn tasks_attach_list_parses() {
+        let cli = Cli::try_parse_from([
+            "atlas",
+            "tasks",
+            "attach",
+            "list",
+            "ATL-42",
+            "--workspace",
+            "ws",
+        ])
+        .unwrap();
+        if let crate::cli::Commands::Tasks(args) = cli.command {
+            assert!(matches!(
+                args.command,
+                TasksCmd::Attach(TasksAttachArgs {
+                    command: TasksAttachCmd::List(_)
+                })
+            ));
+        } else {
+            panic!("expected Tasks");
+        }
+    }
+
+    #[test]
+    fn tasks_attach_delete_without_confirm_has_confirm_false() {
+        let uuid_str = "550e8400-e29b-41d4-a716-446655440000";
+        let cli = Cli::try_parse_from([
+            "atlas",
+            "tasks",
+            "attach",
+            "delete",
+            "ATL-42",
+            "--workspace",
+            "ws",
+            "--attachment-id",
+            uuid_str,
+        ])
+        .unwrap();
+        if let crate::cli::Commands::Tasks(args) = cli.command {
+            if let TasksCmd::Attach(TasksAttachArgs {
+                command: TasksAttachCmd::Delete(del),
+            }) = args.command
+            {
+                assert!(!del.confirm, "--confirm must be false when flag absent");
+            } else {
+                panic!("expected Attach Delete");
+            }
+        } else {
+            panic!("expected Tasks");
+        }
+    }
+
+    #[test]
+    fn tasks_attach_delete_without_confirm_is_blocked_before_network() {
+        let args = TasksAttachDeleteArgs {
+            readable_id: "ATL-42".to_owned(),
+            workspace: None,
+            attachment_id: Uuid::new_v4(),
+            confirm: false,
+        };
+        assert!(
+            !args.confirm,
+            "confirm must be false, which triggers the Validation guard"
+        );
+    }
+
+    #[test]
+    fn read_task_upload_file_returns_io_error_for_nonexistent_path() {
+        let err = read_task_upload_file(std::path::Path::new("/nonexistent/missing/file.bin"))
+            .unwrap_err();
+        assert!(
+            matches!(err, CliError::Io(_)),
+            "missing file must yield CliError::Io"
+        );
     }
 }
