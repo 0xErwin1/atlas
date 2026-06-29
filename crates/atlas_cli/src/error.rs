@@ -8,9 +8,6 @@ use atlas_client::{ClientError, helpers::ResolverError};
 #[derive(Debug)]
 pub(crate) enum CliError {
     Client(Box<ClientError>),
-    // Used starting from B6 (docs edit CAS path); forward-declared here so the
-    // error hierarchy is complete and From<ClientError::Conflict> can route correctly.
-    #[allow(dead_code)]
     Conflict(Box<ConflictProblemDto>),
     Resolver(Box<ResolverError>),
     Config(String),

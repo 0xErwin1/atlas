@@ -2,6 +2,7 @@
 
 use clap::{Parser, Subcommand};
 
+use crate::commands::docs::DocsArgs;
 use crate::commands::tasks::TasksArgs;
 
 /// Atlas CLI — personal knowledge base client.
@@ -36,6 +37,8 @@ pub(crate) enum Commands {
     Search(SearchArgs),
     /// Manage tasks (create, list, get, update, move, delete).
     Tasks(TasksArgs),
+    /// Manage documents (list, get, create, update-metadata, update-content, delete).
+    Docs(DocsArgs),
 }
 
 /// Arguments for the `search` subcommand.
