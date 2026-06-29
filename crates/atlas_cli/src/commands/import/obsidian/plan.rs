@@ -14,7 +14,7 @@
 // their respective batches.
 #![allow(dead_code)]
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use serde::Serialize;
@@ -135,8 +135,7 @@ pub(crate) struct ImportPlan {
 /// but executes as an update (execution always calls `get_document` first).
 /// This honours "dry-run performs zero API calls" while staying truthful.
 pub(crate) fn build_plan(docs: &[VaultDoc], manifest: &Manifest) -> ImportPlan {
-    let slug_set: HashSet<String> = docs.iter().map(|d| d.predicted_slug.clone()).collect();
-
+    let link_index = build_link_index(docs);
     let folders = collect_folders(docs);
 
     let mut documents: Vec<DocumentOp> = Vec::with_capacity(docs.len());
@@ -150,9 +149,11 @@ pub(crate) fn build_plan(docs: &[VaultDoc], manifest: &Manifest) -> ImportPlan {
             .filter(|p| !p.as_os_str().is_empty())
             .map(PathBuf::from);
 
+        let (resolved_body, broken_links) = resolve_links(&doc.body, &link_index);
+
         let content = match &doc.yaml_block {
-            Some(yaml) => format!("---\n{yaml}\n---\n{}", doc.body),
-            None => doc.body.clone(),
+            Some(yaml) => format!("---\n{yaml}\n---\n{resolved_body}"),
+            None => resolved_body,
         };
 
         let action = {
@@ -164,13 +165,6 @@ pub(crate) fn build_plan(docs: &[VaultDoc], manifest: &Manifest) -> ImportPlan {
                 None => DocAction::Create,
             }
         };
-
-        let broken_links: Vec<String> = doc
-            .wikilink_targets
-            .iter()
-            .filter(|t| !slug_set.contains(&atlas_domain::slugify(t)))
-            .cloned()
-            .collect();
 
         for (file_path, mime) in &doc.attachment_candidates {
             let file_name = file_path
@@ -286,6 +280,82 @@ fn collect_folders(docs: &[VaultDoc]) -> Vec<FolderOp> {
             }
         })
         .collect()
+}
+
+/// Builds a vault-wide link resolution index that maps a normalized key to
+/// the target doc's title.
+///
+/// Obsidian links by filename but Atlas slugs by title, so resolve filename→title.
+/// Each doc contributes two keys: `slugify(filename_stem)` and `slugify(title)`,
+/// both pointing to the doc's title. On a key collision, the first doc in the
+/// slice wins (callers pass docs sorted by `rel_path`).
+fn build_link_index(docs: &[VaultDoc]) -> HashMap<String, String> {
+    let mut index: HashMap<String, String> = HashMap::new();
+
+    for doc in docs {
+        let stem = doc
+            .rel_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("");
+
+        let filename_key = atlas_domain::slugify(stem);
+        index
+            .entry(filename_key)
+            .or_insert_with(|| doc.title.clone());
+
+        let title_key = atlas_domain::slugify(&doc.title);
+        index.entry(title_key).or_insert_with(|| doc.title.clone());
+    }
+
+    index
+}
+
+/// Resolves `[[target]]` wikilinks in `body` against a vault-wide index.
+///
+/// Obsidian links reference notes by their filename, but Atlas derives the
+/// document slug from the title. This function maps each link target through
+/// the index (which covers both filename-slugs and title-slugs) so that
+/// `[[rendering-pipeline]]` becomes `[[Graphics Rendering Pipeline]]` when
+/// that doc's title is "Graphics Rendering Pipeline".
+///
+/// Returns the rewritten body and the list of unresolved target strings.
+pub(crate) fn resolve_links(body: &str, index: &HashMap<String, String>) -> (String, Vec<String>) {
+    let mut out = String::with_capacity(body.len());
+    let mut broken: Vec<String> = Vec::new();
+    let mut remaining = body;
+
+    while let Some(open) = remaining.find("[[") {
+        out.push_str(&remaining[..open]);
+        remaining = &remaining[open + 2..];
+
+        let Some(close) = remaining.find("]]") else {
+            out.push_str("[[");
+            continue;
+        };
+
+        let target = remaining[..close].trim();
+        remaining = &remaining[close + 2..];
+
+        let key = atlas_domain::slugify(target);
+
+        match index.get(&key) {
+            Some(resolved_title) => {
+                out.push_str("[[");
+                out.push_str(resolved_title);
+                out.push_str("]]");
+            }
+            None => {
+                out.push_str("[[");
+                out.push_str(target);
+                out.push_str("]]");
+                broken.push(target.to_string());
+            }
+        }
+    }
+
+    out.push_str(remaining);
+    (out, broken)
 }
 
 fn body_has_dataview(body: &str) -> bool {
@@ -406,6 +476,7 @@ fn skip_reason_label(reason: &SkipReason) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::fs;
     use std::path::PathBuf;
     use tempfile::TempDir;
@@ -634,5 +705,131 @@ mod tests {
     #[test]
     fn inline_field_not_detected_in_single_colon() {
         assert!(!body_has_inline_field("key: value"));
+    }
+
+    // -- resolve_links ---------------------------------------------------------
+
+    #[test]
+    fn resolve_links_filename_link_rewrites_to_title() {
+        // A doc filed as "rendering-pipeline.md" has title "Graphics Rendering Pipeline".
+        // A link [[rendering-pipeline]] should be rewritten to [[Graphics Rendering Pipeline]].
+        let mut index = HashMap::new();
+        index.insert(
+            "rendering-pipeline".to_string(),
+            "Graphics Rendering Pipeline".to_string(),
+        );
+
+        let (resolved, broken) = resolve_links("See [[rendering-pipeline]] for details.", &index);
+
+        assert_eq!(resolved, "See [[Graphics Rendering Pipeline]] for details.");
+        assert!(broken.is_empty());
+    }
+
+    #[test]
+    fn resolve_links_title_link_resolves_idempotently() {
+        // A link using the exact title also resolves (title key is in the index too).
+        let mut index = HashMap::new();
+        index.insert(
+            "graphics-rendering-pipeline".to_string(),
+            "Graphics Rendering Pipeline".to_string(),
+        );
+
+        let (resolved, broken) =
+            resolve_links("See [[Graphics Rendering Pipeline]] for details.", &index);
+
+        assert_eq!(resolved, "See [[Graphics Rendering Pipeline]] for details.");
+        assert!(broken.is_empty());
+    }
+
+    #[test]
+    fn resolve_links_missing_target_left_verbatim_and_in_broken() {
+        let index = HashMap::new();
+
+        let (resolved, broken) = resolve_links("See [[Ghost]] for details.", &index);
+
+        assert_eq!(resolved, "See [[Ghost]] for details.");
+        assert!(broken.contains(&"Ghost".to_string()));
+    }
+
+    // -- build_plan: filename≠title resolution --------------------------------
+
+    #[test]
+    fn build_plan_resolves_filename_link_to_title() {
+        // B's filename is "rendering-pipeline.md" but its title is "Graphics Rendering Pipeline".
+        // A links to B using the filename [[rendering-pipeline]].
+        // After build_plan, A's content must contain the title form and broken_links must be empty.
+        let doc_b = make_doc(
+            "rendering-pipeline.md",
+            "Graphics Rendering Pipeline",
+            "This is the rendering pipeline.",
+        );
+        let doc_a = make_doc("a.md", "A Doc", "See [[rendering-pipeline]] for details.");
+        let manifest = Manifest::empty();
+
+        let plan = build_plan(&[doc_a, doc_b], &manifest);
+
+        let op_a = plan
+            .documents
+            .iter()
+            .find(|d| d.rel_path.to_str() == Some("a.md"))
+            .unwrap();
+
+        assert!(
+            op_a.broken_links.is_empty(),
+            "link to a vault doc by its filename must not be broken"
+        );
+        assert!(
+            op_a.content.contains("[[Graphics Rendering Pipeline]]"),
+            "content must contain the resolved title in the link"
+        );
+    }
+
+    // -- build_plan: collision determinism ------------------------------------
+
+    #[test]
+    fn build_plan_collision_first_by_rel_path_wins_no_panic() {
+        // "a.md" and "sub/a.md" both yield filename key slugify("a") = "a".
+        // The first in the slice wins; a third doc links to [[a]] and must
+        // resolve to that first winner's title without panicking.
+        let doc_first = make_doc("a.md", "Alpha First", "Hello.");
+        let doc_second = make_doc("sub/a.md", "Alpha Second", "World.");
+        let doc_linker = make_doc("linker.md", "Linker", "See [[a]] for details.");
+        let manifest = Manifest::empty();
+
+        let plan = build_plan(&[doc_first, doc_second, doc_linker], &manifest);
+
+        assert_eq!(plan.documents.len(), 3);
+
+        let op = plan
+            .documents
+            .iter()
+            .find(|d| d.rel_path.to_str() == Some("linker.md"))
+            .unwrap();
+
+        assert!(
+            op.broken_links.is_empty(),
+            "link must resolve to first winner"
+        );
+        assert!(
+            op.content.contains("[[Alpha First]]"),
+            "first doc in rel_path order must win on filename key collision"
+        );
+    }
+
+    // -- build_plan: genuinely missing target remains in broken_links ---------
+
+    #[test]
+    fn build_plan_genuinely_missing_target_in_broken_links() {
+        let doc = make_doc("a.md", "A Doc", "See [[NonExistent]] here.");
+        let manifest = Manifest::empty();
+
+        let plan = build_plan(&[doc], &manifest);
+
+        assert!(
+            plan.documents[0]
+                .broken_links
+                .contains(&"NonExistent".to_string()),
+            "link to a doc not in the vault must appear in broken_links"
+        );
     }
 }

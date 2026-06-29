@@ -501,14 +501,20 @@ mod tests {
     #[test]
     fn validate_reference_kind_existing_kinds_preserved() {
         for v in &["relates", "blocks", "parent", "spec"] {
-            assert!(validate_reference_kind(v).is_ok(), "'{v}' should still be valid");
+            assert!(
+                validate_reference_kind(v).is_ok(),
+                "'{v}' should still be valid"
+            );
         }
     }
 
     #[test]
     fn validate_reference_kind_unknown_error_includes_docs() {
         let err = validate_reference_kind("mentions").unwrap_err();
-        assert!(err.contains("docs"), "error must list docs as a valid value");
+        assert!(
+            err.contains("docs"),
+            "error must list docs as a valid value"
+        );
     }
 
     #[test]
