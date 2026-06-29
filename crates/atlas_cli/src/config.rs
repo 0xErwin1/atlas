@@ -1,17 +1,20 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
-use std::path::PathBuf;
+use std::io::Write;
+use std::path::{Path, PathBuf};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::error::CliError;
 
 const KEYRING_SERVICE: &str = "atlas";
 const KEYRING_USER: &str = "token";
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 pub(crate) struct Config {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) base_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) token: Option<String>,
 }
 
@@ -50,12 +53,99 @@ pub(crate) fn load() -> Result<Config, CliError> {
     load_from_path(&path)
 }
 
-fn load_from_path(path: &std::path::Path) -> Result<Config, CliError> {
+fn load_from_path(path: &Path) -> Result<Config, CliError> {
     match std::fs::read_to_string(path) {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Config::default()),
         Err(e) => Err(CliError::Io(e)),
         Ok(content) => toml::from_str(&content)
             .map_err(|e| CliError::Config(format!("{}: {e}", path.display()))),
+    }
+}
+
+/// Persists `config` to the default config file location.
+///
+/// Creates the parent directory with mode 0o700 and the file with mode 0o600.
+/// Only `Some` fields are written; `None` fields are omitted entirely.
+pub(crate) fn save(config: &Config) -> Result<(), CliError> {
+    let path = config_path();
+    save_to_path(config, &path)
+}
+
+/// Pure inner: serialize and write `config` to `path`.
+///
+/// The parent directory is created with mode 0o700 and the file with mode 0o600.
+/// This is the security invariant for a file that may contain a plaintext token.
+fn save_to_path(config: &Config, path: &Path) -> Result<(), CliError> {
+    let content = toml::to_string(config)
+        .map_err(|e| CliError::Config(format!("failed to serialize config: {e}")))?;
+
+    if let Some(parent) = path.parent() {
+        use std::os::unix::fs::DirBuilderExt;
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(parent)
+            .map_err(CliError::Io)?;
+    }
+
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)
+            .map_err(CliError::Io)?;
+
+        file.write_all(content.as_bytes()).map_err(CliError::Io)?;
+    }
+
+    Ok(())
+}
+
+/// Stores `token` in the OS keyring under the Atlas service entry.
+///
+/// Returns `CliError::Config` when the keyring backend is unavailable or rejects
+/// the write. Callers are responsible for ensuring the token is NOT subsequently
+/// written to the config file to avoid duplicate storage.
+pub(crate) fn keyring_set_token(token: &str) -> Result<(), CliError> {
+    let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)
+        .map_err(|e| CliError::Config(format!("failed to access keyring: {e}")))?;
+
+    entry
+        .set_password(token)
+        .map_err(|e| CliError::Config(format!("failed to store token in keyring: {e}")))
+}
+
+/// Removes the Atlas token from the OS keyring.
+///
+/// A missing entry is treated as success so that `clear-token` is idempotent.
+/// Other keyring errors (e.g. access denied) are surfaced as `CliError::Config`.
+pub(crate) fn keyring_delete_token() -> Result<(), CliError> {
+    let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)
+        .map_err(|e| CliError::Config(format!("failed to access keyring: {e}")))?;
+
+    match entry.delete_credential() {
+        Ok(()) => Ok(()),
+        Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(CliError::Config(format!(
+            "failed to delete keyring entry: {e}"
+        ))),
+    }
+}
+
+/// Returns a masked representation of `token` safe to display to the user.
+///
+/// Tokens of 4 characters or fewer are fully masked. Longer tokens show only
+/// the last 4 characters prefixed with `...`. The full secret is never included.
+pub(crate) fn mask_token(token: &str) -> String {
+    let char_count = token.chars().count();
+    if char_count <= 4 {
+        "****".to_owned()
+    } else {
+        let last4: String = token.chars().skip(char_count - 4).collect();
+        format!("...{last4}")
     }
 }
 
@@ -92,7 +182,7 @@ pub(crate) fn resolve(cli_base: Option<&str>, cli_token: Option<&str>, file: &Co
 ///
 /// Any keyring error (including `NoEntry` and absent backends) silently yields
 /// `None` — keychain-less environments must not fail.
-fn try_keyring_token() -> Option<String> {
+pub(crate) fn try_keyring_token() -> Option<String> {
     keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)
         .ok()
         .and_then(|entry| entry.get_password().ok())
@@ -138,7 +228,6 @@ fn resolve_with_env(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
 
     fn write_temp_config(content: &str) -> (tempfile::TempDir, std::path::PathBuf) {
         let dir = tempfile::tempdir().unwrap();
@@ -335,5 +424,147 @@ token    = "secret-tok"
         // Verifies the keyring call does not panic regardless of the
         // environment (no entry → None, no backend → None, has entry → Some).
         drop(try_keyring_token());
+    }
+
+    // -----------------------------------------------------------------------
+    // save_to_path tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn save_to_path_round_trips_base_url_and_token() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("atlas").join("config.toml");
+
+        let config = Config {
+            base_url: Some("https://round-trip.example.com".to_owned()),
+            token: Some("round-trip-token".to_owned()),
+        };
+
+        save_to_path(&config, &path).unwrap();
+        let loaded = load_from_path(&path).unwrap();
+
+        assert_eq!(
+            loaded.base_url.as_deref(),
+            Some("https://round-trip.example.com")
+        );
+        assert_eq!(loaded.token.as_deref(), Some("round-trip-token"));
+    }
+
+    #[test]
+    fn save_to_path_omits_none_fields() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("atlas").join("config.toml");
+
+        let config = Config {
+            base_url: Some("https://example.com".to_owned()),
+            token: None,
+        };
+
+        save_to_path(&config, &path).unwrap();
+        let raw = std::fs::read_to_string(&path).unwrap();
+
+        assert!(!raw.contains("token"), "None token must not be emitted");
+    }
+
+    #[test]
+    fn save_to_path_creates_file_with_mode_0o600() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("atlas").join("config.toml");
+
+        save_to_path(&Config::default(), &path).unwrap();
+
+        let meta = std::fs::metadata(&path).unwrap();
+        let mode = meta.permissions().mode();
+        assert_eq!(mode & 0o777, 0o600, "config file must have mode 0o600");
+    }
+
+    #[test]
+    fn save_to_path_creates_parent_dir_with_mode_0o700() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("atlas").join("config.toml");
+
+        save_to_path(&Config::default(), &path).unwrap();
+
+        let parent = path.parent().unwrap();
+        let meta = std::fs::metadata(parent).unwrap();
+        let mode = meta.permissions().mode();
+        assert_eq!(mode & 0o777, 0o700, "config dir must have mode 0o700");
+    }
+
+    #[test]
+    fn save_to_path_overwrites_existing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("atlas").join("config.toml");
+
+        let first = Config {
+            base_url: Some("https://first.example.com".to_owned()),
+            token: Some("first-token".to_owned()),
+        };
+        save_to_path(&first, &path).unwrap();
+
+        let second = Config {
+            base_url: Some("https://second.example.com".to_owned()),
+            token: None,
+        };
+        save_to_path(&second, &path).unwrap();
+
+        let loaded = load_from_path(&path).unwrap();
+        assert_eq!(
+            loaded.base_url.as_deref(),
+            Some("https://second.example.com")
+        );
+        assert!(
+            loaded.token.is_none(),
+            "token from first write must not persist"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // mask_token tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn mask_token_empty_returns_fixed_mask() {
+        let masked = mask_token("");
+        assert_eq!(masked, "****");
+    }
+
+    #[test]
+    fn mask_token_short_token_returns_fixed_mask() {
+        assert_eq!(mask_token("ab"), "****");
+        assert_eq!(mask_token("abc"), "****");
+    }
+
+    #[test]
+    fn mask_token_exactly_four_chars_returns_fixed_mask() {
+        let masked = mask_token("abcd");
+        assert_eq!(masked, "****");
+    }
+
+    #[test]
+    fn mask_token_long_shows_last_four_only() {
+        let token = "supersecret-ab12";
+        let masked = mask_token(token);
+        assert!(masked.ends_with("b12"), "must show last 4 chars");
+        assert!(!masked.contains("supersecret"), "must not expose prefix");
+    }
+
+    #[test]
+    fn mask_token_never_equals_full_token() {
+        let token = "mytoken123456789";
+        let masked = mask_token(token);
+        assert_ne!(masked, token);
+        assert!(!masked.contains(token));
+    }
+
+    #[test]
+    fn mask_token_five_chars_shows_last_four() {
+        let token = "abcde";
+        let masked = mask_token(token);
+        assert_eq!(masked, "...bcde");
     }
 }
