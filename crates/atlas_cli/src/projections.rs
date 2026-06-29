@@ -9,7 +9,7 @@
 )]
 
 use atlas_api::dtos::boards_tasks::{TaskDto, TaskSummaryDto};
-use atlas_api::dtos::documents::ActorDto;
+use atlas_api::dtos::documents::{ActorDto, DocumentDto, DocumentSummaryDto};
 use atlas_api::dtos::search::{SearchHitDto, SearchKindDto};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
@@ -388,6 +388,173 @@ impl TableRow for DeleteTaskProjection {
 }
 
 // ---------------------------------------------------------------------------
+// Document projections
+// ---------------------------------------------------------------------------
+
+/// Summary document projection used for `docs list` responses.
+///
+/// Matches the `project_document_summary` shape from the MCP: optional fields
+/// (`slug`, `folder_id`) are omitted when absent rather than serialized as null.
+#[derive(Debug, Serialize)]
+pub(crate) struct DocSummaryProjection {
+    pub(crate) id: Uuid,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) slug: Option<String>,
+    pub(crate) title: String,
+    pub(crate) head_seq: i64,
+    pub(crate) updated_at: DateTime<Utc>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) folder_id: Option<Uuid>,
+}
+
+impl From<DocumentSummaryDto> for DocSummaryProjection {
+    fn from(doc: DocumentSummaryDto) -> Self {
+        Self {
+            id: doc.id,
+            slug: doc.slug,
+            title: doc.title,
+            head_seq: doc.head_seq,
+            updated_at: doc.updated_at,
+            folder_id: doc.folder_id,
+        }
+    }
+}
+
+impl TableRow for DocSummaryProjection {
+    fn headers() -> &'static [&'static str] {
+        &["ID", "Slug", "Title", "Seq", "Updated"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        vec![
+            self.id.to_string(),
+            self.slug.clone().unwrap_or_default(),
+            self.title.clone(),
+            self.head_seq.to_string(),
+            self.updated_at.format("%Y-%m-%d").to_string(),
+        ]
+    }
+}
+
+/// Compact document projection mirroring `project_document_compact` exactly.
+///
+/// All eight fields are always present (optional values serialize as `null`
+/// when absent), matching the MCP wire format.
+#[derive(Debug, Serialize)]
+pub(crate) struct DocCompactProjection {
+    pub(crate) id: Uuid,
+    pub(crate) slug: Option<String>,
+    pub(crate) title: String,
+    pub(crate) head_revision_id: Uuid,
+    pub(crate) head_seq: i64,
+    pub(crate) updated_at: DateTime<Utc>,
+    pub(crate) folder_id: Option<Uuid>,
+    pub(crate) project_id: Option<Uuid>,
+}
+
+impl From<DocumentDto> for DocCompactProjection {
+    fn from(doc: DocumentDto) -> Self {
+        Self {
+            id: doc.id,
+            slug: doc.slug,
+            title: doc.title,
+            head_revision_id: doc.head_revision_id,
+            head_seq: doc.head_seq,
+            updated_at: doc.updated_at,
+            folder_id: doc.folder_id,
+            project_id: doc.project_id,
+        }
+    }
+}
+
+impl TableRow for DocCompactProjection {
+    fn headers() -> &'static [&'static str] {
+        &["ID", "Slug", "Title", "Rev", "Seq", "Updated"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        vec![
+            self.id.to_string(),
+            self.slug.clone().unwrap_or_default(),
+            self.title.clone(),
+            self.head_revision_id.to_string(),
+            self.head_seq.to_string(),
+            self.updated_at.format("%Y-%m-%d").to_string(),
+        ]
+    }
+}
+
+/// Full document projection mirroring `project_document_full`: compact fields
+/// plus markdown content and frontmatter.
+#[derive(Debug, Serialize)]
+pub(crate) struct DocFullProjection {
+    pub(crate) id: Uuid,
+    pub(crate) slug: Option<String>,
+    pub(crate) title: String,
+    pub(crate) head_revision_id: Uuid,
+    pub(crate) head_seq: i64,
+    pub(crate) updated_at: DateTime<Utc>,
+    pub(crate) folder_id: Option<Uuid>,
+    pub(crate) project_id: Option<Uuid>,
+    pub(crate) content: String,
+    pub(crate) frontmatter: serde_json::Value,
+}
+
+impl From<DocumentDto> for DocFullProjection {
+    fn from(doc: DocumentDto) -> Self {
+        Self {
+            id: doc.id,
+            slug: doc.slug,
+            title: doc.title,
+            head_revision_id: doc.head_revision_id,
+            head_seq: doc.head_seq,
+            updated_at: doc.updated_at,
+            folder_id: doc.folder_id,
+            project_id: doc.project_id,
+            content: doc.content,
+            frontmatter: doc.frontmatter,
+        }
+    }
+}
+
+impl TableRow for DocFullProjection {
+    fn headers() -> &'static [&'static str] {
+        &["ID", "Slug", "Title", "Rev", "Seq", "Updated"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        vec![
+            self.id.to_string(),
+            self.slug.clone().unwrap_or_default(),
+            self.title.clone(),
+            self.head_revision_id.to_string(),
+            self.head_seq.to_string(),
+            self.updated_at.format("%Y-%m-%d").to_string(),
+        ]
+    }
+}
+
+/// Projection for a completed document deletion.
+///
+/// Uses `slug` (not a generic `id`) to match the document's public identifier,
+/// consistent with how documents are addressed across the CLI and the MCP.
+#[derive(Debug, Serialize)]
+pub(crate) struct DeleteDocProjection {
+    pub(crate) deleted: bool,
+    pub(crate) slug: String,
+}
+
+impl TableRow for DeleteDocProjection {
+    fn headers() -> &'static [&'static str] {
+        &["Deleted", "Slug"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        vec![self.deleted.to_string(), self.slug.clone()]
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -701,5 +868,130 @@ mod tests {
         assert_eq!(value["readable_id"], "ATL-1");
         assert!(value.get("id").is_none(), "must not contain a generic 'id' key");
         assert_projection_fields(&value, &["deleted", "readable_id"], &[]);
+    }
+
+    // -----------------------------------------------------------------------
+    // Document projections (T36)
+    // -----------------------------------------------------------------------
+
+    fn make_document_dto(slug: Option<&str>, folder_id: Option<Uuid>) -> DocumentDto {
+        DocumentDto {
+            id: Uuid::now_v7(),
+            workspace_id: Uuid::now_v7(),
+            project_id: Some(Uuid::now_v7()),
+            folder_id,
+            slug: slug.map(str::to_owned),
+            title: "Test Document".to_owned(),
+            content: "# Hello\nWorld".to_owned(),
+            head_revision_id: Uuid::now_v7(),
+            head_seq: 5,
+            frontmatter: serde_json::json!({"tags": ["rust"]}),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    fn make_document_summary_dto(slug: Option<&str>) -> DocumentSummaryDto {
+        DocumentSummaryDto {
+            id: Uuid::now_v7(),
+            slug: slug.map(str::to_owned),
+            title: "Summary Doc".to_owned(),
+            folder_id: None,
+            head_seq: 3,
+            updated_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn doc_compact_projection_contract_fields() {
+        let dto = make_document_dto(Some("my-doc"), None);
+        let proj = DocCompactProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_projection_fields(
+            &value,
+            &["id", "slug", "title", "head_revision_id", "head_seq", "updated_at", "folder_id", "project_id"],
+            &[],
+        );
+    }
+
+    #[test]
+    fn doc_compact_projection_slug_null_when_none() {
+        let dto = make_document_dto(None, None);
+        let proj = DocCompactProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert!(value["slug"].is_null(), "slug must be null (not absent) when None");
+    }
+
+    #[test]
+    fn doc_compact_projection_folder_id_null_when_none() {
+        let dto = make_document_dto(Some("x"), None);
+        let proj = DocCompactProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert!(value["folder_id"].is_null(), "folder_id must be null when None");
+    }
+
+    #[test]
+    fn doc_full_projection_contract_fields() {
+        let dto = make_document_dto(Some("full-doc"), None);
+        let proj = DocFullProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_projection_fields(
+            &value,
+            &[
+                "id", "slug", "title", "head_revision_id", "head_seq", "updated_at",
+                "folder_id", "project_id", "content", "frontmatter",
+            ],
+            &[],
+        );
+    }
+
+    #[test]
+    fn doc_full_projection_content_and_frontmatter_present() {
+        let dto = make_document_dto(Some("doc"), None);
+        let proj = DocFullProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert!(value["content"].is_string());
+        assert!(value["frontmatter"].is_object());
+    }
+
+    #[test]
+    fn delete_doc_projection_serializes_slug_not_id() {
+        let proj = DeleteDocProjection {
+            deleted: true,
+            slug: "my-doc".to_owned(),
+        };
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_eq!(value["deleted"], true);
+        assert_eq!(value["slug"], "my-doc");
+        assert!(value.get("id").is_none(), "must not contain a generic 'id' key");
+        assert_projection_fields(&value, &["deleted", "slug"], &[]);
+    }
+
+    #[test]
+    fn doc_summary_projection_contract_fields_required() {
+        let dto = make_document_summary_dto(None);
+        let proj = DocSummaryProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_projection_fields(
+            &value,
+            &["id", "title", "head_seq", "updated_at"],
+            &["slug", "folder_id"],
+        );
+    }
+
+    #[test]
+    fn doc_summary_projection_slug_absent_when_none() {
+        let dto = make_document_summary_dto(None);
+        let proj = DocSummaryProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert!(value.get("slug").is_none(), "slug must be absent (not null) when None");
+    }
+
+    #[test]
+    fn doc_summary_projection_slug_present_when_some() {
+        let dto = make_document_summary_dto(Some("notes"));
+        let proj = DocSummaryProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_eq!(value["slug"], "notes");
     }
 }
