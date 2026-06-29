@@ -17,8 +17,12 @@ use atlas_api::dtos::documents::{
 };
 use atlas_api::dtos::folders::FolderDto;
 use atlas_api::dtos::groups::{GroupDto, GroupMemberDto};
+use atlas_api::dtos::property_definitions::PropertyDefinitionDto;
+use atlas_api::dtos::saved_searches::SavedSearchDto;
 use atlas_api::dtos::search::{SearchHitDto, SearchKindDto};
+use atlas_api::dtos::status_templates::StatusTemplateDto;
 use atlas_api::dtos::tags::TagDto;
+use atlas_api::dtos::task_views::{TaskViewDto, TaskViewFiltersDto};
 use atlas_api::dtos::{
     ActivationLinkResponse, ApiKeyCreated, ApiKeyDto, ApiKeyGrantDto, CreateUserResponse,
     GrantedByDto, PrincipalDto, ProjectDto, UserDto, UserMembershipDto, WorkspaceDto,
@@ -1677,6 +1681,163 @@ impl TableRow for GroupMemberProjection {
 }
 
 // ---------------------------------------------------------------------------
+// Workspace config projections (Batch 5-B)
+// ---------------------------------------------------------------------------
+
+/// Status template projection, mirroring the MCP `project_status_template` shape.
+///
+/// `workspace_id` and `created_at` are dropped. `color` is omitted when absent.
+/// `position_key` is retained so callers can use `before`/`after` anchors.
+#[derive(Debug, Serialize)]
+pub(crate) struct StatusTemplateProjection {
+    pub(crate) id: Uuid,
+    pub(crate) name: String,
+    pub(crate) position_key: String,
+    pub(crate) updated_at: DateTime<Utc>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) color: Option<String>,
+}
+
+impl From<StatusTemplateDto> for StatusTemplateProjection {
+    fn from(t: StatusTemplateDto) -> Self {
+        Self {
+            id: t.id,
+            name: t.name,
+            position_key: t.position_key,
+            updated_at: t.updated_at,
+            color: t.color,
+        }
+    }
+}
+
+impl TableRow for StatusTemplateProjection {
+    fn headers() -> &'static [&'static str] {
+        &["ID", "Name", "Color", "Position", "Updated At"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        vec![
+            self.id.to_string(),
+            self.name.clone(),
+            self.color.clone().unwrap_or_default(),
+            self.position_key.clone(),
+            self.updated_at.format("%Y-%m-%d").to_string(),
+        ]
+    }
+}
+
+/// Saved search projection, mirroring the MCP `project_saved_search` shape.
+///
+/// `workspace_id` and timestamps are dropped; `query` is retained so the
+/// caller can inspect or reuse the filter string directly.
+#[derive(Debug, Serialize)]
+pub(crate) struct SavedSearchProjection {
+    pub(crate) id: Uuid,
+    pub(crate) name: String,
+    pub(crate) query: String,
+}
+
+impl From<SavedSearchDto> for SavedSearchProjection {
+    fn from(s: SavedSearchDto) -> Self {
+        Self {
+            id: s.id,
+            name: s.name,
+            query: s.query,
+        }
+    }
+}
+
+impl TableRow for SavedSearchProjection {
+    fn headers() -> &'static [&'static str] {
+        &["ID", "Name", "Query"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        vec![self.id.to_string(), self.name.clone(), self.query.clone()]
+    }
+}
+
+/// Task view projection, mirroring the MCP `project_task_view` shape.
+///
+/// `workspace_id` and timestamps are dropped. `filters` passes through the
+/// DTO verbatim — its `skip_serializing_if` guards keep absent fields out of
+/// the JSON output.
+#[derive(Debug, Serialize)]
+pub(crate) struct TaskViewProjection {
+    pub(crate) id: Uuid,
+    pub(crate) name: String,
+    pub(crate) filters: TaskViewFiltersDto,
+}
+
+impl From<TaskViewDto> for TaskViewProjection {
+    fn from(v: TaskViewDto) -> Self {
+        Self {
+            id: v.id,
+            name: v.name,
+            filters: v.filters,
+        }
+    }
+}
+
+impl TableRow for TaskViewProjection {
+    fn headers() -> &'static [&'static str] {
+        &["ID", "Name", "Filters"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        let filters_json = serde_json::to_string(&self.filters).unwrap_or_default();
+        vec![self.id.to_string(), self.name.clone(), filters_json]
+    }
+}
+
+/// Property definition projection for `property-definitions list` and `create`.
+///
+/// Exposes all DTO fields except `workspace_id` (not present in the DTO).
+/// `options` is omitted when absent (non-select kinds have no options array).
+#[derive(Debug, Serialize)]
+pub(crate) struct PropertyDefinitionProjection {
+    pub(crate) id: Uuid,
+    pub(crate) key: String,
+    pub(crate) name: String,
+    pub(crate) kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) options: Option<serde_json::Value>,
+    pub(crate) applies_to: String,
+    pub(crate) created_at: DateTime<Utc>,
+}
+
+impl From<PropertyDefinitionDto> for PropertyDefinitionProjection {
+    fn from(p: PropertyDefinitionDto) -> Self {
+        Self {
+            id: p.id,
+            key: p.key,
+            name: p.name,
+            kind: p.kind,
+            options: p.options,
+            applies_to: p.applies_to,
+            created_at: p.created_at,
+        }
+    }
+}
+
+impl TableRow for PropertyDefinitionProjection {
+    fn headers() -> &'static [&'static str] {
+        &["ID", "Key", "Name", "Kind", "Applies To", "Created At"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        vec![
+            self.id.to_string(),
+            self.key.clone(),
+            self.name.clone(),
+            self.kind.clone(),
+            self.applies_to.clone(),
+            self.created_at.format("%Y-%m-%d").to_string(),
+        ]
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -3048,5 +3209,181 @@ mod tests {
         let value = serde_json::to_value(&proj).unwrap();
         assert_projection_fields(&value, &["deleted", "id"], &[]);
         assert_eq!(value["deleted"], true);
+    }
+
+    // -----------------------------------------------------------------------
+    // Batch 5-B projections
+    // -----------------------------------------------------------------------
+
+    fn make_status_template_dto(color: Option<&str>) -> StatusTemplateDto {
+        StatusTemplateDto {
+            id: Uuid::now_v7(),
+            workspace_id: Uuid::now_v7(),
+            name: "In Progress".to_owned(),
+            color: color.map(str::to_owned),
+            position_key: "a0".to_owned(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn status_template_projection_required_fields() {
+        let proj = StatusTemplateProjection::from(make_status_template_dto(None));
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_projection_fields(
+            &value,
+            &["id", "name", "position_key", "updated_at"],
+            &["color"],
+        );
+    }
+
+    #[test]
+    fn status_template_projection_drops_workspace_id_and_created_at() {
+        let proj = StatusTemplateProjection::from(make_status_template_dto(None));
+        let value = serde_json::to_value(&proj).unwrap();
+        assert!(value.get("workspace_id").is_none());
+        assert!(value.get("created_at").is_none());
+    }
+
+    #[test]
+    fn status_template_projection_includes_color_when_present() {
+        let proj = StatusTemplateProjection::from(make_status_template_dto(Some("blue")));
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_eq!(value["color"], "blue");
+    }
+
+    #[test]
+    fn status_template_projection_omits_color_when_absent() {
+        let proj = StatusTemplateProjection::from(make_status_template_dto(None));
+        let value = serde_json::to_value(&proj).unwrap();
+        assert!(value.get("color").is_none());
+    }
+
+    fn make_saved_search_dto() -> SavedSearchDto {
+        SavedSearchDto {
+            id: Uuid::now_v7(),
+            workspace_id: Uuid::now_v7(),
+            name: "Open bugs".to_owned(),
+            query: "status:open tag:bug".to_owned(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn saved_search_projection_contract_fields() {
+        let proj = SavedSearchProjection::from(make_saved_search_dto());
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_projection_fields(&value, &["id", "name", "query"], &[]);
+    }
+
+    #[test]
+    fn saved_search_projection_drops_workspace_id_and_timestamps() {
+        let proj = SavedSearchProjection::from(make_saved_search_dto());
+        let value = serde_json::to_value(&proj).unwrap();
+        assert!(value.get("workspace_id").is_none());
+        assert!(value.get("created_at").is_none());
+        assert!(value.get("updated_at").is_none());
+    }
+
+    #[test]
+    fn saved_search_projection_preserves_query() {
+        let proj = SavedSearchProjection::from(make_saved_search_dto());
+        assert_eq!(proj.query, "status:open tag:bug");
+    }
+
+    fn make_task_view_dto(filters: TaskViewFiltersDto) -> TaskViewDto {
+        TaskViewDto {
+            id: Uuid::now_v7(),
+            workspace_id: Uuid::now_v7(),
+            name: "High priority".to_owned(),
+            filters,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn task_view_projection_contract_fields() {
+        let proj = TaskViewProjection::from(make_task_view_dto(TaskViewFiltersDto::default()));
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_projection_fields(&value, &["id", "name", "filters"], &[]);
+    }
+
+    #[test]
+    fn task_view_projection_drops_workspace_id_and_timestamps() {
+        let proj = TaskViewProjection::from(make_task_view_dto(TaskViewFiltersDto::default()));
+        let value = serde_json::to_value(&proj).unwrap();
+        assert!(value.get("workspace_id").is_none());
+        assert!(value.get("created_at").is_none());
+        assert!(value.get("updated_at").is_none());
+    }
+
+    #[test]
+    fn task_view_projection_filters_empty_fields_omitted() {
+        let proj = TaskViewProjection::from(make_task_view_dto(TaskViewFiltersDto::default()));
+        let value = serde_json::to_value(&proj).unwrap();
+        let filters = value["filters"].as_object().unwrap();
+        assert!(
+            filters.is_empty(),
+            "empty default filters must serialize as {{}}"
+        );
+    }
+
+    #[test]
+    fn task_view_projection_includes_non_empty_filter_fields() {
+        let filters = TaskViewFiltersDto {
+            sort: Some("priority_desc".to_owned()),
+            priorities: vec!["high".to_owned(), "urgent".to_owned()],
+            ..Default::default()
+        };
+        let proj = TaskViewProjection::from(make_task_view_dto(filters));
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_eq!(value["filters"]["sort"], "priority_desc");
+        let prios = value["filters"]["priorities"].as_array().unwrap();
+        assert_eq!(prios.len(), 2);
+    }
+
+    fn make_property_definition_dto() -> PropertyDefinitionDto {
+        PropertyDefinitionDto {
+            id: Uuid::now_v7(),
+            key: "due_date".to_owned(),
+            name: "Due Date".to_owned(),
+            kind: "date".to_owned(),
+            options: None,
+            applies_to: "task".to_owned(),
+            created_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn property_definition_projection_contract_fields() {
+        let proj = PropertyDefinitionProjection::from(make_property_definition_dto());
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_projection_fields(
+            &value,
+            &["id", "key", "name", "kind", "applies_to", "created_at"],
+            &["options"],
+        );
+    }
+
+    #[test]
+    fn property_definition_projection_omits_options_when_absent() {
+        let proj = PropertyDefinitionProjection::from(make_property_definition_dto());
+        let value = serde_json::to_value(&proj).unwrap();
+        assert!(value.get("options").is_none());
+    }
+
+    #[test]
+    fn property_definition_projection_includes_options_for_select_kind() {
+        use serde_json::json;
+        let mut dto = make_property_definition_dto();
+        dto.kind = "select".to_owned();
+        dto.options = Some(json!(["todo", "in_progress", "done"]));
+        let proj = PropertyDefinitionProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        let opts = value["options"].as_array().unwrap();
+        assert_eq!(opts.len(), 3);
     }
 }
