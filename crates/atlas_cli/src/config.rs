@@ -6,6 +6,9 @@ use serde::Deserialize;
 
 use crate::error::CliError;
 
+const KEYRING_SERVICE: &str = "atlas";
+const KEYRING_USER: &str = "token";
+
 #[derive(Debug, Default, Deserialize)]
 pub(crate) struct Config {
     pub(crate) base_url: Option<String>,
@@ -62,18 +65,51 @@ fn load_from_path(path: &std::path::Path) -> Result<Config, CliError> {
 ///   `--base-url` flag → `ATLAS_BASE_URL` env → config file → `http://localhost:8080`.
 ///
 /// Precedence for `token`:
-///   `--token` flag → `ATLAS_TOKEN` env → config file → `None`.
+///   `--token` flag → `ATLAS_TOKEN` env → config file → keyring → `None`.
+///
+/// Keyring errors (no entry, unavailable backend, …) are silently treated as
+/// `None` so keychain-less environments compile and run without issue.
 pub(crate) fn resolve(cli_base: Option<&str>, cli_token: Option<&str>, file: &Config) -> Resolved {
-    resolve_with_env(
+    let r = resolve_with_env(
         cli_base,
         cli_token,
         std::env::var("ATLAS_BASE_URL").ok().as_deref(),
         std::env::var("ATLAS_TOKEN").ok().as_deref(),
         file,
-    )
+    );
+
+    if r.token.is_some() {
+        return r;
+    }
+
+    Resolved {
+        base_url: r.base_url,
+        token: apply_keyring_fallback(None, try_keyring_token()),
+    }
 }
 
-/// Pure inner function — exposed only for unit testing.
+/// Attempts to retrieve the token from the system keyring.
+///
+/// Any keyring error (including `NoEntry` and absent backends) silently yields
+/// `None` — keychain-less environments must not fail.
+fn try_keyring_token() -> Option<String> {
+    keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)
+        .ok()
+        .and_then(|entry| entry.get_password().ok())
+}
+
+/// Pure combining function: returns `current` if set, otherwise `keyring_token`.
+///
+/// Exists as a testable unit so callers can verify the composition logic
+/// without depending on the presence or absence of a real keyring entry.
+fn apply_keyring_fallback(
+    current: Option<String>,
+    keyring_token: Option<String>,
+) -> Option<String> {
+    current.or(keyring_token)
+}
+
+/// Pure inner: resolves base_url and token from explicit sources (no keyring).
 fn resolve_with_env(
     cli_base: Option<&str>,
     cli_token: Option<&str>,
@@ -262,5 +298,42 @@ token    = "secret-tok"
             &empty_config(),
         );
         assert_eq!(r.base_url, "https://env-server.com");
+    }
+
+    // -----------------------------------------------------------------------
+    // WU-35: keyring fallback tests (pure functions only — no real keyring)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn apply_keyring_fallback_all_none_returns_none() {
+        let result = apply_keyring_fallback(None, None);
+        assert!(result.is_none(), "both absent must yield None — no panic");
+    }
+
+    #[test]
+    fn apply_keyring_fallback_keyring_none_entry_returns_none() {
+        // Simulates keyring returning None (no entry or unavailable backend).
+        let result = apply_keyring_fallback(None, None);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn apply_keyring_fallback_uses_current_when_set() {
+        let result =
+            apply_keyring_fallback(Some("from-file".to_owned()), Some("from-kr".to_owned()));
+        assert_eq!(result.as_deref(), Some("from-file"));
+    }
+
+    #[test]
+    fn apply_keyring_fallback_uses_keyring_when_current_absent() {
+        let result = apply_keyring_fallback(None, Some("kr-tok".to_owned()));
+        assert_eq!(result.as_deref(), Some("kr-tok"));
+    }
+
+    #[test]
+    fn try_keyring_token_does_not_panic_in_test_env() {
+        // Verifies the keyring call does not panic regardless of the
+        // environment (no entry → None, no backend → None, has entry → Some).
+        let _ = try_keyring_token();
     }
 }
