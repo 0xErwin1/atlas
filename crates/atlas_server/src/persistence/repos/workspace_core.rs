@@ -132,6 +132,7 @@ pub struct PgProjectRepo {
 impl ProjectRepo for PgProjectRepo {
     async fn create(&self, ctx: &WorkspaceCtx, new: NewProject) -> Result<Project, DomainError> {
         let created_by_user_id = user_id_from_actor(&ctx.actor);
+        let created_by_api_key_id = api_key_id_from_actor(&ctx.actor);
         let (vis_str, vis_role_str) = visibility_to_str(&new.visibility);
         let model = project::ActiveModel {
             id: Set(ProjectId::new().0),
@@ -143,7 +144,7 @@ impl ProjectRepo for PgProjectRepo {
             visibility: Set(vis_str.to_string()),
             visibility_role: Set(vis_role_str.map(|s| s.to_string())),
             created_by_user_id: Set(created_by_user_id),
-            created_by_api_key_id: Set(None),
+            created_by_api_key_id: Set(created_by_api_key_id),
             created_at: Set(Utc::now()),
             updated_at: Set(Utc::now()),
             deleted_at: Set(None),
@@ -433,6 +434,7 @@ pub struct PgFolderRepo {
 impl FolderRepo for PgFolderRepo {
     async fn create(&self, ctx: &WorkspaceCtx, new: NewFolder) -> Result<Folder, DomainError> {
         let created_by_user_id = user_id_from_actor(&ctx.actor);
+        let created_by_api_key_id = api_key_id_from_actor(&ctx.actor);
         let model = folder::ActiveModel {
             id: Set(FolderId::new().0),
             workspace_id: Set(ctx.workspace_id.0),
@@ -440,7 +442,7 @@ impl FolderRepo for PgFolderRepo {
             parent_folder_id: Set(new.parent_folder_id.map(|id| id.0)),
             name: Set(new.name),
             created_by_user_id: Set(created_by_user_id),
-            created_by_api_key_id: Set(None),
+            created_by_api_key_id: Set(created_by_api_key_id),
             created_at: Set(Utc::now()),
             updated_at: Set(Utc::now()),
             deleted_at: Set(None),
@@ -588,6 +590,13 @@ fn user_id_from_actor(actor: &Actor) -> Option<uuid::Uuid> {
     match actor {
         Actor::User(uid) => Some(uid.0),
         Actor::ApiKey(_) => None,
+    }
+}
+
+fn api_key_id_from_actor(actor: &Actor) -> Option<uuid::Uuid> {
+    match actor {
+        Actor::ApiKey(kid) => Some(kid.0),
+        Actor::User(_) => None,
     }
 }
 
