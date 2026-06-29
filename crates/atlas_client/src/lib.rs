@@ -1,5 +1,7 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+pub mod helpers;
+
 use atlas_api::{
     dtos::{
         ActivationLinkResponse, ApiKeyCreated, ApiKeyDto, ApiKeyGrantDto, ChangePasswordRequest,
