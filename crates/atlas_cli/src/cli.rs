@@ -4,10 +4,12 @@ use clap::{Parser, Subcommand};
 
 use crate::commands::activity::ActivityArgs;
 use crate::commands::api_keys::ApiKeysArgs;
+use crate::commands::audit::AuditArgs;
 use crate::commands::boards::BoardsArgs;
 use crate::commands::columns::ColumnsArgs;
 use crate::commands::docs::DocsArgs;
 use crate::commands::folders::FoldersArgs;
+use crate::commands::grants::GrantsArgs;
 use crate::commands::groups::GroupsArgs;
 use crate::commands::members::MembersArgs;
 use crate::commands::projects::ProjectsArgs;
@@ -84,6 +86,10 @@ pub(crate) enum Commands {
     TaskViews(TaskViewsArgs),
     /// Manage workspace property definitions / custom fields (list, create, delete).
     PropertyDefinitions(PropertyDefinitionsArgs),
+    /// Manage workspace and project permission grants (workspace/project list, create, revoke).
+    Grants(GrantsArgs),
+    /// Query security audit logs (workspace, platform).
+    Audit(AuditArgs),
 }
 
 /// Arguments for the `search` subcommand.

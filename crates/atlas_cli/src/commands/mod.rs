@@ -1,9 +1,11 @@
 pub(crate) mod activity;
 pub(crate) mod api_keys;
+pub(crate) mod audit;
 pub(crate) mod boards;
 pub(crate) mod columns;
 pub(crate) mod docs;
 pub(crate) mod folders;
+pub(crate) mod grants;
 pub(crate) mod groups;
 pub(crate) mod members;
 pub(crate) mod projects;
@@ -46,5 +48,7 @@ pub(crate) async fn dispatch(ctx: &Ctx, cmd: Commands) -> Result<(), CliError> {
         Commands::SavedSearches(args) => saved_searches::run(ctx, args.command).await,
         Commands::TaskViews(args) => task_views::run(ctx, args.command).await,
         Commands::PropertyDefinitions(args) => property_definitions::run(ctx, args.command).await,
+        Commands::Grants(args) => grants::run(ctx, args.command).await,
+        Commands::Audit(args) => audit::run(ctx, args.command).await,
     }
 }
