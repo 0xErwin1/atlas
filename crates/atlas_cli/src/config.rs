@@ -334,6 +334,6 @@ token    = "secret-tok"
     fn try_keyring_token_does_not_panic_in_test_env() {
         // Verifies the keyring call does not panic regardless of the
         // environment (no entry → None, no backend → None, has entry → Some).
-        let _ = try_keyring_token();
+        drop(try_keyring_token());
     }
 }

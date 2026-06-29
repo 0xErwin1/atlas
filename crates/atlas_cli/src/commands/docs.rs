@@ -12,7 +12,7 @@ use std::io::Write as _;
 use std::path::PathBuf;
 
 use atlas_api::dtos::documents::{
-    CreateDocumentRequest, UpdateContentRequest, UpdateDocumentRequest,
+    CreateDocumentRequest, DocumentDto, UpdateContentRequest, UpdateDocumentRequest,
 };
 use atlas_client::ClientError;
 use clap::{Args, Parser, Subcommand, ValueEnum};
@@ -699,54 +699,96 @@ fn build_update_content_request(content: String, base_revision_id: Uuid) -> Upda
     }
 }
 
+/// Writes `content` to a deterministic recovery file under the system temp
+/// directory so the user's edit survives any post-editor update failure.
+///
+/// The file is named `atlas-edit-<slug>.md` — easy to locate and re-apply.
+/// Returns the path of the written file.
+fn preserve_edit_on_error(slug: &str, content: &str) -> std::io::Result<std::path::PathBuf> {
+    let name = format!("atlas-edit-{slug}.md");
+    let path = std::env::temp_dir().join(&name);
+    std::fs::write(&path, content)?;
+    Ok(path)
+}
+
+/// Applies the result of the CAS submit step for a `docs edit` session.
+///
+/// On success returns the updated document unchanged. On any update error,
+/// preserves the user's edited content to a recovery file so it is not lost
+/// when the tempfile is dropped, then returns the mapped CLI error alongside
+/// the recovery path (or `None` when the recovery write itself failed).
+///
+/// Factoring out this step makes the preservation behaviour testable without
+/// a real server or $EDITOR.
+fn apply_edit_outcome(
+    slug: &str,
+    content: &str,
+    outcome: Result<DocumentDto, ClientError>,
+) -> Result<DocumentDto, (CliError, Option<std::path::PathBuf>)> {
+    match outcome {
+        Ok(doc) => Ok(doc),
+        Err(e) => {
+            let recovery = preserve_edit_on_error(slug, content).ok();
+            let cli_err = match e {
+                ClientError::Conflict(dto) => CliError::Conflict(Box::new(dto)),
+                other => CliError::from(other),
+            };
+            Err((cli_err, recovery))
+        }
+    }
+}
+
 async fn run_edit(ctx: &Ctx, args: DocsEditArgs) -> Result<(), CliError> {
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
 
-    // Fetch the document and capture the CAS base revision immediately.
     let doc = ctx.client.get_document(ws, &args.slug).await?;
     let base_revision_id = doc.head_revision_id;
     let original_content = doc.content.clone();
 
-    // Write current content to a temp file for the editor.
     let temp = write_edit_tempfile(&doc.content)?;
     let temp_path = temp.path().to_path_buf();
 
-    // Resolve and launch the editor.
     let editor = find_editor(std::env::var("EDITOR").ok().as_deref())?;
     spawn_editor(&editor, &temp_path)?;
 
-    // Read back the edited content.
     let new_content = std::fs::read_to_string(&temp_path)?;
-    drop(temp);
 
     if new_content == original_content {
         println!("no changes");
         return Ok(());
     }
 
-    // Submit via CAS using the revision captured at fetch time.
-    let body = build_update_content_request(new_content, base_revision_id);
-    match ctx.client.update_content(ws, &args.slug, body).await {
+    // Clone before moving into the request body so `new_content` is still
+    // available on the error path for writing the recovery file.
+    let body = build_update_content_request(new_content.clone(), base_revision_id);
+    let outcome = ctx.client.update_content(ws, &args.slug, body).await;
+
+    match apply_edit_outcome(&args.slug, &new_content, outcome) {
         Ok(updated) => {
+            drop(temp);
             let proj = DocCompactProjection::from(updated);
             output::emit(ctx.output, &proj)
         }
 
-        Err(ClientError::Conflict(dto)) => {
-            // Safe conflict recovery: the base_to_current_patch describes what
-            // changed server-side, but a silent 3-way merge risks silently
-            // producing wrong content.  Surface the conflict clearly so the
-            // user can re-run with the current version.
+        Err((CliError::Conflict(dto), recovery)) => {
+            if let Some(ref path) = recovery {
+                eprintln!("Your edit has been preserved at: {}", path.display());
+            }
             eprintln!(
                 "revision conflict: the document was modified while you were editing.\n\
                  current_revision_id={}, current_seq={}.\n\
                  Re-run `atlas docs edit {}` to start from the current version.",
                 dto.current_revision_id, dto.current_seq, args.slug
             );
-            Err(CliError::Conflict(Box::new(dto)))
+            Err(CliError::Conflict(dto))
         }
 
-        Err(e) => Err(e.into()),
+        Err((e, recovery)) => {
+            if let Some(ref path) = recovery {
+                eprintln!("Your edit has been preserved at: {}", path.display());
+            }
+            Err(e)
+        }
     }
 }
 
@@ -1433,6 +1475,68 @@ mod tests {
         let dto = ConflictProblemDto::new(Uuid::new_v4(), 5, "--- a\n+++ b\n".to_owned());
         let e = CliError::Conflict(Box::new(dto));
         assert_eq!(e.exit_code(), 1);
+    }
+
+    // C1 fix: edit preservation on update failure
+
+    #[test]
+    fn on_conflict_edited_content_is_written_to_recovery_file() {
+        use atlas_api::dtos::documents::ConflictProblemDto;
+        use atlas_client::ClientError;
+
+        let content = "# My edited heading\n\nSome new paragraphs the user typed.";
+        let slug = "atlas-edit-test-conflict-doc";
+
+        let dto = ConflictProblemDto::new(Uuid::new_v4(), 3, "--- a\n+++ b\n".to_owned());
+        let result = apply_edit_outcome(slug, content, Err(ClientError::Conflict(dto)));
+
+        let Err((err, recovery)) = result else {
+            panic!("expected Err from apply_edit_outcome on conflict input");
+        };
+
+        assert!(
+            matches!(err, CliError::Conflict(_)),
+            "conflict outcome must map to CliError::Conflict"
+        );
+
+        let path = recovery.expect("recovery file must be written when update returns Conflict");
+        assert!(path.exists(), "recovery file must exist on disk");
+
+        let recovered = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            recovered, content,
+            "recovery file must contain the exact edited content"
+        );
+
+        drop(std::fs::remove_file(&path));
+    }
+
+    #[test]
+    fn preserve_edit_on_error_creates_file_with_exact_content() {
+        let content = "# Recovery test\n\nParagraph content.";
+        let slug = "preserve-edit-test-slug";
+
+        let path = preserve_edit_on_error(slug, content).unwrap();
+
+        assert!(path.exists(), "recovery file must be created on disk");
+
+        let recovered = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            recovered, content,
+            "file must contain the exact edited content"
+        );
+
+        let name = path.file_name().unwrap().to_string_lossy();
+        assert!(
+            name.contains("atlas-edit-"),
+            "recovery file name must start with atlas-edit-"
+        );
+        assert!(
+            name.contains(slug),
+            "recovery file name must embed the document slug"
+        );
+
+        drop(std::fs::remove_file(&path));
     }
 
     // -----------------------------------------------------------------------
