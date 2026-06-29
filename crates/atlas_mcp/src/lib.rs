@@ -19,7 +19,7 @@ use atlas_api::dtos::task_views::{
     CreateTaskViewRequest, TaskViewFiltersDto, UpdateTaskViewRequest,
 };
 use atlas_api::dtos::{CreateProjectRequest, UpdateProjectRequest};
-use atlas_client::AtlasClient;
+use atlas_client::{AtlasClient, helpers};
 use rmcp::{
     ErrorData as McpError, ServerHandler,
     handler::server::wrapper::Parameters,
@@ -48,17 +48,17 @@ where
 }
 
 use response::{
-    Detail, enrich_client_error, envelope_page, map_present_value, match_columns_by_name,
-    parse_atlas_doc_uri, parse_csv, parse_detail, project_activity_entry, project_assignee,
-    project_attachment, project_audit_entry, project_backlink, project_board_summary,
-    project_checklist_item, project_column, project_document_compact, project_document_full,
-    project_document_summary, project_folder, project_principal, project_project,
-    project_promotion, project_reference, project_revision_content, project_revision_meta,
-    project_saved_search, project_search_hit, project_status_template, project_tag,
-    project_task_backlink, project_task_compact, project_task_full, project_task_row,
-    project_task_view, project_workspace, project_workspace_activity_entry, require_confirm,
-    resolve_column_id_on_board, validate_assignee_type, validate_estimate, validate_estimate_value,
-    validate_priority, validate_reference_kind, validate_single_target, wrap_vec,
+    Detail, enrich_client_error, envelope_page, map_present_value, parse_atlas_doc_uri, parse_csv,
+    parse_detail, project_activity_entry, project_assignee, project_attachment,
+    project_audit_entry, project_backlink, project_board_summary, project_checklist_item,
+    project_column, project_document_compact, project_document_full, project_document_summary,
+    project_folder, project_principal, project_project, project_promotion, project_reference,
+    project_revision_content, project_revision_meta, project_saved_search, project_search_hit,
+    project_status_template, project_tag, project_task_backlink, project_task_compact,
+    project_task_full, project_task_row, project_task_view, project_workspace,
+    project_workspace_activity_entry, require_confirm, resolve_column_id_on_board,
+    validate_assignee_type, validate_estimate, validate_estimate_value, validate_priority,
+    validate_reference_kind, validate_single_target, wrap_vec,
 };
 
 const ATLAS_INSTRUCTIONS: &str = "\
@@ -1359,21 +1359,23 @@ impl AtlasMcp {
         let limit = params.limit.unwrap_or(20).clamp(1, 200);
 
         let column_ids = if let Some(status_name) = &params.status {
-            self.resolve_column_ids(
+            helpers::resolve_column_ids(
                 &client,
                 &params.workspace,
                 params.board.as_deref(),
                 status_name,
             )
-            .await?
+            .await
+            .map_err(|e| e.to_string())?
         } else {
             Vec::new()
         };
 
         let board_id = if let Some(board) = &params.board {
             Some(
-                self.resolve_board_id(&client, &params.workspace, board)
-                    .await?,
+                helpers::resolve_board_id(&client, &params.workspace, board)
+                    .await
+                    .map_err(|e| e.to_string())?,
             )
         } else {
             None
@@ -1523,9 +1525,9 @@ impl AtlasMcp {
     ) -> Result<String, String> {
         let client = self.resolve_client(&ctx)?;
 
-        let board_id_str = self
-            .resolve_board_id(&client, &params.workspace, &params.board)
-            .await?;
+        let board_id_str = helpers::resolve_board_id(&client, &params.workspace, &params.board)
+            .await
+            .map_err(|e| e.to_string())?;
 
         let board_uuid: uuid::Uuid = board_id_str
             .parse()
@@ -1916,9 +1918,9 @@ impl AtlasMcp {
     ) -> Result<String, String> {
         let client = self.resolve_client(&ctx)?;
 
-        let board_id_str = self
-            .resolve_board_id(&client, &params.workspace, &params.board)
-            .await?;
+        let board_id_str = helpers::resolve_board_id(&client, &params.workspace, &params.board)
+            .await
+            .map_err(|e| e.to_string())?;
         let board_uuid: uuid::Uuid = board_id_str
             .parse()
             .map_err(|_| format!("resolved board '{board_id_str}' is not a valid UUID"))?;
@@ -2030,10 +2032,9 @@ impl AtlasMcp {
         let client = self.resolve_client(&ctx)?;
 
         let board_id_str = match params.board.as_deref() {
-            Some(board_ref) => {
-                self.resolve_board_id(&client, &params.workspace, board_ref)
-                    .await?
-            }
+            Some(board_ref) => helpers::resolve_board_id(&client, &params.workspace, board_ref)
+                .await
+                .map_err(|e| e.to_string())?,
             None => {
                 // No board supplied: fetch the task first to get its board_id.
                 let task = client
@@ -2512,9 +2513,9 @@ impl AtlasMcp {
     ) -> Result<String, String> {
         let client = self.resolve_client(&ctx)?;
 
-        let board_id_str = self
-            .resolve_board_id(&client, &params.workspace, &params.board)
-            .await?;
+        let board_id_str = helpers::resolve_board_id(&client, &params.workspace, &params.board)
+            .await
+            .map_err(|e| e.to_string())?;
 
         let board_uuid: uuid::Uuid = board_id_str
             .parse()
@@ -2548,9 +2549,9 @@ impl AtlasMcp {
         let client = self.resolve_client(&ctx)?;
         require_confirm(params.confirm, "board", &params.board)?;
 
-        let board_id_str = self
-            .resolve_board_id(&client, &params.workspace, &params.board)
-            .await?;
+        let board_id_str = helpers::resolve_board_id(&client, &params.workspace, &params.board)
+            .await
+            .map_err(|e| e.to_string())?;
 
         let board_uuid: uuid::Uuid = board_id_str
             .parse()
@@ -2578,9 +2579,9 @@ impl AtlasMcp {
     ) -> Result<String, String> {
         let client = self.resolve_client(&ctx)?;
 
-        let board_id_str = self
-            .resolve_board_id(&client, &params.workspace, &params.board)
-            .await?;
+        let board_id_str = helpers::resolve_board_id(&client, &params.workspace, &params.board)
+            .await
+            .map_err(|e| e.to_string())?;
 
         let board_uuid: uuid::Uuid = board_id_str
             .parse()
@@ -2613,9 +2614,9 @@ impl AtlasMcp {
     ) -> Result<String, String> {
         let client = self.resolve_client(&ctx)?;
 
-        let board_id_str = self
-            .resolve_board_id(&client, &params.workspace, &params.board)
-            .await?;
+        let board_id_str = helpers::resolve_board_id(&client, &params.workspace, &params.board)
+            .await
+            .map_err(|e| e.to_string())?;
 
         let board_uuid: uuid::Uuid = board_id_str
             .parse()
@@ -2658,9 +2659,9 @@ impl AtlasMcp {
         let client = self.resolve_client(&ctx)?;
         require_confirm(params.confirm, "column", &params.column)?;
 
-        let board_id_str = self
-            .resolve_board_id(&client, &params.workspace, &params.board)
-            .await?;
+        let board_id_str = helpers::resolve_board_id(&client, &params.workspace, &params.board)
+            .await
+            .map_err(|e| e.to_string())?;
 
         let board_uuid: uuid::Uuid = board_id_str
             .parse()
@@ -2932,9 +2933,9 @@ impl AtlasMcp {
             .parse()
             .map_err(|_| format!("item_id '{}' is not a valid UUID", params.item_id))?;
 
-        let board_id_str = self
-            .resolve_board_id(&client, &params.workspace, &params.board)
-            .await?;
+        let board_id_str = helpers::resolve_board_id(&client, &params.workspace, &params.board)
+            .await
+            .map_err(|e| e.to_string())?;
 
         let board_uuid: uuid::Uuid = board_id_str
             .parse()
@@ -3425,131 +3426,6 @@ impl AtlasMcp {
 
         let result = envelope_page(page, project_audit_entry);
         serde_json::to_string(&result).map_err(|e| e.to_string())
-    }
-}
-
-impl AtlasMcp {
-    /// Resolves a status/column name to matching column UUIDs.
-    ///
-    /// When `board` is provided (name or UUID), resolves within that one board using a
-    /// single `list_columns` call. Otherwise walks all projects and all their boards to
-    /// collect all matching columns — an O(projects × boards) GET sequence that is
-    /// mitigated by encouraging callers to supply `board`.
-    async fn resolve_column_ids(
-        &self,
-        client: &AtlasClient,
-        ws: &str,
-        board: Option<&str>,
-        status_name: &str,
-    ) -> Result<Vec<String>, String> {
-        if let Some(board_ref) = board {
-            let board_id = self.resolve_board_id(client, ws, board_ref).await?;
-            let board_uuid: uuid::Uuid = board_id
-                .parse()
-                .map_err(|_| format!("resolved board_id '{board_id}' is not a valid UUID"))?;
-            let cols = client
-                .list_columns(ws, board_uuid)
-                .await
-                .map_err(|e| format!("list_columns failed: {e}"))?;
-            return Ok(match_columns_by_name(status_name, &cols));
-        }
-
-        // No board given: workspace-wide walk (D-WSCOL — O(projects + boards) GETs).
-        let mut all_cols = Vec::new();
-        let mut project_cursor: Option<String> = None;
-
-        loop {
-            let projects = client
-                .list_projects(ws, project_cursor.as_deref(), Some(200))
-                .await
-                .map_err(|e| format!("list_projects failed: {e}"))?;
-
-            for project in &projects.items {
-                let mut board_cursor: Option<String> = None;
-                loop {
-                    let boards = client
-                        .list_boards(ws, &project.slug, board_cursor.as_deref(), Some(200))
-                        .await
-                        .map_err(|e| {
-                            format!("list_boards for project '{}' failed: {e}", project.slug)
-                        })?;
-
-                    for board in &boards.items {
-                        let cols = client.list_columns(ws, board.id).await.map_err(|e| {
-                            format!("list_columns for board '{}' failed: {e}", board.name)
-                        })?;
-                        all_cols.extend(cols);
-                    }
-
-                    match boards.next_cursor {
-                        Some(next) if boards.has_more => board_cursor = Some(next),
-                        _ => break,
-                    }
-                }
-            }
-
-            match projects.next_cursor {
-                Some(next) if projects.has_more => project_cursor = Some(next),
-                _ => break,
-            }
-        }
-
-        Ok(match_columns_by_name(status_name, &all_cols))
-    }
-
-    /// Resolves a board reference (name fragment or UUID string) to a UUID string.
-    ///
-    /// When the input parses as a UUID it is returned directly. Otherwise walks
-    /// all projects' boards to find the first partial name match.
-    async fn resolve_board_id(
-        &self,
-        client: &AtlasClient,
-        ws: &str,
-        board_ref: &str,
-    ) -> Result<String, String> {
-        if uuid::Uuid::parse_str(board_ref).is_ok() {
-            return Ok(board_ref.to_string());
-        }
-
-        let needle = board_ref.to_ascii_lowercase();
-        let mut project_cursor: Option<String> = None;
-
-        loop {
-            let projects = client
-                .list_projects(ws, project_cursor.as_deref(), Some(200))
-                .await
-                .map_err(|e| format!("list_projects failed: {e}"))?;
-
-            for project in &projects.items {
-                let mut board_cursor: Option<String> = None;
-                loop {
-                    let boards = client
-                        .list_boards(ws, &project.slug, board_cursor.as_deref(), Some(200))
-                        .await
-                        .map_err(|e| format!("list_boards failed: {e}"))?;
-
-                    for board in &boards.items {
-                        if board.name.to_ascii_lowercase().contains(&needle) {
-                            return Ok(board.id.to_string());
-                        }
-                    }
-
-                    match boards.next_cursor {
-                        Some(next) if boards.has_more => board_cursor = Some(next),
-                        _ => break,
-                    }
-                }
-            }
-
-            match projects.next_cursor {
-                Some(next) if projects.has_more => project_cursor = Some(next),
-                _ => break,
-            }
-        }
-
-        Err(format!(
-            "no board matching '{board_ref}' found in workspace '{ws}'"
-        ))
     }
 }
 

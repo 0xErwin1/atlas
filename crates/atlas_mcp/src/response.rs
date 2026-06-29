@@ -26,6 +26,10 @@ use atlas_api::{
     pagination::Page,
 };
 use atlas_client::ClientError;
+pub(crate) use atlas_client::helpers::{
+    parse_csv, resolve_column_id_on_board, validate_assignee_type, validate_estimate,
+    validate_estimate_value, validate_priority, validate_reference_kind,
+};
 use serde_json::{Value, json};
 
 // ---------------------------------------------------------------------------
@@ -50,22 +54,6 @@ pub(crate) fn parse_detail(value: Option<&str>) -> Detail {
         Some(s) if s.eq_ignore_ascii_case("full") => Detail::Full,
         _ => Detail::Compact,
     }
-}
-
-// ---------------------------------------------------------------------------
-// CSV / list param parsing
-// ---------------------------------------------------------------------------
-
-/// Splits a comma-separated string into a trimmed, non-empty `Vec<String>`.
-///
-/// Empty input or whitespace-only input yields an empty vec.
-/// Individual items that are blank after trimming are skipped.
-pub(crate) fn parse_csv(s: &str) -> Vec<String> {
-    s.split(',')
-        .map(str::trim)
-        .filter(|item| !item.is_empty())
-        .map(String::from)
-        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -109,26 +97,6 @@ where
 {
     let projected: Vec<Value> = items.into_iter().map(project_fn).collect();
     paginated_envelope(projected, None, false)
-}
-
-// ---------------------------------------------------------------------------
-// Column-name resolver
-// ---------------------------------------------------------------------------
-
-/// Returns the UUIDs of all columns whose name contains `name_fragment` as a
-/// case-insensitive substring.
-///
-/// Returns an empty vec when no column matches — callers should propagate this
-/// as an empty result rather than an error (the agent supplied an unrecognised
-/// status name). Multi-match is intentional: a workspace may have multiple
-/// boards each with a column called "To Do"; all matching UUIDs are returned so
-/// the filter covers all of them.
-pub(crate) fn match_columns_by_name(name_fragment: &str, cols: &[ColumnDto]) -> Vec<String> {
-    let needle = name_fragment.to_ascii_lowercase();
-    cols.iter()
-        .filter(|col| col.name.to_ascii_lowercase().contains(&needle))
-        .map(|col| col.id.to_string())
-        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -725,84 +693,6 @@ pub(crate) fn require_confirm(confirm: bool, resource: &str, id: &str) -> Result
     ))
 }
 
-// ---------------------------------------------------------------------------
-// Write-side: column resolver (single-match, write-path semantics)
-// ---------------------------------------------------------------------------
-
-/// Resolves a column name to exactly one UUID on a given board.
-///
-/// Unlike `match_columns_by_name` (which returns all fuzzy matches for read
-/// filters), this function enforces single-match semantics required by write
-/// operations: 0 matches or >1 matches are both errors that include the board's
-/// full column list so the caller can correct the name immediately.
-pub(crate) fn resolve_column_id_on_board(
-    name: &str,
-    cols: &[ColumnDto],
-) -> Result<uuid::Uuid, String> {
-    let needle = name.to_ascii_lowercase();
-    let matches: Vec<&ColumnDto> = cols
-        .iter()
-        .filter(|c| c.name.to_ascii_lowercase().contains(&needle))
-        .collect();
-
-    let available: Vec<&str> = cols.iter().map(|c| c.name.as_str()).collect();
-    let available_list = available.join(", ");
-
-    match matches.as_slice() {
-        [] => Err(format!(
-            "column '{name}' not found on this board; available columns: [{available_list}]"
-        )),
-        [single] => Ok(single.id),
-        many => {
-            let matched_names: Vec<&str> = many.iter().map(|c| c.name.as_str()).collect();
-            Err(format!(
-                "column '{name}' is ambiguous; matches: [{}]; pass a more specific name",
-                matched_names.join(", ")
-            ))
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Write-side: enum validators
-// ---------------------------------------------------------------------------
-
-/// Validates a task priority string.
-///
-/// Returns `Ok(())` for accepted values, or an `Err` listing the valid set.
-pub(crate) fn validate_priority(v: &str) -> Result<(), String> {
-    match v {
-        "low" | "medium" | "high" | "urgent" => Ok(()),
-        _ => Err(format!(
-            "invalid priority '{v}'; valid values: low, medium, high, urgent"
-        )),
-    }
-}
-
-/// Validates a task assignee type.
-///
-/// Returns `Ok(())` for accepted values, or an `Err` listing the valid set.
-pub(crate) fn validate_assignee_type(v: &str) -> Result<(), String> {
-    match v {
-        "user" | "api_key" => Ok(()),
-        _ => Err(format!(
-            "invalid assignee_type '{v}'; valid values: user, api_key"
-        )),
-    }
-}
-
-/// Validates a task reference kind.
-///
-/// Returns `Ok(())` for accepted values, or an `Err` listing the valid set.
-pub(crate) fn validate_reference_kind(v: &str) -> Result<(), String> {
-    match v {
-        "relates" | "blocks" | "parent" | "spec" => Ok(()),
-        _ => Err(format!(
-            "invalid kind '{v}'; valid values: relates, blocks, parent, spec"
-        )),
-    }
-}
-
 /// Validates that exactly one of task or document target is supplied for a reference.
 ///
 /// Returns `Ok(())` when exactly one target is present, or an `Err` explaining
@@ -876,34 +766,6 @@ pub(crate) fn map_present_value(
             Ok(Some(v.clone()))
         }
     }
-}
-
-/// Validates that an estimate value is non-negative.
-///
-/// Accepts any `i32 >= 0`. Returns an actionable error string for negative values.
-/// Called before the client request so the failure is cheap and local.
-pub(crate) fn validate_estimate(v: i32) -> Result<(), String> {
-    if v < 0 {
-        return Err(format!(
-            "invalid estimate '{v}': must be a non-negative integer"
-        ));
-    }
-    Ok(())
-}
-
-/// Validates an estimate carried as a `serde_json::Value` (used in PATCH paths).
-///
-/// Null (clear) and absent are allowed and pass through unchecked. Only a numeric
-/// value that is negative is rejected.
-pub(crate) fn validate_estimate_value(v: &serde_json::Value) -> Result<(), String> {
-    if let serde_json::Value::Number(n) = v
-        && n.as_i64().is_some_and(|i| i < 0)
-    {
-        return Err(format!(
-            "invalid estimate '{n}': must be a non-negative integer"
-        ));
-    }
-    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -1093,6 +955,7 @@ mod tests {
         tags::TagDto,
         task_views::{TaskViewDto, TaskViewFiltersDto},
     };
+    use atlas_client::helpers::match_columns_by_name;
     use chrono::Utc;
     use uuid::Uuid;
 
