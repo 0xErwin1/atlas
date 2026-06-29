@@ -9,18 +9,22 @@
 )]
 
 use atlas_api::dtos::boards_tasks::{
-    CreateTaskRequest, MoveTaskRequest, TaskPropertiesDto, UpdateTaskRequest,
-    WorkspaceTaskQueryParams,
+    AddAssigneeRequest, CreateChecklistItemRequest, CreateReferenceRequest, CreateSubtaskRequest,
+    CreateTaskRequest, MoveTaskRequest, PromoteChecklistItemRequest, TaskPropertiesDto,
+    UpdateChecklistItemRequest, UpdateTaskRequest, WorkspaceTaskQueryParams,
 };
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use uuid::Uuid;
 
-use atlas_client::helpers;
 use crate::ctx::Ctx;
 use crate::error::CliError;
 use crate::output;
 use crate::projections::{
-    DeleteTaskProjection, TaskCompactProjection, TaskFullProjection, TaskSummaryProjection,
+    ChecklistItemProjection, DeleteTaskProjection, DeletedProjection, PromotionProjection,
+    SubtaskProjection, TaskActivityProjection, TaskAssigneeProjection, TaskBacklinkProjection,
+    TaskCompactProjection, TaskFullProjection, TaskRefProjection, TaskSummaryProjection,
 };
+use atlas_client::helpers;
 
 const LIMIT_MIN: u32 = 1;
 const LIMIT_MAX: u32 = 200;
@@ -61,6 +65,18 @@ pub(crate) enum TasksCmd {
     Move(TasksMoveArgs),
     /// Delete a task (requires --confirm).
     Delete(TasksDeleteArgs),
+    /// Manage outbound references on a task (list, create, remove).
+    Refs(RefsArgs),
+    /// List inbound references (backlinks) pointing at a task.
+    Backlinks(TasksBacklinksArgs),
+    /// Manage assignees on a task (list, add, remove).
+    Assignees(AssigneesArgs),
+    /// Manage the checklist on a task (list, add, update, remove, promote).
+    Checklist(ChecklistArgs),
+    /// List activity (audit log) entries for a task.
+    Activity(TasksActivityArgs),
+    /// Manage subtasks of a task (list, create, promote).
+    Subtasks(SubtasksArgs),
 }
 
 /// Dispatches a parsed `TasksCmd` to its handler.
@@ -72,6 +88,12 @@ pub(crate) async fn run(ctx: &Ctx, cmd: TasksCmd) -> Result<(), CliError> {
         TasksCmd::Update(args) => run_update(ctx, args).await,
         TasksCmd::Move(args) => run_move(ctx, args).await,
         TasksCmd::Delete(args) => run_delete(ctx, args).await,
+        TasksCmd::Refs(args) => run_refs(ctx, args.command).await,
+        TasksCmd::Backlinks(args) => run_backlinks(ctx, args).await,
+        TasksCmd::Assignees(args) => run_assignees(ctx, args.command).await,
+        TasksCmd::Checklist(args) => run_checklist(ctx, args.command).await,
+        TasksCmd::Activity(args) => run_task_activity(ctx, args).await,
+        TasksCmd::Subtasks(args) => run_subtasks(ctx, args.command).await,
     }
 }
 
@@ -160,7 +182,12 @@ async fn run_list(ctx: &Ctx, args: TasksListArgs) -> Result<(), CliError> {
         .map(TaskSummaryProjection::from)
         .collect();
 
-    output::emit_list(ctx.output, &projections, page.next_cursor.as_deref(), page.has_more)
+    output::emit_list(
+        ctx.output,
+        &projections,
+        page.next_cursor.as_deref(),
+        page.has_more,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -201,13 +228,15 @@ async fn run_get(ctx: &Ctx, args: TasksGetArgs) -> Result<(), CliError> {
                 .await
                 .map(|v| {
                     v.into_iter()
-                        .map(|r| serde_json::json!({
-                            "kind": r.kind,
-                            "target_readable_id": r.target_readable_id,
-                            "target_document_id": r.target_document_id,
-                            "target_title": r.target_title,
-                            "target_resolved": r.target_resolved,
-                        }))
+                        .map(|r| {
+                            serde_json::json!({
+                                "kind": r.kind,
+                                "target_readable_id": r.target_readable_id,
+                                "target_document_id": r.target_document_id,
+                                "target_title": r.target_title,
+                                "target_resolved": r.target_resolved,
+                            })
+                        })
                         .collect::<Vec<_>>()
                 })
                 .map_err(|e| format!("list_references failed: {e}"));
@@ -216,21 +245,15 @@ async fn run_get(ctx: &Ctx, args: TasksGetArgs) -> Result<(), CliError> {
                 .client
                 .list_subtasks(ws, &args.readable_id)
                 .await
-                .map(|v| {
+                .map_err(|e| format!("list_subtasks failed: {e}"))
+                .and_then(|v| {
                     v.into_iter()
-                        .map(|s| serde_json::json!({
-                            "readable_id": s.readable_id,
-                            "title": s.title,
-                            "board_name": s.board_name,
-                            "column_name": s.column_name,
-                            "priority": s.priority,
-                            "labels": s.labels,
-                            "estimate": s.estimate,
-                            "updated_at": s.updated_at,
-                        }))
-                        .collect::<Vec<_>>()
-                })
-                .map_err(|e| format!("list_subtasks failed: {e}"));
+                        .map(|s| {
+                            serde_json::to_value(SubtaskProjection::from(s))
+                                .map_err(|e| format!("list_subtasks: serialize: {e}"))
+                        })
+                        .collect::<Result<Vec<_>, String>>()
+                });
 
             let assignees = ctx
                 .client
@@ -238,11 +261,13 @@ async fn run_get(ctx: &Ctx, args: TasksGetArgs) -> Result<(), CliError> {
                 .await
                 .map(|v| {
                     v.into_iter()
-                        .map(|a| serde_json::json!({
-                            "type": a.assignee.r#type,
-                            "display_name": a.assignee.display_name,
-                            "assigned_at": a.assigned_at,
-                        }))
+                        .map(|a| {
+                            serde_json::json!({
+                                "type": a.assignee.r#type,
+                                "display_name": a.assignee.display_name,
+                                "assigned_at": a.assigned_at,
+                            })
+                        })
                         .collect::<Vec<_>>()
                 })
                 .map_err(|e| format!("list_assignees failed: {e}"));
@@ -312,9 +337,11 @@ async fn run_create(ctx: &Ctx, args: TasksCreateArgs) -> Result<(), CliError> {
         .map_err(CliError::from)?;
 
     let board_uuid: uuid::Uuid = board_id_str.parse().map_err(|_| {
-        CliError::Resolver(Box::new(atlas_client::helpers::ResolverError::InvalidBoardUuid {
-            board_id: board_id_str.clone(),
-        }))
+        CliError::Resolver(Box::new(
+            atlas_client::helpers::ResolverError::InvalidBoardUuid {
+                board_id: board_id_str.clone(),
+            },
+        ))
     })?;
 
     let cols = ctx.client.list_columns(ws, board_uuid).await?;
@@ -419,9 +446,7 @@ pub(crate) struct TasksUpdateArgs {
 /// invalid inputs are rejected before any network call is made. Nullable
 /// fields follow the PATCH tri-state: absent = unchanged, `--clear-X` =
 /// null (clear), explicit value = set.
-pub(crate) fn build_update_body(
-    args: &TasksUpdateArgs,
-) -> Result<UpdateTaskRequest, CliError> {
+pub(crate) fn build_update_body(args: &TasksUpdateArgs) -> Result<UpdateTaskRequest, CliError> {
     if let Some(pri) = &args.priority {
         helpers::validate_priority(pri).map_err(CliError::Validation)?;
     }
@@ -432,7 +457,9 @@ pub(crate) fn build_update_body(
     let priority = if args.clear_priority {
         Some(serde_json::Value::Null)
     } else {
-        args.priority.as_ref().map(|p| serde_json::Value::String(p.clone()))
+        args.priority
+            .as_ref()
+            .map(|p| serde_json::Value::String(p.clone()))
     };
 
     let due_date = if args.clear_due_date {
@@ -573,6 +600,641 @@ async fn run_delete(ctx: &Ctx, args: TasksDeleteArgs) -> Result<(), CliError> {
 }
 
 // ---------------------------------------------------------------------------
+// Refs (WU-22)
+// ---------------------------------------------------------------------------
+
+/// Arguments holder for the `tasks refs` subcommand group.
+#[derive(Args)]
+pub(crate) struct RefsArgs {
+    #[command(subcommand)]
+    pub(crate) command: RefsCmd,
+}
+
+#[derive(Subcommand)]
+pub(crate) enum RefsCmd {
+    /// List outbound references on a task.
+    List(RefsListArgs),
+    /// Create an outbound reference from a task to another task or document.
+    Create(RefsCreateArgs),
+    /// Remove an outbound reference by its UUID.
+    Remove(RefsRemoveArgs),
+}
+
+/// Arguments for `atlas tasks refs list`.
+#[derive(Parser)]
+pub(crate) struct RefsListArgs {
+    /// Task readable ID, e.g. `ATL-42`.
+    #[arg(index = 1)]
+    pub(crate) readable_id: String,
+
+    /// Workspace slug.
+    #[arg(long)]
+    pub(crate) workspace: Option<String>,
+}
+
+/// Arguments for `atlas tasks refs create`.
+#[derive(Parser)]
+pub(crate) struct RefsCreateArgs {
+    /// Task readable ID, e.g. `ATL-42`.
+    #[arg(index = 1)]
+    pub(crate) readable_id: String,
+
+    /// Workspace slug.
+    #[arg(long)]
+    pub(crate) workspace: Option<String>,
+
+    /// Reference kind: `relates`, `blocks`, `parent`, or `spec`.
+    #[arg(long)]
+    pub(crate) kind: String,
+
+    /// Target: a task readable ID (e.g. `ATL-10`) or a document UUID.
+    /// UUIDs are resolved as document targets; anything else is treated as a task
+    /// readable ID.
+    #[arg(long)]
+    pub(crate) target: String,
+}
+
+/// Arguments for `atlas tasks refs remove`.
+#[derive(Parser)]
+pub(crate) struct RefsRemoveArgs {
+    /// Task readable ID, e.g. `ATL-42`.
+    #[arg(index = 1)]
+    pub(crate) readable_id: String,
+
+    /// Workspace slug.
+    #[arg(long)]
+    pub(crate) workspace: Option<String>,
+
+    /// UUID of the reference to remove.
+    #[arg(long)]
+    pub(crate) ref_id: Uuid,
+}
+
+async fn run_refs(ctx: &Ctx, cmd: RefsCmd) -> Result<(), CliError> {
+    match cmd {
+        RefsCmd::List(args) => run_refs_list(ctx, args).await,
+        RefsCmd::Create(args) => run_refs_create(ctx, args).await,
+        RefsCmd::Remove(args) => run_refs_remove(ctx, args).await,
+    }
+}
+
+async fn run_refs_list(ctx: &Ctx, args: RefsListArgs) -> Result<(), CliError> {
+    let ws = ctx.require_workspace(args.workspace.as_deref())?;
+    let refs = ctx.client.list_references(ws, &args.readable_id).await?;
+    let projections: Vec<TaskRefProjection> =
+        refs.into_iter().map(TaskRefProjection::from).collect();
+    output::emit_list(ctx.output, &projections, None, false)
+}
+
+async fn run_refs_create(ctx: &Ctx, args: RefsCreateArgs) -> Result<(), CliError> {
+    helpers::validate_reference_kind(&args.kind).map_err(CliError::Validation)?;
+
+    let ws = ctx.require_workspace(args.workspace.as_deref())?;
+
+    let (target_task_readable_id, target_document_id) =
+        if let Ok(doc_id) = args.target.parse::<Uuid>() {
+            (None, Some(doc_id))
+        } else {
+            (Some(args.target.clone()), None)
+        };
+
+    let body = CreateReferenceRequest {
+        kind: args.kind,
+        target_task_readable_id,
+        target_document_id,
+    };
+
+    let reference = ctx
+        .client
+        .create_reference(ws, &args.readable_id, body)
+        .await?;
+
+    let proj = TaskRefProjection::from(reference);
+    output::emit(ctx.output, &proj)
+}
+
+async fn run_refs_remove(ctx: &Ctx, args: RefsRemoveArgs) -> Result<(), CliError> {
+    let ws = ctx.require_workspace(args.workspace.as_deref())?;
+    ctx.client
+        .delete_reference(ws, &args.readable_id, args.ref_id)
+        .await?;
+    let proj = DeletedProjection { deleted: true };
+    output::emit(ctx.output, &proj)
+}
+
+// ---------------------------------------------------------------------------
+// Backlinks (WU-22)
+// ---------------------------------------------------------------------------
+
+/// Arguments for `atlas tasks backlinks`.
+#[derive(Parser)]
+pub(crate) struct TasksBacklinksArgs {
+    /// Task readable ID, e.g. `ATL-42`.
+    #[arg(index = 1)]
+    pub(crate) readable_id: String,
+
+    /// Workspace slug.
+    #[arg(long)]
+    pub(crate) workspace: Option<String>,
+}
+
+async fn run_backlinks(ctx: &Ctx, args: TasksBacklinksArgs) -> Result<(), CliError> {
+    let ws = ctx.require_workspace(args.workspace.as_deref())?;
+    let page = ctx
+        .client
+        .list_task_backlinks(ws, &args.readable_id)
+        .await?;
+    let projections: Vec<TaskBacklinkProjection> = page
+        .items
+        .into_iter()
+        .map(TaskBacklinkProjection::from)
+        .collect();
+    output::emit_list(
+        ctx.output,
+        &projections,
+        page.next_cursor.as_deref(),
+        page.has_more,
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Assignees (WU-22)
+// ---------------------------------------------------------------------------
+
+/// Arguments holder for the `tasks assignees` subcommand group.
+#[derive(Args)]
+pub(crate) struct AssigneesArgs {
+    #[command(subcommand)]
+    pub(crate) command: AssigneesCmd,
+}
+
+#[derive(Subcommand)]
+pub(crate) enum AssigneesCmd {
+    /// List assignees on a task.
+    List(AssigneesListArgs),
+    /// Add an assignee to a task (validates type before network).
+    Add(AssigneesAddArgs),
+    /// Remove an assignee from a task by its assignee reference.
+    Remove(AssigneesRemoveArgs),
+}
+
+/// Arguments for `atlas tasks assignees list`.
+#[derive(Parser)]
+pub(crate) struct AssigneesListArgs {
+    /// Task readable ID, e.g. `ATL-42`.
+    #[arg(index = 1)]
+    pub(crate) readable_id: String,
+
+    /// Workspace slug.
+    #[arg(long)]
+    pub(crate) workspace: Option<String>,
+}
+
+/// Arguments for `atlas tasks assignees add`.
+#[derive(Parser)]
+pub(crate) struct AssigneesAddArgs {
+    /// Task readable ID, e.g. `ATL-42`.
+    #[arg(index = 1)]
+    pub(crate) readable_id: String,
+
+    /// Workspace slug.
+    #[arg(long)]
+    pub(crate) workspace: Option<String>,
+
+    /// Assignee type: `user` or `api_key`.
+    #[arg(long)]
+    pub(crate) assignee_type: String,
+
+    /// UUID of the user or API key to assign.
+    #[arg(long)]
+    pub(crate) assignee_id: Uuid,
+}
+
+/// Arguments for `atlas tasks assignees remove`.
+#[derive(Parser)]
+pub(crate) struct AssigneesRemoveArgs {
+    /// Task readable ID, e.g. `ATL-42`.
+    #[arg(index = 1)]
+    pub(crate) readable_id: String,
+
+    /// Workspace slug.
+    #[arg(long)]
+    pub(crate) workspace: Option<String>,
+
+    /// Assignee reference to remove (`me`, `user:{uuid}`, or `api_key:{uuid}`).
+    #[arg(long)]
+    pub(crate) assignee_id: String,
+}
+
+async fn run_assignees(ctx: &Ctx, cmd: AssigneesCmd) -> Result<(), CliError> {
+    match cmd {
+        AssigneesCmd::List(args) => run_assignees_list(ctx, args).await,
+        AssigneesCmd::Add(args) => run_assignees_add(ctx, args).await,
+        AssigneesCmd::Remove(args) => run_assignees_remove(ctx, args).await,
+    }
+}
+
+async fn run_assignees_list(ctx: &Ctx, args: AssigneesListArgs) -> Result<(), CliError> {
+    let ws = ctx.require_workspace(args.workspace.as_deref())?;
+    let assignees = ctx.client.list_assignees(ws, &args.readable_id).await?;
+    let projections: Vec<TaskAssigneeProjection> = assignees
+        .into_iter()
+        .map(TaskAssigneeProjection::from)
+        .collect();
+    output::emit_list(ctx.output, &projections, None, false)
+}
+
+async fn run_assignees_add(ctx: &Ctx, args: AssigneesAddArgs) -> Result<(), CliError> {
+    helpers::validate_assignee_type(&args.assignee_type).map_err(CliError::Validation)?;
+
+    let ws = ctx.require_workspace(args.workspace.as_deref())?;
+
+    let body = AddAssigneeRequest {
+        assignee_type: args.assignee_type,
+        assignee_id: args.assignee_id,
+    };
+
+    let assignee = ctx.client.add_assignee(ws, &args.readable_id, body).await?;
+
+    let proj = TaskAssigneeProjection::from(assignee);
+    output::emit(ctx.output, &proj)
+}
+
+async fn run_assignees_remove(ctx: &Ctx, args: AssigneesRemoveArgs) -> Result<(), CliError> {
+    let ws = ctx.require_workspace(args.workspace.as_deref())?;
+    ctx.client
+        .remove_assignee(ws, &args.readable_id, &args.assignee_id)
+        .await?;
+    let proj = DeletedProjection { deleted: true };
+    output::emit(ctx.output, &proj)
+}
+
+// ---------------------------------------------------------------------------
+// Checklist (WU-23)
+// ---------------------------------------------------------------------------
+
+/// Arguments holder for the `tasks checklist` subcommand group.
+#[derive(Args)]
+pub(crate) struct ChecklistArgs {
+    #[command(subcommand)]
+    pub(crate) command: ChecklistCmd,
+}
+
+#[derive(Subcommand)]
+pub(crate) enum ChecklistCmd {
+    /// List checklist items on a task.
+    List(ChecklistListArgs),
+    /// Add a checklist item to a task.
+    Add(ChecklistAddArgs),
+    /// Update a checklist item (title, checked state).
+    Update(ChecklistUpdateArgs),
+    /// Remove a checklist item (requires --confirm).
+    Remove(ChecklistRemoveArgs),
+    /// Promote a checklist item to a task.
+    Promote(ChecklistPromoteArgs),
+}
+
+/// Arguments for `atlas tasks checklist list`.
+#[derive(Parser)]
+pub(crate) struct ChecklistListArgs {
+    /// Task readable ID, e.g. `ATL-42`.
+    #[arg(index = 1)]
+    pub(crate) readable_id: String,
+
+    /// Workspace slug.
+    #[arg(long)]
+    pub(crate) workspace: Option<String>,
+}
+
+/// Arguments for `atlas tasks checklist add`.
+#[derive(Parser)]
+pub(crate) struct ChecklistAddArgs {
+    /// Task readable ID, e.g. `ATL-42`.
+    #[arg(index = 1)]
+    pub(crate) readable_id: String,
+
+    /// Workspace slug.
+    #[arg(long)]
+    pub(crate) workspace: Option<String>,
+
+    /// Checklist item title (required).
+    #[arg(long)]
+    pub(crate) title: String,
+}
+
+/// Arguments for `atlas tasks checklist update`.
+#[derive(Parser)]
+pub(crate) struct ChecklistUpdateArgs {
+    /// Task readable ID, e.g. `ATL-42`.
+    #[arg(index = 1)]
+    pub(crate) readable_id: String,
+
+    /// Workspace slug.
+    #[arg(long)]
+    pub(crate) workspace: Option<String>,
+
+    /// UUID of the checklist item to update (required).
+    #[arg(long)]
+    pub(crate) id: Uuid,
+
+    /// New title for the checklist item.
+    #[arg(long)]
+    pub(crate) title: Option<String>,
+
+    /// Mark the item as checked.
+    #[arg(long)]
+    pub(crate) checked: bool,
+
+    /// Mark the item as unchecked.
+    #[arg(long)]
+    pub(crate) uncheck: bool,
+}
+
+/// Arguments for `atlas tasks checklist remove`.
+#[derive(Parser)]
+pub(crate) struct ChecklistRemoveArgs {
+    /// Task readable ID, e.g. `ATL-42`.
+    #[arg(index = 1)]
+    pub(crate) readable_id: String,
+
+    /// Workspace slug.
+    #[arg(long)]
+    pub(crate) workspace: Option<String>,
+
+    /// UUID of the checklist item to remove (required).
+    #[arg(long)]
+    pub(crate) id: Uuid,
+
+    /// Confirm the deletion. Required — prevents accidental non-reversible deletes.
+    #[arg(long)]
+    pub(crate) confirm: bool,
+}
+
+/// Arguments for `atlas tasks checklist promote`.
+#[derive(Parser)]
+pub(crate) struct ChecklistPromoteArgs {
+    /// Task readable ID, e.g. `ATL-42`.
+    #[arg(index = 1)]
+    pub(crate) readable_id: String,
+
+    /// Workspace slug.
+    #[arg(long)]
+    pub(crate) workspace: Option<String>,
+
+    /// UUID of the checklist item to promote (required).
+    #[arg(long)]
+    pub(crate) id: Uuid,
+
+    /// Target board name or UUID for the new task.
+    #[arg(long)]
+    pub(crate) board: String,
+
+    /// Target column name on the board for the new task.
+    #[arg(long)]
+    pub(crate) column: String,
+}
+
+async fn run_checklist(ctx: &Ctx, cmd: ChecklistCmd) -> Result<(), CliError> {
+    match cmd {
+        ChecklistCmd::List(args) => run_checklist_list(ctx, args).await,
+        ChecklistCmd::Add(args) => run_checklist_add(ctx, args).await,
+        ChecklistCmd::Update(args) => run_checklist_update(ctx, args).await,
+        ChecklistCmd::Remove(args) => run_checklist_remove(ctx, args).await,
+        ChecklistCmd::Promote(args) => run_checklist_promote(ctx, args).await,
+    }
+}
+
+async fn run_checklist_list(ctx: &Ctx, args: ChecklistListArgs) -> Result<(), CliError> {
+    let ws = ctx.require_workspace(args.workspace.as_deref())?;
+    let items = ctx.client.list_checklist(ws, &args.readable_id).await?;
+    let projections: Vec<ChecklistItemProjection> = items
+        .into_iter()
+        .map(ChecklistItemProjection::from)
+        .collect();
+    output::emit_list(ctx.output, &projections, None, false)
+}
+
+async fn run_checklist_add(ctx: &Ctx, args: ChecklistAddArgs) -> Result<(), CliError> {
+    let ws = ctx.require_workspace(args.workspace.as_deref())?;
+    let body = CreateChecklistItemRequest {
+        title: args.title,
+        before: None,
+        after: None,
+    };
+    let item = ctx
+        .client
+        .create_checklist_item(ws, &args.readable_id, body)
+        .await?;
+    let proj = ChecklistItemProjection::from(item);
+    output::emit(ctx.output, &proj)
+}
+
+async fn run_checklist_update(ctx: &Ctx, args: ChecklistUpdateArgs) -> Result<(), CliError> {
+    let ws = ctx.require_workspace(args.workspace.as_deref())?;
+
+    let checked = if args.checked {
+        Some(true)
+    } else if args.uncheck {
+        Some(false)
+    } else {
+        None
+    };
+
+    let body = UpdateChecklistItemRequest {
+        title: args.title,
+        checked,
+        before: None,
+        after: None,
+    };
+
+    let item = ctx
+        .client
+        .update_checklist_item(ws, &args.readable_id, args.id, body)
+        .await?;
+
+    let proj = ChecklistItemProjection::from(item);
+    output::emit(ctx.output, &proj)
+}
+
+async fn run_checklist_remove(ctx: &Ctx, args: ChecklistRemoveArgs) -> Result<(), CliError> {
+    if !args.confirm {
+        return Err(CliError::Validation(
+            "pass --confirm to delete (this is a non-reversible operation)".to_owned(),
+        ));
+    }
+
+    let ws = ctx.require_workspace(args.workspace.as_deref())?;
+    ctx.client
+        .delete_checklist_item(ws, &args.readable_id, args.id)
+        .await?;
+
+    let proj = DeletedProjection { deleted: true };
+    output::emit(ctx.output, &proj)
+}
+
+async fn run_checklist_promote(ctx: &Ctx, args: ChecklistPromoteArgs) -> Result<(), CliError> {
+    let ws = ctx.require_workspace(args.workspace.as_deref())?;
+
+    let board_id_str = helpers::resolve_board_id(&ctx.client, ws, &args.board)
+        .await
+        .map_err(CliError::from)?;
+
+    let board_uuid: Uuid = board_id_str.parse().map_err(|_| {
+        CliError::Resolver(Box::new(helpers::ResolverError::InvalidBoardUuid {
+            board_id: board_id_str.clone(),
+        }))
+    })?;
+
+    let cols = ctx.client.list_columns(ws, board_uuid).await?;
+    let column_uuid =
+        helpers::resolve_column_id_on_board(&args.column, &cols).map_err(CliError::Validation)?;
+
+    let body = PromoteChecklistItemRequest {
+        board_id: board_uuid,
+        column_id: column_uuid,
+    };
+
+    let promotion = ctx
+        .client
+        .promote_checklist_item(ws, &args.readable_id, args.id, body)
+        .await?;
+
+    let proj = PromotionProjection::from(promotion);
+    output::emit(ctx.output, &proj)
+}
+
+// ---------------------------------------------------------------------------
+// Activity (WU-23)
+// ---------------------------------------------------------------------------
+
+/// Arguments for `atlas tasks activity`.
+#[derive(Parser)]
+pub(crate) struct TasksActivityArgs {
+    /// Task readable ID, e.g. `ATL-42`.
+    #[arg(index = 1)]
+    pub(crate) readable_id: String,
+
+    /// Workspace slug.
+    #[arg(long)]
+    pub(crate) workspace: Option<String>,
+}
+
+async fn run_task_activity(ctx: &Ctx, args: TasksActivityArgs) -> Result<(), CliError> {
+    let ws = ctx.require_workspace(args.workspace.as_deref())?;
+    let page = ctx.client.list_activity(ws, &args.readable_id).await?;
+    let projections: Vec<TaskActivityProjection> = page
+        .items
+        .into_iter()
+        .map(TaskActivityProjection::from)
+        .collect();
+    output::emit_list(
+        ctx.output,
+        &projections,
+        page.next_cursor.as_deref(),
+        page.has_more,
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Subtasks (WU-23)
+// ---------------------------------------------------------------------------
+
+/// Arguments holder for the `tasks subtasks` subcommand group.
+#[derive(Args)]
+pub(crate) struct SubtasksArgs {
+    #[command(subcommand)]
+    pub(crate) command: SubtasksCmd,
+}
+
+#[derive(Subcommand)]
+pub(crate) enum SubtasksCmd {
+    /// List subtasks of a task.
+    List(SubtasksListArgs),
+    /// Create a new subtask under a task.
+    Create(SubtasksCreateArgs),
+    /// Promote a subtask to a top-level task.
+    Promote(SubtasksPromoteArgs),
+}
+
+/// Arguments for `atlas tasks subtasks list`.
+#[derive(Parser)]
+pub(crate) struct SubtasksListArgs {
+    /// Parent task readable ID, e.g. `ATL-42`.
+    #[arg(index = 1)]
+    pub(crate) readable_id: String,
+
+    /// Workspace slug.
+    #[arg(long)]
+    pub(crate) workspace: Option<String>,
+}
+
+/// Arguments for `atlas tasks subtasks create`.
+#[derive(Parser)]
+pub(crate) struct SubtasksCreateArgs {
+    /// Parent task readable ID, e.g. `ATL-42`.
+    #[arg(index = 1)]
+    pub(crate) readable_id: String,
+
+    /// Workspace slug.
+    #[arg(long)]
+    pub(crate) workspace: Option<String>,
+
+    /// Title of the new subtask (required).
+    #[arg(long)]
+    pub(crate) title: String,
+}
+
+/// Arguments for `atlas tasks subtasks promote`.
+#[derive(Parser)]
+pub(crate) struct SubtasksPromoteArgs {
+    /// Parent task readable ID, e.g. `ATL-42`.
+    #[arg(index = 1)]
+    pub(crate) readable_id: String,
+
+    /// Workspace slug.
+    #[arg(long)]
+    pub(crate) workspace: Option<String>,
+
+    /// Readable ID of the subtask to promote (e.g. `ATL-99`).
+    #[arg(long)]
+    pub(crate) subtask_id: String,
+}
+
+async fn run_subtasks(ctx: &Ctx, cmd: SubtasksCmd) -> Result<(), CliError> {
+    match cmd {
+        SubtasksCmd::List(args) => run_subtasks_list(ctx, args).await,
+        SubtasksCmd::Create(args) => run_subtasks_create(ctx, args).await,
+        SubtasksCmd::Promote(args) => run_subtasks_promote(ctx, args).await,
+    }
+}
+
+async fn run_subtasks_list(ctx: &Ctx, args: SubtasksListArgs) -> Result<(), CliError> {
+    let ws = ctx.require_workspace(args.workspace.as_deref())?;
+    let subtasks = ctx.client.list_subtasks(ws, &args.readable_id).await?;
+    let projections: Vec<SubtaskProjection> =
+        subtasks.into_iter().map(SubtaskProjection::from).collect();
+    output::emit_list(ctx.output, &projections, None, false)
+}
+
+async fn run_subtasks_create(ctx: &Ctx, args: SubtasksCreateArgs) -> Result<(), CliError> {
+    let ws = ctx.require_workspace(args.workspace.as_deref())?;
+    let body = CreateSubtaskRequest { title: args.title };
+    let task = ctx
+        .client
+        .create_subtask(ws, &args.readable_id, body)
+        .await?;
+    let proj = TaskCompactProjection::from(task);
+    output::emit(ctx.output, &proj)
+}
+
+async fn run_subtasks_promote(ctx: &Ctx, args: SubtasksPromoteArgs) -> Result<(), CliError> {
+    let ws = ctx.require_workspace(args.workspace.as_deref())?;
+    let task = ctx.client.promote_subtask(ws, &args.subtask_id).await?;
+    let proj = TaskCompactProjection::from(task);
+    output::emit(ctx.output, &proj)
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -597,8 +1259,7 @@ mod tests {
 
     #[test]
     fn tasks_list_board_is_optional() {
-        let cli =
-            Cli::try_parse_from(["atlas", "tasks", "list", "--workspace", "ws"]).unwrap();
+        let cli = Cli::try_parse_from(["atlas", "tasks", "list", "--workspace", "ws"]).unwrap();
         if let crate::cli::Commands::Tasks(args) = cli.command {
             if let TasksCmd::List(list_args) = args.command {
                 assert!(list_args.board.is_none());
@@ -613,9 +1274,19 @@ mod tests {
     #[test]
     fn tasks_list_priority_and_label_are_repeatable() {
         let cli = Cli::try_parse_from([
-            "atlas", "tasks", "list", "--workspace", "ws",
-            "--priority", "high", "--priority", "urgent",
-            "--label", "rust", "--label", "bug",
+            "atlas",
+            "tasks",
+            "list",
+            "--workspace",
+            "ws",
+            "--priority",
+            "high",
+            "--priority",
+            "urgent",
+            "--label",
+            "rust",
+            "--label",
+            "bug",
         ])
         .unwrap();
         if let crate::cli::Commands::Tasks(args) = cli.command {
@@ -706,7 +1377,10 @@ mod tests {
     #[test]
     fn validate_priority_rejects_bogus_values() {
         let err = helpers::validate_priority("bogus").unwrap_err();
-        assert!(err.contains("bogus"), "error must mention the invalid value");
+        assert!(
+            err.contains("bogus"),
+            "error must mention the invalid value"
+        );
     }
 
     #[test]
@@ -757,9 +1431,18 @@ mod tests {
         // wire shape. The server treats null for these non-nullable fields as "leave unchanged".
         // The tri-state fields (priority, due_date, estimate) do use skip_serializing_if
         // and must be absent when neither a value nor a clear flag was provided.
-        assert!(obj.get("priority").is_none(), "absent priority must be omitted");
-        assert!(obj.get("due_date").is_none(), "absent due_date must be omitted");
-        assert!(obj.get("estimate").is_none(), "absent estimate must be omitted");
+        assert!(
+            obj.get("priority").is_none(),
+            "absent priority must be omitted"
+        );
+        assert!(
+            obj.get("due_date").is_none(),
+            "absent due_date must be omitted"
+        );
+        assert!(
+            obj.get("estimate").is_none(),
+            "absent estimate must be omitted"
+        );
         // labels and properties lack skip_serializing_if so None serializes as null —
         // the server treats null labels as "leave unchanged" (same as absent).
         assert!(
@@ -785,7 +1468,10 @@ mod tests {
         };
         let body = build_update_body(&args).unwrap();
         let json = serde_json::to_value(&body).unwrap();
-        assert!(json["priority"].is_null(), "clear_priority must produce null");
+        assert!(
+            json["priority"].is_null(),
+            "clear_priority must produce null"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -794,10 +1480,8 @@ mod tests {
 
     #[test]
     fn tasks_move_board_is_optional() {
-        let cli = Cli::try_parse_from([
-            "atlas", "tasks", "move", "ATL-1", "--column", "Done",
-        ])
-        .unwrap();
+        let cli =
+            Cli::try_parse_from(["atlas", "tasks", "move", "ATL-1", "--column", "Done"]).unwrap();
         if let crate::cli::Commands::Tasks(args) = cli.command {
             if let TasksCmd::Move(move_args) = args.command {
                 assert_eq!(move_args.readable_id, "ATL-1");
@@ -817,8 +1501,7 @@ mod tests {
 
     #[test]
     fn tasks_delete_confirm_defaults_to_false() {
-        let cli =
-            Cli::try_parse_from(["atlas", "tasks", "delete", "ATL-1"]).unwrap();
+        let cli = Cli::try_parse_from(["atlas", "tasks", "delete", "ATL-1"]).unwrap();
         if let crate::cli::Commands::Tasks(args) = cli.command {
             if let TasksCmd::Delete(del_args) = args.command {
                 assert!(!del_args.confirm, "--confirm must default to false");
@@ -832,13 +1515,390 @@ mod tests {
 
     #[test]
     fn tasks_delete_confirm_flag_sets_field_to_true() {
-        let cli =
-            Cli::try_parse_from(["atlas", "tasks", "delete", "ATL-1", "--confirm"]).unwrap();
+        let cli = Cli::try_parse_from(["atlas", "tasks", "delete", "ATL-1", "--confirm"]).unwrap();
         if let crate::cli::Commands::Tasks(args) = cli.command {
             if let TasksCmd::Delete(del_args) = args.command {
                 assert!(del_args.confirm);
             } else {
                 panic!("expected Delete");
+            }
+        } else {
+            panic!("expected Tasks");
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // W1: subtask rows now include assignees (SubtaskProjection)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn subtask_projection_includes_assignees_field() {
+        use crate::projections::SubtaskProjection;
+        use atlas_api::dtos::boards_tasks::TaskSummaryDto;
+        use atlas_api::dtos::documents::ActorDto;
+        use chrono::Utc;
+        use uuid::Uuid;
+
+        let actor = ActorDto {
+            r#type: "user".to_owned(),
+            id: Uuid::now_v7(),
+            display_name: Some("Alice".to_owned()),
+            key_type: None,
+            account_status: None,
+        };
+        let dto = TaskSummaryDto {
+            id: Uuid::now_v7(),
+            readable_id: "ATL-5".to_owned(),
+            board_id: Uuid::now_v7(),
+            column_id: Uuid::now_v7(),
+            title: "A subtask".to_owned(),
+            priority: None,
+            estimate: None,
+            labels: vec![],
+            assignees: vec![actor],
+            board_name: "Dev".to_owned(),
+            column_name: "Todo".to_owned(),
+            updated_at: Utc::now(),
+        };
+
+        let proj = SubtaskProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+
+        let assignees = value["assignees"].as_array().unwrap();
+        assert_eq!(assignees.len(), 1, "subtask must include assignees");
+        assert_eq!(assignees[0]["type"], "user");
+        assert_eq!(assignees[0]["display_name"], "Alice");
+    }
+
+    // -----------------------------------------------------------------------
+    // T49 / WU-22: Parse and validation tests — refs
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn tasks_refs_list_parses() {
+        let cli = Cli::try_parse_from(["atlas", "tasks", "refs", "list", "ATL-42"]).unwrap();
+        if let crate::cli::Commands::Tasks(args) = cli.command {
+            if let TasksCmd::Refs(refs_args) = args.command {
+                assert!(matches!(refs_args.command, RefsCmd::List(_)));
+            } else {
+                panic!("expected Refs");
+            }
+        } else {
+            panic!("expected Tasks");
+        }
+    }
+
+    #[test]
+    fn tasks_refs_create_parses_kind_and_target() {
+        let cli = Cli::try_parse_from([
+            "atlas", "tasks", "refs", "create", "ATL-42", "--kind", "relates", "--target", "ATL-10",
+        ])
+        .unwrap();
+        if let crate::cli::Commands::Tasks(args) = cli.command {
+            if let TasksCmd::Refs(refs_args) = args.command {
+                if let RefsCmd::Create(create_args) = refs_args.command {
+                    assert_eq!(create_args.readable_id, "ATL-42");
+                    assert_eq!(create_args.kind, "relates");
+                    assert_eq!(create_args.target, "ATL-10");
+                } else {
+                    panic!("expected Create");
+                }
+            } else {
+                panic!("expected Refs");
+            }
+        } else {
+            panic!("expected Tasks");
+        }
+    }
+
+    #[test]
+    fn tasks_refs_create_requires_kind() {
+        let result = Cli::try_parse_from([
+            "atlas", "tasks", "refs", "create", "ATL-42", "--target", "ATL-10",
+        ]);
+        assert!(result.is_err(), "--kind is required for refs create");
+    }
+
+    #[test]
+    fn tasks_refs_create_requires_target() {
+        let result = Cli::try_parse_from([
+            "atlas", "tasks", "refs", "create", "ATL-42", "--kind", "relates",
+        ]);
+        assert!(result.is_err(), "--target is required for refs create");
+    }
+
+    #[test]
+    fn validate_reference_kind_rejects_bogus_value() {
+        let result = helpers::validate_reference_kind("bogus");
+        assert!(
+            result.is_err(),
+            "validate_reference_kind must reject unknown kinds"
+        );
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains("bogus"),
+            "error must mention the invalid value"
+        );
+    }
+
+    #[test]
+    fn validate_reference_kind_accepts_known_values() {
+        for kind in ["relates", "blocks", "parent", "spec"] {
+            assert!(
+                helpers::validate_reference_kind(kind).is_ok(),
+                "'{kind}' must be accepted"
+            );
+        }
+    }
+
+    #[test]
+    fn tasks_refs_remove_requires_ref_id() {
+        let result = Cli::try_parse_from(["atlas", "tasks", "refs", "remove", "ATL-42"]);
+        assert!(result.is_err(), "--ref-id is required for refs remove");
+    }
+
+    // -----------------------------------------------------------------------
+    // T49 / WU-22: Parse and validation tests — assignees
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn tasks_backlinks_parses() {
+        let cli =
+            Cli::try_parse_from(["atlas", "tasks", "backlinks", "ATL-42", "--workspace", "ws"])
+                .unwrap();
+        if let crate::cli::Commands::Tasks(args) = cli.command {
+            if let TasksCmd::Backlinks(bl_args) = args.command {
+                assert_eq!(bl_args.readable_id, "ATL-42");
+            } else {
+                panic!("expected Backlinks");
+            }
+        } else {
+            panic!("expected Tasks");
+        }
+    }
+
+    #[test]
+    fn tasks_assignees_add_parses() {
+        let uuid_str = "550e8400-e29b-41d4-a716-446655440000";
+        let cli = Cli::try_parse_from([
+            "atlas",
+            "tasks",
+            "assignees",
+            "add",
+            "ATL-42",
+            "--assignee-type",
+            "user",
+            "--assignee-id",
+            uuid_str,
+        ])
+        .unwrap();
+        if let crate::cli::Commands::Tasks(args) = cli.command {
+            if let TasksCmd::Assignees(a_args) = args.command {
+                if let AssigneesCmd::Add(add_args) = a_args.command {
+                    assert_eq!(add_args.assignee_type, "user");
+                    assert_eq!(add_args.assignee_id, uuid_str.parse::<Uuid>().unwrap());
+                } else {
+                    panic!("expected Add");
+                }
+            } else {
+                panic!("expected Assignees");
+            }
+        } else {
+            panic!("expected Tasks");
+        }
+    }
+
+    #[test]
+    fn tasks_assignees_add_requires_assignee_type() {
+        let uuid_str = "550e8400-e29b-41d4-a716-446655440000";
+        let result = Cli::try_parse_from([
+            "atlas",
+            "tasks",
+            "assignees",
+            "add",
+            "ATL-42",
+            "--assignee-id",
+            uuid_str,
+        ]);
+        assert!(
+            result.is_err(),
+            "--assignee-type is required for assignees add"
+        );
+    }
+
+    #[test]
+    fn validate_assignee_type_rejects_bogus_value() {
+        let result = helpers::validate_assignee_type("bogus");
+        assert!(result.is_err());
+        let msg = result.unwrap_err();
+        assert!(msg.contains("bogus"));
+    }
+
+    #[test]
+    fn validate_assignee_type_accepts_known_values() {
+        for t in ["user", "api_key"] {
+            assert!(
+                helpers::validate_assignee_type(t).is_ok(),
+                "'{t}' must be accepted"
+            );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // T50 / WU-23: Parse and validation tests — checklist
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn tasks_checklist_list_parses() {
+        let cli = Cli::try_parse_from(["atlas", "tasks", "checklist", "list", "ATL-1"]).unwrap();
+        if let crate::cli::Commands::Tasks(args) = cli.command {
+            if let TasksCmd::Checklist(cl_args) = args.command {
+                assert!(matches!(cl_args.command, ChecklistCmd::List(_)));
+            } else {
+                panic!("expected Checklist");
+            }
+        } else {
+            panic!("expected Tasks");
+        }
+    }
+
+    #[test]
+    fn tasks_checklist_add_requires_title() {
+        let result = Cli::try_parse_from(["atlas", "tasks", "checklist", "add", "ATL-1"]);
+        assert!(result.is_err(), "--title is required for checklist add");
+    }
+
+    #[test]
+    fn tasks_checklist_remove_confirm_defaults_to_false() {
+        let uuid_str = "550e8400-e29b-41d4-a716-446655440000";
+        let cli = Cli::try_parse_from([
+            "atlas",
+            "tasks",
+            "checklist",
+            "remove",
+            "ATL-1",
+            "--id",
+            uuid_str,
+        ])
+        .unwrap();
+        if let crate::cli::Commands::Tasks(args) = cli.command {
+            if let TasksCmd::Checklist(cl_args) = args.command {
+                if let ChecklistCmd::Remove(rm_args) = cl_args.command {
+                    assert!(!rm_args.confirm, "--confirm must default to false");
+                } else {
+                    panic!("expected Remove");
+                }
+            } else {
+                panic!("expected Checklist");
+            }
+        } else {
+            panic!("expected Tasks");
+        }
+    }
+
+    #[test]
+    fn checklist_remove_confirm_guard_fires_before_network() {
+        let args = ChecklistRemoveArgs {
+            readable_id: "ATL-1".to_owned(),
+            workspace: None,
+            id: Uuid::nil(),
+            confirm: false,
+        };
+        assert!(
+            !args.confirm,
+            "confirm guard: must be false when --confirm absent"
+        );
+    }
+
+    #[test]
+    fn tasks_checklist_promote_parses_board_and_column() {
+        let uuid_str = "550e8400-e29b-41d4-a716-446655440000";
+        let cli = Cli::try_parse_from([
+            "atlas",
+            "tasks",
+            "checklist",
+            "promote",
+            "ATL-1",
+            "--id",
+            uuid_str,
+            "--board",
+            "Dev Board",
+            "--column",
+            "To Do",
+        ])
+        .unwrap();
+        if let crate::cli::Commands::Tasks(args) = cli.command {
+            if let TasksCmd::Checklist(cl_args) = args.command {
+                if let ChecklistCmd::Promote(p_args) = cl_args.command {
+                    assert_eq!(p_args.board, "Dev Board");
+                    assert_eq!(p_args.column, "To Do");
+                } else {
+                    panic!("expected Promote");
+                }
+            } else {
+                panic!("expected Checklist");
+            }
+        } else {
+            panic!("expected Tasks");
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // T51 / WU-23: Parse tests — activity and subtasks
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn tasks_activity_parses() {
+        let cli =
+            Cli::try_parse_from(["atlas", "tasks", "activity", "ATL-42", "--workspace", "ws"])
+                .unwrap();
+        if let crate::cli::Commands::Tasks(args) = cli.command {
+            if let TasksCmd::Activity(act_args) = args.command {
+                assert_eq!(act_args.readable_id, "ATL-42");
+            } else {
+                panic!("expected Activity");
+            }
+        } else {
+            panic!("expected Tasks");
+        }
+    }
+
+    #[test]
+    fn tasks_subtasks_create_requires_title() {
+        let result = Cli::try_parse_from(["atlas", "tasks", "subtasks", "create", "ATL-1"]);
+        assert!(result.is_err(), "--title is required for subtasks create");
+    }
+
+    #[test]
+    fn tasks_subtasks_promote_requires_subtask_id() {
+        let result = Cli::try_parse_from(["atlas", "tasks", "subtasks", "promote", "ATL-1"]);
+        assert!(
+            result.is_err(),
+            "--subtask-id is required for subtasks promote"
+        );
+    }
+
+    #[test]
+    fn tasks_subtasks_create_parses_title() {
+        let cli = Cli::try_parse_from([
+            "atlas",
+            "tasks",
+            "subtasks",
+            "create",
+            "ATL-1",
+            "--title",
+            "My subtask",
+        ])
+        .unwrap();
+        if let crate::cli::Commands::Tasks(args) = cli.command {
+            if let TasksCmd::Subtasks(st_args) = args.command {
+                if let SubtasksCmd::Create(c_args) = st_args.command {
+                    assert_eq!(c_args.title, "My subtask");
+                } else {
+                    panic!("expected Create");
+                }
+            } else {
+                panic!("expected Subtasks");
             }
         } else {
             panic!("expected Tasks");
