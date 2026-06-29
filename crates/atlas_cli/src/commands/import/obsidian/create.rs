@@ -7,24 +7,69 @@
         clippy::indexing_slicing
     )
 )]
-// execute_folders, execute_documents_create_path, and the private helpers they
-// depend on are wired into the execute orchestrator in B1b. The dead_code
-// allow covers the transition period.
-#![allow(dead_code)]
 
 use std::collections::HashMap;
 use std::path::Path;
 
-use atlas_api::dtos::{documents::CreateDocumentRequest, folders::CreateFolderRequest};
+use atlas_api::dtos::{
+    documents::{ConflictProblemDto, CreateDocumentRequest, DocumentDto, UpdateContentRequest},
+    folders::CreateFolderRequest,
+};
 use atlas_client::AtlasClient;
 use uuid::Uuid;
 
 use crate::error::CliError;
+use crate::output::OutputFormat;
 
 use super::manifest::{Manifest, ManifestDocEntry, content_hash};
-use super::plan::{DocAction, DocumentOp, FolderOp};
+use super::plan::{DocumentOp, FolderOp};
 
 type FolderKey = (String, Option<Uuid>);
+
+/// The maximum number of CAS update attempts before reporting a conflict error.
+const MAX_CAS_RETRIES: usize = 3;
+
+/// The execution action to take for a single document.
+///
+/// Determined by `decide_action` from manifest state, content hash, and server
+/// existence — independently of the dry-run prediction in `DocAction`.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum DocDecision {
+    /// Content is unchanged since last import — no API call needed.
+    Skip,
+    /// Document does not exist on the server — call `create_document`.
+    Create,
+    /// Document exists on the server — apply a CAS content update.
+    Update,
+}
+
+/// Determines the per-document execution action from local and server state.
+///
+/// When a manifest entry is present the decision is hash-only: same hash → Skip,
+/// different hash → Update. The `server_exists` argument is only consulted when
+/// the manifest has no entry for this path.
+pub(crate) fn decide_action(
+    manifest_entry: Option<&ManifestDocEntry>,
+    new_hash: &str,
+    server_exists: bool,
+) -> DocDecision {
+    match manifest_entry {
+        Some(entry) => {
+            if entry.content_hash == new_hash {
+                DocDecision::Skip
+            } else {
+                DocDecision::Update
+            }
+        }
+        None => {
+            if server_exists {
+                DocDecision::Update
+            } else {
+                DocDecision::Create
+            }
+        }
+    }
+}
 
 /// Returns the id of an already-existing folder whose `(name, parent_folder_id)`
 /// matches the supplied key, or `None` when no match is found.
@@ -112,63 +157,198 @@ pub(crate) async fn execute_folders(
     Ok(())
 }
 
-/// Executes only `DocAction::Create` ops; Update ops are skipped until B1b.
+/// Executes create, update, and skip operations for all document ops.
 ///
-/// For each Create op: resolves the owning folder from the manifest, calls
-/// `create_document`, and persists the server-returned slug and id alongside
-/// the content hash. The manifest is atomically saved after each successful
-/// create so a partial run can be resumed.
-pub(crate) async fn execute_documents_create_path(
+/// For each document the manifest is consulted first:
+/// - Manifest hit, same hash → `[SKIP]`, no API call.
+/// - Manifest hit, different hash → CAS `update_content` with the server's
+///   current head revision.
+/// - Manifest miss → probe `get_document(predicted_slug)`:
+///   - 200 → CAS update using the returned document's head revision.
+///   - 404 → `create_document`, persist the server-returned slug.
+///
+/// The manifest is atomically saved after each successful operation so a
+/// partial run can be resumed without data loss.
+pub(crate) async fn execute_documents(
     client: &AtlasClient,
     ws: &str,
     project: &str,
     doc_ops: &[DocumentOp],
     manifest: &mut Manifest,
     manifest_path: &Path,
+    output: OutputFormat,
 ) -> Result<(), CliError> {
+    use atlas_client::ClientError;
+
     for op in doc_ops {
-        if !matches!(op.action, DocAction::Create) {
-            continue;
-        }
-
-        let folder_id = resolve_doc_folder_id(&op.folder_rel, manifest)?;
-
-        let dto = client
-            .create_document(
-                ws,
-                project,
-                CreateDocumentRequest {
-                    title: op.title.clone(),
-                    folder_id,
-                    content: Some(op.content.clone()),
-                },
-            )
-            .await?;
-
-        // The server-returned slug (not the predicted one) is persisted so
-        // slug collisions resolved server-side are recorded correctly.
-        let slug = dto.slug.ok_or_else(|| {
-            CliError::Validation(format!(
-                "server returned no slug for document '{}'; cannot persist manifest entry",
-                op.title
-            ))
-        })?;
-
-        let hash = content_hash(&op.content);
         let rel_key = op.rel_path.to_string_lossy().into_owned();
+        let new_hash = content_hash(&op.content);
+        let manifest_entry = manifest.documents.get(&rel_key).cloned();
 
-        manifest.documents.insert(
-            rel_key,
-            ManifestDocEntry {
-                slug,
-                id: dto.id.to_string(),
-                content_hash: hash,
-            },
-        );
-        manifest.save(manifest_path)?;
+        // When the manifest has no entry, probe the server to determine existence.
+        // Preserve the full DocumentDto so the Update path can read head_revision_id
+        // without an extra round-trip.
+        let server_doc: Option<DocumentDto> = if manifest_entry.is_none() {
+            match client.get_document(ws, &op.predicted_slug).await {
+                Ok(doc) => Some(doc),
+                Err(ClientError::Api(p)) if p.status == 404 => None,
+                Err(e) => return Err(CliError::from(e)),
+            }
+        } else {
+            None
+        };
+
+        let server_exists = server_doc.is_some();
+
+        match decide_action(manifest_entry.as_ref(), &new_hash, server_exists) {
+            DocDecision::Skip => {
+                let slug = manifest_entry
+                    .as_ref()
+                    .map(|e| e.slug.as_str())
+                    .unwrap_or(&op.predicted_slug);
+                emit_progress(output, "[SKIP]", slug);
+            }
+
+            DocDecision::Create => {
+                let folder_id = resolve_doc_folder_id(&op.folder_rel, manifest)?;
+
+                let dto = client
+                    .create_document(
+                        ws,
+                        project,
+                        CreateDocumentRequest {
+                            title: op.title.clone(),
+                            folder_id,
+                            content: Some(op.content.clone()),
+                        },
+                    )
+                    .await?;
+
+                let slug = dto.slug.ok_or_else(|| {
+                    CliError::Validation(format!(
+                        "server returned no slug for document '{}'; cannot persist manifest entry",
+                        op.title
+                    ))
+                })?;
+
+                manifest.documents.insert(
+                    rel_key,
+                    ManifestDocEntry {
+                        slug: slug.clone(),
+                        id: dto.id.to_string(),
+                        content_hash: new_hash,
+                    },
+                );
+                manifest.save(manifest_path)?;
+                emit_progress(output, "[CREATE]", &slug);
+            }
+
+            DocDecision::Update => {
+                let (slug, head_revision_id) = if let Some(doc) = server_doc {
+                    // Manifest miss but server has a doc at the predicted slug —
+                    // use the returned document's current head for CAS.
+                    let slug = doc.slug.unwrap_or_else(|| op.predicted_slug.clone());
+                    (slug, doc.head_revision_id)
+                } else {
+                    // Manifest hit, hash differs — fetch the current head from
+                    // the server to obtain a fresh base_revision_id for CAS.
+                    let entry = manifest_entry.as_ref().ok_or_else(|| {
+                        CliError::Validation(
+                            "internal: Update decision with neither a manifest entry \
+                             nor a server document"
+                                .into(),
+                        )
+                    })?;
+                    let doc = client.get_document(ws, &entry.slug).await?;
+                    (entry.slug.clone(), doc.head_revision_id)
+                };
+
+                let updated =
+                    cas_update_document(client, ws, &slug, op.content.clone(), head_revision_id)
+                        .await?;
+
+                let final_slug = updated.slug.unwrap_or_else(|| slug.clone());
+
+                manifest.documents.insert(
+                    rel_key,
+                    ManifestDocEntry {
+                        slug: final_slug.clone(),
+                        id: updated.id.to_string(),
+                        content_hash: new_hash,
+                    },
+                );
+                manifest.save(manifest_path)?;
+                emit_progress(output, "[UPDATE]", &final_slug);
+            }
+        }
     }
 
     Ok(())
+}
+
+/// Stub for B3: creates boards and tasks from epic/task mapping ops.
+pub(crate) async fn execute_boards_and_tasks() -> Result<(), CliError> {
+    Ok(())
+}
+
+/// Stub for B4: uploads binary attachments for their owning documents.
+pub(crate) async fn execute_attachments() -> Result<(), CliError> {
+    Ok(())
+}
+
+/// Applies a CAS content update, retrying on revision conflicts.
+///
+/// On each `ClientError::Conflict`, the server provides `current_revision_id` —
+/// the head the client must rebase onto to avoid clobbering concurrent edits.
+/// After `MAX_CAS_RETRIES` attempts without success the last conflict is
+/// returned as `CliError::Conflict`.
+async fn cas_update_document(
+    client: &AtlasClient,
+    ws: &str,
+    slug: &str,
+    content: String,
+    initial_base: Uuid,
+) -> Result<DocumentDto, CliError> {
+    use atlas_client::ClientError;
+
+    let mut base = initial_base;
+    let mut last_conflict: Option<ConflictProblemDto> = None;
+
+    for _ in 0..MAX_CAS_RETRIES {
+        match client
+            .update_content(
+                ws,
+                slug,
+                UpdateContentRequest {
+                    content: content.clone(),
+                    base_revision_id: base,
+                },
+            )
+            .await
+        {
+            Ok(dto) => return Ok(dto),
+            Err(ClientError::Conflict(p)) => {
+                // Rebase onto the server's current head to avoid clobbering concurrent edits.
+                base = p.current_revision_id;
+                last_conflict = Some(p);
+            }
+            Err(e) => return Err(CliError::from(e)),
+        }
+    }
+
+    match last_conflict {
+        Some(conflict) => Err(CliError::Conflict(Box::new(conflict))),
+        None => Err(CliError::Validation(
+            "CAS retry loop exhausted without executing any attempt".into(),
+        )),
+    }
+}
+
+/// Emits a per-operation progress line to stdout in Human output mode.
+fn emit_progress(output: OutputFormat, kind: &str, target: &str) {
+    if output == OutputFormat::Human {
+        println!("{kind} {target}");
+    }
 }
 
 fn resolve_parent_folder_id(
@@ -231,6 +411,122 @@ mod tests {
             .iter()
             .map(|(name, parent, id)| ((name.to_string(), parent.map(uuid)), uuid(*id)))
             .collect()
+    }
+
+    fn entry_with_hash(hash: &str) -> ManifestDocEntry {
+        ManifestDocEntry {
+            slug: "some-slug".into(),
+            id: "some-uuid".into(),
+            content_hash: hash.into(),
+        }
+    }
+
+    // -- decide_action ---------------------------------------------------------
+
+    #[test]
+    fn decide_action_manifest_hit_same_hash_returns_skip() {
+        let hash = "abc123";
+        let entry = entry_with_hash(hash);
+        assert_eq!(decide_action(Some(&entry), hash, false), DocDecision::Skip);
+    }
+
+    #[test]
+    fn decide_action_manifest_hit_same_hash_server_exists_ignored() {
+        // server_exists is irrelevant when the manifest has a matching hash
+        let hash = "abc123";
+        let entry = entry_with_hash(hash);
+        assert_eq!(decide_action(Some(&entry), hash, true), DocDecision::Skip);
+    }
+
+    #[test]
+    fn decide_action_manifest_hit_different_hash_returns_update() {
+        let entry = entry_with_hash("old-hash");
+        assert_eq!(
+            decide_action(Some(&entry), "new-hash", false),
+            DocDecision::Update
+        );
+    }
+
+    #[test]
+    fn decide_action_no_manifest_server_exists_returns_update() {
+        assert_eq!(decide_action(None, "any-hash", true), DocDecision::Update);
+    }
+
+    #[test]
+    fn decide_action_no_manifest_server_absent_returns_create() {
+        assert_eq!(decide_action(None, "any-hash", false), DocDecision::Create);
+    }
+
+    // -- CAS retry simulation --------------------------------------------------
+
+    /// Simulates the CAS retry state machine against a sequence of pre-computed
+    /// attempt outcomes, without touching the network.
+    ///
+    /// Each outcome is `Ok(())` (success) or `Err(current_revision_id)` (conflict).
+    /// Returns `Ok(winning_base)` when any attempt within `MAX_CAS_RETRIES`
+    /// succeeds, or `Err(last_conflict_revision_id)` when retries are exhausted.
+    fn simulate_cas_retries(
+        initial_base: Uuid,
+        outcomes: &[Result<(), Uuid>],
+    ) -> Result<Uuid, Uuid> {
+        let mut base = initial_base;
+        let mut last_conflict_id: Option<Uuid> = None;
+
+        for outcome in outcomes.iter().take(MAX_CAS_RETRIES) {
+            match outcome {
+                Ok(()) => return Ok(base),
+                Err(conflict_id) => {
+                    last_conflict_id = Some(*conflict_id);
+                    base = *conflict_id;
+                }
+            }
+        }
+
+        Err(last_conflict_id.unwrap_or(initial_base))
+    }
+
+    #[test]
+    fn cas_immediate_success_returns_ok_with_initial_base() {
+        let initial = uuid(1);
+        let result = simulate_cas_retries(initial, &[Ok(())]);
+        assert_eq!(result, Ok(initial));
+    }
+
+    #[test]
+    fn cas_conflict_then_success_rebases_onto_conflict_revision() {
+        let initial = uuid(1);
+        let conflict_id = uuid(2);
+        // First attempt conflicts; second succeeds with the rebased base.
+        let result = simulate_cas_retries(initial, &[Err(conflict_id), Ok(())]);
+        assert_eq!(result, Ok(conflict_id));
+    }
+
+    #[test]
+    fn cas_three_conflicts_exhausts_retries_and_returns_last_conflict_id() {
+        let initial = uuid(1);
+        let conflict_a = uuid(2);
+        let conflict_b = uuid(3);
+        let conflict_c = uuid(4);
+        let result = simulate_cas_retries(
+            initial,
+            &[Err(conflict_a), Err(conflict_b), Err(conflict_c)],
+        );
+        assert_eq!(result, Err(conflict_c));
+    }
+
+    #[test]
+    fn cas_stops_at_max_retries_even_if_more_outcomes_provided() {
+        // MAX_CAS_RETRIES = 3; the 4th Ok(()) must never be reached.
+        let initial = uuid(1);
+        let conflict_a = uuid(2);
+        let conflict_b = uuid(3);
+        let conflict_c = uuid(4);
+        let result = simulate_cas_retries(
+            initial,
+            &[Err(conflict_a), Err(conflict_b), Err(conflict_c), Ok(())],
+        );
+        // Only 3 retries executed — all conflicts — so we get the exhaustion error.
+        assert_eq!(result, Err(conflict_c));
     }
 
     // -- find_existing_folder --------------------------------------------------
