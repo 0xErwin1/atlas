@@ -23,6 +23,7 @@ uuid.workspace = true
 tempfile.workspace = true
 toml = { workspace = true }
 comfy-table = { workspace = true }
+clap_complete = { workspace = true }
 
 [lints]
 workspace = true

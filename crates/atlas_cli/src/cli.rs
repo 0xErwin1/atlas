@@ -7,6 +7,7 @@ use crate::commands::api_keys::ApiKeysArgs;
 use crate::commands::audit::AuditArgs;
 use crate::commands::boards::BoardsArgs;
 use crate::commands::columns::ColumnsArgs;
+use crate::commands::completions::CompletionsArgs;
 use crate::commands::docs::DocsArgs;
 use crate::commands::folders::FoldersArgs;
 use crate::commands::grants::GrantsArgs;
@@ -90,6 +91,8 @@ pub(crate) enum Commands {
     Grants(GrantsArgs),
     /// Query security audit logs (workspace, platform).
     Audit(AuditArgs),
+    /// Generate shell completion scripts for the `atlas` binary.
+    Completions(CompletionsArgs),
 }
 
 /// Arguments for the `search` subcommand.
