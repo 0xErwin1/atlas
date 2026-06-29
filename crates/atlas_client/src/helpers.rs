@@ -161,9 +161,9 @@ pub fn validate_assignee_type(v: &str) -> Result<(), String> {
 /// Returns `Ok(())` for accepted values, or an `Err` listing the valid set.
 pub fn validate_reference_kind(v: &str) -> Result<(), String> {
     match v {
-        "relates" | "blocks" | "parent" | "spec" => Ok(()),
+        "relates" | "blocks" | "parent" | "spec" | "docs" => Ok(()),
         _ => Err(format!(
-            "invalid kind '{v}'; valid values: relates, blocks, parent, spec"
+            "invalid kind '{v}'; valid values: relates, blocks, parent, spec, docs"
         )),
     }
 }
@@ -488,9 +488,27 @@ mod tests {
 
     #[test]
     fn validate_reference_kind_valid_values_pass() {
-        for v in &["relates", "blocks", "parent", "spec"] {
+        for v in &["relates", "blocks", "parent", "spec", "docs"] {
             assert!(validate_reference_kind(v).is_ok(), "'{v}' should be valid");
         }
+    }
+
+    #[test]
+    fn validate_reference_kind_docs_accepted() {
+        assert!(validate_reference_kind("docs").is_ok());
+    }
+
+    #[test]
+    fn validate_reference_kind_existing_kinds_preserved() {
+        for v in &["relates", "blocks", "parent", "spec"] {
+            assert!(validate_reference_kind(v).is_ok(), "'{v}' should still be valid");
+        }
+    }
+
+    #[test]
+    fn validate_reference_kind_unknown_error_includes_docs() {
+        let err = validate_reference_kind("mentions").unwrap_err();
+        assert!(err.contains("docs"), "error must list docs as a valid value");
     }
 
     #[test]
@@ -501,6 +519,7 @@ mod tests {
         assert!(err.contains("blocks"), "error must list valid values");
         assert!(err.contains("parent"), "error must list valid values");
         assert!(err.contains("spec"), "error must list valid values");
+        assert!(err.contains("docs"), "error must list valid values");
     }
 
     // -----------------------------------------------------------------------
