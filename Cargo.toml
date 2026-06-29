@@ -67,6 +67,8 @@ reqwest = { version = "0.13", default-features = false, features = ["json", "rus
 
 # CLI
 clap = { version = "4", features = ["derive", "env"] }
+toml = "0.8"
+comfy-table = "7"
 
 # MCP — pinned exact version confirmed at scaffold time
 rmcp = { version = "=1.7.0", features = ["server", "transport-io", "macros", "transport-streamable-http-server"] }
