@@ -13,6 +13,7 @@ use crate::commands::docs::DocsArgs;
 use crate::commands::folders::FoldersArgs;
 use crate::commands::grants::GrantsArgs;
 use crate::commands::groups::GroupsArgs;
+use crate::commands::import::ImportArgs;
 use crate::commands::members::MembersArgs;
 use crate::commands::projects::ProjectsArgs;
 use crate::commands::property_definitions::PropertyDefinitionsArgs;
@@ -96,6 +97,8 @@ pub(crate) enum Commands {
     Completions(CompletionsArgs),
     /// Manage CLI configuration (path, show, set-url, set-token, clear-token).
     Config(ConfigArgs),
+    /// Import content from an external source (e.g. an Obsidian vault).
+    Import(ImportArgs),
 }
 
 /// Arguments for the `search` subcommand.
