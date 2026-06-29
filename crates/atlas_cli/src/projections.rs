@@ -8,8 +8,13 @@
     )
 )]
 
-use atlas_api::dtos::boards_tasks::{BoardSummaryDto, ColumnDto, TaskDto, TaskSummaryDto};
-use atlas_api::dtos::documents::{ActorDto, DocumentDto, DocumentSummaryDto};
+use atlas_api::dtos::boards_tasks::{
+    ActivityEntryDto, AssigneeDto, BoardSummaryDto, ChecklistItemDto, ColumnDto, PromotionDto,
+    ReferenceDto, TaskBacklinkDto, TaskDto, TaskSummaryDto,
+};
+use atlas_api::dtos::documents::{
+    ActorDto, BacklinkDto, DocumentDto, DocumentSummaryDto, RevisionContentDto, RevisionMetaDto,
+};
 use atlas_api::dtos::folders::FolderDto;
 use atlas_api::dtos::search::{SearchHitDto, SearchKindDto};
 use atlas_api::dtos::tags::TagDto;
@@ -838,6 +843,432 @@ impl TableRow for FolderProjection {
 }
 
 // ---------------------------------------------------------------------------
+// Graph / activity projections (Batch 4)
+// ---------------------------------------------------------------------------
+
+/// Outbound reference on a task, mirroring `project_reference` from the MCP.
+///
+/// `id` (UUID) and attribution fields are dropped; `kind` + target fields identify
+/// the reference. Optional target fields are omitted when absent.
+#[derive(Debug, Serialize)]
+pub(crate) struct TaskRefProjection {
+    pub(crate) kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) target_readable_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) target_document_id: Option<Uuid>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) target_title: Option<String>,
+    pub(crate) target_resolved: bool,
+}
+
+impl From<ReferenceDto> for TaskRefProjection {
+    fn from(r: ReferenceDto) -> Self {
+        Self {
+            kind: r.kind,
+            target_readable_id: r.target_readable_id,
+            target_document_id: r.target_document_id,
+            target_title: r.target_title,
+            target_resolved: r.target_resolved,
+        }
+    }
+}
+
+impl TableRow for TaskRefProjection {
+    fn headers() -> &'static [&'static str] {
+        &["Kind", "Target Task", "Target Doc", "Title", "Resolved"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        vec![
+            self.kind.clone(),
+            self.target_readable_id.clone().unwrap_or_default(),
+            self.target_document_id
+                .map(|id| id.to_string())
+                .unwrap_or_default(),
+            self.target_title.clone().unwrap_or_default(),
+            self.target_resolved.to_string(),
+        ]
+    }
+}
+
+/// Inbound reference (backlink) on a task, mirroring `project_task_backlink` from the MCP.
+///
+/// `source_task_id` (UUID) is dropped; `source_readable_id` is the public handle.
+#[derive(Debug, Serialize)]
+pub(crate) struct TaskBacklinkProjection {
+    pub(crate) source_readable_id: String,
+    pub(crate) source_title: String,
+    pub(crate) kind: String,
+}
+
+impl From<TaskBacklinkDto> for TaskBacklinkProjection {
+    fn from(b: TaskBacklinkDto) -> Self {
+        Self {
+            source_readable_id: b.source_readable_id,
+            source_title: b.source_title,
+            kind: b.kind,
+        }
+    }
+}
+
+impl TableRow for TaskBacklinkProjection {
+    fn headers() -> &'static [&'static str] {
+        &["Source ID", "Source Title", "Kind"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        vec![
+            self.source_readable_id.clone(),
+            self.source_title.clone(),
+            self.kind.clone(),
+        ]
+    }
+}
+
+/// Full assignee entry on a task, mirroring `project_assignee` from the MCP.
+///
+/// Exposes the actor's `type` and `display_name` from the nested `assignee` sub-DTO,
+/// plus `assigned_at`. `assigned_by` is dropped.
+#[derive(Debug, Serialize)]
+pub(crate) struct TaskAssigneeProjection {
+    #[serde(rename = "type")]
+    pub(crate) type_: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) display_name: Option<String>,
+    pub(crate) assigned_at: DateTime<Utc>,
+}
+
+impl From<AssigneeDto> for TaskAssigneeProjection {
+    fn from(a: AssigneeDto) -> Self {
+        Self {
+            type_: a.assignee.r#type,
+            display_name: a.assignee.display_name,
+            assigned_at: a.assigned_at,
+        }
+    }
+}
+
+impl TableRow for TaskAssigneeProjection {
+    fn headers() -> &'static [&'static str] {
+        &["Type", "Display Name", "Assigned At"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        vec![
+            self.type_.clone(),
+            self.display_name.clone().unwrap_or_default(),
+            self.assigned_at.format("%Y-%m-%d").to_string(),
+        ]
+    }
+}
+
+/// Checklist item projection, mirroring `project_checklist_item` from the MCP.
+///
+/// `task_id`, `position_key`, and timestamps are dropped. `promoted_readable_id`
+/// is preserved so callers can navigate to the promoted task.
+#[derive(Debug, Serialize)]
+pub(crate) struct ChecklistItemProjection {
+    pub(crate) id: Uuid,
+    pub(crate) title: String,
+    pub(crate) checked: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) promoted_readable_id: Option<String>,
+}
+
+impl From<ChecklistItemDto> for ChecklistItemProjection {
+    fn from(item: ChecklistItemDto) -> Self {
+        Self {
+            id: item.id,
+            title: item.title,
+            checked: item.checked,
+            promoted_readable_id: item.promoted_readable_id,
+        }
+    }
+}
+
+impl TableRow for ChecklistItemProjection {
+    fn headers() -> &'static [&'static str] {
+        &["ID", "Title", "Checked", "Promoted To"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        vec![
+            self.id.to_string(),
+            self.title.clone(),
+            self.checked.to_string(),
+            self.promoted_readable_id.clone().unwrap_or_default(),
+        ]
+    }
+}
+
+/// Result of promoting a checklist item to a task, mirroring `project_promotion` from the MCP.
+///
+/// Surfaces the new task's compact fields and the original checklist item.
+/// `parent_reference` is omitted when absent (the promoted task has no parent ref).
+#[derive(Debug, Serialize)]
+pub(crate) struct PromotionProjection {
+    pub(crate) task: TaskCompactProjection,
+    pub(crate) checklist_item: ChecklistItemProjection,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) parent_reference: Option<TaskRefProjection>,
+}
+
+impl From<PromotionDto> for PromotionProjection {
+    fn from(p: PromotionDto) -> Self {
+        Self {
+            task: TaskCompactProjection::from(p.task),
+            checklist_item: ChecklistItemProjection::from(p.checklist_item),
+            parent_reference: p.parent_reference.map(TaskRefProjection::from),
+        }
+    }
+}
+
+impl TableRow for PromotionProjection {
+    fn headers() -> &'static [&'static str] {
+        &["New Task ID", "New Task Title", "Checklist Item", "Checked"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        vec![
+            self.task.readable_id.clone(),
+            self.task.title.clone(),
+            self.checklist_item.title.clone(),
+            self.checklist_item.checked.to_string(),
+        ]
+    }
+}
+
+/// Task-scoped activity entry, mirroring `project_activity_entry` from the MCP.
+///
+/// `id` (UUID) and `task_id` are dropped. `payload` is verbatim because its schema
+/// varies per `kind`.
+#[derive(Debug, Serialize)]
+pub(crate) struct TaskActivityProjection {
+    pub(crate) kind: String,
+    pub(crate) actor: AssigneeProjection,
+    pub(crate) payload: serde_json::Value,
+    pub(crate) created_at: DateTime<Utc>,
+}
+
+impl From<ActivityEntryDto> for TaskActivityProjection {
+    fn from(entry: ActivityEntryDto) -> Self {
+        Self {
+            kind: entry.kind,
+            actor: AssigneeProjection::from(entry.actor),
+            payload: entry.payload,
+            created_at: entry.created_at,
+        }
+    }
+}
+
+impl TableRow for TaskActivityProjection {
+    fn headers() -> &'static [&'static str] {
+        &["Kind", "Actor", "Created At"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        vec![
+            self.kind.clone(),
+            self.actor
+                .display_name
+                .clone()
+                .unwrap_or_else(|| self.actor.type_.clone()),
+            self.created_at.format("%Y-%m-%d %H:%M").to_string(),
+        ]
+    }
+}
+
+/// Subtask projection, aliasing `TaskSummaryProjection` for semantic clarity.
+///
+/// Subtasks are fetched as `TaskSummaryDto` and share the exact field set of a
+/// task list row, including `assignees`. This alias lets handlers call
+/// `SubtaskProjection::from(dto)` without duplicating the struct definition.
+pub(crate) type SubtaskProjection = TaskSummaryProjection;
+
+/// Document history entry (revision metadata), mirroring `project_revision_meta` from the MCP.
+///
+/// `id` (UUID) is dropped; `seq` is the stable handle for fetching full revision content.
+/// `actor` is absent when the revision was created by a system operation.
+#[derive(Debug, Serialize)]
+pub(crate) struct DocHistoryProjection {
+    pub(crate) seq: i64,
+    pub(crate) is_anchor: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) actor: Option<AssigneeProjection>,
+    pub(crate) created_at: DateTime<Utc>,
+}
+
+impl From<RevisionMetaDto> for DocHistoryProjection {
+    fn from(rev: RevisionMetaDto) -> Self {
+        Self {
+            seq: rev.seq,
+            is_anchor: rev.is_anchor,
+            actor: rev.actor.map(AssigneeProjection::from),
+            created_at: rev.created_at,
+        }
+    }
+}
+
+impl TableRow for DocHistoryProjection {
+    fn headers() -> &'static [&'static str] {
+        &["Seq", "Anchor", "Actor", "Created At"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        vec![
+            self.seq.to_string(),
+            self.is_anchor.to_string(),
+            self.actor
+                .as_ref()
+                .and_then(|a| a.display_name.clone())
+                .unwrap_or_default(),
+            self.created_at.format("%Y-%m-%d %H:%M").to_string(),
+        ]
+    }
+}
+
+/// Full document revision content, mirroring `project_revision_content` from the MCP.
+///
+/// `id` (UUID) is dropped; `seq` + `content` are the load-bearing fields.
+/// `actor` is absent when no attribution is available.
+#[derive(Debug, Serialize)]
+pub(crate) struct DocRevisionProjection {
+    pub(crate) seq: i64,
+    pub(crate) content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) actor: Option<AssigneeProjection>,
+    pub(crate) created_at: DateTime<Utc>,
+}
+
+impl From<RevisionContentDto> for DocRevisionProjection {
+    fn from(rev: RevisionContentDto) -> Self {
+        Self {
+            seq: rev.seq,
+            content: rev.content,
+            actor: rev.actor.map(AssigneeProjection::from),
+            created_at: rev.created_at,
+        }
+    }
+}
+
+impl TableRow for DocRevisionProjection {
+    fn headers() -> &'static [&'static str] {
+        &["Seq", "Actor", "Created At", "Content (preview)"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        vec![
+            self.seq.to_string(),
+            self.actor
+                .as_ref()
+                .and_then(|a| a.display_name.clone())
+                .unwrap_or_default(),
+            self.created_at.format("%Y-%m-%d %H:%M").to_string(),
+            self.content.chars().take(40).collect(),
+        ]
+    }
+}
+
+/// Document backlink (inbound link), mirroring `project_backlink` from the MCP.
+///
+/// `source_document_id` (UUID) is dropped in favour of `source_slug` when present.
+/// `display_title` is the rendered title preferred for display.
+#[derive(Debug, Serialize)]
+pub(crate) struct DocBacklinkProjection {
+    pub(crate) source_title: String,
+    pub(crate) display_title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) source_slug: Option<String>,
+}
+
+impl From<BacklinkDto> for DocBacklinkProjection {
+    fn from(b: BacklinkDto) -> Self {
+        Self {
+            source_title: b.source_title,
+            display_title: b.display_title,
+            source_slug: b.source_slug,
+        }
+    }
+}
+
+impl TableRow for DocBacklinkProjection {
+    fn headers() -> &'static [&'static str] {
+        &["Source Title", "Display Title", "Slug"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        vec![
+            self.source_title.clone(),
+            self.display_title.clone(),
+            self.source_slug.clone().unwrap_or_default(),
+        ]
+    }
+}
+
+/// Workspace-scoped activity entry, mirroring `project_workspace_activity_entry` from the MCP.
+///
+/// Adds `task_readable_id` so callers can navigate to the originating task.
+/// `id` (UUID) and `task_id` are dropped.
+#[derive(Debug, Serialize)]
+pub(crate) struct WorkspaceActivityProjection {
+    pub(crate) task_readable_id: String,
+    pub(crate) kind: String,
+    pub(crate) actor: AssigneeProjection,
+    pub(crate) payload: serde_json::Value,
+    pub(crate) created_at: DateTime<Utc>,
+}
+
+impl From<ActivityEntryDto> for WorkspaceActivityProjection {
+    fn from(entry: ActivityEntryDto) -> Self {
+        Self {
+            task_readable_id: entry.task_readable_id,
+            kind: entry.kind,
+            actor: AssigneeProjection::from(entry.actor),
+            payload: entry.payload,
+            created_at: entry.created_at,
+        }
+    }
+}
+
+impl TableRow for WorkspaceActivityProjection {
+    fn headers() -> &'static [&'static str] {
+        &["Task", "Kind", "Actor", "Created At"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        vec![
+            self.task_readable_id.clone(),
+            self.kind.clone(),
+            self.actor
+                .display_name
+                .clone()
+                .unwrap_or_else(|| self.actor.type_.clone()),
+            self.created_at.format("%Y-%m-%d %H:%M").to_string(),
+        ]
+    }
+}
+
+/// Minimal deletion confirmation used when no meaningful resource ID needs surfacing.
+///
+/// Used for `assignees remove` and similar operations where the caller already holds
+/// the identifier and only needs to confirm that the operation succeeded.
+#[derive(Debug, Serialize)]
+pub(crate) struct DeletedProjection {
+    pub(crate) deleted: bool,
+}
+
+impl TableRow for DeletedProjection {
+    fn headers() -> &'static [&'static str] {
+        &["Deleted"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        vec![self.deleted.to_string()]
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -1606,5 +2037,369 @@ mod tests {
         let proj = FolderProjection::from(dto);
         let value = serde_json::to_value(&proj).unwrap();
         assert_eq!(value["parent_folder_id"], parent.to_string());
+    }
+
+    // -----------------------------------------------------------------------
+    // Graph / activity projections (T48 — WU-21)
+    // -----------------------------------------------------------------------
+
+    fn make_reference_dto() -> atlas_api::dtos::boards_tasks::ReferenceDto {
+        atlas_api::dtos::boards_tasks::ReferenceDto {
+            id: Uuid::now_v7(),
+            kind: "relates".to_owned(),
+            target_task_id: Some(Uuid::now_v7()),
+            target_readable_id: Some("ATL-10".to_owned()),
+            target_document_id: None,
+            target_title: None,
+            target_resolved: true,
+            created_by: make_actor_dto(),
+            created_at: Utc::now(),
+        }
+    }
+
+    fn make_task_backlink_dto() -> atlas_api::dtos::boards_tasks::TaskBacklinkDto {
+        atlas_api::dtos::boards_tasks::TaskBacklinkDto {
+            source_task_id: Uuid::now_v7(),
+            source_readable_id: "ATL-5".to_owned(),
+            source_title: "Blocker task".to_owned(),
+            kind: "blocks".to_owned(),
+        }
+    }
+
+    fn make_assignee_dto() -> atlas_api::dtos::boards_tasks::AssigneeDto {
+        atlas_api::dtos::boards_tasks::AssigneeDto {
+            assignee: make_actor_dto(),
+            assigned_by: make_actor_dto(),
+            assigned_at: Utc::now(),
+        }
+    }
+
+    fn make_checklist_item_dto(promoted: bool) -> atlas_api::dtos::boards_tasks::ChecklistItemDto {
+        atlas_api::dtos::boards_tasks::ChecklistItemDto {
+            id: Uuid::now_v7(),
+            task_id: Uuid::now_v7(),
+            title: "Write docs".to_owned(),
+            checked: false,
+            position_key: "a0".to_owned(),
+            promoted_task_id: if promoted { Some(Uuid::now_v7()) } else { None },
+            promoted_readable_id: if promoted {
+                Some("ATL-99".to_owned())
+            } else {
+                None
+            },
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    fn make_activity_entry_dto(
+        task_readable_id: &str,
+    ) -> atlas_api::dtos::boards_tasks::ActivityEntryDto {
+        atlas_api::dtos::boards_tasks::ActivityEntryDto {
+            id: Uuid::now_v7(),
+            kind: "moved".to_owned(),
+            actor: make_actor_dto(),
+            payload: serde_json::json!({"from": "Todo", "to": "In Progress"}),
+            created_at: Utc::now(),
+            task_id: Uuid::now_v7(),
+            task_readable_id: task_readable_id.to_owned(),
+        }
+    }
+
+    fn make_revision_meta_dto(with_actor: bool) -> atlas_api::dtos::documents::RevisionMetaDto {
+        atlas_api::dtos::documents::RevisionMetaDto {
+            id: Uuid::now_v7(),
+            seq: 3,
+            is_anchor: false,
+            actor: if with_actor {
+                Some(make_actor_dto())
+            } else {
+                None
+            },
+            created_at: Utc::now(),
+        }
+    }
+
+    fn make_revision_content_dto(
+        with_actor: bool,
+    ) -> atlas_api::dtos::documents::RevisionContentDto {
+        atlas_api::dtos::documents::RevisionContentDto {
+            id: Uuid::now_v7(),
+            seq: 3,
+            content: "# Hello\nWorld".to_owned(),
+            actor: if with_actor {
+                Some(make_actor_dto())
+            } else {
+                None
+            },
+            created_at: Utc::now(),
+        }
+    }
+
+    fn make_backlink_dto(slug: Option<&str>) -> atlas_api::dtos::documents::BacklinkDto {
+        atlas_api::dtos::documents::BacklinkDto {
+            source_document_id: Uuid::now_v7(),
+            source_slug: slug.map(str::to_owned),
+            source_title: "Source Doc".to_owned(),
+            display_title: "Source Doc".to_owned(),
+        }
+    }
+
+    #[test]
+    fn task_ref_projection_contract_fields() {
+        let dto = make_reference_dto();
+        let proj = TaskRefProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_projection_fields(
+            &value,
+            &["kind", "target_resolved"],
+            &["target_readable_id", "target_document_id", "target_title"],
+        );
+    }
+
+    #[test]
+    fn task_ref_projection_drops_id_and_attribution() {
+        let dto = make_reference_dto();
+        let proj = TaskRefProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert!(value.get("id").is_none(), "id must be dropped");
+        assert!(
+            value.get("created_by").is_none(),
+            "created_by must be dropped"
+        );
+        assert!(
+            value.get("created_at").is_none(),
+            "created_at must be dropped"
+        );
+    }
+
+    #[test]
+    fn task_ref_projection_optional_targets_absent_when_none() {
+        let dto = atlas_api::dtos::boards_tasks::ReferenceDto {
+            id: Uuid::now_v7(),
+            kind: "relates".to_owned(),
+            target_task_id: None,
+            target_readable_id: None,
+            target_document_id: None,
+            target_title: None,
+            target_resolved: false,
+            created_by: make_actor_dto(),
+            created_at: Utc::now(),
+        };
+        let proj = TaskRefProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert!(value.get("target_readable_id").is_none());
+        assert!(value.get("target_document_id").is_none());
+        assert!(value.get("target_title").is_none());
+    }
+
+    #[test]
+    fn task_backlink_projection_contract_fields() {
+        let dto = make_task_backlink_dto();
+        let proj = TaskBacklinkProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_projection_fields(&value, &["source_readable_id", "source_title", "kind"], &[]);
+    }
+
+    #[test]
+    fn task_backlink_projection_drops_source_task_id() {
+        let dto = make_task_backlink_dto();
+        let proj = TaskBacklinkProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert!(
+            value.get("source_task_id").is_none(),
+            "source_task_id must be dropped"
+        );
+    }
+
+    #[test]
+    fn task_assignee_projection_contract_fields() {
+        let dto = make_assignee_dto();
+        let proj = TaskAssigneeProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_projection_fields(&value, &["type", "assigned_at"], &["display_name"]);
+    }
+
+    #[test]
+    fn task_assignee_projection_drops_assigned_by() {
+        let dto = make_assignee_dto();
+        let proj = TaskAssigneeProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert!(
+            value.get("assigned_by").is_none(),
+            "assigned_by must be dropped"
+        );
+    }
+
+    #[test]
+    fn checklist_item_projection_contract_fields() {
+        let dto = make_checklist_item_dto(false);
+        let proj = ChecklistItemProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_projection_fields(
+            &value,
+            &["id", "title", "checked"],
+            &["promoted_readable_id"],
+        );
+    }
+
+    #[test]
+    fn checklist_item_promoted_readable_id_absent_when_none() {
+        let dto = make_checklist_item_dto(false);
+        let proj = ChecklistItemProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert!(value.get("promoted_readable_id").is_none());
+    }
+
+    #[test]
+    fn checklist_item_promoted_readable_id_present_when_promoted() {
+        let dto = make_checklist_item_dto(true);
+        let proj = ChecklistItemProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_eq!(value["promoted_readable_id"], "ATL-99");
+    }
+
+    #[test]
+    fn task_activity_projection_contract_fields() {
+        let dto = make_activity_entry_dto("ATL-1");
+        let proj = TaskActivityProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_projection_fields(&value, &["kind", "actor", "payload", "created_at"], &[]);
+    }
+
+    #[test]
+    fn task_activity_projection_drops_id_and_task_id() {
+        let dto = make_activity_entry_dto("ATL-1");
+        let proj = TaskActivityProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert!(value.get("id").is_none(), "id must be dropped");
+        assert!(value.get("task_id").is_none(), "task_id must be dropped");
+        assert!(
+            value.get("task_readable_id").is_none(),
+            "task_readable_id must be dropped"
+        );
+    }
+
+    #[test]
+    fn subtask_projection_is_task_summary_with_assignees() {
+        let dto = make_task_summary_dto();
+        let proj = SubtaskProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert!(
+            value.get("assignees").is_some(),
+            "SubtaskProjection must include assignees field"
+        );
+        assert_projection_fields(
+            &value,
+            &[
+                "readable_id",
+                "title",
+                "board_name",
+                "column_name",
+                "labels",
+                "assignees",
+                "updated_at",
+            ],
+            &["priority", "estimate"],
+        );
+    }
+
+    #[test]
+    fn doc_history_projection_contract_fields() {
+        let dto = make_revision_meta_dto(true);
+        let proj = DocHistoryProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_projection_fields(&value, &["seq", "is_anchor", "created_at"], &["actor"]);
+    }
+
+    #[test]
+    fn doc_history_projection_actor_absent_when_none() {
+        let dto = make_revision_meta_dto(false);
+        let proj = DocHistoryProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert!(
+            value.get("actor").is_none(),
+            "actor must be absent when None"
+        );
+    }
+
+    #[test]
+    fn doc_history_projection_drops_id() {
+        let dto = make_revision_meta_dto(false);
+        let proj = DocHistoryProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert!(value.get("id").is_none(), "id must be dropped");
+    }
+
+    #[test]
+    fn doc_revision_projection_contract_fields() {
+        let dto = make_revision_content_dto(true);
+        let proj = DocRevisionProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_projection_fields(&value, &["seq", "content", "created_at"], &["actor"]);
+    }
+
+    #[test]
+    fn doc_revision_projection_drops_id() {
+        let dto = make_revision_content_dto(false);
+        let proj = DocRevisionProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert!(value.get("id").is_none(), "id must be dropped");
+    }
+
+    #[test]
+    fn doc_backlink_projection_contract_fields() {
+        let dto = make_backlink_dto(Some("my-note"));
+        let proj = DocBacklinkProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_projection_fields(&value, &["source_title", "display_title"], &["source_slug"]);
+    }
+
+    #[test]
+    fn doc_backlink_projection_slug_absent_when_none() {
+        let dto = make_backlink_dto(None);
+        let proj = DocBacklinkProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert!(value.get("source_slug").is_none(), "slug absent when None");
+    }
+
+    #[test]
+    fn doc_backlink_projection_drops_source_document_id() {
+        let dto = make_backlink_dto(None);
+        let proj = DocBacklinkProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert!(
+            value.get("source_document_id").is_none(),
+            "source_document_id must be dropped"
+        );
+    }
+
+    #[test]
+    fn workspace_activity_projection_contract_fields() {
+        let dto = make_activity_entry_dto("ATL-42");
+        let proj = WorkspaceActivityProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_projection_fields(
+            &value,
+            &["task_readable_id", "kind", "actor", "payload", "created_at"],
+            &[],
+        );
+    }
+
+    #[test]
+    fn workspace_activity_projection_includes_task_readable_id() {
+        let dto = make_activity_entry_dto("ATL-42");
+        let proj = WorkspaceActivityProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_eq!(value["task_readable_id"], "ATL-42");
+    }
+
+    #[test]
+    fn workspace_activity_projection_drops_id_and_task_id() {
+        let dto = make_activity_entry_dto("ATL-42");
+        let proj = WorkspaceActivityProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert!(value.get("id").is_none());
+        assert!(value.get("task_id").is_none());
     }
 }
