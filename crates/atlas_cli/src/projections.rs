@@ -16,9 +16,13 @@ use atlas_api::dtos::documents::{
     ActorDto, BacklinkDto, DocumentDto, DocumentSummaryDto, RevisionContentDto, RevisionMetaDto,
 };
 use atlas_api::dtos::folders::FolderDto;
+use atlas_api::dtos::groups::{GroupDto, GroupMemberDto};
 use atlas_api::dtos::search::{SearchHitDto, SearchKindDto};
 use atlas_api::dtos::tags::TagDto;
-use atlas_api::dtos::{PrincipalDto, ProjectDto, WorkspaceDto};
+use atlas_api::dtos::{
+    ActivationLinkResponse, ApiKeyCreated, ApiKeyDto, ApiKeyGrantDto, CreateUserResponse,
+    GrantedByDto, PrincipalDto, ProjectDto, UserDto, UserMembershipDto, WorkspaceDto,
+};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use uuid::Uuid;
@@ -1268,6 +1272,410 @@ impl TableRow for DeletedProjection {
     }
 }
 
+/// Deletion confirmation for resources identified by a UUID `id`.
+///
+/// Used for groups and API-key revocation where the natural identifier is
+/// the resource UUID rather than a human-readable slug or readable_id.
+#[derive(Debug, Serialize)]
+pub(crate) struct DeleteByIdProjection {
+    pub(crate) deleted: bool,
+    pub(crate) id: Uuid,
+}
+
+impl TableRow for DeleteByIdProjection {
+    fn headers() -> &'static [&'static str] {
+        &["Deleted", "ID"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        vec![self.deleted.to_string(), self.id.to_string()]
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Admin projections (Batch 5-A)
+// ---------------------------------------------------------------------------
+
+/// User account projection, mirroring all non-secret fields from `UserDto`.
+///
+/// Optional fields (`email`, `disabled_at`, `activated_at`) are omitted when
+/// absent so the JSON output stays minimal for users in the common case.
+#[derive(Debug, Serialize)]
+pub(crate) struct UserProjection {
+    pub(crate) id: Uuid,
+    pub(crate) username: String,
+    pub(crate) display_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) email: Option<String>,
+    pub(crate) is_root: bool,
+    pub(crate) is_system_admin: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) disabled_at: Option<DateTime<Utc>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) activated_at: Option<DateTime<Utc>>,
+    pub(crate) created_at: DateTime<Utc>,
+    pub(crate) updated_at: DateTime<Utc>,
+}
+
+impl From<UserDto> for UserProjection {
+    fn from(u: UserDto) -> Self {
+        Self {
+            id: u.id,
+            username: u.username,
+            display_name: u.display_name,
+            email: u.email,
+            is_root: u.is_root,
+            is_system_admin: u.is_system_admin,
+            disabled_at: u.disabled_at,
+            activated_at: u.activated_at,
+            created_at: u.created_at,
+            updated_at: u.updated_at,
+        }
+    }
+}
+
+impl TableRow for UserProjection {
+    fn headers() -> &'static [&'static str] {
+        &["ID", "Username", "Display Name", "Root", "Admin", "Status"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        let status = if self.disabled_at.is_some() {
+            "disabled"
+        } else if self.activated_at.is_none() {
+            "pending"
+        } else {
+            "active"
+        };
+        vec![
+            self.id.to_string(),
+            self.username.clone(),
+            self.display_name.clone(),
+            self.is_root.to_string(),
+            self.is_system_admin.to_string(),
+            status.to_owned(),
+        ]
+    }
+}
+
+/// Projection returned by `users create`, which deliberately surfaces the
+/// one-time `activation_link` (not stored server-side after the response).
+#[derive(Debug, Serialize)]
+pub(crate) struct UserCreatedProjection {
+    pub(crate) id: Uuid,
+    pub(crate) username: String,
+    pub(crate) display_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) email: Option<String>,
+    pub(crate) is_root: bool,
+    pub(crate) is_system_admin: bool,
+    pub(crate) created_at: DateTime<Utc>,
+    pub(crate) updated_at: DateTime<Utc>,
+    /// Single-use activation link. Show this to the invitee exactly once.
+    pub(crate) activation_link: String,
+}
+
+impl From<CreateUserResponse> for UserCreatedProjection {
+    fn from(r: CreateUserResponse) -> Self {
+        Self {
+            id: r.user.id,
+            username: r.user.username,
+            display_name: r.user.display_name,
+            email: r.user.email,
+            is_root: r.user.is_root,
+            is_system_admin: r.user.is_system_admin,
+            created_at: r.user.created_at,
+            updated_at: r.user.updated_at,
+            activation_link: r.activation_link,
+        }
+    }
+}
+
+impl TableRow for UserCreatedProjection {
+    fn headers() -> &'static [&'static str] {
+        &["ID", "Username", "Display Name", "Activation Link"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        vec![
+            self.id.to_string(),
+            self.username.clone(),
+            self.display_name.clone(),
+            self.activation_link.clone(),
+        ]
+    }
+}
+
+/// Projection for a freshly issued activation link (`users regenerate-link`).
+///
+/// `activation_link` is the single-use path shown exactly once.
+#[derive(Debug, Serialize)]
+pub(crate) struct ActivationLinkProjection {
+    pub(crate) activation_link: String,
+}
+
+impl From<ActivationLinkResponse> for ActivationLinkProjection {
+    fn from(r: ActivationLinkResponse) -> Self {
+        Self {
+            activation_link: r.activation_link,
+        }
+    }
+}
+
+impl TableRow for ActivationLinkProjection {
+    fn headers() -> &'static [&'static str] {
+        &["Activation Link"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        vec![self.activation_link.clone()]
+    }
+}
+
+/// Workspace membership for a specific user (`users memberships`).
+#[derive(Debug, Serialize)]
+pub(crate) struct UserMembershipProjection {
+    pub(crate) workspace_slug: String,
+    pub(crate) workspace_name: String,
+    pub(crate) role: String,
+}
+
+impl From<UserMembershipDto> for UserMembershipProjection {
+    fn from(m: UserMembershipDto) -> Self {
+        Self {
+            workspace_slug: m.workspace_slug,
+            workspace_name: m.workspace_name,
+            role: m.role,
+        }
+    }
+}
+
+impl TableRow for UserMembershipProjection {
+    fn headers() -> &'static [&'static str] {
+        &["Workspace Slug", "Workspace Name", "Role"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        vec![
+            self.workspace_slug.clone(),
+            self.workspace_name.clone(),
+            self.role.clone(),
+        ]
+    }
+}
+
+/// API key summary projection for `api-keys list`. Does not include the secret.
+///
+/// `type` is a reserved keyword in Rust; the field is renamed via serde.
+#[derive(Debug, Serialize)]
+pub(crate) struct ApiKeyProjection {
+    pub(crate) id: Uuid,
+    pub(crate) name: String,
+    #[serde(rename = "type")]
+    pub(crate) type_: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) expires_at: Option<DateTime<Utc>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) last_used_at: Option<DateTime<Utc>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) revoked_at: Option<DateTime<Utc>>,
+    pub(crate) created_at: DateTime<Utc>,
+    pub(crate) is_global: bool,
+}
+
+impl From<ApiKeyDto> for ApiKeyProjection {
+    fn from(k: ApiKeyDto) -> Self {
+        Self {
+            id: k.id,
+            name: k.name,
+            type_: k.r#type,
+            expires_at: k.expires_at,
+            last_used_at: k.last_used_at,
+            revoked_at: k.revoked_at,
+            created_at: k.created_at,
+            is_global: k.is_global,
+        }
+    }
+}
+
+impl TableRow for ApiKeyProjection {
+    fn headers() -> &'static [&'static str] {
+        &["ID", "Name", "Type", "Global", "Created At"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        vec![
+            self.id.to_string(),
+            self.name.clone(),
+            self.type_.clone(),
+            self.is_global.to_string(),
+            self.created_at.format("%Y-%m-%d").to_string(),
+        ]
+    }
+}
+
+/// Projection for a newly created API key (`api-keys create`).
+///
+/// Deliberately surfaces the one-time plaintext `secret` — this is the
+/// intended output of key creation, not a leak.
+#[derive(Debug, Serialize)]
+pub(crate) struct ApiKeyCreatedProjection {
+    pub(crate) id: Uuid,
+    pub(crate) name: String,
+    /// One-time plaintext secret. Shown at creation only; not stored server-side.
+    pub(crate) secret: String,
+    #[serde(rename = "type")]
+    pub(crate) type_: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) expires_at: Option<DateTime<Utc>>,
+    pub(crate) created_at: DateTime<Utc>,
+}
+
+impl From<ApiKeyCreated> for ApiKeyCreatedProjection {
+    fn from(k: ApiKeyCreated) -> Self {
+        Self {
+            id: k.id,
+            name: k.name,
+            secret: k.secret,
+            type_: k.r#type,
+            expires_at: k.expires_at,
+            created_at: k.created_at,
+        }
+    }
+}
+
+impl TableRow for ApiKeyCreatedProjection {
+    fn headers() -> &'static [&'static str] {
+        &["ID", "Name", "Secret", "Type", "Created At"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        vec![
+            self.id.to_string(),
+            self.name.clone(),
+            self.secret.clone(),
+            self.type_.clone(),
+            self.created_at.format("%Y-%m-%d").to_string(),
+        ]
+    }
+}
+
+/// API key grant projection for `api-keys grants`.
+///
+/// `granted_by` is omitted when absent (legacy grants without attribution).
+#[derive(Debug, Serialize)]
+pub(crate) struct ApiKeyGrantProjection {
+    pub(crate) id: Uuid,
+    pub(crate) role: String,
+    pub(crate) resource_kind: String,
+    pub(crate) resource_label: String,
+    pub(crate) workspace_slug: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) project_slug: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) granted_by: Option<GrantedByDto>,
+}
+
+impl From<ApiKeyGrantDto> for ApiKeyGrantProjection {
+    fn from(g: ApiKeyGrantDto) -> Self {
+        Self {
+            id: g.id,
+            role: g.role,
+            resource_kind: g.resource_kind,
+            resource_label: g.resource_label,
+            workspace_slug: g.workspace_slug,
+            project_slug: g.project_slug,
+            granted_by: g.granted_by,
+        }
+    }
+}
+
+impl TableRow for ApiKeyGrantProjection {
+    fn headers() -> &'static [&'static str] {
+        &["ID", "Role", "Resource Kind", "Resource Label", "Workspace"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        vec![
+            self.id.to_string(),
+            self.role.clone(),
+            self.resource_kind.clone(),
+            self.resource_label.clone(),
+            self.workspace_slug.clone(),
+        ]
+    }
+}
+
+/// Group projection for `groups list` and `groups create`.
+///
+/// `workspace_id` and `created_by` are internal identifiers dropped from the
+/// projection; `name` and timestamps are sufficient for display.
+#[derive(Debug, Serialize)]
+pub(crate) struct GroupProjection {
+    pub(crate) id: Uuid,
+    pub(crate) name: String,
+    pub(crate) created_at: DateTime<Utc>,
+    pub(crate) updated_at: DateTime<Utc>,
+}
+
+impl From<GroupDto> for GroupProjection {
+    fn from(g: GroupDto) -> Self {
+        Self {
+            id: g.id,
+            name: g.name,
+            created_at: g.created_at,
+            updated_at: g.updated_at,
+        }
+    }
+}
+
+impl TableRow for GroupProjection {
+    fn headers() -> &'static [&'static str] {
+        &["ID", "Name", "Created At", "Updated At"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        vec![
+            self.id.to_string(),
+            self.name.clone(),
+            self.created_at.format("%Y-%m-%d").to_string(),
+            self.updated_at.format("%Y-%m-%d").to_string(),
+        ]
+    }
+}
+
+/// Group member projection for `groups members` and `groups add-member`.
+#[derive(Debug, Serialize)]
+pub(crate) struct GroupMemberProjection {
+    pub(crate) group_id: Uuid,
+    pub(crate) user_id: Uuid,
+    pub(crate) created_at: DateTime<Utc>,
+}
+
+impl From<GroupMemberDto> for GroupMemberProjection {
+    fn from(m: GroupMemberDto) -> Self {
+        Self {
+            group_id: m.group_id,
+            user_id: m.user_id,
+            created_at: m.created_at,
+        }
+    }
+}
+
+impl TableRow for GroupMemberProjection {
+    fn headers() -> &'static [&'static str] {
+        &["Group ID", "User ID", "Added At"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        vec![
+            self.group_id.to_string(),
+            self.user_id.to_string(),
+            self.created_at.format("%Y-%m-%d").to_string(),
+        ]
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -2401,5 +2809,244 @@ mod tests {
         let value = serde_json::to_value(&proj).unwrap();
         assert!(value.get("id").is_none());
         assert!(value.get("task_id").is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // Admin projection contract tests (Batch 5-A)
+    // -----------------------------------------------------------------------
+
+    fn make_user_dto() -> UserDto {
+        UserDto {
+            id: Uuid::now_v7(),
+            username: "alice".to_owned(),
+            display_name: "Alice".to_owned(),
+            email: Some("alice@example.com".to_owned()),
+            is_root: false,
+            is_system_admin: false,
+            disabled_at: None,
+            activated_at: Some(Utc::now()),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn user_projection_contract_fields() {
+        let proj = UserProjection::from(make_user_dto());
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_projection_fields(
+            &value,
+            &[
+                "id",
+                "username",
+                "display_name",
+                "is_root",
+                "is_system_admin",
+                "created_at",
+                "updated_at",
+            ],
+            &["email", "disabled_at", "activated_at"],
+        );
+    }
+
+    #[test]
+    fn user_projection_optional_fields_absent_when_none() {
+        let mut dto = make_user_dto();
+        dto.email = None;
+        dto.disabled_at = None;
+        dto.activated_at = None;
+        let proj = UserProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert!(value.get("email").is_none());
+        assert!(value.get("disabled_at").is_none());
+        assert!(value.get("activated_at").is_none());
+    }
+
+    #[test]
+    fn user_created_projection_surfaces_activation_link() {
+        use atlas_api::dtos::CreateUserResponse;
+        let resp = CreateUserResponse {
+            user: make_user_dto(),
+            activation_link: "/activate/tok123".to_owned(),
+        };
+        let proj = UserCreatedProjection::from(resp);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_eq!(value["activation_link"], "/activate/tok123");
+        assert_projection_fields(
+            &value,
+            &[
+                "id",
+                "username",
+                "display_name",
+                "is_root",
+                "is_system_admin",
+                "created_at",
+                "updated_at",
+                "activation_link",
+            ],
+            &["email"],
+        );
+    }
+
+    #[test]
+    fn activation_link_projection_contract() {
+        use atlas_api::dtos::ActivationLinkResponse;
+        let resp = ActivationLinkResponse {
+            activation_link: "/activate/abc".to_owned(),
+        };
+        let proj = ActivationLinkProjection::from(resp);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_projection_fields(&value, &["activation_link"], &[]);
+        assert_eq!(value["activation_link"], "/activate/abc");
+    }
+
+    #[test]
+    fn user_membership_projection_contract() {
+        use atlas_api::dtos::UserMembershipDto;
+        let dto = UserMembershipDto {
+            workspace_slug: "my-ws".to_owned(),
+            workspace_name: "My Workspace".to_owned(),
+            role: "member".to_owned(),
+        };
+        let proj = UserMembershipProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_projection_fields(&value, &["workspace_slug", "workspace_name", "role"], &[]);
+    }
+
+    fn make_api_key_dto() -> ApiKeyDto {
+        ApiKeyDto {
+            id: Uuid::now_v7(),
+            name: "test-key".to_owned(),
+            r#type: "agent".to_owned(),
+            expires_at: None,
+            last_used_at: None,
+            revoked_at: None,
+            created_at: Utc::now(),
+            is_global: false,
+        }
+    }
+
+    #[test]
+    fn api_key_projection_contract_fields() {
+        let proj = ApiKeyProjection::from(make_api_key_dto());
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_projection_fields(
+            &value,
+            &["id", "name", "type", "created_at", "is_global"],
+            &["expires_at", "last_used_at", "revoked_at"],
+        );
+    }
+
+    #[test]
+    fn api_key_projection_does_not_include_secret() {
+        let proj = ApiKeyProjection::from(make_api_key_dto());
+        let value = serde_json::to_value(&proj).unwrap();
+        assert!(
+            value.get("secret").is_none(),
+            "list projection must not expose secret"
+        );
+    }
+
+    #[test]
+    fn api_key_created_projection_surfaces_secret() {
+        use atlas_api::dtos::ApiKeyCreated;
+        let dto = ApiKeyCreated {
+            id: Uuid::now_v7(),
+            name: "new-key".to_owned(),
+            secret: "atlas_supersecret".to_owned(),
+            r#type: "cli".to_owned(),
+            expires_at: None,
+            created_at: Utc::now(),
+        };
+        let proj = ApiKeyCreatedProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_projection_fields(
+            &value,
+            &["id", "name", "secret", "type", "created_at"],
+            &["expires_at"],
+        );
+        assert_eq!(value["secret"], "atlas_supersecret");
+    }
+
+    fn make_api_key_grant_dto() -> ApiKeyGrantDto {
+        use atlas_api::dtos::GrantedByDto;
+        ApiKeyGrantDto {
+            id: Uuid::now_v7(),
+            role: "editor".to_owned(),
+            resource_kind: "workspace".to_owned(),
+            resource_label: "My Workspace".to_owned(),
+            workspace_slug: "my-ws".to_owned(),
+            project_slug: None,
+            granted_by: Some(GrantedByDto {
+                id: Uuid::now_v7(),
+                display: "Alice".to_owned(),
+                principal_type: "user".to_owned(),
+            }),
+        }
+    }
+
+    #[test]
+    fn api_key_grant_projection_contract_fields() {
+        let proj = ApiKeyGrantProjection::from(make_api_key_grant_dto());
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_projection_fields(
+            &value,
+            &[
+                "id",
+                "role",
+                "resource_kind",
+                "resource_label",
+                "workspace_slug",
+            ],
+            &["project_slug", "granted_by"],
+        );
+    }
+
+    fn make_group_dto() -> GroupDto {
+        GroupDto {
+            id: Uuid::now_v7(),
+            workspace_id: Uuid::now_v7(),
+            name: "devs".to_owned(),
+            created_by: Uuid::now_v7(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn group_projection_contract_fields() {
+        let proj = GroupProjection::from(make_group_dto());
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_projection_fields(&value, &["id", "name", "created_at", "updated_at"], &[]);
+    }
+
+    #[test]
+    fn group_projection_drops_workspace_id_and_created_by() {
+        let proj = GroupProjection::from(make_group_dto());
+        let value = serde_json::to_value(&proj).unwrap();
+        assert!(value.get("workspace_id").is_none());
+        assert!(value.get("created_by").is_none());
+    }
+
+    #[test]
+    fn group_member_projection_contract_fields() {
+        use atlas_api::dtos::groups::GroupMemberDto;
+        let dto = GroupMemberDto {
+            group_id: Uuid::now_v7(),
+            user_id: Uuid::now_v7(),
+            created_at: Utc::now(),
+        };
+        let proj = GroupMemberProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_projection_fields(&value, &["group_id", "user_id", "created_at"], &[]);
+    }
+
+    #[test]
+    fn delete_by_id_projection_contract() {
+        let id = Uuid::now_v7();
+        let proj = DeleteByIdProjection { deleted: true, id };
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_projection_fields(&value, &["deleted", "id"], &[]);
+        assert_eq!(value["deleted"], true);
     }
 }
