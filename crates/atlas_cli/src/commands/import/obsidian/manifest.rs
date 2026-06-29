@@ -7,15 +7,13 @@
         clippy::indexing_slicing
     )
 )]
-// B1a fields: `save` (atomic write), `is_unchanged` (content-hash), `id`,
-// `content_hash`, `folders`, `boards`, `tasks` are populated by the execute
-// phase and not yet read in B0b.
 #![allow(dead_code)]
 
 use std::collections::HashMap;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use crate::error::CliError;
 
@@ -66,9 +64,6 @@ impl Manifest {
     ///
     /// Returns an empty manifest when the file is absent. Returns
     /// `CliError::Validation` when the file is present but malformed JSON.
-    ///
-    /// B1a: Atomic write (`save`) and `is_unchanged` content-hash comparison
-    /// are not yet implemented.
     pub(crate) fn load(path: &Path) -> Result<Self, CliError> {
         if !path.exists() {
             return Ok(Self::empty());
@@ -79,6 +74,43 @@ impl Manifest {
         serde_json::from_str(&text)
             .map_err(|e| CliError::Validation(format!("malformed .atlas-import.json: {e}")))
     }
+
+    /// Writes the manifest to `path` atomically.
+    ///
+    /// Writes to a `NamedTempFile` in the same directory as `path`, then
+    /// renames it into place. An interrupted write never corrupts an existing
+    /// valid manifest file.
+    pub(crate) fn save(&self, path: &Path) -> Result<(), CliError> {
+        let dir = path
+            .parent()
+            .ok_or_else(|| CliError::Validation("manifest path has no parent directory".into()))?;
+
+        let mut tmp = tempfile::NamedTempFile::new_in(dir)?;
+
+        serde_json::to_writer_pretty(&mut tmp, self)
+            .map_err(|e| CliError::Validation(format!("failed to serialize manifest: {e}")))?;
+
+        tmp.persist(path).map_err(|e| CliError::Io(e.error))?;
+
+        Ok(())
+    }
+
+    /// Returns `true` when `rel_path` is in the manifest and its stored
+    /// `content_hash` matches `new_hash`. Returns `false` for unknown paths
+    /// and on hash mismatch.
+    pub(crate) fn is_unchanged(&self, rel_path: &str, new_hash: &str) -> bool {
+        self.documents
+            .get(rel_path)
+            .map(|e| e.content_hash == new_hash)
+            .unwrap_or(false)
+    }
+}
+
+/// Computes a SHA-256 digest of `content` and returns it as a 64-character
+/// lowercase hex string.
+pub(crate) fn content_hash(content: &str) -> String {
+    let digest = Sha256::digest(content.as_bytes());
+    digest.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -145,5 +177,123 @@ mod tests {
             CliError::Validation(msg) => assert!(msg.contains("malformed")),
             other => panic!("expected Validation, got {other:?}"),
         }
+    }
+
+    // -- content_hash -----------------------------------------------------------
+
+    #[test]
+    fn content_hash_is_64_char_lowercase_hex() {
+        let h = content_hash("hello");
+        assert_eq!(h.len(), 64, "SHA-256 digest must be 64 hex chars");
+        assert!(
+            h.chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_uppercase()),
+            "must be lowercase hex; got: {h}"
+        );
+    }
+
+    #[test]
+    fn content_hash_is_stable_for_same_input() {
+        assert_eq!(content_hash("same text"), content_hash("same text"));
+    }
+
+    #[test]
+    fn content_hash_differs_for_different_content() {
+        assert_ne!(content_hash("foo"), content_hash("bar"));
+    }
+
+    #[test]
+    fn content_hash_known_vector() {
+        // SHA-256("") = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+        let h = content_hash("");
+        assert_eq!(
+            h,
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+    }
+
+    // -- is_unchanged -----------------------------------------------------------
+
+    #[test]
+    fn is_unchanged_returns_true_when_hash_matches() {
+        let mut m = Manifest::empty();
+        let hash = content_hash("some content");
+        m.documents.insert(
+            "a.md".into(),
+            ManifestDocEntry {
+                slug: "a".into(),
+                id: "id-1".into(),
+                content_hash: hash.clone(),
+            },
+        );
+        assert!(m.is_unchanged("a.md", &hash));
+    }
+
+    #[test]
+    fn is_unchanged_returns_false_when_hash_differs() {
+        let mut m = Manifest::empty();
+        m.documents.insert(
+            "a.md".into(),
+            ManifestDocEntry {
+                slug: "a".into(),
+                id: "id-1".into(),
+                content_hash: content_hash("original"),
+            },
+        );
+        assert!(!m.is_unchanged("a.md", &content_hash("modified")));
+    }
+
+    #[test]
+    fn is_unchanged_returns_false_for_unknown_path() {
+        let m = Manifest::empty();
+        assert!(!m.is_unchanged("not-in-manifest.md", "anyhash"));
+    }
+
+    // -- save (atomic write) ---------------------------------------------------
+
+    #[test]
+    fn save_and_load_round_trip() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join(".atlas-import.json");
+
+        let mut m = Manifest::empty();
+        m.documents.insert(
+            "note.md".into(),
+            ManifestDocEntry {
+                slug: "note".into(),
+                id: "uuid-abc".into(),
+                content_hash: content_hash("content"),
+            },
+        );
+        m.folders.insert("notes/".into(), "folder-uuid".into());
+
+        m.save(&path).unwrap();
+
+        let loaded = Manifest::load(&path).unwrap();
+        assert_eq!(loaded.version, 1);
+        assert_eq!(loaded.documents.len(), 1);
+        assert_eq!(loaded.documents["note.md"].slug, "note");
+        assert_eq!(loaded.folders.len(), 1);
+        assert_eq!(loaded.folders["notes/"], "folder-uuid");
+    }
+
+    #[test]
+    fn save_atomic_no_temp_file_left_on_success() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join(".atlas-import.json");
+
+        Manifest::empty().save(&path).unwrap();
+
+        let entries: Vec<_> = fs::read_dir(tmp.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .collect();
+
+        assert_eq!(entries.len(), 1, "only the manifest file should remain");
+        assert_eq!(
+            entries[0].file_name(),
+            ".atlas-import.json",
+            "the file must be the manifest"
+        );
     }
 }
