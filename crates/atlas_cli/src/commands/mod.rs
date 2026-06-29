@@ -5,6 +5,7 @@ pub(crate) mod boards;
 pub(crate) mod bulk;
 pub(crate) mod columns;
 pub(crate) mod completions;
+pub(crate) mod config;
 pub(crate) mod docs;
 pub(crate) mod folders;
 pub(crate) mod grants;
@@ -53,5 +54,6 @@ pub(crate) async fn dispatch(ctx: &Ctx, cmd: Commands) -> Result<(), CliError> {
         Commands::Grants(args) => grants::run(ctx, args.command).await,
         Commands::Audit(args) => audit::run(ctx, args.command).await,
         Commands::Completions(args) => completions::run(ctx, args).await,
+        Commands::Config(args) => config::run(ctx, args.command).await,
     }
 }
