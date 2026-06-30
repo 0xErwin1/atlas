@@ -15,9 +15,13 @@ const MAX_LINK_LEN: usize = 512;
 
 /// Converts a JSON frontmatter object into a YAML frontmatter block.
 ///
-/// JSON arrays become block sequences (`key:\n  - item`). Scalars render inline.
-/// Returns an empty string when `fm` is not an object or is empty, so the
-/// caller can concatenate without a leading `---` on content-only documents.
+/// JSON arrays become block sequences (`key:\n  - item`). String values that look
+/// like inline YAML arrays (e.g. `"[a, b, c]"`) are also expanded into block
+/// sequences — the server's frontmatter parser is scalar-only and stores inline
+/// arrays as strings, so round-tripping them requires re-expansion on export.
+/// Scalars render inline. Returns an empty string when `fm` is not an object or
+/// is empty, so the caller can concatenate without a leading `---` on
+/// content-only documents.
 pub(crate) fn frontmatter_to_yaml(fm: &serde_json::Value) -> String {
     let obj = match fm.as_object() {
         Some(m) if !m.is_empty() => m,
@@ -37,6 +41,15 @@ pub(crate) fn frontmatter_to_yaml(fm: &serde_json::Value) -> String {
                     out.push('\n');
                 }
             }
+            serde_json::Value::String(s) if looks_like_inline_array(s) => {
+                out.push_str(key);
+                out.push_str(":\n");
+                for item in parse_inline_array(s) {
+                    out.push_str("  - ");
+                    out.push_str(&yaml_quote(&item));
+                    out.push('\n');
+                }
+            }
             other => {
                 out.push_str(key);
                 out.push_str(": ");
@@ -48,6 +61,40 @@ pub(crate) fn frontmatter_to_yaml(fm: &serde_json::Value) -> String {
 
     out.push_str("---\n");
     out
+}
+
+/// Returns `true` when a string value looks like an inline YAML/JSON array.
+///
+/// Matches strings whose trimmed form starts with `[` and ends with `]`.
+fn looks_like_inline_array(s: &str) -> bool {
+    let t = s.trim();
+    t.starts_with('[') && t.ends_with(']')
+}
+
+/// Splits an inline array string (e.g. `"[a, b, c]"`) into individual items.
+///
+/// Strips the surrounding brackets, splits on commas, trims whitespace, and
+/// removes any surrounding double or single quotes from each item. Empty items
+/// (including those produced by a bare `[]` input) are dropped.
+fn parse_inline_array(s: &str) -> Vec<String> {
+    let inner = s.trim().trim_start_matches('[').trim_end_matches(']');
+    inner
+        .split(',')
+        .map(|item| {
+            let trimmed = item.trim();
+            let unquoted = trimmed
+                .strip_prefix('"')
+                .and_then(|s| s.strip_suffix('"'))
+                .or_else(|| {
+                    trimmed
+                        .strip_prefix('\'')
+                        .and_then(|s| s.strip_suffix('\''))
+                })
+                .unwrap_or(trimmed);
+            unquoted.to_string()
+        })
+        .filter(|s| !s.is_empty())
+        .collect()
 }
 
 /// Converts a single JSON value to a YAML scalar string.
@@ -247,6 +294,67 @@ mod tests {
         let fm = json!({ "tags": [] });
         let out = frontmatter_to_yaml(&fm);
         assert_eq!(out, "---\ntags:\n---\n");
+    }
+
+    #[test]
+    fn frontmatter_string_array_becomes_block_sequence() {
+        let fm = json!({ "tags": "[rust, cli]" });
+        let out = frontmatter_to_yaml(&fm);
+        assert_eq!(out, "---\ntags:\n  - rust\n  - cli\n---\n");
+    }
+
+    #[test]
+    fn frontmatter_string_array_with_quoted_items_strips_quotes() {
+        let fm = json!({ "tags": "[\"a\", \"b\"]" });
+        let out = frontmatter_to_yaml(&fm);
+        assert_eq!(out, "---\ntags:\n  - a\n  - b\n---\n");
+    }
+
+    #[test]
+    fn frontmatter_empty_string_array_emits_key_without_items() {
+        let fm = json!({ "tags": "[]" });
+        let out = frontmatter_to_yaml(&fm);
+        assert_eq!(out, "---\ntags:\n---\n");
+    }
+
+    #[test]
+    fn frontmatter_plain_scalar_string_not_treated_as_array() {
+        let fm = json!({ "title": "My Document" });
+        let out = frontmatter_to_yaml(&fm);
+        assert_eq!(out, "---\ntitle: My Document\n---\n");
+    }
+
+    // -- looks_like_inline_array + parse_inline_array --------------------------
+
+    #[test]
+    fn looks_like_inline_array_brackets_returns_true() {
+        assert!(looks_like_inline_array("[a, b]"));
+        assert!(looks_like_inline_array("[]"));
+        assert!(looks_like_inline_array("  [x]  "));
+    }
+
+    #[test]
+    fn looks_like_inline_array_no_brackets_returns_false() {
+        assert!(!looks_like_inline_array("plain string"));
+        assert!(!looks_like_inline_array("[unclosed"));
+        assert!(!looks_like_inline_array("no bracket]"));
+        assert!(!looks_like_inline_array(""));
+    }
+
+    #[test]
+    fn parse_inline_array_simple_items() {
+        assert_eq!(parse_inline_array("[a, b, c]"), vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn parse_inline_array_quoted_items() {
+        assert_eq!(parse_inline_array("[\"x\", \"y\"]"), vec!["x", "y"]);
+    }
+
+    #[test]
+    fn parse_inline_array_empty_returns_empty() {
+        let result = parse_inline_array("[]");
+        assert!(result.is_empty());
     }
 
     #[test]
