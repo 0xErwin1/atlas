@@ -1,5 +1,7 @@
+pub mod automation_rule;
 pub mod boards_tasks;
 pub mod events_outbox;
+pub mod integration_config;
 pub mod webhook_delivery;
 pub mod webhook_subscription;
 pub mod documents;
