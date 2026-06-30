@@ -32,7 +32,11 @@ use atlas_api::{
             CopyFolderRequest, CreateFolderRequest, FolderDto, MoveFolderRequest,
             RenameFolderRequest,
         },
+        automation_rules::{AutomationRuleDto, CreateAutomationRuleRequest, PatchAutomationRuleRequest},
         groups::{AddGroupMemberRequest, CreateGroupRequest, GroupDto, GroupMemberDto},
+        integrations::{
+            CreateIntegrationConfigRequest, IntegrationConfigCreatedDto, IntegrationConfigDto,
+        },
         property_definitions::{CreatePropertyDefinitionRequest, PropertyDefinitionDto},
         saved_searches::{CreateSavedSearchRequest, RenameSavedSearchRequest, SavedSearchDto},
         search::{SearchHitDto, SearchKindDto},
@@ -205,6 +209,16 @@ use atlas_api::{
         crate::routes::webhooks::update_webhook,
         crate::routes::webhooks::delete_webhook,
         crate::routes::webhooks::list_webhook_deliveries,
+        crate::routes::integration_configs::create_integration_config,
+        crate::routes::integration_configs::list_integration_configs,
+        crate::routes::integration_configs::get_integration_config,
+        crate::routes::integration_configs::delete_integration_config,
+        crate::routes::automation_rules::create_automation_rule,
+        crate::routes::automation_rules::list_automation_rules,
+        crate::routes::automation_rules::get_automation_rule,
+        crate::routes::automation_rules::patch_automation_rule,
+        crate::routes::automation_rules::delete_automation_rule,
+        crate::routes::integrations_ingest::ingest_github_event,
     ),
     components(schemas(
         LoginRequest,
@@ -317,6 +331,12 @@ use atlas_api::{
         CreateWebhookRequest,
         UpdateWebhookRequest,
         WebhookDeliveryDto,
+        CreateIntegrationConfigRequest,
+        IntegrationConfigDto,
+        IntegrationConfigCreatedDto,
+        CreateAutomationRuleRequest,
+        PatchAutomationRuleRequest,
+        AutomationRuleDto,
     )),
     tags(
         (name = "audit", description = "Security audit log"),
@@ -340,6 +360,8 @@ use atlas_api::{
         (name = "saved-searches", description = "Per-owner saved search registry"),
         (name = "task-views", description = "Per-owner task filter views"),
         (name = "webhooks", description = "Outgoing webhook subscription management (admin-only)"),
+        (name = "integrations", description = "External integration config management and event ingestion (admin-only)"),
+        (name = "automation-rules", description = "Automation rule CRUD (admin-only)"),
     )
 )]
 pub(crate) struct ApiDoc;

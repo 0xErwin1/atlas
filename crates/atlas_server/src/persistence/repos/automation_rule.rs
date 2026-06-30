@@ -1,8 +1,8 @@
 use atlas_domain::DomainError;
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseBackend,
-    EntityTrait, IntoActiveModel, QueryFilter, Statement,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait,
+    IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, Statement,
 };
 use uuid::Uuid;
 
@@ -64,6 +64,26 @@ impl PgAutomationRuleRepo {
         };
 
         model.insert(conn).await.map_err(db_err)
+    }
+
+    /// Lists all non-deleted rules for a workspace ordered by creation time,
+    /// with cursor-based pagination. `after_id` is the last seen rule ID.
+    pub async fn list(
+        conn: &impl ConnectionTrait,
+        workspace_id: Uuid,
+        after_id: Option<Uuid>,
+        limit: u64,
+    ) -> Result<Vec<automation_rules::Model>, DomainError> {
+        let mut q = automation_rules::Entity::find()
+            .filter(automation_rules::Column::WorkspaceId.eq(workspace_id))
+            .filter(automation_rules::Column::DeletedAt.is_null())
+            .order_by_asc(automation_rules::Column::Id);
+
+        if let Some(after) = after_id {
+            q = q.filter(automation_rules::Column::Id.gt(after));
+        }
+
+        q.limit(limit).all(conn).await.map_err(db_err)
     }
 
     /// Returns a single non-deleted rule by its UUID within a workspace.

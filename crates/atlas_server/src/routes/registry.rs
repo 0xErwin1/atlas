@@ -896,6 +896,69 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/v1/workspaces/{ws}/task-views/{id}"),
     },
+    // ---- Integration configs (admin-only) ----
+    RouteEntry {
+        method: "POST",
+        path_template: "/v1/workspaces/{ws}/integration-configs",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/integration-configs"),
+    },
+    RouteEntry {
+        method: "GET",
+        path_template: "/v1/workspaces/{ws}/integration-configs",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/integration-configs"),
+    },
+    RouteEntry {
+        method: "GET",
+        path_template: "/v1/workspaces/{ws}/integration-configs/00000000-0000-0000-0000-000000000001",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/integration-configs/{config_id}"),
+    },
+    RouteEntry {
+        method: "DELETE",
+        path_template: "/v1/workspaces/{ws}/integration-configs/00000000-0000-0000-0000-000000000001",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/integration-configs/{config_id}"),
+    },
+    // ---- Automation rules (admin-only) ----
+    RouteEntry {
+        method: "POST",
+        path_template: "/v1/workspaces/{ws}/automation-rules",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/automation-rules"),
+    },
+    RouteEntry {
+        method: "GET",
+        path_template: "/v1/workspaces/{ws}/automation-rules",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/automation-rules"),
+    },
+    RouteEntry {
+        method: "GET",
+        path_template: "/v1/workspaces/{ws}/automation-rules/00000000-0000-0000-0000-000000000001",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/automation-rules/{rule_id}"),
+    },
+    RouteEntry {
+        method: "PATCH",
+        path_template: "/v1/workspaces/{ws}/automation-rules/00000000-0000-0000-0000-000000000001",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/automation-rules/{rule_id}"),
+    },
+    RouteEntry {
+        method: "DELETE",
+        path_template: "/v1/workspaces/{ws}/automation-rules/00000000-0000-0000-0000-000000000001",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/automation-rules/{rule_id}"),
+    },
+    // ---- External event ingestion (public) ----
+    RouteEntry {
+        method: "POST",
+        path_template: "/v1/workspaces/{ws}/integrations/github/events",
+        kind: RouteKind::Public,
+        openapi_path: Some("/v1/workspaces/{ws}/integrations/{integration}/events"),
+    },
     // ---- Webhooks (admin-only) ----
     RouteEntry {
         method: "POST",

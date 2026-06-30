@@ -130,6 +130,13 @@ const EXPECTED_SCHEMAS: &[&str] = &[
     "WebhookDeliveryDto",
     "Page_WebhookDto",
     "Page_WebhookDeliveryDto",
+    "CreateIntegrationConfigRequest",
+    "IntegrationConfigDto",
+    "IntegrationConfigCreatedDto",
+    "CreateAutomationRuleRequest",
+    "PatchAutomationRuleRequest",
+    "AutomationRuleDto",
+    "Page_AutomationRuleDto",
 ];
 
 #[test]

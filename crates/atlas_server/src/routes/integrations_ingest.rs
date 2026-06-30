@@ -7,12 +7,13 @@
         clippy::indexing_slicing
     )
 )]
-// Suppressing dead_code for items that become live once the ingestion route is wired up.
-#![allow(dead_code)]
 
 use std::collections::HashMap;
 
-use axum::extract::{FromRequest, FromRequestParts, Path, Request};
+use axum::{
+    extract::{FromRequest, FromRequestParts, Path, Request, State},
+    http::StatusCode,
+};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use uuid::Uuid;
@@ -20,6 +21,7 @@ use uuid::Uuid;
 use crate::{
     error::ApiError,
     persistence::repos::{PgIntegrationConfigRepo, PgWorkspaceRepo, WorkspaceRepo},
+    services::AutomationService,
     state::AppState,
 };
 
@@ -36,6 +38,8 @@ const BODY_LIMIT: usize = 1024 * 1024;
 /// public router; must not be placed behind `require_authn`.
 pub(crate) struct VerifiedIntegrationEvent {
     pub workspace_id: Uuid,
+    /// Integration slug (e.g. `"github"`). Available for future multi-integration routing.
+    #[allow(dead_code)]
     pub integration: String,
     pub integration_api_key_id: Uuid,
     pub delivery_id: Uuid,
@@ -162,6 +166,50 @@ pub(crate) fn verify_github_signature(
     mac.verify_slice(&sig_bytes).map_err(|_| ApiError::Unauthorized)?;
 
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// POST /v1/workspaces/{ws}/integrations/{integration}/events
+// ---------------------------------------------------------------------------
+
+/// Receives a signed GitHub delivery, verifies it via the `VerifiedIntegrationEvent`
+/// extractor, and hands it off to `AutomationService` for dedup, outbox storage,
+/// and rule evaluation.
+///
+/// Returns 200 regardless of whether the delivery was new or a duplicate so
+/// that GitHub does not retry on idempotent re-deliveries.
+#[utoipa::path(
+    post,
+    path = "/v1/workspaces/{ws}/integrations/{integration}/events",
+    tag = "integrations",
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+        ("integration" = String, Path, description = "Integration slug (e.g. 'github')"),
+    ),
+    responses(
+        (status = 200, description = "Event accepted (new or duplicate)"),
+        (status = 401, description = "Signature missing or invalid"),
+        (status = 404, description = "No active integration config found for this workspace"),
+        (status = 413, description = "Request body exceeds 1 MiB"),
+    )
+)]
+pub(crate) async fn ingest_github_event(
+    State(state): State<AppState>,
+    event: VerifiedIntegrationEvent,
+) -> Result<StatusCode, ApiError> {
+    let svc = AutomationService::new((*state.db).clone());
+
+    svc.process_github_delivery(
+        event.workspace_id,
+        event.integration_api_key_id,
+        event.delivery_id,
+        &event.event_name,
+        &event.data,
+    )
+    .await
+    .map_err(ApiError::Domain)?;
+
+    Ok(StatusCode::OK)
 }
 
 /// Decodes a lowercase or uppercase hexadecimal string into raw bytes.

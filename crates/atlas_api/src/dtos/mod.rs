@@ -1,8 +1,10 @@
 pub mod audit;
+pub mod automation_rules;
 pub mod boards_tasks;
 pub mod documents;
 pub mod folders;
 pub mod groups;
+pub mod integrations;
 pub mod property_definitions;
 pub mod saved_searches;
 pub mod search;

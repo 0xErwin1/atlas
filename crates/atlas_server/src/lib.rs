@@ -444,6 +444,29 @@ pub fn app(state: AppState) -> Router {
             "/v1/workspaces/{ws}/webhooks/{webhook_id}/deliveries",
             get(routes::webhooks::list_webhook_deliveries),
         )
+        // Integration configs (admin-only)
+        .route(
+            "/v1/workspaces/{ws}/integration-configs",
+            axum::routing::post(routes::integration_configs::create_integration_config)
+                .get(routes::integration_configs::list_integration_configs),
+        )
+        .route(
+            "/v1/workspaces/{ws}/integration-configs/{config_id}",
+            get(routes::integration_configs::get_integration_config)
+                .delete(routes::integration_configs::delete_integration_config),
+        )
+        // Automation rules (admin-only)
+        .route(
+            "/v1/workspaces/{ws}/automation-rules",
+            axum::routing::post(routes::automation_rules::create_automation_rule)
+                .get(routes::automation_rules::list_automation_rules),
+        )
+        .route(
+            "/v1/workspaces/{ws}/automation-rules/{rule_id}",
+            get(routes::automation_rules::get_automation_rule)
+                .patch(routes::automation_rules::patch_automation_rule)
+                .delete(routes::automation_rules::delete_automation_rule),
+        )
         // Search
         .route("/v1/workspaces/{ws}/search", get(routes::search::search))
         .layer(axum_middleware::from_fn(
@@ -479,6 +502,11 @@ pub fn app(state: AppState) -> Router {
             get(routes::activate::get_activation_info)
                 .post(routes::activate::post_activate)
                 .layer(GovernorLayer::new(activate_config)),
+        )
+        // External event ingestion (public; HMAC-verified by the extractor)
+        .route(
+            "/v1/workspaces/{ws}/integrations/{integration}/events",
+            axum::routing::post(routes::integrations_ingest::ingest_github_event),
         )
         .route("/openapi.json", get(routes::openapi::openapi_json))
         .merge(routes::openapi::scalar_router())
