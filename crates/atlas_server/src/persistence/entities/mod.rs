@@ -1,4 +1,7 @@
 pub mod boards_tasks;
+pub mod events_outbox;
+pub mod webhook_delivery;
+pub mod webhook_subscription;
 pub mod documents;
 pub mod identity;
 pub mod permissions;
