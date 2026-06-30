@@ -193,6 +193,18 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         openapi_path: Some("/v1/admin/workspaces"),
     },
     RouteEntry {
+        method: "PATCH",
+        path_template: "/v1/admin/workspaces/{ws}",
+        kind: RouteKind::AuthnRequired,
+        openapi_path: Some("/v1/admin/workspaces/{ws}"),
+    },
+    RouteEntry {
+        method: "DELETE",
+        path_template: "/v1/admin/workspaces/{ws}",
+        kind: RouteKind::AuthnRequired,
+        openapi_path: Some("/v1/admin/workspaces/{ws}"),
+    },
+    RouteEntry {
         method: "GET",
         path_template: "/v1/admin/audit",
         kind: RouteKind::AuthnRequired,

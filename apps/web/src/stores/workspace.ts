@@ -263,6 +263,66 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   /**
+   * Re-slugs a workspace via the admin endpoint (root/system-admin only). Reflects
+   * the new slug in any cached list, and if the active workspace was re-slugged,
+   * repoints the active slug and the persisted choice so navigation keeps working.
+   * Returns true on success; sets `error` and returns false otherwise (e.g. 422
+   * for an invalid or already-taken slug).
+   */
+  async function updateWorkspaceSlug(ws: string, slug: string): Promise<boolean> {
+    const { data, error: apiError } = await wrappedClient.PATCH('/v1/admin/workspaces/{ws}', {
+      params: { path: { ws } },
+      body: { slug },
+    });
+
+    if (apiError !== undefined || data === undefined) {
+      error.value = errorHint(apiError, 'Failed to update workspace slug');
+      return false;
+    }
+
+    const apply = (list: WorkspaceDto[]): WorkspaceDto[] => list.map((w) => (w.slug === ws ? data : w));
+
+    workspaces.value = apply(workspaces.value);
+    adminWorkspaces.value = apply(adminWorkspaces.value);
+
+    if (activeWorkspaceSlug.value === ws) {
+      activeWorkspaceSlug.value = data.slug;
+      persistWorkspace(data.slug);
+    }
+
+    return true;
+  }
+
+  /**
+   * Soft-deletes a workspace via the admin endpoint (root/system-admin only).
+   * Drops it from the cached lists; if it was the active workspace, switches to
+   * the first remaining one (or clears the selection). Returns true on success;
+   * sets `error` and returns false otherwise.
+   */
+  async function deleteWorkspace(ws: string): Promise<boolean> {
+    const { error: apiError } = await wrappedClient.DELETE('/v1/admin/workspaces/{ws}', {
+      params: { path: { ws } },
+    });
+
+    if (apiError !== undefined) {
+      error.value = errorHint(apiError, 'Failed to delete workspace');
+      return false;
+    }
+
+    workspaces.value = workspaces.value.filter((w) => w.slug !== ws);
+    adminWorkspaces.value = adminWorkspaces.value.filter((w) => w.slug !== ws);
+
+    if (activeWorkspaceSlug.value === ws) {
+      const next = workspaces.value[0]?.slug ?? null;
+      activeWorkspaceSlug.value = next;
+      projects.value = [];
+      if (next !== null) persistWorkspace(next);
+    }
+
+    return true;
+  }
+
+  /**
    * Loads every workspace in the system for the root-only admin panel. Clears the
    * list and sets `error` on failure (e.g. a non-root caller gets 403).
    */
@@ -384,6 +444,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     switchWorkspace,
     createWorkspace,
     renameWorkspace,
+    updateWorkspaceSlug,
+    deleteWorkspace,
     loadWorkspaces,
     loadAdminWorkspaces,
     loadProjects,

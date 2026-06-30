@@ -240,6 +240,103 @@
         ]
       }
     },
+    "/v1/admin/workspaces/{ws}": {
+      "delete": {
+        "tags": [
+          "workspaces"
+        ],
+        "summary": "Soft-deletes a workspace, hiding it and its content from every lookup while\npreserving the underlying rows. Restricted to root/system-admin via\n`RequireUserAdmin`. Deleting an unknown or already-deleted workspace is a 404.",
+        "operationId": "admin_delete_workspace",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Workspace deleted"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Not a root/admin user"
+          },
+          "404": {
+            "description": "Workspace not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "workspaces"
+        ],
+        "summary": "Updates a workspace's `name` and/or `slug` on behalf of a platform admin.",
+        "description": "Unlike the member-facing `update_workspace`, this admin path may re-slug a\nworkspace. The new slug is format-validated and checked for collisions against\nevery existing slug (a soft-deleted workspace still reserves its slug). Both\nfields are optional; omitting both is a no-op that returns the current state.\nRestricted to root/system-admin via `RequireUserAdmin`.",
+        "operationId": "admin_update_workspace",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminUpdateWorkspaceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Workspace updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Not a root/admin user"
+          },
+          "404": {
+            "description": "Workspace not found"
+          },
+          "422": {
+            "description": "Validation error or slug already in use"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/v1/api-keys": {
       "get": {
         "tags": [
@@ -8275,6 +8372,24 @@
           "user_id": {
             "type": "string",
             "format": "uuid"
+          }
+        }
+      },
+      "AdminUpdateWorkspaceRequest": {
+        "type": "object",
+        "description": "Request body for `PATCH /v1/admin/workspaces/{ws}` (root/system-admin only).\n\nBoth fields are optional and applied independently: omit a field to leave it\nunchanged. Unlike the member-facing `UpdateWorkspaceRequest`, this admin path\nalso allows re-slugging a workspace.",
+        "properties": {
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "slug": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },

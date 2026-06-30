@@ -4,9 +4,10 @@ pub mod helpers;
 
 use atlas_api::{
     dtos::{
-        ActivationLinkResponse, ApiKeyCreated, ApiKeyDto, ApiKeyGrantDto, ChangePasswordRequest,
-        CreateGrantRequest, CreateProjectRequest, CreateUserApiKeyRequest, CreateUserRequest,
-        CreateUserResponse, CreateWorkspaceRequest, GrantDto, HealthResponse, LoginRequest,
+        ActivationLinkResponse, AdminUpdateWorkspaceRequest, ApiKeyCreated, ApiKeyDto,
+        ApiKeyGrantDto, ChangePasswordRequest, CreateGrantRequest, CreateProjectRequest,
+        CreateUserApiKeyRequest, CreateUserRequest, CreateUserResponse, CreateWorkspaceRequest,
+        GrantDto, HealthResponse, LoginRequest,
         LoginResponse, MeResponse, PrincipalDto, ProjectDto, ResetPasswordRequest, ServerMetaDto,
         UiStateDto, UpdateMeRequest, UpdateProjectRequest, UpdateUiStateRequest,
         UpdateWorkspaceRequest, UserDto, UserMembershipDto, WorkspaceDto,
@@ -688,6 +689,43 @@ impl AtlasClient {
         let response = self.get("/v1/admin/workspaces").send().await?;
         self.decode_response(response, "admin_list_workspaces")
             .await
+    }
+
+    /// `PATCH /v1/admin/workspaces/{ws}`
+    ///
+    /// Updates a workspace's name and/or slug. Requires root/admin privileges.
+    pub async fn admin_update_workspace(
+        &self,
+        ws: &str,
+        body: AdminUpdateWorkspaceRequest,
+    ) -> Result<WorkspaceDto, ClientError> {
+        let response = self
+            .patch(&format!("/v1/admin/workspaces/{ws}"))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "admin_update_workspace")
+            .await
+    }
+
+    /// `DELETE /v1/admin/workspaces/{ws}`
+    ///
+    /// Soft-deletes a workspace. Requires root/admin privileges.
+    pub async fn admin_delete_workspace(&self, ws: &str) -> Result<(), ClientError> {
+        let response = self
+            .delete(&format!("/v1/admin/workspaces/{ws}"))
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        if response.status().is_success() {
+            return Ok(());
+        }
+        let problem: ProblemDetails = response
+            .json()
+            .await
+            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
+        Err(ClientError::Api(problem))
     }
 
     /// `GET /v1/workspaces/{ws}/members`

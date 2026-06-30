@@ -98,6 +98,12 @@ pub fn app(state: AppState) -> Router {
             "/v1/admin/workspaces",
             get(routes::workspaces::admin_list_workspaces),
         )
+        // Admin workspace mutate (root-only): re-slug and soft-delete
+        .route(
+            "/v1/admin/workspaces/{ws}",
+            axum::routing::patch(routes::workspaces::admin_update_workspace)
+                .delete(routes::workspaces::admin_delete_workspace),
+        )
         // Admin security audit log (root/system_admin only)
         .route("/v1/admin/audit", get(routes::audit::list_platform_audit))
         // API keys — top-level (user-owned, workspace-independent)

@@ -32,9 +32,19 @@ pub trait WorkspaceRepo: Send + Sync {
     /// Updates the display name of a workspace. The slug is never re-derived;
     /// only `name` and `updated_at` change.
     async fn rename(&self, id: WorkspaceId, name: String) -> Result<Workspace, DomainError>;
-    /// Returns every workspace in the system, ordered by `created_at` ascending.
-    /// Intended for root/admin use only — the route layer enforces the guard.
+    /// Replaces the workspace slug with a caller-supplied value and bumps
+    /// `updated_at`. The caller is responsible for validating the slug format and
+    /// resolving collisions; this method performs the write only. Returns
+    /// `DomainError::NotFound` when the workspace does not exist or is soft-deleted.
+    async fn set_slug(&self, id: WorkspaceId, slug: String) -> Result<Workspace, DomainError>;
+    /// Returns every live workspace in the system, ordered by `created_at`
+    /// ascending. Soft-deleted workspaces are excluded. Intended for root/admin
+    /// use only — the route layer enforces the guard.
     async fn list_all(&self) -> Result<Vec<Workspace>, DomainError>;
+    /// Soft-deletes a workspace by stamping `deleted_at = now()`, hiding it from
+    /// every lookup while preserving its rows. Returns `DomainError::NotFound`
+    /// when the workspace does not exist or is already soft-deleted.
+    async fn soft_delete(&self, id: WorkspaceId) -> Result<(), DomainError>;
 }
 
 #[async_trait]

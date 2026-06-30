@@ -7,7 +7,9 @@
 
 mod support;
 
-use atlas_api::dtos::{CreateGrantRequest, GrantPrincipal, UpdateWorkspaceRequest};
+use atlas_api::dtos::{
+    AdminUpdateWorkspaceRequest, CreateGrantRequest, GrantPrincipal, UpdateWorkspaceRequest,
+};
 use atlas_client::ClientError;
 use atlas_domain::{Actor, WorkspaceCtx, entities::permissions::NewPermissionGrant};
 use atlas_server::persistence::repos::{
@@ -258,6 +260,211 @@ async fn admin_list_workspaces_non_root_gets_403() {
         ClientError::Api(p) => {
             assert_eq!(p.status, 403, "expected 403, got {}", p.status)
         }
+        other => panic!("unexpected error: {other:?}"),
+    }
+
+    db.teardown().await;
+}
+
+// ---- admin workspace re-slug ----
+
+#[tokio::test]
+async fn admin_update_workspace_changes_slug() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner, ws, _user) = login_user_with_workspace(&server, &db, "ws-reslug-target").await;
+
+    let root = support::login_root_user(&server, &db).await;
+
+    let updated = root
+        .admin_update_workspace(
+            &ws.slug,
+            AdminUpdateWorkspaceRequest {
+                name: None,
+                slug: Some("brand-new-slug".to_string()),
+            },
+        )
+        .await
+        .expect("admin_update_workspace");
+
+    assert_eq!(updated.slug, "brand-new-slug", "slug must change");
+    assert_eq!(updated.id, ws.id.0, "id must be stable across a re-slug");
+
+    let fetched = owner
+        .get_workspace("brand-new-slug")
+        .await
+        .expect("get_workspace by the new slug");
+    assert_eq!(fetched.id, ws.id.0);
+
+    let old = owner.get_workspace(&ws.slug).await;
+    match old {
+        Err(ClientError::Api(p)) => assert_eq!(p.status, 404, "old slug must 404"),
+        other => panic!("old slug must no longer resolve, got {other:?}"),
+    }
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn admin_update_workspace_rejects_taken_slug() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (_a, ws_a, _ua) = login_user_with_workspace(&server, &db, "ws-reslug-collide-a").await;
+    let (_b, ws_b, _ub) = login_user_with_workspace(&server, &db, "ws-reslug-collide-b").await;
+
+    let root = support::login_root_user(&server, &db).await;
+
+    let err = root
+        .admin_update_workspace(
+            &ws_a.slug,
+            AdminUpdateWorkspaceRequest {
+                name: None,
+                slug: Some(ws_b.slug.clone()),
+            },
+        )
+        .await
+        .expect_err("re-slugging onto a taken slug must fail");
+
+    match err {
+        ClientError::Api(p) => assert_eq!(p.status, 422, "expected 422, got {}", p.status),
+        other => panic!("unexpected error: {other:?}"),
+    }
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn admin_update_workspace_rejects_invalid_slug() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (_owner, ws, _user) = login_user_with_workspace(&server, &db, "ws-reslug-invalid").await;
+
+    let root = support::login_root_user(&server, &db).await;
+
+    let err = root
+        .admin_update_workspace(
+            &ws.slug,
+            AdminUpdateWorkspaceRequest {
+                name: None,
+                slug: Some("Not A Slug!".to_string()),
+            },
+        )
+        .await
+        .expect_err("an invalid slug format must be rejected");
+
+    match err {
+        ClientError::Api(p) => assert_eq!(p.status, 422, "expected 422, got {}", p.status),
+        other => panic!("unexpected error: {other:?}"),
+    }
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn admin_update_workspace_non_root_gets_403() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner, ws, _user) = login_user_with_workspace(&server, &db, "ws-reslug-nonroot").await;
+
+    let err = owner
+        .admin_update_workspace(
+            &ws.slug,
+            AdminUpdateWorkspaceRequest {
+                name: None,
+                slug: Some("owner-attempt".to_string()),
+            },
+        )
+        .await
+        .expect_err("a non-admin must not re-slug via the admin endpoint");
+
+    match err {
+        ClientError::Api(p) => assert_eq!(p.status, 403, "expected 403, got {}", p.status),
+        other => panic!("unexpected error: {other:?}"),
+    }
+
+    db.teardown().await;
+}
+
+// ---- admin workspace soft-delete ----
+
+#[tokio::test]
+async fn admin_delete_workspace_hides_it_everywhere() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner, ws, _user) = login_user_with_workspace(&server, &db, "ws-delete-target").await;
+
+    let root = support::login_root_user(&server, &db).await;
+
+    root.admin_delete_workspace(&ws.slug)
+        .await
+        .expect("admin_delete_workspace");
+
+    let admin_list = root
+        .admin_list_workspaces()
+        .await
+        .expect("admin_list_workspaces after delete");
+    assert!(
+        !admin_list.iter().any(|w| w.slug == ws.slug),
+        "a soft-deleted workspace must not appear in the admin list"
+    );
+
+    let owner_list = owner
+        .list_workspaces()
+        .await
+        .expect("owner list_workspaces after delete");
+    assert!(
+        !owner_list.iter().any(|w| w.slug == ws.slug),
+        "a soft-deleted workspace must not appear in the owner's list"
+    );
+
+    let get = owner.get_workspace(&ws.slug).await;
+    match get {
+        Err(ClientError::Api(p)) => assert_eq!(p.status, 404, "deleted workspace must 404"),
+        other => panic!("deleted workspace must no longer resolve, got {other:?}"),
+    }
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn admin_delete_workspace_unknown_slug_gets_404() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let root = support::login_root_user(&server, &db).await;
+
+    let err = root
+        .admin_delete_workspace("no-such-workspace")
+        .await
+        .expect_err("deleting an unknown workspace must fail");
+
+    match err {
+        ClientError::Api(p) => assert_eq!(p.status, 404, "expected 404, got {}", p.status),
+        other => panic!("unexpected error: {other:?}"),
+    }
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn admin_delete_workspace_non_root_gets_403() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner, ws, _user) = login_user_with_workspace(&server, &db, "ws-delete-nonroot").await;
+
+    let err = owner
+        .admin_delete_workspace(&ws.slug)
+        .await
+        .expect_err("a non-admin must not delete via the admin endpoint");
+
+    match err {
+        ClientError::Api(p) => assert_eq!(p.status, 403, "expected 403, got {}", p.status),
         other => panic!("unexpected error: {other:?}"),
     }
 

@@ -31,6 +31,41 @@ pub(crate) fn validate_name(field: &str, value: &str) -> Result<(), ApiError> {
     Ok(())
 }
 
+const MAX_SLUG_LEN: usize = 80;
+
+/// Validates a user-supplied workspace slug.
+///
+/// Accepted format mirrors the output of `slugify`: lowercase ASCII alphanumeric
+/// segments joined by single hyphens, with no leading, trailing, or doubled
+/// hyphens, and a length of 1–80 characters. Rejecting anything else keeps slugs
+/// URL-safe and stable, so a hand-edited slug behaves identically to a derived one.
+pub(crate) fn validate_slug(field: &str, value: &str) -> Result<(), ApiError> {
+    let invalid = || ApiError::InvalidInput {
+        message: format!(
+            "{field} must be 1–{MAX_SLUG_LEN} lowercase letters, digits, or single hyphens \
+             (no leading, trailing, or repeated hyphens)"
+        ),
+    };
+
+    if value.is_empty() || value.len() > MAX_SLUG_LEN {
+        return Err(invalid());
+    }
+
+    if value.starts_with('-') || value.ends_with('-') || value.contains("--") {
+        return Err(invalid());
+    }
+
+    let charset_ok = value
+        .bytes()
+        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
+
+    if !charset_ok {
+        return Err(invalid());
+    }
+
+    Ok(())
+}
+
 /// Validates a long free-text field (e.g. description) against a maximum byte length.
 pub(crate) fn validate_long_text(field: &str, value: &str, max: usize) -> Result<(), ApiError> {
     if value.len() > max {

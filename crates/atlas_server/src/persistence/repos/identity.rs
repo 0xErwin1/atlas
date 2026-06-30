@@ -40,6 +40,7 @@ impl WorkspaceRepo for PgWorkspaceRepo {
             slug: Set(new.slug),
             created_at: Set(Utc::now()),
             updated_at: Set(Utc::now()),
+            deleted_at: Set(None),
         };
         model
             .insert(&self.conn)
@@ -50,6 +51,7 @@ impl WorkspaceRepo for PgWorkspaceRepo {
 
     async fn find_by_id(&self, id: WorkspaceId) -> Result<Option<Workspace>, DomainError> {
         workspace::Entity::find_by_id(id.0)
+            .filter(workspace::Column::DeletedAt.is_null())
             .one(&self.conn)
             .await
             .map(|opt| opt.map(workspace_from))
@@ -59,6 +61,7 @@ impl WorkspaceRepo for PgWorkspaceRepo {
     async fn find_by_slug(&self, slug: &str) -> Result<Option<Workspace>, DomainError> {
         workspace::Entity::find()
             .filter(workspace::Column::Slug.eq(slug))
+            .filter(workspace::Column::DeletedAt.is_null())
             .one(&self.conn)
             .await
             .map(|opt| opt.map(workspace_from))
@@ -78,6 +81,7 @@ impl WorkspaceRepo for PgWorkspaceRepo {
         let mut workspaces = Vec::new();
         for id in ids {
             if let Some(ws) = workspace::Entity::find_by_id(id)
+                .filter(workspace::Column::DeletedAt.is_null())
                 .one(&self.conn)
                 .await
                 .map_err(db_err)?
@@ -105,6 +109,7 @@ impl WorkspaceRepo for PgWorkspaceRepo {
                 membership_from(m).map_err(|message| DomainError::Internal { message })?;
 
             if let Some(ws) = workspace::Entity::find_by_id(membership.workspace_id.0)
+                .filter(workspace::Column::DeletedAt.is_null())
                 .one(&self.conn)
                 .await
                 .map_err(db_err)?
@@ -136,6 +141,7 @@ impl WorkspaceRepo for PgWorkspaceRepo {
         let mut workspaces = Vec::new();
         for row in rows {
             if let Some(ws) = workspace::Entity::find_by_id(row.workspace_id)
+                .filter(workspace::Column::DeletedAt.is_null())
                 .one(&self.conn)
                 .await
                 .map_err(db_err)?
@@ -153,6 +159,9 @@ impl WorkspaceRepo for PgWorkspaceRepo {
             slug: String,
         }
 
+        // Includes soft-deleted workspaces on purpose: the `slug` unique
+        // constraint still reserves a deleted workspace's slug, so collision
+        // resolution must keep avoiding it.
         let rows = SlugRow::find_by_statement(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
             "SELECT slug FROM workspaces",
@@ -192,11 +201,58 @@ impl WorkspaceRepo for PgWorkspaceRepo {
         use sea_orm::QueryOrder;
 
         workspace::Entity::find()
+            .filter(workspace::Column::DeletedAt.is_null())
             .order_by_asc(workspace::Column::CreatedAt)
             .all(&self.conn)
             .await
             .map(|rows| rows.into_iter().map(workspace_from).collect())
             .map_err(db_err)
+    }
+
+    async fn set_slug(&self, id: WorkspaceId, slug: String) -> Result<Workspace, DomainError> {
+        use sea_orm::IntoActiveModel;
+
+        let row = workspace::Entity::find_by_id(id.0)
+            .filter(workspace::Column::DeletedAt.is_null())
+            .one(&self.conn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "workspace",
+                id: id.0,
+            })?;
+
+        let mut active = row.into_active_model();
+        active.slug = Set(slug);
+        active.updated_at = Set(Utc::now());
+
+        active
+            .update(&self.conn)
+            .await
+            .map(workspace_from)
+            .map_err(db_err)
+    }
+
+    async fn soft_delete(&self, id: WorkspaceId) -> Result<(), DomainError> {
+        use sea_orm::IntoActiveModel;
+
+        let row = workspace::Entity::find_by_id(id.0)
+            .filter(workspace::Column::DeletedAt.is_null())
+            .one(&self.conn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "workspace",
+                id: id.0,
+            })?;
+
+        let mut active = row.into_active_model();
+        active.deleted_at = Set(Some(Utc::now()));
+        active.updated_at = Set(Utc::now());
+
+        active.update(&self.conn).await.map_err(db_err)?;
+
+        Ok(())
     }
 }
 

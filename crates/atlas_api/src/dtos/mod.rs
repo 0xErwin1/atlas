@@ -376,6 +376,20 @@ pub struct UpdateWorkspaceRequest {
     pub name: String,
 }
 
+/// Request body for `PATCH /v1/admin/workspaces/{ws}` (root/system-admin only).
+///
+/// Both fields are optional and applied independently: omit a field to leave it
+/// unchanged. Unlike the member-facing `UpdateWorkspaceRequest`, this admin path
+/// also allows re-slugging a workspace.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct AdminUpdateWorkspaceRequest {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub slug: Option<String>,
+}
+
 /// Workspace representation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]

@@ -1,11 +1,13 @@
 use axum::{
     Json,
-    extract::{Extension, State},
+    extract::{Extension, Path, State},
     http::StatusCode,
     response::IntoResponse,
 };
 
-use atlas_api::dtos::{CreateWorkspaceRequest, UpdateWorkspaceRequest, WorkspaceDto};
+use atlas_api::dtos::{
+    AdminUpdateWorkspaceRequest, CreateWorkspaceRequest, UpdateWorkspaceRequest, WorkspaceDto,
+};
 use atlas_domain::{
     Actor, WorkspaceCtx,
     entities::boards_tasks::NewBoard,
@@ -26,7 +28,7 @@ use crate::{
         PgProjectRepo, PgStatusTemplateRepo, PgUserRepo, PgWorkspaceRepo, ProjectRepo,
         StatusTemplateRepo, UserRepo, WorkspaceRepo,
     },
-    routes::validation::validate_name,
+    routes::validation::{validate_name, validate_slug},
     state::AppState,
 };
 
@@ -365,6 +367,127 @@ pub(crate) async fn admin_list_workspaces(
 
     let dtos = workspaces.iter().map(workspace_to_dto).collect();
     Ok(Json(dtos))
+}
+
+#[utoipa::path(
+    patch,
+    path = "/v1/admin/workspaces/{ws}",
+    tag = "workspaces",
+    security(("bearer_auth" = [])),
+    params(("ws" = String, Path, description = "Workspace slug")),
+    request_body = AdminUpdateWorkspaceRequest,
+    responses(
+        (status = 200, description = "Workspace updated", body = WorkspaceDto),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Not a root/admin user"),
+        (status = 404, description = "Workspace not found"),
+        (status = 422, description = "Validation error or slug already in use"),
+    )
+)]
+/// Updates a workspace's `name` and/or `slug` on behalf of a platform admin.
+///
+/// Unlike the member-facing `update_workspace`, this admin path may re-slug a
+/// workspace. The new slug is format-validated and checked for collisions against
+/// every existing slug (a soft-deleted workspace still reserves its slug). Both
+/// fields are optional; omitting both is a no-op that returns the current state.
+/// Restricted to root/system-admin via `RequireUserAdmin`.
+pub(crate) async fn admin_update_workspace(
+    _admin: RequireUserAdmin,
+    State(state): State<AppState>,
+    Path(ws): Path<String>,
+    Json(body): Json<AdminUpdateWorkspaceRequest>,
+) -> Result<Json<WorkspaceDto>, ApiError> {
+    let ws_repo = PgWorkspaceRepo {
+        conn: (*state.db).clone(),
+    };
+
+    let workspace = ws_repo
+        .find_by_slug(&ws)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?
+        .ok_or(ApiError::NotFound)?;
+
+    let mut current = workspace;
+
+    if let Some(name) = body.name {
+        validate_name("name", &name)?;
+
+        current = ws_repo
+            .rename(current.id, name)
+            .await
+            .map_err(|e| ApiError::Internal {
+                message: e.to_string(),
+            })?;
+    }
+
+    if let Some(slug) = body.slug
+        && slug != current.slug
+    {
+        validate_slug("slug", &slug)?;
+
+        let existing_slugs = ws_repo.list_slugs().await.map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?;
+        if existing_slugs.iter().any(|s| s == &slug) {
+            return Err(ApiError::InvalidInput {
+                message: format!("slug '{slug}' is already in use"),
+            });
+        }
+
+        current = ws_repo
+            .set_slug(current.id, slug)
+            .await
+            .map_err(|e| ApiError::Internal {
+                message: e.to_string(),
+            })?;
+    }
+
+    Ok(Json(workspace_to_dto(&current)))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/v1/admin/workspaces/{ws}",
+    tag = "workspaces",
+    security(("bearer_auth" = [])),
+    params(("ws" = String, Path, description = "Workspace slug")),
+    responses(
+        (status = 204, description = "Workspace deleted"),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Not a root/admin user"),
+        (status = 404, description = "Workspace not found"),
+    )
+)]
+/// Soft-deletes a workspace, hiding it and its content from every lookup while
+/// preserving the underlying rows. Restricted to root/system-admin via
+/// `RequireUserAdmin`. Deleting an unknown or already-deleted workspace is a 404.
+pub(crate) async fn admin_delete_workspace(
+    _admin: RequireUserAdmin,
+    State(state): State<AppState>,
+    Path(ws): Path<String>,
+) -> Result<impl IntoResponse, ApiError> {
+    let ws_repo = PgWorkspaceRepo {
+        conn: (*state.db).clone(),
+    };
+
+    let workspace = ws_repo
+        .find_by_slug(&ws)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?
+        .ok_or(ApiError::NotFound)?;
+
+    ws_repo
+        .soft_delete(workspace.id)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?;
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 fn workspace_to_dto(ws: &atlas_domain::entities::identity::Workspace) -> WorkspaceDto {
