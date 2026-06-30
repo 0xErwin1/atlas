@@ -5,6 +5,9 @@ use atlas_domain::{
         NewTaskChecklistItem, NewTaskReference, PositionBetween, ReferenceKind, Task, TaskActivity,
         TaskAssignee, TaskChecklistItem, TaskChecklistItemPatch, TaskPatch, TaskReference,
     },
+    entities::events::{
+        DomainEvent, TaskCreatedPayload, TaskDeletedPayload, TaskMovedPayload, TaskUpdatedPayload,
+    },
     ids::{
         BoardId, ChecklistItemId, ColumnId, DocumentId, ProjectId, TaskActivityId, TaskId,
         TaskReferenceId,
@@ -24,7 +27,7 @@ use crate::persistence::entities::boards_tasks::{
     board, board_column, task, task_checklist_item, task_checklist_item_from,
 };
 use crate::persistence::repos::{
-    PgDocumentLinkRepo, PgTaskActivityRepo, PgTaskAssigneeRepo, PgTaskChecklistRepo,
+    PgDocumentLinkRepo, PgOutboxRepo, PgTaskActivityRepo, PgTaskAssigneeRepo, PgTaskChecklistRepo,
     PgTaskReferenceRepo, PgTaskRepo, TaskActivityRepo as _,
 };
 
@@ -82,6 +85,21 @@ impl TaskService {
         )
         .await?;
 
+        PgOutboxRepo::insert_in(
+            &txn,
+            ctx,
+            Some(task.project_id),
+            Some(task.board_id),
+            DomainEvent::TaskCreated(TaskCreatedPayload {
+                task_id: task.id,
+                title: task.title.clone(),
+                project_id: task.project_id,
+                board_id: task.board_id,
+                column_id: task.column_id,
+            }),
+        )
+        .await?;
+
         txn.commit().await.map_err(db_err)?;
         Ok(task)
     }
@@ -127,6 +145,21 @@ impl TaskService {
         )
         .await?;
 
+        PgOutboxRepo::insert_in(
+            &txn,
+            ctx,
+            Some(task.project_id),
+            Some(task.board_id),
+            DomainEvent::TaskCreated(TaskCreatedPayload {
+                task_id: task.id,
+                title: task.title.clone(),
+                project_id: task.project_id,
+                board_id: task.board_id,
+                column_id: task.column_id,
+            }),
+        )
+        .await?;
+
         txn.commit().await.map_err(db_err)?;
         Ok(task)
     }
@@ -153,6 +186,9 @@ impl TaskService {
                 entity: "task",
                 id: id.0,
             })?;
+
+        let task_project_id = ProjectId(before.project_id);
+        let task_board_id = BoardId(before.board_id);
 
         let old_parent = match before.parent_task_id {
             Some(p) => serde_json::Value::String(p.to_string()),
@@ -181,6 +217,18 @@ impl TaskService {
                     new_value: serde_json::Value::Null,
                 },
             },
+        )
+        .await?;
+
+        PgOutboxRepo::insert_in(
+            &txn,
+            ctx,
+            Some(task_project_id),
+            Some(task_board_id),
+            DomainEvent::TaskUpdated(TaskUpdatedPayload {
+                task_id: id,
+                changed_fields: vec!["parent_task_id".into()],
+            }),
         )
         .await?;
 
@@ -223,6 +271,8 @@ impl TaskService {
             sync_task_description_links(&txn, ctx, id, &updated.description).await?;
         }
 
+        let changed_field_names: Vec<String> = fields_changed.iter().map(|(f, _, _)| f.clone()).collect();
+
         for (field, old_value, new_value) in fields_changed {
             PgTaskActivityRepo::append_in(
                 &txn,
@@ -236,6 +286,20 @@ impl TaskService {
                         new_value,
                     },
                 },
+            )
+            .await?;
+        }
+
+        if !changed_field_names.is_empty() {
+            PgOutboxRepo::insert_in(
+                &txn,
+                ctx,
+                Some(before.project_id),
+                Some(before.board_id),
+                DomainEvent::TaskUpdated(TaskUpdatedPayload {
+                    task_id: id,
+                    changed_fields: changed_field_names,
+                }),
             )
             .await?;
         }
@@ -295,6 +359,19 @@ impl TaskService {
         )
         .await?;
 
+        PgOutboxRepo::insert_in(
+            &txn,
+            ctx,
+            Some(moved.project_id),
+            Some(moved.board_id),
+            DomainEvent::TaskMoved(TaskMovedPayload {
+                task_id: id,
+                from_column_id: before.column_id,
+                to_column_id: column_id,
+            }),
+        )
+        .await?;
+
         txn.commit().await.map_err(db_err)?;
         Ok(moved)
     }
@@ -302,6 +379,20 @@ impl TaskService {
     /// Soft-deletes a task and records a `Deleted` activity in the same transaction.
     pub async fn delete_task(&self, ctx: &WorkspaceCtx, id: TaskId) -> Result<(), DomainError> {
         let txn = self.conn.begin().await.map_err(db_err)?;
+
+        let row = task::Entity::find_by_id(id.0)
+            .filter(task::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(task::Column::DeletedAt.is_null())
+            .one(&txn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "task",
+                id: id.0,
+            })?;
+
+        let task_project_id = ProjectId(row.project_id);
+        let task_board_id = BoardId(row.board_id);
 
         PgTaskRepo::soft_delete_in(&txn, ctx, id).await?;
 
@@ -313,6 +404,15 @@ impl TaskService {
                 kind: ActivityKind::Deleted,
                 payload: ActivityPayload::Deleted,
             },
+        )
+        .await?;
+
+        PgOutboxRepo::insert_in(
+            &txn,
+            ctx,
+            Some(task_project_id),
+            Some(task_board_id),
+            DomainEvent::TaskDeleted(TaskDeletedPayload { task_id: id }),
         )
         .await?;
 
@@ -330,6 +430,20 @@ impl TaskService {
     ) -> Result<TaskAssignee, DomainError> {
         let txn = self.conn.begin().await.map_err(db_err)?;
 
+        let row = task::Entity::find_by_id(task_id.0)
+            .filter(task::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(task::Column::DeletedAt.is_null())
+            .one(&txn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "task",
+                id: task_id.0,
+            })?;
+
+        let task_project_id = ProjectId(row.project_id);
+        let task_board_id = BoardId(row.board_id);
+
         let result =
             PgTaskAssigneeRepo::add_in(&txn, ctx, NewTaskAssignee { task_id, assignee }).await?;
 
@@ -341,6 +455,18 @@ impl TaskService {
                 kind: ActivityKind::Assigned,
                 payload: ActivityPayload::Assigned { assignee },
             },
+        )
+        .await?;
+
+        PgOutboxRepo::insert_in(
+            &txn,
+            ctx,
+            Some(task_project_id),
+            Some(task_board_id),
+            DomainEvent::TaskUpdated(TaskUpdatedPayload {
+                task_id,
+                changed_fields: vec!["assignees".into()],
+            }),
         )
         .await?;
 
@@ -358,6 +484,20 @@ impl TaskService {
     ) -> Result<(), DomainError> {
         let txn = self.conn.begin().await.map_err(db_err)?;
 
+        let row = task::Entity::find_by_id(task_id.0)
+            .filter(task::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(task::Column::DeletedAt.is_null())
+            .one(&txn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "task",
+                id: task_id.0,
+            })?;
+
+        let task_project_id = ProjectId(row.project_id);
+        let task_board_id = BoardId(row.board_id);
+
         PgTaskAssigneeRepo::remove_in(&txn, ctx, task_id, assignee).await?;
 
         PgTaskActivityRepo::append_in(
@@ -368,6 +508,18 @@ impl TaskService {
                 kind: ActivityKind::Unassigned,
                 payload: ActivityPayload::Unassigned { assignee },
             },
+        )
+        .await?;
+
+        PgOutboxRepo::insert_in(
+            &txn,
+            ctx,
+            Some(task_project_id),
+            Some(task_board_id),
+            DomainEvent::TaskUpdated(TaskUpdatedPayload {
+                task_id,
+                changed_fields: vec!["assignees".into()],
+            }),
         )
         .await?;
 

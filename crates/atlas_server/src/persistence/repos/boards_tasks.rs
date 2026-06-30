@@ -7,6 +7,10 @@ use atlas_domain::{
         Task, TaskActivity, TaskAssignee, TaskChecklistItem, TaskChecklistItemPatch, TaskPatch,
         TaskReference,
     },
+    entities::events::{
+        BoardCreatedPayload, BoardDeletedPayload, ColumnCreatedPayload, ColumnDeletedPayload,
+        DomainEvent,
+    },
     entities::task_views::{ActorTypeFilter, AssigneeFilter, TaskSort, TaskViewFilters},
     ids::{BoardId, ChecklistItemId, ColumnId, ProjectId, TaskActivityId, TaskId, TaskReferenceId},
     ports::boards_tasks::{
@@ -27,6 +31,7 @@ use crate::persistence::entities::boards_tasks::{
     task_checklist_item_from, task_from, task_reference, task_reference_from,
 };
 use crate::persistence::entities::status_templates::status_template;
+use crate::persistence::repos::PgOutboxRepo;
 
 pub use atlas_domain::ports::boards_tasks::{
     BoardRepo, TaskActivityRepo, TaskAssigneeRepo, TaskChecklistRepo, TaskReferenceRepo, TaskRepo,
@@ -48,6 +53,8 @@ impl BoardRepo for PgBoardRepo {
         let txn = self.conn.begin().await.map_err(db_err)?;
 
         let (by_user, by_key) = actor_columns(&ctx.actor);
+        let board_project_id = new.project_id;
+        let board_name = new.name.clone();
         let board_model = board::ActiveModel {
             id: Set(BoardId::new().0),
             workspace_id: Set(ctx.workspace_id.0),
@@ -89,6 +96,19 @@ impl BoardRepo for PgBoardRepo {
             col_model.insert(&txn).await.map_err(db_err)?;
             prev = Some(position_key);
         }
+
+        PgOutboxRepo::insert_in(
+            &txn,
+            ctx,
+            Some(board_project_id),
+            Some(board_id),
+            DomainEvent::BoardCreated(BoardCreatedPayload {
+                board_id,
+                project_id: board_project_id,
+                name: board_name,
+            }),
+        )
+        .await?;
 
         txn.commit().await.map_err(db_err)?;
         Ok(board_from(inserted_board))
@@ -133,6 +153,19 @@ impl BoardRepo for PgBoardRepo {
     ) -> Result<BoardColumn, DomainError> {
         let txn = self.conn.begin().await.map_err(db_err)?;
 
+        let board_row = board::Entity::find_by_id(board_id.0)
+            .filter(board::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(board::Column::DeletedAt.is_null())
+            .one(&txn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "board",
+                id: board_id.0,
+            })?;
+
+        let board_project_id = ProjectId(board_row.project_id);
+
         let position_key =
             match position::try_between(position.before.as_deref(), position.after.as_deref()) {
                 Some(key) => key,
@@ -155,6 +188,7 @@ impl BoardRepo for PgBoardRepo {
             };
 
         let (by_user, by_key) = actor_columns(&ctx.actor);
+        let col_name = name.clone();
         let model = board_column::ActiveModel {
             id: Set(ColumnId::new().0),
             workspace_id: Set(ctx.workspace_id.0),
@@ -169,6 +203,21 @@ impl BoardRepo for PgBoardRepo {
             deleted_at: Set(None),
         };
         let inserted = model.insert(&txn).await.map_err(db_err)?;
+        let column_id = ColumnId(inserted.id);
+
+        PgOutboxRepo::insert_in(
+            &txn,
+            ctx,
+            Some(board_project_id),
+            Some(board_id),
+            DomainEvent::ColumnCreated(ColumnCreatedPayload {
+                board_id,
+                column_id,
+                name: col_name,
+            }),
+        )
+        .await?;
+
         txn.commit().await.map_err(db_err)?;
         Ok(board_column_from(inserted))
     }
@@ -302,10 +351,12 @@ impl BoardRepo for PgBoardRepo {
     }
 
     async fn soft_delete_board(&self, ctx: &WorkspaceCtx, id: BoardId) -> Result<(), DomainError> {
+        let txn = self.conn.begin().await.map_err(db_err)?;
+
         let row = board::Entity::find_by_id(id.0)
             .filter(board::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(board::Column::DeletedAt.is_null())
-            .one(&self.conn)
+            .one(&txn)
             .await
             .map_err(db_err)?
             .ok_or(DomainError::NotFound {
@@ -313,10 +364,26 @@ impl BoardRepo for PgBoardRepo {
                 id: id.0,
             })?;
 
+        let board_project_id = ProjectId(row.project_id);
+
         let mut active = row.into_active_model();
         active.deleted_at = Set(Some(Utc::now()));
         active.updated_at = Set(Utc::now());
-        active.update(&self.conn).await.map_err(db_err)?;
+        active.update(&txn).await.map_err(db_err)?;
+
+        PgOutboxRepo::insert_in(
+            &txn,
+            ctx,
+            Some(board_project_id),
+            Some(id),
+            DomainEvent::BoardDeleted(BoardDeletedPayload {
+                board_id: id,
+                project_id: board_project_id,
+            }),
+        )
+        .await?;
+
+        txn.commit().await.map_err(db_err)?;
         Ok(())
     }
 
@@ -326,11 +393,13 @@ impl BoardRepo for PgBoardRepo {
         board_id: BoardId,
         id: ColumnId,
     ) -> Result<(), DomainError> {
+        let txn = self.conn.begin().await.map_err(db_err)?;
+
         let row = board_column::Entity::find_by_id(id.0)
             .filter(board_column::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(board_column::Column::BoardId.eq(board_id.0))
             .filter(board_column::Column::DeletedAt.is_null())
-            .one(&self.conn)
+            .one(&txn)
             .await
             .map_err(db_err)?
             .ok_or(DomainError::NotFound {
@@ -342,11 +411,12 @@ impl BoardRepo for PgBoardRepo {
             .filter(task::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(task::Column::ColumnId.eq(id.0))
             .filter(task::Column::DeletedAt.is_null())
-            .count(&self.conn)
+            .count(&txn)
             .await
             .map_err(db_err)?;
 
         if live_tasks > 0 {
+            txn.rollback().await.map_err(db_err)?;
             return Err(DomainError::InvalidInput {
                 message: "column still has tasks; move or delete them first".to_string(),
             });
@@ -355,7 +425,21 @@ impl BoardRepo for PgBoardRepo {
         let mut active = row.into_active_model();
         active.deleted_at = Set(Some(Utc::now()));
         active.updated_at = Set(Utc::now());
-        active.update(&self.conn).await.map_err(db_err)?;
+        active.update(&txn).await.map_err(db_err)?;
+
+        PgOutboxRepo::insert_in(
+            &txn,
+            ctx,
+            None,
+            Some(board_id),
+            DomainEvent::ColumnDeleted(ColumnDeletedPayload {
+                board_id,
+                column_id: id,
+            }),
+        )
+        .await?;
+
+        txn.commit().await.map_err(db_err)?;
         Ok(())
     }
 }

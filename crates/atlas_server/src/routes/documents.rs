@@ -38,6 +38,7 @@ use crate::{
         PgDocumentRepo,
     },
     routes::validation::validate_name,
+    services::DocumentService,
     state::AppState,
 };
 
@@ -93,7 +94,7 @@ pub(crate) async fn create_document(
 
     validate_name("title", &body.title)?;
 
-    let doc_repo = PgDocumentRepo::new((*state.db).clone(), state.anchor_interval);
+    let doc_svc = state.document_service();
 
     let base_slug = slugify(&body.title);
     let existing = collect_existing_slugs_for_workspace(&state, &ctx).await?;
@@ -119,7 +120,7 @@ pub(crate) async fn create_document(
     let doc = persist_new_document(
         &state,
         &ctx,
-        &doc_repo,
+        &doc_svc,
         body.title,
         slug,
         content,
@@ -140,7 +141,7 @@ pub(crate) async fn create_document(
 async fn persist_new_document(
     state: &AppState,
     ctx: &WorkspaceCtx,
-    doc_repo: &PgDocumentRepo,
+    doc_svc: &DocumentService,
     title: String,
     slug: String,
     content: String,
@@ -149,7 +150,7 @@ async fn persist_new_document(
 ) -> Result<atlas_domain::entities::documents::Document, ApiError> {
     let frontmatter = derive_frontmatter(&content);
 
-    let doc = doc_repo
+    let doc = doc_svc
         .create(
             ctx,
             NewDocument {
@@ -164,10 +165,11 @@ async fn persist_new_document(
         .await
         .map_err(ApiError::Domain)?;
 
+    let doc_repo = PgDocumentRepo::new((*state.db).clone(), state.anchor_interval);
     let link_repo = PgDocumentLinkRepo {
         conn: (*state.db).clone(),
     };
-    update_document_links(ctx, doc_repo, &link_repo, doc.id, &doc.content).await?;
+    update_document_links(ctx, &doc_repo, &link_repo, doc.id, &doc.content).await?;
 
     Ok(doc)
 }
@@ -293,7 +295,7 @@ pub(crate) async fn update_document(
 ) -> Result<Json<DocumentDto>, ApiError> {
     let doc = auth.resource.0;
     let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
-    let doc_repo = PgDocumentRepo::new((*state.db).clone(), state.anchor_interval);
+    let doc_svc = state.document_service();
 
     if let Some(ref new_title) = body.title {
         validate_name("title", new_title)?;
@@ -301,7 +303,7 @@ pub(crate) async fn update_document(
 
     let doc = if let Some(new_title) = body.title {
         if new_title != doc.title {
-            doc_repo
+            doc_svc
                 .rename(&ctx, doc.id, new_title)
                 .await
                 .map_err(ApiError::Domain)?
@@ -326,10 +328,11 @@ pub(crate) async fn update_document(
         }
 
         let folder_id = body.folder_id.map(FolderId);
-        doc_repo
+        doc_svc
             .move_to(&ctx, doc.id, folder_id, doc.project_id)
             .await
             .map_err(ApiError::Domain)?;
+        let doc_repo = PgDocumentRepo::new((*state.db).clone(), state.anchor_interval);
         doc_repo
             .get(&ctx, doc.id)
             .await
@@ -371,9 +374,9 @@ pub(crate) async fn update_content(
 ) -> Result<Json<DocumentDto>, ApiError> {
     let doc = auth.resource.0;
     let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
-    let doc_repo = PgDocumentRepo::new((*state.db).clone(), state.anchor_interval);
+    let doc_svc = state.document_service();
 
-    let updated = doc_repo
+    let updated = doc_svc
         .update_content(
             &ctx,
             doc.id,
@@ -386,6 +389,7 @@ pub(crate) async fn update_content(
             other => ApiError::Domain(other),
         })?;
 
+    let doc_repo = PgDocumentRepo::new((*state.db).clone(), state.anchor_interval);
     let link_repo = PgDocumentLinkRepo {
         conn: (*state.db).clone(),
     };
@@ -419,9 +423,9 @@ pub(crate) async fn delete_document(
     State(state): State<AppState>,
 ) -> Result<StatusCode, ApiError> {
     let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
-    let doc_repo = PgDocumentRepo::new((*state.db).clone(), state.anchor_interval);
+    let doc_svc = state.document_service();
 
-    doc_repo
+    doc_svc
         .soft_delete(&ctx, auth.resource.0.id)
         .await
         .map_err(ApiError::Domain)?;
@@ -970,7 +974,7 @@ pub(crate) async fn move_document(
 ) -> Result<Json<DocumentDto>, ApiError> {
     let doc = auth.resource.0;
     let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
-    let doc_repo = PgDocumentRepo::new((*state.db).clone(), state.anchor_interval);
+    let doc_svc = state.document_service();
 
     if let Some(fid) = body.folder_id {
         authorize_folder_destination(
@@ -985,11 +989,12 @@ pub(crate) async fn move_document(
     }
 
     let folder_id = body.folder_id.map(FolderId);
-    doc_repo
+    doc_svc
         .move_to(&ctx, doc.id, folder_id, doc.project_id)
         .await
         .map_err(ApiError::Domain)?;
 
+    let doc_repo = PgDocumentRepo::new((*state.db).clone(), state.anchor_interval);
     let updated = doc_repo
         .get(&ctx, doc.id)
         .await
@@ -1027,7 +1032,7 @@ pub(crate) async fn copy_document(
 ) -> Result<impl IntoResponse, ApiError> {
     let source = auth.resource.0;
     let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
-    let doc_repo = PgDocumentRepo::new((*state.db).clone(), state.anchor_interval);
+    let doc_svc = state.document_service();
 
     let folder_id = match body.folder_id {
         Some(fid) => Some(FolderId(fid)),
@@ -1056,7 +1061,7 @@ pub(crate) async fn copy_document(
     let copy = persist_new_document(
         &state,
         &ctx,
-        &doc_repo,
+        &doc_svc,
         title,
         slug,
         source.content,
@@ -1075,7 +1080,7 @@ pub(crate) async fn copy_document(
 pub(crate) async fn copy_document_into(
     state: &AppState,
     ctx: &WorkspaceCtx,
-    doc_repo: &PgDocumentRepo,
+    doc_svc: &DocumentService,
     source: &atlas_domain::entities::documents::Document,
     folder_id: Option<FolderId>,
     project_id: Option<atlas_domain::ids::ProjectId>,
@@ -1088,7 +1093,7 @@ pub(crate) async fn copy_document_into(
     persist_new_document(
         state,
         ctx,
-        doc_repo,
+        doc_svc,
         source.title.clone(),
         slug,
         source.content.clone(),

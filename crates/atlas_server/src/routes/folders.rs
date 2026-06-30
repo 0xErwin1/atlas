@@ -27,6 +27,7 @@ use crate::{
     error::ApiError,
     persistence::repos::{DocumentRepo, FolderRepo, PgDocumentRepo, PgFolderRepo},
     routes::{documents::copy_document_into, validation::validate_name},
+    services::DocumentService,
     state::AppState,
 };
 
@@ -395,6 +396,7 @@ pub(crate) async fn copy_folder(
         conn: (*state.db).clone(),
     };
     let doc_repo = PgDocumentRepo::new((*state.db).clone(), state.anchor_interval);
+    let doc_svc = state.document_service();
 
     let top_name = format!("{} (copy)", source.name);
 
@@ -410,7 +412,8 @@ pub(crate) async fn copy_folder(
         .await
         .map_err(ApiError::Domain)?;
 
-    copy_folder_subtree(&state, &ctx, &folder_repo, &doc_repo, &source, &new_top, 0).await?;
+    copy_folder_subtree(&state, &ctx, &folder_repo, &doc_repo, &doc_svc, &source, &new_top, 0)
+        .await?;
 
     Ok((StatusCode::CREATED, Json(folder_to_dto(new_top))))
 }
@@ -427,6 +430,7 @@ async fn copy_folder_subtree(
     ctx: &WorkspaceCtx,
     folder_repo: &PgFolderRepo,
     doc_repo: &PgDocumentRepo,
+    doc_svc: &DocumentService,
     source: &Folder,
     dest: &Folder,
     depth: usize,
@@ -443,7 +447,7 @@ async fn copy_folder_subtree(
         .map_err(ApiError::Domain)?;
 
     for doc in &documents {
-        copy_document_into(state, ctx, doc_repo, doc, Some(dest.id), dest.project_id).await?;
+        copy_document_into(state, ctx, doc_svc, doc, Some(dest.id), dest.project_id).await?;
     }
 
     let children = folder_repo
@@ -469,6 +473,7 @@ async fn copy_folder_subtree(
             ctx,
             folder_repo,
             doc_repo,
+            doc_svc,
             child,
             &new_child,
             depth + 1,

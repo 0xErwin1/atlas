@@ -284,6 +284,43 @@ impl DomainEvent {
             DomainEvent::FolderDeleted(_) => version::FOLDER_DELETED,
         }
     }
+
+    /// Returns the aggregate type string for scope-matching in outbox delivery.
+    pub fn aggregate_type(&self) -> &'static str {
+        match self {
+            DomainEvent::TaskCreated(_)
+            | DomainEvent::TaskUpdated(_)
+            | DomainEvent::TaskMoved(_)
+            | DomainEvent::TaskDeleted(_) => "task",
+            DomainEvent::DocumentCreated(_)
+            | DomainEvent::DocumentUpdated(_)
+            | DomainEvent::DocumentMoved(_)
+            | DomainEvent::DocumentDeleted(_) => "document",
+            DomainEvent::BoardCreated(_) | DomainEvent::BoardDeleted(_) => "board",
+            DomainEvent::ColumnCreated(_) | DomainEvent::ColumnDeleted(_) => "column",
+            DomainEvent::FolderCreated(_) | DomainEvent::FolderDeleted(_) => "folder",
+        }
+    }
+
+    /// Returns the primary aggregate UUID carried by this event.
+    pub fn aggregate_id(&self) -> Uuid {
+        match self {
+            DomainEvent::TaskCreated(p) => p.task_id.0,
+            DomainEvent::TaskUpdated(p) => p.task_id.0,
+            DomainEvent::TaskMoved(p) => p.task_id.0,
+            DomainEvent::TaskDeleted(p) => p.task_id.0,
+            DomainEvent::DocumentCreated(p) => p.document_id.0,
+            DomainEvent::DocumentUpdated(p) => p.document_id.0,
+            DomainEvent::DocumentMoved(p) => p.document_id.0,
+            DomainEvent::DocumentDeleted(p) => p.document_id.0,
+            DomainEvent::BoardCreated(p) => p.board_id.0,
+            DomainEvent::BoardDeleted(p) => p.board_id.0,
+            DomainEvent::ColumnCreated(p) => p.column_id.0,
+            DomainEvent::ColumnDeleted(p) => p.column_id.0,
+            DomainEvent::FolderCreated(p) => p.folder_id.0,
+            DomainEvent::FolderDeleted(p) => p.folder_id.0,
+        }
+    }
 }
 
 // ─── EventEnvelope ───────────────────────────────────────────────────────────

@@ -652,3 +652,200 @@ async fn rename_cross_tenant_not_found() {
 
     db.teardown().await;
 }
+
+// ─── B2.6 — `_in` primitive function tests ───────────────────────────────────
+
+use atlas_domain::{
+    DomainError,
+    entities::documents::NewDocument as NewDoc,
+    ids::RevisionId,
+};
+use atlas_server::persistence::repos::{
+    FolderRepo, PgFolderRepo, doc_create_in, doc_move_to_in, doc_rename_in, doc_soft_delete_in,
+    doc_update_content_in,
+};
+use sea_orm::TransactionTrait;
+
+fn new_doc(title: &str, slug: &str) -> NewDoc {
+    NewDoc {
+        title: title.into(),
+        slug: Some(slug.into()),
+        content: "hello".into(),
+        folder_id: None,
+        project_id: None,
+        frontmatter: None,
+    }
+}
+
+// B2.6-1: create_in writes exactly one document row within a committed txn.
+#[tokio::test]
+async fn create_in_writes_doc_in_txn() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let (ws, user) = support::seed_workspace(&db, "ci-create").await;
+    let ctx = support::ctx(&ws, &user);
+
+    let txn = db.conn().begin().await.expect("begin");
+    let doc = doc_create_in(&txn, &ctx, new_doc("Created In", "created-in"))
+        .await
+        .expect("create_in");
+    txn.commit().await.expect("commit");
+
+    assert_eq!(doc.title, "Created In");
+    assert_eq!(doc.slug, Some("created-in".into()));
+    assert_eq!(doc.workspace_id, ws.id);
+
+    let repo = make_doc_repo(&db);
+    let fetched = repo
+        .get(&ctx, doc.id)
+        .await
+        .expect("get")
+        .expect("doc must exist after commit");
+    assert_eq!(fetched.id, doc.id);
+
+    db.teardown().await;
+}
+
+// B2.6-2: rolling back the txn after create_in leaves zero document rows.
+#[tokio::test]
+async fn create_in_rollback_leaves_no_rows() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let (ws, user) = support::seed_workspace(&db, "ci-rollback").await;
+    let ctx = support::ctx(&ws, &user);
+    let repo = make_doc_repo(&db);
+
+    let txn = db.conn().begin().await.expect("begin");
+    let doc = doc_create_in(&txn, &ctx, new_doc("Should Roll Back", "rollback-doc"))
+        .await
+        .expect("create_in");
+    txn.rollback().await.expect("rollback");
+
+    let result = repo.get(&ctx, doc.id).await.expect("get");
+    assert!(
+        result.is_none(),
+        "rolled-back txn must not persist any document"
+    );
+
+    db.teardown().await;
+}
+
+// B2.6-3: update_content_in returns DomainError::Conflict when the
+// expected_revision does not match the current head.
+#[tokio::test]
+async fn update_content_in_conflict_on_stale_revision() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let (ws, user) = support::seed_workspace(&db, "ci-conflict").await;
+    let ctx = support::ctx(&ws, &user);
+    let repo = make_doc_repo(&db);
+
+    let doc = create_doc(&repo, &ws, &user, "OG Doc", Some("og-doc")).await;
+    let stale_revision = RevisionId::new(); // random UUID — not the current head
+
+    let txn = db.conn().begin().await.expect("begin");
+    let result =
+        doc_update_content_in(&txn, &ctx, doc.id, stale_revision, "new content", 50).await;
+    txn.rollback().await.expect("rollback");
+
+    assert!(
+        matches!(result, Err(DomainError::InvalidInput { .. })),
+        "stale/unknown revision must return DomainError::InvalidInput; got: {result:?}"
+    );
+
+    db.teardown().await;
+}
+
+// B2.6-4: rename_in updates the title and backlink titles within the txn.
+#[tokio::test]
+async fn rename_in_updates_title_in_txn() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let (ws, user) = support::seed_workspace(&db, "ci-rename").await;
+    let ctx = support::ctx(&ws, &user);
+    let repo = make_doc_repo(&db);
+
+    let doc = create_doc(&repo, &ws, &user, "Old Name", Some("old-name")).await;
+
+    let txn = db.conn().begin().await.expect("begin");
+    let renamed = doc_rename_in(&txn, &ctx, doc.id, "New Name".into())
+        .await
+        .expect("rename_in");
+    txn.commit().await.expect("commit");
+
+    assert_eq!(renamed.title, "New Name");
+
+    let fetched = repo
+        .get(&ctx, doc.id)
+        .await
+        .expect("get")
+        .expect("must exist");
+    assert_eq!(fetched.title, "New Name");
+
+    db.teardown().await;
+}
+
+// B2.6-5: move_to_in changes the folder association within the txn.
+#[tokio::test]
+async fn move_to_in_assigns_folder_in_txn() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let (ws, user) = support::seed_workspace(&db, "ci-move").await;
+    let ctx = support::ctx(&ws, &user);
+    let repo = make_doc_repo(&db);
+
+    let folder_repo = PgFolderRepo { conn: db.conn().clone() };
+    let folder = folder_repo
+        .create(
+            &ctx,
+            atlas_domain::entities::workspace_core::NewFolder {
+                name: "Target Folder".into(),
+                project_id: None,
+                parent_folder_id: None,
+            },
+        )
+        .await
+        .expect("create folder");
+
+    let doc = create_doc(&repo, &ws, &user, "Movable Doc", Some("movable-doc")).await;
+    assert!(doc.folder_id.is_none(), "doc must start without a folder");
+
+    let txn = db.conn().begin().await.expect("begin");
+    doc_move_to_in(&txn, &ctx, doc.id, Some(folder.id), None)
+        .await
+        .expect("move_to_in");
+    txn.commit().await.expect("commit");
+
+    let fetched = repo
+        .get(&ctx, doc.id)
+        .await
+        .expect("get")
+        .expect("must exist");
+    assert_eq!(
+        fetched.folder_id,
+        Some(folder.id),
+        "doc folder_id must reflect the moved-to folder"
+    );
+
+    db.teardown().await;
+}
+
+// B2.6-6: soft_delete_in marks deleted_at within the txn; Get returns None afterwards.
+#[tokio::test]
+async fn soft_delete_in_hides_doc_after_commit() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let (ws, user) = support::seed_workspace(&db, "ci-delete").await;
+    let ctx = support::ctx(&ws, &user);
+    let repo = make_doc_repo(&db);
+
+    let doc = create_doc(&repo, &ws, &user, "To Be Deleted", Some("to-be-deleted")).await;
+
+    let txn = db.conn().begin().await.expect("begin");
+    doc_soft_delete_in(&txn, &ctx, doc.id)
+        .await
+        .expect("soft_delete_in");
+    txn.commit().await.expect("commit");
+
+    let result = repo.get(&ctx, doc.id).await.expect("get");
+    assert!(
+        result.is_none(),
+        "soft-deleted document must not be visible via get"
+    );
+
+    db.teardown().await;
+}

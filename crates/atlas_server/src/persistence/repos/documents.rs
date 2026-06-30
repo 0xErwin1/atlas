@@ -42,55 +42,9 @@ impl PgDocumentRepo {
 impl DocumentRepo for PgDocumentRepo {
     async fn create(&self, ctx: &WorkspaceCtx, new: NewDocument) -> Result<Document, DomainError> {
         let txn = self.conn.begin().await.map_err(db_err)?;
-
-        let doc_id = DocumentId::new();
-        let rev_id = RevisionId::new();
-        let (by_user, by_key) = actor_fields(&ctx.actor);
-        let now = Utc::now();
-
-        let frontmatter = new.frontmatter.unwrap_or_else(|| json!({}));
-
-        let doc_model = document::ActiveModel {
-            id: Set(doc_id.0),
-            workspace_id: Set(ctx.workspace_id.0),
-            project_id: Set(new.project_id.map(|id| id.0)),
-            folder_id: Set(new.folder_id.map(|id| id.0)),
-            title: Set(new.title),
-            slug: Set(new.slug),
-            content: Set(new.content.clone()),
-            frontmatter: Set(frontmatter),
-            current_revision_id: Set(None),
-            current_revision_seq: Set(0),
-            created_by_user_id: Set(by_user),
-            created_by_api_key_id: Set(by_key),
-            created_at: Set(now),
-            updated_at: Set(now),
-            deleted_at: Set(None),
-        };
-        let inserted_doc = doc_model.insert(&txn).await.map_err(db_err)?;
-
-        let rev_model = document_revision::ActiveModel {
-            id: Set(rev_id.0),
-            workspace_id: Set(ctx.workspace_id.0),
-            document_id: Set(doc_id.0),
-            seq: Set(1),
-            patch: Set(None),
-            snapshot: Set(Some(new.content.clone())),
-            is_anchor: Set(true),
-            created_by_user_id: Set(by_user),
-            created_by_api_key_id: Set(by_key),
-            created_at: Set(now),
-        };
-        rev_model.insert(&txn).await.map_err(db_err)?;
-
-        let mut doc_active = inserted_doc.into_active_model();
-        doc_active.current_revision_id = Set(Some(rev_id.0));
-        doc_active.current_revision_seq = Set(1);
-        let updated_doc = doc_active.update(&txn).await.map_err(db_err)?;
-
+        let doc = create_in(&txn, ctx, new).await?;
         txn.commit().await.map_err(db_err)?;
-
-        document_from(updated_doc).map_err(internal_err)
+        Ok(doc)
     }
 
     async fn get(
@@ -326,32 +280,9 @@ impl DocumentRepo for PgDocumentRepo {
         new_title: String,
     ) -> Result<Document, DomainError> {
         let txn = self.conn.begin().await.map_err(db_err)?;
-
-        let row = document::Entity::find_by_id(id.0)
-            .filter(document::Column::WorkspaceId.eq(ctx.workspace_id.0))
-            .filter(document::Column::DeletedAt.is_null())
-            .lock_exclusive()
-            .one(&txn)
-            .await
-            .map_err(db_err)?
-            .ok_or(DomainError::NotFound {
-                entity: "document",
-                id: id.0,
-            })?;
-
-        let mut active = row.into_active_model();
-        active.title = Set(new_title.clone());
-        active.updated_at = Set(Utc::now());
-        let updated = active.update(&txn).await.map_err(db_err)?;
-
-        // Sweep document_links: update target_title for any link targeting this doc.
-        update_backlink_titles(&txn, ctx.workspace_id.0, id.0, &new_title)
-            .await
-            .map_err(db_err)?;
-
+        let doc = rename_in(&txn, ctx, id, new_title).await?;
         txn.commit().await.map_err(db_err)?;
-
-        document_from(updated).map_err(internal_err)
+        Ok(doc)
     }
 
     async fn update_content(
@@ -362,90 +293,11 @@ impl DocumentRepo for PgDocumentRepo {
         new_content: &str,
     ) -> Result<Document, DomainError> {
         let txn = self.conn.begin().await.map_err(db_err)?;
-
-        let doc = document::Entity::find_by_id(id.0)
-            .filter(document::Column::WorkspaceId.eq(ctx.workspace_id.0))
-            .filter(document::Column::DeletedAt.is_null())
-            .lock_exclusive()
-            .one(&txn)
-            .await
-            .map_err(db_err)?
-            .ok_or(DomainError::NotFound {
-                entity: "document",
-                id: id.0,
-            })?;
-
-        let current_rev_uuid = doc.current_revision_id.ok_or(DomainError::NotFound {
-            entity: "document.current_revision_id",
-            id: id.0,
-        })?;
-
-        if current_rev_uuid != expected_revision.0 {
-            let base_seq = find_revision_seq(&txn, ctx.workspace_id.0, id.0, expected_revision.0)
-                .await
-                .map_err(db_err)?;
-
-            let Some(base_seq) = base_seq else {
-                txn.rollback().await.map_err(db_err)?;
-                return Err(DomainError::InvalidInput {
-                    message: "base_revision_id is not a revision of this document".to_string(),
-                });
-            };
-
-            let base_content = reconstruct_content_at(&txn, ctx.workspace_id.0, id.0, base_seq)
-                .await
-                .map_err(internal_err)?;
-
-            let patch = create_revision_patch(&base_content, &doc.content);
-
-            txn.rollback().await.map_err(db_err)?;
-
-            return Err(DomainError::Conflict(RevisionConflict {
-                document_id: id,
-                current_revision_id: RevisionId(current_rev_uuid),
-                current_seq: doc.current_revision_seq,
-                base_to_current_patch: patch,
-            }));
-        }
-
-        let patch = create_revision_patch(&doc.content, new_content);
-        let next_seq = doc.current_revision_seq + 1;
-        let is_anchor = is_anchor_seq(next_seq, self.anchor_interval);
-        let rev_id = RevisionId::new();
-        let (by_user, by_key) = actor_fields(&ctx.actor);
-        let now = Utc::now();
-
-        let rev_model = document_revision::ActiveModel {
-            id: Set(rev_id.0),
-            workspace_id: Set(ctx.workspace_id.0),
-            document_id: Set(id.0),
-            seq: Set(next_seq),
-            patch: Set(Some(patch)),
-            snapshot: Set(if is_anchor {
-                Some(new_content.to_string())
-            } else {
-                None
-            }),
-            is_anchor: Set(is_anchor),
-            created_by_user_id: Set(by_user),
-            created_by_api_key_id: Set(by_key),
-            created_at: Set(now),
-        };
-        rev_model.insert(&txn).await.map_err(db_err)?;
-
-        let frontmatter = derive_frontmatter(new_content);
-
-        let mut doc_active = doc.into_active_model();
-        doc_active.content = Set(new_content.to_string());
-        doc_active.frontmatter = Set(frontmatter);
-        doc_active.current_revision_id = Set(Some(rev_id.0));
-        doc_active.current_revision_seq = Set(next_seq);
-        doc_active.updated_at = Set(now);
-        let updated = doc_active.update(&txn).await.map_err(db_err)?;
-
+        let doc =
+            update_content_in(&txn, ctx, id, expected_revision, new_content, self.anchor_interval)
+                .await?;
         txn.commit().await.map_err(db_err)?;
-
-        document_from(updated).map_err(internal_err)
+        Ok(doc)
     }
 
     async fn update_frontmatter(
@@ -480,64 +332,11 @@ impl DocumentRepo for PgDocumentRepo {
         folder: Option<FolderId>,
         project: Option<ProjectId>,
     ) -> Result<(), DomainError> {
-        use crate::persistence::entities::workspace_core::folder;
-
-        let row = document::Entity::find_by_id(id.0)
-            .filter(document::Column::WorkspaceId.eq(ctx.workspace_id.0))
-            .filter(document::Column::DeletedAt.is_null())
-            .one(&self.conn)
-            .await
-            .map_err(db_err)?
-            .ok_or(DomainError::NotFound {
-                entity: "document",
-                id: id.0,
-            })?;
-
-        // When moving into a folder, the destination folder must exist in this
-        // workspace and dictates the document's project so the two cannot desync.
-        // Clearing the folder (None) drops the document to the workspace root.
-        let (target_folder_id, target_project_id) = match folder {
-            Some(folder_id) => {
-                let folder_row = folder::Entity::find_by_id(folder_id.0)
-                    .filter(folder::Column::WorkspaceId.eq(ctx.workspace_id.0))
-                    .filter(folder::Column::DeletedAt.is_null())
-                    .one(&self.conn)
-                    .await
-                    .map_err(db_err)?
-                    .ok_or(DomainError::InvalidInput {
-                        message: "target folder does not exist in this workspace".to_string(),
-                    })?;
-
-                (Some(folder_id.0), folder_row.project_id)
-            }
-            None => (None, project.map(|id| id.0)),
-        };
-
-        let mut active = row.into_active_model();
-        active.folder_id = Set(target_folder_id);
-        active.project_id = Set(target_project_id);
-        active.updated_at = Set(Utc::now());
-        active.update(&self.conn).await.map_err(db_err)?;
-        Ok(())
+        move_to_in(&self.conn, ctx, id, folder, project).await
     }
 
     async fn soft_delete(&self, ctx: &WorkspaceCtx, id: DocumentId) -> Result<(), DomainError> {
-        let row = document::Entity::find_by_id(id.0)
-            .filter(document::Column::WorkspaceId.eq(ctx.workspace_id.0))
-            .filter(document::Column::DeletedAt.is_null())
-            .one(&self.conn)
-            .await
-            .map_err(db_err)?
-            .ok_or(DomainError::NotFound {
-                entity: "document",
-                id: id.0,
-            })?;
-
-        let mut active = row.into_active_model();
-        active.deleted_at = Set(Some(Utc::now()));
-        active.updated_at = Set(Utc::now());
-        active.update(&self.conn).await.map_err(db_err)?;
-        Ok(())
+        soft_delete_in(&self.conn, ctx, id).await
     }
 
     async fn history(
@@ -588,6 +387,268 @@ impl DocumentRepo for PgDocumentRepo {
             .await
             .map_err(internal_err)
     }
+}
+
+// ─── Extracted mutation primitives ───────────────────────────────────────────
+//
+// Each `*_in` function performs exactly one logical mutation on `conn` (which
+// may be a DatabaseTransaction or a DatabaseConnection). The caller is
+// responsible for wrapping in a transaction and committing or rolling back.
+
+/// Inserts a new document and its first revision within the given connection.
+///
+/// Used by both `PgDocumentRepo::create` (which provides its own txn) and
+/// `DocumentService::create` (which also emits an outbox event in the same txn).
+pub async fn create_in(
+    conn: &impl ConnectionTrait,
+    ctx: &WorkspaceCtx,
+    new: NewDocument,
+) -> Result<Document, DomainError> {
+    let doc_id = DocumentId::new();
+    let rev_id = RevisionId::new();
+    let (by_user, by_key) = actor_fields(&ctx.actor);
+    let now = Utc::now();
+
+    let frontmatter = new.frontmatter.unwrap_or_else(|| json!({}));
+
+    let doc_model = document::ActiveModel {
+        id: Set(doc_id.0),
+        workspace_id: Set(ctx.workspace_id.0),
+        project_id: Set(new.project_id.map(|id| id.0)),
+        folder_id: Set(new.folder_id.map(|id| id.0)),
+        title: Set(new.title),
+        slug: Set(new.slug),
+        content: Set(new.content.clone()),
+        frontmatter: Set(frontmatter),
+        current_revision_id: Set(None),
+        current_revision_seq: Set(0),
+        created_by_user_id: Set(by_user),
+        created_by_api_key_id: Set(by_key),
+        created_at: Set(now),
+        updated_at: Set(now),
+        deleted_at: Set(None),
+    };
+    let inserted_doc = doc_model.insert(conn).await.map_err(db_err)?;
+
+    let rev_model = document_revision::ActiveModel {
+        id: Set(rev_id.0),
+        workspace_id: Set(ctx.workspace_id.0),
+        document_id: Set(doc_id.0),
+        seq: Set(1),
+        patch: Set(None),
+        snapshot: Set(Some(new.content.clone())),
+        is_anchor: Set(true),
+        created_by_user_id: Set(by_user),
+        created_by_api_key_id: Set(by_key),
+        created_at: Set(now),
+    };
+    rev_model.insert(conn).await.map_err(db_err)?;
+
+    let mut doc_active = inserted_doc.into_active_model();
+    doc_active.current_revision_id = Set(Some(rev_id.0));
+    doc_active.current_revision_seq = Set(1);
+    let updated_doc = doc_active.update(conn).await.map_err(db_err)?;
+
+    document_from(updated_doc).map_err(internal_err)
+}
+
+/// Updates a document's title and sweeps backlink titles within `conn`.
+///
+/// Used by both `PgDocumentRepo::rename` and `DocumentService::rename`.
+pub async fn rename_in(
+    conn: &impl ConnectionTrait,
+    ctx: &WorkspaceCtx,
+    id: DocumentId,
+    new_title: String,
+) -> Result<Document, DomainError> {
+    let row = document::Entity::find_by_id(id.0)
+        .filter(document::Column::WorkspaceId.eq(ctx.workspace_id.0))
+        .filter(document::Column::DeletedAt.is_null())
+        .lock_exclusive()
+        .one(conn)
+        .await
+        .map_err(db_err)?
+        .ok_or(DomainError::NotFound {
+            entity: "document",
+            id: id.0,
+        })?;
+
+    let mut active = row.into_active_model();
+    active.title = Set(new_title.clone());
+    active.updated_at = Set(Utc::now());
+    let updated = active.update(conn).await.map_err(db_err)?;
+
+    update_backlink_titles(conn, ctx.workspace_id.0, id.0, &new_title)
+        .await
+        .map_err(db_err)?;
+
+    document_from(updated).map_err(internal_err)
+}
+
+/// Appends a content revision for a document within `conn`.
+///
+/// Returns `DomainError::Conflict` when `expected_revision` is not the current
+/// head (CAS semantics). The caller is responsible for rolling back on error.
+pub async fn update_content_in(
+    conn: &impl ConnectionTrait,
+    ctx: &WorkspaceCtx,
+    id: DocumentId,
+    expected_revision: RevisionId,
+    new_content: &str,
+    anchor_interval: u32,
+) -> Result<Document, DomainError> {
+    let doc = document::Entity::find_by_id(id.0)
+        .filter(document::Column::WorkspaceId.eq(ctx.workspace_id.0))
+        .filter(document::Column::DeletedAt.is_null())
+        .lock_exclusive()
+        .one(conn)
+        .await
+        .map_err(db_err)?
+        .ok_or(DomainError::NotFound {
+            entity: "document",
+            id: id.0,
+        })?;
+
+    let current_rev_uuid = doc.current_revision_id.ok_or(DomainError::NotFound {
+        entity: "document.current_revision_id",
+        id: id.0,
+    })?;
+
+    if current_rev_uuid != expected_revision.0 {
+        let base_seq =
+            find_revision_seq(conn, ctx.workspace_id.0, id.0, expected_revision.0)
+                .await
+                .map_err(db_err)?;
+
+        let Some(base_seq) = base_seq else {
+            return Err(DomainError::InvalidInput {
+                message: "base_revision_id is not a revision of this document".to_string(),
+            });
+        };
+
+        let base_content = reconstruct_content_at(conn, ctx.workspace_id.0, id.0, base_seq)
+            .await
+            .map_err(internal_err)?;
+
+        let patch = create_revision_patch(&base_content, &doc.content);
+
+        return Err(DomainError::Conflict(RevisionConflict {
+            document_id: id,
+            current_revision_id: RevisionId(current_rev_uuid),
+            current_seq: doc.current_revision_seq,
+            base_to_current_patch: patch,
+        }));
+    }
+
+    let patch = create_revision_patch(&doc.content, new_content);
+    let next_seq = doc.current_revision_seq + 1;
+    let is_anchor = is_anchor_seq(next_seq, anchor_interval);
+    let rev_id = RevisionId::new();
+    let (by_user, by_key) = actor_fields(&ctx.actor);
+    let now = Utc::now();
+
+    let rev_model = document_revision::ActiveModel {
+        id: Set(rev_id.0),
+        workspace_id: Set(ctx.workspace_id.0),
+        document_id: Set(id.0),
+        seq: Set(next_seq),
+        patch: Set(Some(patch)),
+        snapshot: Set(if is_anchor {
+            Some(new_content.to_string())
+        } else {
+            None
+        }),
+        is_anchor: Set(is_anchor),
+        created_by_user_id: Set(by_user),
+        created_by_api_key_id: Set(by_key),
+        created_at: Set(now),
+    };
+    rev_model.insert(conn).await.map_err(db_err)?;
+
+    let frontmatter = derive_frontmatter(new_content);
+
+    let mut doc_active = doc.into_active_model();
+    doc_active.content = Set(new_content.to_string());
+    doc_active.frontmatter = Set(frontmatter);
+    doc_active.current_revision_id = Set(Some(rev_id.0));
+    doc_active.current_revision_seq = Set(next_seq);
+    doc_active.updated_at = Set(now);
+    let updated = doc_active.update(conn).await.map_err(db_err)?;
+
+    document_from(updated).map_err(internal_err)
+}
+
+/// Moves a document to a different folder and/or project within `conn`.
+///
+/// When `folder` is `Some`, the target folder dictates the project so the two
+/// fields cannot desync. When `folder` is `None`, `project` is used directly.
+pub async fn move_to_in(
+    conn: &impl ConnectionTrait,
+    ctx: &WorkspaceCtx,
+    id: DocumentId,
+    folder: Option<FolderId>,
+    project: Option<ProjectId>,
+) -> Result<(), DomainError> {
+    use crate::persistence::entities::workspace_core::folder as folder_entity;
+
+    let row = document::Entity::find_by_id(id.0)
+        .filter(document::Column::WorkspaceId.eq(ctx.workspace_id.0))
+        .filter(document::Column::DeletedAt.is_null())
+        .one(conn)
+        .await
+        .map_err(db_err)?
+        .ok_or(DomainError::NotFound {
+            entity: "document",
+            id: id.0,
+        })?;
+
+    let (target_folder_id, target_project_id) = match folder {
+        Some(folder_id) => {
+            let folder_row = folder_entity::Entity::find_by_id(folder_id.0)
+                .filter(folder_entity::Column::WorkspaceId.eq(ctx.workspace_id.0))
+                .filter(folder_entity::Column::DeletedAt.is_null())
+                .one(conn)
+                .await
+                .map_err(db_err)?
+                .ok_or(DomainError::InvalidInput {
+                    message: "target folder does not exist in this workspace".to_string(),
+                })?;
+
+            (Some(folder_id.0), folder_row.project_id)
+        }
+        None => (None, project.map(|id| id.0)),
+    };
+
+    let mut active = row.into_active_model();
+    active.folder_id = Set(target_folder_id);
+    active.project_id = Set(target_project_id);
+    active.updated_at = Set(Utc::now());
+    active.update(conn).await.map_err(db_err)?;
+    Ok(())
+}
+
+/// Soft-deletes a document by setting `deleted_at` within `conn`.
+pub async fn soft_delete_in(
+    conn: &impl ConnectionTrait,
+    ctx: &WorkspaceCtx,
+    id: DocumentId,
+) -> Result<(), DomainError> {
+    let row = document::Entity::find_by_id(id.0)
+        .filter(document::Column::WorkspaceId.eq(ctx.workspace_id.0))
+        .filter(document::Column::DeletedAt.is_null())
+        .one(conn)
+        .await
+        .map_err(db_err)?
+        .ok_or(DomainError::NotFound {
+            entity: "document",
+            id: id.0,
+        })?;
+
+    let mut active = row.into_active_model();
+    active.deleted_at = Set(Some(Utc::now()));
+    active.updated_at = Set(Utc::now());
+    active.update(conn).await.map_err(db_err)?;
+    Ok(())
 }
 
 async fn find_revision_seq(

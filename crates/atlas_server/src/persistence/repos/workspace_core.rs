@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use atlas_domain::{
     Actor, DomainError, WorkspaceCtx,
+    entities::events::{DomainEvent, FolderCreatedPayload, FolderDeletedPayload},
     entities::workspace_core::{
         Folder, NewFolder, NewProject, NewPropertyDefinition, Project, PropertyDefinition,
         UpdateProject,
@@ -11,13 +12,14 @@ use atlas_domain::{
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait,
-    IntoActiveModel, QueryFilter, QueryOrder, QuerySelect,
+    IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
 };
 
 use crate::persistence::entities::workspace_core::{
     folder, folder_from, project, project_from, property_definition, property_definition_from,
     visibility_from_cols,
 };
+use crate::persistence::repos::PgOutboxRepo;
 
 pub use atlas_domain::ports::workspace_core::{FolderRepo, ProjectRepo, PropertyDefinitionRepo};
 
@@ -433,8 +435,12 @@ pub struct PgFolderRepo {
 #[async_trait]
 impl FolderRepo for PgFolderRepo {
     async fn create(&self, ctx: &WorkspaceCtx, new: NewFolder) -> Result<Folder, DomainError> {
+        let txn = self.conn.begin().await.map_err(db_err)?;
+
         let created_by_user_id = user_id_from_actor(&ctx.actor);
         let created_by_api_key_id = api_key_id_from_actor(&ctx.actor);
+        let folder_project_id = new.project_id;
+        let folder_name = new.name.clone();
         let model = folder::ActiveModel {
             id: Set(FolderId::new().0),
             workspace_id: Set(ctx.workspace_id.0),
@@ -447,11 +453,26 @@ impl FolderRepo for PgFolderRepo {
             updated_at: Set(Utc::now()),
             deleted_at: Set(None),
         };
-        model
-            .insert(&self.conn)
-            .await
-            .map(folder_from)
-            .map_err(db_err)
+        let inserted = model.insert(&txn).await.map_err(db_err)?;
+        let folder = folder_from(inserted);
+
+        if let Some(pid) = folder_project_id {
+            PgOutboxRepo::insert_in(
+                &txn,
+                ctx,
+                Some(pid),
+                None,
+                DomainEvent::FolderCreated(FolderCreatedPayload {
+                    folder_id: folder.id,
+                    project_id: pid,
+                    name: folder_name,
+                }),
+            )
+            .await?;
+        }
+
+        txn.commit().await.map_err(db_err)?;
+        Ok(folder)
     }
 
     async fn find(&self, ctx: &WorkspaceCtx, id: FolderId) -> Result<Option<Folder>, DomainError> {
@@ -567,10 +588,12 @@ impl FolderRepo for PgFolderRepo {
     }
 
     async fn soft_delete(&self, ctx: &WorkspaceCtx, id: FolderId) -> Result<(), DomainError> {
+        let txn = self.conn.begin().await.map_err(db_err)?;
+
         let row = folder::Entity::find_by_id(id.0)
             .filter(folder::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(folder::Column::DeletedAt.is_null())
-            .one(&self.conn)
+            .one(&txn)
             .await
             .map_err(db_err)?
             .ok_or(DomainError::NotFound {
@@ -578,10 +601,28 @@ impl FolderRepo for PgFolderRepo {
                 id: id.0,
             })?;
 
+        let folder_project_id = row.project_id.map(ProjectId);
+
         let mut active = row.into_active_model();
         active.deleted_at = Set(Some(Utc::now()));
         active.updated_at = Set(Utc::now());
-        active.update(&self.conn).await.map_err(db_err)?;
+        active.update(&txn).await.map_err(db_err)?;
+
+        if let Some(pid) = folder_project_id {
+            PgOutboxRepo::insert_in(
+                &txn,
+                ctx,
+                Some(pid),
+                None,
+                DomainEvent::FolderDeleted(FolderDeletedPayload {
+                    folder_id: id,
+                    project_id: pid,
+                }),
+            )
+            .await?;
+        }
+
+        txn.commit().await.map_err(db_err)?;
         Ok(())
     }
 }

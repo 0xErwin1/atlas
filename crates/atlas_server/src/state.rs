@@ -4,7 +4,7 @@ use std::sync::Arc;
 use atlas_domain::AttachmentStore;
 
 use crate::persistence::repos::{DiskAttachmentStore, S3AttachmentStore, S3Config};
-use crate::services::TaskService;
+use crate::services::{DocumentService, TaskService};
 
 const DEFAULT_MAX_ATTACHMENT_BYTES: u64 = 20 * 1024 * 1024; // 20 MiB
 
@@ -85,6 +85,11 @@ impl AppState {
     /// Builds a `TaskService` bound to this state's database connection.
     pub fn task_service(&self) -> TaskService {
         TaskService::new((*self.db).clone())
+    }
+
+    /// Builds a `DocumentService` bound to this state's database connection.
+    pub fn document_service(&self) -> DocumentService {
+        DocumentService::new((*self.db).clone(), self.anchor_interval)
     }
 }
 
