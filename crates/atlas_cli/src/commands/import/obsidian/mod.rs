@@ -116,9 +116,9 @@ pub(crate) fn read_yes(mut reader: impl BufRead) -> bool {
 /// Executes the import plan against the Atlas API.
 ///
 /// Phase order: folders (depth-first) → documents (create/update/skip) →
-/// boards and tasks (stub, B3) → attachments (stub, B4). The manifest is
-/// saved inside each phase after every successful operation so a crash at
-/// any point leaves a valid, resumable state.
+/// boards and tasks (B3) → attachments (stub, B4). The manifest is saved
+/// inside each phase after every successful operation so a crash at any point
+/// leaves a valid, resumable state.
 async fn execute(
     ctx: &Ctx,
     plan: &plan::ImportPlan,
@@ -148,7 +148,17 @@ async fn execute(
     )
     .await?;
 
-    create::execute_boards_and_tasks().await?;
+    create::execute_boards_and_tasks(
+        &ctx.client,
+        ws,
+        project,
+        plan,
+        manifest,
+        manifest_path,
+        ctx.output,
+    )
+    .await?;
+
     create::execute_attachments().await?;
 
     Ok(())

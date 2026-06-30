@@ -12,6 +12,9 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use atlas_api::dtos::{
+    boards_tasks::{
+        CreateBoardRequest, CreateColumnRequest, CreateReferenceRequest, CreateTaskRequest,
+    },
     documents::{ConflictProblemDto, CreateDocumentRequest, DocumentDto, UpdateContentRequest},
     folders::CreateFolderRequest,
 };
@@ -22,7 +25,7 @@ use crate::error::CliError;
 use crate::output::OutputFormat;
 
 use super::manifest::{Manifest, ManifestDocEntry, content_hash};
-use super::plan::{DocumentOp, FolderOp};
+use super::plan::{DocumentOp, FolderOp, ImportPlan, LinkOp};
 
 type FolderKey = (String, Option<Uuid>);
 
@@ -286,14 +289,198 @@ pub(crate) async fn execute_documents(
     Ok(())
 }
 
-/// Stub for B3: creates boards and tasks from epic/task mapping ops.
-pub(crate) async fn execute_boards_and_tasks() -> Result<(), CliError> {
+/// Creates the "Roadmap" board (idempotent via manifest), ensures its three
+/// standard columns exist, creates a task per epic, and attaches a `docs`
+/// reference from each task back to its source document.
+///
+/// Phase order: boards → tasks → links. The manifest is saved after every
+/// successful mutation so a partial run is resumable.
+pub(crate) async fn execute_boards_and_tasks(
+    client: &AtlasClient,
+    ws: &str,
+    project: &str,
+    plan: &ImportPlan,
+    manifest: &mut Manifest,
+    manifest_path: &Path,
+    output: OutputFormat,
+) -> Result<(), CliError> {
+    use atlas_client::ClientError;
+
+    // Phase 1: Create boards; resolve and ensure required columns exist.
+    // board_key → (board_uuid, column_name → column_uuid)
+    let mut board_info: HashMap<String, (Uuid, HashMap<String, Uuid>)> = HashMap::new();
+
+    for op in &plan.boards {
+        let board_key = op.epic_rel.to_string_lossy().into_owned();
+
+        let board_id = match manifest.boards.get(&board_key) {
+            Some(id_str) => id_str.parse::<Uuid>().map_err(|e| {
+                CliError::Validation(format!(
+                    "invalid board UUID in manifest for '{board_key}': {e}"
+                ))
+            })?,
+            None => {
+                let dto = client
+                    .create_board(
+                        ws,
+                        project,
+                        CreateBoardRequest {
+                            name: op.name.clone(),
+                        },
+                    )
+                    .await?;
+                let id = dto.id;
+                manifest.boards.insert(board_key.clone(), id.to_string());
+                manifest.save(manifest_path)?;
+                emit_progress(output, "[BOARD_CREATE]", &op.name);
+                id
+            }
+        };
+
+        let column_map = ensure_board_columns(client, ws, board_id, &op.columns).await?;
+        board_info.insert(board_key, (board_id, column_map));
+    }
+
+    // Phase 2: Create one task per epic, idempotent via manifest.tasks[rel_path].
+    for op in &plan.tasks {
+        let rel_key = op.rel_path.to_string_lossy().into_owned();
+
+        if manifest.tasks.contains_key(&rel_key) {
+            emit_progress(output, "[TASK_SKIP]", &op.title);
+            continue;
+        }
+
+        let board_key = op.board_epic_rel.to_string_lossy().into_owned();
+        let (board_id, column_map) = board_info.get(&board_key).ok_or_else(|| {
+            CliError::Validation(format!(
+                "board '{board_key}' not found; board must be created before tasks"
+            ))
+        })?;
+
+        let column_id = *column_map.get(&op.column).ok_or_else(|| {
+            CliError::Validation(format!(
+                "column '{}' not found on board '{board_key}'",
+                op.column
+            ))
+        })?;
+
+        let description = if op.description.is_empty() {
+            None
+        } else {
+            Some(op.description.clone())
+        };
+
+        let dto = client
+            .create_task(
+                ws,
+                *board_id,
+                CreateTaskRequest {
+                    column_id,
+                    title: op.title.clone(),
+                    description,
+                    properties: None,
+                    before: None,
+                    after: None,
+                },
+            )
+            .await?;
+
+        manifest.tasks.insert(rel_key, dto.readable_id.clone());
+        manifest.save(manifest_path)?;
+        emit_progress(output, "[TASK_CREATE]", &dto.readable_id);
+    }
+
+    // Phase 3: Link each task back to its source document via a "docs" reference.
+    // Skip LinkOp::Parent — not handled in B3.
+    for op in &plan.links {
+        let (task_rel, source_doc_rel) = match op {
+            LinkOp::Docs {
+                task_rel,
+                source_doc_rel,
+            } => (task_rel, source_doc_rel),
+            LinkOp::Parent { .. } => continue,
+        };
+
+        let task_key = task_rel.to_string_lossy().into_owned();
+        let doc_key = source_doc_rel.to_string_lossy().into_owned();
+
+        let readable_id = manifest.tasks.get(&task_key).ok_or_else(|| {
+            CliError::Validation(format!(
+                "task for '{task_key}' not in manifest; create tasks before linking"
+            ))
+        })?;
+
+        let doc_entry = manifest.documents.get(&doc_key).ok_or_else(|| {
+            CliError::Validation(format!(
+                "document '{doc_key}' not in manifest; import documents before linking"
+            ))
+        })?;
+
+        let doc_id = doc_entry.id.parse::<Uuid>().map_err(|e| {
+            CliError::Validation(format!(
+                "invalid document UUID in manifest for '{doc_key}': {e}"
+            ))
+        })?;
+
+        match client
+            .create_reference(
+                ws,
+                readable_id,
+                CreateReferenceRequest {
+                    kind: "docs".to_string(),
+                    target_task_readable_id: None,
+                    target_document_id: Some(doc_id),
+                },
+            )
+            .await
+        {
+            Ok(_) => emit_progress(output, "[LINK]", readable_id),
+            // A 409 means the reference already exists from a previous run — skip.
+            Err(ClientError::Api(ref p)) if p.status == 409 => {}
+            Err(e) => return Err(CliError::from(e)),
+        }
+    }
+
     Ok(())
 }
 
 /// Stub for B4: uploads binary attachments for their owning documents.
 pub(crate) async fn execute_attachments() -> Result<(), CliError> {
     Ok(())
+}
+
+/// Ensures all `desired` columns exist on `board_id`, creating any that are
+/// missing. Returns a name → id map covering at least the desired set.
+async fn ensure_board_columns(
+    client: &AtlasClient,
+    ws: &str,
+    board_id: Uuid,
+    desired: &[String],
+) -> Result<HashMap<String, Uuid>, CliError> {
+    let existing = client.list_columns(ws, board_id).await?;
+
+    let mut column_map: HashMap<String, Uuid> =
+        existing.into_iter().map(|c| (c.name, c.id)).collect();
+
+    for name in desired {
+        if !column_map.contains_key(name) {
+            let col = client
+                .create_column(
+                    ws,
+                    board_id,
+                    CreateColumnRequest {
+                        name: name.clone(),
+                        color: None,
+                        before: None,
+                        after: None,
+                    },
+                )
+                .await?;
+            column_map.insert(col.name, col.id);
+        }
+    }
+
+    Ok(column_map)
 }
 
 /// Applies a CAS content update, retrying on revision conflicts.
