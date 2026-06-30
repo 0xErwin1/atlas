@@ -456,20 +456,18 @@ impl FolderRepo for PgFolderRepo {
         let inserted = model.insert(&txn).await.map_err(db_err)?;
         let folder = folder_from(inserted);
 
-        if let Some(pid) = folder_project_id {
-            PgOutboxRepo::insert_in(
-                &txn,
-                ctx,
-                Some(pid),
-                None,
-                DomainEvent::FolderCreated(FolderCreatedPayload {
-                    folder_id: folder.id,
-                    project_id: pid,
-                    name: folder_name,
-                }),
-            )
-            .await?;
-        }
+        PgOutboxRepo::insert_in(
+            &txn,
+            ctx,
+            folder_project_id,
+            None,
+            DomainEvent::FolderCreated(FolderCreatedPayload {
+                folder_id: folder.id,
+                project_id: folder_project_id,
+                name: folder_name,
+            }),
+        )
+        .await?;
 
         txn.commit().await.map_err(db_err)?;
         Ok(folder)
@@ -608,19 +606,17 @@ impl FolderRepo for PgFolderRepo {
         active.updated_at = Set(Utc::now());
         active.update(&txn).await.map_err(db_err)?;
 
-        if let Some(pid) = folder_project_id {
-            PgOutboxRepo::insert_in(
-                &txn,
-                ctx,
-                Some(pid),
-                None,
-                DomainEvent::FolderDeleted(FolderDeletedPayload {
-                    folder_id: id,
-                    project_id: pid,
-                }),
-            )
-            .await?;
-        }
+        PgOutboxRepo::insert_in(
+            &txn,
+            ctx,
+            folder_project_id,
+            None,
+            DomainEvent::FolderDeleted(FolderDeletedPayload {
+                folder_id: id,
+                project_id: folder_project_id,
+            }),
+        )
+        .await?;
 
         txn.commit().await.map_err(db_err)?;
         Ok(())

@@ -196,7 +196,7 @@ pub struct ColumnDeletedPayload {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FolderCreatedPayload {
     pub folder_id: FolderId,
-    pub project_id: ProjectId,
+    pub project_id: Option<ProjectId>,
     pub name: String,
 }
 
@@ -204,7 +204,7 @@ pub struct FolderCreatedPayload {
 #[serde(deny_unknown_fields)]
 pub struct FolderDeletedPayload {
     pub folder_id: FolderId,
-    pub project_id: ProjectId,
+    pub project_id: Option<ProjectId>,
 }
 
 // ─── DomainEvent enum ────────────────────────────────────────────────────────
@@ -540,7 +540,7 @@ mod tests {
     fn test_folder_created_roundtrip() {
         roundtrip(&DomainEvent::FolderCreated(FolderCreatedPayload {
             folder_id: FolderId(nil_uuid()),
-            project_id: ProjectId(nil_uuid()),
+            project_id: Some(ProjectId(nil_uuid())),
             name: "Engineering".to_string(),
         }));
     }
@@ -549,7 +549,7 @@ mod tests {
     fn test_folder_deleted_roundtrip() {
         roundtrip(&DomainEvent::FolderDeleted(FolderDeletedPayload {
             folder_id: FolderId(nil_uuid()),
-            project_id: ProjectId(nil_uuid()),
+            project_id: Some(ProjectId(nil_uuid())),
         }));
     }
 
@@ -808,7 +808,7 @@ mod tests {
     fn test_folder_created_json_shape() {
         let payload = FolderCreatedPayload {
             folder_id: FolderId(nil_uuid()),
-            project_id: ProjectId(nil_uuid()),
+            project_id: Some(ProjectId(nil_uuid())),
             name: "Docs".to_string(),
         };
         let json: serde_json::Value = serde_json::to_value(&payload).unwrap();
@@ -819,10 +819,22 @@ mod tests {
     }
 
     #[test]
+    fn test_folder_created_json_shape_workspace_root() {
+        let payload = FolderCreatedPayload {
+            folder_id: FolderId(nil_uuid()),
+            project_id: None,
+            name: "Docs".to_string(),
+        };
+        let json: serde_json::Value = serde_json::to_value(&payload).unwrap();
+
+        assert!(json["project_id"].is_null());
+    }
+
+    #[test]
     fn test_folder_deleted_json_shape() {
         let payload = FolderDeletedPayload {
             folder_id: FolderId(nil_uuid()),
-            project_id: ProjectId(nil_uuid()),
+            project_id: Some(ProjectId(nil_uuid())),
         };
         let json: serde_json::Value = serde_json::to_value(&payload).unwrap();
 
