@@ -412,8 +412,14 @@ pub(crate) async fn copy_folder(
         .await
         .map_err(ApiError::Domain)?;
 
-    copy_folder_subtree(&state, &ctx, &folder_repo, &doc_repo, &doc_svc, &source, &new_top, 0)
-        .await?;
+    let copy_deps = CopyDeps {
+        state: &state,
+        ctx: &ctx,
+        folder_repo: &folder_repo,
+        doc_repo: &doc_repo,
+        doc_svc: &doc_svc,
+    };
+    copy_folder_subtree(&copy_deps, &source, &new_top, 0).await?;
 
     Ok((StatusCode::CREATED, Json(folder_to_dto(new_top))))
 }
@@ -425,12 +431,17 @@ pub(crate) async fn copy_folder(
 /// (only the top-level copy carries the " (copy)" suffix, applied by the caller).
 /// Every created entity gets a fresh id and, for documents, a fresh slug and
 /// first revision. Bounded by `MAX_COPY_DEPTH` to guard against cyclic trees.
+/// Borrowed handles threaded through the recursive folder copy.
+struct CopyDeps<'a> {
+    state: &'a AppState,
+    ctx: &'a WorkspaceCtx,
+    folder_repo: &'a PgFolderRepo,
+    doc_repo: &'a PgDocumentRepo,
+    doc_svc: &'a DocumentService,
+}
+
 async fn copy_folder_subtree(
-    state: &AppState,
-    ctx: &WorkspaceCtx,
-    folder_repo: &PgFolderRepo,
-    doc_repo: &PgDocumentRepo,
-    doc_svc: &DocumentService,
+    deps: &CopyDeps<'_>,
     source: &Folder,
     dest: &Folder,
     depth: usize,
@@ -441,24 +452,28 @@ async fn copy_folder_subtree(
         });
     }
 
-    let documents = doc_repo
-        .list_in_folder(ctx, source.id)
+    let documents = deps
+        .doc_repo
+        .list_in_folder(deps.ctx, source.id)
         .await
         .map_err(ApiError::Domain)?;
 
     for doc in &documents {
-        copy_document_into(state, ctx, doc_svc, doc, Some(dest.id), dest.project_id).await?;
+        copy_document_into(deps.state, deps.ctx, deps.doc_svc, doc, Some(dest.id), dest.project_id)
+            .await?;
     }
 
-    let children = folder_repo
-        .list_children(ctx, Some(source.id))
+    let children = deps
+        .folder_repo
+        .list_children(deps.ctx, Some(source.id))
         .await
         .map_err(ApiError::Domain)?;
 
     for child in &children {
-        let new_child = folder_repo
+        let new_child = deps
+            .folder_repo
             .create(
-                ctx,
+                deps.ctx,
                 NewFolder {
                     project_id: child.project_id,
                     parent_folder_id: Some(dest.id),
@@ -468,17 +483,7 @@ async fn copy_folder_subtree(
             .await
             .map_err(ApiError::Domain)?;
 
-        Box::pin(copy_folder_subtree(
-            state,
-            ctx,
-            folder_repo,
-            doc_repo,
-            doc_svc,
-            child,
-            &new_child,
-            depth + 1,
-        ))
-        .await?;
+        Box::pin(copy_folder_subtree(deps, child, &new_child, depth + 1)).await?;
     }
 
     Ok(())
