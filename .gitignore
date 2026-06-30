@@ -20,3 +20,4 @@ vite.config.d.ts
 .agent/
 # Local attachment store (ATLAS_ATTACHMENT_ROOT default)
 /data/
+.logs
