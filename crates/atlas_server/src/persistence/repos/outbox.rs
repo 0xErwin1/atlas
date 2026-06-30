@@ -217,6 +217,76 @@ impl PgOutboxRepo {
             .await
             .map_err(db_err)
     }
+
+    /// Inserts an externally-sourced event into `events_outbox`, keyed on
+    /// `delivery_id` for idempotent dedup.
+    ///
+    /// The stored `payload` mirrors the `EventEnvelope` JSON shape so the
+    /// existing `WebhookDispatcher` fans it out to subscribers without
+    /// modification. `source` is e.g. `"external/github"` and `event_type`
+    /// is e.g. `"external.github.workflow_run"`.
+    ///
+    /// Returns `Ok(true)` when a new row was inserted and `Ok(false)` when
+    /// `delivery_id` was already present (`ON CONFLICT (id) DO NOTHING`).
+    /// The caller is responsible for committing or rolling back any enclosing
+    /// transaction.
+    pub async fn insert_external_in(
+        conn: &impl ConnectionTrait,
+        delivery_id: Uuid,
+        workspace_id: Uuid,
+        source: &str,
+        event_type: &str,
+        actor_api_key_id: Uuid,
+        data: serde_json::Value,
+    ) -> Result<bool, DomainError> {
+        let occurred_at = Utc::now();
+
+        let payload = serde_json::json!({
+            "id": delivery_id,
+            "event_type": event_type,
+            "version": 1,
+            "source": source,
+            "workspace_id": workspace_id,
+            "project_id": null,
+            "board_id": null,
+            "occurred_at": occurred_at,
+            "actor": {
+                "type": "api_key",
+                "id": actor_api_key_id
+            },
+            "data": data
+        });
+
+        let stmt = Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+            INSERT INTO events_outbox (
+                id, workspace_id, event_type, event_version, source,
+                project_id, board_id, aggregate_type, aggregate_id,
+                payload, occurred_at, status, attempt_count, next_attempt_at,
+                locked_until, last_error, created_at, updated_at
+            )
+            VALUES (
+                $1, $2, $3, 1, $4,
+                NULL, NULL, 'external', $1,
+                $5, $6, 'pending', 0, $6,
+                NULL, NULL, $6, $6
+            )
+            ON CONFLICT (id) DO NOTHING
+            "#,
+            [
+                delivery_id.into(),
+                workspace_id.into(),
+                event_type.into(),
+                source.into(),
+                payload.into(),
+                occurred_at.into(),
+            ],
+        );
+
+        let result = conn.execute_raw(stmt).await.map_err(db_err)?;
+        Ok(result.rows_affected() == 1)
+    }
 }
 
 fn db_err(e: sea_orm::DbErr) -> DomainError {

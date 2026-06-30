@@ -17,6 +17,7 @@ use atlas_server::persistence::{
     repos::PgOutboxRepo,
 };
 use sea_orm::{EntityTrait, TransactionTrait};
+use uuid::Uuid;
 
 fn make_ctx(ws_id: WorkspaceId, user: &atlas_server::persistence::repos::User) -> WorkspaceCtx {
     WorkspaceCtx::new(ws_id, Actor::User(user.id))
@@ -219,6 +220,107 @@ async fn finalize_with_zero_subs_marks_delivered() {
         rows[0].status, "delivered",
         "zero subs_remaining must mark the row 'delivered'"
     );
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
+// insert_external_in — first insert returns true; row has correct shape
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn insert_external_in_returns_true_and_row_exists() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let (ws, _user) = support::seed_workspace(&db, "ob-ext-first").await;
+
+    let delivery_id = Uuid::new_v4();
+    let actor_key_id = Uuid::new_v4();
+
+    let txn = db.conn().begin().await.expect("begin");
+    let inserted = PgOutboxRepo::insert_external_in(
+        &txn,
+        delivery_id,
+        ws.id.0,
+        "external/github",
+        "external.github.workflow_run",
+        actor_key_id,
+        serde_json::json!({"action": "completed", "conclusion": "failure"}),
+    )
+    .await
+    .expect("insert_external_in");
+    txn.commit().await.expect("commit");
+
+    assert!(inserted, "first insert must return true");
+
+    let rows = event_outbox::Entity::find()
+        .all(db.conn())
+        .await
+        .expect("find all");
+
+    assert_eq!(rows.len(), 1, "exactly one outbox row must exist");
+    assert_eq!(rows[0].id, delivery_id, "row id must equal delivery_id");
+    assert_eq!(rows[0].source, "external/github");
+    assert_eq!(rows[0].event_type, "external.github.workflow_run");
+    assert_eq!(rows[0].aggregate_type, "external");
+    assert_eq!(rows[0].aggregate_id, delivery_id, "aggregate_id must equal delivery_id");
+    assert_eq!(rows[0].status, "pending");
+    assert_eq!(rows[0].event_version, 1);
+    assert!(rows[0].project_id.is_none());
+    assert!(rows[0].board_id.is_none());
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
+// insert_external_in — duplicate delivery_id returns false; no second row
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn insert_external_in_duplicate_delivery_id_returns_false() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let (ws, _user) = support::seed_workspace(&db, "ob-ext-dup").await;
+
+    let delivery_id = Uuid::new_v4();
+    let actor_key_id = Uuid::new_v4();
+
+    let txn = db.conn().begin().await.expect("begin");
+    let first = PgOutboxRepo::insert_external_in(
+        &txn,
+        delivery_id,
+        ws.id.0,
+        "external/github",
+        "external.github.workflow_run",
+        actor_key_id,
+        serde_json::json!({}),
+    )
+    .await
+    .expect("first insert");
+    txn.commit().await.expect("commit");
+
+    assert!(first, "first insert must return true");
+
+    let txn2 = db.conn().begin().await.expect("begin2");
+    let second = PgOutboxRepo::insert_external_in(
+        &txn2,
+        delivery_id,
+        ws.id.0,
+        "external/github",
+        "external.github.workflow_run",
+        actor_key_id,
+        serde_json::json!({}),
+    )
+    .await
+    .expect("second insert");
+    txn2.commit().await.expect("commit2");
+
+    assert!(!second, "duplicate delivery_id must return false");
+
+    let rows = event_outbox::Entity::find()
+        .all(db.conn())
+        .await
+        .expect("find all");
+
+    assert_eq!(rows.len(), 1, "must not insert a second row on duplicate delivery_id");
 
     db.teardown().await;
 }
