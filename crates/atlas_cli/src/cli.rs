@@ -10,6 +10,7 @@ use crate::commands::columns::ColumnsArgs;
 use crate::commands::completions::CompletionsArgs;
 use crate::commands::config::ConfigArgs;
 use crate::commands::docs::DocsArgs;
+use crate::commands::export::ExportArgs;
 use crate::commands::folders::FoldersArgs;
 use crate::commands::grants::GrantsArgs;
 use crate::commands::groups::GroupsArgs;
@@ -99,6 +100,8 @@ pub(crate) enum Commands {
     Config(ConfigArgs),
     /// Import content from an external source (e.g. an Obsidian vault).
     Import(ImportArgs),
+    /// Export an Atlas project to an external format (e.g. an Obsidian vault).
+    Export(ExportArgs),
 }
 
 /// Arguments for the `search` subcommand.

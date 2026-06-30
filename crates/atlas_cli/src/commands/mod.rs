@@ -7,6 +7,7 @@ pub(crate) mod columns;
 pub(crate) mod completions;
 pub(crate) mod config;
 pub(crate) mod docs;
+pub(crate) mod export;
 pub(crate) mod folders;
 pub(crate) mod grants;
 pub(crate) mod groups;
@@ -57,5 +58,6 @@ pub(crate) async fn dispatch(ctx: &Ctx, cmd: Commands) -> Result<(), CliError> {
         Commands::Completions(args) => completions::run(ctx, args).await,
         Commands::Config(args) => config::run(ctx, args.command).await,
         Commands::Import(args) => import::run(ctx, args.command).await,
+        Commands::Export(args) => export::run(ctx, args.command).await,
     }
 }
