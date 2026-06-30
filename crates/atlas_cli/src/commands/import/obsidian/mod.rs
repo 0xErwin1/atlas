@@ -95,6 +95,7 @@ pub(crate) async fn run_obsidian(ctx: &Ctx, args: ObsidianImportArgs) -> Result<
         ws,
         &args.project,
         &manifest_path,
+        &args.path,
     )
     .await
 }
@@ -116,9 +117,9 @@ pub(crate) fn read_yes(mut reader: impl BufRead) -> bool {
 /// Executes the import plan against the Atlas API.
 ///
 /// Phase order: folders (depth-first) → documents (create/update/skip) →
-/// boards and tasks (B3) → attachments (stub, B4). The manifest is saved
-/// inside each phase after every successful operation so a crash at any point
-/// leaves a valid, resumable state.
+/// boards and tasks (B3) → attachments (B4). The manifest is saved inside each
+/// phase after every successful operation so a crash at any point leaves a
+/// valid, resumable state.
 async fn execute(
     ctx: &Ctx,
     plan: &plan::ImportPlan,
@@ -126,6 +127,7 @@ async fn execute(
     ws: &str,
     project: &str,
     manifest_path: &std::path::Path,
+    vault_root: &std::path::Path,
 ) -> Result<(), CliError> {
     create::execute_folders(
         &ctx.client,
@@ -159,7 +161,7 @@ async fn execute(
     )
     .await?;
 
-    create::execute_attachments().await?;
+    create::execute_attachments(&ctx.client, ws, plan, manifest, vault_root, ctx.output).await?;
 
     Ok(())
 }

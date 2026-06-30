@@ -9,7 +9,8 @@
 )]
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::ffi::OsStr;
+use std::path::{Path, PathBuf};
 
 use atlas_api::dtos::{
     boards_tasks::{
@@ -444,9 +445,150 @@ pub(crate) async fn execute_boards_and_tasks(
     Ok(())
 }
 
-/// Stub for B4: uploads binary attachments for their owning documents.
-pub(crate) async fn execute_attachments() -> Result<(), CliError> {
+/// Uploads binary attachments for their owning documents.
+///
+/// For each `AttachmentOp` in the plan:
+/// - Resolves the owning document slug from the manifest (skips with a warning
+///   when the owner has not been imported yet).
+/// - Resolves the attachment file on disk via `resolve_attachment_path`; a
+///   missing file is reported to stderr and the import continues (non-fatal).
+/// - Checks for an already-uploaded attachment with the same filename to avoid
+///   duplicates on re-import.
+/// - Calls `upload_attachment`, treating a 409 response as an idempotent skip.
+pub(crate) async fn execute_attachments(
+    client: &AtlasClient,
+    ws: &str,
+    plan: &ImportPlan,
+    manifest: &Manifest,
+    vault_root: &Path,
+    output: OutputFormat,
+) -> Result<(), CliError> {
+    use atlas_client::ClientError;
+
+    for op in &plan.attachments {
+        let owner_key = op.owner_rel.to_string_lossy().into_owned();
+
+        let doc_entry = match manifest.documents.get(&owner_key) {
+            Some(entry) => entry,
+            None => {
+                eprintln!(
+                    "[WARN] attachment '{}': owning document '{}' not yet in manifest, skipping",
+                    op.file_name, owner_key
+                );
+                continue;
+            }
+        };
+
+        let file_bytes = match resolve_attachment_path(vault_root, &op.file_path, &op.owner_rel) {
+            Some(path) => std::fs::read(&path)?,
+            None => {
+                eprintln!("[UNSUPPORTED] missing attachment: {}", op.file_name);
+                continue;
+            }
+        };
+
+        if attachment_exists_by_name(client, ws, &doc_entry.slug, &op.file_name).await? {
+            emit_progress(output, "[ATTACH_SKIP]", &op.file_name);
+            continue;
+        }
+
+        match client
+            .upload_attachment(
+                ws,
+                &doc_entry.slug,
+                &op.file_name,
+                &op.content_type,
+                file_bytes,
+            )
+            .await
+        {
+            Ok(_) => emit_progress(output, "[ATTACH]", &op.file_name),
+            // A race between the existence check and the upload can produce 409;
+            // treat it as a successful idempotent skip.
+            Err(ClientError::Api(ref p)) if p.status == 409 => {
+                emit_progress(output, "[ATTACH_SKIP]", &op.file_name);
+            }
+            Err(e) => return Err(CliError::from(e)),
+        }
+    }
+
     Ok(())
+}
+
+/// Resolves the on-disk path for an attachment file referenced via a vault embed.
+///
+/// Resolution order:
+/// 1. `vault_root / file_path` — embed path treated as vault-relative.
+/// 2. `vault_root / owner_dir / file_name` — relative to the owning note's directory.
+/// 3. Recursive basename search anywhere under `vault_root`.
+///
+/// Returns `None` when the file cannot be found on disk.
+pub(crate) fn resolve_attachment_path(
+    vault_root: &Path,
+    file_path: &Path,
+    owner_rel: &Path,
+) -> Option<PathBuf> {
+    let candidate1 = vault_root.join(file_path);
+    if candidate1.is_file() {
+        return Some(candidate1);
+    }
+
+    let file_name = file_path.file_name()?;
+
+    let owner_dir = owner_rel.parent().unwrap_or(Path::new(""));
+    let candidate2 = vault_root.join(owner_dir).join(file_name);
+    if candidate2 != candidate1 && candidate2.is_file() {
+        return Some(candidate2);
+    }
+
+    basename_search(vault_root, file_name)
+}
+
+/// Walks `dir` recursively, returning the first path whose filename equals
+/// `file_name`. Hidden directories (names starting with `.`) are skipped.
+fn basename_search(dir: &Path, file_name: &OsStr) -> Option<PathBuf> {
+    let entries = std::fs::read_dir(dir).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = entry.file_name();
+        if path.is_dir() {
+            if name.to_string_lossy().starts_with('.') {
+                continue;
+            }
+            if let Some(found) = basename_search(&path, file_name) {
+                return Some(found);
+            }
+        } else if name == file_name {
+            return Some(path);
+        }
+    }
+    None
+}
+
+/// Returns `true` if a document attachment with `file_name` already exists,
+/// paging through `list_attachments` until a match is found or the list ends.
+async fn attachment_exists_by_name(
+    client: &AtlasClient,
+    ws: &str,
+    slug: &str,
+    file_name: &str,
+) -> Result<bool, CliError> {
+    let mut cursor: Option<String> = None;
+    loop {
+        let page = client
+            .list_attachments(ws, slug, cursor.as_deref(), Some(100))
+            .await?;
+
+        if page.items.iter().any(|a| a.file_name == file_name) {
+            return Ok(true);
+        }
+
+        if !page.has_more {
+            return Ok(false);
+        }
+
+        cursor = page.next_cursor;
+    }
 }
 
 /// Ensures all `desired` columns exist on `board_id`, creating any that are
@@ -808,5 +950,93 @@ mod tests {
         m.folders.insert("docs".into(), id.to_string());
         let path = Some(std::path::PathBuf::from("docs"));
         assert_eq!(resolve_doc_folder_id(&path, &m).unwrap(), Some(id));
+    }
+
+    // -- resolve_attachment_path -----------------------------------------------
+
+    #[test]
+    fn resolve_attachment_path_vault_relative_hit() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let vault_root = dir.path();
+        std::fs::write(vault_root.join("diagram.png"), b"data").unwrap();
+
+        let result = resolve_attachment_path(
+            vault_root,
+            Path::new("diagram.png"),
+            Path::new("notes/doc.md"),
+        );
+        assert_eq!(result, Some(vault_root.join("diagram.png")));
+    }
+
+    #[test]
+    fn resolve_attachment_path_note_dir_hit() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let vault_root = dir.path();
+        std::fs::create_dir(vault_root.join("notes")).unwrap();
+        std::fs::write(vault_root.join("notes").join("diagram.png"), b"data").unwrap();
+
+        // diagram.png does not exist at vault root; it is found via the owner's directory.
+        let result = resolve_attachment_path(
+            vault_root,
+            Path::new("diagram.png"),
+            Path::new("notes/doc.md"),
+        );
+        assert_eq!(result, Some(vault_root.join("notes").join("diagram.png")));
+    }
+
+    #[test]
+    fn resolve_attachment_path_basename_search_hit() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let vault_root = dir.path();
+        std::fs::create_dir(vault_root.join("assets")).unwrap();
+        std::fs::write(vault_root.join("assets").join("diagram.png"), b"data").unwrap();
+
+        // diagram.png is not at vault root nor in the owner's dir (which doesn't exist),
+        // but the recursive basename search finds it under assets/.
+        let result = resolve_attachment_path(
+            vault_root,
+            Path::new("diagram.png"),
+            Path::new("notes/doc.md"),
+        );
+        assert_eq!(result, Some(vault_root.join("assets").join("diagram.png")));
+    }
+
+    #[test]
+    fn resolve_attachment_path_not_found_returns_none() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let vault_root = dir.path();
+
+        let result =
+            resolve_attachment_path(vault_root, Path::new("missing.png"), Path::new("doc.md"));
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn resolve_attachment_path_path_style_embed_vault_relative() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let vault_root = dir.path();
+        std::fs::create_dir(vault_root.join("assets")).unwrap();
+        std::fs::write(vault_root.join("assets").join("chart.pdf"), b"pdf").unwrap();
+
+        // Embed was ![[assets/chart.pdf]] — path-style; the vault-relative join resolves it.
+        let result = resolve_attachment_path(
+            vault_root,
+            Path::new("assets/chart.pdf"),
+            Path::new("doc.md"),
+        );
+        assert_eq!(result, Some(vault_root.join("assets").join("chart.pdf")));
+    }
+
+    #[test]
+    fn resolve_attachment_path_hidden_dirs_skipped_in_basename_search() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let vault_root = dir.path();
+        // File only exists inside a hidden directory — must NOT be found.
+        std::fs::create_dir(vault_root.join(".obsidian")).unwrap();
+        std::fs::write(vault_root.join(".obsidian").join("diagram.png"), b"data").unwrap();
+
+        let result =
+            resolve_attachment_path(vault_root, Path::new("diagram.png"), Path::new("doc.md"));
+        assert!(result.is_none());
     }
 }
