@@ -1,11 +1,15 @@
 #[allow(unreachable_pub)]
 mod attachment_store;
 #[allow(unreachable_pub)]
+mod automation_rule;
+#[allow(unreachable_pub)]
 mod boards_tasks;
 #[allow(unreachable_pub)]
 mod documents;
 #[allow(unreachable_pub)]
 mod identity;
+#[allow(unreachable_pub)]
+mod integration_config;
 #[allow(unreachable_pub)]
 pub(crate) mod outbox;
 #[allow(unreachable_pub)]
@@ -71,3 +75,6 @@ mod status_templates;
 pub use status_templates::{
     PgStatusTemplateRepo, StatusTemplateRepo, list_templates_for_workspace,
 };
+
+pub use automation_rule::{AutomationRulePatch, PgAutomationRuleRepo};
+pub use integration_config::PgIntegrationConfigRepo;
