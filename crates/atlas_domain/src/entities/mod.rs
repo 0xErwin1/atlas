@@ -1,4 +1,5 @@
 pub mod boards_tasks;
+pub mod events;
 pub mod documents;
 pub mod groups;
 pub mod identity;
