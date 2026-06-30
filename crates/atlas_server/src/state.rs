@@ -3,6 +3,8 @@ use std::sync::Arc;
 
 use atlas_domain::AttachmentStore;
 
+use crate::config::{DispatcherConfig, ServerConfig};
+use crate::crypto::WebhookCrypto;
 use crate::persistence::repos::{DiskAttachmentStore, S3AttachmentStore, S3Config};
 use crate::services::{DocumentService, TaskService};
 
@@ -18,10 +20,12 @@ pub struct AppState {
     pub anchor_interval: u32,
     pub attachments: Arc<dyn AttachmentStore>,
     pub max_attachment_bytes: u64,
+    pub webhook_crypto: Arc<WebhookCrypto>,
+    pub dispatcher_config: DispatcherConfig,
 }
 
 impl AppState {
-    pub async fn new(db: DatabaseConnection) -> Result<Self, anyhow::Error> {
+    pub async fn new(db: DatabaseConnection, cfg: &ServerConfig) -> Result<Self, anyhow::Error> {
         let session_ttl_hours = read_env_i64("ATLAS_SESSION_TTL_HOURS", 168);
         let session_max_ttl_hours = read_env_i64("ATLAS_SESSION_MAX_TTL_HOURS", 720);
 
@@ -32,6 +36,7 @@ impl AppState {
         let anchor_interval = read_env_u32("ATLAS_ANCHOR_INTERVAL", 50).max(2);
 
         let attachments = build_attachment_store().await?;
+        let webhook_crypto = Arc::new(WebhookCrypto::new(&cfg.webhook_enc_key));
 
         Ok(Self {
             db: Arc::new(db),
@@ -41,13 +46,16 @@ impl AppState {
             anchor_interval,
             attachments,
             max_attachment_bytes: DEFAULT_MAX_ATTACHMENT_BYTES,
+            webhook_crypto,
+            dispatcher_config: cfg.dispatcher.clone(),
         })
     }
 
     /// Creates a test-mode state with reduced session TTLs and `cookie_secure=false`.
     ///
-    /// The attachment store uses a temp directory unless `ATLAS_ATTACHMENT_ROOT` is set.
-    /// Returns `Err` only if the attachment root directory cannot be created.
+    /// Uses a freshly generated random AES key so tests do not need
+    /// `ATLAS_WEBHOOK_ENC_KEY` set. The attachment store uses a temp directory
+    /// unless `ATLAS_ATTACHMENT_ROOT` is set.
     pub async fn for_test(db: DatabaseConnection) -> Result<Self, anyhow::Error> {
         let anchor_interval = read_env_u32("ATLAS_ANCHOR_INTERVAL", 50).max(2);
 
@@ -70,6 +78,8 @@ impl AppState {
             anchor_interval,
             attachments: Arc::new(attachments),
             max_attachment_bytes: DEFAULT_MAX_ATTACHMENT_BYTES,
+            webhook_crypto: Arc::new(WebhookCrypto::generate_for_test()),
+            dispatcher_config: DispatcherConfig::default(),
         })
     }
 
@@ -163,8 +173,6 @@ fn read_env_u32(var: &str, default: u32) -> u32 {
 mod tests {
     #[test]
     fn anchor_interval_floor_clamps_1_to_2() {
-        // Simulates the raw value that `read_env_u32("ATLAS_ANCHOR_INTERVAL", 50)`
-        // would return when the env var is set to "1", then applies the same `.max(2)`.
         let raw: u32 = 1;
         let effective = raw.max(2);
         assert_eq!(effective, 2, "interval of 1 must be clamped to floor of 2");
