@@ -65,6 +65,10 @@ time              = "0.3"
 # Client layer
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 
+# Cryptography
+hmac    = { version = "0.12", features = ["std"] }
+aes-gcm = "0.10"
+
 # CLI
 clap = { version = "4", features = ["derive", "env"] }
 clap_complete = "4"
