@@ -47,15 +47,21 @@ pub(crate) enum DocDecision {
     Update,
 }
 
-/// Determines the per-document execution action from local and server state.
+/// Determines the per-document execution action from manifest and content state.
 ///
-/// When a manifest entry is present the decision is hash-only: same hash → Skip,
-/// different hash → Update. The `server_exists` argument is only consulted when
-/// the manifest has no entry for this path.
+/// Manifest hit, same hash → Skip (content unchanged since last import).
+/// Manifest hit, different hash → Update via CAS.
+/// Manifest miss → always Create, letting the server assign a unique slug.
+///
+/// A manifest miss always creates, even when the predicted slug already exists on
+/// the server. This ensures distinct vault files sharing the same title (e.g. ten
+/// different `tasks.md` files under different folders) each become distinct
+/// documents (`tasks`, `tasks-2`, …). The accepted trade-off: if the manifest
+/// file is deleted, a re-import will create new documents rather than recognise
+/// the originals.
 pub(crate) fn decide_action(
     manifest_entry: Option<&ManifestDocEntry>,
     new_hash: &str,
-    server_exists: bool,
 ) -> DocDecision {
     match manifest_entry {
         Some(entry) => {
@@ -65,13 +71,7 @@ pub(crate) fn decide_action(
                 DocDecision::Update
             }
         }
-        None => {
-            if server_exists {
-                DocDecision::Update
-            } else {
-                DocDecision::Create
-            }
-        }
+        None => DocDecision::Create,
     }
 }
 
@@ -166,10 +166,11 @@ pub(crate) async fn execute_folders(
 /// For each document the manifest is consulted first:
 /// - Manifest hit, same hash → `[SKIP]`, no API call.
 /// - Manifest hit, different hash → CAS `update_content` with the server's
-///   current head revision.
-/// - Manifest miss → probe `get_document(predicted_slug)`:
-///   - 200 → CAS update using the returned document's head revision.
-///   - 404 → `create_document`, persist the server-returned slug.
+///   current head revision (fetched immediately before the CAS attempt).
+/// - Manifest miss → `create_document`; the server assigns a unique slug
+///   (e.g. `tasks`, `tasks-2`) so distinct vault files sharing the same title
+///   each become distinct documents. A manifest-loss re-import will create new
+///   documents rather than recognising the originals.
 ///
 /// The manifest is atomically saved after each successful operation so a
 /// partial run can be resumed without data loss.
@@ -182,29 +183,12 @@ pub(crate) async fn execute_documents(
     manifest_path: &Path,
     output: OutputFormat,
 ) -> Result<(), CliError> {
-    use atlas_client::ClientError;
-
     for op in doc_ops {
         let rel_key = op.rel_path.to_string_lossy().into_owned();
         let new_hash = content_hash(&op.content);
         let manifest_entry = manifest.documents.get(&rel_key).cloned();
 
-        // When the manifest has no entry, probe the server to determine existence.
-        // Preserve the full DocumentDto so the Update path can read head_revision_id
-        // without an extra round-trip.
-        let server_doc: Option<DocumentDto> = if manifest_entry.is_none() {
-            match client.get_document(ws, &op.predicted_slug).await {
-                Ok(doc) => Some(doc),
-                Err(ClientError::Api(p)) if p.status == 404 => None,
-                Err(e) => return Err(CliError::from(e)),
-            }
-        } else {
-            None
-        };
-
-        let server_exists = server_doc.is_some();
-
-        match decide_action(manifest_entry.as_ref(), &new_hash, server_exists) {
+        match decide_action(manifest_entry.as_ref(), &new_hash) {
             DocDecision::Skip => {
                 let slug = manifest_entry
                     .as_ref()
@@ -248,28 +232,23 @@ pub(crate) async fn execute_documents(
             }
 
             DocDecision::Update => {
-                let (slug, head_revision_id) = if let Some(doc) = server_doc {
-                    // Manifest miss but server has a doc at the predicted slug —
-                    // use the returned document's current head for CAS.
-                    let slug = doc.slug.unwrap_or_else(|| op.predicted_slug.clone());
-                    (slug, doc.head_revision_id)
-                } else {
-                    // Manifest hit, hash differs — fetch the current head from
-                    // the server to obtain a fresh base_revision_id for CAS.
-                    let entry = manifest_entry.as_ref().ok_or_else(|| {
-                        CliError::Validation(
-                            "internal: Update decision with neither a manifest entry \
-                             nor a server document"
-                                .into(),
-                        )
-                    })?;
-                    let doc = client.get_document(ws, &entry.slug).await?;
-                    (entry.slug.clone(), doc.head_revision_id)
-                };
+                let entry = manifest_entry.as_ref().ok_or_else(|| {
+                    CliError::Validation(
+                        "internal: Update decision without a manifest entry".into(),
+                    )
+                })?;
 
-                let updated =
-                    cas_update_document(client, ws, &slug, op.content.clone(), head_revision_id)
-                        .await?;
+                let doc = client.get_document(ws, &entry.slug).await?;
+                let slug = entry.slug.clone();
+
+                let updated = cas_update_document(
+                    client,
+                    ws,
+                    &slug,
+                    op.content.clone(),
+                    doc.head_revision_id,
+                )
+                .await?;
 
                 let final_slug = updated.slug.unwrap_or_else(|| slug.clone());
 
@@ -756,34 +735,28 @@ mod tests {
     fn decide_action_manifest_hit_same_hash_returns_skip() {
         let hash = "abc123";
         let entry = entry_with_hash(hash);
-        assert_eq!(decide_action(Some(&entry), hash, false), DocDecision::Skip);
-    }
-
-    #[test]
-    fn decide_action_manifest_hit_same_hash_server_exists_ignored() {
-        // server_exists is irrelevant when the manifest has a matching hash
-        let hash = "abc123";
-        let entry = entry_with_hash(hash);
-        assert_eq!(decide_action(Some(&entry), hash, true), DocDecision::Skip);
+        assert_eq!(decide_action(Some(&entry), hash), DocDecision::Skip);
     }
 
     #[test]
     fn decide_action_manifest_hit_different_hash_returns_update() {
         let entry = entry_with_hash("old-hash");
+        assert_eq!(decide_action(Some(&entry), "new-hash"), DocDecision::Update);
+    }
+
+    #[test]
+    fn decide_action_no_manifest_always_returns_create() {
+        assert_eq!(decide_action(None, "any-hash"), DocDecision::Create);
+    }
+
+    #[test]
+    fn decide_action_no_manifest_always_creates_even_when_slug_exists_on_server() {
+        // The caller no longer probes the server; a manifest miss is always Create
+        // so distinct vault files with the same title each become distinct documents.
         assert_eq!(
-            decide_action(Some(&entry), "new-hash", false),
-            DocDecision::Update
+            decide_action(None, "hash-for-second-tasks-file"),
+            DocDecision::Create
         );
-    }
-
-    #[test]
-    fn decide_action_no_manifest_server_exists_returns_update() {
-        assert_eq!(decide_action(None, "any-hash", true), DocDecision::Update);
-    }
-
-    #[test]
-    fn decide_action_no_manifest_server_absent_returns_create() {
-        assert_eq!(decide_action(None, "any-hash", false), DocDecision::Create);
     }
 
     // -- CAS retry simulation --------------------------------------------------
