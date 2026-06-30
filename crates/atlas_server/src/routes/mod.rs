@@ -1,4 +1,5 @@
 pub(crate) mod activate;
+pub(crate) mod integrations_ingest;
 pub(crate) mod api_keys;
 pub(crate) mod audit;
 pub(crate) mod auth;
