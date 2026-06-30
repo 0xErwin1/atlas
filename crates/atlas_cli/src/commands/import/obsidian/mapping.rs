@@ -21,17 +21,39 @@ const COLUMN_DONE: &str = "Done";
 /// Maps a frontmatter `status` value to the corresponding column name on the
 /// Roadmap board.
 ///
-/// The table:
-/// - `todo` → "To Do"
-/// - `in-progress` / `in_progress` / `doing` → "In Progress"
-/// - `done` → "Done"
-/// - anything else (including absent) → "To Do"
+/// Matching is case-insensitive and covers both the English and the Spanish
+/// vocabularies the real vault uses (`status: hecho` for done, `status: todo`
+/// for pending). Anything unrecognized — or absent — falls back to "To Do".
 pub(crate) fn map_status(status: Option<&str>) -> &'static str {
-    match status {
-        Some("in-progress") | Some("in_progress") | Some("doing") => COLUMN_IN_PROGRESS,
-        Some("done") => COLUMN_DONE,
+    let Some(raw) = status else {
+        return COLUMN_TODO;
+    };
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "done" | "hecho" | "completado" | "terminado" | "listo" => COLUMN_DONE,
+        "in-progress" | "in_progress" | "doing" | "en-progreso" | "en_progreso" | "en progreso"
+        | "en curso" | "haciendo" => COLUMN_IN_PROGRESS,
         _ => COLUMN_TODO,
     }
+}
+
+/// Returns the title to use for an epic's task: the document's first H1 heading
+/// (e.g. `# E09 — CLI`) when present, otherwise the document title (filename
+/// stem). The H1 matches how the existing Atlas roadmap names its epic tasks.
+fn epic_task_title(doc: &VaultDoc) -> String {
+    extract_h1(&doc.body).unwrap_or_else(|| doc.title.clone())
+}
+
+/// Extracts the text of the first level-1 ATX heading (`# ...`) in `body`.
+fn extract_h1(body: &str) -> Option<String> {
+    body.lines().find_map(|line| {
+        let rest = line.strip_prefix("# ")?;
+        let title = rest.trim();
+        if title.is_empty() {
+            None
+        } else {
+            Some(title.to_string())
+        }
+    })
 }
 
 /// Inspects vault documents for the `type: epic` convention and returns
@@ -69,7 +91,7 @@ pub(crate) fn build_ops(docs: &[VaultDoc]) -> (Vec<BoardOp>, Vec<TaskOp>, Vec<Li
             rel_path: doc.rel_path.clone(),
             board_epic_rel: PathBuf::from(ROADMAP_BOARD),
             column: map_status(doc.frontmatter.status.as_deref()).to_string(),
-            title: doc.title.clone(),
+            title: epic_task_title(doc),
             description: String::new(),
             depends: doc.frontmatter.depends.clone(),
         });
@@ -184,6 +206,55 @@ mod tests {
     #[test]
     fn map_status_unknown_value_returns_to_do() {
         assert_eq!(map_status(Some("blocked")), "To Do");
+    }
+
+    #[test]
+    fn map_status_spanish_hecho_returns_done() {
+        assert_eq!(map_status(Some("hecho")), "Done");
+    }
+
+    #[test]
+    fn map_status_is_case_insensitive() {
+        assert_eq!(map_status(Some("HECHO")), "Done");
+        assert_eq!(map_status(Some("Todo")), "To Do");
+    }
+
+    #[test]
+    fn map_status_spanish_en_progreso_returns_in_progress() {
+        assert_eq!(map_status(Some("en progreso")), "In Progress");
+    }
+
+    // -- epic task title (H1 heading) ----------------------------------------
+
+    #[test]
+    fn extract_h1_reads_first_heading() {
+        assert_eq!(
+            extract_h1("# E09 — CLI\n\nbody"),
+            Some("E09 — CLI".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_h1_absent_returns_none() {
+        assert_eq!(extract_h1("no heading here"), None);
+    }
+
+    #[test]
+    fn build_ops_epic_task_title_from_h1_heading() {
+        let mut doc = make_epic("Atlas/E09-cli/E09-cli.md", "E09-cli", Some("todo"));
+        doc.body = "# E09 — CLI\n\nthe epic body".to_string();
+        let (_, tasks, _) = build_ops(&[doc]);
+        assert_eq!(
+            tasks[0].title, "E09 — CLI",
+            "epic task title comes from the H1, not the filename"
+        );
+    }
+
+    #[test]
+    fn build_ops_epic_task_title_falls_back_to_filename_when_no_h1() {
+        let docs = vec![make_epic("e1.md", "E1 Filename", Some("todo"))];
+        let (_, tasks, _) = build_ops(&docs);
+        assert_eq!(tasks[0].title, "E1 Filename");
     }
 
     // -- build_ops: no epics --------------------------------------------------
