@@ -13,7 +13,7 @@ pub struct PgWebhookDeliveryRepo;
 impl PgWebhookDeliveryRepo {
     /// Appends one delivery-attempt log row for a single subscription dispatch.
     ///
-    /// `outcome` is one of `"success"`, `"http_error"`, or `"network_error"`.
+    /// `outcome` is one of `"success"` or `"failure"`.
     #[allow(clippy::too_many_arguments)]
     pub async fn append_log(
         conn: &impl ConnectionTrait,
@@ -66,6 +66,28 @@ impl PgWebhookDeliveryRepo {
             .all(conn)
             .await
             .map_err(db_err)
+    }
+
+    /// Returns the subscription IDs that have a `success` delivery log row for
+    /// the given `outbox_event_id`.
+    ///
+    /// The dispatcher uses this to skip subscriptions that already received the
+    /// event successfully (idempotency on retry after a partial-success batch).
+    pub async fn succeeded_subscription_ids_for_event(
+        conn: &impl ConnectionTrait,
+        outbox_event_id: Uuid,
+    ) -> Result<Vec<Uuid>, DomainError> {
+        let rows = webhook_delivery_log::Entity::find()
+            .filter(webhook_delivery_log::Column::OutboxEventId.eq(outbox_event_id))
+            .filter(webhook_delivery_log::Column::Outcome.eq("success"))
+            .select_only()
+            .column(webhook_delivery_log::Column::SubscriptionId)
+            .into_tuple::<Uuid>()
+            .all(conn)
+            .await
+            .map_err(db_err)?;
+
+        Ok(rows)
     }
 }
 
