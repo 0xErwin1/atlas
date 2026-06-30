@@ -122,6 +122,13 @@ const EXPECTED_SCHEMAS: &[&str] = &[
     "GroupDto",
     "GroupMemberDto",
     "AddGroupMemberRequest",
+    "WebhookDto",
+    "WebhookCreatedDto",
+    "CreateWebhookRequest",
+    "UpdateWebhookRequest",
+    "WebhookDeliveryDto",
+    "Page_WebhookDto",
+    "Page_WebhookDeliveryDto",
 ];
 
 #[test]

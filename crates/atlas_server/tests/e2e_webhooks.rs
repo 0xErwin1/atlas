@@ -150,8 +150,11 @@ async fn e2e_webhook_dispatched_on_task_creation() {
         .await
         .expect("add column");
 
+    let board_id = board.id;
     let task_resp = reqwest::Client::new()
-        .post(format!("{base_url}/v1/workspaces/{ws_slug}/tasks"))
+        .post(format!(
+            "{base_url}/v1/workspaces/{ws_slug}/boards/{board_id}/tasks"
+        ))
         .bearer_auth(token)
         .json(&serde_json::json!({
             "column_id": column.id,
