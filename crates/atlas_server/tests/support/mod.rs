@@ -33,7 +33,7 @@ impl TestDb {
         let admin_url = admin_url_from(&database_url);
         let db_name = format!("atlas_test_{}", Uuid::now_v7().as_simple());
 
-        let admin = Database::connect(&admin_url).await?;
+        let admin = Database::connect(admin_opts(&admin_url)).await?;
         admin
             .execute_unprepared(&format!("CREATE DATABASE \"{db_name}\""))
             .await?;
@@ -125,7 +125,7 @@ impl TestDb {
     pub(crate) async fn teardown(self) {
         drop(self.conn);
 
-        if let Ok(admin) = Database::connect(&self.admin_url).await {
+        if let Ok(admin) = Database::connect(admin_opts(&self.admin_url)).await {
             let _ = admin
                 .execute_unprepared(&format!(
                     "DROP DATABASE IF EXISTS \"{}\" WITH (FORCE)",
@@ -418,6 +418,16 @@ pub(crate) async fn expire_all_sessions(db: &TestDb) {
         .execute_unprepared("UPDATE sessions SET expires_at = now() - interval '1 second'")
         .await
         .expect("expire sessions");
+}
+
+/// Connection options for an admin connection that only runs a single
+/// CREATE/DROP DATABASE statement. Caps the pool to one connection so that many
+/// parallel tests do not each open a default-sized admin pool against the shared
+/// server.
+fn admin_opts(url: &str) -> ConnectOptions {
+    let mut opts = ConnectOptions::new(url.to_owned());
+    opts.max_connections(1).min_connections(0);
+    opts
 }
 
 fn admin_url_from(url: &str) -> String {
