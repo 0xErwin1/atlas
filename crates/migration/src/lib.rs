@@ -27,6 +27,9 @@ pub mod m20260624_000024_groups;
 pub mod m20260626_000025_apikey_global;
 pub mod m20260628_000026_task_reference_docs_kind;
 pub mod m20260628_000027_task_activity_document_mentioned;
+pub mod m20260630_000028_events_outbox;
+pub mod m20260630_000029_webhook_subscriptions;
+pub mod m20260630_000030_webhook_delivery_log;
 
 use sea_orm_migration::prelude::*;
 
@@ -63,6 +66,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20260626_000025_apikey_global::Migration),
             Box::new(m20260628_000026_task_reference_docs_kind::Migration),
             Box::new(m20260628_000027_task_activity_document_mentioned::Migration),
+            Box::new(m20260630_000028_events_outbox::Migration),
+            Box::new(m20260630_000029_webhook_subscriptions::Migration),
+            Box::new(m20260630_000030_webhook_delivery_log::Migration),
         ]
     }
 }
