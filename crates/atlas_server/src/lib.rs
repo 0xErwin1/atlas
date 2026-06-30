@@ -11,6 +11,8 @@ use tower_http::{
 pub mod auth;
 pub mod authz;
 pub mod config;
+pub mod crypto;
+pub mod dispatcher;
 pub mod error;
 pub mod middleware;
 pub mod persistence;
