@@ -30,6 +30,8 @@ pub mod m20260628_000027_task_activity_document_mentioned;
 pub mod m20260630_000028_events_outbox;
 pub mod m20260630_000029_webhook_subscriptions;
 pub mod m20260630_000030_webhook_delivery_log;
+pub mod m20260630_000031_integration_configs;
+pub mod m20260630_000032_automation_rules;
 
 use sea_orm_migration::prelude::*;
 
@@ -69,6 +71,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20260630_000028_events_outbox::Migration),
             Box::new(m20260630_000029_webhook_subscriptions::Migration),
             Box::new(m20260630_000030_webhook_delivery_log::Migration),
+            Box::new(m20260630_000031_integration_configs::Migration),
+            Box::new(m20260630_000032_automation_rules::Migration),
         ]
     }
 }
