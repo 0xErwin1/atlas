@@ -13,7 +13,7 @@ pub(crate) mod render;
 pub(crate) mod write;
 
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::Parser;
 use uuid::Uuid;
@@ -145,83 +145,115 @@ async fn build_export_plan(
     }
 
     let boards = paginate_boards(client, ws, project).await?;
-
-    if !boards.is_empty() {
-        plan.dirs.push(DirOp {
-            rel_path: PathBuf::from("boards"),
-        });
-    }
+    let mut boards_dir_added = false;
 
     for board in &boards {
         let board_dir = PathBuf::from("boards").join(sanitize_name(&board.name));
-        plan.dirs.push(DirOp {
-            rel_path: board_dir.clone(),
-        });
+        let task_files = collect_board_task_files(client, ws, board, &board_dir).await?;
 
-        let epic_fm = serde_json::json!({ "type": "epic" });
-        let epic_filename = safe_filename(&board.name, &sanitize_name(&board.name));
-        plan.files.push(FileOp {
-            rel_path: board_dir.join(&epic_filename),
-            content: frontmatter_to_yaml(&epic_fm),
-        });
-
-        let columns = client.list_columns(ws, board.id).await?;
-        let col_by_id: HashMap<Uuid, String> =
-            columns.iter().map(|c| (c.id, c.name.clone())).collect();
-
-        let tasks = paginate_tasks(client, ws, board.id).await?;
-        let mut task_names: HashSet<String> = HashSet::new();
-
-        for task_summary in &tasks {
-            let readable_id = &task_summary.readable_id;
-            let refs = client.list_references(ws, readable_id).await?;
-
-            let depends: Vec<String> = refs
-                .iter()
-                .filter(|r| r.kind == "parent")
-                .filter_map(|r| r.target_readable_id.clone())
-                .collect();
-
-            let status = col_by_id
-                .get(&task_summary.column_id)
-                .cloned()
-                .unwrap_or_else(|| task_summary.column_name.clone());
-
-            let mut fm_map = serde_json::Map::new();
-            fm_map.insert(
-                "type".to_string(),
-                serde_json::Value::String("task".to_string()),
-            );
-            fm_map.insert("status".to_string(), serde_json::Value::String(status));
-
-            if !depends.is_empty() {
-                fm_map.insert(
-                    "depends".to_string(),
-                    serde_json::Value::Array(
-                        depends.into_iter().map(serde_json::Value::String).collect(),
-                    ),
-                );
+        if !task_files.is_empty() {
+            if !boards_dir_added {
+                plan.dirs.push(DirOp {
+                    rel_path: PathBuf::from("boards"),
+                });
+                boards_dir_added = true;
             }
 
-            let task_fm = serde_json::Value::Object(fm_map);
-            let task_slug = sanitize_name(&task_summary.readable_id);
-            let task_filename = unique_filename(&task_summary.title, &task_slug, &task_names);
-            task_names.insert(task_filename.clone());
-
-            let content = format!(
-                "{}{}",
-                frontmatter_to_yaml(&task_fm),
-                deuid_links(&task_summary.board_name),
-            );
-
-            plan.files.push(FileOp {
-                rel_path: board_dir.join(&task_filename),
-                content,
+            plan.dirs.push(DirOp {
+                rel_path: board_dir,
             });
+
+            plan.files.extend(task_files);
         }
     }
 
     Ok(plan)
+}
+
+/// Returns `true` when a task should be written as a standalone file.
+///
+/// Tasks backed by a document (identified by a "docs" outbound reference) are
+/// already exported via their source document's file; writing them again would
+/// produce duplicate content that re-import cannot de-duplicate.
+pub(crate) fn task_needs_file(ref_kinds: &[&str]) -> bool {
+    !ref_kinds.contains(&"docs")
+}
+
+/// Fetches tasks for one board and builds the `FileOp` list for tasks that are
+/// not backed by a source document.
+///
+/// Each task's outbound references are inspected: if any reference has
+/// `kind == "docs"` the task is skipped (its source document file already
+/// carries the content). Only Atlas-native tasks without a document backing
+/// are materialised as standalone files under `board_dir`.
+async fn collect_board_task_files(
+    client: &atlas_client::AtlasClient,
+    ws: &str,
+    board: &atlas_api::dtos::boards_tasks::BoardSummaryDto,
+    board_dir: &Path,
+) -> Result<Vec<FileOp>, CliError> {
+    let columns = client.list_columns(ws, board.id).await?;
+    let col_by_id: HashMap<Uuid, String> = columns.iter().map(|c| (c.id, c.name.clone())).collect();
+
+    let tasks = paginate_tasks(client, ws, board.id).await?;
+    let mut task_names: HashSet<String> = HashSet::new();
+    let mut files: Vec<FileOp> = Vec::new();
+
+    for task_summary in &tasks {
+        let refs = client
+            .list_references(ws, &task_summary.readable_id)
+            .await?;
+        let ref_kinds: Vec<&str> = refs.iter().map(|r| r.kind.as_str()).collect();
+
+        if !task_needs_file(&ref_kinds) {
+            continue;
+        }
+
+        let depends: Vec<String> = refs
+            .iter()
+            .filter(|r| r.kind == "parent")
+            .filter_map(|r| r.target_readable_id.clone())
+            .collect();
+
+        let status = col_by_id
+            .get(&task_summary.column_id)
+            .cloned()
+            .unwrap_or_else(|| task_summary.column_name.clone());
+
+        let mut fm_map = serde_json::Map::new();
+        fm_map.insert(
+            "type".to_string(),
+            serde_json::Value::String("task".to_string()),
+        );
+        fm_map.insert("status".to_string(), serde_json::Value::String(status));
+
+        if !depends.is_empty() {
+            fm_map.insert(
+                "depends".to_string(),
+                serde_json::Value::Array(
+                    depends.into_iter().map(serde_json::Value::String).collect(),
+                ),
+            );
+        }
+
+        let task_fm = serde_json::Value::Object(fm_map);
+        let task_slug = sanitize_name(&task_summary.readable_id);
+        let task_filename = unique_filename(&task_summary.title, &task_slug, &task_names);
+        task_names.insert(task_filename.clone());
+
+        let content = format!(
+            "{}{}",
+            frontmatter_to_yaml(&task_fm),
+            deuid_links(&task_summary.board_name),
+        );
+
+        files.push(FileOp {
+            rel_path: board_dir.join(&task_filename),
+            content,
+        });
+    }
+
+    Ok(files)
 }
 
 /// Paginates `list_folders` until exhausted, returning all folder DTOs.
@@ -481,6 +513,30 @@ mod tests {
             "export obsidian without --project must fail"
         );
     }
+
+    // -- task_needs_file -------------------------------------------------------
+
+    #[test]
+    fn task_needs_file_empty_refs_returns_true() {
+        assert!(task_needs_file(&[]));
+    }
+
+    #[test]
+    fn task_needs_file_without_docs_ref_returns_true() {
+        assert!(task_needs_file(&["parent", "relates"]));
+    }
+
+    #[test]
+    fn task_needs_file_with_docs_ref_returns_false() {
+        assert!(!task_needs_file(&["docs"]));
+    }
+
+    #[test]
+    fn task_needs_file_docs_among_others_returns_false() {
+        assert!(!task_needs_file(&["parent", "docs", "relates"]));
+    }
+
+    // -- sanitize_name ---------------------------------------------------------
 
     #[test]
     fn sanitize_name_replaces_spaces_with_dashes() {
