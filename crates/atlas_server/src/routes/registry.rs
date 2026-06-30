@@ -884,4 +884,41 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/v1/workspaces/{ws}/task-views/{id}"),
     },
+    // ---- Webhooks (admin-only) ----
+    RouteEntry {
+        method: "POST",
+        path_template: "/v1/workspaces/{ws}/webhooks",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/webhooks"),
+    },
+    RouteEntry {
+        method: "GET",
+        path_template: "/v1/workspaces/{ws}/webhooks",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/webhooks"),
+    },
+    RouteEntry {
+        method: "GET",
+        path_template: "/v1/workspaces/{ws}/webhooks/00000000-0000-0000-0000-000000000001",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/webhooks/{webhook_id}"),
+    },
+    RouteEntry {
+        method: "PATCH",
+        path_template: "/v1/workspaces/{ws}/webhooks/00000000-0000-0000-0000-000000000001",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/webhooks/{webhook_id}"),
+    },
+    RouteEntry {
+        method: "DELETE",
+        path_template: "/v1/workspaces/{ws}/webhooks/00000000-0000-0000-0000-000000000001",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/webhooks/{webhook_id}"),
+    },
+    RouteEntry {
+        method: "GET",
+        path_template: "/v1/workspaces/{ws}/webhooks/00000000-0000-0000-0000-000000000001/deliveries",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/webhooks/{webhook_id}/deliveries"),
+    },
 ];

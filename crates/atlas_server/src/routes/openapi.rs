@@ -42,6 +42,10 @@ use atlas_api::{
         task_views::{
             CreateTaskViewRequest, TaskViewDto, TaskViewFiltersDto, UpdateTaskViewRequest,
         },
+        webhooks::{
+            CreateWebhookRequest, UpdateWebhookRequest, WebhookCreatedDto, WebhookDeliveryDto,
+            WebhookDto,
+        },
     },
     problem::ProblemDetails,
 };
@@ -192,6 +196,12 @@ use atlas_api::{
         crate::routes::task_views::get_task_view,
         crate::routes::task_views::update_task_view,
         crate::routes::task_views::delete_task_view,
+        crate::routes::webhooks::create_webhook,
+        crate::routes::webhooks::list_webhooks,
+        crate::routes::webhooks::get_webhook,
+        crate::routes::webhooks::update_webhook,
+        crate::routes::webhooks::delete_webhook,
+        crate::routes::webhooks::list_webhook_deliveries,
     ),
     components(schemas(
         LoginRequest,
@@ -298,6 +308,11 @@ use atlas_api::{
         TaskViewFiltersDto,
         CreateTaskViewRequest,
         UpdateTaskViewRequest,
+        WebhookDto,
+        WebhookCreatedDto,
+        CreateWebhookRequest,
+        UpdateWebhookRequest,
+        WebhookDeliveryDto,
     )),
     tags(
         (name = "audit", description = "Security audit log"),
@@ -320,6 +335,7 @@ use atlas_api::{
         (name = "property-definitions", description = "Workspace custom-field registry"),
         (name = "saved-searches", description = "Per-owner saved search registry"),
         (name = "task-views", description = "Per-owner task filter views"),
+        (name = "webhooks", description = "Outgoing webhook subscription management (admin-only)"),
     )
 )]
 pub(crate) struct ApiDoc;

@@ -22,6 +22,7 @@ pub(crate) mod tasks;
 pub(crate) mod ui_state;
 pub(crate) mod users;
 pub(crate) mod validation;
+pub(crate) mod webhooks;
 pub(crate) mod workspaces;
 
 /// Derives the account lifecycle state from a user's disable/activation timestamps.

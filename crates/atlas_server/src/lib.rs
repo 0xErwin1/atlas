@@ -422,6 +422,22 @@ pub fn app(state: AppState) -> Router {
             "/v1/workspaces/{ws}/folders/{folder_id}/copy",
             axum::routing::post(routes::folders::copy_folder),
         )
+        // Webhooks (admin-only subscription CRUD + delivery log)
+        .route(
+            "/v1/workspaces/{ws}/webhooks",
+            axum::routing::post(routes::webhooks::create_webhook)
+                .get(routes::webhooks::list_webhooks),
+        )
+        .route(
+            "/v1/workspaces/{ws}/webhooks/{webhook_id}",
+            get(routes::webhooks::get_webhook)
+                .patch(routes::webhooks::update_webhook)
+                .delete(routes::webhooks::delete_webhook),
+        )
+        .route(
+            "/v1/workspaces/{ws}/webhooks/{webhook_id}/deliveries",
+            get(routes::webhooks::list_webhook_deliveries),
+        )
         // Search
         .route("/v1/workspaces/{ws}/search", get(routes::search::search))
         .layer(axum_middleware::from_fn(
