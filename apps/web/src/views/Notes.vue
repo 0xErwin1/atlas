@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router';
 import BacklinksPanel from '@/components/notas/BacklinksPanel.vue';
 import CasConflictView from '@/components/notas/CasConflictView.vue';
@@ -46,6 +46,9 @@ function goBackToTree(): void {
 const editorRef = ref<InstanceType<typeof NoteEditor> | null>(null);
 const suggestRef = ref<InstanceType<typeof WikiLinkSuggest> | null>(null);
 const sidebarRef = ref<InstanceType<typeof NotesSidebar> | null>(null);
+// The scrollable note surface (title + properties + editor). It is not remounted
+// between notes, so its scroll offset must be reset on a switch.
+const scrollAreaRef = ref<HTMLElement | null>(null);
 
 const slug = computed(() => {
   const s = route.params.slug;
@@ -363,6 +366,14 @@ onBeforeRouteLeave(() => {
 
 watch([slug, ws], loadDoc, { immediate: true });
 
+// A new note opens at the top: the scroll surface persists across switches, so
+// without this it would keep the previous note's scroll offset.
+watch(slug, () => {
+  void nextTick(() => {
+    if (scrollAreaRef.value !== null) scrollAreaRef.value.scrollTop = 0;
+  });
+});
+
 watch(title, (t) => {
   if (slug.value !== null && ws.value !== '') tabsStore.setTitle(ws.value, slug.value, t);
 });
@@ -543,7 +554,7 @@ watch(title, (t) => {
       </button>
     </EditorToolbar>
 
-    <div class="flex-1 overflow-y-auto">
+    <div ref="scrollAreaRef" class="flex-1 overflow-y-auto">
       <div
         :style="{
           maxWidth: isMobile || ui.editorWide ? 'none' : '980px',
@@ -577,6 +588,7 @@ watch(title, (t) => {
           <div @keydown="onEditorKeydown">
             <NoteEditor
               ref="editorRef"
+              :key="slug"
               v-model:mode="editorMode"
               v-model:reading="editorReading"
               :body="body"
