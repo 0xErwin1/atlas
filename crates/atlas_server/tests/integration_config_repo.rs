@@ -45,12 +45,18 @@ async fn create_provisions_integration_api_key() {
         .expect("find api_key")
         .expect("api_key must exist");
 
-    assert_eq!(key.type_, "integration", "provisioned key must have type 'integration'");
+    assert_eq!(
+        key.type_, "integration",
+        "provisioned key must have type 'integration'"
+    );
     assert_eq!(
         key.created_by_user_id, user.id.0,
         "key must be attributed to the creating user"
     );
-    assert!(key.revoked_at.is_none(), "newly provisioned key must not be revoked");
+    assert!(
+        key.revoked_at.is_none(),
+        "newly provisioned key must not be revoked"
+    );
 
     db.teardown().await;
 }
@@ -120,7 +126,10 @@ async fn find_active_returns_none_after_soft_delete() {
         .await
         .expect("find_active after delete");
 
-    assert!(after.is_none(), "find_active must return None after soft-delete");
+    assert!(
+        after.is_none(),
+        "find_active must return None after soft-delete"
+    );
 
     db.teardown().await;
 }

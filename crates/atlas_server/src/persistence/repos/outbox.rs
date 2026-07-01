@@ -4,7 +4,9 @@ use atlas_domain::{
     ids::{BoardId, ProjectId},
 };
 use chrono::Utc;
-use sea_orm::{ActiveModelTrait, ActiveValue::Set, ConnectionTrait, DatabaseBackend, EntityTrait, Statement};
+use sea_orm::{
+    ActiveModelTrait, ActiveValue::Set, ConnectionTrait, DatabaseBackend, EntityTrait, Statement,
+};
 use uuid::Uuid;
 
 use crate::persistence::entities::events_outbox::event_outbox;

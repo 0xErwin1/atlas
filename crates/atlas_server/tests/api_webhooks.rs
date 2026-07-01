@@ -12,8 +12,8 @@ use atlas_server::{
     auth::password,
     crypto::WebhookCrypto,
     persistence::repos::{
-        MembershipRepo, NewUser, PgMembershipRepo, PgUserRepo, PgWebhookSubscriptionRepo,
-        UserRepo, WebhookSubscriptionPatch,
+        MembershipRepo, NewUser, PgMembershipRepo, PgUserRepo, PgWebhookSubscriptionRepo, UserRepo,
+        WebhookSubscriptionPatch,
     },
 };
 use serde_json::Value;
@@ -67,8 +67,12 @@ async fn add_member_user_and_login(
         .await
         .expect("hash");
 
-    let user_repo = PgUserRepo { conn: db.conn().clone() };
-    let membership_repo = PgMembershipRepo { conn: db.conn().clone() };
+    let user_repo = PgUserRepo {
+        conn: db.conn().clone(),
+    };
+    let membership_repo = PgMembershipRepo {
+        conn: db.conn().clone(),
+    };
 
     let user = user_repo
         .create(NewUser {
@@ -171,12 +175,14 @@ async fn webhook_repo_list_active_pagination() {
     assert_eq!(page1.len(), 2);
 
     let cursor = page1.last().unwrap().id;
-    let page2 =
-        PgWebhookSubscriptionRepo::list_active(db.conn(), ws.id.0, Some(cursor), 10)
-            .await
-            .expect("list page 2");
+    let page2 = PgWebhookSubscriptionRepo::list_active(db.conn(), ws.id.0, Some(cursor), 10)
+        .await
+        .expect("list page 2");
     assert_eq!(page2.len(), 1);
-    assert!(page2[0].id > cursor, "page-2 items must be after the cursor");
+    assert!(
+        page2[0].id > cursor,
+        "page-2 items must be after the cursor"
+    );
 
     db.teardown().await;
 }
@@ -375,8 +381,7 @@ async fn non_admin_is_rejected_on_all_crud() {
     let created: Value = create_resp.json().await.unwrap();
     let hook_id = created["id"].as_str().unwrap().to_string();
 
-    let member_token =
-        add_member_user_and_login(&server, &db, ws.id.0, "wh-nonadmin-editor").await;
+    let member_token = add_member_user_and_login(&server, &db, ws.id.0, "wh-nonadmin-editor").await;
 
     // The permission engine returns 404 for non-admin members on workspace resources
     // with no explicit visibility — this is intentional security-by-obscurity behavior
@@ -388,15 +393,25 @@ async fn non_admin_is_rejected_on_all_crud() {
         .send()
         .await
         .unwrap();
-    assert_eq!(list_resp.status(), 404, "non-admin list must be rejected (404)");
+    assert_eq!(
+        list_resp.status(),
+        404,
+        "non-admin list must be rejected (404)"
+    );
 
     let get_resp = http()
-        .get(format!("{base_url}/v1/workspaces/{ws_slug}/webhooks/{hook_id}"))
+        .get(format!(
+            "{base_url}/v1/workspaces/{ws_slug}/webhooks/{hook_id}"
+        ))
         .bearer_auth(&member_token)
         .send()
         .await
         .unwrap();
-    assert_eq!(get_resp.status(), 404, "non-admin get must be rejected (404)");
+    assert_eq!(
+        get_resp.status(),
+        404,
+        "non-admin get must be rejected (404)"
+    );
 
     let patch_resp = http()
         .patch(format!(
@@ -407,7 +422,11 @@ async fn non_admin_is_rejected_on_all_crud() {
         .send()
         .await
         .unwrap();
-    assert_eq!(patch_resp.status(), 404, "non-admin patch must be rejected (404)");
+    assert_eq!(
+        patch_resp.status(),
+        404,
+        "non-admin patch must be rejected (404)"
+    );
 
     let post_resp = http()
         .post(format!("{base_url}/v1/workspaces/{ws_slug}/webhooks"))
@@ -419,7 +438,11 @@ async fn non_admin_is_rejected_on_all_crud() {
         .send()
         .await
         .unwrap();
-    assert_eq!(post_resp.status(), 404, "non-admin create must be rejected (404)");
+    assert_eq!(
+        post_resp.status(),
+        404,
+        "non-admin create must be rejected (404)"
+    );
 
     let delete_resp = http()
         .delete(format!(
@@ -429,7 +452,11 @@ async fn non_admin_is_rejected_on_all_crud() {
         .send()
         .await
         .unwrap();
-    assert_eq!(delete_resp.status(), 404, "non-admin delete must be rejected (404)");
+    assert_eq!(
+        delete_resp.status(),
+        404,
+        "non-admin delete must be rejected (404)"
+    );
 
     db.teardown().await;
 }
@@ -442,8 +469,7 @@ async fn non_admin_is_rejected_on_all_crud() {
 async fn list_and_get_responses_contain_no_secret() {
     let db = support::TestDb::create().await.expect("TestDb");
     let server = support::TestServer::spawn(&db).await;
-    let (client, ws, _user) =
-        support::login_user_with_workspace(&server, &db, "wh-nosecret").await;
+    let (client, ws, _user) = support::login_user_with_workspace(&server, &db, "wh-nosecret").await;
 
     let token = client.token().expect("token");
     let base_url = server.base_url();
@@ -505,6 +531,37 @@ async fn list_and_get_responses_contain_no_secret() {
 // ---------------------------------------------------------------------------
 // B4.5-4: validation — empty event_types rejected with 422
 // ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn create_webhook_rejects_private_target_url_by_default() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let mut state = atlas_server::state::AppState::for_test(db.conn().clone())
+        .await
+        .expect("AppState::for_test");
+    state.allow_private_webhook_targets = false;
+    let server = support::TestServer::spawn_with_state(state).await;
+    let (client, ws, _user) =
+        support::login_user_with_workspace(&server, &db, "wh-val-private-url").await;
+
+    let token = client.token().expect("token");
+    let base_url = server.base_url();
+    let ws_slug = &ws.slug;
+
+    let resp = http()
+        .post(format!("{base_url}/v1/workspaces/{ws_slug}/webhooks"))
+        .bearer_auth(token)
+        .json(&serde_json::json!({
+            "target_url": "http://169.254.169.254/latest/meta-data",
+            "event_types": ["task.created"]
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 422, "private target_url must return 422");
+
+    db.teardown().await;
+}
 
 #[tokio::test]
 async fn create_webhook_rejects_empty_event_types() {
@@ -608,8 +665,7 @@ async fn create_webhook_rejects_missing_scope_id_for_board_scope() {
 async fn admin_can_toggle_is_active_and_patch_has_no_secret() {
     let db = support::TestDb::create().await.expect("TestDb");
     let server = support::TestServer::spawn(&db).await;
-    let (client, ws, _user) =
-        support::login_user_with_workspace(&server, &db, "wh-toggle").await;
+    let (client, ws, _user) = support::login_user_with_workspace(&server, &db, "wh-toggle").await;
 
     let token = client.token().expect("token");
     let base_url = server.base_url();
@@ -654,8 +710,7 @@ async fn admin_can_toggle_is_active_and_patch_has_no_secret() {
 async fn admin_delete_returns_204_then_get_returns_404() {
     let db = support::TestDb::create().await.expect("TestDb");
     let server = support::TestServer::spawn(&db).await;
-    let (client, ws, _user) =
-        support::login_user_with_workspace(&server, &db, "wh-delete").await;
+    let (client, ws, _user) = support::login_user_with_workspace(&server, &db, "wh-delete").await;
 
     let token = client.token().expect("token");
     let base_url = server.base_url();

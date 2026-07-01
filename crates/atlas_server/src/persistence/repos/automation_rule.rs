@@ -46,6 +46,14 @@ impl PgAutomationRuleRepo {
             });
         }
 
+        if project_id.is_some() {
+            return Err(DomainError::InvalidInput {
+                message:
+                    "external automation rules must be workspace-scoped in v1; omit project_id"
+                        .into(),
+            });
+        }
+
         let now = Utc::now();
         let model = automation_rules::ActiveModel {
             id: Set(Uuid::now_v7()),

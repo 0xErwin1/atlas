@@ -5,15 +5,17 @@ use utoipa_scalar::{Scalar, Servable as _};
 use atlas_api::{
     dtos::{
         ActivatePasswordRequest, ActivationInfoDto, ActivationLinkResponse, AddMemberRequest,
-        ApiKeyCreated, ApiKeyDto, ApiKeyGrantDto, ChangePasswordRequest, CreateGrantRequest,
-        CreateProjectRequest, CreateUserApiKeyRequest, CreateUserRequest, CreateUserResponse,
-        AdminUpdateWorkspaceRequest, CreateWorkspaceRequest, GrantDto, GrantPrincipal, GrantedByDto,
-        InitialGrantRequest,
-        LoginRequest, LoginResponse, MeResponse, PrincipalDto, ProjectDto, ResetPasswordRequest,
-        ServerMetaDto, SetSystemAdminRequest, UiStateDto, UpdateApiKeyRequest, UpdateMeRequest,
-        UpdateMemberRoleRequest, UpdateProjectRequest, UpdateUiStateRequest,
-        UpdateWorkspaceRequest, UserDto, UserMembershipDto, WorkspaceDto,
+        AdminUpdateWorkspaceRequest, ApiKeyCreated, ApiKeyDto, ApiKeyGrantDto,
+        ChangePasswordRequest, CreateGrantRequest, CreateProjectRequest, CreateUserApiKeyRequest,
+        CreateUserRequest, CreateUserResponse, CreateWorkspaceRequest, GrantDto, GrantPrincipal,
+        GrantedByDto, InitialGrantRequest, LoginRequest, LoginResponse, MeResponse, PrincipalDto,
+        ProjectDto, ResetPasswordRequest, ServerMetaDto, SetSystemAdminRequest, UiStateDto,
+        UpdateApiKeyRequest, UpdateMeRequest, UpdateMemberRoleRequest, UpdateProjectRequest,
+        UpdateUiStateRequest, UpdateWorkspaceRequest, UserDto, UserMembershipDto, WorkspaceDto,
         audit::AuditEntryDto,
+        automation_rules::{
+            AutomationRuleDto, CreateAutomationRuleRequest, PatchAutomationRuleRequest,
+        },
         boards_tasks::{
             ActivityEntryDto, AddAssigneeRequest, AssigneeDto, BoardDto, BoardSummaryDto,
             ChecklistItemDto, ColumnDto, CreateBoardRequest, CreateChecklistItemRequest,
@@ -32,7 +34,6 @@ use atlas_api::{
             CopyFolderRequest, CreateFolderRequest, FolderDto, MoveFolderRequest,
             RenameFolderRequest,
         },
-        automation_rules::{AutomationRuleDto, CreateAutomationRuleRequest, PatchAutomationRuleRequest},
         groups::{AddGroupMemberRequest, CreateGroupRequest, GroupDto, GroupMemberDto},
         integrations::{
             CreateIntegrationConfigRequest, IntegrationConfigCreatedDto, IntegrationConfigDto,

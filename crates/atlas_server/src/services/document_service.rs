@@ -7,9 +7,7 @@ use atlas_domain::{
     },
     ids::{DocumentId, FolderId, ProjectId, RevisionId},
 };
-use sea_orm::{
-    ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, TransactionTrait,
-};
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, TransactionTrait};
 
 use crate::persistence::entities::documents::document;
 use crate::persistence::repos::{
@@ -77,9 +75,15 @@ impl DocumentService {
     ) -> Result<Document, DomainError> {
         let txn = self.conn.begin().await.map_err(db_err)?;
 
-        let doc =
-            doc_update_content_in(&txn, ctx, id, expected_revision, new_content, self.anchor_interval)
-                .await?;
+        let doc = doc_update_content_in(
+            &txn,
+            ctx,
+            id,
+            expected_revision,
+            new_content,
+            self.anchor_interval,
+        )
+        .await?;
 
         let event = DomainEvent::DocumentUpdated(DocumentUpdatedPayload {
             document_id: doc.id,
@@ -145,11 +149,7 @@ impl DocumentService {
     }
 
     /// Soft-deletes a document and emits a `DocumentDeleted` event.
-    pub async fn soft_delete(
-        &self,
-        ctx: &WorkspaceCtx,
-        id: DocumentId,
-    ) -> Result<(), DomainError> {
+    pub async fn soft_delete(&self, ctx: &WorkspaceCtx, id: DocumentId) -> Result<(), DomainError> {
         let txn = self.conn.begin().await.map_err(db_err)?;
 
         let pre = document::Entity::find_by_id(id.0)
@@ -167,8 +167,7 @@ impl DocumentService {
 
         doc_soft_delete_in(&txn, ctx, id).await?;
 
-        let event =
-            DomainEvent::DocumentDeleted(DocumentDeletedPayload { document_id: id });
+        let event = DomainEvent::DocumentDeleted(DocumentDeletedPayload { document_id: id });
         PgOutboxRepo::insert_in(&txn, ctx, pre_project_id, None, event).await?;
 
         txn.commit().await.map_err(db_err)?;

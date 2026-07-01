@@ -655,11 +655,7 @@ async fn rename_cross_tenant_not_found() {
 
 // ─── B2.6 — `_in` primitive function tests ───────────────────────────────────
 
-use atlas_domain::{
-    DomainError,
-    entities::documents::NewDocument as NewDoc,
-    ids::RevisionId,
-};
+use atlas_domain::{DomainError, entities::documents::NewDocument as NewDoc, ids::RevisionId};
 use atlas_server::persistence::repos::{
     FolderRepo, PgFolderRepo, doc_create_in, doc_move_to_in, doc_rename_in, doc_soft_delete_in,
     doc_update_content_in,
@@ -741,8 +737,7 @@ async fn update_content_in_conflict_on_stale_revision() {
     let stale_revision = RevisionId::new(); // random UUID — not the current head
 
     let txn = db.conn().begin().await.expect("begin");
-    let result =
-        doc_update_content_in(&txn, &ctx, doc.id, stale_revision, "new content", 50).await;
+    let result = doc_update_content_in(&txn, &ctx, doc.id, stale_revision, "new content", 50).await;
     txn.rollback().await.expect("rollback");
 
     assert!(
@@ -789,7 +784,9 @@ async fn move_to_in_assigns_folder_in_txn() {
     let ctx = support::ctx(&ws, &user);
     let repo = make_doc_repo(&db);
 
-    let folder_repo = PgFolderRepo { conn: db.conn().clone() };
+    let folder_repo = PgFolderRepo {
+        conn: db.conn().clone(),
+    };
     let folder = folder_repo
         .create(
             &ctx,

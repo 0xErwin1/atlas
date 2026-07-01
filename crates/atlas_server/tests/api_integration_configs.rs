@@ -46,8 +46,12 @@ async fn add_member_and_login(
     let plaintext = "TestPassword1!";
     let hash = password::hash(plaintext.to_string()).await.expect("hash");
 
-    let user_repo = PgUserRepo { conn: db.conn().clone() };
-    let membership_repo = PgMembershipRepo { conn: db.conn().clone() };
+    let user_repo = PgUserRepo {
+        conn: db.conn().clone(),
+    };
+    let membership_repo = PgMembershipRepo {
+        conn: db.conn().clone(),
+    };
 
     let user = user_repo
         .create(NewUser {
@@ -100,7 +104,9 @@ async fn admin_creates_integration_config_returns_201_with_secret() {
     let ws_slug = &ws.slug;
 
     let resp = http()
-        .post(format!("{base_url}/v1/workspaces/{ws_slug}/integration-configs"))
+        .post(format!(
+            "{base_url}/v1/workspaces/{ws_slug}/integration-configs"
+        ))
         .bearer_auth(token)
         .json(&serde_json::json!({ "integration": "github" }))
         .send()
@@ -113,14 +119,20 @@ async fn admin_creates_integration_config_returns_201_with_secret() {
     assert!(body["id"].is_string(), "id must be present");
     assert_eq!(body["integration"], "github");
     assert_eq!(body["is_active"], true);
-    assert!(body["secret"].is_string(), "secret must be in create response");
+    assert!(
+        body["secret"].is_string(),
+        "secret must be in create response"
+    );
     assert!(
         body["integration_api_key_id"].is_string(),
         "integration_api_key_id must be present"
     );
 
     let secret = body["secret"].as_str().unwrap();
-    assert!(secret.starts_with("integ_"), "secret must start with integ_: {secret}");
+    assert!(
+        secret.starts_with("integ_"),
+        "secret must start with integ_: {secret}"
+    );
 
     db.teardown().await;
 }
@@ -133,15 +145,16 @@ async fn admin_creates_integration_config_returns_201_with_secret() {
 async fn list_and_get_do_not_expose_secret() {
     let db = support::TestDb::create().await.expect("TestDb");
     let server = support::TestServer::spawn(&db).await;
-    let (client, ws, _user) =
-        support::login_user_with_workspace(&server, &db, "ic-nosecret").await;
+    let (client, ws, _user) = support::login_user_with_workspace(&server, &db, "ic-nosecret").await;
 
     let token = client.token().expect("token");
     let base_url = server.base_url();
     let ws_slug = &ws.slug;
 
     let create_resp = http()
-        .post(format!("{base_url}/v1/workspaces/{ws_slug}/integration-configs"))
+        .post(format!(
+            "{base_url}/v1/workspaces/{ws_slug}/integration-configs"
+        ))
         .bearer_auth(token)
         .json(&serde_json::json!({ "integration": "github" }))
         .send()
@@ -152,7 +165,9 @@ async fn list_and_get_do_not_expose_secret() {
     let config_id = created["id"].as_str().unwrap().to_string();
 
     let list_resp = http()
-        .get(format!("{base_url}/v1/workspaces/{ws_slug}/integration-configs"))
+        .get(format!(
+            "{base_url}/v1/workspaces/{ws_slug}/integration-configs"
+        ))
         .bearer_auth(token)
         .send()
         .await
@@ -161,7 +176,10 @@ async fn list_and_get_do_not_expose_secret() {
     let list_body: Value = list_resp.json().await.unwrap();
     let items = list_body.as_array().unwrap();
     assert_eq!(items.len(), 1);
-    assert!(items[0]["secret"].is_null(), "list item must not expose secret");
+    assert!(
+        items[0]["secret"].is_null(),
+        "list item must not expose secret"
+    );
     assert!(
         items[0]["encrypted_secret"].is_null(),
         "list item must not expose encrypted_secret"
@@ -177,7 +195,10 @@ async fn list_and_get_do_not_expose_secret() {
         .unwrap();
     assert_eq!(get_resp.status(), 200);
     let get_body: Value = get_resp.json().await.unwrap();
-    assert!(get_body["secret"].is_null(), "get response must not expose secret");
+    assert!(
+        get_body["secret"].is_null(),
+        "get response must not expose secret"
+    );
     assert!(
         get_body["encrypted_secret"].is_null(),
         "get response must not expose encrypted_secret"
@@ -202,7 +223,9 @@ async fn non_admin_rejected_on_integration_config_endpoints() {
     let ws_slug = &ws.slug;
 
     let create_resp = http()
-        .post(format!("{base_url}/v1/workspaces/{ws_slug}/integration-configs"))
+        .post(format!(
+            "{base_url}/v1/workspaces/{ws_slug}/integration-configs"
+        ))
         .bearer_auth(admin_token)
         .json(&serde_json::json!({ "integration": "github" }))
         .send()
@@ -212,11 +235,12 @@ async fn non_admin_rejected_on_integration_config_endpoints() {
     let created: Value = create_resp.json().await.unwrap();
     let config_id = created["id"].as_str().unwrap().to_string();
 
-    let member_token =
-        add_member_and_login(&server, &db, ws.id.0, "ic-nonadmin-member").await;
+    let member_token = add_member_and_login(&server, &db, ws.id.0, "ic-nonadmin-member").await;
 
     let list_resp = http()
-        .get(format!("{base_url}/v1/workspaces/{ws_slug}/integration-configs"))
+        .get(format!(
+            "{base_url}/v1/workspaces/{ws_slug}/integration-configs"
+        ))
         .bearer_auth(&member_token)
         .send()
         .await
@@ -234,7 +258,9 @@ async fn non_admin_rejected_on_integration_config_endpoints() {
     assert_eq!(get_resp.status(), 404, "non-admin get must be 404");
 
     let post_resp = http()
-        .post(format!("{base_url}/v1/workspaces/{ws_slug}/integration-configs"))
+        .post(format!(
+            "{base_url}/v1/workspaces/{ws_slug}/integration-configs"
+        ))
         .bearer_auth(&member_token)
         .json(&serde_json::json!({ "integration": "github" }))
         .send()
@@ -266,15 +292,16 @@ async fn admin_delete_soft_deletes_and_revokes_key() {
 
     let db = support::TestDb::create().await.expect("TestDb");
     let server = support::TestServer::spawn(&db).await;
-    let (client, ws, _user) =
-        support::login_user_with_workspace(&server, &db, "ic-delete").await;
+    let (client, ws, _user) = support::login_user_with_workspace(&server, &db, "ic-delete").await;
 
     let token = client.token().expect("token");
     let base_url = server.base_url();
     let ws_slug = &ws.slug;
 
     let create_resp = http()
-        .post(format!("{base_url}/v1/workspaces/{ws_slug}/integration-configs"))
+        .post(format!(
+            "{base_url}/v1/workspaces/{ws_slug}/integration-configs"
+        ))
         .bearer_auth(token)
         .json(&serde_json::json!({ "integration": "github" }))
         .send()
@@ -338,7 +365,9 @@ async fn ingest_valid_signed_event_returns_200() {
     let ws_slug = &ws.slug;
 
     let create_resp = http()
-        .post(format!("{base_url}/v1/workspaces/{ws_slug}/integration-configs"))
+        .post(format!(
+            "{base_url}/v1/workspaces/{ws_slug}/integration-configs"
+        ))
         .bearer_auth(token)
         .json(&serde_json::json!({ "integration": "github" }))
         .send()
@@ -410,7 +439,9 @@ async fn ingest_bad_sig_returns_401() {
     let ws_slug = &ws.slug;
 
     http()
-        .post(format!("{base_url}/v1/workspaces/{ws_slug}/integration-configs"))
+        .post(format!(
+            "{base_url}/v1/workspaces/{ws_slug}/integration-configs"
+        ))
         .bearer_auth(token)
         .json(&serde_json::json!({ "integration": "github" }))
         .send()
@@ -453,7 +484,9 @@ async fn ingest_missing_sig_returns_401() {
     let ws_slug = &ws.slug;
 
     http()
-        .post(format!("{base_url}/v1/workspaces/{ws_slug}/integration-configs"))
+        .post(format!(
+            "{base_url}/v1/workspaces/{ws_slug}/integration-configs"
+        ))
         .bearer_auth(token)
         .json(&serde_json::json!({ "integration": "github" }))
         .send()
@@ -523,7 +556,9 @@ async fn ingest_oversized_body_returns_413() {
     let ws_slug = &ws.slug;
 
     let create_resp = http()
-        .post(format!("{base_url}/v1/workspaces/{ws_slug}/integration-configs"))
+        .post(format!(
+            "{base_url}/v1/workspaces/{ws_slug}/integration-configs"
+        ))
         .bearer_auth(token)
         .json(&serde_json::json!({ "integration": "github" }))
         .send()
@@ -576,7 +611,9 @@ async fn ingest_duplicate_delivery_is_noop() {
     let ws_slug = &ws.slug;
 
     let create_resp = http()
-        .post(format!("{base_url}/v1/workspaces/{ws_slug}/integration-configs"))
+        .post(format!(
+            "{base_url}/v1/workspaces/{ws_slug}/integration-configs"
+        ))
         .bearer_auth(token)
         .json(&serde_json::json!({ "integration": "github" }))
         .send()
@@ -609,7 +646,11 @@ async fn ingest_duplicate_delivery_is_noop() {
         .all(db.conn())
         .await
         .expect("query outbox");
-    assert_eq!(rows.len(), 1, "duplicate delivery must produce exactly one outbox row");
+    assert_eq!(
+        rows.len(),
+        1,
+        "duplicate delivery must produce exactly one outbox row"
+    );
 
     db.teardown().await;
 }
@@ -642,22 +683,30 @@ async fn ingest_filter_match_creates_task() {
 
     let ctx = support::ctx(&ws, &user);
 
-    let project = PgProjectRepo { conn: db.conn().clone() }
-        .create(
-            &ctx,
-            NewProject {
-                name: "Ingest Match Project".to_string(),
-                slug: "ingest-match-proj".to_string(),
-                task_prefix: "IMP".to_string(),
-                visibility: Visibility::Workspace(VisibilityRole::Editor),
-            },
-        )
-        .await
-        .expect("create project");
+    let project = PgProjectRepo {
+        conn: db.conn().clone(),
+    }
+    .create(
+        &ctx,
+        NewProject {
+            name: "Ingest Match Project".to_string(),
+            slug: "ingest-match-proj".to_string(),
+            task_prefix: "IMP".to_string(),
+            visibility: Visibility::Workspace(VisibilityRole::Editor),
+        },
+    )
+    .await
+    .expect("create project");
 
     let board_repo = db.board_repo();
     let board = board_repo
-        .create_board(&ctx, NewBoard { name: "Test Board".to_string(), project_id: project.id })
+        .create_board(
+            &ctx,
+            NewBoard {
+                name: "Test Board".to_string(),
+                project_id: project.id,
+            },
+        )
         .await
         .expect("create board");
 
@@ -667,13 +716,18 @@ async fn ingest_filter_match_creates_task() {
             board.id,
             "To Do".to_string(),
             None,
-            PositionBetween { before: None, after: None },
+            PositionBetween {
+                before: None,
+                after: None,
+            },
         )
         .await
         .expect("create column");
 
     let create_resp = http()
-        .post(format!("{base_url}/v1/workspaces/{ws_slug}/integration-configs"))
+        .post(format!(
+            "{base_url}/v1/workspaces/{ws_slug}/integration-configs"
+        ))
         .bearer_auth(token)
         .json(&serde_json::json!({ "integration": "github" }))
         .send()
@@ -776,22 +830,30 @@ async fn ingest_filter_no_match_no_task() {
 
     let ctx = support::ctx(&ws, &user);
 
-    let project = PgProjectRepo { conn: db.conn().clone() }
-        .create(
-            &ctx,
-            NewProject {
-                name: "Ingest Nomatch Project".to_string(),
-                slug: "ingest-nomatch-proj".to_string(),
-                task_prefix: "INP".to_string(),
-                visibility: Visibility::Workspace(VisibilityRole::Editor),
-            },
-        )
-        .await
-        .expect("create project");
+    let project = PgProjectRepo {
+        conn: db.conn().clone(),
+    }
+    .create(
+        &ctx,
+        NewProject {
+            name: "Ingest Nomatch Project".to_string(),
+            slug: "ingest-nomatch-proj".to_string(),
+            task_prefix: "INP".to_string(),
+            visibility: Visibility::Workspace(VisibilityRole::Editor),
+        },
+    )
+    .await
+    .expect("create project");
 
     let board_repo = db.board_repo();
     let board = board_repo
-        .create_board(&ctx, NewBoard { name: "Test Board".to_string(), project_id: project.id })
+        .create_board(
+            &ctx,
+            NewBoard {
+                name: "Test Board".to_string(),
+                project_id: project.id,
+            },
+        )
         .await
         .expect("create board");
 
@@ -801,13 +863,18 @@ async fn ingest_filter_no_match_no_task() {
             board.id,
             "To Do".to_string(),
             None,
-            PositionBetween { before: None, after: None },
+            PositionBetween {
+                before: None,
+                after: None,
+            },
         )
         .await
         .expect("create column");
 
     let create_resp = http()
-        .post(format!("{base_url}/v1/workspaces/{ws_slug}/integration-configs"))
+        .post(format!(
+            "{base_url}/v1/workspaces/{ws_slug}/integration-configs"
+        ))
         .bearer_auth(token)
         .json(&serde_json::json!({ "integration": "github" }))
         .send()

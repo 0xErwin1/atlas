@@ -102,14 +102,8 @@ impl AutomationService {
         let task_svc = TaskService::new(self.conn.clone());
 
         for rule in &rules {
-            self.execute_rule(
-                &task_svc,
-                rule,
-                workspace_id,
-                integration_api_key_id,
-                &data,
-            )
-            .await?;
+            self.execute_rule(&task_svc, rule, workspace_id, integration_api_key_id, &data)
+                .await?;
         }
 
         Ok(true)
@@ -156,10 +150,10 @@ impl AutomationService {
 
         let title = render_template(&params.title_template, data);
 
-        let priority = params
-            .priority
-            .as_deref()
-            .and_then(|s| s.parse::<atlas_domain::entities::boards_tasks::Priority>().ok());
+        let priority = params.priority.as_deref().and_then(|s| {
+            s.parse::<atlas_domain::entities::boards_tasks::Priority>()
+                .ok()
+        });
 
         let ctx = WorkspaceCtx::new(
             WorkspaceId(workspace_id),
@@ -351,8 +345,7 @@ pub(crate) fn render_template(template: &str, data: &serde_json::Value) -> Strin
                     })
                     .unwrap_or_default();
 
-                let truncated: String =
-                    value_str.chars().take(MAX_TEMPLATE_VALUE_CHARS).collect();
+                let truncated: String = value_str.chars().take(MAX_TEMPLATE_VALUE_CHARS).collect();
                 result.push_str(&truncated);
             }
         } else {
@@ -415,8 +408,7 @@ mod tests {
     // B3.4 [U] Filter with multiple keys: all must match
     #[test]
     fn multi_key_filter_all_must_match() {
-        let filter =
-            serde_json::json!({"conclusion": "failure", "head_branch": "main"});
+        let filter = serde_json::json!({"conclusion": "failure", "head_branch": "main"});
         let data = sample_data();
         assert!(evaluate_trigger_filter(Some(&filter), &data));
     }
@@ -424,8 +416,7 @@ mod tests {
     // B3.4 [U] Filter with multiple keys: partial match → no match
     #[test]
     fn multi_key_filter_partial_is_no_match() {
-        let filter =
-            serde_json::json!({"conclusion": "failure", "head_branch": "feature"});
+        let filter = serde_json::json!({"conclusion": "failure", "head_branch": "feature"});
         let data = sample_data();
         assert!(!evaluate_trigger_filter(Some(&filter), &data));
     }

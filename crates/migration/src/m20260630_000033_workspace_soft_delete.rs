@@ -13,10 +13,8 @@ impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         let conn = manager.get_connection();
 
-        conn.execute_unprepared(
-            "ALTER TABLE workspaces ADD COLUMN deleted_at TIMESTAMPTZ NULL",
-        )
-        .await?;
+        conn.execute_unprepared("ALTER TABLE workspaces ADD COLUMN deleted_at TIMESTAMPTZ NULL")
+            .await?;
 
         Ok(())
     }

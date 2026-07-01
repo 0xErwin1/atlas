@@ -9,7 +9,11 @@ mod support;
 
 use std::sync::{Arc, Mutex};
 
-use atlas_domain::{Actor, WorkspaceCtx, entities::events::{DomainEvent, TaskCreatedPayload}, ids::{BoardId, ColumnId, ProjectId, TaskId}};
+use atlas_domain::{
+    Actor, WorkspaceCtx,
+    entities::events::{DomainEvent, TaskCreatedPayload},
+    ids::{BoardId, ColumnId, ProjectId, TaskId},
+};
 use atlas_server::{
     config::DispatcherConfig,
     crypto::WebhookCrypto,
@@ -128,7 +132,9 @@ async fn spawn_mock_receiver(response_code: u16) -> (String, MockState, tokio::t
     let url = format!("http://{addr}/hook");
 
     let handle = tokio::spawn(async move {
-        axum::serve(listener, app).await.expect("mock receiver serve");
+        axum::serve(listener, app)
+            .await
+            .expect("mock receiver serve");
     });
 
     (url, mock_state, handle.abort_handle())
@@ -173,9 +179,15 @@ async fn dispatcher_delivers_event_and_marks_delivered() {
     txn.commit().await.expect("commit");
 
     // Run one dispatch pass
-    let dispatcher =
-        WebhookDispatcher::new(db.conn().clone(), Arc::clone(&crypto), default_test_config());
-    dispatcher.poll_and_dispatch().await.expect("poll_and_dispatch");
+    let dispatcher = WebhookDispatcher::new(
+        db.conn().clone(),
+        Arc::clone(&crypto),
+        default_test_config(),
+    );
+    dispatcher
+        .poll_and_dispatch()
+        .await
+        .expect("poll_and_dispatch");
 
     // Mock must have received exactly one POST. Clone data before dropping the guard
     // so no MutexGuard is held across subsequent await points.
@@ -190,23 +202,28 @@ async fn dispatcher_delivers_event_and_marks_delivered() {
 
     // Verify the signature is present and correct
     let received_sig = received_sig.expect("signature header must be present");
-    let expected_sig = atlas_server::dispatcher::compute_signature(TEST_SECRET, received_body.as_bytes())
-        .expect("compute expected sig");
+    let expected_sig =
+        atlas_server::dispatcher::compute_signature(TEST_SECRET, received_body.as_bytes())
+            .expect("compute expected sig");
     assert_eq!(
         received_sig, expected_sig,
         "received signature must match expected HMAC"
     );
 
     // Outbox row must be delivered
-    let rows = event_outbox::Entity::find().all(db.conn()).await.expect("find");
+    let rows = event_outbox::Entity::find()
+        .all(db.conn())
+        .await
+        .expect("find");
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].status, "delivered", "outbox must be 'delivered'");
 
     // Delivery log must have one success row
-    let log_rows = atlas_server::persistence::entities::webhook_delivery::webhook_delivery_log::Entity::find()
-        .all(db.conn())
-        .await
-        .expect("find log");
+    let log_rows =
+        atlas_server::persistence::entities::webhook_delivery::webhook_delivery_log::Entity::find()
+            .all(db.conn())
+            .await
+            .expect("find log");
     assert_eq!(log_rows.len(), 1, "delivery log must have one row");
     assert_eq!(log_rows[0].outcome, "success");
 
@@ -252,24 +269,29 @@ async fn dispatcher_marks_dead_on_exhausted_attempts() {
     // max_attempts=1 → dead after first failed pass
     let dispatcher =
         WebhookDispatcher::new(db.conn().clone(), Arc::clone(&crypto), one_attempt_config());
-    dispatcher.poll_and_dispatch().await.expect("poll_and_dispatch");
+    dispatcher
+        .poll_and_dispatch()
+        .await
+        .expect("poll_and_dispatch");
 
     // Mock received one POST
-    let req_count = {
-        mock_state.requests.lock().unwrap().len()
-    };
+    let req_count = { mock_state.requests.lock().unwrap().len() };
     assert_eq!(req_count, 1, "mock must receive exactly one POST");
 
     // Outbox must be dead
-    let rows = event_outbox::Entity::find().all(db.conn()).await.expect("find");
+    let rows = event_outbox::Entity::find()
+        .all(db.conn())
+        .await
+        .expect("find");
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].status, "dead", "exhausted row must be 'dead'");
 
     // Delivery log must have one failure row
-    let log_rows = atlas_server::persistence::entities::webhook_delivery::webhook_delivery_log::Entity::find()
-        .all(db.conn())
-        .await
-        .expect("find log");
+    let log_rows =
+        atlas_server::persistence::entities::webhook_delivery::webhook_delivery_log::Entity::find()
+            .all(db.conn())
+            .await
+            .expect("find log");
     assert_eq!(log_rows.len(), 1);
     assert_eq!(log_rows[0].outcome, "failure");
 
@@ -350,11 +372,16 @@ async fn delivery_log_records_each_attempt() {
     dispatcher.poll_and_dispatch().await.expect("pass 3");
 
     // Expect 3 delivery log rows (one per attempt)
-    let log_rows = atlas_server::persistence::entities::webhook_delivery::webhook_delivery_log::Entity::find()
-        .all(db.conn())
-        .await
-        .expect("find log");
-    assert_eq!(log_rows.len(), 3, "must have one delivery log row per attempt");
+    let log_rows =
+        atlas_server::persistence::entities::webhook_delivery::webhook_delivery_log::Entity::find()
+            .all(db.conn())
+            .await
+            .expect("find log");
+    assert_eq!(
+        log_rows.len(),
+        3,
+        "must have one delivery log row per attempt"
+    );
 
     // All failures
     for r in &log_rows {
@@ -362,7 +389,10 @@ async fn delivery_log_records_each_attempt() {
     }
 
     // Outbox must be dead after 3 attempts with max_attempts=3
-    let rows = event_outbox::Entity::find().all(db.conn()).await.expect("find");
+    let rows = event_outbox::Entity::find()
+        .all(db.conn())
+        .await
+        .expect("find");
     assert_eq!(rows[0].status, "dead");
 
     db.teardown().await;
@@ -387,11 +417,20 @@ async fn no_matching_subscriptions_marks_delivered() {
         .expect("insert_in");
     txn.commit().await.expect("commit");
 
-    let dispatcher =
-        WebhookDispatcher::new(db.conn().clone(), Arc::clone(&crypto), default_test_config());
-    dispatcher.poll_and_dispatch().await.expect("poll_and_dispatch");
+    let dispatcher = WebhookDispatcher::new(
+        db.conn().clone(),
+        Arc::clone(&crypto),
+        default_test_config(),
+    );
+    dispatcher
+        .poll_and_dispatch()
+        .await
+        .expect("poll_and_dispatch");
 
-    let rows = event_outbox::Entity::find().all(db.conn()).await.expect("find");
+    let rows = event_outbox::Entity::find()
+        .all(db.conn())
+        .await
+        .expect("find");
     assert_eq!(rows[0].status, "delivered", "no matching subs → delivered");
 
     db.teardown().await;
@@ -427,13 +466,12 @@ async fn graceful_shutdown_exits_cleanly() {
     shutdown_tx.send(true).expect("send shutdown");
 
     // Await with a timeout — if the dispatcher hangs, the test fails
-    let result = tokio::time::timeout(
-        std::time::Duration::from_secs(2),
-        handle,
-    )
-    .await;
+    let result = tokio::time::timeout(std::time::Duration::from_secs(2), handle).await;
 
-    assert!(result.is_ok(), "dispatcher must exit within the timeout on shutdown");
+    assert!(
+        result.is_ok(),
+        "dispatcher must exit within the timeout on shutdown"
+    );
     let join_result = result.unwrap();
     assert!(join_result.is_ok(), "dispatcher task must not panic");
 
@@ -478,18 +516,28 @@ async fn out_of_scope_subscription_is_not_delivered() {
         .expect("insert_in");
     txn.commit().await.expect("commit");
 
-    let dispatcher =
-        WebhookDispatcher::new(db.conn().clone(), Arc::clone(&crypto), default_test_config());
-    dispatcher.poll_and_dispatch().await.expect("poll_and_dispatch");
+    let dispatcher = WebhookDispatcher::new(
+        db.conn().clone(),
+        Arc::clone(&crypto),
+        default_test_config(),
+    );
+    dispatcher
+        .poll_and_dispatch()
+        .await
+        .expect("poll_and_dispatch");
 
     // Mock must NOT have received any request
-    let req_count = {
-        mock_state.requests.lock().unwrap().len()
-    };
-    assert_eq!(req_count, 0, "out-of-scope subscription must not receive delivery");
+    let req_count = { mock_state.requests.lock().unwrap().len() };
+    assert_eq!(
+        req_count, 0,
+        "out-of-scope subscription must not receive delivery"
+    );
 
     // Event still delivered (zero matching subs)
-    let rows = event_outbox::Entity::find().all(db.conn()).await.expect("find");
+    let rows = event_outbox::Entity::find()
+        .all(db.conn())
+        .await
+        .expect("find");
     assert_eq!(rows[0].status, "delivered");
 
     db.teardown().await;

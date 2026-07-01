@@ -59,9 +59,9 @@ pub use security_audit::{PgSecurityAuditRepo, SecurityAuditRepoTrait as Security
 #[allow(unreachable_pub)]
 mod saved_searches;
 
+pub use outbox::PgOutboxRepo;
 pub use saved_searches::{PgSavedSearchRepo, SavedSearchRepo};
 pub use search::PgSearchRepo;
-pub use outbox::PgOutboxRepo;
 pub use tags::{PgTagRepo, TagRepo};
 #[allow(unreachable_pub)]
 mod task_views;

@@ -1740,6 +1740,279 @@
         ]
       }
     },
+    "/v1/workspaces/{ws}/automation-rules": {
+      "get": {
+        "tags": [
+          "automation-rules"
+        ],
+        "operationId": "list_automation_rules",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "description": "Opaque cursor for the next page",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size, max 50",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of automation rules",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_AutomationRuleDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "404": {
+            "description": "Workspace not found or caller is not an admin"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "automation-rules"
+        ],
+        "operationId": "create_automation_rule",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAutomationRuleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Automation rule created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutomationRuleDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "404": {
+            "description": "Workspace not found or caller is not an admin"
+          },
+          "422": {
+            "description": "Validation error"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{ws}/automation-rules/{rule_id}": {
+      "get": {
+        "tags": [
+          "automation-rules"
+        ],
+        "operationId": "get_automation_rule",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "rule_id",
+            "in": "path",
+            "description": "Automation rule id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Automation rule",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutomationRuleDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "404": {
+            "description": "Rule not found or caller is not an admin"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "automation-rules"
+        ],
+        "operationId": "delete_automation_rule",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "rule_id",
+            "in": "path",
+            "description": "Automation rule id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Automation rule soft-deleted"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "404": {
+            "description": "Rule not found or caller is not an admin"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "automation-rules"
+        ],
+        "operationId": "patch_automation_rule",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "rule_id",
+            "in": "path",
+            "description": "Automation rule id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchAutomationRuleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated automation rule",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutomationRuleDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "404": {
+            "description": "Rule not found or caller is not an admin"
+          },
+          "422": {
+            "description": "Validation error"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/v1/workspaces/{ws}/boards/{board_id}": {
       "get": {
         "tags": [
@@ -3840,6 +4113,243 @@
             "bearer_auth": []
           }
         ]
+      }
+    },
+    "/v1/workspaces/{ws}/integration-configs": {
+      "get": {
+        "tags": [
+          "integrations"
+        ],
+        "operationId": "list_integration_configs",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of integration configs (no secret)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/IntegrationConfigDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "404": {
+            "description": "Workspace not found or caller is not an admin"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "integrations"
+        ],
+        "operationId": "create_integration_config",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateIntegrationConfigRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Config created; secret returned once",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationConfigCreatedDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "404": {
+            "description": "Workspace not found or caller is not an admin"
+          },
+          "422": {
+            "description": "Validation error"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{ws}/integration-configs/{config_id}": {
+      "get": {
+        "tags": [
+          "integrations"
+        ],
+        "operationId": "get_integration_config",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "config_id",
+            "in": "path",
+            "description": "Integration config id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Integration config (no secret)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationConfigDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "404": {
+            "description": "Config not found or caller is not an admin"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "integrations"
+        ],
+        "operationId": "delete_integration_config",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "config_id",
+            "in": "path",
+            "description": "Integration config id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Config soft-deleted and api key revoked"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "404": {
+            "description": "Config not found or caller is not an admin"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{ws}/integrations/{integration}/events": {
+      "post": {
+        "tags": [
+          "integrations"
+        ],
+        "summary": "Receives a signed GitHub delivery, verifies it via the `VerifiedIntegrationEvent`\nextractor, and hands it off to `AutomationService` for dedup, outbox storage,\nand rule evaluation.",
+        "description": "Returns 200 regardless of whether the delivery was new or a duplicate so\nthat GitHub does not retry on idempotent re-deliveries.",
+        "operationId": "ingest_github_event",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "integration",
+            "in": "path",
+            "description": "Integration slug (e.g. 'github')",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Event accepted (new or duplicate)"
+          },
+          "401": {
+            "description": "Signature missing or invalid"
+          },
+          "404": {
+            "description": "No active integration config found for this workspace"
+          },
+          "413": {
+            "description": "Request body exceeds 1 MiB"
+          }
+        }
       }
     },
     "/v1/workspaces/{ws}/members": {
@@ -8662,6 +9172,60 @@
           }
         }
       },
+      "AutomationRuleDto": {
+        "type": "object",
+        "description": "Automation rule representation.",
+        "required": [
+          "id",
+          "workspace_id",
+          "name",
+          "is_active",
+          "trigger_event_type",
+          "action_type",
+          "action_params",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "action_params": {},
+          "action_type": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "trigger_event_type": {
+            "type": "string"
+          },
+          "trigger_filter": {},
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
       "BacklinkDto": {
         "type": "object",
         "description": "A document that links to this document (backlink).",
@@ -8958,6 +9522,43 @@
           }
         }
       },
+      "CreateAutomationRuleRequest": {
+        "type": "object",
+        "description": "Request body for `POST /v1/workspaces/{ws}/automation-rules`.",
+        "required": [
+          "name",
+          "trigger_event_type",
+          "action_type",
+          "action_params"
+        ],
+        "properties": {
+          "action_params": {
+            "description": "Parameters for the action. For `\"create_task\"`: `{board_id, column_id, title_template, priority?}`."
+          },
+          "action_type": {
+            "type": "string",
+            "description": "Action to execute on match. Only `\"create_task\"` is supported in v1."
+          },
+          "name": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Scope the rule to a specific project. `None` means workspace-scoped."
+          },
+          "trigger_event_type": {
+            "type": "string",
+            "description": "Must start with `\"external.\"` (e.g. `\"external.github.workflow_run\"`)."
+          },
+          "trigger_filter": {
+            "description": "Optional top-level string-equality filter. All keys must match for the rule to fire."
+          }
+        }
+      },
       "CreateBoardRequest": {
         "type": "object",
         "description": "Request body for `POST /v1/workspaces/{ws}/projects/{ps}/boards`.",
@@ -9093,6 +9694,19 @@
         "properties": {
           "name": {
             "type": "string"
+          }
+        }
+      },
+      "CreateIntegrationConfigRequest": {
+        "type": "object",
+        "description": "Request body for `POST /v1/workspaces/{ws}/integration-configs`.",
+        "required": [
+          "integration"
+        ],
+        "properties": {
+          "integration": {
+            "type": "string",
+            "description": "Integration slug. Only `\"github\"` is supported in v1."
           }
         }
       },
@@ -9759,6 +10373,94 @@
           }
         }
       },
+      "IntegrationConfigCreatedDto": {
+        "type": "object",
+        "description": "Response from `POST /v1/workspaces/{ws}/integration-configs`.\n\nCarries the HMAC secret in plaintext exactly once. After this response the\nsecret is never available again — configure your integration immediately.",
+        "required": [
+          "id",
+          "workspace_id",
+          "integration",
+          "integration_api_key_id",
+          "is_active",
+          "secret",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "integration": {
+            "type": "string"
+          },
+          "integration_api_key_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "secret": {
+            "type": "string",
+            "description": "Plaintext HMAC-SHA256 signing secret (`integ_…`). Shown exactly once."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "IntegrationConfigDto": {
+        "type": "object",
+        "description": "Integration config as returned by list and get.\n\nNever contains the plaintext or encrypted HMAC secret.",
+        "required": [
+          "id",
+          "workspace_id",
+          "integration",
+          "integration_api_key_id",
+          "is_active",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "integration": {
+            "type": "string"
+          },
+          "integration_api_key_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Provisioned `ApiKeyType::Integration` key used as the automation actor."
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
       "LoginRequest": {
         "type": "object",
         "description": "Request body for `POST /v1/auth/login`.",
@@ -10095,6 +10797,82 @@
                     "string",
                     "null"
                   ],
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "Page_AutomationRuleDto": {
+        "type": "object",
+        "description": "Paginated response envelope.",
+        "required": [
+          "items",
+          "has_more"
+        ],
+        "properties": {
+          "has_more": {
+            "type": "boolean"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "Automation rule representation.",
+              "required": [
+                "id",
+                "workspace_id",
+                "name",
+                "is_active",
+                "trigger_event_type",
+                "action_type",
+                "action_params",
+                "created_at",
+                "updated_at"
+              ],
+              "properties": {
+                "action_params": {},
+                "action_type": {
+                  "type": "string"
+                },
+                "created_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "is_active": {
+                  "type": "boolean"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "project_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                },
+                "trigger_event_type": {
+                  "type": "string"
+                },
+                "trigger_filter": {},
+                "updated_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "workspace_id": {
+                  "type": "string",
                   "format": "uuid"
                 }
               }
@@ -10719,6 +11497,28 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "PatchAutomationRuleRequest": {
+        "type": "object",
+        "description": "Partial update for `PATCH /v1/workspaces/{ws}/automation-rules/{rule_id}`.\n\nOmitted fields are left unchanged. Pass `{\"trigger_filter\": null}` to clear the filter.",
+        "properties": {
+          "action_params": {},
+          "is_active": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "trigger_filter": {
+            "description": "`Some(null)` clears the filter; `Some(value)` replaces it; absent leaves it unchanged."
           }
         }
       },
@@ -12448,6 +13248,14 @@
     {
       "name": "webhooks",
       "description": "Outgoing webhook subscription management (admin-only)"
+    },
+    {
+      "name": "integrations",
+      "description": "External integration config management and event ingestion (admin-only)"
+    },
+    {
+      "name": "automation-rules",
+      "description": "Automation rule CRUD (admin-only)"
     }
   ]
 }

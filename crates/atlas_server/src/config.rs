@@ -38,6 +38,7 @@ pub struct ServerConfig {
     /// Raw 32-byte AES-256-GCM key bytes decoded from `ATLAS_WEBHOOK_ENC_KEY`.
     pub webhook_enc_key: [u8; 32],
     pub dispatcher: DispatcherConfig,
+    pub allow_private_webhook_targets: bool,
 }
 
 impl ServerConfig {
@@ -60,6 +61,8 @@ impl ServerConfig {
 
         let webhook_enc_key = load_webhook_enc_key()?;
         let dispatcher = load_dispatcher_config();
+        let allow_private_webhook_targets =
+            read_env_bool("ATLAS_ALLOW_PRIVATE_WEBHOOK_TARGETS", false);
 
         Ok(Self {
             database_url,
@@ -67,6 +70,7 @@ impl ServerConfig {
             anchor_interval,
             webhook_enc_key,
             dispatcher,
+            allow_private_webhook_targets,
         })
     }
 }
@@ -79,6 +83,10 @@ impl fmt::Debug for ServerConfig {
             .field("anchor_interval", &self.anchor_interval)
             .field("webhook_enc_key", &"[REDACTED]")
             .field("dispatcher", &self.dispatcher)
+            .field(
+                "allow_private_webhook_targets",
+                &self.allow_private_webhook_targets,
+            )
             .finish()
     }
 }
@@ -134,6 +142,12 @@ fn read_env_u64(var: &str, default: u64) -> u64 {
         .unwrap_or(default)
 }
 
+fn read_env_bool(var: &str, default: bool) -> bool {
+    std::env::var(var)
+        .map(|s| matches!(s.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(default)
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
@@ -148,6 +162,7 @@ mod tests {
             anchor_interval: 50,
             webhook_enc_key: [0xABu8; 32],
             dispatcher: DispatcherConfig::default(),
+            allow_private_webhook_targets: false,
         };
 
         let output = format!("{config:?}");

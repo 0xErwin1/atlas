@@ -102,8 +102,15 @@ async fn list_active_for_workspace_event_returns_matching_rules() {
     .await
     .expect("list_active_for_workspace_event");
 
-    assert_eq!(matching.len(), 1, "must only return rules matching the event type");
-    assert_eq!(matching[0].trigger_event_type, "external.github.workflow_run");
+    assert_eq!(
+        matching.len(),
+        1,
+        "must only return rules matching the event type"
+    );
+    assert_eq!(
+        matching[0].trigger_event_type,
+        "external.github.workflow_run"
+    );
 
     db.teardown().await;
 }

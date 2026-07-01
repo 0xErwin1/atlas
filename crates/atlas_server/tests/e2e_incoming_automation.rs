@@ -27,7 +27,7 @@ use atlas_server::{
     config::DispatcherConfig,
     dispatcher::{WebhookDispatcher, compute_signature},
     persistence::{
-        entities::boards_tasks::task,
+        entities::boards_tasks::{task, task_activity},
         repos::{BoardRepo, PgAutomationRuleRepo, PgBoardRepo, PgProjectRepo, ProjectRepo},
     },
     state::AppState,
@@ -88,7 +88,9 @@ async fn spawn_mock_receiver() -> (String, MockState, tokio::task::AbortHandle) 
     let url = format!("http://{addr}/hook");
 
     let handle = tokio::spawn(async move {
-        axum::serve(listener, app).await.expect("mock receiver serve");
+        axum::serve(listener, app)
+            .await
+            .expect("mock receiver serve");
     });
 
     (url, mock_state, handle.abort_handle())
@@ -117,22 +119,30 @@ async fn e2e_github_workflow_run_fires_automation_and_dispatches_webhook() {
     let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
 
     // Seed project, board, and column so the automation rule has valid targets.
-    let project = PgProjectRepo { conn: db.conn().clone() }
-        .create(
-            &ctx,
-            NewProject {
-                name: "E2E Auto Project".into(),
-                slug: "e2e-auto-proj".into(),
-                task_prefix: "EAP".into(),
-                visibility: Visibility::Workspace(VisibilityRole::Editor),
-            },
-        )
-        .await
-        .expect("create project");
+    let project = PgProjectRepo {
+        conn: db.conn().clone(),
+    }
+    .create(
+        &ctx,
+        NewProject {
+            name: "E2E Auto Project".into(),
+            slug: "e2e-auto-proj".into(),
+            task_prefix: "EAP".into(),
+            visibility: Visibility::Workspace(VisibilityRole::Editor),
+        },
+    )
+    .await
+    .expect("create project");
 
     let board_repo = PgBoardRepo::new(db.conn().clone());
     let board = board_repo
-        .create_board(&ctx, NewBoard { project_id: project.id, name: "CI Board".into() })
+        .create_board(
+            &ctx,
+            NewBoard {
+                project_id: project.id,
+                name: "CI Board".into(),
+            },
+        )
         .await
         .expect("create board");
 
@@ -142,7 +152,10 @@ async fn e2e_github_workflow_run_fires_automation_and_dispatches_webhook() {
             board.id,
             "Failures".into(),
             None,
-            PositionBetween { before: None, after: None },
+            PositionBetween {
+                before: None,
+                after: None,
+            },
         )
         .await
         .expect("add column");
@@ -152,13 +165,19 @@ async fn e2e_github_workflow_run_fires_automation_and_dispatches_webhook() {
 
     // Create integration config via HTTP API — the plaintext secret is returned once.
     let config_resp = http()
-        .post(format!("{base_url}/v1/workspaces/{ws_slug}/integration-configs"))
+        .post(format!(
+            "{base_url}/v1/workspaces/{ws_slug}/integration-configs"
+        ))
         .bearer_auth(token)
         .json(&serde_json::json!({ "integration": "github" }))
         .send()
         .await
         .expect("create config POST");
-    assert_eq!(config_resp.status(), 201, "integration config creation must succeed");
+    assert_eq!(
+        config_resp.status(),
+        201,
+        "integration config creation must succeed"
+    );
     let config_body: Value = config_resp.json().await.unwrap();
     let integration_secret = config_body["secret"].as_str().unwrap().to_string();
     let integration_api_key_id =
@@ -176,7 +195,11 @@ async fn e2e_github_workflow_run_fires_automation_and_dispatches_webhook() {
         .send()
         .await
         .expect("create webhook POST");
-    assert_eq!(wh_resp.status(), 201, "webhook subscription creation must succeed");
+    assert_eq!(
+        wh_resp.status(),
+        201,
+        "webhook subscription creation must succeed"
+    );
     let wh_body: Value = wh_resp.json().await.unwrap();
     let wh_secret = wh_body["secret"].as_str().unwrap().to_string();
 
@@ -240,7 +263,11 @@ async fn e2e_github_workflow_run_fires_automation_and_dispatches_webhook() {
         .all(db.conn())
         .await
         .expect("query tasks");
-    assert_eq!(tasks.len(), 1, "one task must be created by the automation rule");
+    assert_eq!(
+        tasks.len(),
+        1,
+        "one task must be created by the automation rule"
+    );
     assert_eq!(tasks[0].title, "CI failed: Build and Test");
     assert!(
         tasks[0].created_by_api_key_id.is_some(),
@@ -251,7 +278,28 @@ async fn e2e_github_workflow_run_fires_automation_and_dispatches_webhook() {
         integration_api_key_id,
         "task attribution must match the integration config's provisioned api key"
     );
-    assert_eq!(tasks[0].column_id, column.id.0, "task must land in the rule's target column");
+    assert_eq!(
+        tasks[0].column_id, column.id.0,
+        "task must land in the rule's target column"
+    );
+
+    let activities = task_activity::Entity::find()
+        .filter(task_activity::Column::WorkspaceId.eq(ws.id.0))
+        .filter(task_activity::Column::TaskId.eq(tasks[0].id))
+        .all(db.conn())
+        .await
+        .expect("query task activity");
+    assert_eq!(
+        activities.len(),
+        1,
+        "automation-created task must have a task_activity entry"
+    );
+    assert_eq!(activities[0].kind, "created");
+    assert_eq!(
+        activities[0].created_by_api_key_id,
+        Some(integration_api_key_id),
+        "task_activity attribution must match the integration api key"
+    );
 
     // Run the dispatcher — both outbox rows (external event + task.created) are
     // processed; the subscription only matches task.created, so the mock receives
@@ -268,7 +316,10 @@ async fn e2e_github_workflow_run_fires_automation_and_dispatches_webhook() {
             lease_secs: 30,
         },
     );
-    dispatcher.poll_and_dispatch().await.expect("poll_and_dispatch");
+    dispatcher
+        .poll_and_dispatch()
+        .await
+        .expect("poll_and_dispatch");
 
     // Assert mock receiver got exactly one POST for task.created, with a valid signature.
     let (req_count, body_text, signature_header) = {
@@ -279,7 +330,10 @@ async fn e2e_github_workflow_run_fires_automation_and_dispatches_webhook() {
         (count, body, sig)
     };
 
-    assert_eq!(req_count, 1, "mock must receive exactly one POST (task.created)");
+    assert_eq!(
+        req_count, 1,
+        "mock must receive exactly one POST (task.created)"
+    );
 
     let sig_header = signature_header.expect("x-atlas-signature header must be present");
     assert!(
@@ -321,7 +375,11 @@ async fn e2e_github_workflow_run_fires_automation_and_dispatches_webhook() {
         .all(db.conn())
         .await
         .expect("query tasks after dup");
-    assert_eq!(tasks_after_dup.len(), 1, "duplicate delivery must not create a second task");
+    assert_eq!(
+        tasks_after_dup.len(),
+        1,
+        "duplicate delivery must not create a second task"
+    );
 
     db.teardown().await;
 }

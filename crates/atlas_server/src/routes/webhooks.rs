@@ -4,6 +4,8 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
 use rand::RngCore;
 use rand::rngs::OsRng;
 use serde::Deserialize;
@@ -53,9 +55,7 @@ fn principal_to_actor(p: &Principal) -> atlas_domain::Actor {
     match p {
         Principal::User(uid) => atlas_domain::Actor::User(*uid),
         Principal::ApiKey(kid) => atlas_domain::Actor::ApiKey(*kid),
-        Principal::Group(_) => {
-            atlas_domain::Actor::User(atlas_domain::ids::UserId(Uuid::nil()))
-        }
+        Principal::Group(_) => atlas_domain::Actor::User(atlas_domain::ids::UserId(Uuid::nil())),
     }
 }
 
@@ -89,12 +89,8 @@ fn delivery_row_to_dto(row: webhook_delivery_log::Model) -> WebhookDeliveryDto {
     }
 }
 
-/// Validates that `url` is a non-empty absolute URL with an http or https scheme.
-///
-/// Avoids pulling in the `url` crate; performs the minimum check needed at the
-/// boundary. The dispatcher will fail at delivery time for unreachable URLs; this
-/// guard only rejects obviously malformed inputs.
-fn validate_target_url(url: &str) -> Result<(), ApiError> {
+/// Validates that `url` is an absolute http(s) URL with a routable host.
+fn validate_target_url(url: &str, allow_private_targets: bool) -> Result<(), ApiError> {
     let url = url.trim();
 
     if url.is_empty() {
@@ -103,27 +99,63 @@ fn validate_target_url(url: &str) -> Result<(), ApiError> {
         });
     }
 
-    let has_valid_scheme =
-        url.starts_with("https://") || url.starts_with("http://");
+    let parsed = reqwest::Url::parse(url).map_err(|_| ApiError::InvalidInput {
+        message: "target_url must be an absolute URL with http or https scheme".into(),
+    })?;
 
-    if !has_valid_scheme {
+    if parsed.scheme() != "http" && parsed.scheme() != "https" {
         return Err(ApiError::InvalidInput {
             message: "target_url must be an absolute URL with http or https scheme".into(),
         });
     }
 
-    let host_part = url
-        .strip_prefix("https://")
-        .or_else(|| url.strip_prefix("http://"))
-        .unwrap_or("");
+    let host = parsed.host_str().ok_or_else(|| ApiError::InvalidInput {
+        message: "target_url must include a host".into(),
+    })?;
 
-    if host_part.is_empty() || host_part.starts_with('/') {
+    if !allow_private_targets && is_private_webhook_host(host) {
         return Err(ApiError::InvalidInput {
-            message: "target_url must include a host".into(),
+            message: "target_url host must not be localhost, private, loopback, link-local, or unspecified".into(),
         });
     }
 
     Ok(())
+}
+
+fn is_private_webhook_host(host: &str) -> bool {
+    let normalized = host.trim_end_matches('.').to_ascii_lowercase();
+    if normalized == "localhost" || normalized.ends_with(".localhost") {
+        return true;
+    }
+
+    normalized
+        .parse::<IpAddr>()
+        .map(is_private_webhook_ip)
+        .unwrap_or(false)
+}
+
+fn is_private_webhook_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(ip) => is_private_webhook_ipv4(ip),
+        IpAddr::V6(ip) => is_private_webhook_ipv6(ip),
+    }
+}
+
+fn is_private_webhook_ipv4(ip: Ipv4Addr) -> bool {
+    ip.is_private()
+        || ip.is_loopback()
+        || ip.is_link_local()
+        || ip.is_unspecified()
+        || ip.is_broadcast()
+        || ip.octets()[0] == 0
+        || ip.octets()[0] >= 224
+}
+
+fn is_private_webhook_ipv6(ip: Ipv6Addr) -> bool {
+    ip.is_loopback()
+        || ip.is_unspecified()
+        || ((ip.segments()[0] & 0xfe00) == 0xfc00)
+        || ((ip.segments()[0] & 0xffc0) == 0xfe80)
 }
 
 /// Validates that `event_types` is non-empty and all values are in the catalog.
@@ -163,9 +195,7 @@ fn validate_scope(scope_type: &str, scope_id: Option<Uuid>) -> Result<(), ApiErr
         "project" | "board" => {
             if scope_id.is_none() {
                 return Err(ApiError::InvalidInput {
-                    message: format!(
-                        "scope_id is required when scope_type is '{scope_type}'"
-                    ),
+                    message: format!("scope_id is required when scope_type is '{scope_type}'"),
                 });
             }
         }
@@ -213,7 +243,7 @@ pub(crate) async fn create_webhook(
     State(state): State<AppState>,
     Json(body): Json<CreateWebhookRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    validate_target_url(&body.target_url)?;
+    validate_target_url(&body.target_url, state.allow_private_webhook_targets)?;
     validate_event_types(&body.event_types)?;
     validate_scope(&body.scope_type, body.scope_id)?;
 
@@ -307,14 +337,9 @@ pub(crate) async fn list_webhooks(
     let limit = params.limit.unwrap_or(PAGE_LIMIT).min(PAGE_LIMIT);
     let fetch_limit = limit + 1;
 
-    let rows = PgWebhookSubscriptionRepo::list_active(
-        &*state.db,
-        ws_id,
-        after_id,
-        fetch_limit,
-    )
-    .await
-    .map_err(ApiError::Domain)?;
+    let rows = PgWebhookSubscriptionRepo::list_active(&*state.db, ws_id, after_id, fetch_limit)
+        .await
+        .map_err(ApiError::Domain)?;
 
     let has_more = rows.len() as u64 > limit;
     let trimmed: Vec<_> = rows.into_iter().take(limit as usize).collect();
@@ -393,7 +418,7 @@ pub(crate) async fn update_webhook(
     Json(body): Json<UpdateWebhookRequest>,
 ) -> Result<Json<WebhookDto>, ApiError> {
     if let Some(url) = &body.target_url {
-        validate_target_url(url)?;
+        validate_target_url(url, state.allow_private_webhook_targets)?;
     }
 
     if let Some(types) = &body.event_types {

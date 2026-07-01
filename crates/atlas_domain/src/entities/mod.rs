@@ -1,6 +1,6 @@
 pub mod boards_tasks;
-pub mod events;
 pub mod documents;
+pub mod events;
 pub mod groups;
 pub mod identity;
 pub mod permissions;

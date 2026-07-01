@@ -186,7 +186,10 @@ mod tests {
 
         assert!(result.is_err());
         let msg = result.unwrap_err();
-        assert!(msg.contains("12 bytes"), "error must mention expected nonce size");
+        assert!(
+            msg.contains("12 bytes"),
+            "error must mention expected nonce size"
+        );
     }
 
     // B3.2-6 — Debug output must be redacted (never expose the key)
@@ -213,7 +216,10 @@ mod tests {
 
         assert!(result.is_err());
         let msg = result.unwrap_err();
-        assert!(msg.contains("32 bytes"), "error must mention required key length: {msg}");
+        assert!(
+            msg.contains("32 bytes"),
+            "error must mention required key length: {msg}"
+        );
     }
 
     // B3.2-8 — from_base64_key fails when the input is not valid base64
@@ -232,7 +238,10 @@ mod tests {
         let valid = base64::engine::general_purpose::STANDARD.encode([0x42u8; 32]);
         let result = WebhookCrypto::from_base64_key(&valid);
 
-        assert!(result.is_ok(), "must succeed with a valid 32-byte base64 key");
+        assert!(
+            result.is_ok(),
+            "must succeed with a valid 32-byte base64 key"
+        );
 
         // Verify it's actually functional (roundtrip)
         let crypto = result.unwrap();

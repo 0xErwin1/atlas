@@ -12,10 +12,7 @@ use atlas_domain::{
     entities::events::{DomainEvent, TaskCreatedPayload},
     ids::{BoardId, ColumnId, ProjectId, TaskId, WorkspaceId},
 };
-use atlas_server::persistence::{
-    entities::events_outbox::event_outbox,
-    repos::PgOutboxRepo,
-};
+use atlas_server::persistence::{entities::events_outbox::event_outbox, repos::PgOutboxRepo};
 use sea_orm::{EntityTrait, TransactionTrait};
 use uuid::Uuid;
 
@@ -117,17 +114,34 @@ async fn claim_batch_marks_delivering_and_increments_count() {
         .await
         .expect("claim_batch");
 
-    assert_eq!(claimed.len(), 2, "claim_batch must return exactly the requested batch_size");
+    assert_eq!(
+        claimed.len(),
+        2,
+        "claim_batch must return exactly the requested batch_size"
+    );
     for row in &claimed {
-        assert_eq!(row.status, "delivering", "claimed rows must be 'delivering'");
-        assert_eq!(row.attempt_count, 1, "claim_batch must increment attempt_count to 1");
-        assert!(row.locked_until.is_some(), "claimed rows must have a locked_until timestamp");
+        assert_eq!(
+            row.status, "delivering",
+            "claimed rows must be 'delivering'"
+        );
+        assert_eq!(
+            row.attempt_count, 1,
+            "claim_batch must increment attempt_count to 1"
+        );
+        assert!(
+            row.locked_until.is_some(),
+            "claimed rows must have a locked_until timestamp"
+        );
     }
 
     let remaining = PgOutboxRepo::claim_batch(db.conn(), 5, 30)
         .await
         .expect("second claim_batch");
-    assert_eq!(remaining.len(), 1, "second claim must return the remaining pending row");
+    assert_eq!(
+        remaining.len(),
+        1,
+        "second claim must return the remaining pending row"
+    );
 
     db.teardown().await;
 }
@@ -262,7 +276,10 @@ async fn insert_external_in_returns_true_and_row_exists() {
     assert_eq!(rows[0].source, "external/github");
     assert_eq!(rows[0].event_type, "external.github.workflow_run");
     assert_eq!(rows[0].aggregate_type, "external");
-    assert_eq!(rows[0].aggregate_id, delivery_id, "aggregate_id must equal delivery_id");
+    assert_eq!(
+        rows[0].aggregate_id, delivery_id,
+        "aggregate_id must equal delivery_id"
+    );
     assert_eq!(rows[0].status, "pending");
     assert_eq!(rows[0].event_version, 1);
     assert!(rows[0].project_id.is_none());
@@ -320,7 +337,11 @@ async fn insert_external_in_duplicate_delivery_id_returns_false() {
         .await
         .expect("find all");
 
-    assert_eq!(rows.len(), 1, "must not insert a second row on duplicate delivery_id");
+    assert_eq!(
+        rows.len(),
+        1,
+        "must not insert a second row on duplicate delivery_id"
+    );
 
     db.teardown().await;
 }

@@ -21,3 +21,4 @@ vite.config.d.ts
 # Local attachment store (ATLAS_ATTACHMENT_ROOT default)
 /data/
 .logs
+.codegraph/

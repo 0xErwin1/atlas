@@ -93,11 +93,11 @@ impl FromRequest<AppState> for VerifiedIntegrationEvent {
             .unwrap_or("unknown")
             .to_string();
 
-        let bytes = axum::body::to_bytes(body, BODY_LIMIT)
-            .await
-            .map_err(|_| ApiError::PayloadTooLarge {
+        let bytes = axum::body::to_bytes(body, BODY_LIMIT).await.map_err(|_| {
+            ApiError::PayloadTooLarge {
                 message: "request body exceeds 1 MiB limit".into(),
-            })?;
+            }
+        })?;
 
         let ws_repo = PgWorkspaceRepo {
             conn: (*state.db).clone(),
@@ -110,13 +110,12 @@ impl FromRequest<AppState> for VerifiedIntegrationEvent {
             })?
             .ok_or(ApiError::NotFound)?;
 
-        let config =
-            PgIntegrationConfigRepo::find_active(&*state.db, workspace.id.0, &integration)
-                .await
-                .map_err(|e| ApiError::Internal {
-                    message: e.to_string(),
-                })?
-                .ok_or(ApiError::NotFound)?;
+        let config = PgIntegrationConfigRepo::find_active(&*state.db, workspace.id.0, &integration)
+            .await
+            .map_err(|e| ApiError::Internal {
+                message: e.to_string(),
+            })?
+            .ok_or(ApiError::NotFound)?;
 
         let secret_bytes = state
             .webhook_crypto
@@ -163,7 +162,8 @@ pub(crate) fn verify_github_signature(
     })?;
     mac.update(body);
 
-    mac.verify_slice(&sig_bytes).map_err(|_| ApiError::Unauthorized)?;
+    mac.verify_slice(&sig_bytes)
+        .map_err(|_| ApiError::Unauthorized)?;
 
     Ok(())
 }
@@ -249,7 +249,10 @@ mod tests {
         let sig = compute_sig(secret, body);
 
         let result = verify_github_signature(&sig, secret, body);
-        assert!(result.is_ok(), "valid signature must be accepted: {result:?}");
+        assert!(
+            result.is_ok(),
+            "valid signature must be accepted: {result:?}"
+        );
     }
 
     // B3.2 [U] Wrong secret produces a different signature, which is rejected with 401
@@ -272,8 +275,7 @@ mod tests {
     fn all_zero_signature_rejected_with_401() {
         let secret = b"my-secret";
         let body = b"some payload";
-        let bad_sig =
-            "sha256=0000000000000000000000000000000000000000000000000000000000000000";
+        let bad_sig = "sha256=0000000000000000000000000000000000000000000000000000000000000000";
 
         let err = verify_github_signature(bad_sig, secret, body).unwrap_err();
         assert!(

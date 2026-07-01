@@ -459,8 +459,15 @@ async fn copy_folder_subtree(
         .map_err(ApiError::Domain)?;
 
     for doc in &documents {
-        copy_document_into(deps.state, deps.ctx, deps.doc_svc, doc, Some(dest.id), dest.project_id)
-            .await?;
+        copy_document_into(
+            deps.state,
+            deps.ctx,
+            deps.doc_svc,
+            doc,
+            Some(dest.id),
+            dest.project_id,
+        )
+        .await?;
     }
 
     let children = deps

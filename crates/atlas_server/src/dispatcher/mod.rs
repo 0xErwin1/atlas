@@ -110,9 +110,10 @@ impl WebhookDispatcher {
             info!(count = recovered, "recovered stale delivering outbox rows");
         }
 
-        let rows = PgOutboxRepo::claim_batch(&self.db, self.config.batch_size, self.config.lease_secs)
-            .await
-            .map_err(|e| anyhow::anyhow!("claim batch: {e}"))?;
+        let rows =
+            PgOutboxRepo::claim_batch(&self.db, self.config.batch_size, self.config.lease_secs)
+                .await
+                .map_err(|e| anyhow::anyhow!("claim batch: {e}"))?;
 
         if rows.is_empty() {
             return Ok(());
@@ -176,8 +177,7 @@ async fn process_event(ctx: DeliveryContext, row: event_outbox::Model) {
     };
 
     let already_succeeded = match PgWebhookDeliveryRepo::succeeded_subscription_ids_for_event(
-        &ctx.db,
-        row.id,
+        &ctx.db, row.id,
     )
     .await
     {
@@ -245,8 +245,16 @@ async fn deliver_to_subscription(
         Err(e) => {
             error!(sub_id = %sub.id, event_id = %event_id, error = %e, "decrypt secret failed");
             record_log(
-                &ctx.db, workspace_id, sub.id, event_id, attempt_no,
-                "failure", None, None, Some(e), elapsed_ms(start),
+                &ctx.db,
+                workspace_id,
+                sub.id,
+                event_id,
+                attempt_no,
+                "failure",
+                None,
+                None,
+                Some(e),
+                elapsed_ms(start),
             )
             .await;
             return false;
@@ -258,8 +266,16 @@ async fn deliver_to_subscription(
         Err(e) => {
             error!(sub_id = %sub.id, event_id = %event_id, error = %e, "HMAC computation failed");
             record_log(
-                &ctx.db, workspace_id, sub.id, event_id, attempt_no,
-                "failure", None, None, Some(e), elapsed_ms(start),
+                &ctx.db,
+                workspace_id,
+                sub.id,
+                event_id,
+                attempt_no,
+                "failure",
+                None,
+                None,
+                Some(e),
+                elapsed_ms(start),
             )
             .await;
             return false;
@@ -281,8 +297,16 @@ async fn deliver_to_subscription(
         Err(e) => {
             warn!(sub_id = %sub.id, event_id = %event_id, error = %e, "delivery network error");
             record_log(
-                &ctx.db, workspace_id, sub.id, event_id, attempt_no,
-                "failure", None, None, Some(e.to_string()), duration,
+                &ctx.db,
+                workspace_id,
+                sub.id,
+                event_id,
+                attempt_no,
+                "failure",
+                None,
+                None,
+                Some(e.to_string()),
+                duration,
             )
             .await;
             false
@@ -310,8 +334,16 @@ async fn deliver_to_subscription(
             }
 
             record_log(
-                &ctx.db, workspace_id, sub.id, event_id, attempt_no,
-                outcome, Some(status_code), snippet, None, duration,
+                &ctx.db,
+                workspace_id,
+                sub.id,
+                event_id,
+                attempt_no,
+                outcome,
+                Some(status_code),
+                snippet,
+                None,
+                duration,
             )
             .await;
 
@@ -322,8 +354,8 @@ async fn deliver_to_subscription(
 
 /// Computes `X-Atlas-Signature: sha256=<hex>` over `body` using `secret` as the HMAC key.
 pub fn compute_signature(secret: &[u8], body: &[u8]) -> Result<String, String> {
-    let mut mac = HmacSha256::new_from_slice(secret)
-        .map_err(|e| format!("HMAC key setup failed: {e}"))?;
+    let mut mac =
+        HmacSha256::new_from_slice(secret).map_err(|e| format!("HMAC key setup failed: {e}"))?;
     mac.update(body);
     let bytes = mac.finalize().into_bytes();
     let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
@@ -383,7 +415,10 @@ mod tests {
     #[test]
     fn compute_signature_produces_sha256_prefix() {
         let sig = compute_signature(b"my-secret", b"hello").unwrap();
-        assert!(sig.starts_with("sha256="), "signature must start with 'sha256=': {sig}");
+        assert!(
+            sig.starts_with("sha256="),
+            "signature must start with 'sha256=': {sig}"
+        );
     }
 
     // B3.6-2 — known HMAC vector: HMAC-SHA256("key", "The quick brown fox...")

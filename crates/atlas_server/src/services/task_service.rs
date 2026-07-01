@@ -271,7 +271,8 @@ impl TaskService {
             sync_task_description_links(&txn, ctx, id, &updated.description).await?;
         }
 
-        let changed_field_names: Vec<String> = fields_changed.iter().map(|(f, _, _)| f.clone()).collect();
+        let changed_field_names: Vec<String> =
+            fields_changed.iter().map(|(f, _, _)| f.clone()).collect();
 
         for (field, old_value, new_value) in fields_changed {
             PgTaskActivityRepo::append_in(

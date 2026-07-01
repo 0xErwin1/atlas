@@ -564,36 +564,57 @@ mod tests {
 
         assert!(json["id"].is_string(), "id must be a string");
         assert!(json["version"].is_number(), "version must be a number");
-        assert!(json["event_type"].is_string(), "event_type must be a string");
+        assert!(
+            json["event_type"].is_string(),
+            "event_type must be a string"
+        );
         assert_eq!(json["source"], "internal", "source must equal \"internal\"");
-        assert!(json["workspace_id"].is_string(), "workspace_id must be a string");
-        assert!(json["occurred_at"].is_string(), "occurred_at must be a string");
+        assert!(
+            json["workspace_id"].is_string(),
+            "workspace_id must be a string"
+        );
+        assert!(
+            json["occurred_at"].is_string(),
+            "occurred_at must be a string"
+        );
     }
 
     #[test]
     fn test_envelope_event_type_matches_variant() {
         let cases: &[(&str, DomainEvent)] = &[
-            ("task.created", DomainEvent::TaskCreated(TaskCreatedPayload {
-                task_id: TaskId(nil_uuid()),
-                title: "t".to_string(),
-                project_id: ProjectId(nil_uuid()),
-                board_id: BoardId(nil_uuid()),
-                column_id: ColumnId(nil_uuid()),
-            })),
-            ("task.deleted", DomainEvent::TaskDeleted(TaskDeletedPayload {
-                task_id: TaskId(nil_uuid()),
-            })),
-            ("document.moved", DomainEvent::DocumentMoved(DocumentMovedPayload {
-                document_id: DocumentId(nil_uuid()),
-                from_folder_id: None,
-                to_folder_id: None,
-                project_id: None,
-            })),
-            ("board.created", DomainEvent::BoardCreated(BoardCreatedPayload {
-                board_id: BoardId(nil_uuid()),
-                project_id: ProjectId(nil_uuid()),
-                name: "b".to_string(),
-            })),
+            (
+                "task.created",
+                DomainEvent::TaskCreated(TaskCreatedPayload {
+                    task_id: TaskId(nil_uuid()),
+                    title: "t".to_string(),
+                    project_id: ProjectId(nil_uuid()),
+                    board_id: BoardId(nil_uuid()),
+                    column_id: ColumnId(nil_uuid()),
+                }),
+            ),
+            (
+                "task.deleted",
+                DomainEvent::TaskDeleted(TaskDeletedPayload {
+                    task_id: TaskId(nil_uuid()),
+                }),
+            ),
+            (
+                "document.moved",
+                DomainEvent::DocumentMoved(DocumentMovedPayload {
+                    document_id: DocumentId(nil_uuid()),
+                    from_folder_id: None,
+                    to_folder_id: None,
+                    project_id: None,
+                }),
+            ),
+            (
+                "board.created",
+                DomainEvent::BoardCreated(BoardCreatedPayload {
+                    board_id: BoardId(nil_uuid()),
+                    project_id: ProjectId(nil_uuid()),
+                    name: "b".to_string(),
+                }),
+            ),
         ];
 
         for (expected_type, event) in cases {
@@ -684,11 +705,17 @@ mod tests {
 
     #[test]
     fn test_task_deleted_json_shape() {
-        let payload = TaskDeletedPayload { task_id: TaskId(nil_uuid()) };
+        let payload = TaskDeletedPayload {
+            task_id: TaskId(nil_uuid()),
+        };
         let json: serde_json::Value = serde_json::to_value(&payload).unwrap();
 
         assert!(json["task_id"].is_string());
-        assert_eq!(json.as_object().unwrap().len(), 1, "task.deleted data must have exactly one key");
+        assert_eq!(
+            json.as_object().unwrap().len(),
+            1,
+            "task.deleted data must have exactly one key"
+        );
     }
 
     #[test]
@@ -725,7 +752,9 @@ mod tests {
 
     #[test]
     fn test_document_deleted_json_shape() {
-        let payload = DocumentDeletedPayload { document_id: DocumentId(nil_uuid()) };
+        let payload = DocumentDeletedPayload {
+            document_id: DocumentId(nil_uuid()),
+        };
         let json: serde_json::Value = serde_json::to_value(&payload).unwrap();
 
         assert!(json["document_id"].is_string());

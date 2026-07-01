@@ -5,8 +5,8 @@ use atlas_domain::{
 };
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseBackend,
-    EntityTrait, IntoActiveModel, QueryFilter, QueryOrder, Statement,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait,
+    IntoActiveModel, QueryFilter, QueryOrder, Statement,
 };
 use uuid::Uuid;
 

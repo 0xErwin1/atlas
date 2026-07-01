@@ -22,6 +22,7 @@ pub struct AppState {
     pub max_attachment_bytes: u64,
     pub webhook_crypto: Arc<WebhookCrypto>,
     pub dispatcher_config: DispatcherConfig,
+    pub allow_private_webhook_targets: bool,
 }
 
 impl AppState {
@@ -48,6 +49,7 @@ impl AppState {
             max_attachment_bytes: DEFAULT_MAX_ATTACHMENT_BYTES,
             webhook_crypto,
             dispatcher_config: cfg.dispatcher.clone(),
+            allow_private_webhook_targets: cfg.allow_private_webhook_targets,
         })
     }
 
@@ -80,6 +82,7 @@ impl AppState {
             max_attachment_bytes: DEFAULT_MAX_ATTACHMENT_BYTES,
             webhook_crypto: Arc::new(WebhookCrypto::generate_for_test()),
             dispatcher_config: DispatcherConfig::default(),
+            allow_private_webhook_targets: true,
         })
     }
 

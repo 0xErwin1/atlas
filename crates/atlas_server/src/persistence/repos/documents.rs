@@ -293,9 +293,15 @@ impl DocumentRepo for PgDocumentRepo {
         new_content: &str,
     ) -> Result<Document, DomainError> {
         let txn = self.conn.begin().await.map_err(db_err)?;
-        let doc =
-            update_content_in(&txn, ctx, id, expected_revision, new_content, self.anchor_interval)
-                .await?;
+        let doc = update_content_in(
+            &txn,
+            ctx,
+            id,
+            expected_revision,
+            new_content,
+            self.anchor_interval,
+        )
+        .await?;
         txn.commit().await.map_err(db_err)?;
         Ok(doc)
     }
@@ -515,10 +521,9 @@ pub async fn update_content_in(
     })?;
 
     if current_rev_uuid != expected_revision.0 {
-        let base_seq =
-            find_revision_seq(conn, ctx.workspace_id.0, id.0, expected_revision.0)
-                .await
-                .map_err(db_err)?;
+        let base_seq = find_revision_seq(conn, ctx.workspace_id.0, id.0, expected_revision.0)
+            .await
+            .map_err(db_err)?;
 
         let Some(base_seq) = base_seq else {
             return Err(DomainError::InvalidInput {

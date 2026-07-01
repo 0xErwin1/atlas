@@ -65,7 +65,9 @@ async fn spawn_mock_receiver() -> (String, MockState, tokio::task::AbortHandle) 
     let url = format!("http://{addr}/hook");
 
     let handle = tokio::spawn(async move {
-        axum::serve(listener, app).await.expect("mock receiver serve");
+        axum::serve(listener, app)
+            .await
+            .expect("mock receiver serve");
     });
 
     (url, mock_state, handle.abort_handle())
@@ -87,8 +89,7 @@ async fn e2e_webhook_dispatched_on_task_creation() {
     let crypto = Arc::clone(&state.webhook_crypto);
     let server = support::TestServer::spawn_with_state(state).await;
 
-    let (client, ws, user) =
-        support::login_user_with_workspace(&server, &db, "e2e-wh-admin").await;
+    let (client, ws, user) = support::login_user_with_workspace(&server, &db, "e2e-wh-admin").await;
     let token = client.token().expect("token");
     let base_url = server.base_url();
     let ws_slug = &ws.slug;
@@ -113,7 +114,9 @@ async fn e2e_webhook_dispatched_on_task_creation() {
 
     let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
 
-    let project_repo = PgProjectRepo { conn: db.conn().clone() };
+    let project_repo = PgProjectRepo {
+        conn: db.conn().clone(),
+    };
     let project = project_repo
         .create(
             &ctx,
@@ -145,7 +148,10 @@ async fn e2e_webhook_dispatched_on_task_creation() {
             board.id,
             "Backlog".into(),
             None,
-            PositionBetween { before: None, after: None },
+            PositionBetween {
+                before: None,
+                after: None,
+            },
         )
         .await
         .expect("add column");
@@ -206,8 +212,7 @@ async fn e2e_webhook_dispatched_on_task_creation() {
 
     let payload: Value = serde_json::from_str(&body_text).expect("payload must be valid JSON");
     assert_eq!(
-        payload["event_type"],
-        "task.created",
+        payload["event_type"], "task.created",
         "event_type must be task.created"
     );
 

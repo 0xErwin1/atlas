@@ -31,8 +31,12 @@ async fn add_member_and_login(
     let plaintext = "TestPassword1!";
     let hash = password::hash(plaintext.to_string()).await.expect("hash");
 
-    let user_repo = PgUserRepo { conn: db.conn().clone() };
-    let membership_repo = PgMembershipRepo { conn: db.conn().clone() };
+    let user_repo = PgUserRepo {
+        conn: db.conn().clone(),
+    };
+    let membership_repo = PgMembershipRepo {
+        conn: db.conn().clone(),
+    };
 
     let user = user_repo
         .create(NewUser {
@@ -92,30 +96,49 @@ async fn admin_creates_automation_rule_returns_201() {
     let ws_slug = &ws.slug;
 
     let ctx = support::ctx(&ws, &user);
-    let project = PgProjectRepo { conn: db.conn().clone() }
-        .create(
+    let project = PgProjectRepo {
+        conn: db.conn().clone(),
+    }
+    .create(
+        &ctx,
+        NewProject {
+            name: "AR Admin Create Project".to_string(),
+            slug: "ar-admin-proj".to_string(),
+            task_prefix: "AAC".to_string(),
+            visibility: Visibility::Workspace(VisibilityRole::Editor),
+        },
+    )
+    .await
+    .expect("project");
+    let board_repo = db.board_repo();
+    let board = board_repo
+        .create_board(
             &ctx,
-            NewProject {
-                name: "AR Admin Create Project".to_string(),
-                slug: "ar-admin-proj".to_string(),
-                task_prefix: "AAC".to_string(),
-                visibility: Visibility::Workspace(VisibilityRole::Editor),
+            NewBoard {
+                name: "B".to_string(),
+                project_id: project.id,
             },
         )
         .await
-        .expect("project");
-    let board_repo = db.board_repo();
-    let board = board_repo
-        .create_board(&ctx, NewBoard { name: "B".to_string(), project_id: project.id })
-        .await
         .expect("board");
     let column = board_repo
-        .add_column(&ctx, board.id, "C".to_string(), None, PositionBetween { before: None, after: None })
+        .add_column(
+            &ctx,
+            board.id,
+            "C".to_string(),
+            None,
+            PositionBetween {
+                before: None,
+                after: None,
+            },
+        )
         .await
         .expect("column");
 
     let resp = http()
-        .post(format!("{base_url}/v1/workspaces/{ws_slug}/automation-rules"))
+        .post(format!(
+            "{base_url}/v1/workspaces/{ws_slug}/automation-rules"
+        ))
         .bearer_auth(token)
         .json(&serde_json::json!({
             "name": "CI failures",
@@ -143,6 +166,50 @@ async fn admin_creates_automation_rule_returns_201() {
 }
 
 // ---------------------------------------------------------------------------
+// External event rules are workspace-scoped in v1; project_id is rejected.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn automation_rule_project_scope_rejected_for_external_triggers() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _user) =
+        support::login_user_with_workspace(&server, &db, "ar-project-scope").await;
+
+    let token = client.token().expect("token");
+    let base_url = server.base_url();
+    let ws_slug = &ws.slug;
+
+    let resp = http()
+        .post(format!(
+            "{base_url}/v1/workspaces/{ws_slug}/automation-rules"
+        ))
+        .bearer_auth(token)
+        .json(&serde_json::json!({
+            "name": "Project-scoped external rule",
+            "trigger_event_type": "external.github.workflow_run",
+            "project_id": Uuid::now_v7(),
+            "action_type": "create_task",
+            "action_params": {
+                "board_id": Uuid::now_v7(),
+                "column_id": Uuid::now_v7(),
+                "title_template": "CI failed"
+            }
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        resp.status(),
+        422,
+        "external automation rules must reject project_id in v1"
+    );
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
 // B4.8 [I] Internal trigger type is rejected at the app layer → 422
 // ---------------------------------------------------------------------------
 
@@ -158,7 +225,9 @@ async fn automation_rule_internal_trigger_rejected() {
     let ws_slug = &ws.slug;
 
     let resp = http()
-        .post(format!("{base_url}/v1/workspaces/{ws_slug}/automation-rules"))
+        .post(format!(
+            "{base_url}/v1/workspaces/{ws_slug}/automation-rules"
+        ))
         .bearer_auth(token)
         .json(&serde_json::json!({
             "name": "Bad rule",
@@ -199,7 +268,9 @@ async fn automation_rule_invalid_action_type_rejected() {
     let ws_slug = &ws.slug;
 
     let resp = http()
-        .post(format!("{base_url}/v1/workspaces/{ws_slug}/automation-rules"))
+        .post(format!(
+            "{base_url}/v1/workspaces/{ws_slug}/automation-rules"
+        ))
         .bearer_auth(token)
         .json(&serde_json::json!({
             "name": "Bad action",
@@ -236,7 +307,9 @@ async fn automation_rule_invalid_action_params_rejected() {
     let ws_slug = &ws.slug;
 
     let resp = http()
-        .post(format!("{base_url}/v1/workspaces/{ws_slug}/automation-rules"))
+        .post(format!(
+            "{base_url}/v1/workspaces/{ws_slug}/automation-rules"
+        ))
         .bearer_auth(token)
         .json(&serde_json::json!({
             "name": "Missing params",
@@ -280,30 +353,49 @@ async fn non_admin_rejected_on_automation_rule_endpoints() {
     let ws_slug = &ws.slug;
 
     let ctx = support::ctx(&ws, &user);
-    let project = PgProjectRepo { conn: db.conn().clone() }
-        .create(
+    let project = PgProjectRepo {
+        conn: db.conn().clone(),
+    }
+    .create(
+        &ctx,
+        NewProject {
+            name: "AR Nonadmin Project".to_string(),
+            slug: "ar-nonadmin-proj".to_string(),
+            task_prefix: "ANP".to_string(),
+            visibility: Visibility::Workspace(VisibilityRole::Editor),
+        },
+    )
+    .await
+    .expect("project");
+    let board_repo = db.board_repo();
+    let board = board_repo
+        .create_board(
             &ctx,
-            NewProject {
-                name: "AR Nonadmin Project".to_string(),
-                slug: "ar-nonadmin-proj".to_string(),
-                task_prefix: "ANP".to_string(),
-                visibility: Visibility::Workspace(VisibilityRole::Editor),
+            NewBoard {
+                name: "B".to_string(),
+                project_id: project.id,
             },
         )
         .await
-        .expect("project");
-    let board_repo = db.board_repo();
-    let board = board_repo
-        .create_board(&ctx, NewBoard { name: "B".to_string(), project_id: project.id })
-        .await
         .expect("board");
     let column = board_repo
-        .add_column(&ctx, board.id, "C".to_string(), None, PositionBetween { before: None, after: None })
+        .add_column(
+            &ctx,
+            board.id,
+            "C".to_string(),
+            None,
+            PositionBetween {
+                before: None,
+                after: None,
+            },
+        )
         .await
         .expect("column");
 
     let create_resp = http()
-        .post(format!("{base_url}/v1/workspaces/{ws_slug}/automation-rules"))
+        .post(format!(
+            "{base_url}/v1/workspaces/{ws_slug}/automation-rules"
+        ))
         .bearer_auth(admin_token)
         .json(&serde_json::json!({
             "name": "Admin rule",
@@ -322,11 +414,14 @@ async fn non_admin_rejected_on_automation_rule_endpoints() {
     let created: Value = create_resp.json().await.unwrap();
     let rule_id = created["id"].as_str().unwrap().to_string();
 
-    let member_token =
-        add_member_and_login(&server, &db, ws.id.0, "ar-nonadmin-member").await;
+    let member_token = add_member_and_login(&server, &db, ws.id.0, "ar-nonadmin-member").await;
 
     for (method, path, body) in [
-        ("GET", format!("{base_url}/v1/workspaces/{ws_slug}/automation-rules"), None),
+        (
+            "GET",
+            format!("{base_url}/v1/workspaces/{ws_slug}/automation-rules"),
+            None,
+        ),
         (
             "GET",
             format!("{base_url}/v1/workspaces/{ws_slug}/automation-rules/{rule_id}"),
@@ -335,7 +430,9 @@ async fn non_admin_rejected_on_automation_rule_endpoints() {
         (
             "POST",
             format!("{base_url}/v1/workspaces/{ws_slug}/automation-rules"),
-            Some(serde_json::json!({"name":"x","trigger_event_type":"external.x","action_type":"create_task","action_params":{}})),
+            Some(
+                serde_json::json!({"name":"x","trigger_event_type":"external.x","action_type":"create_task","action_params":{}}),
+            ),
         ),
         (
             "PATCH",
@@ -378,38 +475,56 @@ async fn automation_rule_crud() {
 
     let db = support::TestDb::create().await.expect("TestDb");
     let server = support::TestServer::spawn(&db).await;
-    let (client, ws, user) =
-        support::login_user_with_workspace(&server, &db, "ar-crud").await;
+    let (client, ws, user) = support::login_user_with_workspace(&server, &db, "ar-crud").await;
 
     let token = client.token().expect("token");
     let base_url = server.base_url();
     let ws_slug = &ws.slug;
 
     let ctx = support::ctx(&ws, &user);
-    let project = PgProjectRepo { conn: db.conn().clone() }
-        .create(
+    let project = PgProjectRepo {
+        conn: db.conn().clone(),
+    }
+    .create(
+        &ctx,
+        NewProject {
+            name: "AR CRUD Project".to_string(),
+            slug: "ar-crud-proj".to_string(),
+            task_prefix: "ACP".to_string(),
+            visibility: Visibility::Workspace(VisibilityRole::Editor),
+        },
+    )
+    .await
+    .expect("project");
+    let board_repo = db.board_repo();
+    let board = board_repo
+        .create_board(
             &ctx,
-            NewProject {
-                name: "AR CRUD Project".to_string(),
-                slug: "ar-crud-proj".to_string(),
-                task_prefix: "ACP".to_string(),
-                visibility: Visibility::Workspace(VisibilityRole::Editor),
+            NewBoard {
+                name: "B".to_string(),
+                project_id: project.id,
             },
         )
         .await
-        .expect("project");
-    let board_repo = db.board_repo();
-    let board = board_repo
-        .create_board(&ctx, NewBoard { name: "B".to_string(), project_id: project.id })
-        .await
         .expect("board");
     let column = board_repo
-        .add_column(&ctx, board.id, "C".to_string(), None, PositionBetween { before: None, after: None })
+        .add_column(
+            &ctx,
+            board.id,
+            "C".to_string(),
+            None,
+            PositionBetween {
+                before: None,
+                after: None,
+            },
+        )
         .await
         .expect("column");
 
     let create_resp = http()
-        .post(format!("{base_url}/v1/workspaces/{ws_slug}/automation-rules"))
+        .post(format!(
+            "{base_url}/v1/workspaces/{ws_slug}/automation-rules"
+        ))
         .bearer_auth(token)
         .json(&serde_json::json!({
             "name": "CI rule",
@@ -430,7 +545,9 @@ async fn automation_rule_crud() {
     let rule_id = created["id"].as_str().unwrap().to_string();
 
     let get_resp = http()
-        .get(format!("{base_url}/v1/workspaces/{ws_slug}/automation-rules/{rule_id}"))
+        .get(format!(
+            "{base_url}/v1/workspaces/{ws_slug}/automation-rules/{rule_id}"
+        ))
         .bearer_auth(token)
         .send()
         .await
@@ -440,7 +557,9 @@ async fn automation_rule_crud() {
     assert_eq!(get_body["name"], "CI rule");
 
     let list_resp = http()
-        .get(format!("{base_url}/v1/workspaces/{ws_slug}/automation-rules"))
+        .get(format!(
+            "{base_url}/v1/workspaces/{ws_slug}/automation-rules"
+        ))
         .bearer_auth(token)
         .send()
         .await
@@ -475,12 +594,18 @@ async fn automation_rule_crud() {
     assert_eq!(delete_resp.status(), 204);
 
     let after_delete_resp = http()
-        .get(format!("{base_url}/v1/workspaces/{ws_slug}/automation-rules/{rule_id}"))
+        .get(format!(
+            "{base_url}/v1/workspaces/{ws_slug}/automation-rules/{rule_id}"
+        ))
         .bearer_auth(token)
         .send()
         .await
         .unwrap();
-    assert_eq!(after_delete_resp.status(), 404, "deleted rule must return 404");
+    assert_eq!(
+        after_delete_resp.status(),
+        404,
+        "deleted rule must return 404"
+    );
 
     db.teardown().await;
 }

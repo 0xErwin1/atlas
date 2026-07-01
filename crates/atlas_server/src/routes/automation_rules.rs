@@ -18,9 +18,7 @@ use atlas_domain::permissions::Principal;
 use crate::{
     authz::{AdminMin, Authorized, WorkspaceRes},
     error::ApiError,
-    persistence::{
-        entities::automation_rule::automation_rules, repos::PgAutomationRuleRepo,
-    },
+    persistence::{entities::automation_rule::automation_rules, repos::PgAutomationRuleRepo},
     state::AppState,
 };
 
@@ -54,6 +52,13 @@ fn validate_create(req: &CreateAutomationRuleRequest) -> Result<(), ApiError> {
                 "trigger_event_type must start with 'external.', got: {}",
                 req.trigger_event_type
             ),
+        });
+    }
+
+    if req.project_id.is_some() {
+        return Err(ApiError::InvalidInput {
+            message: "external automation rules must be workspace-scoped in v1; omit project_id"
+                .into(),
         });
     }
 
@@ -178,7 +183,9 @@ pub(crate) async fn list_automation_rules(
         .map(|s| {
             Cursor::decode(s)
                 .map(|c| c.0)
-                .ok_or_else(|| ApiError::BadRequest { message: "invalid cursor".into() })
+                .ok_or_else(|| ApiError::BadRequest {
+                    message: "invalid cursor".into(),
+                })
         })
         .transpose()?;
 

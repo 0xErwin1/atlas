@@ -17,7 +17,9 @@ use atlas_domain::permissions::Principal;
 use crate::{
     authz::{AdminMin, Authorized, WorkspaceRes},
     error::ApiError,
-    persistence::{entities::integration_config::integration_configs, repos::PgIntegrationConfigRepo},
+    persistence::{
+        entities::integration_config::integration_configs, repos::PgIntegrationConfigRepo,
+    },
     state::AppState,
 };
 
@@ -81,10 +83,9 @@ pub(crate) async fn create_integration_config(
         .encrypt(plaintext_secret.as_bytes())
         .map_err(|e| ApiError::Internal { message: e })?;
 
-    let txn = (*state.db)
-        .begin()
-        .await
-        .map_err(|e| ApiError::Internal { message: e.to_string() })?;
+    let txn = (*state.db).begin().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
 
     let row = PgIntegrationConfigRepo::create(
         &txn,
@@ -97,9 +98,9 @@ pub(crate) async fn create_integration_config(
     .await
     .map_err(ApiError::Domain)?;
 
-    txn.commit()
-        .await
-        .map_err(|e| ApiError::Internal { message: e.to_string() })?;
+    txn.commit().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
 
     let dto = IntegrationConfigCreatedDto {
         id: row.id,
@@ -204,18 +205,17 @@ pub(crate) async fn delete_integration_config(
 ) -> Result<StatusCode, ApiError> {
     let ws_id = auth.workspace.id.0;
 
-    let txn = (*state.db)
-        .begin()
-        .await
-        .map_err(|e| ApiError::Internal { message: e.to_string() })?;
+    let txn = (*state.db).begin().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
 
     PgIntegrationConfigRepo::soft_delete_and_revoke_key(&txn, ws_id, config_id)
         .await
         .map_err(ApiError::Domain)?;
 
-    txn.commit()
-        .await
-        .map_err(|e| ApiError::Internal { message: e.to_string() })?;
+    txn.commit().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
 
     Ok(StatusCode::NO_CONTENT)
 }

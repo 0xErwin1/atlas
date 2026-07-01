@@ -7,8 +7,14 @@
 
 mod support;
 
-use atlas_server::persistence::repos::{PgAutomationRuleRepo, PgIntegrationConfigRepo};
-use sea_orm::TransactionTrait;
+use atlas_server::{
+    persistence::{
+        entities::boards_tasks::task,
+        repos::{PgAutomationRuleRepo, PgIntegrationConfigRepo},
+    },
+    services::AutomationService,
+};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, TransactionTrait};
 
 // ---------------------------------------------------------------------------
 // B3.5 [I] Cascade guard: task.created matches no automation rules
@@ -71,6 +77,81 @@ async fn cascade_guard_task_created_matches_zero_rules() {
 // integration_api_key_id stored on a config is a valid Uuid (structural check
 // on the provisioning plumbing).
 // ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn permanent_misconfigured_rule_returns_ok_without_creating_task() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let (ws, user) = support::seed_workspace(&db, "permanent-misconfig").await;
+
+    let crypto = atlas_server::crypto::WebhookCrypto::generate_for_test();
+    let secret = b"test-secret";
+    let (encrypted, nonce) = crypto.encrypt(secret).expect("encrypt");
+
+    let txn = db.conn().begin().await.expect("begin");
+    let config = PgIntegrationConfigRepo::create(
+        &txn,
+        ws.id.0,
+        "github".to_string(),
+        encrypted,
+        nonce,
+        user.id.0,
+    )
+    .await
+    .expect("create config");
+    PgAutomationRuleRepo::create(
+        &txn,
+        ws.id.0,
+        "Misconfigured board".to_string(),
+        "external.github.workflow_run".to_string(),
+        Some(serde_json::json!({"conclusion": "failure"})),
+        None,
+        "create_task".to_string(),
+        serde_json::json!({
+            "board_id": uuid::Uuid::new_v4(),
+            "column_id": uuid::Uuid::new_v4(),
+            "title_template": "CI failed: {{workflow_name}}"
+        }),
+        user.id.0,
+    )
+    .await
+    .expect("create rule");
+    txn.commit().await.expect("commit");
+
+    let service = AutomationService::new(db.conn().clone());
+    let processed = service
+        .process_github_delivery(
+            ws.id.0,
+            config.integration_api_key_id,
+            uuid::Uuid::now_v7(),
+            "workflow_run",
+            &serde_json::json!({
+                "action": "completed",
+                "workflow_run": {
+                    "name": "Build",
+                    "conclusion": "failure"
+                }
+            }),
+        )
+        .await
+        .expect("permanent misconfig must not fail delivery processing");
+
+    assert!(
+        processed,
+        "new delivery must still be recorded as processed"
+    );
+
+    let tasks = task::Entity::find()
+        .filter(task::Column::WorkspaceId.eq(ws.id.0))
+        .all(db.conn())
+        .await
+        .expect("query tasks");
+    assert!(
+        tasks.is_empty(),
+        "misconfigured rule must not create a task"
+    );
+
+    db.teardown().await;
+}
 
 #[tokio::test]
 async fn integration_api_key_id_is_provisioned() {

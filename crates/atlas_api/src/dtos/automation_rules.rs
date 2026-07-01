@@ -13,7 +13,7 @@ pub struct CreateAutomationRuleRequest {
     /// Optional top-level string-equality filter. All keys must match for the rule to fire.
     #[serde(default)]
     pub trigger_filter: Option<serde_json::Value>,
-    /// Scope the rule to a specific project. `None` means workspace-scoped.
+    /// Reserved for future project-scoped automation; must be omitted in v1.
     #[serde(default)]
     pub project_id: Option<uuid::Uuid>,
     /// Action to execute on match. Only `"create_task"` is supported in v1.
