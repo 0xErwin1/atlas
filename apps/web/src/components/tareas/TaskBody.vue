@@ -13,7 +13,6 @@ import ReferenceList from '@/components/tareas/ReferenceList.vue';
 import SubtaskList from '@/components/tareas/SubtaskList.vue';
 import TaskDescription from '@/components/tareas/TaskDescription.vue';
 import Chip from '@/components/ui/Chip.vue';
-import CollapsibleText from '@/components/ui/CollapsibleText.vue';
 import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
 import Icon from '@/components/ui/Icon.vue';
 import Popover from '@/components/ui/Popover.vue';
@@ -489,9 +488,7 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
     <div class="atl-tv-divider" />
 
     <div class="atl-tv-section-label">Description</div>
-    <CollapsibleText :collapsed-height="88">
-      <TaskDescription :markdown="task.description" :ws="ws" :readable-id="task.readable_id" />
-    </CollapsibleText>
+    <TaskDescription :markdown="task.description" :ws="ws" :readable-id="task.readable_id" />
 
     <div style="margin-top: 22px;">
       <SubtaskList
