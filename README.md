@@ -2,6 +2,10 @@
 
 Atlas is an AI-first workspace platform — markdown **notes** (with wikilinks and backlinks) and kanban **tasks**, multi-workspace, with resource-sharing permissions and human-vs-agent attribution. One REST API serves all three consumers alike: the web UI, the MCP server (agents), and the CLI. This repository is the full monorepo: Rust backend services, a Vue 3 web frontend, and shared tooling.
 
+Start with [docs/README.md](docs/README.md) for the documentation portal: product/features, web app, REST API, CLI, MCP, operations, limitations, and contributor entry points.
+
+See [docs/README.md](docs/README.md) for the documentation portal aimed at product users, API consumers, CLI users, MCP consumers, and contributors.
+
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the crate map, request lifecycle, data model, permission model, and the web frontend overview.
 
 ## Quick start
@@ -50,5 +54,12 @@ atlas/
 | `just build-web` | vue-tsc + vite build |
 | `just lint-web` | biome ci |
 | `just verify` | full local gate (fmt-check + clippy + test + build + lint-web) |
+
+## Documentation
+
+- [Documentation portal](docs/README.md) — product, web, REST API, CLI, MCP, operations, limitations, and contributor map.
+- [ARCHITECTURE.md](ARCHITECTURE.md) — crate map, request lifecycle, data model, permissions, and frontend architecture.
+- [CODE_STYLE.md](CODE_STYLE.md) — coding and documentation conventions.
+- [CONTRIBUTING.md](CONTRIBUTING.md) — contribution workflow.
 
 See [AGENTS.md](AGENTS.md) for agent guidance and commit conventions, and [CODE_STYLE.md](CODE_STYLE.md) for coding conventions and lint policy.
