@@ -32,7 +32,7 @@ export type SaveResult =
  */
 export function useMarkdownDoc() {
   async function load(ws: string, slug: string): Promise<LoadResult> {
-    const { data, error } = await wrappedClient.GET('/v1/workspaces/{ws}/documents/{slug}', {
+    const { data, error, response } = await wrappedClient.GET('/v1/workspaces/{ws}/documents/{slug}', {
       params: { path: { ws, slug } },
     });
 
@@ -40,7 +40,9 @@ export function useMarkdownDoc() {
       const err = new Error(
         (error as { title?: string } | undefined)?.title ?? 'Failed to load document',
       ) as Error & { status?: number };
-      err.status = (error as { status?: number } | undefined)?.status ?? 0;
+      // The HTTP status is the reliable signal (the RFC 9457 body may omit it);
+      // callers key their 404 recovery off it.
+      err.status = response?.status ?? (error as { status?: number } | undefined)?.status ?? 0;
       throw err;
     }
 

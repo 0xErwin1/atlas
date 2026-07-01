@@ -177,10 +177,11 @@ async function loadDoc(): Promise<void> {
     await documents.loadBacklinks(ws.value, slug.value);
   } catch (e) {
     // The note is gone (deleted here, elsewhere, or a stale persisted tab): drop
-    // its tab and move on instead of stranding the user on a broken tab.
+    // its tab and fall back to another open tab so the user lands on a note they
+    // still have open — never a raw error — instead of being stranded.
     const status = (e as { status?: number }).status ?? 0;
     if (status === 404 && slug.value !== null && ws.value !== '') {
-      const next = tabsStore.close(ws.value, slug.value);
+      const next = tabsStore.close(ws.value, slug.value) ?? tabsStore.tabs(ws.value)[0]?.slug ?? null;
       void router.replace(next !== null ? { name: 'notes', params: { slug: next } } : { name: 'notes' });
       return;
     }

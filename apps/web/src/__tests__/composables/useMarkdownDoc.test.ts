@@ -60,6 +60,33 @@ describe('useMarkdownDoc', () => {
     expect(result.headRevisionId).toBe('rev-xyz');
   });
 
+  it('load: throws with the HTTP status from the response, even when the body omits it', async () => {
+    mockGet.mockResolvedValue({
+      data: undefined,
+      error: { title: 'Not Found' },
+      response: { status: 404 },
+    });
+
+    const { load } = useMarkdownDoc();
+    const err = (await load(WS, SLUG).catch((e) => e)) as Error & { status?: number };
+
+    expect(err).toBeInstanceOf(Error);
+    expect(err.message).toBe('Not Found');
+    expect(err.status).toBe(404);
+  });
+
+  it('load: falls back to the body status when there is no response', async () => {
+    mockGet.mockResolvedValue({
+      data: undefined,
+      error: { title: 'Gone', status: 410 },
+    });
+
+    const { load } = useMarkdownDoc();
+    const err = (await load(WS, SLUG).catch((e) => e)) as Error & { status?: number };
+
+    expect(err.status).toBe(410);
+  });
+
   it('save: joins frontmatter+body, PUTs with base_revision_id, returns the new head', async () => {
     mockPut.mockResolvedValue({ data: { head_revision_id: 'rev-def' }, error: undefined });
 
