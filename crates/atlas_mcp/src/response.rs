@@ -9,7 +9,7 @@ use atlas_api::{
     dtos::{
         boards_tasks::{
             ActivityEntryDto, AssigneeDto, BoardSummaryDto, ChecklistItemDto, ColumnDto,
-            ReferenceDto, TaskBacklinkDto, TaskDto, TaskSummaryDto,
+            ReferenceDto, TaskAttachmentDto, TaskBacklinkDto, TaskDto, TaskSummaryDto,
         },
         documents::{
             ActorDto, AttachmentDto, BacklinkDto, DocumentDto, DocumentSummaryDto,
@@ -886,6 +886,18 @@ pub(crate) fn project_attachment(att: AttachmentDto) -> Value {
     map.insert("created_at".into(), json!(att.created_at));
 
     Value::Object(map)
+}
+
+/// Projects task attachment metadata to the compact MCP shape.
+pub(crate) fn project_task_attachment(att: TaskAttachmentDto) -> Value {
+    json!({
+        "id": att.id,
+        "file_name": att.file_name,
+        "content_type": att.content_type,
+        "size_bytes": att.size_bytes,
+        "actor": project_actor(att.created_by),
+        "created_at": att.created_at,
+    })
 }
 
 // ---------------------------------------------------------------------------

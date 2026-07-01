@@ -54,11 +54,11 @@ use response::{
     project_column, project_document_compact, project_document_full, project_document_summary,
     project_folder, project_principal, project_project, project_promotion, project_reference,
     project_revision_content, project_revision_meta, project_saved_search, project_search_hit,
-    project_status_template, project_tag, project_task_backlink, project_task_compact,
-    project_task_full, project_task_row, project_task_view, project_workspace,
-    project_workspace_activity_entry, require_confirm, resolve_column_id_on_board,
-    validate_assignee_type, validate_estimate, validate_estimate_value, validate_priority,
-    validate_reference_kind, validate_single_target, wrap_vec,
+    project_status_template, project_tag, project_task_attachment, project_task_backlink,
+    project_task_compact, project_task_full, project_task_row, project_task_view,
+    project_workspace, project_workspace_activity_entry, require_confirm,
+    resolve_column_id_on_board, validate_assignee_type, validate_estimate, validate_estimate_value,
+    validate_priority, validate_reference_kind, validate_single_target, wrap_vec,
 };
 
 const ATLAS_INSTRUCTIONS: &str = "\
@@ -89,7 +89,7 @@ Tools by area (see each tool's own description for parameters):\n\
 `list_used_labels`, `list_saved_searches`, `list_task_views`.\n\
 - Links and depth: `get_task_references`, `get_task_backlinks`, `get_document_backlinks`, \
 `list_checklist`, `list_activity`, `list_workspace_activity`, `list_document_history`, \
-`get_document_revision`, `list_attachments`.\n\
+`get_document_revision`, `list_attachments`, `list_task_attachments`.\n\
 - Security audit (owner/admin only): `get_workspace_audit`, `get_platform_audit`.\n\
 - Task writes: `create_task`, `update_task`, `move_task`, `delete_task`, \
 `add_task_assignee`, `remove_task_assignee`.\n\
@@ -597,6 +597,15 @@ pub struct ListAttachmentsParams {
     /// Page size (default 20, max 200).
     #[serde(default)]
     pub limit: Option<u32>,
+}
+
+/// Parameters accepted by the `list_task_attachments` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ListTaskAttachmentsParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Task readable ID, e.g. `ATL-42`.
+    pub readable_id: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -1907,6 +1916,28 @@ impl AtlasMcp {
             .map_err(|e| format!("list_attachments for '{}' failed: {e}", params.slug))?;
 
         let result = envelope_page(page, project_attachment);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "List attachment metadata for a task (file name, type, size)")]
+    async fn list_task_attachments(
+        &self,
+        Parameters(params): Parameters<ListTaskAttachmentsParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
+        let items = client
+            .list_task_attachments(&params.workspace, &params.readable_id)
+            .await
+            .map_err(|e| {
+                format!(
+                    "list_task_attachments for '{}' failed: {e}",
+                    params.readable_id
+                )
+            })?;
+
+        let result: Vec<_> = items.into_iter().map(project_task_attachment).collect();
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
@@ -3958,6 +3989,13 @@ mod tests {
     }
 
     #[test]
+    fn list_task_attachments_params_deserializes_minimal() {
+        let json = r#"{"workspace":"ws","readable_id":"ATL-42"}"#;
+        let params: ListTaskAttachmentsParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.readable_id, "ATL-42");
+    }
+
+    #[test]
     fn get_info_instructions_reference_depth_tools() {
         let server = AtlasMcp::new("http://localhost:8080", "test-token").unwrap();
         let info = server.get_info();
@@ -3981,6 +4019,10 @@ mod tests {
         assert!(
             instructions.contains("`list_attachments`"),
             "instructions must mention list_attachments"
+        );
+        assert!(
+            instructions.contains("`list_task_attachments`"),
+            "instructions must mention list_task_attachments"
         );
         assert!(
             instructions.contains("`list_workspace_activity`"),
