@@ -98,6 +98,26 @@ describe('useTasksStore', () => {
       const [, opts] = PATCH.mock.calls[0] as [string, { body: { description: string } }];
       expect(opts.body.description).toBe('hello');
     });
+
+    it('does not overwrite newer local edits when an older save returns', async () => {
+      const store = useTasksStore();
+      store.$patch({ openTask: taskDto('old') });
+
+      let resolvePatch: (value: { data: ReturnType<typeof taskDto>; error: undefined }) => void = () => {};
+      PATCH.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolvePatch = resolve;
+        }),
+      );
+
+      const pending = store.updateDescription('ws-1', 'ATL-1', 'first save');
+      store.patchOpenTask({ description: 'newer local edit' });
+
+      resolvePatch({ data: taskDto('first save'), error: undefined });
+      await pending;
+
+      expect(store.openTask?.description).toBe('newer local edit');
+    });
   });
 
   describe('patchOpenTask', () => {

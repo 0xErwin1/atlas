@@ -7,6 +7,7 @@ import { EditorView, keymap } from '@codemirror/view';
 import { GFM } from '@lezer/markdown';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import Icon from '@/components/ui/Icon.vue';
+import { restoreSelection, snapshotSelection } from '@/lib/editorSelection';
 import {
   detectWikilinkTrigger,
   formatWikilink,
@@ -274,9 +275,10 @@ watch(
     if (body === lastEmitted) return;
     if (body === view.state.doc.toString()) return;
 
+    const nextSelection = restoreSelection(snapshotSelection(view.state.selection), body.length);
     view.dispatch({
       changes: { from: 0, to: view.state.doc.length, insert: body },
-      selection: { anchor: 0 },
+      selection: nextSelection,
     });
     lastEmitted = body;
 
