@@ -167,18 +167,27 @@ const groups = computed<Group[]>(() => {
   return statusGroups.value;
 });
 
+// A task's column, looked up by id once per render instead of a linear
+// `columns.find` on each of the several per-row status helpers (taskIsDone alone
+// runs twice per row).
+const columnById = computed<Map<string, ColumnDto>>(() => {
+  const map = new Map<string, ColumnDto>();
+  for (const column of boards.columns) map.set(column.id, column);
+  return map;
+});
+
 function statusRingColor(task: TaskSummaryDto): string {
-  const column = boards.columns.find((c) => c.id === task.column_id);
+  const column = columnById.value.get(task.column_id);
   return column !== undefined ? statusColor(column) : 'var(--c-muted)';
 }
 
 function taskIsDone(task: TaskSummaryDto): boolean {
-  const column = boards.columns.find((c) => c.id === task.column_id);
+  const column = columnById.value.get(task.column_id);
   return column !== undefined && isDoneColumn(column);
 }
 
 function statusNameForTask(task: TaskSummaryDto): string {
-  const column = boards.columns.find((c) => c.id === task.column_id);
+  const column = columnById.value.get(task.column_id);
   return column?.name ?? '';
 }
 

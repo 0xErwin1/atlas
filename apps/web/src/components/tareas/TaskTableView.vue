@@ -34,22 +34,45 @@ const PRIORITY_COLOR: Record<string, string> = {
   low: 'var(--c-muted)',
 };
 
+interface StatusStyle {
+  fg: string;
+  bg: string;
+}
+
 interface Row {
   task: TaskSummaryDto;
   column: ColumnDto | undefined;
+  status: StatusStyle;
+  assignees: { id: string; name: string; agent: boolean }[];
+  due: string;
 }
 
+const DEFAULT_STATUS: StatusStyle = { fg: 'var(--c-muted)', bg: 'rgba(179, 177, 173, 0.1)' };
+
+// One swatch per column, resolved once per render instead of on every cell (the
+// status pill read the swatch three times per row).
+const statusByColumnId = computed<Map<string, StatusStyle>>(() => {
+  const map = new Map<string, StatusStyle>();
+  for (const column of boards.columns) {
+    const swatch = swatchById(labelColors.colorFor(`status:${column.name}`));
+    map.set(column.id, { fg: swatch.fg, bg: swatch.bg });
+  }
+  return map;
+});
+
+// Rows carry their derived status/assignees/due so the template reads plain
+// fields instead of re-running (and re-allocating) per cell on every render.
 const rows = computed<Row[]>(() =>
   boards.columns.flatMap((column) =>
-    boards.filteredTasksByColumn(column.id).map((task) => ({ task, column })),
+    boards.filteredTasksByColumn(column.id).map((task) => ({
+      task,
+      column,
+      status: statusByColumnId.value.get(column.id) ?? DEFAULT_STATUS,
+      assignees: assigneesForTask(task),
+      due: dueLabel(task.readable_id),
+    })),
   ),
 );
-
-function statusSwatch(column: ColumnDto | undefined): { fg: string; bg: string } {
-  if (column === undefined) return { fg: 'var(--c-muted)', bg: 'rgba(179, 177, 173, 0.1)' };
-  const swatch = swatchById(labelColors.colorFor(`status:${column.name}`));
-  return { fg: swatch.fg, bg: swatch.bg };
-}
 
 function priorityLabel(priority: string | null | undefined): string {
   if (priority === null || priority === undefined || priority === '') return '';
@@ -108,16 +131,16 @@ function dueLabel(readableId: string): string {
           <td class="atl-tt-status">
             <span
               class="atl-tt-statuspill"
-              :style="{ color: statusSwatch(row.column).fg, background: statusSwatch(row.column).bg }"
+              :style="{ color: row.status.fg, background: row.status.bg }"
             >
-              <span class="atl-tt-statusdot" :style="{ background: statusSwatch(row.column).fg }" />
+              <span class="atl-tt-statusdot" :style="{ background: row.status.fg }" />
               {{ row.column?.name ?? '—' }}
             </span>
           </td>
           <td class="atl-tt-assignee">
-            <span v-if="assigneesForTask(row.task).length" class="atl-tt-avatars">
+            <span v-if="row.assignees.length" class="atl-tt-avatars">
               <Avatar
-                v-for="a in assigneesForTask(row.task)"
+                v-for="a in row.assignees"
                 :key="a.id"
                 :name="a.name"
                 :agent="a.agent"
@@ -138,7 +161,7 @@ function dueLabel(readableId: string): string {
           <td class="atl-tt-num">
             {{ row.task.estimate !== null && row.task.estimate !== undefined ? row.task.estimate : '—' }}
           </td>
-          <td class="atl-tt-num">{{ dueLabel(row.task.readable_id) }}</td>
+          <td class="atl-tt-num">{{ row.due }}</td>
           <td class="atl-tt-tags">
             <span class="atl-tt-chips">
               <Chip

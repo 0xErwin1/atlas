@@ -71,9 +71,18 @@ function dueIndex(readableId: string): number | null {
   return Math.round((dueMidnight.getTime() - axisStart.getTime()) / MS_PER_DAY);
 }
 
+// One swatch per column, resolved once per render instead of a linear
+// `columns.find` per task while building the bars.
+const swatchByColumnId = computed<Map<string, Swatch>>(() => {
+  const map = new Map<string, Swatch>();
+  for (const column of boards.columns) {
+    map.set(column.id, swatchById(labelColors.colorFor(`status:${column.name}`)));
+  }
+  return map;
+});
+
 function statusSwatch(task: TaskSummaryDto): Swatch {
-  const column = boards.columns.find((c) => c.id === task.column_id);
-  return swatchById(labelColors.colorFor(`status:${column?.name ?? ''}`));
+  return swatchByColumnId.value.get(task.column_id) ?? swatchById(labelColors.colorFor('status:'));
 }
 
 function firstAssignee(task: TaskSummaryDto): { name: string; agent: boolean } | null {
@@ -91,11 +100,16 @@ interface Bar {
   estimate: string;
 }
 
+// Resolve each task's due index once (a store lookup plus Date math), then reuse
+// it for both the bars and the off-window tally instead of two full passes.
+const taskDueIndices = computed<{ task: TaskSummaryDto; idx: number | null }[]>(() =>
+  allTasks.value.map((task) => ({ task, idx: dueIndex(task.readable_id) })),
+);
+
 const bars = computed<Bar[]>(() => {
   const placed: { idx: number; bar: Bar }[] = [];
 
-  for (const task of allTasks.value) {
-    const idx = dueIndex(task.readable_id);
+  for (const { task, idx } of taskDueIndices.value) {
     if (idx === null) continue;
 
     const start = idx - PRESENTATIONAL_LEAD_DAYS;
@@ -121,8 +135,8 @@ const bars = computed<Bar[]>(() => {
 });
 
 const offWindowCount = computed(() => {
-  const total = allTasks.value.length;
-  const withDue = allTasks.value.filter((t) => dueIndex(t.readable_id) !== null).length;
+  const total = taskDueIndices.value.length;
+  const withDue = taskDueIndices.value.filter((t) => t.idx !== null).length;
   return { undated: total - withDue, total };
 });
 </script>

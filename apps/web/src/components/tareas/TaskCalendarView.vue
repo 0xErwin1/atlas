@@ -67,9 +67,18 @@ function dueDate(readableId: string): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+// Resolve one swatch per column once per render instead of a linear
+// `columns.find` on every chip (each chip reads it twice: background + dot).
+const swatchByColumnId = computed<Map<string, Swatch>>(() => {
+  const map = new Map<string, Swatch>();
+  for (const column of boards.columns) {
+    map.set(column.id, swatchById(labelColors.colorFor(`status:${column.name}`)));
+  }
+  return map;
+});
+
 function statusSwatch(task: TaskSummaryDto): Swatch {
-  const column = boards.columns.find((c) => c.id === task.column_id);
-  return swatchById(labelColors.colorFor(`status:${column?.name ?? ''}`));
+  return swatchByColumnId.value.get(task.column_id) ?? swatchById(labelColors.colorFor('status:'));
 }
 
 interface Cell {
@@ -80,6 +89,27 @@ interface Cell {
   weekend: boolean;
   tasks: TaskSummaryDto[];
 }
+
+// Resolve every task's due date once per render (each `dueDate` call does a store
+// lookup and allocates a Date), then bucket the current month's tasks by day so
+// each cell is an O(1) lookup instead of re-filtering every task (O(cells×tasks)).
+const taskDueDates = computed<{ task: TaskSummaryDto; due: Date | null }[]>(() =>
+  allTasks.value.map((task) => ({ task, due: dueDate(task.readable_id) })),
+);
+
+const tasksByDay = computed<Map<number, TaskSummaryDto[]>>(() => {
+  const map = new Map<number, TaskSummaryDto[]>();
+  for (const { task, due } of taskDueDates.value) {
+    if (due === null) continue;
+    if (due.getFullYear() !== viewYear.value || due.getMonth() !== viewMonth.value) continue;
+
+    const day = due.getDate();
+    const list = map.get(day);
+    if (list) list.push(task);
+    else map.set(day, [task]);
+  }
+  return map;
+});
 
 const cells = computed<Cell[]>(() => {
   const first = new Date(viewYear.value, viewMonth.value, 1);
@@ -102,17 +132,7 @@ const cells = computed<Cell[]>(() => {
         cellDate.getMonth() === today.getMonth() &&
         cellDate.getDate() === today.getDate(),
       weekend: weekday >= 5,
-      tasks: inMonth
-        ? allTasks.value.filter((t) => {
-            const due = dueDate(t.readable_id);
-            return (
-              due !== null &&
-              due.getFullYear() === viewYear.value &&
-              due.getMonth() === viewMonth.value &&
-              due.getDate() === cellDate.getDate()
-            );
-          })
-        : [],
+      tasks: inMonth ? (tasksByDay.value.get(cellDate.getDate()) ?? []) : [],
     });
   }
   return result;
@@ -125,7 +145,7 @@ const weeks = computed<Cell[][]>(() => {
 });
 
 const unscheduled = computed<TaskSummaryDto[]>(() =>
-  allTasks.value.filter((t) => dueDate(t.readable_id) === null),
+  taskDueDates.value.filter((d) => d.due === null).map((d) => d.task),
 );
 </script>
 
