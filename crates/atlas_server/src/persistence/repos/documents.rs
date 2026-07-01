@@ -100,11 +100,19 @@ impl DocumentRepo for PgDocumentRepo {
             Principal::User(uid) => {
                 principal_col = "user_id";
                 values.push(uid.0.into()); // $2
-                membership_clause = "EXISTS (
+                membership_clause = "(
+                    EXISTS (
                         SELECT 1 FROM workspace_memberships
                         WHERE workspace_id = $1
                           AND user_id = $2
-                    )"
+                    )
+                    OR EXISTS (
+                        SELECT 1 FROM users
+                        WHERE id = $2
+                          AND (is_root OR is_system_admin)
+                          AND disabled_at IS NULL
+                    )
+                )"
                 .to_string();
             }
             Principal::ApiKey(kid) => {

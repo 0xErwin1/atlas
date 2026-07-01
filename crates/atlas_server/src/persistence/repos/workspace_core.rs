@@ -212,12 +212,20 @@ impl ProjectRepo for PgProjectRepo {
 
                 // $2 already pushed; re-use for membership sub-query
                 visibility_clause = "p.visibility != 'private'".to_string();
-                membership_clause = "EXISTS (
+                membership_clause = "(
+                    EXISTS (
                         SELECT 1 FROM workspace_memberships
                         WHERE workspace_id = $1
                           AND user_id = $2
                           AND role IN ('owner', 'admin')
-                    )"
+                    )
+                    OR EXISTS (
+                        SELECT 1 FROM users
+                        WHERE id = $2
+                          AND (is_root OR is_system_admin)
+                          AND disabled_at IS NULL
+                    )
+                )"
                 .to_string();
             }
             Principal::ApiKey(kid) => {

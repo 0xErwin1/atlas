@@ -12,7 +12,7 @@ use atlas_api::dtos::{
     boards_tasks::{CreateBoardRequest, CreateColumnRequest, CreateTaskRequest},
 };
 use atlas_client::ClientError;
-use support::{TestDb, TestServer, login_user_with_workspace};
+use support::{TestDb, TestServer, login_root_user, login_user_with_workspace};
 
 fn project_req(name: &str, slug: &str) -> CreateProjectRequest {
     CreateProjectRequest {
@@ -62,6 +62,39 @@ async fn list_projects_returns_created_project() {
     assert!(
         page.items.iter().any(|p| p.slug == "listed-proj"),
         "created project should appear in list"
+    );
+}
+
+#[tokio::test]
+async fn root_user_lists_private_project_without_membership() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner_client, ws, _) = login_user_with_workspace(&server, &db, "proj-root-list").await;
+    let root_client = login_root_user(&server, &db).await;
+
+    owner_client
+        .create_project(
+            &ws.slug,
+            CreateProjectRequest {
+                name: "Private Project".to_string(),
+                slug: "private-project".to_string(),
+                task_prefix: "PVT".to_string(),
+                visibility: Some("private".to_string()),
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create private project");
+
+    let page = root_client
+        .list_projects(&ws.slug, None, None)
+        .await
+        .expect("root list projects");
+
+    assert!(
+        page.items.iter().any(|p| p.slug == "private-project"),
+        "root/system admin users must see private workspace projects without membership"
     );
 }
 

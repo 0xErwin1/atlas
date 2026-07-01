@@ -198,6 +198,46 @@ async fn list_documents_returns_created_document() {
 }
 
 #[tokio::test]
+async fn root_user_lists_documents_in_workspace_without_membership() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (owner_client, ws, _) =
+        support::login_user_with_workspace(&server, &db, "doc-list-root").await;
+    let root_client = support::login_root_user(&server, &db).await;
+
+    let project = owner_client
+        .create_project(
+            &ws.slug,
+            atlas_api::dtos::CreateProjectRequest {
+                name: "Shared Project".to_string(),
+                slug: "shared-project".to_string(),
+                task_prefix: "SPR".to_string(),
+                visibility: None,
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create project");
+
+    owner_client
+        .create_document(&ws.slug, &project.slug, doc_req("Visible to Root"))
+        .await
+        .expect("create document");
+
+    let page = root_client
+        .list_documents(&ws.slug, &project.slug, None, None)
+        .await
+        .expect("root list documents");
+
+    assert!(
+        page.items.iter().any(|d| d.title == "Visible to Root"),
+        "root/system admin users must see workspace documents without a membership row"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
 async fn update_document_changes_title() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;
