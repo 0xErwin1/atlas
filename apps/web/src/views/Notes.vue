@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router';
 import BacklinksPanel from '@/components/notas/BacklinksPanel.vue';
 import CasConflictView from '@/components/notas/CasConflictView.vue';
 import HistoryPanel from '@/components/notas/HistoryPanel.vue';
@@ -286,6 +286,29 @@ function onChange(markdown: string): void {
   saveTimer = setTimeout(() => void persist(), 800);
 }
 
+/**
+ * Persist a pending debounced edit before the current document goes away
+ * (switching notes or leaving the view), so the last keystrokes within the
+ * debounce window are never dropped. Runs from the route guards, which fire
+ * while the refs still point at the outgoing document.
+ *
+ * This is best-effort: the identity is captured as `save` arguments and the
+ * component refs are intentionally not updated afterwards, because the next
+ * document's own load owns them. A CAS conflict here is left unsaved (the same
+ * outcome as before), rather than merged against now-stale local state.
+ */
+function flushPendingSave(): void {
+  if (saveTimer === null) return;
+  clearTimeout(saveTimer);
+  saveTimer = null;
+
+  const targetSlug = slug.value;
+  if (targetSlug === null || ws.value === '') return;
+
+  const currentBody = editorRef.value?.currentMarkdown() ?? body.value;
+  void save(ws.value, targetSlug, currentBody, meta.value, headRevisionId.value);
+}
+
 function onMetaChange(newMeta: Record<string, unknown>): void {
   meta.value = newMeta;
   title.value = typeof newMeta.title === 'string' ? newMeta.title : (slug.value ?? '');
@@ -327,6 +350,16 @@ function onEditorKeydown(event: KeyboardEvent): void {
     wikilinkCaret.value = null;
   }
 }
+
+// Flush before the outgoing document is replaced: update fires on a note→note
+// slug change, leave fires when navigating out of Notes. Both run before the
+// route (and `slug`) updates, so the pending save still targets this document.
+onBeforeRouteUpdate(() => {
+  flushPendingSave();
+});
+onBeforeRouteLeave(() => {
+  flushPendingSave();
+});
 
 watch([slug, ws], loadDoc, { immediate: true });
 

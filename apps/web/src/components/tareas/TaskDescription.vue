@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, toRef } from 'vue';
+import { onBeforeUnmount, ref, toRef } from 'vue';
 import { useRouter } from 'vue-router';
 // biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
 import MarkdownEditor from '@/components/editor/MarkdownEditor.vue';
@@ -23,14 +23,36 @@ const wikilinkTitles = useWikilinkTitles(toRef(props, 'ws'), toRef(props, 'markd
 
 const editorRef = ref<InstanceType<typeof MarkdownEditor> | null>(null);
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingSave: (() => void) | null = null;
 
 function onChange(currentMarkdown: string): void {
+  // Bind the target task now, not at fire time: this component can be reused for
+  // a different task, and reading props later would save into the wrong one.
+  const ws = props.ws;
+  const readableId = props.readableId;
+  pendingSave = () => void tasks.updateDescription(ws, readableId, currentMarkdown);
+
   if (saveTimer !== null) clearTimeout(saveTimer);
-  saveTimer = setTimeout(
-    () => void tasks.updateDescription(props.ws, props.readableId, currentMarkdown),
-    800,
-  );
+  saveTimer = setTimeout(flushSave, 800);
 }
+
+/**
+ * Persist the pending edit immediately, cancelling the debounce. Called on the
+ * trailing debounce and on unmount so closing or switching a task within the
+ * debounce window never drops the last keystrokes.
+ */
+function flushSave(): void {
+  if (saveTimer !== null) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+
+  const save = pendingSave;
+  pendingSave = null;
+  save?.();
+}
+
+onBeforeUnmount(flushSave);
 
 function onNavigateWikilink(ref: WikilinkRef): void {
   void router.push(wikilinkHref(ref));
