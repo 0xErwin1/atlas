@@ -51,6 +51,95 @@ describe('useFoldersStore', () => {
     expect(store.folders).toHaveLength(0);
   });
 
+  it('load clears stale folders while loading a new project', async () => {
+    let resolveLoad: (value: { data: { items: ReturnType<typeof folder>[]; has_more: false } }) => void =
+      () => {};
+    GET.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveLoad = resolve;
+      }),
+    );
+
+    const store = useFoldersStore();
+    store.$patch({ folders: [folder('old', 'Old')] });
+    const pending = store.load('ws', 'next');
+
+    expect(store.folders).toHaveLength(0);
+
+    resolveLoad({ data: { items: [folder('new', 'New')], has_more: false } });
+    await pending;
+    expect(store.folders[0]?.id).toBe('new');
+  });
+
+  it('load ignores an older response after a newer load starts', async () => {
+    let resolveFirst: (value: { data: { items: ReturnType<typeof folder>[]; has_more: false } }) => void =
+      () => {};
+    GET.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveFirst = resolve;
+      }),
+    );
+    GET.mockResolvedValueOnce({ data: { items: [folder('new', 'New')], has_more: false } });
+
+    const store = useFoldersStore();
+    const first = store.load('ws', 'old');
+    await store.load('ws', 'new');
+    resolveFirst({ data: { items: [folder('old', 'Old')], has_more: false } });
+    await first;
+
+    expect(store.folders[0]?.id).toBe('new');
+  });
+
+  it('create refreshes silently without blanking the tree or toggling loading', async () => {
+    POST.mockResolvedValueOnce({ data: folder('f2', 'New') });
+    let resolveRefresh: (value: { data: { items: ReturnType<typeof folder>[]; has_more: false } }) => void =
+      () => {};
+    GET.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveRefresh = resolve;
+      }),
+    );
+
+    const store = useFoldersStore();
+    store.$patch({ folders: [folder('f1', 'Existing')] });
+
+    const pending = store.create('ws', 'proj', 'New');
+
+    expect(store.folders).toHaveLength(1);
+    expect(store.folders[0]?.id).toBe('f1');
+    expect(store.loading).toBe(false);
+
+    resolveRefresh({ data: { items: [folder('f1', 'Existing'), folder('f2', 'New')], has_more: false } });
+    await pending;
+
+    expect(store.folders).toHaveLength(2);
+    expect(store.loading).toBe(false);
+  });
+
+  it('releases the loader when a silent refresh supersedes an in-flight switch load', async () => {
+    let resolveSwitch: (value: { data: { items: ReturnType<typeof folder>[]; has_more: false } }) => void =
+      () => {};
+    GET.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveSwitch = resolve;
+      }),
+    );
+    POST.mockResolvedValueOnce({ data: folder('new', 'New') });
+    GET.mockResolvedValueOnce({ data: { items: [folder('new', 'New')], has_more: false } });
+
+    const store = useFoldersStore();
+    const switchLoad = store.load('ws', 'proj');
+    expect(store.loading).toBe(true);
+
+    await store.create('ws', 'proj', 'New');
+
+    resolveSwitch({ data: { items: [folder('old', 'Old')], has_more: false } });
+    await switchLoad;
+
+    expect(store.loading).toBe(false);
+    expect(store.folders.map((f) => f.id)).toEqual(['new']);
+  });
+
   it('create re-fetches the list on success', async () => {
     POST.mockResolvedValue({ data: folder('f2', 'New') });
     GET.mockResolvedValue({ data: { items: [folder('f2', 'New')], has_more: false } });

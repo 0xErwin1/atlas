@@ -15,14 +15,22 @@ export const useTasksStore = defineStore('tasks', () => {
   const openTask = ref<TaskDto | null>(null);
   const loading = ref(false);
   const error = ref<string | null>(null);
+  let loadSeq = 0;
 
   async function loadTask(ws: string, readableId: string): Promise<void> {
+    const seq = ++loadSeq;
     loading.value = true;
     error.value = null;
+
+    if (openTask.value?.readable_id !== readableId) {
+      openTask.value = null;
+    }
 
     const { data, error: apiError } = await wrappedClient.GET('/v1/workspaces/{ws}/tasks/{readable_id}', {
       params: { path: { ws, readable_id: readableId } },
     });
+
+    if (seq !== loadSeq) return;
 
     loading.value = false;
 

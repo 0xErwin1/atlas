@@ -12,9 +12,9 @@ vi.mock('@/api/wrapper', () => ({
 
 import { useTasksStore } from '@/stores/tasks';
 
-const taskDto = (description = '') => ({
+const taskDto = (description = '', readableId = 'ATL-1') => ({
   id: 'uuid-1',
-  readable_id: 'ATL-1',
+  readable_id: readableId,
   title: 'Test task',
   description,
   board_id: 'board-1',
@@ -52,6 +52,37 @@ describe('useTasksStore', () => {
 
       expect(store.openTask).toBeNull();
       expect(store.error).toBe('Not found');
+    });
+
+    it('clears a different open task before loading the requested one', async () => {
+      GET.mockResolvedValueOnce({ data: taskDto('', 'ATL-2'), error: undefined });
+
+      const store = useTasksStore();
+      store.$patch({ openTask: taskDto('', 'ATL-1') });
+      const pending = store.loadTask('ws-1', 'ATL-2');
+
+      expect(store.openTask).toBeNull();
+
+      await pending;
+      expect(store.openTask?.readable_id).toBe('ATL-2');
+    });
+
+    it('does not let an older request replace the latest requested task', async () => {
+      let resolveFirst: (value: { data: ReturnType<typeof taskDto>; error: undefined }) => void = () => {};
+      GET.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveFirst = resolve;
+        }),
+      );
+      GET.mockResolvedValueOnce({ data: taskDto('', 'ATL-2'), error: undefined });
+
+      const store = useTasksStore();
+      const first = store.loadTask('ws-1', 'ATL-1');
+      await store.loadTask('ws-1', 'ATL-2');
+      resolveFirst({ data: taskDto('', 'ATL-1'), error: undefined });
+      await first;
+
+      expect(store.openTask?.readable_id).toBe('ATL-2');
     });
   });
 

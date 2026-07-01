@@ -16,10 +16,29 @@ export const useFoldersStore = defineStore('folders', () => {
   const folders = ref<FolderDto[]>([]);
   const loading = ref(false);
   const error = ref<string | null>(null);
+  let loadSeq = 0;
+  let loadingSeq = 0;
 
-  async function load(ws: string, projectSlug: string): Promise<void> {
-    loading.value = true;
+  /**
+   * Load the active project's folders.
+   *
+   * A project/workspace switch (`silent: false`, the default) clears the list and
+   * flips `loading` so the tree shows a loader instead of the previous project's
+   * folders. A post-mutation refresh (`silent: true`) keeps the current tree in
+   * place and updates it when the response arrives, so a rename/move/create never
+   * blanks the whole tree. Both paths share the `loadSeq` guard so a slower
+   * response can never overwrite a newer one.
+   */
+  async function load(ws: string, projectSlug: string, opts: { silent?: boolean } = {}): Promise<void> {
+    const seq = ++loadSeq;
+    const silent = opts.silent ?? false;
+
     error.value = null;
+    if (!silent) {
+      loadingSeq = seq;
+      loading.value = true;
+      folders.value = [];
+    }
 
     const { items, error: apiError } = await collectPaged<FolderDto>((cursor) =>
       wrappedClient.GET('/v1/workspaces/{ws}/projects/{project_slug}/folders', {
@@ -30,7 +49,15 @@ export const useFoldersStore = defineStore('folders', () => {
       }),
     );
 
-    loading.value = false;
+    if (seq !== loadSeq) {
+      // A newer load supersedes this one. If we still own the loader (i.e. the
+      // successor was a silent refresh, which never manages `loading`), release
+      // it so the tree can never stay stuck on the spinner.
+      if (!silent && seq === loadingSeq) loading.value = false;
+      return;
+    }
+
+    if (!silent) loading.value = false;
 
     if (apiError !== undefined) {
       error.value = errorHint(apiError, 'Failed to load folders');
@@ -59,7 +86,7 @@ export const useFoldersStore = defineStore('folders', () => {
       return false;
     }
 
-    await load(ws, projectSlug);
+    await load(ws, projectSlug, { silent: true });
     return true;
   }
 
@@ -74,7 +101,7 @@ export const useFoldersStore = defineStore('folders', () => {
       return false;
     }
 
-    await load(ws, projectSlug);
+    await load(ws, projectSlug, { silent: true });
     return true;
   }
 
@@ -88,7 +115,7 @@ export const useFoldersStore = defineStore('folders', () => {
       return false;
     }
 
-    await load(ws, projectSlug);
+    await load(ws, projectSlug, { silent: true });
     return true;
   }
 
@@ -108,7 +135,7 @@ export const useFoldersStore = defineStore('folders', () => {
       return false;
     }
 
-    await load(ws, projectSlug);
+    await load(ws, projectSlug, { silent: true });
     return true;
   }
 
@@ -128,7 +155,7 @@ export const useFoldersStore = defineStore('folders', () => {
       return false;
     }
 
-    await load(ws, projectSlug);
+    await load(ws, projectSlug, { silent: true });
     return true;
   }
 

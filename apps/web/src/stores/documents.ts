@@ -21,10 +21,33 @@ export const useDocumentsStore = defineStore('documents', () => {
   const backlinks = ref<BacklinkSummary[]>([]);
   const loading = ref(false);
   const error = ref<string | null>(null);
+  let summariesLoadSeq = 0;
+  let summariesLoadingSeq = 0;
 
-  async function loadSummaries(ws: string, projectSlug: string): Promise<void> {
-    loading.value = true;
+  /**
+   * Load the active project's document summaries.
+   *
+   * A project/workspace switch (`silent: false`, the default) clears the list and
+   * flips `loading` so the tree shows a loader instead of the previous project's
+   * notes. A post-mutation refresh (`silent: true`) keeps the current tree in
+   * place and updates it when the response arrives, so a rename/move/create never
+   * blanks the whole tree. Both paths share the `summariesLoadSeq` guard so a
+   * slower response can never overwrite a newer one.
+   */
+  async function loadSummaries(
+    ws: string,
+    projectSlug: string,
+    opts: { silent?: boolean } = {},
+  ): Promise<void> {
+    const seq = ++summariesLoadSeq;
+    const silent = opts.silent ?? false;
+
     error.value = null;
+    if (!silent) {
+      summariesLoadingSeq = seq;
+      loading.value = true;
+      summaries.value = [];
+    }
 
     // The tree renders the whole project, but the endpoint is paginated. Page
     // through it so all documents show — and so a newly created note (newest by
@@ -38,7 +61,15 @@ export const useDocumentsStore = defineStore('documents', () => {
       }),
     );
 
-    loading.value = false;
+    if (seq !== summariesLoadSeq) {
+      // A newer load supersedes this one. If we still own the loader (i.e. the
+      // successor was a silent refresh, which never manages `loading`), release
+      // it so the tree can never stay stuck on the spinner.
+      if (!silent && seq === summariesLoadingSeq) loading.value = false;
+      return;
+    }
+
+    if (!silent) loading.value = false;
 
     if (apiError !== undefined) {
       error.value = errorHint(apiError, 'Failed to load documents');
@@ -82,7 +113,7 @@ export const useDocumentsStore = defineStore('documents', () => {
       return null;
     }
 
-    await loadSummaries(ws, projectSlug);
+    await loadSummaries(ws, projectSlug, { silent: true });
     return data.slug ?? null;
   }
 
@@ -97,7 +128,7 @@ export const useDocumentsStore = defineStore('documents', () => {
       return false;
     }
 
-    await loadSummaries(ws, projectSlug);
+    await loadSummaries(ws, projectSlug, { silent: true });
     return true;
   }
 
@@ -111,7 +142,7 @@ export const useDocumentsStore = defineStore('documents', () => {
       return false;
     }
 
-    await loadSummaries(ws, projectSlug);
+    await loadSummaries(ws, projectSlug, { silent: true });
     return true;
   }
 
@@ -131,7 +162,7 @@ export const useDocumentsStore = defineStore('documents', () => {
       return false;
     }
 
-    await loadSummaries(ws, projectSlug);
+    await loadSummaries(ws, projectSlug, { silent: true });
     return true;
   }
 
@@ -151,7 +182,7 @@ export const useDocumentsStore = defineStore('documents', () => {
       return false;
     }
 
-    await loadSummaries(ws, projectSlug);
+    await loadSummaries(ws, projectSlug, { silent: true });
     return true;
   }
 

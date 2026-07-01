@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import FolderPickerDialog from '@/components/notas/FolderPickerDialog.vue';
 // biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
 import NotesTree from '@/components/notas/NotesTree.vue';
+import LoadingState from '@/components/states/LoadingState.vue';
 import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
 import { docKey, type TreeNodeRef } from '@/lib/notesTree';
 import { useDocumentsStore } from '@/stores/documents';
@@ -64,6 +65,7 @@ const projectOptions = computed<DropdownOption[]>(() =>
 );
 
 const ws = computed(() => workspace.activeWorkspaceSlug ?? '');
+const treeLoading = computed(() => folders.loading || documents.loading);
 
 function selectProject(slug: string): void {
   selectedSlug.value = slug;
@@ -252,8 +254,9 @@ defineExpose({ openNewPage });
       />
     </div>
 
+    <LoadingState v-if="treeLoading" label="Loading notes…" />
     <NotesTree
-      v-if="activeProject"
+      v-else-if="activeProject"
       ref="treeRef"
       :project-name="activeProject.name"
       :folders="folders.folders"

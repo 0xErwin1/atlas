@@ -65,6 +65,71 @@ describe('useDocumentsStore', () => {
     expect(store.summaries).toHaveLength(0);
   });
 
+  it('loadSummaries clears stale documents while loading a new project', async () => {
+    let resolveLoad: (value: { data: { items: ReturnType<typeof summary>[]; has_more: false } }) => void =
+      () => {};
+    GET.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveLoad = resolve;
+      }),
+    );
+
+    const store = useDocumentsStore();
+    store.$patch({ summaries: [summary('old', 'Old')] });
+    const pending = store.loadSummaries('ws', 'next');
+
+    expect(store.summaries).toHaveLength(0);
+
+    resolveLoad({ data: { items: [summary('new', 'New')], has_more: false } });
+    await pending;
+    expect(store.summaries[0]?.id).toBe('new');
+  });
+
+  it('loadSummaries ignores an older response after a newer load starts', async () => {
+    let resolveFirst: (value: { data: { items: ReturnType<typeof summary>[]; has_more: false } }) => void =
+      () => {};
+    GET.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveFirst = resolve;
+      }),
+    );
+    GET.mockResolvedValueOnce({ data: { items: [summary('new', 'New')], has_more: false } });
+
+    const store = useDocumentsStore();
+    const first = store.loadSummaries('ws', 'old');
+    await store.loadSummaries('ws', 'new');
+    resolveFirst({ data: { items: [summary('old', 'Old')], has_more: false } });
+    await first;
+
+    expect(store.summaries[0]?.id).toBe('new');
+  });
+
+  it('create refreshes silently without blanking the tree or toggling loading', async () => {
+    POST.mockResolvedValueOnce({ data: summary('d2', 'New') });
+    let resolveRefresh: (value: { data: { items: ReturnType<typeof summary>[]; has_more: false } }) => void =
+      () => {};
+    GET.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveRefresh = resolve;
+      }),
+    );
+
+    const store = useDocumentsStore();
+    store.$patch({ summaries: [summary('d1', 'Existing')] });
+
+    const pending = store.create('ws', 'proj', 'New');
+
+    expect(store.summaries).toHaveLength(1);
+    expect(store.summaries[0]?.id).toBe('d1');
+    expect(store.loading).toBe(false);
+
+    resolveRefresh({ data: { items: [summary('d1', 'Existing'), summary('d2', 'New')], has_more: false } });
+    await pending;
+
+    expect(store.summaries).toHaveLength(2);
+    expect(store.loading).toBe(false);
+  });
+
   it('loadBacklinks populates backlinks (REQ-W17)', async () => {
     GET.mockResolvedValue({
       data: {
