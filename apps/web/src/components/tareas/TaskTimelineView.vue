@@ -11,16 +11,54 @@
  */
 import { computed } from 'vue';
 import Avatar from '@/components/ui/Avatar.vue';
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
+import ContextMenu from '@/components/ui/ContextMenu.vue';
+import PromptDialog from '@/components/ui/PromptDialog.vue';
+import { useContextMenu } from '@/composables/useContextMenu';
+import { useTaskInteractions } from '@/composables/useTaskInteractions';
 import { type Swatch, swatchById } from '@/lib/swatches';
 import type { TaskSummaryDto } from '@/stores/boards';
 import { useBoardsStore } from '@/stores/boards';
 import { useLabelColorsStore } from '@/stores/labelColors';
+import type { TaskViewMode } from '@/stores/ui';
+import { useWorkspaceStore } from '@/stores/workspace';
 
-defineProps<{ ws: string; selectedReadableId: string | null }>();
-const emit = defineEmits<{ select: [readableId: string]; open: [readableId: string] }>();
+const props = defineProps<{ ws: string; selectedReadableId: string | null }>();
+const emit = defineEmits<{ select: [readableId: string, mode?: TaskViewMode]; open: [readableId: string] }>();
 
 const boards = useBoardsStore();
 const labelColors = useLabelColorsStore();
+const workspace = useWorkspaceStore();
+const ti = useTaskInteractions(props.ws);
+const menu = useContextMenu();
+
+async function onMenu(readableId: string, event: MouseEvent): Promise<void> {
+  ti.menuReadableId.value = readableId;
+  menu.openAt(event);
+
+  void workspace.loadMembers(props.ws);
+  await Promise.all(workspace.projects.map((p) => boards.loadBoardsForProject(props.ws, p.slug)));
+}
+
+const deleteTarget = computed(() => ti.deleteTargetFor(ti.menuReadableId.value));
+
+const menuItems = computed(() => {
+  const readableId = ti.menuReadableId.value;
+  if (readableId === null) return [];
+
+  const task = boards.findTaskByReadableId(readableId);
+  if (task === undefined) return [];
+
+  const boardId = boards.board?.id;
+  return ti.buildMenuItems({
+    task,
+    boardId,
+    columns: boards.columns,
+    allowDuplicate: boardId !== undefined,
+    onOpen: (rid) => emit('open', rid),
+    onOpenAs: (rid, mode) => emit('select', rid, mode),
+  });
+});
 
 const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 const NAME_W = 300;
@@ -162,7 +200,12 @@ const offWindowCount = computed(() => {
       <div class="atl-tm-rows">
         <div class="atl-tm-today" :style="{ left: `calc(${NAME_W}px + (100% - ${NAME_W}px) * ${todayPct / 100})` }" />
 
-        <div v-for="bar in bars" :key="bar.task.id" class="atl-tm-row">
+        <div
+          v-for="bar in bars"
+          :key="bar.task.id"
+          class="atl-tm-row"
+          @contextmenu.prevent="onMenu(bar.task.readable_id, $event)"
+        >
           <div class="atl-tm-name" :style="{ width: `${NAME_W}px`, flex: `0 0 ${NAME_W}px` }">
             <span class="atl-tm-dot" :style="{ background: bar.swatch.fg }" />
             <span class="atl-tm-title">{{ bar.task.title }}</span>
@@ -203,6 +246,37 @@ const offWindowCount = computed(() => {
         {{ offWindowCount.undated }} task{{ offWindowCount.undated === 1 ? '' : 's' }} with no due date are not shown.
       </div>
     </div>
+
+    <ContextMenu
+      :open="menu.open.value"
+      :x="menu.x.value"
+      :y="menu.y.value"
+      :items="menuItems"
+      @close="menu.close"
+    />
+
+    <PromptDialog
+      :open="ti.promptState.value.open"
+      :title="ti.promptState.value.title"
+      :initial="ti.promptState.value.initial"
+      :input-type="ti.promptState.value.mode === 'due' ? 'date' : 'text'"
+      @confirm="ti.onPromptConfirm"
+      @cancel="ti.promptState.value = { ...ti.promptState.value, open: false }"
+    />
+
+    <ConfirmDialog
+      :open="ti.confirmOpen.value"
+      tone="danger"
+      title="Delete this task?"
+      message="The task is removed permanently. This can't be undone."
+      :detail="deleteTarget ? `${deleteTarget.readable_id} · ${deleteTarget.title}` : undefined"
+      detail-icon="square-kanban"
+      note="Its sub-tasks, references, and activity are removed along with it."
+      confirm-label="Delete task"
+      confirm-icon="trash-2"
+      @confirm="ti.onConfirmDelete"
+      @cancel="ti.confirmOpen.value = false"
+    />
   </div>
 </template>
 

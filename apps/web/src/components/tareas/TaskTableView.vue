@@ -15,17 +15,55 @@
 import { computed } from 'vue';
 import Avatar from '@/components/ui/Avatar.vue';
 import Chip from '@/components/ui/Chip.vue';
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
+import ContextMenu from '@/components/ui/ContextMenu.vue';
 import Icon from '@/components/ui/Icon.vue';
+import PromptDialog from '@/components/ui/PromptDialog.vue';
+import { useContextMenu } from '@/composables/useContextMenu';
+import { useTaskInteractions } from '@/composables/useTaskInteractions';
 import { swatchById } from '@/lib/swatches';
 import type { ColumnDto, TaskSummaryDto } from '@/stores/boards';
 import { useBoardsStore } from '@/stores/boards';
 import { useLabelColorsStore } from '@/stores/labelColors';
+import type { TaskViewMode } from '@/stores/ui';
+import { useWorkspaceStore } from '@/stores/workspace';
 
-defineProps<{ ws: string; selectedReadableId: string | null }>();
-const emit = defineEmits<{ select: [readableId: string]; open: [readableId: string] }>();
+const props = defineProps<{ ws: string; selectedReadableId: string | null }>();
+const emit = defineEmits<{ select: [readableId: string, mode?: TaskViewMode]; open: [readableId: string] }>();
 
 const boards = useBoardsStore();
 const labelColors = useLabelColorsStore();
+const workspace = useWorkspaceStore();
+const ti = useTaskInteractions(props.ws);
+const menu = useContextMenu();
+
+async function onMenu(readableId: string, event: MouseEvent): Promise<void> {
+  ti.menuReadableId.value = readableId;
+  menu.openAt(event);
+
+  void workspace.loadMembers(props.ws);
+  await Promise.all(workspace.projects.map((p) => boards.loadBoardsForProject(props.ws, p.slug)));
+}
+
+const deleteTarget = computed(() => ti.deleteTargetFor(ti.menuReadableId.value));
+
+const menuItems = computed(() => {
+  const readableId = ti.menuReadableId.value;
+  if (readableId === null) return [];
+
+  const task = boards.findTaskByReadableId(readableId);
+  if (task === undefined) return [];
+
+  const boardId = boards.board?.id;
+  return ti.buildMenuItems({
+    task,
+    boardId,
+    columns: boards.columns,
+    allowDuplicate: boardId !== undefined,
+    onOpen: (rid) => emit('open', rid),
+    onOpenAs: (rid, mode) => emit('select', rid, mode),
+  });
+});
 
 const PRIORITY_COLOR: Record<string, string> = {
   urgent: 'var(--c-danger)',
@@ -121,6 +159,7 @@ function dueLabel(readableId: string): string {
           class="atl-tt-row"
           :class="{ selected: row.task.readable_id === selectedReadableId }"
           @click="emit('select', row.task.readable_id)"
+          @contextmenu.prevent="onMenu(row.task.readable_id, $event)"
         >
           <td class="atl-tt-icon">
             <Icon name="square-kanban" :size="13" style="color: var(--c-primary);" />
@@ -181,6 +220,37 @@ function dueLabel(readableId: string): string {
         </tr>
       </tbody>
     </table>
+
+    <ContextMenu
+      :open="menu.open.value"
+      :x="menu.x.value"
+      :y="menu.y.value"
+      :items="menuItems"
+      @close="menu.close"
+    />
+
+    <PromptDialog
+      :open="ti.promptState.value.open"
+      :title="ti.promptState.value.title"
+      :initial="ti.promptState.value.initial"
+      :input-type="ti.promptState.value.mode === 'due' ? 'date' : 'text'"
+      @confirm="ti.onPromptConfirm"
+      @cancel="ti.promptState.value = { ...ti.promptState.value, open: false }"
+    />
+
+    <ConfirmDialog
+      :open="ti.confirmOpen.value"
+      tone="danger"
+      title="Delete this task?"
+      message="The task is removed permanently. This can't be undone."
+      :detail="deleteTarget ? `${deleteTarget.readable_id} · ${deleteTarget.title}` : undefined"
+      detail-icon="square-kanban"
+      note="Its sub-tasks, references, and activity are removed along with it."
+      confirm-label="Delete task"
+      confirm-icon="trash-2"
+      @confirm="ti.onConfirmDelete"
+      @cancel="ti.confirmOpen.value = false"
+    />
   </div>
 </template>
 
