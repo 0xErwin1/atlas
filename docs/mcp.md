@@ -110,6 +110,7 @@ Shared behavior from `ATLAS_INSTRUCTIONS` and tool parameter docs:
 - `list_document_history`
 - `get_document_revision`
 - `list_attachments`
+- `list_task_attachments`
 - `get_workspace_audit`
 - `get_platform_audit`
 
@@ -172,9 +173,10 @@ Shared behavior from `ATLAS_INSTRUCTIONS` and tool parameter docs:
 
 1. use `search` or the list tools to discover targets first
 2. use task readable IDs and document slugs in follow-up calls
-3. for document edits, call `get_document` with `detail=full`, keep the returned revision id, then call `update_document_content`
-4. if a CAS conflict comes back, apply the returned patch and retry against `current_revision_id`
-5. only call destructive tools after an explicit decision and `confirm: true`
+3. before implementing a task, call `get_task` with `detail=full` and `list_task_attachments` so descriptions and attached screenshots/files are considered
+4. for document edits, call `get_document` with `detail=full`, keep the returned revision id, then call `update_document_content`
+5. if a CAS conflict comes back, apply the returned patch and retry against `current_revision_id`
+6. only call destructive tools after an explicit decision and `confirm: true`
 
 ## Current MCP gaps
 
@@ -186,4 +188,4 @@ Compared with REST, MCP intentionally omits several areas:
 - no group, grant, or property-definition tools
 - no workspace create/update/admin-delete tools
 - no webhook, integration-config, or automation-rule tools
-- no attachment upload/download/delete tools; the current attachment surface is document-attachment metadata listing only
+- no attachment upload/download/delete tools; the current attachment surface is metadata listing for document attachments and task attachments

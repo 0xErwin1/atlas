@@ -75,7 +75,7 @@ This page records caveats backed by the current code, tests, or authoritative re
 
 - MCP advertises tools and resources, not prompts
 - MCP intentionally exposes an agent-focused subset and omits user/admin management, API-key management, grants, groups, property definitions, webhook/integration/automation admin flows, and workspace create/update/admin-delete
-- current MCP attachment coverage is metadata-only for document attachments; it does not expose attachment upload/download/delete tools
+- current MCP attachment coverage is metadata-only for document and task attachments; it does not expose attachment upload/download/delete tools
 
 ## Automation and webhook specifics
 
