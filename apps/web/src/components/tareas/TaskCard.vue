@@ -53,7 +53,7 @@ defineEmits<{
       class="flex flex-wrap"
       style="gap: 5px;"
     >
-      <Chip v-for="label in task.labels ?? []" :key="label" :color="labelColors.colorFor(`tag:${label.toLowerCase()}`)">{{ label }}</Chip>
+      <Chip v-for="label in task.labels ?? []" :key="label" truncate :color="labelColors.colorFor(`tag:${label.toLowerCase()}`)">{{ label }}</Chip>
     </div>
 
     <div class="flex items-center" style="gap: 8px;">

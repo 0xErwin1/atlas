@@ -273,6 +273,7 @@ function onAssigneePick(task: TaskSummaryDto, value: string): void {
             <Chip
               v-for="label in task.labels ?? []"
               :key="label"
+              truncate
               :color="labelColors.colorFor(`tag:${label.toLowerCase()}`)"
             >
               {{ label }}

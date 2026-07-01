@@ -24,11 +24,16 @@ const props = withDefaults(
     icon?: string;
     /** A user-chosen swatch id (see lib/swatches). Overrides `tone` when set. */
     color?: string;
+    /** Cap the chip at its container's width and ellipsize a long label instead of
+     * letting it overflow. For width-constrained hosts (task cards, table cells)
+     * where a single long tag would otherwise stick out of the container. */
+    truncate?: boolean;
   }>(),
   {
     tone: 'neutral',
     icon: '',
     color: '',
+    truncate: false,
   },
 );
 
@@ -57,9 +62,16 @@ const style = computed(() => {
       fontWeight: 'var(--fw-medium)',
       lineHeight: '1',
       whiteSpace: 'nowrap',
+      ...(truncate ? { maxWidth: '100%', minWidth: '0', overflow: 'hidden' } : {}),
     }"
   >
     <Icon v-if="icon" :name="icon" :size="13" />
-    <slot />
+    <span
+      v-if="truncate"
+      style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;"
+    >
+      <slot />
+    </span>
+    <slot v-else />
   </span>
 </template>

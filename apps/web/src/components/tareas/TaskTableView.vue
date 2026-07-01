@@ -167,6 +167,7 @@ function dueLabel(readableId: string): string {
               <Chip
                 v-for="label in row.task.labels ?? []"
                 :key="label"
+                truncate
                 :color="labelColors.colorFor(`tag:${label.toLowerCase()}`)"
               >
                 {{ label }}
