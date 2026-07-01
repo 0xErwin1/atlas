@@ -859,6 +859,25 @@ function consumeTrailingSpace(view: EditorView, pos: number, limit: number): num
 }
 
 /**
+ * Block-level nodes whose subtree is pure inline content: a table or fenced-code
+ * block can never appear inside one. Skipping their descent keeps the whole-document
+ * block walk from visiting every inline node (emphasis, links, code, text) on each
+ * keystroke and caret move. Container blocks (lists, blockquotes) are intentionally
+ * absent so a table nested in them is still discovered.
+ */
+const INLINE_ONLY_BLOCKS = new Set([
+  'Paragraph',
+  'ATXHeading1',
+  'ATXHeading2',
+  'ATXHeading3',
+  'ATXHeading4',
+  'ATXHeading5',
+  'ATXHeading6',
+  'SetextHeading1',
+  'SetextHeading2',
+]);
+
+/**
  * Builds the BLOCK decorations (rendered tables and mermaid diagrams) for the
  * whole document. Block widgets and decorations that span line breaks may only be
  * provided through a StateField, never a ViewPlugin, so these live apart from the
@@ -866,8 +885,10 @@ function consumeTrailingSpace(view: EditorView, pos: number, limit: number): num
  *
  * A block is rendered as a widget unless the selection touches it, in which case
  * it is left as raw markdown for editing (reveal-on-active-block).
+ *
+ * Exported for unit testing the block-discovery walk without a DOM.
  */
-function buildBlockDecorations(state: EditorState, reveal: boolean, ctx: InlineCtx): DecorationSet {
+export function buildBlockDecorations(state: EditorState, reveal: boolean, ctx: InlineCtx): DecorationSet {
   const tree = syntaxTree(state);
   const doc = state.doc;
   const activeLines = activeLinesFromSelection(state, reveal);
@@ -879,6 +900,8 @@ function buildBlockDecorations(state: EditorState, reveal: boolean, ctx: InlineC
 
   tree.iterate({
     enter: (node) => {
+      if (INLINE_ONLY_BLOCKS.has(node.name)) return false;
+
       if (node.name === 'Table') {
         const firstLine = doc.lineAt(node.from).number;
         const lastLine = doc.lineAt(node.to).number;
