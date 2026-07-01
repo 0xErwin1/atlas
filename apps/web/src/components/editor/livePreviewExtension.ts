@@ -9,15 +9,12 @@ import {
   WidgetType,
 } from '@codemirror/view';
 import {
-  computeActiveLines,
   fenceLanguage,
   type InlineToken,
   isBlockActive,
-  type LineRange,
   type ParsedTable,
   parseImage,
   parseTable,
-  type SelectionRange,
   taskMarkerChecked,
   tokenizeInline,
 } from '@/lib/livePreview';
@@ -101,8 +98,10 @@ function appendInline(parent: HTMLElement, text: string, ctx: InlineCtx): void {
  * Wikilinks (`[[Title]]`) are not part of the Lezer markdown grammar, so they are
  * decorated by a separate regex pass with the same reveal-on-active-line rule.
  *
- * The active-line decision is delegated to the pure `computeActiveLines` helper so
- * it stays unit-testable without a DOM.
+ * The active-line rule (a line is active when a selection range touches it) is
+ * applied directly from the selection via `activeLinesFromSelection`; the pure
+ * `computeActiveLines` helper in `lib/livePreview` encodes the same rule and stays
+ * the unit-testable reference for it.
  */
 
 export interface LivePreviewCallbacks {
@@ -449,20 +448,25 @@ class MermaidWidget extends WidgetType {
 
 const hideDeco = Decoration.replace({});
 
-function lineRangesFor(view: EditorView): LineRange[] {
-  const out: LineRange[] = [];
-  const doc = view.state.doc;
+/**
+ * The set of "active" (revealed) line numbers for the current selection: every
+ * line any selection range touches, matching `computeActiveLines`' intersection
+ * rule. Derived directly from the selection via `lineAt` — O(selection ranges),
+ * not O(document lines) — so it stays cheap on every keystroke and caret move in
+ * large documents. Returns an empty set when reveal is off (preview / read-only).
+ */
+export function activeLinesFromSelection(state: EditorState, reveal: boolean): Set<number> {
+  const active = new Set<number>();
+  if (!reveal) return active;
 
-  for (let n = 1; n <= doc.lines; n += 1) {
-    const line = doc.line(n);
-    out.push({ number: line.number, from: line.from, to: line.to });
+  const doc = state.doc;
+  for (const range of state.selection.ranges) {
+    const first = doc.lineAt(Math.min(range.from, range.to)).number;
+    const last = doc.lineAt(Math.max(range.from, range.to)).number;
+    for (let n = first; n <= last; n += 1) active.add(n);
   }
 
-  return out;
-}
-
-function selectionRangesFor(view: EditorView): SelectionRange[] {
-  return view.state.selection.ranges.map((r) => ({ from: r.from, to: r.to }));
+  return active;
 }
 
 function lineNumberAt(view: EditorView, pos: number): number {
@@ -483,9 +487,7 @@ function buildDecorations(
   reveal: boolean,
   titles: Record<string, string>,
 ): DecorationSet {
-  const activeLines = reveal
-    ? computeActiveLines(lineRangesFor(view), selectionRangesFor(view))
-    : new Set<number>();
+  const activeLines = activeLinesFromSelection(view.state, reveal);
   const decos: Range<Decoration>[] = [];
 
   // Ranges replaced by a block widget (tables, diagrams). The wikilink pass must
@@ -856,19 +858,6 @@ function consumeTrailingSpace(view: EditorView, pos: number, limit: number): num
   return pos;
 }
 
-function activeLinesForState(state: EditorState, reveal: boolean): Set<number> {
-  if (!reveal) return new Set<number>();
-
-  const lines: LineRange[] = [];
-  for (let n = 1; n <= state.doc.lines; n += 1) {
-    const line = state.doc.line(n);
-    lines.push({ number: line.number, from: line.from, to: line.to });
-  }
-  const sels = state.selection.ranges.map((r) => ({ from: r.from, to: r.to }));
-
-  return computeActiveLines(lines, sels);
-}
-
 /**
  * Builds the BLOCK decorations (rendered tables and mermaid diagrams) for the
  * whole document. Block widgets and decorations that span line breaks may only be
@@ -881,7 +870,7 @@ function activeLinesForState(state: EditorState, reveal: boolean): Set<number> {
 function buildBlockDecorations(state: EditorState, reveal: boolean, ctx: InlineCtx): DecorationSet {
   const tree = syntaxTree(state);
   const doc = state.doc;
-  const activeLines = activeLinesForState(state, reveal);
+  const activeLines = activeLinesFromSelection(state, reveal);
   const decos: Range<Decoration>[] = [];
 
   const blockReplace = (node: SyntaxNode, widget: WidgetType): void => {
