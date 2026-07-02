@@ -96,6 +96,11 @@ function openMenu(comment: CommentDto, event: MouseEvent): void {
   menu.openAt(event);
 }
 
+function closeMenu(): void {
+  menu.close();
+  menuComment.value = null;
+}
+
 function focusComposer(): void {
   composerEditor.value?.focus?.();
 }
@@ -293,7 +298,7 @@ async function loadMore(): Promise<void> {
       :y="menu.y.value"
       :items="menuItems"
       :width="160"
-      @close="menu.close()"
+      @close="closeMenu"
     />
 
     <ConfirmDialog
