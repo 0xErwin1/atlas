@@ -64,9 +64,14 @@ async function onCreate(columnId: string, title: string): Promise<void> {
   if (boardId === undefined) return;
 
   const created = await boards.createTask(props.ws, boardId, columnId, title);
-  if (created === null && boards.error) {
-    ui.showBanner(boards.error, 'error');
+  if (created === null) {
+    if (boards.error) ui.showBanner(boards.error, 'error');
+    return;
   }
+
+  // Open the freshly created task in the user's chosen task view mode (dock,
+  // floating dialog, or full) so they can keep editing it right away.
+  emit('select', created);
 }
 
 async function onMenu(readableId: string, event: MouseEvent): Promise<void> {
