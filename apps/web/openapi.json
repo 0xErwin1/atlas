@@ -9636,8 +9636,7 @@
           "task_id",
           "body",
           "author",
-          "created_at",
-          "updated_at"
+          "created_at"
         ],
         "properties": {
           "author": {
@@ -9657,10 +9656,6 @@
           "task_id": {
             "type": "string",
             "format": "uuid"
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time"
           }
         }
       },
@@ -11248,8 +11243,7 @@
                 "task_id",
                 "body",
                 "author",
-                "created_at",
-                "updated_at"
+                "created_at"
               ],
               "properties": {
                 "author": {
@@ -11269,10 +11263,6 @@
                 "task_id": {
                   "type": "string",
                   "format": "uuid"
-                },
-                "updated_at": {
-                  "type": "string",
-                  "format": "date-time"
                 }
               }
             }

@@ -268,7 +268,6 @@ pub struct CommentDto {
     pub body: String,
     pub author: ActorDto,
     pub created_at: chrono::DateTime<chrono::Utc>,
-    pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
 /// Request body for `POST .../comments`.
