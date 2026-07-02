@@ -239,7 +239,8 @@ async fn admin_can_remove_another_members_comment_via_can_moderate() {
     let (ws, owner) = support::seed_workspace(&db, "cs-admin-owner").await;
     let owner_ctx = support::ctx(&ws, &owner);
 
-    let (proj, board, col) = seed_project_board_column(&db, &owner_ctx, "cs-admin-proj", "CM").await;
+    let (proj, board, col) =
+        seed_project_board_column(&db, &owner_ctx, "cs-admin-proj", "CM").await;
     let task = seed_task(&db, &owner_ctx, proj.id, board.id, col.id, "Task").await;
 
     let author_ctx = seed_member(&db, &ws, "cs-admin-author", MemberRole::Member).await;

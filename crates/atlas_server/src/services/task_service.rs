@@ -29,7 +29,8 @@ use crate::persistence::entities::boards_tasks::{
 };
 use crate::persistence::repos::{
     CommentRepo as _, PgCommentRepo, PgDocumentLinkRepo, PgOutboxRepo, PgTaskActivityRepo,
-    PgTaskAssigneeRepo, PgTaskChecklistRepo, PgTaskReferenceRepo, PgTaskRepo, TaskActivityRepo as _,
+    PgTaskAssigneeRepo, PgTaskChecklistRepo, PgTaskReferenceRepo, PgTaskRepo,
+    TaskActivityRepo as _,
 };
 
 /// Result of a checklist item promotion: the three records committed atomically.

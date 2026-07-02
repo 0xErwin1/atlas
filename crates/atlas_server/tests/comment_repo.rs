@@ -206,7 +206,8 @@ async fn comment_cursor_pagination_has_no_gaps_or_duplicates() {
     let (ws, user) = support::seed_workspace(&db, "comment-cursor-user").await;
     let ctx = support::ctx(&ws, &user);
 
-    let (proj, board, col) = seed_project_board_column(&db, &ctx, "comment-cursor-proj", "CU").await;
+    let (proj, board, col) =
+        seed_project_board_column(&db, &ctx, "comment-cursor-proj", "CU").await;
     let task = seed_task(&db, &ctx, proj.id, board.id, col.id, "Task").await;
 
     let repo = PgCommentRepo::new(db.conn().clone());
@@ -268,7 +269,8 @@ async fn comment_soft_delete_removes_from_listing_and_get() {
     let (ws, user) = support::seed_workspace(&db, "comment-delete-user").await;
     let ctx = support::ctx(&ws, &user);
 
-    let (proj, board, col) = seed_project_board_column(&db, &ctx, "comment-delete-proj", "CD").await;
+    let (proj, board, col) =
+        seed_project_board_column(&db, &ctx, "comment-delete-proj", "CD").await;
     let task = seed_task(&db, &ctx, proj.id, board.id, col.id, "Task").await;
 
     let repo = PgCommentRepo::new(db.conn().clone());
@@ -292,7 +294,10 @@ async fn comment_soft_delete_removes_from_listing_and_get() {
         .list_for_owner(&ctx, CommentOwner::Task(task.id), None, 50)
         .await
         .expect("list comments");
-    assert!(page.is_empty(), "deleted comment must not appear in listings");
+    assert!(
+        page.is_empty(),
+        "deleted comment must not appear in listings"
+    );
 
     let err = repo
         .get_for_owner(&ctx, CommentOwner::Task(task.id), created.id)
@@ -309,7 +314,8 @@ async fn comment_delete_missing_comment_returns_not_found() {
     let (ws, user) = support::seed_workspace(&db, "comment-missing-user").await;
     let ctx = support::ctx(&ws, &user);
 
-    let (proj, board, col) = seed_project_board_column(&db, &ctx, "comment-missing-proj", "CX").await;
+    let (proj, board, col) =
+        seed_project_board_column(&db, &ctx, "comment-missing-proj", "CX").await;
     let task = seed_task(&db, &ctx, proj.id, board.id, col.id, "Task").await;
 
     let repo = PgCommentRepo::new(db.conn().clone());
