@@ -20,6 +20,10 @@ const props = withDefaults(
     /** Right inspector collapse toggle, shown only in the full-screen view. */
     showInspectorToggle?: boolean;
     inspectorOpen?: boolean;
+    /** Activity+comments panel toggle, shown in the narrow sidebar dock where the
+     * panel replaces the body instead of sitting beside it. */
+    showActivityToggle?: boolean;
+    activityOpen?: boolean;
   }>(),
   {
     breadcrumbs: () => [],
@@ -31,6 +35,8 @@ const props = withDefaults(
     hasNext: false,
     showInspectorToggle: false,
     inspectorOpen: true,
+    showActivityToggle: false,
+    activityOpen: false,
   },
 );
 
@@ -42,6 +48,7 @@ const emit = defineEmits<{
   next: [];
   change: [mode: TaskViewMode];
   toggleInspector: [];
+  toggleActivity: [];
 }>();
 
 const ui = useUiStore();
@@ -134,6 +141,19 @@ const menuItems = computed<MenuItem[]>(() => [
     <button type="button" class="atl-gbtn" style="height: 26px;" title="Share" @click="ui.openShare(shareLabel)">
       <Icon name="users" :size="14" />
       Share
+    </button>
+
+    <button
+      v-if="showActivityToggle"
+      type="button"
+      class="atl-gbtn"
+      :class="{ on: activityOpen }"
+      style="width: 26px; height: 26px;"
+      :title="activityOpen ? 'Back to task' : 'Activity & comments'"
+      :aria-label="activityOpen ? 'Back to task' : 'Activity and comments'"
+      @click="emit('toggleActivity')"
+    >
+      <Icon :name="activityOpen ? 'file-text' : 'message-square'" :size="15" />
     </button>
 
     <TaskViewModeSwitch @change="(m) => emit('change', m)" />

@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import type { components } from '@/api/types.d.ts';
+import ActivityComments from '@/components/tareas/ActivityComments.vue';
 import TaskBody from '@/components/tareas/TaskBody.vue';
 import TaskDetailHeader from '@/components/tareas/TaskDetailHeader.vue';
 import { useBoardsStore } from '@/stores/boards';
@@ -25,6 +26,10 @@ const boards = useBoardsStore();
 
 const shareLabel = computed(() => `${props.task.readable_id} · task`);
 const isModal = computed(() => ui.effectiveTaskViewMode === 'modal');
+
+// The narrow dock cannot fit the body and the activity+comments panel side by
+// side, so a header toggle swaps the whole view between them (ClickUp-style).
+const showActivity = ref(false);
 
 // The board's tasks flattened in column order, so the dock's prev/next arrows
 // walk the same sequence the user sees on the board.
@@ -68,8 +73,15 @@ function onChangeMode(mode: TaskViewMode): void {
         @expand="emit('expand')"
         @change="onChangeMode"
       />
-      <div class="atl-tv-scroll" style="padding: 20px 32px;">
-        <TaskBody :task="task" :ws="ws" layout="wide" />
+      <div class="atl-tv-modal-body">
+        <div class="atl-tv-scroll" style="flex: 1; padding: 20px 32px;">
+          <TaskBody :task="task" :ws="ws" layout="wide" :show-secondary="false" />
+        </div>
+        <aside class="atl-tv-modal-rail">
+          <div class="atl-tv-scroll" style="padding: 14px 16px;">
+            <ActivityComments :ws="ws" :readable-id="task.readable_id" />
+          </div>
+        </aside>
       </div>
     </div>
   </div>
@@ -80,15 +92,19 @@ function onChangeMode(mode: TaskViewMode): void {
       :share-label="shareLabel"
       show-expand
       show-nav
+      show-activity-toggle
+      :activity-open="showActivity"
       :has-prev="hasPrev"
       :has-next="hasNext"
       @close="emit('close')"
       @expand="emit('expand')"
       @prev="goPrev"
       @next="goNext"
+      @toggle-activity="showActivity = !showActivity"
     />
-    <div class="atl-tv-scroll" style="padding: 14px 18px;">
-      <TaskBody :task="task" :ws="ws" layout="narrow" />
+    <div class="atl-tv-scroll" :style="showActivity ? 'padding: 14px 16px;' : 'padding: 14px 18px;'">
+      <ActivityComments v-if="showActivity" :ws="ws" :readable-id="task.readable_id" />
+      <TaskBody v-else :task="task" :ws="ws" layout="narrow" :show-secondary="false" />
     </div>
   </aside>
 </template>
@@ -122,8 +138,8 @@ function onChangeMode(mode: TaskViewMode): void {
 }
 
 .atl-tv-modal {
-  width: min(820px, 88%);
-  height: min(82%, 760px);
+  width: min(1040px, 92%);
+  height: min(84%, 820px);
   display: flex;
   flex-direction: column;
   background: var(--c-background);
@@ -131,5 +147,20 @@ function onChangeMode(mode: TaskViewMode): void {
   border-radius: var(--r-lg, var(--r-md));
   box-shadow: var(--shadow-lg, var(--shadow-md));
   overflow: hidden;
+}
+
+.atl-tv-modal-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.atl-tv-modal-rail {
+  flex: 0 0 340px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-left: 1px solid var(--c-border);
+  background: var(--c-panel);
 }
 </style>
