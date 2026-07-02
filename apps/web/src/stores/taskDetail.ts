@@ -168,6 +168,42 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     return true;
   }
 
+  /**
+   * Edits an existing comment's body. The server authorizes this as author-only
+   * (admins cannot edit others' comments), returning the updated DTO which is
+   * swapped in place so the thread order is preserved.
+   */
+  async function editComment(
+    ws: string,
+    readableId: string,
+    commentId: string,
+    body: string,
+  ): Promise<boolean> {
+    error.value = null;
+
+    const { data, error: apiError } = await wrappedClient.PATCH(
+      '/v1/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}',
+      {
+        params: { path: { ws, readable_id: readableId, comment_id: commentId } },
+        body: { body },
+      },
+    );
+
+    if (apiError !== undefined || data === undefined) {
+      error.value = errorHint(apiError, 'Failed to edit comment');
+      return false;
+    }
+
+    const idx = comments.value.findIndex((c) => c.id === commentId);
+    if (idx !== -1) {
+      const updated = [...comments.value];
+      updated[idx] = data;
+      comments.value = updated;
+    }
+
+    return true;
+  }
+
   async function addAssignee(ws: string, readableId: string, input: AddAssigneeInput): Promise<boolean> {
     error.value = null;
 
@@ -564,6 +600,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     removeAttachment,
     loadMoreComments,
     addComment,
+    editComment,
     removeComment,
     clear,
     _setForTest,

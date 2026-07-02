@@ -3,6 +3,7 @@ import { ref } from 'vue';
 import type { components } from '@/api/types.d.ts';
 import SharePanel from '@/components/share/SharePanel.vue';
 import ActivityFeed from '@/components/tareas/ActivityFeed.vue';
+import Comments from '@/components/tareas/Comments.vue';
 import ReferenceAdd from '@/components/tareas/ReferenceAdd.vue';
 import ReferenceList from '@/components/tareas/ReferenceList.vue';
 import AgentBadge from '@/components/ui/AgentBadge.vue';
@@ -17,10 +18,10 @@ type TaskDto = components['schemas']['TaskDto'];
 
 /**
  * Right-side task inspector (hi-fi TareasDetail): a 280px dock with Details /
- * References / Activity / Share tabs, holding the secondary collections that
- * would otherwise stack inline below the task body. Defaults to Activity, the
- * design's active tab. The body keeps the title, meta card, description and
- * sub-tasks; this panel owns the rest.
+ * References / Comments / Activity / Share tabs, holding the secondary
+ * collections that would otherwise stack inline below the task body. Defaults to
+ * Comments, the conversation the product surfaces most. The body keeps the title,
+ * meta card, description and sub-tasks; this panel owns the rest.
  */
 
 const props = defineProps<{
@@ -31,14 +32,15 @@ const props = defineProps<{
 const detail = useTaskDetailStore();
 const ui = useUiStore();
 
-type Tab = 'details' | 'references' | 'activity' | 'share';
+type Tab = 'details' | 'references' | 'comments' | 'activity' | 'share';
 const TABS: Array<{ id: Tab; label: string; icon: string }> = [
   { id: 'details', label: 'Details', icon: 'file' },
   { id: 'references', label: 'References', icon: 'link' },
+  { id: 'comments', label: 'Comments', icon: 'message-square' },
   { id: 'activity', label: 'Activity', icon: 'history' },
   { id: 'share', label: 'Share', icon: 'user' },
 ];
-const active = ref('activity');
+const active = ref('comments');
 
 const creator = props.task.created_by;
 const creatorName = creator.display_name ?? (creator.type === 'api_key' ? 'Agent' : 'User');
@@ -91,6 +93,10 @@ async function onRemoveReference(referenceId: string): Promise<void> {
       <template v-else-if="active === 'references'">
         <ReferenceList :references="detail.references" @remove="onRemoveReference" />
         <ReferenceAdd :ws="ws" @add="onAddReference" />
+      </template>
+
+      <template v-else-if="active === 'comments'">
+        <Comments :ws="ws" :readable-id="task.readable_id" />
       </template>
 
       <template v-else-if="active === 'activity'">

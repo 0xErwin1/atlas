@@ -37,8 +37,8 @@ const props = withDefaults(
     task: TaskDto;
     ws: string;
     layout?: 'wide' | 'narrow';
-    /** Render References + Activity inline. Off when a host (the full view) shows
-     * them in a side inspector instead, so they are not duplicated. */
+    /** Render References + Comments + Activity inline. Off when a host (the full
+     * view) shows them in a side inspector instead, so they are not duplicated. */
     showSecondary?: boolean;
   }>(),
   { layout: 'wide', showSecondary: true },
@@ -538,16 +538,16 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
       </button>
     </div>
 
-    <div style="margin-top: 22px;">
-      <div class="atl-tv-section-label">Comments</div>
-      <Comments :ws="ws" :readable-id="task.readable_id" />
-    </div>
-
     <template v-if="showSecondary">
       <div style="margin-top: 22px;">
         <div class="atl-tv-section-label">References</div>
         <ReferenceList :references="detail.references" @remove="onRemoveReference" />
         <ReferenceAdd :ws="ws" @add="onAddReference" />
+      </div>
+
+      <div style="margin-top: 22px;">
+        <div class="atl-tv-section-label">Comments</div>
+        <Comments :ws="ws" :readable-id="task.readable_id" />
       </div>
 
       <div style="margin-top: 22px;">

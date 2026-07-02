@@ -69,12 +69,19 @@ const activityEntry = (id: string, kind: string, actorType: string, name: string
   task_readable_id: `ATL-${id}`,
 });
 
-const comment = (id: string, body: string, actorType: string, name: string) => ({
+const comment = (
+  id: string,
+  body: string,
+  actorType: string,
+  name: string,
+  updatedAt = '2026-01-01T00:00:00Z',
+) => ({
   id,
   task_id: 't1',
   body,
   author: actor(`a-${id}`, actorType, name),
   created_at: '2026-01-01T00:00:00Z',
+  updated_at: updatedAt,
 });
 
 describe('useTaskDetailStore', () => {
@@ -475,6 +482,45 @@ describe('useTaskDetailStore', () => {
     expect(ok).toBe(false);
     expect(store.comments).toHaveLength(0);
     expect(store.error).toBe('Comment too long');
+  });
+
+  it('editComment swaps the updated comment in place on success', async () => {
+    const store = useTaskDetailStore();
+    store._setForTest({
+      comments: [comment('cm1', 'First', 'user', 'Ann'), comment('cm2', 'Second', 'user', 'Ann')],
+    });
+
+    PATCH.mockResolvedValueOnce({
+      data: comment('cm1', 'First edited', 'user', 'Ann', '2026-02-02T00:00:00Z'),
+      error: undefined,
+    });
+
+    const ok = await store.editComment('ws', 'ATL-1', 'cm1', 'First edited');
+
+    expect(ok).toBe(true);
+    expect(store.comments.map((c) => c.id)).toEqual(['cm1', 'cm2']);
+    expect(store.comments[0]?.body).toBe('First edited');
+    expect(store.comments[0]?.updated_at).toBe('2026-02-02T00:00:00Z');
+
+    const [, opts] = PATCH.mock.calls[0] as [
+      string,
+      { params: { path: { comment_id: string } }; body: { body: string } },
+    ];
+    expect(opts.params.path.comment_id).toBe('cm1');
+    expect(opts.body.body).toBe('First edited');
+  });
+
+  it('editComment surfaces the hint and leaves the comment unchanged on error', async () => {
+    const store = useTaskDetailStore();
+    store._setForTest({ comments: [comment('cm1', 'First', 'user', 'Ann')] });
+
+    PATCH.mockResolvedValueOnce({ data: undefined, error: { hint: 'No permission' } });
+
+    const ok = await store.editComment('ws', 'ATL-1', 'cm1', 'Nope');
+
+    expect(ok).toBe(false);
+    expect(store.error).toBe('No permission');
+    expect(store.comments[0]?.body).toBe('First');
   });
 
   it('removeComment optimistically removes, rolls back on error', async () => {
