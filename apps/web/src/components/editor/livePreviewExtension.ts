@@ -726,7 +726,10 @@ function decorateFenced(
   decos: Range<Decoration>[],
 ): void {
   const doc = view.state.doc;
-  decorateLines(view, node.from, node.to, 'cm-atlas-fenced', decos);
+  decorateLines(view, node.from, node.to, 'cm-atlas-fenced', decos, {
+    first: 'cm-atlas-fenced-first',
+    last: 'cm-atlas-fenced-last',
+  });
 
   const marks = collectChildren(node, 'CodeMark');
   const openMark = marks[0];
@@ -800,13 +803,19 @@ function decorateLines(
   to: number,
   cls: string,
   decos: Range<Decoration>[],
+  edge?: { first: string; last: string },
 ): void {
   const doc = view.state.doc;
   const firstLine = doc.lineAt(from).number;
   const lastLine = doc.lineAt(to).number;
 
   for (let n = firstLine; n <= lastLine; n += 1) {
-    decos.push(Decoration.line({ class: cls }).range(doc.line(n).from));
+    let lineCls = cls;
+    if (edge !== undefined) {
+      if (n === firstLine) lineCls += ` ${edge.first}`;
+      if (n === lastLine) lineCls += ` ${edge.last}`;
+    }
+    decos.push(Decoration.line({ class: lineCls }).range(doc.line(n).from));
   }
 }
 

@@ -60,21 +60,38 @@ export const atlasMarkdownTheme = EditorView.theme(
     '.cm-atlas-em': { fontStyle: 'italic' },
     '.cm-atlas-strike': { textDecoration: 'line-through', color: 'var(--c-muted)' },
 
-    // Inline code.
+    // Inline code: a subtle chip with a dimmed-amber body, quieter than the
+    // primary amber so it reads as code without competing with links/emphasis.
     '.cm-atlas-code': {
       fontFamily: 'var(--font-mono)',
       backgroundColor: 'var(--c-input)',
+      color: 'var(--c-primary-active)',
       borderRadius: 'var(--r-sm)',
-      padding: '1px 4px',
+      padding: '1px 5px',
     },
 
-    // Fenced code block lines.
+    // Fenced code block. Each line carries `cm-atlas-fenced` (shared background +
+    // side borders and horizontal padding, so the code never touches the edges);
+    // the first/last lines add the top/bottom padding, borders and rounded
+    // corners that close the block into one padded box.
     '.cm-atlas-fenced': {
       backgroundColor: 'var(--c-raised)',
       fontFamily: 'var(--font-mono)',
+      padding: '0 14px',
+      borderLeft: '1px solid var(--c-border)',
+      borderRight: '1px solid var(--c-border)',
     },
-    '.cm-atlas-fenced:first-of-type': {
+    '.cm-atlas-fenced-first': {
+      paddingTop: '10px',
       borderTop: '1px solid var(--c-border)',
+      borderTopLeftRadius: 'var(--r-md)',
+      borderTopRightRadius: 'var(--r-md)',
+    },
+    '.cm-atlas-fenced-last': {
+      paddingBottom: '10px',
+      borderBottom: '1px solid var(--c-border)',
+      borderBottomLeftRadius: 'var(--r-md)',
+      borderBottomRightRadius: 'var(--r-md)',
     },
 
     // Language badge shown in place of the opening ```lang fence off active line.
