@@ -13,10 +13,6 @@ const props = withDefaults(
     showExpand?: boolean;
     showClose?: boolean;
     showBack?: boolean;
-    /** Prev/next task arrows, shown in the sidebar-dock variant. */
-    showNav?: boolean;
-    hasPrev?: boolean;
-    hasNext?: boolean;
     /** Right inspector collapse toggle, shown only in the full-screen view. */
     showInspectorToggle?: boolean;
     inspectorOpen?: boolean;
@@ -30,9 +26,6 @@ const props = withDefaults(
     showExpand: false,
     showClose: true,
     showBack: false,
-    showNav: false,
-    hasPrev: false,
-    hasNext: false,
     showInspectorToggle: false,
     inspectorOpen: true,
     showActivityToggle: false,
@@ -44,8 +37,6 @@ const emit = defineEmits<{
   close: [];
   expand: [];
   back: [];
-  prev: [];
-  next: [];
   change: [mode: TaskViewMode];
   toggleInspector: [];
   toggleActivity: [];
@@ -102,31 +93,6 @@ const menuItems = computed<MenuItem[]>(() => [
     >
       <Icon name="arrow-left" :size="16" />
     </button>
-
-    <div v-if="showNav" class="flex" style="gap: 2px;">
-      <button
-        type="button"
-        class="atl-gbtn"
-        style="width: 22px; height: 22px;"
-        title="Previous task"
-        aria-label="Previous task"
-        :disabled="!hasPrev"
-        @click="emit('prev')"
-      >
-        <Icon name="chevron-down" :size="14" style="transform: rotate(90deg);" />
-      </button>
-      <button
-        type="button"
-        class="atl-gbtn"
-        style="width: 22px; height: 22px;"
-        title="Next task"
-        aria-label="Next task"
-        :disabled="!hasNext"
-        @click="emit('next')"
-      >
-        <Icon name="chevron-down" :size="14" style="transform: rotate(-90deg);" />
-      </button>
-    </div>
 
     <nav v-if="breadcrumbs.length" class="atl-tv-crumb" aria-label="Breadcrumb">
       <template v-for="(part, i) in breadcrumbs" :key="i">

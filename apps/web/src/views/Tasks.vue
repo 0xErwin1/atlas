@@ -394,7 +394,6 @@ watch(
           :ws="ws"
           @close="closePane"
           @expand="expandToFull"
-          @navigate="openTask"
         />
       </div>
     </template>
@@ -428,7 +427,6 @@ watch(
           :ws="ws"
           @close="closePane"
           @expand="expandToFull"
-          @navigate="openTask"
         />
       </div>
     </template>

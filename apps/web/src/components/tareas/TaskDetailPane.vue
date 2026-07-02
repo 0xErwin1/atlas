@@ -4,7 +4,7 @@ import type { components } from '@/api/types.d.ts';
 import ActivityComments from '@/components/tareas/ActivityComments.vue';
 import TaskBody from '@/components/tareas/TaskBody.vue';
 import TaskDetailHeader from '@/components/tareas/TaskDetailHeader.vue';
-import { useBoardsStore } from '@/stores/boards';
+import { useResizablePanel } from '@/composables/useResizablePanel';
 import { type TaskViewMode, useUiStore } from '@/stores/ui';
 
 type TaskDto = components['schemas']['TaskDto'];
@@ -17,12 +17,9 @@ const props = defineProps<{
 const emit = defineEmits<{
   close: [];
   expand: [];
-  /** Navigate to a neighbouring board task (prev/next arrows in the dock). */
-  navigate: [readableId: string];
 }>();
 
 const ui = useUiStore();
-const boards = useBoardsStore();
 
 const shareLabel = computed(() => `${props.task.readable_id} · task`);
 const isModal = computed(() => ui.effectiveTaskViewMode === 'modal');
@@ -31,25 +28,13 @@ const isModal = computed(() => ui.effectiveTaskViewMode === 'modal');
 // side, so a header toggle swaps the whole view between them (ClickUp-style).
 const showActivity = ref(false);
 
-// The board's tasks flattened in column order, so the dock's prev/next arrows
-// walk the same sequence the user sees on the board.
-const orderedIds = computed<string[]>(() =>
-  boards.columns.flatMap((c) => boards.tasksByColumn(c.id).map((t) => t.readable_id)),
-);
-
-const currentIndex = computed(() => orderedIds.value.indexOf(props.task.readable_id));
-const hasPrev = computed(() => currentIndex.value > 0);
-const hasNext = computed(() => currentIndex.value >= 0 && currentIndex.value < orderedIds.value.length - 1);
-
-function goPrev(): void {
-  const prev = orderedIds.value[currentIndex.value - 1];
-  if (hasPrev.value && prev !== undefined) emit('navigate', prev);
-}
-
-function goNext(): void {
-  const next = orderedIds.value[currentIndex.value + 1];
-  if (hasNext.value && next !== undefined) emit('navigate', next);
-}
+// The dock floats over the board as a resizable overlay; its width persists.
+const { width: dockWidth, startResize } = useResizablePanel({
+  storageKey: 'atlas:task-dock-width',
+  min: 340,
+  max: 760,
+  initial: 440,
+});
 
 // Picking "Full screen" in the header switch leaves this inline pane (it only
 // renders dock/dialog); hand off to the parent to open the standalone route.
@@ -86,20 +71,27 @@ function onChangeMode(mode: TaskViewMode): void {
     </div>
   </div>
 
-  <aside v-else class="atl-tv-dock">
+  <aside
+    v-else
+    class="atl-tv-dock"
+    :style="{ width: `${dockWidth}px` }"
+  >
+    <div
+      class="atl-tv-dock-resizer"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize panel"
+      @mousedown.prevent="startResize"
+    />
     <TaskDetailHeader
       :readable-id="task.readable_id"
       :share-label="shareLabel"
       show-expand
-      show-nav
       show-activity-toggle
       :activity-open="showActivity"
-      :has-prev="hasPrev"
-      :has-next="hasNext"
       @close="emit('close')"
       @expand="emit('expand')"
-      @prev="goPrev"
-      @next="goNext"
+      @change="onChangeMode"
       @toggle-activity="showActivity = !showActivity"
     />
     <div class="atl-tv-scroll" :style="showActivity ? 'padding: 14px 16px;' : 'padding: 14px 18px;'">
@@ -111,15 +103,35 @@ function onChangeMode(mode: TaskViewMode): void {
 
 <style scoped>
 .atl-tv-dock {
-  /* Responsive: shrink with the viewport so opening a task on a narrow window
-     doesn't crush the board behind it, but never wider than the design's 460px. */
-  width: clamp(320px, 34vw, 460px);
-  flex: 0 0 clamp(320px, 34vw, 460px);
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
   display: flex;
   flex-direction: column;
   min-width: 0;
   background: var(--c-background);
   border-left: 1px solid var(--c-border);
+  box-shadow: var(--shadow-lg, var(--shadow-md));
+}
+
+/* Drag handle straddling the dock's left edge; widens the panel toward the
+   board. Kept thin but with a hover cue so it reads as resizable. */
+.atl-tv-dock-resizer {
+  position: absolute;
+  top: 0;
+  left: -3px;
+  width: 7px;
+  height: 100%;
+  z-index: 1;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.12s;
+}
+
+.atl-tv-dock-resizer:hover {
+  background: var(--c-primary);
 }
 
 .atl-tv-scroll {
@@ -128,9 +140,9 @@ function onChangeMode(mode: TaskViewMode): void {
 }
 
 .atl-tv-backdrop {
-  position: absolute;
+  position: fixed;
   inset: 0;
-  z-index: 40;
+  z-index: 50;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -138,8 +150,8 @@ function onChangeMode(mode: TaskViewMode): void {
 }
 
 .atl-tv-modal {
-  width: min(1040px, 92%);
-  height: min(84%, 820px);
+  width: min(1280px, 94vw);
+  height: min(90vh, 900px);
   display: flex;
   flex-direction: column;
   background: var(--c-background);

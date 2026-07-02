@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import ErrorState from '@/components/states/ErrorState.vue';
 import LoadingState from '@/components/states/LoadingState.vue';
@@ -7,6 +7,7 @@ import TaskBody from '@/components/tareas/TaskBody.vue';
 import TaskDetailHeader from '@/components/tareas/TaskDetailHeader.vue';
 import TaskInspector from '@/components/tareas/TaskInspector.vue';
 import { useBreakpoint } from '@/composables/useBreakpoint';
+import { useResizablePanel } from '@/composables/useResizablePanel';
 import { useBoardsStore } from '@/stores/boards';
 import { useTaskDetailStore } from '@/stores/taskDetail';
 import { useTasksStore } from '@/stores/tasks';
@@ -35,52 +36,12 @@ const task = computed(() => tasks.openTask);
 
 // Resizable inspector (activity + comments): the user drags the divider to make
 // the panel as wide as they need; the width persists across tasks and reloads.
-const INSPECTOR_WIDTH_KEY = 'atlas:task-inspector-width';
-const INSPECTOR_MIN = 300;
-const INSPECTOR_MAX = 680;
-
-function loadInspectorWidth(): number {
-  try {
-    const raw = localStorage.getItem(INSPECTOR_WIDTH_KEY);
-    const parsed = raw !== null ? Number.parseInt(raw, 10) : Number.NaN;
-    if (Number.isFinite(parsed)) return Math.min(Math.max(parsed, INSPECTOR_MIN), INSPECTOR_MAX);
-  } catch {
-    // ignore storage errors
-  }
-  return 400;
-}
-
-const inspectorWidth = ref(loadInspectorWidth());
-
-let resizeStartX = 0;
-let resizeStartWidth = 0;
-
-function onResizeMove(event: MouseEvent): void {
-  // The inspector is on the right, so dragging the divider left widens it.
-  const delta = resizeStartX - event.clientX;
-  inspectorWidth.value = Math.min(Math.max(resizeStartWidth + delta, INSPECTOR_MIN), INSPECTOR_MAX);
-}
-
-function onResizeEnd(): void {
-  window.removeEventListener('mousemove', onResizeMove);
-  window.removeEventListener('mouseup', onResizeEnd);
-  document.body.style.removeProperty('cursor');
-  document.body.style.removeProperty('user-select');
-  try {
-    localStorage.setItem(INSPECTOR_WIDTH_KEY, String(inspectorWidth.value));
-  } catch {
-    // ignore storage errors
-  }
-}
-
-function startResize(event: MouseEvent): void {
-  resizeStartX = event.clientX;
-  resizeStartWidth = inspectorWidth.value;
-  document.body.style.cursor = 'col-resize';
-  document.body.style.userSelect = 'none';
-  window.addEventListener('mousemove', onResizeMove);
-  window.addEventListener('mouseup', onResizeEnd);
-}
+const { width: inspectorWidth, startResize } = useResizablePanel({
+  storageKey: 'atlas:task-inspector-width',
+  min: 300,
+  max: 680,
+  initial: 400,
+});
 
 const breadcrumbs = computed(() => [
   'Atlas',
