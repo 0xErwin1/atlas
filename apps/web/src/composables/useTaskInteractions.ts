@@ -52,7 +52,7 @@ export function useTaskInteractions(ws: string) {
 
   const promptState = ref<{
     open: boolean;
-    mode: 'rename' | 'due';
+    mode: 'rename' | 'due' | 'tag';
     title: string;
     initial: string;
   }>({
@@ -121,6 +121,10 @@ export function useTaskInteractions(ws: string) {
     promptState.value = { open: true, mode: 'due', title: 'Set due date', initial: '' };
   }
 
+  function openAddTag(): void {
+    promptState.value = { open: true, mode: 'tag', title: 'Add tag', initial: '' };
+  }
+
   async function onPromptConfirm(value: string): Promise<void> {
     const readableId = menuReadableId.value;
     const mode = promptState.value.mode;
@@ -130,6 +134,17 @@ export function useTaskInteractions(ws: string) {
     if (mode === 'rename') {
       const title = value.trim();
       if (title.length > 0) await runUpdate(readableId, { title });
+      return;
+    }
+
+    if (mode === 'tag') {
+      const tag = value.trim();
+      if (tag.length === 0) return;
+
+      const existing = boards.findTaskByReadableId(readableId)?.labels ?? [];
+      if (existing.some((l) => l.toLowerCase() === tag.toLowerCase())) return;
+
+      await runUpdate(readableId, { labels: [...existing, tag] });
       return;
     }
 
@@ -182,6 +197,7 @@ export function useTaskInteractions(ws: string) {
       { label: 'Assign to', icon: 'user-plus', children: assignChildren },
       { label: 'Move to board', icon: 'arrow-right-left', children: moveChildren },
       { label: 'Set due date', icon: 'calendar', action: openDueDate },
+      { label: 'Add tag', icon: 'tag', action: openAddTag },
       { sep: true },
       { label: 'Copy ID', icon: 'hash', action: () => copyText(readableId, 'ID') },
       {
@@ -293,6 +309,7 @@ export function useTaskInteractions(ws: string) {
     copyText,
     openRename,
     openDueDate,
+    openAddTag,
     onPromptConfirm,
     onConfirmDelete,
     deleteTargetFor,

@@ -633,6 +633,7 @@ export const useBoardsStore = defineStore('boards', () => {
     const summaryPatch: Partial<TaskSummaryDto> & { id: string } = { id: data.id };
     if (patch.title !== undefined) summaryPatch.title = data.title;
     if (patch.priority !== undefined) summaryPatch.priority = data.priority ?? null;
+    if (patch.labels !== undefined) summaryPatch.labels = data.labels ?? [];
     updateTaskFields(summaryPatch);
 
     return true;

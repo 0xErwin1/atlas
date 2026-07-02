@@ -45,7 +45,7 @@ describe('useTaskInteractions.buildMenuItems', () => {
     vi.clearAllMocks();
   });
 
-  it('returns the full 14-item action set for a single-board context', () => {
+  it('returns the full action set (incl. Add tag) for a single-board context', () => {
     const ti = useTaskInteractions('ws');
     const t = task('t1', 'AB-1', 'c1');
     const items = ti.buildMenuItems({
@@ -66,10 +66,34 @@ describe('useTaskInteractions.buildMenuItems', () => {
     expect(labels).toContain('Assign to');
     expect(labels).toContain('Move to board');
     expect(labels).toContain('Set due date');
+    expect(labels).toContain('Add tag');
     expect(labels).toContain('Copy ID');
     expect(labels).toContain('Copy link');
     expect(labels).toContain('Duplicate');
     expect(labels).toContain('Delete');
+  });
+
+  it('Add tag prompt appends a label to the task via updateTask', async () => {
+    PATCH.mockResolvedValueOnce({ data: task('t1', 'AB-1', 'c1'), error: undefined });
+
+    const ti = useTaskInteractions('ws');
+    ti.menuReadableId.value = 'AB-1';
+    ti.openAddTag();
+    await ti.onPromptConfirm('needs-review');
+
+    expect(PATCH).toHaveBeenCalledTimes(1);
+    const [, opts] = PATCH.mock.calls[0] as [string, { body: { labels: string[] } }];
+    expect(opts.body.labels).toEqual(['needs-review']);
+    expect(ti.promptState.value.open).toBe(false);
+  });
+
+  it('Add tag ignores a blank value', async () => {
+    const ti = useTaskInteractions('ws');
+    ti.menuReadableId.value = 'AB-1';
+    ti.openAddTag();
+    await ti.onPromptConfirm('   ');
+
+    expect(PATCH).not.toHaveBeenCalled();
   });
 
   it('status submenu uses ctx.columns — not the boards store', () => {
