@@ -82,6 +82,25 @@ The repo assumes:
 
 The shared default attachment size cap in `AppState` is `20 MiB`.
 
+### Rate limiting
+
+The authenticated API surface is rate-limited per principal (the resolved user or
+API key), not per IP, because the volume risk comes from programmatic clients (the
+CLI and MCP server), which are always authenticated. IP-based limiting still
+guards the unauthenticated login and activation routes.
+
+| Variable | Default | Notes |
+|---|---|---|
+| `ATLAS_RATE_LIMIT_ENABLED` | `true` | set `false`/`0` to disable the per-principal limiter |
+| `ATLAS_RATE_LIMIT_PER_SECOND` | `20` | steady-state requests per second per principal |
+| `ATLAS_RATE_LIMIT_BURST` | `40` | maximum instantaneous burst per principal |
+
+The limiter is in-memory (GCRA via `governor`); it is per-process and not shared
+across replicas. A rejected request returns `429 Too Many Requests` with a
+`Retry-After` header. The `atlas_client` used by the CLI and MCP honors that
+header and retries automatically with bounded backoff, so bulk operations
+self-throttle instead of failing on the first rejection.
+
 ### Webhooks and integrations
 
 | Variable | Required? | Default / notes |

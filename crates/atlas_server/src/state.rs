@@ -5,6 +5,7 @@ use atlas_domain::AttachmentStore;
 
 use crate::config::{DispatcherConfig, ServerConfig};
 use crate::crypto::WebhookCrypto;
+use crate::middleware::rate_limit::PrincipalRateLimiter;
 use crate::persistence::repos::{DiskAttachmentStore, S3AttachmentStore, S3Config};
 use crate::services::{DocumentService, TaskService};
 
@@ -23,6 +24,8 @@ pub struct AppState {
     pub webhook_crypto: Arc<WebhookCrypto>,
     pub dispatcher_config: DispatcherConfig,
     pub allow_private_webhook_targets: bool,
+    /// Per-principal rate limiter, or `None` when rate limiting is disabled.
+    pub rate_limiter: Option<Arc<PrincipalRateLimiter>>,
 }
 
 impl AppState {
@@ -39,6 +42,13 @@ impl AppState {
         let attachments = build_attachment_store().await?;
         let webhook_crypto = Arc::new(WebhookCrypto::new(&cfg.webhook_enc_key));
 
+        let rate_limiter = cfg.rate_limit.enabled.then(|| {
+            Arc::new(PrincipalRateLimiter::new(
+                cfg.rate_limit.per_second,
+                cfg.rate_limit.burst,
+            ))
+        });
+
         Ok(Self {
             db: Arc::new(db),
             session_ttl_hours,
@@ -50,6 +60,7 @@ impl AppState {
             webhook_crypto,
             dispatcher_config: cfg.dispatcher.clone(),
             allow_private_webhook_targets: cfg.allow_private_webhook_targets,
+            rate_limiter,
         })
     }
 
@@ -83,6 +94,7 @@ impl AppState {
             webhook_crypto: Arc::new(WebhookCrypto::generate_for_test()),
             dispatcher_config: DispatcherConfig::default(),
             allow_private_webhook_targets: true,
+            rate_limiter: None,
         })
     }
 
@@ -92,6 +104,15 @@ impl AppState {
     /// without uploading a real 20 MiB body.
     pub fn with_max_attachment_bytes(mut self, cap: u64) -> Self {
         self.max_attachment_bytes = cap;
+        self
+    }
+
+    /// Returns this state with per-principal rate limiting enabled at the given
+    /// quota. Intended for integration tests that exercise the 429 path; the
+    /// default `for_test` state leaves the limiter disabled so unrelated tests
+    /// are never throttled.
+    pub fn with_rate_limit(mut self, per_second: u32, burst: u32) -> Self {
+        self.rate_limiter = Some(Arc::new(PrincipalRateLimiter::new(per_second, burst)));
         self
     }
 

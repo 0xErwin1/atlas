@@ -44,7 +44,15 @@ use atlas_api::{
     pagination::Page,
     problem::ProblemDetails,
 };
+use std::time::Duration;
 use thiserror::Error;
+
+/// Maximum number of times a request is retried after a 429 before giving up.
+const MAX_RATE_LIMIT_RETRIES: u32 = 3;
+/// Upper bound on how long a single retry waits, regardless of `Retry-After`.
+const MAX_RETRY_WAIT: Duration = Duration::from_secs(30);
+/// Floor applied to any retry wait so a `Retry-After: 0` still yields a pause.
+const MIN_RETRY_WAIT: Duration = Duration::from_millis(50);
 
 #[derive(Debug, Error)]
 pub enum ClientError {
@@ -62,6 +70,52 @@ pub enum ClientError {
         context: &'static str,
         source: serde_json::Error,
     },
+}
+
+/// A pending request built through one of the verb helpers.
+///
+/// Delegates the builder methods the client actually uses (`header`, `json`,
+/// `body`) and defers the actual send to [`AtlasClient::send_with_retry`], so
+/// every request goes through the 429-retry path without changing call sites.
+#[must_use = "a Req does nothing until `.send().await` is awaited"]
+struct Req<'a> {
+    client: &'a AtlasClient,
+    builder: reqwest::RequestBuilder,
+}
+
+impl Req<'_> {
+    fn header(mut self, name: &str, value: impl Into<String>) -> Self {
+        self.builder = self.builder.header(name, value.into());
+        self
+    }
+
+    fn json<T: serde::Serialize + ?Sized>(mut self, json: &T) -> Self {
+        self.builder = self.builder.json(json);
+        self
+    }
+
+    fn body(mut self, body: impl Into<reqwest::Body>) -> Self {
+        self.builder = self.builder.body(body);
+        self
+    }
+
+    async fn send(self) -> Result<reqwest::Response, ClientError> {
+        self.client.send_with_retry(self.builder).await
+    }
+}
+
+/// Parses a `Retry-After` header value (delta-seconds) into a bounded wait.
+///
+/// The Atlas server emits an integer number of seconds. Anything missing or
+/// unparseable falls back to one second. The result is clamped to
+/// `[MIN_RETRY_WAIT, MAX_RETRY_WAIT]` so a hostile or misconfigured value cannot
+/// make the client sleep indefinitely or busy-loop.
+fn parse_retry_after(raw: Option<&str>) -> Duration {
+    let secs = raw
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .unwrap_or(1);
+
+    Duration::from_secs(secs).clamp(MIN_RETRY_WAIT, MAX_RETRY_WAIT)
 }
 
 pub struct AtlasClient {
@@ -117,44 +171,74 @@ impl AtlasClient {
         &self.http
     }
 
-    fn get(&self, path: &str) -> reqwest::RequestBuilder {
-        let mut req = self.http.get(format!("{}{}", self.base_url, path));
-        if let Some(token) = &self.token {
-            req = req.bearer_auth(token);
-        }
-        req
+    fn get(&self, path: &str) -> Req<'_> {
+        self.request(self.http.get(format!("{}{}", self.base_url, path)))
     }
 
-    fn post(&self, path: &str) -> reqwest::RequestBuilder {
-        let mut req = self.http.post(format!("{}{}", self.base_url, path));
-        if let Some(token) = &self.token {
-            req = req.bearer_auth(token);
-        }
-        req
+    fn post(&self, path: &str) -> Req<'_> {
+        self.request(self.http.post(format!("{}{}", self.base_url, path)))
     }
 
-    fn patch(&self, path: &str) -> reqwest::RequestBuilder {
-        let mut req = self.http.patch(format!("{}{}", self.base_url, path));
-        if let Some(token) = &self.token {
-            req = req.bearer_auth(token);
-        }
-        req
+    fn patch(&self, path: &str) -> Req<'_> {
+        self.request(self.http.patch(format!("{}{}", self.base_url, path)))
     }
 
-    fn put(&self, path: &str) -> reqwest::RequestBuilder {
-        let mut req = self.http.put(format!("{}{}", self.base_url, path));
-        if let Some(token) = &self.token {
-            req = req.bearer_auth(token);
-        }
-        req
+    fn put(&self, path: &str) -> Req<'_> {
+        self.request(self.http.put(format!("{}{}", self.base_url, path)))
     }
 
-    fn delete(&self, path: &str) -> reqwest::RequestBuilder {
-        let mut req = self.http.delete(format!("{}{}", self.base_url, path));
+    fn delete(&self, path: &str) -> Req<'_> {
+        self.request(self.http.delete(format!("{}{}", self.base_url, path)))
+    }
+
+    /// Wraps a raw `RequestBuilder`, applying bearer auth, into a retry-aware `Req`.
+    fn request(&self, mut builder: reqwest::RequestBuilder) -> Req<'_> {
         if let Some(token) = &self.token {
-            req = req.bearer_auth(token);
+            builder = builder.bearer_auth(token);
         }
-        req
+        Req {
+            client: self,
+            builder,
+        }
+    }
+
+    /// Sends a request, transparently retrying on HTTP 429.
+    ///
+    /// On a `429 Too Many Requests` the server's per-principal rate limit was hit;
+    /// the response carries a `Retry-After` interval. Bulk callers (the CLI and
+    /// MCP server) would otherwise fail on the first rejection, so the client
+    /// waits for that interval and retries up to `MAX_RATE_LIMIT_RETRIES` times.
+    ///
+    /// Requests whose body cannot be cloned (streaming bodies) are sent once with
+    /// no retry, since replaying them is not possible.
+    async fn send_with_retry(
+        &self,
+        request: reqwest::RequestBuilder,
+    ) -> Result<reqwest::Response, ClientError> {
+        let mut attempt: u32 = 0;
+
+        loop {
+            let attempt_builder = match request.try_clone() {
+                Some(clone) => clone,
+                None => return Ok(request.send().await?),
+            };
+
+            let response = attempt_builder.send().await?;
+
+            if response.status().as_u16() == 429 && attempt < MAX_RATE_LIMIT_RETRIES {
+                let wait = parse_retry_after(
+                    response
+                        .headers()
+                        .get(reqwest::header::RETRY_AFTER)
+                        .and_then(|value| value.to_str().ok()),
+                );
+                attempt += 1;
+                tokio::time::sleep(wait).await;
+                continue;
+            }
+
+            return Ok(response);
+        }
     }
 
     async fn decode_response<T: serde::de::DeserializeOwned>(
@@ -2317,7 +2401,8 @@ impl AtlasClient {
             limit,
         );
         let response = self.get(&path).send().await?;
-        self.decode_response(response, "list_document_comments").await
+        self.decode_response(response, "list_document_comments")
+            .await
     }
 
     /// `POST /v1/workspaces/{ws}/documents/{slug}/comments`
@@ -2352,7 +2437,8 @@ impl AtlasClient {
             .json(&body)
             .send()
             .await?;
-        self.decode_response(response, "update_document_comment").await
+        self.decode_response(response, "update_document_comment")
+            .await
     }
 
     /// `DELETE /v1/workspaces/{ws}/documents/{slug}/comments/{comment_id}`
@@ -2841,5 +2927,24 @@ mod tests {
     fn encode_query_value_preserves_alphanumeric() {
         let encoded = encode_query_value("abc123");
         assert_eq!(encoded, "abc123");
+    }
+
+    #[test]
+    fn parse_retry_after_reads_delta_seconds() {
+        assert_eq!(parse_retry_after(Some("5")), Duration::from_secs(5));
+        assert_eq!(parse_retry_after(Some("  3 ")), Duration::from_secs(3));
+    }
+
+    #[test]
+    fn parse_retry_after_defaults_to_one_second_when_absent_or_invalid() {
+        assert_eq!(parse_retry_after(None), Duration::from_secs(1));
+        assert_eq!(parse_retry_after(Some("soon")), Duration::from_secs(1));
+        assert_eq!(parse_retry_after(Some("")), Duration::from_secs(1));
+    }
+
+    #[test]
+    fn parse_retry_after_clamps_to_bounds() {
+        assert_eq!(parse_retry_after(Some("0")), MIN_RETRY_WAIT);
+        assert_eq!(parse_retry_after(Some("9999")), MAX_RETRY_WAIT);
     }
 }

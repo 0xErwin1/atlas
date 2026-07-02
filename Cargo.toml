@@ -50,6 +50,7 @@ utoipa-axum   = "0.2"
 utoipa-scalar = { version = "0.3", features = ["axum"] }
 axum-extra    = { version = "0.10", features = ["cookie"] }
 tower_governor = "0.8"
+governor      = "0.10"
 
 # Persistence deps
 argon2            = "0.5"

@@ -43,6 +43,11 @@ pub enum ApiError {
     PayloadTooLarge {
         message: String,
     },
+    /// The authenticated principal exceeded its request quota. Carries the number
+    /// of whole seconds the caller should wait, surfaced via `Retry-After`.
+    TooManyRequests {
+        retry_after_secs: u64,
+    },
     Internal {
         message: String,
     },
@@ -119,6 +124,27 @@ impl IntoResponse for ApiError {
                     header::CONTENT_TYPE,
                     HeaderValue::from_static("application/problem+json"),
                 );
+                return response;
+            }
+            ApiError::TooManyRequests { retry_after_secs } => {
+                let problem = ProblemDetails::new(
+                    "urn:atlas:error:rate-limited",
+                    "Too Many Requests",
+                    429,
+                )
+                .with_hint(
+                    "You are sending requests too quickly. Wait for the Retry-After interval before retrying.",
+                );
+
+                let body = serde_json::to_vec(&problem).unwrap_or_else(|_| b"{}".to_vec());
+                let mut response = (StatusCode::TOO_MANY_REQUESTS, body).into_response();
+                response.headers_mut().insert(
+                    header::CONTENT_TYPE,
+                    HeaderValue::from_static("application/problem+json"),
+                );
+                if let Ok(value) = HeaderValue::from_str(&retry_after_secs.to_string()) {
+                    response.headers_mut().insert(header::RETRY_AFTER, value);
+                }
                 return response;
             }
             ApiError::LastOwner { message } => (

@@ -31,6 +31,30 @@ impl Default for DispatcherConfig {
     }
 }
 
+/// Per-principal rate-limit parameters for the authenticated API surface.
+///
+/// The limiter keys by the authenticated caller (user or API key), not by IP:
+/// the abuse vector the limit guards against is programmatic clients (the MCP
+/// server and CLI) driving high request volume, and those are always
+/// authenticated. `per_second` is the steady-state refill rate and `burst` is
+/// the maximum number of requests allowed in an instantaneous spike.
+#[derive(Clone, Debug)]
+pub struct RateLimitConfig {
+    pub enabled: bool,
+    pub per_second: u32,
+    pub burst: u32,
+}
+
+impl Default for RateLimitConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            per_second: 20,
+            burst: 40,
+        }
+    }
+}
+
 pub struct ServerConfig {
     pub database_url: String,
     pub root_password: Option<String>,
@@ -39,6 +63,7 @@ pub struct ServerConfig {
     pub webhook_enc_key: [u8; 32],
     pub dispatcher: DispatcherConfig,
     pub allow_private_webhook_targets: bool,
+    pub rate_limit: RateLimitConfig,
 }
 
 impl ServerConfig {
@@ -63,6 +88,7 @@ impl ServerConfig {
         let dispatcher = load_dispatcher_config();
         let allow_private_webhook_targets =
             read_env_bool("ATLAS_ALLOW_PRIVATE_WEBHOOK_TARGETS", false);
+        let rate_limit = load_rate_limit_config();
 
         Ok(Self {
             database_url,
@@ -71,6 +97,7 @@ impl ServerConfig {
             webhook_enc_key,
             dispatcher,
             allow_private_webhook_targets,
+            rate_limit,
         })
     }
 }
@@ -87,6 +114,7 @@ impl fmt::Debug for ServerConfig {
                 "allow_private_webhook_targets",
                 &self.allow_private_webhook_targets,
             )
+            .field("rate_limit", &self.rate_limit)
             .finish()
     }
 }
@@ -135,6 +163,22 @@ fn load_dispatcher_config() -> DispatcherConfig {
     }
 }
 
+fn load_rate_limit_config() -> RateLimitConfig {
+    let defaults = RateLimitConfig::default();
+    RateLimitConfig {
+        enabled: read_env_bool("ATLAS_RATE_LIMIT_ENABLED", defaults.enabled),
+        per_second: read_env_u32("ATLAS_RATE_LIMIT_PER_SECOND", defaults.per_second),
+        burst: read_env_u32("ATLAS_RATE_LIMIT_BURST", defaults.burst),
+    }
+}
+
+fn read_env_u32(var: &str, default: u32) -> u32 {
+    std::env::var(var)
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(default)
+}
+
 fn read_env_u64(var: &str, default: u64) -> u64 {
     std::env::var(var)
         .ok()
@@ -163,6 +207,7 @@ mod tests {
             webhook_enc_key: [0xABu8; 32],
             dispatcher: DispatcherConfig::default(),
             allow_private_webhook_targets: false,
+            rate_limit: RateLimitConfig::default(),
         };
 
         let output = format!("{config:?}");
@@ -183,6 +228,14 @@ mod tests {
             output.contains("[REDACTED]"),
             "Debug output must contain [REDACTED]: {output}"
         );
+    }
+
+    #[test]
+    fn rate_limit_config_has_sane_defaults() {
+        let cfg = RateLimitConfig::default();
+        assert!(cfg.enabled, "rate limiting is enabled by default");
+        assert_eq!(cfg.per_second, 20);
+        assert_eq!(cfg.burst, 40);
     }
 
     #[test]

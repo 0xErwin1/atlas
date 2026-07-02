@@ -464,6 +464,7 @@ dependencies = [
  "diffy-imara",
  "fractional_index",
  "futures",
+ "governor",
  "hmac 0.12.1",
  "migration",
  "object_store",

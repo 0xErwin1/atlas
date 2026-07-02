@@ -68,6 +68,14 @@ Atlas returns RFC 9457 `application/problem+json` responses. Common fields inclu
 - `hint`
 - `request_id`
 
+### Rate limiting
+
+The authenticated API is rate-limited per principal (user or API key). When the
+quota is exceeded the server returns `429 Too Many Requests` with a `Retry-After`
+header (whole seconds). Clients should wait for that interval before retrying;
+the official `atlas_client` (CLI and MCP) does this automatically. The
+unauthenticated login and activation routes are separately rate-limited by IP.
+
 ### Pagination
 
 Most list endpoints return:

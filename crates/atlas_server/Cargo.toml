@@ -34,6 +34,7 @@ utoipa-scalar.workspace = true
 tower.workspace = true
 tower-http.workspace = true
 tower_governor.workspace = true
+governor.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true

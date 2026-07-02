@@ -490,6 +490,13 @@ pub fn app(state: AppState) -> Router {
         .layer(axum_middleware::from_fn(
             crate::auth::csrf::require_csrf_for_cookie_mutations,
         ))
+        // Runs after `require_authn` (layers execute outermost-first, so this is
+        // applied before the authn layer in source order): the `Principal` is
+        // present in extensions by the time the limiter reads it.
+        .layer(axum_middleware::from_fn_with_state(
+            state.clone(),
+            crate::middleware::rate_limit::require_rate_limit,
+        ))
         .layer(axum_middleware::from_fn_with_state(
             state.clone(),
             crate::auth::middleware::require_authn,
