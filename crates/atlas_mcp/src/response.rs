@@ -9,7 +9,7 @@ use atlas_api::{
     dtos::{
         boards_tasks::{
             ActivityEntryDto, AssigneeDto, BoardSummaryDto, ChecklistItemDto, ColumnDto,
-            ReferenceDto, TaskAttachmentDto, TaskBacklinkDto, TaskDto, TaskSummaryDto,
+            CommentDto, ReferenceDto, TaskAttachmentDto, TaskBacklinkDto, TaskDto, TaskSummaryDto,
         },
         documents::{
             ActorDto, AttachmentDto, BacklinkDto, DocumentDto, DocumentSummaryDto,
@@ -897,6 +897,24 @@ pub(crate) fn project_task_attachment(att: TaskAttachmentDto) -> Value {
         "size_bytes": att.size_bytes,
         "actor": project_actor(att.created_by),
         "created_at": att.created_at,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Comment projection (list_comments rows)
+// ---------------------------------------------------------------------------
+
+/// Projects task comment metadata to the compact MCP shape.
+///
+/// `task_id` is dropped — always implicit from the tool's `readable_id` param.
+/// `updated_at` is dropped — comments are immutable in v1, so it always equals
+/// `created_at` and carries no information the agent needs.
+pub(crate) fn project_comment(c: CommentDto) -> Value {
+    json!({
+        "id": c.id,
+        "body": c.body,
+        "author": project_actor(c.author),
+        "created_at": c.created_at,
     })
 }
 

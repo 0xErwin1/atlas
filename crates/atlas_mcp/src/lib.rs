@@ -4,9 +4,9 @@ mod response;
 
 use atlas_api::dtos::boards_tasks::{
     AddAssigneeRequest, CreateBoardRequest, CreateChecklistItemRequest, CreateColumnRequest,
-    CreateReferenceRequest, CreateSubtaskRequest, CreateTaskRequest, MoveTaskRequest,
-    PromoteChecklistItemRequest, TaskPropertiesDto, UpdateBoardRequest, UpdateChecklistItemRequest,
-    UpdateColumnRequest, UpdateTaskRequest, WorkspaceTaskQueryParams,
+    CreateCommentRequest, CreateReferenceRequest, CreateSubtaskRequest, CreateTaskRequest,
+    MoveTaskRequest, PromoteChecklistItemRequest, TaskPropertiesDto, UpdateBoardRequest,
+    UpdateChecklistItemRequest, UpdateColumnRequest, UpdateTaskRequest, WorkspaceTaskQueryParams,
 };
 use atlas_api::dtos::documents::{
     CreateDocumentRequest, MoveDocumentRequest, UpdateContentRequest, UpdateDocumentRequest,
@@ -51,14 +51,15 @@ use response::{
     Detail, enrich_client_error, envelope_page, map_present_value, parse_atlas_doc_uri, parse_csv,
     parse_detail, project_activity_entry, project_assignee, project_attachment,
     project_audit_entry, project_backlink, project_board_summary, project_checklist_item,
-    project_column, project_document_compact, project_document_full, project_document_summary,
-    project_folder, project_principal, project_project, project_promotion, project_reference,
-    project_revision_content, project_revision_meta, project_saved_search, project_search_hit,
-    project_status_template, project_tag, project_task_attachment, project_task_backlink,
-    project_task_compact, project_task_full, project_task_row, project_task_view,
-    project_workspace, project_workspace_activity_entry, require_confirm,
-    resolve_column_id_on_board, validate_assignee_type, validate_estimate, validate_estimate_value,
-    validate_priority, validate_reference_kind, validate_single_target, wrap_vec,
+    project_column, project_comment, project_document_compact, project_document_full,
+    project_document_summary, project_folder, project_principal, project_project,
+    project_promotion, project_reference, project_revision_content, project_revision_meta,
+    project_saved_search, project_search_hit, project_status_template, project_tag,
+    project_task_attachment, project_task_backlink, project_task_compact, project_task_full,
+    project_task_row, project_task_view, project_workspace, project_workspace_activity_entry,
+    require_confirm, resolve_column_id_on_board, validate_assignee_type, validate_estimate,
+    validate_estimate_value, validate_priority, validate_reference_kind, validate_single_target,
+    wrap_vec,
 };
 
 const ATLAS_INSTRUCTIONS: &str = "\
@@ -88,11 +89,11 @@ Tools by area (see each tool's own description for parameters):\n\
 - Workspace context: `list_workspaces`, `list_projects`, `list_members`, `list_tags`, \
 `list_used_labels`, `list_saved_searches`, `list_task_views`.\n\
 - Links and depth: `get_task_references`, `get_task_backlinks`, `get_document_backlinks`, \
-`list_checklist`, `list_activity`, `list_workspace_activity`, `list_document_history`, \
-`get_document_revision`, `list_attachments`, `list_task_attachments`.\n\
+`list_checklist`, `list_comments`, `list_activity`, `list_workspace_activity`, \
+`list_document_history`, `get_document_revision`, `list_attachments`, `list_task_attachments`.\n\
 - Security audit (owner/admin only): `get_workspace_audit`, `get_platform_audit`.\n\
 - Task writes: `create_task`, `update_task`, `move_task`, `delete_task`, \
-`add_task_assignee`, `remove_task_assignee`.\n\
+`add_task_assignee`, `remove_task_assignee`, `add_comment`, `delete_comment`.\n\
 - Document and folder writes: `create_document`, `update_document_metadata`, \
 `update_document_content`, `delete_document`, `move_document`, `copy_document`, \
 `create_folder`, `rename_folder`, `move_folder`, `copy_folder`, `delete_folder`.\n\
@@ -486,6 +487,21 @@ pub struct ListActivityParams {
     pub workspace: String,
     /// Task readable ID, e.g. `ATL-42`.
     pub readable_id: String,
+}
+
+/// Parameters accepted by the `list_comments` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ListCommentsParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Task readable ID, e.g. `ATL-42`.
+    pub readable_id: String,
+    /// Pass `next_cursor` from the previous response to fetch the next page.
+    #[serde(default)]
+    pub cursor: Option<String>,
+    /// Page size (default 50, max 200).
+    #[serde(default)]
+    pub limit: Option<u32>,
 }
 
 /// Parameters accepted by the `list_workspace_activity` tool.
@@ -1085,6 +1101,28 @@ pub struct DeleteChecklistItemParams {
     pub readable_id: String,
     /// UUID string of the checklist item to delete.
     pub item_id: String,
+}
+
+/// Parameters accepted by the `add_comment` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct AddCommentParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Readable ID of the task to comment on.
+    pub readable_id: String,
+    /// Markdown comment body. Must not be blank; max 10 000 characters.
+    pub body: String,
+}
+
+/// Parameters accepted by the `delete_comment` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DeleteCommentParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Readable ID of the task that owns the comment.
+    pub readable_id: String,
+    /// UUID string of the comment to delete.
+    pub comment_id: String,
 }
 
 /// Parameters accepted by the `promote_checklist_item` tool.
@@ -1802,6 +1840,29 @@ impl AtlasMcp {
             .map_err(|e| format!("list_activity for '{}' failed: {e}", params.readable_id))?;
 
         let result = envelope_page(page, project_activity_entry);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "List markdown comments on a task, oldest first")]
+    async fn list_comments(
+        &self,
+        Parameters(params): Parameters<ListCommentsParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+        let limit = params.limit.unwrap_or(50).clamp(1, 200);
+
+        let page = client
+            .list_comments(
+                &params.workspace,
+                &params.readable_id,
+                params.cursor.as_deref(),
+                Some(limit),
+            )
+            .await
+            .map_err(|e| format!("list_comments for '{}' failed: {e}", params.readable_id))?;
+
+        let result = envelope_page(page, project_comment);
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
@@ -2948,6 +3009,53 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
+    #[tool(description = "Post a markdown comment on a task (max 10 000 characters)")]
+    async fn add_comment(
+        &self,
+        Parameters(params): Parameters<AddCommentParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
+        let body = CreateCommentRequest { body: params.body };
+
+        let comment = client
+            .add_comment(&params.workspace, &params.readable_id, body)
+            .await
+            .map_err(|e| enrich_client_error(e, "add_comment"))?;
+
+        let result = project_comment(comment);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Delete a task comment. The comment's author or a workspace admin/owner \
+                       may delete it; anyone else gets a permission error."
+    )]
+    async fn delete_comment(
+        &self,
+        Parameters(params): Parameters<DeleteCommentParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
+        let comment_id: uuid::Uuid = params
+            .comment_id
+            .parse()
+            .map_err(|_| format!("comment_id '{}' is not a valid UUID", params.comment_id))?;
+
+        client
+            .delete_comment(&params.workspace, &params.readable_id, comment_id)
+            .await
+            .map_err(|e| enrich_client_error(e, "delete_comment"))?;
+
+        let result = json!({
+            "deleted": true,
+            "comment_id": comment_id,
+        });
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
     #[tool(
         description = "Promote a checklist item to a full task on the specified board and column. \
                        Returns the new task and the updated checklist item."
@@ -3891,6 +3999,24 @@ mod tests {
     }
 
     #[test]
+    fn list_comments_params_deserializes_minimal() {
+        let json = r#"{"workspace":"ws","readable_id":"ATL-10"}"#;
+        let params: ListCommentsParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.workspace, "ws");
+        assert_eq!(params.readable_id, "ATL-10");
+        assert!(params.cursor.is_none());
+        assert!(params.limit.is_none());
+    }
+
+    #[test]
+    fn list_comments_params_deserializes_with_pagination() {
+        let json = r#"{"workspace":"ws","readable_id":"ATL-10","cursor":"tok","limit":20}"#;
+        let params: ListCommentsParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.cursor.as_deref(), Some("tok"));
+        assert_eq!(params.limit, Some(20));
+    }
+
+    #[test]
     fn list_workspace_activity_params_deserializes_minimal() {
         let json = r#"{"workspace":"ws"}"#;
         let params: ListWorkspaceActivityParams = serde_json::from_str(json).unwrap();
@@ -4035,6 +4161,18 @@ mod tests {
         assert!(
             instructions.contains("`get_platform_audit`"),
             "instructions must mention get_platform_audit"
+        );
+        assert!(
+            instructions.contains("`list_comments`"),
+            "instructions must mention list_comments"
+        );
+        assert!(
+            instructions.contains("`add_comment`"),
+            "instructions must mention add_comment"
+        );
+        assert!(
+            instructions.contains("`delete_comment`"),
+            "instructions must mention delete_comment"
         );
     }
 
@@ -4407,6 +4545,23 @@ mod tests {
         let params: DeleteChecklistItemParams = serde_json::from_str(json).unwrap();
         assert_eq!(params.readable_id, "ATL-1");
         assert_eq!(params.item_id, "018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234");
+    }
+
+    #[test]
+    fn add_comment_params_deserializes() {
+        let json = r#"{"workspace":"ws","readable_id":"ATL-1","body":"Looks good to me"}"#;
+        let params: AddCommentParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.workspace, "ws");
+        assert_eq!(params.readable_id, "ATL-1");
+        assert_eq!(params.body, "Looks good to me");
+    }
+
+    #[test]
+    fn delete_comment_params_deserializes() {
+        let json = r#"{"workspace":"ws","readable_id":"ATL-1","comment_id":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234"}"#;
+        let params: DeleteCommentParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.readable_id, "ATL-1");
+        assert_eq!(params.comment_id, "018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234");
     }
 
     #[test]
