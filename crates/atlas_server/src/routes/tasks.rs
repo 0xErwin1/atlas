@@ -520,7 +520,6 @@ async fn comment_to_dto(
 /// `account_status`), matching `comment_to_dto`'s per-comment resolution.
 async fn enrich_comment_entries(
     state: &AppState,
-    _ctx: &WorkspaceCtx,
     task_id: TaskId,
     comments: Vec<Comment>,
 ) -> Result<Vec<CommentDto>, ApiError> {
@@ -2535,7 +2534,7 @@ pub(crate) async fn list_comments(
         None
     };
 
-    let dtos = enrich_comment_entries(&state, &ctx, task_id, entries).await?;
+    let dtos = enrich_comment_entries(&state, task_id, entries).await?;
 
     Ok(Json(Page::new(dtos, next_cursor, has_more)))
 }
