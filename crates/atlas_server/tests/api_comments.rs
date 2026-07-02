@@ -8,7 +8,7 @@
 mod support;
 
 use atlas_api::dtos::{
-    CreateProjectRequest,
+    CreateProjectRequest, CreateUserApiKeyRequest, InitialGrantRequest,
     boards_tasks::{
         CreateBoardRequest, CreateColumnRequest, CreateCommentRequest, CreateTaskRequest,
     },
@@ -188,6 +188,57 @@ async fn create_list_delete_comment_roundtrip() {
         after_delete.items.is_empty(),
         "soft-deleted comment must not appear in the list"
     );
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
+// Author attribution: api-key actor
+// ---------------------------------------------------------------------------
+
+/// Automations (E11) post comments as an api-key actor, not a user — this is the
+/// feature's primary use case, so the returned author must report the api-key's
+/// type and display name, not fall back to a user attribution.
+#[tokio::test]
+async fn create_comment_as_api_key_reports_api_key_author() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _user) =
+        support::login_user_with_workspace(&server, &db, "comment-api-key-actor").await;
+
+    let readable_id = seed_task(&client, &ws.slug, "comment-api-key-proj", "CK").await;
+
+    let api_key = client
+        .create_user_api_key(CreateUserApiKeyRequest {
+            name: "comment-bot".to_string(),
+            r#type: None,
+            expires_at: None,
+            initial_grant: Some(InitialGrantRequest {
+                workspace: ws.slug.clone(),
+                role: "editor".to_string(),
+            }),
+        })
+        .await
+        .expect("create api key");
+
+    let mut api_key_client = atlas_client::AtlasClient::new(server.base_url().to_string());
+    api_key_client.set_token(api_key.secret.clone());
+
+    let created = api_key_client
+        .add_comment(
+            &ws.slug,
+            &readable_id,
+            CreateCommentRequest {
+                body: "Automated comment".to_string(),
+            },
+        )
+        .await
+        .expect("create comment as api key");
+
+    assert_eq!(created.body, "Automated comment");
+    assert_eq!(created.author.r#type, "api_key");
+    assert_eq!(created.author.id, api_key.id);
+    assert_eq!(created.author.display_name.as_deref(), Some("comment-bot"));
 
     db.teardown().await;
 }
