@@ -33,6 +33,7 @@ pub mod m20260630_000030_webhook_delivery_log;
 pub mod m20260630_000031_integration_configs;
 pub mod m20260630_000032_automation_rules;
 pub mod m20260630_000033_workspace_soft_delete;
+pub mod m20260702_000034_comments;
 
 use sea_orm_migration::prelude::*;
 
@@ -75,6 +76,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260630_000031_integration_configs::Migration),
             Box::new(m20260630_000032_automation_rules::Migration),
             Box::new(m20260630_000033_workspace_soft_delete::Migration),
+            Box::new(m20260702_000034_comments::Migration),
         ]
     }
 }

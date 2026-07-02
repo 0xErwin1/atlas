@@ -1,5 +1,6 @@
 pub mod attachment_store;
 pub mod boards_tasks;
+pub mod comments;
 pub mod documents;
 pub mod group_repo;
 pub mod identity;
