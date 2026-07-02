@@ -1199,6 +1199,7 @@ pub(crate) struct DocumentCommentPath {
 #[utoipa::path(
     get,
     path = "/v1/workspaces/{ws}/documents/{slug}/comments",
+    operation_id = "list_document_comments",
     tag = "documents",
     security(("bearer_auth" = [])),
     params(
@@ -1208,7 +1209,7 @@ pub(crate) struct DocumentCommentPath {
         ("limit" = Option<u32>, Query, description = "Page size"),
     ),
     responses(
-        (status = 200, description = "Comment page"),
+        (status = 200, description = "Comment page", body = Page<CommentDto>),
         (status = 401, description = "Unauthenticated"),
         (status = 403, description = "Insufficient permissions"),
         (status = 404, description = "Document not found"),
@@ -1256,6 +1257,7 @@ pub(crate) async fn list_comments(
 #[utoipa::path(
     post,
     path = "/v1/workspaces/{ws}/documents/{slug}/comments",
+    operation_id = "create_document_comment",
     tag = "documents",
     security(("bearer_auth" = [])),
     params(
@@ -1296,6 +1298,7 @@ pub(crate) async fn create_comment(
 #[utoipa::path(
     patch,
     path = "/v1/workspaces/{ws}/documents/{slug}/comments/{comment_id}",
+    operation_id = "update_document_comment",
     tag = "documents",
     security(("bearer_auth" = [])),
     params(
@@ -1338,6 +1341,7 @@ pub(crate) async fn update_comment(
 #[utoipa::path(
     delete,
     path = "/v1/workspaces/{ws}/documents/{slug}/comments/{comment_id}",
+    operation_id = "delete_document_comment",
     tag = "documents",
     security(("bearer_auth" = [])),
     params(

@@ -152,6 +152,49 @@ select:focus-visible {
   color: var(--c-primary);
 }
 
+/* Comment thread controls — shared by task and document comment threads. */
+.atl-comment-btn {
+  height: 28px;
+  padding: 0 12px;
+  background: transparent;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  color: var(--c-foreground);
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.atl-comment-btn:hover {
+  background: rgba(179, 177, 173, 0.06);
+}
+.atl-comment-submit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px;
+  background: var(--c-primary);
+  border: 1px solid var(--c-primary);
+  border-radius: var(--r-md);
+  color: var(--c-background);
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+}
+.atl-comment-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.atl-comment-composer {
+  margin-top: 16px;
+  padding: 10px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  background: var(--c-panel);
+  cursor: text;
+}
+
 /* Dropdown trigger (view switcher, project picker). */
 .atl-dd {
   transition: background 0.12s;

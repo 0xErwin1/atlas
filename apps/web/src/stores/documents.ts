@@ -7,6 +7,7 @@ import { collectPaged } from '@/lib/pagination';
 
 export type DocumentSummary = components['schemas']['Page_DocumentSummaryDto']['items'][number];
 export type BacklinkSummary = components['schemas']['Page_BacklinkDto']['items'][number];
+export type CommentDto = components['schemas']['CommentDto'];
 
 /**
  * Documents store: the single caller of the document list and backlink routes
@@ -19,6 +20,9 @@ export type BacklinkSummary = components['schemas']['Page_BacklinkDto']['items']
 export const useDocumentsStore = defineStore('documents', () => {
   const summaries = ref<DocumentSummary[]>([]);
   const backlinks = ref<BacklinkSummary[]>([]);
+  const comments = ref<CommentDto[]>([]);
+  const commentsCursor = ref<string | null>(null);
+  const commentsHasMore = ref(false);
   const loading = ref(false);
   const error = ref<string | null>(null);
   let summariesLoadSeq = 0;
@@ -92,6 +96,120 @@ export const useDocumentsStore = defineStore('documents', () => {
     }
 
     backlinks.value = items;
+  }
+
+  /**
+   * Loads the first page of a document's comments (oldest-first). Mirrors the
+   * task-comment thread in the task inspector, but keyed by document slug.
+   */
+  async function loadComments(ws: string, slug: string): Promise<void> {
+    error.value = null;
+
+    const { data, error: apiError } = await wrappedClient.GET(
+      '/v1/workspaces/{ws}/documents/{slug}/comments',
+      { params: { path: { ws, slug } } },
+    );
+
+    if (apiError !== undefined || data === undefined) {
+      comments.value = [];
+      commentsCursor.value = null;
+      commentsHasMore.value = false;
+      error.value = errorHint(apiError, 'Failed to load comments');
+      return;
+    }
+
+    comments.value = data.items;
+    commentsCursor.value = data.next_cursor ?? null;
+    commentsHasMore.value = data.has_more;
+  }
+
+  /** Appends the next page of comments using the stored cursor. No-op at the end. */
+  async function loadMoreComments(ws: string, slug: string): Promise<void> {
+    error.value = null;
+
+    if (!commentsHasMore.value || commentsCursor.value === null) {
+      return;
+    }
+
+    const { data, error: apiError } = await wrappedClient.GET(
+      '/v1/workspaces/{ws}/documents/{slug}/comments',
+      { params: { path: { ws, slug }, query: { cursor: commentsCursor.value } } },
+    );
+
+    if (apiError !== undefined || data === undefined) {
+      error.value = errorHint(apiError, 'Failed to load comments');
+      return;
+    }
+
+    comments.value = [...comments.value, ...data.items];
+    commentsCursor.value = data.next_cursor ?? null;
+    commentsHasMore.value = data.has_more;
+  }
+
+  async function addComment(ws: string, slug: string, body: string): Promise<boolean> {
+    error.value = null;
+
+    const { data, error: apiError } = await wrappedClient.POST(
+      '/v1/workspaces/{ws}/documents/{slug}/comments',
+      { params: { path: { ws, slug } }, body: { body } },
+    );
+
+    if (apiError !== undefined || data === undefined) {
+      error.value = errorHint(apiError, 'Failed to add comment');
+      return false;
+    }
+
+    // Only reflect locally once the whole thread is paged in, so a newest-first
+    // append can't land out of order or be re-fetched as a duplicate by a later
+    // "Load more". It is persisted server-side regardless.
+    if (!commentsHasMore.value) {
+      comments.value = [...comments.value, data];
+    }
+    return true;
+  }
+
+  async function removeComment(ws: string, slug: string, commentId: string): Promise<boolean> {
+    error.value = null;
+
+    const snapshot = [...comments.value];
+    comments.value = comments.value.filter((c) => c.id !== commentId);
+
+    const { error: apiError } = await wrappedClient.DELETE(
+      '/v1/workspaces/{ws}/documents/{slug}/comments/{comment_id}',
+      { params: { path: { ws, slug, comment_id: commentId } } },
+    );
+
+    if (apiError !== undefined) {
+      comments.value = snapshot;
+      error.value = errorHint(apiError, 'Failed to remove comment');
+      return false;
+    }
+
+    return true;
+  }
+
+  /** Edits a comment's body (author-only server-side); swaps the DTO in place. */
+  async function editComment(ws: string, slug: string, commentId: string, body: string): Promise<boolean> {
+    error.value = null;
+
+    const { data, error: apiError } = await wrappedClient.PATCH(
+      '/v1/workspaces/{ws}/documents/{slug}/comments/{comment_id}',
+      { params: { path: { ws, slug, comment_id: commentId } }, body: { body } },
+    );
+
+    if (apiError !== undefined || data === undefined) {
+      error.value = errorHint(apiError, 'Failed to edit comment');
+      return false;
+    }
+
+    const idx = comments.value.findIndex((c) => c.id === commentId);
+    if (idx !== -1) {
+      const updated = [...comments.value];
+      updated[idx] = data;
+      comments.value = updated;
+    }
+
+    return true;
   }
 
   async function create(
@@ -189,10 +307,17 @@ export const useDocumentsStore = defineStore('documents', () => {
   return {
     summaries,
     backlinks,
+    comments,
+    commentsHasMore,
     loading,
     error,
     loadSummaries,
     loadBacklinks,
+    loadComments,
+    loadMoreComments,
+    addComment,
+    removeComment,
+    editComment,
     create,
     rename,
     remove,

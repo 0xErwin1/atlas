@@ -10,6 +10,7 @@ const ui = useUiStore();
 const tabs: Array<{ id: InspectorTab; label: string; icon: string }> = [
   { id: 'properties', label: 'Properties', icon: 'columns' },
   { id: 'backlinks', label: 'Backlinks', icon: 'link' },
+  { id: 'comments', label: 'Comments', icon: 'message-square' },
   { id: 'activity', label: 'Activity', icon: 'history' },
   { id: 'share', label: 'Share', icon: 'user' },
 ];

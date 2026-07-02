@@ -2970,7 +2970,7 @@
         "tags": [
           "documents"
         ],
-        "operationId": "list_comments",
+        "operationId": "list_document_comments",
         "parameters": [
           {
             "name": "ws",
@@ -3013,7 +3013,14 @@
         ],
         "responses": {
           "200": {
-            "description": "Comment page"
+            "description": "Comment page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_CommentDto"
+                }
+              }
+            }
           },
           "401": {
             "description": "Unauthenticated"
@@ -3035,7 +3042,7 @@
         "tags": [
           "documents"
         ],
-        "operationId": "create_comment",
+        "operationId": "create_document_comment",
         "parameters": [
           {
             "name": "ws",
@@ -3102,7 +3109,7 @@
         "tags": [
           "documents"
         ],
-        "operationId": "delete_comment",
+        "operationId": "delete_document_comment",
         "parameters": [
           {
             "name": "ws",
@@ -3156,7 +3163,7 @@
         "tags": [
           "documents"
         ],
-        "operationId": "update_comment",
+        "operationId": "update_document_comment",
         "parameters": [
           {
             "name": "ws",

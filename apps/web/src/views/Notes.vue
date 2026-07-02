@@ -3,6 +3,7 @@ import { computed, nextTick, ref, watch } from 'vue';
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router';
 import BacklinksPanel from '@/components/notas/BacklinksPanel.vue';
 import CasConflictView from '@/components/notas/CasConflictView.vue';
+import DocumentComments from '@/components/notas/DocumentComments.vue';
 import HistoryPanel from '@/components/notas/HistoryPanel.vue';
 // biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
 import NoteEditor from '@/components/notas/NoteEditor.vue';
@@ -636,6 +637,13 @@ watch(title, (t) => {
         :backlinks="documents.backlinks"
         @navigate="(s) => router.push({ name: 'notes', params: { slug: s } })"
       />
+    </template>
+
+    <template #inspector-comments>
+      <DocumentComments v-if="slug" :ws="ws" :slug="slug" />
+      <p v-else style="font-size: var(--fs-sm); color: var(--c-muted);">
+        Open a document to see its comments.
+      </p>
     </template>
 
     <template #inspector-activity>

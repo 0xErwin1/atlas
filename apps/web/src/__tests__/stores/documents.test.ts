@@ -308,4 +308,145 @@ describe('useDocumentsStore', () => {
     expect(store.error).toBe('denied');
     expect(GET).not.toHaveBeenCalled();
   });
+
+  const comment = (id: string, body: string, updatedAt = '2026-01-01T00:00:00Z') => ({
+    id,
+    document_id: 'd1',
+    body,
+    author: { id: 'u1', type: 'user', display_name: 'Jordan' },
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: updatedAt,
+  });
+
+  it('loadComments populates the thread and the has-more flag', async () => {
+    GET.mockResolvedValue({
+      data: { items: [comment('c1', 'First')], next_cursor: 'cur', has_more: true },
+    });
+
+    const store = useDocumentsStore();
+    await store.loadComments('ws', 'my-doc');
+
+    expect(store.comments.map((c) => c.id)).toEqual(['c1']);
+    expect(store.commentsHasMore).toBe(true);
+    expect(store.error).toBeNull();
+  });
+
+  it('loadComments clears the thread and surfaces the hint on error', async () => {
+    GET.mockResolvedValue({ error: { hint: 'forbidden' } });
+
+    const store = useDocumentsStore();
+    await store.loadComments('ws', 'my-doc');
+
+    expect(store.comments).toHaveLength(0);
+    expect(store.commentsHasMore).toBe(false);
+    expect(store.error).toBe('forbidden');
+  });
+
+  it('loadMoreComments appends the next page using the stored cursor', async () => {
+    GET.mockResolvedValueOnce({
+      data: { items: [comment('c1', 'First')], next_cursor: 'cur', has_more: true },
+    }).mockResolvedValueOnce({
+      data: { items: [comment('c2', 'Second')], next_cursor: null, has_more: false },
+    });
+
+    const store = useDocumentsStore();
+    await store.loadComments('ws', 'my-doc');
+    await store.loadMoreComments('ws', 'my-doc');
+
+    expect(store.comments.map((c) => c.id)).toEqual(['c1', 'c2']);
+    expect(store.commentsHasMore).toBe(false);
+    expect(GET.mock.calls[1]?.[1]?.params?.query?.cursor).toBe('cur');
+  });
+
+  it('addComment appends the created comment only when the thread is fully paged', async () => {
+    GET.mockResolvedValue({
+      data: { items: [comment('c1', 'First')], next_cursor: null, has_more: false },
+    });
+    POST.mockResolvedValue({ data: comment('c2', 'Second') });
+
+    const store = useDocumentsStore();
+    await store.loadComments('ws', 'my-doc');
+    const ok = await store.addComment('ws', 'my-doc', 'Second');
+
+    expect(ok).toBe(true);
+    expect(store.comments.map((c) => c.id)).toEqual(['c1', 'c2']);
+  });
+
+  it('addComment does not append locally while more pages remain', async () => {
+    GET.mockResolvedValue({
+      data: { items: [comment('c1', 'First')], next_cursor: 'cur', has_more: true },
+    });
+    POST.mockResolvedValue({ data: comment('c2', 'Second') });
+
+    const store = useDocumentsStore();
+    await store.loadComments('ws', 'my-doc');
+    const ok = await store.addComment('ws', 'my-doc', 'Second');
+
+    expect(ok).toBe(true);
+    expect(store.comments.map((c) => c.id)).toEqual(['c1']);
+  });
+
+  it('addComment returns false and sets error on failure', async () => {
+    POST.mockResolvedValue({ error: { hint: 'nope' } });
+
+    const store = useDocumentsStore();
+    const ok = await store.addComment('ws', 'my-doc', 'Hi');
+
+    expect(ok).toBe(false);
+    expect(store.error).toBe('nope');
+  });
+
+  it('removeComment optimistically drops the comment on success', async () => {
+    GET.mockResolvedValue({
+      data: { items: [comment('c1', 'First'), comment('c2', 'Second')], next_cursor: null, has_more: false },
+    });
+    DELETE.mockResolvedValue({ error: undefined });
+
+    const store = useDocumentsStore();
+    await store.loadComments('ws', 'my-doc');
+    const ok = await store.removeComment('ws', 'my-doc', 'c1');
+
+    expect(ok).toBe(true);
+    expect(store.comments.map((c) => c.id)).toEqual(['c2']);
+  });
+
+  it('removeComment rolls back and sets error on failure', async () => {
+    GET.mockResolvedValue({
+      data: { items: [comment('c1', 'First'), comment('c2', 'Second')], next_cursor: null, has_more: false },
+    });
+    DELETE.mockResolvedValue({ error: { hint: 'denied' } });
+
+    const store = useDocumentsStore();
+    await store.loadComments('ws', 'my-doc');
+    const ok = await store.removeComment('ws', 'my-doc', 'c1');
+
+    expect(ok).toBe(false);
+    expect(store.comments.map((c) => c.id)).toEqual(['c1', 'c2']);
+    expect(store.error).toBe('denied');
+  });
+
+  it('editComment swaps the updated DTO in place', async () => {
+    GET.mockResolvedValue({
+      data: { items: [comment('c1', 'First')], next_cursor: null, has_more: false },
+    });
+    PATCH.mockResolvedValue({ data: comment('c1', 'Edited', '2026-02-02T00:00:00Z') });
+
+    const store = useDocumentsStore();
+    await store.loadComments('ws', 'my-doc');
+    const ok = await store.editComment('ws', 'my-doc', 'c1', 'Edited');
+
+    expect(ok).toBe(true);
+    expect(store.comments[0]?.body).toBe('Edited');
+    expect(store.comments[0]?.updated_at).toBe('2026-02-02T00:00:00Z');
+  });
+
+  it('editComment returns false and sets error on failure', async () => {
+    PATCH.mockResolvedValue({ error: { hint: 'not author' } });
+
+    const store = useDocumentsStore();
+    const ok = await store.editComment('ws', 'my-doc', 'c1', 'Edited');
+
+    expect(ok).toBe(false);
+    expect(store.error).toBe('not author');
+  });
 });

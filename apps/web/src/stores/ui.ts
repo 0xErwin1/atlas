@@ -2,7 +2,7 @@ import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 import type { AiAction, AiPromptTask } from '@/lib/aiPrompt';
 
-export type InspectorTab = 'properties' | 'backlinks' | 'activity' | 'share';
+export type InspectorTab = 'properties' | 'backlinks' | 'comments' | 'activity' | 'share';
 export type BannerType = 'error' | 'warning' | 'info' | 'success';
 export type Theme = 'dark' | 'light';
 export type TaskViewMode = 'sidebar' | 'modal' | 'full';
