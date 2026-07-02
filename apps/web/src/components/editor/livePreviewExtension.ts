@@ -481,12 +481,36 @@ function lineNumberAt(view: EditorView, pos: number): number {
  * decorations added in document order. Line decorations and mark/replace
  * decorations are interleaved by position.
  */
+/**
+ * The rendering decoration set plus the subset that should trap the caret.
+ *
+ * `decorations` drives the view; `atomic` feeds `EditorView.atomicRanges`. Only
+ * ranges that HIDE or REPLACE source (hidden markdown marks, widget-replaced
+ * constructs) belong in `atomic`, so the caret skips them and a delete removes
+ * the whole construct. Visible mark decorations (inline code, emphasis, links)
+ * must stay editable and are therefore excluded.
+ */
+interface BuiltDecorations {
+  decorations: DecorationSet;
+  atomic: DecorationSet;
+}
+
+/**
+ * True for replace/widget decorations, false for the styling marks and line
+ * decorations. Every mark/line decoration in this file is built with a `class`;
+ * `Decoration.replace(...)` (hidden marks and widgets) never carries one, so the
+ * absence of `class` cleanly identifies the ranges that should be atomic.
+ */
+export function isReplaceDeco(deco: Decoration): boolean {
+  return (deco.spec as { class?: unknown }).class === undefined;
+}
+
 function buildDecorations(
   view: EditorView,
   callbacks: LivePreviewCallbacks,
   reveal: boolean,
   titles: Record<string, string>,
-): DecorationSet {
+): BuiltDecorations {
   const activeLines = activeLinesFromSelection(view.state, reveal);
   const decos: Range<Decoration>[] = [];
 
@@ -506,8 +530,13 @@ function buildDecorations(
   decos.sort((a, b) => a.from - b.from || a.value.startSide - b.value.startSide);
 
   const builder = new RangeSetBuilder<Decoration>();
-  for (const deco of decos) builder.add(deco.from, deco.to, deco.value);
-  return builder.finish();
+  const atomicBuilder = new RangeSetBuilder<Decoration>();
+  for (const deco of decos) {
+    builder.add(deco.from, deco.to, deco.value);
+    if (isReplaceDeco(deco.value)) atomicBuilder.add(deco.from, deco.to, deco.value);
+  }
+
+  return { decorations: builder.finish(), atomic: atomicBuilder.finish() };
 }
 
 /**
@@ -978,6 +1007,7 @@ export function livePreview(callbacks: LivePreviewCallbacks, options: LivePrevie
   const inline = ViewPlugin.fromClass(
     class {
       decorations: DecorationSet;
+      atomic: DecorationSet;
 
       constructor(view: EditorView) {
         // The markdown grammar parses incrementally: on first construction the
@@ -985,7 +1015,9 @@ export function livePreview(callbacks: LivePreviewCallbacks, options: LivePrevie
         // rendered as raw markdown until the first interaction. Force the parse
         // up to the viewport so the very first paint is already decorated.
         ensureSyntaxTree(view.state, view.viewport.to, 100);
-        this.decorations = buildDecorations(view, callbacks, reveal, titles);
+        const built = buildDecorations(view, callbacks, reveal, titles);
+        this.decorations = built.decorations;
+        this.atomic = built.atomic;
       }
 
       update(update: ViewUpdate): void {
@@ -999,14 +1031,19 @@ export function livePreview(callbacks: LivePreviewCallbacks, options: LivePrevie
           update.viewportChanged ||
           syntaxTree(update.startState) !== syntaxTree(update.state)
         ) {
-          this.decorations = buildDecorations(update.view, callbacks, reveal, titles);
+          const built = buildDecorations(update.view, callbacks, reveal, titles);
+          this.decorations = built.decorations;
+          this.atomic = built.atomic;
         }
       }
     },
     {
       decorations: (plugin) => plugin.decorations,
+      // Only the replaced/hidden ranges are atomic — never the visible styling
+      // marks — so inline code, emphasis and links stay editable (caret can enter
+      // them, and a single backspace deletes one character, not the whole span).
       provide: (plugin) =>
-        EditorView.atomicRanges.of((view) => view.plugin(plugin)?.decorations ?? Decoration.none),
+        EditorView.atomicRanges.of((view) => view.plugin(plugin)?.atomic ?? Decoration.none),
     },
   );
 
