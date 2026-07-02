@@ -24,10 +24,15 @@ type TaskDto = components['schemas']['TaskDto'];
  * title, meta card, description and sub-tasks; this panel owns the rest.
  */
 
-const props = defineProps<{
-  task: TaskDto;
-  ws: string;
-}>();
+const props = withDefaults(
+  defineProps<{
+    task: TaskDto;
+    ws: string;
+    /** Panel width in px (the caller makes the dock resizable). */
+    width?: number;
+  }>(),
+  { width: 280 },
+);
 
 const detail = useTaskDetailStore();
 const ui = useUiStore();
@@ -62,7 +67,7 @@ async function onRemoveReference(referenceId: string): Promise<void> {
 </script>
 
 <template>
-  <aside class="atl-tv-inspector">
+  <aside class="atl-tv-inspector" :style="{ width: `${props.width}px`, flex: `0 0 ${props.width}px` }">
     <InspectorTabs :tabs="TABS" v-model:active="active" />
 
     <div class="atl-tv-inspector-body">
