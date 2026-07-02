@@ -638,6 +638,24 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
     },
     RouteEntry {
         method: "GET",
+        path_template: "/v1/workspaces/{ws}/tasks/ATL-0/comments",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/tasks/{readable_id}/comments"),
+    },
+    RouteEntry {
+        method: "POST",
+        path_template: "/v1/workspaces/{ws}/tasks/ATL-0/comments",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/tasks/{readable_id}/comments"),
+    },
+    RouteEntry {
+        method: "DELETE",
+        path_template: "/v1/workspaces/{ws}/tasks/ATL-0/comments/00000000-0000-0000-0000-000000000001",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}"),
+    },
+    RouteEntry {
+        method: "GET",
         path_template: "/v1/workspaces/{ws}/tasks/ATL-0/subtasks",
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/v1/workspaces/{ws}/tasks/{readable_id}/subtasks"),

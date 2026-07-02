@@ -5,6 +5,7 @@ use serde_json::Value;
 
 const MAX_NAME_LEN: usize = 200;
 const MAX_DESC_LEN: usize = 20_000;
+const MAX_COMMENT_LEN: usize = 10_000;
 const MAX_LABEL_LEN: usize = 64;
 const MAX_LABELS: usize = 50;
 const MAX_CUSTOM_ENTRIES: usize = 100;
@@ -248,6 +249,27 @@ fn definition_options(definition: &PropertyDefinition) -> Vec<String> {
 /// Validates the description field using the standard 20 000-character cap.
 pub(crate) fn validate_description(value: &str) -> Result<(), ApiError> {
     validate_long_text("description", value, MAX_DESC_LEN)
+}
+
+/// Validates a comment body.
+///
+/// Rejects an empty or whitespace-only body and a body longer than 10 000
+/// Unicode scalar values (counted with `chars().count()`, not byte length, so
+/// multi-byte markdown content isn't penalized for its UTF-8 encoding size).
+pub(crate) fn validate_comment_body(value: &str) -> Result<(), ApiError> {
+    if value.trim().is_empty() {
+        return Err(ApiError::InvalidInput {
+            message: "body must not be blank".into(),
+        });
+    }
+
+    if value.chars().count() > MAX_COMMENT_LEN {
+        return Err(ApiError::InvalidInput {
+            message: format!("body must be at most {MAX_COMMENT_LEN} characters"),
+        });
+    }
+
+    Ok(())
 }
 
 /// Validates the `query` field for a saved search.

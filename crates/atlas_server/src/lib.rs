@@ -351,6 +351,14 @@ pub fn app(state: AppState) -> Router {
             axum::routing::get(routes::tasks::list_activity),
         )
         .route(
+            "/v1/workspaces/{ws}/tasks/{readable_id}/comments",
+            axum::routing::get(routes::tasks::list_comments).post(routes::tasks::create_comment),
+        )
+        .route(
+            "/v1/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}",
+            axum::routing::delete(routes::tasks::delete_comment),
+        )
+        .route(
             "/v1/workspaces/{ws}/activity",
             axum::routing::get(routes::tasks::list_workspace_activity),
         )

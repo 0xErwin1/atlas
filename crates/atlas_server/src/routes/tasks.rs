@@ -11,10 +11,10 @@ use serde::Deserialize;
 
 use atlas_api::{
     dtos::boards_tasks::{
-        ActivityEntryDto, AddAssigneeRequest, AssigneeDto, ChecklistItemDto,
-        CreateChecklistItemRequest, CreateReferenceRequest, CreateSubtaskRequest,
-        CreateTaskRequest, MoveTaskRequest, PromoteChecklistItemRequest, PromotionDto,
-        ReferenceDto, TaskAttachmentDto, TaskBacklinkDto, TaskDto, TaskSummaryDto,
+        ActivityEntryDto, AddAssigneeRequest, AssigneeDto, ChecklistItemDto, CommentDto,
+        CreateChecklistItemRequest, CreateCommentRequest, CreateReferenceRequest,
+        CreateSubtaskRequest, CreateTaskRequest, MoveTaskRequest, PromoteChecklistItemRequest,
+        PromotionDto, ReferenceDto, TaskAttachmentDto, TaskBacklinkDto, TaskDto, TaskSummaryDto,
         UpdateChecklistItemRequest, UpdateTaskRequest, WorkspaceTaskQueryParams,
     },
     dtos::documents::ActorDto,
@@ -27,13 +27,14 @@ use atlas_domain::{
         PositionBetween, Priority, Task, TaskActivity, TaskAssignee, TaskChecklistItem, TaskPatch,
         TaskReference,
     },
+    entities::comments::Comment,
     entities::documents::{AttachmentOwner, NewAttachment},
     entities::identity::MemberRole,
     entities::task_views::{ActorTypeFilter, AssigneeFilter, TaskSort, TaskViewFilters},
     entities::workspace_core::{AppliesTo, PropertyDefinition},
     ids::{
-        ApiKeyId, AttachmentId, BoardId, ChecklistItemId, ColumnId, DocumentId, TaskActivityId,
-        TaskId, TaskReferenceId, UserId,
+        ApiKeyId, AttachmentId, BoardId, ChecklistItemId, ColumnId, CommentId, DocumentId,
+        TaskActivityId, TaskId, TaskReferenceId, UserId,
     },
     permissions::{ChainSegment, Principal, ResolutionInput, ResourceChain, ResourceRef},
     ports::boards_tasks::{WorkspaceActivityFilters, WorkspaceActivityScope},
@@ -55,8 +56,8 @@ use crate::{
     },
     routes::documents::content_disposition_attachment,
     routes::validation::{
-        validate_custom_entry_count, validate_custom_properties, validate_description,
-        validate_labels, validate_name,
+        validate_comment_body, validate_custom_entry_count, validate_custom_properties,
+        validate_description, validate_labels, validate_name,
     },
     state::AppState,
 };
@@ -106,6 +107,15 @@ pub(crate) struct TaskAttachmentPath {
     #[allow(dead_code)]
     readable_id: String,
     attachment_id: uuid::Uuid,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct CommentPath {
+    #[allow(dead_code)]
+    ws: String,
+    #[allow(dead_code)]
+    readable_id: String,
+    comment_id: uuid::Uuid,
 }
 
 // ---------------------------------------------------------------------------
@@ -469,6 +479,27 @@ fn checklist_item_to_dto(item: TaskChecklistItem) -> ChecklistItemDto {
         promoted_readable_id: None,
         created_at: item.created_at,
         updated_at: item.updated_at,
+    }
+}
+
+/// Builds a `CommentDto` from a `Comment`, resolving the author's display name.
+///
+/// `task_id` is supplied by the caller (from the already-authorized route resource)
+/// rather than read off `c.task_id`, since `Comment` is polymorphic (task or
+/// document owner) and this route only ever loads task-owned comments.
+async fn comment_to_dto(
+    state: &AppState,
+    ctx: &WorkspaceCtx,
+    task_id: TaskId,
+    c: Comment,
+) -> CommentDto {
+    CommentDto {
+        id: c.id.0,
+        task_id: task_id.0,
+        body: c.body,
+        author: resolve_actor_dto(state, ctx, &c.created_by).await,
+        created_at: c.created_at,
+        updated_at: c.updated_at,
     }
 }
 
@@ -2346,6 +2377,162 @@ pub(crate) async fn list_activity(
 
     let dtos = enrich_activity_entries(&state, &ctx, entries, &task_readable_id).await?;
     Ok(Json(Page::new(dtos, next_cursor, has_more)))
+}
+
+// ---------------------------------------------------------------------------
+// GET /v1/workspaces/{ws}/tasks/{readable_id}/comments
+// ---------------------------------------------------------------------------
+
+#[utoipa::path(
+    get,
+    path = "/v1/workspaces/{ws}/tasks/{readable_id}/comments",
+    tag = "tasks",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+        ("readable_id" = String, Path, description = "Task readable ID"),
+        ("cursor" = Option<String>, Query, description = "Pagination cursor"),
+        ("limit" = Option<u32>, Query, description = "Page size (max 200)"),
+    ),
+    responses(
+        (status = 200, description = "Task comments, oldest first", body = Page<CommentDto>),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Insufficient permissions"),
+        (status = 404, description = "Task not found"),
+    )
+)]
+pub(crate) async fn list_comments(
+    auth: Authorized<TaskRes, ViewerMin>,
+    State(state): State<AppState>,
+    Query(q): Query<PaginationQuery>,
+) -> Result<Json<Page<CommentDto>>, ApiError> {
+    let limit = q.limit.unwrap_or(50).clamp(1, 200) as u64;
+    let actor = principal_to_actor(&auth.principal);
+    let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
+
+    let after_id = q
+        .cursor
+        .as_deref()
+        .and_then(Cursor::decode)
+        .map(|c| CommentId(c.0));
+
+    let task_id = auth.resource.0.id;
+
+    let mut entries = state
+        .task_service()
+        .list_comments(&ctx, task_id, after_id, limit + 1)
+        .await
+        .map_err(ApiError::Domain)?;
+
+    let has_more = entries.len() > limit as usize;
+    if has_more {
+        entries.truncate(limit as usize);
+    }
+
+    let next_cursor = if has_more {
+        entries.last().map(|c| Cursor(c.id.0))
+    } else {
+        None
+    };
+
+    let mut dtos = Vec::with_capacity(entries.len());
+    for entry in entries {
+        dtos.push(comment_to_dto(&state, &ctx, task_id, entry).await);
+    }
+
+    Ok(Json(Page::new(dtos, next_cursor, has_more)))
+}
+
+// ---------------------------------------------------------------------------
+// POST /v1/workspaces/{ws}/tasks/{readable_id}/comments
+// ---------------------------------------------------------------------------
+
+#[utoipa::path(
+    post,
+    path = "/v1/workspaces/{ws}/tasks/{readable_id}/comments",
+    tag = "tasks",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+        ("readable_id" = String, Path, description = "Task readable ID"),
+    ),
+    request_body = CreateCommentRequest,
+    responses(
+        (status = 201, description = "Comment created", body = CommentDto),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Insufficient permissions"),
+        (status = 404, description = "Task not found"),
+        (status = 422, description = "Comment body is blank or exceeds the maximum length"),
+    )
+)]
+pub(crate) async fn create_comment(
+    auth: Authorized<TaskRes, EditorMin>,
+    State(state): State<AppState>,
+    Json(body): Json<CreateCommentRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    let actor = principal_to_actor(&auth.principal);
+    let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
+
+    validate_comment_body(&body.body)?;
+
+    let task_id = auth.resource.0.id;
+
+    let comment = state
+        .task_service()
+        .add_comment(&ctx, task_id, body.body)
+        .await
+        .map_err(ApiError::Domain)?;
+
+    let dto = comment_to_dto(&state, &ctx, task_id, comment).await;
+    Ok((StatusCode::CREATED, Json(dto)))
+}
+
+// ---------------------------------------------------------------------------
+// DELETE /v1/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}
+// ---------------------------------------------------------------------------
+
+#[utoipa::path(
+    delete,
+    path = "/v1/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}",
+    tag = "tasks",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+        ("readable_id" = String, Path, description = "Task readable ID"),
+        ("comment_id" = String, Path, description = "Comment UUID"),
+    ),
+    responses(
+        (status = 204, description = "Comment deleted"),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Neither the comment's author nor a workspace admin/owner"),
+        (status = 404, description = "Task or comment not found"),
+    )
+)]
+pub(crate) async fn delete_comment(
+    auth: Authorized<TaskRes, ViewerMin>,
+    Path(p): Path<CommentPath>,
+    State(state): State<AppState>,
+) -> Result<StatusCode, ApiError> {
+    let actor = principal_to_actor(&auth.principal);
+    let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
+
+    let can_moderate = matches!(
+        auth.membership,
+        Some(MemberRole::Owner) | Some(MemberRole::Admin)
+    );
+
+    state
+        .task_service()
+        .remove_comment(
+            &ctx,
+            auth.resource.0.id,
+            CommentId(p.comment_id),
+            can_moderate,
+        )
+        .await
+        .map_err(ApiError::Domain)?;
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 // ---------------------------------------------------------------------------
