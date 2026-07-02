@@ -36,7 +36,7 @@ impl MigrationTrait for Migration {
         .await?;
 
         conn.execute_unprepared(
-            r#"CREATE INDEX comments_task_time_idx
+            r#"CREATE INDEX comments_task_id_idx
                ON comments (task_id, id ASC)
                WHERE deleted_at IS NULL"#,
         )
