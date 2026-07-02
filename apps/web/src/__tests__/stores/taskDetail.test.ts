@@ -75,7 +75,6 @@ const comment = (id: string, body: string, actorType: string, name: string) => (
   body,
   author: actor(`a-${id}`, actorType, name),
   created_at: '2026-01-01T00:00:00Z',
-  updated_at: '2026-01-01T00:00:00Z',
 });
 
 describe('useTaskDetailStore', () => {
@@ -429,9 +428,9 @@ describe('useTaskDetailStore', () => {
     expect(store.comments).toHaveLength(1);
   });
 
-  it('addComment appends the created comment at the end on success', async () => {
+  it('addComment appends the created comment at the end on success when fully paged', async () => {
     const store = useTaskDetailStore();
-    store._setForTest({ comments: [comment('cm1', 'First', 'user', 'Ann')] });
+    store._setForTest({ comments: [comment('cm1', 'First', 'user', 'Ann')], commentsHasMore: false });
 
     POST.mockResolvedValueOnce({
       data: comment('cm2', 'Second', 'user', 'Ann'),
@@ -445,6 +444,25 @@ describe('useTaskDetailStore', () => {
 
     const [, opts] = POST.mock.calls[0] as [string, { body: { body: string } }];
     expect(opts.body.body).toBe('Second');
+  });
+
+  it('addComment does not append while earlier pages remain unloaded', async () => {
+    const store = useTaskDetailStore();
+    store._setForTest({
+      comments: [comment('cm1', 'First', 'user', 'Ann')],
+      commentsCursor: 'cm1',
+      commentsHasMore: true,
+    });
+
+    POST.mockResolvedValueOnce({
+      data: comment('cm2', 'Second', 'user', 'Ann'),
+      error: undefined,
+    });
+
+    const ok = await store.addComment('ws', 'ATL-1', 'Second');
+
+    expect(ok).toBe(true);
+    expect(store.comments.map((c) => c.id)).toEqual(['cm1']);
   });
 
   it('addComment surfaces the hint and returns false on error', async () => {

@@ -98,6 +98,8 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
    * server, so appending preserves conversation order.
    */
   async function loadMoreComments(ws: string, readableId: string): Promise<void> {
+    error.value = null;
+
     if (!commentsHasMore.value || commentsCursor.value === null) {
       return;
     }
@@ -135,7 +137,14 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
       return false;
     }
 
-    comments.value = [...comments.value, data];
+    // The thread is oldest-first with a forward cursor. Appending the new
+    // (newest) comment while earlier pages are still unloaded would place it
+    // out of order and let a later "Load more" re-fetch it as a duplicate, so
+    // only reflect it locally once the full thread is paged in. It is persisted
+    // server-side either way.
+    if (!commentsHasMore.value) {
+      comments.value = [...comments.value, data];
+    }
     return true;
   }
 
