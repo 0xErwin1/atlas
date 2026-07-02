@@ -113,7 +113,6 @@ impl CommentRepo for PgCommentRepo {
             .filter(comment::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(owner_condition(owner))
             .filter(comment::Column::DeletedAt.is_null())
-            .order_by_asc(comment::Column::CreatedAt)
             .order_by_asc(comment::Column::Id)
             .limit(limit);
 
