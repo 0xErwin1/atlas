@@ -72,6 +72,16 @@ const PRIORITY_COLOR: Record<string, string> = {
   low: 'var(--c-muted)',
 };
 
+// Default table order: highest priority first (unprioritised last). The kanban and
+// status-grouped list keep their manual drag order, but the table is a flat scan
+// where priority is the useful default. Ties keep the incoming (position) order
+// since Array.prototype.sort is stable.
+const PRIORITY_RANK: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
+
+function priorityRank(priority: string | null | undefined): number {
+  return priority !== null && priority !== undefined ? (PRIORITY_RANK[priority] ?? 4) : 4;
+}
+
 interface StatusStyle {
   fg: string;
   bg: string;
@@ -101,15 +111,17 @@ const statusByColumnId = computed<Map<string, StatusStyle>>(() => {
 // Rows carry their derived status/assignees/due so the template reads plain
 // fields instead of re-running (and re-allocating) per cell on every render.
 const rows = computed<Row[]>(() =>
-  boards.columns.flatMap((column) =>
-    boards.filteredTasksByColumn(column.id).map((task) => ({
-      task,
-      column,
-      status: statusByColumnId.value.get(column.id) ?? DEFAULT_STATUS,
-      assignees: assigneesForTask(task),
-      due: dueLabel(task.readable_id),
-    })),
-  ),
+  boards.columns
+    .flatMap((column) =>
+      boards.filteredTasksByColumn(column.id).map((task) => ({
+        task,
+        column,
+        status: statusByColumnId.value.get(column.id) ?? DEFAULT_STATUS,
+        assignees: assigneesForTask(task),
+        due: dueLabel(task.readable_id),
+      })),
+    )
+    .sort((a, b) => priorityRank(a.task.priority) - priorityRank(b.task.priority)),
 );
 
 function priorityLabel(priority: string | null | undefined): string {
