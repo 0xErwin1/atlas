@@ -12,6 +12,7 @@ export type ActorDto = components['schemas']['ActorDto'];
 export type SubtaskDto = components['schemas']['TaskSummaryDto'];
 export type TaskDto = components['schemas']['TaskDto'];
 export type TaskAttachmentDto = components['schemas']['TaskAttachmentDto'];
+export type CommentDto = components['schemas']['CommentDto'];
 
 export interface AddAssigneeInput {
   assignee_id: string;
@@ -37,6 +38,9 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
   const subtasks = ref<SubtaskDto[]>([]);
   const activity = ref<ActivityEntryDto[]>([]);
   const attachments = ref<TaskAttachmentDto[]>([]);
+  const comments = ref<CommentDto[]>([]);
+  const commentsCursor = ref<string | null>(null);
+  const commentsHasMore = ref(false);
   const loading = ref(false);
   const error = ref<string | null>(null);
 
@@ -46,13 +50,14 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
 
     const path = { ws, readable_id: readableId };
 
-    const [a, r, s, cl, act, at] = await Promise.all([
+    const [a, r, s, cl, act, at, cm] = await Promise.all([
       wrappedClient.GET('/v1/workspaces/{ws}/tasks/{readable_id}/assignees', { params: { path } }),
       wrappedClient.GET('/v1/workspaces/{ws}/tasks/{readable_id}/references', { params: { path } }),
       wrappedClient.GET('/v1/workspaces/{ws}/tasks/{readable_id}/subtasks', { params: { path } }),
       wrappedClient.GET('/v1/workspaces/{ws}/tasks/{readable_id}/checklist', { params: { path } }),
       wrappedClient.GET('/v1/workspaces/{ws}/tasks/{readable_id}/activity', { params: { path } }),
       wrappedClient.GET('/v1/workspaces/{ws}/tasks/{readable_id}/attachments', { params: { path } }),
+      wrappedClient.GET('/v1/workspaces/{ws}/tasks/{readable_id}/comments', { params: { path } }),
     ]);
 
     loading.value = false;
@@ -75,11 +80,83 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     if (at.data !== undefined) {
       attachments.value = at.data;
     }
+    if (cm.data !== undefined) {
+      comments.value = cm.data.items;
+      commentsCursor.value = cm.data.next_cursor ?? null;
+      commentsHasMore.value = cm.data.has_more;
+    }
 
-    const firstError = a.error ?? r.error ?? s.error ?? cl.error ?? act.error ?? at.error;
+    const firstError = a.error ?? r.error ?? s.error ?? cl.error ?? act.error ?? at.error ?? cm.error;
     if (firstError !== undefined) {
       error.value = errorHint(firstError, 'Failed to load task detail');
     }
+  }
+
+  /**
+   * Appends the next page of comments using the stored cursor. No-op when
+   * there is no further page. Comments are returned oldest-first by the
+   * server, so appending preserves conversation order.
+   */
+  async function loadMoreComments(ws: string, readableId: string): Promise<void> {
+    if (!commentsHasMore.value || commentsCursor.value === null) {
+      return;
+    }
+
+    const { data, error: apiError } = await wrappedClient.GET(
+      '/v1/workspaces/{ws}/tasks/{readable_id}/comments',
+      {
+        params: {
+          path: { ws, readable_id: readableId },
+          query: { cursor: commentsCursor.value },
+        },
+      },
+    );
+
+    if (apiError !== undefined || data === undefined) {
+      error.value = errorHint(apiError, 'Failed to load comments');
+      return;
+    }
+
+    comments.value = [...comments.value, ...data.items];
+    commentsCursor.value = data.next_cursor ?? null;
+    commentsHasMore.value = data.has_more;
+  }
+
+  async function addComment(ws: string, readableId: string, body: string): Promise<boolean> {
+    error.value = null;
+
+    const { data, error: apiError } = await wrappedClient.POST(
+      '/v1/workspaces/{ws}/tasks/{readable_id}/comments',
+      { params: { path: { ws, readable_id: readableId } }, body: { body } },
+    );
+
+    if (apiError !== undefined || data === undefined) {
+      error.value = errorHint(apiError, 'Failed to add comment');
+      return false;
+    }
+
+    comments.value = [...comments.value, data];
+    return true;
+  }
+
+  async function removeComment(ws: string, readableId: string, commentId: string): Promise<boolean> {
+    error.value = null;
+
+    const snapshot = [...comments.value];
+    comments.value = comments.value.filter((c) => c.id !== commentId);
+
+    const { error: apiError } = await wrappedClient.DELETE(
+      '/v1/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}',
+      { params: { path: { ws, readable_id: readableId, comment_id: commentId } } },
+    );
+
+    if (apiError !== undefined) {
+      comments.value = snapshot;
+      error.value = errorHint(apiError, 'Failed to remove comment');
+      return false;
+    }
+
+    return true;
   }
 
   async function addAssignee(ws: string, readableId: string, input: AddAssigneeInput): Promise<boolean> {
@@ -422,6 +499,9 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     subtasks.value = [];
     activity.value = [];
     attachments.value = [];
+    comments.value = [];
+    commentsCursor.value = null;
+    commentsHasMore.value = false;
     error.value = null;
   }
 
@@ -432,6 +512,9 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     subtasks?: SubtaskDto[];
     activity?: ActivityEntryDto[];
     attachments?: TaskAttachmentDto[];
+    comments?: CommentDto[];
+    commentsCursor?: string | null;
+    commentsHasMore?: boolean;
   }): void {
     assignees.value = data.assignees ?? [];
     references.value = data.references ?? [];
@@ -439,6 +522,9 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     subtasks.value = data.subtasks ?? [];
     activity.value = data.activity ?? [];
     attachments.value = data.attachments ?? [];
+    comments.value = data.comments ?? [];
+    commentsCursor.value = data.commentsCursor ?? null;
+    commentsHasMore.value = data.commentsHasMore ?? false;
   }
 
   return {
@@ -448,6 +534,9 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     subtasks,
     activity,
     attachments,
+    comments,
+    commentsCursor,
+    commentsHasMore,
     loading,
     error,
     loadAll,
@@ -464,6 +553,9 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     removeReference,
     uploadAttachment,
     removeAttachment,
+    loadMoreComments,
+    addComment,
+    removeComment,
     clear,
     _setForTest,
   };

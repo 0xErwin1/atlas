@@ -69,13 +69,22 @@ const activityEntry = (id: string, kind: string, actorType: string, name: string
   task_readable_id: `ATL-${id}`,
 });
 
+const comment = (id: string, body: string, actorType: string, name: string) => ({
+  id,
+  task_id: 't1',
+  body,
+  author: actor(`a-${id}`, actorType, name),
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-01T00:00:00Z',
+});
+
 describe('useTaskDetailStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
   });
 
-  it('loadAll populates assignees, references, subtasks, checklist and activity', async () => {
+  it('loadAll populates assignees, references, subtasks, checklist, activity and comments', async () => {
     GET.mockImplementation((path: string) => {
       if (path.endsWith('/assignees')) {
         return Promise.resolve({ data: [assignee('u9', 'user', 'Jordan')], error: undefined });
@@ -95,6 +104,16 @@ describe('useTaskDetailStore', () => {
           error: undefined,
         });
       }
+      if (path.endsWith('/comments')) {
+        return Promise.resolve({
+          data: {
+            items: [comment('cm1', 'First comment', 'user', 'Jordan')],
+            has_more: true,
+            next_cursor: 'cm1',
+          },
+          error: undefined,
+        });
+      }
       return Promise.resolve({ data: undefined, error: { hint: 'unexpected' } });
     });
 
@@ -109,6 +128,10 @@ describe('useTaskDetailStore', () => {
     expect(store.checklist).toHaveLength(1);
     expect(store.checklist[0]?.title).toBe('Review code');
     expect(store.activity).toHaveLength(1);
+    expect(store.comments).toHaveLength(1);
+    expect(store.comments[0]?.body).toBe('First comment');
+    expect(store.commentsHasMore).toBe(true);
+    expect(store.commentsCursor).toBe('cm1');
   });
 
   it('addChecklistItem appends the created item to checklist on success', async () => {
@@ -355,6 +378,7 @@ describe('useTaskDetailStore', () => {
       checklist: [checklistItem('c1', 'Step', false)],
       references: [reference('r1', 'relates')],
       activity: [activityEntry('e1', 'created', 'user', 'Ann')],
+      comments: [comment('cm1', 'Hello', 'user', 'Ann')],
     });
 
     store.clear();
@@ -363,5 +387,107 @@ describe('useTaskDetailStore', () => {
     expect(store.checklist).toHaveLength(0);
     expect(store.references).toHaveLength(0);
     expect(store.activity).toHaveLength(0);
+    expect(store.comments).toHaveLength(0);
+    expect(store.commentsCursor).toBeNull();
+    expect(store.commentsHasMore).toBe(false);
+  });
+
+  it('loadMoreComments appends the next page using the stored cursor, oldest-first', async () => {
+    const store = useTaskDetailStore();
+    store._setForTest({
+      comments: [comment('cm1', 'First', 'user', 'Ann')],
+      commentsCursor: 'cm1',
+      commentsHasMore: true,
+    });
+
+    GET.mockResolvedValueOnce({
+      data: { items: [comment('cm2', 'Second', 'user', 'Ann')], has_more: false, next_cursor: null },
+      error: undefined,
+    });
+
+    await store.loadMoreComments('ws', 'ATL-1');
+
+    expect(store.comments.map((c) => c.id)).toEqual(['cm1', 'cm2']);
+    expect(store.commentsHasMore).toBe(false);
+    expect(store.commentsCursor).toBeNull();
+
+    const [, opts] = GET.mock.calls[0] as [string, { params: { query?: { cursor?: string } } }];
+    expect(opts.params.query?.cursor).toBe('cm1');
+  });
+
+  it('loadMoreComments is a no-op when there is no further page', async () => {
+    const store = useTaskDetailStore();
+    store._setForTest({
+      comments: [comment('cm1', 'First', 'user', 'Ann')],
+      commentsCursor: null,
+      commentsHasMore: false,
+    });
+
+    await store.loadMoreComments('ws', 'ATL-1');
+
+    expect(GET).not.toHaveBeenCalled();
+    expect(store.comments).toHaveLength(1);
+  });
+
+  it('addComment appends the created comment at the end on success', async () => {
+    const store = useTaskDetailStore();
+    store._setForTest({ comments: [comment('cm1', 'First', 'user', 'Ann')] });
+
+    POST.mockResolvedValueOnce({
+      data: comment('cm2', 'Second', 'user', 'Ann'),
+      error: undefined,
+    });
+
+    const ok = await store.addComment('ws', 'ATL-1', 'Second');
+
+    expect(ok).toBe(true);
+    expect(store.comments.map((c) => c.id)).toEqual(['cm1', 'cm2']);
+
+    const [, opts] = POST.mock.calls[0] as [string, { body: { body: string } }];
+    expect(opts.body.body).toBe('Second');
+  });
+
+  it('addComment surfaces the hint and returns false on error', async () => {
+    const store = useTaskDetailStore();
+
+    POST.mockResolvedValueOnce({ data: undefined, error: { hint: 'Comment too long' } });
+
+    const ok = await store.addComment('ws', 'ATL-1', 'x'.repeat(10_001));
+
+    expect(ok).toBe(false);
+    expect(store.comments).toHaveLength(0);
+    expect(store.error).toBe('Comment too long');
+  });
+
+  it('removeComment optimistically removes, rolls back on error', async () => {
+    const store = useTaskDetailStore();
+    store._setForTest({
+      comments: [comment('cm1', 'First', 'user', 'Ann'), comment('cm2', 'Second', 'user', 'Ann')],
+    });
+
+    DELETE.mockResolvedValueOnce({ data: undefined, error: { hint: 'No permission' } });
+
+    const ok = await store.removeComment('ws', 'ATL-1', 'cm2');
+
+    expect(ok).toBe(false);
+    expect(store.error).toBe('No permission');
+    expect(store.comments).toHaveLength(2);
+  });
+
+  it('removeComment deletes on success', async () => {
+    const store = useTaskDetailStore();
+    store._setForTest({
+      comments: [comment('cm1', 'First', 'user', 'Ann'), comment('cm2', 'Second', 'user', 'Ann')],
+    });
+
+    DELETE.mockResolvedValueOnce({ data: undefined, error: undefined });
+
+    const ok = await store.removeComment('ws', 'ATL-1', 'cm1');
+
+    expect(ok).toBe(true);
+    expect(store.comments.map((c) => c.id)).toEqual(['cm2']);
+
+    const [, opts] = DELETE.mock.calls[0] as [string, { params: { path: { comment_id: string } } }];
+    expect(opts.params.path.comment_id).toBe('cm1');
   });
 });
