@@ -1,5 +1,5 @@
 import { createPinia, setActivePinia } from 'pinia';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useUiStore } from '@/stores/ui';
 
 describe('useUiStore', () => {
@@ -45,6 +45,42 @@ describe('useUiStore', () => {
     store.showBanner('oops', 'error');
     store.dismissBanner();
     expect(store.banner).toBeNull();
+  });
+
+  it('showBanner auto-dismisses after its type timeout', () => {
+    vi.useFakeTimers();
+    try {
+      const store = useUiStore();
+      store.showBanner('Saved', 'success');
+      expect(store.banner).not.toBeNull();
+
+      vi.advanceTimersByTime(3999);
+      expect(store.banner).not.toBeNull();
+
+      vi.advanceTimersByTime(1);
+      expect(store.banner).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('showBanner resets the dismiss timer for a replacing toast', () => {
+    vi.useFakeTimers();
+    try {
+      const store = useUiStore();
+      store.showBanner('First', 'success');
+      vi.advanceTimersByTime(3000);
+
+      store.showBanner('Second', 'success');
+      // The first toast's 4s deadline passes, but the replacement restarted it.
+      vi.advanceTimersByTime(1500);
+      expect(store.banner).toEqual({ message: 'Second', type: 'success' });
+
+      vi.advanceTimersByTime(2500);
+      expect(store.banner).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('taskViewMode defaults to sidebar', () => {

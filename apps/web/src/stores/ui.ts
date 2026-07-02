@@ -21,6 +21,15 @@ export interface Banner {
   type: BannerType;
 }
 
+// A toast auto-dismisses after this long. Errors linger longer than confirmations
+// because they carry information the user may need to read and act on.
+const BANNER_TIMEOUT_MS: Record<BannerType, number> = {
+  success: 4000,
+  info: 4000,
+  warning: 6000,
+  error: 8000,
+};
+
 const INSPECTOR_STORAGE_KEY = 'atlas:inspector';
 const EDITOR_WIDE_STORAGE_KEY = 'atlas:editor-wide';
 const THEME_STORAGE_KEY = 'atlas:theme';
@@ -138,11 +147,26 @@ export const useUiStore = defineStore('ui', () => {
     persistInspector();
   }
 
+  let bannerTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function clearBannerTimer() {
+    if (bannerTimer !== null) {
+      clearTimeout(bannerTimer);
+      bannerTimer = null;
+    }
+  }
+
   function showBanner(message: string, type: BannerType) {
+    clearBannerTimer();
     banner.value = { message, type };
+    bannerTimer = setTimeout(() => {
+      banner.value = null;
+      bannerTimer = null;
+    }, BANNER_TIMEOUT_MS[type]);
   }
 
   function dismissBanner() {
+    clearBannerTimer();
     banner.value = null;
   }
 
