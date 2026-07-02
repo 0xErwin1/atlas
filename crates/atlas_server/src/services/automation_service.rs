@@ -11,14 +11,14 @@
 use atlas_domain::{
     Actor, DomainError, WorkspaceCtx,
     entities::boards_tasks::{NewTask, PositionBetween},
-    ids::{ApiKeyId, BoardId, ColumnId, ProjectId, WorkspaceId},
+    ids::{ApiKeyId, BoardId, ColumnId, ProjectId, TaskId, WorkspaceId},
 };
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, TransactionTrait};
 use uuid::Uuid;
 
 use crate::{
     persistence::{
-        entities::boards_tasks::board,
+        entities::boards_tasks::{board, task},
         repos::{PgAutomationRuleRepo, PgOutboxRepo},
     },
     services::TaskService,
@@ -121,6 +121,32 @@ impl AutomationService {
             return Ok(());
         }
 
+        // The DB CHECK constrains `action_type` to this set, but an unknown value
+        // is still handled as a permanent misconfig rather than assumed away.
+        match rule.action_type.as_str() {
+            "create_task" => {
+                self.execute_create_task(task_svc, rule, workspace_id, integration_api_key_id, data)
+                    .await
+            }
+            "add_comment" => {
+                self.execute_add_comment(task_svc, rule, workspace_id, integration_api_key_id, data)
+                    .await
+            }
+            other => {
+                tracing::warn!(rule_id = %rule.id, action_type = %other, "permanent misconfig: unknown action_type");
+                Ok(())
+            }
+        }
+    }
+
+    async fn execute_create_task(
+        &self,
+        task_svc: &TaskService,
+        rule: &crate::persistence::entities::automation_rule::automation_rules::Model,
+        workspace_id: Uuid,
+        integration_api_key_id: Uuid,
+        data: &serde_json::Value,
+    ) -> Result<(), DomainError> {
         let params: CreateTaskParams = match serde_json::from_value(rule.action_params.clone()) {
             Ok(p) => p,
             Err(e) => {
@@ -185,6 +211,71 @@ impl AutomationService {
                     entity,
                     id = %id,
                     "permanent misconfig: board/column not found during task creation"
+                );
+            }
+            Err(e) => {
+                return Err(e);
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn execute_add_comment(
+        &self,
+        task_svc: &TaskService,
+        rule: &crate::persistence::entities::automation_rule::automation_rules::Model,
+        workspace_id: Uuid,
+        integration_api_key_id: Uuid,
+        data: &serde_json::Value,
+    ) -> Result<(), DomainError> {
+        let params: AddCommentParams = match serde_json::from_value(rule.action_params.clone()) {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::warn!(rule_id = %rule.id, error = %e, "permanent misconfig: invalid action_params");
+                return Ok(());
+            }
+        };
+
+        // The comment repo trusts the given task id and only stamps the ctx
+        // workspace onto the row, so the target task must be verified to live in
+        // this workspace (and not be soft-deleted) first. A stale or foreign id
+        // is a permanent misconfig — logged and skipped — never a comment written
+        // onto another workspace's task or a 500 from the FK violation.
+        let task_row = task::Entity::find_by_id(params.task_id)
+            .filter(task::Column::WorkspaceId.eq(workspace_id))
+            .filter(task::Column::DeletedAt.is_null())
+            .one(&self.conn)
+            .await
+            .map_err(db_err)?;
+
+        let task_row = match task_row {
+            Some(row) => row,
+            None => {
+                tracing::warn!(
+                    rule_id = %rule.id,
+                    task_id = %params.task_id,
+                    "permanent misconfig: target task not found"
+                );
+                return Ok(());
+            }
+        };
+
+        let body = render_template(&params.body_template, data);
+
+        let ctx = WorkspaceCtx::new(
+            WorkspaceId(workspace_id),
+            Actor::ApiKey(ApiKeyId(integration_api_key_id)),
+        );
+
+        match task_svc.add_comment(&ctx, TaskId(task_row.id), body).await {
+            Ok(_) => {}
+            Err(DomainError::NotFound { entity, id }) => {
+                tracing::warn!(
+                    rule_id = %rule.id,
+                    entity,
+                    id = %id,
+                    "permanent misconfig: task not found during comment creation"
                 );
             }
             Err(e) => {
@@ -362,6 +453,12 @@ struct CreateTaskParams {
     column_id: Uuid,
     title_template: String,
     priority: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct AddCommentParams {
+    task_id: Uuid,
+    body_template: String,
 }
 
 fn db_err(e: sea_orm::DbErr) -> DomainError {

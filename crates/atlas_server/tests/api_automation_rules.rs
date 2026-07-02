@@ -275,7 +275,7 @@ async fn automation_rule_invalid_action_type_rejected() {
         .json(&serde_json::json!({
             "name": "Bad action",
             "trigger_event_type": "external.github.workflow_run",
-            "action_type": "add_comment",
+            "action_type": "delete_task",
             "action_params": {}
         }))
         .send()
@@ -286,6 +286,61 @@ async fn automation_rule_invalid_action_type_rejected() {
     assert!(
         status == 400 || status == 422,
         "invalid action type must be rejected, got {status}"
+    );
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
+// add_comment action: valid params accepted (201), missing params rejected (422)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn add_comment_rule_accepted_and_validated() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _user) =
+        support::login_user_with_workspace(&server, &db, "ar-add-comment").await;
+
+    let token = client.token().expect("token");
+    let base_url = server.base_url();
+    let ws_slug = &ws.slug;
+    let url = format!("{base_url}/v1/workspaces/{ws_slug}/automation-rules");
+
+    let ok = http()
+        .post(&url)
+        .bearer_auth(token)
+        .json(&serde_json::json!({
+            "name": "Comment on CI failure",
+            "trigger_event_type": "external.github.workflow_run",
+            "trigger_filter": {"conclusion": "failure"},
+            "action_type": "add_comment",
+            "action_params": {
+                "task_id": Uuid::now_v7(),
+                "body_template": "CI failed: {{workflow_name}}"
+            }
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(ok.status(), 201, "valid add_comment rule must return 201");
+
+    let missing = http()
+        .post(&url)
+        .bearer_auth(token)
+        .json(&serde_json::json!({
+            "name": "Comment missing fields",
+            "trigger_event_type": "external.github.workflow_run",
+            "action_type": "add_comment",
+            "action_params": { "task_id": Uuid::now_v7() }
+        }))
+        .send()
+        .await
+        .unwrap();
+    let status = missing.status().as_u16();
+    assert!(
+        status == 400 || status == 422,
+        "add_comment missing body_template must be rejected, got {status}"
     );
 
     db.teardown().await;

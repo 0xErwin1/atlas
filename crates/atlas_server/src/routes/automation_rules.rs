@@ -62,17 +62,32 @@ fn validate_create(req: &CreateAutomationRuleRequest) -> Result<(), ApiError> {
         });
     }
 
-    if req.action_type != "create_task" {
-        return Err(ApiError::InvalidInput {
+    match req.action_type.as_str() {
+        "create_task" => require_action_params(
+            &req.action_params,
+            "create_task",
+            &["board_id", "column_id", "title_template"],
+        ),
+        "add_comment" => {
+            require_action_params(&req.action_params, "add_comment", &["task_id", "body_template"])
+        }
+        other => Err(ApiError::InvalidInput {
             message: format!(
-                "unsupported action_type '{}'; only 'create_task' is supported in v1",
-                req.action_type
+                "unsupported action_type '{other}'; supported: 'create_task', 'add_comment'"
             ),
-        });
+        }),
     }
+}
 
-    let params = &req.action_params;
-    let missing = ["board_id", "column_id", "title_template"]
+/// Rejects an `action_params` object that is missing any of the fields the given
+/// action requires, so a misconfigured rule fails with a 422 at the request
+/// boundary instead of silently no-op'ing later during event processing.
+fn require_action_params(
+    params: &serde_json::Value,
+    action: &str,
+    required: &[&str],
+) -> Result<(), ApiError> {
+    let missing = required
         .iter()
         .filter(|k| params.get(*k).is_none())
         .cloned()
@@ -81,7 +96,7 @@ fn validate_create(req: &CreateAutomationRuleRequest) -> Result<(), ApiError> {
     if !missing.is_empty() {
         return Err(ApiError::InvalidInput {
             message: format!(
-                "action_params for 'create_task' is missing required fields: {}",
+                "action_params for '{action}' is missing required fields: {}",
                 missing.join(", ")
             ),
         });
