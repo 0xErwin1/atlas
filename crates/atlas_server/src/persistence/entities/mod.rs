@@ -1,5 +1,6 @@
 pub mod automation_rule;
 pub mod boards_tasks;
+pub mod comments;
 pub mod documents;
 pub mod events_outbox;
 pub mod identity;
