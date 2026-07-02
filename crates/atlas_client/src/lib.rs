@@ -18,8 +18,8 @@ use atlas_api::{
             CreateReferenceRequest, CreateSubtaskRequest, CreateTaskRequest, MoveTaskRequest,
             PromoteChecklistItemRequest, PromotionDto, ReferenceDto, TaskAttachmentDto,
             TaskBacklinkDto, TaskDto, TaskSummaryDto, UpdateBoardRequest,
-            UpdateChecklistItemRequest, UpdateColumnRequest, UpdateTaskRequest,
-            WorkspaceTaskQueryParams,
+            UpdateChecklistItemRequest, UpdateColumnRequest, UpdateCommentRequest,
+            UpdateTaskRequest, WorkspaceTaskQueryParams,
         },
         documents::{
             AttachmentDto, BacklinkDto, ConflictProblemDto, CopyDocumentRequest,
@@ -2258,6 +2258,25 @@ impl AtlasClient {
             .send()
             .await?;
         self.decode_response(response, "add_comment").await
+    }
+
+    /// `PATCH /v1/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}`
+    pub async fn update_comment(
+        &self,
+        ws: &str,
+        readable_id: &str,
+        comment_id: uuid::Uuid,
+        body: UpdateCommentRequest,
+    ) -> Result<CommentDto, ClientError> {
+        let response = self
+            .patch(&format!(
+                "/v1/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}"
+            ))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "update_comment").await
     }
 
     /// `DELETE /v1/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}`

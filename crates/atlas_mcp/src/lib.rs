@@ -6,7 +6,8 @@ use atlas_api::dtos::boards_tasks::{
     AddAssigneeRequest, CreateBoardRequest, CreateChecklistItemRequest, CreateColumnRequest,
     CreateCommentRequest, CreateReferenceRequest, CreateSubtaskRequest, CreateTaskRequest,
     MoveTaskRequest, PromoteChecklistItemRequest, TaskPropertiesDto, UpdateBoardRequest,
-    UpdateChecklistItemRequest, UpdateColumnRequest, UpdateTaskRequest, WorkspaceTaskQueryParams,
+    UpdateChecklistItemRequest, UpdateColumnRequest, UpdateCommentRequest, UpdateTaskRequest,
+    WorkspaceTaskQueryParams,
 };
 use atlas_api::dtos::documents::{
     CreateDocumentRequest, MoveDocumentRequest, UpdateContentRequest, UpdateDocumentRequest,
@@ -93,7 +94,8 @@ Tools by area (see each tool's own description for parameters):\n\
 `list_document_history`, `get_document_revision`, `list_attachments`, `list_task_attachments`.\n\
 - Security audit (owner/admin only): `get_workspace_audit`, `get_platform_audit`.\n\
 - Task writes: `create_task`, `update_task`, `move_task`, `delete_task`, \
-`add_task_assignee`, `remove_task_assignee`, `add_comment`, `delete_comment`.\n\
+`add_task_assignee`, `remove_task_assignee`, `add_comment`, `update_comment`, \
+`delete_comment`.\n\
 - Document and folder writes: `create_document`, `update_document_metadata`, \
 `update_document_content`, `delete_document`, `move_document`, `copy_document`, \
 `create_folder`, `rename_folder`, `move_folder`, `copy_folder`, `delete_folder`.\n\
@@ -1111,6 +1113,19 @@ pub struct AddCommentParams {
     /// Readable ID of the task to comment on.
     pub readable_id: String,
     /// Markdown comment body. Must not be blank; max 10 000 characters.
+    pub body: String,
+}
+
+/// Parameters accepted by the `update_comment` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct UpdateCommentParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Readable ID of the task that owns the comment.
+    pub readable_id: String,
+    /// UUID string of the comment to edit.
+    pub comment_id: String,
+    /// New markdown comment body. Must not be blank; max 10 000 characters.
     pub body: String,
 }
 
@@ -3029,6 +3044,33 @@ impl AtlasMcp {
     }
 
     #[tool(
+        description = "Edit a task comment's body (max 10 000 characters). Only the comment's \
+                       author may edit it; anyone else gets a permission error."
+    )]
+    async fn update_comment(
+        &self,
+        Parameters(params): Parameters<UpdateCommentParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
+        let comment_id: uuid::Uuid = params
+            .comment_id
+            .parse()
+            .map_err(|_| format!("comment_id '{}' is not a valid UUID", params.comment_id))?;
+
+        let body = UpdateCommentRequest { body: params.body };
+
+        let comment = client
+            .update_comment(&params.workspace, &params.readable_id, comment_id, body)
+            .await
+            .map_err(|e| enrich_client_error(e, "update_comment"))?;
+
+        let result = project_comment(comment);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
         description = "Delete a task comment. The comment's author or a workspace admin/owner \
                        may delete it; anyone else gets a permission error."
     )]
@@ -4554,6 +4596,15 @@ mod tests {
         assert_eq!(params.workspace, "ws");
         assert_eq!(params.readable_id, "ATL-1");
         assert_eq!(params.body, "Looks good to me");
+    }
+
+    #[test]
+    fn update_comment_params_deserializes() {
+        let json = r#"{"workspace":"ws","readable_id":"ATL-1","comment_id":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234","body":"Edited"}"#;
+        let params: UpdateCommentParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.readable_id, "ATL-1");
+        assert_eq!(params.comment_id, "018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234");
+        assert_eq!(params.body, "Edited");
     }
 
     #[test]

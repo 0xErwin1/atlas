@@ -905,6 +905,36 @@ impl TaskService {
         txn.commit().await.map_err(db_err)?;
         Ok(())
     }
+
+    /// Edits the body of a task comment.
+    ///
+    /// Only the comment's author may edit it: unlike delete, moderation does not
+    /// extend to rewriting another person's words, so workspace admins/owners get
+    /// `Forbidden` here even though they may delete. Load-then-check-then-update
+    /// runs in one transaction, mirroring `remove_comment`.
+    pub async fn update_comment(
+        &self,
+        ctx: &WorkspaceCtx,
+        task_id: TaskId,
+        comment_id: CommentId,
+        body: String,
+    ) -> Result<Comment, DomainError> {
+        let txn = self.conn.begin().await.map_err(db_err)?;
+        let owner = CommentOwner::Task(task_id);
+
+        let comment = PgCommentRepo::get_for_owner_in(&txn, ctx, owner, comment_id).await?;
+
+        if comment.created_by != ctx.actor {
+            return Err(DomainError::Forbidden {
+                message: "only the comment's author may edit it".into(),
+            });
+        }
+
+        let updated = PgCommentRepo::update_body_in(&txn, ctx, owner, comment_id, body).await?;
+
+        txn.commit().await.map_err(db_err)?;
+        Ok(updated)
+    }
 }
 
 fn db_err(e: sea_orm::DbErr) -> DomainError {

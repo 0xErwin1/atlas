@@ -15,7 +15,8 @@ use atlas_api::{
         CreateChecklistItemRequest, CreateCommentRequest, CreateReferenceRequest,
         CreateSubtaskRequest, CreateTaskRequest, MoveTaskRequest, PromoteChecklistItemRequest,
         PromotionDto, ReferenceDto, TaskAttachmentDto, TaskBacklinkDto, TaskDto, TaskSummaryDto,
-        UpdateChecklistItemRequest, UpdateTaskRequest, WorkspaceTaskQueryParams,
+        UpdateChecklistItemRequest, UpdateCommentRequest, UpdateTaskRequest,
+        WorkspaceTaskQueryParams,
     },
     dtos::documents::ActorDto,
     pagination::{Cursor, Page, SearchCursor, SortKey},
@@ -499,37 +500,47 @@ async fn comment_to_dto(
         body: c.body,
         author: resolve_actor_dto(state, ctx, &c.created_by).await,
         created_at: c.created_at,
+        updated_at: c.updated_at,
     }
 }
 
 /// Batch-resolves the distinct authors of a page of comments and builds their
 /// DTOs in a fixed number of queries (the referenced users, and — only when a
-/// comment was posted by an api key — the workspace's granted api keys), mirroring
+/// comment was posted by an api key — the referenced api keys), mirroring
 /// the activity feed's actor batch-load so a comment page never issues one query
 /// per row.
+///
+/// Api-key authors are resolved by id (unscoped), matching the create path's
+/// `resolve_actor_dto`/`get_by_id` semantics. A workspace-grant/revocation filter
+/// would drop the name of a global key (admitted via `is_global`, no grant row) or
+/// a later-revoked key, so those authors would render as the generic fallback and
+/// diverge from the create response.
 ///
 /// Authors carry the attribution actor shape (id + display name, no
 /// `account_status`), matching `comment_to_dto`'s per-comment resolution.
 async fn enrich_comment_entries(
     state: &AppState,
-    ctx: &WorkspaceCtx,
+    _ctx: &WorkspaceCtx,
     task_id: TaskId,
     comments: Vec<Comment>,
 ) -> Result<Vec<CommentDto>, ApiError> {
     use std::collections::HashMap;
 
     let mut user_ids: Vec<UserId> = Vec::new();
-    let mut needs_keys = false;
+    let mut key_ids: Vec<ApiKeyId> = Vec::new();
 
     for c in &comments {
         match &c.created_by {
             Actor::User(uid) => user_ids.push(*uid),
-            Actor::ApiKey(_) => needs_keys = true,
+            Actor::ApiKey(kid) => key_ids.push(*kid),
         }
     }
 
     user_ids.sort_by_key(|u| u.0);
     user_ids.dedup_by_key(|u| u.0);
+
+    key_ids.sort_by_key(|k| k.0);
+    key_ids.dedup_by_key(|k| k.0);
 
     let user_names: HashMap<uuid::Uuid, String> = PgUserRepo {
         conn: (*state.db).clone(),
@@ -541,18 +552,18 @@ async fn enrich_comment_entries(
     .map(|u| (u.id.0, u.display_name))
     .collect();
 
-    let key_info: HashMap<uuid::Uuid, (String, String)> = if needs_keys {
+    let key_info: HashMap<uuid::Uuid, (String, String)> = if key_ids.is_empty() {
+        HashMap::new()
+    } else {
         PgApiKeyRepo {
             conn: (*state.db).clone(),
         }
-        .list_granted_in_workspace(ctx.workspace_id)
+        .list_by_ids(&key_ids)
         .await
         .map_err(ApiError::Domain)?
         .into_iter()
         .map(|k| (k.id.0, (k.name, k.type_.as_str().to_string())))
         .collect()
-    } else {
-        HashMap::new()
     };
 
     let dtos = comments
@@ -584,6 +595,7 @@ async fn enrich_comment_entries(
                 body: c.body,
                 author,
                 created_at: c.created_at,
+                updated_at: c.updated_at,
             }
         })
         .collect();
@@ -2570,6 +2582,52 @@ pub(crate) async fn create_comment(
 
     let dto = comment_to_dto(&state, &ctx, task_id, comment).await;
     Ok((StatusCode::CREATED, Json(dto)))
+}
+
+// ---------------------------------------------------------------------------
+// PATCH /v1/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}
+// ---------------------------------------------------------------------------
+
+#[utoipa::path(
+    patch,
+    path = "/v1/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}",
+    tag = "tasks",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+        ("readable_id" = String, Path, description = "Task readable ID"),
+        ("comment_id" = String, Path, description = "Comment UUID"),
+    ),
+    request_body = UpdateCommentRequest,
+    responses(
+        (status = 200, description = "Comment updated", body = CommentDto),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Only the comment's author may edit it"),
+        (status = 404, description = "Task or comment not found"),
+        (status = 422, description = "Comment body is blank or exceeds the maximum length"),
+    )
+)]
+pub(crate) async fn update_comment(
+    auth: Authorized<TaskRes, EditorMin>,
+    Path(p): Path<CommentPath>,
+    State(state): State<AppState>,
+    Json(body): Json<UpdateCommentRequest>,
+) -> Result<Json<CommentDto>, ApiError> {
+    let actor = principal_to_actor(&auth.principal);
+    let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
+
+    validate_comment_body(&body.body)?;
+
+    let task_id = auth.resource.0.id;
+
+    let comment = state
+        .task_service()
+        .update_comment(&ctx, task_id, CommentId(p.comment_id), body.body)
+        .await
+        .map_err(ApiError::Domain)?;
+
+    let dto = comment_to_dto(&state, &ctx, task_id, comment).await;
+    Ok(Json(dto))
 }
 
 // ---------------------------------------------------------------------------

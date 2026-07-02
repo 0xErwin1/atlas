@@ -153,6 +153,12 @@ pub trait ApiKeyRepo: Send + Sync {
     async fn list_for_user(&self, user_id: UserId) -> Result<Vec<ApiKey>, DomainError>;
     /// Looks up a single key by its id, regardless of workspace.
     async fn get_by_id(&self, id: ApiKeyId) -> Result<Option<ApiKey>, DomainError>;
+    /// Batch lookup by id, regardless of workspace or revocation state.
+    ///
+    /// Mirrors `get_by_id`'s unscoped semantics for a set of ids, so attribution
+    /// paths can resolve the names of global or later-revoked keys without the
+    /// grant/revocation filter applied by `list_granted_in_workspace`.
+    async fn list_by_ids(&self, ids: &[ApiKeyId]) -> Result<Vec<ApiKey>, DomainError>;
     /// Lists all non-revoked keys that hold at least one grant in the given workspace.
     async fn list_granted_in_workspace(
         &self,

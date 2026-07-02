@@ -62,6 +62,27 @@ impl PgCommentRepo {
         find_scoped(conn, ctx, owner, id).await.map(comment_from)
     }
 
+    /// Updates a comment's body and `updated_at` inside an existing transaction,
+    /// returning the updated row.
+    ///
+    /// `owner` scopes the lookup so a comment id from a different task/document
+    /// resolves to `NotFound` — this is the IDOR guard for cross-owner ids.
+    pub async fn update_body_in(
+        conn: &impl ConnectionTrait,
+        ctx: &WorkspaceCtx,
+        owner: CommentOwner,
+        id: CommentId,
+        new_body: String,
+    ) -> Result<Comment, DomainError> {
+        let row = find_scoped(conn, ctx, owner, id).await?;
+
+        let mut active = row.into_active_model();
+        active.body = Set(new_body);
+        active.updated_at = Set(Utc::now());
+
+        active.update(conn).await.map(comment_from).map_err(db_err)
+    }
+
     /// Soft-deletes a comment inside an existing transaction.
     ///
     /// `owner` scopes the lookup so a comment id from a different task/document

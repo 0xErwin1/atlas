@@ -907,14 +907,15 @@ pub(crate) fn project_task_attachment(att: TaskAttachmentDto) -> Value {
 /// Projects task comment metadata to the compact MCP shape.
 ///
 /// `task_id` is dropped — always implicit from the tool's `readable_id` param.
-/// `updated_at` is dropped — comments are immutable in v1, so it always equals
-/// `created_at` and carries no information the agent needs.
+/// `updated_at` is surfaced so an agent can tell an edited comment from an
+/// untouched one (it advances past `created_at` on edit).
 pub(crate) fn project_comment(c: CommentDto) -> Value {
     json!({
         "id": c.id,
         "body": c.body,
         "author": project_actor(c.author),
         "created_at": c.created_at,
+        "updated_at": c.updated_at,
     })
 }
 

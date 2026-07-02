@@ -268,12 +268,20 @@ pub struct CommentDto {
     pub body: String,
     pub author: ActorDto,
     pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
 /// Request body for `POST .../comments`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct CreateCommentRequest {
+    pub body: String,
+}
+
+/// Request body for `PATCH .../comments/{comment_id}`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct UpdateCommentRequest {
     pub body: String,
 }
 

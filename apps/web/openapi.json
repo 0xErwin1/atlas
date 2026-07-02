@@ -8104,6 +8104,80 @@
             "bearer_auth": []
           }
         ]
+      },
+      "patch": {
+        "tags": [
+          "tasks"
+        ],
+        "operationId": "update_comment",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "readable_id",
+            "in": "path",
+            "description": "Task readable ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "comment_id",
+            "in": "path",
+            "description": "Comment UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCommentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Comment updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Only the comment's author may edit it"
+          },
+          "404": {
+            "description": "Task or comment not found"
+          },
+          "422": {
+            "description": "Comment body is blank or exceeds the maximum length"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
       }
     },
     "/v1/workspaces/{ws}/tasks/{readable_id}/move": {
@@ -9636,7 +9710,8 @@
           "task_id",
           "body",
           "author",
-          "created_at"
+          "created_at",
+          "updated_at"
         ],
         "properties": {
           "author": {
@@ -9656,6 +9731,10 @@
           "task_id": {
             "type": "string",
             "format": "uuid"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
@@ -11243,7 +11322,8 @@
                 "task_id",
                 "body",
                 "author",
-                "created_at"
+                "created_at",
+                "updated_at"
               ],
               "properties": {
                 "author": {
@@ -11263,6 +11343,10 @@
                 "task_id": {
                   "type": "string",
                   "format": "uuid"
+                },
+                "updated_at": {
+                  "type": "string",
+                  "format": "date-time"
                 }
               }
             }
@@ -12890,6 +12974,18 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "UpdateCommentRequest": {
+        "type": "object",
+        "description": "Request body for `PATCH .../comments/{comment_id}`.",
+        "required": [
+          "body"
+        ],
+        "properties": {
+          "body": {
+            "type": "string"
           }
         }
       },

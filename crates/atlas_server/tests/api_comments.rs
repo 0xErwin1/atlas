@@ -11,11 +11,13 @@ use atlas_api::dtos::{
     CreateProjectRequest, CreateUserApiKeyRequest, InitialGrantRequest,
     boards_tasks::{
         CreateBoardRequest, CreateColumnRequest, CreateCommentRequest, CreateTaskRequest,
+        UpdateCommentRequest,
     },
 };
 use atlas_client::ClientError;
 use atlas_domain::{Actor, WorkspaceCtx, entities::identity::MemberRole};
 use atlas_server::persistence::repos::{MembershipRepo, NewUser, UserRepo};
+use sea_orm::ConnectionTrait;
 
 fn project_req(slug: &str, prefix: &str) -> CreateProjectRequest {
     CreateProjectRequest {
@@ -735,6 +737,343 @@ async fn admin_can_delete_another_members_comment() {
     assert!(
         page.items.is_empty(),
         "admin-deleted comment must not appear in the list"
+    );
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
+// Author attribution on list: global / ungranted api-key author
+// ---------------------------------------------------------------------------
+
+/// A global api key (admitted via `is_global`, holding no workspace grant) authors
+/// a comment. The batch list path must resolve its name by id — unscoped, the same
+/// way the create path does — so its attribution is not lost just because it has no
+/// active grant row in the workspace.
+#[tokio::test]
+async fn list_comments_preserves_global_api_key_author_name() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _user) =
+        support::login_user_with_workspace(&server, &db, "comment-global-key").await;
+
+    let readable_id = seed_task(&client, &ws.slug, "comment-global-key-proj", "GK").await;
+
+    let api_key = client
+        .create_user_api_key(CreateUserApiKeyRequest {
+            name: "global-bot".to_string(),
+            r#type: None,
+            expires_at: None,
+            initial_grant: Some(InitialGrantRequest {
+                workspace: ws.slug.clone(),
+                role: "editor".to_string(),
+            }),
+        })
+        .await
+        .expect("create api key");
+
+    let mut api_key_client = atlas_client::AtlasClient::new(server.base_url().to_string());
+    api_key_client.set_token(api_key.secret.clone());
+
+    api_key_client
+        .add_comment(
+            &ws.slug,
+            &readable_id,
+            CreateCommentRequest {
+                body: "Posted while granted".to_string(),
+            },
+        )
+        .await
+        .expect("create comment as api key");
+
+    // Promote the key to global and strip its workspace grant, so the old
+    // grant-scoped author loader (`list_granted_in_workspace`) would no longer
+    // return it, while the create path (`get_by_id`) still would.
+    db.conn()
+        .execute_unprepared(&format!(
+            "UPDATE api_keys SET is_global = true WHERE id = '{}'",
+            api_key.id
+        ))
+        .await
+        .expect("promote api key to global");
+    db.conn()
+        .execute_unprepared(&format!(
+            "DELETE FROM permission_grants WHERE api_key_id = '{}'",
+            api_key.id
+        ))
+        .await
+        .expect("strip api key grant");
+
+    let page = client
+        .list_comments(&ws.slug, &readable_id, None, None)
+        .await
+        .expect("list comments");
+
+    assert_eq!(page.items.len(), 1);
+    let author = &page.items[0].author;
+    assert_eq!(author.r#type, "api_key");
+    assert_eq!(author.id, api_key.id);
+    assert_eq!(
+        author.display_name.as_deref(),
+        Some("global-bot"),
+        "a global/ungranted api-key author's name must be preserved on list"
+    );
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
+// Edit: PATCH .../comments/{comment_id}
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn author_edits_own_comment() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (owner, ws, _) =
+        support::login_user_with_workspace(&server, &db, "comment-edit-owner").await;
+
+    let readable_id = seed_task(&owner, &ws.slug, "comment-edit-proj", "CE1").await;
+
+    let created = owner
+        .add_comment(
+            &ws.slug,
+            &readable_id,
+            CreateCommentRequest {
+                body: "original".to_string(),
+            },
+        )
+        .await
+        .expect("create comment");
+
+    let updated = owner
+        .update_comment(
+            &ws.slug,
+            &readable_id,
+            created.id,
+            UpdateCommentRequest {
+                body: "edited body".to_string(),
+            },
+        )
+        .await
+        .expect("author must be able to edit their own comment");
+
+    assert_eq!(updated.id, created.id);
+    assert_eq!(updated.body, "edited body");
+    assert_eq!(updated.created_at, created.created_at);
+    assert!(
+        updated.updated_at >= created.updated_at,
+        "updated_at must advance on edit"
+    );
+
+    let page = owner
+        .list_comments(&ws.slug, &readable_id, None, None)
+        .await
+        .expect("list comments");
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(page.items[0].body, "edited body");
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn admin_cannot_edit_another_members_comment() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (owner, ws, _) =
+        support::login_user_with_workspace(&server, &db, "comment-edit-authz-owner").await;
+
+    let readable_id = seed_task(&owner, &ws.slug, "comment-edit-authz-proj", "CE2").await;
+
+    let (member, _) = add_member(
+        &db,
+        &server,
+        ws.id,
+        "comment-edit-author",
+        MemberRole::Member,
+    )
+    .await;
+
+    let comment = member
+        .add_comment(
+            &ws.slug,
+            &readable_id,
+            CreateCommentRequest {
+                body: "member's words".to_string(),
+            },
+        )
+        .await
+        .expect("create comment");
+
+    let (admin, _) = add_member(&db, &server, ws.id, "comment-edit-admin", MemberRole::Admin).await;
+
+    let admin_result = admin
+        .update_comment(
+            &ws.slug,
+            &readable_id,
+            comment.id,
+            UpdateCommentRequest {
+                body: "rewritten by admin".to_string(),
+            },
+        )
+        .await;
+    assert!(
+        matches!(admin_result, Err(ClientError::Api(ref p)) if p.status == 403),
+        "an admin/owner must not be able to edit another member's comment, got: {admin_result:?}"
+    );
+
+    let owner_result = owner
+        .update_comment(
+            &ws.slug,
+            &readable_id,
+            comment.id,
+            UpdateCommentRequest {
+                body: "rewritten by owner".to_string(),
+            },
+        )
+        .await;
+    assert!(
+        matches!(owner_result, Err(ClientError::Api(ref p)) if p.status == 403),
+        "the workspace owner must not be able to edit another member's comment, got: {owner_result:?}"
+    );
+
+    let page = owner
+        .list_comments(&ws.slug, &readable_id, None, None)
+        .await
+        .expect("list comments");
+    assert_eq!(
+        page.items[0].body, "member's words",
+        "body must be untouched"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn non_member_cannot_edit_comment_404() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (owner, ws_a, _) =
+        support::login_user_with_workspace(&server, &db, "comment-edit-xws-a").await;
+    let (other, _ws_b, _) =
+        support::login_user_with_workspace(&server, &db, "comment-edit-xws-b").await;
+
+    let readable_id = seed_task(&owner, &ws_a.slug, "comment-edit-xws-proj", "CE3").await;
+    let comment = owner
+        .add_comment(
+            &ws_a.slug,
+            &readable_id,
+            CreateCommentRequest {
+                body: "workspace A comment".to_string(),
+            },
+        )
+        .await
+        .expect("create comment");
+
+    let result = other
+        .update_comment(
+            &ws_a.slug,
+            &readable_id,
+            comment.id,
+            UpdateCommentRequest {
+                body: "trespassing edit".to_string(),
+            },
+        )
+        .await;
+    assert!(
+        matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
+        "a non-member editing another workspace's comment must get 404, got: {result:?}"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn edit_comment_rejects_invalid_body() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (owner, ws, _) =
+        support::login_user_with_workspace(&server, &db, "comment-edit-invalid").await;
+
+    let readable_id = seed_task(&owner, &ws.slug, "comment-edit-invalid-proj", "CE4").await;
+
+    let comment = owner
+        .add_comment(
+            &ws.slug,
+            &readable_id,
+            CreateCommentRequest {
+                body: "original".to_string(),
+            },
+        )
+        .await
+        .expect("create comment");
+
+    for blank in ["", "   ", "\n\t "] {
+        let result = owner
+            .update_comment(
+                &ws.slug,
+                &readable_id,
+                comment.id,
+                UpdateCommentRequest {
+                    body: blank.to_string(),
+                },
+            )
+            .await;
+        assert!(
+            matches!(result, Err(ClientError::Api(ref p)) if p.status == 422),
+            "blank edit body {blank:?} must be rejected with 422, got: {result:?}"
+        );
+    }
+
+    let oversize = owner
+        .update_comment(
+            &ws.slug,
+            &readable_id,
+            comment.id,
+            UpdateCommentRequest {
+                body: "a".repeat(10_001),
+            },
+        )
+        .await;
+    assert!(
+        matches!(oversize, Err(ClientError::Api(ref p)) if p.status == 422),
+        "edit body over 10 000 characters must be rejected with 422, got: {oversize:?}"
+    );
+
+    let page = owner
+        .list_comments(&ws.slug, &readable_id, None, None)
+        .await
+        .expect("list comments");
+    assert_eq!(
+        page.items[0].body, "original",
+        "body must be unchanged after failed edits"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn edit_missing_comment_returns_404() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (owner, ws, _) =
+        support::login_user_with_workspace(&server, &db, "comment-edit-missing").await;
+
+    let readable_id = seed_task(&owner, &ws.slug, "comment-edit-missing-proj", "CE5").await;
+
+    let result = owner
+        .update_comment(
+            &ws.slug,
+            &readable_id,
+            uuid::Uuid::new_v4(),
+            UpdateCommentRequest {
+                body: "edit into the void".to_string(),
+            },
+        )
+        .await;
+    assert!(
+        matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
+        "editing a missing comment must return 404, got: {result:?}"
     );
 
     db.teardown().await;

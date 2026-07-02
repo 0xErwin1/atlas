@@ -76,6 +76,7 @@ const EXPECTED_SCHEMAS: &[&str] = &[
     "ActivityEntryDto",
     "CommentDto",
     "CreateCommentRequest",
+    "UpdateCommentRequest",
     "Page_CommentDto",
     "AuditEntryDto",
     "SearchHitDto",

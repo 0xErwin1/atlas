@@ -356,7 +356,8 @@ pub fn app(state: AppState) -> Router {
         )
         .route(
             "/v1/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}",
-            axum::routing::delete(routes::tasks::delete_comment),
+            axum::routing::patch(routes::tasks::update_comment)
+                .delete(routes::tasks::delete_comment),
         )
         .route(
             "/v1/workspaces/{ws}/activity",

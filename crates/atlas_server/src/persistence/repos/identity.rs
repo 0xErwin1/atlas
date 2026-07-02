@@ -902,6 +902,21 @@ impl ApiKeyRepo for PgApiKeyRepo {
             .map_err(db_err)
     }
 
+    async fn list_by_ids(&self, ids: &[ApiKeyId]) -> Result<Vec<ApiKey>, DomainError> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let raw: Vec<uuid::Uuid> = ids.iter().map(|id| id.0).collect();
+
+        api_key::Entity::find()
+            .filter(api_key::Column::Id.is_in(raw))
+            .all(&self.conn)
+            .await
+            .map(|rows| rows.into_iter().map(api_key_from).collect())
+            .map_err(db_err)
+    }
+
     async fn list_granted_in_workspace(
         &self,
         workspace_id: WorkspaceId,
