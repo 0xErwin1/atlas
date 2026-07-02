@@ -5,12 +5,13 @@ use atlas_domain::{
         NewTaskChecklistItem, NewTaskReference, PositionBetween, ReferenceKind, Task, TaskActivity,
         TaskAssignee, TaskChecklistItem, TaskChecklistItemPatch, TaskPatch, TaskReference,
     },
+    entities::comments::{Comment, CommentOwner, NewComment},
     entities::events::{
         DomainEvent, TaskCreatedPayload, TaskDeletedPayload, TaskMovedPayload, TaskUpdatedPayload,
     },
     ids::{
-        BoardId, ChecklistItemId, ColumnId, DocumentId, ProjectId, TaskActivityId, TaskId,
-        TaskReferenceId,
+        BoardId, ChecklistItemId, ColumnId, CommentId, DocumentId, ProjectId, TaskActivityId,
+        TaskId, TaskReferenceId,
     },
 };
 use chrono::Utc;
@@ -27,8 +28,8 @@ use crate::persistence::entities::boards_tasks::{
     board, board_column, task, task_checklist_item, task_checklist_item_from,
 };
 use crate::persistence::repos::{
-    PgDocumentLinkRepo, PgOutboxRepo, PgTaskActivityRepo, PgTaskAssigneeRepo, PgTaskChecklistRepo,
-    PgTaskReferenceRepo, PgTaskRepo, TaskActivityRepo as _,
+    CommentRepo as _, PgCommentRepo, PgDocumentLinkRepo, PgOutboxRepo, PgTaskActivityRepo,
+    PgTaskAssigneeRepo, PgTaskChecklistRepo, PgTaskReferenceRepo, PgTaskRepo, TaskActivityRepo as _,
 };
 
 /// Result of a checklist item promotion: the three records committed atomically.
@@ -831,6 +832,77 @@ impl TaskService {
     ) -> Result<Vec<TaskActivity>, DomainError> {
         let repo = PgTaskActivityRepo::new(self.conn.clone());
         repo.list_for_task(ctx, task_id, after_id, limit).await
+    }
+
+    /// Adds a markdown comment to a task.
+    ///
+    /// Comments are an append-only conversation surface, not part of the task's
+    /// structured activity log: no `TaskActivity` entry and no outbox event are
+    /// recorded. The transaction is kept anyway for the coordinator convention
+    /// and to leave room for future additive activity.
+    pub async fn add_comment(
+        &self,
+        ctx: &WorkspaceCtx,
+        task_id: TaskId,
+        body: String,
+    ) -> Result<Comment, DomainError> {
+        let txn = self.conn.begin().await.map_err(db_err)?;
+
+        let comment = PgCommentRepo::create_in(
+            &txn,
+            ctx,
+            NewComment {
+                owner: CommentOwner::Task(task_id),
+                body,
+            },
+        )
+        .await?;
+
+        txn.commit().await.map_err(db_err)?;
+        Ok(comment)
+    }
+
+    /// Returns paginated comments for a task, oldest-first.
+    pub async fn list_comments(
+        &self,
+        ctx: &WorkspaceCtx,
+        task_id: TaskId,
+        after_id: Option<CommentId>,
+        limit: u64,
+    ) -> Result<Vec<Comment>, DomainError> {
+        let repo = PgCommentRepo::new(self.conn.clone());
+        repo.list_for_owner(ctx, CommentOwner::Task(task_id), after_id, limit)
+            .await
+    }
+
+    /// Removes a comment from a task.
+    ///
+    /// The comment's author may always delete their own comment. `can_moderate`
+    /// (workspace admin/owner, resolved by the caller from `Authorized::membership`)
+    /// allows deleting anyone's comment. Everyone else gets `Forbidden`.
+    pub async fn remove_comment(
+        &self,
+        ctx: &WorkspaceCtx,
+        task_id: TaskId,
+        comment_id: CommentId,
+        can_moderate: bool,
+    ) -> Result<(), DomainError> {
+        let txn = self.conn.begin().await.map_err(db_err)?;
+        let owner = CommentOwner::Task(task_id);
+
+        let comment = PgCommentRepo::get_for_owner_in(&txn, ctx, owner, comment_id).await?;
+
+        if comment.created_by != ctx.actor && !can_moderate {
+            return Err(DomainError::Forbidden {
+                message: "only the comment's author or a workspace admin/owner may delete it"
+                    .into(),
+            });
+        }
+
+        PgCommentRepo::soft_delete_in(&txn, ctx, owner, comment_id).await?;
+
+        txn.commit().await.map_err(db_err)?;
+        Ok(())
     }
 }
 
