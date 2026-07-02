@@ -256,6 +256,29 @@ pub struct ActivityEntryDto {
 }
 
 // ---------------------------------------------------------------------------
+// Comment DTOs
+// ---------------------------------------------------------------------------
+
+/// A single markdown comment on a task.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct CommentDto {
+    pub id: uuid::Uuid,
+    pub task_id: uuid::Uuid,
+    pub body: String,
+    pub author: ActorDto,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// Request body for `POST .../comments`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct CreateCommentRequest {
+    pub body: String,
+}
+
+// ---------------------------------------------------------------------------
 // Request bodies
 // ---------------------------------------------------------------------------
 

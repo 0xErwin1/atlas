@@ -13,10 +13,11 @@ use atlas_api::{
         UserMembershipDto, WorkspaceDto,
         boards_tasks::{
             ActivityEntryDto, AddAssigneeRequest, AssigneeDto, BoardDto, BoardSummaryDto,
-            ChecklistItemDto, ColumnDto, CreateBoardRequest, CreateChecklistItemRequest,
-            CreateColumnRequest, CreateReferenceRequest, CreateSubtaskRequest, CreateTaskRequest,
-            MoveTaskRequest, PromoteChecklistItemRequest, PromotionDto, ReferenceDto,
-            TaskAttachmentDto, TaskBacklinkDto, TaskDto, TaskSummaryDto, UpdateBoardRequest,
+            ChecklistItemDto, ColumnDto, CommentDto, CreateBoardRequest,
+            CreateChecklistItemRequest, CreateColumnRequest, CreateCommentRequest,
+            CreateReferenceRequest, CreateSubtaskRequest, CreateTaskRequest, MoveTaskRequest,
+            PromoteChecklistItemRequest, PromotionDto, ReferenceDto, TaskAttachmentDto,
+            TaskBacklinkDto, TaskDto, TaskSummaryDto, UpdateBoardRequest,
             UpdateChecklistItemRequest, UpdateColumnRequest, UpdateTaskRequest,
             WorkspaceTaskQueryParams,
         },
@@ -2224,6 +2225,63 @@ impl AtlasClient {
             .send()
             .await?;
         self.decode_response(response, "list_activity").await
+    }
+
+    /// `GET /v1/workspaces/{ws}/tasks/{readable_id}/comments`
+    pub async fn list_comments(
+        &self,
+        ws: &str,
+        readable_id: &str,
+        cursor: Option<&str>,
+        limit: Option<u32>,
+    ) -> Result<Page<CommentDto>, ClientError> {
+        let path = build_paginated_path(
+            &format!("/v1/workspaces/{ws}/tasks/{readable_id}/comments"),
+            cursor,
+            limit,
+        );
+        let response = self.get(&path).send().await?;
+        self.decode_response(response, "list_comments").await
+    }
+
+    /// `POST /v1/workspaces/{ws}/tasks/{readable_id}/comments`
+    pub async fn add_comment(
+        &self,
+        ws: &str,
+        readable_id: &str,
+        body: CreateCommentRequest,
+    ) -> Result<CommentDto, ClientError> {
+        let response = self
+            .post(&format!("/v1/workspaces/{ws}/tasks/{readable_id}/comments"))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "add_comment").await
+    }
+
+    /// `DELETE /v1/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}`
+    pub async fn delete_comment(
+        &self,
+        ws: &str,
+        readable_id: &str,
+        comment_id: uuid::Uuid,
+    ) -> Result<(), ClientError> {
+        let response = self
+            .delete(&format!(
+                "/v1/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}"
+            ))
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        if response.status().is_success() {
+            return Ok(());
+        }
+        let problem: ProblemDetails = response
+            .json()
+            .await
+            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
+        Err(ClientError::Api(problem))
     }
 
     /// `GET /v1/workspaces/{ws}/activity`
