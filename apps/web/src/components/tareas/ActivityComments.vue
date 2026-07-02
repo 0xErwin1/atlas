@@ -8,9 +8,10 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import ContextMenu, { type MenuItem } from '@/components/ui/ContextMenu.vue';
 import Icon from '@/components/ui/Icon.vue';
 import { useContextMenu } from '@/composables/useContextMenu';
+import { activityVerb } from '@/lib/activityVerb';
 import { formatDate } from '@/lib/format';
 import { useAuthStore } from '@/stores/auth';
-import { type CommentDto, useTaskDetailStore } from '@/stores/taskDetail';
+import { type ActivityEntryDto, type CommentDto, useTaskDetailStore } from '@/stores/taskDetail';
 import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 
@@ -40,6 +41,28 @@ const savingEdit = ref(false);
 const canSubmit = computed(() => draft.value.trim().length > 0);
 const canSaveEdit = computed(() => editDraft.value.trim().length > 0);
 
+// One chronological feed: system activity entries and user comments interleaved
+// by time (oldest first), with the composer pinned below. ISO timestamps sort
+// lexicographically, so a string compare is chronological.
+type FeedItem =
+  | { kind: 'comment'; key: string; at: string; comment: CommentDto }
+  | { kind: 'activity'; key: string; at: string; entry: ActivityEntryDto };
+
+const feed = computed<FeedItem[]>(() => {
+  const items: FeedItem[] = [
+    ...detail.comments.map(
+      (comment): FeedItem => ({ kind: 'comment', key: `c:${comment.id}`, at: comment.created_at, comment }),
+    ),
+    ...detail.activity.map(
+      (entry): FeedItem => ({ kind: 'activity', key: `a:${entry.id}`, at: entry.created_at, entry }),
+    ),
+  ];
+
+  return items.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+});
+
+const isEmpty = computed(() => detail.comments.length === 0 && detail.activity.length === 0);
+
 // The server authorizes deletion (author OR workspace admin/owner); this only
 // gates whether the affordance is shown. A break-glass global admin with no
 // membership row here sees no button and would get a 403, which is acceptable.
@@ -53,8 +76,8 @@ function isAgent(actorType: string): boolean {
   return actorType === 'api_key';
 }
 
-function authorName(comment: CommentDto): string {
-  return comment.author.display_name ?? (isAgent(comment.author.type) ? 'Agent' : 'User');
+function actorName(displayName: string | null | undefined, actorType: string): string {
+  return displayName ?? (isAgent(actorType) ? 'Agent' : 'User');
 }
 
 // Editing is author-only: the server forbids admins from editing others' comments.
@@ -169,105 +192,137 @@ async function loadMore(): Promise<void> {
 </script>
 
 <template>
-  <section>
+  <section class="atl-ac">
     <EmptyState
-      v-if="detail.comments.length === 0"
+      v-if="isEmpty"
       compact
       icon="message-square"
-      title="No comments yet"
-      hint="Start the conversation — comments support markdown."
+      title="No activity yet"
+      hint="Activity and comments show up here — comments support markdown."
     />
 
-    <div v-else class="flex flex-col" style="gap: 14px;">
-      <article
-        v-for="comment in detail.comments"
-        :key="comment.id"
-        :data-comment-id="comment.id"
-        class="group"
-      >
-        <div class="flex items-center" style="gap: 8px;">
-          <Avatar :name="authorName(comment)" :agent="isAgent(comment.author.type)" :size="22" />
-          <span
-            style="font-family: var(--font-mono); font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--c-foreground);"
-          >
-            {{ authorName(comment) }}
-          </span>
-          <AgentBadge v-if="isAgent(comment.author.type)" />
-          <span style="font-size: var(--fs-xs); color: var(--c-muted);">
-            {{ formatDate(comment.created_at) }}
-          </span>
-          <span v-if="isEdited(comment)" style="font-size: var(--fs-xs); color: var(--c-muted);">
-            (edited)
-          </span>
-          <span style="flex: 1;" />
-          <button
-            v-if="hasActions(comment)"
-            type="button"
-            aria-label="Comment actions"
-            title="Comment actions"
-            class="shrink-0 cursor-pointer opacity-0 group-hover:opacity-100 flex items-center justify-center"
-            style="width: 22px; height: 22px; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-secondary); color: var(--c-muted);"
-            @click="openMenu(comment, $event)"
-          >
-            <Icon name="ellipsis" :size="13" />
-          </button>
+    <div v-else class="atl-ac-feed flex flex-col" style="gap: 12px;">
+      <template v-for="item in feed" :key="item.key">
+        <div
+          v-if="item.kind === 'activity'"
+          class="flex items-start"
+          style="gap: 8px;"
+          :data-activity-id="item.entry.id"
+        >
+          <Avatar
+            :name="actorName(item.entry.actor.display_name, item.entry.actor.type)"
+            :agent="isAgent(item.entry.actor.type)"
+            :size="20"
+          />
+          <div class="flex flex-col" style="gap: 2px; min-width: 0;">
+            <div class="flex items-center" style="gap: 6px; flex-wrap: wrap;">
+              <span
+                style="font-family: var(--font-mono); font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--c-foreground);"
+              >
+                {{ actorName(item.entry.actor.display_name, item.entry.actor.type) }}
+              </span>
+              <AgentBadge v-if="isAgent(item.entry.actor.type)" />
+              <span style="font-size: var(--fs-sm); color: var(--c-muted);">{{ activityVerb(item.entry.kind) }}</span>
+            </div>
+            <span style="font-size: var(--fs-xs); color: var(--c-muted);">
+              {{ formatDate(item.entry.created_at) }}
+            </span>
+          </div>
         </div>
 
-        <div style="margin-top: 4px; margin-left: 30px;">
-          <template v-if="editingId === comment.id">
+        <article
+          v-else
+          :data-comment-id="item.comment.id"
+          class="atl-ac-comment group"
+        >
+          <div class="flex items-center" style="gap: 8px;">
+            <Avatar
+              :name="actorName(item.comment.author.display_name, item.comment.author.type)"
+              :agent="isAgent(item.comment.author.type)"
+              :size="22"
+            />
+            <span
+              style="font-family: var(--font-mono); font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--c-foreground);"
+            >
+              {{ actorName(item.comment.author.display_name, item.comment.author.type) }}
+            </span>
+            <AgentBadge v-if="isAgent(item.comment.author.type)" />
+            <span style="font-size: var(--fs-xs); color: var(--c-muted);">
+              {{ formatDate(item.comment.created_at) }}
+            </span>
+            <span v-if="isEdited(item.comment)" style="font-size: var(--fs-xs); color: var(--c-muted);">
+              (edited)
+            </span>
+            <span style="flex: 1;" />
+            <button
+              v-if="hasActions(item.comment)"
+              type="button"
+              aria-label="Comment actions"
+              title="Comment actions"
+              class="shrink-0 cursor-pointer opacity-0 group-hover:opacity-100 flex items-center justify-center"
+              style="width: 22px; height: 22px; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-secondary); color: var(--c-muted);"
+              @click="openMenu(item.comment, $event)"
+            >
+              <Icon name="ellipsis" :size="13" />
+            </button>
+          </div>
+
+          <div style="margin-top: 4px; margin-left: 30px;">
+            <template v-if="editingId === item.comment.id">
+              <MarkdownEditor
+                :body="editDraft"
+                :editable="true"
+                :embedded-controls="false"
+                :width-toggle="false"
+                min-height="2.5rem"
+                @change="onEditChange"
+              />
+              <div class="flex justify-end" style="gap: 8px; margin-top: 8px;">
+                <button
+                  type="button"
+                  data-test="comment-edit-cancel"
+                  class="atl-ac-btn"
+                  @click="cancelEdit"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  data-test="comment-edit-save"
+                  class="atl-ac-submit"
+                  :disabled="!canSaveEdit || savingEdit"
+                  @click="saveEdit(item.comment)"
+                >
+                  {{ savingEdit ? 'Saving…' : 'Save' }}
+                </button>
+              </div>
+            </template>
             <MarkdownEditor
-              :body="editDraft"
-              :editable="true"
+              v-else
+              :body="item.comment.body"
+              :editable="false"
+              :reading="true"
               :embedded-controls="false"
               :width-toggle="false"
-              min-height="2.5rem"
-              @change="onEditChange"
+              min-height="1rem"
             />
-            <div class="flex justify-end" style="gap: 8px; margin-top: 8px;">
-              <button
-                type="button"
-                data-test="comment-edit-cancel"
-                class="atl-comment-loadmore"
-                @click="cancelEdit"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                data-test="comment-edit-save"
-                class="atl-comment-submit"
-                :disabled="!canSaveEdit || savingEdit"
-                @click="saveEdit(comment)"
-              >
-                {{ savingEdit ? 'Saving…' : 'Save' }}
-              </button>
-            </div>
-          </template>
-          <MarkdownEditor
-            v-else
-            :body="comment.body"
-            :editable="false"
-            :reading="true"
-            :embedded-controls="false"
-            :width-toggle="false"
-            min-height="1rem"
-          />
-        </div>
-      </article>
+          </div>
+        </article>
+      </template>
     </div>
 
     <div v-if="detail.commentsHasMore" style="margin-top: 12px;">
       <button
         type="button"
         data-test="comment-load-more"
-        class="atl-comment-loadmore"
+        class="atl-ac-btn"
         @click="loadMore"
       >
         Load more comments
       </button>
     </div>
 
-    <div data-comment-composer class="atl-comment-composer" @click="focusComposer">
+    <div data-comment-composer class="atl-ac-composer" @click="focusComposer">
       <MarkdownEditor
         ref="composerEditor"
         :body="draft"
@@ -282,7 +337,7 @@ async function loadMore(): Promise<void> {
         <button
           type="button"
           data-test="comment-submit"
-          class="atl-comment-submit"
+          class="atl-ac-submit"
           :disabled="!canSubmit || submitting"
           @click.stop="submit"
         >
@@ -314,7 +369,12 @@ async function loadMore(): Promise<void> {
 </template>
 
 <style scoped>
-.atl-comment-composer {
+.atl-ac {
+  display: flex;
+  flex-direction: column;
+}
+
+.atl-ac-composer {
   margin-top: 16px;
   padding: 10px;
   border: 1px solid var(--c-border);
@@ -323,7 +383,7 @@ async function loadMore(): Promise<void> {
   cursor: text;
 }
 
-.atl-comment-loadmore {
+.atl-ac-btn {
   height: 28px;
   padding: 0 12px;
   background: transparent;
@@ -335,11 +395,11 @@ async function loadMore(): Promise<void> {
   cursor: pointer;
 }
 
-.atl-comment-loadmore:hover {
+.atl-ac-btn:hover {
   background: rgba(179, 177, 173, 0.06);
 }
 
-.atl-comment-submit {
+.atl-ac-submit {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -355,7 +415,7 @@ async function loadMore(): Promise<void> {
   cursor: pointer;
 }
 
-.atl-comment-submit:disabled {
+.atl-ac-submit:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }

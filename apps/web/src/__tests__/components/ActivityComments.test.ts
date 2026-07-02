@@ -1,21 +1,13 @@
 import { type DOMWrapper, flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import Comments from '@/components/tareas/Comments.vue';
+import ActivityComments from '@/components/tareas/ActivityComments.vue';
 import { useAuthStore } from '@/stores/auth';
-import { type CommentDto, useTaskDetailStore } from '@/stores/taskDetail';
+import { type ActivityEntryDto, type CommentDto, useTaskDetailStore } from '@/stores/taskDetail';
 import { useWorkspaceStore } from '@/stores/workspace';
 
 const editorFocus = vi.fn();
 
-/**
- * Stubs the CodeMirror-backed editor so the panel can be mounted in jsdom without
- * a real editor instance: it renders the markdown body as plain text (so the
- * read-only comment body is assertable), exposes a textarea that re-emits the
- * host's `change` event (so drafts can be typed), and exposes a `focus` spy that
- * mirrors the real editor's `defineExpose` (so the composer click-to-focus wiring
- * is assertable).
- */
 const MarkdownEditorStub = {
   name: 'MarkdownEditor',
   props: ['body', 'editable', 'reading', 'embeddedControls', 'placeholder', 'minHeight', 'widthToggle'],
@@ -36,18 +28,35 @@ const comment = (
   authorId: string,
   authorType = 'user',
   name: string | null = 'Jordan',
-  updatedAt = '2026-01-01T00:00:00Z',
+  createdAt = '2026-01-01T00:00:00Z',
+  updatedAt = createdAt,
 ): CommentDto => ({
   id,
   task_id: 't1',
   body,
   author: { id: authorId, type: authorType, display_name: name },
-  created_at: '2026-01-01T00:00:00Z',
+  created_at: createdAt,
   updated_at: updatedAt,
 });
 
-function mountComments() {
-  return mount(Comments, {
+const activity = (
+  id: string,
+  kind: string,
+  createdAt: string,
+  name: string | null = 'Robin',
+  type = 'user',
+): ActivityEntryDto => ({
+  id,
+  kind,
+  actor: { id: `actor-${id}`, type, display_name: name },
+  created_at: createdAt,
+  payload: null,
+  task_id: 't1',
+  task_readable_id: 'ATL-1',
+});
+
+function mountFeed() {
+  return mount(ActivityComments, {
     props: { ws: 'acme', readableId: 'ATL-1' },
     global: { stubs: { MarkdownEditor: MarkdownEditorStub, teleport: true } },
   });
@@ -78,17 +87,46 @@ beforeEach(() => {
   editorFocus.mockClear();
 });
 
-describe('Comments panel (ATL-19)', () => {
-  it('renders a card per comment with its author and body, oldest-first', () => {
-    const detail = useTaskDetailStore();
-    detail._setForTest({
+describe('ActivityComments feed (ATL-19)', () => {
+  it('interleaves activity entries and comments in chronological order', () => {
+    useTaskDetailStore()._setForTest({
+      activity: [
+        activity('a1', 'created', '2026-01-01T09:00:00Z'),
+        activity('a2', 'moved', '2026-01-01T11:00:00Z'),
+      ],
+      comments: [comment('c1', 'Middle note', 'u1', 'user', 'Jordan', '2026-01-01T10:00:00Z')],
+    });
+
+    const wrapper = mountFeed();
+
+    const order = wrapper
+      .findAll('[data-activity-id], [data-comment-id]')
+      .map((n) => n.attributes('data-activity-id') ?? n.attributes('data-comment-id'));
+    expect(order).toEqual(['a1', 'c1', 'a2']);
+  });
+
+  it('renders an activity entry as a readable line', () => {
+    useTaskDetailStore()._setForTest({
+      activity: [activity('a1', 'created', '2026-01-01T09:00:00Z', 'Robin')],
+      comments: [],
+    });
+
+    const wrapper = mountFeed();
+
+    const row = wrapper.get('[data-activity-id="a1"]');
+    expect(row.text()).toContain('Robin');
+    expect(row.text()).toContain('created this task');
+  });
+
+  it('renders a card per comment with its author and body', () => {
+    useTaskDetailStore()._setForTest({
       comments: [
         comment('c1', 'First note', 'u1', 'user', 'Jordan'),
         comment('c2', 'Second note', 'k1', 'api_key', 'Claude'),
       ],
     });
 
-    const wrapper = mountComments();
+    const wrapper = mountFeed();
 
     const cards = wrapper.findAll('[data-comment-id]');
     expect(cards).toHaveLength(2);
@@ -99,28 +137,27 @@ describe('Comments panel (ATL-19)', () => {
   });
 
   it('shows an "(edited)" marker when the comment was updated after creation', () => {
-    const detail = useTaskDetailStore();
-    detail._setForTest({
+    useTaskDetailStore()._setForTest({
       comments: [
         comment('c1', 'Untouched', 'u1'),
-        comment('c2', 'Reworded', 'u1', 'user', 'Jordan', '2026-02-02T00:00:00Z'),
+        comment('c2', 'Reworded', 'u1', 'user', 'Jordan', '2026-01-01T00:00:00Z', '2026-02-02T00:00:00Z'),
       ],
     });
 
-    const wrapper = mountComments();
+    const wrapper = mountFeed();
 
     expect(wrapper.get('[data-comment-id="c1"]').text()).not.toContain('(edited)');
     expect(wrapper.get('[data-comment-id="c2"]').text()).toContain('(edited)');
   });
 
-  it('shows a compact empty state when there are no comments', () => {
-    useTaskDetailStore()._setForTest({ comments: [] });
+  it('shows a compact empty state when there is no activity or comments', () => {
+    useTaskDetailStore()._setForTest({ comments: [], activity: [] });
 
-    const wrapper = mountComments();
+    const wrapper = mountFeed();
 
     expect(wrapper.find('[data-comment-id]').exists()).toBe(false);
     expect(wrapper.find('[data-state="empty"]').exists()).toBe(true);
-    expect(wrapper.text()).toContain('No comments yet');
+    expect(wrapper.text()).toContain('No activity yet');
   });
 
   it('submits the typed body via addComment and clears the composer', async () => {
@@ -128,7 +165,7 @@ describe('Comments panel (ATL-19)', () => {
     detail._setForTest({ comments: [] });
     const addComment = vi.spyOn(detail, 'addComment').mockResolvedValue(true);
 
-    const wrapper = mountComments();
+    const wrapper = mountFeed();
 
     const input = wrapper.get('[data-comment-composer] textarea');
     await input.setValue('New comment');
@@ -142,7 +179,7 @@ describe('Comments panel (ATL-19)', () => {
   it('focuses the editor when the composer box is clicked', async () => {
     useTaskDetailStore()._setForTest({ comments: [] });
 
-    const wrapper = mountComments();
+    const wrapper = mountFeed();
 
     await wrapper.get('[data-comment-composer]').trigger('click');
 
@@ -154,7 +191,7 @@ describe('Comments panel (ATL-19)', () => {
     detail._setForTest({ comments: [] });
     const addComment = vi.spyOn(detail, 'addComment').mockResolvedValue(true);
 
-    const wrapper = mountComments();
+    const wrapper = mountFeed();
 
     const submit = wrapper.get('[data-test="comment-submit"]');
     expect((submit.element as HTMLButtonElement).disabled).toBe(true);
@@ -173,7 +210,7 @@ describe('Comments panel (ATL-19)', () => {
 
     signInAs('me');
 
-    const wrapper = mountComments();
+    const wrapper = mountFeed();
 
     await wrapper.get('[data-comment-id="c1"] [aria-label="Comment actions"]').trigger('click');
     const del = menuItem(wrapper, 'Delete');
@@ -186,12 +223,11 @@ describe('Comments panel (ATL-19)', () => {
   });
 
   it('offers Edit and Delete to the comment author', async () => {
-    const detail = useTaskDetailStore();
-    detail._setForTest({ comments: [comment('c1', 'Mine', 'me', 'user', 'Me')] });
+    useTaskDetailStore()._setForTest({ comments: [comment('c1', 'Mine', 'me', 'user', 'Me')] });
 
     signInAs('me');
 
-    const wrapper = mountComments();
+    const wrapper = mountFeed();
 
     await wrapper.get('[data-comment-id="c1"] [aria-label="Comment actions"]').trigger('click');
 
@@ -200,12 +236,11 @@ describe('Comments panel (ATL-19)', () => {
   });
 
   it("lets a workspace admin delete but not edit another member's comment", async () => {
-    const detail = useTaskDetailStore();
-    detail._setForTest({ comments: [comment('c1', 'Theirs', 'someone-else')] });
+    useTaskDetailStore()._setForTest({ comments: [comment('c1', 'Theirs', 'someone-else')] });
 
     signInAs('admin', 'admin');
 
-    const wrapper = mountComments();
+    const wrapper = mountFeed();
 
     await wrapper.get('[data-comment-id="c1"] [aria-label="Comment actions"]').trigger('click');
 
@@ -214,12 +249,11 @@ describe('Comments panel (ATL-19)', () => {
   });
 
   it('hides the actions menu for a comment the member neither authored nor can moderate', () => {
-    const detail = useTaskDetailStore();
-    detail._setForTest({ comments: [comment('c1', 'Theirs', 'someone-else')] });
+    useTaskDetailStore()._setForTest({ comments: [comment('c1', 'Theirs', 'someone-else')] });
 
     signInAs('me');
 
-    const wrapper = mountComments();
+    const wrapper = mountFeed();
 
     expect(wrapper.find('[data-comment-id="c1"] [aria-label="Comment actions"]').exists()).toBe(false);
   });
@@ -231,7 +265,7 @@ describe('Comments panel (ATL-19)', () => {
 
     signInAs('me');
 
-    const wrapper = mountComments();
+    const wrapper = mountFeed();
 
     await wrapper.get('[data-comment-id="c1"] [aria-label="Comment actions"]').trigger('click');
     await menuItem(wrapper, 'Edit')?.trigger('click');
@@ -254,7 +288,7 @@ describe('Comments panel (ATL-19)', () => {
 
     signInAs('me');
 
-    const wrapper = mountComments();
+    const wrapper = mountFeed();
 
     await wrapper.get('[data-comment-id="c1"] [aria-label="Comment actions"]').trigger('click');
     await menuItem(wrapper, 'Edit')?.trigger('click');
@@ -271,7 +305,7 @@ describe('Comments panel (ATL-19)', () => {
     detail._setForTest({ comments: [comment('c1', 'First', 'u1')], commentsHasMore: true });
     const loadMore = vi.spyOn(detail, 'loadMoreComments').mockResolvedValue();
 
-    const wrapper = mountComments();
+    const wrapper = mountFeed();
 
     await wrapper.get('[data-test="comment-load-more"]').trigger('click');
 

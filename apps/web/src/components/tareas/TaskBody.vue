@@ -2,11 +2,10 @@
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import type { components } from '@/api/types.d.ts';
-import ActivityFeed from '@/components/tareas/ActivityFeed.vue';
+import ActivityComments from '@/components/tareas/ActivityComments.vue';
 import AssigneeList from '@/components/tareas/AssigneeList.vue';
 import AttachmentList from '@/components/tareas/AttachmentList.vue';
 import Checklist from '@/components/tareas/Checklist.vue';
-import Comments from '@/components/tareas/Comments.vue';
 import CustomFieldsSection from '@/components/tareas/CustomFieldsSection.vue';
 import LinkDependencyDialog from '@/components/tareas/LinkDependencyDialog.vue';
 import ReferenceAdd from '@/components/tareas/ReferenceAdd.vue';
@@ -546,13 +545,8 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
       </div>
 
       <div style="margin-top: 22px;">
-        <div class="atl-tv-section-label">Comments</div>
-        <Comments :ws="ws" :readable-id="task.readable_id" />
-      </div>
-
-      <div style="margin-top: 22px;">
         <div class="atl-tv-section-label">Activity</div>
-        <ActivityFeed :items="detail.activity" />
+        <ActivityComments :ws="ws" :readable-id="task.readable_id" />
       </div>
     </template>
 
