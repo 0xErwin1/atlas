@@ -11,9 +11,9 @@
 use std::io::Write as _;
 
 use atlas_api::dtos::boards_tasks::{
-    AddAssigneeRequest, CreateChecklistItemRequest, CreateReferenceRequest, CreateSubtaskRequest,
-    CreateTaskRequest, MoveTaskRequest, PromoteChecklistItemRequest, TaskPropertiesDto,
-    UpdateChecklistItemRequest, UpdateTaskRequest, WorkspaceTaskQueryParams,
+    AddAssigneeRequest, CreateChecklistItemRequest, CreateCommentRequest, CreateReferenceRequest,
+    CreateSubtaskRequest, CreateTaskRequest, MoveTaskRequest, PromoteChecklistItemRequest,
+    TaskPropertiesDto, UpdateChecklistItemRequest, UpdateTaskRequest, WorkspaceTaskQueryParams,
 };
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use uuid::Uuid;
@@ -23,10 +23,10 @@ use crate::ctx::Ctx;
 use crate::error::CliError;
 use crate::output;
 use crate::projections::{
-    AttachProjection, ChecklistItemProjection, DeleteTaskProjection, DeletedProjection,
-    PromotionProjection, SubtaskProjection, TaskActivityProjection, TaskAssigneeProjection,
-    TaskBacklinkProjection, TaskCompactProjection, TaskFullProjection, TaskRefProjection,
-    TaskSummaryProjection,
+    AttachProjection, ChecklistItemProjection, CommentProjection, DeleteTaskProjection,
+    DeletedProjection, PromotionProjection, SubtaskProjection, TaskActivityProjection,
+    TaskAssigneeProjection, TaskBacklinkProjection, TaskCompactProjection, TaskFullProjection,
+    TaskRefProjection, TaskSummaryProjection,
 };
 use atlas_client::helpers;
 
@@ -79,6 +79,8 @@ pub(crate) enum TasksCmd {
     Checklist(ChecklistArgs),
     /// List activity (audit log) entries for a task.
     Activity(TasksActivityArgs),
+    /// Manage comments on a task (list, add, delete).
+    Comments(CommentsArgs),
     /// Manage subtasks of a task (list, create, promote).
     Subtasks(SubtasksArgs),
     /// Manage task attachments (upload, list, download, delete).
@@ -99,6 +101,7 @@ pub(crate) async fn run(ctx: &Ctx, cmd: TasksCmd) -> Result<(), CliError> {
         TasksCmd::Assignees(args) => run_assignees(ctx, args.command).await,
         TasksCmd::Checklist(args) => run_checklist(ctx, args.command).await,
         TasksCmd::Activity(args) => run_task_activity(ctx, args).await,
+        TasksCmd::Comments(args) => run_comments(ctx, args.command).await,
         TasksCmd::Subtasks(args) => run_subtasks(ctx, args.command).await,
         TasksCmd::Attach(args) => run_task_attach(ctx, args.command).await,
     }
@@ -1253,6 +1256,112 @@ async fn run_task_activity(ctx: &Ctx, args: TasksActivityArgs) -> Result<(), Cli
 }
 
 // ---------------------------------------------------------------------------
+// Comments
+// ---------------------------------------------------------------------------
+
+/// Arguments holder for the `tasks comments` subcommand group.
+#[derive(Args)]
+pub(crate) struct CommentsArgs {
+    #[command(subcommand)]
+    pub(crate) command: CommentsCmd,
+}
+
+#[derive(Subcommand)]
+pub(crate) enum CommentsCmd {
+    /// List comments on a task, oldest first.
+    List(CommentsListArgs),
+    /// Post a markdown comment on a task.
+    Add(CommentsAddArgs),
+    /// Delete a comment from a task by its UUID.
+    Delete(CommentsDeleteArgs),
+}
+
+/// Arguments for `atlas tasks comments list`.
+#[derive(Parser)]
+pub(crate) struct CommentsListArgs {
+    /// Task readable ID, e.g. `ATL-42`.
+    #[arg(index = 1)]
+    pub(crate) readable_id: String,
+
+    /// Workspace slug.
+    #[arg(long)]
+    pub(crate) workspace: Option<String>,
+}
+
+/// Arguments for `atlas tasks comments add`.
+#[derive(Parser)]
+pub(crate) struct CommentsAddArgs {
+    /// Task readable ID, e.g. `ATL-42`.
+    #[arg(index = 1)]
+    pub(crate) readable_id: String,
+
+    /// Markdown comment body.
+    #[arg(index = 2)]
+    pub(crate) body: String,
+
+    /// Workspace slug.
+    #[arg(long)]
+    pub(crate) workspace: Option<String>,
+}
+
+/// Arguments for `atlas tasks comments delete`.
+#[derive(Parser)]
+pub(crate) struct CommentsDeleteArgs {
+    /// Task readable ID, e.g. `ATL-42`.
+    #[arg(index = 1)]
+    pub(crate) readable_id: String,
+
+    /// UUID of the comment to delete.
+    #[arg(index = 2)]
+    pub(crate) comment_id: Uuid,
+
+    /// Workspace slug.
+    #[arg(long)]
+    pub(crate) workspace: Option<String>,
+}
+
+async fn run_comments(ctx: &Ctx, cmd: CommentsCmd) -> Result<(), CliError> {
+    match cmd {
+        CommentsCmd::List(args) => run_comments_list(ctx, args).await,
+        CommentsCmd::Add(args) => run_comments_add(ctx, args).await,
+        CommentsCmd::Delete(args) => run_comments_delete(ctx, args).await,
+    }
+}
+
+async fn run_comments_list(ctx: &Ctx, args: CommentsListArgs) -> Result<(), CliError> {
+    let ws = ctx.require_workspace(args.workspace.as_deref())?;
+    let page = ctx
+        .client
+        .list_comments(ws, &args.readable_id, None, None)
+        .await?;
+    let projections: Vec<CommentProjection> =
+        page.items.into_iter().map(CommentProjection::from).collect();
+    output::emit_list(
+        ctx.output,
+        &projections,
+        page.next_cursor.as_deref(),
+        page.has_more,
+    )
+}
+
+async fn run_comments_add(ctx: &Ctx, args: CommentsAddArgs) -> Result<(), CliError> {
+    let ws = ctx.require_workspace(args.workspace.as_deref())?;
+    let body = CreateCommentRequest { body: args.body };
+    let comment = ctx.client.add_comment(ws, &args.readable_id, body).await?;
+    let proj = CommentProjection::from(comment);
+    output::emit(ctx.output, &proj)
+}
+
+async fn run_comments_delete(ctx: &Ctx, args: CommentsDeleteArgs) -> Result<(), CliError> {
+    let ws = ctx.require_workspace(args.workspace.as_deref())?;
+    ctx.client
+        .delete_comment(ws, &args.readable_id, args.comment_id)
+        .await?;
+    let proj = DeletedProjection { deleted: true };
+    output::emit(ctx.output, &proj)
+}
+
+// ---------------------------------------------------------------------------
 // Subtasks (WU-23)
 // ---------------------------------------------------------------------------
 
@@ -1998,6 +2107,54 @@ mod tests {
         } else {
             panic!("expected Tasks");
         }
+    }
+
+    #[test]
+    fn tasks_comments_add_parses_positional_body() {
+        let cli =
+            Cli::try_parse_from(["atlas", "tasks", "comments", "add", "ATL-42", "Looks good"])
+                .unwrap();
+        if let crate::cli::Commands::Tasks(args) = cli.command {
+            if let TasksCmd::Comments(c_args) = args.command {
+                if let CommentsCmd::Add(add_args) = c_args.command {
+                    assert_eq!(add_args.readable_id, "ATL-42");
+                    assert_eq!(add_args.body, "Looks good");
+                } else {
+                    panic!("expected Add");
+                }
+            } else {
+                panic!("expected Comments");
+            }
+        } else {
+            panic!("expected Tasks");
+        }
+    }
+
+    #[test]
+    fn tasks_comments_delete_parses_comment_uuid() {
+        let uuid_str = "018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234";
+        let cli =
+            Cli::try_parse_from(["atlas", "tasks", "comments", "delete", "ATL-1", uuid_str])
+                .unwrap();
+        if let crate::cli::Commands::Tasks(args) = cli.command {
+            if let TasksCmd::Comments(c_args) = args.command {
+                if let CommentsCmd::Delete(del_args) = c_args.command {
+                    assert_eq!(del_args.comment_id, uuid_str.parse::<Uuid>().unwrap());
+                } else {
+                    panic!("expected Delete");
+                }
+            } else {
+                panic!("expected Comments");
+            }
+        } else {
+            panic!("expected Tasks");
+        }
+    }
+
+    #[test]
+    fn tasks_comments_add_requires_body() {
+        let result = Cli::try_parse_from(["atlas", "tasks", "comments", "add", "ATL-42"]);
+        assert!(result.is_err(), "comments add must require a body argument");
     }
 
     #[test]

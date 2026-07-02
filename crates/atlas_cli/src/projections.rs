@@ -10,8 +10,8 @@
 
 use atlas_api::dtos::audit::AuditEntryDto;
 use atlas_api::dtos::boards_tasks::{
-    ActivityEntryDto, AssigneeDto, BoardSummaryDto, ChecklistItemDto, ColumnDto, PromotionDto,
-    ReferenceDto, TaskAttachmentDto, TaskBacklinkDto, TaskDto, TaskSummaryDto,
+    ActivityEntryDto, AssigneeDto, BoardSummaryDto, ChecklistItemDto, ColumnDto, CommentDto,
+    PromotionDto, ReferenceDto, TaskAttachmentDto, TaskBacklinkDto, TaskDto, TaskSummaryDto,
 };
 use atlas_api::dtos::documents::{
     ActorDto, AttachmentDto, BacklinkDto, DocumentDto, DocumentSummaryDto, RevisionContentDto,
@@ -1085,6 +1085,56 @@ impl TableRow for TaskActivityProjection {
                 .display_name
                 .clone()
                 .unwrap_or_else(|| self.actor.type_.clone()),
+            self.created_at.format("%Y-%m-%d %H:%M").to_string(),
+        ]
+    }
+}
+
+/// Outbound comment on a task, mirroring `project_comment` from the MCP.
+///
+/// `task_id` / `document_id` are dropped — the owner is implicit from the command
+/// the comment was listed under. `updated_at` is surfaced so an edited comment is
+/// distinguishable from an untouched one.
+#[derive(Debug, Serialize)]
+pub(crate) struct CommentProjection {
+    pub(crate) id: Uuid,
+    pub(crate) author: AssigneeProjection,
+    pub(crate) body: String,
+    pub(crate) created_at: DateTime<Utc>,
+    pub(crate) updated_at: DateTime<Utc>,
+}
+
+impl From<CommentDto> for CommentProjection {
+    fn from(c: CommentDto) -> Self {
+        Self {
+            id: c.id,
+            author: AssigneeProjection::from(c.author),
+            body: c.body,
+            created_at: c.created_at,
+            updated_at: c.updated_at,
+        }
+    }
+}
+
+impl TableRow for CommentProjection {
+    fn headers() -> &'static [&'static str] {
+        &["ID", "Author", "Body", "Created At"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        let body = if self.body.chars().count() > 60 {
+            format!("{}…", self.body.chars().take(59).collect::<String>())
+        } else {
+            self.body.clone()
+        };
+
+        vec![
+            self.id.to_string(),
+            self.author
+                .display_name
+                .clone()
+                .unwrap_or_else(|| self.author.type_.clone()),
+            body.replace('\n', " "),
             self.created_at.format("%Y-%m-%d %H:%M").to_string(),
         ]
     }
