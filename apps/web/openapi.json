@@ -7911,6 +7911,201 @@
         ]
       }
     },
+    "/v1/workspaces/{ws}/tasks/{readable_id}/comments": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "operationId": "list_comments",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "readable_id",
+            "in": "path",
+            "description": "Task readable ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Pagination cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size (max 200)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Task comments, oldest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_CommentDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          },
+          "404": {
+            "description": "Task not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "tasks"
+        ],
+        "operationId": "create_comment",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "readable_id",
+            "in": "path",
+            "description": "Task readable ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCommentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Comment created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          },
+          "404": {
+            "description": "Task not found"
+          },
+          "422": {
+            "description": "Comment body is blank or exceeds the maximum length"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}": {
+      "delete": {
+        "tags": [
+          "tasks"
+        ],
+        "operationId": "delete_comment",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "readable_id",
+            "in": "path",
+            "description": "Task readable ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "comment_id",
+            "in": "path",
+            "description": "Comment UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Comment deleted"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Neither the comment's author nor a workspace admin/owner"
+          },
+          "404": {
+            "description": "Task or comment not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/v1/workspaces/{ws}/tasks/{readable_id}/move": {
       "post": {
         "tags": [
@@ -9433,6 +9628,42 @@
           }
         }
       },
+      "CommentDto": {
+        "type": "object",
+        "description": "A single markdown comment on a task.",
+        "required": [
+          "id",
+          "task_id",
+          "body",
+          "author",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "author": {
+            "$ref": "#/components/schemas/ActorDto"
+          },
+          "body": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "task_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "ConflictProblemDto": {
         "type": "object",
         "description": "RFC 9457 problem+json extension for CAS revision conflicts (status 409).\n\nFlattens `ProblemDetails` fields alongside conflict-specific fields so the\nclient receives a single `application/problem+json` body.",
@@ -9548,7 +9779,7 @@
               "null"
             ],
             "format": "uuid",
-            "description": "Scope the rule to a specific project. `None` means workspace-scoped."
+            "description": "Reserved for future project-scoped automation; must be omitted in v1."
           },
           "trigger_event_type": {
             "type": "string",
@@ -9621,6 +9852,18 @@
             ]
           },
           "name": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateCommentRequest": {
+        "type": "object",
+        "description": "Request body for `POST .../comments`.",
+        "required": [
+          "body"
+        ],
+        "properties": {
+          "body": {
             "type": "string"
           }
         }
@@ -10968,6 +11211,64 @@
                 },
                 "name": {
                   "type": "string"
+                },
+                "updated_at": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              }
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "Page_CommentDto": {
+        "type": "object",
+        "description": "Paginated response envelope.",
+        "required": [
+          "items",
+          "has_more"
+        ],
+        "properties": {
+          "has_more": {
+            "type": "boolean"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "A single markdown comment on a task.",
+              "required": [
+                "id",
+                "task_id",
+                "body",
+                "author",
+                "created_at",
+                "updated_at"
+              ],
+              "properties": {
+                "author": {
+                  "$ref": "#/components/schemas/ActorDto"
+                },
+                "body": {
+                  "type": "string"
+                },
+                "created_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "task_id": {
+                  "type": "string",
+                  "format": "uuid"
                 },
                 "updated_at": {
                   "type": "string",
