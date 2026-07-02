@@ -2607,7 +2607,7 @@ pub(crate) async fn create_comment(
     )
 )]
 pub(crate) async fn update_comment(
-    auth: Authorized<TaskRes, EditorMin>,
+    auth: Authorized<TaskRes, ViewerMin>,
     Path(p): Path<CommentPath>,
     State(state): State<AppState>,
     Json(body): Json<UpdateCommentRequest>,

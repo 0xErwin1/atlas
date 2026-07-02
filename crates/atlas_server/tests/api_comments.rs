@@ -8,7 +8,7 @@
 mod support;
 
 use atlas_api::dtos::{
-    CreateProjectRequest, CreateUserApiKeyRequest, InitialGrantRequest,
+    CreateProjectRequest, CreateUserApiKeyRequest, InitialGrantRequest, UpdateProjectRequest,
     boards_tasks::{
         CreateBoardRequest, CreateColumnRequest, CreateCommentRequest, CreateTaskRequest,
         UpdateCommentRequest,
@@ -1074,6 +1074,93 @@ async fn edit_missing_comment_returns_404() {
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
         "editing a missing comment must return 404, got: {result:?}"
+    );
+
+    db.teardown().await;
+}
+
+/// A member posts a comment while the project grants Editor by default, then the
+/// project is downgraded to Viewer visibility. The edit floor is author-only
+/// (`ViewerMin`, mirroring delete), so the now-Viewer author can still edit their
+/// own comment, while a different Viewer member editing that comment still gets
+/// 403 from the service's strict author-only check.
+#[tokio::test]
+async fn viewer_author_can_edit_own_comment_but_not_a_different_viewer() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (owner, ws, _) =
+        support::login_user_with_workspace(&server, &db, "comment-viewer-edit-owner").await;
+
+    let project_slug = "comment-viewer-edit-proj";
+    let readable_id = seed_task(&owner, &ws.slug, project_slug, "CVE").await;
+
+    let (author, _) = add_member(
+        &db,
+        &server,
+        ws.id,
+        "comment-viewer-edit-author",
+        MemberRole::Member,
+    )
+    .await;
+
+    let comment = author
+        .add_comment(
+            &ws.slug,
+            &readable_id,
+            CreateCommentRequest {
+                body: "posted while editor".to_string(),
+            },
+        )
+        .await
+        .expect("member must be able to comment under the default editor visibility");
+
+    owner
+        .update_project(
+            &ws.slug,
+            project_slug,
+            UpdateProjectRequest {
+                visibility_role: Some("viewer".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("owner must be able to downgrade the project to viewer visibility");
+
+    let updated = author
+        .update_comment(
+            &ws.slug,
+            &readable_id,
+            comment.id,
+            UpdateCommentRequest {
+                body: "edited after demotion to viewer".to_string(),
+            },
+        )
+        .await
+        .expect("a viewer who authored the comment must still be able to edit it");
+    assert_eq!(updated.body, "edited after demotion to viewer");
+
+    let (other_viewer, _) = add_member(
+        &db,
+        &server,
+        ws.id,
+        "comment-viewer-edit-other",
+        MemberRole::Member,
+    )
+    .await;
+
+    let result = other_viewer
+        .update_comment(
+            &ws.slug,
+            &readable_id,
+            comment.id,
+            UpdateCommentRequest {
+                body: "trespassing edit".to_string(),
+            },
+        )
+        .await;
+    assert!(
+        matches!(result, Err(ClientError::Api(ref p)) if p.status == 403),
+        "a viewer who is not the comment's author must get 403, got: {result:?}"
     );
 
     db.teardown().await;
