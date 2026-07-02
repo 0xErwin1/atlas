@@ -28,7 +28,7 @@ use atlas_domain::{
         PositionBetween, Priority, Task, TaskActivity, TaskAssignee, TaskChecklistItem, TaskPatch,
         TaskReference,
     },
-    entities::comments::Comment,
+    entities::comments::CommentOwner,
     entities::documents::{AttachmentOwner, NewAttachment},
     entities::identity::MemberRole,
     entities::task_views::{ActorTypeFilter, AssigneeFilter, TaskSort, TaskViewFilters},
@@ -55,6 +55,7 @@ use crate::{
         TaskActivityRepo, TaskAssigneeRepo, TaskChecklistRepo, TaskReferenceRepo, TaskRepo,
         UserRepo,
     },
+    routes::comments::{comment_to_dto, enrich_comment_entries},
     routes::documents::content_disposition_attachment,
     routes::validation::{
         validate_comment_body, validate_custom_entry_count, validate_custom_properties,
@@ -247,7 +248,7 @@ use super::account_status;
 /// Attribution actors carry only id and display name. `account_status` is always
 /// absent here — it is a display signal for the assignee/member UI, not for audit
 /// trails or activity feeds.
-async fn resolve_actor_dto(state: &AppState, _ctx: &WorkspaceCtx, actor: &Actor) -> ActorDto {
+pub(crate) async fn resolve_actor_dto(state: &AppState, _ctx: &WorkspaceCtx, actor: &Actor) -> ActorDto {
     match actor {
         Actor::User(uid) => {
             let repo = PgUserRepo {
@@ -481,125 +482,6 @@ fn checklist_item_to_dto(item: TaskChecklistItem) -> ChecklistItemDto {
         created_at: item.created_at,
         updated_at: item.updated_at,
     }
-}
-
-/// Builds a `CommentDto` from a `Comment`, resolving the author's display name.
-///
-/// `task_id` is supplied by the caller (from the already-authorized route resource)
-/// rather than read off `c.task_id`, since `Comment` is polymorphic (task or
-/// document owner) and this route only ever loads task-owned comments.
-async fn comment_to_dto(
-    state: &AppState,
-    ctx: &WorkspaceCtx,
-    task_id: TaskId,
-    c: Comment,
-) -> CommentDto {
-    CommentDto {
-        id: c.id.0,
-        task_id: task_id.0,
-        body: c.body,
-        author: resolve_actor_dto(state, ctx, &c.created_by).await,
-        created_at: c.created_at,
-        updated_at: c.updated_at,
-    }
-}
-
-/// Batch-resolves the distinct authors of a page of comments and builds their
-/// DTOs in a fixed number of queries (the referenced users, and — only when a
-/// comment was posted by an api key — the referenced api keys), mirroring
-/// the activity feed's actor batch-load so a comment page never issues one query
-/// per row.
-///
-/// Api-key authors are resolved by id (unscoped), matching the create path's
-/// `resolve_actor_dto`/`get_by_id` semantics. A workspace-grant/revocation filter
-/// would drop the name of a global key (admitted via `is_global`, no grant row) or
-/// a later-revoked key, so those authors would render as the generic fallback and
-/// diverge from the create response.
-///
-/// Authors carry the attribution actor shape (id + display name, no
-/// `account_status`), matching `comment_to_dto`'s per-comment resolution.
-async fn enrich_comment_entries(
-    state: &AppState,
-    task_id: TaskId,
-    comments: Vec<Comment>,
-) -> Result<Vec<CommentDto>, ApiError> {
-    use std::collections::HashMap;
-
-    let mut user_ids: Vec<UserId> = Vec::new();
-    let mut key_ids: Vec<ApiKeyId> = Vec::new();
-
-    for c in &comments {
-        match &c.created_by {
-            Actor::User(uid) => user_ids.push(*uid),
-            Actor::ApiKey(kid) => key_ids.push(*kid),
-        }
-    }
-
-    user_ids.sort_by_key(|u| u.0);
-    user_ids.dedup_by_key(|u| u.0);
-
-    key_ids.sort_by_key(|k| k.0);
-    key_ids.dedup_by_key(|k| k.0);
-
-    let user_names: HashMap<uuid::Uuid, String> = PgUserRepo {
-        conn: (*state.db).clone(),
-    }
-    .list_by_ids(&user_ids)
-    .await
-    .map_err(ApiError::Domain)?
-    .into_iter()
-    .map(|u| (u.id.0, u.display_name))
-    .collect();
-
-    let key_info: HashMap<uuid::Uuid, (String, String)> = if key_ids.is_empty() {
-        HashMap::new()
-    } else {
-        PgApiKeyRepo {
-            conn: (*state.db).clone(),
-        }
-        .list_by_ids(&key_ids)
-        .await
-        .map_err(ApiError::Domain)?
-        .into_iter()
-        .map(|k| (k.id.0, (k.name, k.type_.as_str().to_string())))
-        .collect()
-    };
-
-    let dtos = comments
-        .into_iter()
-        .map(|c| {
-            let author = match &c.created_by {
-                Actor::User(uid) => ActorDto {
-                    r#type: "user".into(),
-                    id: uid.0,
-                    display_name: user_names.get(&uid.0).cloned(),
-                    key_type: None,
-                    account_status: None,
-                },
-                Actor::ApiKey(kid) => {
-                    let info = key_info.get(&kid.0);
-                    ActorDto {
-                        r#type: "api_key".into(),
-                        id: kid.0,
-                        display_name: info.map(|(name, _)| name.clone()),
-                        key_type: info.map(|(_, kt)| kt.clone()),
-                        account_status: None,
-                    }
-                }
-            };
-
-            CommentDto {
-                id: c.id.0,
-                task_id: task_id.0,
-                body: c.body,
-                author,
-                created_at: c.created_at,
-                updated_at: c.updated_at,
-            }
-        })
-        .collect();
-
-    Ok(dtos)
 }
 
 /// Batch-loads display info for all distinct actors in a page of activity entries
@@ -2534,7 +2416,7 @@ pub(crate) async fn list_comments(
         None
     };
 
-    let dtos = enrich_comment_entries(&state, task_id, entries).await?;
+    let dtos = enrich_comment_entries(&state, CommentOwner::Task(task_id), entries).await?;
 
     Ok(Json(Page::new(dtos, next_cursor, has_more)))
 }
@@ -2579,7 +2461,7 @@ pub(crate) async fn create_comment(
         .await
         .map_err(ApiError::Domain)?;
 
-    let dto = comment_to_dto(&state, &ctx, task_id, comment).await;
+    let dto = comment_to_dto(&state, &ctx, CommentOwner::Task(task_id), comment).await;
     Ok((StatusCode::CREATED, Json(dto)))
 }
 
@@ -2625,7 +2507,7 @@ pub(crate) async fn update_comment(
         .await
         .map_err(ApiError::Domain)?;
 
-    let dto = comment_to_dto(&state, &ctx, task_id, comment).await;
+    let dto = comment_to_dto(&state, &ctx, CommentOwner::Task(task_id), comment).await;
     Ok(Json(dto))
 }
 

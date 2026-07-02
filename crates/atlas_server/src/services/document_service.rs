@@ -1,18 +1,19 @@
 use atlas_domain::{
     DomainError, WorkspaceCtx,
+    entities::comments::{Comment, CommentOwner, NewComment},
     entities::documents::{Document, NewDocument},
     entities::events::{
         DocumentCreatedPayload, DocumentDeletedPayload, DocumentMovedPayload,
         DocumentUpdatedPayload, DomainEvent,
     },
-    ids::{DocumentId, FolderId, ProjectId, RevisionId},
+    ids::{CommentId, DocumentId, FolderId, ProjectId, RevisionId},
 };
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, TransactionTrait};
 
 use crate::persistence::entities::documents::document;
 use crate::persistence::repos::{
-    PgOutboxRepo, doc_create_in, doc_move_to_in, doc_rename_in, doc_soft_delete_in,
-    doc_update_content_in,
+    CommentRepo, PgCommentRepo, PgOutboxRepo, doc_create_in, doc_move_to_in, doc_rename_in,
+    doc_soft_delete_in, doc_update_content_in,
 };
 
 /// Coordinates document mutations with transactional outbox emission.
@@ -172,6 +173,102 @@ impl DocumentService {
 
         txn.commit().await.map_err(db_err)?;
         Ok(())
+    }
+
+    /// Adds a markdown comment to a document.
+    ///
+    /// Mirrors `TaskService::add_comment` for the document owner: comments are an
+    /// append-only conversation surface, so no domain event is emitted.
+    pub async fn add_comment(
+        &self,
+        ctx: &WorkspaceCtx,
+        document_id: DocumentId,
+        body: String,
+    ) -> Result<Comment, DomainError> {
+        let txn = self.conn.begin().await.map_err(db_err)?;
+
+        let comment = PgCommentRepo::create_in(
+            &txn,
+            ctx,
+            NewComment {
+                owner: CommentOwner::Document(document_id),
+                body,
+            },
+        )
+        .await?;
+
+        txn.commit().await.map_err(db_err)?;
+        Ok(comment)
+    }
+
+    /// Returns paginated comments for a document, oldest-first.
+    pub async fn list_comments(
+        &self,
+        ctx: &WorkspaceCtx,
+        document_id: DocumentId,
+        after_id: Option<CommentId>,
+        limit: u64,
+    ) -> Result<Vec<Comment>, DomainError> {
+        let repo = PgCommentRepo::new(self.conn.clone());
+        repo.list_for_owner(ctx, CommentOwner::Document(document_id), after_id, limit)
+            .await
+    }
+
+    /// Removes a comment from a document.
+    ///
+    /// The comment's author may always delete their own comment; `can_moderate`
+    /// (workspace admin/owner) allows deleting anyone's. Everyone else gets
+    /// `Forbidden`. Mirrors `TaskService::remove_comment`.
+    pub async fn remove_comment(
+        &self,
+        ctx: &WorkspaceCtx,
+        document_id: DocumentId,
+        comment_id: CommentId,
+        can_moderate: bool,
+    ) -> Result<(), DomainError> {
+        let txn = self.conn.begin().await.map_err(db_err)?;
+        let owner = CommentOwner::Document(document_id);
+
+        let comment = PgCommentRepo::get_for_owner_in(&txn, ctx, owner, comment_id).await?;
+
+        if comment.created_by != ctx.actor && !can_moderate {
+            return Err(DomainError::Forbidden {
+                message: "only the comment's author or a workspace admin/owner may delete it"
+                    .into(),
+            });
+        }
+
+        PgCommentRepo::soft_delete_in(&txn, ctx, owner, comment_id).await?;
+
+        txn.commit().await.map_err(db_err)?;
+        Ok(())
+    }
+
+    /// Edits the body of a document comment. Only the comment's author may edit it
+    /// (moderation does not extend to rewriting another person's words). Mirrors
+    /// `TaskService::update_comment`.
+    pub async fn update_comment(
+        &self,
+        ctx: &WorkspaceCtx,
+        document_id: DocumentId,
+        comment_id: CommentId,
+        body: String,
+    ) -> Result<Comment, DomainError> {
+        let txn = self.conn.begin().await.map_err(db_err)?;
+        let owner = CommentOwner::Document(document_id);
+
+        let comment = PgCommentRepo::get_for_owner_in(&txn, ctx, owner, comment_id).await?;
+
+        if comment.created_by != ctx.actor {
+            return Err(DomainError::Forbidden {
+                message: "only the comment's author may edit it".into(),
+            });
+        }
+
+        let updated = PgCommentRepo::update_body_from(&txn, ctx, owner, comment, body).await?;
+
+        txn.commit().await.map_err(db_err)?;
+        Ok(updated)
     }
 }
 

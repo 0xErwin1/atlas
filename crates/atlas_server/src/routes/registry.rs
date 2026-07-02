@@ -440,6 +440,30 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/v1/workspaces/{ws}/documents/{slug}/copy"),
     },
+    RouteEntry {
+        method: "GET",
+        path_template: "/v1/workspaces/{ws}/documents/nonexistent-slug/comments",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/documents/{slug}/comments"),
+    },
+    RouteEntry {
+        method: "POST",
+        path_template: "/v1/workspaces/{ws}/documents/nonexistent-slug/comments",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/documents/{slug}/comments"),
+    },
+    RouteEntry {
+        method: "PATCH",
+        path_template: "/v1/workspaces/{ws}/documents/nonexistent-slug/comments/00000000-0000-0000-0000-000000000001",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/documents/{slug}/comments/{comment_id}"),
+    },
+    RouteEntry {
+        method: "DELETE",
+        path_template: "/v1/workspaces/{ws}/documents/nonexistent-slug/comments/00000000-0000-0000-0000-000000000001",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/documents/{slug}/comments/{comment_id}"),
+    },
     // ---- Board routes ----
     RouteEntry {
         method: "POST",

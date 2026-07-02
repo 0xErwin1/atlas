@@ -11,6 +11,7 @@ use bytes::Bytes;
 use serde::Deserialize;
 
 use atlas_api::{
+    dtos::boards_tasks::{CommentDto, CreateCommentRequest, UpdateCommentRequest},
     dtos::documents::{
         ActorDto, AttachmentDto, BacklinkDto, CopyDocumentRequest, CreateDocumentRequest,
         DocumentDto, DocumentSummaryDto, FrontmatterDto, MoveDocumentRequest, RevisionContentDto,
@@ -20,8 +21,10 @@ use atlas_api::{
 };
 use atlas_domain::{
     Actor, WorkspaceCtx,
+    entities::comments::CommentOwner,
     entities::documents::{AttachmentOwner, ExtractedLink, NewAttachment, NewDocument},
-    ids::{AttachmentId, DocumentId, FolderId, RevisionId, UserId},
+    entities::identity::MemberRole,
+    ids::{AttachmentId, CommentId, DocumentId, FolderId, RevisionId, UserId},
     permissions::Principal,
     resolve_collision, slugify,
 };
@@ -37,7 +40,8 @@ use crate::{
         AttachmentRepo, DocumentLinkRepo, DocumentRepo, PgAttachmentRepo, PgDocumentLinkRepo,
         PgDocumentRepo,
     },
-    routes::validation::validate_name,
+    routes::comments::{comment_to_dto, enrich_comment_entries},
+    routes::validation::{validate_comment_body, validate_name},
     services::DocumentService,
     state::AppState,
 };
@@ -1176,6 +1180,197 @@ async fn authorize_attachment_document(
     }
 
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Document comments
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+pub(crate) struct DocumentCommentPath {
+    #[allow(dead_code)]
+    ws: String,
+    #[allow(dead_code)]
+    slug: String,
+    comment_id: uuid::Uuid,
+}
+
+// GET /v1/workspaces/{ws}/documents/{slug}/comments
+#[utoipa::path(
+    get,
+    path = "/v1/workspaces/{ws}/documents/{slug}/comments",
+    tag = "documents",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+        ("slug" = String, Path, description = "Document slug"),
+        ("cursor" = Option<String>, Query, description = "Pagination cursor"),
+        ("limit" = Option<u32>, Query, description = "Page size"),
+    ),
+    responses(
+        (status = 200, description = "Comment page"),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Insufficient permissions"),
+        (status = 404, description = "Document not found"),
+    )
+)]
+pub(crate) async fn list_comments(
+    auth: Authorized<DocumentSlugRes, ViewerMin>,
+    State(state): State<AppState>,
+    Query(q): Query<PaginationQuery>,
+) -> Result<Json<Page<CommentDto>>, ApiError> {
+    let limit = q.limit.unwrap_or(50).clamp(1, 200) as u64;
+    let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
+
+    let after_id = q
+        .cursor
+        .as_deref()
+        .and_then(Cursor::decode)
+        .map(|c| CommentId(c.0));
+
+    let document_id = auth.resource.0.id;
+
+    let mut entries = state
+        .document_service()
+        .list_comments(&ctx, document_id, after_id, limit + 1)
+        .await
+        .map_err(ApiError::Domain)?;
+
+    let has_more = entries.len() > limit as usize;
+    if has_more {
+        entries.truncate(limit as usize);
+    }
+
+    let next_cursor = if has_more {
+        entries.last().map(|c| Cursor(c.id.0))
+    } else {
+        None
+    };
+
+    let dtos = enrich_comment_entries(&state, CommentOwner::Document(document_id), entries).await?;
+
+    Ok(Json(Page::new(dtos, next_cursor, has_more)))
+}
+
+// POST /v1/workspaces/{ws}/documents/{slug}/comments
+#[utoipa::path(
+    post,
+    path = "/v1/workspaces/{ws}/documents/{slug}/comments",
+    tag = "documents",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+        ("slug" = String, Path, description = "Document slug"),
+    ),
+    request_body = CreateCommentRequest,
+    responses(
+        (status = 201, description = "Comment created", body = CommentDto),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Insufficient permissions"),
+        (status = 404, description = "Document not found"),
+        (status = 422, description = "Comment body is blank or exceeds the maximum length"),
+    )
+)]
+pub(crate) async fn create_comment(
+    auth: Authorized<DocumentSlugRes, EditorMin>,
+    State(state): State<AppState>,
+    Json(body): Json<CreateCommentRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
+
+    validate_comment_body(&body.body)?;
+
+    let document_id = auth.resource.0.id;
+
+    let comment = state
+        .document_service()
+        .add_comment(&ctx, document_id, body.body)
+        .await
+        .map_err(ApiError::Domain)?;
+
+    let dto = comment_to_dto(&state, &ctx, CommentOwner::Document(document_id), comment).await;
+    Ok((StatusCode::CREATED, Json(dto)))
+}
+
+// PATCH /v1/workspaces/{ws}/documents/{slug}/comments/{comment_id}
+#[utoipa::path(
+    patch,
+    path = "/v1/workspaces/{ws}/documents/{slug}/comments/{comment_id}",
+    tag = "documents",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+        ("slug" = String, Path, description = "Document slug"),
+        ("comment_id" = String, Path, description = "Comment UUID"),
+    ),
+    request_body = UpdateCommentRequest,
+    responses(
+        (status = 200, description = "Comment updated", body = CommentDto),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Only the comment's author may edit it"),
+        (status = 404, description = "Document or comment not found"),
+        (status = 422, description = "Comment body is blank or exceeds the maximum length"),
+    )
+)]
+pub(crate) async fn update_comment(
+    auth: Authorized<DocumentSlugRes, ViewerMin>,
+    Path(p): Path<DocumentCommentPath>,
+    State(state): State<AppState>,
+    Json(body): Json<UpdateCommentRequest>,
+) -> Result<Json<CommentDto>, ApiError> {
+    let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
+
+    validate_comment_body(&body.body)?;
+
+    let document_id = auth.resource.0.id;
+
+    let comment = state
+        .document_service()
+        .update_comment(&ctx, document_id, CommentId(p.comment_id), body.body)
+        .await
+        .map_err(ApiError::Domain)?;
+
+    let dto = comment_to_dto(&state, &ctx, CommentOwner::Document(document_id), comment).await;
+    Ok(Json(dto))
+}
+
+// DELETE /v1/workspaces/{ws}/documents/{slug}/comments/{comment_id}
+#[utoipa::path(
+    delete,
+    path = "/v1/workspaces/{ws}/documents/{slug}/comments/{comment_id}",
+    tag = "documents",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+        ("slug" = String, Path, description = "Document slug"),
+        ("comment_id" = String, Path, description = "Comment UUID"),
+    ),
+    responses(
+        (status = 204, description = "Comment deleted"),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Neither the comment's author nor a workspace admin/owner"),
+        (status = 404, description = "Document or comment not found"),
+    )
+)]
+pub(crate) async fn delete_comment(
+    auth: Authorized<DocumentSlugRes, ViewerMin>,
+    Path(p): Path<DocumentCommentPath>,
+    State(state): State<AppState>,
+) -> Result<StatusCode, ApiError> {
+    let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
+
+    let can_moderate = matches!(
+        auth.membership,
+        Some(MemberRole::Owner) | Some(MemberRole::Admin)
+    );
+
+    state
+        .document_service()
+        .remove_comment(&ctx, auth.resource.0.id, CommentId(p.comment_id), can_moderate)
+        .await
+        .map_err(ApiError::Domain)?;
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// Derives the frontmatter JSON object from document content by parsing the

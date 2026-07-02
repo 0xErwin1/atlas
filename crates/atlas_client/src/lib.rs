@@ -2303,6 +2303,82 @@ impl AtlasClient {
         Err(ClientError::Api(problem))
     }
 
+    /// `GET /v1/workspaces/{ws}/documents/{slug}/comments`
+    pub async fn list_document_comments(
+        &self,
+        ws: &str,
+        slug: &str,
+        cursor: Option<&str>,
+        limit: Option<u32>,
+    ) -> Result<Page<CommentDto>, ClientError> {
+        let path = build_paginated_path(
+            &format!("/v1/workspaces/{ws}/documents/{slug}/comments"),
+            cursor,
+            limit,
+        );
+        let response = self.get(&path).send().await?;
+        self.decode_response(response, "list_document_comments").await
+    }
+
+    /// `POST /v1/workspaces/{ws}/documents/{slug}/comments`
+    pub async fn add_document_comment(
+        &self,
+        ws: &str,
+        slug: &str,
+        body: CreateCommentRequest,
+    ) -> Result<CommentDto, ClientError> {
+        let response = self
+            .post(&format!("/v1/workspaces/{ws}/documents/{slug}/comments"))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "add_document_comment").await
+    }
+
+    /// `PATCH /v1/workspaces/{ws}/documents/{slug}/comments/{comment_id}`
+    pub async fn update_document_comment(
+        &self,
+        ws: &str,
+        slug: &str,
+        comment_id: uuid::Uuid,
+        body: UpdateCommentRequest,
+    ) -> Result<CommentDto, ClientError> {
+        let response = self
+            .patch(&format!(
+                "/v1/workspaces/{ws}/documents/{slug}/comments/{comment_id}"
+            ))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "update_document_comment").await
+    }
+
+    /// `DELETE /v1/workspaces/{ws}/documents/{slug}/comments/{comment_id}`
+    pub async fn delete_document_comment(
+        &self,
+        ws: &str,
+        slug: &str,
+        comment_id: uuid::Uuid,
+    ) -> Result<(), ClientError> {
+        let response = self
+            .delete(&format!(
+                "/v1/workspaces/{ws}/documents/{slug}/comments/{comment_id}"
+            ))
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        if response.status().is_success() {
+            return Ok(());
+        }
+        let problem: ProblemDetails = response
+            .json()
+            .await
+            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
+        Err(ClientError::Api(problem))
+    }
+
     /// `GET /v1/workspaces/{ws}/activity`
     pub async fn list_workspace_activity(
         &self,

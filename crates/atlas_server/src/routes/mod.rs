@@ -4,6 +4,7 @@ pub(crate) mod audit;
 pub(crate) mod auth;
 pub(crate) mod automation_rules;
 pub(crate) mod boards;
+pub(crate) mod comments;
 pub(crate) mod documents;
 pub(crate) mod folders;
 pub(crate) mod grants;

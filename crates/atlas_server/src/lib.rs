@@ -418,6 +418,15 @@ pub fn app(state: AppState) -> Router {
             "/v1/workspaces/{ws}/documents/{slug}/copy",
             axum::routing::post(routes::documents::copy_document),
         )
+        .route(
+            "/v1/workspaces/{ws}/documents/{slug}/comments",
+            get(routes::documents::list_comments).post(routes::documents::create_comment),
+        )
+        .route(
+            "/v1/workspaces/{ws}/documents/{slug}/comments/{comment_id}",
+            axum::routing::patch(routes::documents::update_comment)
+                .delete(routes::documents::delete_comment),
+        )
         // Folders
         .route(
             "/v1/workspaces/{ws}/projects/{project_slug}/folders",

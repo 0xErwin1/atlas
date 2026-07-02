@@ -2965,6 +2965,268 @@
         ]
       }
     },
+    "/v1/workspaces/{ws}/documents/{slug}/comments": {
+      "get": {
+        "tags": [
+          "documents"
+        ],
+        "operationId": "list_comments",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Document slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Pagination cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Comment page"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          },
+          "404": {
+            "description": "Document not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "documents"
+        ],
+        "operationId": "create_comment",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Document slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCommentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Comment created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          },
+          "404": {
+            "description": "Document not found"
+          },
+          "422": {
+            "description": "Comment body is blank or exceeds the maximum length"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/v1/workspaces/{ws}/documents/{slug}/comments/{comment_id}": {
+      "delete": {
+        "tags": [
+          "documents"
+        ],
+        "operationId": "delete_comment",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Document slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "comment_id",
+            "in": "path",
+            "description": "Comment UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Comment deleted"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Neither the comment's author nor a workspace admin/owner"
+          },
+          "404": {
+            "description": "Document or comment not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "documents"
+        ],
+        "operationId": "update_comment",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Document slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "comment_id",
+            "in": "path",
+            "description": "Comment UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCommentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Comment updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Only the comment's author may edit it"
+          },
+          "404": {
+            "description": "Document or comment not found"
+          },
+          "422": {
+            "description": "Comment body is blank or exceeds the maximum length"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/v1/workspaces/{ws}/documents/{slug}/content": {
       "put": {
         "tags": [
@@ -9704,10 +9966,9 @@
       },
       "CommentDto": {
         "type": "object",
-        "description": "A single markdown comment on a task.",
+        "description": "A single markdown comment on a task or a document.\n\nComments are polymorphic: exactly one of `task_id` / `document_id` is present,\nidentifying the owner the comment was loaded from.",
         "required": [
           "id",
-          "task_id",
           "body",
           "author",
           "created_at",
@@ -9724,12 +9985,22 @@
             "type": "string",
             "format": "date-time"
           },
+          "document_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
           "id": {
             "type": "string",
             "format": "uuid"
           },
           "task_id": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "uuid"
           },
           "updated_at": {
@@ -11316,10 +11587,9 @@
             "type": "array",
             "items": {
               "type": "object",
-              "description": "A single markdown comment on a task.",
+              "description": "A single markdown comment on a task or a document.\n\nComments are polymorphic: exactly one of `task_id` / `document_id` is present,\nidentifying the owner the comment was loaded from.",
               "required": [
                 "id",
-                "task_id",
                 "body",
                 "author",
                 "created_at",
@@ -11336,12 +11606,22 @@
                   "type": "string",
                   "format": "date-time"
                 },
+                "document_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                },
                 "id": {
                   "type": "string",
                   "format": "uuid"
                 },
                 "task_id": {
-                  "type": "string",
+                  "type": [
+                    "string",
+                    "null"
+                  ],
                   "format": "uuid"
                 },
                 "updated_at": {

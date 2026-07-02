@@ -90,14 +90,16 @@ Tools by area (see each tool's own description for parameters):\n\
 - Workspace context: `list_workspaces`, `list_projects`, `list_members`, `list_tags`, \
 `list_used_labels`, `list_saved_searches`, `list_task_views`.\n\
 - Links and depth: `get_task_references`, `get_task_backlinks`, `get_document_backlinks`, \
-`list_checklist`, `list_comments`, `list_activity`, `list_workspace_activity`, \
-`list_document_history`, `get_document_revision`, `list_attachments`, `list_task_attachments`.\n\
+`list_checklist`, `list_comments`, `list_document_comments`, `list_activity`, \
+`list_workspace_activity`, `list_document_history`, `get_document_revision`, \
+`list_attachments`, `list_task_attachments`.\n\
 - Security audit (owner/admin only): `get_workspace_audit`, `get_platform_audit`.\n\
 - Task writes: `create_task`, `update_task`, `move_task`, `delete_task`, \
 `add_task_assignee`, `remove_task_assignee`, `add_comment`, `update_comment`, \
 `delete_comment`.\n\
 - Document and folder writes: `create_document`, `update_document_metadata`, \
 `update_document_content`, `delete_document`, `move_document`, `copy_document`, \
+`add_document_comment`, `update_document_comment`, `delete_document_comment`, \
 `create_folder`, `rename_folder`, `move_folder`, `copy_folder`, `delete_folder`.\n\
 - Board, column and tag writes: `create_board`, `update_board`, `delete_board`, \
 `create_column`, `update_column`, `delete_column`, `create_tag`, `update_tag`, `delete_tag`.\n\
@@ -1136,6 +1138,56 @@ pub struct DeleteCommentParams {
     pub workspace: String,
     /// Readable ID of the task that owns the comment.
     pub readable_id: String,
+    /// UUID string of the comment to delete.
+    pub comment_id: String,
+}
+
+/// Parameters accepted by the `list_document_comments` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ListDocumentCommentsParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Document slug.
+    pub slug: String,
+    /// Pass `next_cursor` from the previous response to fetch the next page.
+    #[serde(default)]
+    pub cursor: Option<String>,
+    /// Page size (default 50, max 200).
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+/// Parameters accepted by the `add_document_comment` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct AddDocumentCommentParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Slug of the document to comment on.
+    pub slug: String,
+    /// Markdown comment body. Must not be blank; max 10 000 characters.
+    pub body: String,
+}
+
+/// Parameters accepted by the `update_document_comment` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct UpdateDocumentCommentParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Slug of the document that owns the comment.
+    pub slug: String,
+    /// UUID string of the comment to edit.
+    pub comment_id: String,
+    /// New markdown comment body. Must not be blank; max 10 000 characters.
+    pub body: String,
+}
+
+/// Parameters accepted by the `delete_document_comment` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DeleteDocumentCommentParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Slug of the document that owns the comment.
+    pub slug: String,
     /// UUID string of the comment to delete.
     pub comment_id: String,
 }
@@ -3098,6 +3150,103 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
+    #[tool(description = "List markdown comments on a document, oldest first")]
+    async fn list_document_comments(
+        &self,
+        Parameters(params): Parameters<ListDocumentCommentsParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+        let limit = params.limit.unwrap_or(50).clamp(1, 200);
+
+        let page = client
+            .list_document_comments(
+                &params.workspace,
+                &params.slug,
+                params.cursor.as_deref(),
+                Some(limit),
+            )
+            .await
+            .map_err(|e| format!("list_document_comments for '{}' failed: {e}", params.slug))?;
+
+        let result = envelope_page(page, project_comment);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "Post a markdown comment on a document (max 10 000 characters)")]
+    async fn add_document_comment(
+        &self,
+        Parameters(params): Parameters<AddDocumentCommentParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
+        let body = CreateCommentRequest { body: params.body };
+
+        let comment = client
+            .add_document_comment(&params.workspace, &params.slug, body)
+            .await
+            .map_err(|e| enrich_client_error(e, "add_document_comment"))?;
+
+        let result = project_comment(comment);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Edit a document comment's body (max 10 000 characters). Only the comment's \
+                       author may edit it; anyone else gets a permission error."
+    )]
+    async fn update_document_comment(
+        &self,
+        Parameters(params): Parameters<UpdateDocumentCommentParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
+        let comment_id: uuid::Uuid = params
+            .comment_id
+            .parse()
+            .map_err(|_| format!("comment_id '{}' is not a valid UUID", params.comment_id))?;
+
+        let body = UpdateCommentRequest { body: params.body };
+
+        let comment = client
+            .update_document_comment(&params.workspace, &params.slug, comment_id, body)
+            .await
+            .map_err(|e| enrich_client_error(e, "update_document_comment"))?;
+
+        let result = project_comment(comment);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Delete a document comment. The comment's author or a workspace admin/owner \
+                       may delete it; anyone else gets a permission error."
+    )]
+    async fn delete_document_comment(
+        &self,
+        Parameters(params): Parameters<DeleteDocumentCommentParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
+        let comment_id: uuid::Uuid = params
+            .comment_id
+            .parse()
+            .map_err(|_| format!("comment_id '{}' is not a valid UUID", params.comment_id))?;
+
+        client
+            .delete_document_comment(&params.workspace, &params.slug, comment_id)
+            .await
+            .map_err(|e| enrich_client_error(e, "delete_document_comment"))?;
+
+        let result = json!({
+            "deleted": true,
+            "comment_id": comment_id,
+        });
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
     #[tool(
         description = "Promote a checklist item to a full task on the specified board and column. \
                        Returns the new task and the updated checklist item."
@@ -4216,6 +4365,18 @@ mod tests {
             instructions.contains("`delete_comment`"),
             "instructions must mention delete_comment"
         );
+        assert!(
+            instructions.contains("`list_document_comments`"),
+            "instructions must mention list_document_comments"
+        );
+        assert!(
+            instructions.contains("`add_document_comment`"),
+            "instructions must mention add_document_comment"
+        );
+        assert!(
+            instructions.contains("`delete_document_comment`"),
+            "instructions must mention delete_document_comment"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -4613,6 +4774,33 @@ mod tests {
         let params: DeleteCommentParams = serde_json::from_str(json).unwrap();
         assert_eq!(params.readable_id, "ATL-1");
         assert_eq!(params.comment_id, "018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234");
+    }
+
+    #[test]
+    fn document_comment_params_deserialize() {
+        let list: ListDocumentCommentsParams =
+            serde_json::from_str(r#"{"workspace":"ws","slug":"my-doc","limit":10}"#).unwrap();
+        assert_eq!(list.slug, "my-doc");
+        assert_eq!(list.limit, Some(10));
+
+        let add: AddDocumentCommentParams =
+            serde_json::from_str(r#"{"workspace":"ws","slug":"my-doc","body":"Nice note"}"#).unwrap();
+        assert_eq!(add.slug, "my-doc");
+        assert_eq!(add.body, "Nice note");
+
+        let update: UpdateDocumentCommentParams = serde_json::from_str(
+            r#"{"workspace":"ws","slug":"my-doc","comment_id":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234","body":"Edited"}"#,
+        )
+        .unwrap();
+        assert_eq!(update.comment_id, "018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234");
+        assert_eq!(update.body, "Edited");
+
+        let delete: DeleteDocumentCommentParams = serde_json::from_str(
+            r#"{"workspace":"ws","slug":"my-doc","comment_id":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234"}"#,
+        )
+        .unwrap();
+        assert_eq!(delete.slug, "my-doc");
+        assert_eq!(delete.comment_id, "018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234");
     }
 
     #[test]
