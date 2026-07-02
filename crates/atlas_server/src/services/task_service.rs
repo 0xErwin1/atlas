@@ -930,7 +930,7 @@ impl TaskService {
             });
         }
 
-        let updated = PgCommentRepo::update_body_in(&txn, ctx, owner, comment_id, body).await?;
+        let updated = PgCommentRepo::update_body_from(&txn, ctx, owner, comment, body).await?;
 
         txn.commit().await.map_err(db_err)?;
         Ok(updated)

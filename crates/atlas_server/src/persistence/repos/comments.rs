@@ -8,6 +8,7 @@ use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition, ConnectionTrait,
     DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder, QuerySelect,
+    sea_query::Expr,
 };
 
 use crate::persistence::entities::comments::{comment, comment_from};
@@ -63,24 +64,45 @@ impl PgCommentRepo {
     }
 
     /// Updates a comment's body and `updated_at` inside an existing transaction,
-    /// returning the updated row.
+    /// given the caller's already-loaded copy of the row (typically from
+    /// `get_for_owner_in`), returning the updated row.
     ///
-    /// `owner` scopes the lookup so a comment id from a different task/document
-    /// resolves to `NotFound` — this is the IDOR guard for cross-owner ids.
-    pub async fn update_body_in(
+    /// Re-applies the same scoping as `find_scoped` (workspace, owner,
+    /// `deleted_at IS NULL`) to the update itself instead of loading the row a
+    /// second time, so a concurrent soft-delete between the caller's load and
+    /// this update still resolves to `NotFound` instead of reviving the row.
+    pub async fn update_body_from(
         conn: &impl ConnectionTrait,
         ctx: &WorkspaceCtx,
         owner: CommentOwner,
-        id: CommentId,
+        loaded: Comment,
         new_body: String,
     ) -> Result<Comment, DomainError> {
-        let row = find_scoped(conn, ctx, owner, id).await?;
+        let now = Utc::now();
 
-        let mut active = row.into_active_model();
-        active.body = Set(new_body);
-        active.updated_at = Set(Utc::now());
+        let result = comment::Entity::update_many()
+            .col_expr(comment::Column::Body, Expr::value(new_body.clone()))
+            .col_expr(comment::Column::UpdatedAt, Expr::value(now))
+            .filter(comment::Column::Id.eq(loaded.id.0))
+            .filter(comment::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(owner_condition(owner))
+            .filter(comment::Column::DeletedAt.is_null())
+            .exec(conn)
+            .await
+            .map_err(db_err)?;
 
-        active.update(conn).await.map(comment_from).map_err(db_err)
+        if result.rows_affected == 0 {
+            return Err(DomainError::NotFound {
+                entity: "comment",
+                id: loaded.id.0,
+            });
+        }
+
+        Ok(Comment {
+            body: new_body,
+            updated_at: now,
+            ..loaded
+        })
     }
 
     /// Soft-deletes a comment inside an existing transaction.
