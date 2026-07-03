@@ -27,6 +27,17 @@ pub struct IntegrationConfigDto {
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
+/// Request body for `PATCH /v1/workspaces/{ws}/integration-configs/{config_id}`.
+///
+/// Only `is_active` can be changed; the integration slug and secret are fixed at
+/// creation. Omitting `is_active` leaves the config unchanged. Setting it to
+/// `false` makes the inbound ingest reject events for this integration.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct UpdateIntegrationConfigRequest {
+    pub is_active: Option<bool>,
+}
+
 /// Response from `POST /v1/workspaces/{ws}/integration-configs`.
 ///
 /// Carries the HMAC secret in plaintext exactly once. After this response the

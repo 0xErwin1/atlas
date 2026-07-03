@@ -471,6 +471,7 @@ pub fn app(state: AppState) -> Router {
         .route(
             "/v1/workspaces/{ws}/integration-configs/{config_id}",
             get(routes::integration_configs::get_integration_config)
+                .patch(routes::integration_configs::patch_integration_config)
                 .delete(routes::integration_configs::delete_integration_config),
         )
         // Automation rules (admin-only)

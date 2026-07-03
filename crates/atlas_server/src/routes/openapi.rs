@@ -39,6 +39,7 @@ use atlas_api::{
         groups::{AddGroupMemberRequest, CreateGroupRequest, GroupDto, GroupMemberDto},
         integrations::{
             CreateIntegrationConfigRequest, IntegrationConfigCreatedDto, IntegrationConfigDto,
+            UpdateIntegrationConfigRequest,
         },
         property_definitions::{CreatePropertyDefinitionRequest, PropertyDefinitionDto},
         saved_searches::{CreateSavedSearchRequest, RenameSavedSearchRequest, SavedSearchDto},
@@ -223,6 +224,7 @@ use atlas_api::{
         crate::routes::integration_configs::create_integration_config,
         crate::routes::integration_configs::list_integration_configs,
         crate::routes::integration_configs::get_integration_config,
+        crate::routes::integration_configs::patch_integration_config,
         crate::routes::integration_configs::delete_integration_config,
         crate::routes::automation_rules::create_automation_rule,
         crate::routes::automation_rules::list_automation_rules,
@@ -346,6 +348,7 @@ use atlas_api::{
         UpdateWebhookRequest,
         WebhookDeliveryDto,
         CreateIntegrationConfigRequest,
+        UpdateIntegrationConfigRequest,
         IntegrationConfigDto,
         IntegrationConfigCreatedDto,
         CreateAutomationRuleRequest,

@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 use atlas_api::dtos::integrations::{
     CreateIntegrationConfigRequest, IntegrationConfigCreatedDto, IntegrationConfigDto,
+    UpdateIntegrationConfigRequest,
 };
 use atlas_domain::permissions::Principal;
 
@@ -175,6 +176,52 @@ pub(crate) async fn get_integration_config(
         .await
         .map_err(ApiError::Domain)?
         .ok_or(ApiError::NotFound)?;
+
+    Ok(Json(row_to_dto(row)))
+}
+
+// ---------------------------------------------------------------------------
+// PATCH /v1/workspaces/{ws}/integration-configs/{config_id}
+// ---------------------------------------------------------------------------
+
+#[utoipa::path(
+    patch,
+    path = "/v1/workspaces/{ws}/integration-configs/{config_id}",
+    tag = "integrations",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+        ("config_id" = Uuid, Path, description = "Integration config id"),
+    ),
+    request_body = UpdateIntegrationConfigRequest,
+    responses(
+        (status = 200, description = "Updated integration config (no secret)", body = IntegrationConfigDto),
+        (status = 401, description = "Unauthenticated"),
+        (status = 404, description = "Config not found or caller is not an admin"),
+        (status = 422, description = "Validation error"),
+    )
+)]
+pub(crate) async fn patch_integration_config(
+    auth: Authorized<WorkspaceRes, AdminMin>,
+    Path((_ws, config_id)): Path<(String, Uuid)>,
+    State(state): State<AppState>,
+    Json(body): Json<UpdateIntegrationConfigRequest>,
+) -> Result<Json<IntegrationConfigDto>, ApiError> {
+    let ws_id = auth.workspace.id.0;
+
+    // The only mutable field is `is_active`; with nothing to change, return the
+    // current row so the call is an idempotent read.
+    let Some(is_active) = body.is_active else {
+        let row = PgIntegrationConfigRepo::get_by_id(&*state.db, ws_id, config_id)
+            .await
+            .map_err(ApiError::Domain)?
+            .ok_or(ApiError::NotFound)?;
+        return Ok(Json(row_to_dto(row)));
+    };
+
+    let row = PgIntegrationConfigRepo::set_active(&*state.db, ws_id, config_id, is_active)
+        .await
+        .map_err(ApiError::Domain)?;
 
     Ok(Json(row_to_dto(row)))
 }

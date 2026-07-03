@@ -106,6 +106,34 @@ impl PgIntegrationConfigRepo {
             .map_err(db_err)
     }
 
+    /// Sets the `is_active` flag on a config, returning the updated row.
+    ///
+    /// Returns `NotFound` when the config does not exist (or is deleted) in the
+    /// workspace. Deactivating a config makes the inbound ingest reject its
+    /// events (ingest resolves configs via `find_active`).
+    pub async fn set_active(
+        conn: &impl ConnectionTrait,
+        workspace_id: Uuid,
+        id: Uuid,
+        is_active: bool,
+    ) -> Result<integration_configs::Model, DomainError> {
+        let config = integration_configs::Entity::find_by_id(id)
+            .filter(integration_configs::Column::WorkspaceId.eq(workspace_id))
+            .filter(integration_configs::Column::DeletedAt.is_null())
+            .one(conn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "integration_config",
+                id,
+            })?;
+
+        let mut active = config.into_active_model();
+        active.is_active = Set(is_active);
+        active.updated_at = Set(Utc::now());
+        active.update(conn).await.map_err(db_err)
+    }
+
     /// Soft-deletes a config and revokes its provisioned `integration_api_key_id`.
     ///
     /// The api key row is kept (the FK uses `ON DELETE RESTRICT` because tasks may

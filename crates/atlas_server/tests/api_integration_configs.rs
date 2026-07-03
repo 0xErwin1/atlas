@@ -347,6 +347,103 @@ async fn admin_delete_soft_deletes_and_revokes_key() {
 }
 
 // ---------------------------------------------------------------------------
+// [I] PATCH is_active toggles the config and gates the inbound ingest
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn patch_is_active_toggles_and_gates_ingest() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _user) = support::login_user_with_workspace(&server, &db, "ic-toggle").await;
+
+    let token = client.token().expect("token");
+    let base_url = server.base_url();
+    let ws_slug = &ws.slug;
+
+    let create_resp = http()
+        .post(format!(
+            "{base_url}/v1/workspaces/{ws_slug}/integration-configs"
+        ))
+        .bearer_auth(token)
+        .json(&serde_json::json!({ "integration": "github" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(create_resp.status(), 201);
+    let created: Value = create_resp.json().await.unwrap();
+    let config_id = created["id"].as_str().unwrap().to_string();
+    let secret = created["secret"].as_str().unwrap().to_string();
+
+    let deactivate = http()
+        .patch(format!(
+            "{base_url}/v1/workspaces/{ws_slug}/integration-configs/{config_id}"
+        ))
+        .bearer_auth(token)
+        .json(&serde_json::json!({ "is_active": false }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(deactivate.status(), 200, "patch must return 200");
+    let patched: Value = deactivate.json().await.unwrap();
+    assert_eq!(patched["is_active"], false, "config must be deactivated");
+    assert!(patched["secret"].is_null(), "patch must not expose secret");
+
+    // A deactivated config makes the ingest resolve no active config → 404.
+    let body = b"{\"action\":\"completed\"}";
+    let sig = compute_sig(secret.as_bytes(), body);
+    let ingest_off = http()
+        .post(format!(
+            "{base_url}/v1/workspaces/{ws_slug}/integrations/github/events"
+        ))
+        .header("x-hub-signature-256", &sig)
+        .header("x-github-delivery", Uuid::now_v7().to_string())
+        .header("x-github-event", "workflow_run")
+        .header("content-type", "application/json")
+        .body(body.as_ref())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        ingest_off.status(),
+        404,
+        "ingest must be rejected while the config is inactive"
+    );
+
+    let reactivate = http()
+        .patch(format!(
+            "{base_url}/v1/workspaces/{ws_slug}/integration-configs/{config_id}"
+        ))
+        .bearer_auth(token)
+        .json(&serde_json::json!({ "is_active": true }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(reactivate.status(), 200);
+    let reactivated: Value = reactivate.json().await.unwrap();
+    assert_eq!(reactivated["is_active"], true, "config must be reactivated");
+
+    let ingest_on = http()
+        .post(format!(
+            "{base_url}/v1/workspaces/{ws_slug}/integrations/github/events"
+        ))
+        .header("x-hub-signature-256", &sig)
+        .header("x-github-delivery", Uuid::now_v7().to_string())
+        .header("x-github-event", "workflow_run")
+        .header("content-type", "application/json")
+        .body(body.as_ref())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        ingest_on.status(),
+        200,
+        "ingest must succeed again after reactivation"
+    );
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
 // B4.7 [I] Ingestion: valid signed event → 200 + outbox row
 // ---------------------------------------------------------------------------
 
