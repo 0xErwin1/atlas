@@ -466,6 +466,7 @@ dependencies = [
  "futures",
  "governor",
  "hmac 0.12.1",
+ "log",
  "migration",
  "object_store",
  "rand 0.8.6",
