@@ -2640,7 +2640,11 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "Create a new board in a project.")]
+    #[tool(
+        description = "Create a new board in a project. A new board is auto-seeded with the \
+workspace's default columns (statuses), which are returned in the `columns` field of the \
+response — do NOT create those columns again; only add columns for statuses that are missing."
+    )]
     async fn create_board(
         &self,
         Parameters(params): Parameters<CreateBoardParams>,
@@ -2655,11 +2659,19 @@ impl AtlasMcp {
             .await
             .map_err(|e| enrich_client_error(e, "create_board"))?;
 
+        // A new board is auto-seeded with the workspace's default columns; return
+        // them so the caller does not recreate the statuses that already exist.
+        let columns = client
+            .list_columns(&params.workspace, board.id)
+            .await
+            .map_err(|e| enrich_client_error(e, "list_columns"))?;
+
         let result = json!({
             "id": board.id,
             "name": board.name,
             "project_id": board.project_id,
             "updated_at": board.updated_at,
+            "columns": columns.into_iter().map(project_column).collect::<Vec<_>>(),
         });
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
