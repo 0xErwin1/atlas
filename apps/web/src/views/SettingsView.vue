@@ -14,6 +14,7 @@ import StatusesPanel from '@/components/settings/StatusesPanel.vue';
 import StatusTemplatesPanel from '@/components/settings/StatusTemplatesPanel.vue';
 import TagsPanel from '@/components/settings/TagsPanel.vue';
 import UsersPanel from '@/components/settings/UsersPanel.vue';
+import WebhooksPanel from '@/components/settings/WebhooksPanel.vue';
 import WorkspaceAuditPanel from '@/components/settings/WorkspaceAuditPanel.vue';
 import WorkspaceGeneralPanel from '@/components/settings/WorkspaceGeneralPanel.vue';
 import Icon from '@/components/ui/Icon.vue';
@@ -38,6 +39,7 @@ export type SettingsSection =
   | 'audit'
   | 'users'
   | 'workspaces'
+  | 'webhooks'
   | 'platform-audit'
   | 'about';
 
@@ -118,6 +120,7 @@ const navGroups = computed<NavGroup[]>(() => {
     groups.push({
       label: 'Administration',
       entries: [
+        { section: 'webhooks', icon: 'webhook', label: 'Webhooks & Events', rootOnly: true },
         { section: 'users', icon: 'users', label: 'Users', rootOnly: true },
         { section: 'workspaces', icon: 'layers', label: 'Workspaces', rootOnly: true },
         { section: 'platform-audit', icon: 'shield-alert', label: 'Platform audit', rootOnly: true },
@@ -213,6 +216,7 @@ watch(
       <UsersPanel v-else-if="activeSection === 'users'" />
       <AdminWorkspacesPanel v-else-if="activeSection === 'workspaces'" />
       <PlatformAuditPanel v-else-if="activeSection === 'platform-audit'" />
+      <WebhooksPanel v-else-if="activeSection === 'webhooks'" />
       <AboutPanel v-else-if="activeSection === 'about'" />
     </div>
   </AppShell>
