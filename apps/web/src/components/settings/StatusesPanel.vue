@@ -7,6 +7,7 @@ import ColorPicker from '@/components/ui/ColorPicker.vue';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
 import Icon from '@/components/ui/Icon.vue';
+import { useColumnEditing } from '@/composables/useColumnEditing';
 import { resolveColumnSwatchId } from '@/lib/columnColor';
 import { swatchById } from '@/lib/swatches';
 import { type ColumnDto, useBoardsStore } from '@/stores/boards';
@@ -28,6 +29,11 @@ const templatesStore = useStatusTemplatesStore();
 const ui = useUiStore();
 
 const ws = computed(() => workspace.activeWorkspaceSlug);
+
+const edit = useColumnEditing(
+  () => ws.value,
+  () => (selectedBoardId.value === '' ? null : selectedBoardId.value),
+);
 
 const selectedBoardId = ref<string>('');
 const loadingColumns = ref(false);
@@ -118,58 +124,17 @@ function cancelRename(): void {
 }
 
 /**
- * Persists the name and color edited together in the row's edit mode. Sends both
- * in a single PATCH; only the changed fields are included so an untouched name
- * or color is left as-is on the server.
+ * Persists the name and color edited together in the row's edit mode, then
+ * leaves edit mode on success. The changed-field diff and the update call live in
+ * `useColumnEditing`.
  */
 async function saveEdit(column: ColumnDto): Promise<void> {
-  const slug = ws.value;
-  if (slug === null) {
-    cancelRename();
-    return;
-  }
-
-  const nextName = draftName.value.trim();
-  const patch: { name?: string; color?: string } = {};
-  if (nextName !== '' && nextName !== column.name) patch.name = nextName;
-  if (draftColor.value !== resolveColumnSwatchId(column)) patch.color = draftColor.value;
-
-  if (patch.name === undefined && patch.color === undefined) {
-    cancelRename();
-    return;
-  }
-
-  const ok = await boards.updateColumn(slug, selectedBoardId.value, column.id, patch);
-  if (ok) {
-    ui.showBanner('Status updated', 'success');
-    cancelRename();
-  } else if (boards.error) {
-    ui.showBanner(boards.error, 'error');
-  }
+  const ok = await edit.saveEdit(column, { name: draftName.value, color: draftColor.value });
+  if (ok) cancelRename();
 }
 
-/**
- * Reorders a column one slot up or down by requesting a fractional position
- * between the new neighbours. `before` is the key the column will follow and
- * `after` the key it will precede (null at the list edges).
- */
 async function move(column: ColumnDto, direction: -1 | 1): Promise<void> {
-  const slug = ws.value;
-  if (slug === null) return;
-
-  const list = boards.columns;
-  const index = list.findIndex((c) => c.id === column.id);
-  const target = index + direction;
-  if (index === -1 || target < 0 || target >= list.length) return;
-
-  const lower = direction === -1 ? list[target - 1] : list[target];
-  const upper = direction === -1 ? list[target] : list[target + 1];
-
-  const ok = await boards.moveColumn(slug, selectedBoardId.value, column.id, {
-    before: lower?.position_key ?? null,
-    after: upper?.position_key ?? null,
-  });
-  if (!ok && boards.error) ui.showBanner(boards.error, 'error');
+  await edit.move(column, direction);
 }
 
 /**
@@ -191,14 +156,11 @@ async function applyDefaults(): Promise<void> {
 }
 
 async function confirmDelete(): Promise<void> {
-  const slug = ws.value;
   const id = deleteTargetId.value;
   deleteTargetId.value = null;
-  if (slug === null || id === null) return;
+  if (id === null) return;
 
-  const ok = await boards.deleteColumn(slug, selectedBoardId.value, id);
-  if (ok) ui.showBanner('Status deleted', 'success');
-  else if (boards.error) ui.showBanner(boards.error, 'error');
+  await edit.remove(id);
 }
 </script>
 

@@ -6,11 +6,12 @@ import ContextMenu from '@/components/ui/ContextMenu.vue';
 import Icon from '@/components/ui/Icon.vue';
 import PromptDialog from '@/components/ui/PromptDialog.vue';
 import { useBreakpoint } from '@/composables/useBreakpoint';
+import { useColumnEditing } from '@/composables/useColumnEditing';
 import { useContextMenu } from '@/composables/useContextMenu';
 import { useKanbanMove } from '@/composables/useKanbanMove';
 import { useTaskInteractions } from '@/composables/useTaskInteractions';
 import { activeDotIndex, dotScrollTarget } from '@/lib/kanbanDots';
-import { useBoardsStore } from '@/stores/boards';
+import { type ColumnDto, useBoardsStore } from '@/stores/boards';
 import { type TaskViewMode, useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 
@@ -31,9 +32,15 @@ const { move } = useKanbanMove(props.ws);
 const { isMobile } = useBreakpoint();
 const ti = useTaskInteractions(props.ws);
 
+const columnEdit = useColumnEditing(
+  () => props.ws,
+  () => boards.board?.id ?? null,
+);
+
 const scrollEl = ref<HTMLElement | null>(null);
 const activeColumn = ref(0);
 const addColumnOpen = ref(false);
+const columnDeleteTarget = ref<ColumnDto | null>(null);
 
 const menu = useContextMenu();
 
@@ -93,6 +100,14 @@ async function onAddColumnConfirm(value: string): Promise<void> {
   if (created === null && boards.error) ui.showBanner(boards.error, 'error');
 }
 
+async function onConfirmDeleteColumn(): Promise<void> {
+  const target = columnDeleteTarget.value;
+  columnDeleteTarget.value = null;
+  if (target === null) return;
+
+  await columnEdit.remove(target.id);
+}
+
 const deleteTarget = computed(() => ti.deleteTargetFor(ti.menuReadableId.value));
 
 const menuItems = computed(() => {
@@ -123,17 +138,22 @@ const menuItems = computed(() => {
       @scroll="onBoardScroll"
     >
       <KanbanColumn
-        v-for="column in boards.columns"
+        v-for="(column, index) in boards.columns"
         :key="column.id"
         :column="column"
         :tasks="boards.filteredTasksByColumn(column.id)"
         :selected-readable-id="selectedReadableId"
         :fluid="isMobile"
+        :is-first="index === 0"
+        :is-last="index === boards.columns.length - 1"
         @drop="onDrop"
         @create="onCreate"
         @select="(id) => emit('select', id)"
         @open="(id) => emit('open', id)"
         @menu="onMenu"
+        @save-column="(col, draft) => columnEdit.saveEdit(col, draft)"
+        @move-column="(col, direction) => columnEdit.move(col, direction)"
+        @delete-column="(col) => { columnDeleteTarget = col; }"
       />
 
       <button
@@ -218,6 +238,19 @@ const menuItems = computed(() => {
       confirm-icon="trash-2"
       @confirm="ti.onConfirmDelete"
       @cancel="ti.confirmOpen.value = false"
+    />
+
+    <ConfirmDialog
+      :open="columnDeleteTarget !== null"
+      tone="danger"
+      title="Delete this status?"
+      message="The column is removed from the board. It must have no tasks; move or delete its tasks first."
+      :detail="columnDeleteTarget?.name"
+      detail-icon="kanban"
+      confirm-label="Delete status"
+      confirm-icon="trash"
+      @confirm="onConfirmDeleteColumn"
+      @cancel="columnDeleteTarget = null"
     />
   </div>
 </template>
