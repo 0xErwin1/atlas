@@ -296,6 +296,53 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     return true;
   }
 
+  async function updateChecklistItem(
+    ws: string,
+    readableId: string,
+    itemId: string,
+    title: string,
+  ): Promise<boolean> {
+    error.value = null;
+
+    const trimmed = title.trim();
+    if (trimmed === '') return false;
+
+    const idx = checklist.value.findIndex((i) => i.id === itemId);
+    if (idx === -1) {
+      return false;
+    }
+
+    const item = checklist.value[idx];
+    if (item === undefined || item.title === trimmed) {
+      return false;
+    }
+
+    const optimistic = [...checklist.value];
+    optimistic[idx] = { ...item, title: trimmed };
+    checklist.value = optimistic;
+
+    const { data, error: apiError } = await wrappedClient.PATCH(
+      '/v1/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}',
+      {
+        params: { path: { ws, readable_id: readableId, item_id: itemId } },
+        body: { title: trimmed },
+      },
+    );
+
+    if (apiError !== undefined || data === undefined) {
+      const rolledBack = [...checklist.value];
+      rolledBack[idx] = item;
+      checklist.value = rolledBack;
+      error.value = errorHint(apiError, 'Failed to update checklist item');
+      return false;
+    }
+
+    const reconciled = [...checklist.value];
+    reconciled[idx] = data;
+    checklist.value = reconciled;
+    return true;
+  }
+
   async function promoteChecklistItem(
     ws: string,
     readableId: string,
@@ -588,6 +635,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     addAssignee,
     removeAssignee,
     toggleChecklistItem,
+    updateChecklistItem,
     promoteChecklistItem,
     addChecklistItem,
     removeChecklistItem,

@@ -16,6 +16,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   toggle: [itemId: string];
+  edit: [itemId: string, title: string];
   promote: [itemId: string, columnId: string];
   remove: [itemId: string];
   add: [title: string];
@@ -26,11 +27,39 @@ const doneCount = computed(() => props.items.filter((i) => i.checked).length);
 const draft = ref('');
 const pickerOpenForItem = ref<string | null>(null);
 
+// Only one item is edited at a time; the input's mount focuses itself.
+const editingId = ref<string | null>(null);
+const editDraft = ref('');
+
 function submitDraft(): void {
   const title = draft.value.trim();
   if (title === '') return;
   emit('add', title);
   draft.value = '';
+}
+
+function beginEdit(item: ChecklistItemDto): void {
+  editingId.value = item.id;
+  editDraft.value = item.title;
+}
+
+// Focus the edit input as it mounts. A function ref sidesteps the array a string
+// ref would collect inside the `v-for`, and needs no post-render tick.
+function focusOnMount(el: unknown): void {
+  if (el instanceof HTMLInputElement) el.focus();
+}
+
+function commitEdit(): void {
+  const id = editingId.value;
+  if (id === null) return;
+
+  const title = editDraft.value.trim();
+  editingId.value = null;
+  if (title !== '') emit('edit', id, title);
+}
+
+function cancelEdit(): void {
+  editingId.value = null;
 }
 
 function openPicker(itemId: string): void {
@@ -88,15 +117,47 @@ function pickColumn(itemId: string, columnId: string): void {
         <Icon v-if="item.checked" name="check" :size="12" />
       </button>
 
+      <input
+        v-if="editingId === item.id"
+        :ref="focusOnMount"
+        v-model="editDraft"
+        type="text"
+        class="atl-checklist-add"
+        aria-label="Edit item"
+        @keydown.enter.prevent="commitEdit"
+        @keydown.esc.prevent="cancelEdit"
+        @blur="commitEdit"
+      />
       <span
-        class="flex-1 min-w-0"
+        v-else
+        class="flex-1 min-w-0 cursor-text"
         :style="{
           color: item.checked ? 'var(--c-muted)' : 'var(--c-foreground)',
           textDecoration: item.checked ? 'line-through' : 'none',
         }"
+        @dblclick="beginEdit(item)"
       >
         {{ item.title }}
       </span>
+
+      <button
+        v-if="editingId !== item.id"
+        type="button"
+        title="Edit item"
+        aria-label="Edit item"
+        class="shrink-0 cursor-pointer opacity-0 group-hover:opacity-100 flex items-center justify-center"
+        style="
+          width: 22px;
+          height: 22px;
+          border: 1px solid var(--c-border);
+          border-radius: var(--r-sm);
+          background: var(--c-secondary);
+          color: var(--c-muted);
+        "
+        @click="beginEdit(item)"
+      >
+        <Icon name="pencil" :size="13" />
+      </button>
 
       <a
         v-if="item.promoted_readable_id"

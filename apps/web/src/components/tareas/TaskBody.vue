@@ -293,6 +293,11 @@ async function onChecklistToggle(itemId: string): Promise<void> {
   if (!ok) fail(detail.error);
 }
 
+async function onChecklistEdit(itemId: string, title: string): Promise<void> {
+  const ok = await detail.updateChecklistItem(props.ws, props.task.readable_id, itemId, title);
+  if (!ok && detail.error !== null) fail(detail.error);
+}
+
 async function onChecklistRemove(itemId: string): Promise<void> {
   const ok = await detail.removeChecklistItem(props.ws, props.task.readable_id, itemId);
   if (!ok) fail(detail.error);
@@ -506,6 +511,7 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
         :items="detail.checklist"
         :columns="boards.columns"
         @toggle="onChecklistToggle"
+        @edit="onChecklistEdit"
         @remove="onChecklistRemove"
         @add="onChecklistAdd"
         @promote="onChecklistPromote"

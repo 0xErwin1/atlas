@@ -74,4 +74,47 @@ describe('Checklist (REQ-W22)', () => {
 
     expect(wrapper.find('button[aria-label="Promote to task"]').exists()).toBe(false);
   });
+
+  it('swaps the title for an input and emits edit with (id, title) on enter', async () => {
+    const wrapper = mount(Checklist, { props: { items: [item('a', 'One', false)], columns } });
+
+    await wrapper.get('button[aria-label="Edit item"]').trigger('click');
+
+    const input = wrapper.get('input[aria-label="Edit item"]');
+    await input.setValue('One edited');
+    await input.trigger('keydown.enter');
+
+    expect(wrapper.emitted('edit')).toEqual([['a', 'One edited']]);
+  });
+
+  it('begins editing on a double-click of the title', async () => {
+    const wrapper = mount(Checklist, { props: { items: [item('a', 'One', false)], columns } });
+
+    await wrapper.get('[data-checklist-item="a"] span').trigger('dblclick');
+
+    expect(wrapper.find('input[aria-label="Edit item"]').exists()).toBe(true);
+  });
+
+  it('cancels the edit on escape without emitting', async () => {
+    const wrapper = mount(Checklist, { props: { items: [item('a', 'One', false)], columns } });
+
+    await wrapper.get('button[aria-label="Edit item"]').trigger('click');
+    const input = wrapper.get('input[aria-label="Edit item"]');
+    await input.setValue('discard me');
+    await input.trigger('keydown.esc');
+
+    expect(wrapper.emitted('edit')).toBeUndefined();
+    expect(wrapper.find('input[aria-label="Edit item"]').exists()).toBe(false);
+  });
+
+  it('does not emit edit when the title is cleared to empty', async () => {
+    const wrapper = mount(Checklist, { props: { items: [item('a', 'One', false)], columns } });
+
+    await wrapper.get('button[aria-label="Edit item"]').trigger('click');
+    const input = wrapper.get('input[aria-label="Edit item"]');
+    await input.setValue('   ');
+    await input.trigger('keydown.enter');
+
+    expect(wrapper.emitted('edit')).toBeUndefined();
+  });
 });

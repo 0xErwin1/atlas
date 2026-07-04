@@ -315,6 +315,48 @@ describe('useTaskDetailStore', () => {
     expect(store.error).toBe('Failed');
   });
 
+  it('updateChecklistItem edits the title optimistically and PATCHes', async () => {
+    const store = useTaskDetailStore();
+    store._setForTest({ checklist: [checklistItem('c1', 'Step', false)] });
+
+    PATCH.mockResolvedValueOnce({
+      data: { ...checklistItem('c1', 'Step edited', false) },
+      error: undefined,
+    });
+
+    const ok = await store.updateChecklistItem('ws', 'ATL-1', 'c1', '  Step edited  ');
+
+    expect(ok).toBe(true);
+    expect(store.checklist[0]?.title).toBe('Step edited');
+
+    const [, opts] = PATCH.mock.calls[0] as [string, { body: { title?: string | null } }];
+    expect(opts.body.title).toBe('Step edited');
+  });
+
+  it('updateChecklistItem rolls back the optimistic title on error', async () => {
+    const store = useTaskDetailStore();
+    store._setForTest({ checklist: [checklistItem('c1', 'Step', false)] });
+
+    PATCH.mockResolvedValueOnce({ data: undefined, error: { hint: 'Failed' } });
+
+    const ok = await store.updateChecklistItem('ws', 'ATL-1', 'c1', 'Step edited');
+
+    expect(ok).toBe(false);
+    expect(store.checklist[0]?.title).toBe('Step');
+    expect(store.error).toBe('Failed');
+  });
+
+  it('updateChecklistItem is a no-op that never PATCHes when the title is unchanged', async () => {
+    const store = useTaskDetailStore();
+    store._setForTest({ checklist: [checklistItem('c1', 'Step', false)] });
+
+    const ok = await store.updateChecklistItem('ws', 'ATL-1', 'c1', '  Step  ');
+
+    expect(ok).toBe(false);
+    expect(PATCH).not.toHaveBeenCalled();
+    expect(store.error).toBeNull();
+  });
+
   it('removeChecklistItem deletes the item on success', async () => {
     const store = useTaskDetailStore();
     store._setForTest({
