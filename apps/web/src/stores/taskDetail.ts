@@ -255,6 +255,24 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     return true;
   }
 
+  /**
+   * Re-fetches the task's activity feed so a change the acting user just made
+   * appears immediately. The checklist endpoints emit no live event, so a
+   * checklist mutation would otherwise not surface in the feed until an unrelated
+   * reload; this keeps add/toggle/edit/remove/promote symmetric and live. Failures
+   * are swallowed — a stale feed must never surface as a mutation error.
+   */
+  async function reloadActivity(ws: string, readableId: string): Promise<void> {
+    try {
+      const result = await wrappedClient.GET('/v1/workspaces/{ws}/tasks/{readable_id}/activity', {
+        params: { path: { ws, readable_id: readableId } },
+      });
+      if (result?.data !== undefined) activity.value = result.data.items;
+    } catch {
+      // A stale activity feed must never surface as a mutation error.
+    }
+  }
+
   async function toggleChecklistItem(ws: string, readableId: string, itemId: string): Promise<boolean> {
     error.value = null;
 
@@ -293,6 +311,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     const reconciled = [...checklist.value];
     reconciled[idx] = data;
     checklist.value = reconciled;
+    void reloadActivity(ws, readableId);
     return true;
   }
 
@@ -340,6 +359,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     const reconciled = [...checklist.value];
     reconciled[idx] = data;
     checklist.value = reconciled;
+    void reloadActivity(ws, readableId);
     return true;
   }
 
@@ -372,6 +392,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
       checklist.value = updated;
     }
 
+    void reloadActivity(ws, readableId);
     return { ok: true, readableId: data.task.readable_id };
   }
 
@@ -389,6 +410,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     }
 
     checklist.value = [...checklist.value, data];
+    void reloadActivity(ws, readableId);
     return true;
   }
 
@@ -406,6 +428,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     }
 
     checklist.value = checklist.value.filter((i) => i.id !== itemId);
+    void reloadActivity(ws, readableId);
     return true;
   }
 

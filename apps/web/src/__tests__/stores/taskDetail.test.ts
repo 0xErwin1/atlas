@@ -167,6 +167,31 @@ describe('useTaskDetailStore', () => {
     expect(store.error).toBe('Not found');
   });
 
+  it('addChecklistItem re-fetches the activity feed so the new entry surfaces', async () => {
+    const store = useTaskDetailStore();
+
+    POST.mockResolvedValueOnce({
+      data: checklistItem('c9', 'Write tests', false),
+      error: undefined,
+    });
+    GET.mockResolvedValueOnce({
+      data: { items: [{ id: 'a1', kind: 'checklist_added' }] },
+      error: undefined,
+    });
+
+    const ok = await store.addChecklistItem('ws', 'ATL-1', 'Write tests');
+    expect(ok).toBe(true);
+
+    // The activity reload is fire-and-forget; let its microtask settle.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(GET).toHaveBeenCalledWith('/v1/workspaces/{ws}/tasks/{readable_id}/activity', {
+      params: { path: { ws: 'ws', readable_id: 'ATL-1' } },
+    });
+    expect(store.activity.map((a) => a.kind)).toEqual(['checklist_added']);
+  });
+
   it('addSubtask appends the created child as a summary row', async () => {
     const store = useTaskDetailStore();
 
