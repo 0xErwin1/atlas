@@ -2478,7 +2478,7 @@ async fn activity_is_recorded_on_task_create() {
 }
 
 #[tokio::test]
-async fn consecutive_field_edits_coalesce_by_field_and_actor() {
+async fn description_edits_are_suppressed_and_other_fields_coalesce() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;
     let (client, ws, _) =
@@ -2527,7 +2527,7 @@ async fn consecutive_field_edits_coalesce_by_field_and_actor() {
         .await
         .expect("create task");
 
-    // Three consecutive description edits by the same actor within the window.
+    // Description autosaves must never reach the activity feed, no matter how many.
     for draft in ["First draft", "Second draft", "Third draft"] {
         client
             .update_task(
@@ -2547,32 +2547,53 @@ async fn consecutive_field_edits_coalesce_by_field_and_actor() {
             .expect("update description");
     }
 
-    // They collapse into a single field_changed entry.
+    assert_eq!(
+        count_activity_of_kind(&db, task.id, "field_changed").await,
+        0,
+        "editing the description never records an activity entry"
+    );
+
+    // Other fields ARE recorded, and consecutive same-field edits by the same actor
+    // coalesce into a single entry.
+    for renamed in ["Renamed A", "Renamed B"] {
+        client
+            .update_task(
+                &ws.slug,
+                &task.readable_id,
+                UpdateTaskRequest {
+                    title: Some(renamed.to_string()),
+                    description: None,
+                    priority: None,
+                    due_date: None,
+                    estimate: None,
+                    labels: None,
+                    properties: None,
+                },
+            )
+            .await
+            .expect("update title");
+    }
+
     assert_eq!(
         count_activity_of_kind(&db, task.id, "field_changed").await,
         1,
-        "consecutive same-field edits by the same actor coalesce into one entry"
+        "consecutive title edits coalesce into one entry"
     );
 
-    // The single entry keeps the original old_value (null) and the latest new_value.
     let payload = latest_field_changed_payload(&db, task.id).await;
-    assert_eq!(
-        payload["field_changed"]["field"].as_str(),
-        Some("description")
-    );
+    assert_eq!(payload["field_changed"]["field"].as_str(), Some("title"));
     assert_eq!(
         payload["field_changed"]["new_value"].as_str(),
-        Some("Third draft"),
+        Some("Renamed B"),
         "the coalesced entry reflects the latest edit"
     );
-    let old_value = &payload["field_changed"]["old_value"];
-    assert!(
-        old_value.is_null() || old_value.as_str() == Some(""),
-        "the coalesced entry keeps the burst's original (pre-edit) old_value, not an \
-         intermediate one; got {old_value}"
+    assert_eq!(
+        payload["field_changed"]["old_value"].as_str(),
+        Some("Tracked"),
+        "the coalesced entry keeps the burst's original (pre-edit) old_value"
     );
 
-    // A different field is a distinct entry — coalescing is field-scoped.
+    // A change to a different field is a distinct entry — coalescing is field-scoped.
     client
         .update_task(
             &ws.slug,
@@ -2593,7 +2614,7 @@ async fn consecutive_field_edits_coalesce_by_field_and_actor() {
     assert_eq!(
         count_activity_of_kind(&db, task.id, "field_changed").await,
         2,
-        "a change to a different field is not merged into the description entry"
+        "a change to a different field is not merged into the title entry"
     );
 
     db.teardown().await;

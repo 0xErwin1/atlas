@@ -36,6 +36,7 @@ pub mod m20260630_000033_workspace_soft_delete;
 pub mod m20260702_000034_comments;
 pub mod m20260702_000035_automation_add_comment_action;
 pub mod m20260702_000036_events_outbox_notify;
+pub mod m20260702_000037_prune_description_edit_activity;
 
 use sea_orm_migration::prelude::*;
 
@@ -81,6 +82,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260702_000034_comments::Migration),
             Box::new(m20260702_000035_automation_add_comment_action::Migration),
             Box::new(m20260702_000036_events_outbox_notify::Migration),
+            Box::new(m20260702_000037_prune_description_edit_activity::Migration),
         ]
     }
 }
