@@ -9,9 +9,9 @@ const props = defineProps<{ actors: ActorDto[] }>();
 const auth = useAuthStore();
 
 // Presence always includes the viewer (they are heartbeating themselves in), so
-// the pill surfaces who *else* is on the board and renders nothing when the
+// the stack surfaces who *else* is on the resource and renders nothing when the
 // viewer is alone. The avatar stack marks agents distinctly and reuses the same
-// primitive as task assignees.
+// primitive as task assignees. Shared by board and document presence.
 const others = computed<ActorDto[]>(() => {
   const me = auth.user;
   if (me?.id == null) return props.actors;

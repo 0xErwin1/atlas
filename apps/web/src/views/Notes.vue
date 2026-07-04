@@ -14,12 +14,16 @@ import WikiLinkSuggest from '@/components/notas/WikiLinkSuggest.vue';
 import SharePanel from '@/components/share/SharePanel.vue';
 import EditorToolbar from '@/components/shell/EditorToolbar.vue';
 import Icon from '@/components/ui/Icon.vue';
+import PresenceAvatars from '@/components/ui/PresenceAvatars.vue';
 import TabStrip, { type Tab } from '@/components/ui/TabStrip.vue';
 import { useBreakpoint } from '@/composables/useBreakpoint';
 import type { MergeSegment } from '@/composables/useCasMerge';
 import { useCasMerge } from '@/composables/useCasMerge';
+import { useDocumentPresence } from '@/composables/useDocumentPresence';
+import { useLiveUpdates } from '@/composables/useLiveUpdates';
 import { useMarkdownDoc } from '@/composables/useMarkdownDoc';
 import { useWikilinkTitles } from '@/composables/useWikilinkTitles';
+import { PRESENCE_UPDATED } from '@/lib/eventTypes';
 import { joinFrontmatter, splitFrontmatter } from '@/lib/frontmatter';
 import { type WikilinkRef, wikilinkHref } from '@/lib/wikilink';
 import { useDocumentsStore } from '@/stores/documents';
@@ -57,6 +61,18 @@ const slug = computed(() => {
 });
 
 const ws = computed(() => workspace.activeWorkspaceSlug ?? '');
+
+// Live document presence: heartbeat the viewer into the open note and surface who
+// else is editing it. `presence.updated` is the only live event this view acts on;
+// the note list is refreshed by the sidebar's own stream and the open editor is
+// CAS-managed, so a reconnect needs no resync here (the next heartbeat re-seeds).
+const presence = useDocumentPresence(ws, slug);
+useLiveUpdates(ws, {
+  onEvent: (evt) => {
+    if (evt.type === PRESENCE_UPDATED) presence.apply(evt.envelope);
+  },
+  onResync: () => {},
+});
 
 const title = ref('');
 const body = ref('');
@@ -542,6 +558,8 @@ watch(title, (t) => {
 
         <div aria-hidden="true" style="width: 1px; height: 18px; background: var(--c-border);" />
       </template>
+
+      <PresenceAvatars v-if="slug" :actors="presence.actors" />
 
       <button
         type="button"

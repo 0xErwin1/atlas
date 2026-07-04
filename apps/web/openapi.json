@@ -3637,6 +3637,105 @@
         ]
       }
     },
+    "/v1/workspaces/{ws}/documents/{slug}/presence": {
+      "post": {
+        "tags": [
+          "presence"
+        ],
+        "operationId": "document_heartbeat",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Document slug or UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current document presence",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentPresenceResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          },
+          "404": {
+            "description": "Document not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "presence"
+        ],
+        "operationId": "document_leave",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Document slug or UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Presence cleared"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          },
+          "404": {
+            "description": "Document not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/v1/workspaces/{ws}/documents/{slug}/revisions/{seq}": {
       "get": {
         "tags": [
@@ -10906,6 +11005,26 @@
           }
         }
       },
+      "DocumentPresenceResponse": {
+        "type": "object",
+        "description": "The set of principals currently present on a document.\n\nReturned by the document presence heartbeat endpoint so a client learns the\nfull visible set — and the document's canonical UUID — on its first heartbeat,\nand mirrored inside the `data` field of a `presence.updated` live event so both\ntransports share one shape. `document_id` lets a client that addressed the\ndocument by slug correlate subsequent broadcasts, which are keyed by UUID.",
+        "required": [
+          "document_id",
+          "actors"
+        ],
+        "properties": {
+          "actors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActorDto"
+            }
+          },
+          "document_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
       "DocumentSummaryDto": {
         "type": "object",
         "description": "Lightweight document summary for list endpoints.",
@@ -14082,7 +14201,7 @@
     },
     {
       "name": "presence",
-      "description": "Board presence (live awareness)"
+      "description": "Board and document presence (live awareness)"
     },
     {
       "name": "folders",

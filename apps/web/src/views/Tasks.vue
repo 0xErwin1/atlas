@@ -5,7 +5,6 @@ import EditorToolbar from '@/components/shell/EditorToolbar.vue';
 import EmptyState from '@/components/states/EmptyState.vue';
 import ErrorState from '@/components/states/ErrorState.vue';
 import LoadingState from '@/components/states/LoadingState.vue';
-import BoardPresence from '@/components/tareas/BoardPresence.vue';
 import BoardViewMenu from '@/components/tareas/BoardViewMenu.vue';
 import KanbanBoard from '@/components/tareas/KanbanBoard.vue';
 import TaskCalendarView from '@/components/tareas/TaskCalendarView.vue';
@@ -17,6 +16,7 @@ import TaskTimelineView from '@/components/tareas/TaskTimelineView.vue';
 import TaskViewListView from '@/components/tareas/TaskViewListView.vue';
 import Icon from '@/components/ui/Icon.vue';
 import Popover from '@/components/ui/Popover.vue';
+import PresenceAvatars from '@/components/ui/PresenceAvatars.vue';
 import { useBoardPresence } from '@/composables/useBoardPresence';
 import { useBreakpoint } from '@/composables/useBreakpoint';
 import { type LiveUpdateEvent, useLiveUpdates } from '@/composables/useLiveUpdates';
@@ -423,7 +423,7 @@ watch(
         </Popover>
       </template>
 
-      <BoardPresence v-if="!isView" :actors="presence.actors" />
+      <PresenceAvatars v-if="!isView" :actors="presence.actors" />
       <Popover v-if="!isView" placement="bottom-start">
         <template #trigger="{ open, toggle }">
           <button

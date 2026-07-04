@@ -42,6 +42,7 @@ export interface LiveEnvelope {
   workspace_id: string;
   project_id?: string | null;
   board_id?: string | null;
+  document_id?: string | null;
   occurred_at: string;
   actor: { type: string; id: string };
   data: unknown;
