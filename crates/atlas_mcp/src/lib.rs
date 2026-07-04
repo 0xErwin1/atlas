@@ -25,7 +25,7 @@ use rmcp::{
     ErrorData as McpError, ServerHandler,
     handler::server::wrapper::Parameters,
     model::{
-        AnnotateAble, Implementation, ListResourceTemplatesResult, RawResourceTemplate,
+        AnnotateAble, Content, Implementation, ListResourceTemplatesResult, RawResourceTemplate,
         ReadResourceRequestParams, ReadResourceResult, ResourceContents, ServerCapabilities,
         ServerInfo,
     },
@@ -92,7 +92,7 @@ Tools by area (see each tool's own description for parameters):\n\
 - Links and depth: `get_task_references`, `get_task_backlinks`, `get_document_backlinks`, \
 `list_checklist`, `list_comments`, `list_document_comments`, `list_activity`, \
 `list_workspace_activity`, `list_document_history`, `get_document_revision`, \
-`list_attachments`, `list_task_attachments`.\n\
+`list_attachments`, `list_task_attachments`, `get_task_attachment`.\n\
 - Security audit (owner/admin only): `get_workspace_audit`, `get_platform_audit`.\n\
 - Task writes: `create_task`, `update_task`, `move_task`, `delete_task`, \
 `add_task_assignee`, `remove_task_assignee`, `add_comment`, `update_comment`, \
@@ -626,6 +626,17 @@ pub struct ListTaskAttachmentsParams {
     pub workspace: String,
     /// Task readable ID, e.g. `ATL-42`.
     pub readable_id: String,
+}
+
+/// Parameters accepted by the `get_task_attachment` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetTaskAttachmentParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Task readable ID, e.g. `ATL-42`.
+    pub readable_id: String,
+    /// Attachment UUID, taken from the `id` field of `list_task_attachments`.
+    pub attachment_id: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -2067,6 +2078,48 @@ impl AtlasMcp {
 
         let result: Vec<_> = items.into_iter().map(project_task_attachment).collect();
         serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Retrieve a task's IMAGE attachment as viewable content (e.g. a screenshot). \
+                       Pass the attachment UUID from `list_task_attachments`. Non-image attachments \
+                       are rejected."
+    )]
+    async fn get_task_attachment(
+        &self,
+        Parameters(params): Parameters<GetTaskAttachmentParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<Content, String> {
+        let client = self.resolve_client(&ctx)?;
+
+        let attachment_id = params.attachment_id.parse::<uuid::Uuid>().map_err(|_| {
+            format!(
+                "attachment_id '{}' is not a valid UUID",
+                params.attachment_id
+            )
+        })?;
+
+        let (bytes, content_type) = client
+            .download_task_attachment(&params.workspace, &params.readable_id, attachment_id)
+            .await
+            .map_err(|e| {
+                format!(
+                    "get_task_attachment for '{}' failed: {e}",
+                    params.readable_id
+                )
+            })?;
+
+        let mime = content_type.unwrap_or_else(|| "application/octet-stream".to_string());
+        if !mime.starts_with("image/") {
+            return Err(format!(
+                "attachment '{attachment_id}' is not an image (content type '{mime}'); \
+                 this tool only retrieves image attachments for viewing"
+            ));
+        }
+
+        use base64::Engine as _;
+        let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
+        Ok(Content::image(encoded, mime))
     }
 
     #[tool(description = "Create a task on a board. Board and column are resolved by name.")]
@@ -4325,6 +4378,14 @@ mod tests {
     }
 
     #[test]
+    fn get_task_attachment_params_deserializes() {
+        let json = r#"{"workspace":"ws","readable_id":"ATL-42","attachment_id":"018f-uuid"}"#;
+        let params: GetTaskAttachmentParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.readable_id, "ATL-42");
+        assert_eq!(params.attachment_id, "018f-uuid");
+    }
+
+    #[test]
     fn get_info_instructions_reference_depth_tools() {
         let server = AtlasMcp::new("http://localhost:8080", "test-token").unwrap();
         let info = server.get_info();
@@ -4352,6 +4413,10 @@ mod tests {
         assert!(
             instructions.contains("`list_task_attachments`"),
             "instructions must mention list_task_attachments"
+        );
+        assert!(
+            instructions.contains("`get_task_attachment`"),
+            "instructions must mention get_task_attachment"
         );
         assert!(
             instructions.contains("`list_workspace_activity`"),

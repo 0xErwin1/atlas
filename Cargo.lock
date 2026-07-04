@@ -430,6 +430,7 @@ dependencies = [
  "atlas_client",
  "atlas_domain",
  "axum",
+ "base64",
  "chrono",
  "clap",
  "http",
