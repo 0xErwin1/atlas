@@ -97,6 +97,7 @@ async fn publish_without_subscribers_does_not_error() {
         workspace_id: Uuid::now_v7(),
         project_id: None,
         board_id: None,
+        document_id: None,
         event_type: "task.created".into(),
         payload: Arc::from("{}"),
     });

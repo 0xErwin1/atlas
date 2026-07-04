@@ -9,7 +9,7 @@
 //!
 //! The sweeper test avoids waiting the real 45s TTL: it drives the exact sequence
 //! a sweeper tick performs (`PresenceRegistry::sweep` followed by
-//! `broadcast_board_presence`) against a live SSE subscriber, seeding a presence
+//! `broadcast_presence`) against a live SSE subscriber, seeding a presence
 //! entry and sweeping with a zero TTL so every entry is treated as expired.
 //!
 //! All SSE reads use `tokio::time::timeout`; the stream is infinite, so tests read
@@ -41,7 +41,7 @@ use atlas_server::{
     persistence::repos::{
         ApiKeyRepo, BoardRepo, NewApiKey, PgBoardRepo, PgProjectRepo, ProjectRepo,
     },
-    presence::broadcast_board_presence,
+    presence::{PresenceResource, broadcast_presence},
     state::AppState,
 };
 use tokio::sync::watch;
@@ -211,7 +211,10 @@ async fn spawn_live_pipeline(
     (shutdown_tx, vec![listener, agent])
 }
 
-async fn stop_pipeline(shutdown_tx: watch::Sender<bool>, handles: Vec<tokio::task::JoinHandle<()>>) {
+async fn stop_pipeline(
+    shutdown_tx: watch::Sender<bool>,
+    handles: Vec<tokio::task::JoinHandle<()>>,
+) {
     let _ = shutdown_tx.send(true);
     for handle in handles {
         handle.abort();
@@ -492,8 +495,7 @@ async fn sweep_then_broadcast_delivers_empty_actors() {
     // The server shares the same hub and registry via the cloned state.
     let server = support::TestServer::spawn_with_state(state.clone()).await;
 
-    let (client, ws, user) =
-        support::login_user_with_workspace(&server, &db, "p2-sweeper").await;
+    let (client, ws, user) = support::login_user_with_workspace(&server, &db, "p2-sweeper").await;
     let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
     let token = client.token().expect("token").to_string();
 
@@ -516,8 +518,9 @@ async fn sweep_then_broadcast_delivers_empty_actors() {
         key_type: Some("agent".into()),
         account_status: None,
     };
+    let resource = PresenceResource::Board(board_id.0);
     assert!(
-        state.presence.heartbeat(ws.id.0, board_id.0, agent),
+        state.presence.heartbeat(ws.id.0, resource, agent),
         "seeding the entry is a change"
     );
 
@@ -531,11 +534,11 @@ async fn sweep_then_broadcast_delivers_empty_actors() {
     let changed = state.presence.sweep(Duration::from_secs(0));
     assert_eq!(
         changed,
-        vec![(ws.id.0, board_id.0)],
+        vec![(ws.id.0, resource)],
         "the swept board is reported changed"
     );
-    for (workspace, board) in changed {
-        broadcast_board_presence(&state, workspace, board, None);
+    for (workspace, resource) in changed {
+        broadcast_presence(&state, workspace, resource, None);
     }
 
     let data = wait_for_presence(&mut resp, &mut buf, |_| true)

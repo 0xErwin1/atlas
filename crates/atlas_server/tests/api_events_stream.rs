@@ -179,6 +179,7 @@ async fn stream_delivers_forwarded_event_to_connected_principal() {
         workspace_id: ws.id.0,
         project_id: Some(project_id.0),
         board_id: Some(board_id.0),
+        document_id: None,
         event_type: "task.created".to_string(),
         payload: task_created_payload(task_id),
     });
@@ -253,6 +254,7 @@ async fn stream_does_not_deliver_cross_workspace_events() {
         workspace_id: foreign_workspace_id,
         project_id: None,
         board_id: None,
+        document_id: None,
         event_type: "task.created".to_string(),
         payload: task_created_payload(Uuid::now_v7()),
     });
@@ -265,6 +267,7 @@ async fn stream_does_not_deliver_cross_workspace_events() {
         workspace_id: ws_a.id.0,
         project_id: None,
         board_id: None,
+        document_id: None,
         event_type: "task.created".to_string(),
         payload: task_created_payload(local_task_id),
     });
@@ -332,6 +335,7 @@ async fn stream_filters_events_by_per_resource_access() {
         workspace_id: ws.id.0,
         project_id: Some(project_id.0),
         board_id: Some(board_id.0),
+        document_id: None,
         event_type: "task.created".to_string(),
         payload: task_created_payload(board_task_id),
     });
@@ -359,6 +363,7 @@ async fn stream_filters_events_by_per_resource_access() {
         workspace_id: ws.id.0,
         project_id: None,
         board_id: None,
+        document_id: None,
         event_type: "task.created".to_string(),
         payload: task_created_payload(ws_task_id),
     });

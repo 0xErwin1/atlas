@@ -74,6 +74,20 @@ pub struct ActorDto {
     pub account_status: Option<String>,
 }
 
+/// The set of principals currently present on a document.
+///
+/// Returned by the document presence heartbeat endpoint so a client learns the
+/// full visible set — and the document's canonical UUID — on its first heartbeat,
+/// and mirrored inside the `data` field of a `presence.updated` live event so both
+/// transports share one shape. `document_id` lets a client that addressed the
+/// document by slug correlate subsequent broadcasts, which are keyed by UUID.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct DocumentPresenceResponse {
+    pub document_id: uuid::Uuid,
+    pub actors: Vec<ActorDto>,
+}
+
 /// Full document representation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]

@@ -42,7 +42,7 @@ use atlas_domain::{
 
 use crate::{
     authz::{
-        authorized::{build_board_chain, resolve_effective_role},
+        authorized::{build_board_chain, build_document_chain, resolve_effective_role},
         extractors::WorkspaceAccess,
     },
     error::ApiError,
@@ -131,7 +131,9 @@ fn event_stream(state: ConnectionState) -> impl Stream<Item = Result<Event, Infa
 /// A workspace-level event (no board or project scope) is always forwarded: the
 /// connect gate already proved the principal has workspace access.
 async fn authorize_event(state: &mut ConnectionState, event: &LiveEvent) -> bool {
-    let Some(resource_id) = event.board_id.or(event.project_id) else {
+    // Most-specific resource first: a document-scoped event (presence on a document)
+    // is gated by its own per-document chain, never by the coarser board/project.
+    let Some(resource_id) = event.document_id.or(event.board_id).or(event.project_id) else {
         return true;
     };
 
@@ -184,6 +186,10 @@ async fn build_event_chain(
     workspace: &Workspace,
     event: &LiveEvent,
 ) -> Result<Option<ResourceChain>, ApiError> {
+    if let Some(document_uuid) = event.document_id {
+        return build_document_event_chain(db, workspace, document_uuid).await;
+    }
+
     if let Some(board_uuid) = event.board_id {
         let board_id = BoardId(board_uuid);
 
@@ -226,6 +232,41 @@ async fn load_board_project(
         })?;
 
     Ok(row.map(|r| ProjectId(r.project_id)))
+}
+
+/// Builds the full `document → folder ancestry → project → workspace` chain for a
+/// document-scoped event, reusing the same builder the document request extractors
+/// use so presence visibility exactly equals document view access.
+///
+/// The document is re-loaded from its id (the event carries no folder/project
+/// routing) so its folder ancestry and effective project are resolved fresh.
+/// Returns `Ok(None)` when the document is absent (deleted or cross-tenant), which
+/// fails the event closed.
+async fn build_document_event_chain(
+    db: &DatabaseConnection,
+    workspace: &Workspace,
+    document_uuid: Uuid,
+) -> Result<Option<ResourceChain>, ApiError> {
+    use crate::persistence::entities::documents::{document, document_from};
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+
+    let row = document::Entity::find_by_id(document_uuid)
+        .filter(document::Column::WorkspaceId.eq(workspace.id.0))
+        .filter(document::Column::DeletedAt.is_null())
+        .one(db)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?;
+
+    let Some(row) = row else {
+        return Ok(None);
+    };
+
+    let doc = document_from(row).map_err(|message| ApiError::Internal { message })?;
+    let chain = build_document_chain(db, workspace, &doc).await?;
+
+    Ok(Some(chain))
 }
 
 /// Builds the `project → workspace` chain for a project-scoped event, carrying

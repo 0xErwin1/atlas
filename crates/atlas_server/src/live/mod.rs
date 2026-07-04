@@ -39,6 +39,11 @@ pub struct LiveEvent {
     pub workspace_id: Uuid,
     pub project_id: Option<Uuid>,
     pub board_id: Option<Uuid>,
+    /// Set only by document-scoped presence broadcasts, which the SSE filter gates
+    /// against the per-document permission chain. Outbox-sourced events never carry
+    /// it (their `document_id` lives inside `data`, not the routing envelope), so it
+    /// stays `None` for every event fanned out by [`forward_notification`].
+    pub document_id: Option<Uuid>,
     pub event_type: String,
     pub payload: Arc<str>,
 }
@@ -186,6 +191,7 @@ fn forward_notification(hub: &LiveEventHub, payload: &str) {
         workspace_id: routing.workspace_id,
         project_id: routing.project_id,
         board_id: routing.board_id,
+        document_id: None,
         event_type: routing.event_type,
         payload: Arc::from(payload),
     });

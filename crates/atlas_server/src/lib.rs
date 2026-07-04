@@ -282,6 +282,12 @@ pub fn app(state: AppState) -> Router {
             "/v1/workspaces/{ws}/boards/{board_id}/presence",
             axum::routing::post(routes::presence::heartbeat).delete(routes::presence::leave),
         )
+        // Document presence (heartbeat / leave)
+        .route(
+            "/v1/workspaces/{ws}/documents/{slug}/presence",
+            axum::routing::post(routes::presence::document_heartbeat)
+                .delete(routes::presence::document_leave),
+        )
         .route(
             "/v1/workspaces/{ws}/tasks",
             axum::routing::get(routes::tasks::list_workspace_tasks),

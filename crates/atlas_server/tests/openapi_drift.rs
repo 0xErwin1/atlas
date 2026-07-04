@@ -51,6 +51,7 @@ const EXPECTED_SCHEMAS: &[&str] = &[
     "BoardDto",
     "BoardSummaryDto",
     "BoardPresenceResponse",
+    "DocumentPresenceResponse",
     "ColumnDto",
     "CreateBoardRequest",
     "UpdateBoardRequest",
