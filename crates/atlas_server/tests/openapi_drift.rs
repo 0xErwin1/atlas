@@ -135,6 +135,7 @@ const EXPECTED_SCHEMAS: &[&str] = &[
     "Page_WebhookDto",
     "Page_WebhookDeliveryDto",
     "CreateIntegrationConfigRequest",
+    "UpdateIntegrationConfigRequest",
     "IntegrationConfigDto",
     "IntegrationConfigCreatedDto",
     "CreateAutomationRuleRequest",
