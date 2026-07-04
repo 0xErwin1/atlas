@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import EditorToolbar from '@/components/shell/EditorToolbar.vue';
 import EmptyState from '@/components/states/EmptyState.vue';
@@ -60,6 +60,41 @@ const viewId = computed(() => {
 const isView = computed(() => viewId.value !== null);
 
 const ws = computed(() => workspace.activeWorkspaceSlug ?? '');
+
+// Quick board finder: a "/" from anywhere on the board (while not already typing)
+// focuses the search input, mirroring the search-shortcut convention. Esc in the
+// input clears the query, then blurs on a second press.
+const boardSearchRef = ref<HTMLInputElement | null>(null);
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable;
+}
+
+function onBoardSearchShortcut(event: KeyboardEvent): void {
+  if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return;
+  if (isView.value || isEditableTarget(event.target)) return;
+
+  event.preventDefault();
+  boardSearchRef.value?.focus();
+}
+
+function onSearchKeydownEsc(event: KeyboardEvent): void {
+  if (ui.taskFilterText !== '') {
+    ui.setTaskFilterText('');
+  } else {
+    (event.target as HTMLInputElement).blur();
+  }
+}
+
+function clearBoardSearch(): void {
+  ui.setTaskFilterText('');
+  boardSearchRef.value?.focus();
+}
+
+onMounted(() => window.addEventListener('keydown', onBoardSearchShortcut));
+onBeforeUnmount(() => window.removeEventListener('keydown', onBoardSearchShortcut));
 
 const openTaskLive = useOpenTaskLive(ws);
 const presence = useBoardPresence(ws, boardId);
@@ -424,6 +459,29 @@ watch(
       </template>
 
       <PresenceAvatars v-if="!isView" :actors="presence.actors" />
+      <div v-if="!isView" class="atl-board-search">
+        <Icon name="search" :size="13" class="atl-board-search-icon" />
+        <input
+          ref="boardSearchRef"
+          :value="ui.taskFilterText"
+          type="text"
+          class="atl-board-search-input"
+          placeholder="Search tasks…"
+          aria-label="Search tasks"
+          @input="ui.setTaskFilterText(($event.target as HTMLInputElement).value)"
+          @keydown.esc="onSearchKeydownEsc"
+        />
+        <button
+          v-if="ui.taskFilterText !== ''"
+          type="button"
+          class="atl-board-search-clear"
+          title="Clear search"
+          aria-label="Clear search"
+          @click="clearBoardSearch"
+        >
+          <Icon name="x" :size="12" />
+        </button>
+      </div>
       <Popover v-if="!isView" placement="bottom-start">
         <template #trigger="{ open, toggle }">
           <button
@@ -528,5 +586,60 @@ watch(
 .atl-board-dimmed {
   filter: saturate(0.7) brightness(0.82);
   transition: filter 0.2s;
+}
+
+.atl-board-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-background);
+  color: var(--c-muted);
+}
+
+.atl-board-search:focus-within {
+  border-color: var(--c-primary);
+}
+
+.atl-board-search-icon {
+  flex: 0 0 auto;
+}
+
+.atl-board-search-input {
+  width: 150px;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--c-foreground);
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
+}
+
+.atl-board-search-input::placeholder {
+  color: var(--c-muted);
+}
+
+.atl-board-search-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--c-muted);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.atl-board-search-clear:hover {
+  color: var(--c-foreground);
+  background: var(--c-raised);
 }
 </style>

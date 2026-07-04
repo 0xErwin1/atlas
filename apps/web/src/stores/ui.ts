@@ -308,6 +308,11 @@ export const useUiStore = defineStore('ui', () => {
     labels: [],
   });
 
+  // Free-text board finder, kept separate from the structured facets above so the
+  // quick-search input and the filter panel never overwrite each other. Session
+  // only; matched against task title and readable id by `filteredTasksByColumn`.
+  const taskFilterText = ref('');
+
   const hasActiveFilter = computed<boolean>(
     () =>
       taskFilter.value.statuses.length > 0 ||
@@ -320,8 +325,13 @@ export const useUiStore = defineStore('ui', () => {
     taskFilter.value = next;
   }
 
+  function setTaskFilterText(text: string): void {
+    taskFilterText.value = text;
+  }
+
   function clearTaskFilter(): void {
     taskFilter.value = { statuses: [], priorities: [], assigneeIds: [], labels: [] };
+    taskFilterText.value = '';
   }
 
   // "Ask AI" hand-off dialog. Global so it can be opened both from the task
@@ -382,8 +392,10 @@ export const useUiStore = defineStore('ui', () => {
     taskGroupBy,
     setTaskGroupBy,
     taskFilter,
+    taskFilterText,
     hasActiveFilter,
     setTaskFilter,
+    setTaskFilterText,
     clearTaskFilter,
     askAiOpen,
     askAiTask,

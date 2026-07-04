@@ -104,18 +104,21 @@ export const useBoardsStore = defineStore('boards', () => {
    */
   function filteredTasksByColumn(columnId: string): TaskSummaryDto[] {
     const raw = tasksByColumn(columnId);
-    const filter = useUiStore().taskFilter;
+    const ui = useUiStore();
+    const filter = ui.taskFilter;
+    const text = ui.taskFilterText.trim().toLowerCase();
 
     const noStatusFilter = filter.statuses.length === 0;
     const noPriorityFilter = filter.priorities.length === 0;
     const noLabelFilter = filter.labels.length === 0;
     const noAssigneeFilter = filter.assigneeIds.length === 0;
+    const noTextFilter = text === '';
 
-    if (noStatusFilter && noPriorityFilter && noLabelFilter && noAssigneeFilter) {
+    if (noStatusFilter && noPriorityFilter && noLabelFilter && noAssigneeFilter && noTextFilter) {
       return raw;
     }
 
-    const key = `${filter.statuses.join(',')}|${filter.priorities.join(',')}|${filter.labels.join(',')}|${filter.assigneeIds.join(',')}`;
+    const key = `${filter.statuses.join(',')}|${filter.priorities.join(',')}|${filter.labels.join(',')}|${filter.assigneeIds.join(',')}|${text}`;
     const cached = filteredByColumn.get(columnId);
     if (cached !== undefined && cached.raw === raw && cached.key === key) {
       return cached.result;
@@ -131,6 +134,13 @@ export const useBoardsStore = defineStore('boards', () => {
       if (!noPriorityFilter && !prioritySet.has(task.priority ?? '')) return false;
       if (!noLabelFilter && !(task.labels ?? []).some((l) => labelSet.has(l))) return false;
       if (!noAssigneeFilter && !(task.assignees ?? []).some((a) => assigneeSet.has(a.id))) return false;
+      if (
+        !noTextFilter &&
+        !task.title.toLowerCase().includes(text) &&
+        !task.readable_id.toLowerCase().includes(text)
+      ) {
+        return false;
+      }
 
       return true;
     });

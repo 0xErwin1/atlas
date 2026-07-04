@@ -91,6 +91,26 @@ describe('useUiStore — taskFilter', () => {
     expect(ui.taskFilter.statuses).toEqual([]);
     expect(ui.taskFilter.priorities).toEqual(['low']);
   });
+
+  it('taskFilterText is independent of the structured facets and reset by clearTaskFilter', () => {
+    const ui = useUiStore();
+
+    expect(ui.taskFilterText).toBe('');
+
+    ui.setTaskFilterText('login');
+
+    // The text query alone does not light the structured-filter indicator.
+    expect(ui.taskFilterText).toBe('login');
+    expect(ui.hasActiveFilter).toBe(false);
+
+    // Setting the structured facets must not wipe the free-text query.
+    ui.setTaskFilter({ statuses: ['col-1'], priorities: [], assigneeIds: [], labels: [] });
+    expect(ui.taskFilterText).toBe('login');
+
+    ui.clearTaskFilter();
+
+    expect(ui.taskFilterText).toBe('');
+  });
 });
 
 describe('useBoardsStore — filteredTasksByColumn', () => {
@@ -318,6 +338,66 @@ describe('useBoardsStore — filteredTasksByColumn', () => {
     const result = boards.filteredTasksByColumn(COL_A);
 
     expect(result).toHaveLength(0);
+  });
+
+  it('filters by free text — matches the task title (case-insensitive)', () => {
+    const boards = useBoardsStore();
+    const ui = useUiStore();
+    boards._setTasksForTest({
+      [COL_A]: [
+        makeTask({ id: 'T-10', column_id: COL_A, title: 'Fix login bug' }),
+        makeTask({ id: 'T-11', column_id: COL_A, title: 'Update docs' }),
+      ],
+    });
+
+    ui.setTaskFilterText('LOGIN');
+
+    const result = boards.filteredTasksByColumn(COL_A);
+    expect(result.map((t) => t.readable_id)).toEqual(['T-10']);
+  });
+
+  it('filters by free text — matches the readable id', () => {
+    const boards = useBoardsStore();
+    const ui = useUiStore();
+    boards._setTasksForTest({
+      [COL_A]: [
+        makeTask({ id: 'ATL-40', column_id: COL_A, title: 'Quick finder' }),
+        makeTask({ id: 'ATL-99', column_id: COL_A, title: 'Something else' }),
+      ],
+    });
+
+    ui.setTaskFilterText('atl-40');
+
+    const result = boards.filteredTasksByColumn(COL_A);
+    expect(result.map((t) => t.readable_id)).toEqual(['ATL-40']);
+  });
+
+  it('combines free text with structured filters (AND)', () => {
+    const boards = useBoardsStore();
+    const ui = useUiStore();
+    boards._setTasksForTest({
+      [COL_A]: [
+        makeTask({ id: 'T-20', column_id: COL_A, priority: 'high', title: 'alpha task' }),
+        makeTask({ id: 'T-21', column_id: COL_A, priority: 'low', title: 'alpha task' }),
+      ],
+    });
+
+    ui.setTaskFilter({ statuses: [], priorities: ['high'], assigneeIds: [], labels: [] });
+    ui.setTaskFilterText('alpha');
+
+    const result = boards.filteredTasksByColumn(COL_A);
+    expect(result.map((t) => t.readable_id)).toEqual(['T-20']);
+  });
+
+  it('treats a whitespace-only query as no text filter (stable raw reference)', () => {
+    const boards = useBoardsStore();
+    seedTasks(boards);
+    const ui = useUiStore();
+
+    ui.setTaskFilterText('   ');
+
+    const result = boards.filteredTasksByColumn(COL_A);
+    expect(result).toBe(boards.tasksByColumn(COL_A));
   });
 
   // Identity stability — the kanban draggable freezes in an infinite render loop
