@@ -8,6 +8,7 @@ use crate::crypto::WebhookCrypto;
 use crate::live::{DEFAULT_HUB_CAPACITY, LiveEventHub};
 use crate::middleware::rate_limit::PrincipalRateLimiter;
 use crate::persistence::repos::{DiskAttachmentStore, S3AttachmentStore, S3Config};
+use crate::presence::PresenceRegistry;
 use crate::services::{DocumentService, TaskService};
 
 const DEFAULT_MAX_ATTACHMENT_BYTES: u64 = 20 * 1024 * 1024; // 20 MiB
@@ -29,6 +30,8 @@ pub struct AppState {
     pub rate_limiter: Option<Arc<PrincipalRateLimiter>>,
     /// In-process fan-out hub for live events streamed to clients.
     pub live: LiveEventHub,
+    /// In-memory board presence registry (who is currently viewing each board).
+    pub presence: Arc<PresenceRegistry>,
 }
 
 impl AppState {
@@ -65,6 +68,7 @@ impl AppState {
             allow_private_webhook_targets: cfg.allow_private_webhook_targets,
             rate_limiter,
             live: LiveEventHub::new(DEFAULT_HUB_CAPACITY),
+            presence: Arc::new(PresenceRegistry::default()),
         })
     }
 
@@ -100,6 +104,7 @@ impl AppState {
             allow_private_webhook_targets: true,
             rate_limiter: None,
             live: LiveEventHub::new(DEFAULT_HUB_CAPACITY),
+            presence: Arc::new(PresenceRegistry::default()),
         })
     }
 

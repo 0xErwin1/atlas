@@ -50,6 +50,7 @@ const EXPECTED_SCHEMAS: &[&str] = &[
     "ConflictProblemDto",
     "BoardDto",
     "BoardSummaryDto",
+    "BoardPresenceResponse",
     "ColumnDto",
     "CreateBoardRequest",
     "UpdateBoardRequest",

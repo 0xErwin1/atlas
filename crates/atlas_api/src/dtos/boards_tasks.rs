@@ -513,3 +513,18 @@ pub struct WorkspaceTaskQueryParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit: Option<u32>,
 }
+
+// ---------------------------------------------------------------------------
+// Presence DTOs
+// ---------------------------------------------------------------------------
+
+/// The set of principals currently present on a board.
+///
+/// Returned by the presence heartbeat endpoint so a client learns the full
+/// visible set on its first heartbeat, and mirrored inside the `data` field of a
+/// `presence.updated` live event so both transports share one shape.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct BoardPresenceResponse {
+    pub actors: Vec<ActorDto>,
+}

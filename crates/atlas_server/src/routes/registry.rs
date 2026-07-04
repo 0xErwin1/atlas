@@ -532,6 +532,19 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/v1/workspaces/{ws}/boards/{board_id}/tasks"),
     },
+    // ---- Board presence ----
+    RouteEntry {
+        method: "POST",
+        path_template: "/v1/workspaces/{ws}/boards/00000000-0000-0000-0000-000000000001/presence",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/boards/{board_id}/presence"),
+    },
+    RouteEntry {
+        method: "DELETE",
+        path_template: "/v1/workspaces/{ws}/boards/00000000-0000-0000-0000-000000000001/presence",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/v1/workspaces/{ws}/boards/{board_id}/presence"),
+    },
     RouteEntry {
         method: "GET",
         path_template: "/v1/workspaces/{ws}/tasks",

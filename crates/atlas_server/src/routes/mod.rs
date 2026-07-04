@@ -15,6 +15,7 @@ pub(crate) mod integration_configs;
 pub(crate) mod integrations_ingest;
 pub(crate) mod members;
 pub mod openapi;
+pub(crate) mod presence;
 pub(crate) mod projects;
 pub(crate) mod property_definitions;
 pub mod registry;

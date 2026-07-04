@@ -124,7 +124,7 @@ pub(crate) struct CommentPath {
 // Conversion helpers
 // ---------------------------------------------------------------------------
 
-fn principal_to_actor(principal: &Principal) -> Actor {
+pub(crate) fn principal_to_actor(principal: &Principal) -> Actor {
     match principal {
         Principal::User(uid) => Actor::User(*uid),
         Principal::ApiKey(kid) => Actor::ApiKey(*kid),

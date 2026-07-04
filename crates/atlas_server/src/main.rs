@@ -74,6 +74,19 @@ async fn main() -> Result<()> {
     let listener_handle = tokio::spawn(atlas_server::live::run_listener(
         live_pool,
         state.live.clone(),
+        shutdown_rx.clone(),
+    ));
+
+    // Spawn the presence background tasks: the TTL sweeper that expires stale
+    // presence entries, and the agent-activity consumer that marks an api-key
+    // principal present while it is mutating a board. Both share the same
+    // watch-based shutdown signal and are drained on graceful shutdown.
+    let sweeper_handle = tokio::spawn(atlas_server::presence::run_presence_sweeper(
+        state.clone(),
+        shutdown_rx.clone(),
+    ));
+    let presence_agent_handle = tokio::spawn(atlas_server::presence::run_presence_agent_consumer(
+        state.clone(),
         shutdown_rx,
     ));
 
@@ -91,6 +104,12 @@ async fn main() -> Result<()> {
     }
     if let Err(e) = listener_handle.await {
         tracing::error!(error = %e, "live event listener task panicked during shutdown");
+    }
+    if let Err(e) = sweeper_handle.await {
+        tracing::error!(error = %e, "presence sweeper task panicked during shutdown");
+    }
+    if let Err(e) = presence_agent_handle.await {
+        tracing::error!(error = %e, "presence agent consumer task panicked during shutdown");
     }
 
     Ok(())

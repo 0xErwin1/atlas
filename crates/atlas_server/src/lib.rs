@@ -17,6 +17,7 @@ pub mod error;
 pub mod live;
 pub mod middleware;
 pub mod persistence;
+pub mod presence;
 pub mod routes;
 pub mod services;
 pub mod state;
@@ -275,6 +276,11 @@ pub fn app(state: AppState) -> Router {
         .route(
             "/v1/workspaces/{ws}/boards/{board_id}/tasks",
             axum::routing::post(routes::tasks::create_task).get(routes::tasks::list_tasks),
+        )
+        // Board presence (heartbeat / leave)
+        .route(
+            "/v1/workspaces/{ws}/boards/{board_id}/presence",
+            axum::routing::post(routes::presence::heartbeat).delete(routes::presence::leave),
         )
         .route(
             "/v1/workspaces/{ws}/tasks",

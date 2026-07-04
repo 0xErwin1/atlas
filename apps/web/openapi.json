@@ -2484,6 +2484,105 @@
         ]
       }
     },
+    "/v1/workspaces/{ws}/boards/{board_id}/presence": {
+      "post": {
+        "tags": [
+          "presence"
+        ],
+        "operationId": "heartbeat",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "board_id",
+            "in": "path",
+            "description": "Board UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current board presence",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoardPresenceResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          },
+          "404": {
+            "description": "Board not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "presence"
+        ],
+        "operationId": "leave",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "board_id",
+            "in": "path",
+            "description": "Board UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Presence cleared"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          },
+          "404": {
+            "description": "Board not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/v1/workspaces/{ws}/boards/{board_id}/tasks": {
       "get": {
         "tags": [
@@ -9895,6 +9994,21 @@
           }
         }
       },
+      "BoardPresenceResponse": {
+        "type": "object",
+        "description": "The set of principals currently present on a board.\n\nReturned by the presence heartbeat endpoint so a client learns the full\nvisible set on its first heartbeat, and mirrored inside the `data` field of a\n`presence.updated` live event so both transports share one shape.",
+        "required": [
+          "actors"
+        ],
+        "properties": {
+          "actors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActorDto"
+            }
+          }
+        }
+      },
       "BoardSummaryDto": {
         "type": "object",
         "description": "Lightweight board summary for list endpoints.",
@@ -13965,6 +14079,10 @@
     {
       "name": "tasks",
       "description": "Task management"
+    },
+    {
+      "name": "presence",
+      "description": "Board presence (live awareness)"
     },
     {
       "name": "folders",
