@@ -21,6 +21,7 @@ import Icon from '@/components/ui/Icon.vue';
 import PromptDialog from '@/components/ui/PromptDialog.vue';
 import { resolveDropTarget } from '@/composables/kanbanDrop';
 import { useContextMenu } from '@/composables/useContextMenu';
+import { useInlineEdit } from '@/composables/useInlineEdit';
 import { useKanbanMove } from '@/composables/useKanbanMove';
 import { useTaskInteractions } from '@/composables/useTaskInteractions';
 import { resolveColumnSwatchId } from '@/lib/columnColor';
@@ -51,6 +52,26 @@ const { move } = useKanbanMove(props.ws);
  * not a column_id, so we suppress the draggable wrapper entirely in those modes.
  */
 const isDragEnabled = computed(() => ui.taskGroupBy === 'status');
+
+// Inline create, only offered under status grouping where a group's key IS a
+// real column_id; the ctx threaded through the input is that target column.
+const {
+  active: adding,
+  value: addValue,
+  inputRef,
+  start: startAdd,
+  commit: commitAdd,
+  onKeydown: onAddKeydown,
+} = useInlineEdit<string>((title, columnId) => void createTaskInColumn(columnId, title));
+
+async function createTaskInColumn(columnId: string, title: string): Promise<void> {
+  const boardId = boards.board?.id;
+  if (boardId === undefined) return;
+
+  const created = await boards.createTask(props.ws, boardId, columnId, title);
+  if (created !== null) emit('select', created);
+  else if (boards.error !== null) ui.showBanner(boards.error, 'error');
+}
 
 async function onSortableDrop(event: unknown, columnId: string): Promise<void> {
   const target = resolveDropTarget(event as Parameters<typeof resolveDropTarget>[0]);
@@ -598,6 +619,33 @@ function onAssigneePick(task: TaskSummaryDto, value: string): void {
             <span class="atl-tl-est">{{ task.estimate !== null && task.estimate !== undefined ? `${task.estimate} pts` : '—' }}</span>
           </button>
         </div>
+
+        <div
+          v-if="ui.taskGroupBy === 'status'"
+          v-show="!isGroupCollapsed(group.key)"
+          class="atl-tl-add-row"
+        >
+          <input
+            v-if="adding === group.key"
+            ref="inputRef"
+            v-model="addValue"
+            type="text"
+            placeholder="Task title…"
+            class="atl-tl-add-input"
+            aria-label="New task title"
+            @keydown="onAddKeydown"
+            @blur="commitAdd"
+          />
+          <button
+            v-else
+            type="button"
+            class="atl-tl-add"
+            @click="startAdd(group.key)"
+          >
+            <Icon name="plus" :size="13" />
+            <span>Add task</span>
+          </button>
+        </div>
       </div>
 
       <p v-if="groups.length === 0" class="atl-tl-empty">No tasks to show.</p>
@@ -911,6 +959,48 @@ function onAssigneePick(task: TaskSummaryDto, value: string): void {
 
 .atl-tl-row:hover .atl-tl-copy {
   opacity: 1;
+}
+
+.atl-tl-add-row {
+  padding: 2px 12px 2px 10px;
+}
+
+.atl-tl-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 32px;
+  padding: 0 5px;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  text-align: left;
+  color: var(--c-muted);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.atl-tl-add:hover {
+  background: var(--c-raised);
+  color: var(--c-foreground);
+}
+
+.atl-tl-add-input {
+  width: 100%;
+  height: 32px;
+  padding: 0 8px;
+  background: var(--c-raised);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  outline: none;
+  color: var(--c-foreground);
+  font-family: var(--font-ui);
+  font-size: var(--fs-base);
+}
+
+.atl-tl-add-input:focus {
+  border-color: var(--c-primary);
 }
 
 .atl-tl-empty {

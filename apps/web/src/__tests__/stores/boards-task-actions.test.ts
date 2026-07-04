@@ -214,4 +214,32 @@ describe('boards store — task context-menu actions', () => {
       body: { column_id: 'col-1', title: 'Original (copy)', description: 'Body' },
     });
   });
+
+  it('createTask posts the column and title, reloads, and returns the readable id', async () => {
+    const store = useBoardsStore();
+
+    POST.mockResolvedValueOnce({ data: { readable_id: 'AB-7' }, error: undefined });
+    GET.mockResolvedValueOnce({ data: { items: [] }, error: undefined });
+
+    const created = await store.createTask('ws', 'board-1', 'col-2', 'New task');
+
+    expect(created).toBe('AB-7');
+    expect(POST).toHaveBeenCalledWith('/v1/workspaces/{ws}/boards/{board_id}/tasks', {
+      params: { path: { ws: 'ws', board_id: 'board-1' } },
+      body: { column_id: 'col-2', title: 'New task' },
+    });
+    // Reloads the board's tasks so the new task appears in the list.
+    expect(GET).toHaveBeenCalled();
+  });
+
+  it('createTask returns null and sets an error hint on failure', async () => {
+    const store = useBoardsStore();
+
+    POST.mockResolvedValueOnce({ data: undefined, error: { hint: 'Boom' } });
+
+    const created = await store.createTask('ws', 'board-1', 'col-2', 'New task');
+
+    expect(created).toBeNull();
+    expect(store.error).toBe('Boom');
+  });
 });
