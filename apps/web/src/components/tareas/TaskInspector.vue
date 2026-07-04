@@ -96,7 +96,11 @@ async function onRemoveReference(referenceId: string): Promise<void> {
 
       <template v-else-if="active === 'references'">
         <ReferenceList :references="detail.references" @remove="onRemoveReference" />
-        <ReferenceAdd :ws="ws" @add="onAddReference" />
+        <ReferenceAdd
+          :ws="ws"
+          :current-readable-id="task.readable_id"
+          @add="onAddReference"
+        />
       </template>
 
       <template v-else-if="active === 'activity'">

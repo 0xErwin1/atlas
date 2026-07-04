@@ -137,7 +137,13 @@ watch([readableId, ws], load, { immediate: true });
 
     <div v-if="task" class="flex flex-1 min-h-0">
       <div class="flex-1 overflow-y-auto" :style="isMobile ? 'padding: 16px;' : 'padding: 24px 40px;'">
-        <TaskBody :task="task" :ws="ws" layout="wide" :show-secondary="isMobile" />
+        <TaskBody
+          :task="task"
+          :ws="ws"
+          layout="wide"
+          :show-secondary="isMobile"
+          :show-references="isMobile"
+        />
       </div>
       <template v-if="!isMobile && ui.taskInspectorOpen">
         <div

@@ -36,11 +36,16 @@ const props = withDefaults(
     task: TaskDto;
     ws: string;
     layout?: 'wide' | 'narrow';
-    /** Render References + Comments + Activity inline. Off when a host (the full
-     * view) shows them in a side inspector instead, so they are not duplicated. */
+    /** Render the Activity + Comments feed inline. Off when a host renders it in
+     * a side rail/inspector instead (full view, dock, modal), so it is not
+     * duplicated. */
     showSecondary?: boolean;
+    /** Render the References section inline. Off only on the full desktop view,
+     * whose inspector owns References; the dock and modal have no such surface, so
+     * they keep it inline (default on). */
+    showReferences?: boolean;
   }>(),
-  { layout: 'wide', showSecondary: true },
+  { layout: 'wide', showSecondary: true, showReferences: true },
 );
 
 const boards = useBoardsStore();
@@ -543,13 +548,15 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
       </button>
     </div>
 
-    <template v-if="showSecondary">
+    <template v-if="showReferences">
       <div style="margin-top: 22px;">
         <div class="atl-tv-section-label">References</div>
         <ReferenceList :references="detail.references" @remove="onRemoveReference" />
-        <ReferenceAdd :ws="ws" @add="onAddReference" />
+        <ReferenceAdd :ws="ws" :current-readable-id="task.readable_id" @add="onAddReference" />
       </div>
+    </template>
 
+    <template v-if="showSecondary">
       <div style="margin-top: 22px;">
         <div class="atl-tv-section-label">Activity</div>
         <ActivityComments :ws="ws" :readable-id="task.readable_id" />

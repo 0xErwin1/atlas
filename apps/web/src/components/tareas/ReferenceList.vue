@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { type RouteLocationRaw, RouterLink } from 'vue-router';
 import Chip, { type ChipTone } from '@/components/ui/Chip.vue';
 import Icon from '@/components/ui/Icon.vue';
 import type { ReferenceDto } from '@/stores/taskDetail';
@@ -26,6 +27,21 @@ interface Row {
   tone: ChipTone;
   target: string;
   resolved: boolean;
+  to: RouteLocationRaw | null;
+}
+
+// A resolved reference points at either a task (by readable ID) or a document (by
+// id, which the notes route accepts as its slug). A broken reference has no live
+// target to open, so it stays plain text.
+function targetRoute(r: ReferenceDto): RouteLocationRaw | null {
+  if (!r.target_resolved) return null;
+  if (r.target_readable_id != null) {
+    return { name: 'task-detail', params: { readableId: r.target_readable_id } };
+  }
+  if (r.target_document_id != null) {
+    return { name: 'notes', params: { slug: r.target_document_id } };
+  }
+  return null;
 }
 
 const rows = computed<Row[]>(() =>
@@ -35,6 +51,7 @@ const rows = computed<Row[]>(() =>
     tone: KIND_TONE[r.kind] ?? 'neutral',
     target: r.target_readable_id ?? r.target_title ?? r.target_document_id ?? 'unknown',
     resolved: r.target_resolved,
+    to: targetRoute(r),
   })),
 );
 </script>
@@ -49,8 +66,10 @@ const rows = computed<Row[]>(() =>
       :data-reference-id="row.id"
     >
       <Chip :tone="row.tone">{{ row.kind }}</Chip>
-      <span
-        class="flex-1 min-w-0 truncate"
+      <component
+        :is="row.to ? RouterLink : 'span'"
+        :to="row.to ?? undefined"
+        class="atl-ref-target flex-1 min-w-0 truncate"
         :style="{
           fontFamily: 'var(--font-mono)',
           fontSize: 'var(--fs-sm)',
@@ -60,7 +79,7 @@ const rows = computed<Row[]>(() =>
         :title="row.resolved ? row.target : `${row.target} (broken)`"
       >
         {{ row.target }}
-      </span>
+      </component>
       <button
         type="button"
         :aria-label="`Remove reference ${row.target}`"
@@ -80,3 +99,13 @@ const rows = computed<Row[]>(() =>
     </p>
   </div>
 </template>
+
+<style scoped>
+a.atl-ref-target {
+  cursor: pointer;
+}
+
+a.atl-ref-target:hover {
+  text-decoration: underline;
+}
+</style>

@@ -68,7 +68,13 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
         </div>
 
         <div class="atl-link-body">
-          <ReferenceAdd :ws="ws" default-kind="blocks" large @add="onAdd" />
+          <ReferenceAdd
+            :ws="ws"
+            default-kind="blocks"
+            large
+            :current-readable-id="readableId"
+            @add="onAdd"
+          />
         </div>
       </div>
     </div>

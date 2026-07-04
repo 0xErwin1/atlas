@@ -8,10 +8,20 @@ import type { SearchHitDto } from '@/stores/search';
 
 type CreateReferenceRequest = components['schemas']['CreateReferenceRequest'];
 
-const props = withDefaults(defineProps<{ ws: string; defaultKind?: string; large?: boolean }>(), {
-  defaultKind: 'relates',
-  large: false,
-});
+const props = withDefaults(
+  defineProps<{
+    ws: string;
+    defaultKind?: string;
+    large?: boolean;
+    /** Readable ID of the task owning this picker, excluded so a task cannot
+     * reference itself. */
+    currentReadableId?: string;
+  }>(),
+  {
+    defaultKind: 'relates',
+    large: false,
+  },
+);
 
 const emit = defineEmits<{ add: [body: CreateReferenceRequest] }>();
 
@@ -62,7 +72,11 @@ watch([query, kind], () => {
           query: { q: term, type: targetType.value, sort: 'relevance', prefix: true },
         },
       });
-      results.value = data?.items ?? [];
+      const items = data?.items ?? [];
+      results.value =
+        props.currentReadableId != null
+          ? items.filter((hit) => hit.readable_id !== props.currentReadableId)
+          : items;
     } catch {
       results.value = [];
     } finally {
@@ -72,6 +86,8 @@ watch([query, kind], () => {
 });
 
 function pick(hit: SearchHitDto): void {
+  if (hit.kind === 'task' && hit.readable_id === props.currentReadableId) return;
+
   const body: CreateReferenceRequest =
     hit.kind === 'task'
       ? { kind: kind.value, target_task_readable_id: hit.readable_id ?? null }
