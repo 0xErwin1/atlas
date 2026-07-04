@@ -1,5 +1,5 @@
 import { onScopeDispose, type Ref, watch } from 'vue';
-import { EVENT_TYPES, type LiveEnvelope } from '@/lib/eventTypes';
+import { EVENT_TYPES, LIVE_ONLY_EVENT_TYPES, type LiveEnvelope } from '@/lib/eventTypes';
 
 export interface LiveUpdateEvent {
   type: string;
@@ -84,8 +84,12 @@ export function useLiveUpdates(wsSlug: Ref<string>, handlers: LiveUpdateHandlers
 
     // Named domain events are routed by their event_type; the default `message`
     // event is a fallback for a server that omits the name. `resync` is a
-    // non-domain marker whose data may not be an envelope.
+    // non-domain marker whose data may not be an envelope. Live-only events (e.g.
+    // presence) share the same dispatch path but are catalogued separately.
     for (const type of EVENT_TYPES) {
+      stream.addEventListener(type, dispatch as EventListener);
+    }
+    for (const type of LIVE_ONLY_EVENT_TYPES) {
       stream.addEventListener(type, dispatch as EventListener);
     }
     stream.onmessage = dispatch;

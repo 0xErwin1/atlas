@@ -125,6 +125,26 @@ describe('useLiveUpdates', () => {
     scope.stop();
   });
 
+  it('dispatches a live-only presence.updated frame through onEvent', () => {
+    const ws = ref('acme');
+    const onEvent = vi.fn();
+    const scope = effectScope();
+    scope.run(() => useLiveUpdates(ws, { onEvent, onResync: vi.fn() }));
+
+    FakeEventSource.instances[0]?.emit(
+      'presence.updated',
+      envelope('presence.updated', { board_id: 'board-1', actors: [] }),
+    );
+
+    expect(onEvent).toHaveBeenCalledTimes(1);
+    expect(onEvent.mock.calls[0]?.[0]).toMatchObject({
+      type: 'presence.updated',
+      data: { board_id: 'board-1', actors: [] },
+    });
+
+    scope.stop();
+  });
+
   it('dispatches a default (unnamed) message via the message fallback', () => {
     const ws = ref('acme');
     const onEvent = vi.fn();

@@ -5,6 +5,7 @@ import EditorToolbar from '@/components/shell/EditorToolbar.vue';
 import EmptyState from '@/components/states/EmptyState.vue';
 import ErrorState from '@/components/states/ErrorState.vue';
 import LoadingState from '@/components/states/LoadingState.vue';
+import BoardPresence from '@/components/tareas/BoardPresence.vue';
 import BoardViewMenu from '@/components/tareas/BoardViewMenu.vue';
 import KanbanBoard from '@/components/tareas/KanbanBoard.vue';
 import TaskCalendarView from '@/components/tareas/TaskCalendarView.vue';
@@ -16,10 +17,11 @@ import TaskTimelineView from '@/components/tareas/TaskTimelineView.vue';
 import TaskViewListView from '@/components/tareas/TaskViewListView.vue';
 import Icon from '@/components/ui/Icon.vue';
 import Popover from '@/components/ui/Popover.vue';
+import { useBoardPresence } from '@/composables/useBoardPresence';
 import { useBreakpoint } from '@/composables/useBreakpoint';
 import { type LiveUpdateEvent, useLiveUpdates } from '@/composables/useLiveUpdates';
 import { useOpenTaskLive } from '@/composables/useOpenTaskLive';
-import { EVENT_TYPE, eventString } from '@/lib/eventTypes';
+import { EVENT_TYPE, eventString, PRESENCE_UPDATED } from '@/lib/eventTypes';
 import { useBoardsStore } from '@/stores/boards';
 import { useTaskDetailStore } from '@/stores/taskDetail';
 import { useTasksStore } from '@/stores/tasks';
@@ -60,6 +62,7 @@ const isView = computed(() => viewId.value !== null);
 const ws = computed(() => workspace.activeWorkspaceSlug ?? '');
 
 const openTaskLive = useOpenTaskLive(ws);
+const presence = useBoardPresence(ws, boardId);
 
 const sidebarRef = ref<InstanceType<typeof TasksSidebar> | null>(null);
 
@@ -302,6 +305,10 @@ function onLiveEvent(evt: LiveUpdateEvent): void {
       if (onCurrentBoard) reloadActive();
       break;
 
+    case PRESENCE_UPDATED:
+      presence.apply(evt.envelope);
+      break;
+
     default:
       break;
   }
@@ -416,6 +423,7 @@ watch(
         </Popover>
       </template>
 
+      <BoardPresence v-if="!isView" :actors="presence.actors" />
       <Popover v-if="!isView" placement="bottom-start">
         <template #trigger="{ open, toggle }">
           <button

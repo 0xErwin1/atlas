@@ -22,6 +22,13 @@ export type EventType = (typeof EVENT_TYPE)[keyof typeof EVENT_TYPE];
 // The flat catalog, preserving declaration order for the webhook event picker.
 export const EVENT_TYPES: readonly EventType[] = Object.values(EVENT_TYPE);
 
+// Streamed over SSE but deliberately outside EVENT_TYPE/EVENT_TYPES: these are
+// live-only and absent from the server's webhook catalog, so they must not reach
+// the webhook event picker while still needing a named SSE listener.
+export const PRESENCE_UPDATED = 'presence.updated';
+
+export const LIVE_ONLY_EVENT_TYPES: readonly string[] = [PRESENCE_UPDATED];
+
 /**
  * The full domain-event envelope streamed over SSE. `data` is the per-type
  * payload (see the wire contract); it is left as `unknown` here and read through
