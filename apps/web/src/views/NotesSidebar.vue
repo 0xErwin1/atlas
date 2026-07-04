@@ -6,6 +6,8 @@ import FolderPickerDialog from '@/components/notas/FolderPickerDialog.vue';
 import NotesTree from '@/components/notas/NotesTree.vue';
 import LoadingState from '@/components/states/LoadingState.vue';
 import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
+import { type LiveUpdateEvent, useLiveUpdates } from '@/composables/useLiveUpdates';
+import { EVENT_TYPE } from '@/lib/eventTypes';
 import { docKey, type TreeNodeRef } from '@/lib/notesTree';
 import { useDocumentsStore } from '@/stores/documents';
 import { useFoldersStore } from '@/stores/folders';
@@ -230,6 +232,32 @@ async function onPickFolder(target: string | null): Promise<void> {
   if (op === 'move') await moveNodes(nodes, target);
   else if (op === 'copy') await copyNodes(nodes, target);
 }
+
+// Refreshes the active project's note list silently (no loader flash) when
+// another actor creates, moves, deletes, or updates a document. A
+// `document.updated` only refreshes summary metadata (title, updated_at); the
+// open editor is CAS-managed and never live-replaced here.
+function reloadNotesLive(): void {
+  const project = activeProject.value;
+  if (project === null || ws.value === '') return;
+  void documents.loadSummaries(ws.value, project.slug, { silent: true });
+}
+
+function onLiveEvent(evt: LiveUpdateEvent): void {
+  switch (evt.type) {
+    case EVENT_TYPE.DOCUMENT_CREATED:
+    case EVENT_TYPE.DOCUMENT_UPDATED:
+    case EVENT_TYPE.DOCUMENT_MOVED:
+    case EVENT_TYPE.DOCUMENT_DELETED:
+      reloadNotesLive();
+      break;
+
+    default:
+      break;
+  }
+}
+
+useLiveUpdates(ws, { onEvent: onLiveEvent, onResync: () => void loadTree() });
 
 onMounted(loadTree);
 watch(() => workspace.activeWorkspaceSlug, loadTree);

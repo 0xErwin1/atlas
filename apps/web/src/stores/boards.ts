@@ -417,6 +417,62 @@ export const useBoardsStore = defineStore('boards', () => {
     useLabelColorsStore().recordTags(items.flatMap((t) => t.labels ?? []));
   }
 
+  /**
+   * Insert-or-update a single task's card on the active board from a live event
+   * that carries only its id. The per-task summary is not addressable by UUID
+   * (the task GET route resolves a readable id), so the board's task list is
+   * refetched and only the affected column(s) are rebuilt from it, leaving every
+   * other column's array identity untouched — a background update must not churn
+   * the whole kanban. Idempotent: rebuilding the touched columns from the
+   * authoritative list yields the same result when the event echoes a change
+   * this client already applied, so a card is never duplicated. When the task is
+   * no longer on the board (moved off or deleted) any stale copy is removed.
+   */
+  async function upsertTaskById(ws: string, taskId: string): Promise<void> {
+    const boardId = board.value?.id;
+    if (boardId === undefined) return;
+
+    const { items, error: apiError } = await collectPaged<TaskSummaryDto>((cursor) =>
+      wrappedClient.GET('/v1/workspaces/{ws}/boards/{board_id}/tasks', {
+        params: {
+          path: { ws, board_id: boardId },
+          query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) },
+        },
+      }),
+    );
+
+    if (apiError !== undefined) return;
+
+    const summary = items.find((t) => t.id === taskId);
+
+    if (summary === undefined) {
+      removeTaskById(taskId);
+      return;
+    }
+
+    let staleColumn: string | undefined;
+    for (const [colId, colTasks] of tasks.value) {
+      if (colTasks.some((t) => t.id === taskId)) {
+        staleColumn = colId;
+        break;
+      }
+    }
+
+    _setColumnTasks(
+      summary.column_id,
+      items.filter((t) => t.column_id === summary.column_id),
+    );
+
+    if (staleColumn !== undefined && staleColumn !== summary.column_id) {
+      _setColumnTasks(
+        staleColumn,
+        items.filter((t) => t.column_id === staleColumn),
+      );
+    }
+
+    useLabelColorsStore().recordTags(summary.labels ?? []);
+  }
+
   function taskDetail(readableId: string): TaskDto | undefined {
     return taskDetails.value.get(readableId);
   }
@@ -912,12 +968,14 @@ export const useBoardsStore = defineStore('boards', () => {
     moveColumn,
     deleteColumn,
     loadTasks,
+    upsertTaskById,
     reconcileTask,
     applyOptimisticMove,
     snapshotTasks,
     restoreSnapshot,
     findTaskByReadableId,
     updateTaskFields,
+    removeTaskById,
     updateTask,
     deleteTask,
     assignTask,

@@ -7,7 +7,10 @@ import TaskBody from '@/components/tareas/TaskBody.vue';
 import TaskDetailHeader from '@/components/tareas/TaskDetailHeader.vue';
 import TaskInspector from '@/components/tareas/TaskInspector.vue';
 import { useBreakpoint } from '@/composables/useBreakpoint';
+import { type LiveUpdateEvent, useLiveUpdates } from '@/composables/useLiveUpdates';
+import { useOpenTaskLive } from '@/composables/useOpenTaskLive';
 import { useResizablePanel } from '@/composables/useResizablePanel';
+import { EVENT_TYPE, eventString } from '@/lib/eventTypes';
 import { useBoardsStore } from '@/stores/boards';
 import { useTaskDetailStore } from '@/stores/taskDetail';
 import { useTasksStore } from '@/stores/tasks';
@@ -31,6 +34,8 @@ const readableId = computed(() => {
 });
 
 const ws = computed(() => workspace.activeWorkspaceSlug ?? '');
+
+const openTaskLive = useOpenTaskLive(ws);
 
 const task = computed(() => tasks.openTask);
 
@@ -85,6 +90,27 @@ function onChangeMode(mode: TaskViewMode): void {
   if (id === undefined) return;
   backToBoard({ open: id });
 }
+
+// Reacts to another actor's change to the open task: an update or move reloads
+// the detail and its collections; a delete returns to the board (the task is
+// gone, so there is nothing to show here).
+function onLiveEvent(evt: LiveUpdateEvent): void {
+  const taskId = eventString(evt.data, 'task_id');
+  if (taskId === undefined) return;
+
+  switch (evt.type) {
+    case EVENT_TYPE.TASK_UPDATED:
+    case EVENT_TYPE.TASK_MOVED:
+    case EVENT_TYPE.TASK_DELETED:
+      if (openTaskLive.apply(evt.type, taskId) === 'deleted') backToBoard();
+      break;
+
+    default:
+      break;
+  }
+}
+
+useLiveUpdates(ws, { onEvent: onLiveEvent, onResync: () => void load() });
 
 watch([readableId, ws], load, { immediate: true });
 </script>

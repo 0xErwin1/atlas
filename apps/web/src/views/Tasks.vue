@@ -17,6 +17,9 @@ import TaskViewListView from '@/components/tareas/TaskViewListView.vue';
 import Icon from '@/components/ui/Icon.vue';
 import Popover from '@/components/ui/Popover.vue';
 import { useBreakpoint } from '@/composables/useBreakpoint';
+import { type LiveUpdateEvent, useLiveUpdates } from '@/composables/useLiveUpdates';
+import { useOpenTaskLive } from '@/composables/useOpenTaskLive';
+import { EVENT_TYPE, eventString } from '@/lib/eventTypes';
 import { useBoardsStore } from '@/stores/boards';
 import { useTaskDetailStore } from '@/stores/taskDetail';
 import { useTasksStore } from '@/stores/tasks';
@@ -55,6 +58,8 @@ const viewId = computed(() => {
 const isView = computed(() => viewId.value !== null);
 
 const ws = computed(() => workspace.activeWorkspaceSlug ?? '');
+
+const openTaskLive = useOpenTaskLive(ws);
 
 const sidebarRef = ref<InstanceType<typeof TasksSidebar> | null>(null);
 
@@ -225,6 +230,84 @@ async function loadView(): Promise<void> {
   const params = paramsForView(vid, customView?.filters);
   await workspaceTasks.load(ws.value, params);
 }
+
+// Reloads whichever surface is active — the kanban board or a task view — used
+// to fully resynchronize after the live stream reconnects or on a board delete.
+function reloadActive(): void {
+  if (isView.value) void loadView();
+  else void loadBoard();
+}
+
+// The column a task currently sits in on the loaded board, by task UUID.
+function columnOfTask(taskId: string): string | undefined {
+  for (const col of boards.columns) {
+    if (boards.tasksByColumn(col.id).some((t) => t.id === taskId)) return col.id;
+  }
+  return undefined;
+}
+
+// Reflects a remote move using the existing optimistic-move primitive (fields
+// are unchanged, so no refetch). A no-op when the card is already in the target
+// column (an echo of this client's own move). When the task moved onto this
+// board from elsewhere we don't hold its card yet, so fetch it.
+function applyRemoteMove(taskId: string, toColumnId: string): void {
+  const current = columnOfTask(taskId);
+  if (current === toColumnId) return;
+
+  if (current !== undefined) {
+    boards.applyOptimisticMove(taskId, toColumnId, boards.tasksByColumn(toColumnId).length);
+  } else if (boards.columns.some((c) => c.id === toColumnId)) {
+    void boards.upsertTaskById(ws.value, taskId);
+  }
+}
+
+// Applies another actor's change to the board and, when it targets the open
+// task, to the detail pane. Board mutations run only in board mode; open-task
+// refreshes apply in either mode since the pane can float over a task view too.
+function onLiveEvent(evt: LiveUpdateEvent): void {
+  const taskId = eventString(evt.data, 'task_id');
+  const onCurrentBoard = !isView.value && evt.envelope.board_id === boardId.value;
+
+  switch (evt.type) {
+    case EVENT_TYPE.TASK_CREATED:
+      if (taskId !== undefined && onCurrentBoard) void boards.upsertTaskById(ws.value, taskId);
+      break;
+
+    case EVENT_TYPE.TASK_UPDATED:
+      if (taskId === undefined) break;
+      if (onCurrentBoard) void boards.upsertTaskById(ws.value, taskId);
+      openTaskLive.apply(evt.type, taskId);
+      break;
+
+    case EVENT_TYPE.TASK_MOVED: {
+      if (taskId === undefined) break;
+      const toColumn = eventString(evt.data, 'to_column_id');
+      if (!isView.value && toColumn !== undefined) applyRemoteMove(taskId, toColumn);
+      openTaskLive.apply(evt.type, taskId);
+      break;
+    }
+
+    case EVENT_TYPE.TASK_DELETED:
+      if (taskId === undefined) break;
+      if (!isView.value) boards.removeTaskById(taskId);
+      if (openTaskLive.apply(evt.type, taskId) === 'deleted') closePane();
+      break;
+
+    case EVENT_TYPE.COLUMN_CREATED:
+    case EVENT_TYPE.COLUMN_DELETED:
+      if (onCurrentBoard && boardId.value !== null) void boards.loadColumns(ws.value, boardId.value);
+      break;
+
+    case EVENT_TYPE.BOARD_DELETED:
+      if (onCurrentBoard) reloadActive();
+      break;
+
+    default:
+      break;
+  }
+}
+
+useLiveUpdates(ws, { onEvent: onLiveEvent, onResync: reloadActive });
 
 // A board id is only valid within its own workspace. When the active workspace
 // changes, clear board-scoped state so a board (or a stale load error) from the
