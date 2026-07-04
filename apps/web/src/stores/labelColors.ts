@@ -13,8 +13,8 @@ import { defaultSwatchId } from '@/lib/swatches';
  * real color field this store becomes the migration source.
  */
 
-const STORAGE_KEY = 'atlas:label-colors';
-const TAGS_KEY = 'atlas:known-tags';
+export const STORAGE_KEY = 'atlas:label-colors';
+export const TAGS_KEY = 'atlas:known-tags';
 
 function load(): Record<string, string> {
   try {
@@ -94,5 +94,41 @@ export const useLabelColorsStore = defineStore('labelColors', () => {
     }
   }
 
-  return { colors, knownTags, tagNames, colorFor, isExplicit, setColor, recordTags };
+  // Adopts a color map written by another tab (from a `storage` event). Parses
+  // the raw payload defensively and never re-persists, so it cannot bounce a
+  // fresh `storage` event back to the originating tab.
+  function applyExternalColors(raw: string): void {
+    try {
+      const next = JSON.parse(raw) as unknown;
+      if (next !== null && typeof next === 'object' && !Array.isArray(next)) {
+        colors.value = next as Record<string, string>;
+      }
+    } catch {
+      // ignore malformed payload
+    }
+  }
+
+  // Adopts the known-tags list written by another tab, without re-persisting.
+  function applyExternalKnownTags(raw: string): void {
+    try {
+      const next = JSON.parse(raw) as unknown;
+      if (Array.isArray(next)) {
+        knownTags.value = next as string[];
+      }
+    } catch {
+      // ignore malformed payload
+    }
+  }
+
+  return {
+    colors,
+    knownTags,
+    tagNames,
+    colorFor,
+    isExplicit,
+    setColor,
+    recordTags,
+    applyExternalColors,
+    applyExternalKnownTags,
+  };
 });

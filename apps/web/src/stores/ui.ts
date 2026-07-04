@@ -31,10 +31,10 @@ const BANNER_TIMEOUT_MS: Record<BannerType, number> = {
 };
 
 const INSPECTOR_STORAGE_KEY = 'atlas:inspector';
-const EDITOR_WIDE_STORAGE_KEY = 'atlas:editor-wide';
-const THEME_STORAGE_KEY = 'atlas:theme';
+export const EDITOR_WIDE_STORAGE_KEY = 'atlas:editor-wide';
+export const THEME_STORAGE_KEY = 'atlas:theme';
 const SIDEBAR_STORAGE_KEY = 'atlas:sidebar-collapsed';
-const TASK_VIEW_MODE_STORAGE_KEY = 'atlas.taskview.mode';
+export const TASK_VIEW_MODE_STORAGE_KEY = 'atlas.taskview.mode';
 const TASK_INSPECTOR_STORAGE_KEY = 'atlas:task-inspector-open';
 
 function loadTaskInspectorOpen(): boolean {
@@ -126,6 +126,16 @@ export const useUiStore = defineStore('ui', () => {
     }
   }
 
+  // Applies a theme change made in another tab (from a `storage` event). Updates
+  // the reactive state and the DOM but never re-persists, so it cannot bounce a
+  // fresh `storage` event back to the tab that made the original change.
+  function applyExternalTheme(raw: string): void {
+    if (raw === 'light' || raw === 'dark') {
+      theme.value = raw;
+      applyTheme(raw);
+    }
+  }
+
   function persistInspector() {
     try {
       localStorage.setItem(
@@ -177,6 +187,12 @@ export const useUiStore = defineStore('ui', () => {
     } catch {
       // ignore storage errors
     }
+  }
+
+  // Mirrors an editor-width change from another tab without re-persisting. Any
+  // value other than '1' is read as false, matching `loadEditorWide`.
+  function applyExternalEditorWide(raw: string): void {
+    editorWide.value = raw === '1';
   }
 
   function openShare(resourceLabel: string, projectSlug?: string) {
@@ -235,6 +251,15 @@ export const useUiStore = defineStore('ui', () => {
       localStorage.setItem(TASK_VIEW_MODE_STORAGE_KEY, mode);
     } catch {
       // ignore storage errors
+    }
+  }
+
+  // Mirrors a persisted task-view-mode change from another tab without
+  // re-persisting. Leaves this tab's session-only override untouched; malformed
+  // values are ignored, matching `loadTaskViewMode`.
+  function applyExternalTaskViewMode(raw: string): void {
+    if (raw === 'sidebar' || raw === 'modal' || raw === 'full') {
+      taskViewMode.value = raw;
     }
   }
 
@@ -328,8 +353,10 @@ export const useUiStore = defineStore('ui', () => {
     shareProjectSlug,
     editorWide,
     toggleEditorWide,
+    applyExternalEditorWide,
     theme,
     setTheme,
+    applyExternalTheme,
     toggleInspector,
     setInspectorTab,
     showBanner,
@@ -345,6 +372,7 @@ export const useUiStore = defineStore('ui', () => {
     taskViewMode,
     effectiveTaskViewMode,
     setTaskViewMode,
+    applyExternalTaskViewMode,
     openTaskInMode,
     clearTaskViewModeOverride,
     taskInspectorOpen,

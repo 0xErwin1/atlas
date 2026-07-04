@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import CommandPalette, { type PaletteSelection } from '@/components/search/CommandPalette.vue';
+import { useCrossTabSync } from '@/composables/useCrossTabSync';
 import type { LocalAction } from '@/composables/useSearch';
 import type { SearchHitDto } from '@/stores/search';
 import { useSearchStore } from '@/stores/search';
@@ -14,6 +15,10 @@ const searchStore = useSearchStore();
 const ui = useUiStore();
 
 const ws = computed(() => workspace.activeWorkspaceSlug ?? '');
+
+// App-lifetime cross-tab sync of local-only preferences (theme, editor width,
+// task-view mode, label colors, known tags) via the native `storage` event.
+useCrossTabSync();
 
 // Opening the palette (from anywhere — Cmd/Ctrl+K or a toolbar button) starts
 // from a clean search slate.
