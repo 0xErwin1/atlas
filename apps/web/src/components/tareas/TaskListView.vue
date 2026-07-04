@@ -830,6 +830,9 @@ function onAssigneePick(task: TaskSummaryDto, value: string): void {
   align-items: center;
   gap: 8px;
   min-width: 0;
+  /* Clip only at the cell boundary in the pathological many-labels case, so labels
+     never bleed into the next column. */
+  overflow: hidden;
 }
 
 .atl-tl-title {
@@ -849,9 +852,9 @@ function onAssigneePick(task: TaskSummaryDto, value: string): void {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-width: 0;
-  overflow: hidden;
-  flex: 0 1 auto;
+  /* Never shrink: a long title ellipsizes (the title alone absorbs the row's
+     slack) while the label chips keep their intrinsic width instead of clipping. */
+  flex: 0 0 auto;
 }
 
 .atl-tl-prio {
