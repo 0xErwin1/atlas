@@ -399,7 +399,10 @@ async fn add_comment_rule_with_unknown_task_skips_without_error() {
         )
         .await
         .expect("misconfigured target must not fail delivery processing");
-    assert!(processed, "new delivery must still be recorded as processed");
+    assert!(
+        processed,
+        "new delivery must still be recorded as processed"
+    );
 
     let comments = comment::Entity::find()
         .filter(comment::Column::WorkspaceId.eq(ws.id.0))

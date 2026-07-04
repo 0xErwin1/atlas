@@ -1370,7 +1370,12 @@ pub(crate) async fn delete_comment(
 
     state
         .document_service()
-        .remove_comment(&ctx, auth.resource.0.id, CommentId(p.comment_id), can_moderate)
+        .remove_comment(
+            &ctx,
+            auth.resource.0.id,
+            CommentId(p.comment_id),
+            can_moderate,
+        )
         .await
         .map_err(ApiError::Domain)?;
 

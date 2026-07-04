@@ -128,7 +128,11 @@ async fn create_list_delete_document_comment_roundtrip() {
 
     assert_eq!(created.body, "First document comment");
     assert_eq!(created.author.r#type, "user");
-    assert_eq!(created.document_id, Some(doc_id), "DTO must carry document_id");
+    assert_eq!(
+        created.document_id,
+        Some(doc_id),
+        "DTO must carry document_id"
+    );
     assert!(
         created.task_id.is_none(),
         "a document comment must not carry a task_id"
@@ -348,7 +352,14 @@ async fn viewer_cannot_create_document_comment() {
         .expect("create document");
     let slug = doc.slug.expect("slug");
 
-    let viewer = add_member(&db, &server, ws.id, "doc-comment-viewer", MemberRole::Member).await;
+    let viewer = add_member(
+        &db,
+        &server,
+        ws.id,
+        "doc-comment-viewer",
+        MemberRole::Member,
+    )
+    .await;
 
     let result = viewer
         .add_document_comment(
@@ -371,8 +382,7 @@ async fn viewer_cannot_create_document_comment() {
 async fn author_edits_own_document_comment() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;
-    let (owner, ws, _) =
-        support::login_user_with_workspace(&server, &db, "doc-comment-edit").await;
+    let (owner, ws, _) = support::login_user_with_workspace(&server, &db, "doc-comment-edit").await;
 
     let (slug, _) = seed_document(&owner, &ws.slug, "doc-comment-edit-proj", "DED").await;
 
@@ -415,7 +425,14 @@ async fn admin_deletes_but_cannot_edit_another_members_document_comment() {
 
     let (slug, _) = seed_document(&owner, &ws.slug, "doc-comment-mod-proj", "DMD").await;
 
-    let member = add_member(&db, &server, ws.id, "doc-comment-mod-author", MemberRole::Member).await;
+    let member = add_member(
+        &db,
+        &server,
+        ws.id,
+        "doc-comment-mod-author",
+        MemberRole::Member,
+    )
+    .await;
     let comment = member
         .add_document_comment(
             &ws.slug,
@@ -427,7 +444,14 @@ async fn admin_deletes_but_cannot_edit_another_members_document_comment() {
         .await
         .expect("create comment");
 
-    let admin = add_member(&db, &server, ws.id, "doc-comment-mod-admin", MemberRole::Admin).await;
+    let admin = add_member(
+        &db,
+        &server,
+        ws.id,
+        "doc-comment-mod-admin",
+        MemberRole::Admin,
+    )
+    .await;
 
     let edit = admin
         .update_document_comment(

@@ -1334,8 +1334,11 @@ async fn run_comments_list(ctx: &Ctx, args: CommentsListArgs) -> Result<(), CliE
         .client
         .list_comments(ws, &args.readable_id, None, None)
         .await?;
-    let projections: Vec<CommentProjection> =
-        page.items.into_iter().map(CommentProjection::from).collect();
+    let projections: Vec<CommentProjection> = page
+        .items
+        .into_iter()
+        .map(CommentProjection::from)
+        .collect();
     output::emit_list(
         ctx.output,
         &projections,
@@ -2133,9 +2136,8 @@ mod tests {
     #[test]
     fn tasks_comments_delete_parses_comment_uuid() {
         let uuid_str = "018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234";
-        let cli =
-            Cli::try_parse_from(["atlas", "tasks", "comments", "delete", "ATL-1", uuid_str])
-                .unwrap();
+        let cli = Cli::try_parse_from(["atlas", "tasks", "comments", "delete", "ATL-1", uuid_str])
+            .unwrap();
         if let crate::cli::Commands::Tasks(args) = cli.command {
             if let TasksCmd::Comments(c_args) = args.command {
                 if let CommentsCmd::Delete(del_args) = c_args.command {

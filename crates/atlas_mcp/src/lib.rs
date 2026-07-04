@@ -4796,7 +4796,8 @@ mod tests {
         assert_eq!(list.limit, Some(10));
 
         let add: AddDocumentCommentParams =
-            serde_json::from_str(r#"{"workspace":"ws","slug":"my-doc","body":"Nice note"}"#).unwrap();
+            serde_json::from_str(r#"{"workspace":"ws","slug":"my-doc","body":"Nice note"}"#)
+                .unwrap();
         assert_eq!(add.slug, "my-doc");
         assert_eq!(add.body, "Nice note");
 

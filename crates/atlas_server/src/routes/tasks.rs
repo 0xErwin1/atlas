@@ -248,7 +248,11 @@ use super::account_status;
 /// Attribution actors carry only id and display name. `account_status` is always
 /// absent here — it is a display signal for the assignee/member UI, not for audit
 /// trails or activity feeds.
-pub(crate) async fn resolve_actor_dto(state: &AppState, _ctx: &WorkspaceCtx, actor: &Actor) -> ActorDto {
+pub(crate) async fn resolve_actor_dto(
+    state: &AppState,
+    _ctx: &WorkspaceCtx,
+    actor: &Actor,
+) -> ActorDto {
     match actor {
         Actor::User(uid) => {
             let repo = PgUserRepo {

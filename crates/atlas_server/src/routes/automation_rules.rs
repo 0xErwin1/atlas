@@ -68,9 +68,11 @@ fn validate_create(req: &CreateAutomationRuleRequest) -> Result<(), ApiError> {
             "create_task",
             &["board_id", "column_id", "title_template"],
         ),
-        "add_comment" => {
-            require_action_params(&req.action_params, "add_comment", &["task_id", "body_template"])
-        }
+        "add_comment" => require_action_params(
+            &req.action_params,
+            "add_comment",
+            &["task_id", "body_template"],
+        ),
         other => Err(ApiError::InvalidInput {
             message: format!(
                 "unsupported action_type '{other}'; supported: 'create_task', 'add_comment'"
