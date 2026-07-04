@@ -1,8 +1,8 @@
-import { Decoration } from '@codemirror/view';
+import { Decoration, WidgetType } from '@codemirror/view';
 import { describe, expect, it } from 'vitest';
 import { isReplaceDeco } from '@/components/editor/livePreviewExtension';
 
-class StubWidget {
+class StubWidget extends WidgetType {
   toDOM(): HTMLElement {
     return document.createElement('span');
   }
