@@ -36,7 +36,7 @@ const rows = computed<Row[]>(() =>
       v-for="row in rows"
       :key="`${row.type}:${row.id}`"
       class="group inline-flex items-center"
-      style="gap: 5px; padding: 2px 6px 2px 2px; border-radius: var(--r-full); background: var(--c-raised); border: 1px solid var(--c-border);"
+      style="gap: 5px; padding: 2px 6px 2px 2px; border-radius: var(--r-sm); background: var(--c-raised); border: 1px solid var(--c-border);"
       :data-assignee-kind="row.isAgent ? 'agent' : 'user'"
     >
       <Avatar :name="row.name" :agent="row.isAgent" :size="18" />
