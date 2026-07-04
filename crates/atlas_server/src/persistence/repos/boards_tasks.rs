@@ -1663,6 +1663,12 @@ impl TaskChecklistRepo for PgTaskChecklistRepo {
     }
 }
 
+/// Consecutive `field_changed` activity on the same task field, by the same actor,
+/// within this window is merged into a single entry rather than appended as a new
+/// row. Chosen generously so an ordinary editing session (a burst of debounced
+/// autosaves on a description) collapses to one activity entry.
+const FIELD_CHANGE_COALESCE_WINDOW_MINUTES: i64 = 10;
+
 pub struct PgTaskActivityRepo {
     pub conn: DatabaseConnection,
 }
@@ -1703,6 +1709,89 @@ impl PgTaskActivityRepo {
             .await
             .map_err(db_err)
             .and_then(|m| task_activity_from(m).map_err(internal_err))
+    }
+
+    /// Appends a `field_changed` activity, or merges it into a recent same-field
+    /// change by the same actor instead of adding a new row.
+    ///
+    /// A burst of autosaves on one field (e.g. editing a task description) would
+    /// otherwise append one activity entry per save, flooding the feed. When the
+    /// most recent `field_changed` on this task, by this actor, within
+    /// [`FIELD_CHANGE_COALESCE_WINDOW_MINUTES`], targets the same field, that entry
+    /// is updated in place: the original `old_value` (the burst's starting point)
+    /// is kept, `new_value` becomes the latest, and `created_at` is bumped so the
+    /// single entry reflects the last edit. A change to a different field, a
+    /// different actor, or an older entry starts a fresh row.
+    pub async fn append_or_coalesce_field_change_in(
+        conn: &impl ConnectionTrait,
+        ctx: &WorkspaceCtx,
+        task_id: TaskId,
+        field: String,
+        old_value: serde_json::Value,
+        new_value: serde_json::Value,
+    ) -> Result<TaskActivity, DomainError> {
+        use atlas_domain::entities::boards_tasks::ActivityPayload;
+
+        let (by_user, by_key) = actor_columns(&ctx.actor);
+        let cutoff = Utc::now() - chrono::Duration::minutes(FIELD_CHANGE_COALESCE_WINDOW_MINUTES);
+
+        let mut query = task_activity::Entity::find()
+            .filter(task_activity::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(task_activity::Column::TaskId.eq(task_id.0))
+            .filter(task_activity::Column::Kind.eq(ActivityKind::FieldChanged.as_str()))
+            .filter(task_activity::Column::CreatedAt.gte(cutoff))
+            .order_by_desc(task_activity::Column::CreatedAt)
+            .order_by_desc(task_activity::Column::Id);
+
+        // Never merge across principals: a different actor's edit is its own entry.
+        query = match (by_user, by_key) {
+            (Some(uid), _) => query.filter(task_activity::Column::CreatedByUserId.eq(uid)),
+            (_, Some(kid)) => query.filter(task_activity::Column::CreatedByApiKeyId.eq(kid)),
+            (None, None) => query,
+        };
+
+        if let Some(model) = query.one(conn).await.map_err(db_err)?
+            && let Ok(ActivityPayload::FieldChanged {
+                field: recent_field,
+                old_value: original_old,
+                ..
+            }) = serde_json::from_value::<ActivityPayload>(model.payload.clone())
+            && recent_field == field
+        {
+            let merged = ActivityPayload::FieldChanged {
+                field,
+                old_value: original_old,
+                new_value,
+            };
+            let payload = serde_json::to_value(&merged).map_err(|e| DomainError::Internal {
+                message: format!("serialize activity payload: {e}"),
+            })?;
+
+            let mut active = model.into_active_model();
+            active.payload = Set(payload);
+            active.created_at = Set(Utc::now());
+
+            return active
+                .update(conn)
+                .await
+                .map_err(db_err)
+                .and_then(|m| task_activity_from(m).map_err(internal_err));
+        }
+
+        Self::append_in(
+            conn,
+            ctx,
+            NewTaskActivity {
+                task_id,
+                kind: ActivityKind::FieldChanged,
+                payload: ActivityPayload::FieldChanged {
+                    field,
+                    old_value,
+                    new_value,
+                },
+            },
+        )
+        .await
     }
 }
 

@@ -276,19 +276,12 @@ impl TaskService {
         let changed_field_names: Vec<String> =
             fields_changed.iter().map(|(f, _, _)| f.clone()).collect();
 
+        // Coalesce consecutive same-field edits by the same actor so a burst of
+        // description autosaves collapses to one activity entry instead of flooding
+        // the feed. Other verbs (move, assign, promote) keep their own entries.
         for (field, old_value, new_value) in fields_changed {
-            PgTaskActivityRepo::append_in(
-                &txn,
-                ctx,
-                NewTaskActivity {
-                    task_id: id,
-                    kind: ActivityKind::FieldChanged,
-                    payload: ActivityPayload::FieldChanged {
-                        field,
-                        old_value,
-                        new_value,
-                    },
-                },
+            PgTaskActivityRepo::append_or_coalesce_field_change_in(
+                &txn, ctx, id, field, old_value, new_value,
             )
             .await?;
         }
