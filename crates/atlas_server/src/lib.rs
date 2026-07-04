@@ -14,6 +14,7 @@ pub mod config;
 pub mod crypto;
 pub mod dispatcher;
 pub mod error;
+pub mod live;
 pub mod middleware;
 pub mod persistence;
 pub mod routes;
@@ -485,6 +486,11 @@ pub fn app(state: AppState) -> Router {
             get(routes::automation_rules::get_automation_rule)
                 .patch(routes::automation_rules::patch_automation_rule)
                 .delete(routes::automation_rules::delete_automation_rule),
+        )
+        // Live updates (Server-Sent Events)
+        .route(
+            "/v1/workspaces/{ws}/events",
+            get(routes::events::stream_events),
         )
         // Search
         .route("/v1/workspaces/{ws}/search", get(routes::search::search))

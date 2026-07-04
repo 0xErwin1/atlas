@@ -6,6 +6,7 @@ pub(crate) mod automation_rules;
 pub(crate) mod boards;
 pub(crate) mod comments;
 pub(crate) mod documents;
+pub(crate) mod events;
 pub(crate) mod folders;
 pub(crate) mod grants;
 pub(crate) mod groups;

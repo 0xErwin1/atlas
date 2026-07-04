@@ -43,6 +43,13 @@ axum       = { version = "0.8", features = ["multipart"] }
 tokio      = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
 sea-orm    = { version = "2.0.0-rc.40", features = ["sqlx-postgres", "runtime-tokio-rustls", "macros"] }
 sea-orm-migration = { version = "2.0.0-rc.40", features = ["sqlx-postgres", "runtime-tokio-rustls"] }
+# Direct sqlx handle for Postgres LISTEN/NOTIFY (PgListener). sea-orm's
+# `sqlx-postgres` feature pulls the sqlx-postgres driver crate but does not
+# enable the sqlx facade's `postgres` feature, so `sqlx::postgres::PgListener`
+# is only reachable via a direct dependency. Version and runtime/tls features
+# match sea-orm's bundled sqlx 0.9 (tokio + rustls) so a single sqlx instance is
+# shared and `DatabaseConnection::get_postgres_connection_pool()` stays type-compatible.
+sqlx       = { version = "0.9", default-features = false, features = ["postgres", "runtime-tokio", "tls-rustls"] }
 utoipa     = { version = "5", features = ["axum_extras"] }
 tower      = "0.5"
 tower-http = { version = "0.6", features = ["trace", "request-id", "cors", "set-header"] }

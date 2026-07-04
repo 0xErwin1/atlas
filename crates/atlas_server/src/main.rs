@@ -65,7 +65,17 @@ async fn main() -> Result<()> {
         state.webhook_crypto.clone(),
         state.dispatcher_config.clone(),
     );
-    let dispatcher_handle = tokio::spawn(dispatcher.run(shutdown_rx));
+    let dispatcher_handle = tokio::spawn(dispatcher.run(shutdown_rx.clone()));
+
+    // Spawn the Postgres LISTEN consumer that feeds the in-process live-event
+    // hub. It shares the same watch-based shutdown signal as the dispatcher and
+    // is drained on graceful shutdown alongside it.
+    let live_pool = state.db.get_postgres_connection_pool().clone();
+    let listener_handle = tokio::spawn(atlas_server::live::run_listener(
+        live_pool,
+        state.live.clone(),
+        shutdown_rx,
+    ));
 
     axum::serve(
         listener,
@@ -74,10 +84,13 @@ async fn main() -> Result<()> {
     .with_graceful_shutdown(shutdown_signal())
     .await?;
 
-    // Signal the dispatcher and await its clean exit.
+    // Signal the background tasks and await their clean exit.
     let _ = shutdown_tx.send(true);
     if let Err(e) = dispatcher_handle.await {
         tracing::error!(error = %e, "dispatcher task panicked during shutdown");
+    }
+    if let Err(e) = listener_handle.await {
+        tracing::error!(error = %e, "live event listener task panicked during shutdown");
     }
 
     Ok(())

@@ -5,6 +5,7 @@ use atlas_domain::AttachmentStore;
 
 use crate::config::{DispatcherConfig, ServerConfig};
 use crate::crypto::WebhookCrypto;
+use crate::live::{DEFAULT_HUB_CAPACITY, LiveEventHub};
 use crate::middleware::rate_limit::PrincipalRateLimiter;
 use crate::persistence::repos::{DiskAttachmentStore, S3AttachmentStore, S3Config};
 use crate::services::{DocumentService, TaskService};
@@ -26,6 +27,8 @@ pub struct AppState {
     pub allow_private_webhook_targets: bool,
     /// Per-principal rate limiter, or `None` when rate limiting is disabled.
     pub rate_limiter: Option<Arc<PrincipalRateLimiter>>,
+    /// In-process fan-out hub for live events streamed to clients.
+    pub live: LiveEventHub,
 }
 
 impl AppState {
@@ -61,6 +64,7 @@ impl AppState {
             dispatcher_config: cfg.dispatcher.clone(),
             allow_private_webhook_targets: cfg.allow_private_webhook_targets,
             rate_limiter,
+            live: LiveEventHub::new(DEFAULT_HUB_CAPACITY),
         })
     }
 
@@ -95,6 +99,7 @@ impl AppState {
             dispatcher_config: DispatcherConfig::default(),
             allow_private_webhook_targets: true,
             rate_limiter: None,
+            live: LiveEventHub::new(DEFAULT_HUB_CAPACITY),
         })
     }
 

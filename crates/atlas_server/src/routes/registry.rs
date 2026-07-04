@@ -757,6 +757,18 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/v1/workspaces/{ws}/folders/{folder_id}/copy"),
     },
+    // ---- Live updates (Server-Sent Events) ----
+    //
+    // SSE is not modelled in OpenAPI (utoipa cannot express an event stream), so
+    // `openapi_path` is None: the endpoint is exercised by the 401-sweep and the
+    // registry→router audit, but excluded from the OpenAPI drift test. The web app
+    // consumes it via `EventSource`, not the generated client.
+    RouteEntry {
+        method: "GET",
+        path_template: "/v1/workspaces/{ws}/events",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: None,
+    },
     // ---- Search ----
     RouteEntry {
         method: "GET",
