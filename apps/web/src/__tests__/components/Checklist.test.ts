@@ -1,7 +1,13 @@
 import { mount } from '@vue/test-utils';
 import { describe, expect, it } from 'vitest';
+import { createMemoryHistory, createRouter } from 'vue-router';
 import Checklist from '@/components/tareas/Checklist.vue';
 import type { ChecklistItemDto } from '@/stores/taskDetail';
+
+const router = createRouter({
+  history: createMemoryHistory(),
+  routes: [{ path: '/t/task/:readableId', name: 'task-detail', component: { template: '<div />' } }],
+});
 
 const item = (id: string, title: string, checked: boolean, promoted?: string): ChecklistItemDto => ({
   id,
@@ -54,10 +60,15 @@ describe('Checklist (REQ-W22)', () => {
     expect(wrapper.emitted('promote')).toEqual([['a', 'col-1']]);
   });
 
-  it('renders the promoted readable id instead of a promote button once promoted', () => {
-    const wrapper = mount(Checklist, { props: { items: [item('a', 'One', false, 'ATL-99')], columns } });
+  it('links the promoted readable id to its task instead of a promote button', () => {
+    const wrapper = mount(Checklist, {
+      props: { items: [item('a', 'One', false, 'ATL-99')], columns },
+      global: { plugins: [router] },
+    });
 
-    expect(wrapper.text()).toContain('ATL-99');
+    const link = wrapper.get('a.atl-checklist-promoted');
+    expect(link.text()).toBe('ATL-99');
+    expect(link.attributes('href')).toBe('/t/task/ATL-99');
     expect(wrapper.find('button[aria-label="Promote to task"]').exists()).toBe(false);
   });
 

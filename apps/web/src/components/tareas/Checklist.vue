@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
+import { RouterLink } from 'vue-router';
 import Icon from '@/components/ui/Icon.vue';
 import Popover from '@/components/ui/Popover.vue';
 import type { ChecklistItemDto } from '@/stores/taskDetail';
@@ -159,13 +160,14 @@ function pickColumn(itemId: string, columnId: string): void {
         <Icon name="pencil" :size="13" />
       </button>
 
-      <a
+      <RouterLink
         v-if="item.promoted_readable_id"
-        class="shrink-0"
-        style="font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--c-info);"
+        :to="{ name: 'task-detail', params: { readableId: item.promoted_readable_id } }"
+        class="atl-checklist-promoted shrink-0"
+        :title="`Open ${item.promoted_readable_id}`"
       >
         {{ item.promoted_readable_id }}
-      </a>
+      </RouterLink>
 
       <Popover
         v-else-if="columns.length > 0"
@@ -259,5 +261,16 @@ function pickColumn(itemId: string, columnId: string): void {
 
 .atl-checklist-add::placeholder {
   color: var(--c-muted);
+}
+
+.atl-checklist-promoted {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--c-info);
+  cursor: pointer;
+}
+
+.atl-checklist-promoted:hover {
+  text-decoration: underline;
 }
 </style>
