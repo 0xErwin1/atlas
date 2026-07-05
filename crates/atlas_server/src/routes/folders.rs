@@ -21,8 +21,9 @@ use atlas_domain::{
 
 use crate::{
     authz::{
-        Authorized, EditorMin, FolderRes, MinRole, ViewerMin, authorize_folder_destination,
-        authorized::ProjectRes, resolve_folder_ancestry,
+        Authorized, EditorMin, FolderRes, FoldersCreate, FoldersDelete, FoldersRead, FoldersUpdate,
+        MinRole, ViewerMin, authorize_folder_destination, authorized::ProjectRes,
+        resolve_folder_ancestry,
     },
     error::ApiError,
     persistence::repos::{DocumentRepo, FolderRepo, PgDocumentRepo, PgFolderRepo},
@@ -78,7 +79,7 @@ fn principal_to_actor(principal: &Principal) -> Actor {
     )
 )]
 pub(crate) async fn create_folder(
-    auth: Authorized<ProjectRes, EditorMin>,
+    auth: Authorized<ProjectRes, EditorMin, FoldersCreate>,
     State(state): State<AppState>,
     Json(body): Json<CreateFolderRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -154,7 +155,7 @@ pub(crate) struct PaginationQuery {
     )
 )]
 pub(crate) async fn list_folders(
-    auth: Authorized<ProjectRes, ViewerMin>,
+    auth: Authorized<ProjectRes, ViewerMin, FoldersRead>,
     State(state): State<AppState>,
     Query(q): Query<PaginationQuery>,
 ) -> Result<Json<Page<FolderDto>>, ApiError> {
@@ -215,7 +216,7 @@ pub(crate) async fn list_folders(
     )
 )]
 pub(crate) async fn get_folder(
-    auth: Authorized<FolderRes, ViewerMin>,
+    auth: Authorized<FolderRes, ViewerMin, FoldersRead>,
 ) -> Result<Json<FolderDto>, ApiError> {
     Ok(Json(folder_to_dto(auth.resource.0)))
 }
@@ -242,7 +243,7 @@ pub(crate) async fn get_folder(
     )
 )]
 pub(crate) async fn rename_folder(
-    auth: Authorized<FolderRes, EditorMin>,
+    auth: Authorized<FolderRes, EditorMin, FoldersUpdate>,
     State(state): State<AppState>,
     Json(body): Json<RenameFolderRequest>,
 ) -> Result<Json<FolderDto>, ApiError> {
@@ -292,7 +293,7 @@ pub(crate) async fn rename_folder(
     )
 )]
 pub(crate) async fn move_folder(
-    auth: Authorized<FolderRes, EditorMin>,
+    auth: Authorized<FolderRes, EditorMin, FoldersUpdate>,
     State(state): State<AppState>,
     Json(body): Json<MoveFolderRequest>,
 ) -> Result<Json<FolderDto>, ApiError> {
@@ -367,7 +368,7 @@ pub(crate) async fn move_folder(
     )
 )]
 pub(crate) async fn copy_folder(
-    auth: Authorized<FolderRes, EditorMin>,
+    auth: Authorized<FolderRes, EditorMin, FoldersCreate>,
     State(state): State<AppState>,
     Json(body): Json<CopyFolderRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -517,7 +518,7 @@ async fn copy_folder_subtree(
     )
 )]
 pub(crate) async fn delete_folder(
-    auth: Authorized<FolderRes, EditorMin>,
+    auth: Authorized<FolderRes, EditorMin, FoldersDelete>,
     State(state): State<AppState>,
 ) -> Result<StatusCode, ApiError> {
     let actor = principal_to_actor(&auth.principal);

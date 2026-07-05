@@ -15,12 +15,16 @@ use atlas_domain::{
     entities::permissions::NewPermissionGrant,
     entities::workspace_core::{NewProject, UpdateProject},
     permissions::{
-        Principal, ResourceRole, ShareDenied, Visibility, VisibilityRole, authorize_share,
+        Capability, CapabilityAction, CapabilityFamily, Principal, ResourceRole, ShareDenied,
+        Visibility, VisibilityRole, authorize_share,
     },
 };
 
 use crate::{
-    authz::{Authorized, EditorMin, ViewerMin, WorkspaceMember, authorized::ProjectRes},
+    authz::{
+        Authorized, EditorMin, ProjectsCreate, ProjectsDelete, ProjectsRead, ProjectsUpdate,
+        ViewerMin, WorkspaceMember, authorized::ProjectRes, enforce_api_key_scope,
+    },
     error::ApiError,
     persistence::repos::{PermissionGrantRepo, PgPermissionGrantRepo, PgProjectRepo, ProjectRepo},
     routes::validation::{validate_name, validate_task_prefix},
@@ -47,7 +51,7 @@ pub(crate) struct PaginationQuery {
     )
 )]
 pub(crate) async fn create_project(
-    auth: Authorized<crate::authz::authorized::WorkspaceRes, EditorMin>,
+    auth: Authorized<crate::authz::authorized::WorkspaceRes, EditorMin, ProjectsCreate>,
     State(state): State<AppState>,
     Json(body): Json<CreateProjectRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -134,6 +138,18 @@ pub(crate) async fn list_projects(
     State(state): State<AppState>,
     Query(q): Query<PaginationQuery>,
 ) -> Result<Json<Page<ProjectDto>>, ApiError> {
+    if let Some(key_id) = member.api_key_id {
+        enforce_api_key_scope(
+            &state.db,
+            key_id,
+            Capability {
+                family: CapabilityFamily::Projects,
+                action: CapabilityAction::Read,
+            },
+        )
+        .await?;
+    }
+
     let limit = q.limit.unwrap_or(50).clamp(1, 200) as u64;
     let after_id = q.cursor.as_deref().and_then(Cursor::decode).map(|c| c.0);
 
@@ -183,7 +199,7 @@ pub(crate) async fn list_projects(
     )
 )]
 pub(crate) async fn get_project(
-    auth: Authorized<ProjectRes, ViewerMin>,
+    auth: Authorized<ProjectRes, ViewerMin, ProjectsRead>,
     State(_state): State<AppState>,
 ) -> Result<Json<ProjectDto>, ApiError> {
     Ok(Json(project_to_dto(&auth.resource.0)))
@@ -207,7 +223,7 @@ pub(crate) async fn get_project(
     )
 )]
 pub(crate) async fn update_project(
-    auth: Authorized<ProjectRes, EditorMin>,
+    auth: Authorized<ProjectRes, EditorMin, ProjectsUpdate>,
     State(state): State<AppState>,
     Json(body): Json<UpdateProjectRequest>,
 ) -> Result<Json<ProjectDto>, ApiError> {
@@ -275,7 +291,7 @@ pub(crate) async fn update_project(
     )
 )]
 pub(crate) async fn delete_project(
-    auth: Authorized<ProjectRes, EditorMin>,
+    auth: Authorized<ProjectRes, EditorMin, ProjectsDelete>,
     State(state): State<AppState>,
 ) -> Result<StatusCode, ApiError> {
     let actor = principal_to_actor(&auth.principal);

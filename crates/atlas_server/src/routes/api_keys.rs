@@ -33,7 +33,7 @@ use atlas_domain::{
         security_audit::{NewSecurityAuditEvent, SecurityAction},
     },
     ids::{ApiKeyId, ProjectId, UserId, WorkspaceId},
-    permissions::{Principal, ResourceRole, ShareDenied, authorize_grant_target},
+    permissions::{Capability, Principal, ResourceRole, ShareDenied, authorize_grant_target},
 };
 use sea_orm::TransactionTrait;
 
@@ -136,6 +136,10 @@ pub(crate) async fn create_user_api_key(
         token_hash,
         type_: key_type,
         expires_at: body.expires_at,
+        // The wire request does not yet expose a scopes field (added alongside
+        // ApiKeyScope in a later increment); until then, new keys keep full
+        // access rather than silently becoming read-only.
+        scopes: Capability::ALL.to_vec(),
     };
 
     let txn = (*state.db).begin().await.map_err(|e| ApiError::Internal {

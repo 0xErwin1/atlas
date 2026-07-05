@@ -61,6 +61,7 @@ async fn add_agent(
                 token_hash: format!("hash-{name}"),
                 type_: atlas_domain::entities::identity::ApiKeyType::Agent,
                 expires_at: None,
+                scopes: atlas_domain::permissions::Capability::ALL.to_vec(),
             },
         )
         .await
@@ -456,6 +457,7 @@ async fn workspace_owner_or_admin_api_key_returns_403() {
                 token_hash,
                 type_: atlas_domain::entities::identity::ApiKeyType::Agent,
                 expires_at: None,
+                scopes: atlas_domain::permissions::Capability::ALL.to_vec(),
             },
         )
         .await

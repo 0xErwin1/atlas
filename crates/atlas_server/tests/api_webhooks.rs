@@ -7,13 +7,18 @@
 
 mod support;
 
-use atlas_domain::{Actor, WorkspaceCtx, entities::identity::MemberRole, ids::WorkspaceId};
+use atlas_domain::{
+    Actor, WorkspaceCtx,
+    entities::identity::{ApiKeyType, MemberRole},
+    ids::WorkspaceId,
+    permissions::Capability,
+};
 use atlas_server::{
     auth::password,
     crypto::WebhookCrypto,
     persistence::repos::{
-        MembershipRepo, NewUser, PgMembershipRepo, PgUserRepo, PgWebhookSubscriptionRepo, UserRepo,
-        WebhookSubscriptionPatch,
+        ApiKeyRepo, MembershipRepo, NewApiKey, NewUser, PgApiKeyRepo, PgMembershipRepo, PgUserRepo,
+        PgWebhookSubscriptionRepo, UserRepo, WebhookSubscriptionPatch,
     },
 };
 use serde_json::Value;
@@ -747,6 +752,65 @@ async fn admin_delete_returns_204_then_get_returns_404() {
         get_resp.status(),
         404,
         "deleted subscription must return 404 on get"
+    );
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
+// Regression: webhooks stay agent-blocked regardless of capability scope
+// ---------------------------------------------------------------------------
+
+/// Webhooks are an `AdminMin`-gated, agent-unreachable surface: an agent is
+/// capped at `Editor` regardless of its creator's role, so it can never clear
+/// the `AdminMin` threshold. Granting it every capability in the catalog must
+/// not change that — the capability gate is orthogonal to (and only ever
+/// further restricts on top of) the role ceiling.
+#[tokio::test]
+async fn agent_with_all_capabilities_cannot_list_webhooks() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+
+    let (_owner, ws, owner_user) =
+        support::login_user_with_workspace(&server, &db, "wh-agent-allcap-owner").await;
+
+    let plain = "atlas_wh_allcap_agent_secret";
+    let hash = atlas_server::auth::tokens::hash_token(plain);
+
+    let key = db
+        .api_key_repo()
+        .create_for_user(
+            owner_user.id,
+            NewApiKey {
+                name: "wh-allcap-agent".to_string(),
+                token_hash: hash,
+                type_: ApiKeyType::Agent,
+                expires_at: None,
+                scopes: Capability::ALL.to_vec(),
+            },
+        )
+        .await
+        .expect("create all-capability agent key");
+
+    PgApiKeyRepo::set_global_for_user_in(db.conn(), owner_user.id, key.id, true)
+        .await
+        .expect("make key global");
+
+    let resp = http()
+        .get(format!(
+            "{}/v1/workspaces/{}/webhooks",
+            server.base_url(),
+            ws.slug
+        ))
+        .bearer_auth(plain)
+        .send()
+        .await
+        .expect("request");
+
+    assert_eq!(
+        resp.status(),
+        403,
+        "an agent holding all 20 capabilities must still be blocked from webhooks by the AdminMin role ceiling"
     );
 
     db.teardown().await;

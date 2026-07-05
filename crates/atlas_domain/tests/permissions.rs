@@ -6,8 +6,9 @@ use atlas_domain::entities::identity::MemberRole;
 use atlas_domain::error::DomainError;
 use atlas_domain::ids::{ApiKeyId, BoardId, DocumentId, ProjectId, TaskId, UserId};
 use atlas_domain::permissions::{
-    ChainSegment, Principal, ResolutionInput, ResourceChain, ResourceRef, ResourceRole,
-    ShareDenied, Visibility, VisibilityRole, authorize_share, resolve, validate_reference,
+    Capability, CapabilityAction, CapabilityFamily, ChainSegment, Principal, ResolutionInput,
+    ResourceChain, ResourceRef, ResourceRole, ShareDenied, Visibility, VisibilityRole,
+    authorize_share, resolve, validate_reference,
 };
 
 fn user_principal() -> Principal {
@@ -462,4 +463,59 @@ fn self_referencing_blocks_is_rejected() {
     let tid = TaskId::new();
     let result = validate_reference(tid, ReferenceKind::Blocks, Some(tid), None);
     assert!(matches!(result, Err(DomainError::InvalidInput { .. })));
+}
+
+// ——— Capability tests ———
+
+#[test]
+fn capability_all_has_twenty_entries() {
+    assert_eq!(Capability::ALL.len(), 20);
+}
+
+#[test]
+fn capability_default_read_only_has_five_entries_all_read() {
+    assert_eq!(Capability::DEFAULT_READ_ONLY.len(), 5);
+    for cap in Capability::DEFAULT_READ_ONLY {
+        assert_eq!(cap.action, CapabilityAction::Read);
+    }
+}
+
+#[test]
+fn capability_default_read_only_covers_every_family() {
+    let families: std::collections::HashSet<CapabilityFamily> = Capability::DEFAULT_READ_ONLY
+        .iter()
+        .map(|c| c.family)
+        .collect();
+    assert_eq!(families.len(), 5);
+}
+
+#[test]
+fn capability_as_str_matches_family_action_format() {
+    let cap = Capability {
+        family: CapabilityFamily::Tasks,
+        action: CapabilityAction::Read,
+    };
+    assert_eq!(cap.as_str(), "tasks:read");
+
+    let cap = Capability {
+        family: CapabilityFamily::Projects,
+        action: CapabilityAction::Delete,
+    };
+    assert_eq!(cap.as_str(), "projects:delete");
+}
+
+#[test]
+fn capability_round_trips_through_string_for_every_catalog_entry() {
+    for cap in Capability::ALL {
+        let parsed: Capability = cap.as_str().parse().expect("catalog entry must parse back");
+        assert_eq!(parsed, cap);
+    }
+}
+
+#[test]
+fn capability_rejects_unknown_strings() {
+    assert!("tasks:manage".parse::<Capability>().is_err());
+    assert!("foo:read".parse::<Capability>().is_err());
+    assert!("tasks".parse::<Capability>().is_err());
+    assert!("".parse::<Capability>().is_err());
 }

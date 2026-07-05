@@ -3,6 +3,7 @@ use atlas_domain::{
     Actor, DomainError, WorkspaceCtx,
     entities::identity::{ApiKeyType, MemberRole, WorkspaceMembership},
     ids::{ActivationTokenId, ApiKeyId, MembershipId, SessionId, UserId, WorkspaceId},
+    permissions::Capability,
 };
 use chrono::Utc;
 use sea_orm::{
@@ -12,9 +13,9 @@ use sea_orm::{
 use uuid::Uuid;
 
 use crate::persistence::entities::identity::{
-    activation_token, activation_token_from, api_key, api_key_from, membership, membership_from,
-    session, session_from, user, user_from, user_ui_state, user_ui_state_from, workspace,
-    workspace_from,
+    activation_token, activation_token_from, api_key, api_key_from, capabilities_from_stored,
+    capabilities_to_stored, membership, membership_from, session, session_from, user, user_from,
+    user_ui_state, user_ui_state_from, workspace, workspace_from,
 };
 
 pub use atlas_domain::entities::identity::{
@@ -721,6 +722,7 @@ impl ApiKeyRepo for PgApiKeyRepo {
             revoked_at: Set(None),
             created_at: Set(Utc::now()),
             is_global: Set(false),
+            scopes: Set(capabilities_to_stored(&new.scopes)),
         };
         model
             .insert(&self.conn)
@@ -746,6 +748,7 @@ impl ApiKeyRepo for PgApiKeyRepo {
             revoked_at: Set(None),
             created_at: Set(Utc::now()),
             is_global: Set(false),
+            scopes: Set(capabilities_to_stored(&new.scopes)),
         };
         model
             .insert(&self.conn)
@@ -771,13 +774,14 @@ impl ApiKeyRepo for PgApiKeyRepo {
             revoked_at: Option<chrono::DateTime<Utc>>,
             created_at: chrono::DateTime<Utc>,
             is_global: bool,
+            scopes: Vec<String>,
         }
 
         let rows = Row::find_by_statement(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
             "SELECT k.id, k.workspace_id, k.created_by_user_id, k.name, k.token_hash,
                     k.type AS type_, k.expires_at, k.last_used_at, k.revoked_at, k.created_at,
-                    k.is_global
+                    k.is_global, k.scopes
              FROM api_keys k
              JOIN users u ON u.id = k.created_by_user_id
              WHERE k.token_hash = $1
@@ -803,6 +807,7 @@ impl ApiKeyRepo for PgApiKeyRepo {
             revoked_at: r.revoked_at,
             created_at: r.created_at,
             is_global: r.is_global,
+            scopes: capabilities_from_stored(&r.scopes),
         }))
     }
 
@@ -934,13 +939,14 @@ impl ApiKeyRepo for PgApiKeyRepo {
             revoked_at: Option<chrono::DateTime<Utc>>,
             created_at: chrono::DateTime<Utc>,
             is_global: bool,
+            scopes: Vec<String>,
         }
 
         let rows = Row::find_by_statement(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
             "SELECT DISTINCT k.id, k.workspace_id, k.created_by_user_id, k.name, k.token_hash,
                     k.type AS type_, k.expires_at, k.last_used_at, k.revoked_at, k.created_at,
-                    k.is_global
+                    k.is_global, k.scopes
              FROM api_keys k
              JOIN permission_grants g ON g.api_key_id = k.id
              WHERE g.workspace_id = $1
@@ -966,6 +972,7 @@ impl ApiKeyRepo for PgApiKeyRepo {
                 revoked_at: r.revoked_at,
                 created_at: r.created_at,
                 is_global: r.is_global,
+                scopes: capabilities_from_stored(&r.scopes),
             })
             .collect())
     }
@@ -993,8 +1000,39 @@ impl PgApiKeyRepo {
             revoked_at: Set(None),
             created_at: Set(Utc::now()),
             is_global: Set(false),
+            scopes: Set(capabilities_to_stored(&new.scopes)),
         };
         model.insert(conn).await.map(api_key_from).map_err(db_err)
+    }
+
+    /// Replaces the full scope set on a user-owned key using the provided
+    /// connection or transaction, so the update and its audit append share one
+    /// transaction. Mirrors `set_global_for_user_in`'s full-replacement semantics.
+    ///
+    /// Scoped to `user_id`: returns `DomainError::NotFound` when the key does not
+    /// exist or is owned by someone else, so a non-owner cannot probe key existence.
+    pub async fn set_scopes_for_user_in<C: ConnectionTrait>(
+        conn: &C,
+        user_id: UserId,
+        id: ApiKeyId,
+        scopes: Vec<Capability>,
+    ) -> Result<ApiKey, DomainError> {
+        use sea_orm::IntoActiveModel;
+
+        let key = api_key::Entity::find_by_id(id.0)
+            .filter(api_key::Column::CreatedByUserId.eq(user_id.0))
+            .one(conn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "api_key",
+                id: id.0,
+            })?;
+
+        let mut active = key.into_active_model();
+        active.scopes = Set(capabilities_to_stored(&scopes));
+
+        active.update(conn).await.map(api_key_from).map_err(db_err)
     }
 
     /// Sets the `is_global` flag on a user-owned key using the provided connection

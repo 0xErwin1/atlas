@@ -126,6 +126,7 @@ async fn create_agent_key(
                 token_hash: format!("hash-{name}"),
                 type_: atlas_domain::entities::identity::ApiKeyType::Agent,
                 expires_at: None,
+                scopes: atlas_domain::permissions::Capability::ALL.to_vec(),
             },
         )
         .await

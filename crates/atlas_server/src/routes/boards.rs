@@ -23,7 +23,10 @@ use atlas_domain::{
 };
 
 use crate::{
-    authz::{Authorized, BoardRes, EditorMin, ProjectRes, ViewerMin},
+    authz::{
+        Authorized, BoardRes, BoardsCreate, BoardsDelete, BoardsRead, BoardsUpdate, EditorMin,
+        ProjectRes, ViewerMin,
+    },
     error::ApiError,
     persistence::repos::{BoardRepo, PgBoardRepo},
     routes::validation::{validate_name, validate_swatch},
@@ -109,7 +112,7 @@ fn column_to_dto(c: BoardColumn) -> ColumnDto {
     )
 )]
 pub(crate) async fn create_board(
-    auth: Authorized<ProjectRes, EditorMin>,
+    auth: Authorized<ProjectRes, EditorMin, BoardsCreate>,
     State(state): State<AppState>,
     Json(body): Json<CreateBoardRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -155,7 +158,7 @@ pub(crate) async fn create_board(
     )
 )]
 pub(crate) async fn list_boards(
-    auth: Authorized<ProjectRes, ViewerMin>,
+    auth: Authorized<ProjectRes, ViewerMin, BoardsRead>,
     State(state): State<AppState>,
     Query(q): Query<PaginationQuery>,
 ) -> Result<Json<Page<BoardSummaryDto>>, ApiError> {
@@ -221,7 +224,7 @@ pub(crate) async fn list_boards(
     )
 )]
 pub(crate) async fn get_board(
-    auth: Authorized<BoardRes, ViewerMin>,
+    auth: Authorized<BoardRes, ViewerMin, BoardsRead>,
 ) -> Result<Json<BoardDto>, ApiError> {
     Ok(Json(board_to_dto(auth.resource.0)))
 }
@@ -248,7 +251,7 @@ pub(crate) async fn get_board(
     )
 )]
 pub(crate) async fn update_board(
-    auth: Authorized<BoardRes, EditorMin>,
+    auth: Authorized<BoardRes, EditorMin, BoardsUpdate>,
     State(state): State<AppState>,
     Json(body): Json<UpdateBoardRequest>,
 ) -> Result<Json<BoardDto>, ApiError> {
@@ -292,7 +295,7 @@ pub(crate) async fn update_board(
     )
 )]
 pub(crate) async fn delete_board(
-    auth: Authorized<BoardRes, EditorMin>,
+    auth: Authorized<BoardRes, EditorMin, BoardsDelete>,
     State(state): State<AppState>,
 ) -> Result<StatusCode, ApiError> {
     let actor = principal_to_actor(&auth.principal);
@@ -329,7 +332,7 @@ pub(crate) async fn delete_board(
     )
 )]
 pub(crate) async fn create_column(
-    auth: Authorized<BoardRes, EditorMin>,
+    auth: Authorized<BoardRes, EditorMin, BoardsUpdate>,
     State(state): State<AppState>,
     Json(body): Json<CreateColumnRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -381,7 +384,7 @@ pub(crate) async fn create_column(
     )
 )]
 pub(crate) async fn list_columns(
-    auth: Authorized<BoardRes, ViewerMin>,
+    auth: Authorized<BoardRes, ViewerMin, BoardsRead>,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<ColumnDto>>, ApiError> {
     let actor = principal_to_actor(&auth.principal);
@@ -420,7 +423,7 @@ pub(crate) async fn list_columns(
     )
 )]
 pub(crate) async fn update_column(
-    auth: Authorized<BoardRes, EditorMin>,
+    auth: Authorized<BoardRes, EditorMin, BoardsUpdate>,
     Path(p): Path<ColumnPath>,
     State(state): State<AppState>,
     Json(body): Json<UpdateColumnRequest>,
@@ -516,7 +519,7 @@ pub(crate) async fn update_column(
     )
 )]
 pub(crate) async fn delete_column(
-    auth: Authorized<BoardRes, EditorMin>,
+    auth: Authorized<BoardRes, EditorMin, BoardsUpdate>,
     Path(p): Path<ColumnPath>,
     State(state): State<AppState>,
 ) -> Result<StatusCode, ApiError> {

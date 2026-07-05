@@ -15,8 +15,8 @@ use atlas_domain::{
     entities::workspace_core::Project,
     ids::{ApiKeyId, FolderId, UserId},
     permissions::{
-        ChainSegment, Principal, ResolutionInput, ResourceChain, ResourceRef, ResourceRole,
-        Visibility,
+        Capability, CapabilityAction, CapabilityFamily, ChainSegment, Principal, ResolutionInput,
+        ResourceChain, ResourceRef, ResourceRole, Visibility,
     },
     ports::permission_grant_repo::ResolutionQuery,
 };
@@ -56,6 +56,61 @@ impl MinRole for EditorMin {
 impl MinRole for AdminMin {
     const ROLE: ResourceRole = ResourceRole::Admin;
 }
+
+/// Declares the API-key capability a route requires, as the third generic
+/// marker parameter on `Authorized<R, M, S>`. `NoScope` (the default) means the
+/// route has no capability gate; the twenty `{Family}{Action}` markers below
+/// each pin `CAPABILITY` to one entry of the closed catalog.
+///
+/// Only `Principal::ApiKey` requests are checked against `CAPABILITY`; `User`
+/// and `Group` principals have no scope concept and always bypass the gate.
+pub trait RequiredScope: Send + Sync {
+    const CAPABILITY: Option<Capability>;
+}
+
+/// The default scope marker: no capability required. Every extractor call
+/// site outside the five gated families uses this (implicitly, via the
+/// default type parameter), so their signature does not change.
+pub struct NoScope;
+
+impl RequiredScope for NoScope {
+    const CAPABILITY: Option<Capability> = None;
+}
+
+macro_rules! capability_marker {
+    ($name:ident, $family:ident, $action:ident) => {
+        /// Scope marker requiring a single capability from the closed catalog.
+        pub struct $name;
+
+        impl RequiredScope for $name {
+            const CAPABILITY: Option<Capability> = Some(Capability {
+                family: CapabilityFamily::$family,
+                action: CapabilityAction::$action,
+            });
+        }
+    };
+}
+
+capability_marker!(TasksRead, Tasks, Read);
+capability_marker!(TasksCreate, Tasks, Create);
+capability_marker!(TasksUpdate, Tasks, Update);
+capability_marker!(TasksDelete, Tasks, Delete);
+capability_marker!(DocsRead, Docs, Read);
+capability_marker!(DocsCreate, Docs, Create);
+capability_marker!(DocsUpdate, Docs, Update);
+capability_marker!(DocsDelete, Docs, Delete);
+capability_marker!(BoardsRead, Boards, Read);
+capability_marker!(BoardsCreate, Boards, Create);
+capability_marker!(BoardsUpdate, Boards, Update);
+capability_marker!(BoardsDelete, Boards, Delete);
+capability_marker!(FoldersRead, Folders, Read);
+capability_marker!(FoldersCreate, Folders, Create);
+capability_marker!(FoldersUpdate, Folders, Update);
+capability_marker!(FoldersDelete, Folders, Delete);
+capability_marker!(ProjectsRead, Projects, Read);
+capability_marker!(ProjectsCreate, Projects, Create);
+capability_marker!(ProjectsUpdate, Projects, Update);
+capability_marker!(ProjectsDelete, Projects, Delete);
 
 pub trait ResolvedResource: Sized + Send {
     type PathParams: DeserializeOwned + Send;
@@ -631,21 +686,24 @@ fn project_visibility(vis: &atlas_domain::permissions::Visibility) -> Visibility
     vis.clone()
 }
 
-/// Proof that the request's principal has at least `M::ROLE` on resource `R`.
-pub struct Authorized<R: ResolvedResource, M: MinRole> {
+/// Proof that the request's principal has at least `M::ROLE` on resource `R`,
+/// and — when the principal is an `ApiKey` and `S::CAPABILITY` is `Some` — that
+/// the key's scope set holds that capability.
+pub struct Authorized<R: ResolvedResource, M: MinRole, S: RequiredScope = NoScope> {
     pub principal: Principal,
     pub workspace: Workspace,
     pub resource: R,
     pub effective: ResourceRole,
     pub membership: Option<atlas_domain::entities::identity::MemberRole>,
-    _min: PhantomData<M>,
+    _min: PhantomData<(M, S)>,
 }
 
-impl<R, M> FromRequestParts<AppState> for Authorized<R, M>
+impl<R, M, S> FromRequestParts<AppState> for Authorized<R, M, S>
 where
     R: ResolvedResource,
     R::PathParams: DeserializeOwned + Send,
     M: MinRole + 'static,
+    S: RequiredScope + 'static,
 {
     type Rejection = ApiError;
 
@@ -770,6 +828,12 @@ where
             });
         }
 
+        if let Principal::ApiKey(kid) = &domain_principal
+            && let Some(required) = S::CAPABILITY
+        {
+            enforce_api_key_scope(&state.db, *kid, required).await?;
+        }
+
         Ok(Authorized {
             principal: domain_principal,
             workspace,
@@ -779,6 +843,42 @@ where
             _min: PhantomData,
         })
     }
+}
+
+/// Denies (403) an API-key request whose scope set lacks `required`. Runs
+/// immediately after the role-threshold check in
+/// `Authorized::from_request_parts`, and is also called manually by the small
+/// set of in-scope routes that bypass that extractor (see the design's
+/// "bypass call sites" for the exhaustive list).
+///
+/// Only meaningful for `Principal::ApiKey`; `User` and `Group` principals never
+/// call this — they have no scope concept and always bypass the gate.
+pub async fn enforce_api_key_scope(
+    db: &sea_orm::DatabaseConnection,
+    key_id: ApiKeyId,
+    required: Capability,
+) -> Result<(), ApiError> {
+    let key_repo = PgApiKeyRepo { conn: db.clone() };
+    let key = key_repo
+        .get_by_id(key_id)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?
+        .ok_or(ApiError::NotFound)?;
+
+    if !key.scopes.contains(&required) {
+        tracing::warn!(
+            capability = required.as_str(),
+            key_id = %key_id.0,
+            "authorization denied: api key lacks required scope"
+        );
+        return Err(ApiError::Forbidden {
+            message: format!("api key lacks required scope: {}", required.as_str()),
+        });
+    }
+
+    Ok(())
 }
 
 /// Loads the principal's grants for the resource chain and resolves the effective

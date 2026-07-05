@@ -13,10 +13,18 @@ use serde_json::Value;
 use sha2::Sha256;
 use uuid::Uuid;
 
-use atlas_domain::{Actor, WorkspaceCtx, entities::identity::MemberRole, ids::WorkspaceId};
+use atlas_domain::{
+    Actor, WorkspaceCtx,
+    entities::identity::{ApiKeyType, MemberRole},
+    ids::WorkspaceId,
+    permissions::Capability,
+};
 use atlas_server::{
     auth::password,
-    persistence::repos::{MembershipRepo, NewUser, PgMembershipRepo, PgUserRepo, UserRepo},
+    persistence::repos::{
+        ApiKeyRepo, MembershipRepo, NewApiKey, NewUser, PgApiKeyRepo, PgMembershipRepo, PgUserRepo,
+        UserRepo,
+    },
 };
 
 type HmacSha256 = Hmac<Sha256>;
@@ -1036,6 +1044,64 @@ async fn ingest_filter_no_match_no_task() {
         .await
         .expect("query tasks");
     assert!(tasks.is_empty(), "filter non-match must produce no task");
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
+// Regression: integration configs stay agent-blocked regardless of scope
+// ---------------------------------------------------------------------------
+
+/// Integration configs are an `AdminMin`-gated, agent-unreachable surface: an
+/// agent is capped at `Editor` regardless of its creator's role, so it can
+/// never clear the `AdminMin` threshold. Granting it every capability in the
+/// catalog must not change that.
+#[tokio::test]
+async fn agent_with_all_capabilities_cannot_list_integration_configs() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+
+    let (_owner, ws, owner_user) =
+        support::login_user_with_workspace(&server, &db, "ic-agent-allcap-owner").await;
+
+    let plain = "atlas_ic_allcap_agent_secret";
+    let hash = atlas_server::auth::tokens::hash_token(plain);
+
+    let key = db
+        .api_key_repo()
+        .create_for_user(
+            owner_user.id,
+            NewApiKey {
+                name: "ic-allcap-agent".to_string(),
+                token_hash: hash,
+                type_: ApiKeyType::Agent,
+                expires_at: None,
+                scopes: Capability::ALL.to_vec(),
+            },
+        )
+        .await
+        .expect("create all-capability agent key");
+
+    PgApiKeyRepo::set_global_for_user_in(db.conn(), owner_user.id, key.id, true)
+        .await
+        .expect("make key global");
+
+    let resp = http()
+        .get(format!(
+            "{}/v1/workspaces/{}/integration-configs",
+            server.base_url(),
+            ws.slug
+        ))
+        .bearer_auth(plain)
+        .send()
+        .await
+        .expect("request");
+
+    assert_eq!(
+        resp.status(),
+        403,
+        "an agent holding all 20 capabilities must still be blocked from integration configs by the AdminMin role ceiling"
+    );
 
     db.teardown().await;
 }

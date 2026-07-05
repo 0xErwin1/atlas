@@ -13,7 +13,7 @@ use atlas_api::dtos::{boards_tasks::BoardPresenceResponse, documents::DocumentPr
 use atlas_domain::{WorkspaceCtx, permissions::Principal};
 
 use crate::{
-    authz::{Authorized, BoardRes, ViewerMin, authorized::DocumentSlugRes},
+    authz::{Authorized, BoardRes, BoardsRead, DocsRead, ViewerMin, authorized::DocumentSlugRes},
     error::ApiError,
     presence::{PresenceResource, PrincipalKey, broadcast_presence},
     routes::tasks::{principal_to_actor, resolve_actor_dto},
@@ -49,7 +49,7 @@ fn principal_key(principal: &Principal) -> PrincipalKey {
     )
 )]
 pub(crate) async fn heartbeat(
-    auth: Authorized<BoardRes, ViewerMin>,
+    auth: Authorized<BoardRes, ViewerMin, BoardsRead>,
     State(state): State<AppState>,
 ) -> Result<Json<BoardPresenceResponse>, ApiError> {
     let board = &auth.resource.0;
@@ -88,7 +88,7 @@ pub(crate) async fn heartbeat(
     )
 )]
 pub(crate) async fn leave(
-    auth: Authorized<BoardRes, ViewerMin>,
+    auth: Authorized<BoardRes, ViewerMin, BoardsRead>,
     State(state): State<AppState>,
 ) -> Result<StatusCode, ApiError> {
     let board = &auth.resource.0;
@@ -123,7 +123,7 @@ pub(crate) async fn leave(
     )
 )]
 pub(crate) async fn document_heartbeat(
-    auth: Authorized<DocumentSlugRes, ViewerMin>,
+    auth: Authorized<DocumentSlugRes, ViewerMin, DocsRead>,
     State(state): State<AppState>,
 ) -> Result<Json<DocumentPresenceResponse>, ApiError> {
     let workspace_id = auth.workspace.id.0;
@@ -166,7 +166,7 @@ pub(crate) async fn document_heartbeat(
     )
 )]
 pub(crate) async fn document_leave(
-    auth: Authorized<DocumentSlugRes, ViewerMin>,
+    auth: Authorized<DocumentSlugRes, ViewerMin, DocsRead>,
     State(state): State<AppState>,
 ) -> Result<StatusCode, ApiError> {
     let workspace_id = auth.workspace.id.0;

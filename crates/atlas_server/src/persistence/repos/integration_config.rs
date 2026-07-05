@@ -2,6 +2,7 @@ use atlas_domain::{
     DomainError,
     entities::identity::{ApiKeyType, NewApiKey},
     ids::UserId,
+    permissions::Capability,
 };
 use chrono::Utc;
 use sea_orm::{
@@ -39,6 +40,10 @@ impl PgIntegrationConfigRepo {
                 token_hash: random_unissued_token_hash(),
                 type_: ApiKeyType::Integration,
                 expires_at: None,
+                // This key's token_hash is never issued, so it can never authenticate
+                // and the scope set is inert; ALL keeps it consistent with a normal
+                // fully-provisioned key rather than an arbitrary distinguished value.
+                scopes: Capability::ALL.to_vec(),
             },
         )
         .await?;

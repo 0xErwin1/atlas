@@ -30,6 +30,7 @@ async fn add_agent(
                 token_hash: format!("hash-{name}"),
                 type_: atlas_domain::entities::identity::ApiKeyType::Agent,
                 expires_at: None,
+                scopes: atlas_domain::permissions::Capability::ALL.to_vec(),
             },
         )
         .await
@@ -554,4 +555,97 @@ async fn grant_toplevel_api_key_admin_is_still_rejected() {
         ClientError::Api(p) => assert_eq!(p.status, 403, "expected 403, got {}", p.status),
         other => panic!("unexpected error: {other:?}"),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Regression: grant management stays agent-blocked regardless of scope
+// ---------------------------------------------------------------------------
+
+/// Grant management is a hard-coded human-only surface (`authorize_share`
+/// rejects any `Principal::ApiKey` actor with `ShareDenied::AgentsNeverManageGrants`,
+/// independent of the capability gate). An agent with an Editor grant on the
+/// project — enough to clear the extractor's role threshold — and all 20
+/// catalog capabilities must still be rejected when it tries to create a grant.
+#[tokio::test]
+async fn agent_with_all_capabilities_and_editor_grant_cannot_create_project_grant() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner, ws, owner_user) =
+        login_user_with_workspace(&server, &db, "grant-agent-allcap-owner").await;
+
+    let project = owner
+        .create_project(
+            &ws.slug,
+            proj_req("Agent AllCap Project", "agent-allcap-proj"),
+        )
+        .await
+        .expect("create project");
+
+    let plain = "atlas_grant_allcap_agent_secret";
+    let hash = atlas_server::auth::tokens::hash_token(plain);
+
+    let ctx = WorkspaceCtx::new(ws.id, Actor::User(owner_user.id));
+    let key = db
+        .api_key_repo()
+        .create(
+            &ctx,
+            NewApiKey {
+                name: "grant-allcap-agent".to_string(),
+                token_hash: hash,
+                type_: atlas_domain::entities::identity::ApiKeyType::Agent,
+                expires_at: None,
+                scopes: atlas_domain::permissions::Capability::ALL.to_vec(),
+            },
+        )
+        .await
+        .expect("create all-capability agent key");
+
+    use atlas_domain::entities::permissions::NewPermissionGrant;
+    use atlas_domain::ids::{ApiKeyId, ProjectId};
+    use atlas_server::persistence::repos::PermissionGrantRepo;
+    let grant_repo = atlas_server::persistence::repos::PgPermissionGrantRepo {
+        conn: db.conn().clone(),
+    };
+    grant_repo
+        .upsert(NewPermissionGrant {
+            workspace_id: ws.id,
+            user_id: None,
+            api_key_id: Some(ApiKeyId(key.id.0)),
+            group_id: None,
+            project_id: Some(ProjectId(project.id)),
+            folder_id: None,
+            document_id: None,
+            board_id: None,
+            role: atlas_domain::permissions::ResourceRole::Editor,
+            created_by_user_id: Some(owner_user.id),
+            created_by_api_key_id: None,
+        })
+        .await
+        .expect("seed agent editor grant on project");
+
+    let (_, grantee_user) = add_user_to_workspace(
+        &db,
+        &server,
+        ws.id,
+        "grant-agent-allcap-target",
+        MemberRole::Member,
+    )
+    .await;
+
+    let agent = atlas_client::AtlasClient::new(server.base_url()).with_token(plain);
+    let result = agent
+        .create_project_grant(
+            &ws.slug,
+            "agent-allcap-proj",
+            grant_req(grantee_user.id.0, "viewer"),
+        )
+        .await;
+
+    assert!(
+        matches!(result, Err(ClientError::Api(ref p)) if p.status == 403),
+        "an agent holding all 20 capabilities and an Editor grant must still be blocked from creating grants, got: {result:?}"
+    );
+
+    db.teardown().await;
 }

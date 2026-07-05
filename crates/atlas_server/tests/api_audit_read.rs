@@ -410,6 +410,7 @@ async fn seed_api_key_for_user(
                 token_hash,
                 type_: ApiKeyType::Agent,
                 expires_at: None,
+                scopes: atlas_domain::permissions::Capability::ALL.to_vec(),
             },
         )
         .await

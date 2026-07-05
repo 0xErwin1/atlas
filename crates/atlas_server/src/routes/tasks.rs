@@ -37,14 +37,18 @@ use atlas_domain::{
         ApiKeyId, AttachmentId, BoardId, ChecklistItemId, ColumnId, CommentId, DocumentId,
         TaskActivityId, TaskId, TaskReferenceId, UserId,
     },
-    permissions::{ChainSegment, Principal, ResolutionInput, ResourceChain, ResourceRef},
+    permissions::{
+        Capability, CapabilityAction, CapabilityFamily, ChainSegment, Principal, ResolutionInput,
+        ResourceChain, ResourceRef,
+    },
     ports::boards_tasks::{WorkspaceActivityFilters, WorkspaceActivityScope},
 };
 
 use crate::{
     authz::{
-        Authorized, BoardRes, EditorMin, MinRole, TaskRes, ViewerMin, WorkspaceMember,
-        authorize_board_destination,
+        Authorized, BoardRes, EditorMin, MinRole, TaskRes, TasksCreate, TasksDelete, TasksRead,
+        TasksUpdate, ViewerMin, WorkspaceMember, authorize_board_destination,
+        enforce_api_key_scope,
     },
     error::ApiError,
     persistence::repos::{
@@ -491,7 +495,10 @@ async fn subtask_counts_by_task(
         .await
         .map_err(ApiError::Domain)?;
 
-    Ok(counts.into_iter().map(|(id, count)| (id.0, count)).collect())
+    Ok(counts
+        .into_iter()
+        .map(|(id, count)| (id.0, count))
+        .collect())
 }
 
 fn checklist_item_to_dto(item: TaskChecklistItem) -> ChecklistItemDto {
@@ -767,7 +774,7 @@ fn parse_due_date(
     )
 )]
 pub(crate) async fn create_task(
-    auth: Authorized<BoardRes, EditorMin>,
+    auth: Authorized<BoardRes, EditorMin, TasksCreate>,
     State(state): State<AppState>,
     Json(body): Json<CreateTaskRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -860,7 +867,7 @@ pub(crate) async fn create_task(
     )
 )]
 pub(crate) async fn list_tasks(
-    auth: Authorized<BoardRes, ViewerMin>,
+    auth: Authorized<BoardRes, ViewerMin, TasksRead>,
     State(state): State<AppState>,
     Query(q): Query<PaginationQuery>,
 ) -> Result<Json<Page<TaskSummaryDto>>, ApiError> {
@@ -955,7 +962,7 @@ pub(crate) async fn list_tasks(
     )
 )]
 pub(crate) async fn get_task(
-    auth: Authorized<TaskRes, ViewerMin>,
+    auth: Authorized<TaskRes, ViewerMin, TasksRead>,
     State(state): State<AppState>,
 ) -> Result<Json<TaskDto>, ApiError> {
     let actor = principal_to_actor(&auth.principal);
@@ -995,7 +1002,7 @@ pub(crate) async fn get_task(
     )
 )]
 pub(crate) async fn update_task(
-    auth: Authorized<TaskRes, EditorMin>,
+    auth: Authorized<TaskRes, EditorMin, TasksUpdate>,
     State(state): State<AppState>,
     Json(body): Json<UpdateTaskRequest>,
 ) -> Result<Json<TaskDto>, ApiError> {
@@ -1065,7 +1072,7 @@ pub(crate) async fn update_task(
     )
 )]
 pub(crate) async fn delete_task(
-    auth: Authorized<TaskRes, EditorMin>,
+    auth: Authorized<TaskRes, EditorMin, TasksDelete>,
     State(state): State<AppState>,
 ) -> Result<StatusCode, ApiError> {
     let actor = principal_to_actor(&auth.principal);
@@ -1103,7 +1110,7 @@ pub(crate) async fn delete_task(
     )
 )]
 pub(crate) async fn move_task(
-    auth: Authorized<TaskRes, EditorMin>,
+    auth: Authorized<TaskRes, EditorMin, TasksUpdate>,
     State(state): State<AppState>,
     Json(body): Json<MoveTaskRequest>,
 ) -> Result<Json<TaskDto>, ApiError> {
@@ -1162,7 +1169,7 @@ pub(crate) async fn move_task(
     )
 )]
 pub(crate) async fn list_assignees(
-    auth: Authorized<TaskRes, ViewerMin>,
+    auth: Authorized<TaskRes, ViewerMin, TasksRead>,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<AssigneeDto>>, ApiError> {
     let actor = principal_to_actor(&auth.principal);
@@ -1205,7 +1212,7 @@ pub(crate) async fn list_assignees(
     )
 )]
 pub(crate) async fn add_assignee(
-    auth: Authorized<TaskRes, EditorMin>,
+    auth: Authorized<TaskRes, EditorMin, TasksUpdate>,
     State(state): State<AppState>,
     Json(body): Json<AddAssigneeRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -1264,7 +1271,7 @@ pub(crate) async fn add_assignee(
     )
 )]
 pub(crate) async fn remove_assignee(
-    auth: Authorized<TaskRes, EditorMin>,
+    auth: Authorized<TaskRes, EditorMin, TasksUpdate>,
     Path(p): Path<AssigneePath>,
     State(state): State<AppState>,
 ) -> Result<StatusCode, ApiError> {
@@ -1302,7 +1309,7 @@ pub(crate) async fn remove_assignee(
     )
 )]
 pub(crate) async fn list_references(
-    auth: Authorized<TaskRes, ViewerMin>,
+    auth: Authorized<TaskRes, ViewerMin, TasksRead>,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<ReferenceDto>>, ApiError> {
     use std::collections::{HashMap, HashSet};
@@ -1399,7 +1406,7 @@ pub(crate) async fn list_references(
 /// bodies are rejected here as 422 before reaching the DB, preventing a CHECK
 /// constraint violation or a silent both-null insert.
 pub(crate) async fn create_reference(
-    auth: Authorized<TaskRes, EditorMin>,
+    auth: Authorized<TaskRes, EditorMin, TasksUpdate>,
     State(state): State<AppState>,
     Json(body): Json<CreateReferenceRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -1534,7 +1541,7 @@ pub(crate) async fn create_reference(
     )
 )]
 pub(crate) async fn delete_reference(
-    auth: Authorized<TaskRes, EditorMin>,
+    auth: Authorized<TaskRes, EditorMin, TasksUpdate>,
     Path(p): Path<ReferencePath>,
     State(state): State<AppState>,
 ) -> Result<StatusCode, ApiError> {
@@ -1587,7 +1594,7 @@ pub(crate) async fn delete_reference(
 /// buffered. The stored blob is content-addressed, so re-uploading identical bytes
 /// reuses the existing object.
 pub(crate) async fn upload_attachment(
-    auth: Authorized<TaskRes, EditorMin>,
+    auth: Authorized<TaskRes, EditorMin, TasksUpdate>,
     State(state): State<AppState>,
     mut multipart: Multipart,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -1691,7 +1698,7 @@ pub(crate) async fn upload_attachment(
     )
 )]
 pub(crate) async fn list_attachments(
-    auth: Authorized<TaskRes, ViewerMin>,
+    auth: Authorized<TaskRes, ViewerMin, TasksRead>,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<TaskAttachmentDto>>, ApiError> {
     let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
@@ -1738,7 +1745,7 @@ pub(crate) async fn list_attachments(
 /// from the configured `AttachmentStore`, so this works for both the disk and S3
 /// backends.
 pub(crate) async fn download_attachment(
-    auth: Authorized<TaskRes, ViewerMin>,
+    auth: Authorized<TaskRes, ViewerMin, TasksRead>,
     Path(p): Path<TaskAttachmentPath>,
     State(state): State<AppState>,
 ) -> Result<Response, ApiError> {
@@ -1811,7 +1818,7 @@ pub(crate) async fn download_attachment(
 /// Only the DB row is marked deleted; the content-addressed blob is left in place
 /// because the same bytes may be referenced by other attachments.
 pub(crate) async fn delete_attachment(
-    auth: Authorized<TaskRes, EditorMin>,
+    auth: Authorized<TaskRes, EditorMin, TasksUpdate>,
     Path(p): Path<TaskAttachmentPath>,
     State(state): State<AppState>,
 ) -> Result<StatusCode, ApiError> {
@@ -1863,7 +1870,7 @@ pub(crate) async fn delete_attachment(
     )
 )]
 pub(crate) async fn list_backlinks(
-    auth: Authorized<TaskRes, ViewerMin>,
+    auth: Authorized<TaskRes, ViewerMin, TasksRead>,
     State(state): State<AppState>,
     Query(q): Query<PaginationQuery>,
 ) -> Result<Json<Page<TaskBacklinkDto>>, ApiError> {
@@ -1936,7 +1943,7 @@ pub(crate) async fn list_backlinks(
     )
 )]
 pub(crate) async fn list_checklist(
-    auth: Authorized<TaskRes, ViewerMin>,
+    auth: Authorized<TaskRes, ViewerMin, TasksRead>,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<ChecklistItemDto>>, ApiError> {
     let actor = principal_to_actor(&auth.principal);
@@ -1973,7 +1980,7 @@ pub(crate) async fn list_checklist(
     )
 )]
 pub(crate) async fn create_checklist_item(
-    auth: Authorized<TaskRes, EditorMin>,
+    auth: Authorized<TaskRes, EditorMin, TasksUpdate>,
     State(state): State<AppState>,
     Json(body): Json<CreateChecklistItemRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -2025,7 +2032,7 @@ pub(crate) async fn create_checklist_item(
     )
 )]
 pub(crate) async fn update_checklist_item(
-    auth: Authorized<TaskRes, EditorMin>,
+    auth: Authorized<TaskRes, EditorMin, TasksUpdate>,
     Path(p): Path<ChecklistItemPath>,
     State(state): State<AppState>,
     Json(body): Json<UpdateChecklistItemRequest>,
@@ -2089,7 +2096,7 @@ pub(crate) async fn update_checklist_item(
     )
 )]
 pub(crate) async fn delete_checklist_item(
-    auth: Authorized<TaskRes, EditorMin>,
+    auth: Authorized<TaskRes, EditorMin, TasksUpdate>,
     Path(p): Path<ChecklistItemPath>,
     State(state): State<AppState>,
 ) -> Result<StatusCode, ApiError> {
@@ -2129,7 +2136,7 @@ pub(crate) async fn delete_checklist_item(
     )
 )]
 pub(crate) async fn promote_checklist_item(
-    auth: Authorized<TaskRes, EditorMin>,
+    auth: Authorized<TaskRes, EditorMin, TasksCreate>,
     Path(p): Path<ChecklistItemPath>,
     State(state): State<AppState>,
     Json(body): Json<PromoteChecklistItemRequest>,
@@ -2238,7 +2245,7 @@ async fn tasks_to_summaries(
     )
 )]
 pub(crate) async fn list_subtasks(
-    auth: Authorized<TaskRes, ViewerMin>,
+    auth: Authorized<TaskRes, ViewerMin, TasksRead>,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<TaskSummaryDto>>, ApiError> {
     let actor = principal_to_actor(&auth.principal);
@@ -2273,7 +2280,7 @@ pub(crate) async fn list_subtasks(
     )
 )]
 pub(crate) async fn create_subtask(
-    auth: Authorized<TaskRes, EditorMin>,
+    auth: Authorized<TaskRes, EditorMin, TasksCreate>,
     State(state): State<AppState>,
     Json(body): Json<CreateSubtaskRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -2311,7 +2318,7 @@ pub(crate) async fn create_subtask(
     )
 )]
 pub(crate) async fn promote_subtask(
-    auth: Authorized<TaskRes, EditorMin>,
+    auth: Authorized<TaskRes, EditorMin, TasksUpdate>,
     State(state): State<AppState>,
 ) -> Result<Json<TaskDto>, ApiError> {
     let actor = principal_to_actor(&auth.principal);
@@ -2349,7 +2356,7 @@ pub(crate) async fn promote_subtask(
     )
 )]
 pub(crate) async fn list_activity(
-    auth: Authorized<TaskRes, ViewerMin>,
+    auth: Authorized<TaskRes, ViewerMin, TasksRead>,
     State(state): State<AppState>,
     Query(q): Query<PaginationQuery>,
 ) -> Result<Json<Page<ActivityEntryDto>>, ApiError> {
@@ -2411,7 +2418,7 @@ pub(crate) async fn list_activity(
     )
 )]
 pub(crate) async fn list_comments(
-    auth: Authorized<TaskRes, ViewerMin>,
+    auth: Authorized<TaskRes, ViewerMin, TasksRead>,
     State(state): State<AppState>,
     Query(q): Query<PaginationQuery>,
 ) -> Result<Json<Page<CommentDto>>, ApiError> {
@@ -2472,7 +2479,7 @@ pub(crate) async fn list_comments(
     )
 )]
 pub(crate) async fn create_comment(
-    auth: Authorized<TaskRes, EditorMin>,
+    auth: Authorized<TaskRes, EditorMin, TasksUpdate>,
     State(state): State<AppState>,
     Json(body): Json<CreateCommentRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -2517,7 +2524,7 @@ pub(crate) async fn create_comment(
     )
 )]
 pub(crate) async fn update_comment(
-    auth: Authorized<TaskRes, ViewerMin>,
+    auth: Authorized<TaskRes, ViewerMin, TasksUpdate>,
     Path(p): Path<CommentPath>,
     State(state): State<AppState>,
     Json(body): Json<UpdateCommentRequest>,
@@ -2561,7 +2568,7 @@ pub(crate) async fn update_comment(
     )
 )]
 pub(crate) async fn delete_comment(
-    auth: Authorized<TaskRes, ViewerMin>,
+    auth: Authorized<TaskRes, ViewerMin, TasksUpdate>,
     Path(p): Path<CommentPath>,
     State(state): State<AppState>,
 ) -> Result<StatusCode, ApiError> {
@@ -2949,6 +2956,18 @@ pub(crate) async fn list_workspace_tasks(
         (None, Some(key_id)) => Actor::ApiKey(*key_id),
         (None, None) => return Err(ApiError::Unauthorized),
     };
+
+    if let Some(key_id) = member.api_key_id {
+        enforce_api_key_scope(
+            &state.db,
+            key_id,
+            Capability {
+                family: CapabilityFamily::Tasks,
+                action: CapabilityAction::Read,
+            },
+        )
+        .await?;
+    }
 
     let limit = q.limit.unwrap_or(50).clamp(1, 200) as u64;
 

@@ -221,6 +221,7 @@ async fn project_created_by_api_key_succeeds() {
                 ),
                 type_: ApiKeyType::Agent,
                 expires_at: None,
+                scopes: atlas_domain::permissions::Capability::ALL.to_vec(),
             },
         )
         .await
@@ -267,6 +268,7 @@ async fn folder_created_by_api_key_succeeds() {
                 ),
                 type_: ApiKeyType::Agent,
                 expires_at: None,
+                scopes: atlas_domain::permissions::Capability::ALL.to_vec(),
             },
         )
         .await

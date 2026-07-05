@@ -86,6 +86,7 @@ async fn append_in_inserts_api_key_actor_row() {
                 token_hash,
                 type_: atlas_domain::entities::identity::ApiKeyType::Agent,
                 expires_at: None,
+                scopes: atlas_domain::permissions::Capability::ALL.to_vec(),
             },
         )
         .await

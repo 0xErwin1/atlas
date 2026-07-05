@@ -27,6 +27,15 @@ pub(crate) struct TestDb {
 
 impl TestDb {
     pub(crate) async fn create() -> Result<Self, DbErr> {
+        Self::create_with_migration_steps(None).await
+    }
+
+    /// Creates a fresh test database and applies only the first `steps`
+    /// migrations (in `Migrator::migrations()` order), or all of them when
+    /// `steps` is `None`. Used to reproduce a database mid-migration, e.g. to
+    /// assert a later migration's back-fill behavior against a row shaped like
+    /// it existed before that migration ran.
+    pub(crate) async fn create_with_migration_steps(steps: Option<u32>) -> Result<Self, DbErr> {
         let database_url = std::env::var("DATABASE_URL")
             .unwrap_or_else(|_| "postgres://atlas:atlas@localhost:5432/atlas_dev".to_string());
 
@@ -43,13 +52,18 @@ impl TestDb {
         let opts = ConnectOptions::new(test_url);
         let conn = Database::connect(opts).await?;
 
-        Migrator::up(&conn, None).await?;
+        Migrator::up(&conn, steps).await?;
 
         Ok(Self {
             conn,
             db_name,
             admin_url,
         })
+    }
+
+    /// Applies any migrations still pending against this database.
+    pub(crate) async fn run_remaining_migrations(&self) -> Result<(), DbErr> {
+        Migrator::up(&self.conn, None).await
     }
 
     pub(crate) fn conn(&self) -> &DatabaseConnection {

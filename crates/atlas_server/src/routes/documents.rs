@@ -25,15 +25,16 @@ use atlas_domain::{
     entities::documents::{AttachmentOwner, ExtractedLink, NewAttachment, NewDocument},
     entities::identity::MemberRole,
     ids::{AttachmentId, CommentId, DocumentId, FolderId, RevisionId, UserId},
-    permissions::Principal,
+    permissions::{Capability, CapabilityAction, CapabilityFamily, Principal},
     resolve_collision, slugify,
 };
 
 use crate::{
     authz::{
-        Authorized, EditorMin, MinRole, ViewerMin, WorkspaceMember, authorize_folder_destination,
+        Authorized, DocsCreate, DocsDelete, DocsRead, DocsUpdate, EditorMin, MinRole, ViewerMin,
+        WorkspaceMember, authorize_folder_destination,
         authorized::{DocumentSlugRes, ProjectRes},
-        resolve_folder_ancestry,
+        enforce_api_key_scope, resolve_folder_ancestry,
     },
     error::ApiError,
     persistence::repos::{
@@ -89,7 +90,7 @@ pub(crate) struct AttachmentPath {
     )
 )]
 pub(crate) async fn create_document(
-    auth: Authorized<ProjectRes, EditorMin>,
+    auth: Authorized<ProjectRes, EditorMin, DocsCreate>,
     State(state): State<AppState>,
     Json(body): Json<CreateDocumentRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -200,7 +201,7 @@ async fn persist_new_document(
     )
 )]
 pub(crate) async fn list_documents(
-    auth: Authorized<ProjectRes, ViewerMin>,
+    auth: Authorized<ProjectRes, ViewerMin, DocsRead>,
     State(state): State<AppState>,
     Query(q): Query<PaginationQuery>,
 ) -> Result<Json<Page<DocumentSummaryDto>>, ApiError> {
@@ -265,7 +266,7 @@ pub(crate) async fn list_documents(
     )
 )]
 pub(crate) async fn get_document(
-    auth: Authorized<DocumentSlugRes, ViewerMin>,
+    auth: Authorized<DocumentSlugRes, ViewerMin, DocsRead>,
     State(_state): State<AppState>,
 ) -> Result<Json<DocumentDto>, ApiError> {
     Ok(Json(document_to_dto(auth.resource.0)))
@@ -293,7 +294,7 @@ pub(crate) async fn get_document(
     )
 )]
 pub(crate) async fn update_document(
-    auth: Authorized<DocumentSlugRes, EditorMin>,
+    auth: Authorized<DocumentSlugRes, EditorMin, DocsUpdate>,
     State(state): State<AppState>,
     Json(body): Json<UpdateDocumentRequest>,
 ) -> Result<Json<DocumentDto>, ApiError> {
@@ -372,7 +373,7 @@ pub(crate) async fn update_document(
     )
 )]
 pub(crate) async fn update_content(
-    auth: Authorized<DocumentSlugRes, EditorMin>,
+    auth: Authorized<DocumentSlugRes, EditorMin, DocsUpdate>,
     State(state): State<AppState>,
     Json(body): Json<UpdateContentRequest>,
 ) -> Result<Json<DocumentDto>, ApiError> {
@@ -423,7 +424,7 @@ pub(crate) async fn update_content(
     )
 )]
 pub(crate) async fn delete_document(
-    auth: Authorized<DocumentSlugRes, EditorMin>,
+    auth: Authorized<DocumentSlugRes, EditorMin, DocsDelete>,
     State(state): State<AppState>,
 ) -> Result<StatusCode, ApiError> {
     let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
@@ -458,7 +459,7 @@ pub(crate) async fn delete_document(
     )
 )]
 pub(crate) async fn list_history(
-    auth: Authorized<DocumentSlugRes, ViewerMin>,
+    auth: Authorized<DocumentSlugRes, ViewerMin, DocsRead>,
     State(state): State<AppState>,
     Query(q): Query<PaginationQuery>,
 ) -> Result<Json<Page<RevisionMetaDto>>, ApiError> {
@@ -530,7 +531,7 @@ pub(crate) async fn list_history(
     )
 )]
 pub(crate) async fn get_revision_content(
-    auth: Authorized<DocumentSlugRes, ViewerMin>,
+    auth: Authorized<DocumentSlugRes, ViewerMin, DocsRead>,
     Path(rev_path): Path<RevisionPath>,
     State(state): State<AppState>,
 ) -> Result<Json<RevisionContentDto>, ApiError> {
@@ -587,7 +588,7 @@ pub(crate) async fn get_revision_content(
     )
 )]
 pub(crate) async fn list_backlinks(
-    auth: Authorized<DocumentSlugRes, ViewerMin>,
+    auth: Authorized<DocumentSlugRes, ViewerMin, DocsRead>,
     State(state): State<AppState>,
     Query(q): Query<PaginationQuery>,
 ) -> Result<Json<Page<BacklinkDto>>, ApiError> {
@@ -666,7 +667,7 @@ pub(crate) async fn list_backlinks(
     )
 )]
 pub(crate) async fn get_frontmatter(
-    auth: Authorized<DocumentSlugRes, ViewerMin>,
+    auth: Authorized<DocumentSlugRes, ViewerMin, DocsRead>,
     State(_state): State<AppState>,
 ) -> Result<Json<FrontmatterDto>, ApiError> {
     Ok(Json(FrontmatterDto {
@@ -695,7 +696,7 @@ pub(crate) async fn get_frontmatter(
     )
 )]
 pub(crate) async fn upload_attachment(
-    auth: Authorized<DocumentSlugRes, EditorMin>,
+    auth: Authorized<DocumentSlugRes, EditorMin, DocsUpdate>,
     State(state): State<AppState>,
     request: Request,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -792,7 +793,7 @@ pub(crate) async fn upload_attachment(
     )
 )]
 pub(crate) async fn list_attachments(
-    auth: Authorized<DocumentSlugRes, ViewerMin>,
+    auth: Authorized<DocumentSlugRes, ViewerMin, DocsRead>,
     State(state): State<AppState>,
     Query(q): Query<PaginationQuery>,
 ) -> Result<Json<Page<AttachmentDto>>, ApiError> {
@@ -873,6 +874,18 @@ pub(crate) async fn download_attachment(
 
     authorize_attachment_document(&state, &member, &attachment, ViewerMin::ROLE).await?;
 
+    if let Some(key_id) = member.api_key_id {
+        enforce_api_key_scope(
+            &state.db,
+            key_id,
+            Capability {
+                family: CapabilityFamily::Docs,
+                action: CapabilityAction::Read,
+            },
+        )
+        .await?;
+    }
+
     let bytes = state
         .attachments
         .get(&attachment.sha256)
@@ -942,6 +955,18 @@ pub(crate) async fn delete_attachment(
 
     authorize_attachment_document(&state, &member, &attachment, EditorMin::ROLE).await?;
 
+    if let Some(key_id) = member.api_key_id {
+        enforce_api_key_scope(
+            &state.db,
+            key_id,
+            Capability {
+                family: CapabilityFamily::Docs,
+                action: CapabilityAction::Update,
+            },
+        )
+        .await?;
+    }
+
     attachment_repo
         .soft_delete(&ctx, attachment_id)
         .await
@@ -972,7 +997,7 @@ pub(crate) async fn delete_attachment(
     )
 )]
 pub(crate) async fn move_document(
-    auth: Authorized<DocumentSlugRes, EditorMin>,
+    auth: Authorized<DocumentSlugRes, EditorMin, DocsUpdate>,
     State(state): State<AppState>,
     Json(body): Json<MoveDocumentRequest>,
 ) -> Result<Json<DocumentDto>, ApiError> {
@@ -1030,7 +1055,7 @@ pub(crate) async fn move_document(
     )
 )]
 pub(crate) async fn copy_document(
-    auth: Authorized<DocumentSlugRes, EditorMin>,
+    auth: Authorized<DocumentSlugRes, EditorMin, DocsCreate>,
     State(state): State<AppState>,
     Json(body): Json<CopyDocumentRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -1216,7 +1241,7 @@ pub(crate) struct DocumentCommentPath {
     )
 )]
 pub(crate) async fn list_comments(
-    auth: Authorized<DocumentSlugRes, ViewerMin>,
+    auth: Authorized<DocumentSlugRes, ViewerMin, DocsRead>,
     State(state): State<AppState>,
     Query(q): Query<PaginationQuery>,
 ) -> Result<Json<Page<CommentDto>>, ApiError> {
@@ -1274,7 +1299,7 @@ pub(crate) async fn list_comments(
     )
 )]
 pub(crate) async fn create_comment(
-    auth: Authorized<DocumentSlugRes, EditorMin>,
+    auth: Authorized<DocumentSlugRes, EditorMin, DocsUpdate>,
     State(state): State<AppState>,
     Json(body): Json<CreateCommentRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -1316,7 +1341,7 @@ pub(crate) async fn create_comment(
     )
 )]
 pub(crate) async fn update_comment(
-    auth: Authorized<DocumentSlugRes, ViewerMin>,
+    auth: Authorized<DocumentSlugRes, ViewerMin, DocsUpdate>,
     Path(p): Path<DocumentCommentPath>,
     State(state): State<AppState>,
     Json(body): Json<UpdateCommentRequest>,
@@ -1357,7 +1382,7 @@ pub(crate) async fn update_comment(
     )
 )]
 pub(crate) async fn delete_comment(
-    auth: Authorized<DocumentSlugRes, ViewerMin>,
+    auth: Authorized<DocumentSlugRes, ViewerMin, DocsUpdate>,
     Path(p): Path<DocumentCommentPath>,
     State(state): State<AppState>,
 ) -> Result<StatusCode, ApiError> {

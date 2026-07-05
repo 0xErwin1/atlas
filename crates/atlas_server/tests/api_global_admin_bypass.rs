@@ -149,6 +149,7 @@ async fn create_api_key(
             token_hash,
             type_: ApiKeyType::Agent,
             expires_at: None,
+            scopes: atlas_domain::permissions::Capability::ALL.to_vec(),
         },
     )
     .await

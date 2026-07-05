@@ -11,8 +11,14 @@ use atlas_api::dtos::{
     CreateGrantRequest, CreateProjectRequest, CreateUserApiKeyRequest, GrantPrincipal,
     UpdateProjectRequest,
 };
-use atlas_domain::{Actor, WorkspaceCtx, entities::identity::MemberRole};
-use atlas_server::persistence::repos::{MembershipRepo, NewUser, PermissionGrantRepo, UserRepo};
+use atlas_domain::{
+    Actor, WorkspaceCtx,
+    entities::identity::{ApiKeyType, MemberRole},
+    permissions::Capability,
+};
+use atlas_server::persistence::repos::{
+    ApiKeyRepo, MembershipRepo, NewApiKey, NewUser, PermissionGrantRepo, PgApiKeyRepo, UserRepo,
+};
 
 fn proj_req(name: &str, slug: &str) -> CreateProjectRequest {
     CreateProjectRequest {
@@ -165,6 +171,72 @@ async fn agent_cannot_share_project() {
     assert!(
         matches!(result, Err(atlas_client::ClientError::Api(ref p)) if p.status == 403),
         "agent grant attempt must return 403, got: {result:?}"
+    );
+
+    db.teardown().await;
+}
+
+/// Regression: grant management stays a hard-coded human-only surface
+/// (`ShareDenied::AgentsNeverManageGrants`) even for a global agent explicitly
+/// holding every capability in the catalog. The capability gate only ever
+/// further restricts on top of the existing role/actor checks — it can never
+/// grant an agent a permission those checks already deny.
+#[tokio::test]
+async fn agent_with_all_capabilities_still_cannot_share_project() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+
+    let (owner, ws, owner_user) =
+        support::login_user_with_workspace(&server, &db, "perm-allcap-owner").await;
+
+    owner
+        .create_project(&ws.slug, proj_req("AllCap Project", "allcap-proj"))
+        .await
+        .expect("create project");
+
+    let plain = "atlas_perm_allcap_agent_secret";
+    let hash = atlas_server::auth::tokens::hash_token(plain);
+
+    let key = db
+        .api_key_repo()
+        .create_for_user(
+            owner_user.id,
+            NewApiKey {
+                name: "perm-allcap-agent".to_string(),
+                token_hash: hash,
+                type_: ApiKeyType::Agent,
+                expires_at: None,
+                scopes: Capability::ALL.to_vec(),
+            },
+        )
+        .await
+        .expect("create all-capability agent key");
+
+    PgApiKeyRepo::set_global_for_user_in(db.conn(), owner_user.id, key.id, true)
+        .await
+        .expect("make key global");
+
+    let (_, grantee_user) = add_member(
+        &db,
+        &server,
+        ws.id,
+        "perm-allcap-grantee",
+        MemberRole::Member,
+    )
+    .await;
+
+    let agent_client = atlas_client::AtlasClient::new(server.base_url()).with_token(plain);
+    let result = agent_client
+        .create_project_grant(
+            &ws.slug,
+            "allcap-proj",
+            grant_req(grantee_user.id.0, "viewer"),
+        )
+        .await;
+
+    assert!(
+        matches!(result, Err(atlas_client::ClientError::Api(ref p)) if p.status == 403),
+        "an agent holding all 20 capabilities must still be blocked from granting shares, got: {result:?}"
     );
 
     db.teardown().await;

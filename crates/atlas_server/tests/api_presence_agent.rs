@@ -244,6 +244,7 @@ async fn create_granted_agent(
                 token_hash: hash,
                 type_: atlas_domain::entities::identity::ApiKeyType::Agent,
                 expires_at: None,
+                scopes: atlas_domain::permissions::Capability::ALL.to_vec(),
             },
         )
         .await

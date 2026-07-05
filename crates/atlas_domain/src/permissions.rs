@@ -11,6 +11,189 @@ pub enum ResourceRole {
     Admin,
 }
 
+/// The resource family a capability governs. Together with `CapabilityAction`
+/// forms the closed `family:action` catalog that API key scopes are drawn from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CapabilityFamily {
+    Tasks,
+    Docs,
+    Boards,
+    Folders,
+    Projects,
+}
+
+/// The CRUD verb of a capability.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CapabilityAction {
+    Read,
+    Create,
+    Update,
+    Delete,
+}
+
+/// A single `family:action` capability, e.g. `tasks:read`. This is the unit of
+/// an API key's scope set: the closed catalog is the full cross product of the
+/// five families and four actions (`Capability::ALL`, 20 entries).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Capability {
+    pub family: CapabilityFamily,
+    pub action: CapabilityAction,
+}
+
+impl Capability {
+    /// The closed catalog of every valid capability, in `family:action` order
+    /// with families ordered `tasks, docs, boards, folders, projects` and
+    /// actions ordered `read, create, update, delete`. This is the single
+    /// source of truth other derived sets (defaults, wire enums) are built from.
+    pub const ALL: [Capability; 20] = [
+        Capability {
+            family: CapabilityFamily::Tasks,
+            action: CapabilityAction::Read,
+        },
+        Capability {
+            family: CapabilityFamily::Tasks,
+            action: CapabilityAction::Create,
+        },
+        Capability {
+            family: CapabilityFamily::Tasks,
+            action: CapabilityAction::Update,
+        },
+        Capability {
+            family: CapabilityFamily::Tasks,
+            action: CapabilityAction::Delete,
+        },
+        Capability {
+            family: CapabilityFamily::Docs,
+            action: CapabilityAction::Read,
+        },
+        Capability {
+            family: CapabilityFamily::Docs,
+            action: CapabilityAction::Create,
+        },
+        Capability {
+            family: CapabilityFamily::Docs,
+            action: CapabilityAction::Update,
+        },
+        Capability {
+            family: CapabilityFamily::Docs,
+            action: CapabilityAction::Delete,
+        },
+        Capability {
+            family: CapabilityFamily::Boards,
+            action: CapabilityAction::Read,
+        },
+        Capability {
+            family: CapabilityFamily::Boards,
+            action: CapabilityAction::Create,
+        },
+        Capability {
+            family: CapabilityFamily::Boards,
+            action: CapabilityAction::Update,
+        },
+        Capability {
+            family: CapabilityFamily::Boards,
+            action: CapabilityAction::Delete,
+        },
+        Capability {
+            family: CapabilityFamily::Folders,
+            action: CapabilityAction::Read,
+        },
+        Capability {
+            family: CapabilityFamily::Folders,
+            action: CapabilityAction::Create,
+        },
+        Capability {
+            family: CapabilityFamily::Folders,
+            action: CapabilityAction::Update,
+        },
+        Capability {
+            family: CapabilityFamily::Folders,
+            action: CapabilityAction::Delete,
+        },
+        Capability {
+            family: CapabilityFamily::Projects,
+            action: CapabilityAction::Read,
+        },
+        Capability {
+            family: CapabilityFamily::Projects,
+            action: CapabilityAction::Create,
+        },
+        Capability {
+            family: CapabilityFamily::Projects,
+            action: CapabilityAction::Update,
+        },
+        Capability {
+            family: CapabilityFamily::Projects,
+            action: CapabilityAction::Delete,
+        },
+    ];
+
+    /// The scope set a newly created API key receives when the caller selects
+    /// no scopes: read access to every family, write access to none.
+    pub const DEFAULT_READ_ONLY: [Capability; 5] = [
+        Capability {
+            family: CapabilityFamily::Tasks,
+            action: CapabilityAction::Read,
+        },
+        Capability {
+            family: CapabilityFamily::Docs,
+            action: CapabilityAction::Read,
+        },
+        Capability {
+            family: CapabilityFamily::Boards,
+            action: CapabilityAction::Read,
+        },
+        Capability {
+            family: CapabilityFamily::Folders,
+            action: CapabilityAction::Read,
+        },
+        Capability {
+            family: CapabilityFamily::Projects,
+            action: CapabilityAction::Read,
+        },
+    ];
+
+    /// The wire/storage representation, e.g. `"tasks:read"`. Stable and used
+    /// both for the `TEXT[]` storage column and the wire DTO.
+    pub fn as_str(&self) -> &'static str {
+        match (self.family, self.action) {
+            (CapabilityFamily::Tasks, CapabilityAction::Read) => "tasks:read",
+            (CapabilityFamily::Tasks, CapabilityAction::Create) => "tasks:create",
+            (CapabilityFamily::Tasks, CapabilityAction::Update) => "tasks:update",
+            (CapabilityFamily::Tasks, CapabilityAction::Delete) => "tasks:delete",
+            (CapabilityFamily::Docs, CapabilityAction::Read) => "docs:read",
+            (CapabilityFamily::Docs, CapabilityAction::Create) => "docs:create",
+            (CapabilityFamily::Docs, CapabilityAction::Update) => "docs:update",
+            (CapabilityFamily::Docs, CapabilityAction::Delete) => "docs:delete",
+            (CapabilityFamily::Boards, CapabilityAction::Read) => "boards:read",
+            (CapabilityFamily::Boards, CapabilityAction::Create) => "boards:create",
+            (CapabilityFamily::Boards, CapabilityAction::Update) => "boards:update",
+            (CapabilityFamily::Boards, CapabilityAction::Delete) => "boards:delete",
+            (CapabilityFamily::Folders, CapabilityAction::Read) => "folders:read",
+            (CapabilityFamily::Folders, CapabilityAction::Create) => "folders:create",
+            (CapabilityFamily::Folders, CapabilityAction::Update) => "folders:update",
+            (CapabilityFamily::Folders, CapabilityAction::Delete) => "folders:delete",
+            (CapabilityFamily::Projects, CapabilityAction::Read) => "projects:read",
+            (CapabilityFamily::Projects, CapabilityAction::Create) => "projects:create",
+            (CapabilityFamily::Projects, CapabilityAction::Update) => "projects:update",
+            (CapabilityFamily::Projects, CapabilityAction::Delete) => "projects:delete",
+        }
+    }
+}
+
+impl std::str::FromStr for Capability {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Capability::ALL
+            .into_iter()
+            .find(|cap| cap.as_str() == s)
+            .ok_or_else(|| format!("unknown capability: {s}"))
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Principal {
     User(UserId),

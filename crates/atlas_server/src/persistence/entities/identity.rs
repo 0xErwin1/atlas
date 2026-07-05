@@ -5,6 +5,7 @@ use atlas_domain::entities::identity::{
 use atlas_domain::ids::{
     ActivationTokenId, ApiKeyId, MembershipId, SessionId, UserId, WorkspaceId,
 };
+use atlas_domain::permissions::Capability;
 use chrono::{DateTime, Utc};
 use sea_orm::entity::prelude::*;
 
@@ -117,6 +118,7 @@ pub mod api_key {
         pub revoked_at: Option<DateTime<Utc>>,
         pub created_at: DateTime<Utc>,
         pub is_global: bool,
+        pub scopes: Vec<String>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -234,7 +236,21 @@ pub fn api_key_from(m: api_key::Model) -> ApiKey {
         revoked_at: m.revoked_at,
         created_at: m.created_at,
         is_global: m.is_global,
+        scopes: capabilities_from_stored(&m.scopes),
     }
+}
+
+/// Parses stored scope strings into `Capability`s, fail-closed: any entry that
+/// does not parse (corrupt row, manual DB edit) is silently dropped rather than
+/// defaulted, since defaulting an unknown scope string would risk granting a
+/// capability the row never actually held.
+pub(crate) fn capabilities_from_stored(raw: &[String]) -> Vec<Capability> {
+    raw.iter().filter_map(|s| s.parse().ok()).collect()
+}
+
+/// Converts a scope set to its storage representation for the `scopes TEXT[]` column.
+pub(crate) fn capabilities_to_stored(scopes: &[Capability]) -> Vec<String> {
+    scopes.iter().map(|c| c.as_str().to_string()).collect()
 }
 
 pub fn membership_from(m: membership::Model) -> Result<WorkspaceMembership, String> {

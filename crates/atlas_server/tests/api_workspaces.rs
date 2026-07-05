@@ -494,6 +494,7 @@ async fn api_key_with_grant_sees_workspace_in_list() {
                 token_hash: hash,
                 type_: atlas_domain::entities::identity::ApiKeyType::Agent,
                 expires_at: None,
+                scopes: atlas_domain::permissions::Capability::ALL.to_vec(),
             },
         )
         .await
@@ -557,6 +558,7 @@ async fn api_key_with_grants_in_two_workspaces_sees_both_distinct() {
                 token_hash: hash,
                 type_: atlas_domain::entities::identity::ApiKeyType::Agent,
                 expires_at: None,
+                scopes: atlas_domain::permissions::Capability::ALL.to_vec(),
             },
         )
         .await
@@ -663,6 +665,7 @@ async fn api_key_with_no_grant_sees_empty_workspace_list() {
                 token_hash: hash,
                 type_: atlas_domain::entities::identity::ApiKeyType::Agent,
                 expires_at: None,
+                scopes: atlas_domain::permissions::Capability::ALL.to_vec(),
             },
         )
         .await
@@ -745,6 +748,7 @@ async fn global_api_key_created_by_root_lists_all_workspaces() {
                 token_hash: atlas_server::auth::tokens::hash_token(plain),
                 type_: atlas_domain::entities::identity::ApiKeyType::Agent,
                 expires_at: None,
+                scopes: atlas_domain::permissions::Capability::ALL.to_vec(),
             },
         )
         .await

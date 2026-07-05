@@ -1,4 +1,5 @@
 use crate::ids::{ActivationTokenId, ApiKeyId, MembershipId, SessionId, UserId, WorkspaceId};
+use crate::permissions::Capability;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -140,6 +141,9 @@ pub struct ApiKey {
     /// (capped at editor and never above the creator's own role), instead of
     /// being limited to workspaces where it holds an explicit grant.
     pub is_global: bool,
+    /// The capabilities this key may exercise, gated on top of (never above)
+    /// its resolved role. Empty means the key can read and write nothing.
+    pub scopes: Vec<Capability>,
 }
 
 #[derive(Debug, Clone)]
@@ -148,6 +152,7 @@ pub struct NewApiKey {
     pub token_hash: String,
     pub type_: ApiKeyType,
     pub expires_at: Option<DateTime<Utc>>,
+    pub scopes: Vec<Capability>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

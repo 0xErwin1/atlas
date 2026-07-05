@@ -215,6 +215,7 @@ async fn create_api_key(
                 token_hash: format!("hash-{}", uuid::Uuid::now_v7()),
                 type_: atlas_domain::entities::identity::ApiKeyType::Agent,
                 expires_at: None,
+                scopes: atlas_domain::permissions::Capability::ALL.to_vec(),
             },
         )
         .await

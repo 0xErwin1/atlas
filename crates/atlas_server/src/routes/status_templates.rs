@@ -17,7 +17,7 @@ use atlas_domain::{
 };
 
 use crate::{
-    authz::{Authorized, BoardRes, EditorMin, ViewerMin, authorized::WorkspaceRes},
+    authz::{Authorized, BoardRes, BoardsUpdate, EditorMin, ViewerMin, authorized::WorkspaceRes},
     error::ApiError,
     persistence::repos::{
         BoardRepo, PgBoardRepo, PgStatusTemplateRepo, StatusTemplateRepo,
@@ -295,7 +295,7 @@ pub(crate) async fn delete_status_template(
     )
 )]
 pub(crate) async fn apply_status_templates(
-    auth: Authorized<BoardRes, EditorMin>,
+    auth: Authorized<BoardRes, EditorMin, BoardsUpdate>,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<atlas_api::dtos::boards_tasks::ColumnDto>>, ApiError> {
     let actor = principal_to_actor(&auth.principal);
