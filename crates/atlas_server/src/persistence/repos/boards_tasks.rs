@@ -1602,9 +1602,10 @@ impl PgTaskChecklistRepo {
             });
         }
 
+        // Promotion moves the item to a task; it does not complete it. Leave
+        // `checked` untouched so a promoted item is not struck through as done.
         let mut active = row.into_active_model();
         active.promoted_task_id = Set(Some(promoted_task_id.0));
-        active.checked = Set(true);
         active.updated_at = Set(Utc::now());
         active
             .update(conn)

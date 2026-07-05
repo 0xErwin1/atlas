@@ -266,6 +266,10 @@ async fn task_service_promote_checklist_item_is_atomic() {
         .expect("promote");
 
     assert_eq!(result.checklist_item.promoted_task_id, Some(result.task.id));
+    assert!(
+        !result.checklist_item.checked,
+        "promotion moves the item to a task; it must not mark it completed"
+    );
     assert_eq!(
         result.parent_reference.target_task_id,
         Some(parent.id),
