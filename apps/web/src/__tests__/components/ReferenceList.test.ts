@@ -2,7 +2,7 @@ import { mount } from '@vue/test-utils';
 import { describe, expect, it } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import ReferenceList from '@/components/tareas/ReferenceList.vue';
-import type { ReferenceDto } from '@/stores/taskDetail';
+import type { ReferenceDto, TaskBacklinkDto } from '@/stores/taskDetail';
 
 const Dummy = { template: '<div />' };
 
@@ -29,9 +29,9 @@ function reference(overrides: Partial<ReferenceDto>): ReferenceDto {
   } as ReferenceDto;
 }
 
-function mountList(references: ReferenceDto[]) {
+function mountList(references: ReferenceDto[], backlinks: TaskBacklinkDto[] = []) {
   return mount(ReferenceList, {
-    props: { references },
+    props: { references, backlinks },
     global: { plugins: [router], stubs: { Icon: true, Chip: true } },
   });
 }
@@ -62,5 +62,32 @@ describe('ReferenceList', () => {
     const span = wrapper.get('span.atl-ref-target');
     expect(span.text()).toContain('ATL-9');
     expect(span.attributes('style')).toContain('line-through');
+  });
+
+  it('lists inbound backlinks under "Referenced by", each linking to its source task', () => {
+    const backlink: TaskBacklinkDto = {
+      source_task_id: 't7',
+      source_readable_id: 'ATL-7',
+      source_title: 'Blocks this one',
+      kind: 'blocks',
+    };
+
+    const wrapper = mountList([], [backlink]);
+
+    expect(wrapper.text()).toContain('Referenced by');
+    const row = wrapper.get('[data-backlink-id="t7"]');
+    expect(row.text()).toContain('ATL-7');
+    expect(row.text()).toContain('Blocks this one');
+    expect(row.get('a.atl-ref-target').attributes('href')).toBe('/t/task/ATL-7');
+  });
+
+  it('shows the empty state only when there are neither references nor backlinks', () => {
+    expect(mountList([]).text()).toContain('No references.');
+    expect(
+      mountList(
+        [],
+        [{ source_task_id: 't7', source_readable_id: 'ATL-7', source_title: 'X', kind: 'relates' }],
+      ).text(),
+    ).not.toContain('No references.');
   });
 });

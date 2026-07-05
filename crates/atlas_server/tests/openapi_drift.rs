@@ -107,6 +107,7 @@ const EXPECTED_SCHEMAS: &[&str] = &[
     "Page_GrantDto",
     "Page_DocumentSummaryDto",
     "Page_BacklinkDto",
+    "Page_TaskBacklinkDto",
     "Page_ProjectDto",
     "Page_TaskSummaryDto",
     "Page_ActivityEntryDto",

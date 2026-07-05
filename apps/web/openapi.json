@@ -8097,7 +8097,14 @@
         ],
         "responses": {
           "200": {
-            "description": "Inbound reference list"
+            "description": "Inbound reference list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_TaskBacklinkDto"
+                }
+              }
+            }
           },
           "401": {
             "description": "Unauthenticated"
@@ -12180,6 +12187,54 @@
                 "workspace_id": {
                   "type": "string",
                   "format": "uuid"
+                }
+              }
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "Page_TaskBacklinkDto": {
+        "type": "object",
+        "description": "Paginated response envelope.",
+        "required": [
+          "items",
+          "has_more"
+        ],
+        "properties": {
+          "has_more": {
+            "type": "boolean"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "An inbound reference — another task that points to this one.",
+              "required": [
+                "source_task_id",
+                "source_readable_id",
+                "source_title",
+                "kind"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "description": "\"relates\" | \"blocks\" | \"parent\" | \"spec\" | \"docs\""
+                },
+                "source_readable_id": {
+                  "type": "string"
+                },
+                "source_task_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "source_title": {
+                  "type": "string"
                 }
               }
             }

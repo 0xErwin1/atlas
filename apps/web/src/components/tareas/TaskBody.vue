@@ -6,7 +6,6 @@ import AssigneeList from '@/components/tareas/AssigneeList.vue';
 import AttachmentList from '@/components/tareas/AttachmentList.vue';
 import Checklist from '@/components/tareas/Checklist.vue';
 import CustomFieldsSection from '@/components/tareas/CustomFieldsSection.vue';
-import LinkDependencyDialog from '@/components/tareas/LinkDependencyDialog.vue';
 import ReferenceAdd from '@/components/tareas/ReferenceAdd.vue';
 import ReferenceList from '@/components/tareas/ReferenceList.vue';
 import SubtaskList from '@/components/tareas/SubtaskList.vue';
@@ -273,8 +272,6 @@ async function onCreateStatus(value: string): Promise<void> {
 function openAskAi(action: AiAction): void {
   ui.openAskAi(props.task, statusName.value, action);
 }
-
-const linkDialogOpen = ref(false);
 
 const fileInput = ref<HTMLInputElement | null>(null);
 const uploading = ref(false);
@@ -593,18 +590,20 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
     <input ref="fileInput" type="file" class="hidden" @change="onFileSelected" />
 
     <div class="atl-tv-actions">
-      <button type="button" class="atl-tv-action" @click="linkDialogOpen = true">
-        <Icon name="link" :size="14" style="color: var(--c-muted);" />Link or add dependency
+      <button type="button" class="atl-tv-attach" :disabled="uploading" @click="onAttachClick">
+        <Icon name="paperclip" :size="13" style="color: var(--c-muted);" />{{ uploading ? 'Uploading…' : 'Attach file' }}
       </button>
-      <button type="button" class="atl-tv-action" :disabled="uploading" @click="onAttachClick">
-        <Icon name="paperclip" :size="14" style="color: var(--c-muted);" />{{ uploading ? 'Uploading…' : 'Attach file' }}
-      </button>
+      <span class="atl-tv-attach-hint">or drop / paste a file anywhere</span>
     </div>
 
     <template v-if="showReferences">
       <div style="margin-top: 22px;">
         <div class="atl-tv-section-label">References</div>
-        <ReferenceList :references="detail.references" @remove="onRemoveReference" />
+        <ReferenceList
+          :references="detail.references"
+          :backlinks="detail.backlinks"
+          @remove="onRemoveReference"
+        />
         <ReferenceAdd :ws="ws" :current-readable-id="task.readable_id" @add="onAddReference" />
       </div>
     </template>
@@ -623,13 +622,6 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
       confirm-label="Create status"
       @confirm="onCreateStatus"
       @cancel="addStatusOpen = false"
-    />
-
-    <LinkDependencyDialog
-      v-if="linkDialogOpen"
-      :ws="ws"
-      :readable-id="task.readable_id"
-      @close="linkDialogOpen = false"
     />
   </div>
 </template>
@@ -898,28 +890,44 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
 
 .atl-tv-actions {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 10px;
   margin-top: 22px;
   margin-bottom: 24px;
 }
 
-.atl-tv-action {
+/* A lone, low-emphasis affordance: dropping or pasting a file is the primary path
+   (see the hint beside it), so the button stays small and borderless instead of
+   reading as a call to action. */
+.atl-tv-attach {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 28px;
-  padding: 0 10px;
+  height: 24px;
+  padding: 0 8px;
+  margin-left: -8px;
   background: transparent;
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
-  color: var(--c-foreground);
+  border: none;
+  border-radius: var(--r-sm);
+  color: var(--c-muted);
   font-size: var(--fs-sm);
   font-family: var(--font-ui);
   cursor: pointer;
+  transition: color 0.12s ease, background 0.12s ease;
 }
 
-.atl-tv-action:hover {
-  background: rgba(179, 177, 173, 0.06);
+.atl-tv-attach:hover:not(:disabled) {
+  color: var(--c-foreground);
+  background: var(--c-raised);
+}
+
+.atl-tv-attach:disabled {
+  cursor: default;
+}
+
+.atl-tv-attach-hint {
+  font-size: var(--fs-xs);
+  color: var(--c-muted);
 }
 </style>

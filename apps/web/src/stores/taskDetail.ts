@@ -6,6 +6,7 @@ import { errorHint } from '@/lib/apiError';
 
 export type AssigneeDto = components['schemas']['AssigneeDto'];
 export type ReferenceDto = components['schemas']['ReferenceDto'];
+export type TaskBacklinkDto = components['schemas']['TaskBacklinkDto'];
 export type ChecklistItemDto = components['schemas']['ChecklistItemDto'];
 export type ActivityEntryDto = components['schemas']['ActivityEntryDto'];
 export type ActorDto = components['schemas']['ActorDto'];
@@ -34,6 +35,7 @@ export interface PromoteResult {
 export const useTaskDetailStore = defineStore('taskDetail', () => {
   const assignees = ref<AssigneeDto[]>([]);
   const references = ref<ReferenceDto[]>([]);
+  const backlinks = ref<TaskBacklinkDto[]>([]);
   const checklist = ref<ChecklistItemDto[]>([]);
   const subtasks = ref<SubtaskDto[]>([]);
   const activity = ref<ActivityEntryDto[]>([]);
@@ -50,9 +52,10 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
 
     const path = { ws, readable_id: readableId };
 
-    const [a, r, s, cl, act, at, cm] = await Promise.all([
+    const [a, r, bl, s, cl, act, at, cm] = await Promise.all([
       wrappedClient.GET('/v1/workspaces/{ws}/tasks/{readable_id}/assignees', { params: { path } }),
       wrappedClient.GET('/v1/workspaces/{ws}/tasks/{readable_id}/references', { params: { path } }),
+      wrappedClient.GET('/v1/workspaces/{ws}/tasks/{readable_id}/backlinks', { params: { path } }),
       wrappedClient.GET('/v1/workspaces/{ws}/tasks/{readable_id}/subtasks', { params: { path } }),
       wrappedClient.GET('/v1/workspaces/{ws}/tasks/{readable_id}/checklist', { params: { path } }),
       wrappedClient.GET('/v1/workspaces/{ws}/tasks/{readable_id}/activity', { params: { path } }),
@@ -67,6 +70,9 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     }
     if (r.data !== undefined) {
       references.value = r.data;
+    }
+    if (bl.data !== undefined) {
+      backlinks.value = bl.data.items;
     }
     if (s.data !== undefined) {
       subtasks.value = s.data;
@@ -86,7 +92,8 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
       commentsHasMore.value = cm.data.has_more;
     }
 
-    const firstError = a.error ?? r.error ?? s.error ?? cl.error ?? act.error ?? at.error ?? cm.error;
+    const firstError =
+      a.error ?? r.error ?? bl.error ?? s.error ?? cl.error ?? act.error ?? at.error ?? cm.error;
     if (firstError !== undefined) {
       error.value = errorHint(firstError, 'Failed to load task detail');
     }
@@ -611,6 +618,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
   function clear(): void {
     assignees.value = [];
     references.value = [];
+    backlinks.value = [];
     checklist.value = [];
     subtasks.value = [];
     activity.value = [];
@@ -624,6 +632,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
   function _setForTest(data: {
     assignees?: AssigneeDto[];
     references?: ReferenceDto[];
+    backlinks?: TaskBacklinkDto[];
     checklist?: ChecklistItemDto[];
     subtasks?: SubtaskDto[];
     activity?: ActivityEntryDto[];
@@ -634,6 +643,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
   }): void {
     assignees.value = data.assignees ?? [];
     references.value = data.references ?? [];
+    backlinks.value = data.backlinks ?? [];
     checklist.value = data.checklist ?? [];
     subtasks.value = data.subtasks ?? [];
     activity.value = data.activity ?? [];
@@ -646,6 +656,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
   return {
     assignees,
     references,
+    backlinks,
     checklist,
     subtasks,
     activity,

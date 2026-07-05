@@ -3,11 +3,17 @@ import { computed } from 'vue';
 import { type RouteLocationRaw, RouterLink } from 'vue-router';
 import Chip, { type ChipTone } from '@/components/ui/Chip.vue';
 import Icon from '@/components/ui/Icon.vue';
-import type { ReferenceDto } from '@/stores/taskDetail';
+import type { ReferenceDto, TaskBacklinkDto } from '@/stores/taskDetail';
 
-const props = defineProps<{
-  references: ReferenceDto[];
-}>();
+const props = withDefaults(
+  defineProps<{
+    references: ReferenceDto[];
+    /** Inbound references — other tasks that point at this one. Shown read-only
+     * under "Referenced by", since the link is owned by the source task. */
+    backlinks?: TaskBacklinkDto[];
+  }>(),
+  { backlinks: () => [] },
+);
 
 const emit = defineEmits<{
   remove: [referenceId: string];
@@ -54,6 +60,30 @@ const rows = computed<Row[]>(() =>
     to: targetRoute(r),
   })),
 );
+
+interface BacklinkRow {
+  id: string;
+  kind: string;
+  tone: ChipTone;
+  readableId: string;
+  title: string;
+  to: RouteLocationRaw;
+}
+
+// The backlinks endpoint only returns live source tasks, so every backlink is
+// navigable — no broken state to render.
+const backlinkRows = computed<BacklinkRow[]>(() =>
+  props.backlinks.map((b) => ({
+    id: b.source_task_id,
+    kind: b.kind,
+    tone: KIND_TONE[b.kind] ?? 'neutral',
+    readableId: b.source_readable_id,
+    title: b.source_title,
+    to: { name: 'task-detail', params: { readableId: b.source_readable_id } },
+  })),
+);
+
+const isEmpty = computed(() => rows.value.length === 0 && backlinkRows.value.length === 0);
 </script>
 
 <template>
@@ -91,8 +121,34 @@ const rows = computed<Row[]>(() =>
       </button>
     </div>
 
+    <template v-if="backlinkRows.length > 0">
+      <div class="atl-ref-backlabel">Referenced by</div>
+      <div
+        v-for="row in backlinkRows"
+        :key="row.id"
+        class="flex items-center"
+        style="gap: 8px;"
+        :data-backlink-id="row.id"
+      >
+        <Chip :tone="row.tone">{{ row.kind }}</Chip>
+        <RouterLink
+          :to="row.to"
+          class="atl-ref-target flex items-baseline min-w-0"
+          style="gap: 6px;"
+          :title="row.title"
+        >
+          <span style="font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--c-muted); flex: 0 0 auto;">
+            {{ row.readableId }}
+          </span>
+          <span class="truncate" style="font-size: var(--fs-sm); color: var(--c-foreground);">
+            {{ row.title }}
+          </span>
+        </RouterLink>
+      </div>
+    </template>
+
     <p
-      v-if="rows.length === 0"
+      v-if="isEmpty"
       style="font-size: var(--fs-sm); color: var(--c-muted);"
     >
       No references.
@@ -107,5 +163,11 @@ a.atl-ref-target {
 
 a.atl-ref-target:hover {
   text-decoration: underline;
+}
+
+.atl-ref-backlabel {
+  margin-top: 4px;
+  font-size: var(--fs-xs);
+  color: var(--c-muted);
 }
 </style>

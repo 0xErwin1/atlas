@@ -1856,7 +1856,7 @@ pub(crate) async fn delete_attachment(
         ("limit" = Option<u32>, Query, description = "Page size (max 200)"),
     ),
     responses(
-        (status = 200, description = "Inbound reference list"),
+        (status = 200, description = "Inbound reference list", body = Page<TaskBacklinkDto>),
         (status = 401, description = "Unauthenticated"),
         (status = 403, description = "Insufficient permissions"),
         (status = 404, description = "Task not found"),

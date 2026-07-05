@@ -99,6 +99,23 @@ describe('useTaskDetailStore', () => {
       if (path.endsWith('/references')) {
         return Promise.resolve({ data: [reference('r1', 'relates')], error: undefined });
       }
+      if (path.endsWith('/backlinks')) {
+        return Promise.resolve({
+          data: {
+            items: [
+              {
+                source_task_id: 't5',
+                source_readable_id: 'ATL-5',
+                source_title: 'Blocks this',
+                kind: 'blocks',
+              },
+            ],
+            has_more: false,
+            next_cursor: null,
+          },
+          error: undefined,
+        });
+      }
       if (path.endsWith('/subtasks')) {
         return Promise.resolve({ data: [subtaskSummary('s1', 'ATL-2', 'Child')], error: undefined });
       }
@@ -130,6 +147,8 @@ describe('useTaskDetailStore', () => {
     expect(store.assignees).toHaveLength(1);
     expect(store.assignees[0]?.assignee.display_name).toBe('Jordan');
     expect(store.references).toHaveLength(1);
+    expect(store.backlinks).toHaveLength(1);
+    expect(store.backlinks[0]?.source_readable_id).toBe('ATL-5');
     expect(store.subtasks).toHaveLength(1);
     expect(store.subtasks[0]?.readable_id).toBe('ATL-2');
     expect(store.checklist).toHaveLength(1);
