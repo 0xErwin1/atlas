@@ -39,6 +39,8 @@ pub(crate) enum ApiKeysCmd {
     Revoke(ApiKeysRevokeArgs),
     /// Toggle a key's global workspace reach.
     SetGlobal(ApiKeysSetGlobalArgs),
+    /// Replace the full capability scope set for a key.
+    SetScopes(ApiKeysSetScopesArgs),
     /// List grants associated with an API key.
     Grants(ApiKeysGrantsArgs),
     /// Delete a specific grant from an API key (requires --confirm).
@@ -52,6 +54,7 @@ pub(crate) async fn run(ctx: &Ctx, cmd: ApiKeysCmd) -> Result<(), CliError> {
         ApiKeysCmd::Create(args) => run_create(ctx, args).await,
         ApiKeysCmd::Revoke(args) => run_revoke(ctx, args).await,
         ApiKeysCmd::SetGlobal(args) => run_set_global(ctx, args).await,
+        ApiKeysCmd::SetScopes(args) => run_set_scopes(ctx, args).await,
         ApiKeysCmd::Grants(args) => run_grants(ctx, args).await,
         ApiKeysCmd::DeleteGrant(args) => run_delete_grant(ctx, args).await,
     }
@@ -106,6 +109,14 @@ pub(crate) struct ApiKeysCreateArgs {
     /// Role for the initial grant: `viewer` or `editor`.
     #[arg(long)]
     pub(crate) initial_grant_role: Option<String>,
+
+    /// Capability scope to grant, in `family:action` form (repeatable).
+    ///
+    /// Families: `tasks`, `docs`, `boards`, `folders`, `projects`. Actions:
+    /// `read`, `create`, `update`, `delete`. Omit entirely to receive the
+    /// server's read-only default.
+    #[arg(long = "scope", value_name = "FAMILY:ACTION")]
+    pub(crate) scopes: Vec<String>,
 }
 
 async fn run_create(ctx: &Ctx, args: ApiKeysCreateArgs) -> Result<(), CliError> {
@@ -131,13 +142,20 @@ async fn run_create(ctx: &Ctx, args: ApiKeysCreateArgs) -> Result<(), CliError> 
         }
     };
 
+    let scopes = collect_scopes(&args.scopes)?;
+
     let body = CreateUserApiKeyRequest {
         name: args.name,
         r#type: args.r#type,
         expires_at,
         initial_grant,
-        // No `--scope` flag yet; omitted scopes default to read-only server-side.
-        scopes: None,
+        // Omitting `--scope` sends `None`, so the server applies its read-only
+        // default; any provided scopes are the exact set to grant.
+        scopes: if scopes.is_empty() {
+            None
+        } else {
+            Some(scopes)
+        },
     };
 
     let created = ctx.client.create_user_api_key(body).await?;
@@ -200,6 +218,56 @@ async fn run_set_global(ctx: &Ctx, args: ApiKeysSetGlobalArgs) -> Result<(), Cli
         .await?;
     let proj = ApiKeyProjection::from(key);
     output::emit(ctx.output, &proj)
+}
+
+// ---------------------------------------------------------------------------
+// Set-scopes
+// ---------------------------------------------------------------------------
+
+/// Arguments for `atlas api-keys set-scopes`.
+#[derive(Parser)]
+pub(crate) struct ApiKeysSetScopesArgs {
+    /// UUID of the API key to update.
+    #[arg(long)]
+    pub(crate) key_id: Uuid,
+
+    /// Capability scope in `family:action` form (repeatable). At least one is
+    /// required; the provided set fully replaces the key's existing scopes. To
+    /// remove all access, revoke the key instead.
+    #[arg(long = "scope", value_name = "FAMILY:ACTION", required = true)]
+    pub(crate) scopes: Vec<String>,
+}
+
+async fn run_set_scopes(ctx: &Ctx, args: ApiKeysSetScopesArgs) -> Result<(), CliError> {
+    let scopes = collect_scopes(&args.scopes)?;
+
+    let key = ctx.client.set_api_key_scopes(args.key_id, scopes).await?;
+    let proj = ApiKeyProjection::from(key);
+    output::emit(ctx.output, &proj)
+}
+
+// ---------------------------------------------------------------------------
+// Scope parsing
+// ---------------------------------------------------------------------------
+
+/// Parses a repeatable `--scope family:action` list into wire capability scopes.
+///
+/// Each token is validated against the closed `ApiKeyScope` catalog through its
+/// own serde mapping, so an unknown `family:action` produces a clean CLI
+/// validation error rather than a panic.
+fn collect_scopes(raw: &[String]) -> Result<Vec<atlas_api::dtos::ApiKeyScope>, CliError> {
+    raw.iter().map(|s| parse_scope(s)).collect()
+}
+
+/// Maps a single `family:action` token to its `ApiKeyScope` variant.
+fn parse_scope(raw: &str) -> Result<atlas_api::dtos::ApiKeyScope, CliError> {
+    serde_json::from_value(serde_json::Value::String(raw.to_owned())).map_err(|_| {
+        CliError::Validation(format!(
+            "invalid --scope '{raw}': expected `family:action` \
+             (families: tasks, docs, boards, folders, projects; \
+             actions: read, create, update, delete)"
+        ))
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -323,6 +391,10 @@ mod tests {
         assert!(c.expires_at.is_none());
         assert!(c.initial_grant_workspace.is_none());
         assert!(c.initial_grant_role.is_none());
+        assert!(
+            c.scopes.is_empty(),
+            "no --scope means an empty list (server applies the read-only default)"
+        );
     }
 
     #[test]
@@ -413,6 +485,119 @@ mod tests {
     #[test]
     fn api_keys_grants_requires_key_id() {
         let result = Cli::try_parse_from(["atlas", "api-keys", "grants"]);
+        assert!(result.is_err(), "missing --key-id must fail");
+    }
+
+    /// Every `family:action` token in the closed catalog must round-trip through
+    /// `parse_scope` into an `ApiKeyScope` variant.
+    #[test]
+    fn parse_scope_accepts_every_family_action() {
+        let all = [
+            "tasks:read",
+            "tasks:create",
+            "tasks:update",
+            "tasks:delete",
+            "docs:read",
+            "docs:create",
+            "docs:update",
+            "docs:delete",
+            "boards:read",
+            "boards:create",
+            "boards:update",
+            "boards:delete",
+            "folders:read",
+            "folders:create",
+            "folders:update",
+            "folders:delete",
+            "projects:read",
+            "projects:create",
+            "projects:update",
+            "projects:delete",
+        ];
+        for token in all {
+            assert!(parse_scope(token).is_ok(), "expected `{token}` to parse");
+        }
+    }
+
+    #[test]
+    fn parse_scope_rejects_unknown_tokens() {
+        for token in ["tasks:manage", "foo:read", "tasks", ""] {
+            assert!(
+                parse_scope(token).is_err(),
+                "expected `{token}` to be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn collect_scopes_rejects_the_whole_list_on_one_bad_token() {
+        let raw = vec!["tasks:read".to_owned(), "tasks:manage".to_owned()];
+        assert!(collect_scopes(&raw).is_err());
+    }
+
+    #[test]
+    fn api_keys_create_collects_repeated_scopes() {
+        let cli = Cli::try_parse_from([
+            "atlas",
+            "api-keys",
+            "create",
+            "--name",
+            "k",
+            "--scope",
+            "tasks:read",
+            "--scope",
+            "docs:update",
+        ])
+        .unwrap();
+        let Commands::ApiKeys(args) = cli.command else {
+            panic!("expected ApiKeys");
+        };
+        let ApiKeysCmd::Create(c) = args.command else {
+            panic!("expected Create");
+        };
+        assert_eq!(c.scopes, vec!["tasks:read", "docs:update"]);
+    }
+
+    #[test]
+    fn api_keys_set_scopes_parses_multiple() {
+        let cli = Cli::try_parse_from([
+            "atlas",
+            "api-keys",
+            "set-scopes",
+            "--key-id",
+            "00000000-0000-0000-0000-000000000001",
+            "--scope",
+            "tasks:read",
+            "--scope",
+            "tasks:create",
+        ])
+        .unwrap();
+        let Commands::ApiKeys(args) = cli.command else {
+            panic!("expected ApiKeys");
+        };
+        let ApiKeysCmd::SetScopes(sc) = args.command else {
+            panic!("expected SetScopes");
+        };
+        assert_eq!(sc.key_id, Uuid::from_u128(1));
+        assert_eq!(sc.scopes, vec!["tasks:read", "tasks:create"]);
+    }
+
+    #[test]
+    fn api_keys_set_scopes_requires_at_least_one_scope() {
+        let result = Cli::try_parse_from([
+            "atlas",
+            "api-keys",
+            "set-scopes",
+            "--key-id",
+            "00000000-0000-0000-0000-000000000001",
+        ]);
+        assert!(result.is_err(), "set-scopes with no --scope must fail");
+    }
+
+    #[test]
+    fn api_keys_set_scopes_requires_key_id() {
+        let result =
+            Cli::try_parse_from(["atlas", "api-keys", "set-scopes", "--scope", "tasks:read"]);
         assert!(result.is_err(), "missing --key-id must fail");
     }
 }

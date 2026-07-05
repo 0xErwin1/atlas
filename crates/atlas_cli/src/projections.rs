@@ -26,9 +26,9 @@ use atlas_api::dtos::status_templates::StatusTemplateDto;
 use atlas_api::dtos::tags::TagDto;
 use atlas_api::dtos::task_views::{TaskViewDto, TaskViewFiltersDto};
 use atlas_api::dtos::{
-    ActivationLinkResponse, ApiKeyCreated, ApiKeyDto, ApiKeyGrantDto, CreateUserResponse, GrantDto,
-    GrantPrincipal, GrantedByDto, PrincipalDto, ProjectDto, UserDto, UserMembershipDto,
-    WorkspaceDto,
+    ActivationLinkResponse, ApiKeyCreated, ApiKeyDto, ApiKeyGrantDto, ApiKeyScope,
+    CreateUserResponse, GrantDto, GrantPrincipal, GrantedByDto, PrincipalDto, ProjectDto, UserDto,
+    UserMembershipDto, WorkspaceDto,
 };
 use chrono::{DateTime, Utc};
 use serde::Serialize;
@@ -1595,6 +1595,17 @@ pub(crate) struct ApiKeyProjection {
     pub(crate) revoked_at: Option<DateTime<Utc>>,
     pub(crate) created_at: DateTime<Utc>,
     pub(crate) is_global: bool,
+    /// Capability scopes in canonical `family:action` form.
+    pub(crate) scopes: Vec<String>,
+}
+
+/// Renders a wire capability scope to its canonical `family:action` string using
+/// the type's own serde mapping, avoiding a hand-maintained variant match.
+fn scope_wire_name(scope: &ApiKeyScope) -> String {
+    serde_json::to_value(scope)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_owned))
+        .unwrap_or_default()
 }
 
 impl From<ApiKeyDto> for ApiKeyProjection {
@@ -1608,13 +1619,14 @@ impl From<ApiKeyDto> for ApiKeyProjection {
             revoked_at: k.revoked_at,
             created_at: k.created_at,
             is_global: k.is_global,
+            scopes: k.scopes.iter().map(scope_wire_name).collect(),
         }
     }
 }
 
 impl TableRow for ApiKeyProjection {
     fn headers() -> &'static [&'static str] {
-        &["ID", "Name", "Type", "Global", "Created At"]
+        &["ID", "Name", "Type", "Global", "Scopes", "Created At"]
     }
 
     fn row(&self) -> Vec<String> {
@@ -1623,6 +1635,7 @@ impl TableRow for ApiKeyProjection {
             self.name.clone(),
             self.type_.clone(),
             self.is_global.to_string(),
+            self.scopes.join(","),
             self.created_at.format("%Y-%m-%d").to_string(),
         ]
     }
@@ -3327,9 +3340,22 @@ mod tests {
         let value = serde_json::to_value(&proj).unwrap();
         assert_projection_fields(
             &value,
-            &["id", "name", "type", "created_at", "is_global"],
+            &["id", "name", "type", "created_at", "is_global", "scopes"],
             &["expires_at", "last_used_at", "revoked_at"],
         );
+    }
+
+    #[test]
+    fn api_key_projection_renders_scopes_as_wire_strings() {
+        let mut dto = make_api_key_dto();
+        dto.scopes = vec![ApiKeyScope::TasksRead, ApiKeyScope::ProjectsDelete];
+        let proj = ApiKeyProjection::from(dto);
+
+        assert_eq!(proj.scopes, vec!["tasks:read", "projects:delete"]);
+
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_eq!(value["scopes"][0], "tasks:read");
+        assert_eq!(value["scopes"][1], "projects:delete");
     }
 
     #[test]
