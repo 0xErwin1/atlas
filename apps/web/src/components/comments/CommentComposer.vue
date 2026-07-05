@@ -55,6 +55,7 @@ defineExpose({ focus });
       :editable="true"
       :embedded-controls="false"
       :width-toggle="false"
+      :follow-caret="false"
       min-height="1.75rem"
       :placeholder="placeholder"
       @change="onDraftChange"

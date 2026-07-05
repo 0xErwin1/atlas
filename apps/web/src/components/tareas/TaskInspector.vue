@@ -51,7 +51,7 @@ const isAgentCreator = creator.type === 'api_key';
     <InspectorTabs :tabs="TABS" v-model:active="active" />
 
     <div class="atl-tv-inspector-body">
-      <template v-if="active === 'details'">
+      <div v-if="active === 'details'" class="atl-tv-inspector-scroll">
         <MetaRow label="Created">
           <Avatar :name="creatorName" :agent="isAgentCreator" :size="18" />
           <span style="font-family: var(--font-mono);">{{ creatorName }}</span>
@@ -72,15 +72,13 @@ const isAgentCreator = creator.type === 'api_key';
         <MetaRow label="Assignees">
           <span style="font-family: var(--font-mono);">{{ detail.assignees.length }}</span>
         </MetaRow>
-      </template>
+      </div>
 
-      <template v-else-if="active === 'activity'">
-        <ActivityComments :ws="ws" :readable-id="task.readable_id" />
-      </template>
+      <ActivityComments v-else-if="active === 'activity'" :ws="ws" :readable-id="task.readable_id" pinned />
 
-      <template v-else>
+      <div v-else class="atl-tv-inspector-scroll">
         <SharePanel :resource-label="`${task.readable_id} · task`" />
-      </template>
+      </div>
     </div>
   </aside>
 </template>
@@ -97,6 +95,16 @@ const isAgentCreator = creator.type === 'api_key';
 
 .atl-tv-inspector-body {
   flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Details / Share tabs scroll as a whole; the Activity tab manages its own feed
+   scroll and docks the composer, so it fills this body without an outer scroll. */
+.atl-tv-inspector-scroll {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 10px;
 }

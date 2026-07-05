@@ -128,6 +128,7 @@ async function confirmDelete(): Promise<void> {
           :editable="true"
           :embedded-controls="false"
           :width-toggle="false"
+          :follow-caret="false"
           min-height="2.5rem"
           @change="onEditChange"
         />

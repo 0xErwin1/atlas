@@ -57,6 +57,10 @@ const props = withDefaults(
      * point. Returns the image URL, or null on failure (the host surfaces the
      * error). Hosts that omit it (task description) leave paste/drop untouched. */
     uploadImage?: (file: File) => Promise<string | null>;
+    /** Keep the caret in view by scrolling the host container while typing. On for
+     * long-form surfaces (note body, task description); off for compact fixed
+     * editors (the comment composer/edit box) that never outgrow their host. */
+    followCaret?: boolean;
   }>(),
   {
     placeholder: '',
@@ -66,6 +70,7 @@ const props = withDefaults(
     wikilinkTitles: () => ({}),
     minHeight: '60vh',
     embeddedControls: true,
+    followCaret: true,
   },
 );
 
@@ -156,6 +161,49 @@ function onUpdate(docChanged: boolean, selectionChanged: boolean, state: EditorS
   }
 }
 
+/**
+ * The closest ancestor that actually scrolls vertically. The editor grows with
+ * its content (no inner scroll), so the surface that moves is a host container —
+ * a note page, the task body — not CodeMirror's own scroller.
+ */
+function nearestScrollableAncestor(el: HTMLElement): HTMLElement | null {
+  let cur = el.parentElement;
+  while (cur !== null) {
+    const overflowY = getComputedStyle(cur).overflowY;
+    if ((overflowY === 'auto' || overflowY === 'scroll') && cur.scrollHeight > cur.clientHeight) {
+      return cur;
+    }
+    cur = cur.parentElement;
+  }
+  return null;
+}
+
+/**
+ * Keeps the caret visible while typing. When the editor grows inside an outer
+ * scroll container, CodeMirror's built-in scroll-into-view acts on its own
+ * (non-scrolling) scroller and never moves the host, so a caret at the bottom
+ * slips below the fold. This nudges the nearest scrollable ancestor just enough
+ * to bring the caret back within a margin of the viewport edges.
+ */
+function keepCaretInView(): void {
+  if (view === null || host.value === null) return;
+
+  const caret = view.coordsAtPos(view.state.selection.main.head);
+  if (caret === null) return;
+
+  const scroller = nearestScrollableAncestor(host.value);
+  if (scroller === null) return;
+
+  const box = scroller.getBoundingClientRect();
+  const margin = 28;
+
+  if (caret.bottom > box.bottom - margin) {
+    scroller.scrollTop += caret.bottom - (box.bottom - margin);
+  } else if (caret.top < box.top + margin) {
+    scroller.scrollTop -= box.top + margin - caret.top;
+  }
+}
+
 function liveExtension(reveal: boolean) {
   return livePreview(
     { onWikilinkClick: (ref) => emit('navigate-wikilink', ref) },
@@ -222,6 +270,16 @@ function buildExtensions() {
     }),
     EditorView.updateListener.of((update) => {
       onUpdate(update.docChanged, update.selectionSet, update.state);
+
+      // Follow the caret only on the user's own edits — never on a programmatic
+      // body replacement (external sync), which would yank the scroll position.
+      if (
+        props.followCaret &&
+        update.docChanged &&
+        update.transactions.some((tr) => tr.isUserEvent('input') || tr.isUserEvent('delete'))
+      ) {
+        requestAnimationFrame(keepCaretInView);
+      }
     }),
   ];
 }

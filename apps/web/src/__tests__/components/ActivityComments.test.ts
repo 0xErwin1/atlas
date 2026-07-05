@@ -1,6 +1,7 @@
 import { type DOMWrapper, flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { nextTick } from 'vue';
 import ActivityComments from '@/components/tareas/ActivityComments.vue';
 import { useAuthStore } from '@/stores/auth';
 import { type ActivityEntryDto, type CommentDto, useTaskDetailStore } from '@/stores/taskDetail';
@@ -298,6 +299,30 @@ describe('ActivityComments feed (ATL-19)', () => {
 
     expect(editComment).not.toHaveBeenCalled();
     expect(wrapper.find('[data-comment-id="c1"] [data-test="comment-edit-save"]').exists()).toBe(false);
+  });
+
+  it('in pinned mode docks the composer and lands at the end of the feed on open', async () => {
+    useTaskDetailStore()._setForTest({
+      activity: [activity('a1', 'created', '2026-01-01T09:00:00Z')],
+      comments: [comment('c1', 'Note', 'u1', 'user', 'Jordan', '2026-01-01T10:00:00Z')],
+    });
+
+    const wrapper = mount(ActivityComments, {
+      props: { ws: 'acme', readableId: 'ATL-1', pinned: true },
+      global: { stubs: { MarkdownEditor: MarkdownEditorStub, teleport: true } },
+    });
+
+    expect(wrapper.get('.atl-ac').classes()).toContain('pinned');
+    expect(wrapper.find('.atl-ac-composer [data-comment-composer]').exists()).toBe(true);
+
+    // jsdom does no layout, so stand in a scrollable feed before the queued
+    // scroll-to-end runs and assert it jumps to the bottom.
+    const scroll = wrapper.get('.atl-ac-scroll').element as HTMLElement;
+    Object.defineProperty(scroll, 'scrollHeight', { value: 640, configurable: true });
+
+    await nextTick();
+
+    expect(scroll.scrollTop).toBe(640);
   });
 
   it('loads the next page via loadMoreComments when more remain', async () => {

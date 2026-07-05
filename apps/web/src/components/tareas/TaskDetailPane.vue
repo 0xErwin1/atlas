@@ -70,9 +70,7 @@ function onChangeMode(mode: TaskViewMode): void {
           />
         </div>
         <aside class="atl-tv-modal-rail">
-          <div class="atl-tv-scroll" style="padding: 14px 16px;">
-            <ActivityComments :ws="ws" :readable-id="task.readable_id" />
-          </div>
+          <ActivityComments :ws="ws" :readable-id="task.readable_id" pinned />
         </aside>
       </div>
     </div>
@@ -101,10 +99,9 @@ function onChangeMode(mode: TaskViewMode): void {
       @change="onChangeMode"
       @toggle-activity="showActivity = !showActivity"
     />
-    <div class="atl-tv-scroll" :style="showActivity ? 'padding: 14px 16px;' : 'padding: 14px 18px;'">
-      <ActivityComments v-if="showActivity" :ws="ws" :readable-id="task.readable_id" />
+    <ActivityComments v-if="showActivity" :ws="ws" :readable-id="task.readable_id" pinned />
+    <div v-else class="atl-tv-scroll" style="padding: 14px 18px;">
       <TaskBody
-        v-else
         :task="task"
         :ws="ws"
         layout="narrow"
