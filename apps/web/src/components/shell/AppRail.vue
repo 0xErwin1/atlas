@@ -60,10 +60,24 @@ const workspaceInitial = computed(() => {
 
 const newWorkspaceOpen = ref(false);
 
+// Task surfaces that should keep the user in Tasks after a workspace switch.
+const TASK_ROUTES = new Set(['tasks', 'task-view', 'task-detail']);
+
+// Keep the user in the same section when they switch workspace: from any Tasks
+// route land on the new workspace's board, from Search stay in Search, otherwise
+// (Notes, Settings, …) go to Notes. The specific board/task/note id belongs to the
+// old workspace, so we drop it and navigate to the section root.
+function sectionAfterSwitch(): string {
+  const name = typeof route.name === 'string' ? route.name : '';
+  if (TASK_ROUTES.has(name)) return 'tasks';
+  if (name === 'search') return 'search';
+  return 'notes';
+}
+
 function pickWorkspace(slug: string): void {
   if (slug === workspace.activeWorkspaceSlug) return;
   workspace.switchWorkspace(slug);
-  router.push({ name: 'notes' });
+  router.push({ name: sectionAfterSwitch() });
 }
 
 function startNewWorkspace(): void {
