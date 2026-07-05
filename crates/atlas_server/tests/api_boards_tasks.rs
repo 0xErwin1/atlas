@@ -5644,6 +5644,7 @@ async fn revoked_api_key_assignee_is_hidden_after_revoke() {
                 workspace: ws.slug.clone(),
                 role: "editor".to_string(),
             }),
+            scopes: None,
         })
         .await
         .expect("create api key");

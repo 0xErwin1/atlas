@@ -438,6 +438,7 @@ fn toplevel_key_req(name: &str) -> CreateUserApiKeyRequest {
         r#type: None,
         expires_at: None,
         initial_grant: None,
+        scopes: None,
     }
 }
 

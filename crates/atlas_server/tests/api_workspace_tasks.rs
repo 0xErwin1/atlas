@@ -11,7 +11,9 @@ use atlas_api::dtos::boards_tasks::{
     AddAssigneeRequest, CreateBoardRequest, CreateColumnRequest, CreateSubtaskRequest,
     CreateTaskRequest, WorkspaceTaskQueryParams,
 };
-use atlas_api::dtos::{CreateProjectRequest, CreateUserApiKeyRequest, InitialGrantRequest};
+use atlas_api::dtos::{
+    ApiKeyScope, CreateProjectRequest, CreateUserApiKeyRequest, InitialGrantRequest,
+};
 use atlas_client::ClientError;
 
 // ---------------------------------------------------------------------------
@@ -61,6 +63,12 @@ async fn seed_workspace(
                 workspace: ws.slug.clone(),
                 role: "editor".to_string(),
             }),
+            scopes: Some(vec![
+                ApiKeyScope::TasksRead,
+                ApiKeyScope::TasksCreate,
+                ApiKeyScope::TasksUpdate,
+                ApiKeyScope::TasksDelete,
+            ]),
         })
         .await
         .expect("create api key with workspace grant");

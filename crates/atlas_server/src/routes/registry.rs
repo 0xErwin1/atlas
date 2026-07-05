@@ -978,34 +978,34 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         openapi_path: Some("/v1/workspaces/{ws}/tags/{tag_id}"),
         capability: None,
     },
-    // ---- Status templates (workspace CRUD excluded; apply-to-board is boards:update) ----
+    // ---- Status templates (folded into the boards family; apply-to-board is boards:update) ----
     RouteEntry {
         method: "GET",
         path_template: "/v1/workspaces/{ws}/status-templates",
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/v1/workspaces/{ws}/status-templates"),
-        capability: None,
+        capability: Some("boards:read"),
     },
     RouteEntry {
         method: "POST",
         path_template: "/v1/workspaces/{ws}/status-templates",
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/v1/workspaces/{ws}/status-templates"),
-        capability: None,
+        capability: Some("boards:create"),
     },
     RouteEntry {
         method: "PATCH",
         path_template: "/v1/workspaces/{ws}/status-templates/00000000-0000-0000-0000-000000000001",
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/v1/workspaces/{ws}/status-templates/{template_id}"),
-        capability: None,
+        capability: Some("boards:update"),
     },
     RouteEntry {
         method: "DELETE",
         path_template: "/v1/workspaces/{ws}/status-templates/00000000-0000-0000-0000-000000000001",
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/v1/workspaces/{ws}/status-templates/{template_id}"),
-        capability: None,
+        capability: Some("boards:delete"),
     },
     RouteEntry {
         method: "POST",

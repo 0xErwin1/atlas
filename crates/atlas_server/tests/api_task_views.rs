@@ -278,6 +278,7 @@ async fn create_task_view_allows_same_name_for_different_owners() {
                 workspace: ws.slug.clone(),
                 role: "editor".to_string(),
             }),
+            scopes: None,
         })
         .await
         .expect("create api key");
@@ -337,6 +338,7 @@ async fn list_task_views_is_owner_scoped_sorted_and_excludes_deleted() {
                 workspace: ws.slug.clone(),
                 role: "editor".to_string(),
             }),
+            scopes: None,
         })
         .await
         .expect("create api key");
@@ -448,6 +450,7 @@ async fn get_task_view_returns_404_for_non_owned_id() {
                 workspace: ws.slug.clone(),
                 role: "editor".to_string(),
             }),
+            scopes: None,
         })
         .await
         .expect("create api key");
@@ -622,6 +625,7 @@ async fn update_task_view_returns_404_for_non_owned_id() {
                 workspace: ws.slug.clone(),
                 role: "editor".to_string(),
             }),
+            scopes: None,
         })
         .await
         .expect("create api key");
@@ -726,6 +730,7 @@ async fn delete_task_view_returns_404_for_non_owned_id() {
                 workspace: ws.slug.clone(),
                 role: "editor".to_string(),
             }),
+            scopes: None,
         })
         .await
         .expect("create api key");

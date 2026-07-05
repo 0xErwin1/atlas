@@ -8,7 +8,8 @@
 mod support;
 
 use atlas_api::dtos::{
-    CreateProjectRequest, CreateUserApiKeyRequest, InitialGrantRequest, UpdateProjectRequest,
+    ApiKeyScope, CreateProjectRequest, CreateUserApiKeyRequest, InitialGrantRequest,
+    UpdateProjectRequest,
     boards_tasks::{
         CreateBoardRequest, CreateColumnRequest, CreateCommentRequest, CreateTaskRequest,
         UpdateCommentRequest,
@@ -219,6 +220,7 @@ async fn create_comment_as_api_key_reports_api_key_author() {
                 workspace: ws.slug.clone(),
                 role: "editor".to_string(),
             }),
+            scopes: Some(vec![ApiKeyScope::TasksRead, ApiKeyScope::TasksUpdate]),
         })
         .await
         .expect("create api key");
@@ -768,6 +770,7 @@ async fn list_comments_preserves_global_api_key_author_name() {
                 workspace: ws.slug.clone(),
                 role: "editor".to_string(),
             }),
+            scopes: Some(vec![ApiKeyScope::TasksRead, ApiKeyScope::TasksUpdate]),
         })
         .await
         .expect("create api key");

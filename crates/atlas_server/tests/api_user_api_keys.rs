@@ -7,7 +7,7 @@
 
 mod support;
 
-use atlas_api::dtos::{CreateUserApiKeyRequest, InitialGrantRequest};
+use atlas_api::dtos::{ApiKeyScope, CreateUserApiKeyRequest, InitialGrantRequest};
 use support::{TestDb, TestServer, login_user, login_user_with_workspace};
 
 fn key_req(name: &str) -> CreateUserApiKeyRequest {
@@ -16,6 +16,7 @@ fn key_req(name: &str) -> CreateUserApiKeyRequest {
         r#type: None,
         expires_at: None,
         initial_grant: None,
+        scopes: None,
     }
 }
 
@@ -25,6 +26,7 @@ fn user_key_req(name: &str) -> CreateUserApiKeyRequest {
         r#type: None,
         expires_at: None,
         initial_grant: None,
+        scopes: None,
     }
 }
 
@@ -67,6 +69,7 @@ async fn create_user_api_key_respects_explicit_type() {
         r#type: Some("cli".to_string()),
         expires_at: None,
         initial_grant: None,
+        scopes: None,
     };
 
     let created = user
@@ -91,6 +94,7 @@ async fn create_user_api_key_rejects_invalid_type() {
         r#type: Some("superuser".to_string()),
         expires_at: None,
         initial_grant: None,
+        scopes: None,
     };
 
     let err = user.create_user_api_key(req).await;
@@ -136,6 +140,7 @@ async fn create_user_api_key_with_initial_grant() {
             workspace: ws.slug.clone(),
             role: "editor".to_string(),
         }),
+        scopes: None,
     };
 
     let created = owner
@@ -177,6 +182,7 @@ async fn initial_grant_rejects_admin_role() {
             workspace: ws.slug.clone(),
             role: "admin".to_string(),
         }),
+        scopes: None,
     };
 
     let err = owner.create_user_api_key(req).await;
@@ -236,6 +242,7 @@ async fn list_user_api_keys_includes_type_field() {
         r#type: Some("bot".to_string()),
         expires_at: None,
         initial_grant: None,
+        scopes: None,
     })
     .await
     .expect("create typed key");
@@ -664,6 +671,7 @@ async fn api_key_member_dto_includes_key_type() {
             workspace: ws.slug.clone(),
             role: "editor".to_string(),
         }),
+        scopes: None,
     };
 
     let key_created = owner
@@ -686,6 +694,247 @@ async fn api_key_member_dto_includes_key_type() {
         Some("bot"),
         "key_type must be 'bot' in member DTO"
     );
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
+// Capability scopes: defaults, explicit selection, PATCH-partial, validation
+// ---------------------------------------------------------------------------
+
+const DEFAULT_READ_ONLY_SCOPES: [ApiKeyScope; 5] = [
+    ApiKeyScope::TasksRead,
+    ApiKeyScope::DocsRead,
+    ApiKeyScope::BoardsRead,
+    ApiKeyScope::FoldersRead,
+    ApiKeyScope::ProjectsRead,
+];
+
+#[tokio::test]
+async fn create_user_api_key_default_scopes_grant_read_but_not_write() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner, ws, _) = login_user_with_workspace(&server, &db, "cuk-default-scopes").await;
+
+    let req = CreateUserApiKeyRequest {
+        name: "default-scope-agent".to_string(),
+        r#type: None,
+        expires_at: None,
+        initial_grant: Some(InitialGrantRequest {
+            workspace: ws.slug.clone(),
+            role: "editor".to_string(),
+        }),
+        scopes: None,
+    };
+
+    let created = owner
+        .create_user_api_key(req)
+        .await
+        .expect("create default-scope key");
+
+    assert_eq!(
+        created.scopes,
+        DEFAULT_READ_ONLY_SCOPES.to_vec(),
+        "a key created with no scopes selected must default to the 5 read-only scopes"
+    );
+
+    let page = owner
+        .list_user_api_keys(None, None)
+        .await
+        .expect("list keys");
+    let listed = page
+        .items
+        .iter()
+        .find(|k| k.id == created.id)
+        .expect("key must be listed");
+    assert_eq!(
+        listed.scopes,
+        DEFAULT_READ_ONLY_SCOPES.to_vec(),
+        "the persisted default scopes must round-trip through the read path"
+    );
+
+    let agent = atlas_client::AtlasClient::new(server.base_url()).with_token(created.secret);
+
+    agent
+        .list_projects(&ws.slug, None, None)
+        .await
+        .expect("read-only default must allow reading projects");
+
+    let create_err = agent
+        .create_project(
+            &ws.slug,
+            atlas_api::dtos::CreateProjectRequest {
+                name: "should-fail".to_string(),
+                slug: "should-fail".to_string(),
+                task_prefix: "SFL".to_string(),
+                visibility: None,
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect_err("read-only default must forbid creating a project");
+
+    match create_err {
+        atlas_client::ClientError::Api(p) => {
+            assert_eq!(p.status, 403);
+            assert!(
+                p.detail
+                    .as_deref()
+                    .unwrap_or("")
+                    .contains("lacks required scope"),
+                "must be a scope denial, got: {p:?}"
+            );
+        }
+        other => panic!("unexpected error: {other:?}"),
+    }
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn create_user_api_key_explicit_scopes_round_trip() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner, _) = login_user(&server, &db, "cuk-explicit-scopes").await;
+
+    let req = CreateUserApiKeyRequest {
+        name: "explicit-scope-agent".to_string(),
+        r#type: None,
+        expires_at: None,
+        initial_grant: None,
+        scopes: Some(vec![
+            ApiKeyScope::TasksUpdate,
+            ApiKeyScope::TasksRead,
+            ApiKeyScope::TasksRead, // duplicate on purpose: must be deduplicated
+        ]),
+    };
+
+    let created = owner
+        .create_user_api_key(req)
+        .await
+        .expect("create explicit-scope key");
+
+    assert_eq!(
+        created.scopes,
+        vec![ApiKeyScope::TasksRead, ApiKeyScope::TasksUpdate],
+        "explicit scopes must be deduplicated and canonically ordered"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn create_user_api_key_rejects_unknown_scope_with_422() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner, _) = login_user(&server, &db, "cuk-unknown-scope").await;
+
+    let response = owner
+        .http_client()
+        .post(format!("{}/v1/api-keys", server.base_url()))
+        .header("x-atlas-csrf", "1")
+        .bearer_auth(owner.token().expect("token"))
+        .json(&serde_json::json!({
+            "name": "bad-scope-key",
+            "scopes": ["tasks:manage"],
+        }))
+        .send()
+        .await
+        .expect("send request");
+
+    assert_eq!(
+        response.status().as_u16(),
+        422,
+        "an unknown scope string must be rejected with 422"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn update_user_api_key_replaces_full_scope_set() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner, _) = login_user(&server, &db, "cuk-update-scopes").await;
+
+    let created = owner
+        .create_user_api_key(user_key_req("update-scope-key"))
+        .await
+        .expect("create key");
+
+    let updated = owner
+        .set_api_key_scopes(
+            created.id,
+            vec![ApiKeyScope::DocsCreate, ApiKeyScope::DocsRead],
+        )
+        .await
+        .expect("update scopes");
+
+    assert_eq!(
+        updated.scopes,
+        vec![ApiKeyScope::DocsRead, ApiKeyScope::DocsCreate],
+        "update must replace the full set, deduplicated and canonically ordered"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn update_user_api_key_empty_scopes_returns_400() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner, _) = login_user(&server, &db, "cuk-empty-scopes").await;
+
+    let created = owner
+        .create_user_api_key(user_key_req("empty-scope-key"))
+        .await
+        .expect("create key");
+
+    let err = owner
+        .set_api_key_scopes(created.id, vec![])
+        .await
+        .expect_err("empty scopes must be rejected");
+
+    match err {
+        atlas_client::ClientError::Api(p) => assert_eq!(
+            p.status, 400,
+            "an explicit empty scope list must be rejected with 400"
+        ),
+        other => panic!("unexpected error: {other:?}"),
+    }
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn update_user_api_key_omitting_scopes_leaves_them_unchanged() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner, _) = login_user(&server, &db, "cuk-omit-scopes").await;
+
+    let created = owner
+        .create_user_api_key(user_key_req("omit-scope-key"))
+        .await
+        .expect("create key");
+
+    let scopes_before = created.scopes.clone();
+
+    let after_toggle = owner
+        .set_api_key_global(created.id, true)
+        .await
+        .expect("toggle is_global without touching scopes");
+
+    assert_eq!(
+        after_toggle.scopes, scopes_before,
+        "a PATCH that omits scopes must leave them unchanged"
+    );
+    assert!(after_toggle.is_global, "is_global must have been toggled");
 
     db.teardown().await;
 }

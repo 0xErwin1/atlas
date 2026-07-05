@@ -5,7 +5,7 @@ use utoipa_scalar::{Scalar, Servable as _};
 use atlas_api::{
     dtos::{
         ActivatePasswordRequest, ActivationInfoDto, ActivationLinkResponse, AddMemberRequest,
-        AdminUpdateWorkspaceRequest, ApiKeyCreated, ApiKeyDto, ApiKeyGrantDto,
+        AdminUpdateWorkspaceRequest, ApiKeyCreated, ApiKeyDto, ApiKeyGrantDto, ApiKeyScope,
         ChangePasswordRequest, CreateGrantRequest, CreateProjectRequest, CreateUserApiKeyRequest,
         CreateUserRequest, CreateUserResponse, CreateWorkspaceRequest, GrantDto, GrantPrincipal,
         GrantedByDto, InitialGrantRequest, LoginRequest, LoginResponse, MeResponse, PrincipalDto,
@@ -259,6 +259,7 @@ use atlas_api::{
         InitialGrantRequest,
         ApiKeyCreated,
         ApiKeyDto,
+        ApiKeyScope,
         ApiKeyGrantDto,
         GrantedByDto,
         UpdateApiKeyRequest,

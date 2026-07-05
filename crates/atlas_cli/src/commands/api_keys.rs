@@ -136,6 +136,8 @@ async fn run_create(ctx: &Ctx, args: ApiKeysCreateArgs) -> Result<(), CliError> 
         r#type: args.r#type,
         expires_at,
         initial_grant,
+        // No `--scope` flag yet; omitted scopes default to read-only server-side.
+        scopes: None,
     };
 
     let created = ctx.client.create_user_api_key(body).await?;

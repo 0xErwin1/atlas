@@ -8,7 +8,7 @@
 mod support;
 
 use atlas_api::dtos::{
-    CreateUserApiKeyRequest,
+    ApiKeyScope, CreateUserApiKeyRequest,
     documents::{
         CreateDocumentRequest, MoveDocumentRequest, UpdateContentRequest, UpdateDocumentRequest,
     },
@@ -1840,6 +1840,7 @@ async fn api_key_actor_write_sets_actor_type_api_key() {
             r#type: None,
             expires_at: None,
             initial_grant: None,
+            scopes: Some(vec![ApiKeyScope::DocsRead, ApiKeyScope::DocsUpdate]),
         })
         .await
         .expect("create api key");

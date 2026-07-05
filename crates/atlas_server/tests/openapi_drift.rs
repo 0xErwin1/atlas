@@ -21,6 +21,7 @@ const EXPECTED_SCHEMAS: &[&str] = &[
     "UserDto",
     "ApiKeyCreated",
     "ApiKeyDto",
+    "ApiKeyScope",
     "UpdateApiKeyRequest",
     "CreateProjectRequest",
     "UpdateProjectRequest",

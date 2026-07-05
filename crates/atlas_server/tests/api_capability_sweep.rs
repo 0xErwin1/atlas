@@ -43,6 +43,7 @@ use atlas_api::{
             CreateDocumentRequest, MoveDocumentRequest, UpdateContentRequest, UpdateDocumentRequest,
         },
         folders::{CreateFolderRequest, MoveFolderRequest, RenameFolderRequest},
+        status_templates::{CreateStatusTemplateRequest, UpdateStatusTemplateRequest},
     },
     problem::ProblemDetails,
 };
@@ -272,6 +273,10 @@ enum Case {
     ApplyStatusTemplates,
     BoardHeartbeat,
     BoardLeave,
+    ListStatusTemplates,
+    CreateStatusTemplate,
+    UpdateStatusTemplate,
+    DeleteStatusTemplate,
     // ---- folders (7) ----
     CreateFolder,
     ListFolders,
@@ -355,6 +360,10 @@ impl Case {
         Case::ApplyStatusTemplates,
         Case::BoardHeartbeat,
         Case::BoardLeave,
+        Case::ListStatusTemplates,
+        Case::CreateStatusTemplate,
+        Case::UpdateStatusTemplate,
+        Case::DeleteStatusTemplate,
         Case::CreateFolder,
         Case::ListFolders,
         Case::GetFolder,
@@ -441,6 +450,10 @@ impl Case {
             Case::ApplyStatusTemplates => ("POST", "boards:update"),
             Case::BoardHeartbeat => ("POST", "boards:read"),
             Case::BoardLeave => ("DELETE", "boards:read"),
+            Case::ListStatusTemplates => ("GET", "boards:read"),
+            Case::CreateStatusTemplate => ("POST", "boards:create"),
+            Case::UpdateStatusTemplate => ("PATCH", "boards:update"),
+            Case::DeleteStatusTemplate => ("DELETE", "boards:delete"),
 
             Case::CreateFolder => ("POST", "folders:create"),
             Case::ListFolders => ("GET", "folders:read"),
@@ -842,6 +855,24 @@ async fn invoke(
             )
             .await
         }
+        Case::ListStatusTemplates => client.list_status_templates(ws).await.map(|_| ()),
+        Case::CreateStatusTemplate => client
+            .create_status_template(
+                ws,
+                CreateStatusTemplateRequest {
+                    name: "x".into(),
+                    color: None,
+                    before: None,
+                    after: None,
+                },
+            )
+            .await
+            .map(|_| ()),
+        Case::UpdateStatusTemplate => client
+            .update_status_template(ws, nil, UpdateStatusTemplateRequest::default())
+            .await
+            .map(|_| ()),
+        Case::DeleteStatusTemplate => client.delete_status_template(ws, nil).await,
 
         Case::CreateFolder => client
             .create_folder(

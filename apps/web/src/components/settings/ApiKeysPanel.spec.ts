@@ -14,8 +14,9 @@ function key(over: Partial<ApiKeyDto> = {}): ApiKeyDto {
     type: 'agent',
     created_at: '2024-01-01T00:00:00Z',
     is_global: false,
+    scopes: [],
     ...over,
-  };
+  } as ApiKeyDto;
 }
 
 function grant(over: Partial<ApiKeyGrantDto> = {}): ApiKeyGrantDto {

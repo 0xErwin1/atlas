@@ -599,6 +599,7 @@ async fn api_key_resolution_unaffected_by_groups() {
             r#type: None,
             expires_at: None,
             initial_grant: None,
+            scopes: None,
         })
         .await
         .expect("create api key");

@@ -190,6 +190,59 @@ pub struct ActivatePasswordRequest {
     pub password: String,
 }
 
+/// The closed catalog of API key capability scopes: five resource families
+/// (`tasks`, `docs`, `boards`, `folders`, `projects`) crossed with four CRUD
+/// actions (`read`, `create`, `update`, `delete`), twenty variants total.
+///
+/// This is the wire mirror of `atlas_domain::permissions::Capability`; the
+/// server maps between the two at the route boundary. Being a closed serde
+/// enum, an unrecognized wire value (e.g. `"tasks:manage"`) is rejected during
+/// deserialization with a 422, before any handler runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub enum ApiKeyScope {
+    #[serde(rename = "tasks:read")]
+    TasksRead,
+    #[serde(rename = "tasks:create")]
+    TasksCreate,
+    #[serde(rename = "tasks:update")]
+    TasksUpdate,
+    #[serde(rename = "tasks:delete")]
+    TasksDelete,
+    #[serde(rename = "docs:read")]
+    DocsRead,
+    #[serde(rename = "docs:create")]
+    DocsCreate,
+    #[serde(rename = "docs:update")]
+    DocsUpdate,
+    #[serde(rename = "docs:delete")]
+    DocsDelete,
+    #[serde(rename = "boards:read")]
+    BoardsRead,
+    #[serde(rename = "boards:create")]
+    BoardsCreate,
+    #[serde(rename = "boards:update")]
+    BoardsUpdate,
+    #[serde(rename = "boards:delete")]
+    BoardsDelete,
+    #[serde(rename = "folders:read")]
+    FoldersRead,
+    #[serde(rename = "folders:create")]
+    FoldersCreate,
+    #[serde(rename = "folders:update")]
+    FoldersUpdate,
+    #[serde(rename = "folders:delete")]
+    FoldersDelete,
+    #[serde(rename = "projects:read")]
+    ProjectsRead,
+    #[serde(rename = "projects:create")]
+    ProjectsCreate,
+    #[serde(rename = "projects:update")]
+    ProjectsUpdate,
+    #[serde(rename = "projects:delete")]
+    ProjectsDelete,
+}
+
 /// Optional initial workspace grant included in a `POST /v1/api-keys` request.
 ///
 /// When present, a workspace-scope grant at the given role is created atomically
@@ -215,6 +268,10 @@ pub struct CreateUserApiKeyRequest {
     /// Optional initial grant so the key is immediately usable in one workspace.
     #[serde(default)]
     pub initial_grant: Option<InitialGrantRequest>,
+    /// Capability scopes to grant the new key. Omitted or empty defaults to
+    /// read-only access to every family (`{family}:read` for all five families).
+    #[serde(default)]
+    pub scopes: Option<Vec<ApiKeyScope>>,
 }
 
 /// Response for `POST /v1/api-keys` (secret returned exactly once).
@@ -229,6 +286,8 @@ pub struct ApiKeyCreated {
     pub r#type: String,
     pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
     pub created_at: chrono::DateTime<chrono::Utc>,
+    /// The key's capability scopes, in canonical `family:action` order.
+    pub scopes: Vec<ApiKeyScope>,
 }
 
 /// Summary representation of an API key (no secret).
@@ -246,14 +305,21 @@ pub struct ApiKeyDto {
     /// When true, the key reaches every workspace its creator can reach (capped at
     /// editor), instead of only workspaces where it holds an explicit grant.
     pub is_global: bool,
+    /// The key's capability scopes, in canonical `family:action` order.
+    pub scopes: Vec<ApiKeyScope>,
 }
 
 /// Request body for `PATCH /v1/api-keys/{key_id}`.
+///
+/// Both fields are PATCH-partial: omit a field to leave it unchanged.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct UpdateApiKeyRequest {
     /// Toggles the key's global reach. Omit to leave unchanged.
     pub is_global: Option<bool>,
+    /// Replaces the key's full scope set. Omit to leave unchanged; an explicit
+    /// empty list is rejected (revoke the key instead of deny-all scopes).
+    pub scopes: Option<Vec<ApiKeyScope>>,
 }
 
 /// Request body for `POST /v1/workspaces/{ws}/projects`.

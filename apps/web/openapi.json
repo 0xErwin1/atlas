@@ -423,6 +423,9 @@
           },
           "403": {
             "description": "API keys cannot create keys"
+          },
+          "422": {
+            "description": "Unknown scope value"
           }
         },
         "security": [
@@ -474,8 +477,8 @@
         "tags": [
           "api-keys"
         ],
-        "summary": "Updates a user-owned API key. Currently only the `is_global` flag is mutable.",
-        "description": "Any owner of the key may toggle global reach; the agent never gains more than\nits creator can reach (and stays capped at editor), so this is bounded by the\nowner's own permissions rather than being a privilege escalation.",
+        "summary": "Updates a user-owned API key. `is_global` and `scopes` are each PATCH-partial:\nomitting a field leaves it unchanged; both may be set in the same request.",
+        "description": "Any owner of the key may toggle global reach or replace its scope set; the\nagent never gains more than its creator can reach (and stays capped at\neditor) nor more capabilities than the closed catalog allows, so this is\nbounded by the owner's own permissions rather than being a privilege\nescalation.",
         "operationId": "update_user_api_key",
         "parameters": [
           {
@@ -510,6 +513,9 @@
               }
             }
           },
+          "400": {
+            "description": "Scopes present but empty; revoke the key instead"
+          },
           "401": {
             "description": "Unauthenticated"
           },
@@ -518,6 +524,9 @@
           },
           "404": {
             "description": "Key not found or not owned by the caller"
+          },
+          "422": {
+            "description": "Unknown scope value"
           }
         },
         "security": [
@@ -9717,7 +9726,8 @@
           "name",
           "secret",
           "type",
-          "created_at"
+          "created_at",
+          "scopes"
         ],
         "properties": {
           "created_at": {
@@ -9738,6 +9748,13 @@
           "name": {
             "type": "string"
           },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ApiKeyScope"
+            },
+            "description": "The key's capability scopes, in canonical `family:action` order."
+          },
           "secret": {
             "type": "string",
             "description": "The full `atlas_`-prefixed secret. Shown exactly once; not stored."
@@ -9756,7 +9773,8 @@
           "name",
           "type",
           "created_at",
-          "is_global"
+          "is_global",
+          "scopes"
         ],
         "properties": {
           "created_at": {
@@ -9794,6 +9812,13 @@
               "null"
             ],
             "format": "date-time"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ApiKeyScope"
+            },
+            "description": "The key's capability scopes, in canonical `family:action` order."
           },
           "type": {
             "type": "string",
@@ -9851,6 +9876,32 @@
             "description": "Workspace slug (always present — all grants live inside a workspace)."
           }
         }
+      },
+      "ApiKeyScope": {
+        "type": "string",
+        "description": "The closed catalog of API key capability scopes: five resource families\n(`tasks`, `docs`, `boards`, `folders`, `projects`) crossed with four CRUD\nactions (`read`, `create`, `update`, `delete`), twenty variants total.\n\nThis is the wire mirror of `atlas_domain::permissions::Capability`; the\nserver maps between the two at the route boundary. Being a closed serde\nenum, an unrecognized wire value (e.g. `\"tasks:manage\"`) is rejected during\ndeserialization with a 422, before any handler runs.",
+        "enum": [
+          "tasks:read",
+          "tasks:create",
+          "tasks:update",
+          "tasks:delete",
+          "docs:read",
+          "docs:create",
+          "docs:update",
+          "docs:delete",
+          "boards:read",
+          "boards:create",
+          "boards:update",
+          "boards:delete",
+          "folders:read",
+          "folders:create",
+          "folders:update",
+          "folders:delete",
+          "projects:read",
+          "projects:create",
+          "projects:update",
+          "projects:delete"
+        ]
       },
       "AssigneeDto": {
         "type": "object",
@@ -10834,6 +10885,16 @@
           "name": {
             "type": "string"
           },
+          "scopes": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ApiKeyScope"
+            },
+            "description": "Capability scopes to grant the new key. Omitted or empty defaults to\nread-only access to every family (`{family}:read` for all five families)."
+          },
           "type": {
             "type": [
               "string",
@@ -11577,7 +11638,8 @@
                 "name",
                 "type",
                 "created_at",
-                "is_global"
+                "is_global",
+                "scopes"
               ],
               "properties": {
                 "created_at": {
@@ -11615,6 +11677,13 @@
                     "null"
                   ],
                   "format": "date-time"
+                },
+                "scopes": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ApiKeyScope"
+                  },
+                  "description": "The key's capability scopes, in canonical `family:action` order."
                 },
                 "type": {
                   "type": "string",
@@ -13549,7 +13618,7 @@
       },
       "UpdateApiKeyRequest": {
         "type": "object",
-        "description": "Request body for `PATCH /v1/api-keys/{key_id}`.",
+        "description": "Request body for `PATCH /v1/api-keys/{key_id}`.\n\nBoth fields are PATCH-partial: omit a field to leave it unchanged.",
         "properties": {
           "is_global": {
             "type": [
@@ -13557,6 +13626,16 @@
               "null"
             ],
             "description": "Toggles the key's global reach. Omit to leave unchanged."
+          },
+          "scopes": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ApiKeyScope"
+            },
+            "description": "Replaces the key's full scope set. Omit to leave unchanged; an explicit\nempty list is rejected (revoke the key instead of deny-all scopes)."
           }
         }
       },

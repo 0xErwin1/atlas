@@ -3317,6 +3317,7 @@ mod tests {
             revoked_at: None,
             created_at: Utc::now(),
             is_global: false,
+            scopes: vec![],
         }
     }
 
@@ -3351,6 +3352,7 @@ mod tests {
             r#type: "cli".to_owned(),
             expires_at: None,
             created_at: Utc::now(),
+            scopes: vec![],
         };
         let proj = ApiKeyCreatedProjection::from(dto);
         let value = serde_json::to_value(&proj).unwrap();

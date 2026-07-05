@@ -1452,6 +1452,7 @@ async fn audit_api_key_created_happy_path_writes_one_row() {
             r#type: Some("agent".to_string()),
             expires_at: None,
             initial_grant: None,
+            scopes: None,
         })
         .await
         .expect("create_user_api_key");
@@ -1494,6 +1495,7 @@ async fn audit_api_key_created_by_api_key_principal_writes_zero_rows() {
             r#type: Some("agent".to_string()),
             expires_at: None,
             initial_grant: None,
+            scopes: None,
         })
         .await
         .expect("create initial api key");
@@ -1509,6 +1511,7 @@ async fn audit_api_key_created_by_api_key_principal_writes_zero_rows() {
             r#type: Some("agent".to_string()),
             expires_at: None,
             initial_grant: None,
+            scopes: None,
         })
         .await;
 
@@ -1541,6 +1544,7 @@ async fn audit_api_key_revoked_happy_path_writes_one_row() {
             r#type: Some("agent".to_string()),
             expires_at: None,
             initial_grant: None,
+            scopes: None,
         })
         .await
         .expect("create_user_api_key");

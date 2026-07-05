@@ -17,7 +17,10 @@ use atlas_domain::{
 };
 
 use crate::{
-    authz::{Authorized, BoardRes, BoardsUpdate, EditorMin, ViewerMin, authorized::WorkspaceRes},
+    authz::{
+        Authorized, BoardRes, BoardsCreate, BoardsDelete, BoardsRead, BoardsUpdate, EditorMin,
+        ViewerMin, authorized::WorkspaceRes,
+    },
     error::ApiError,
     persistence::repos::{
         BoardRepo, PgBoardRepo, PgStatusTemplateRepo, StatusTemplateRepo,
@@ -83,7 +86,7 @@ fn column_to_dto(c: BoardColumn) -> atlas_api::dtos::boards_tasks::ColumnDto {
     )
 )]
 pub(crate) async fn list_status_templates(
-    auth: Authorized<WorkspaceRes, ViewerMin>,
+    auth: Authorized<WorkspaceRes, ViewerMin, BoardsRead>,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<StatusTemplateDto>>, ApiError> {
     let actor = principal_to_actor(&auth.principal);
@@ -114,7 +117,7 @@ pub(crate) async fn list_status_templates(
     )
 )]
 pub(crate) async fn create_status_template(
-    auth: Authorized<WorkspaceRes, EditorMin>,
+    auth: Authorized<WorkspaceRes, EditorMin, BoardsCreate>,
     State(state): State<AppState>,
     Json(body): Json<CreateStatusTemplateRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -174,7 +177,7 @@ pub(crate) async fn create_status_template(
     )
 )]
 pub(crate) async fn update_status_template(
-    auth: Authorized<WorkspaceRes, EditorMin>,
+    auth: Authorized<WorkspaceRes, EditorMin, BoardsUpdate>,
     Path(p): Path<TemplatePath>,
     State(state): State<AppState>,
     Json(body): Json<UpdateStatusTemplateRequest>,
@@ -259,7 +262,7 @@ pub(crate) async fn update_status_template(
     )
 )]
 pub(crate) async fn delete_status_template(
-    auth: Authorized<WorkspaceRes, EditorMin>,
+    auth: Authorized<WorkspaceRes, EditorMin, BoardsDelete>,
     Path(p): Path<TemplatePath>,
     State(state): State<AppState>,
 ) -> Result<StatusCode, ApiError> {

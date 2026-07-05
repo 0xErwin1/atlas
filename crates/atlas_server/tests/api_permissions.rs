@@ -121,6 +121,7 @@ async fn agent_cannot_share_project() {
             r#type: None,
             expires_at: None,
             initial_grant: None,
+            scopes: None,
         })
         .await
         .expect("create api key");
@@ -438,6 +439,7 @@ async fn agent_with_grant_sees_private_project_in_list() {
             r#type: None,
             expires_at: None,
             initial_grant: None,
+            scopes: None,
         })
         .await
         .expect("create api key");
@@ -513,6 +515,7 @@ async fn agent_without_grant_cannot_see_workspace_visibility_project() {
             r#type: None,
             expires_at: None,
             initial_grant: None,
+            scopes: None,
         })
         .await
         .expect("create api key without grant");
@@ -656,6 +659,7 @@ async fn share_denied_403_does_not_leak_variant_name() {
             r#type: None,
             expires_at: None,
             initial_grant: None,
+            scopes: None,
         })
         .await
         .expect("create api key");

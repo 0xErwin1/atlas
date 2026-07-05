@@ -530,6 +530,7 @@ async fn workspace_activity_api_key_sees_granted_scope() {
                 workspace: ws.slug.clone(),
                 role: "viewer".to_string(),
             }),
+            scopes: None,
         })
         .await
         .expect("create api key");
@@ -578,6 +579,10 @@ async fn workspace_activity_actor_type_filter_works() {
                 workspace: ws.slug.clone(),
                 role: "editor".to_string(),
             }),
+            scopes: Some(vec![
+                atlas_api::dtos::ApiKeyScope::TasksRead,
+                atlas_api::dtos::ApiKeyScope::TasksCreate,
+            ]),
         })
         .await
         .expect("create api key");
@@ -943,6 +948,7 @@ async fn workspace_activity_ungranted_api_key_cannot_see_workspace_visible_proje
             r#type: Some("agent".to_string()),
             expires_at: None,
             initial_grant: None,
+            scopes: None,
         })
         .await
         .expect("create api key");

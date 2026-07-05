@@ -90,6 +90,7 @@ async fn api_key_principal_is_forbidden_on_both_endpoints() {
             r#type: None,
             expires_at: None,
             initial_grant: None,
+            scopes: None,
         })
         .await
         .expect("create_user_api_key");

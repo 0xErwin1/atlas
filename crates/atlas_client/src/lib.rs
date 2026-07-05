@@ -5,10 +5,10 @@ pub mod helpers;
 use atlas_api::{
     dtos::{
         ActivationLinkResponse, AdminUpdateWorkspaceRequest, ApiKeyCreated, ApiKeyDto,
-        ApiKeyGrantDto, ChangePasswordRequest, CreateGrantRequest, CreateProjectRequest,
-        CreateUserApiKeyRequest, CreateUserRequest, CreateUserResponse, CreateWorkspaceRequest,
-        GrantDto, HealthResponse, LoginRequest, LoginResponse, MeResponse, PrincipalDto,
-        ProjectDto, ResetPasswordRequest, ServerMetaDto, UiStateDto, UpdateMeRequest,
+        ApiKeyGrantDto, ApiKeyScope, ChangePasswordRequest, CreateGrantRequest,
+        CreateProjectRequest, CreateUserApiKeyRequest, CreateUserRequest, CreateUserResponse,
+        CreateWorkspaceRequest, GrantDto, HealthResponse, LoginRequest, LoginResponse, MeResponse,
+        PrincipalDto, ProjectDto, ResetPasswordRequest, ServerMetaDto, UiStateDto, UpdateMeRequest,
         UpdateProjectRequest, UpdateUiStateRequest, UpdateWorkspaceRequest, UserDto,
         UserMembershipDto, WorkspaceDto,
         boards_tasks::{
@@ -505,6 +505,7 @@ impl AtlasClient {
 
         let body = UpdateApiKeyRequest {
             is_global: Some(is_global),
+            scopes: None,
         };
         let response = self
             .patch(&format!("/v1/api-keys/{key_id}"))
@@ -513,6 +514,27 @@ impl AtlasClient {
             .send()
             .await?;
         self.decode_response(response, "set_api_key_global").await
+    }
+
+    /// `PATCH /v1/api-keys/{key_id}` — replaces the key's full scope set.
+    pub async fn set_api_key_scopes(
+        &self,
+        key_id: uuid::Uuid,
+        scopes: Vec<ApiKeyScope>,
+    ) -> Result<ApiKeyDto, ClientError> {
+        use atlas_api::dtos::UpdateApiKeyRequest;
+
+        let body = UpdateApiKeyRequest {
+            is_global: None,
+            scopes: Some(scopes),
+        };
+        let response = self
+            .patch(&format!("/v1/api-keys/{key_id}"))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "set_api_key_scopes").await
     }
 
     /// `GET /v1/api-keys/{key_id}/grants`

@@ -20,8 +20,8 @@ pub(crate) struct ApiKeyGrantPath {
 
 use atlas_api::{
     dtos::{
-        ApiKeyCreated, ApiKeyDto, ApiKeyGrantDto, CreateUserApiKeyRequest, GrantedByDto,
-        InitialGrantRequest, UpdateApiKeyRequest,
+        ApiKeyCreated, ApiKeyDto, ApiKeyGrantDto, ApiKeyScope, CreateUserApiKeyRequest,
+        GrantedByDto, InitialGrantRequest, UpdateApiKeyRequest,
     },
     pagination::{Cursor, Page},
 };
@@ -33,7 +33,10 @@ use atlas_domain::{
         security_audit::{NewSecurityAuditEvent, SecurityAction},
     },
     ids::{ApiKeyId, ProjectId, UserId, WorkspaceId},
-    permissions::{Capability, Principal, ResourceRole, ShareDenied, authorize_grant_target},
+    permissions::{
+        Capability, CapabilityAction, CapabilityFamily, Principal, ResourceRole, ShareDenied,
+        authorize_grant_target,
+    },
 };
 use sea_orm::TransactionTrait;
 
@@ -83,6 +86,79 @@ fn parse_role(role: &str) -> Result<ResourceRole, ApiError> {
     }
 }
 
+/// Maps a wire scope to its domain capability.
+fn capability_from_scope(scope: ApiKeyScope) -> Capability {
+    let (family, action) = match scope {
+        ApiKeyScope::TasksRead => (CapabilityFamily::Tasks, CapabilityAction::Read),
+        ApiKeyScope::TasksCreate => (CapabilityFamily::Tasks, CapabilityAction::Create),
+        ApiKeyScope::TasksUpdate => (CapabilityFamily::Tasks, CapabilityAction::Update),
+        ApiKeyScope::TasksDelete => (CapabilityFamily::Tasks, CapabilityAction::Delete),
+        ApiKeyScope::DocsRead => (CapabilityFamily::Docs, CapabilityAction::Read),
+        ApiKeyScope::DocsCreate => (CapabilityFamily::Docs, CapabilityAction::Create),
+        ApiKeyScope::DocsUpdate => (CapabilityFamily::Docs, CapabilityAction::Update),
+        ApiKeyScope::DocsDelete => (CapabilityFamily::Docs, CapabilityAction::Delete),
+        ApiKeyScope::BoardsRead => (CapabilityFamily::Boards, CapabilityAction::Read),
+        ApiKeyScope::BoardsCreate => (CapabilityFamily::Boards, CapabilityAction::Create),
+        ApiKeyScope::BoardsUpdate => (CapabilityFamily::Boards, CapabilityAction::Update),
+        ApiKeyScope::BoardsDelete => (CapabilityFamily::Boards, CapabilityAction::Delete),
+        ApiKeyScope::FoldersRead => (CapabilityFamily::Folders, CapabilityAction::Read),
+        ApiKeyScope::FoldersCreate => (CapabilityFamily::Folders, CapabilityAction::Create),
+        ApiKeyScope::FoldersUpdate => (CapabilityFamily::Folders, CapabilityAction::Update),
+        ApiKeyScope::FoldersDelete => (CapabilityFamily::Folders, CapabilityAction::Delete),
+        ApiKeyScope::ProjectsRead => (CapabilityFamily::Projects, CapabilityAction::Read),
+        ApiKeyScope::ProjectsCreate => (CapabilityFamily::Projects, CapabilityAction::Create),
+        ApiKeyScope::ProjectsUpdate => (CapabilityFamily::Projects, CapabilityAction::Update),
+        ApiKeyScope::ProjectsDelete => (CapabilityFamily::Projects, CapabilityAction::Delete),
+    };
+    Capability { family, action }
+}
+
+/// Maps a domain capability to its wire scope.
+fn scope_from_capability(cap: Capability) -> ApiKeyScope {
+    match (cap.family, cap.action) {
+        (CapabilityFamily::Tasks, CapabilityAction::Read) => ApiKeyScope::TasksRead,
+        (CapabilityFamily::Tasks, CapabilityAction::Create) => ApiKeyScope::TasksCreate,
+        (CapabilityFamily::Tasks, CapabilityAction::Update) => ApiKeyScope::TasksUpdate,
+        (CapabilityFamily::Tasks, CapabilityAction::Delete) => ApiKeyScope::TasksDelete,
+        (CapabilityFamily::Docs, CapabilityAction::Read) => ApiKeyScope::DocsRead,
+        (CapabilityFamily::Docs, CapabilityAction::Create) => ApiKeyScope::DocsCreate,
+        (CapabilityFamily::Docs, CapabilityAction::Update) => ApiKeyScope::DocsUpdate,
+        (CapabilityFamily::Docs, CapabilityAction::Delete) => ApiKeyScope::DocsDelete,
+        (CapabilityFamily::Boards, CapabilityAction::Read) => ApiKeyScope::BoardsRead,
+        (CapabilityFamily::Boards, CapabilityAction::Create) => ApiKeyScope::BoardsCreate,
+        (CapabilityFamily::Boards, CapabilityAction::Update) => ApiKeyScope::BoardsUpdate,
+        (CapabilityFamily::Boards, CapabilityAction::Delete) => ApiKeyScope::BoardsDelete,
+        (CapabilityFamily::Folders, CapabilityAction::Read) => ApiKeyScope::FoldersRead,
+        (CapabilityFamily::Folders, CapabilityAction::Create) => ApiKeyScope::FoldersCreate,
+        (CapabilityFamily::Folders, CapabilityAction::Update) => ApiKeyScope::FoldersUpdate,
+        (CapabilityFamily::Folders, CapabilityAction::Delete) => ApiKeyScope::FoldersDelete,
+        (CapabilityFamily::Projects, CapabilityAction::Read) => ApiKeyScope::ProjectsRead,
+        (CapabilityFamily::Projects, CapabilityAction::Create) => ApiKeyScope::ProjectsCreate,
+        (CapabilityFamily::Projects, CapabilityAction::Update) => ApiKeyScope::ProjectsUpdate,
+        (CapabilityFamily::Projects, CapabilityAction::Delete) => ApiKeyScope::ProjectsDelete,
+    }
+}
+
+/// Converts wire scopes into stored capabilities, deduplicated and ordered in
+/// the catalog's canonical `family:action` order (`Capability::ALL`'s order).
+fn capabilities_from_wire(scopes: Vec<ApiKeyScope>) -> Vec<Capability> {
+    let requested: Vec<Capability> = scopes.into_iter().map(capability_from_scope).collect();
+    Capability::ALL
+        .into_iter()
+        .filter(|cap| requested.contains(cap))
+        .collect()
+}
+
+/// Deduplicates and orders a key's stored capabilities into the catalog's
+/// canonical order, then maps each to its wire representation.
+fn canonical_scopes(capabilities: &[Capability]) -> Vec<ApiKeyScope> {
+    Capability::ALL
+        .into_iter()
+        .filter(|cap| capabilities.contains(cap))
+        .map(scope_from_capability)
+        .collect()
+}
+
 fn key_to_dto(k: &atlas_domain::entities::identity::ApiKey) -> ApiKeyDto {
     ApiKeyDto {
         id: k.id.0,
@@ -93,6 +169,7 @@ fn key_to_dto(k: &atlas_domain::entities::identity::ApiKey) -> ApiKeyDto {
         revoked_at: k.revoked_at,
         created_at: k.created_at,
         is_global: k.is_global,
+        scopes: canonical_scopes(&k.scopes),
     }
 }
 
@@ -111,6 +188,7 @@ fn key_to_dto(k: &atlas_domain::entities::identity::ApiKey) -> ApiKeyDto {
         (status = 400, description = "Invalid key type or role"),
         (status = 401, description = "Unauthenticated"),
         (status = 403, description = "API keys cannot create keys"),
+        (status = 422, description = "Unknown scope value"),
     )
 )]
 pub(crate) async fn create_user_api_key(
@@ -131,15 +209,19 @@ pub(crate) async fn create_user_api_key(
     let secret = generate_api_key();
     let token_hash = hash_token(&secret);
 
+    // Omitted or empty scopes default to read-only access to every family; an
+    // explicit non-empty selection is deduplicated and canonically ordered.
+    let scopes = match body.scopes {
+        Some(scopes) if !scopes.is_empty() => capabilities_from_wire(scopes),
+        _ => Capability::DEFAULT_READ_ONLY.to_vec(),
+    };
+
     let new_key = NewApiKey {
         name: body.name,
         token_hash,
         type_: key_type,
         expires_at: body.expires_at,
-        // The wire request does not yet expose a scopes field (added alongside
-        // ApiKeyScope in a later increment); until then, new keys keep full
-        // access rather than silently becoming read-only.
-        scopes: Capability::ALL.to_vec(),
+        scopes,
     };
 
     let txn = (*state.db).begin().await.map_err(|e| ApiError::Internal {
@@ -188,6 +270,7 @@ pub(crate) async fn create_user_api_key(
             r#type: key.type_.as_str().to_string(),
             expires_at: key.expires_at,
             created_at: key.created_at,
+            scopes: canonical_scopes(&key.scopes),
         }),
     ))
 }
@@ -746,11 +829,14 @@ pub(crate) async fn revoke_user_api_key(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Updates a user-owned API key. Currently only the `is_global` flag is mutable.
+/// Updates a user-owned API key. `is_global` and `scopes` are each PATCH-partial:
+/// omitting a field leaves it unchanged; both may be set in the same request.
 ///
-/// Any owner of the key may toggle global reach; the agent never gains more than
-/// its creator can reach (and stays capped at editor), so this is bounded by the
-/// owner's own permissions rather than being a privilege escalation.
+/// Any owner of the key may toggle global reach or replace its scope set; the
+/// agent never gains more than its creator can reach (and stays capped at
+/// editor) nor more capabilities than the closed catalog allows, so this is
+/// bounded by the owner's own permissions rather than being a privilege
+/// escalation.
 #[utoipa::path(
     patch,
     path = "/v1/api-keys/{key_id}",
@@ -760,9 +846,11 @@ pub(crate) async fn revoke_user_api_key(
     request_body = UpdateApiKeyRequest,
     responses(
         (status = 200, description = "API key updated", body = ApiKeyDto),
+        (status = 400, description = "Scopes present but empty; revoke the key instead"),
         (status = 401, description = "Unauthenticated"),
         (status = 403, description = "API keys cannot manage API keys"),
         (status = 404, description = "Key not found or not owned by the caller"),
+        (status = 422, description = "Unknown scope value"),
     )
 )]
 pub(crate) async fn update_user_api_key(
@@ -782,7 +870,17 @@ pub(crate) async fn update_user_api_key(
 
     let key_id = ApiKeyId(params.key_id);
 
-    let Some(is_global) = body.is_global else {
+    let scopes = match body.scopes {
+        None => None,
+        Some(scopes) if scopes.is_empty() => {
+            return Err(ApiError::BadRequest {
+                message: "scopes cannot be empty; revoke the key instead".into(),
+            });
+        }
+        Some(scopes) => Some(capabilities_from_wire(scopes)),
+    };
+
+    if body.is_global.is_none() && scopes.is_none() {
         let key = PgApiKeyRepo {
             conn: (*state.db).clone(),
         }
@@ -795,39 +893,82 @@ pub(crate) async fn update_user_api_key(
         .ok_or(ApiError::NotFound)?;
 
         return Ok(Json(key_to_dto(&key)));
-    };
+    }
 
     let txn = (*state.db).begin().await.map_err(|e| ApiError::Internal {
         message: e.to_string(),
     })?;
 
-    let key = PgApiKeyRepo::set_global_for_user_in(&txn, user_id, key_id, is_global)
-        .await
-        .map_err(|e| match e {
-            atlas_domain::DomainError::NotFound { .. } => ApiError::NotFound,
-            other => ApiError::Internal {
-                message: other.to_string(),
+    let mut key = None;
+
+    if let Some(is_global) = body.is_global {
+        let updated = PgApiKeyRepo::set_global_for_user_in(&txn, user_id, key_id, is_global)
+            .await
+            .map_err(|e| match e {
+                atlas_domain::DomainError::NotFound { .. } => ApiError::NotFound,
+                other => ApiError::Internal {
+                    message: other.to_string(),
+                },
+            })?;
+
+        PgSecurityAuditRepo::append_in(
+            &txn,
+            NewSecurityAuditEvent {
+                workspace_id: None,
+                actor: Actor::User(user_id),
+                action: SecurityAction::ApiKeyGlobalChanged,
+                target_type: "api_key".to_string(),
+                target_id: Some(key_id.0),
+                metadata: serde_json::json!({ "is_global": is_global }),
             },
+        )
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
         })?;
 
-    PgSecurityAuditRepo::append_in(
-        &txn,
-        NewSecurityAuditEvent {
-            workspace_id: None,
-            actor: Actor::User(user_id),
-            action: SecurityAction::ApiKeyGlobalChanged,
-            target_type: "api_key".to_string(),
-            target_id: Some(key_id.0),
-            metadata: serde_json::json!({ "is_global": is_global }),
-        },
-    )
-    .await
-    .map_err(|e| ApiError::Internal {
-        message: e.to_string(),
-    })?;
+        key = Some(updated);
+    }
+
+    if let Some(scopes) = scopes {
+        let metadata = serde_json::json!({
+            "scopes": scopes.iter().map(Capability::as_str).collect::<Vec<_>>(),
+        });
+
+        let updated = PgApiKeyRepo::set_scopes_for_user_in(&txn, user_id, key_id, scopes)
+            .await
+            .map_err(|e| match e {
+                atlas_domain::DomainError::NotFound { .. } => ApiError::NotFound,
+                other => ApiError::Internal {
+                    message: other.to_string(),
+                },
+            })?;
+
+        PgSecurityAuditRepo::append_in(
+            &txn,
+            NewSecurityAuditEvent {
+                workspace_id: None,
+                actor: Actor::User(user_id),
+                action: SecurityAction::ApiKeyScopesChanged,
+                target_type: "api_key".to_string(),
+                target_id: Some(key_id.0),
+                metadata,
+            },
+        )
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?;
+
+        key = Some(updated);
+    }
 
     txn.commit().await.map_err(|e| ApiError::Internal {
         message: e.to_string(),
+    })?;
+
+    let key = key.ok_or(ApiError::Internal {
+        message: "update_user_api_key: no field applied despite entering the update branch".into(),
     })?;
 
     Ok(Json(key_to_dto(&key)))
