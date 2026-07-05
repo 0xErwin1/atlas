@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import type { components } from '@/api/types.d.ts';
 import ActivityComments from '@/components/tareas/ActivityComments.vue';
@@ -20,6 +20,7 @@ import PromptDialog from '@/components/ui/PromptDialog.vue';
 import TagInput from '@/components/ui/TagInput.vue';
 import { useInlineEdit } from '@/composables/useInlineEdit';
 import type { AiAction } from '@/lib/aiPrompt';
+import { filesFromClipboard, filesFromDataTransfer } from '@/lib/fileTransfer';
 import { swatchById } from '@/lib/swatches';
 import { useBoardsStore } from '@/stores/boards';
 import { useLabelColorsStore } from '@/stores/labelColors';
@@ -198,6 +199,11 @@ function onCreateTag(name: string): void {
 
 onMounted(() => {
   void tagsStore.load(props.ws);
+  document.addEventListener('paste', onPaste);
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener('paste', onPaste);
 });
 
 async function onAddAssignee(ref: string): Promise<void> {
@@ -269,6 +275,7 @@ const linkDialogOpen = ref(false);
 
 const fileInput = ref<HTMLInputElement | null>(null);
 const uploading = ref(false);
+const dragActive = ref(false);
 
 function onAttachClick(): void {
   fileInput.value?.click();
@@ -276,16 +283,49 @@ function onAttachClick(): void {
 
 async function onFileSelected(event: Event): Promise<void> {
   const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
+  const files = Array.from(input.files ?? []);
   input.value = '';
-  if (file === undefined) return;
+
+  await uploadFiles(files);
+}
+
+/**
+ * Uploads each file as a task attachment, the same path the "Attach file" button
+ * uses. Shared by the button, drag-and-drop and clipboard paste; reports one
+ * banner for the batch and stops the spinner even if a file fails.
+ */
+async function uploadFiles(files: File[]): Promise<void> {
+  if (files.length === 0) return;
 
   uploading.value = true;
-  const ok = await detail.uploadAttachment(props.ws, props.task.readable_id, file);
+
+  let uploaded = 0;
+  for (const file of files) {
+    const ok = await detail.uploadAttachment(props.ws, props.task.readable_id, file);
+    if (ok) uploaded += 1;
+    else fail(detail.error);
+  }
+
   uploading.value = false;
 
-  if (ok) ui.showBanner('Attachment uploaded', 'success');
-  else fail(detail.error);
+  if (uploaded > 0) {
+    ui.showBanner(uploaded === 1 ? 'Attachment uploaded' : `${uploaded} attachments uploaded`, 'success');
+  }
+}
+
+function onDrop(event: DragEvent): void {
+  dragActive.value = false;
+  void uploadFiles(filesFromDataTransfer(event.dataTransfer));
+}
+
+// A file paste anywhere in the open task attaches it, mirroring the drop flow.
+// Text pastes carry no files, so normal editing is never intercepted.
+function onPaste(event: ClipboardEvent): void {
+  const files = filesFromClipboard(event.clipboardData);
+  if (files.length === 0) return;
+
+  event.preventDefault();
+  void uploadFiles(files);
 }
 
 async function onRemoveAttachment(attachmentId: string): Promise<void> {
@@ -334,7 +374,17 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
 </script>
 
 <template>
-  <div class="atl-tv-body" :class="{ wide }">
+  <div
+    class="atl-tv-body"
+    :class="{ wide, 'drag-active': dragActive }"
+    @dragover.prevent="dragActive = true"
+    @dragleave="dragActive = false"
+    @drop.prevent="onDrop"
+  >
+    <div v-if="dragActive" class="atl-tv-drophint">
+      <Icon name="paperclip" :size="16" style="color: var(--c-primary);" />
+      Drop to attach
+    </div>
     <div class="atl-tv-typebar">
       <span class="atl-tv-typechip">
         <Icon name="square-kanban" :size="13" style="color: var(--c-primary);" />
@@ -583,6 +633,7 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
 
 <style scoped>
 .atl-tv-body {
+  position: relative;
   padding: 4px 0 28px;
 }
 
@@ -590,6 +641,31 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
   max-width: 760px;
   margin: 0 auto;
   padding: 8px 0 40px;
+}
+
+.atl-tv-body.drag-active {
+  outline: 2px dashed var(--c-primary);
+  outline-offset: 6px;
+  border-radius: var(--r-md);
+}
+
+/* The hint must not intercept drag events, or moving over it fires dragleave and
+   flickers the active state. */
+.atl-tv-drophint {
+  position: absolute;
+  top: 8px;
+  right: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  pointer-events: none;
+  background: var(--c-panel);
+  border: 1px solid var(--c-primary);
+  border-radius: var(--r-md);
+  font-size: var(--fs-sm);
+  color: var(--c-primary);
 }
 
 .atl-tv-typebar {

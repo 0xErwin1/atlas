@@ -20,6 +20,10 @@ const emit = defineEmits<{
 function contentUrl(attachmentId: string): string {
   return `/v1/workspaces/${props.ws}/tasks/${props.readableId}/attachments/${attachmentId}/content`;
 }
+
+function isImage(att: TaskAttachmentDto): boolean {
+  return att.content_type.startsWith('image/');
+}
 </script>
 
 <template>
@@ -27,31 +31,44 @@ function contentUrl(attachmentId: string): string {
     <div
       v-for="att in attachments"
       :key="att.id"
-      class="group flex items-center"
-      style="gap: 8px;"
+      class="flex flex-col"
+      style="gap: 6px;"
       :data-attachment-id="att.id"
     >
-      <Icon name="paperclip" :size="14" style="color: var(--c-muted); flex: 0 0 auto;" />
+      <div class="group flex items-center" style="gap: 8px;">
+        <Icon name="paperclip" :size="14" style="color: var(--c-muted); flex: 0 0 auto;" />
+        <a
+          :href="contentUrl(att.id)"
+          :download="att.file_name"
+          class="flex-1 min-w-0 truncate atl-att-name"
+          :title="`Download ${att.file_name}`"
+        >
+          {{ att.file_name }}
+        </a>
+        <span style="flex: 0 0 auto; font-size: var(--fs-xs); color: var(--c-muted);">
+          {{ formatBytes(att.size_bytes) }}
+        </span>
+        <button
+          type="button"
+          :aria-label="`Remove attachment ${att.file_name}`"
+          class="inline-flex items-center justify-center cursor-pointer opacity-0 group-hover:opacity-100"
+          style="width: 16px; height: 16px; border: none; background: transparent; color: var(--c-muted); padding: 0;"
+          @click="emit('remove', att.id)"
+        >
+          <Icon name="x" :size="13" />
+        </button>
+      </div>
+
       <a
+        v-if="isImage(att)"
         :href="contentUrl(att.id)"
-        :download="att.file_name"
-        class="flex-1 min-w-0 truncate atl-att-name"
-        :title="`Download ${att.file_name}`"
+        target="_blank"
+        rel="noopener"
+        class="atl-att-thumb"
+        :title="att.file_name"
       >
-        {{ att.file_name }}
+        <img :src="contentUrl(att.id)" :alt="att.file_name" loading="lazy" />
       </a>
-      <span style="flex: 0 0 auto; font-size: var(--fs-xs); color: var(--c-muted);">
-        {{ formatBytes(att.size_bytes) }}
-      </span>
-      <button
-        type="button"
-        :aria-label="`Remove attachment ${att.file_name}`"
-        class="inline-flex items-center justify-center cursor-pointer opacity-0 group-hover:opacity-100"
-        style="width: 16px; height: 16px; border: none; background: transparent; color: var(--c-muted); padding: 0;"
-        @click="emit('remove', att.id)"
-      >
-        <Icon name="x" :size="13" />
-      </button>
     </div>
   </div>
 </template>
@@ -65,5 +82,21 @@ function contentUrl(attachmentId: string): string {
 .atl-att-name:hover {
   color: var(--c-primary);
   text-decoration: underline;
+}
+
+.atl-att-thumb {
+  display: block;
+  align-self: flex-start;
+  margin-left: 22px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+
+.atl-att-thumb img {
+  display: block;
+  max-width: 240px;
+  max-height: 160px;
+  object-fit: contain;
 }
 </style>
