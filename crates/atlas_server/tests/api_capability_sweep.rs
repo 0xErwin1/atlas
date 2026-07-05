@@ -1045,3 +1045,125 @@ async fn all_twenty_scope_key_never_gets_scope_403() {
 
     db.teardown().await;
 }
+
+/// The first `Case` in `Case::ALL` that declares `cap` as its required
+/// capability — the single representative route the per-capability matrix
+/// exercises. Derived from `Case::registry_key` (not a hand-maintained second
+/// table), so it can never drift from the sweep's own route mapping.
+fn representative_case_for(cap: Capability) -> Case {
+    Case::ALL
+        .iter()
+        .copied()
+        .find(|c| c.registry_key().1 == cap.as_str())
+        .expect("every catalog capability has at least one representative Case")
+}
+
+/// Any capability guaranteed distinct from `cap`, used as the WRONG scope a key
+/// holds when proving a route's gate rejects the wrong capability. The 20-entry
+/// catalog always contains at least one other capability.
+fn a_different_capability(cap: Capability) -> Capability {
+    Capability::ALL
+        .into_iter()
+        .find(|c| c.as_str() != cap.as_str())
+        .expect("the catalog holds more than one capability")
+}
+
+/// Per-capability positive + wrong-scope matrix.
+///
+/// The zero-scope and all-20 sweeps above prove deny-by-default and
+/// never-over-deny, but neither proves a route requires its OWN capability: a
+/// route mis-annotated with the wrong marker would still pass both. For each of
+/// the 20 catalog capabilities this picks one representative route and asserts
+/// both directions of correctness:
+///
+/// - **positive**: a key scoped to EXACTLY that one capability passes the gate
+///   (result is not a scope-403; a downstream 404/400 on the throwaway ids is
+///   still a pass, mirroring the all-20 sweep's convention);
+/// - **wrong-scope**: a key scoped to exactly one DIFFERENT capability is
+///   scope-denied on the same route.
+///
+/// Ordering matters, and not as the extractor's doc-comment first suggests: the
+/// capability gate runs AFTER the primary `ResolvedResource` is looked up (the
+/// resolve chain → role check → scope gate order), so it is only the SECONDARY
+/// path/body params that the gate short-circuits. A wrong-scope call therefore
+/// needs its primary fixture to still exist to reach the gate at all — a
+/// positive `DELETE` that removes the shared fixture would otherwise turn a
+/// later wrong-scope call into a resolve-time 404 instead of the expected 403.
+/// To stay robust regardless of the catalog order, the two directions run in
+/// separate passes:
+///   1. all wrong-scope calls first — each is denied inside the extractor
+///      before its handler body runs, so none of them mutate and every fixture
+///      stays intact for the whole pass;
+///   2. all positive calls second — these may delete fixtures, but a positive
+///      only asserts "not a scope-403", which depends solely on the key's scope
+///      set and is immune to a downstream 404.
+#[tokio::test]
+async fn each_capability_gate_admits_its_own_scope_and_rejects_a_wrong_one() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner, ws, owner_user) = login_user_with_workspace(&server, &db, "cap-matrix-owner").await;
+    let fx = seed_fixtures(&owner, &ws.slug).await;
+    let http = reqwest::Client::new();
+
+    // Pass 1: a key holding a DIFFERENT capability is scope-denied on each
+    // representative route. Denials fire before any handler body, so no fixture
+    // is mutated during this pass.
+    for cap in Capability::ALL {
+        let case = representative_case_for(cap);
+        let wrong = a_different_capability(cap);
+        let slug = cap.as_str().replace(':', "-");
+
+        let wrong_token = create_scoped_agent(
+            &db,
+            owner_user.id,
+            &format!("cap-matrix-wrong-{slug}"),
+            vec![wrong],
+        )
+        .await;
+        let wrong_agent = AtlasClient::new(server.base_url()).with_token(wrong_token.clone());
+        let wrong_result = invoke(
+            case,
+            &wrong_agent,
+            &http,
+            server.base_url(),
+            &wrong_token,
+            &fx,
+        )
+        .await;
+        assert!(
+            matches!(&wrong_result, Err(e) if is_scope_denial(e)),
+            "capability {}: representative case {case:?} was NOT scope-denied to a key holding only \
+             {} — the gate is not enforcing this capability: {wrong_result:?}",
+            cap.as_str(),
+            wrong.as_str()
+        );
+    }
+
+    // Pass 2: a key holding EXACTLY the required capability passes the gate. May
+    // mutate/delete fixtures; a positive only requires "not a scope-403".
+    for cap in Capability::ALL {
+        let case = representative_case_for(cap);
+        let slug = cap.as_str().replace(':', "-");
+
+        let ok_token = create_scoped_agent(
+            &db,
+            owner_user.id,
+            &format!("cap-matrix-ok-{slug}"),
+            vec![cap],
+        )
+        .await;
+        let ok_agent = AtlasClient::new(server.base_url()).with_token(ok_token.clone());
+        let ok_result = invoke(case, &ok_agent, &http, server.base_url(), &ok_token, &fx).await;
+        if let Err(e) = &ok_result {
+            assert!(
+                !is_scope_denial(e),
+                "capability {}: representative case {case:?} was scope-denied to a key that HOLDS it \
+                 — route likely annotated with the wrong capability: {e:?}",
+                cap.as_str()
+            );
+        }
+    }
+
+    db.teardown().await;
+}
