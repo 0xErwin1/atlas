@@ -2,10 +2,25 @@ import { type DOMWrapper, flushPromises, mount, type VueWrapper } from '@vue/tes
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { nextTick } from 'vue';
+import { createMemoryHistory, createRouter } from 'vue-router';
 import ActivityComments from '@/components/tareas/ActivityComments.vue';
 import { useAuthStore } from '@/stores/auth';
-import { type ActivityEntryDto, type CommentDto, useTaskDetailStore } from '@/stores/taskDetail';
+import {
+  type ActivityEntryDto,
+  type CommentDto,
+  type ReferenceDto,
+  useTaskDetailStore,
+} from '@/stores/taskDetail';
 import { useWorkspaceStore } from '@/stores/workspace';
+
+const RouteStub = { template: '<div />' };
+const testRouter = createRouter({
+  history: createMemoryHistory(),
+  routes: [
+    { path: '/t/task/:readableId', name: 'task-detail', component: RouteStub },
+    { path: '/n/:slug?', name: 'notes', component: RouteStub },
+  ],
+});
 
 const editorFocus = vi.fn();
 
@@ -323,6 +338,41 @@ describe('ActivityComments feed (ATL-19)', () => {
     await nextTick();
 
     expect(scroll.scrollTop).toBe(640);
+  });
+
+  it('links a reference_added entry to the referenced task (ATL-65)', () => {
+    const reference: ReferenceDto = {
+      id: 'r1',
+      kind: 'relates',
+      target_readable_id: 'ATL-9',
+      target_resolved: true,
+      created_at: '2026-01-01T00:00:00Z',
+      created_by: { id: 'u1', type: 'user', display_name: 'Robin' },
+    } as ReferenceDto;
+
+    const entry: ActivityEntryDto = {
+      id: 'a1',
+      kind: 'reference_added',
+      actor: { id: 'actor-a1', type: 'user', display_name: 'Robin' },
+      created_at: '2026-01-01T09:00:00Z',
+      payload: { reference_added: { reference_id: 'r1', kind: 'relates' } },
+      task_id: 't1',
+      task_readable_id: 'ATL-1',
+    };
+
+    useTaskDetailStore()._setForTest({ activity: [entry], references: [reference] });
+
+    const wrapper = mount(ActivityComments, {
+      props: { ws: 'acme', readableId: 'ATL-1' },
+      global: {
+        plugins: [testRouter],
+        stubs: { MarkdownEditor: MarkdownEditorStub, teleport: true },
+      },
+    });
+
+    const link = wrapper.get('[data-activity-id="a1"] a.atl-ac-reflink');
+    expect(link.text()).toBe('ATL-9');
+    expect(link.attributes('href')).toBe('/t/task/ATL-9');
   });
 
   it('loads the next page via loadMoreComments when more remain', async () => {

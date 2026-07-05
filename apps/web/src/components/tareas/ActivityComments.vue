@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { type RouteLocationRaw, RouterLink } from 'vue-router';
 import CommentCard from '@/components/comments/CommentCard.vue';
 import CommentComposer from '@/components/comments/CommentComposer.vue';
 import EmptyState from '@/components/states/EmptyState.vue';
@@ -30,12 +31,67 @@ const ui = useUiStore();
 const auth = useAuthStore();
 const workspace = useWorkspaceStore();
 
+/** A navigable target surfaced next to a reference/mention activity entry. */
+interface ActivityLink {
+  label: string;
+  to: RouteLocationRaw;
+}
+
 // One chronological feed: system activity entries and user comments interleaved
 // by time (oldest first), with the composer pinned below. ISO timestamps sort
 // lexicographically, so a string compare is chronological.
 type FeedItem =
   | { kind: 'comment'; key: string; at: string; comment: CommentDto }
-  | { kind: 'activity'; key: string; at: string; entry: ActivityEntryDto };
+  | { kind: 'activity'; key: string; at: string; entry: ActivityEntryDto; link: ActivityLink | null };
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null;
+}
+
+/**
+ * The task or document an activity entry points at, so the feed both names it and
+ * links to it. `reference_added` carries only the reference id, resolved against
+ * the task's loaded references (a later-removed reference degrades to no link);
+ * `document_mentioned` carries the target document inline.
+ */
+function activityLink(entry: ActivityEntryDto): ActivityLink | null {
+  const payload = asRecord(entry.payload);
+  if (payload === null) return null;
+
+  if (entry.kind === 'reference_added') {
+    const body = asRecord(payload.reference_added);
+    const referenceId = typeof body?.reference_id === 'string' ? body.reference_id : null;
+    if (referenceId === null) return null;
+
+    const ref = detail.references.find((r) => r.id === referenceId);
+    if (ref === undefined || !ref.target_resolved) return null;
+
+    if (ref.target_readable_id != null) {
+      return {
+        label: ref.target_readable_id,
+        to: { name: 'task-detail', params: { readableId: ref.target_readable_id } },
+      };
+    }
+    if (ref.target_document_id != null) {
+      return {
+        label: ref.target_title ?? 'document',
+        to: { name: 'notes', params: { slug: ref.target_document_id } },
+      };
+    }
+    return null;
+  }
+
+  if (entry.kind === 'document_mentioned') {
+    const body = asRecord(payload.document_mentioned);
+    const documentId = typeof body?.document_id === 'string' ? body.document_id : null;
+    if (documentId === null) return null;
+
+    const title = typeof body?.title === 'string' ? body.title : 'document';
+    return { label: title, to: { name: 'notes', params: { slug: documentId } } };
+  }
+
+  return null;
+}
 
 const feed = computed<FeedItem[]>(() => {
   const items: FeedItem[] = [
@@ -43,7 +99,13 @@ const feed = computed<FeedItem[]>(() => {
       (comment): FeedItem => ({ kind: 'comment', key: `c:${comment.id}`, at: comment.created_at, comment }),
     ),
     ...detail.activity.map(
-      (entry): FeedItem => ({ kind: 'activity', key: `a:${entry.id}`, at: entry.created_at, entry }),
+      (entry): FeedItem => ({
+        kind: 'activity',
+        key: `a:${entry.id}`,
+        at: entry.created_at,
+        entry,
+        link: activityLink(entry),
+      }),
     ),
   ];
 
@@ -177,6 +239,10 @@ async function loadMore(): Promise<void> {
               </span>
               <AgentBadge v-if="isAgent(item.entry.actor.type)" />
               <span style="font-size: var(--fs-sm); color: var(--c-muted);">{{ activityVerb(item.entry.kind) }}</span>
+              <template v-if="item.link">
+                <span aria-hidden="true" style="font-size: var(--fs-sm); color: var(--c-muted);">→</span>
+                <RouterLink :to="item.link.to" class="atl-ac-reflink">{{ item.link.label }}</RouterLink>
+              </template>
             </div>
             <span style="font-size: var(--fs-xs); color: var(--c-muted);">
               {{ formatDate(item.entry.created_at) }}
@@ -217,6 +283,22 @@ async function loadMore(): Promise<void> {
 .atl-ac {
   display: flex;
   flex-direction: column;
+}
+
+.atl-ac-reflink {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--c-primary);
+  cursor: pointer;
+}
+
+.atl-ac-reflink:hover {
+  text-decoration: underline;
 }
 
 /* Inline (mobile) feed: grows within the page scroll, composer trailing it. */
