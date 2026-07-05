@@ -459,6 +459,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
         estimate: data.estimate,
         labels: data.labels ?? [],
         assignees: [],
+        subtask_count: 0,
         updated_at: data.updated_at,
       },
     ];

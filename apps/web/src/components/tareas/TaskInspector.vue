@@ -3,15 +3,12 @@ import { ref } from 'vue';
 import type { components } from '@/api/types.d.ts';
 import SharePanel from '@/components/share/SharePanel.vue';
 import ActivityComments from '@/components/tareas/ActivityComments.vue';
-import ReferenceAdd from '@/components/tareas/ReferenceAdd.vue';
-import ReferenceList from '@/components/tareas/ReferenceList.vue';
 import AgentBadge from '@/components/ui/AgentBadge.vue';
 import Avatar from '@/components/ui/Avatar.vue';
 import InspectorTabs from '@/components/ui/InspectorTabs.vue';
 import MetaRow from '@/components/ui/MetaRow.vue';
 import { relativeTime } from '@/lib/relativeTime';
 import { useTaskDetailStore } from '@/stores/taskDetail';
-import { useUiStore } from '@/stores/ui';
 
 type TaskDto = components['schemas']['TaskDto'];
 
@@ -35,12 +32,10 @@ const props = withDefaults(
 );
 
 const detail = useTaskDetailStore();
-const ui = useUiStore();
 
-type Tab = 'details' | 'references' | 'activity' | 'share';
+type Tab = 'details' | 'activity' | 'share';
 const TABS: Array<{ id: Tab; label: string; icon: string }> = [
   { id: 'details', label: 'Details', icon: 'file' },
-  { id: 'references', label: 'References', icon: 'link' },
   { id: 'activity', label: 'Activity', icon: 'message-square' },
   { id: 'share', label: 'Share', icon: 'user' },
 ];
@@ -49,21 +44,6 @@ const active = ref('activity');
 const creator = props.task.created_by;
 const creatorName = creator.display_name ?? (creator.type === 'api_key' ? 'Agent' : 'User');
 const isAgentCreator = creator.type === 'api_key';
-
-function fail(message: string | null): void {
-  if (message !== null) ui.showBanner(message, 'error');
-}
-
-async function onAddReference(body: components['schemas']['CreateReferenceRequest']): Promise<void> {
-  const ok = await detail.addReference(props.ws, props.task.readable_id, body);
-  if (ok) ui.showBanner('Reference added', 'success');
-  else fail(detail.error);
-}
-
-async function onRemoveReference(referenceId: string): Promise<void> {
-  const ok = await detail.removeReference(props.ws, props.task.readable_id, referenceId);
-  if (!ok) fail(detail.error);
-}
 </script>
 
 <template>
@@ -92,15 +72,6 @@ async function onRemoveReference(referenceId: string): Promise<void> {
         <MetaRow label="Assignees">
           <span style="font-family: var(--font-mono);">{{ detail.assignees.length }}</span>
         </MetaRow>
-      </template>
-
-      <template v-else-if="active === 'references'">
-        <ReferenceList :references="detail.references" @remove="onRemoveReference" />
-        <ReferenceAdd
-          :ws="ws"
-          :current-readable-id="task.readable_id"
-          @add="onAddReference"
-        />
       </template>
 
       <template v-else-if="active === 'activity'">

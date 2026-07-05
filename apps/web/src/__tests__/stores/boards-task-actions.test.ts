@@ -29,6 +29,7 @@ const task = (
   column_name: 'Todo',
   title: `Task ${id}`,
   priority,
+  subtask_count: 0,
   updated_at: '2026-01-01T00:00:00Z',
 });
 

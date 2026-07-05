@@ -524,12 +524,16 @@ export const useBoardsStore = defineStore('boards', () => {
   function reconcileTask(moved: MovedTaskSummary): void {
     const newColumnId = moved.column_id;
 
+    // A move does not change the task's children; carry the prior count over so
+    // the list view's expand affordance survives the optimistic reconcile.
+    let priorSubtaskCount = 0;
     for (const [colId, colTasks] of tasks.value) {
-      const idx = colTasks.findIndex((t) => t.id === moved.id);
-      if (idx === -1) {
+      const existing = colTasks.find((t) => t.id === moved.id);
+      if (existing === undefined) {
         continue;
       }
 
+      priorSubtaskCount = existing.subtask_count;
       tasks.value.set(
         colId,
         colTasks.filter((t) => t.id !== moved.id),
@@ -547,6 +551,7 @@ export const useBoardsStore = defineStore('boards', () => {
       column_name: columns.value.find((c) => c.id === newColumnId)?.name ?? '',
       title: moved.title,
       priority: moved.priority ?? null,
+      subtask_count: priorSubtaskCount,
       updated_at: moved.updated_at,
     };
     tasks.value.set(newColumnId, [...dest, updated]);
@@ -903,6 +908,26 @@ export const useBoardsStore = defineStore('boards', () => {
   }
 
   /**
+   * Fetches a task's direct sub-tasks as row summaries, so the list view can
+   * expand a task in place. Returns an empty list on error (the caller shows a
+   * collapsed, empty branch rather than surfacing a blocking error); the list is
+   * not cached here — the view holds the expansion cache.
+   */
+  async function loadSubtasks(ws: string, readableId: string): Promise<TaskSummaryDto[]> {
+    const { data, error: apiError } = await wrappedClient.GET(
+      '/v1/workspaces/{ws}/tasks/{readable_id}/subtasks',
+      { params: { path: { ws, readable_id: readableId } } },
+    );
+
+    if (apiError !== undefined || data === undefined) {
+      error.value = errorHint(apiError, 'Failed to load sub-tasks');
+      return [];
+    }
+
+    return data;
+  }
+
+  /**
    * Replace the tasks array for a specific column.
    * Used by useKanbanMove to reorder after reconcile, and in tests.
    */
@@ -978,6 +1003,7 @@ export const useBoardsStore = defineStore('boards', () => {
     moveColumn,
     deleteColumn,
     loadTasks,
+    loadSubtasks,
     upsertTaskById,
     reconcileTask,
     applyOptimisticMove,

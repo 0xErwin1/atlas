@@ -128,6 +128,10 @@ pub struct TaskSummaryDto {
     pub board_name: String,
     /// Name of the column (status) this task is currently in.
     pub column_name: String,
+    /// Number of direct sub-tasks (children whose `parent_task_id` is this task),
+    /// so a list view can flag tasks that have sub-tasks without a follow-up
+    /// request. Zero for tasks with no children.
+    pub subtask_count: i64,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 

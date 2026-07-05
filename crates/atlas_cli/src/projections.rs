@@ -2266,6 +2266,7 @@ mod tests {
             assignees: vec![make_actor_dto()],
             board_name: "Dev Board".to_owned(),
             column_name: "In Progress".to_owned(),
+            subtask_count: 0,
             updated_at: Utc::now(),
         }
     }

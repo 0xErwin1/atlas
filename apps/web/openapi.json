@@ -12216,6 +12216,7 @@
                 "title",
                 "board_name",
                 "column_name",
+                "subtask_count",
                 "updated_at"
               ],
               "properties": {
@@ -12268,6 +12269,11 @@
                 },
                 "readable_id": {
                   "type": "string"
+                },
+                "subtask_count": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "Number of direct sub-tasks (children whose `parent_task_id` is this task),\nso a list view can flag tasks that have sub-tasks without a follow-up\nrequest. Zero for tasks with no children."
                 },
                 "title": {
                   "type": "string"
@@ -13313,6 +13319,7 @@
           "title",
           "board_name",
           "column_name",
+          "subtask_count",
           "updated_at"
         ],
         "properties": {
@@ -13365,6 +13372,11 @@
           },
           "readable_id": {
             "type": "string"
+          },
+          "subtask_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of direct sub-tasks (children whose `parent_task_id` is this task),\nso a list view can flag tasks that have sub-tasks without a follow-up\nrequest. Zero for tasks with no children."
           },
           "title": {
             "type": "string"

@@ -1962,6 +1962,7 @@ mod tests {
             assignees: vec![actor],
             board_name: "Dev".to_owned(),
             column_name: "Todo".to_owned(),
+            subtask_count: 0,
             updated_at: Utc::now(),
         };
 

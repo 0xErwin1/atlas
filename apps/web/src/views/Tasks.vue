@@ -543,6 +543,7 @@ watch(
           :ws="ws"
           @close="closePane"
           @expand="expandToFull"
+          @open-subtask="onSelect"
         />
       </div>
     </template>
@@ -576,6 +577,7 @@ watch(
           :ws="ws"
           @close="closePane"
           @expand="expandToFull"
+          @open-subtask="onSelect"
         />
       </div>
     </template>

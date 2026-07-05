@@ -17,6 +17,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   close: [];
   expand: [];
+  'open-subtask': [readableId: string];
 }>();
 
 const ui = useUiStore();
@@ -60,7 +61,13 @@ function onChangeMode(mode: TaskViewMode): void {
       />
       <div class="atl-tv-modal-body">
         <div class="atl-tv-scroll" style="flex: 1; padding: 20px 32px;">
-          <TaskBody :task="task" :ws="ws" layout="wide" :show-secondary="false" />
+          <TaskBody
+            :task="task"
+            :ws="ws"
+            layout="wide"
+            :show-secondary="false"
+            @open-subtask="(id) => emit('open-subtask', id)"
+          />
         </div>
         <aside class="atl-tv-modal-rail">
           <div class="atl-tv-scroll" style="padding: 14px 16px;">
@@ -96,7 +103,14 @@ function onChangeMode(mode: TaskViewMode): void {
     />
     <div class="atl-tv-scroll" :style="showActivity ? 'padding: 14px 16px;' : 'padding: 14px 18px;'">
       <ActivityComments v-if="showActivity" :ws="ws" :readable-id="task.readable_id" />
-      <TaskBody v-else :task="task" :ws="ws" layout="narrow" :show-secondary="false" />
+      <TaskBody
+        v-else
+        :task="task"
+        :ws="ws"
+        layout="narrow"
+        :show-secondary="false"
+        @open-subtask="(id) => emit('open-subtask', id)"
+      />
     </div>
   </aside>
 </template>

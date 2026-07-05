@@ -175,6 +175,17 @@ pub trait TaskRepo: Send + Sync {
         parent_task_id: TaskId,
     ) -> Result<Vec<Task>, DomainError>;
 
+    /// Counts the direct sub-tasks of each given parent in a single query.
+    ///
+    /// Mirrors `list_children`'s predicates (workspace-scoped, `deleted_at IS
+    /// NULL`) so the count matches what a sub-task listing would return. Parents
+    /// with no children are omitted from the result; callers default those to 0.
+    async fn count_children_for_parents(
+        &self,
+        ctx: &WorkspaceCtx,
+        parent_task_ids: &[TaskId],
+    ) -> Result<Vec<(TaskId, i64)>, DomainError>;
+
     /// Clears a task's parent so it becomes a top-level board task again
     /// ("promote"). Returns the updated task.
     async fn detach(&self, ctx: &WorkspaceCtx, id: TaskId) -> Result<Task, DomainError>;

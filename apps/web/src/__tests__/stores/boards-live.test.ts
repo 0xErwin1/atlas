@@ -29,6 +29,7 @@ const task = (id: string, columnId: string, title = `Task ${id}`): TaskSummaryDt
   column_name: 'Todo',
   title,
   priority: null,
+  subtask_count: 0,
   updated_at: '2026-01-01T00:00:00Z',
 });
 

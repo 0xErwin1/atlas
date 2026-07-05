@@ -1062,6 +1062,7 @@ mod tests {
             assignees: vec![actor()],
             board_name: "Main Board".into(),
             column_name: "To Do".into(),
+            subtask_count: 0,
             updated_at: now(),
         }
     }

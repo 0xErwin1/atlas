@@ -73,6 +73,12 @@ async function load(): Promise<void> {
   ]);
 }
 
+// Already on the full-screen route, so a sub-task stays full screen — navigating
+// swaps the route param and reloads this view for the child.
+function openSubtask(readableId: string): void {
+  void router.push({ name: 'task-detail', params: { readableId } });
+}
+
 function backToBoard(query: Record<string, string> = {}): void {
   const boardId = task.value?.board_id;
   if (boardId === undefined) {
@@ -142,7 +148,7 @@ watch([readableId, ws], load, { immediate: true });
           :ws="ws"
           layout="wide"
           :show-secondary="isMobile"
-          :show-references="isMobile"
+          @open-subtask="openSubtask"
         />
       </div>
       <template v-if="!isMobile && ui.taskInspectorOpen">

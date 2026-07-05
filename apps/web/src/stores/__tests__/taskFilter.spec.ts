@@ -14,6 +14,7 @@ function makeTask(overrides: Partial<TaskSummaryDto> & { id: string; column_id: 
     priority: null,
     labels: [],
     assignees: [],
+    subtask_count: 0,
     updated_at: '2026-01-01T00:00:00Z',
     ...overrides,
   };

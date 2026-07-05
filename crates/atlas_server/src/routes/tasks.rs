@@ -474,6 +474,26 @@ async fn board_column_names_by_task(
     Ok(by_column)
 }
 
+/// Counts the direct sub-tasks of each task in a page in a single query.
+///
+/// Returns a map from task id to child count. Tasks with no sub-tasks are absent
+/// from the map; callers default those to 0. Used to populate `subtask_count` on
+/// each `TaskSummaryDto` without an N+1 query.
+async fn subtask_counts_by_task(
+    state: &AppState,
+    ctx: &WorkspaceCtx,
+    tasks: &[Task],
+) -> Result<std::collections::HashMap<uuid::Uuid, i64>, ApiError> {
+    let task_ids: Vec<TaskId> = tasks.iter().map(|t| t.id).collect();
+
+    let counts = PgTaskRepo::new((*state.db).clone())
+        .count_children_for_parents(ctx, &task_ids)
+        .await
+        .map_err(ApiError::Domain)?;
+
+    Ok(counts.into_iter().map(|(id, count)| (id.0, count)).collect())
+}
+
 fn checklist_item_to_dto(item: TaskChecklistItem) -> ChecklistItemDto {
     ChecklistItemDto {
         id: item.id.0,
@@ -874,6 +894,7 @@ pub(crate) async fn list_tasks(
 
     let mut assignees_by_task = board_assignees_by_task(&state, &ctx, &all).await?;
     let board_column_names = board_column_names_by_task(&state, &ctx, &all).await?;
+    let subtask_counts = subtask_counts_by_task(&state, &ctx, &all).await?;
     let board_name_fallback = auth.resource.0.name.clone();
 
     let board_id_fallback = auth.resource.0.id.0;
@@ -904,6 +925,7 @@ pub(crate) async fn list_tasks(
                 assignees: assignees_by_task.remove(&t.id.0).unwrap_or_default(),
                 board_name,
                 column_name,
+                subtask_count: subtask_counts.get(&t.id.0).copied().unwrap_or(0),
                 updated_at: t.updated_at,
             }
         })
@@ -2170,6 +2192,7 @@ async fn tasks_to_summaries(
 ) -> Result<Vec<TaskSummaryDto>, ApiError> {
     let mut assignees_by_task = board_assignees_by_task(state, ctx, &tasks).await?;
     let board_column_names = board_column_names_by_task(state, ctx, &tasks).await?;
+    let subtask_counts = subtask_counts_by_task(state, ctx, &tasks).await?;
 
     Ok(tasks
         .into_iter()
@@ -2191,6 +2214,7 @@ async fn tasks_to_summaries(
                 assignees: assignees_by_task.remove(&t.id.0).unwrap_or_default(),
                 board_name,
                 column_name,
+                subtask_count: subtask_counts.get(&t.id.0).copied().unwrap_or(0),
                 updated_at: t.updated_at,
             }
         })
@@ -3049,6 +3073,7 @@ pub(crate) async fn list_workspace_tasks(
 
     let mut assignees_by_task = board_assignees_by_task(&state, &ctx, &tasks).await?;
     let board_column_names = board_column_names_by_task(&state, &ctx, &tasks).await?;
+    let subtask_counts = subtask_counts_by_task(&state, &ctx, &tasks).await?;
 
     let dtos = tasks
         .into_iter()
@@ -3070,6 +3095,7 @@ pub(crate) async fn list_workspace_tasks(
                 assignees: assignees_by_task.remove(&t.id.0).unwrap_or_default(),
                 board_name,
                 column_name,
+                subtask_count: subtask_counts.get(&t.id.0).copied().unwrap_or(0),
                 updated_at: t.updated_at,
             }
         })

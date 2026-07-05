@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
-import { useRouter } from 'vue-router';
 import type { components } from '@/api/types.d.ts';
 import ActivityComments from '@/components/tareas/ActivityComments.vue';
 import AssigneeList from '@/components/tareas/AssigneeList.vue';
@@ -49,6 +48,11 @@ const props = withDefaults(
   { layout: 'wide', showSecondary: true, showReferences: true },
 );
 
+// Opening a sub-task is host-dependent: the full-screen route navigates, while the
+// dock/modal pane reopens the sub-task in place. TaskBody therefore delegates
+// upward instead of routing itself.
+const emit = defineEmits<{ 'open-subtask': [readableId: string] }>();
+
 const boards = useBoardsStore();
 const tasks = useTasksStore();
 const detail = useTaskDetailStore();
@@ -56,7 +60,6 @@ const tagsStore = useTagsStore();
 const labelColors = useLabelColorsStore();
 const workspace = useWorkspaceStore();
 const ui = useUiStore();
-const router = useRouter();
 
 const wide = computed(() => props.layout === 'wide');
 
@@ -235,7 +238,7 @@ async function onSubtaskSetColumn(readableId: string, columnId: string): Promise
 }
 
 function onOpenSubtask(readableId: string): void {
-  void router.push({ name: 'task-detail', params: { readableId } });
+  emit('open-subtask', readableId);
 }
 
 async function onAddReference(body: components['schemas']['CreateReferenceRequest']): Promise<void> {

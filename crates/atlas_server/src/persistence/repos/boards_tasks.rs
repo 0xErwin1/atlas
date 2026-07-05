@@ -786,6 +786,60 @@ impl TaskRepo for PgTaskRepo {
             .map_err(db_err)
     }
 
+    async fn count_children_for_parents(
+        &self,
+        ctx: &WorkspaceCtx,
+        parent_task_ids: &[TaskId],
+    ) -> Result<Vec<(TaskId, i64)>, DomainError> {
+        if parent_task_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        #[derive(FromQueryResult)]
+        struct ChildCountRow {
+            parent_task_id: uuid::Uuid,
+            child_count: i64,
+        }
+
+        let mut values: Vec<sea_orm::Value> = Vec::new();
+
+        // $1 — workspace_id
+        values.push(ctx.workspace_id.0.into());
+
+        // $2..$N — parent_task_id IN list
+        let placeholders: String = parent_task_ids
+            .iter()
+            .map(|id| {
+                values.push(id.0.into());
+                format!("${}", values.len())
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let sql = format!(
+            "SELECT t.parent_task_id AS parent_task_id, count(*) AS child_count
+             FROM tasks t
+             WHERE t.workspace_id = $1
+               AND t.parent_task_id IN ({placeholders})
+               AND t.deleted_at IS NULL
+             GROUP BY t.parent_task_id"
+        );
+
+        let rows = ChildCountRow::find_by_statement(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            sql,
+            values,
+        ))
+        .all(&self.conn)
+        .await
+        .map_err(db_err)?;
+
+        Ok(rows
+            .into_iter()
+            .map(|r| (TaskId(r.parent_task_id), r.child_count))
+            .collect())
+    }
+
     async fn detach(&self, ctx: &WorkspaceCtx, id: TaskId) -> Result<Task, DomainError> {
         let row = task::Entity::find_by_id(id.0)
             .filter(task::Column::WorkspaceId.eq(ctx.workspace_id.0))

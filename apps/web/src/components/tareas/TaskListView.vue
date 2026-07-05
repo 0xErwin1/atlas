@@ -12,9 +12,8 @@
  */
 import { computed, ref } from 'vue';
 import { VueDraggable } from 'vue-draggable-plus';
-import AssigneeAvatars from '@/components/tareas/AssigneeAvatars.vue';
-import TaskRowPicker, { type PickerOption } from '@/components/tareas/TaskRowPicker.vue';
-import Chip from '@/components/ui/Chip.vue';
+import TaskListRow from '@/components/tareas/TaskListRow.vue';
+import type { PickerOption } from '@/components/tareas/TaskRowPicker.vue';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import ContextMenu from '@/components/ui/ContextMenu.vue';
 import Icon from '@/components/ui/Icon.vue';
@@ -26,9 +25,9 @@ import { useKanbanMove } from '@/composables/useKanbanMove';
 import { useTaskInteractions } from '@/composables/useTaskInteractions';
 import { resolveColumnSwatchId } from '@/lib/columnColor';
 import { swatchById } from '@/lib/swatches';
+import { PRIORITY_COLOR, priorityLabel } from '@/lib/taskPriority';
 import type { ColumnDto, TaskSummaryDto } from '@/stores/boards';
 import { useBoardsStore } from '@/stores/boards';
-import { useLabelColorsStore } from '@/stores/labelColors';
 import { type TaskViewMode, useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 
@@ -40,7 +39,6 @@ const emit = defineEmits<{
 
 const boards = useBoardsStore();
 const workspace = useWorkspaceStore();
-const labelColors = useLabelColorsStore();
 const ui = useUiStore();
 const menu = useContextMenu();
 const ti = useTaskInteractions(props.ws);
@@ -95,24 +93,12 @@ interface Group {
 
 const PRIORITY_ORDER = ['urgent', 'high', 'medium', 'low'] as const;
 
-const PRIORITY_COLOR: Record<string, string> = {
-  urgent: 'var(--c-danger)',
-  high: 'var(--c-primary)',
-  medium: 'var(--c-info)',
-  low: 'var(--c-muted)',
-};
-
 function statusColor(column: ColumnDto): string {
   return swatchById(resolveColumnSwatchId(column)).fg;
 }
 
 function isDoneColumn(column: ColumnDto): boolean {
   return column.name.trim().toLowerCase() === 'done';
-}
-
-function priorityLabel(priority: string | null): string {
-  if (priority === null || priority === '') return 'No priority';
-  return priority.charAt(0).toUpperCase() + priority.slice(1);
 }
 
 const allTasks = computed<TaskSummaryDto[]>(() =>
@@ -243,7 +229,7 @@ const menuItems = computed(() => {
   const readableId = ti.menuReadableId.value;
   if (readableId === null) return [];
 
-  const task = boards.findTaskByReadableId(readableId);
+  const task = findRowTask(readableId);
   if (task === undefined) return [];
 
   const boardId = boards.board?.id;
@@ -352,6 +338,94 @@ function onAssigneePick(task: TaskSummaryDto, value: string): void {
 
   void ti.runAssign(task.readable_id, type, id);
 }
+
+// The board list excludes child tasks, so a right-clicked sub-task is resolved
+// from the expansion cache instead of the board columns.
+function findRowTask(readableId: string): TaskSummaryDto | undefined {
+  const top = boards.findTaskByReadableId(readableId);
+  if (top !== undefined) return top;
+
+  for (const children of subtaskCache.value.values()) {
+    const found = children.find((c) => c.readable_id === readableId);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
+// Sub-task expansion (tree): which rows are open, plus a per-parent cache of the
+// fetched children so re-expanding is instant. Keyed by readable_id.
+const expandedTasks = ref<Set<string>>(new Set());
+const subtaskCache = ref<Map<string, TaskSummaryDto[]>>(new Map());
+const loadingSubtasks = new Set<string>();
+
+function hasSubtasks(task: TaskSummaryDto): boolean {
+  return task.subtask_count > 0;
+}
+
+function isExpanded(task: TaskSummaryDto): boolean {
+  return expandedTasks.value.has(task.readable_id);
+}
+
+function childrenOf(task: TaskSummaryDto): TaskSummaryDto[] {
+  return subtaskCache.value.get(task.readable_id) ?? [];
+}
+
+async function toggleExpand(task: TaskSummaryDto): Promise<void> {
+  const id = task.readable_id;
+  const next = new Set(expandedTasks.value);
+
+  if (next.has(id)) {
+    next.delete(id);
+    expandedTasks.value = next;
+    return;
+  }
+
+  next.add(id);
+  expandedTasks.value = next;
+
+  // Fetch once; a cached branch re-expands instantly, and a concurrent toggle is
+  // guarded so a double-click never fires two requests.
+  if (subtaskCache.value.has(id) || loadingSubtasks.has(id)) return;
+
+  loadingSubtasks.add(id);
+  const children = await boards.loadSubtasks(props.ws, id);
+  loadingSubtasks.delete(id);
+
+  subtaskCache.value = new Map(subtaskCache.value).set(id, children);
+}
+
+// The presentational row takes every derived value and option list as props; this
+// bundles them so a board task and each of its nested children bind identically.
+function rowProps(task: TaskSummaryDto) {
+  return {
+    task,
+    selected: task.readable_id === props.selectedReadableId,
+    done: taskIsDone(task),
+    ringColor: statusRingColor(task),
+    statusName: statusNameForTask(task),
+    statusOptions: statusOptionsFor(task),
+    assigneeOptions: assigneeOptionsFor(task),
+    priorityOptions: priorityOptionsFor(task),
+    statusOpen: isPickerOpen('status', task),
+    assigneeOpen: isPickerOpen('assignee', task),
+    priorityOpen: isPickerOpen('priority', task),
+  };
+}
+
+// One handler map shared by every row (parent and child) so the wiring is not
+// repeated across the draggable and plain render paths.
+const rowHandlers = {
+  select: (readableId: string) => emit('select', readableId),
+  menu: onMenu,
+  copy: copyId,
+  toggleExpand,
+  statusOpen: (task: TaskSummaryDto, value: boolean) => setPickerOpen('status', task, value),
+  assigneeOpen: onAssigneeOpen,
+  priorityOpen: (task: TaskSummaryDto, value: boolean) => setPickerOpen('priority', task, value),
+  statusPick: onStatusPick,
+  assigneePick: onAssigneePick,
+  priorityPick: onPriorityPick,
+};
 </script>
 
 <template>
@@ -401,223 +475,48 @@ function onAssigneePick(task: TaskSummaryDto, value: string): void {
           @add="(e: unknown) => onSortableDrop(e, group.key)"
           @update="(e: unknown) => onSortableDrop(e, group.key)"
         >
-          <button
+          <div
             v-for="task in group.tasks"
             :key="task.id"
-            type="button"
-            class="atl-tl-row"
-            :class="{ selected: task.readable_id === selectedReadableId }"
+            class="atl-tl-item"
             :data-readable-id="task.readable_id"
-            @click="emit('select', task.readable_id)"
-            @contextmenu.prevent="onMenu(task, $event)"
           >
-            <TaskRowPicker
-              class="atl-tl-pick"
-              :options="statusOptionsFor(task)"
-              :open="isPickerOpen('status', task)"
-              @update:open="(v: boolean) => setPickerOpen('status', task, v)"
-              @pick="(v: string) => onStatusPick(task, v)"
-            >
-              <template #trigger>
-                <span
-                  v-if="taskIsDone(task)"
-                  class="atl-tl-marker done"
-                  title="Change status"
-                >
-                  <Icon name="check" :size="10" :stroke-width="2.6" />
-                </span>
-                <span
-                  v-else
-                  class="atl-tl-marker"
-                  title="Change status"
-                  :style="{ borderColor: statusRingColor(task) }"
-                />
-              </template>
-            </TaskRowPicker>
-
-            <span class="atl-tl-name">
-              <span class="atl-tl-title" :class="{ muted: taskIsDone(task) }">{{ task.title }}</span>
-              <span v-if="(task.labels ?? []).length > 0" class="atl-tl-labels">
-                <Chip
-                  v-for="label in task.labels ?? []"
-                  :key="label"
-                  truncate
-                  :color="labelColors.colorFor(`tag:${label.toLowerCase()}`)"
-                >
-                  {{ label }}
-                </Chip>
-              </span>
-            </span>
-
-            <span class="atl-tl-id">
-              <span class="atl-tl-id-text">{{ task.readable_id }}</span>
-              <button
-                type="button"
-                class="atl-tl-copy"
-                :title="`Copy ${task.readable_id}`"
-                @click.stop="copyId(task)"
-              >
-                <Icon name="copy" :size="12" />
-              </button>
-            </span>
-
-            <TaskRowPicker
-              class="atl-tl-pick atl-tl-assignee"
-              :options="assigneeOptionsFor(task)"
-              width="220px"
-              :open="isPickerOpen('assignee', task)"
-              @update:open="(v: boolean) => onAssigneeOpen(task, v)"
-              @pick="(v: string) => onAssigneePick(task, v)"
-            >
-              <template #trigger>
-                <AssigneeAvatars
-                  v-if="task.assignees && task.assignees.length"
-                  :assignees="task.assignees"
-                  :max="3"
-                  :size="18"
-                />
-                <span v-else class="atl-tl-noassignee" title="Assign">
-                  <Icon name="user" :size="11" />
-                </span>
-              </template>
-            </TaskRowPicker>
-
-            <TaskRowPicker
-              class="atl-tl-pick atl-tl-prio"
-              :options="priorityOptionsFor(task)"
-              :open="isPickerOpen('priority', task)"
-              @update:open="(v: boolean) => setPickerOpen('priority', task, v)"
-              @pick="(v: string) => onPriorityPick(task, v)"
-            >
-              <template #trigger>
-                <span class="atl-tl-prio-inner" title="Change priority">
-                  <template v-if="task.priority">
-                    <Icon
-                      name="flag"
-                      :size="13"
-                      :style="{ color: PRIORITY_COLOR[task.priority] ?? 'var(--c-muted)' }"
-                    />
-                    {{ priorityLabel(task.priority) }}
-                  </template>
-                  <span v-else class="atl-tl-prio-empty">—</span>
-                </span>
-              </template>
-            </TaskRowPicker>
-
-            <span class="atl-tl-status">{{ statusNameForTask(task) }}</span>
-
-            <span class="atl-tl-est">{{ task.estimate !== null && task.estimate !== undefined ? `${task.estimate} pts` : '—' }}</span>
-          </button>
+            <TaskListRow
+              v-bind="rowProps(task)"
+              v-on="rowHandlers"
+              :expandable="hasSubtasks(task)"
+              :expanded="isExpanded(task)"
+            />
+            <div v-if="isExpanded(task)" class="atl-tl-children">
+              <TaskListRow
+                v-for="child in childrenOf(task)"
+                :key="child.id"
+                v-bind="rowProps(child)"
+                v-on="rowHandlers"
+                :indent="1"
+              />
+            </div>
+          </div>
         </VueDraggable>
 
         <div v-else v-show="!isGroupCollapsed(group.key)">
-          <button
-            v-for="task in group.tasks"
-            :key="task.id"
-            type="button"
-            class="atl-tl-row"
-            :class="{ selected: task.readable_id === selectedReadableId }"
-            :data-readable-id="task.readable_id"
-            @click="emit('select', task.readable_id)"
-            @contextmenu.prevent="onMenu(task, $event)"
-          >
-            <TaskRowPicker
-              class="atl-tl-pick"
-              :options="statusOptionsFor(task)"
-              :open="isPickerOpen('status', task)"
-              @update:open="(v: boolean) => setPickerOpen('status', task, v)"
-              @pick="(v: string) => onStatusPick(task, v)"
-            >
-              <template #trigger>
-                <span
-                  v-if="taskIsDone(task)"
-                  class="atl-tl-marker done"
-                  title="Change status"
-                >
-                  <Icon name="check" :size="10" :stroke-width="2.6" />
-                </span>
-                <span
-                  v-else
-                  class="atl-tl-marker"
-                  title="Change status"
-                  :style="{ borderColor: statusRingColor(task) }"
-                />
-              </template>
-            </TaskRowPicker>
-
-            <span class="atl-tl-name">
-              <span class="atl-tl-title" :class="{ muted: taskIsDone(task) }">{{ task.title }}</span>
-              <span v-if="(task.labels ?? []).length > 0" class="atl-tl-labels">
-                <Chip
-                  v-for="label in task.labels ?? []"
-                  :key="label"
-                  truncate
-                  :color="labelColors.colorFor(`tag:${label.toLowerCase()}`)"
-                >
-                  {{ label }}
-                </Chip>
-              </span>
-            </span>
-
-            <span class="atl-tl-id">
-              <span class="atl-tl-id-text">{{ task.readable_id }}</span>
-              <button
-                type="button"
-                class="atl-tl-copy"
-                :title="`Copy ${task.readable_id}`"
-                @click.stop="copyId(task)"
-              >
-                <Icon name="copy" :size="12" />
-              </button>
-            </span>
-
-            <TaskRowPicker
-              class="atl-tl-pick atl-tl-assignee"
-              :options="assigneeOptionsFor(task)"
-              width="220px"
-              :open="isPickerOpen('assignee', task)"
-              @update:open="(v: boolean) => onAssigneeOpen(task, v)"
-              @pick="(v: string) => onAssigneePick(task, v)"
-            >
-              <template #trigger>
-                <AssigneeAvatars
-                  v-if="task.assignees && task.assignees.length"
-                  :assignees="task.assignees"
-                  :max="3"
-                  :size="18"
-                />
-                <span v-else class="atl-tl-noassignee" title="Assign">
-                  <Icon name="user" :size="11" />
-                </span>
-              </template>
-            </TaskRowPicker>
-
-            <TaskRowPicker
-              class="atl-tl-pick atl-tl-prio"
-              :options="priorityOptionsFor(task)"
-              :open="isPickerOpen('priority', task)"
-              @update:open="(v: boolean) => setPickerOpen('priority', task, v)"
-              @pick="(v: string) => onPriorityPick(task, v)"
-            >
-              <template #trigger>
-                <span class="atl-tl-prio-inner" title="Change priority">
-                  <template v-if="task.priority">
-                    <Icon
-                      name="flag"
-                      :size="13"
-                      :style="{ color: PRIORITY_COLOR[task.priority] ?? 'var(--c-muted)' }"
-                    />
-                    {{ priorityLabel(task.priority) }}
-                  </template>
-                  <span v-else class="atl-tl-prio-empty">—</span>
-                </span>
-              </template>
-            </TaskRowPicker>
-
-            <span class="atl-tl-status">{{ statusNameForTask(task) }}</span>
-
-            <span class="atl-tl-est">{{ task.estimate !== null && task.estimate !== undefined ? `${task.estimate} pts` : '—' }}</span>
-          </button>
+          <div v-for="task in group.tasks" :key="task.id" class="atl-tl-item">
+            <TaskListRow
+              v-bind="rowProps(task)"
+              v-on="rowHandlers"
+              :expandable="hasSubtasks(task)"
+              :expanded="isExpanded(task)"
+            />
+            <div v-if="isExpanded(task)" class="atl-tl-children">
+              <TaskListRow
+                v-for="child in childrenOf(task)"
+                :key="child.id"
+                v-bind="rowProps(child)"
+                v-on="rowHandlers"
+                :indent="1"
+              />
+            </div>
+          </div>
         </div>
 
         <div
@@ -773,195 +672,13 @@ function onAssigneePick(task: TaskSummaryDto, value: string): void {
   color: var(--c-muted);
 }
 
-.atl-tl-row {
-  display: grid;
-  grid-template-columns: 15px minmax(0, 1fr) 84px 64px 96px 110px 64px;
-  align-items: center;
-  column-gap: 10px;
-  width: 100%;
-  height: 38px;
-  padding: 0 12px 0 10px;
-  border: none;
-  border-radius: 3px;
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
-}
-
-.atl-tl-row:hover {
-  background: var(--c-raised);
-}
-
-.atl-tl-row.selected {
-  background: var(--c-selection);
-  box-shadow: inset 2px 0 0 var(--c-primary);
-}
-
-.atl-tl-pick {
-  display: inline-flex;
-  align-items: center;
-  min-width: 0;
-}
-
-.atl-tl-marker {
-  width: 15px;
-  height: 15px;
-  border-radius: var(--r-full);
-  border: 1.6px solid var(--c-muted);
-  flex: 0 0 auto;
-  transition: transform 0.1s ease;
-}
-
-.atl-tl-marker:hover {
-  transform: scale(1.12);
-}
-
-.atl-tl-marker.done {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  background: var(--c-success);
-  color: var(--c-background);
-}
-
-.atl-tl-name {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  /* Clip only at the cell boundary in the pathological many-labels case, so labels
-     never bleed into the next column. */
-  overflow: hidden;
-}
-
-.atl-tl-title {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--fs-lg);
-  color: var(--c-foreground);
-}
-
-.atl-tl-title.muted {
-  color: var(--c-muted);
-}
-
-.atl-tl-labels {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  /* Never shrink: a long title ellipsizes (the title alone absorbs the row's
-     slack) while the label chips keep their intrinsic width instead of clipping. */
-  flex: 0 0 auto;
-}
-
-.atl-tl-prio {
-  min-width: 0;
-}
-
-.atl-tl-prio-inner {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  height: 24px;
-  padding: 0 6px;
-  border-radius: var(--r-sm);
-  font-size: var(--fs-sm);
-  color: var(--c-foreground);
-}
-
-.atl-tl-prio-inner:hover {
-  background: var(--c-raised);
-}
-
-.atl-tl-prio-empty {
-  color: var(--c-muted);
-}
-
-.atl-tl-status {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: center;
-  font-size: var(--fs-sm);
-  color: var(--c-muted);
-}
-
-.atl-tl-est {
-  text-align: right;
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  color: var(--c-muted);
-}
-
-.atl-tl-assignee {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.atl-tl-assignee :deep(.atl-rp-trigger) {
-  border-radius: var(--r-full);
-}
-
-.atl-tl-assignee :deep(.atl-rp-trigger:hover) {
-  background: var(--c-raised);
-}
-
-.atl-tl-noassignee {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border: 1px dashed var(--c-muted);
-  border-radius: 2px;
-  color: var(--c-muted);
-  flex: 0 0 auto;
-}
-
-.atl-tl-id {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-end;
-  min-width: 0;
-}
-
-.atl-tl-id-text {
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  color: var(--c-muted);
-  white-space: nowrap;
-}
-
-.atl-tl-copy {
-  position: absolute;
-  right: -2px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  padding: 0;
-  border: none;
-  border-radius: 3px;
-  background: var(--c-raised);
-  color: var(--c-muted);
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.12s ease;
-}
-
-.atl-tl-copy:hover {
-  color: var(--c-foreground);
-}
-
-.atl-tl-row:hover .atl-tl-copy {
-  opacity: 1;
+/* Row cell styles live in TaskListRow.vue; this view owns only the group layout
+   and the sub-task tree wrapper. */
+.atl-tl-children {
+  /* Nested rows indent their name column via the row's `indent` prop; a faint
+     rail ties them to the parent above. */
+  margin-left: 17px;
+  border-left: 1px solid var(--c-border);
 }
 
 .atl-tl-add-row {
