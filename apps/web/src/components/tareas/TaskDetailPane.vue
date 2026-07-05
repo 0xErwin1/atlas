@@ -5,6 +5,7 @@ import ActivityComments from '@/components/tareas/ActivityComments.vue';
 import TaskBody from '@/components/tareas/TaskBody.vue';
 import TaskDetailHeader from '@/components/tareas/TaskDetailHeader.vue';
 import { useResizablePanel } from '@/composables/useResizablePanel';
+import { useBoardsStore } from '@/stores/boards';
 import { type TaskViewMode, useUiStore } from '@/stores/ui';
 
 type TaskDto = components['schemas']['TaskDto'];
@@ -21,9 +22,20 @@ const emit = defineEmits<{
 }>();
 
 const ui = useUiStore();
+const boards = useBoardsStore();
 
 const shareLabel = computed(() => `${props.task.readable_id} · task`);
 const isModal = computed(() => ui.effectiveTaskViewMode === 'modal');
+
+async function onDeleteTask(): Promise<void> {
+  const ok = await boards.deleteTask(props.ws, props.task.readable_id);
+  if (ok) {
+    ui.showBanner('Task deleted', 'success');
+    emit('close');
+  } else {
+    ui.showBanner(boards.error ?? 'Failed to delete task', 'error');
+  }
+}
 
 // The narrow dock cannot fit the body and the activity+comments panel side by
 // side, so a header toggle swaps the whole view between them (ClickUp-style).
@@ -58,6 +70,7 @@ function onChangeMode(mode: TaskViewMode): void {
         @close="emit('close')"
         @expand="emit('expand')"
         @change="onChangeMode"
+        @delete="onDeleteTask"
       />
       <div class="atl-tv-modal-body">
         <div class="atl-tv-scroll" style="flex: 1; padding: 20px 32px;">
@@ -98,6 +111,7 @@ function onChangeMode(mode: TaskViewMode): void {
       @expand="emit('expand')"
       @change="onChangeMode"
       @toggle-activity="showActivity = !showActivity"
+      @delete="onDeleteTask"
     />
     <ActivityComments v-if="showActivity" :ws="ws" :readable-id="task.readable_id" pinned />
     <div v-else class="atl-tv-scroll" style="padding: 14px 18px;">

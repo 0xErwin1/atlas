@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import TaskViewModeSwitch from '@/components/tareas/TaskViewModeSwitch.vue';
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import ContextMenu, { type MenuItem } from '@/components/ui/ContextMenu.vue';
 import Icon from '@/components/ui/Icon.vue';
 import { type TaskViewMode, useUiStore } from '@/stores/ui';
@@ -40,6 +41,7 @@ const emit = defineEmits<{
   change: [mode: TaskViewMode];
   toggleInspector: [];
   toggleActivity: [];
+  delete: [];
 }>();
 
 const ui = useUiStore();
@@ -47,6 +49,7 @@ const ui = useUiStore();
 const menuOpen = ref(false);
 const menuX = ref(0);
 const menuY = ref(0);
+const confirmDeleteOpen = ref(false);
 
 const MENU_WIDTH = 210;
 
@@ -77,7 +80,13 @@ const menuItems = computed<MenuItem[]>(() => [
   { label: 'Copy link', icon: 'link', action: () => copy(taskUrl(), 'Link') },
   { label: 'Copy ID', icon: 'hash', action: () => copy(props.readableId, 'ID') },
   { label: 'Open in new tab', icon: 'external-link', action: () => window.open(taskUrl(), '_blank') },
+  { label: 'Delete task', icon: 'trash-2', danger: true, action: () => (confirmDeleteOpen.value = true) },
 ]);
+
+function onConfirmDelete(): void {
+  confirmDeleteOpen.value = false;
+  emit('delete');
+}
 </script>
 
 <template>
@@ -165,6 +174,20 @@ const menuItems = computed<MenuItem[]>(() => [
       :items="menuItems"
       :width="MENU_WIDTH"
       @close="menuOpen = false"
+    />
+
+    <ConfirmDialog
+      :open="confirmDeleteOpen"
+      tone="danger"
+      title="Delete this task?"
+      message="The task is removed permanently. This can't be undone."
+      :detail="readableId"
+      detail-icon="square-kanban"
+      note="Its sub-tasks, references, and activity are removed along with it."
+      confirm-label="Delete task"
+      confirm-icon="trash-2"
+      @confirm="onConfirmDelete"
+      @cancel="confirmDeleteOpen = false"
     />
 
     <button

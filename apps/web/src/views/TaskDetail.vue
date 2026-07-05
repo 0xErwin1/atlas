@@ -79,6 +79,19 @@ function openSubtask(readableId: string): void {
   void router.push({ name: 'task-detail', params: { readableId } });
 }
 
+async function onDeleteTask(): Promise<void> {
+  const id = task.value?.readable_id;
+  if (id === undefined || ws.value === '') return;
+
+  const ok = await boards.deleteTask(ws.value, id);
+  if (ok) {
+    ui.showBanner('Task deleted', 'success');
+    backToBoard();
+  } else {
+    ui.showBanner(boards.error ?? 'Failed to delete task', 'error');
+  }
+}
+
 function backToBoard(query: Record<string, string> = {}): void {
   const boardId = task.value?.board_id;
   if (boardId === undefined) {
@@ -139,6 +152,7 @@ watch([readableId, ws], load, { immediate: true });
       @back="backToBoard()"
       @change="onChangeMode"
       @toggle-inspector="ui.toggleTaskInspector()"
+      @delete="onDeleteTask"
     />
 
     <div v-if="task" class="flex flex-1 min-h-0">
