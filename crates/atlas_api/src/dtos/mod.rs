@@ -101,6 +101,23 @@ pub struct MeResponse {
     pub display_name: Option<String>,
     pub is_root: bool,
     pub is_system_admin: bool,
+    /// Self-identity for an API-key principal: its id, name, and capability
+    /// scopes. `None` for human user and group principals.
+    #[serde(default)]
+    pub agent: Option<AgentIdentityDto>,
+}
+
+/// The self-identity of an API-key (agent) principal, returned in the `agent`
+/// field of `GET /v1/auth/me` so an agent can inspect its own id, name, and the
+/// capability scopes it currently holds.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct AgentIdentityDto {
+    pub id: uuid::Uuid,
+    /// The API key's name.
+    pub name: String,
+    /// The key's capability scopes, in canonical `family:action` order.
+    pub scopes: Vec<ApiKeyScope>,
 }
 
 /// One workspace a user belongs to, with the membership role.

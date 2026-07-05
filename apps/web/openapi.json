@@ -9718,6 +9718,32 @@
           }
         }
       },
+      "AgentIdentityDto": {
+        "type": "object",
+        "description": "The self-identity of an API-key (agent) principal, returned in the `agent`\nfield of `GET /v1/auth/me` so an agent can inspect its own id, name, and the\ncapability scopes it currently holds.",
+        "required": [
+          "id",
+          "name",
+          "scopes"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "description": "The API key's name."
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ApiKeyScope"
+            },
+            "description": "The key's capability scopes, in canonical `family:action` order."
+          }
+        }
+      },
       "ApiKeyCreated": {
         "type": "object",
         "description": "Response for `POST /v1/api-keys` (secret returned exactly once).",
@@ -11468,6 +11494,17 @@
           "is_system_admin"
         ],
         "properties": {
+          "agent": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AgentIdentityDto",
+                "description": "Self-identity for an API-key principal: its id, name, and capability\nscopes. `None` for human user and group principals."
+              }
+            ]
+          },
           "display_name": {
             "type": [
               "string",

@@ -89,6 +89,7 @@ Tools by area (see each tool's own description for parameters):\n\
 - Structure: `list_documents`, `list_folders`, `list_boards`, `list_columns`.\n\
 - Workspace context: `list_workspaces`, `list_projects`, `list_members`, `list_tags`, \
 `list_used_labels`, `list_saved_searches`, `list_task_views`.\n\
+- Self: `get_agent_identity` (the calling API key's own id, name, and capability scopes).\n\
 - Links and depth: `get_task_references`, `get_task_backlinks`, `get_document_backlinks`, \
 `list_checklist`, `list_comments`, `list_document_comments`, `list_activity`, \
 `list_workspace_activity`, `list_document_history`, `get_document_revision`, \
@@ -412,6 +413,12 @@ pub struct ListMembersParams {
 /// No parameters required — returns all workspaces accessible to the caller.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ListWorkspacesParams {}
+
+/// Parameters accepted by the `get_agent_identity` tool.
+///
+/// No parameters required — reports the calling API key's own identity.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetAgentIdentityParams {}
 
 /// Parameters accepted by the `list_projects` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -1746,6 +1753,36 @@ impl AtlasMcp {
             .map_err(|e| format!("list_workspaces failed: {e}"))?;
 
         let result = wrap_vec(workspaces, project_workspace);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Report the calling API key's own identity: its id, name, and the capability scopes it holds. Read-only self-inspection; returns a note when the caller is a human, not an agent key."
+    )]
+    async fn get_agent_identity(
+        &self,
+        Parameters(_params): Parameters<GetAgentIdentityParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
+        let me = client
+            .me()
+            .await
+            .map_err(|e| format!("get_agent_identity failed: {e}"))?;
+
+        let result = match me.agent {
+            Some(agent) => json!({
+                "id": agent.id,
+                "name": agent.name,
+                "scopes": agent.scopes,
+            }),
+            None => json!({
+                "agent": serde_json::Value::Null,
+                "message": "not an agent identity: the current caller is a human user, not an API key",
+            }),
+        };
+
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 

@@ -7,7 +7,9 @@
 
 mod support;
 
-use atlas_api::dtos::{LoginRequest, MeResponse};
+use atlas_api::dtos::{
+    ApiKeyScope, CreateUserApiKeyRequest, InitialGrantRequest, LoginRequest, MeResponse,
+};
 use atlas_client::AtlasClient;
 use atlas_server::persistence::repos::UserRepo;
 
@@ -158,6 +160,79 @@ async fn disabled_user_with_correct_password_returns_401() {
     assert!(
         matches!(result, Err(atlas_client::ClientError::Api(ref p)) if p.status == 401),
         "disabled user with correct password must return 401, got: {result:?}"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn me_for_human_user_has_no_agent_identity() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, _user) = support::login_user(&server, &db, "auth-me-human").await;
+
+    let me: MeResponse = client.me().await.expect("GET /v1/auth/me must succeed");
+
+    assert_eq!(me.principal_type, "user");
+    assert!(
+        me.agent.is_none(),
+        "a human principal must not carry an agent self-identity"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn me_for_api_key_returns_agent_identity_with_canonical_scopes() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (owner, ws, _user) =
+        support::login_user_with_workspace(&server, &db, "auth-me-agent").await;
+
+    // Deliberately unsorted, duplicated scope set: the read path must return it
+    // deduplicated and in canonical family:action order.
+    let created = owner
+        .create_user_api_key(CreateUserApiKeyRequest {
+            name: "self-identity-agent".to_string(),
+            r#type: None,
+            expires_at: None,
+            initial_grant: Some(InitialGrantRequest {
+                workspace: ws.slug.clone(),
+                role: "editor".to_string(),
+            }),
+            scopes: Some(vec![
+                ApiKeyScope::TasksUpdate,
+                ApiKeyScope::TasksRead,
+                ApiKeyScope::TasksRead,
+                ApiKeyScope::DocsRead,
+            ]),
+        })
+        .await
+        .expect("create agent key");
+
+    let agent_client = AtlasClient::new(server.base_url()).with_token(created.secret);
+
+    let me: MeResponse = agent_client
+        .me()
+        .await
+        .expect("GET /v1/auth/me as an agent must succeed");
+
+    assert_eq!(me.principal_type, "api_key");
+
+    let agent = me
+        .agent
+        .expect("an API-key principal must carry an agent self-identity");
+
+    assert_eq!(agent.id, created.id);
+    assert_eq!(agent.name, "self-identity-agent");
+    assert_eq!(
+        agent.scopes,
+        vec![
+            ApiKeyScope::TasksRead,
+            ApiKeyScope::TasksUpdate,
+            ApiKeyScope::DocsRead,
+        ],
+        "scopes must be deduplicated and canonically ordered, matching the api-keys read path"
     );
 
     db.teardown().await;

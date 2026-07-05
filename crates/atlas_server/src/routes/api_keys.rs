@@ -151,7 +151,7 @@ fn capabilities_from_wire(scopes: Vec<ApiKeyScope>) -> Vec<Capability> {
 
 /// Deduplicates and orders a key's stored capabilities into the catalog's
 /// canonical order, then maps each to its wire representation.
-fn canonical_scopes(capabilities: &[Capability]) -> Vec<ApiKeyScope> {
+pub(crate) fn canonical_scopes(capabilities: &[Capability]) -> Vec<ApiKeyScope> {
     Capability::ALL
         .into_iter()
         .filter(|cap| capabilities.contains(cap))

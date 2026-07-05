@@ -12,7 +12,8 @@ use chrono::Utc;
 use std::sync::LazyLock;
 
 use atlas_api::dtos::{
-    ChangePasswordRequest, LoginRequest, LoginResponse, MeResponse, UpdateMeRequest, UserDto,
+    AgentIdentityDto, ChangePasswordRequest, LoginRequest, LoginResponse, MeResponse,
+    UpdateMeRequest, UserDto,
 };
 use atlas_domain::ids::{SessionId, UserId};
 
@@ -23,7 +24,10 @@ use crate::{
         tokens::{generate_session_token, hash_token},
     },
     error::ApiError,
-    persistence::repos::{NewSession, PgSessionRepo, PgUserRepo, SessionRepo, UserRepo},
+    persistence::repos::{
+        ApiKeyRepo, NewSession, PgApiKeyRepo, PgSessionRepo, PgUserRepo, SessionRepo, UserRepo,
+    },
+    routes::api_keys::canonical_scopes,
     state::AppState,
 };
 
@@ -220,17 +224,39 @@ pub(crate) async fn me(
                 display_name: Some(user.display_name),
                 is_root: user.is_root,
                 is_system_admin: user.is_system_admin,
+                agent: None,
             }
         }
-        Principal::ApiKey(_key_id) => MeResponse {
-            principal_type: "api_key".to_string(),
-            username: "api_key".to_string(),
-            email: None,
-            id: None,
-            display_name: None,
-            is_root: false,
-            is_system_admin: false,
-        },
+        Principal::ApiKey(key_id) => {
+            let key_repo = PgApiKeyRepo {
+                conn: (*state.db).clone(),
+            };
+
+            let key = key_repo
+                .get_by_id(key_id)
+                .await
+                .map_err(|_| ApiError::Internal {
+                    message: "api key lookup failed".into(),
+                })?
+                .ok_or(ApiError::Unauthorized)?;
+
+            let agent = AgentIdentityDto {
+                id: key.id.0,
+                name: key.name,
+                scopes: canonical_scopes(&key.scopes),
+            };
+
+            MeResponse {
+                principal_type: "api_key".to_string(),
+                username: "api_key".to_string(),
+                email: None,
+                id: None,
+                display_name: None,
+                is_root: false,
+                is_system_admin: false,
+                agent: Some(agent),
+            }
+        }
     };
 
     Ok(Json(me))
