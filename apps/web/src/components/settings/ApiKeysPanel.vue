@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { z } from 'zod';
 import ExpandableRow from '@/components/settings/ExpandableRow.vue';
 import PanelHeader from '@/components/settings/PanelHeader.vue';
+import ScopeGrid from '@/components/settings/ScopeGrid.vue';
 import SettingsTable from '@/components/settings/SettingsTable.vue';
 import WorkspaceAccessEditor, { type RoleOption } from '@/components/settings/WorkspaceAccessEditor.vue';
 import EmptyState from '@/components/states/EmptyState.vue';
@@ -16,7 +17,13 @@ import { useLoadingMap } from '@/composables/useLoadingMap';
 import { formatDate } from '@/lib/format';
 import { grantRoleOptions } from '@/lib/grantRoles';
 import { validateForm } from '@/lib/validation';
-import { type ApiKeyCreated, type ApiKeyDto, type ApiKeyGrantDto, useApiKeysStore } from '@/stores/apiKeys';
+import {
+  type ApiKeyCreated,
+  type ApiKeyDto,
+  type ApiKeyGrantDto,
+  type ApiKeyScope,
+  useApiKeysStore,
+} from '@/stores/apiKeys';
 import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 
@@ -38,6 +45,7 @@ const KEY_TYPES: { value: KeyType; label: string }[] = [
 const keyTypeOptions: DropdownOption[] = KEY_TYPES.map((t) => ({ value: t.value, label: t.label }));
 
 const form = reactive({ name: '', type: 'agent' as KeyType, expires: '' });
+const newScopes = ref<ApiKeyScope[]>([]);
 const formErrors = reactive<{ name: string | null }>({ name: null });
 const saving = ref(false);
 
@@ -67,6 +75,7 @@ function startNew(): void {
   form.name = '';
   form.type = 'agent';
   form.expires = '';
+  newScopes.value = [];
   formErrors.name = null;
   mode.value = 'new';
 }
@@ -91,6 +100,7 @@ async function submitNew(): Promise<void> {
     name: result.data.name,
     type: form.type,
     expires_at: expiresAt,
+    scopes: newScopes.value,
     initial_grant: null,
   });
   saving.value = false;
@@ -139,6 +149,26 @@ const expandedKeyId = ref<string | null>(null);
 const keyGrants = ref<Record<string, ApiKeyGrantDto[]>>({});
 const grantsLoading = useLoadingMap();
 
+// Per-key working copy of the capability grid, seeded from the key's stored
+// scopes when its row expands. Saving PATCHes this as the full replacement set.
+const scopeEdits = ref<Record<string, ApiKeyScope[]>>({});
+const scopesPending = ref<Record<string, boolean>>({});
+
+async function saveScopes(key: ApiKeyDto): Promise<void> {
+  if (scopesPending.value[key.id] === true) return;
+
+  const selected = scopeEdits.value[key.id] ?? [];
+
+  scopesPending.value = { ...scopesPending.value, [key.id]: true };
+
+  const ok = await keysStore.setKeyScopes(key.id, selected);
+
+  scopesPending.value = { ...scopesPending.value, [key.id]: false };
+
+  if (ok) ui.showBanner('Capabilities updated', 'success');
+  else if (keysStore.error) ui.showBanner(keysStore.error, 'error');
+}
+
 // Agents are capped at editor — the Admin role is never offered for a key.
 const wsAccessOptions: RoleOption[] = grantRoleOptions('api_key');
 
@@ -149,6 +179,9 @@ function toggleExpand(keyId: string): void {
   }
 
   expandedKeyId.value = keyId;
+
+  const key = keysStore.keys.find((k) => k.id === keyId);
+  scopeEdits.value = { ...scopeEdits.value, [keyId]: [...(key?.scopes ?? [])] };
 
   if (keyGrants.value[keyId] === undefined) {
     void loadGrants(keyId);
@@ -368,6 +401,14 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
           helper="Leave empty for a key that never expires."
           @update:model-value="(v) => { form.expires = v; }"
         />
+
+        <div class="atl-field">
+          <label class="atl-field-label">Capabilities</label>
+          <ScopeGrid v-model="newScopes" />
+          <div class="atl-scope-help">
+            Leave everything unchecked for read-only access to every area.
+          </div>
+        </div>
       </div>
 
       <div class="flex" style="gap: 8px; margin-top: 20px;">
@@ -490,6 +531,24 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
                     exceeds your own permissions.
                   </div>
                 </div>
+              </div>
+            </div>
+
+            <div class="atl-manage-block" data-scopes-block>
+              <div class="atl-manage-label">Capabilities</div>
+              <ScopeGrid
+                :model-value="scopeEdits[k.id] ?? []"
+                @update:model-value="(v) => { scopeEdits[k.id] = v; }"
+              />
+              <div class="flex" style="margin-top: 2px;">
+                <Btn
+                  variant="secondary"
+                  data-action="save-scopes"
+                  :disabled="scopesPending[k.id] === true"
+                  @click="saveScopes(k)"
+                >
+                  Save capabilities
+                </Btn>
               </div>
             </div>
 
@@ -780,6 +839,12 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
   font-size: 12px;
   color: var(--c-muted);
   padding: 6px 0;
+}
+
+.atl-scope-help {
+  font-size: 11.5px;
+  color: var(--c-muted);
+  margin-top: 6px;
 }
 
 .atl-manage-block {

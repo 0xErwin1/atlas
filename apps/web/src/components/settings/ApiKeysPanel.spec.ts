@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { nextTick } from 'vue';
 import ApiKeysPanel from '@/components/settings/ApiKeysPanel.vue';
 import WorkspaceAccessEditor from '@/components/settings/WorkspaceAccessEditor.vue';
-import { type ApiKeyDto, type ApiKeyGrantDto, useApiKeysStore } from '@/stores/apiKeys';
+import { type ApiKeyCreated, type ApiKeyDto, type ApiKeyGrantDto, useApiKeysStore } from '@/stores/apiKeys';
 import { useWorkspaceStore, type WorkspaceDto } from '@/stores/workspace';
 
 function key(over: Partial<ApiKeyDto> = {}): ApiKeyDto {
@@ -238,5 +238,65 @@ describe('ApiKeysPanel — manage expander and workspace-access editor', () => {
     await pickRole(row, 'Editor');
 
     expect(setRole).toHaveBeenCalledWith('k1', 'beta', 'editor');
+  });
+});
+
+describe('ApiKeysPanel — capability scope grid', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('builds scopes from the create-form grid and passes them to createKey', async () => {
+    const store = setup([]);
+    const create = vi.spyOn(store, 'createKey').mockResolvedValue({
+      id: 'k9',
+      name: 'ci-bot',
+      type: 'agent',
+      created_at: '2024-01-01T00:00:00Z',
+      is_global: false,
+      scopes: [],
+      secret: 'sk_test',
+    } as ApiKeyCreated);
+
+    const wrapper = mount(ApiKeysPanel, { attachTo: document.body });
+    activeWrapper = wrapper;
+    await flushPromises();
+
+    const newBtn = wrapper.findAll('button').find((b) => b.text().includes('New key'));
+    if (newBtn === undefined) throw new Error('expected a New key button');
+    await newBtn.trigger('click');
+    await nextTick();
+
+    await wrapper.find('input[placeholder="ci-deploy"]').setValue('ci-bot');
+
+    // Toggle out of canonical order to prove the grid emits a sorted set.
+    await wrapper.find('[data-scope="projects:delete"]').setValue(true);
+    await wrapper.find('[data-scope="tasks:read"]').setValue(true);
+
+    const createBtn = wrapper.findAll('button').find((b) => b.text().includes('Create key'));
+    if (createBtn === undefined) throw new Error('expected a Create key button');
+    await createBtn.trigger('click');
+    await flushPromises();
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({ scopes: ['tasks:read', 'projects:delete'] }),
+    );
+  });
+
+  it('pre-populates the edit grid from the key scopes and saves the full replacement set', async () => {
+    const store = setup([key({ scopes: ['tasks:read', 'docs:update'] })]);
+    const save = vi.spyOn(store, 'setKeyScopes').mockResolvedValue(true);
+
+    const wrapper = await mountExpanded();
+
+    expect((wrapper.find('[data-scope="tasks:read"]').element as HTMLInputElement).checked).toBe(true);
+    expect((wrapper.find('[data-scope="docs:update"]').element as HTMLInputElement).checked).toBe(true);
+    expect((wrapper.find('[data-scope="boards:create"]').element as HTMLInputElement).checked).toBe(false);
+
+    await wrapper.find('[data-scope="boards:create"]').setValue(true);
+    await wrapper.find('[data-action="save-scopes"]').trigger('click');
+    await flushPromises();
+
+    expect(save).toHaveBeenCalledWith('k1', ['tasks:read', 'docs:update', 'boards:create']);
   });
 });

@@ -6,6 +6,7 @@ import { errorHint } from '@/lib/apiError';
 import { collectPaged } from '@/lib/pagination';
 
 export type ApiKeyDto = components['schemas']['ApiKeyDto'];
+export type ApiKeyScope = components['schemas']['ApiKeyScope'];
 export type ApiKeyCreated = components['schemas']['ApiKeyCreated'];
 export type ApiKeyGrantDto = components['schemas']['ApiKeyGrantDto'];
 export type CreateUserApiKeyRequest = components['schemas']['CreateUserApiKeyRequest'];
@@ -79,6 +80,38 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
       const existing = keys.value.find((k) => k.id === keyId);
       if (existing !== undefined) {
         existing.is_global = data.is_global;
+      }
+
+      return true;
+    } catch {
+      error.value = "Can't reach the server";
+      return false;
+    }
+  }
+
+  /**
+   * Replaces the key's full capability scope set. The PATCH sends the entire
+   * selection (not a delta); on success the server-canonical scope list is
+   * reflected onto the local key. Mirrors `setKeyGlobal`: sets `error` and
+   * returns false on failure, leaving local state unchanged.
+   */
+  async function setKeyScopes(keyId: string, scopes: ApiKeyScope[]): Promise<boolean> {
+    error.value = null;
+
+    try {
+      const { data, error: e } = await wrappedClient.PATCH('/v1/api-keys/{key_id}', {
+        params: { path: { key_id: keyId } },
+        body: { scopes },
+      });
+
+      if (e || !data) {
+        error.value = errorHint(e, 'Failed to update API key');
+        return false;
+      }
+
+      const existing = keys.value.find((k) => k.id === keyId);
+      if (existing !== undefined) {
+        existing.scopes = data.scopes;
       }
 
       return true;
@@ -183,6 +216,7 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
     loadKeys,
     createKey,
     setKeyGlobal,
+    setKeyScopes,
     revokeKey,
     loadKeyGrants,
     setKeyWorkspaceRole,

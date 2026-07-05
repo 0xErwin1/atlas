@@ -64,6 +64,49 @@ describe('useApiKeysStore — setKeyGlobal', () => {
   });
 });
 
+describe('useApiKeysStore — setKeyScopes', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    vi.clearAllMocks();
+  });
+
+  it('PATCHes the scope set and reflects the server value on success', async () => {
+    PATCH.mockResolvedValueOnce({
+      data: key({ scopes: ['tasks:read', 'tasks:create'] }),
+      error: undefined,
+    });
+
+    const store = useApiKeysStore();
+    store.keys = [key({ scopes: [] })];
+
+    const ok = await store.setKeyScopes('k1', ['tasks:read', 'tasks:create']);
+
+    expect(ok).toBe(true);
+    expect(PATCH).toHaveBeenCalledWith('/v1/api-keys/{key_id}', {
+      params: { path: { key_id: 'k1' } },
+      body: { scopes: ['tasks:read', 'tasks:create'] },
+    });
+    expect(store.keys[0]?.scopes).toEqual(['tasks:read', 'tasks:create']);
+    expect(store.error).toBeNull();
+  });
+
+  it('sets the error and returns false on failure, leaving local scopes unchanged', async () => {
+    PATCH.mockResolvedValueOnce({
+      data: undefined,
+      error: { hint: 'Not allowed' },
+    });
+
+    const store = useApiKeysStore();
+    store.keys = [key({ scopes: ['tasks:read'] })];
+
+    const ok = await store.setKeyScopes('k1', ['docs:delete']);
+
+    expect(ok).toBe(false);
+    expect(store.error).toBe('Not allowed');
+    expect(store.keys[0]?.scopes).toEqual(['tasks:read']);
+  });
+});
+
 describe('useApiKeysStore — setKeyWorkspaceRole', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
