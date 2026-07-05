@@ -96,4 +96,19 @@ describe('KanbanColumn editing', () => {
     const last = menuItems(mountColumn({ isLast: true }));
     expect(last.find((i) => i.label === 'Move right')?.disabled).toBe(true);
   });
+
+  it('the cancel button dismisses the quick-add without creating a task (ATL-63)', async () => {
+    const wrapper = mountColumn();
+
+    await wrapper.find('[aria-label="Add task"]').trigger('click');
+    const input = wrapper.find('input.atl-quick-add');
+    expect(input.exists()).toBe(true);
+    await input.setValue('Draft that should not be created');
+
+    // mousedown (not click) so the input's blur-commit never fires first.
+    await wrapper.find('[aria-label="Cancel task creation"]').trigger('mousedown');
+
+    expect(wrapper.find('input.atl-quick-add').exists()).toBe(false);
+    expect(wrapper.emitted('create')).toBeUndefined();
+  });
 });

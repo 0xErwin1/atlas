@@ -47,6 +47,7 @@ const {
   inputRef,
   start: startAdd,
   commit: commitAdd,
+  cancel: cancelAdd,
   onKeydown: onAddKeydown,
 } = useInlineEdit<'task'>((title) => emit('create', props.column.id, title));
 
@@ -218,7 +219,7 @@ function onSortableDrop(event: unknown): void {
       </div>
     </div>
 
-    <div v-if="adding !== null" style="margin-bottom: 8px;">
+    <div v-if="adding !== null" class="atl-quick-add-row" style="margin-bottom: 8px;">
       <input
         ref="inputRef"
         v-model="addValue"
@@ -228,6 +229,15 @@ function onSortableDrop(event: unknown): void {
         @keydown="onAddKeydown"
         @blur="commitAdd"
       />
+      <button
+        type="button"
+        class="atl-gbtn atl-quick-cancel"
+        title="Cancel (Esc)"
+        aria-label="Cancel task creation"
+        @mousedown.prevent="cancelAdd"
+      >
+        <Icon name="x" :size="13" />
+      </button>
     </div>
 
     <VueDraggable
@@ -319,8 +329,15 @@ function onSortableDrop(event: unknown): void {
   color: var(--c-foreground);
 }
 
+.atl-quick-add-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .atl-quick-add {
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   height: 32px;
   padding: 0 9px;
   background: var(--c-raised);
@@ -330,6 +347,14 @@ function onSortableDrop(event: unknown): void {
   font-family: var(--font-mono);
   color: var(--c-foreground);
   outline: none;
+}
+
+.atl-quick-cancel {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  padding: 0;
 }
 
 .atl-quick-add:focus {

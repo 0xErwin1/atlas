@@ -59,6 +59,7 @@ const {
   inputRef,
   start: startAdd,
   commit: commitAdd,
+  cancel: cancelAdd,
   onKeydown: onAddKeydown,
 } = useInlineEdit<string>((title, columnId) => void createTaskInColumn(columnId, title));
 
@@ -524,17 +525,27 @@ const rowHandlers = {
           v-show="!isGroupCollapsed(group.key)"
           class="atl-tl-add-row"
         >
-          <input
-            v-if="adding === group.key"
-            ref="inputRef"
-            v-model="addValue"
-            type="text"
-            placeholder="Task title…"
-            class="atl-tl-add-input"
-            aria-label="New task title"
-            @keydown="onAddKeydown"
-            @blur="commitAdd"
-          />
+          <template v-if="adding === group.key">
+            <input
+              ref="inputRef"
+              v-model="addValue"
+              type="text"
+              placeholder="Task title…"
+              class="atl-tl-add-input"
+              aria-label="New task title"
+              @keydown="onAddKeydown"
+              @blur="commitAdd"
+            />
+            <button
+              type="button"
+              class="atl-tl-add-cancel"
+              title="Cancel (Esc)"
+              aria-label="Cancel task creation"
+              @mousedown.prevent="cancelAdd"
+            >
+              <Icon name="x" :size="13" />
+            </button>
+          </template>
           <button
             v-else
             type="button"
@@ -682,6 +693,9 @@ const rowHandlers = {
 }
 
 .atl-tl-add-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   padding: 2px 12px 2px 10px;
 }
 
@@ -707,7 +721,8 @@ const rowHandlers = {
 }
 
 .atl-tl-add-input {
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   height: 32px;
   padding: 0 8px;
   background: var(--c-raised);
@@ -721,6 +736,25 @@ const rowHandlers = {
 
 .atl-tl-add-input:focus {
   border-color: var(--c-primary);
+}
+
+.atl-tl-add-cancel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--c-muted);
+  cursor: pointer;
+}
+
+.atl-tl-add-cancel:hover {
+  background: var(--c-raised);
+  color: var(--c-foreground);
 }
 
 .atl-tl-empty {
