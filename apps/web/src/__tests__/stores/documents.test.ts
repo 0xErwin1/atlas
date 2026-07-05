@@ -449,4 +449,34 @@ describe('useDocumentsStore', () => {
     expect(ok).toBe(false);
     expect(store.error).toBe('not author');
   });
+
+  it('uploadAttachment posts raw bytes with the file name header and returns the record', async () => {
+    const attachment = { id: 'att-1', document_id: 'd1', file_name: 'shot.png' };
+    POST.mockResolvedValue({ data: attachment });
+
+    const file = new File([new Uint8Array([1, 2, 3])], 'shot.png', { type: 'image/png' });
+    const store = useDocumentsStore();
+    const result = await store.uploadAttachment('ws', 'my-doc', file);
+
+    expect(result).toEqual(attachment);
+    expect(store.error).toBeNull();
+
+    const [path, init] = POST.mock.calls[0] ?? [];
+    expect(path).toBe('/v1/workspaces/{ws}/documents/{slug}/attachments');
+    expect(init.params.path).toEqual({ ws: 'ws', slug: 'my-doc' });
+    expect(init.headers['x-file-name']).toBe('shot.png');
+    expect(init.headers['Content-Type']).toBe('image/png');
+    expect(init.bodySerializer(file)).toBe(file);
+  });
+
+  it('uploadAttachment returns null and sets error on failure', async () => {
+    POST.mockResolvedValue({ error: { hint: 'too large' } });
+
+    const file = new File([new Uint8Array([1])], 'big.png', { type: 'image/png' });
+    const store = useDocumentsStore();
+    const result = await store.uploadAttachment('ws', 'my-doc', file);
+
+    expect(result).toBeNull();
+    expect(store.error).toBe('too large');
+  });
 });

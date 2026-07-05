@@ -3,11 +3,13 @@ import { ref } from 'vue';
 import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
 import { errorHint } from '@/lib/apiError';
+import { attachmentFileName } from '@/lib/fileTransfer';
 import { collectPaged } from '@/lib/pagination';
 
 export type DocumentSummary = components['schemas']['Page_DocumentSummaryDto']['items'][number];
 export type BacklinkSummary = components['schemas']['Page_BacklinkDto']['items'][number];
 export type CommentDto = components['schemas']['CommentDto'];
+export type AttachmentDto = components['schemas']['AttachmentDto'];
 
 /**
  * Documents store: the single caller of the document list and backlink routes
@@ -304,6 +306,40 @@ export const useDocumentsStore = defineStore('documents', () => {
     return true;
   }
 
+  /**
+   * Uploads a file as an attachment of the given document and returns the created
+   * record (or null on failure, with `error` set). Backs the note editor's image
+   * paste/drop flow, which then inserts the attachment's URL as Markdown.
+   *
+   * The endpoint takes the raw file bytes as the request body and the original
+   * name in an `x-file-name` header — unlike the multipart task upload. utoipa
+   * models neither the header nor the binary body (both are `never` in the
+   * generated types), so the request init is assembled and cast locally.
+   */
+  async function uploadAttachment(ws: string, slug: string, file: File): Promise<AttachmentDto | null> {
+    error.value = null;
+
+    const { data, error: apiError } = await wrappedClient.POST(
+      '/v1/workspaces/{ws}/documents/{slug}/attachments',
+      {
+        params: { path: { ws, slug } },
+        body: file,
+        bodySerializer: (f: File) => f,
+        headers: {
+          'x-file-name': attachmentFileName(file),
+          'Content-Type': file.type || 'application/octet-stream',
+        },
+      } as never,
+    );
+
+    if (apiError !== undefined || data === undefined) {
+      error.value = errorHint(apiError, 'Failed to upload image');
+      return null;
+    }
+
+    return data;
+  }
+
   return {
     summaries,
     backlinks,
@@ -323,5 +359,6 @@ export const useDocumentsStore = defineStore('documents', () => {
     remove,
     move,
     copy,
+    uploadAttachment,
   };
 });

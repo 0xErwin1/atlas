@@ -48,6 +48,23 @@ function goBackToTree(): void {
   void router.push({ name: 'notes' });
 }
 
+/**
+ * Uploads a pasted/dropped image as an attachment of the open note and returns
+ * the same-origin URL to embed. The URL authenticates via the session cookie, so
+ * the inserted `![](…)` renders directly in the live preview with no blob step.
+ */
+async function onUploadImage(file: File): Promise<string | null> {
+  if (ws.value === '' || slug.value === null) return null;
+
+  const attachment = await documents.uploadAttachment(ws.value, slug.value, file);
+  if (attachment === null) {
+    ui.showBanner(documents.error ?? 'Failed to upload image', 'error');
+    return null;
+  }
+
+  return `/v1/workspaces/${ws.value}/attachments/${attachment.id}`;
+}
+
 const editorRef = ref<InstanceType<typeof NoteEditor> | null>(null);
 const suggestRef = ref<InstanceType<typeof WikiLinkSuggest> | null>(null);
 const sidebarRef = ref<InstanceType<typeof NotesSidebar> | null>(null);
@@ -613,6 +630,7 @@ watch(title, (t) => {
               v-model:reading="editorReading"
               :body="body"
               :wikilink-titles="wikilinkTitles"
+              :upload-image="onUploadImage"
               @change="onChange"
               @navigate-wikilink="onNavigateWikilink"
               @wikilink-query="onWikilinkQuery"

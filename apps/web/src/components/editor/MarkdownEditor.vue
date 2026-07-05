@@ -8,6 +8,7 @@ import { GFM } from '@lezer/markdown';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import Icon from '@/components/ui/Icon.vue';
 import { restoreSelection, snapshotSelection } from '@/lib/editorSelection';
+import { filesFromClipboard, filesFromDataTransfer, isImageFile } from '@/lib/fileTransfer';
 import {
   detectWikilinkTrigger,
   formatWikilink,
@@ -51,6 +52,11 @@ const props = withDefaults(
      * toolbar (Notes) set this false and drive `mode`/`reading` via v-model so the
      * controls live in the toolbar instead; embedded hosts (tasks) keep them here. */
     embeddedControls?: boolean;
+    /** Optional image upload hook. When provided, pasting or dropping image files
+     * uploads each via this callback and inserts `![name](url)` at the caret/drop
+     * point. Returns the image URL, or null on failure (the host surfaces the
+     * error). Hosts that omit it (task description) leave paste/drop untouched. */
+    uploadImage?: (file: File) => Promise<string | null>;
   }>(),
   {
     placeholder: '',
@@ -201,6 +207,19 @@ function buildExtensions() {
     livePreviewCompartment.of(renderExtension()),
     atlasMarkdownTheme,
     editStateCompartment.of(editStateExtension(effectiveEditable())),
+    EditorView.domEventHandlers({
+      paste: (event) => handleImageFiles(filesFromClipboard(event.clipboardData), null),
+      drop: (event, v) => {
+        if (props.uploadImage === undefined) return false;
+
+        const files = filesFromDataTransfer(event.dataTransfer);
+        if (files.filter(isImageFile).length === 0) return false;
+
+        event.preventDefault();
+        const pos = v.posAtCoords({ x: event.clientX, y: event.clientY });
+        return handleImageFiles(files, pos);
+      },
+    }),
     EditorView.updateListener.of((update) => {
       onUpdate(update.docChanged, update.selectionSet, update.state);
     }),
@@ -252,6 +271,62 @@ function insertWikilink(ref: WikilinkRef): void {
 
 function focus(): void {
   view?.focus();
+}
+
+/**
+ * Handles image files arriving by paste or drop when the host supplies an
+ * `uploadImage` callback. Returns true when it takes over the event (images
+ * present and a handler set), so CodeMirror's default paste/drop is suppressed;
+ * false otherwise, leaving normal text paste/drop — and drops meant for an outer
+ * dropzone (task attachments) — untouched.
+ */
+function handleImageFiles(files: File[], pos: number | null): boolean {
+  if (props.uploadImage === undefined) return false;
+
+  const images = files.filter(isImageFile);
+  if (images.length === 0) return false;
+
+  void uploadAndInsertImages(images, pos);
+  return true;
+}
+
+async function uploadAndInsertImages(images: File[], pos: number | null): Promise<void> {
+  const upload = props.uploadImage;
+  if (upload === undefined || view === null) return;
+
+  let at = pos ?? view.state.selection.main.head;
+
+  for (const file of images) {
+    const url = await upload(file);
+    if (url === null || view === null) continue;
+
+    const insert = imageSnippet(view.state, at, imageAlt(file), url);
+    view.dispatch({
+      changes: { from: at, to: at, insert },
+      selection: { anchor: at + insert.length },
+    });
+    at += insert.length;
+  }
+
+  view?.focus();
+}
+
+/** A Markdown image on its own line — a leading newline is added only when the
+ * insertion point is mid-line — so the live-preview block widget renders it. */
+function imageSnippet(state: EditorState, at: number, alt: string, url: string): string {
+  const atLineStart = at === state.doc.lineAt(at).from;
+  return `${atLineStart ? '' : '\n'}![${alt}](${url})\n`;
+}
+
+/** Alt text from the file name (extension stripped), with characters that would
+ * break the `![...]` syntax removed. */
+function imageAlt(file: File): string {
+  return file.name
+    .replace(/\.[^.]+$/, '')
+    .replaceAll(']', '')
+    .replaceAll('\n', ' ')
+    .replaceAll('\r', ' ')
+    .trim();
 }
 
 defineExpose({ currentMarkdown, insertWikilink, focus });

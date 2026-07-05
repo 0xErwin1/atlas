@@ -19,6 +19,8 @@ const props = defineProps<{
   body: string;
   /** Live id → current-title map for id-bound wikilinks. */
   wikilinkTitles?: Record<string, string>;
+  /** Uploads a pasted/dropped image and resolves to its URL (see MarkdownEditor). */
+  uploadImage?: (file: File) => Promise<string | null>;
 }>();
 
 defineEmits<{
@@ -56,6 +58,7 @@ defineExpose({ currentMarkdown, insertWikilink });
     v-model:reading="reading"
     :body="body"
     :wikilink-titles="props.wikilinkTitles"
+    :upload-image="props.uploadImage"
     :embedded-controls="false"
     autofocus
     placeholder="Start writing…"
