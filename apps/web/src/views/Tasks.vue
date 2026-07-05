@@ -482,7 +482,7 @@ watch(
           <Icon name="x" :size="12" />
         </button>
       </div>
-      <Popover v-if="!isView" placement="bottom-start">
+      <Popover v-if="!isView" placement="bottom-end">
         <template #trigger="{ open, toggle }">
           <button
             type="button"
