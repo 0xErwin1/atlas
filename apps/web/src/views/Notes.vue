@@ -22,6 +22,7 @@ import { useCasMerge } from '@/composables/useCasMerge';
 import { useDocumentPresence } from '@/composables/useDocumentPresence';
 import { useLiveUpdates } from '@/composables/useLiveUpdates';
 import { useMarkdownDoc } from '@/composables/useMarkdownDoc';
+import { useWikilinkSuggest } from '@/composables/useWikilinkSuggest';
 import { useWikilinkTitles } from '@/composables/useWikilinkTitles';
 import { PRESENCE_UPDATED } from '@/lib/eventTypes';
 import { joinFrontmatter, splitFrontmatter } from '@/lib/frontmatter';
@@ -110,8 +111,18 @@ function toggleEditorReading(): void {
   editorReading.value = !editorReading.value;
 }
 const loadError = ref<string | null>(null);
-const wikilinkQuery = ref<string | null>(null);
-const wikilinkCaret = ref<{ left: number; top: number } | null>(null);
+
+// `[[wikilink]]` autocomplete glue, shared with the task description editor.
+const {
+  query: wikilinkQuery,
+  caret: wikilinkCaret,
+  onQuery: onWikilinkQuery,
+  onSelect: onSuggestSelect,
+  onKeydown: onEditorKeydown,
+} = useWikilinkSuggest(
+  () => editorRef.value,
+  () => suggestRef.value,
+);
 
 // Resolves id-bound wikilinks' current titles so rendered links track renames.
 const wikilinkTitles = useWikilinkTitles(ws, body);
@@ -358,35 +369,6 @@ function onMetaChange(newMeta: Record<string, unknown>): void {
 
 function onNavigateWikilink(ref: WikilinkRef): void {
   void router.push(wikilinkHref(ref));
-}
-
-function onWikilinkQuery(query: string | null, caret: { left: number; top: number } | null): void {
-  wikilinkQuery.value = query;
-  wikilinkCaret.value = caret;
-}
-
-function onSuggestSelect(ref: WikilinkRef): void {
-  editorRef.value?.insertWikilink(ref);
-  wikilinkQuery.value = null;
-  wikilinkCaret.value = null;
-}
-
-function onEditorKeydown(event: KeyboardEvent): void {
-  if (suggestRef.value?.open !== true) return;
-
-  if (event.key === 'ArrowDown') {
-    event.preventDefault();
-    suggestRef.value.moveDown();
-  } else if (event.key === 'ArrowUp') {
-    event.preventDefault();
-    suggestRef.value.moveUp();
-  } else if (event.key === 'Enter') {
-    event.preventDefault();
-    suggestRef.value.confirmActive();
-  } else if (event.key === 'Escape') {
-    wikilinkQuery.value = null;
-    wikilinkCaret.value = null;
-  }
 }
 
 // Flush before the outgoing document is replaced: update fires on a note→note
