@@ -96,4 +96,14 @@ up:
     export PC_PORT_NUM="${PC_PORT_NUM:-8079}"
     process-compose -f process-compose.yaml up
 
+# Build the two deploy OCI images from the deploy/ Containerfiles (repo-root
+# context, honors .dockerignore). atlas-server holds both the atlas_server and
+# atlas_mcp binaries; atlas-web serves the SPA and reverse-proxies /api and /mcp.
+# The server deploys these via Ansible; this just builds them (e.g. before
+# `deploy/deploy.sh` ships them over the VPN). Override the tag with
+# e.g. `just build-images latest`.
+build-images tag="local":
+    podman build -t atlas-server:{{tag}} -f deploy/Containerfile.server .
+    podman build -t atlas-web:{{tag}} -f deploy/Containerfile.web .
+
 verify: fmt-check clippy test build lint-web
