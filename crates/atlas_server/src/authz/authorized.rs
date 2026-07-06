@@ -11,7 +11,7 @@ use atlas_domain::{
     Actor, WorkspaceCtx,
     entities::boards_tasks::{Board, Task},
     entities::documents::Document,
-    entities::identity::{MemberRole, Workspace},
+    entities::identity::{ApiKey, MemberRole, Workspace},
     entities::workspace_core::Project,
     ids::{ApiKeyId, FolderId, UserId},
     permissions::{
@@ -734,6 +734,12 @@ where
             })?
             .ok_or(ApiError::NotFound)?;
 
+        // For an api-key principal the same row is needed twice below: once to
+        // resolve the agent's effective role and once to gate the required
+        // capability. Load it a single time here and thread it into both steps,
+        // instead of issuing two independent `get_by_id` lookups.
+        let mut api_key: Option<ApiKey> = None;
+
         let (domain_principal, membership_role) =
             match &middleware_principal {
                 MiddlewarePrincipal::User(uid) => {
@@ -789,6 +795,16 @@ where
                         return Err(ApiError::NotFound);
                     }
 
+                    let key_repo = PgApiKeyRepo {
+                        conn: (*state.db).clone(),
+                    };
+                    api_key = key_repo
+                        .get_by_id(*kid)
+                        .await
+                        .map_err(|e| ApiError::Internal {
+                            message: e.to_string(),
+                        })?;
+
                     (Principal::ApiKey(*kid), None)
                 }
             };
@@ -806,15 +822,29 @@ where
 
         let (resource, chain) = R::resolve(&state.db, &workspace, params).await?;
 
-        let effective = resolve_effective_role(
-            &state.db,
-            &domain_principal,
-            membership_role.clone(),
-            &workspace,
-            &chain,
-        )
-        .await?
-        .ok_or(ApiError::NotFound)?;
+        let effective_role = if let Principal::ApiKey(_) = &domain_principal {
+            // Reuse the key loaded above rather than letting
+            // `resolve_agent_effective_role` fetch it again. A missing key here
+            // means no access, mirroring that function's `Ok(None)` on a miss.
+            match api_key.as_ref() {
+                Some(key) => {
+                    resolve_agent_effective_role_with_key(&state.db, key, &workspace, &chain)
+                        .await?
+                }
+                None => None,
+            }
+        } else {
+            resolve_effective_role(
+                &state.db,
+                &domain_principal,
+                membership_role.clone(),
+                &workspace,
+                &chain,
+            )
+            .await?
+        };
+
+        let effective = effective_role.ok_or(ApiError::NotFound)?;
 
         if effective < M::ROLE {
             tracing::warn!(
@@ -828,10 +858,14 @@ where
             });
         }
 
-        if let Principal::ApiKey(kid) = &domain_principal
+        if let Principal::ApiKey(_) = &domain_principal
             && let Some(required) = S::CAPABILITY
         {
-            enforce_api_key_scope(&state.db, *kid, required).await?;
+            // Gate against the key loaded above; `enforce_api_key_scope` would
+            // otherwise re-read the identical row. A missing key denies as
+            // NotFound, exactly as that helper does on a miss.
+            let key = api_key.as_ref().ok_or(ApiError::NotFound)?;
+            enforce_scope_on_key(key, required)?;
         }
 
         Ok(Authorized {
@@ -867,10 +901,18 @@ pub async fn enforce_api_key_scope(
         })?
         .ok_or(ApiError::NotFound)?;
 
+    enforce_scope_on_key(&key, required)
+}
+
+/// Pure capability check against an already-loaded key. Shared by
+/// `enforce_api_key_scope` (which fetches the key) and the `Authorized`
+/// extractor (which reuses the key it loaded for role resolution), so both
+/// paths deny with an identical 403 and log identically.
+fn enforce_scope_on_key(key: &ApiKey, required: Capability) -> Result<(), ApiError> {
     if !key.scopes.contains(&required) {
         tracing::warn!(
             capability = required.as_str(),
-            key_id = %key_id.0,
+            key_id = %key.id.0,
             "authorization denied: api key lacks required scope"
         );
         return Err(ApiError::Forbidden {
@@ -960,6 +1002,19 @@ async fn resolve_agent_effective_role(
         return Ok(None);
     };
 
+    resolve_agent_effective_role_with_key(db, &key, workspace, chain).await
+}
+
+/// Resolves an api key's effective role from an already-loaded key row, applying
+/// the creator-ceiling, global-inheritance, and editor-cap invariants documented
+/// on `resolve_agent_effective_role`. Factored out so the `Authorized` extractor
+/// can reuse the key it loaded for the scope gate instead of fetching it twice.
+async fn resolve_agent_effective_role_with_key(
+    db: &sea_orm::DatabaseConnection,
+    key: &ApiKey,
+    workspace: &Workspace,
+    chain: &ResourceChain,
+) -> Result<Option<ResourceRole>, ApiError> {
     let creator_membership =
         effective_membership_for_user(db, key.created_by_user_id, workspace).await?;
     let creator_principal = Principal::User(key.created_by_user_id);
@@ -970,7 +1025,7 @@ async fn resolve_agent_effective_role(
         creator_role
     } else {
         let grant_role =
-            resolve_grant_role(db, &Principal::ApiKey(kid), None, workspace, chain).await?;
+            resolve_grant_role(db, &Principal::ApiKey(key.id), None, workspace, chain).await?;
         min_role(grant_role, creator_role)
     };
 
