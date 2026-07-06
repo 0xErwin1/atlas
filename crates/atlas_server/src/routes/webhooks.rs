@@ -4,7 +4,6 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use rand::RngCore;
 use rand::rngs::OsRng;
@@ -92,75 +91,6 @@ fn delivery_row_to_dto(row: webhook_delivery_log::Model) -> WebhookDeliveryDto {
     }
 }
 
-/// Validates that `url` is an absolute http(s) URL with a routable host.
-fn validate_target_url(url: &str, allow_private_targets: bool) -> Result<(), ApiError> {
-    let url = url.trim();
-
-    if url.is_empty() {
-        return Err(ApiError::InvalidInput {
-            message: "target_url must not be empty".into(),
-        });
-    }
-
-    let parsed = reqwest::Url::parse(url).map_err(|_| ApiError::InvalidInput {
-        message: "target_url must be an absolute URL with http or https scheme".into(),
-    })?;
-
-    if parsed.scheme() != "http" && parsed.scheme() != "https" {
-        return Err(ApiError::InvalidInput {
-            message: "target_url must be an absolute URL with http or https scheme".into(),
-        });
-    }
-
-    let host = parsed.host_str().ok_or_else(|| ApiError::InvalidInput {
-        message: "target_url must include a host".into(),
-    })?;
-
-    if !allow_private_targets && is_private_webhook_host(host) {
-        return Err(ApiError::InvalidInput {
-            message: "target_url host must not be localhost, private, loopback, link-local, or unspecified".into(),
-        });
-    }
-
-    Ok(())
-}
-
-fn is_private_webhook_host(host: &str) -> bool {
-    let normalized = host.trim_end_matches('.').to_ascii_lowercase();
-    if normalized == "localhost" || normalized.ends_with(".localhost") {
-        return true;
-    }
-
-    normalized
-        .parse::<IpAddr>()
-        .map(is_private_webhook_ip)
-        .unwrap_or(false)
-}
-
-fn is_private_webhook_ip(ip: IpAddr) -> bool {
-    match ip {
-        IpAddr::V4(ip) => is_private_webhook_ipv4(ip),
-        IpAddr::V6(ip) => is_private_webhook_ipv6(ip),
-    }
-}
-
-fn is_private_webhook_ipv4(ip: Ipv4Addr) -> bool {
-    ip.is_private()
-        || ip.is_loopback()
-        || ip.is_link_local()
-        || ip.is_unspecified()
-        || ip.is_broadcast()
-        || ip.octets()[0] == 0
-        || ip.octets()[0] >= 224
-}
-
-fn is_private_webhook_ipv6(ip: Ipv6Addr) -> bool {
-    ip.is_loopback()
-        || ip.is_unspecified()
-        || ((ip.segments()[0] & 0xfe00) == 0xfc00)
-        || ((ip.segments()[0] & 0xffc0) == 0xfe80)
-}
-
 /// Validates that `event_types` is non-empty and all values are in the catalog.
 fn validate_event_types(event_types: &[String]) -> Result<(), ApiError> {
     if event_types.is_empty() {
@@ -246,7 +176,8 @@ pub(crate) async fn create_webhook(
     State(state): State<AppState>,
     Json(body): Json<CreateWebhookRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    validate_target_url(&body.target_url, state.allow_private_webhook_targets)?;
+    crate::webhook_url::validate_target_url(&body.target_url, state.allow_private_webhook_targets)
+        .await?;
     validate_event_types(&body.event_types)?;
     validate_scope(&body.scope_type, body.scope_id)?;
 
@@ -421,7 +352,7 @@ pub(crate) async fn update_webhook(
     Json(body): Json<UpdateWebhookRequest>,
 ) -> Result<Json<WebhookDto>, ApiError> {
     if let Some(url) = &body.target_url {
-        validate_target_url(url, state.allow_private_webhook_targets)?;
+        crate::webhook_url::validate_target_url(url, state.allow_private_webhook_targets).await?;
     }
 
     if let Some(types) = &body.event_types {

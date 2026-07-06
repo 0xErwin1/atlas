@@ -64,6 +64,7 @@ async fn main() -> Result<()> {
         db,
         state.webhook_crypto.clone(),
         state.dispatcher_config.clone(),
+        state.allow_private_webhook_targets,
     );
     let dispatcher_handle = tokio::spawn(dispatcher.run(shutdown_rx.clone()));
 

@@ -315,6 +315,7 @@ async fn e2e_github_workflow_run_fires_automation_and_dispatches_webhook() {
             batch_size: 10,
             lease_secs: 30,
         },
+        true,
     );
     dispatcher
         .poll_and_dispatch()

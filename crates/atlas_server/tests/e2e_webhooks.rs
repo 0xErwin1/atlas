@@ -183,6 +183,7 @@ async fn e2e_webhook_dispatched_on_task_creation() {
             batch_size: 10,
             lease_secs: 30,
         },
+        true,
     );
 
     dispatcher.poll_and_dispatch().await.expect("dispatch");

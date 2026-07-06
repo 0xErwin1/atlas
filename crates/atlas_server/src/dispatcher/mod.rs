@@ -39,22 +39,31 @@ pub struct WebhookDispatcher {
     crypto: Arc<WebhookCrypto>,
     config: DispatcherConfig,
     client: reqwest::Client,
+    allow_private_targets: bool,
 }
 
 impl WebhookDispatcher {
     /// Constructs a dispatcher from an existing database connection, crypto
     /// instance, and config.
     ///
-    /// The reqwest client is built once here with the configured delivery timeout.
+    /// The reqwest client is built once here with the configured delivery
+    /// timeout and a no-redirect policy: an allowed public `target_url` must
+    /// never be able to 3xx-redirect a delivery onto an internal host (e.g. the
+    /// cloud metadata endpoint), which would bypass the create-time SSRF guard.
+    ///
+    /// `allow_private_targets` mirrors the create/update guard flag and gates
+    /// the delivery-time re-validation that defeats DNS-rebinding.
     pub fn new(
         db: DatabaseConnection,
         crypto: Arc<WebhookCrypto>,
         config: DispatcherConfig,
+        allow_private_targets: bool,
     ) -> Self {
         let timeout = Duration::from_millis(config.delivery_timeout_ms);
 
         let client = reqwest::Client::builder()
             .timeout(timeout)
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .unwrap_or_default();
 
@@ -63,6 +72,7 @@ impl WebhookDispatcher {
             crypto,
             config,
             client,
+            allow_private_targets,
         }
     }
 
@@ -130,6 +140,7 @@ impl WebhookDispatcher {
                 crypto: Arc::clone(&self.crypto),
                 client: self.client.clone(),
                 max_attempts: self.config.max_attempts,
+                allow_private_targets: self.allow_private_targets,
             };
 
             let permit = semaphore.clone().acquire_owned().await?;
@@ -156,6 +167,7 @@ struct DeliveryContext {
     crypto: Arc<WebhookCrypto>,
     client: reqwest::Client,
     max_attempts: i32,
+    allow_private_targets: bool,
 }
 
 /// Processes one outbox row: fans out to matching subscriptions and finalizes.
@@ -239,6 +251,34 @@ async fn deliver_to_subscription(
     attempt_no: i32,
 ) -> bool {
     let start = std::time::Instant::now();
+
+    // Re-validate the target at delivery time, re-resolving DNS, so a host that
+    // passed the create-time guard but now points at an internal address (a
+    // DNS-rebinding attack) is never contacted.
+    if crate::webhook_url::target_url_is_blocked(&sub.target_url, ctx.allow_private_targets).await {
+        warn!(
+            sub_id = %sub.id,
+            event_id = %event_id,
+            "skipping delivery: target_url resolves to a private or internal host (SSRF guard)"
+        );
+        record_log(
+            &ctx.db,
+            workspace_id,
+            sub.id,
+            event_id,
+            attempt_no,
+            "failure",
+            None,
+            None,
+            Some(
+                "target_url resolves to a private or internal host; delivery blocked (SSRF guard)"
+                    .to_string(),
+            ),
+            elapsed_ms(start),
+        )
+        .await;
+        return false;
+    }
 
     let secret = match ctx.crypto.decrypt(&sub.encrypted_secret, &sub.secret_nonce) {
         Ok(s) => s,

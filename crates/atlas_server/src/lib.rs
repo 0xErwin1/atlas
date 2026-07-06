@@ -21,6 +21,7 @@ pub mod presence;
 pub mod routes;
 pub mod services;
 pub mod state;
+pub mod webhook_url;
 
 use crate::state::AppState;
 

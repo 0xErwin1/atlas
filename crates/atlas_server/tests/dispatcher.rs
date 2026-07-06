@@ -183,6 +183,7 @@ async fn dispatcher_delivers_event_and_marks_delivered() {
         db.conn().clone(),
         Arc::clone(&crypto),
         default_test_config(),
+        true,
     );
     dispatcher
         .poll_and_dispatch()
@@ -267,8 +268,12 @@ async fn dispatcher_marks_dead_on_exhausted_attempts() {
     txn.commit().await.expect("commit");
 
     // max_attempts=1 → dead after first failed pass
-    let dispatcher =
-        WebhookDispatcher::new(db.conn().clone(), Arc::clone(&crypto), one_attempt_config());
+    let dispatcher = WebhookDispatcher::new(
+        db.conn().clone(),
+        Arc::clone(&crypto),
+        one_attempt_config(),
+        true,
+    );
     dispatcher
         .poll_and_dispatch()
         .await
@@ -345,7 +350,7 @@ async fn delivery_log_records_each_attempt() {
         batch_size: 10,
         lease_secs: 30,
     };
-    let dispatcher = WebhookDispatcher::new(db.conn().clone(), Arc::clone(&crypto), config);
+    let dispatcher = WebhookDispatcher::new(db.conn().clone(), Arc::clone(&crypto), config, true);
 
     // Pass 1
     dispatcher.poll_and_dispatch().await.expect("pass 1");
@@ -421,6 +426,7 @@ async fn no_matching_subscriptions_marks_delivered() {
         db.conn().clone(),
         Arc::clone(&crypto),
         default_test_config(),
+        true,
     );
     dispatcher
         .poll_and_dispatch()
@@ -456,7 +462,7 @@ async fn graceful_shutdown_exits_cleanly() {
         lease_secs: 30,
     };
 
-    let dispatcher = WebhookDispatcher::new(db.conn().clone(), Arc::clone(&crypto), config);
+    let dispatcher = WebhookDispatcher::new(db.conn().clone(), Arc::clone(&crypto), config, true);
     let handle = tokio::spawn(dispatcher.run(shutdown_rx));
 
     // Give the dispatcher one or two cycles
@@ -520,6 +526,7 @@ async fn out_of_scope_subscription_is_not_delivered() {
         db.conn().clone(),
         Arc::clone(&crypto),
         default_test_config(),
+        true,
     );
     dispatcher
         .poll_and_dispatch()
