@@ -855,7 +855,10 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         openapi_path: Some("/v1/workspaces/{ws}/tasks/{readable_id}/activity"),
         capability: Some("tasks:read"),
     },
-    // ---- Workspace-wide activity / audit (cross-family feed, ungated in v1) ----
+    // ---- Workspace-wide activity / audit ----
+    // `/activity` carries capability: None here but is gated `tasks:read` in-handler
+    // (manual gate, like list_workspace_tasks); the feed is task-family only. `/audit`
+    // is owner/admin-only and unreachable by an API key.
     RouteEntry {
         method: "GET",
         path_template: "/v1/workspaces/{ws}/activity",
