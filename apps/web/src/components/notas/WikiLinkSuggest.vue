@@ -32,7 +32,7 @@ const open = computed(() => props.query !== null);
  * the user is never blocked.
  */
 async function fetchNotes(q: string): Promise<void> {
-  const { data, error } = await wrappedClient.GET('/v1/workspaces/{ws}/search', {
+  const { data, error } = await wrappedClient.GET('/api/workspaces/{ws}/search', {
     params: { path: { ws: props.ws }, query: { q: q.length > 0 ? q : '*', type: 'note', limit: 8 } },
   });
 

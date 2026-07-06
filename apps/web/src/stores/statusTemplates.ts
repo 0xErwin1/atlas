@@ -23,7 +23,7 @@ export const useStatusTemplatesStore = defineStore('statusTemplates', () => {
   }
 
   async function load(ws: string): Promise<void> {
-    const { data, error: apiError } = await wrappedClient.GET('/v1/workspaces/{ws}/status-templates', {
+    const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/status-templates', {
       params: { path: { ws } },
     });
 
@@ -43,7 +43,7 @@ export const useStatusTemplatesStore = defineStore('statusTemplates', () => {
   async function create(ws: string, name: string): Promise<StatusTemplateDto | null> {
     const last = templates.value.at(-1);
 
-    const { data, error: apiError } = await wrappedClient.POST('/v1/workspaces/{ws}/status-templates', {
+    const { data, error: apiError } = await wrappedClient.POST('/api/workspaces/{ws}/status-templates', {
       params: { path: { ws } },
       body: { name, before: last?.position_key ?? null, after: null },
     });
@@ -68,7 +68,7 @@ export const useStatusTemplatesStore = defineStore('statusTemplates', () => {
     patch: { name?: string; color?: string | null },
   ): Promise<boolean> {
     const { data, error: apiError } = await wrappedClient.PATCH(
-      '/v1/workspaces/{ws}/status-templates/{template_id}',
+      '/api/workspaces/{ws}/status-templates/{template_id}',
       {
         params: { path: { ws, template_id: id } },
         body: patch,
@@ -95,7 +95,7 @@ export const useStatusTemplatesStore = defineStore('statusTemplates', () => {
     placement: { before: string | null; after: string | null },
   ): Promise<boolean> {
     const { data, error: apiError } = await wrappedClient.PATCH(
-      '/v1/workspaces/{ws}/status-templates/{template_id}',
+      '/api/workspaces/{ws}/status-templates/{template_id}',
       {
         params: { path: { ws, template_id: id } },
         body: { before: placement.before, after: placement.after },
@@ -114,7 +114,7 @@ export const useStatusTemplatesStore = defineStore('statusTemplates', () => {
   /** Deletes a template and drops it from the cache. Returns true on success. */
   async function remove(ws: string, id: string): Promise<boolean> {
     const { error: apiError } = await wrappedClient.DELETE(
-      '/v1/workspaces/{ws}/status-templates/{template_id}',
+      '/api/workspaces/{ws}/status-templates/{template_id}',
       { params: { path: { ws, template_id: id } } },
     );
 
@@ -134,7 +134,7 @@ export const useStatusTemplatesStore = defineStore('statusTemplates', () => {
    */
   async function applyToBoard(ws: string, boardId: string): Promise<boolean> {
     const { error: apiError } = await wrappedClient.POST(
-      '/v1/workspaces/{ws}/boards/{board_id}/apply-status-templates',
+      '/api/workspaces/{ws}/boards/{board_id}/apply-status-templates',
       { params: { path: { ws, board_id: boardId } } },
     );
 

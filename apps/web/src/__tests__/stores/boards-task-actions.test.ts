@@ -51,7 +51,7 @@ describe('boards store — task context-menu actions', () => {
     const ok = await store.updateTask('ws', 'AB-1', { priority: 'high' });
 
     expect(ok).toBe(true);
-    expect(PATCH).toHaveBeenCalledWith('/v1/workspaces/{ws}/tasks/{readable_id}', {
+    expect(PATCH).toHaveBeenCalledWith('/api/workspaces/{ws}/tasks/{readable_id}', {
       params: { path: { ws: 'ws', readable_id: 'AB-1' } },
       body: { priority: 'high' },
     });
@@ -129,7 +129,7 @@ describe('boards store — task context-menu actions', () => {
     const ok = await store.unassignTask('ws', 'AB-1', 'user', 'u1');
 
     expect(ok).toBe(true);
-    expect(DELETE).toHaveBeenCalledWith('/v1/workspaces/{ws}/tasks/{readable_id}/assignees/{assignee_ref}', {
+    expect(DELETE).toHaveBeenCalledWith('/api/workspaces/{ws}/tasks/{readable_id}/assignees/{assignee_ref}', {
       params: { path: { ws: 'ws', readable_id: 'AB-1', assignee_ref: 'user:u1' } },
     });
     expect(store.error).toBeNull();
@@ -154,7 +154,7 @@ describe('boards store — task context-menu actions', () => {
     const ok = await store.moveTaskToColumn('ws', 'AB-1', 'col-2');
 
     expect(ok).toBe(true);
-    expect(POST).toHaveBeenCalledWith('/v1/workspaces/{ws}/tasks/{readable_id}/move', {
+    expect(POST).toHaveBeenCalledWith('/api/workspaces/{ws}/tasks/{readable_id}/move', {
       params: { path: { ws: 'ws', readable_id: 'AB-1' } },
       body: { column_id: 'col-2', before: null, after: null },
     });
@@ -175,7 +175,7 @@ describe('boards store — task context-menu actions', () => {
 
     expect(ok).toBe(true);
     // First column by position_key is 'c-a' (key 'a').
-    expect(POST).toHaveBeenCalledWith('/v1/workspaces/{ws}/tasks/{readable_id}/move', {
+    expect(POST).toHaveBeenCalledWith('/api/workspaces/{ws}/tasks/{readable_id}/move', {
       params: { path: { ws: 'ws', readable_id: 'AB-1' } },
       body: { column_id: 'c-a', before: null, after: null },
     });
@@ -210,7 +210,7 @@ describe('boards store — task context-menu actions', () => {
     const created = await store.duplicateTask('ws', 'board-1', 'AB-1');
 
     expect(created).toBe('AB-9');
-    expect(POST).toHaveBeenCalledWith('/v1/workspaces/{ws}/boards/{board_id}/tasks', {
+    expect(POST).toHaveBeenCalledWith('/api/workspaces/{ws}/boards/{board_id}/tasks', {
       params: { path: { ws: 'ws', board_id: 'board-1' } },
       body: { column_id: 'col-1', title: 'Original (copy)', description: 'Body' },
     });
@@ -225,7 +225,7 @@ describe('boards store — task context-menu actions', () => {
     const created = await store.createTask('ws', 'board-1', 'col-2', 'New task');
 
     expect(created).toBe('AB-7');
-    expect(POST).toHaveBeenCalledWith('/v1/workspaces/{ws}/boards/{board_id}/tasks', {
+    expect(POST).toHaveBeenCalledWith('/api/workspaces/{ws}/boards/{board_id}/tasks', {
       params: { path: { ws: 'ws', board_id: 'board-1' } },
       body: { column_id: 'col-2', title: 'New task' },
     });

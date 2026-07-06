@@ -1,4 +1,4 @@
-//! Integration tests for `GET /v1/workspaces/{ws}/events` — the live-updates
+//! Integration tests for `GET /api/workspaces/{ws}/events` — the live-updates
 //! Server-Sent Events endpoint (work unit 2).
 //!
 //! Covers the SSE transport plus the per-resource authorization filter:
@@ -52,7 +52,7 @@ use uuid::Uuid;
 // ---------------------------------------------------------------------------
 
 fn events_url(base: &str, ws_slug: &str) -> String {
-    format!("{base}/v1/workspaces/{ws_slug}/events")
+    format!("{base}/api/workspaces/{ws_slug}/events")
 }
 
 /// A `task.created`-shaped envelope carrying `task_id`, used verbatim as SSE data.

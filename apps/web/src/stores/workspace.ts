@@ -73,7 +73,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   async function loadWorkspaces(): Promise<string | null> {
-    const { data, error } = await wrappedClient.GET('/v1/workspaces');
+    const { data, error } = await wrappedClient.GET('/api/workspaces');
 
     if (error !== undefined || data === undefined) {
       const hint = (error as { hint?: string } | undefined)?.hint;
@@ -111,7 +111,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
    * failure (with `error` set).
    */
   async function createWorkspace(name: string): Promise<string | null> {
-    const { data, error: apiError } = await wrappedClient.POST('/v1/workspaces', {
+    const { data, error: apiError } = await wrappedClient.POST('/api/workspaces', {
       body: { name },
     });
 
@@ -120,7 +120,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       return null;
     }
 
-    const list = await wrappedClient.GET('/v1/workspaces');
+    const list = await wrappedClient.GET('/api/workspaces');
     if (list.data !== undefined) workspaces.value = list.data;
 
     switchWorkspace(data.slug);
@@ -129,7 +129,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   async function loadProjects(ws: string): Promise<void> {
     const { items, error } = await collectPaged<ProjectDto>((cursor) =>
-      wrappedClient.GET('/v1/workspaces/{ws}/projects', {
+      wrappedClient.GET('/api/workspaces/{ws}/projects', {
         params: { path: { ws }, query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) } },
       }),
     );
@@ -165,7 +165,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
         .replace(/[^A-Z0-9]/g, '')
         .slice(0, 4) || 'PRJ';
 
-    const { data, error: apiError } = await wrappedClient.POST('/v1/workspaces/{ws}/projects', {
+    const { data, error: apiError } = await wrappedClient.POST('/api/workspaces/{ws}/projects', {
       params: { path: { ws } },
       body: { name, slug, task_prefix: taskPrefix, visibility: 'workspace' },
     });
@@ -181,7 +181,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   /** Renames a project. Returns true on success; sets `error` and returns false otherwise. */
   async function renameProject(ws: string, slug: string, name: string): Promise<boolean> {
-    const { error: apiError } = await wrappedClient.PATCH('/v1/workspaces/{ws}/projects/{project_slug}', {
+    const { error: apiError } = await wrappedClient.PATCH('/api/workspaces/{ws}/projects/{project_slug}', {
       params: { path: { ws, project_slug: slug } },
       body: { name },
     });
@@ -206,7 +206,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     slug: string,
     patch: { name?: string; task_prefix?: string },
   ): Promise<boolean> {
-    const { error: apiError } = await wrappedClient.PATCH('/v1/workspaces/{ws}/projects/{project_slug}', {
+    const { error: apiError } = await wrappedClient.PATCH('/api/workspaces/{ws}/projects/{project_slug}', {
       params: { path: { ws, project_slug: slug } },
       body: patch,
     });
@@ -225,7 +225,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
    * Returns true on success; sets `error` and returns false otherwise.
    */
   async function deleteProject(ws: string, slug: string): Promise<boolean> {
-    const { error: apiError } = await wrappedClient.DELETE('/v1/workspaces/{ws}/projects/{project_slug}', {
+    const { error: apiError } = await wrappedClient.DELETE('/api/workspaces/{ws}/projects/{project_slug}', {
       params: { path: { ws, project_slug: slug } },
     });
 
@@ -245,7 +245,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
    * on success; sets `error` and returns false otherwise.
    */
   async function renameWorkspace(ws: string, name: string): Promise<boolean> {
-    const { data, error: apiError } = await wrappedClient.PATCH('/v1/workspaces/{ws}', {
+    const { data, error: apiError } = await wrappedClient.PATCH('/api/workspaces/{ws}', {
       params: { path: { ws } },
       body: { name },
     });
@@ -270,7 +270,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
    * for an invalid or already-taken slug).
    */
   async function updateWorkspaceSlug(ws: string, slug: string): Promise<boolean> {
-    const { data, error: apiError } = await wrappedClient.PATCH('/v1/admin/workspaces/{ws}', {
+    const { data, error: apiError } = await wrappedClient.PATCH('/api/admin/workspaces/{ws}', {
       params: { path: { ws } },
       body: { slug },
     });
@@ -300,7 +300,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
    * sets `error` and returns false otherwise.
    */
   async function deleteWorkspace(ws: string): Promise<boolean> {
-    const { error: apiError } = await wrappedClient.DELETE('/v1/admin/workspaces/{ws}', {
+    const { error: apiError } = await wrappedClient.DELETE('/api/admin/workspaces/{ws}', {
       params: { path: { ws } },
     });
 
@@ -327,7 +327,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
    * list and sets `error` on failure (e.g. a non-root caller gets 403).
    */
   async function loadAdminWorkspaces(): Promise<void> {
-    const { data, error: apiError } = await wrappedClient.GET('/v1/admin/workspaces');
+    const { data, error: apiError } = await wrappedClient.GET('/api/admin/workspaces');
 
     if (apiError !== undefined || data === undefined) {
       adminWorkspaces.value = [];
@@ -340,7 +340,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   /** Loads workspace members (users and agents) for assignee pickers. */
   async function loadMembers(ws: string): Promise<void> {
-    const { data, error: apiError } = await wrappedClient.GET('/v1/workspaces/{ws}/members', {
+    const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/members', {
       params: { path: { ws } },
     });
 
@@ -360,7 +360,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
    * Returns true on success.
    */
   async function updateMemberRole(ws: string, userId: string, role: string): Promise<boolean> {
-    const { error: apiError } = await wrappedClient.PATCH('/v1/workspaces/{ws}/members/{user_id}', {
+    const { error: apiError } = await wrappedClient.PATCH('/api/workspaces/{ws}/members/{user_id}', {
       params: { path: { ws, user_id: userId } },
       body: { role },
     });
@@ -380,7 +380,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
    * owner). Returns true on success.
    */
   async function removeMember(ws: string, userId: string): Promise<boolean> {
-    const { error: apiError } = await wrappedClient.DELETE('/v1/workspaces/{ws}/members/{user_id}', {
+    const { error: apiError } = await wrappedClient.DELETE('/api/workspaces/{ws}/members/{user_id}', {
       params: { path: { ws, user_id: userId } },
     });
 
@@ -399,7 +399,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
    * add-member picker never shows stale candidates.
    */
   async function loadAssignableUsers(ws: string): Promise<void> {
-    const { data, error: apiError } = await wrappedClient.GET('/v1/workspaces/{ws}/assignable-users', {
+    const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/assignable-users', {
       params: { path: { ws } },
     });
 
@@ -418,7 +418,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
    * success — the caller reloads the member list.
    */
   async function addMember(ws: string, userId: string, role: string): Promise<boolean> {
-    const { error: apiError } = await wrappedClient.POST('/v1/workspaces/{ws}/members', {
+    const { error: apiError } = await wrappedClient.POST('/api/workspaces/{ws}/members', {
       params: { path: { ws } },
       body: { user_id: userId, role },
     });

@@ -32,7 +32,7 @@ async fn raw_login(base_url: &str, username: &str, password: &str) -> (String, O
         .expect("build reqwest client");
 
     let resp = client
-        .post(format!("{base_url}/v1/auth/login"))
+        .post(format!("{base_url}/api/auth/login"))
         .json(&LoginRequest {
             username: username.to_string(),
             password: password.to_string(),
@@ -77,7 +77,7 @@ async fn csrf_cookie_mutation_without_header_is_rejected() {
     let http = reqwest::Client::new();
 
     let resp = http
-        .post(format!("{}/v1/auth/logout", server.base_url()))
+        .post(format!("{}/api/auth/logout", server.base_url()))
         .header("Cookie", format!("atlas_session={session_cookie}"))
         .send()
         .await
@@ -121,7 +121,7 @@ async fn csrf_cookie_mutation_with_header_succeeds() {
     let http = reqwest::Client::new();
 
     let resp = http
-        .post(format!("{}/v1/auth/logout", server.base_url()))
+        .post(format!("{}/api/auth/logout", server.base_url()))
         .header("Cookie", format!("atlas_session={session_cookie}"))
         .header("X-Atlas-CSRF", "1")
         .send()
@@ -147,7 +147,7 @@ async fn csrf_bearer_mutation_is_exempt() {
     let http = reqwest::Client::new();
 
     let resp = http
-        .post(format!("{}/v1/auth/logout", server.base_url()))
+        .post(format!("{}/api/auth/logout", server.base_url()))
         .header("Authorization", format!("Bearer {token}"))
         .send()
         .await
@@ -175,7 +175,7 @@ async fn login_rate_limit_returns_429_after_quota_exceeded() {
     // pass and the rest are rejected with 429 without waiting for argon2.
     let futures: Vec<_> = (0..10)
         .map(|_| {
-            http.post(format!("{base_url}/v1/auth/login"))
+            http.post(format!("{base_url}/api/auth/login"))
                 .json(&LoginRequest {
                     username: "nonexistent".to_string(),
                     password: "wrong".to_string(),

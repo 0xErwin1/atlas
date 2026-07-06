@@ -31,7 +31,7 @@ fn user_key_req(name: &str) -> CreateUserApiKeyRequest {
 }
 
 // ---------------------------------------------------------------------------
-// POST /v1/api-keys
+// POST /api/api-keys
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
@@ -196,7 +196,7 @@ async fn initial_grant_rejects_admin_role() {
 }
 
 // ---------------------------------------------------------------------------
-// GET /v1/api-keys
+// GET /api/api-keys
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
@@ -280,7 +280,7 @@ async fn api_key_principal_cannot_list_user_api_keys() {
 }
 
 // ---------------------------------------------------------------------------
-// DELETE /v1/api-keys/{id}
+// DELETE /api/api-keys/{id}
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
@@ -367,7 +367,7 @@ async fn revoke_user_api_key_nonexistent_returns_error() {
 }
 
 // ---------------------------------------------------------------------------
-// GET /v1/api-keys/{id}/grants
+// GET /api/api-keys/{id}/grants
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
@@ -551,7 +551,7 @@ async fn list_api_key_grants_non_owner_returns_403() {
 }
 
 // ---------------------------------------------------------------------------
-// DELETE /v1/api-keys/{id}/grants/{grant_id}
+// DELETE /api/api-keys/{id}/grants/{grant_id}
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
@@ -834,7 +834,7 @@ async fn create_user_api_key_rejects_unknown_scope_with_422() {
 
     let response = owner
         .http_client()
-        .post(format!("{}/v1/api-keys", server.base_url()))
+        .post(format!("{}/api/api-keys", server.base_url()))
         .header("x-atlas-csrf", "1")
         .bearer_auth(owner.token().expect("token"))
         .json(&serde_json::json!({

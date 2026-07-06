@@ -58,12 +58,12 @@ fn principal_to_actor(principal: &Principal) -> Actor {
 }
 
 // ---------------------------------------------------------------------------
-// POST /v1/workspaces/{ws}/projects/{project_slug}/folders
+// POST /api/workspaces/{ws}/projects/{project_slug}/folders
 // ---------------------------------------------------------------------------
 
 #[utoipa::path(
     post,
-    path = "/v1/workspaces/{ws}/projects/{project_slug}/folders",
+    path = "/api/workspaces/{ws}/projects/{project_slug}/folders",
     tag = "folders",
     security(("bearer_auth" = [])),
     params(
@@ -128,7 +128,7 @@ pub(crate) async fn create_folder(
 }
 
 // ---------------------------------------------------------------------------
-// GET /v1/workspaces/{ws}/projects/{project_slug}/folders
+// GET /api/workspaces/{ws}/projects/{project_slug}/folders
 // ---------------------------------------------------------------------------
 
 #[derive(Deserialize)]
@@ -139,7 +139,7 @@ pub(crate) struct PaginationQuery {
 
 #[utoipa::path(
     get,
-    path = "/v1/workspaces/{ws}/projects/{project_slug}/folders",
+    path = "/api/workspaces/{ws}/projects/{project_slug}/folders",
     tag = "folders",
     security(("bearer_auth" = [])),
     params(
@@ -196,12 +196,12 @@ pub(crate) async fn list_folders(
 }
 
 // ---------------------------------------------------------------------------
-// GET /v1/workspaces/{ws}/folders/{folder_id}
+// GET /api/workspaces/{ws}/folders/{folder_id}
 // ---------------------------------------------------------------------------
 
 #[utoipa::path(
     get,
-    path = "/v1/workspaces/{ws}/folders/{folder_id}",
+    path = "/api/workspaces/{ws}/folders/{folder_id}",
     tag = "folders",
     security(("bearer_auth" = [])),
     params(
@@ -222,12 +222,12 @@ pub(crate) async fn get_folder(
 }
 
 // ---------------------------------------------------------------------------
-// PATCH /v1/workspaces/{ws}/folders/{folder_id}
+// PATCH /api/workspaces/{ws}/folders/{folder_id}
 // ---------------------------------------------------------------------------
 
 #[utoipa::path(
     patch,
-    path = "/v1/workspaces/{ws}/folders/{folder_id}",
+    path = "/api/workspaces/{ws}/folders/{folder_id}",
     tag = "folders",
     security(("bearer_auth" = [])),
     params(
@@ -272,12 +272,12 @@ pub(crate) async fn rename_folder(
 }
 
 // ---------------------------------------------------------------------------
-// PATCH /v1/workspaces/{ws}/folders/{folder_id}/move
+// PATCH /api/workspaces/{ws}/folders/{folder_id}/move
 // ---------------------------------------------------------------------------
 
 #[utoipa::path(
     patch,
-    path = "/v1/workspaces/{ws}/folders/{folder_id}/move",
+    path = "/api/workspaces/{ws}/folders/{folder_id}/move",
     tag = "folders",
     security(("bearer_auth" = [])),
     params(
@@ -347,12 +347,12 @@ pub(crate) async fn move_folder(
 }
 
 // ---------------------------------------------------------------------------
-// POST /v1/workspaces/{ws}/folders/{folder_id}/copy
+// POST /api/workspaces/{ws}/folders/{folder_id}/copy
 // ---------------------------------------------------------------------------
 
 #[utoipa::path(
     post,
-    path = "/v1/workspaces/{ws}/folders/{folder_id}/copy",
+    path = "/api/workspaces/{ws}/folders/{folder_id}/copy",
     tag = "folders",
     security(("bearer_auth" = [])),
     params(
@@ -498,12 +498,12 @@ async fn copy_folder_subtree(
 }
 
 // ---------------------------------------------------------------------------
-// DELETE /v1/workspaces/{ws}/folders/{folder_id}
+// DELETE /api/workspaces/{ws}/folders/{folder_id}
 // ---------------------------------------------------------------------------
 
 #[utoipa::path(
     delete,
-    path = "/v1/workspaces/{ws}/folders/{folder_id}",
+    path = "/api/workspaces/{ws}/folders/{folder_id}",
     tag = "folders",
     security(("bearer_auth" = [])),
     params(

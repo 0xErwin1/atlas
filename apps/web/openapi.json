@@ -13,38 +13,7 @@
     "version": "0.0.0"
   },
   "paths": {
-    "/health": {
-      "get": {
-        "tags": [
-          "crate::routes::health"
-        ],
-        "operationId": "health",
-        "responses": {
-          "200": {
-            "description": "Service is healthy"
-          }
-        }
-      }
-    },
-    "/ready": {
-      "get": {
-        "tags": [
-          "crate::routes::health"
-        ],
-        "summary": "Readiness probe: liveness plus a `SELECT 1` round-trip to the database.",
-        "description": "Unlike `/health` (a cheap liveness signal), this endpoint touches the pool so\nan orchestrator can withhold traffic while the database is unreachable or the\npool is exhausted. Returns 503 on any database error.",
-        "operationId": "ready",
-        "responses": {
-          "200": {
-            "description": "Service is ready: the database is reachable"
-          },
-          "503": {
-            "description": "Service is not ready: the database is unreachable"
-          }
-        }
-      }
-    },
-    "/v1/activate/{token}": {
+    "/api/activate/{token}": {
       "get": {
         "tags": [
           "auth"
@@ -131,7 +100,7 @@
         }
       }
     },
-    "/v1/admin/audit": {
+    "/api/admin/audit": {
       "get": {
         "tags": [
           "audit"
@@ -223,7 +192,7 @@
         ]
       }
     },
-    "/v1/admin/workspaces": {
+    "/api/admin/workspaces": {
       "get": {
         "tags": [
           "workspaces"
@@ -258,7 +227,7 @@
         ]
       }
     },
-    "/v1/admin/workspaces/{ws}": {
+    "/api/admin/workspaces/{ws}": {
       "delete": {
         "tags": [
           "workspaces"
@@ -355,7 +324,7 @@
         ]
       }
     },
-    "/v1/api-keys": {
+    "/api/api-keys": {
       "get": {
         "tags": [
           "api-keys"
@@ -453,7 +422,7 @@
         ]
       }
     },
-    "/v1/api-keys/{key_id}": {
+    "/api/api-keys/{key_id}": {
       "delete": {
         "tags": [
           "api-keys"
@@ -554,7 +523,7 @@
         ]
       }
     },
-    "/v1/api-keys/{key_id}/grants": {
+    "/api/api-keys/{key_id}/grants": {
       "get": {
         "tags": [
           "api-keys"
@@ -603,7 +572,7 @@
         ]
       }
     },
-    "/v1/api-keys/{key_id}/grants/{grant_id}": {
+    "/api/api-keys/{key_id}/grants/{grant_id}": {
       "delete": {
         "tags": [
           "api-keys"
@@ -652,7 +621,7 @@
         ]
       }
     },
-    "/v1/auth/change-password": {
+    "/api/auth/change-password": {
       "post": {
         "tags": [
           "auth"
@@ -686,7 +655,7 @@
         ]
       }
     },
-    "/v1/auth/login": {
+    "/api/auth/login": {
       "post": {
         "tags": [
           "auth"
@@ -722,7 +691,7 @@
         }
       }
     },
-    "/v1/auth/logout": {
+    "/api/auth/logout": {
       "post": {
         "tags": [
           "auth"
@@ -743,7 +712,7 @@
         ]
       }
     },
-    "/v1/auth/me": {
+    "/api/auth/me": {
       "get": {
         "tags": [
           "auth"
@@ -771,7 +740,7 @@
         ]
       }
     },
-    "/v1/me/ui-state": {
+    "/api/me/ui-state": {
       "get": {
         "tags": [
           "ui-state"
@@ -845,7 +814,7 @@
         ]
       }
     },
-    "/v1/meta": {
+    "/api/meta": {
       "get": {
         "tags": [
           "meta"
@@ -873,7 +842,7 @@
         ]
       }
     },
-    "/v1/users": {
+    "/api/users": {
       "get": {
         "tags": [
           "users"
@@ -949,7 +918,7 @@
         ]
       }
     },
-    "/v1/users/me": {
+    "/api/users/me": {
       "patch": {
         "tags": [
           "users"
@@ -990,7 +959,7 @@
         ]
       }
     },
-    "/v1/users/{user_id}/activation-link": {
+    "/api/users/{user_id}/activation-link": {
       "post": {
         "tags": [
           "users"
@@ -1036,7 +1005,7 @@
         ]
       }
     },
-    "/v1/users/{user_id}/disable": {
+    "/api/users/{user_id}/disable": {
       "post": {
         "tags": [
           "users"
@@ -1072,7 +1041,7 @@
         ]
       }
     },
-    "/v1/users/{user_id}/enable": {
+    "/api/users/{user_id}/enable": {
       "post": {
         "tags": [
           "users"
@@ -1108,7 +1077,7 @@
         ]
       }
     },
-    "/v1/users/{user_id}/memberships": {
+    "/api/users/{user_id}/memberships": {
       "get": {
         "tags": [
           "users"
@@ -1157,7 +1126,7 @@
         ]
       }
     },
-    "/v1/users/{user_id}/reset-password": {
+    "/api/users/{user_id}/reset-password": {
       "post": {
         "tags": [
           "users"
@@ -1203,7 +1172,7 @@
         ]
       }
     },
-    "/v1/users/{user_id}/system-admin": {
+    "/api/users/{user_id}/system-admin": {
       "post": {
         "tags": [
           "users"
@@ -1259,7 +1228,7 @@
         ]
       }
     },
-    "/v1/workspaces": {
+    "/api/workspaces": {
       "get": {
         "tags": [
           "workspaces"
@@ -1296,7 +1265,7 @@
           "workspaces"
         ],
         "summary": "Creates a new workspace owned by the authenticated human user.",
-        "description": "The slug is derived from the name and de-duplicated against existing\nworkspace slugs. The creating user is added as `Owner`, so the workspace\nimmediately appears in `GET /v1/workspaces`. API keys (agents) are rejected\nwith 403: agents are workspace-scoped and must not create workspaces.",
+        "description": "The slug is derived from the name and de-duplicated against existing\nworkspace slugs. The creating user is added as `Owner`, so the workspace\nimmediately appears in `GET /api/workspaces`. API keys (agents) are rejected\nwith 403: agents are workspace-scoped and must not create workspaces.",
         "operationId": "create_workspace",
         "requestBody": {
           "content": {
@@ -1333,7 +1302,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}": {
+    "/api/workspaces/{ws}": {
       "get": {
         "tags": [
           "workspaces"
@@ -1379,6 +1348,7 @@
           "workspaces"
         ],
         "summary": "Renames the workspace display name. The slug is never re-derived; only\n`name` and `updated_at` change. Requires workspace membership.",
+        "description": "A human member passes unchanged; an API-key principal is additionally\nrequired to hold `config:update`, so a scoped agent cannot rename the\nworkspace without that capability. `member.api_key_id` is `Some` exactly for\nthose callers.",
         "operationId": "update_workspace",
         "parameters": [
           {
@@ -1429,7 +1399,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/activity": {
+    "/api/workspaces/{ws}/activity": {
       "get": {
         "tags": [
           "tasks"
@@ -1521,13 +1491,13 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/assignable-users": {
+    "/api/workspaces/{ws}/assignable-users": {
       "get": {
         "tags": [
           "members"
         ],
         "summary": "Lists users who can be added to the workspace.",
-        "description": "Returns the active (non-disabled) users that are NOT already members of this\nworkspace. The `users` table holds only human accounts, so api keys are\nexcluded by construction. Mirrors the `GET /v1/users` shape (`Vec<UserDto>`).",
+        "description": "Returns the active (non-disabled) users that are NOT already members of this\nworkspace. The `users` table holds only human accounts, so api keys are\nexcluded by construction. Mirrors the `GET /api/users` shape (`Vec<UserDto>`).",
         "operationId": "list_assignable_users",
         "parameters": [
           {
@@ -1571,7 +1541,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/attachments/{attachment_id}": {
+    "/api/workspaces/{ws}/attachments/{attachment_id}": {
       "get": {
         "tags": [
           "documents"
@@ -1663,7 +1633,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/audit": {
+    "/api/workspaces/{ws}/audit": {
       "get": {
         "tags": [
           "audit"
@@ -1767,7 +1737,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/automation-rules": {
+    "/api/workspaces/{ws}/automation-rules": {
       "get": {
         "tags": [
           "automation-rules"
@@ -1882,7 +1852,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/automation-rules/{rule_id}": {
+    "/api/workspaces/{ws}/automation-rules/{rule_id}": {
       "get": {
         "tags": [
           "automation-rules"
@@ -2040,7 +2010,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/boards/{board_id}": {
+    "/api/workspaces/{ws}/boards/{board_id}": {
       "get": {
         "tags": [
           "boards"
@@ -2201,7 +2171,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/boards/{board_id}/apply-status-templates": {
+    "/api/workspaces/{ws}/boards/{board_id}/apply-status-templates": {
       "post": {
         "tags": [
           "status-templates"
@@ -2259,7 +2229,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/boards/{board_id}/columns": {
+    "/api/workspaces/{ws}/boards/{board_id}/columns": {
       "get": {
         "tags": [
           "boards"
@@ -2381,7 +2351,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/boards/{board_id}/columns/{column_id}": {
+    "/api/workspaces/{ws}/boards/{board_id}/columns/{column_id}": {
       "delete": {
         "tags": [
           "boards"
@@ -2511,7 +2481,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/boards/{board_id}/presence": {
+    "/api/workspaces/{ws}/boards/{board_id}/presence": {
       "post": {
         "tags": [
           "presence"
@@ -2610,7 +2580,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/boards/{board_id}/tasks": {
+    "/api/workspaces/{ws}/boards/{board_id}/tasks": {
       "get": {
         "tags": [
           "tasks"
@@ -2749,7 +2719,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/documents/{slug}": {
+    "/api/workspaces/{ws}/documents/{slug}": {
       "get": {
         "tags": [
           "documents"
@@ -2910,7 +2880,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/documents/{slug}/attachments": {
+    "/api/workspaces/{ws}/documents/{slug}/attachments": {
       "get": {
         "tags": [
           "documents"
@@ -3023,7 +2993,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/documents/{slug}/backlinks": {
+    "/api/workspaces/{ws}/documents/{slug}/backlinks": {
       "get": {
         "tags": [
           "documents"
@@ -3091,7 +3061,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/documents/{slug}/comments": {
+    "/api/workspaces/{ws}/documents/{slug}/comments": {
       "get": {
         "tags": [
           "documents"
@@ -3230,7 +3200,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/documents/{slug}/comments/{comment_id}": {
+    "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}": {
       "delete": {
         "tags": [
           "documents"
@@ -3360,7 +3330,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/documents/{slug}/content": {
+    "/api/workspaces/{ws}/documents/{slug}/content": {
       "put": {
         "tags": [
           "documents"
@@ -3427,7 +3397,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/documents/{slug}/copy": {
+    "/api/workspaces/{ws}/documents/{slug}/copy": {
       "post": {
         "tags": [
           "documents"
@@ -3491,7 +3461,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/documents/{slug}/frontmatter": {
+    "/api/workspaces/{ws}/documents/{slug}/frontmatter": {
       "get": {
         "tags": [
           "documents"
@@ -3539,7 +3509,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/documents/{slug}/history": {
+    "/api/workspaces/{ws}/documents/{slug}/history": {
       "get": {
         "tags": [
           "documents"
@@ -3600,7 +3570,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/documents/{slug}/move": {
+    "/api/workspaces/{ws}/documents/{slug}/move": {
       "patch": {
         "tags": [
           "documents"
@@ -3664,7 +3634,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/documents/{slug}/presence": {
+    "/api/workspaces/{ws}/documents/{slug}/presence": {
       "post": {
         "tags": [
           "presence"
@@ -3763,7 +3733,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/documents/{slug}/revisions/{seq}": {
+    "/api/workspaces/{ws}/documents/{slug}/revisions/{seq}": {
       "get": {
         "tags": [
           "documents"
@@ -3821,7 +3791,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/folders/{folder_id}": {
+    "/api/workspaces/{ws}/folders/{folder_id}": {
       "get": {
         "tags": [
           "folders"
@@ -3985,7 +3955,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/folders/{folder_id}/copy": {
+    "/api/workspaces/{ws}/folders/{folder_id}/copy": {
       "post": {
         "tags": [
           "folders"
@@ -4050,7 +4020,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/folders/{folder_id}/move": {
+    "/api/workspaces/{ws}/folders/{folder_id}/move": {
       "patch": {
         "tags": [
           "folders"
@@ -4115,7 +4085,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/grants": {
+    "/api/workspaces/{ws}/grants": {
       "get": {
         "tags": [
           "grants"
@@ -4227,7 +4197,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/grants/{grant_id}": {
+    "/api/workspaces/{ws}/grants/{grant_id}": {
       "delete": {
         "tags": [
           "grants"
@@ -4275,7 +4245,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/groups": {
+    "/api/workspaces/{ws}/groups": {
       "get": {
         "tags": [
           "groups"
@@ -4379,7 +4349,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/groups/{group_id}": {
+    "/api/workspaces/{ws}/groups/{group_id}": {
       "delete": {
         "tags": [
           "groups"
@@ -4427,7 +4397,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/groups/{group_id}/members": {
+    "/api/workspaces/{ws}/groups/{group_id}/members": {
       "get": {
         "tags": [
           "groups"
@@ -4551,7 +4521,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/groups/{group_id}/members/{user_id}": {
+    "/api/workspaces/{ws}/groups/{group_id}/members/{user_id}": {
       "delete": {
         "tags": [
           "groups"
@@ -4609,7 +4579,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/integration-configs": {
+    "/api/workspaces/{ws}/integration-configs": {
       "get": {
         "tags": [
           "integrations"
@@ -4707,7 +4677,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/integration-configs/{config_id}": {
+    "/api/workspaces/{ws}/integration-configs/{config_id}": {
       "get": {
         "tags": [
           "integrations"
@@ -4865,7 +4835,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/integrations/{integration}/events": {
+    "/api/workspaces/{ws}/integrations/{integration}/events": {
       "post": {
         "tags": [
           "integrations"
@@ -4909,7 +4879,7 @@
         }
       }
     },
-    "/v1/workspaces/{ws}/members": {
+    "/api/workspaces/{ws}/members": {
       "get": {
         "tags": [
           "members"
@@ -5015,7 +4985,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/members/{user_id}": {
+    "/api/workspaces/{ws}/members/{user_id}": {
       "delete": {
         "tags": [
           "members"
@@ -5142,7 +5112,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/projects": {
+    "/api/workspaces/{ws}/projects": {
       "get": {
         "tags": [
           "projects"
@@ -5251,7 +5221,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/projects/{project_slug}": {
+    "/api/workspaces/{ws}/projects/{project_slug}": {
       "get": {
         "tags": [
           "projects"
@@ -5412,7 +5382,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/projects/{project_slug}/boards": {
+    "/api/workspaces/{ws}/projects/{project_slug}/boards": {
       "get": {
         "tags": [
           "boards"
@@ -5545,7 +5515,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/projects/{project_slug}/documents": {
+    "/api/workspaces/{ws}/projects/{project_slug}/documents": {
       "get": {
         "tags": [
           "documents"
@@ -5675,7 +5645,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/projects/{project_slug}/folders": {
+    "/api/workspaces/{ws}/projects/{project_slug}/folders": {
       "get": {
         "tags": [
           "folders"
@@ -5808,7 +5778,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/projects/{project_slug}/grants": {
+    "/api/workspaces/{ws}/projects/{project_slug}/grants": {
       "get": {
         "tags": [
           "grants"
@@ -5938,7 +5908,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/projects/{project_slug}/grants/{grant_id}": {
+    "/api/workspaces/{ws}/projects/{project_slug}/grants/{grant_id}": {
       "delete": {
         "tags": [
           "grants"
@@ -5995,7 +5965,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/property-definitions": {
+    "/api/workspaces/{ws}/property-definitions": {
       "get": {
         "tags": [
           "property-definitions"
@@ -6108,7 +6078,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/property-definitions/{property_definition_id}": {
+    "/api/workspaces/{ws}/property-definitions/{property_definition_id}": {
       "delete": {
         "tags": [
           "property-definitions"
@@ -6156,7 +6126,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/saved-searches": {
+    "/api/workspaces/{ws}/saved-searches": {
       "get": {
         "tags": [
           "saved-searches"
@@ -6257,7 +6227,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/saved-searches/{id}": {
+    "/api/workspaces/{ws}/saved-searches/{id}": {
       "delete": {
         "tags": [
           "saved-searches"
@@ -6368,7 +6338,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/search": {
+    "/api/workspaces/{ws}/search": {
       "get": {
         "tags": [
           "search"
@@ -6461,7 +6431,7 @@
                       "type": "array",
                       "items": {
                         "type": "object",
-                        "description": "A single search result item returned by `GET /v1/workspaces/{ws}/search`.",
+                        "description": "A single search result item returned by `GET /api/workspaces/{ws}/search`.",
                         "required": [
                           "id",
                           "kind",
@@ -6547,7 +6517,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/status-templates": {
+    "/api/workspaces/{ws}/status-templates": {
       "get": {
         "tags": [
           "status-templates"
@@ -6645,7 +6615,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/status-templates/{template_id}": {
+    "/api/workspaces/{ws}/status-templates/{template_id}": {
       "delete": {
         "tags": [
           "status-templates"
@@ -6759,7 +6729,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/tags": {
+    "/api/workspaces/{ws}/tags": {
       "get": {
         "tags": [
           "tags"
@@ -6864,7 +6834,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/tags/used": {
+    "/api/workspaces/{ws}/tags/used": {
       "get": {
         "tags": [
           "tags"
@@ -6909,7 +6879,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/tags/{tag_id}": {
+    "/api/workspaces/{ws}/tags/{tag_id}": {
       "delete": {
         "tags": [
           "tags"
@@ -7026,7 +6996,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/task-views": {
+    "/api/workspaces/{ws}/task-views": {
       "get": {
         "tags": [
           "task-views"
@@ -7127,7 +7097,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/task-views/{id}": {
+    "/api/workspaces/{ws}/task-views/{id}": {
       "get": {
         "tags": [
           "task-views"
@@ -7288,7 +7258,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/tasks": {
+    "/api/workspaces/{ws}/tasks": {
       "get": {
         "tags": [
           "tasks"
@@ -7416,7 +7386,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/tasks/{readable_id}": {
+    "/api/workspaces/{ws}/tasks/{readable_id}": {
       "get": {
         "tags": [
           "tasks"
@@ -7580,7 +7550,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/tasks/{readable_id}/activity": {
+    "/api/workspaces/{ws}/tasks/{readable_id}/activity": {
       "get": {
         "tags": [
           "tasks"
@@ -7654,7 +7624,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/tasks/{readable_id}/assignees": {
+    "/api/workspaces/{ws}/tasks/{readable_id}/assignees": {
       "get": {
         "tags": [
           "tasks"
@@ -7776,7 +7746,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/tasks/{readable_id}/assignees/{assignee_ref}": {
+    "/api/workspaces/{ws}/tasks/{readable_id}/assignees/{assignee_ref}": {
       "delete": {
         "tags": [
           "tasks"
@@ -7832,7 +7802,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/tasks/{readable_id}/attachments": {
+    "/api/workspaces/{ws}/tasks/{readable_id}/attachments": {
       "get": {
         "tags": [
           "tasks"
@@ -7960,7 +7930,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}": {
+    "/api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}": {
       "delete": {
         "tags": [
           "tasks"
@@ -8018,7 +7988,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}/content": {
+    "/api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}/content": {
       "get": {
         "tags": [
           "tasks"
@@ -8076,7 +8046,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/tasks/{readable_id}/backlinks": {
+    "/api/workspaces/{ws}/tasks/{readable_id}/backlinks": {
       "get": {
         "tags": [
           "tasks"
@@ -8150,7 +8120,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/tasks/{readable_id}/checklist": {
+    "/api/workspaces/{ws}/tasks/{readable_id}/checklist": {
       "get": {
         "tags": [
           "tasks"
@@ -8269,7 +8239,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}": {
+    "/api/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}": {
       "delete": {
         "tags": [
           "tasks"
@@ -8399,7 +8369,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}/promote": {
+    "/api/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}/promote": {
       "post": {
         "tags": [
           "tasks"
@@ -8475,7 +8445,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/tasks/{readable_id}/comments": {
+    "/api/workspaces/{ws}/tasks/{readable_id}/comments": {
       "get": {
         "tags": [
           "tasks"
@@ -8614,7 +8584,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}": {
+    "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}": {
       "delete": {
         "tags": [
           "tasks"
@@ -8744,7 +8714,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/tasks/{readable_id}/move": {
+    "/api/workspaces/{ws}/tasks/{readable_id}/move": {
       "post": {
         "tags": [
           "tasks"
@@ -8811,7 +8781,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/tasks/{readable_id}/promote": {
+    "/api/workspaces/{ws}/tasks/{readable_id}/promote": {
       "post": {
         "tags": [
           "tasks"
@@ -8865,7 +8835,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/tasks/{readable_id}/references": {
+    "/api/workspaces/{ws}/tasks/{readable_id}/references": {
       "get": {
         "tags": [
           "tasks"
@@ -8992,7 +8962,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/tasks/{readable_id}/references/{reference_id}": {
+    "/api/workspaces/{ws}/tasks/{readable_id}/references/{reference_id}": {
       "delete": {
         "tags": [
           "tasks"
@@ -9048,7 +9018,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/tasks/{readable_id}/subtasks": {
+    "/api/workspaces/{ws}/tasks/{readable_id}/subtasks": {
       "get": {
         "tags": [
           "tasks"
@@ -9170,7 +9140,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/webhooks": {
+    "/api/workspaces/{ws}/webhooks": {
       "get": {
         "tags": [
           "webhooks"
@@ -9291,7 +9261,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/webhooks/{webhook_id}": {
+    "/api/workspaces/{ws}/webhooks/{webhook_id}": {
       "get": {
         "tags": [
           "webhooks"
@@ -9458,7 +9428,7 @@
         ]
       }
     },
-    "/v1/workspaces/{ws}/webhooks/{webhook_id}/deliveries": {
+    "/api/workspaces/{ws}/webhooks/{webhook_id}/deliveries": {
       "get": {
         "tags": [
           "webhooks"
@@ -9533,6 +9503,37 @@
         ]
       }
     },
+    "/health": {
+      "get": {
+        "tags": [
+          "crate::routes::health"
+        ],
+        "operationId": "health",
+        "responses": {
+          "200": {
+            "description": "Service is healthy"
+          }
+        }
+      }
+    },
+    "/ready": {
+      "get": {
+        "tags": [
+          "crate::routes::health"
+        ],
+        "summary": "Readiness probe: liveness plus a `SELECT 1` round-trip to the database.",
+        "description": "Unlike `/health` (a cheap liveness signal), this endpoint touches the pool so\nan orchestrator can withhold traffic while the database is unreachable or the\npool is exhausted. Returns 503 on any database error.",
+        "operationId": "ready",
+        "responses": {
+          "200": {
+            "description": "Service is ready: the database is reachable"
+          },
+          "503": {
+            "description": "Service is not ready: the database is unreachable"
+          }
+        }
+      }
+    },
     "/version": {
       "get": {
         "tags": [
@@ -9551,7 +9552,7 @@
     "schemas": {
       "ActivatePasswordRequest": {
         "type": "object",
-        "description": "Request body for `POST /v1/activate/{token}`.",
+        "description": "Request body for `POST /api/activate/{token}`.",
         "required": [
           "password"
         ],
@@ -9563,7 +9564,7 @@
       },
       "ActivationInfoDto": {
         "type": "object",
-        "description": "Minimal user info returned by `GET /v1/activate/{token}` so the activation\npage can display a personalised heading without requiring authentication.",
+        "description": "Minimal user info returned by `GET /api/activate/{token}` so the activation\npage can display a personalised heading without requiring authentication.",
         "required": [
           "username",
           "display_name"
@@ -9579,7 +9580,7 @@
       },
       "ActivationLinkResponse": {
         "type": "object",
-        "description": "Response from `POST /v1/users/{user_id}/activation-link`.\n\n`activation_link` is a freshly issued single-use link. Prior unconsumed tokens\nfor the same user are invalidated.",
+        "description": "Response from `POST /api/users/{user_id}/activation-link`.\n\n`activation_link` is a freshly issued single-use link. Prior unconsumed tokens\nfor the same user are invalidated.",
         "required": [
           "activation_link"
         ],
@@ -9672,7 +9673,7 @@
       },
       "AddAssigneeRequest": {
         "type": "object",
-        "description": "Request body for `POST /v1/workspaces/{ws}/tasks/{readable_id}/assignees`.",
+        "description": "Request body for `POST /api/workspaces/{ws}/tasks/{readable_id}/assignees`.",
         "required": [
           "assignee_type",
           "assignee_id"
@@ -9690,7 +9691,7 @@
       },
       "AddGroupMemberRequest": {
         "type": "object",
-        "description": "Request body for `POST /v1/workspaces/{ws}/groups/{group_id}/members`.",
+        "description": "Request body for `POST /api/workspaces/{ws}/groups/{group_id}/members`.",
         "required": [
           "user_id"
         ],
@@ -9703,7 +9704,7 @@
       },
       "AddMemberRequest": {
         "type": "object",
-        "description": "Request body for `POST /v1/workspaces/{ws}/members`.\n\nAdds an existing user to the workspace at the given role. `role` is one of\n`\"owner\"` | `\"admin\"` | `\"member\"`; granting `owner` requires an owner (or\nbreak-glass) caller.",
+        "description": "Request body for `POST /api/workspaces/{ws}/members`.\n\nAdds an existing user to the workspace at the given role. `role` is one of\n`\"owner\"` | `\"admin\"` | `\"member\"`; granting `owner` requires an owner (or\nbreak-glass) caller.",
         "required": [
           "user_id",
           "role"
@@ -9720,7 +9721,7 @@
       },
       "AdminUpdateWorkspaceRequest": {
         "type": "object",
-        "description": "Request body for `PATCH /v1/admin/workspaces/{ws}` (root/system-admin only).\n\nBoth fields are optional and applied independently: omit a field to leave it\nunchanged. Unlike the member-facing `UpdateWorkspaceRequest`, this admin path\nalso allows re-slugging a workspace.",
+        "description": "Request body for `PATCH /api/admin/workspaces/{ws}` (root/system-admin only).\n\nBoth fields are optional and applied independently: omit a field to leave it\nunchanged. Unlike the member-facing `UpdateWorkspaceRequest`, this admin path\nalso allows re-slugging a workspace.",
         "properties": {
           "name": {
             "type": [
@@ -9738,7 +9739,7 @@
       },
       "AgentIdentityDto": {
         "type": "object",
-        "description": "The self-identity of an API-key (agent) principal, returned in the `agent`\nfield of `GET /v1/auth/me` so an agent can inspect its own id, name, and the\ncapability scopes it currently holds.",
+        "description": "The self-identity of an API-key (agent) principal, returned in the `agent`\nfield of `GET /api/auth/me` so an agent can inspect its own id, name, and the\ncapability scopes it currently holds.",
         "required": [
           "id",
           "name",
@@ -9764,7 +9765,7 @@
       },
       "ApiKeyCreated": {
         "type": "object",
-        "description": "Response for `POST /v1/api-keys` (secret returned exactly once).",
+        "description": "Response for `POST /api/api-keys` (secret returned exactly once).",
         "required": [
           "id",
           "name",
@@ -9872,7 +9873,7 @@
       },
       "ApiKeyGrantDto": {
         "type": "object",
-        "description": "A single grant belonging to an API key, with resolved resource labels.\n\nReturned by `GET /v1/api-keys/{key_id}/grants` so the keys panel can display\nhuman-readable resource names without additional lookups.",
+        "description": "A single grant belonging to an API key, with resolved resource labels.\n\nReturned by `GET /api/api-keys/{key_id}/grants` so the keys panel can display\nhuman-readable resource names without additional lookups.",
         "required": [
           "id",
           "role",
@@ -10256,7 +10257,7 @@
       },
       "ChangePasswordRequest": {
         "type": "object",
-        "description": "Request body for `POST /v1/auth/change-password`.",
+        "description": "Request body for `POST /api/auth/change-password`.",
         "required": [
           "current_password",
           "new_password"
@@ -10476,7 +10477,7 @@
       },
       "CopyDocumentRequest": {
         "type": "object",
-        "description": "Request body for `POST /v1/workspaces/{ws}/documents/{slug}/copy`.\n\n`folder_id` is the destination folder for the copy. When omitted, the copy\nlands in the same folder as the source document.",
+        "description": "Request body for `POST /api/workspaces/{ws}/documents/{slug}/copy`.\n\n`folder_id` is the destination folder for the copy. When omitted, the copy\nlands in the same folder as the source document.",
         "properties": {
           "folder_id": {
             "type": [
@@ -10489,7 +10490,7 @@
       },
       "CopyFolderRequest": {
         "type": "object",
-        "description": "Request body for `POST /v1/workspaces/{ws}/folders/{folder_id}/copy`.\n\n`parent_folder_id` is the destination parent for the copied top folder. When\nomitted, the copy lands under the same parent as the source folder.",
+        "description": "Request body for `POST /api/workspaces/{ws}/folders/{folder_id}/copy`.\n\n`parent_folder_id` is the destination parent for the copied top folder. When\nomitted, the copy lands under the same parent as the source folder.",
         "properties": {
           "parent_folder_id": {
             "type": [
@@ -10502,7 +10503,7 @@
       },
       "CreateAutomationRuleRequest": {
         "type": "object",
-        "description": "Request body for `POST /v1/workspaces/{ws}/automation-rules`.",
+        "description": "Request body for `POST /api/workspaces/{ws}/automation-rules`.",
         "required": [
           "name",
           "trigger_event_type",
@@ -10539,7 +10540,7 @@
       },
       "CreateBoardRequest": {
         "type": "object",
-        "description": "Request body for `POST /v1/workspaces/{ws}/projects/{ps}/boards`.",
+        "description": "Request body for `POST /api/workspaces/{ws}/projects/{ps}/boards`.",
         "required": [
           "name"
         ],
@@ -10551,7 +10552,7 @@
       },
       "CreateChecklistItemRequest": {
         "type": "object",
-        "description": "Request body for `POST /v1/workspaces/{ws}/tasks/{readable_id}/checklist`.",
+        "description": "Request body for `POST /api/workspaces/{ws}/tasks/{readable_id}/checklist`.",
         "required": [
           "title"
         ],
@@ -10575,7 +10576,7 @@
       },
       "CreateColumnRequest": {
         "type": "object",
-        "description": "Request body for `POST /v1/workspaces/{ws}/boards/{board_id}/columns`.",
+        "description": "Request body for `POST /api/workspaces/{ws}/boards/{board_id}/columns`.",
         "required": [
           "name"
         ],
@@ -10617,7 +10618,7 @@
       },
       "CreateDocumentRequest": {
         "type": "object",
-        "description": "Request body for `POST /v1/workspaces/{ws}/projects/{ps}/documents`.\n\nThe slug is always server-generated; any slug field provided by the client\nis silently ignored.",
+        "description": "Request body for `POST /api/workspaces/{ws}/projects/{ps}/documents`.\n\nThe slug is always server-generated; any slug field provided by the client\nis silently ignored.",
         "required": [
           "title"
         ],
@@ -10642,7 +10643,7 @@
       },
       "CreateFolderRequest": {
         "type": "object",
-        "description": "Request body for `POST /v1/workspaces/{ws}/projects/{project_slug}/folders`.",
+        "description": "Request body for `POST /api/workspaces/{ws}/projects/{project_slug}/folders`.",
         "required": [
           "name"
         ],
@@ -10661,7 +10662,7 @@
       },
       "CreateGrantRequest": {
         "type": "object",
-        "description": "Request body for `POST /v1/workspaces/{ws}/projects/{slug}/grants`.",
+        "description": "Request body for `POST /api/workspaces/{ws}/projects/{slug}/grants`.",
         "required": [
           "principal",
           "role"
@@ -10677,7 +10678,7 @@
       },
       "CreateGroupRequest": {
         "type": "object",
-        "description": "Request body for `POST /v1/workspaces/{ws}/groups`.",
+        "description": "Request body for `POST /api/workspaces/{ws}/groups`.",
         "required": [
           "name"
         ],
@@ -10689,7 +10690,7 @@
       },
       "CreateIntegrationConfigRequest": {
         "type": "object",
-        "description": "Request body for `POST /v1/workspaces/{ws}/integration-configs`.",
+        "description": "Request body for `POST /api/workspaces/{ws}/integration-configs`.",
         "required": [
           "integration"
         ],
@@ -10702,7 +10703,7 @@
       },
       "CreateProjectRequest": {
         "type": "object",
-        "description": "Request body for `POST /v1/workspaces/{ws}/projects`.",
+        "description": "Request body for `POST /api/workspaces/{ws}/projects`.",
         "required": [
           "name",
           "slug",
@@ -10736,7 +10737,7 @@
       },
       "CreatePropertyDefinitionRequest": {
         "type": "object",
-        "description": "Request body for `POST /v1/workspaces/{ws}/property-definitions`.\n\nThe `key` is derived server-side from `name`; callers do not supply it.",
+        "description": "Request body for `POST /api/workspaces/{ws}/property-definitions`.\n\nThe `key` is derived server-side from `name`; callers do not supply it.",
         "required": [
           "name",
           "kind"
@@ -10763,7 +10764,7 @@
       },
       "CreateReferenceRequest": {
         "type": "object",
-        "description": "Request body for `POST /v1/workspaces/{ws}/tasks/{readable_id}/references`.",
+        "description": "Request body for `POST /api/workspaces/{ws}/tasks/{readable_id}/references`.",
         "required": [
           "kind"
         ],
@@ -10789,7 +10790,7 @@
       },
       "CreateSavedSearchRequest": {
         "type": "object",
-        "description": "Request body for `POST /v1/workspaces/{ws}/saved-searches`.",
+        "description": "Request body for `POST /api/workspaces/{ws}/saved-searches`.",
         "required": [
           "name",
           "query"
@@ -10805,7 +10806,7 @@
       },
       "CreateStatusTemplateRequest": {
         "type": "object",
-        "description": "Request body for `POST /v1/workspaces/{ws}/status-templates`.",
+        "description": "Request body for `POST /api/workspaces/{ws}/status-templates`.",
         "required": [
           "name"
         ],
@@ -10835,7 +10836,7 @@
       },
       "CreateSubtaskRequest": {
         "type": "object",
-        "description": "Request body for `POST /v1/workspaces/{ws}/tasks/{readable_id}/subtasks`.",
+        "description": "Request body for `POST /api/workspaces/{ws}/tasks/{readable_id}/subtasks`.",
         "required": [
           "title"
         ],
@@ -10847,7 +10848,7 @@
       },
       "CreateTagRequest": {
         "type": "object",
-        "description": "Request body for `POST /v1/workspaces/{ws}/tags`.",
+        "description": "Request body for `POST /api/workspaces/{ws}/tags`.",
         "required": [
           "name"
         ],
@@ -10859,7 +10860,7 @@
       },
       "CreateTaskRequest": {
         "type": "object",
-        "description": "Request body for `POST /v1/workspaces/{ws}/boards/{board_id}/tasks`.",
+        "description": "Request body for `POST /api/workspaces/{ws}/boards/{board_id}/tasks`.",
         "required": [
           "column_id",
           "title"
@@ -10904,7 +10905,7 @@
       },
       "CreateTaskViewRequest": {
         "type": "object",
-        "description": "Request body for `POST /v1/workspaces/{ws}/task-views`.",
+        "description": "Request body for `POST /api/workspaces/{ws}/task-views`.",
         "required": [
           "name",
           "filters"
@@ -10920,7 +10921,7 @@
       },
       "CreateUserApiKeyRequest": {
         "type": "object",
-        "description": "Request body for `POST /v1/api-keys` (top-level, user-owned key creation).",
+        "description": "Request body for `POST /api/api-keys` (top-level, user-owned key creation).",
         "required": [
           "name"
         ],
@@ -10967,7 +10968,7 @@
       },
       "CreateUserRequest": {
         "type": "object",
-        "description": "Request body for `POST /v1/users`.\n\nCreates a pending account with no password. The returned `activation_link`\nmust be shared with the invitee so they can set their own password.",
+        "description": "Request body for `POST /api/users`.\n\nCreates a pending account with no password. The returned `activation_link`\nmust be shared with the invitee so they can set their own password.",
         "required": [
           "username",
           "display_name",
@@ -10999,7 +11000,7 @@
       },
       "CreateUserResponse": {
         "type": "object",
-        "description": "Response from `POST /v1/users`.\n\n`activation_link` is the plaintext single-use link shown exactly once.\nIt is not stored — only the hash is kept server-side.",
+        "description": "Response from `POST /api/users`.\n\n`activation_link` is the plaintext single-use link shown exactly once.\nIt is not stored — only the hash is kept server-side.",
         "required": [
           "user",
           "activation_link"
@@ -11016,7 +11017,7 @@
       },
       "CreateWebhookRequest": {
         "type": "object",
-        "description": "Request body for `POST /v1/workspaces/{ws}/webhooks`.",
+        "description": "Request body for `POST /api/workspaces/{ws}/webhooks`.",
         "required": [
           "target_url",
           "event_types"
@@ -11056,7 +11057,7 @@
       },
       "CreateWorkspaceRequest": {
         "type": "object",
-        "description": "Request body for `POST /v1/workspaces`.",
+        "description": "Request body for `POST /api/workspaces`.",
         "required": [
           "name"
         ],
@@ -11377,7 +11378,7 @@
       },
       "InitialGrantRequest": {
         "type": "object",
-        "description": "Optional initial workspace grant included in a `POST /v1/api-keys` request.\n\nWhen present, a workspace-scope grant at the given role is created atomically\nwith the key so the key is immediately usable in that workspace.",
+        "description": "Optional initial workspace grant included in a `POST /api/api-keys` request.\n\nWhen present, a workspace-scope grant at the given role is created atomically\nwith the key so the key is immediately usable in that workspace.",
         "required": [
           "workspace",
           "role"
@@ -11395,7 +11396,7 @@
       },
       "IntegrationConfigCreatedDto": {
         "type": "object",
-        "description": "Response from `POST /v1/workspaces/{ws}/integration-configs`.\n\nCarries the HMAC secret in plaintext exactly once. After this response the\nsecret is never available again — configure your integration immediately.",
+        "description": "Response from `POST /api/workspaces/{ws}/integration-configs`.\n\nCarries the HMAC secret in plaintext exactly once. After this response the\nsecret is never available again — configure your integration immediately.",
         "required": [
           "id",
           "workspace_id",
@@ -11483,7 +11484,7 @@
       },
       "LoginRequest": {
         "type": "object",
-        "description": "Request body for `POST /v1/auth/login`.",
+        "description": "Request body for `POST /api/auth/login`.",
         "required": [
           "username",
           "password"
@@ -11499,7 +11500,7 @@
       },
       "LoginResponse": {
         "type": "object",
-        "description": "Response body from `POST /v1/auth/login`.",
+        "description": "Response body from `POST /api/auth/login`.",
         "required": [
           "token",
           "expires_at",
@@ -11521,7 +11522,7 @@
       },
       "MeResponse": {
         "type": "object",
-        "description": "Response from `GET /v1/auth/me`.",
+        "description": "Response from `GET /api/auth/me`.",
         "required": [
           "principal_type",
           "username",
@@ -11575,7 +11576,7 @@
       },
       "MoveDocumentRequest": {
         "type": "object",
-        "description": "Request body for `PATCH /v1/workspaces/{ws}/documents/{slug}/move`.",
+        "description": "Request body for `PATCH /api/workspaces/{ws}/documents/{slug}/move`.",
         "properties": {
           "folder_id": {
             "type": [
@@ -11588,7 +11589,7 @@
       },
       "MoveFolderRequest": {
         "type": "object",
-        "description": "Request body for `PATCH /v1/workspaces/{ws}/folders/{folder_id}/move`.",
+        "description": "Request body for `PATCH /api/workspaces/{ws}/folders/{folder_id}/move`.",
         "properties": {
           "parent_folder_id": {
             "type": [
@@ -11602,7 +11603,7 @@
       },
       "MoveTaskRequest": {
         "type": "object",
-        "description": "Request body for `POST /v1/workspaces/{ws}/tasks/{readable_id}/move`.",
+        "description": "Request body for `POST /api/workspaces/{ws}/tasks/{readable_id}/move`.",
         "required": [
           "column_id"
         ],
@@ -12662,7 +12663,7 @@
       },
       "PatchAutomationRuleRequest": {
         "type": "object",
-        "description": "Partial update for `PATCH /v1/workspaces/{ws}/automation-rules/{rule_id}`.\n\nOmitted fields are left unchanged. Pass `{\"trigger_filter\": null}` to clear the filter.",
+        "description": "Partial update for `PATCH /api/workspaces/{ws}/automation-rules/{rule_id}`.\n\nOmitted fields are left unchanged. Pass `{\"trigger_filter\": null}` to clear the filter.",
         "properties": {
           "action_params": {},
           "is_active": {
@@ -12684,7 +12685,7 @@
       },
       "PrincipalDto": {
         "type": "object",
-        "description": "A principal (workspace member or agent) that a grant can be addressed to.\n\nReturned by `GET /v1/workspaces/{ws}/members` so the share dialog can resolve\na human-readable name to the principal id required by a grant request.",
+        "description": "A principal (workspace member or agent) that a grant can be addressed to.\n\nReturned by `GET /api/workspaces/{ws}/members` so the share dialog can resolve\na human-readable name to the principal id required by a grant request.",
         "required": [
           "principal_type",
           "id",
@@ -12830,7 +12831,7 @@
       },
       "PromoteChecklistItemRequest": {
         "type": "object",
-        "description": "Request body for\n`POST /v1/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}/promote`.",
+        "description": "Request body for\n`POST /api/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}/promote`.",
         "required": [
           "board_id",
           "column_id"
@@ -12975,7 +12976,7 @@
       },
       "RenameFolderRequest": {
         "type": "object",
-        "description": "Request body for `PATCH /v1/workspaces/{ws}/folders/{folder_id}`.",
+        "description": "Request body for `PATCH /api/workspaces/{ws}/folders/{folder_id}`.",
         "required": [
           "name"
         ],
@@ -12987,7 +12988,7 @@
       },
       "RenameSavedSearchRequest": {
         "type": "object",
-        "description": "Request body for `PATCH /v1/workspaces/{ws}/saved-searches/{id}`.",
+        "description": "Request body for `PATCH /api/workspaces/{ws}/saved-searches/{id}`.",
         "required": [
           "name"
         ],
@@ -12999,7 +13000,7 @@
       },
       "ResetPasswordRequest": {
         "type": "object",
-        "description": "Request body for `POST /v1/users/{user_id}/reset-password`.",
+        "description": "Request body for `POST /api/users/{user_id}/reset-password`.",
         "required": [
           "new_password"
         ],
@@ -13121,7 +13122,7 @@
       },
       "SearchHitDto": {
         "type": "object",
-        "description": "A single search result item returned by `GET /v1/workspaces/{ws}/search`.",
+        "description": "A single search result item returned by `GET /api/workspaces/{ws}/search`.",
         "required": [
           "id",
           "kind",
@@ -13188,7 +13189,7 @@
       },
       "ServerMetaDto": {
         "type": "object",
-        "description": "Response from `GET /v1/meta`. Server build information for the About screen.",
+        "description": "Response from `GET /api/meta`. Server build information for the About screen.",
         "required": [
           "version"
         ],
@@ -13213,7 +13214,7 @@
       },
       "SetSystemAdminRequest": {
         "type": "object",
-        "description": "Request body for `POST /v1/users/{user_id}/system-admin`.",
+        "description": "Request body for `POST /api/users/{user_id}/system-admin`.",
         "required": [
           "is_system_admin"
         ],
@@ -13678,7 +13679,7 @@
       },
       "UiStateDto": {
         "type": "object",
-        "description": "Response from `GET /v1/me/ui-state` and `PUT /v1/me/ui-state`.\n\n`state` is an opaque JSON object owned by the client (e.g. which sidebar\nfolders are collapsed). The server stores and returns it verbatim and does\nnot validate its inner shape.",
+        "description": "Response from `GET /api/me/ui-state` and `PUT /api/me/ui-state`.\n\n`state` is an opaque JSON object owned by the client (e.g. which sidebar\nfolders are collapsed). The server stores and returns it verbatim and does\nnot validate its inner shape.",
         "required": [
           "state"
         ],
@@ -13690,7 +13691,7 @@
       },
       "UpdateApiKeyRequest": {
         "type": "object",
-        "description": "Request body for `PATCH /v1/api-keys/{key_id}`.\n\nBoth fields are PATCH-partial: omit a field to leave it unchanged.",
+        "description": "Request body for `PATCH /api/api-keys/{key_id}`.\n\nBoth fields are PATCH-partial: omit a field to leave it unchanged.",
         "properties": {
           "is_global": {
             "type": [
@@ -13713,7 +13714,7 @@
       },
       "UpdateBoardRequest": {
         "type": "object",
-        "description": "Request body for `PATCH /v1/workspaces/{ws}/boards/{board_id}`.",
+        "description": "Request body for `PATCH /api/workspaces/{ws}/boards/{board_id}`.",
         "properties": {
           "name": {
             "type": [
@@ -13725,7 +13726,7 @@
       },
       "UpdateChecklistItemRequest": {
         "type": "object",
-        "description": "Request body for `PATCH /v1/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}`.",
+        "description": "Request body for `PATCH /api/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}`.",
         "properties": {
           "after": {
             "type": [
@@ -13755,7 +13756,7 @@
       },
       "UpdateColumnRequest": {
         "type": "object",
-        "description": "Request body for `PATCH /v1/workspaces/{ws}/boards/{board_id}/columns/{column_id}`.\n\nColor uses the same `present_value` convention as `UpdateTaskRequest` fields:\nan absent `color` key leaves the color unchanged; explicit `null` clears it;\na string value sets it. `name`, `before`, and `after` remain simple `Option<String>`.",
+        "description": "Request body for `PATCH /api/workspaces/{ws}/boards/{board_id}/columns/{column_id}`.\n\nColor uses the same `present_value` convention as `UpdateTaskRequest` fields:\nan absent `color` key leaves the color unchanged; explicit `null` clears it;\na string value sets it. `name`, `before`, and `after` remain simple `Option<String>`.",
         "properties": {
           "after": {
             "type": [
@@ -13792,7 +13793,7 @@
       },
       "UpdateContentRequest": {
         "type": "object",
-        "description": "Request body for `PUT /v1/workspaces/{ws}/documents/{slug}/content`.\n\nUses compare-and-swap semantics: `base_revision_id` must match the\ndocument's current revision or the server responds with 409 and a\n`ConflictProblemDto` body.",
+        "description": "Request body for `PUT /api/workspaces/{ws}/documents/{slug}/content`.\n\nUses compare-and-swap semantics: `base_revision_id` must match the\ndocument's current revision or the server responds with 409 and a\n`ConflictProblemDto` body.",
         "required": [
           "content",
           "base_revision_id"
@@ -13809,7 +13810,7 @@
       },
       "UpdateDocumentRequest": {
         "type": "object",
-        "description": "Request body for `PATCH /v1/workspaces/{ws}/documents/{slug}`.\n\nUpdates document metadata (title, folder). Use `PUT .../content` to update\ncontent with CAS.",
+        "description": "Request body for `PATCH /api/workspaces/{ws}/documents/{slug}`.\n\nUpdates document metadata (title, folder). Use `PUT .../content` to update\ncontent with CAS.",
         "properties": {
           "folder_id": {
             "type": [
@@ -13828,7 +13829,7 @@
       },
       "UpdateIntegrationConfigRequest": {
         "type": "object",
-        "description": "Request body for `PATCH /v1/workspaces/{ws}/integration-configs/{config_id}`.\n\nOnly `is_active` can be changed; the integration slug and secret are fixed at\ncreation. Omitting `is_active` leaves the config unchanged. Setting it to\n`false` makes the inbound ingest reject events for this integration.",
+        "description": "Request body for `PATCH /api/workspaces/{ws}/integration-configs/{config_id}`.\n\nOnly `is_active` can be changed; the integration slug and secret are fixed at\ncreation. Omitting `is_active` leaves the config unchanged. Setting it to\n`false` makes the inbound ingest reject events for this integration.",
         "properties": {
           "is_active": {
             "type": [
@@ -13840,7 +13841,7 @@
       },
       "UpdateMeRequest": {
         "type": "object",
-        "description": "Request body for `PATCH /v1/users/me`. Only the provided fields are updated.",
+        "description": "Request body for `PATCH /api/users/me`. Only the provided fields are updated.",
         "properties": {
           "display_name": {
             "type": [
@@ -13858,7 +13859,7 @@
       },
       "UpdateMemberRoleRequest": {
         "type": "object",
-        "description": "Request body for `PATCH /v1/workspaces/{ws}/members/{user_id}`.",
+        "description": "Request body for `PATCH /api/workspaces/{ws}/members/{user_id}`.",
         "required": [
           "role"
         ],
@@ -13870,7 +13871,7 @@
       },
       "UpdateProjectRequest": {
         "type": "object",
-        "description": "Request body for `PATCH /v1/workspaces/{ws}/projects/{project_slug}`.",
+        "description": "Request body for `PATCH /api/workspaces/{ws}/projects/{project_slug}`.",
         "properties": {
           "name": {
             "type": [
@@ -13900,7 +13901,7 @@
       },
       "UpdateStatusTemplateRequest": {
         "type": "object",
-        "description": "Request body for `PATCH /v1/workspaces/{ws}/status-templates/{id}`.\n\n`name`: `None` = leave unchanged; `Some(v)` = rename.\n`color`: absent = leave unchanged; explicit `null` = clear; string = set.\n`before`/`after`: position anchors for reorder.",
+        "description": "Request body for `PATCH /api/workspaces/{ws}/status-templates/{id}`.\n\n`name`: `None` = leave unchanged; `Some(v)` = rename.\n`color`: absent = leave unchanged; explicit `null` = clear; string = set.\n`before`/`after`: position anchors for reorder.",
         "properties": {
           "after": {
             "type": [
@@ -13925,7 +13926,7 @@
       },
       "UpdateTagRequest": {
         "type": "object",
-        "description": "Request body for `PATCH /v1/workspaces/{ws}/tags/{tag_id}`.\n\nBoth fields are optional: supply `name` to rename, `color` to recolor, or both.\n`color: None` in the JSON payload is treated as \"leave unchanged\"; there is no\nway to explicitly clear a tag color via this endpoint (NULL = unset).",
+        "description": "Request body for `PATCH /api/workspaces/{ws}/tags/{tag_id}`.\n\nBoth fields are optional: supply `name` to rename, `color` to recolor, or both.\n`color: None` in the JSON payload is treated as \"leave unchanged\"; there is no\nway to explicitly clear a tag color via this endpoint (NULL = unset).",
         "properties": {
           "color": {
             "type": [
@@ -13943,7 +13944,7 @@
       },
       "UpdateTaskRequest": {
         "type": "object",
-        "description": "Request body for `PATCH /v1/workspaces/{ws}/tasks/{readable_id}`.",
+        "description": "Request body for `PATCH /api/workspaces/{ws}/tasks/{readable_id}`.",
         "properties": {
           "description": {
             "type": [
@@ -13974,7 +13975,7 @@
       },
       "UpdateTaskViewRequest": {
         "type": "object",
-        "description": "Request body for `PATCH /v1/workspaces/{ws}/task-views/{id}`.",
+        "description": "Request body for `PATCH /api/workspaces/{ws}/task-views/{id}`.",
         "required": [
           "name",
           "filters"
@@ -13990,7 +13991,7 @@
       },
       "UpdateUiStateRequest": {
         "type": "object",
-        "description": "Request body for `PUT /v1/me/ui-state`. The `state` is stored verbatim.",
+        "description": "Request body for `PUT /api/me/ui-state`. The `state` is stored verbatim.",
         "required": [
           "state"
         ],
@@ -14002,7 +14003,7 @@
       },
       "UpdateWebhookRequest": {
         "type": "object",
-        "description": "Request body for `PATCH /v1/workspaces/{ws}/webhooks/{webhook_id}`.\n\nAll fields are optional; omitted fields are left unchanged.\nThe secret is never changed via this endpoint (no rotation endpoint in v1).",
+        "description": "Request body for `PATCH /api/workspaces/{ws}/webhooks/{webhook_id}`.\n\nAll fields are optional; omitted fields are left unchanged.\nThe secret is never changed via this endpoint (no rotation endpoint in v1).",
         "properties": {
           "event_types": {
             "type": [
@@ -14048,7 +14049,7 @@
       },
       "UpdateWorkspaceRequest": {
         "type": "object",
-        "description": "Request body for `PATCH /v1/workspaces/{ws}`.",
+        "description": "Request body for `PATCH /api/workspaces/{ws}`.",
         "required": [
           "name"
         ],
@@ -14120,7 +14121,7 @@
       },
       "UserMembershipDto": {
         "type": "object",
-        "description": "One workspace a user belongs to, with the membership role.\n\nReturned by `GET /v1/users/{user_id}/memberships` to power the admin\nworkspace-access editor, which assigns a user across workspaces.",
+        "description": "One workspace a user belongs to, with the membership role.\n\nReturned by `GET /api/users/{user_id}/memberships` to power the admin\nworkspace-access editor, which assigns a user across workspaces.",
         "required": [
           "workspace_slug",
           "workspace_name",
@@ -14141,7 +14142,7 @@
       },
       "WebhookCreatedDto": {
         "type": "object",
-        "description": "Response from `POST /v1/workspaces/{ws}/webhooks`.\n\nCarries the HMAC secret in plaintext exactly once. After this response the\nsecret is never available again — store it immediately.",
+        "description": "Response from `POST /api/workspaces/{ws}/webhooks`.\n\nCarries the HMAC secret in plaintext exactly once. After this response the\nsecret is never available again — store it immediately.",
         "required": [
           "id",
           "workspace_id",

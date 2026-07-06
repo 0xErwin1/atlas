@@ -63,7 +63,7 @@ export const useActivityStore = defineStore('activity', () => {
   }
 
   async function fetchPage(ws: string, pageCursor?: string): Promise<ActivityPage | null> {
-    const { data, error: apiError } = await wrappedClient.GET('/v1/workspaces/{ws}/activity', {
+    const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/activity', {
       params: {
         path: { ws },
         query: buildQuery(pageCursor),

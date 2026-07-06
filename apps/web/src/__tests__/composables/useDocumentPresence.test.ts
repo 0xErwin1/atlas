@@ -13,7 +13,7 @@ vi.mock('@/api/wrapper', () => ({
 import { type DocumentPresence, useDocumentPresence } from '@/composables/useDocumentPresence';
 import type { LiveEnvelope } from '@/lib/eventTypes';
 
-const PATH = '/v1/workspaces/{ws}/documents/{slug}/presence';
+const PATH = '/api/workspaces/{ws}/documents/{slug}/presence';
 
 const actor = (id: string, type = 'user') => ({ id, type, display_name: id });
 

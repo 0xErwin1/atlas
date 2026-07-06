@@ -1,5 +1,5 @@
 //! Integration tests for the document presence endpoints:
-//! `POST/DELETE /v1/workspaces/{ws}/documents/{slug}/presence`.
+//! `POST/DELETE /api/workspaces/{ws}/documents/{slug}/presence`.
 //!
 //! Mirrors `api_presence` (board presence) for the document-scoped case, covering
 //! the heartbeat/leave HTTP contract plus the `presence.updated` live-event fan-out
@@ -35,11 +35,11 @@ use atlas_server::persistence::repos::MembershipRepo;
 // ---------------------------------------------------------------------------
 
 fn presence_url(base: &str, ws_slug: &str, slug: &str) -> String {
-    format!("{base}/v1/workspaces/{ws_slug}/documents/{slug}/presence")
+    format!("{base}/api/workspaces/{ws_slug}/documents/{slug}/presence")
 }
 
 fn events_url(base: &str, ws_slug: &str) -> String {
-    format!("{base}/v1/workspaces/{ws_slug}/events")
+    format!("{base}/api/workspaces/{ws_slug}/events")
 }
 
 fn project_req(slug: &str, prefix: &str, visibility: Option<&str>) -> CreateProjectRequest {

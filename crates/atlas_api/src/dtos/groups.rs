@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "openapi")]
 use utoipa::ToSchema;
 
-/// Request body for `POST /v1/workspaces/{ws}/groups`.
+/// Request body for `POST /api/workspaces/{ws}/groups`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct CreateGroupRequest {
@@ -31,7 +31,7 @@ pub struct GroupMemberDto {
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
-/// Request body for `POST /v1/workspaces/{ws}/groups/{group_id}/members`.
+/// Request body for `POST /api/workspaces/{ws}/groups/{group_id}/members`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct AddGroupMemberRequest {

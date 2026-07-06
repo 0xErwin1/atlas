@@ -35,7 +35,7 @@ describe('useSavedSearchesStore (SE20)', () => {
     const store = useSavedSearchesStore();
     await store.load('ws-1');
 
-    expect(GET).toHaveBeenCalledWith('/v1/workspaces/{ws}/saved-searches', {
+    expect(GET).toHaveBeenCalledWith('/api/workspaces/{ws}/saved-searches', {
       params: { path: { ws: 'ws-1' } },
     });
     expect(store.items).toHaveLength(2);
@@ -79,7 +79,7 @@ describe('useSavedSearchesStore (SE20)', () => {
     const store = useSavedSearchesStore();
     const result = await store.create('ws-1', { name: 'Shell search', query: 'status:open' });
 
-    expect(POST).toHaveBeenCalledWith('/v1/workspaces/{ws}/saved-searches', {
+    expect(POST).toHaveBeenCalledWith('/api/workspaces/{ws}/saved-searches', {
       params: { path: { ws: 'ws-1' } },
       body: { name: 'Shell search', query: 'status:open' },
     });
@@ -136,7 +136,7 @@ describe('useSavedSearchesStore (SE20)', () => {
     const ok = await store.rename('ws-1', 's1', 'New name');
 
     expect(ok).toBe(true);
-    expect(PATCH).toHaveBeenCalledWith('/v1/workspaces/{ws}/saved-searches/{id}', {
+    expect(PATCH).toHaveBeenCalledWith('/api/workspaces/{ws}/saved-searches/{id}', {
       params: { path: { ws: 'ws-1', id: 's1' } },
       body: { name: 'New name' },
     });
@@ -165,7 +165,7 @@ describe('useSavedSearchesStore (SE20)', () => {
     const ok = await store.remove('ws-1', 's1');
 
     expect(ok).toBe(true);
-    expect(DELETE).toHaveBeenCalledWith('/v1/workspaces/{ws}/saved-searches/{id}', {
+    expect(DELETE).toHaveBeenCalledWith('/api/workspaces/{ws}/saved-searches/{id}', {
       params: { path: { ws: 'ws-1', id: 's1' } },
     });
     expect(store.items).toHaveLength(1);

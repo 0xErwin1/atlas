@@ -54,473 +54,476 @@ pub fn app(state: AppState) -> Router {
     .unwrap_or(usize::MAX);
 
     let protected = Router::new()
-        .route("/v1/auth/logout", axum::routing::post(routes::auth::logout))
-        .route("/v1/auth/me", get(routes::auth::me))
         .route(
-            "/v1/auth/change-password",
+            "/api/auth/logout",
+            axum::routing::post(routes::auth::logout),
+        )
+        .route("/api/auth/me", get(routes::auth::me))
+        .route(
+            "/api/auth/change-password",
             axum::routing::post(routes::auth::change_password),
         )
         // Self-service profile (any authenticated user)
         .route(
-            "/v1/users/me",
+            "/api/users/me",
             axum::routing::patch(routes::auth::update_me),
         )
         // Self-service UI state (human users only; agents are rejected at the handler)
         .route(
-            "/v1/me/ui-state",
+            "/api/me/ui-state",
             get(routes::ui_state::get_ui_state).put(routes::ui_state::set_ui_state),
         )
         // Server metadata (any authenticated principal)
-        .route("/v1/meta", get(routes::health::meta))
+        .route("/api/meta", get(routes::health::meta))
         // Users (root-only)
         .route(
-            "/v1/users",
+            "/api/users",
             axum::routing::post(routes::users::create_user).get(routes::users::list_users),
         )
         .route(
-            "/v1/users/{user_id}/disable",
+            "/api/users/{user_id}/disable",
             axum::routing::post(routes::users::disable_user),
         )
         .route(
-            "/v1/users/{user_id}/enable",
+            "/api/users/{user_id}/enable",
             axum::routing::post(routes::users::enable_user),
         )
         .route(
-            "/v1/users/{user_id}/reset-password",
+            "/api/users/{user_id}/reset-password",
             axum::routing::post(routes::users::reset_password),
         )
         .route(
-            "/v1/users/{user_id}/activation-link",
+            "/api/users/{user_id}/activation-link",
             axum::routing::post(routes::users::regenerate_activation_link),
         )
         .route(
-            "/v1/users/{user_id}/system-admin",
+            "/api/users/{user_id}/system-admin",
             axum::routing::post(routes::users::set_system_admin),
         )
         .route(
-            "/v1/users/{user_id}/memberships",
+            "/api/users/{user_id}/memberships",
             get(routes::users::list_user_memberships),
         )
         // Workspace
         .route(
-            "/v1/workspaces",
+            "/api/workspaces",
             get(routes::workspaces::list_workspaces).post(routes::workspaces::create_workspace),
         )
         .route(
-            "/v1/workspaces/{ws}",
+            "/api/workspaces/{ws}",
             get(routes::workspaces::get_workspace).patch(routes::workspaces::update_workspace),
         )
         // Admin workspace list (root-only)
         .route(
-            "/v1/admin/workspaces",
+            "/api/admin/workspaces",
             get(routes::workspaces::admin_list_workspaces),
         )
         // Admin workspace mutate (root-only): re-slug and soft-delete
         .route(
-            "/v1/admin/workspaces/{ws}",
+            "/api/admin/workspaces/{ws}",
             axum::routing::patch(routes::workspaces::admin_update_workspace)
                 .delete(routes::workspaces::admin_delete_workspace),
         )
         // Admin security audit log (root/system_admin only)
-        .route("/v1/admin/audit", get(routes::audit::list_platform_audit))
+        .route("/api/admin/audit", get(routes::audit::list_platform_audit))
         // API keys — top-level (user-owned, workspace-independent)
         .route(
-            "/v1/api-keys",
+            "/api/api-keys",
             axum::routing::post(routes::api_keys::create_user_api_key)
                 .get(routes::api_keys::list_user_api_keys),
         )
         .route(
-            "/v1/api-keys/{key_id}",
+            "/api/api-keys/{key_id}",
             axum::routing::delete(routes::api_keys::revoke_user_api_key)
                 .patch(routes::api_keys::update_user_api_key),
         )
         .route(
-            "/v1/api-keys/{key_id}/grants",
+            "/api/api-keys/{key_id}/grants",
             axum::routing::get(routes::api_keys::list_api_key_grants),
         )
         .route(
-            "/v1/api-keys/{key_id}/grants/{grant_id}",
+            "/api/api-keys/{key_id}/grants/{grant_id}",
             axum::routing::delete(routes::api_keys::delete_api_key_grant),
         )
         // Projects
         .route(
-            "/v1/workspaces/{ws}/projects",
+            "/api/workspaces/{ws}/projects",
             axum::routing::post(routes::projects::create_project)
                 .get(routes::projects::list_projects),
         )
         .route(
-            "/v1/workspaces/{ws}/projects/{project_slug}",
+            "/api/workspaces/{ws}/projects/{project_slug}",
             get(routes::projects::get_project)
                 .patch(routes::projects::update_project)
                 .delete(routes::projects::delete_project),
         )
         // Project grants
         .route(
-            "/v1/workspaces/{ws}/projects/{project_slug}/grants",
+            "/api/workspaces/{ws}/projects/{project_slug}/grants",
             axum::routing::post(routes::grants::create_project_grant)
                 .get(routes::grants::list_project_grants),
         )
         .route(
-            "/v1/workspaces/{ws}/projects/{project_slug}/grants/{grant_id}",
+            "/api/workspaces/{ws}/projects/{project_slug}/grants/{grant_id}",
             axum::routing::delete(routes::grants::delete_project_grant),
         )
         // Workspace grants
         .route(
-            "/v1/workspaces/{ws}/grants",
+            "/api/workspaces/{ws}/grants",
             axum::routing::post(routes::grants::create_workspace_grant)
                 .get(routes::grants::list_workspace_grants),
         )
         .route(
-            "/v1/workspaces/{ws}/grants/{grant_id}",
+            "/api/workspaces/{ws}/grants/{grant_id}",
             axum::routing::delete(routes::grants::delete_workspace_grant),
         )
         // Workspace members (principals addressable by a grant)
         .route(
-            "/v1/workspaces/{ws}/members",
+            "/api/workspaces/{ws}/members",
             get(routes::members::list_workspace_members).post(routes::members::add_member),
         )
         .route(
-            "/v1/workspaces/{ws}/assignable-users",
+            "/api/workspaces/{ws}/assignable-users",
             get(routes::members::list_assignable_users),
         )
         .route(
-            "/v1/workspaces/{ws}/members/{user_id}",
+            "/api/workspaces/{ws}/members/{user_id}",
             axum::routing::patch(routes::members::update_member_role)
                 .delete(routes::members::remove_member),
         )
         // Groups (workspace principal groups)
         .route(
-            "/v1/workspaces/{ws}/groups",
+            "/api/workspaces/{ws}/groups",
             axum::routing::post(routes::groups::create_group).get(routes::groups::list_groups),
         )
         .route(
-            "/v1/workspaces/{ws}/groups/{group_id}",
+            "/api/workspaces/{ws}/groups/{group_id}",
             axum::routing::delete(routes::groups::delete_group),
         )
         .route(
-            "/v1/workspaces/{ws}/groups/{group_id}/members",
+            "/api/workspaces/{ws}/groups/{group_id}/members",
             axum::routing::post(routes::groups::add_group_member)
                 .get(routes::groups::list_group_members),
         )
         .route(
-            "/v1/workspaces/{ws}/groups/{group_id}/members/{user_id}",
+            "/api/workspaces/{ws}/groups/{group_id}/members/{user_id}",
             axum::routing::delete(routes::groups::remove_group_member),
         )
         // Tags (workspace tag registry)
         .route(
-            "/v1/workspaces/{ws}/tags",
+            "/api/workspaces/{ws}/tags",
             axum::routing::get(routes::tags::list_tags).post(routes::tags::create_tag),
         )
         .route(
-            "/v1/workspaces/{ws}/tags/used",
+            "/api/workspaces/{ws}/tags/used",
             axum::routing::get(routes::tags::list_used_labels),
         )
         .route(
-            "/v1/workspaces/{ws}/tags/{tag_id}",
+            "/api/workspaces/{ws}/tags/{tag_id}",
             axum::routing::patch(routes::tags::patch_tag).delete(routes::tags::delete_tag),
         )
         // Status templates (workspace default-status registry)
         .route(
-            "/v1/workspaces/{ws}/status-templates",
+            "/api/workspaces/{ws}/status-templates",
             axum::routing::get(routes::status_templates::list_status_templates)
                 .post(routes::status_templates::create_status_template),
         )
         .route(
-            "/v1/workspaces/{ws}/status-templates/{template_id}",
+            "/api/workspaces/{ws}/status-templates/{template_id}",
             axum::routing::patch(routes::status_templates::update_status_template)
                 .delete(routes::status_templates::delete_status_template),
         )
         .route(
-            "/v1/workspaces/{ws}/boards/{board_id}/apply-status-templates",
+            "/api/workspaces/{ws}/boards/{board_id}/apply-status-templates",
             axum::routing::post(routes::status_templates::apply_status_templates),
         )
         // Property definitions (workspace custom-field registry)
         .route(
-            "/v1/workspaces/{ws}/property-definitions",
+            "/api/workspaces/{ws}/property-definitions",
             axum::routing::get(routes::property_definitions::list_property_definitions)
                 .post(routes::property_definitions::create_property_definition),
         )
         .route(
-            "/v1/workspaces/{ws}/property-definitions/{property_definition_id}",
+            "/api/workspaces/{ws}/property-definitions/{property_definition_id}",
             axum::routing::delete(routes::property_definitions::delete_property_definition),
         )
         // Saved searches (per-owner personal search registry)
         .route(
-            "/v1/workspaces/{ws}/saved-searches",
+            "/api/workspaces/{ws}/saved-searches",
             axum::routing::get(routes::saved_searches::list_saved_searches)
                 .post(routes::saved_searches::create_saved_search),
         )
         .route(
-            "/v1/workspaces/{ws}/saved-searches/{id}",
+            "/api/workspaces/{ws}/saved-searches/{id}",
             axum::routing::patch(routes::saved_searches::rename_saved_search)
                 .delete(routes::saved_searches::delete_saved_search),
         )
         // Task views (per-owner personal filter views)
         .route(
-            "/v1/workspaces/{ws}/task-views",
+            "/api/workspaces/{ws}/task-views",
             axum::routing::get(routes::task_views::list_task_views)
                 .post(routes::task_views::create_task_view),
         )
         .route(
-            "/v1/workspaces/{ws}/task-views/{id}",
+            "/api/workspaces/{ws}/task-views/{id}",
             axum::routing::get(routes::task_views::get_task_view)
                 .patch(routes::task_views::update_task_view)
                 .delete(routes::task_views::delete_task_view),
         )
         // Boards
         .route(
-            "/v1/workspaces/{ws}/projects/{project_slug}/boards",
+            "/api/workspaces/{ws}/projects/{project_slug}/boards",
             axum::routing::post(routes::boards::create_board).get(routes::boards::list_boards),
         )
         .route(
-            "/v1/workspaces/{ws}/boards/{board_id}",
+            "/api/workspaces/{ws}/boards/{board_id}",
             axum::routing::get(routes::boards::get_board)
                 .patch(routes::boards::update_board)
                 .delete(routes::boards::delete_board),
         )
         .route(
-            "/v1/workspaces/{ws}/boards/{board_id}/columns",
+            "/api/workspaces/{ws}/boards/{board_id}/columns",
             axum::routing::post(routes::boards::create_column).get(routes::boards::list_columns),
         )
         .route(
-            "/v1/workspaces/{ws}/boards/{board_id}/columns/{column_id}",
+            "/api/workspaces/{ws}/boards/{board_id}/columns/{column_id}",
             axum::routing::patch(routes::boards::update_column)
                 .delete(routes::boards::delete_column),
         )
         // Tasks
         .route(
-            "/v1/workspaces/{ws}/boards/{board_id}/tasks",
+            "/api/workspaces/{ws}/boards/{board_id}/tasks",
             axum::routing::post(routes::tasks::create_task).get(routes::tasks::list_tasks),
         )
         // Board presence (heartbeat / leave)
         .route(
-            "/v1/workspaces/{ws}/boards/{board_id}/presence",
+            "/api/workspaces/{ws}/boards/{board_id}/presence",
             axum::routing::post(routes::presence::heartbeat).delete(routes::presence::leave),
         )
         // Document presence (heartbeat / leave)
         .route(
-            "/v1/workspaces/{ws}/documents/{slug}/presence",
+            "/api/workspaces/{ws}/documents/{slug}/presence",
             axum::routing::post(routes::presence::document_heartbeat)
                 .delete(routes::presence::document_leave),
         )
         .route(
-            "/v1/workspaces/{ws}/tasks",
+            "/api/workspaces/{ws}/tasks",
             axum::routing::get(routes::tasks::list_workspace_tasks),
         )
         .route(
-            "/v1/workspaces/{ws}/tasks/{readable_id}",
+            "/api/workspaces/{ws}/tasks/{readable_id}",
             axum::routing::get(routes::tasks::get_task)
                 .patch(routes::tasks::update_task)
                 .delete(routes::tasks::delete_task),
         )
         .route(
-            "/v1/workspaces/{ws}/tasks/{readable_id}/move",
+            "/api/workspaces/{ws}/tasks/{readable_id}/move",
             axum::routing::post(routes::tasks::move_task),
         )
         .route(
-            "/v1/workspaces/{ws}/tasks/{readable_id}/assignees",
+            "/api/workspaces/{ws}/tasks/{readable_id}/assignees",
             axum::routing::get(routes::tasks::list_assignees).post(routes::tasks::add_assignee),
         )
         .route(
-            "/v1/workspaces/{ws}/tasks/{readable_id}/assignees/{assignee_ref}",
+            "/api/workspaces/{ws}/tasks/{readable_id}/assignees/{assignee_ref}",
             axum::routing::delete(routes::tasks::remove_assignee),
         )
         .route(
-            "/v1/workspaces/{ws}/tasks/{readable_id}/references",
+            "/api/workspaces/{ws}/tasks/{readable_id}/references",
             axum::routing::get(routes::tasks::list_references)
                 .post(routes::tasks::create_reference),
         )
         .route(
-            "/v1/workspaces/{ws}/tasks/{readable_id}/references/{reference_id}",
+            "/api/workspaces/{ws}/tasks/{readable_id}/references/{reference_id}",
             axum::routing::delete(routes::tasks::delete_reference),
         )
         .route(
-            "/v1/workspaces/{ws}/tasks/{readable_id}/attachments",
+            "/api/workspaces/{ws}/tasks/{readable_id}/attachments",
             axum::routing::post(routes::tasks::upload_attachment)
                 .get(routes::tasks::list_attachments)
                 .layer(axum::extract::DefaultBodyLimit::max(attachment_body_limit)),
         )
         .route(
-            "/v1/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}/content",
+            "/api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}/content",
             get(routes::tasks::download_attachment),
         )
         .route(
-            "/v1/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}",
+            "/api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}",
             axum::routing::delete(routes::tasks::delete_attachment),
         )
         .route(
-            "/v1/workspaces/{ws}/tasks/{readable_id}/backlinks",
+            "/api/workspaces/{ws}/tasks/{readable_id}/backlinks",
             axum::routing::get(routes::tasks::list_backlinks),
         )
         .route(
-            "/v1/workspaces/{ws}/tasks/{readable_id}/checklist",
+            "/api/workspaces/{ws}/tasks/{readable_id}/checklist",
             axum::routing::get(routes::tasks::list_checklist)
                 .post(routes::tasks::create_checklist_item),
         )
         .route(
-            "/v1/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}",
+            "/api/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}",
             axum::routing::patch(routes::tasks::update_checklist_item)
                 .delete(routes::tasks::delete_checklist_item),
         )
         .route(
-            "/v1/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}/promote",
+            "/api/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}/promote",
             axum::routing::post(routes::tasks::promote_checklist_item),
         )
         .route(
-            "/v1/workspaces/{ws}/tasks/{readable_id}/subtasks",
+            "/api/workspaces/{ws}/tasks/{readable_id}/subtasks",
             axum::routing::get(routes::tasks::list_subtasks).post(routes::tasks::create_subtask),
         )
         .route(
-            "/v1/workspaces/{ws}/tasks/{readable_id}/promote",
+            "/api/workspaces/{ws}/tasks/{readable_id}/promote",
             axum::routing::post(routes::tasks::promote_subtask),
         )
         .route(
-            "/v1/workspaces/{ws}/tasks/{readable_id}/activity",
+            "/api/workspaces/{ws}/tasks/{readable_id}/activity",
             axum::routing::get(routes::tasks::list_activity),
         )
         .route(
-            "/v1/workspaces/{ws}/tasks/{readable_id}/comments",
+            "/api/workspaces/{ws}/tasks/{readable_id}/comments",
             axum::routing::get(routes::tasks::list_comments).post(routes::tasks::create_comment),
         )
         .route(
-            "/v1/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}",
+            "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}",
             axum::routing::patch(routes::tasks::update_comment)
                 .delete(routes::tasks::delete_comment),
         )
         .route(
-            "/v1/workspaces/{ws}/activity",
+            "/api/workspaces/{ws}/activity",
             axum::routing::get(routes::tasks::list_workspace_activity),
         )
         // Workspace security audit log (owner/admin only)
         .route(
-            "/v1/workspaces/{ws}/audit",
+            "/api/workspaces/{ws}/audit",
             axum::routing::get(routes::audit::list_workspace_audit),
         )
         // Documents
         .route(
-            "/v1/workspaces/{ws}/projects/{project_slug}/documents",
+            "/api/workspaces/{ws}/projects/{project_slug}/documents",
             axum::routing::post(routes::documents::create_document)
                 .get(routes::documents::list_documents),
         )
         .route(
-            "/v1/workspaces/{ws}/documents/{slug}",
+            "/api/workspaces/{ws}/documents/{slug}",
             get(routes::documents::get_document)
                 .patch(routes::documents::update_document)
                 .delete(routes::documents::delete_document),
         )
         .route(
-            "/v1/workspaces/{ws}/documents/{slug}/content",
+            "/api/workspaces/{ws}/documents/{slug}/content",
             axum::routing::put(routes::documents::update_content),
         )
         .route(
-            "/v1/workspaces/{ws}/documents/{slug}/history",
+            "/api/workspaces/{ws}/documents/{slug}/history",
             get(routes::documents::list_history),
         )
         .route(
-            "/v1/workspaces/{ws}/documents/{slug}/revisions/{seq}",
+            "/api/workspaces/{ws}/documents/{slug}/revisions/{seq}",
             get(routes::documents::get_revision_content),
         )
         .route(
-            "/v1/workspaces/{ws}/documents/{slug}/backlinks",
+            "/api/workspaces/{ws}/documents/{slug}/backlinks",
             get(routes::documents::list_backlinks),
         )
         .route(
-            "/v1/workspaces/{ws}/documents/{slug}/frontmatter",
+            "/api/workspaces/{ws}/documents/{slug}/frontmatter",
             get(routes::documents::get_frontmatter),
         )
         .route(
-            "/v1/workspaces/{ws}/documents/{slug}/attachments",
+            "/api/workspaces/{ws}/documents/{slug}/attachments",
             axum::routing::post(routes::documents::upload_attachment)
                 .get(routes::documents::list_attachments),
         )
         .route(
-            "/v1/workspaces/{ws}/attachments/{attachment_id}",
+            "/api/workspaces/{ws}/attachments/{attachment_id}",
             get(routes::documents::download_attachment)
                 .delete(routes::documents::delete_attachment),
         )
         .route(
-            "/v1/workspaces/{ws}/documents/{slug}/move",
+            "/api/workspaces/{ws}/documents/{slug}/move",
             axum::routing::patch(routes::documents::move_document),
         )
         .route(
-            "/v1/workspaces/{ws}/documents/{slug}/copy",
+            "/api/workspaces/{ws}/documents/{slug}/copy",
             axum::routing::post(routes::documents::copy_document),
         )
         .route(
-            "/v1/workspaces/{ws}/documents/{slug}/comments",
+            "/api/workspaces/{ws}/documents/{slug}/comments",
             get(routes::documents::list_comments).post(routes::documents::create_comment),
         )
         .route(
-            "/v1/workspaces/{ws}/documents/{slug}/comments/{comment_id}",
+            "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}",
             axum::routing::patch(routes::documents::update_comment)
                 .delete(routes::documents::delete_comment),
         )
         // Folders
         .route(
-            "/v1/workspaces/{ws}/projects/{project_slug}/folders",
+            "/api/workspaces/{ws}/projects/{project_slug}/folders",
             axum::routing::post(routes::folders::create_folder).get(routes::folders::list_folders),
         )
         .route(
-            "/v1/workspaces/{ws}/folders/{folder_id}",
+            "/api/workspaces/{ws}/folders/{folder_id}",
             get(routes::folders::get_folder)
                 .patch(routes::folders::rename_folder)
                 .delete(routes::folders::delete_folder),
         )
         .route(
-            "/v1/workspaces/{ws}/folders/{folder_id}/move",
+            "/api/workspaces/{ws}/folders/{folder_id}/move",
             axum::routing::patch(routes::folders::move_folder),
         )
         .route(
-            "/v1/workspaces/{ws}/folders/{folder_id}/copy",
+            "/api/workspaces/{ws}/folders/{folder_id}/copy",
             axum::routing::post(routes::folders::copy_folder),
         )
         // Webhooks (admin-only subscription CRUD + delivery log)
         .route(
-            "/v1/workspaces/{ws}/webhooks",
+            "/api/workspaces/{ws}/webhooks",
             axum::routing::post(routes::webhooks::create_webhook)
                 .get(routes::webhooks::list_webhooks),
         )
         .route(
-            "/v1/workspaces/{ws}/webhooks/{webhook_id}",
+            "/api/workspaces/{ws}/webhooks/{webhook_id}",
             get(routes::webhooks::get_webhook)
                 .patch(routes::webhooks::update_webhook)
                 .delete(routes::webhooks::delete_webhook),
         )
         .route(
-            "/v1/workspaces/{ws}/webhooks/{webhook_id}/deliveries",
+            "/api/workspaces/{ws}/webhooks/{webhook_id}/deliveries",
             get(routes::webhooks::list_webhook_deliveries),
         )
         // Integration configs (admin-only)
         .route(
-            "/v1/workspaces/{ws}/integration-configs",
+            "/api/workspaces/{ws}/integration-configs",
             axum::routing::post(routes::integration_configs::create_integration_config)
                 .get(routes::integration_configs::list_integration_configs),
         )
         .route(
-            "/v1/workspaces/{ws}/integration-configs/{config_id}",
+            "/api/workspaces/{ws}/integration-configs/{config_id}",
             get(routes::integration_configs::get_integration_config)
                 .patch(routes::integration_configs::patch_integration_config)
                 .delete(routes::integration_configs::delete_integration_config),
         )
         // Automation rules (admin-only)
         .route(
-            "/v1/workspaces/{ws}/automation-rules",
+            "/api/workspaces/{ws}/automation-rules",
             axum::routing::post(routes::automation_rules::create_automation_rule)
                 .get(routes::automation_rules::list_automation_rules),
         )
         .route(
-            "/v1/workspaces/{ws}/automation-rules/{rule_id}",
+            "/api/workspaces/{ws}/automation-rules/{rule_id}",
             get(routes::automation_rules::get_automation_rule)
                 .patch(routes::automation_rules::patch_automation_rule)
                 .delete(routes::automation_rules::delete_automation_rule),
         )
         // Live updates (Server-Sent Events)
         .route(
-            "/v1/workspaces/{ws}/events",
+            "/api/workspaces/{ws}/events",
             get(routes::events::stream_events),
         )
         // Search
-        .route("/v1/workspaces/{ws}/search", get(routes::search::search))
+        .route("/api/workspaces/{ws}/search", get(routes::search::search))
         .layer(axum_middleware::from_fn(
             crate::auth::csrf::require_csrf_for_cookie_mutations,
         ))
@@ -570,11 +573,11 @@ pub fn app(state: AppState) -> Router {
         .route("/ready", get(routes::health::ready))
         .route("/version", get(routes::health::version))
         .route(
-            "/v1/auth/login",
+            "/api/auth/login",
             axum::routing::post(routes::auth::login).layer(GovernorLayer::new(login_config)),
         )
         .route(
-            "/v1/activate/{token}",
+            "/api/activate/{token}",
             get(routes::activate::get_activation_info)
                 .post(routes::activate::post_activate)
                 .layer(GovernorLayer::new(activate_config)),
@@ -582,7 +585,7 @@ pub fn app(state: AppState) -> Router {
         // External event ingestion (public; HMAC-verified by the extractor,
         // per-IP rate-limited to bound abuse of this unauthenticated route)
         .route(
-            "/v1/workspaces/{ws}/integrations/{integration}/events",
+            "/api/workspaces/{ws}/integrations/{integration}/events",
             axum::routing::post(routes::integrations_ingest::ingest_github_event)
                 .layer(GovernorLayer::new(ingest_config)),
         )

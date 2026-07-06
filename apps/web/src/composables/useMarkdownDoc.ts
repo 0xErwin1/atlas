@@ -32,7 +32,7 @@ export type SaveResult =
  */
 export function useMarkdownDoc() {
   async function load(ws: string, slug: string): Promise<LoadResult> {
-    const { data, error, response } = await wrappedClient.GET('/v1/workspaces/{ws}/documents/{slug}', {
+    const { data, error, response } = await wrappedClient.GET('/api/workspaces/{ws}/documents/{slug}', {
       params: { path: { ws, slug } },
     });
 
@@ -66,7 +66,7 @@ export function useMarkdownDoc() {
   ): Promise<SaveResult> {
     const content = joinFrontmatter(meta, body);
 
-    const { data, error } = await wrappedClient.PUT('/v1/workspaces/{ws}/documents/{slug}/content', {
+    const { data, error } = await wrappedClient.PUT('/api/workspaces/{ws}/documents/{slug}/content', {
       params: { path: { ws, slug } },
       body: { content, base_revision_id: baseRevisionId },
     });

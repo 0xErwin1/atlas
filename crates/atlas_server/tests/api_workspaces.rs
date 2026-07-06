@@ -615,7 +615,7 @@ async fn admin_delete_workspace_non_root_gets_403() {
 
 // ---- api_key workspace listing ----
 
-/// An api_key that holds a workspace-scope grant appears in `GET /v1/workspaces`.
+/// An api_key that holds a workspace-scope grant appears in `GET /api/workspaces`.
 #[tokio::test]
 async fn api_key_with_grant_sees_workspace_in_list() {
     let db = TestDb::create().await.expect("TestDb::create");
@@ -676,7 +676,7 @@ async fn api_key_with_grant_sees_workspace_in_list() {
     db.teardown().await;
 }
 
-/// An api_key granted in two distinct workspaces sees both in `GET /v1/workspaces`.
+/// An api_key granted in two distinct workspaces sees both in `GET /api/workspaces`.
 /// Also verifies no duplication when the key has multiple grants in the same workspace.
 #[tokio::test]
 async fn api_key_with_grants_in_two_workspaces_sees_both_distinct() {
@@ -787,7 +787,7 @@ async fn api_key_with_grants_in_two_workspaces_sees_both_distinct() {
     db.teardown().await;
 }
 
-/// An api_key with NO grant sees an empty list from `GET /v1/workspaces`.
+/// An api_key with NO grant sees an empty list from `GET /api/workspaces`.
 #[tokio::test]
 async fn api_key_with_no_grant_sees_empty_workspace_list() {
     let db = TestDb::create().await.expect("TestDb::create");

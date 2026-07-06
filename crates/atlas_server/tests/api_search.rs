@@ -31,9 +31,9 @@ use uuid::Uuid;
 
 fn search_url(base: &str, ws: &str, qs: &str) -> String {
     if qs.is_empty() {
-        format!("{base}/v1/workspaces/{ws}/search")
+        format!("{base}/api/workspaces/{ws}/search")
     } else {
-        format!("{base}/v1/workspaces/{ws}/search?{qs}")
+        format!("{base}/api/workspaces/{ws}/search?{qs}")
     }
 }
 

@@ -18,7 +18,7 @@ const emit = defineEmits<{
  * the endpoint sets Content-Disposition so the browser saves rather than navigates.
  */
 function contentUrl(attachmentId: string): string {
-  return `/v1/workspaces/${props.ws}/tasks/${props.readableId}/attachments/${attachmentId}/content`;
+  return `/api/workspaces/${props.ws}/tasks/${props.readableId}/attachments/${attachmentId}/content`;
 }
 
 function isImage(att: TaskAttachmentDto): boolean {

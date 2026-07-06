@@ -1,5 +1,5 @@
 //! Integration tests for the board presence endpoints (work unit P1):
-//! `POST/DELETE /v1/workspaces/{ws}/boards/{board_id}/presence`.
+//! `POST/DELETE /api/workspaces/{ws}/boards/{board_id}/presence`.
 //!
 //! Covers the heartbeat/leave HTTP contract plus the `presence.updated` live-event
 //! fan-out delivered over the SSE stream:
@@ -38,11 +38,11 @@ use atlas_server::persistence::repos::{
 // ---------------------------------------------------------------------------
 
 fn presence_url(base: &str, ws_slug: &str, board_id: &uuid::Uuid) -> String {
-    format!("{base}/v1/workspaces/{ws_slug}/boards/{board_id}/presence")
+    format!("{base}/api/workspaces/{ws_slug}/boards/{board_id}/presence")
 }
 
 fn events_url(base: &str, ws_slug: &str) -> String {
-    format!("{base}/v1/workspaces/{ws_slug}/events")
+    format!("{base}/api/workspaces/{ws_slug}/events")
 }
 
 async fn seed_project_and_board(

@@ -41,7 +41,7 @@ describe('useAuditStore — workspace feed', () => {
     const store = useAuditStore();
     await store.loadWorkspace('acme');
 
-    expect(GET).toHaveBeenCalledWith('/v1/workspaces/{ws}/audit', {
+    expect(GET).toHaveBeenCalledWith('/api/workspaces/{ws}/audit', {
       params: { path: { ws: 'acme' }, query: {} },
     });
     expect(store.entries).toHaveLength(2);
@@ -119,7 +119,7 @@ describe('useAuditStore — platform feed', () => {
     const store = useAuditStore();
     await store.loadPlatform();
 
-    expect(GET).toHaveBeenCalledWith('/v1/admin/audit', {
+    expect(GET).toHaveBeenCalledWith('/api/admin/audit', {
       params: { query: {} },
     });
     expect(store.entries).toHaveLength(1);

@@ -42,12 +42,12 @@ fn tag_to_dto(t: Tag) -> TagDto {
 }
 
 // ---------------------------------------------------------------------------
-// GET /v1/workspaces/{ws}/tags
+// GET /api/workspaces/{ws}/tags
 // ---------------------------------------------------------------------------
 
 #[utoipa::path(
     get,
-    path = "/v1/workspaces/{ws}/tags",
+    path = "/api/workspaces/{ws}/tags",
     tag = "tags",
     security(("bearer_auth" = [])),
     params(("ws" = String, Path, description = "Workspace slug")),
@@ -71,12 +71,12 @@ pub(crate) async fn list_tags(
 }
 
 // ---------------------------------------------------------------------------
-// POST /v1/workspaces/{ws}/tags
+// POST /api/workspaces/{ws}/tags
 // ---------------------------------------------------------------------------
 
 #[utoipa::path(
     post,
-    path = "/v1/workspaces/{ws}/tags",
+    path = "/api/workspaces/{ws}/tags",
     tag = "tags",
     security(("bearer_auth" = [])),
     params(("ws" = String, Path, description = "Workspace slug")),
@@ -123,12 +123,12 @@ pub(crate) async fn create_tag(
 }
 
 // ---------------------------------------------------------------------------
-// PATCH /v1/workspaces/{ws}/tags/{tag_id}
+// PATCH /api/workspaces/{ws}/tags/{tag_id}
 // ---------------------------------------------------------------------------
 
 #[utoipa::path(
     patch,
-    path = "/v1/workspaces/{ws}/tags/{tag_id}",
+    path = "/api/workspaces/{ws}/tags/{tag_id}",
     tag = "tags",
     security(("bearer_auth" = [])),
     params(
@@ -172,12 +172,12 @@ pub(crate) async fn patch_tag(
 }
 
 // ---------------------------------------------------------------------------
-// GET /v1/workspaces/{ws}/tags/used
+// GET /api/workspaces/{ws}/tags/used
 // ---------------------------------------------------------------------------
 
 #[utoipa::path(
     get,
-    path = "/v1/workspaces/{ws}/tags/used",
+    path = "/api/workspaces/{ws}/tags/used",
     tag = "tags",
     security(("bearer_auth" = [])),
     params(("ws" = String, Path, description = "Workspace slug")),
@@ -204,12 +204,12 @@ pub(crate) async fn list_used_labels(
 }
 
 // ---------------------------------------------------------------------------
-// DELETE /v1/workspaces/{ws}/tags/{tag_id}
+// DELETE /api/workspaces/{ws}/tags/{tag_id}
 // ---------------------------------------------------------------------------
 
 #[utoipa::path(
     delete,
-    path = "/v1/workspaces/{ws}/tags/{tag_id}",
+    path = "/api/workspaces/{ws}/tags/{tag_id}",
     tag = "tags",
     security(("bearer_auth" = [])),
     params(

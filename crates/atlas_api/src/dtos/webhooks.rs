@@ -25,7 +25,7 @@ pub struct WebhookDto {
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
-/// Response from `POST /v1/workspaces/{ws}/webhooks`.
+/// Response from `POST /api/workspaces/{ws}/webhooks`.
 ///
 /// Carries the HMAC secret in plaintext exactly once. After this response the
 /// secret is never available again — store it immediately.
@@ -46,7 +46,7 @@ pub struct WebhookCreatedDto {
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
-/// Request body for `POST /v1/workspaces/{ws}/webhooks`.
+/// Request body for `POST /api/workspaces/{ws}/webhooks`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct CreateWebhookRequest {
@@ -67,7 +67,7 @@ fn default_scope_type() -> String {
     "workspace".to_string()
 }
 
-/// Request body for `PATCH /v1/workspaces/{ws}/webhooks/{webhook_id}`.
+/// Request body for `PATCH /api/workspaces/{ws}/webhooks/{webhook_id}`.
 ///
 /// All fields are optional; omitted fields are left unchanged.
 /// The secret is never changed via this endpoint (no rotation endpoint in v1).

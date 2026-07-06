@@ -903,7 +903,10 @@ async fn invoke(
                 base_url,
                 token,
                 "POST",
-                &format!("/v1/workspaces/{ws}/documents/{}/presence", fx.document_ref),
+                &format!(
+                    "/api/workspaces/{ws}/documents/{}/presence",
+                    fx.document_ref
+                ),
             )
             .await
         }
@@ -913,7 +916,10 @@ async fn invoke(
                 base_url,
                 token,
                 "DELETE",
-                &format!("/v1/workspaces/{ws}/documents/{}/presence", fx.document_ref),
+                &format!(
+                    "/api/workspaces/{ws}/documents/{}/presence",
+                    fx.document_ref
+                ),
             )
             .await
         }
@@ -965,7 +971,7 @@ async fn invoke(
                 base_url,
                 token,
                 "POST",
-                &format!("/v1/workspaces/{ws}/boards/{}/presence", fx.board_id),
+                &format!("/api/workspaces/{ws}/boards/{}/presence", fx.board_id),
             )
             .await
         }
@@ -975,7 +981,7 @@ async fn invoke(
                 base_url,
                 token,
                 "DELETE",
-                &format!("/v1/workspaces/{ws}/boards/{}/presence", fx.board_id),
+                &format!("/api/workspaces/{ws}/boards/{}/presence", fx.board_id),
             )
             .await
         }
@@ -1063,7 +1069,7 @@ async fn invoke(
                 base_url,
                 token,
                 "POST",
-                &format!("/v1/workspaces/{ws}/webhooks"),
+                &format!("/api/workspaces/{ws}/webhooks"),
             )
             .await
         }
@@ -1073,7 +1079,7 @@ async fn invoke(
                 base_url,
                 token,
                 "GET",
-                &format!("/v1/workspaces/{ws}/webhooks"),
+                &format!("/api/workspaces/{ws}/webhooks"),
             )
             .await
         }
@@ -1083,7 +1089,7 @@ async fn invoke(
                 base_url,
                 token,
                 "GET",
-                &format!("/v1/workspaces/{ws}/webhooks/{}", fx.webhook_id),
+                &format!("/api/workspaces/{ws}/webhooks/{}", fx.webhook_id),
             )
             .await
         }
@@ -1093,7 +1099,7 @@ async fn invoke(
                 base_url,
                 token,
                 "PATCH",
-                &format!("/v1/workspaces/{ws}/webhooks/{}", fx.webhook_id),
+                &format!("/api/workspaces/{ws}/webhooks/{}", fx.webhook_id),
             )
             .await
         }
@@ -1103,7 +1109,7 @@ async fn invoke(
                 base_url,
                 token,
                 "DELETE",
-                &format!("/v1/workspaces/{ws}/webhooks/{}", fx.webhook_id),
+                &format!("/api/workspaces/{ws}/webhooks/{}", fx.webhook_id),
             )
             .await
         }
@@ -1117,7 +1123,7 @@ async fn invoke(
                 base_url,
                 token,
                 "GET",
-                &format!("/v1/workspaces/{ws}/webhooks/{}/deliveries", fx.webhook_id),
+                &format!("/api/workspaces/{ws}/webhooks/{}/deliveries", fx.webhook_id),
             )
             .await
         }
@@ -1134,7 +1140,7 @@ async fn invoke(
                 base_url,
                 token,
                 "GET",
-                &format!("/v1/workspaces/{ws}/tags"),
+                &format!("/api/workspaces/{ws}/tags"),
             )
             .await
         }
@@ -1144,7 +1150,7 @@ async fn invoke(
                 base_url,
                 token,
                 "POST",
-                &format!("/v1/workspaces/{ws}/tags"),
+                &format!("/api/workspaces/{ws}/tags"),
             )
             .await
         }
@@ -1154,7 +1160,7 @@ async fn invoke(
                 base_url,
                 token,
                 "GET",
-                &format!("/v1/workspaces/{ws}/tags/used"),
+                &format!("/api/workspaces/{ws}/tags/used"),
             )
             .await
         }
@@ -1164,7 +1170,7 @@ async fn invoke(
                 base_url,
                 token,
                 "PATCH",
-                &format!("/v1/workspaces/{ws}/tags/{nil}"),
+                &format!("/api/workspaces/{ws}/tags/{nil}"),
             )
             .await
         }
@@ -1174,7 +1180,7 @@ async fn invoke(
                 base_url,
                 token,
                 "DELETE",
-                &format!("/v1/workspaces/{ws}/tags/{nil}"),
+                &format!("/api/workspaces/{ws}/tags/{nil}"),
             )
             .await
         }
@@ -1184,7 +1190,7 @@ async fn invoke(
                 base_url,
                 token,
                 "GET",
-                &format!("/v1/workspaces/{ws}/property-definitions"),
+                &format!("/api/workspaces/{ws}/property-definitions"),
             )
             .await
         }
@@ -1194,7 +1200,7 @@ async fn invoke(
                 base_url,
                 token,
                 "POST",
-                &format!("/v1/workspaces/{ws}/property-definitions"),
+                &format!("/api/workspaces/{ws}/property-definitions"),
             )
             .await
         }
@@ -1204,7 +1210,7 @@ async fn invoke(
                 base_url,
                 token,
                 "DELETE",
-                &format!("/v1/workspaces/{ws}/property-definitions/{nil}"),
+                &format!("/api/workspaces/{ws}/property-definitions/{nil}"),
             )
             .await
         }
@@ -1232,7 +1238,7 @@ async fn invoke(
                 base_url,
                 token,
                 "GET",
-                &format!("/v1/workspaces/{ws}/projects/{}/grants", fx.project_slug),
+                &format!("/api/workspaces/{ws}/projects/{}/grants", fx.project_slug),
             )
             .await
         }
@@ -1242,7 +1248,7 @@ async fn invoke(
                 base_url,
                 token,
                 "GET",
-                &format!("/v1/workspaces/{ws}/grants"),
+                &format!("/api/workspaces/{ws}/grants"),
             )
             .await
         }

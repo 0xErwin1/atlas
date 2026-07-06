@@ -39,7 +39,7 @@ describe('useApiKeysStore — setKeyGlobal', () => {
     const ok = await store.setKeyGlobal('k1', true);
 
     expect(ok).toBe(true);
-    expect(PATCH).toHaveBeenCalledWith('/v1/api-keys/{key_id}', {
+    expect(PATCH).toHaveBeenCalledWith('/api/api-keys/{key_id}', {
       params: { path: { key_id: 'k1' } },
       body: { is_global: true },
     });
@@ -82,7 +82,7 @@ describe('useApiKeysStore — setKeyScopes', () => {
     const ok = await store.setKeyScopes('k1', ['tasks:read', 'tasks:create']);
 
     expect(ok).toBe(true);
-    expect(PATCH).toHaveBeenCalledWith('/v1/api-keys/{key_id}', {
+    expect(PATCH).toHaveBeenCalledWith('/api/api-keys/{key_id}', {
       params: { path: { key_id: 'k1' } },
       body: { scopes: ['tasks:read', 'tasks:create'] },
     });
@@ -120,7 +120,7 @@ describe('useApiKeysStore — setKeyWorkspaceRole', () => {
     const ok = await store.setKeyWorkspaceRole('k1', 'beta', 'editor');
 
     expect(ok).toBe(true);
-    expect(POST).toHaveBeenCalledWith('/v1/workspaces/{ws}/grants', {
+    expect(POST).toHaveBeenCalledWith('/api/workspaces/{ws}/grants', {
       params: { path: { ws: 'beta' } },
       body: { principal: { type: 'api_key', id: 'k1' }, role: 'editor' },
     });

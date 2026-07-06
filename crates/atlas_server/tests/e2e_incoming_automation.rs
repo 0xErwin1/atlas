@@ -166,7 +166,7 @@ async fn e2e_github_workflow_run_fires_automation_and_dispatches_webhook() {
     // Create integration config via HTTP API — the plaintext secret is returned once.
     let config_resp = http()
         .post(format!(
-            "{base_url}/v1/workspaces/{ws_slug}/integration-configs"
+            "{base_url}/api/workspaces/{ws_slug}/integration-configs"
         ))
         .bearer_auth(token)
         .json(&serde_json::json!({ "integration": "github" }))
@@ -185,7 +185,7 @@ async fn e2e_github_workflow_run_fires_automation_and_dispatches_webhook() {
 
     // Create outgoing webhook subscription scoped to task.created events.
     let wh_resp = http()
-        .post(format!("{base_url}/v1/workspaces/{ws_slug}/webhooks"))
+        .post(format!("{base_url}/api/workspaces/{ws_slug}/webhooks"))
         .bearer_auth(token)
         .json(&serde_json::json!({
             "target_url": mock_url,
@@ -244,7 +244,7 @@ async fn e2e_github_workflow_run_fires_automation_and_dispatches_webhook() {
     // POST the GitHub delivery to the ingestion endpoint.
     let ingest_resp = http()
         .post(format!(
-            "{base_url}/v1/workspaces/{ws_slug}/integrations/github/events"
+            "{base_url}/api/workspaces/{ws_slug}/integrations/github/events"
         ))
         .header("x-hub-signature-256", &ingest_sig)
         .header("x-github-delivery", delivery_id.to_string())
@@ -358,7 +358,7 @@ async fn e2e_github_workflow_run_fires_automation_and_dispatches_webhook() {
     // Dedup: re-POST the same X-GitHub-Delivery GUID → 200, but no second task.
     let dup_resp = http()
         .post(format!(
-            "{base_url}/v1/workspaces/{ws_slug}/integrations/github/events"
+            "{base_url}/api/workspaces/{ws_slug}/integrations/github/events"
         ))
         .header("x-hub-signature-256", &ingest_sig)
         .header("x-github-delivery", delivery_id.to_string())

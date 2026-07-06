@@ -9,7 +9,7 @@ export type TaskViewFiltersDto = components['schemas']['TaskViewFiltersDto'];
 
 /**
  * Store for workspace custom task views. Mirrors savedSearches.ts 1:1 against
- * /v1/workspaces/{ws}/task-views. Items are kept sorted alphabetically by name.
+ * /api/workspaces/{ws}/task-views. Items are kept sorted alphabetically by name.
  *
  * Note: UpdateTaskViewRequest is non-partial — both name and filters are required
  * on every PATCH, so `update` always sends the full payload.
@@ -23,7 +23,7 @@ export const useTaskViewsStore = defineStore('taskViews', () => {
   async function load(ws: string, force = false): Promise<void> {
     if (!force && loadedWs === ws) return;
 
-    const { data, error: apiError } = await wrappedClient.GET('/v1/workspaces/{ws}/task-views', {
+    const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/task-views', {
       params: { path: { ws } },
     });
 
@@ -40,7 +40,7 @@ export const useTaskViewsStore = defineStore('taskViews', () => {
     ws: string,
     payload: { name: string; filters: TaskViewFiltersDto },
   ): Promise<TaskViewDto | null> {
-    const { data, error: apiError } = await wrappedClient.POST('/v1/workspaces/{ws}/task-views', {
+    const { data, error: apiError } = await wrappedClient.POST('/api/workspaces/{ws}/task-views', {
       params: { path: { ws } },
       body: { name: payload.name, filters: payload.filters },
     });
@@ -59,7 +59,7 @@ export const useTaskViewsStore = defineStore('taskViews', () => {
     id: string,
     payload: { name: string; filters: TaskViewFiltersDto },
   ): Promise<boolean> {
-    const { data, error: apiError } = await wrappedClient.PATCH('/v1/workspaces/{ws}/task-views/{id}', {
+    const { data, error: apiError } = await wrappedClient.PATCH('/api/workspaces/{ws}/task-views/{id}', {
       params: { path: { ws, id } },
       body: { name: payload.name, filters: payload.filters },
     });
@@ -77,7 +77,7 @@ export const useTaskViewsStore = defineStore('taskViews', () => {
   }
 
   async function remove(ws: string, id: string): Promise<boolean> {
-    const { error: apiError } = await wrappedClient.DELETE('/v1/workspaces/{ws}/task-views/{id}', {
+    const { error: apiError } = await wrappedClient.DELETE('/api/workspaces/{ws}/task-views/{id}', {
       params: { path: { ws, id } },
     });
 

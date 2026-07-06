@@ -104,7 +104,7 @@ describe('KanbanBoard drag-and-drop wiring', () => {
       string,
       { params: { path: { readable_id: string } }; body: { column_id: string } },
     ];
-    expect(path).toBe('/v1/workspaces/{ws}/tasks/{readable_id}/move');
+    expect(path).toBe('/api/workspaces/{ws}/tasks/{readable_id}/move');
     expect(opts.params.path.readable_id).toBe('ATL-1');
     expect(opts.body.column_id).toBe('c2');
   });

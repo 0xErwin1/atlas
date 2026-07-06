@@ -23,7 +23,7 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
 
     try {
       const { items, error: e } = await collectPaged<ApiKeyDto>((cursor) =>
-        wrappedClient.GET('/v1/api-keys', {
+        wrappedClient.GET('/api/api-keys', {
           params: { query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) } },
         }),
       );
@@ -47,7 +47,7 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
     error.value = null;
 
     try {
-      const { data, error: e } = await wrappedClient.POST('/v1/api-keys', {
+      const { data, error: e } = await wrappedClient.POST('/api/api-keys', {
         body: req,
       });
 
@@ -67,7 +67,7 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
     error.value = null;
 
     try {
-      const { data, error: e } = await wrappedClient.PATCH('/v1/api-keys/{key_id}', {
+      const { data, error: e } = await wrappedClient.PATCH('/api/api-keys/{key_id}', {
         params: { path: { key_id: keyId } },
         body: { is_global: isGlobal },
       });
@@ -99,7 +99,7 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
     error.value = null;
 
     try {
-      const { data, error: e } = await wrappedClient.PATCH('/v1/api-keys/{key_id}', {
+      const { data, error: e } = await wrappedClient.PATCH('/api/api-keys/{key_id}', {
         params: { path: { key_id: keyId } },
         body: { scopes },
       });
@@ -125,7 +125,7 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
     error.value = null;
 
     try {
-      const { error: e } = await wrappedClient.DELETE('/v1/api-keys/{key_id}', {
+      const { error: e } = await wrappedClient.DELETE('/api/api-keys/{key_id}', {
         params: { path: { key_id: id } },
       });
 
@@ -146,7 +146,7 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
     error.value = null;
 
     try {
-      const { data, error: e } = await wrappedClient.GET('/v1/api-keys/{key_id}/grants', {
+      const { data, error: e } = await wrappedClient.GET('/api/api-keys/{key_id}/grants', {
         params: { path: { key_id: keyId } },
       });
 
@@ -172,7 +172,7 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
     error.value = null;
 
     try {
-      const { error: e } = await wrappedClient.POST('/v1/workspaces/{ws}/grants', {
+      const { error: e } = await wrappedClient.POST('/api/workspaces/{ws}/grants', {
         params: { path: { ws: slug } },
         body: { principal: { type: 'api_key', id: keyId }, role },
       });
@@ -193,7 +193,7 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
     error.value = null;
 
     try {
-      const { error: e } = await wrappedClient.DELETE('/v1/api-keys/{key_id}/grants/{grant_id}', {
+      const { error: e } = await wrappedClient.DELETE('/api/api-keys/{key_id}/grants/{grant_id}', {
         params: { path: { key_id: keyId, grant_id: grantId } },
       });
 

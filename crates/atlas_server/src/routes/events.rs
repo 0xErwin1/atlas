@@ -1,4 +1,4 @@
-//! `GET /v1/workspaces/{ws}/events` — the live-updates Server-Sent Events stream.
+//! `GET /api/workspaces/{ws}/events` — the live-updates Server-Sent Events stream.
 //!
 //! The connect gate is `WorkspaceAccess`: any principal with access to the
 //! workspace (a member of any role, or a holder of any grant anywhere in the

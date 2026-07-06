@@ -43,7 +43,7 @@ export const useWebhooksStore = defineStore('webhooks', () => {
   async function loadWebhooks(ws: string): Promise<void> {
     error.value = null;
 
-    const { data, error: apiError } = await wrappedClient.GET('/v1/workspaces/{ws}/webhooks', {
+    const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/webhooks', {
       params: { path: { ws } },
     });
 
@@ -58,7 +58,7 @@ export const useWebhooksStore = defineStore('webhooks', () => {
   async function createWebhook(ws: string, body: CreateWebhookRequest): Promise<WebhookCreatedDto | null> {
     error.value = null;
 
-    const { data, error: apiError } = await wrappedClient.POST('/v1/workspaces/{ws}/webhooks', {
+    const { data, error: apiError } = await wrappedClient.POST('/api/workspaces/{ws}/webhooks', {
       params: { path: { ws } },
       body,
     });
@@ -75,10 +75,13 @@ export const useWebhooksStore = defineStore('webhooks', () => {
   async function updateWebhook(ws: string, id: string, patch: WebhookPatch): Promise<boolean> {
     error.value = null;
 
-    const { data, error: apiError } = await wrappedClient.PATCH('/v1/workspaces/{ws}/webhooks/{webhook_id}', {
-      params: { path: { ws, webhook_id: id } },
-      body: patch,
-    });
+    const { data, error: apiError } = await wrappedClient.PATCH(
+      '/api/workspaces/{ws}/webhooks/{webhook_id}',
+      {
+        params: { path: { ws, webhook_id: id } },
+        body: patch,
+      },
+    );
 
     if (apiError !== undefined || data === undefined) {
       error.value = errorHint(apiError, 'Failed to update webhook');
@@ -92,7 +95,7 @@ export const useWebhooksStore = defineStore('webhooks', () => {
   async function deleteWebhook(ws: string, id: string): Promise<boolean> {
     error.value = null;
 
-    const { error: apiError } = await wrappedClient.DELETE('/v1/workspaces/{ws}/webhooks/{webhook_id}', {
+    const { error: apiError } = await wrappedClient.DELETE('/api/workspaces/{ws}/webhooks/{webhook_id}', {
       params: { path: { ws, webhook_id: id } },
     });
 
@@ -109,7 +112,7 @@ export const useWebhooksStore = defineStore('webhooks', () => {
     error.value = null;
 
     const { data, error: apiError } = await wrappedClient.GET(
-      '/v1/workspaces/{ws}/webhooks/{webhook_id}/deliveries',
+      '/api/workspaces/{ws}/webhooks/{webhook_id}/deliveries',
       { params: { path: { ws, webhook_id: id } } },
     );
 
@@ -124,7 +127,7 @@ export const useWebhooksStore = defineStore('webhooks', () => {
   async function loadIntegrations(ws: string): Promise<void> {
     error.value = null;
 
-    const { data, error: apiError } = await wrappedClient.GET('/v1/workspaces/{ws}/integration-configs', {
+    const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/integration-configs', {
       params: { path: { ws } },
     });
 
@@ -142,7 +145,7 @@ export const useWebhooksStore = defineStore('webhooks', () => {
   ): Promise<IntegrationConfigCreatedDto | null> {
     error.value = null;
 
-    const { data, error: apiError } = await wrappedClient.POST('/v1/workspaces/{ws}/integration-configs', {
+    const { data, error: apiError } = await wrappedClient.POST('/api/workspaces/{ws}/integration-configs', {
       params: { path: { ws } },
       body: { integration },
     });
@@ -160,7 +163,7 @@ export const useWebhooksStore = defineStore('webhooks', () => {
     error.value = null;
 
     const { data, error: apiError } = await wrappedClient.PATCH(
-      '/v1/workspaces/{ws}/integration-configs/{config_id}',
+      '/api/workspaces/{ws}/integration-configs/{config_id}',
       {
         params: { path: { ws, config_id: id } },
         body: { is_active: isActive },
@@ -180,7 +183,7 @@ export const useWebhooksStore = defineStore('webhooks', () => {
     error.value = null;
 
     const { error: apiError } = await wrappedClient.DELETE(
-      '/v1/workspaces/{ws}/integration-configs/{config_id}',
+      '/api/workspaces/{ws}/integration-configs/{config_id}',
       { params: { path: { ws, config_id: id } } },
     );
 

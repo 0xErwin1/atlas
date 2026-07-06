@@ -64,7 +64,7 @@ async fn set_system_admin(
     let response = client
         .http_client()
         .post(format!(
-            "{}/v1/users/{}/system-admin",
+            "{}/api/users/{}/system-admin",
             client.base_url(),
             user_id
         ))

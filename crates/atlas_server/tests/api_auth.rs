@@ -50,7 +50,7 @@ async fn bearer_token_authenticates_me_endpoint() {
     let server = support::TestServer::spawn(&db).await;
     let (client, user) = support::login_user(&server, &db, "auth-me-user").await;
 
-    let me: MeResponse = client.me().await.expect("GET /v1/auth/me must succeed");
+    let me: MeResponse = client.me().await.expect("GET /api/auth/me must succeed");
 
     assert_eq!(me.username, user.username);
 
@@ -171,7 +171,7 @@ async fn me_for_human_user_has_no_agent_identity() {
     let server = support::TestServer::spawn(&db).await;
     let (client, _user) = support::login_user(&server, &db, "auth-me-human").await;
 
-    let me: MeResponse = client.me().await.expect("GET /v1/auth/me must succeed");
+    let me: MeResponse = client.me().await.expect("GET /api/auth/me must succeed");
 
     assert_eq!(me.principal_type, "user");
     assert!(
@@ -215,7 +215,7 @@ async fn me_for_api_key_returns_agent_identity_with_canonical_scopes() {
     let me: MeResponse = agent_client
         .me()
         .await
-        .expect("GET /v1/auth/me as an agent must succeed");
+        .expect("GET /api/auth/me as an agent must succeed");
 
     assert_eq!(me.principal_type, "api_key");
 

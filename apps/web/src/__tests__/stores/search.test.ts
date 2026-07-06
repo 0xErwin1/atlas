@@ -46,7 +46,7 @@ describe('useSearchStore (REQ-W23/W24)', () => {
     store.setSort('relevance');
     await store.runSearch('acme');
 
-    expect(GET).toHaveBeenCalledWith('/v1/workspaces/{ws}/search', {
+    expect(GET).toHaveBeenCalledWith('/api/workspaces/{ws}/search', {
       params: { path: { ws: 'acme' }, query: { q: 'app rail', sort: 'relevance' } },
     });
     expect(store.results).toHaveLength(2);

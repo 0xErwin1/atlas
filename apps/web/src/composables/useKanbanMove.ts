@@ -62,7 +62,7 @@ function computeNeighbors(
  * move(readableId, columnId, toIndex):
  *   1. Snapshot the board store's task ordering.
  *   2. Apply the move optimistically (instant UI update).
- *   3. POST /v1/workspaces/{ws}/tasks/{readable_id}/move.
+ *   3. POST /api/workspaces/{ws}/tasks/{readable_id}/move.
  *   4. On 200 → reconcile the store with the returned TaskDto (canonical column + position).
  *   5. On 409 position-exhausted → retry once. If the retry also fails → rollback + hint.
  *   6. On any other error → rollback + hint.
@@ -80,7 +80,7 @@ export function useKanbanMove(ws: string) {
     const destTasks = store.tasksByColumn(columnId).filter((t) => t.readable_id !== readableId);
     const neighbors = computeNeighbors(destTasks, toIndex);
 
-    const result = await wrappedClient.POST('/v1/workspaces/{ws}/tasks/{readable_id}/move', {
+    const result = await wrappedClient.POST('/api/workspaces/{ws}/tasks/{readable_id}/move', {
       params: { path: { ws, readable_id: readableId } },
       body: {
         column_id: columnId,

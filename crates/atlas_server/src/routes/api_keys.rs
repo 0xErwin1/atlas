@@ -225,12 +225,12 @@ fn key_to_dto(k: &atlas_domain::entities::identity::ApiKey) -> ApiKeyDto {
 }
 
 // ---------------------------------------------------------------------------
-// Top-level user-owned key routes (`/v1/api-keys`)
+// Top-level user-owned key routes (`/api/api-keys`)
 // ---------------------------------------------------------------------------
 
 #[utoipa::path(
     post,
-    path = "/v1/api-keys",
+    path = "/api/api-keys",
     tag = "api-keys",
     security(("bearer_auth" = [])),
     request_body = CreateUserApiKeyRequest,
@@ -561,7 +561,7 @@ fn grant_to_api_key_grant_dto(
 
 #[utoipa::path(
     get,
-    path = "/v1/api-keys/{key_id}/grants",
+    path = "/api/api-keys/{key_id}/grants",
     tag = "api-keys",
     security(("bearer_auth" = [])),
     params(("key_id" = uuid::Uuid, Path, description = "API key id")),
@@ -629,7 +629,7 @@ pub(crate) async fn list_api_key_grants(
 
 #[utoipa::path(
     delete,
-    path = "/v1/api-keys/{key_id}/grants/{grant_id}",
+    path = "/api/api-keys/{key_id}/grants/{grant_id}",
     tag = "api-keys",
     security(("bearer_auth" = [])),
     params(
@@ -753,7 +753,7 @@ async fn create_initial_grant(
 
 #[utoipa::path(
     get,
-    path = "/v1/api-keys",
+    path = "/api/api-keys",
     tag = "api-keys",
     security(("bearer_auth" = [])),
     params(
@@ -816,7 +816,7 @@ pub(crate) async fn list_user_api_keys(
 
 #[utoipa::path(
     delete,
-    path = "/v1/api-keys/{key_id}",
+    path = "/api/api-keys/{key_id}",
     tag = "api-keys",
     security(("bearer_auth" = [])),
     params(("key_id" = uuid::Uuid, Path, description = "API key id")),
@@ -890,7 +890,7 @@ pub(crate) async fn revoke_user_api_key(
 /// escalation.
 #[utoipa::path(
     patch,
-    path = "/v1/api-keys/{key_id}",
+    path = "/api/api-keys/{key_id}",
     tag = "api-keys",
     security(("bearer_auth" = [])),
     params(("key_id" = uuid::Uuid, Path, description = "API key id")),

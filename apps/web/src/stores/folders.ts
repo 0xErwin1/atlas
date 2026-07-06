@@ -41,7 +41,7 @@ export const useFoldersStore = defineStore('folders', () => {
     }
 
     const { items, error: apiError } = await collectPaged<FolderDto>((cursor) =>
-      wrappedClient.GET('/v1/workspaces/{ws}/projects/{project_slug}/folders', {
+      wrappedClient.GET('/api/workspaces/{ws}/projects/{project_slug}/folders', {
         params: {
           path: { ws, project_slug: projectSlug },
           query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) },
@@ -74,7 +74,7 @@ export const useFoldersStore = defineStore('folders', () => {
     parentFolderId?: string,
   ): Promise<boolean> {
     const { error: apiError } = await wrappedClient.POST(
-      '/v1/workspaces/{ws}/projects/{project_slug}/folders',
+      '/api/workspaces/{ws}/projects/{project_slug}/folders',
       {
         params: { path: { ws, project_slug: projectSlug } },
         body: { name, parent_folder_id: parentFolderId ?? null },
@@ -91,7 +91,7 @@ export const useFoldersStore = defineStore('folders', () => {
   }
 
   async function rename(ws: string, projectSlug: string, folderId: string, name: string): Promise<boolean> {
-    const { error: apiError } = await wrappedClient.PATCH('/v1/workspaces/{ws}/folders/{folder_id}', {
+    const { error: apiError } = await wrappedClient.PATCH('/api/workspaces/{ws}/folders/{folder_id}', {
       params: { path: { ws, folder_id: folderId } },
       body: { name },
     });
@@ -106,7 +106,7 @@ export const useFoldersStore = defineStore('folders', () => {
   }
 
   async function remove(ws: string, projectSlug: string, folderId: string): Promise<boolean> {
-    const { error: apiError } = await wrappedClient.DELETE('/v1/workspaces/{ws}/folders/{folder_id}', {
+    const { error: apiError } = await wrappedClient.DELETE('/api/workspaces/{ws}/folders/{folder_id}', {
       params: { path: { ws, folder_id: folderId } },
     });
 
@@ -125,7 +125,7 @@ export const useFoldersStore = defineStore('folders', () => {
     folderId: string,
     parentFolderId: string | null,
   ): Promise<boolean> {
-    const { error: apiError } = await wrappedClient.PATCH('/v1/workspaces/{ws}/folders/{folder_id}/move', {
+    const { error: apiError } = await wrappedClient.PATCH('/api/workspaces/{ws}/folders/{folder_id}/move', {
       params: { path: { ws, folder_id: folderId } },
       body: { parent_folder_id: parentFolderId },
     });
@@ -145,7 +145,7 @@ export const useFoldersStore = defineStore('folders', () => {
     folderId: string,
     parentFolderId: string | null,
   ): Promise<boolean> {
-    const { error: apiError } = await wrappedClient.POST('/v1/workspaces/{ws}/folders/{folder_id}/copy', {
+    const { error: apiError } = await wrappedClient.POST('/api/workspaces/{ws}/folders/{folder_id}/copy', {
       params: { path: { ws, folder_id: folderId } },
       body: { parent_folder_id: parentFolderId },
     });

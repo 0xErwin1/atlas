@@ -52,7 +52,7 @@ static DUMMY_HASH: LazyLock<String> = LazyLock::new(|| {
 
 #[utoipa::path(
     post,
-    path = "/v1/auth/login",
+    path = "/api/auth/login",
     tag = "auth",
     request_body = LoginRequest,
     responses(
@@ -140,7 +140,7 @@ pub(crate) async fn login(
 
 #[utoipa::path(
     post,
-    path = "/v1/auth/logout",
+    path = "/api/auth/logout",
     tag = "auth",
     security(("bearer_auth" = [])),
     responses(
@@ -191,7 +191,7 @@ pub(crate) async fn logout(
 
 #[utoipa::path(
     get,
-    path = "/v1/auth/me",
+    path = "/api/auth/me",
     tag = "auth",
     security(("bearer_auth" = [])),
     responses(
@@ -264,7 +264,7 @@ pub(crate) async fn me(
 
 #[utoipa::path(
     post,
-    path = "/v1/auth/change-password",
+    path = "/api/auth/change-password",
     tag = "auth",
     security(("bearer_auth" = [])),
     request_body = ChangePasswordRequest,
@@ -357,7 +357,7 @@ pub(crate) async fn change_password(
 
 #[utoipa::path(
     patch,
-    path = "/v1/users/me",
+    path = "/api/users/me",
     tag = "users",
     security(("bearer_auth" = [])),
     request_body = UpdateMeRequest,

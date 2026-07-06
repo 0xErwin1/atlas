@@ -28,7 +28,7 @@ use crate::{
 
 #[utoipa::path(
     post,
-    path = "/v1/workspaces/{ws}/groups",
+    path = "/api/workspaces/{ws}/groups",
     tag = "groups",
     security(("bearer_auth" = [])),
     params(
@@ -98,7 +98,7 @@ pub(crate) async fn create_group(
 
 #[utoipa::path(
     get,
-    path = "/v1/workspaces/{ws}/groups",
+    path = "/api/workspaces/{ws}/groups",
     tag = "groups",
     security(("bearer_auth" = [])),
     params(
@@ -129,7 +129,7 @@ pub(crate) async fn list_groups(
 
 #[utoipa::path(
     delete,
-    path = "/v1/workspaces/{ws}/groups/{group_id}",
+    path = "/api/workspaces/{ws}/groups/{group_id}",
     tag = "groups",
     security(("bearer_auth" = [])),
     params(
@@ -190,7 +190,7 @@ pub(crate) async fn delete_group(
 
 #[utoipa::path(
     post,
-    path = "/v1/workspaces/{ws}/groups/{group_id}/members",
+    path = "/api/workspaces/{ws}/groups/{group_id}/members",
     tag = "groups",
     security(("bearer_auth" = [])),
     params(
@@ -288,7 +288,7 @@ pub(crate) async fn add_group_member(
 
 #[utoipa::path(
     delete,
-    path = "/v1/workspaces/{ws}/groups/{group_id}/members/{user_id}",
+    path = "/api/workspaces/{ws}/groups/{group_id}/members/{user_id}",
     tag = "groups",
     security(("bearer_auth" = [])),
     params(
@@ -362,7 +362,7 @@ pub(crate) async fn remove_group_member(
 
 #[utoipa::path(
     get,
-    path = "/v1/workspaces/{ws}/groups/{group_id}/members",
+    path = "/api/workspaces/{ws}/groups/{group_id}/members",
     tag = "groups",
     security(("bearer_auth" = [])),
     params(

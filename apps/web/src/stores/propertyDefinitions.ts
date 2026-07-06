@@ -20,7 +20,7 @@ export const usePropertyDefinitionsStore = defineStore('propertyDefinitions', ()
     if (!force && loadedWs.value === ws) return;
     error.value = null;
 
-    const { data, error: apiError } = await wrappedClient.GET('/v1/workspaces/{ws}/property-definitions', {
+    const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/property-definitions', {
       params: { path: { ws }, query: { applies_to: 'task' } },
     });
 
@@ -39,7 +39,7 @@ export const usePropertyDefinitionsStore = defineStore('propertyDefinitions', ()
   ): Promise<PropertyDefinitionDto | null> {
     error.value = null;
 
-    const { data, error: apiError } = await wrappedClient.POST('/v1/workspaces/{ws}/property-definitions', {
+    const { data, error: apiError } = await wrappedClient.POST('/api/workspaces/{ws}/property-definitions', {
       params: { path: { ws } },
       body,
     });
@@ -60,7 +60,7 @@ export const usePropertyDefinitionsStore = defineStore('propertyDefinitions', ()
     definitions.value = definitions.value.filter((d) => d.id !== id);
 
     const { error: apiError } = await wrappedClient.DELETE(
-      '/v1/workspaces/{ws}/property-definitions/{property_definition_id}',
+      '/api/workspaces/{ws}/property-definitions/{property_definition_id}',
       { params: { path: { ws, property_definition_id: id } } },
     );
 

@@ -51,7 +51,7 @@ pub struct TaskViewDto {
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
-/// Request body for `POST /v1/workspaces/{ws}/task-views`.
+/// Request body for `POST /api/workspaces/{ws}/task-views`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct CreateTaskViewRequest {
@@ -59,7 +59,7 @@ pub struct CreateTaskViewRequest {
     pub filters: TaskViewFiltersDto,
 }
 
-/// Request body for `PATCH /v1/workspaces/{ws}/task-views/{id}`.
+/// Request body for `PATCH /api/workspaces/{ws}/task-views/{id}`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct UpdateTaskViewRequest {

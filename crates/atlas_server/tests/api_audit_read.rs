@@ -8,8 +8,8 @@
 //! B4 read-endpoint integration tests.
 //!
 //! RED tests (written first). Covers:
-//! - GET /v1/workspaces/{ws}/audit — workspace audit feed (owner/admin only)
-//! - GET /v1/admin/audit — platform audit feed (root/system_admin only)
+//! - GET /api/workspaces/{ws}/audit — workspace audit feed (owner/admin only)
+//! - GET /api/admin/audit — platform audit feed (root/system_admin only)
 //! - Actor enrichment: actor carries display_name + key_type + account_status
 //! - Workspace isolation: only rows for that workspace are returned
 //! - Access control: plain member → 403, api_key → 403, break-glass → 200

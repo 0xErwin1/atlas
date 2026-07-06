@@ -457,7 +457,7 @@ async fn set_system_admin_self_is_blocked() {
     let response = root
         .http_client()
         .post(format!(
-            "{}/v1/users/{}/system-admin",
+            "{}/api/users/{}/system-admin",
             root.base_url(),
             my_id,
         ))

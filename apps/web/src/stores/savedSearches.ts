@@ -14,7 +14,7 @@ export const useSavedSearchesStore = defineStore('savedSearches', () => {
   async function load(ws: string, force = false): Promise<void> {
     if (!force && loadedWs === ws) return;
 
-    const { data, error: apiError } = await wrappedClient.GET('/v1/workspaces/{ws}/saved-searches', {
+    const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/saved-searches', {
       params: { path: { ws } },
     });
 
@@ -31,7 +31,7 @@ export const useSavedSearchesStore = defineStore('savedSearches', () => {
     ws: string,
     payload: { name: string; query: string },
   ): Promise<SavedSearchDto | null> {
-    const { data, error: apiError } = await wrappedClient.POST('/v1/workspaces/{ws}/saved-searches', {
+    const { data, error: apiError } = await wrappedClient.POST('/api/workspaces/{ws}/saved-searches', {
       params: { path: { ws } },
       body: { name: payload.name, query: payload.query },
     });
@@ -46,7 +46,7 @@ export const useSavedSearchesStore = defineStore('savedSearches', () => {
   }
 
   async function rename(ws: string, id: string, name: string): Promise<boolean> {
-    const { data, error: apiError } = await wrappedClient.PATCH('/v1/workspaces/{ws}/saved-searches/{id}', {
+    const { data, error: apiError } = await wrappedClient.PATCH('/api/workspaces/{ws}/saved-searches/{id}', {
       params: { path: { ws, id } },
       body: { name },
     });
@@ -64,7 +64,7 @@ export const useSavedSearchesStore = defineStore('savedSearches', () => {
   }
 
   async function remove(ws: string, id: string): Promise<boolean> {
-    const { error: apiError } = await wrappedClient.DELETE('/v1/workspaces/{ws}/saved-searches/{id}', {
+    const { error: apiError } = await wrappedClient.DELETE('/api/workspaces/{ws}/saved-searches/{id}', {
       params: { path: { ws, id } },
     });
 

@@ -19,7 +19,7 @@ export interface WorkspaceTaskParams {
 
 /**
  * Translates a view ID (predefined slug or custom UUID) and optional custom
- * filters into the flat query params accepted by GET /v1/workspaces/{ws}/tasks.
+ * filters into the flat query params accepted by GET /api/workspaces/{ws}/tasks.
  *
  * Predefined slugs are mapped directly; a UUID with filters translates each
  * TaskViewFiltersDto field into the corresponding query parameter name.
@@ -70,7 +70,7 @@ export const useWorkspaceTasksStore = defineStore('workspaceTasks', () => {
     loading.value = true;
     error.value = null;
 
-    const { data, error: apiError } = await wrappedClient.GET('/v1/workspaces/{ws}/tasks', {
+    const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/tasks', {
       params: {
         path: { ws },
         query: { ...params, limit: 200 } as Record<string, unknown>,

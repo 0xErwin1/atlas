@@ -22,7 +22,7 @@ pub struct PropertyDefinitionDto {
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
-/// Request body for `POST /v1/workspaces/{ws}/property-definitions`.
+/// Request body for `POST /api/workspaces/{ws}/property-definitions`.
 ///
 /// The `key` is derived server-side from `name`; callers do not supply it.
 #[derive(Debug, Clone, Serialize, Deserialize)]

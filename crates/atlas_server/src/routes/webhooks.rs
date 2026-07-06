@@ -153,12 +153,12 @@ fn generate_secret() -> String {
 }
 
 // ---------------------------------------------------------------------------
-// POST /v1/workspaces/{ws}/webhooks
+// POST /api/workspaces/{ws}/webhooks
 // ---------------------------------------------------------------------------
 
 #[utoipa::path(
     post,
-    path = "/v1/workspaces/{ws}/webhooks",
+    path = "/api/workspaces/{ws}/webhooks",
     tag = "webhooks",
     security(("bearer_auth" = [])),
     params(("ws" = String, Path, description = "Workspace slug")),
@@ -223,7 +223,7 @@ pub(crate) async fn create_webhook(
 }
 
 // ---------------------------------------------------------------------------
-// GET /v1/workspaces/{ws}/webhooks
+// GET /api/workspaces/{ws}/webhooks
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize)]
@@ -234,7 +234,7 @@ pub(crate) struct ListWebhooksQuery {
 
 #[utoipa::path(
     get,
-    path = "/v1/workspaces/{ws}/webhooks",
+    path = "/api/workspaces/{ws}/webhooks",
     tag = "webhooks",
     security(("bearer_auth" = [])),
     params(
@@ -289,12 +289,12 @@ pub(crate) async fn list_webhooks(
 }
 
 // ---------------------------------------------------------------------------
-// GET /v1/workspaces/{ws}/webhooks/{webhook_id}
+// GET /api/workspaces/{ws}/webhooks/{webhook_id}
 // ---------------------------------------------------------------------------
 
 #[utoipa::path(
     get,
-    path = "/v1/workspaces/{ws}/webhooks/{webhook_id}",
+    path = "/api/workspaces/{ws}/webhooks/{webhook_id}",
     tag = "webhooks",
     security(("bearer_auth" = [])),
     params(
@@ -324,12 +324,12 @@ pub(crate) async fn get_webhook(
 }
 
 // ---------------------------------------------------------------------------
-// PATCH /v1/workspaces/{ws}/webhooks/{webhook_id}
+// PATCH /api/workspaces/{ws}/webhooks/{webhook_id}
 // ---------------------------------------------------------------------------
 
 #[utoipa::path(
     patch,
-    path = "/v1/workspaces/{ws}/webhooks/{webhook_id}",
+    path = "/api/workspaces/{ws}/webhooks/{webhook_id}",
     tag = "webhooks",
     security(("bearer_auth" = [])),
     params(
@@ -385,12 +385,12 @@ pub(crate) async fn update_webhook(
 }
 
 // ---------------------------------------------------------------------------
-// DELETE /v1/workspaces/{ws}/webhooks/{webhook_id}
+// DELETE /api/workspaces/{ws}/webhooks/{webhook_id}
 // ---------------------------------------------------------------------------
 
 #[utoipa::path(
     delete,
-    path = "/v1/workspaces/{ws}/webhooks/{webhook_id}",
+    path = "/api/workspaces/{ws}/webhooks/{webhook_id}",
     tag = "webhooks",
     security(("bearer_auth" = [])),
     params(
@@ -419,7 +419,7 @@ pub(crate) async fn delete_webhook(
 }
 
 // ---------------------------------------------------------------------------
-// GET /v1/workspaces/{ws}/webhooks/{webhook_id}/deliveries
+// GET /api/workspaces/{ws}/webhooks/{webhook_id}/deliveries
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize)]
@@ -430,7 +430,7 @@ pub(crate) struct ListDeliveriesQuery {
 
 #[utoipa::path(
     get,
-    path = "/v1/workspaces/{ws}/webhooks/{webhook_id}/deliveries",
+    path = "/api/workspaces/{ws}/webhooks/{webhook_id}/deliveries",
     tag = "webhooks",
     security(("bearer_auth" = [])),
     params(

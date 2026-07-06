@@ -195,7 +195,7 @@ describe('useFoldersStore', () => {
     const ok = await store.move('ws', 'proj', 'f1', 'parent-1');
 
     expect(ok).toBe(true);
-    expect(PATCH).toHaveBeenCalledWith('/v1/workspaces/{ws}/folders/{folder_id}/move', {
+    expect(PATCH).toHaveBeenCalledWith('/api/workspaces/{ws}/folders/{folder_id}/move', {
       params: { path: { ws: 'ws', folder_id: 'f1' } },
       body: { parent_folder_id: 'parent-1' },
     });
@@ -208,7 +208,7 @@ describe('useFoldersStore', () => {
     const store = useFoldersStore();
     await store.move('ws', 'proj', 'f1', null);
 
-    expect(PATCH).toHaveBeenCalledWith('/v1/workspaces/{ws}/folders/{folder_id}/move', {
+    expect(PATCH).toHaveBeenCalledWith('/api/workspaces/{ws}/folders/{folder_id}/move', {
       params: { path: { ws: 'ws', folder_id: 'f1' } },
       body: { parent_folder_id: null },
     });
@@ -233,7 +233,7 @@ describe('useFoldersStore', () => {
     const ok = await store.copy('ws', 'proj', 'f1', 'parent-1');
 
     expect(ok).toBe(true);
-    expect(POST).toHaveBeenCalledWith('/v1/workspaces/{ws}/folders/{folder_id}/copy', {
+    expect(POST).toHaveBeenCalledWith('/api/workspaces/{ws}/folders/{folder_id}/copy', {
       params: { path: { ws: 'ws', folder_id: 'f1' } },
       body: { parent_folder_id: 'parent-1' },
     });

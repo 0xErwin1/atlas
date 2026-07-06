@@ -3,7 +3,7 @@ import { wrappedClient } from '@/api';
 import { eventString, type LiveEnvelope } from '@/lib/eventTypes';
 import type { ActorDto } from '@/stores/boards';
 
-const PRESENCE_PATH = '/v1/workspaces/{ws}/documents/{slug}/presence' as const;
+const PRESENCE_PATH = '/api/workspaces/{ws}/documents/{slug}/presence' as const;
 
 // The server evicts a presence entry after 45s without a heartbeat; a 20s cadence
 // keeps it alive with margin for a slow request or a briefly backgrounded tab.
@@ -75,7 +75,7 @@ export function useDocumentPresence(ws: Ref<string>, slug: Ref<string | null>): 
     if (activeWs === null || activeSlug === null) return;
 
     try {
-      void fetch(`/v1/workspaces/${activeWs}/documents/${activeSlug}/presence`, {
+      void fetch(`/api/workspaces/${activeWs}/documents/${activeSlug}/presence`, {
         method: 'DELETE',
         keepalive: true,
         credentials: 'include',

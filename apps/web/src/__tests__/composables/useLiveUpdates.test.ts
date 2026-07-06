@@ -68,7 +68,7 @@ describe('useLiveUpdates', () => {
     scope.run(() => useLiveUpdates(ws, { onEvent: vi.fn(), onResync: vi.fn() }));
 
     expect(FakeEventSource.instances).toHaveLength(1);
-    expect(FakeEventSource.instances[0]?.url).toBe('/v1/workspaces/acme/events');
+    expect(FakeEventSource.instances[0]?.url).toBe('/api/workspaces/acme/events');
 
     scope.stop();
   });
@@ -93,7 +93,7 @@ describe('useLiveUpdates', () => {
 
     expect(FakeEventSource.instances).toHaveLength(2);
     expect(FakeEventSource.instances[0]?.closed).toBe(true);
-    expect(FakeEventSource.instances[1]?.url).toBe('/v1/workspaces/globex/events');
+    expect(FakeEventSource.instances[1]?.url).toBe('/api/workspaces/globex/events');
 
     scope.stop();
   });

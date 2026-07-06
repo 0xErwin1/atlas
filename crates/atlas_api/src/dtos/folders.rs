@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "openapi")]
 use utoipa::ToSchema;
 
-/// Request body for `POST /v1/workspaces/{ws}/projects/{project_slug}/folders`.
+/// Request body for `POST /api/workspaces/{ws}/projects/{project_slug}/folders`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct CreateFolderRequest {
@@ -12,14 +12,14 @@ pub struct CreateFolderRequest {
     pub parent_folder_id: Option<uuid::Uuid>,
 }
 
-/// Request body for `PATCH /v1/workspaces/{ws}/folders/{folder_id}`.
+/// Request body for `PATCH /api/workspaces/{ws}/folders/{folder_id}`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct RenameFolderRequest {
     pub name: String,
 }
 
-/// Request body for `PATCH /v1/workspaces/{ws}/folders/{folder_id}/move`.
+/// Request body for `PATCH /api/workspaces/{ws}/folders/{folder_id}/move`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct MoveFolderRequest {
@@ -27,7 +27,7 @@ pub struct MoveFolderRequest {
     pub parent_folder_id: Option<uuid::Uuid>,
 }
 
-/// Request body for `POST /v1/workspaces/{ws}/folders/{folder_id}/copy`.
+/// Request body for `POST /api/workspaces/{ws}/folders/{folder_id}/copy`.
 ///
 /// `parent_folder_id` is the destination parent for the copied top folder. When
 /// omitted, the copy lands under the same parent as the source folder.

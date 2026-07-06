@@ -13,7 +13,7 @@ vi.mock('@/api/wrapper', () => ({
 import { type BoardPresence, useBoardPresence } from '@/composables/useBoardPresence';
 import type { LiveEnvelope } from '@/lib/eventTypes';
 
-const PATH = '/v1/workspaces/{ws}/boards/{board_id}/presence';
+const PATH = '/api/workspaces/{ws}/boards/{board_id}/presence';
 
 const actor = (id: string, type = 'user') => ({ id, type, display_name: id });
 

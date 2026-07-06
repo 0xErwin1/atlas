@@ -32,7 +32,7 @@ pub struct VersionResponse {
     pub version: String,
 }
 
-/// Request body for `POST /v1/auth/login`.
+/// Request body for `POST /api/auth/login`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct LoginRequest {
@@ -40,7 +40,7 @@ pub struct LoginRequest {
     pub password: String,
 }
 
-/// Response body from `POST /v1/auth/login`.
+/// Response body from `POST /api/auth/login`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct LoginResponse {
@@ -67,7 +67,7 @@ pub struct UserDto {
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
-/// Request body for `POST /v1/auth/change-password`.
+/// Request body for `POST /api/auth/change-password`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct ChangePasswordRequest {
@@ -75,7 +75,7 @@ pub struct ChangePasswordRequest {
     pub new_password: String,
 }
 
-/// Request body for `PATCH /v1/users/me`. Only the provided fields are updated.
+/// Request body for `PATCH /api/users/me`. Only the provided fields are updated.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct UpdateMeRequest {
@@ -83,14 +83,14 @@ pub struct UpdateMeRequest {
     pub display_name: Option<String>,
 }
 
-/// Request body for `POST /v1/users/{user_id}/reset-password`.
+/// Request body for `POST /api/users/{user_id}/reset-password`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct ResetPasswordRequest {
     pub new_password: String,
 }
 
-/// Response from `GET /v1/auth/me`.
+/// Response from `GET /api/auth/me`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct MeResponse {
@@ -108,7 +108,7 @@ pub struct MeResponse {
 }
 
 /// The self-identity of an API-key (agent) principal, returned in the `agent`
-/// field of `GET /v1/auth/me` so an agent can inspect its own id, name, and the
+/// field of `GET /api/auth/me` so an agent can inspect its own id, name, and the
 /// capability scopes it currently holds.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
@@ -122,7 +122,7 @@ pub struct AgentIdentityDto {
 
 /// One workspace a user belongs to, with the membership role.
 ///
-/// Returned by `GET /v1/users/{user_id}/memberships` to power the admin
+/// Returned by `GET /api/users/{user_id}/memberships` to power the admin
 /// workspace-access editor, which assigns a user across workspaces.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
@@ -133,14 +133,14 @@ pub struct UserMembershipDto {
     pub role: String,
 }
 
-/// Request body for `POST /v1/users/{user_id}/system-admin`.
+/// Request body for `POST /api/users/{user_id}/system-admin`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct SetSystemAdminRequest {
     pub is_system_admin: bool,
 }
 
-/// Response from `GET /v1/meta`. Server build information for the About screen.
+/// Response from `GET /api/meta`. Server build information for the About screen.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct ServerMetaDto {
@@ -151,7 +151,7 @@ pub struct ServerMetaDto {
     pub url: Option<String>,
 }
 
-/// Request body for `POST /v1/users`.
+/// Request body for `POST /api/users`.
 ///
 /// Creates a pending account with no password. The returned `activation_link`
 /// must be shared with the invitee so they can set their own password.
@@ -168,7 +168,7 @@ pub struct CreateUserRequest {
     pub role: String,
 }
 
-/// Response from `POST /v1/users`.
+/// Response from `POST /api/users`.
 ///
 /// `activation_link` is the plaintext single-use link shown exactly once.
 /// It is not stored — only the hash is kept server-side.
@@ -180,7 +180,7 @@ pub struct CreateUserResponse {
     pub activation_link: String,
 }
 
-/// Response from `POST /v1/users/{user_id}/activation-link`.
+/// Response from `POST /api/users/{user_id}/activation-link`.
 ///
 /// `activation_link` is a freshly issued single-use link. Prior unconsumed tokens
 /// for the same user are invalidated.
@@ -191,7 +191,7 @@ pub struct ActivationLinkResponse {
     pub activation_link: String,
 }
 
-/// Minimal user info returned by `GET /v1/activate/{token}` so the activation
+/// Minimal user info returned by `GET /api/activate/{token}` so the activation
 /// page can display a personalised heading without requiring authentication.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
@@ -200,7 +200,7 @@ pub struct ActivationInfoDto {
     pub display_name: String,
 }
 
-/// Request body for `POST /v1/activate/{token}`.
+/// Request body for `POST /api/activate/{token}`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct ActivatePasswordRequest {
@@ -294,7 +294,7 @@ pub enum ApiKeyScope {
     TaskViewsDelete,
 }
 
-/// Optional initial workspace grant included in a `POST /v1/api-keys` request.
+/// Optional initial workspace grant included in a `POST /api/api-keys` request.
 ///
 /// When present, a workspace-scope grant at the given role is created atomically
 /// with the key so the key is immediately usable in that workspace.
@@ -307,7 +307,7 @@ pub struct InitialGrantRequest {
     pub role: String,
 }
 
-/// Request body for `POST /v1/api-keys` (top-level, user-owned key creation).
+/// Request body for `POST /api/api-keys` (top-level, user-owned key creation).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct CreateUserApiKeyRequest {
@@ -325,7 +325,7 @@ pub struct CreateUserApiKeyRequest {
     pub scopes: Option<Vec<ApiKeyScope>>,
 }
 
-/// Response for `POST /v1/api-keys` (secret returned exactly once).
+/// Response for `POST /api/api-keys` (secret returned exactly once).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct ApiKeyCreated {
@@ -360,7 +360,7 @@ pub struct ApiKeyDto {
     pub scopes: Vec<ApiKeyScope>,
 }
 
-/// Request body for `PATCH /v1/api-keys/{key_id}`.
+/// Request body for `PATCH /api/api-keys/{key_id}`.
 ///
 /// Both fields are PATCH-partial: omit a field to leave it unchanged.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -373,7 +373,7 @@ pub struct UpdateApiKeyRequest {
     pub scopes: Option<Vec<ApiKeyScope>>,
 }
 
-/// Request body for `POST /v1/workspaces/{ws}/projects`.
+/// Request body for `POST /api/workspaces/{ws}/projects`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct CreateProjectRequest {
@@ -386,7 +386,7 @@ pub struct CreateProjectRequest {
     pub visibility_role: Option<String>,
 }
 
-/// Request body for `PATCH /v1/workspaces/{ws}/projects/{project_slug}`.
+/// Request body for `PATCH /api/workspaces/{ws}/projects/{project_slug}`.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct UpdateProjectRequest {
@@ -411,7 +411,7 @@ pub struct ProjectDto {
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
-/// Request body for `POST /v1/workspaces/{ws}/projects/{slug}/grants`.
+/// Request body for `POST /api/workspaces/{ws}/projects/{slug}/grants`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct CreateGrantRequest {
@@ -439,7 +439,7 @@ pub struct GrantDto {
 
 /// A principal (workspace member or agent) that a grant can be addressed to.
 ///
-/// Returned by `GET /v1/workspaces/{ws}/members` so the share dialog can resolve
+/// Returned by `GET /api/workspaces/{ws}/members` so the share dialog can resolve
 /// a human-readable name to the principal id required by a grant request.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
@@ -462,14 +462,14 @@ pub struct PrincipalDto {
     pub account_status: Option<String>,
 }
 
-/// Request body for `PATCH /v1/workspaces/{ws}/members/{user_id}`.
+/// Request body for `PATCH /api/workspaces/{ws}/members/{user_id}`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct UpdateMemberRoleRequest {
     pub role: String,
 }
 
-/// Request body for `POST /v1/workspaces/{ws}/members`.
+/// Request body for `POST /api/workspaces/{ws}/members`.
 ///
 /// Adds an existing user to the workspace at the given role. `role` is one of
 /// `"owner"` | `"admin"` | `"member"`; granting `owner` requires an owner (or
@@ -481,21 +481,21 @@ pub struct AddMemberRequest {
     pub role: String,
 }
 
-/// Request body for `POST /v1/workspaces`.
+/// Request body for `POST /api/workspaces`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct CreateWorkspaceRequest {
     pub name: String,
 }
 
-/// Request body for `PATCH /v1/workspaces/{ws}`.
+/// Request body for `PATCH /api/workspaces/{ws}`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct UpdateWorkspaceRequest {
     pub name: String,
 }
 
-/// Request body for `PATCH /v1/admin/workspaces/{ws}` (root/system-admin only).
+/// Request body for `PATCH /api/admin/workspaces/{ws}` (root/system-admin only).
 ///
 /// Both fields are optional and applied independently: omit a field to leave it
 /// unchanged. Unlike the member-facing `UpdateWorkspaceRequest`, this admin path
@@ -520,7 +520,7 @@ pub struct WorkspaceDto {
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
-/// Response from `GET /v1/me/ui-state` and `PUT /v1/me/ui-state`.
+/// Response from `GET /api/me/ui-state` and `PUT /api/me/ui-state`.
 ///
 /// `state` is an opaque JSON object owned by the client (e.g. which sidebar
 /// folders are collapsed). The server stores and returns it verbatim and does
@@ -532,7 +532,7 @@ pub struct UiStateDto {
     pub state: serde_json::Value,
 }
 
-/// Request body for `PUT /v1/me/ui-state`. The `state` is stored verbatim.
+/// Request body for `PUT /api/me/ui-state`. The `state` is stored verbatim.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct UpdateUiStateRequest {
@@ -556,7 +556,7 @@ pub struct GrantedByDto {
 
 /// A single grant belonging to an API key, with resolved resource labels.
 ///
-/// Returned by `GET /v1/api-keys/{key_id}/grants` so the keys panel can display
+/// Returned by `GET /api/api-keys/{key_id}/grants` so the keys panel can display
 /// human-readable resource names without additional lookups.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]

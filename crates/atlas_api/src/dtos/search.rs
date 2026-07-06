@@ -13,7 +13,7 @@ pub enum SearchKindDto {
     Task,
 }
 
-/// A single search result item returned by `GET /v1/workspaces/{ws}/search`.
+/// A single search result item returned by `GET /api/workspaces/{ws}/search`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct SearchHitDto {

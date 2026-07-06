@@ -693,7 +693,7 @@ async fn get_folder_non_uuid_returns_422() {
     let response = client
         .http_client()
         .get(format!(
-            "{}/v1/workspaces/{}/folders/not-a-uuid",
+            "{}/api/workspaces/{}/folders/not-a-uuid",
             client.base_url(),
             ws.slug
         ))
@@ -991,9 +991,9 @@ fn folder_routes_wired_in_registry_and_router() {
     use atlas_server::routes::registry::ROUTE_REGISTRY;
 
     let expected_openapi_paths = [
-        "/v1/workspaces/{ws}/projects/{project_slug}/folders",
-        "/v1/workspaces/{ws}/folders/{folder_id}",
-        "/v1/workspaces/{ws}/folders/{folder_id}/move",
+        "/api/workspaces/{ws}/projects/{project_slug}/folders",
+        "/api/workspaces/{ws}/folders/{folder_id}",
+        "/api/workspaces/{ws}/folders/{folder_id}/move",
     ];
 
     for path in &expected_openapi_paths {
@@ -1007,13 +1007,16 @@ fn folder_routes_wired_in_registry_and_router() {
     let expected_methods = [
         (
             "POST",
-            "/v1/workspaces/{ws}/projects/{project_slug}/folders",
+            "/api/workspaces/{ws}/projects/{project_slug}/folders",
         ),
-        ("GET", "/v1/workspaces/{ws}/projects/{project_slug}/folders"),
-        ("GET", "/v1/workspaces/{ws}/folders/{folder_id}"),
-        ("PATCH", "/v1/workspaces/{ws}/folders/{folder_id}"),
-        ("DELETE", "/v1/workspaces/{ws}/folders/{folder_id}"),
-        ("PATCH", "/v1/workspaces/{ws}/folders/{folder_id}/move"),
+        (
+            "GET",
+            "/api/workspaces/{ws}/projects/{project_slug}/folders",
+        ),
+        ("GET", "/api/workspaces/{ws}/folders/{folder_id}"),
+        ("PATCH", "/api/workspaces/{ws}/folders/{folder_id}"),
+        ("DELETE", "/api/workspaces/{ws}/folders/{folder_id}"),
+        ("PATCH", "/api/workspaces/{ws}/folders/{folder_id}/move"),
     ];
 
     for (method, openapi_path) in &expected_methods {

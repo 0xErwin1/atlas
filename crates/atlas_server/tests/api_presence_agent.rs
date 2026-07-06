@@ -51,7 +51,7 @@ use tokio::sync::watch;
 // ---------------------------------------------------------------------------
 
 fn events_url(base: &str, ws_slug: &str) -> String {
-    format!("{base}/v1/workspaces/{ws_slug}/events")
+    format!("{base}/api/workspaces/{ws_slug}/events")
 }
 
 /// Reads the next meaningful SSE frame (skipping keep-alive comments), returning

@@ -63,7 +63,7 @@ impl IntoResponse for ApiError {
                     "Unauthorized",
                     401,
                 )
-                .with_hint("Provide a valid Bearer token or session cookie. Login at POST /v1/auth/login."),
+                .with_hint("Provide a valid Bearer token or session cookie. Login at POST /api/auth/login."),
             ),
             ApiError::CsrfRequired => (
                 StatusCode::FORBIDDEN,

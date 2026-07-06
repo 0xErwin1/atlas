@@ -37,7 +37,7 @@ describe('useShareStore — workspace resource (REQ-W26/W27)', () => {
     const store = useShareStore();
     await store.load(WS_RESOURCE);
 
-    expect(GET).toHaveBeenCalledWith('/v1/workspaces/{ws}/grants', {
+    expect(GET).toHaveBeenCalledWith('/api/workspaces/{ws}/grants', {
       params: { path: { ws: 'acme' }, query: { limit: 200 } },
     });
     expect(store.grants).toHaveLength(1);
@@ -63,7 +63,7 @@ describe('useShareStore — workspace resource (REQ-W26/W27)', () => {
     const ok = await store.addGrant(WS_RESOURCE, { type: 'user', id: 'u2' }, 'admin');
 
     expect(ok).toBe(true);
-    expect(POST).toHaveBeenCalledWith('/v1/workspaces/{ws}/grants', {
+    expect(POST).toHaveBeenCalledWith('/api/workspaces/{ws}/grants', {
       params: { path: { ws: 'acme' } },
       body: { principal: { type: 'user', id: 'u2' }, role: 'admin' },
     });
@@ -112,7 +112,7 @@ describe('useShareStore — workspace resource (REQ-W26/W27)', () => {
     const ok = await store.changeRole(WS_RESOURCE, 'g1', 'viewer');
 
     expect(ok).toBe(true);
-    expect(POST).toHaveBeenCalledWith('/v1/workspaces/{ws}/grants', {
+    expect(POST).toHaveBeenCalledWith('/api/workspaces/{ws}/grants', {
       params: { path: { ws: 'acme' } },
       body: { principal: { type: 'user', id: 'u1' }, role: 'viewer' },
     });
@@ -126,7 +126,7 @@ describe('useShareStore — workspace resource (REQ-W26/W27)', () => {
     const ok = await store.removeGrant(WS_RESOURCE, 'g1');
 
     expect(ok).toBe(true);
-    expect(DELETE).toHaveBeenCalledWith('/v1/workspaces/{ws}/grants/{grant_id}', {
+    expect(DELETE).toHaveBeenCalledWith('/api/workspaces/{ws}/grants/{grant_id}', {
       params: { path: { ws: 'acme', grant_id: 'g1' } },
     });
     expect(store.grants).toHaveLength(0);
@@ -154,7 +154,7 @@ describe('useShareStore — workspace resource (REQ-W26/W27)', () => {
     const store = useShareStore();
     await store.loadMembers('acme');
 
-    expect(GET).toHaveBeenCalledWith('/v1/workspaces/{ws}/members', {
+    expect(GET).toHaveBeenCalledWith('/api/workspaces/{ws}/members', {
       params: { path: { ws: 'acme' } },
     });
     expect(store.members).toHaveLength(2);
@@ -205,7 +205,7 @@ describe('useShareStore — project resource dispatch', () => {
     const store = useShareStore();
     await store.load(PROJ_RESOURCE);
 
-    expect(GET).toHaveBeenCalledWith('/v1/workspaces/{ws}/projects/{project_slug}/grants', {
+    expect(GET).toHaveBeenCalledWith('/api/workspaces/{ws}/projects/{project_slug}/grants', {
       params: { path: { ws: 'acme', project_slug: 'my-proj' }, query: { limit: 200 } },
     });
     expect(store.grants).toHaveLength(1);
@@ -219,7 +219,7 @@ describe('useShareStore — project resource dispatch', () => {
     const ok = await store.addGrant(PROJ_RESOURCE, { type: 'user', id: 'u2' }, 'editor');
 
     expect(ok).toBe(true);
-    expect(POST).toHaveBeenCalledWith('/v1/workspaces/{ws}/projects/{project_slug}/grants', {
+    expect(POST).toHaveBeenCalledWith('/api/workspaces/{ws}/projects/{project_slug}/grants', {
       params: { path: { ws: 'acme', project_slug: 'my-proj' } },
       body: { principal: { type: 'user', id: 'u2' }, role: 'editor' },
     });
@@ -242,7 +242,7 @@ describe('useShareStore — project resource dispatch', () => {
     const ok = await store.removeGrant(PROJ_RESOURCE, 'g5');
 
     expect(ok).toBe(true);
-    expect(DELETE).toHaveBeenCalledWith('/v1/workspaces/{ws}/projects/{project_slug}/grants/{grant_id}', {
+    expect(DELETE).toHaveBeenCalledWith('/api/workspaces/{ws}/projects/{project_slug}/grants/{grant_id}', {
       params: { path: { ws: 'acme', project_slug: 'my-proj', grant_id: 'g5' } },
     });
   });
@@ -255,7 +255,7 @@ describe('useShareStore — project resource dispatch', () => {
     const ok = await store.addGrant(PROJ_RESOURCE, { type: 'api_key', id: 'k1' }, 'editor');
 
     expect(ok).toBe(true);
-    expect(POST).toHaveBeenCalledWith('/v1/workspaces/{ws}/projects/{project_slug}/grants', {
+    expect(POST).toHaveBeenCalledWith('/api/workspaces/{ws}/projects/{project_slug}/grants', {
       params: { path: { ws: 'acme', project_slug: 'my-proj' } },
       body: { principal: { type: 'api_key', id: 'k1' }, role: 'editor' },
     });

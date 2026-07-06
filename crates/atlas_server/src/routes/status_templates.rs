@@ -70,12 +70,12 @@ fn column_to_dto(c: BoardColumn) -> atlas_api::dtos::boards_tasks::ColumnDto {
 }
 
 // ---------------------------------------------------------------------------
-// GET /v1/workspaces/{ws}/status-templates
+// GET /api/workspaces/{ws}/status-templates
 // ---------------------------------------------------------------------------
 
 #[utoipa::path(
     get,
-    path = "/v1/workspaces/{ws}/status-templates",
+    path = "/api/workspaces/{ws}/status-templates",
     tag = "status-templates",
     security(("bearer_auth" = [])),
     params(("ws" = String, Path, description = "Workspace slug")),
@@ -99,12 +99,12 @@ pub(crate) async fn list_status_templates(
 }
 
 // ---------------------------------------------------------------------------
-// POST /v1/workspaces/{ws}/status-templates
+// POST /api/workspaces/{ws}/status-templates
 // ---------------------------------------------------------------------------
 
 #[utoipa::path(
     post,
-    path = "/v1/workspaces/{ws}/status-templates",
+    path = "/api/workspaces/{ws}/status-templates",
     tag = "status-templates",
     security(("bearer_auth" = [])),
     params(("ws" = String, Path, description = "Workspace slug")),
@@ -155,12 +155,12 @@ pub(crate) async fn create_status_template(
 }
 
 // ---------------------------------------------------------------------------
-// PATCH /v1/workspaces/{ws}/status-templates/{template_id}
+// PATCH /api/workspaces/{ws}/status-templates/{template_id}
 // ---------------------------------------------------------------------------
 
 #[utoipa::path(
     patch,
-    path = "/v1/workspaces/{ws}/status-templates/{template_id}",
+    path = "/api/workspaces/{ws}/status-templates/{template_id}",
     tag = "status-templates",
     security(("bearer_auth" = [])),
     params(
@@ -242,12 +242,12 @@ pub(crate) async fn update_status_template(
 }
 
 // ---------------------------------------------------------------------------
-// DELETE /v1/workspaces/{ws}/status-templates/{template_id}
+// DELETE /api/workspaces/{ws}/status-templates/{template_id}
 // ---------------------------------------------------------------------------
 
 #[utoipa::path(
     delete,
-    path = "/v1/workspaces/{ws}/status-templates/{template_id}",
+    path = "/api/workspaces/{ws}/status-templates/{template_id}",
     tag = "status-templates",
     security(("bearer_auth" = [])),
     params(
@@ -278,12 +278,12 @@ pub(crate) async fn delete_status_template(
 }
 
 // ---------------------------------------------------------------------------
-// POST /v1/workspaces/{ws}/boards/{board_id}/apply-status-templates
+// POST /api/workspaces/{ws}/boards/{board_id}/apply-status-templates
 // ---------------------------------------------------------------------------
 
 #[utoipa::path(
     post,
-    path = "/v1/workspaces/{ws}/boards/{board_id}/apply-status-templates",
+    path = "/api/workspaces/{ws}/boards/{board_id}/apply-status-templates",
     tag = "status-templates",
     security(("bearer_auth" = [])),
     params(

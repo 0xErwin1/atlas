@@ -15,7 +15,7 @@ export default defineConfig({
     port: 5173,
     allowedHosts: true,
     proxy: {
-      '/v1': 'http://localhost:8080',
+      '/api': 'http://localhost:8080',
       '/openapi.json': 'http://localhost:8080',
     },
   },

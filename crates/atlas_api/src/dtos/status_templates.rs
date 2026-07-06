@@ -17,7 +17,7 @@ pub struct StatusTemplateDto {
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
-/// Request body for `POST /v1/workspaces/{ws}/status-templates`.
+/// Request body for `POST /api/workspaces/{ws}/status-templates`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct CreateStatusTemplateRequest {
@@ -37,7 +37,7 @@ where
     serde_json::Value::deserialize(de).map(Some)
 }
 
-/// Request body for `PATCH /v1/workspaces/{ws}/status-templates/{id}`.
+/// Request body for `PATCH /api/workspaces/{ws}/status-templates/{id}`.
 ///
 /// `name`: `None` = leave unchanged; `Some(v)` = rename.
 /// `color`: absent = leave unchanged; explicit `null` = clear; string = set.

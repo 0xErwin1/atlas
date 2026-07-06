@@ -899,7 +899,7 @@ async fn login_root(
     (client, user)
 }
 
-/// Calls the raw `POST /v1/users/:id/system-admin` endpoint.
+/// Calls the raw `POST /api/users/:id/system-admin` endpoint.
 async fn set_system_admin_raw(
     client: &atlas_client::AtlasClient,
     user_id: uuid::Uuid,
@@ -908,7 +908,7 @@ async fn set_system_admin_raw(
     let resp = client
         .http_client()
         .post(format!(
-            "{}/v1/users/{}/system-admin",
+            "{}/api/users/{}/system-admin",
             client.base_url(),
             user_id
         ))
@@ -926,10 +926,10 @@ async fn set_system_admin_raw(
     }
 }
 
-/// Calls `POST /v1/activate/:token` to activate an account.
+/// Calls `POST /api/activate/:token` to activate an account.
 async fn activate_account(server: &TestServer, token: &str) -> Result<(), reqwest::StatusCode> {
     let resp = reqwest::Client::new()
-        .post(format!("{}/v1/activate/{}", server.base_url(), token))
+        .post(format!("{}/api/activate/{}", server.base_url(), token))
         .header("x-atlas-csrf", "1")
         .json(&serde_json::json!({ "password": "ActivationPw1!" }))
         .send()

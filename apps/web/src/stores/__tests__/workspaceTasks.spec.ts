@@ -61,7 +61,7 @@ describe('useWorkspaceTasksStore', () => {
     const store = useWorkspaceTasksStore();
     await store.load('ws', { assignee: 'me' });
 
-    expect(GET).toHaveBeenCalledWith('/v1/workspaces/{ws}/tasks', {
+    expect(GET).toHaveBeenCalledWith('/api/workspaces/{ws}/tasks', {
       params: {
         path: { ws: 'ws' },
         query: expect.objectContaining({ assignee: 'me', limit: 200 }),
@@ -78,7 +78,7 @@ describe('useWorkspaceTasksStore', () => {
     const store = useWorkspaceTasksStore();
     await store.load('ws', { sort: 'updated_at_desc' });
 
-    expect(GET).toHaveBeenCalledWith('/v1/workspaces/{ws}/tasks', {
+    expect(GET).toHaveBeenCalledWith('/api/workspaces/{ws}/tasks', {
       params: {
         path: { ws: 'ws' },
         query: expect.objectContaining({ sort: 'updated_at_desc', limit: 200 }),

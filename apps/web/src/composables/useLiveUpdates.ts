@@ -14,7 +14,7 @@ export interface LiveUpdateHandlers {
 
 /**
  * Owns a single EventSource for the workspace live-event stream
- * (`GET /v1/workspaces/{ws}/events`). The `atlas_session` cookie is sent
+ * (`GET /api/workspaces/{ws}/events`). The `atlas_session` cookie is sent
  * automatically by EventSource, so no auth wiring is needed.
  *
  * The stream is opened when the workspace slug is non-empty, reopened on a slug
@@ -71,7 +71,7 @@ export function useLiveUpdates(wsSlug: Ref<string>, handlers: LiveUpdateHandlers
     }
 
     firstOpen = true;
-    const stream = new EventSource(`/v1/workspaces/${ws}/events`);
+    const stream = new EventSource(`/api/workspaces/${ws}/events`);
     source = stream;
 
     stream.onopen = () => {

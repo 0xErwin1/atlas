@@ -52,7 +52,7 @@ describe('useUiStateStore', () => {
     vi.advanceTimersByTime(600);
 
     expect(PUT).toHaveBeenCalledTimes(1);
-    expect(PUT).toHaveBeenCalledWith('/v1/me/ui-state', {
+    expect(PUT).toHaveBeenCalledWith('/api/me/ui-state', {
       body: { state: { expandedFolders: ['f1', 'f2'] } },
     });
   });
@@ -96,7 +96,7 @@ describe('useUiStateStore', () => {
     vi.advanceTimersByTime(600);
 
     expect(PUT).toHaveBeenCalledTimes(1);
-    expect(PUT).toHaveBeenCalledWith('/v1/me/ui-state', {
+    expect(PUT).toHaveBeenCalledWith('/api/me/ui-state', {
       body: { state: { boardViews: { b1: 'list', b2: 'table' } } },
     });
   });

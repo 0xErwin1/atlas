@@ -43,7 +43,7 @@ const DEFAULT_STATUSES: &[(&str, &str)] = &[
 
 #[utoipa::path(
     post,
-    path = "/v1/workspaces",
+    path = "/api/workspaces",
     tag = "workspaces",
     security(("bearer_auth" = [])),
     request_body = CreateWorkspaceRequest,
@@ -57,7 +57,7 @@ const DEFAULT_STATUSES: &[(&str, &str)] = &[
 ///
 /// The slug is derived from the name and de-duplicated against existing
 /// workspace slugs. The creating user is added as `Owner`, so the workspace
-/// immediately appears in `GET /v1/workspaces`. API keys (agents) are rejected
+/// immediately appears in `GET /api/workspaces`. API keys (agents) are rejected
 /// with 403: agents are workspace-scoped and must not create workspaces.
 pub(crate) async fn create_workspace(
     State(state): State<AppState>,
@@ -176,7 +176,7 @@ async fn seed_default_content(
 
 #[utoipa::path(
     get,
-    path = "/v1/workspaces",
+    path = "/api/workspaces",
     tag = "workspaces",
     security(("bearer_auth" = [])),
     responses(
@@ -286,7 +286,7 @@ async fn reachable_workspaces_for_user(
 
 #[utoipa::path(
     get,
-    path = "/v1/workspaces/{ws}",
+    path = "/api/workspaces/{ws}",
     tag = "workspaces",
     security(("bearer_auth" = [])),
     params(("ws" = String, Path, description = "Workspace slug")),
@@ -305,7 +305,7 @@ pub(crate) async fn get_workspace(
 
 #[utoipa::path(
     patch,
-    path = "/v1/workspaces/{ws}",
+    path = "/api/workspaces/{ws}",
     tag = "workspaces",
     security(("bearer_auth" = [])),
     params(("ws" = String, Path, description = "Workspace slug")),
@@ -359,7 +359,7 @@ pub(crate) async fn update_workspace(
 
 #[utoipa::path(
     get,
-    path = "/v1/admin/workspaces",
+    path = "/api/admin/workspaces",
     tag = "workspaces",
     security(("bearer_auth" = [])),
     responses(
@@ -388,7 +388,7 @@ pub(crate) async fn admin_list_workspaces(
 
 #[utoipa::path(
     patch,
-    path = "/v1/admin/workspaces/{ws}",
+    path = "/api/admin/workspaces/{ws}",
     tag = "workspaces",
     security(("bearer_auth" = [])),
     params(("ws" = String, Path, description = "Workspace slug")),
@@ -466,7 +466,7 @@ pub(crate) async fn admin_update_workspace(
 
 #[utoipa::path(
     delete,
-    path = "/v1/admin/workspaces/{ws}",
+    path = "/api/admin/workspaces/{ws}",
     tag = "workspaces",
     security(("bearer_auth" = [])),
     params(("ws" = String, Path, description = "Workspace slug")),

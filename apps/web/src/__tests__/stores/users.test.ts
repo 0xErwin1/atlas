@@ -27,7 +27,7 @@ describe('useUsersStore — loadMemberships', () => {
     const store = useUsersStore();
     const map = await store.loadMemberships('u1');
 
-    expect(GET).toHaveBeenCalledWith('/v1/users/{user_id}/memberships', {
+    expect(GET).toHaveBeenCalledWith('/api/users/{user_id}/memberships', {
       params: { path: { user_id: 'u1' } },
     });
     expect(map).toEqual({ acme: 'admin', beta: 'member' });

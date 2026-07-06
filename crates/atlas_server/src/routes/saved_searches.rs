@@ -68,12 +68,12 @@ fn saved_search_to_dto(ss: SavedSearch) -> SavedSearchDto {
 }
 
 // ---------------------------------------------------------------------------
-// GET /v1/workspaces/{ws}/saved-searches
+// GET /api/workspaces/{ws}/saved-searches
 // ---------------------------------------------------------------------------
 
 #[utoipa::path(
     get,
-    path = "/v1/workspaces/{ws}/saved-searches",
+    path = "/api/workspaces/{ws}/saved-searches",
     tag = "saved-searches",
     security(("bearer_auth" = [])),
     params(("ws" = String, Path, description = "Workspace slug")),
@@ -101,12 +101,12 @@ pub(crate) async fn list_saved_searches(
 }
 
 // ---------------------------------------------------------------------------
-// POST /v1/workspaces/{ws}/saved-searches
+// POST /api/workspaces/{ws}/saved-searches
 // ---------------------------------------------------------------------------
 
 #[utoipa::path(
     post,
-    path = "/v1/workspaces/{ws}/saved-searches",
+    path = "/api/workspaces/{ws}/saved-searches",
     tag = "saved-searches",
     security(("bearer_auth" = [])),
     params(("ws" = String, Path, description = "Workspace slug")),
@@ -150,12 +150,12 @@ pub(crate) async fn create_saved_search(
 }
 
 // ---------------------------------------------------------------------------
-// PATCH /v1/workspaces/{ws}/saved-searches/{id}
+// PATCH /api/workspaces/{ws}/saved-searches/{id}
 // ---------------------------------------------------------------------------
 
 #[utoipa::path(
     patch,
-    path = "/v1/workspaces/{ws}/saved-searches/{id}",
+    path = "/api/workspaces/{ws}/saved-searches/{id}",
     tag = "saved-searches",
     security(("bearer_auth" = [])),
     params(
@@ -196,12 +196,12 @@ pub(crate) async fn rename_saved_search(
 }
 
 // ---------------------------------------------------------------------------
-// DELETE /v1/workspaces/{ws}/saved-searches/{id}
+// DELETE /api/workspaces/{ws}/saved-searches/{id}
 // ---------------------------------------------------------------------------
 
 #[utoipa::path(
     delete,
-    path = "/v1/workspaces/{ws}/saved-searches/{id}",
+    path = "/api/workspaces/{ws}/saved-searches/{id}",
     tag = "saved-searches",
     security(("bearer_auth" = [])),
     params(

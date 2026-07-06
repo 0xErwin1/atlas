@@ -422,7 +422,7 @@ pub enum CallerClass {
 
 /// Proof that the caller may perform member-management actions in the workspace.
 ///
-/// Structural gate for `PATCH` and `DELETE` on `/v1/workspaces/{ws}/members/{user_id}`.
+/// Structural gate for `PATCH` and `DELETE` on `/api/workspaces/{ws}/members/{user_id}`.
 /// It resolves one of three caller classes:
 /// - `BreakGlass`: `user.is_root || user.is_system_admin` — no membership required in
 ///   this workspace; can act on any workspace.

@@ -510,10 +510,10 @@ async fn get_activate_valid_token_returns_200_with_username_and_display_name() {
 
     let http = reqwest::Client::new();
     let resp = http
-        .get(format!("{}/v1/activate/{token}", server.base_url()))
+        .get(format!("{}/api/activate/{token}", server.base_url()))
         .send()
         .await
-        .expect("GET /v1/activate/{token}");
+        .expect("GET /api/activate/{token}");
 
     assert_eq!(resp.status().as_u16(), 200, "valid token must return 200");
 
@@ -551,7 +551,7 @@ async fn get_activate_unknown_token_returns_404() {
     let http = reqwest::Client::new();
     let resp = http
         .get(format!(
-            "{}/v1/activate/totally-unknown-token",
+            "{}/api/activate/totally-unknown-token",
             server.base_url()
         ))
         .send()
@@ -601,13 +601,16 @@ async fn get_activate_expired_token_returns_same_404_as_unknown() {
     let http = reqwest::Client::new();
 
     let resp_expired = http
-        .get(format!("{}/v1/activate/{plaintext}", server.base_url()))
+        .get(format!("{}/api/activate/{plaintext}", server.base_url()))
         .send()
         .await
         .expect("GET expired");
 
     let resp_unknown = http
-        .get(format!("{}/v1/activate/nonexistent-abc", server.base_url()))
+        .get(format!(
+            "{}/api/activate/nonexistent-abc",
+            server.base_url()
+        ))
         .send()
         .await
         .expect("GET unknown");
@@ -674,13 +677,16 @@ async fn get_activate_consumed_token_returns_same_404_as_unknown() {
     let http = reqwest::Client::new();
 
     let resp_consumed = http
-        .get(format!("{}/v1/activate/{plaintext}", server.base_url()))
+        .get(format!("{}/api/activate/{plaintext}", server.base_url()))
         .send()
         .await
         .expect("GET consumed");
 
     let resp_unknown = http
-        .get(format!("{}/v1/activate/nonexistent-xyz", server.base_url()))
+        .get(format!(
+            "{}/api/activate/nonexistent-xyz",
+            server.base_url()
+        ))
         .send()
         .await
         .expect("GET unknown");
@@ -711,11 +717,11 @@ async fn post_activate_valid_token_activates_user_and_returns_login_response() {
     let http = reqwest::Client::new();
 
     let resp = http
-        .post(format!("{}/v1/activate/{token}", server.base_url()))
+        .post(format!("{}/api/activate/{token}", server.base_url()))
         .json(&serde_json::json!({ "password": "SuperSecret99!" }))
         .send()
         .await
-        .expect("POST /v1/activate/{token}");
+        .expect("POST /api/activate/{token}");
 
     assert_eq!(
         resp.status().as_u16(),
@@ -760,7 +766,7 @@ async fn post_activate_sets_password_hash_and_activated_at_in_db() {
 
     let http = reqwest::Client::new();
     let resp = http
-        .post(format!("{}/v1/activate/{token}", server.base_url()))
+        .post(format!("{}/api/activate/{token}", server.base_url()))
         .json(&serde_json::json!({ "password": "SuperSecret99!" }))
         .send()
         .await
@@ -806,7 +812,7 @@ async fn activated_user_can_login_normally_after_activation() {
     let http = reqwest::Client::new();
 
     let activate_resp = http
-        .post(format!("{}/v1/activate/{token}", server.base_url()))
+        .post(format!("{}/api/activate/{token}", server.base_url()))
         .json(&serde_json::json!({ "password": password }))
         .send()
         .await
@@ -820,7 +826,7 @@ async fn activated_user_can_login_normally_after_activation() {
         .to_owned();
 
     let login_resp = http
-        .post(format!("{}/v1/auth/login", server.base_url()))
+        .post(format!("{}/api/auth/login", server.base_url()))
         .json(&LoginRequest {
             username: username.clone(),
             password: password.to_string(),
@@ -848,7 +854,10 @@ async fn post_activate_unknown_token_returns_404() {
 
     let http = reqwest::Client::new();
     let resp = http
-        .post(format!("{}/v1/activate/totally-unknown", server.base_url()))
+        .post(format!(
+            "{}/api/activate/totally-unknown",
+            server.base_url()
+        ))
         .json(&serde_json::json!({ "password": "SomePassword1!" }))
         .send()
         .await
@@ -881,7 +890,7 @@ async fn post_activate_short_password_returns_422_and_does_not_consume_token() {
 
     let http = reqwest::Client::new();
     let resp = http
-        .post(format!("{}/v1/activate/{token}", server.base_url()))
+        .post(format!("{}/api/activate/{token}", server.base_url()))
         .json(&serde_json::json!({ "password": "short" }))
         .send()
         .await
@@ -895,7 +904,7 @@ async fn post_activate_short_password_returns_422_and_does_not_consume_token() {
 
     let http = reqwest::Client::new();
     let get_resp = http
-        .get(format!("{}/v1/activate/{token}", server.base_url()))
+        .get(format!("{}/api/activate/{token}", server.base_url()))
         .send()
         .await
         .expect("GET after 422");
@@ -918,7 +927,7 @@ async fn post_activate_empty_password_returns_422() {
 
     let http = reqwest::Client::new();
     let resp = http
-        .post(format!("{}/v1/activate/{token}", server.base_url()))
+        .post(format!("{}/api/activate/{token}", server.base_url()))
         .json(&serde_json::json!({ "password": "" }))
         .send()
         .await
@@ -945,7 +954,7 @@ async fn post_activate_same_token_twice_second_returns_404() {
     let http = reqwest::Client::new();
 
     let first = http
-        .post(format!("{}/v1/activate/{token}", server.base_url()))
+        .post(format!("{}/api/activate/{token}", server.base_url()))
         .json(&serde_json::json!({ "password": "FirstGoodPass1!" }))
         .send()
         .await
@@ -955,7 +964,7 @@ async fn post_activate_same_token_twice_second_returns_404() {
     first.text().await.expect("drain first body");
 
     let second = http
-        .post(format!("{}/v1/activate/{token}", server.base_url()))
+        .post(format!("{}/api/activate/{token}", server.base_url()))
         .json(&serde_json::json!({ "password": "SecondGoodPass2!" }))
         .send()
         .await
@@ -971,7 +980,7 @@ async fn post_activate_same_token_twice_second_returns_404() {
     let username = {
         let http2 = reqwest::Client::new();
         let user_check = http2
-            .post(format!("{}/v1/auth/login", server.base_url()))
+            .post(format!("{}/api/auth/login", server.base_url()))
             .json(&serde_json::json!({ "username": "double-consume", "password": "SecondGoodPass2!" }))
             .send()
             .await
@@ -1034,7 +1043,7 @@ async fn post_activate_bad_token_leaves_user_unactivated_and_token_unconsumed() 
 
     let http = reqwest::Client::new();
     let resp = http
-        .post(format!("{}/v1/activate/wrong-token", server.base_url()))
+        .post(format!("{}/api/activate/wrong-token", server.base_url()))
         .json(&serde_json::json!({ "password": "SomeGoodPass1!" }))
         .send()
         .await
@@ -1059,7 +1068,7 @@ async fn post_activate_bad_token_leaves_user_unactivated_and_token_unconsumed() 
     );
 
     let real_get = http
-        .get(format!("{}/v1/activate/{plaintext}", server.base_url()))
+        .get(format!("{}/api/activate/{plaintext}", server.base_url()))
         .send()
         .await
         .expect("GET real token");
@@ -1085,7 +1094,7 @@ async fn post_activate_rate_limit_returns_429_after_burst() {
 
     let futures: Vec<_> = (0..10)
         .map(|_| {
-            http.post(format!("{base_url}/v1/activate/nonexistent-tok"))
+            http.post(format!("{base_url}/api/activate/nonexistent-tok"))
                 .json(&serde_json::json!({ "password": "SomePass1!" }))
                 .send()
         })
@@ -1115,7 +1124,7 @@ async fn get_activate_rate_limit_returns_429_after_burst() {
 
     let futures: Vec<_> = (0..10)
         .map(|_| {
-            http.get(format!("{base_url}/v1/activate/nonexistent-tok"))
+            http.get(format!("{base_url}/api/activate/nonexistent-tok"))
                 .send()
         })
         .collect();
@@ -1168,7 +1177,7 @@ async fn post_activate_pre_consumed_token_returns_404_no_state_change() {
 
     let http = reqwest::Client::new();
     let resp = http
-        .post(format!("{}/v1/activate/{token}", server.base_url()))
+        .post(format!("{}/api/activate/{token}", server.base_url()))
         .json(&serde_json::json!({ "password": "RacerPass99!" }))
         .send()
         .await
@@ -1234,7 +1243,7 @@ async fn post_activate_concurrent_requests_exactly_one_wins() {
 
     let task_a = tokio::spawn(async move {
         reqwest::Client::new()
-            .post(format!("{base_url}/v1/activate/{token_a}"))
+            .post(format!("{base_url}/api/activate/{token_a}"))
             .json(&serde_json::json!({ "password": "RacerPassA99!" }))
             .send()
             .await
@@ -1246,7 +1255,7 @@ async fn post_activate_concurrent_requests_exactly_one_wins() {
     let base_url_b = server.base_url().to_string();
     let task_b = tokio::spawn(async move {
         reqwest::Client::new()
-            .post(format!("{base_url_b}/v1/activate/{token_b}"))
+            .post(format!("{base_url_b}/api/activate/{token_b}"))
             .json(&serde_json::json!({ "password": "RacerPassB99!" }))
             .send()
             .await
@@ -1325,7 +1334,7 @@ async fn post_activate_concurrent_requests_exactly_one_wins() {
     db.teardown().await;
 }
 
-// ── T33: registry entries for GET and POST /v1/activate/{token} exist ────────
+// ── T33: registry entries for GET and POST /api/activate/{token} exist ────────
 
 #[test]
 fn registry_has_get_and_post_activate_entries() {
@@ -1333,23 +1342,23 @@ fn registry_has_get_and_post_activate_entries() {
 
     let get_entry = ROUTE_REGISTRY.iter().find(|e| {
         e.method == "GET"
-            && e.openapi_path == Some("/v1/activate/{token}")
+            && e.openapi_path == Some("/api/activate/{token}")
             && e.kind == RouteKind::Public
     });
 
     let post_entry = ROUTE_REGISTRY.iter().find(|e| {
         e.method == "POST"
-            && e.openapi_path == Some("/v1/activate/{token}")
+            && e.openapi_path == Some("/api/activate/{token}")
             && e.kind == RouteKind::Public
     });
 
     assert!(
         get_entry.is_some(),
-        "ROUTE_REGISTRY must contain GET /v1/activate/{{token}} (Public)"
+        "ROUTE_REGISTRY must contain GET /api/activate/{{token}} (Public)"
     );
     assert!(
         post_entry.is_some(),
-        "ROUTE_REGISTRY must contain POST /v1/activate/{{token}} (Public)"
+        "ROUTE_REGISTRY must contain POST /api/activate/{{token}} (Public)"
     );
 }
 
@@ -1373,7 +1382,7 @@ async fn post_activate_disabled_pending_user_returns_404_and_no_state_change() {
 
     let http = reqwest::Client::new();
     let resp = http
-        .post(format!("{}/v1/activate/{token}", server.base_url()))
+        .post(format!("{}/api/activate/{token}", server.base_url()))
         .json(&serde_json::json!({ "password": "DisabledTry123!" }))
         .send()
         .await
@@ -1405,7 +1414,7 @@ async fn post_activate_disabled_pending_user_returns_404_and_no_state_change() {
     db.user_repo().enable(user.id).await.expect("enable user");
 
     let get_resp = http
-        .get(format!("{}/v1/activate/{token}", server.base_url()))
+        .get(format!("{}/api/activate/{token}", server.base_url()))
         .send()
         .await
         .expect("GET after rejected activate");
@@ -1444,7 +1453,7 @@ async fn post_activate_already_activated_user_returns_404_and_preserves_password
 
     let http = reqwest::Client::new();
     let resp = http
-        .post(format!("{}/v1/activate/{token}", server.base_url()))
+        .post(format!("{}/api/activate/{token}", server.base_url()))
         .json(&serde_json::json!({ "password": "StrayTokenReset9!" }))
         .send()
         .await
@@ -1486,7 +1495,7 @@ async fn post_activate_multibyte_eight_char_password_is_accepted() {
     // a byte rule. Here we assert the 8-CHARACTER password is accepted.
     let http = reqwest::Client::new();
     let resp = http
-        .post(format!("{}/v1/activate/{token}", server.base_url()))
+        .post(format!("{}/api/activate/{token}", server.base_url()))
         .json(&serde_json::json!({ "password": "áéíóúñçü" }))
         .send()
         .await
@@ -1512,7 +1521,7 @@ async fn post_activate_seven_char_multibyte_password_returns_422() {
     // accept this. A character-count rule correctly rejects it as too short.
     let http = reqwest::Client::new();
     let resp = http
-        .post(format!("{}/v1/activate/{token}", server.base_url()))
+        .post(format!("{}/api/activate/{token}", server.base_url()))
         .json(&serde_json::json!({ "password": "áéíóúñç" }))
         .send()
         .await

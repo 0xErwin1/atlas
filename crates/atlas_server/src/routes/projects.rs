@@ -39,7 +39,7 @@ pub(crate) struct PaginationQuery {
 
 #[utoipa::path(
     post,
-    path = "/v1/workspaces/{ws}/projects",
+    path = "/api/workspaces/{ws}/projects",
     tag = "projects",
     security(("bearer_auth" = [])),
     params(("ws" = String, Path, description = "Workspace slug")),
@@ -120,7 +120,7 @@ pub(crate) async fn create_project(
 
 #[utoipa::path(
     get,
-    path = "/v1/workspaces/{ws}/projects",
+    path = "/api/workspaces/{ws}/projects",
     tag = "projects",
     security(("bearer_auth" = [])),
     params(
@@ -184,7 +184,7 @@ pub(crate) async fn list_projects(
 
 #[utoipa::path(
     get,
-    path = "/v1/workspaces/{ws}/projects/{project_slug}",
+    path = "/api/workspaces/{ws}/projects/{project_slug}",
     tag = "projects",
     security(("bearer_auth" = [])),
     params(
@@ -207,7 +207,7 @@ pub(crate) async fn get_project(
 
 #[utoipa::path(
     patch,
-    path = "/v1/workspaces/{ws}/projects/{project_slug}",
+    path = "/api/workspaces/{ws}/projects/{project_slug}",
     tag = "projects",
     security(("bearer_auth" = [])),
     params(
@@ -276,7 +276,7 @@ pub(crate) async fn update_project(
 
 #[utoipa::path(
     delete,
-    path = "/v1/workspaces/{ws}/projects/{project_slug}",
+    path = "/api/workspaces/{ws}/projects/{project_slug}",
     tag = "projects",
     security(("bearer_auth" = [])),
     params(

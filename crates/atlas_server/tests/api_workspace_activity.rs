@@ -221,7 +221,7 @@ async fn grant_project(
 }
 
 // ---------------------------------------------------------------------------
-// GET /v1/workspaces/{ws}/activity
+// GET /api/workspaces/{ws}/activity
 // ---------------------------------------------------------------------------
 
 /// TEST 1 — Privacy: a plain Member without a grant to a private project does NOT
@@ -1117,7 +1117,7 @@ async fn workspace_activity_api_key_without_tasks_read_is_forbidden() {
     let http = reqwest::Client::new();
     let resp = http
         .get(format!(
-            "{}/v1/workspaces/{}/activity",
+            "{}/api/workspaces/{}/activity",
             server.base_url(),
             ws.slug
         ))

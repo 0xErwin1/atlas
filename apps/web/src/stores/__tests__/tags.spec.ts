@@ -21,7 +21,7 @@ describe('useTagsStore — used labels', () => {
     const store = useTagsStore();
     await store.loadUsed('ws');
 
-    expect(GET).toHaveBeenCalledWith('/v1/workspaces/{ws}/tags/used', {
+    expect(GET).toHaveBeenCalledWith('/api/workspaces/{ws}/tags/used', {
       params: { path: { ws: 'ws' } },
     });
     expect(store.usedLabels).toEqual(['urgent', 'backend', 'design']);

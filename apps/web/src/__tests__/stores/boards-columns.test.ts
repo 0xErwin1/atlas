@@ -41,7 +41,7 @@ describe('useBoardsStore column mutations', () => {
     const ok = await store.updateColumn('ws', 'board-1', 'c1', { color: 'green' });
 
     expect(ok).toBe(true);
-    expect(PATCH).toHaveBeenCalledWith('/v1/workspaces/{ws}/boards/{board_id}/columns/{column_id}', {
+    expect(PATCH).toHaveBeenCalledWith('/api/workspaces/{ws}/boards/{board_id}/columns/{column_id}', {
       params: { path: { ws: 'ws', board_id: 'board-1', column_id: 'c1' } },
       body: { color: 'green' },
     });
@@ -58,7 +58,7 @@ describe('useBoardsStore column mutations', () => {
     const ok = await store.updateColumn('ws', 'board-1', 'c1', { name: 'Renamed' });
 
     expect(ok).toBe(true);
-    expect(PATCH).toHaveBeenCalledWith('/v1/workspaces/{ws}/boards/{board_id}/columns/{column_id}', {
+    expect(PATCH).toHaveBeenCalledWith('/api/workspaces/{ws}/boards/{board_id}/columns/{column_id}', {
       params: { path: { ws: 'ws', board_id: 'board-1', column_id: 'c1' } },
       body: { name: 'Renamed' },
     });
@@ -85,7 +85,7 @@ describe('useBoardsStore column mutations', () => {
     const ok = await store.deleteColumn('ws', 'board-1', 'c1');
 
     expect(ok).toBe(true);
-    expect(DELETE).toHaveBeenCalledWith('/v1/workspaces/{ws}/boards/{board_id}/columns/{column_id}', {
+    expect(DELETE).toHaveBeenCalledWith('/api/workspaces/{ws}/boards/{board_id}/columns/{column_id}', {
       params: { path: { ws: 'ws', board_id: 'board-1', column_id: 'c1' } },
     });
     expect(store.columns.map((c) => c.id)).toEqual(['c2']);
@@ -104,7 +104,7 @@ describe('useBoardsStore column mutations', () => {
     const ok = await store.moveColumn('ws', 'board-1', 'c1', { before: 'c', after: null });
 
     expect(ok).toBe(true);
-    expect(PATCH).toHaveBeenCalledWith('/v1/workspaces/{ws}/boards/{board_id}/columns/{column_id}', {
+    expect(PATCH).toHaveBeenCalledWith('/api/workspaces/{ws}/boards/{board_id}/columns/{column_id}', {
       params: { path: { ws: 'ws', board_id: 'board-1', column_id: 'c1' } },
       body: { before: 'c', after: null },
     });

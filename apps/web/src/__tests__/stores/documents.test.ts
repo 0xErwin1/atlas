@@ -254,7 +254,7 @@ describe('useDocumentsStore', () => {
     const ok = await store.move('ws', 'proj', 'my-doc', 'folder-1');
 
     expect(ok).toBe(true);
-    expect(PATCH).toHaveBeenCalledWith('/v1/workspaces/{ws}/documents/{slug}/move', {
+    expect(PATCH).toHaveBeenCalledWith('/api/workspaces/{ws}/documents/{slug}/move', {
       params: { path: { ws: 'ws', slug: 'my-doc' } },
       body: { folder_id: 'folder-1' },
     });
@@ -267,7 +267,7 @@ describe('useDocumentsStore', () => {
     const store = useDocumentsStore();
     await store.move('ws', 'proj', 'my-doc', null);
 
-    expect(PATCH).toHaveBeenCalledWith('/v1/workspaces/{ws}/documents/{slug}/move', {
+    expect(PATCH).toHaveBeenCalledWith('/api/workspaces/{ws}/documents/{slug}/move', {
       params: { path: { ws: 'ws', slug: 'my-doc' } },
       body: { folder_id: null },
     });
@@ -292,7 +292,7 @@ describe('useDocumentsStore', () => {
     const ok = await store.copy('ws', 'proj', 'my-doc', 'folder-1');
 
     expect(ok).toBe(true);
-    expect(POST).toHaveBeenCalledWith('/v1/workspaces/{ws}/documents/{slug}/copy', {
+    expect(POST).toHaveBeenCalledWith('/api/workspaces/{ws}/documents/{slug}/copy', {
       params: { path: { ws: 'ws', slug: 'my-doc' } },
       body: { folder_id: 'folder-1' },
     });
@@ -462,7 +462,7 @@ describe('useDocumentsStore', () => {
     expect(store.error).toBeNull();
 
     const [path, init] = POST.mock.calls[0] ?? [];
-    expect(path).toBe('/v1/workspaces/{ws}/documents/{slug}/attachments');
+    expect(path).toBe('/api/workspaces/{ws}/documents/{slug}/attachments');
     expect(init.params.path).toEqual({ ws: 'ws', slug: 'my-doc' });
     expect(init.headers['x-file-name']).toBe('shot.png');
     expect(init.headers['Content-Type']).toBe('image/png');

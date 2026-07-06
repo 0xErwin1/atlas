@@ -47,7 +47,7 @@ export const useTagsStore = defineStore('tags', () => {
   async function load(ws: string, force = false): Promise<void> {
     if (!force && loadedWs === ws) return;
 
-    const { data, error: apiError } = await wrappedClient.GET('/v1/workspaces/{ws}/tags', {
+    const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/tags', {
       params: { path: { ws } },
     });
 
@@ -68,7 +68,7 @@ export const useTagsStore = defineStore('tags', () => {
   async function loadUsed(ws: string, force = false): Promise<void> {
     if (!force && loadedUsedWs === ws) return;
 
-    const { data, error: apiError } = await wrappedClient.GET('/v1/workspaces/{ws}/tags/used', {
+    const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/tags/used', {
       params: { path: { ws } },
     });
 
@@ -93,7 +93,7 @@ export const useTagsStore = defineStore('tags', () => {
     const existing = tags.value.find((t) => t.name.toLowerCase() === trimmed.toLowerCase());
     if (existing !== undefined) return existing;
 
-    const { data, error: apiError } = await wrappedClient.POST('/v1/workspaces/{ws}/tags', {
+    const { data, error: apiError } = await wrappedClient.POST('/api/workspaces/{ws}/tags', {
       params: { path: { ws } },
       body: { name: trimmed },
     });
@@ -122,7 +122,7 @@ export const useTagsStore = defineStore('tags', () => {
     const body: { name: string; color?: string | null } = { name: trimmed };
     if (color !== undefined) body.color = color;
 
-    const { data, error: apiError } = await wrappedClient.POST('/v1/workspaces/{ws}/tags', {
+    const { data, error: apiError } = await wrappedClient.POST('/api/workspaces/{ws}/tags', {
       params: { path: { ws } },
       body,
     });
@@ -149,7 +149,7 @@ export const useTagsStore = defineStore('tags', () => {
     id: string,
     patch: { name?: string; color?: string | null },
   ): Promise<boolean> {
-    const { data, error: apiError } = await wrappedClient.PATCH('/v1/workspaces/{ws}/tags/{tag_id}', {
+    const { data, error: apiError } = await wrappedClient.PATCH('/api/workspaces/{ws}/tags/{tag_id}', {
       params: { path: { ws, tag_id: id } },
       body: patch,
     });
@@ -165,7 +165,7 @@ export const useTagsStore = defineStore('tags', () => {
 
   /** Deletes a tag and drops it from the cache. Returns true on success. */
   async function remove(ws: string, id: string): Promise<boolean> {
-    const { error: apiError } = await wrappedClient.DELETE('/v1/workspaces/{ws}/tags/{tag_id}', {
+    const { error: apiError } = await wrappedClient.DELETE('/api/workspaces/{ws}/tags/{tag_id}', {
       params: { path: { ws, tag_id: id } },
     });
 

@@ -104,7 +104,7 @@ async fn add_member_user_and_login(
 
     let http = reqwest::Client::new();
     let resp = http
-        .post(format!("{}/v1/auth/login", server.base_url()))
+        .post(format!("{}/api/auth/login", server.base_url()))
         .json(&LoginRequest {
             username: username.to_string(),
             password: password_plaintext.to_string(),
@@ -282,7 +282,7 @@ async fn add_editor_user_and_login(
 
     let http = reqwest::Client::new();
     let resp = http
-        .post(format!("{}/v1/auth/login", server.base_url()))
+        .post(format!("{}/api/auth/login", server.base_url()))
         .json(&LoginRequest {
             username: username.to_string(),
             password: password_plaintext.to_string(),
@@ -320,7 +320,7 @@ async fn call_webhook_route(
     method: &str,
     suffix: &str,
 ) -> reqwest::StatusCode {
-    let url = format!("{base_url}/v1/workspaces/{ws_slug}/webhooks{suffix}");
+    let url = format!("{base_url}/api/workspaces/{ws_slug}/webhooks{suffix}");
     let client = http();
 
     let builder = match method {
@@ -550,7 +550,7 @@ async fn admin_creates_webhook_returns_201_with_secret() {
     let ws_slug = &ws.slug;
 
     let resp = http()
-        .post(format!("{base_url}/v1/workspaces/{ws_slug}/webhooks"))
+        .post(format!("{base_url}/api/workspaces/{ws_slug}/webhooks"))
         .bearer_auth(token)
         .json(&serde_json::json!({
             "target_url": "https://example.com/hook",
@@ -598,7 +598,7 @@ async fn non_admin_is_rejected_on_all_crud() {
     let base_url = server.base_url();
 
     let create_resp = http()
-        .post(format!("{base_url}/v1/workspaces/{ws_slug}/webhooks"))
+        .post(format!("{base_url}/api/workspaces/{ws_slug}/webhooks"))
         .bearer_auth(admin_token)
         .json(&serde_json::json!({
             "target_url": "https://example.com/hook",
@@ -618,7 +618,7 @@ async fn non_admin_is_rejected_on_all_crud() {
     // that prevents existence disclosure. The important property is that Members are
     // rejected; the exact status (404) is derived from the permission engine's design.
     let list_resp = http()
-        .get(format!("{base_url}/v1/workspaces/{ws_slug}/webhooks"))
+        .get(format!("{base_url}/api/workspaces/{ws_slug}/webhooks"))
         .bearer_auth(&member_token)
         .send()
         .await
@@ -631,7 +631,7 @@ async fn non_admin_is_rejected_on_all_crud() {
 
     let get_resp = http()
         .get(format!(
-            "{base_url}/v1/workspaces/{ws_slug}/webhooks/{hook_id}"
+            "{base_url}/api/workspaces/{ws_slug}/webhooks/{hook_id}"
         ))
         .bearer_auth(&member_token)
         .send()
@@ -645,7 +645,7 @@ async fn non_admin_is_rejected_on_all_crud() {
 
     let patch_resp = http()
         .patch(format!(
-            "{base_url}/v1/workspaces/{ws_slug}/webhooks/{hook_id}"
+            "{base_url}/api/workspaces/{ws_slug}/webhooks/{hook_id}"
         ))
         .bearer_auth(&member_token)
         .json(&serde_json::json!({"is_active": false}))
@@ -659,7 +659,7 @@ async fn non_admin_is_rejected_on_all_crud() {
     );
 
     let post_resp = http()
-        .post(format!("{base_url}/v1/workspaces/{ws_slug}/webhooks"))
+        .post(format!("{base_url}/api/workspaces/{ws_slug}/webhooks"))
         .bearer_auth(&member_token)
         .json(&serde_json::json!({
             "target_url": "https://example.com/hook",
@@ -676,7 +676,7 @@ async fn non_admin_is_rejected_on_all_crud() {
 
     let delete_resp = http()
         .delete(format!(
-            "{base_url}/v1/workspaces/{ws_slug}/webhooks/{hook_id}"
+            "{base_url}/api/workspaces/{ws_slug}/webhooks/{hook_id}"
         ))
         .bearer_auth(&member_token)
         .send()
@@ -706,7 +706,7 @@ async fn list_and_get_responses_contain_no_secret() {
     let ws_slug = &ws.slug;
 
     let create_resp = http()
-        .post(format!("{base_url}/v1/workspaces/{ws_slug}/webhooks"))
+        .post(format!("{base_url}/api/workspaces/{ws_slug}/webhooks"))
         .bearer_auth(token)
         .json(&serde_json::json!({
             "target_url": "https://example.com/hook",
@@ -720,7 +720,7 @@ async fn list_and_get_responses_contain_no_secret() {
     let id = created["id"].as_str().unwrap().to_string();
 
     let list_resp = http()
-        .get(format!("{base_url}/v1/workspaces/{ws_slug}/webhooks"))
+        .get(format!("{base_url}/api/workspaces/{ws_slug}/webhooks"))
         .bearer_auth(token)
         .send()
         .await
@@ -739,7 +739,7 @@ async fn list_and_get_responses_contain_no_secret() {
     );
 
     let get_resp = http()
-        .get(format!("{base_url}/v1/workspaces/{ws_slug}/webhooks/{id}"))
+        .get(format!("{base_url}/api/workspaces/{ws_slug}/webhooks/{id}"))
         .bearer_auth(token)
         .send()
         .await
@@ -778,7 +778,7 @@ async fn create_webhook_rejects_private_target_url_by_default() {
     let ws_slug = &ws.slug;
 
     let resp = http()
-        .post(format!("{base_url}/v1/workspaces/{ws_slug}/webhooks"))
+        .post(format!("{base_url}/api/workspaces/{ws_slug}/webhooks"))
         .bearer_auth(token)
         .json(&serde_json::json!({
             "target_url": "http://169.254.169.254/latest/meta-data",
@@ -805,7 +805,7 @@ async fn create_webhook_rejects_empty_event_types() {
     let ws_slug = &ws.slug;
 
     let resp = http()
-        .post(format!("{base_url}/v1/workspaces/{ws_slug}/webhooks"))
+        .post(format!("{base_url}/api/workspaces/{ws_slug}/webhooks"))
         .bearer_auth(token)
         .json(&serde_json::json!({
             "target_url": "https://example.com/hook",
@@ -836,7 +836,7 @@ async fn create_webhook_rejects_unknown_event_type() {
     let ws_slug = &ws.slug;
 
     let resp = http()
-        .post(format!("{base_url}/v1/workspaces/{ws_slug}/webhooks"))
+        .post(format!("{base_url}/api/workspaces/{ws_slug}/webhooks"))
         .bearer_auth(token)
         .json(&serde_json::json!({
             "target_url": "https://example.com/hook",
@@ -867,7 +867,7 @@ async fn create_webhook_rejects_missing_scope_id_for_board_scope() {
     let ws_slug = &ws.slug;
 
     let resp = http()
-        .post(format!("{base_url}/v1/workspaces/{ws_slug}/webhooks"))
+        .post(format!("{base_url}/api/workspaces/{ws_slug}/webhooks"))
         .bearer_auth(token)
         .json(&serde_json::json!({
             "target_url": "https://example.com/hook",
@@ -902,7 +902,7 @@ async fn admin_can_toggle_is_active_and_patch_has_no_secret() {
     let ws_slug = &ws.slug;
 
     let create_resp = http()
-        .post(format!("{base_url}/v1/workspaces/{ws_slug}/webhooks"))
+        .post(format!("{base_url}/api/workspaces/{ws_slug}/webhooks"))
         .bearer_auth(token)
         .json(&serde_json::json!({
             "target_url": "https://example.com/hook",
@@ -915,7 +915,7 @@ async fn admin_can_toggle_is_active_and_patch_has_no_secret() {
     let id = created["id"].as_str().unwrap().to_string();
 
     let patch_resp = http()
-        .patch(format!("{base_url}/v1/workspaces/{ws_slug}/webhooks/{id}"))
+        .patch(format!("{base_url}/api/workspaces/{ws_slug}/webhooks/{id}"))
         .bearer_auth(token)
         .json(&serde_json::json!({"is_active": false}))
         .send()
@@ -947,7 +947,7 @@ async fn admin_delete_returns_204_then_get_returns_404() {
     let ws_slug = &ws.slug;
 
     let create_resp = http()
-        .post(format!("{base_url}/v1/workspaces/{ws_slug}/webhooks"))
+        .post(format!("{base_url}/api/workspaces/{ws_slug}/webhooks"))
         .bearer_auth(token)
         .json(&serde_json::json!({
             "target_url": "https://example.com/hook",
@@ -960,7 +960,7 @@ async fn admin_delete_returns_204_then_get_returns_404() {
     let id = created["id"].as_str().unwrap().to_string();
 
     let delete_resp = http()
-        .delete(format!("{base_url}/v1/workspaces/{ws_slug}/webhooks/{id}"))
+        .delete(format!("{base_url}/api/workspaces/{ws_slug}/webhooks/{id}"))
         .bearer_auth(token)
         .send()
         .await
@@ -968,7 +968,7 @@ async fn admin_delete_returns_204_then_get_returns_404() {
     assert_eq!(delete_resp.status(), 204, "delete must return 204");
 
     let get_resp = http()
-        .get(format!("{base_url}/v1/workspaces/{ws_slug}/webhooks/{id}"))
+        .get(format!("{base_url}/api/workspaces/{ws_slug}/webhooks/{id}"))
         .bearer_auth(token)
         .send()
         .await
@@ -1018,7 +1018,7 @@ async fn agent_with_webhooks_read_capability_can_list_webhooks() {
 
     let resp = http()
         .get(format!(
-            "{}/v1/workspaces/{}/webhooks",
+            "{}/api/workspaces/{}/webhooks",
             server.base_url(),
             ws.slug
         ))

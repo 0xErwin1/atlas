@@ -45,7 +45,7 @@ describe('useStatusTemplatesStore', () => {
     const store = useStatusTemplatesStore();
     await store.load('acme');
 
-    expect(GET).toHaveBeenCalledWith('/v1/workspaces/{ws}/status-templates', {
+    expect(GET).toHaveBeenCalledWith('/api/workspaces/{ws}/status-templates', {
       params: { path: { ws: 'acme' } },
     });
     expect(store.templates.map((t) => t.id)).toEqual(['t1', 't2']);
@@ -62,7 +62,7 @@ describe('useStatusTemplatesStore', () => {
 
     const created = await store.create('acme', 'Doing');
 
-    expect(POST).toHaveBeenCalledWith('/v1/workspaces/{ws}/status-templates', {
+    expect(POST).toHaveBeenCalledWith('/api/workspaces/{ws}/status-templates', {
       params: { path: { ws: 'acme' } },
       body: { name: 'Doing', before: 'a', after: null },
     });
@@ -81,7 +81,7 @@ describe('useStatusTemplatesStore', () => {
 
     const ok = await store.update('acme', 't1', { name: 'Backlog', color: '#1A2B3C' });
 
-    expect(PATCH).toHaveBeenCalledWith('/v1/workspaces/{ws}/status-templates/{template_id}', {
+    expect(PATCH).toHaveBeenCalledWith('/api/workspaces/{ws}/status-templates/{template_id}', {
       params: { path: { ws: 'acme', template_id: 't1' } },
       body: { name: 'Backlog', color: '#1A2B3C' },
     });
@@ -100,7 +100,7 @@ describe('useStatusTemplatesStore', () => {
 
     const ok = await store.move('acme', 't1', { before: 'b', after: null });
 
-    expect(PATCH).toHaveBeenCalledWith('/v1/workspaces/{ws}/status-templates/{template_id}', {
+    expect(PATCH).toHaveBeenCalledWith('/api/workspaces/{ws}/status-templates/{template_id}', {
       params: { path: { ws: 'acme', template_id: 't1' } },
       body: { before: 'b', after: null },
     });
@@ -116,7 +116,7 @@ describe('useStatusTemplatesStore', () => {
 
     const ok = await store.remove('acme', 't1');
 
-    expect(DELETE).toHaveBeenCalledWith('/v1/workspaces/{ws}/status-templates/{template_id}', {
+    expect(DELETE).toHaveBeenCalledWith('/api/workspaces/{ws}/status-templates/{template_id}', {
       params: { path: { ws: 'acme', template_id: 't1' } },
     });
     expect(ok).toBe(true);
@@ -130,7 +130,7 @@ describe('useStatusTemplatesStore', () => {
 
     const ok = await store.applyToBoard('acme', 'board-1');
 
-    expect(POST).toHaveBeenCalledWith('/v1/workspaces/{ws}/boards/{board_id}/apply-status-templates', {
+    expect(POST).toHaveBeenCalledWith('/api/workspaces/{ws}/boards/{board_id}/apply-status-templates', {
       params: { path: { ws: 'acme', board_id: 'board-1' } },
     });
     expect(ok).toBe(true);

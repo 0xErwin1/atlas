@@ -299,21 +299,21 @@ pub struct UpdateCommentRequest {
 // Request bodies
 // ---------------------------------------------------------------------------
 
-/// Request body for `POST /v1/workspaces/{ws}/projects/{ps}/boards`.
+/// Request body for `POST /api/workspaces/{ws}/projects/{ps}/boards`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct CreateBoardRequest {
     pub name: String,
 }
 
-/// Request body for `PATCH /v1/workspaces/{ws}/boards/{board_id}`.
+/// Request body for `PATCH /api/workspaces/{ws}/boards/{board_id}`.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct UpdateBoardRequest {
     pub name: Option<String>,
 }
 
-/// Request body for `POST /v1/workspaces/{ws}/boards/{board_id}/columns`.
+/// Request body for `POST /api/workspaces/{ws}/boards/{board_id}/columns`.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct CreateColumnRequest {
@@ -326,7 +326,7 @@ pub struct CreateColumnRequest {
     pub after: Option<String>,
 }
 
-/// Request body for `PATCH /v1/workspaces/{ws}/boards/{board_id}/columns/{column_id}`.
+/// Request body for `PATCH /api/workspaces/{ws}/boards/{board_id}/columns/{column_id}`.
 ///
 /// Color uses the same `present_value` convention as `UpdateTaskRequest` fields:
 /// an absent `color` key leaves the color unchanged; explicit `null` clears it;
@@ -345,7 +345,7 @@ pub struct UpdateColumnRequest {
     pub after: Option<String>,
 }
 
-/// Request body for `POST /v1/workspaces/{ws}/boards/{board_id}/tasks`.
+/// Request body for `POST /api/workspaces/{ws}/boards/{board_id}/tasks`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct CreateTaskRequest {
@@ -372,7 +372,7 @@ where
     serde_json::Value::deserialize(de).map(Some)
 }
 
-/// Request body for `PATCH /v1/workspaces/{ws}/tasks/{readable_id}`.
+/// Request body for `PATCH /api/workspaces/{ws}/tasks/{readable_id}`.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct UpdateTaskRequest {
@@ -400,7 +400,7 @@ pub struct UpdateTaskRequest {
     pub properties: Option<serde_json::Value>,
 }
 
-/// Request body for `POST /v1/workspaces/{ws}/tasks/{readable_id}/move`.
+/// Request body for `POST /api/workspaces/{ws}/tasks/{readable_id}/move`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct MoveTaskRequest {
@@ -411,7 +411,7 @@ pub struct MoveTaskRequest {
     pub after: Option<String>,
 }
 
-/// Request body for `POST /v1/workspaces/{ws}/tasks/{readable_id}/assignees`.
+/// Request body for `POST /api/workspaces/{ws}/tasks/{readable_id}/assignees`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct AddAssigneeRequest {
@@ -420,7 +420,7 @@ pub struct AddAssigneeRequest {
     pub assignee_id: uuid::Uuid,
 }
 
-/// Request body for `POST /v1/workspaces/{ws}/tasks/{readable_id}/references`.
+/// Request body for `POST /api/workspaces/{ws}/tasks/{readable_id}/references`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct CreateReferenceRequest {
@@ -432,14 +432,14 @@ pub struct CreateReferenceRequest {
     pub target_document_id: Option<uuid::Uuid>,
 }
 
-/// Request body for `POST /v1/workspaces/{ws}/tasks/{readable_id}/subtasks`.
+/// Request body for `POST /api/workspaces/{ws}/tasks/{readable_id}/subtasks`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct CreateSubtaskRequest {
     pub title: String,
 }
 
-/// Request body for `POST /v1/workspaces/{ws}/tasks/{readable_id}/checklist`.
+/// Request body for `POST /api/workspaces/{ws}/tasks/{readable_id}/checklist`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct CreateChecklistItemRequest {
@@ -450,7 +450,7 @@ pub struct CreateChecklistItemRequest {
     pub after: Option<String>,
 }
 
-/// Request body for `PATCH /v1/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}`.
+/// Request body for `PATCH /api/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}`.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct UpdateChecklistItemRequest {
@@ -461,7 +461,7 @@ pub struct UpdateChecklistItemRequest {
 }
 
 /// Request body for
-/// `POST /v1/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}/promote`.
+/// `POST /api/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}/promote`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct PromoteChecklistItemRequest {
@@ -475,7 +475,7 @@ pub struct PromoteChecklistItemRequest {
 // Workspace-scoped task listing
 // ---------------------------------------------------------------------------
 
-/// Query parameters for `GET /v1/workspaces/{ws}/tasks`.
+/// Query parameters for `GET /api/workspaces/{ws}/tasks`.
 ///
 /// All fields are optional. Absent fields apply no filter (workspace-wide listing).
 /// Used by both the client library and the test harness.

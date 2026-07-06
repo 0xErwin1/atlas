@@ -2293,7 +2293,7 @@ async fn conflict_409_body_carries_conflict_fields() {
     let token = client.token().expect("session token").to_string();
     let http = reqwest::Client::new();
     let url = format!(
-        "{}/v1/workspaces/{}/documents/{}/content",
+        "{}/api/workspaces/{}/documents/{}/content",
         server.base_url(),
         ws.slug,
         slug
@@ -2375,7 +2375,7 @@ async fn download_attachment_sets_nosniff_header() {
     let token = client.token().expect("session token").to_string();
     let http = reqwest::Client::new();
     let url = format!(
-        "{}/v1/workspaces/{}/attachments/{}",
+        "{}/api/workspaces/{}/attachments/{}",
         server.base_url(),
         ws.slug,
         att.id

@@ -59,7 +59,7 @@ export const useDocumentsStore = defineStore('documents', () => {
     // through it so all documents show — and so a newly created note (newest by
     // UUIDv7, hence on the last page) is never dropped.
     const { items, error: apiError } = await collectPaged<DocumentSummary>((cursor) =>
-      wrappedClient.GET('/v1/workspaces/{ws}/projects/{project_slug}/documents', {
+      wrappedClient.GET('/api/workspaces/{ws}/projects/{project_slug}/documents', {
         params: {
           path: { ws, project_slug: projectSlug },
           query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) },
@@ -87,7 +87,7 @@ export const useDocumentsStore = defineStore('documents', () => {
 
   async function loadBacklinks(ws: string, slug: string): Promise<void> {
     const { items, error: apiError } = await collectPaged<BacklinkSummary>((cursor) =>
-      wrappedClient.GET('/v1/workspaces/{ws}/documents/{slug}/backlinks', {
+      wrappedClient.GET('/api/workspaces/{ws}/documents/{slug}/backlinks', {
         params: { path: { ws, slug }, query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) } },
       }),
     );
@@ -108,7 +108,7 @@ export const useDocumentsStore = defineStore('documents', () => {
     error.value = null;
 
     const { data, error: apiError } = await wrappedClient.GET(
-      '/v1/workspaces/{ws}/documents/{slug}/comments',
+      '/api/workspaces/{ws}/documents/{slug}/comments',
       { params: { path: { ws, slug } } },
     );
 
@@ -134,7 +134,7 @@ export const useDocumentsStore = defineStore('documents', () => {
     }
 
     const { data, error: apiError } = await wrappedClient.GET(
-      '/v1/workspaces/{ws}/documents/{slug}/comments',
+      '/api/workspaces/{ws}/documents/{slug}/comments',
       { params: { path: { ws, slug }, query: { cursor: commentsCursor.value } } },
     );
 
@@ -152,7 +152,7 @@ export const useDocumentsStore = defineStore('documents', () => {
     error.value = null;
 
     const { data, error: apiError } = await wrappedClient.POST(
-      '/v1/workspaces/{ws}/documents/{slug}/comments',
+      '/api/workspaces/{ws}/documents/{slug}/comments',
       { params: { path: { ws, slug } }, body: { body } },
     );
 
@@ -177,7 +177,7 @@ export const useDocumentsStore = defineStore('documents', () => {
     comments.value = comments.value.filter((c) => c.id !== commentId);
 
     const { error: apiError } = await wrappedClient.DELETE(
-      '/v1/workspaces/{ws}/documents/{slug}/comments/{comment_id}',
+      '/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}',
       { params: { path: { ws, slug, comment_id: commentId } } },
     );
 
@@ -195,7 +195,7 @@ export const useDocumentsStore = defineStore('documents', () => {
     error.value = null;
 
     const { data, error: apiError } = await wrappedClient.PATCH(
-      '/v1/workspaces/{ws}/documents/{slug}/comments/{comment_id}',
+      '/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}',
       { params: { path: { ws, slug, comment_id: commentId } }, body: { body } },
     );
 
@@ -221,7 +221,7 @@ export const useDocumentsStore = defineStore('documents', () => {
     folderId?: string,
   ): Promise<string | null> {
     const { data, error: apiError } = await wrappedClient.POST(
-      '/v1/workspaces/{ws}/projects/{project_slug}/documents',
+      '/api/workspaces/{ws}/projects/{project_slug}/documents',
       {
         params: { path: { ws, project_slug: projectSlug } },
         body: { title, folder_id: folderId ?? null },
@@ -238,7 +238,7 @@ export const useDocumentsStore = defineStore('documents', () => {
   }
 
   async function rename(ws: string, projectSlug: string, slug: string, title: string): Promise<boolean> {
-    const { error: apiError } = await wrappedClient.PATCH('/v1/workspaces/{ws}/documents/{slug}', {
+    const { error: apiError } = await wrappedClient.PATCH('/api/workspaces/{ws}/documents/{slug}', {
       params: { path: { ws, slug } },
       body: { title },
     });
@@ -253,7 +253,7 @@ export const useDocumentsStore = defineStore('documents', () => {
   }
 
   async function remove(ws: string, projectSlug: string, slug: string): Promise<boolean> {
-    const { error: apiError } = await wrappedClient.DELETE('/v1/workspaces/{ws}/documents/{slug}', {
+    const { error: apiError } = await wrappedClient.DELETE('/api/workspaces/{ws}/documents/{slug}', {
       params: { path: { ws, slug } },
     });
 
@@ -272,7 +272,7 @@ export const useDocumentsStore = defineStore('documents', () => {
     slug: string,
     folderId: string | null,
   ): Promise<boolean> {
-    const { error: apiError } = await wrappedClient.PATCH('/v1/workspaces/{ws}/documents/{slug}/move', {
+    const { error: apiError } = await wrappedClient.PATCH('/api/workspaces/{ws}/documents/{slug}/move', {
       params: { path: { ws, slug } },
       body: { folder_id: folderId },
     });
@@ -292,7 +292,7 @@ export const useDocumentsStore = defineStore('documents', () => {
     slug: string,
     folderId: string | null,
   ): Promise<boolean> {
-    const { error: apiError } = await wrappedClient.POST('/v1/workspaces/{ws}/documents/{slug}/copy', {
+    const { error: apiError } = await wrappedClient.POST('/api/workspaces/{ws}/documents/{slug}/copy', {
       params: { path: { ws, slug } },
       body: { folder_id: folderId },
     });
@@ -320,7 +320,7 @@ export const useDocumentsStore = defineStore('documents', () => {
     error.value = null;
 
     const { data, error: apiError } = await wrappedClient.POST(
-      '/v1/workspaces/{ws}/documents/{slug}/attachments',
+      '/api/workspaces/{ws}/documents/{slug}/attachments',
       {
         params: { path: { ws, slug } },
         body: file,

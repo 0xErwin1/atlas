@@ -66,7 +66,7 @@ watch([query, kind], () => {
   debounce = setTimeout(async () => {
     searching.value = true;
     try {
-      const { data } = await wrappedClient.GET('/v1/workspaces/{ws}/search', {
+      const { data } = await wrappedClient.GET('/api/workspaces/{ws}/search', {
         params: {
           path: { ws: props.ws },
           query: { q: term, type: targetType.value, sort: 'relevance', prefix: true },

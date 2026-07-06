@@ -53,14 +53,14 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     const path = { ws, readable_id: readableId };
 
     const [a, r, bl, s, cl, act, at, cm] = await Promise.all([
-      wrappedClient.GET('/v1/workspaces/{ws}/tasks/{readable_id}/assignees', { params: { path } }),
-      wrappedClient.GET('/v1/workspaces/{ws}/tasks/{readable_id}/references', { params: { path } }),
-      wrappedClient.GET('/v1/workspaces/{ws}/tasks/{readable_id}/backlinks', { params: { path } }),
-      wrappedClient.GET('/v1/workspaces/{ws}/tasks/{readable_id}/subtasks', { params: { path } }),
-      wrappedClient.GET('/v1/workspaces/{ws}/tasks/{readable_id}/checklist', { params: { path } }),
-      wrappedClient.GET('/v1/workspaces/{ws}/tasks/{readable_id}/activity', { params: { path } }),
-      wrappedClient.GET('/v1/workspaces/{ws}/tasks/{readable_id}/attachments', { params: { path } }),
-      wrappedClient.GET('/v1/workspaces/{ws}/tasks/{readable_id}/comments', { params: { path } }),
+      wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/assignees', { params: { path } }),
+      wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/references', { params: { path } }),
+      wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/backlinks', { params: { path } }),
+      wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/subtasks', { params: { path } }),
+      wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/checklist', { params: { path } }),
+      wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/activity', { params: { path } }),
+      wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/attachments', { params: { path } }),
+      wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/comments', { params: { path } }),
     ]);
 
     loading.value = false;
@@ -112,7 +112,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     }
 
     const { data, error: apiError } = await wrappedClient.GET(
-      '/v1/workspaces/{ws}/tasks/{readable_id}/comments',
+      '/api/workspaces/{ws}/tasks/{readable_id}/comments',
       {
         params: {
           path: { ws, readable_id: readableId },
@@ -135,7 +135,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     error.value = null;
 
     const { data, error: apiError } = await wrappedClient.POST(
-      '/v1/workspaces/{ws}/tasks/{readable_id}/comments',
+      '/api/workspaces/{ws}/tasks/{readable_id}/comments',
       { params: { path: { ws, readable_id: readableId } }, body: { body } },
     );
 
@@ -162,7 +162,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     comments.value = comments.value.filter((c) => c.id !== commentId);
 
     const { error: apiError } = await wrappedClient.DELETE(
-      '/v1/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}',
+      '/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}',
       { params: { path: { ws, readable_id: readableId, comment_id: commentId } } },
     );
 
@@ -189,7 +189,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     error.value = null;
 
     const { data, error: apiError } = await wrappedClient.PATCH(
-      '/v1/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}',
+      '/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}',
       {
         params: { path: { ws, readable_id: readableId, comment_id: commentId } },
         body: { body },
@@ -215,7 +215,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     error.value = null;
 
     const { data, error: apiError } = await wrappedClient.POST(
-      '/v1/workspaces/{ws}/tasks/{readable_id}/assignees',
+      '/api/workspaces/{ws}/tasks/{readable_id}/assignees',
       {
         params: { path: { ws, readable_id: readableId } },
         body: { assignee_id: input.assignee_id, assignee_type: input.assignee_type },
@@ -249,7 +249,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     const assigneeRef = `${assigneeType}:${assigneeId}`;
 
     const { error: apiError } = await wrappedClient.DELETE(
-      '/v1/workspaces/{ws}/tasks/{readable_id}/assignees/{assignee_ref}',
+      '/api/workspaces/{ws}/tasks/{readable_id}/assignees/{assignee_ref}',
       { params: { path: { ws, readable_id: readableId, assignee_ref: assigneeRef } } },
     );
 
@@ -271,7 +271,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
    */
   async function reloadActivity(ws: string, readableId: string): Promise<void> {
     try {
-      const result = await wrappedClient.GET('/v1/workspaces/{ws}/tasks/{readable_id}/activity', {
+      const result = await wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/activity', {
         params: { path: { ws, readable_id: readableId } },
       });
       if (result?.data !== undefined) activity.value = result.data.items;
@@ -300,7 +300,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     checklist.value = optimistic;
 
     const { data, error: apiError } = await wrappedClient.PATCH(
-      '/v1/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}',
+      '/api/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}',
       {
         params: { path: { ws, readable_id: readableId, item_id: itemId } },
         body: { checked: nextChecked },
@@ -348,7 +348,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     checklist.value = optimistic;
 
     const { data, error: apiError } = await wrappedClient.PATCH(
-      '/v1/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}',
+      '/api/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}',
       {
         params: { path: { ws, readable_id: readableId, item_id: itemId } },
         body: { title: trimmed },
@@ -380,7 +380,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     error.value = null;
 
     const { data, error: apiError } = await wrappedClient.POST(
-      '/v1/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}/promote',
+      '/api/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}/promote',
       {
         params: { path: { ws, readable_id: readableId, item_id: itemId } },
         body: { board_id: boardId, column_id: columnId },
@@ -407,7 +407,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     error.value = null;
 
     const { data, error: apiError } = await wrappedClient.POST(
-      '/v1/workspaces/{ws}/tasks/{readable_id}/checklist',
+      '/api/workspaces/{ws}/tasks/{readable_id}/checklist',
       { params: { path: { ws, readable_id: readableId } }, body: { title } },
     );
 
@@ -425,7 +425,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     error.value = null;
 
     const { error: apiError } = await wrappedClient.DELETE(
-      '/v1/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}',
+      '/api/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}',
       { params: { path: { ws, readable_id: readableId, item_id: itemId } } },
     );
 
@@ -443,7 +443,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     error.value = null;
 
     const { data, error: apiError } = await wrappedClient.POST(
-      '/v1/workspaces/{ws}/tasks/{readable_id}/subtasks',
+      '/api/workspaces/{ws}/tasks/{readable_id}/subtasks',
       { params: { path: { ws, readable_id: readableId } }, body: { title } },
     );
 
@@ -493,7 +493,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
       subtasks.value = optimistic;
     }
 
-    const { error: apiError } = await wrappedClient.POST('/v1/workspaces/{ws}/tasks/{readable_id}/move', {
+    const { error: apiError } = await wrappedClient.POST('/api/workspaces/{ws}/tasks/{readable_id}/move', {
       params: { path: { ws, readable_id: subtaskReadableId } },
       body: { column_id: columnId, before: null, after: null },
     });
@@ -514,7 +514,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
   async function promoteSubtask(ws: string, subtaskReadableId: string): Promise<boolean> {
     error.value = null;
 
-    const { error: apiError } = await wrappedClient.POST('/v1/workspaces/{ws}/tasks/{readable_id}/promote', {
+    const { error: apiError } = await wrappedClient.POST('/api/workspaces/{ws}/tasks/{readable_id}/promote', {
       params: { path: { ws, readable_id: subtaskReadableId } },
     });
 
@@ -535,7 +535,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     error.value = null;
 
     const { data, error: apiError } = await wrappedClient.POST(
-      '/v1/workspaces/{ws}/tasks/{readable_id}/references',
+      '/api/workspaces/{ws}/tasks/{readable_id}/references',
       { params: { path: { ws, readable_id: readableId } }, body },
     );
 
@@ -555,7 +555,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     references.value = references.value.filter((r) => r.id !== referenceId);
 
     const { error: apiError } = await wrappedClient.DELETE(
-      '/v1/workspaces/{ws}/tasks/{readable_id}/references/{reference_id}',
+      '/api/workspaces/{ws}/tasks/{readable_id}/references/{reference_id}',
       { params: { path: { ws, readable_id: readableId, reference_id: referenceId } } },
     );
 
@@ -572,7 +572,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     error.value = null;
 
     const { data, error: apiError } = await wrappedClient.POST(
-      '/v1/workspaces/{ws}/tasks/{readable_id}/attachments',
+      '/api/workspaces/{ws}/tasks/{readable_id}/attachments',
       {
         params: { path: { ws, readable_id: readableId } },
         // The body is multipart/form-data with the file in a part named `file`;
@@ -602,7 +602,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     attachments.value = attachments.value.filter((a) => a.id !== attachmentId);
 
     const { error: apiError } = await wrappedClient.DELETE(
-      '/v1/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}',
+      '/api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}',
       { params: { path: { ws, readable_id: readableId, attachment_id: attachmentId } } },
     );
 

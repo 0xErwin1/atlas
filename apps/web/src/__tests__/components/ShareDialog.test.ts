@@ -43,7 +43,7 @@ describe('ShareDialog (REQ-W26/W27)', () => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
     GET.mockImplementation((path: string) => {
-      if (path === '/v1/workspaces/{ws}/members') {
+      if (path === '/api/workspaces/{ws}/members') {
         return Promise.resolve({
           data: [
             member('user', 'u1', 'Ada Lovelace'),
@@ -52,12 +52,12 @@ describe('ShareDialog (REQ-W26/W27)', () => {
           ],
         });
       }
-      if (path === '/v1/api-keys') {
+      if (path === '/api/api-keys') {
         return Promise.resolve({
           data: { items: [], has_more: false },
         });
       }
-      if (path === '/v1/workspaces/{ws}/groups') {
+      if (path === '/api/workspaces/{ws}/groups') {
         return Promise.resolve({ data: [] });
       }
       return Promise.resolve({
@@ -120,7 +120,7 @@ describe('ShareDialog (REQ-W26/W27)', () => {
     POST.mockResolvedValue({ data: grant('g3', 'user', 'u9', 'viewer') });
     await options[0]?.trigger('click');
 
-    expect(POST).toHaveBeenCalledWith('/v1/workspaces/{ws}/grants', {
+    expect(POST).toHaveBeenCalledWith('/api/workspaces/{ws}/grants', {
       params: { path: { ws: 'acme' } },
       body: { principal: { type: 'user', id: 'u9' }, role: 'viewer' },
     });

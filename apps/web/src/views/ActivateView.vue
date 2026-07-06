@@ -52,7 +52,7 @@ onMounted(async () => {
   }
 
   try {
-    const { data, error } = await wrappedClient.GET('/v1/activate/{token}', {
+    const { data, error } = await wrappedClient.GET('/api/activate/{token}', {
       params: { path: { token: token.value } },
     });
 
@@ -109,7 +109,7 @@ async function handleSubmit(): Promise<void> {
   submitting.value = true;
 
   try {
-    const { error } = await wrappedClient.POST('/v1/activate/{token}', {
+    const { error } = await wrappedClient.POST('/api/activate/{token}', {
       params: { path: { token: token.value } },
       body: { password: result.data.password },
     });

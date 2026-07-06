@@ -53,7 +53,7 @@ describe('useWebhooksStore', () => {
     const store = useWebhooksStore();
     await store.loadWebhooks('ws');
 
-    expect(GET).toHaveBeenCalledWith('/v1/workspaces/{ws}/webhooks', {
+    expect(GET).toHaveBeenCalledWith('/api/workspaces/{ws}/webhooks', {
       params: { path: { ws: 'ws' } },
     });
     expect(store.webhooks.map((w) => w.id)).toEqual(['wh1']);
@@ -72,7 +72,7 @@ describe('useWebhooksStore', () => {
     });
 
     expect(result?.secret).toBe('whsec_abc');
-    expect(POST).toHaveBeenCalledWith('/v1/workspaces/{ws}/webhooks', {
+    expect(POST).toHaveBeenCalledWith('/api/workspaces/{ws}/webhooks', {
       params: { path: { ws: 'ws' } },
       body: {
         target_url: 'https://example.com/hook',
@@ -99,7 +99,7 @@ describe('useWebhooksStore', () => {
     const ok = await store.updateWebhook('ws', 'wh1', { is_active: false });
 
     expect(ok).toBe(true);
-    expect(PATCH).toHaveBeenCalledWith('/v1/workspaces/{ws}/webhooks/{webhook_id}', {
+    expect(PATCH).toHaveBeenCalledWith('/api/workspaces/{ws}/webhooks/{webhook_id}', {
       params: { path: { ws: 'ws', webhook_id: 'wh1' } },
       body: { is_active: false },
     });
@@ -123,7 +123,7 @@ describe('useWebhooksStore', () => {
     const ok = await store.deleteWebhook('ws', 'wh1');
 
     expect(ok).toBe(true);
-    expect(DELETE).toHaveBeenCalledWith('/v1/workspaces/{ws}/webhooks/{webhook_id}', {
+    expect(DELETE).toHaveBeenCalledWith('/api/workspaces/{ws}/webhooks/{webhook_id}', {
       params: { path: { ws: 'ws', webhook_id: 'wh1' } },
     });
     expect(store.webhooks.map((w) => w.id)).toEqual(['wh2']);
@@ -152,7 +152,7 @@ describe('useWebhooksStore', () => {
     const store = useWebhooksStore();
     await store.loadDeliveries('ws', 'wh1');
 
-    expect(GET).toHaveBeenCalledWith('/v1/workspaces/{ws}/webhooks/{webhook_id}/deliveries', {
+    expect(GET).toHaveBeenCalledWith('/api/workspaces/{ws}/webhooks/{webhook_id}/deliveries', {
       params: { path: { ws: 'ws', webhook_id: 'wh1' } },
     });
     expect(store.deliveries.map((d) => d.id)).toEqual(['d1']);
@@ -164,7 +164,7 @@ describe('useWebhooksStore', () => {
     const store = useWebhooksStore();
     await store.loadIntegrations('ws');
 
-    expect(GET).toHaveBeenCalledWith('/v1/workspaces/{ws}/integration-configs', {
+    expect(GET).toHaveBeenCalledWith('/api/workspaces/{ws}/integration-configs', {
       params: { path: { ws: 'ws' } },
     });
     expect(store.integrations.map((i) => i.id)).toEqual(['ic1']);
@@ -178,7 +178,7 @@ describe('useWebhooksStore', () => {
     const result = await store.createIntegration('ws', 'github');
 
     expect(result?.secret).toBe('integ_xyz');
-    expect(POST).toHaveBeenCalledWith('/v1/workspaces/{ws}/integration-configs', {
+    expect(POST).toHaveBeenCalledWith('/api/workspaces/{ws}/integration-configs', {
       params: { path: { ws: 'ws' } },
       body: { integration: 'github' },
     });
@@ -197,7 +197,7 @@ describe('useWebhooksStore', () => {
     const ok = await store.setIntegrationActive('ws', 'ic1', false);
 
     expect(ok).toBe(true);
-    expect(PATCH).toHaveBeenCalledWith('/v1/workspaces/{ws}/integration-configs/{config_id}', {
+    expect(PATCH).toHaveBeenCalledWith('/api/workspaces/{ws}/integration-configs/{config_id}', {
       params: { path: { ws: 'ws', config_id: 'ic1' } },
       body: { is_active: false },
     });
@@ -217,7 +217,7 @@ describe('useWebhooksStore', () => {
     const ok = await store.deleteIntegration('ws', 'ic1');
 
     expect(ok).toBe(true);
-    expect(DELETE).toHaveBeenCalledWith('/v1/workspaces/{ws}/integration-configs/{config_id}', {
+    expect(DELETE).toHaveBeenCalledWith('/api/workspaces/{ws}/integration-configs/{config_id}', {
       params: { path: { ws: 'ws', config_id: 'ic1' } },
     });
     expect(store.integrations.map((i) => i.id)).toEqual(['ic2']);

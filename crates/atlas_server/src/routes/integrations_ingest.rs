@@ -200,7 +200,7 @@ fn verify_github_signature(sig_header: &str, secret: &[u8], body: &[u8]) -> Resu
 }
 
 // ---------------------------------------------------------------------------
-// POST /v1/workspaces/{ws}/integrations/{integration}/events
+// POST /api/workspaces/{ws}/integrations/{integration}/events
 // ---------------------------------------------------------------------------
 
 /// Receives a signed GitHub delivery, verifies it via the `VerifiedIntegrationEvent`
@@ -211,7 +211,7 @@ fn verify_github_signature(sig_header: &str, secret: &[u8], body: &[u8]) -> Resu
 /// that GitHub does not retry on idempotent re-deliveries.
 #[utoipa::path(
     post,
-    path = "/v1/workspaces/{ws}/integrations/{integration}/events",
+    path = "/api/workspaces/{ws}/integrations/{integration}/events",
     tag = "integrations",
     params(
         ("ws" = String, Path, description = "Workspace slug"),

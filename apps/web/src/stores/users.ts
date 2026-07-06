@@ -34,7 +34,7 @@ export const useUsersStore = defineStore('users', () => {
     error.value = null;
 
     try {
-      const { data, error: e } = await wrappedClient.GET('/v1/users', {});
+      const { data, error: e } = await wrappedClient.GET('/api/users', {});
       if (e || !data) {
         error.value = errorHint(e, 'Failed to load users');
         users.value = [];
@@ -59,7 +59,7 @@ export const useUsersStore = defineStore('users', () => {
     error.value = null;
 
     try {
-      const { data, error: e } = await wrappedClient.POST('/v1/users', { body });
+      const { data, error: e } = await wrappedClient.POST('/api/users', { body });
       if (e || !data) {
         error.value = errorHint(e, 'Failed to create user');
         return null;
@@ -81,7 +81,7 @@ export const useUsersStore = defineStore('users', () => {
     error.value = null;
 
     try {
-      const { data, error: e } = await wrappedClient.POST('/v1/users/{user_id}/activation-link', {
+      const { data, error: e } = await wrappedClient.POST('/api/users/{user_id}/activation-link', {
         params: { path: { user_id: id } },
       });
       if (e || !data) {
@@ -98,7 +98,7 @@ export const useUsersStore = defineStore('users', () => {
   async function setDisabled(id: string, disabled: boolean): Promise<boolean> {
     error.value = null;
 
-    const path = disabled ? '/v1/users/{user_id}/disable' : '/v1/users/{user_id}/enable';
+    const path = disabled ? '/api/users/{user_id}/disable' : '/api/users/{user_id}/enable';
     try {
       const { error: e } = await wrappedClient.POST(path, { params: { path: { user_id: id } } });
       if (e) {
@@ -117,7 +117,7 @@ export const useUsersStore = defineStore('users', () => {
     error.value = null;
 
     try {
-      const { error: e } = await wrappedClient.POST('/v1/users/{user_id}/reset-password', {
+      const { error: e } = await wrappedClient.POST('/api/users/{user_id}/reset-password', {
         params: { path: { user_id: id } },
         body: { new_password: newPassword },
       });
@@ -141,7 +141,7 @@ export const useUsersStore = defineStore('users', () => {
     error.value = null;
 
     try {
-      const { data, error: e } = await wrappedClient.GET('/v1/users/{user_id}/memberships', {
+      const { data, error: e } = await wrappedClient.GET('/api/users/{user_id}/memberships', {
         params: { path: { user_id: id } },
       });
       if (e || !data) {
@@ -164,7 +164,7 @@ export const useUsersStore = defineStore('users', () => {
     error.value = null;
 
     try {
-      const { data, error: e } = await wrappedClient.POST('/v1/users/{user_id}/system-admin', {
+      const { data, error: e } = await wrappedClient.POST('/api/users/{user_id}/system-admin', {
         params: { path: { user_id: id } },
         body: { is_system_admin: value },
       });

@@ -48,7 +48,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function fetchMe(): Promise<void> {
-    const { data, error } = await wrappedClient.GET('/v1/auth/me', {});
+    const { data, error } = await wrappedClient.GET('/api/auth/me', {});
 
     if (error || !data) {
       clearUser();
@@ -60,7 +60,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function login(credentials: { username: string; password: string }): Promise<LoginResult> {
     try {
-      const { data, error } = await wrappedClient.POST('/v1/auth/login', {
+      const { data, error } = await wrappedClient.POST('/api/auth/login', {
         body: credentials,
       });
 
@@ -79,7 +79,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function logout(): Promise<void> {
     try {
-      await wrappedClient.POST('/v1/auth/logout', {});
+      await wrappedClient.POST('/api/auth/logout', {});
     } catch {
       // failure is intentional: always clear local state regardless of server response
     } finally {
@@ -89,7 +89,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function updateProfile(patch: { email?: string; display_name?: string }): Promise<ActionResult> {
     try {
-      const { error } = await wrappedClient.PATCH('/v1/users/me', { body: patch });
+      const { error } = await wrappedClient.PATCH('/api/users/me', { body: patch });
       if (error) return { ok: false, problem: error as ActionResult['problem'] };
 
       await fetchMe();
@@ -104,7 +104,7 @@ export const useAuthStore = defineStore('auth', () => {
     new_password: string;
   }): Promise<ActionResult> {
     try {
-      const { error } = await wrappedClient.POST('/v1/auth/change-password', { body });
+      const { error } = await wrappedClient.POST('/api/auth/change-password', { body });
       if (error) return { ok: false, problem: error as ActionResult['problem'] };
 
       return { ok: true };

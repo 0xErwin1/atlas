@@ -192,7 +192,7 @@ async fn create_tag_rejects_blank_name() {
 }
 
 // ---------------------------------------------------------------------------
-// B2 — PATCH /v1/workspaces/{ws}/tags/{tag_id}: rename
+// B2 — PATCH /api/workspaces/{ws}/tags/{tag_id}: rename
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
@@ -579,7 +579,7 @@ async fn recolor_tag_sets_color_without_backfill() {
 }
 
 // ---------------------------------------------------------------------------
-// B2 — DELETE /v1/workspaces/{ws}/tags/{tag_id}: soft delete
+// B2 — DELETE /api/workspaces/{ws}/tags/{tag_id}: soft delete
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
@@ -934,7 +934,7 @@ async fn patch_tag_invalid_hex_formats_return_422() {
 }
 
 // ---------------------------------------------------------------------------
-// B-TAGS-USED: GET /v1/workspaces/{ws}/tags/used
+// B-TAGS-USED: GET /api/workspaces/{ws}/tags/used
 // ---------------------------------------------------------------------------
 
 #[tokio::test]

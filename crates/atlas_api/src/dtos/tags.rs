@@ -16,14 +16,14 @@ pub struct TagDto {
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
-/// Request body for `POST /v1/workspaces/{ws}/tags`.
+/// Request body for `POST /api/workspaces/{ws}/tags`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct CreateTagRequest {
     pub name: String,
 }
 
-/// Request body for `PATCH /v1/workspaces/{ws}/tags/{tag_id}`.
+/// Request body for `PATCH /api/workspaces/{ws}/tags/{tag_id}`.
 ///
 /// Both fields are optional: supply `name` to rename, `color` to recolor, or both.
 /// `color: None` in the JSON payload is treated as "leave unchanged"; there is no

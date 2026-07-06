@@ -14,7 +14,7 @@ use crate::{
 
 #[utoipa::path(
     get,
-    path = "/v1/me/ui-state",
+    path = "/api/me/ui-state",
     tag = "ui-state",
     security(("bearer_auth" = [])),
     responses(
@@ -55,7 +55,7 @@ pub(crate) async fn get_ui_state(
 
 #[utoipa::path(
     put,
-    path = "/v1/me/ui-state",
+    path = "/api/me/ui-state",
     tag = "ui-state",
     security(("bearer_auth" = [])),
     request_body = UpdateUiStateRequest,

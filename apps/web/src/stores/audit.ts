@@ -22,7 +22,7 @@ interface AuditPage {
  * only fetches, appends, and exposes the current filter selection.
  *
  * Two fetch entry points share one filter/pagination state: `loadWorkspace`
- * targets `/v1/workspaces/{ws}/audit`, `loadPlatform` targets `/v1/admin/audit`.
+ * targets `/api/workspaces/{ws}/audit`, `loadPlatform` targets `/api/admin/audit`.
  * A panel uses exactly one of them and never switches scope mid-life, so they
  * can share the same backing refs. Changing any filter resets and re-fetches.
  */
@@ -70,7 +70,7 @@ export const useAuditStore = defineStore('audit', () => {
   }
 
   async function fetchWorkspacePage(ws: string, pageCursor?: string): Promise<AuditPage | null> {
-    const { data, error: apiError } = await wrappedClient.GET('/v1/workspaces/{ws}/audit', {
+    const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/audit', {
       params: {
         path: { ws },
         query: buildQuery(pageCursor),
@@ -86,7 +86,7 @@ export const useAuditStore = defineStore('audit', () => {
   }
 
   async function fetchPlatformPage(pageCursor?: string): Promise<AuditPage | null> {
-    const { data, error: apiError } = await wrappedClient.GET('/v1/admin/audit', {
+    const { data, error: apiError } = await wrappedClient.GET('/api/admin/audit', {
       params: {
         query: buildQuery(pageCursor),
       },

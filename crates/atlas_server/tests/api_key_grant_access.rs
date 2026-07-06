@@ -146,7 +146,7 @@ async fn ungranted_api_key_denied_on_all_workspace_endpoints() {
     let (_key_id, key_secret) = create_ungrant_key(&db, ws.id, owner_user.id, "b2-01-nokey").await;
     let agent = atlas_client::AtlasClient::new(server.base_url()).with_token(key_secret);
 
-    // (a) GET /v1/workspaces/{ws}/tasks → must be 404, not 200 over-returning all tasks
+    // (a) GET /api/workspaces/{ws}/tasks → must be 404, not 200 over-returning all tasks
     let result = agent
         .list_workspace_tasks(&ws.slug, &Default::default())
         .await;
@@ -155,28 +155,28 @@ async fn ungranted_api_key_denied_on_all_workspace_endpoints() {
         "ungranted key: workspace task list must be 404, got: {result:?}"
     );
 
-    // (b) GET /v1/workspaces/{ws}/tasks/{rid} → must be 404
+    // (b) GET /api/workspaces/{ws}/tasks/{rid} → must be 404
     let result = agent.get_task(&ws.slug, &task_rid).await;
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
         "ungranted key: get_task must be 404, got: {result:?}"
     );
 
-    // (c) GET /v1/workspaces/{ws}/projects → must be 404
+    // (c) GET /api/workspaces/{ws}/projects → must be 404
     let result = agent.list_projects(&ws.slug, None, None).await;
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
         "ungranted key: list_projects must be 404, got: {result:?}"
     );
 
-    // (d) GET /v1/workspaces/{ws}/projects/{slug}/boards via list_boards
+    // (d) GET /api/workspaces/{ws}/projects/{slug}/boards via list_boards
     let result = agent.list_boards(&ws.slug, &project_slug, None, None).await;
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
         "ungranted key: list_boards must be 404, got: {result:?}"
     );
 
-    // (e) PATCH /v1/workspaces/{ws}/tasks/{rid} (write) → must be 404
+    // (e) PATCH /api/workspaces/{ws}/tasks/{rid} (write) → must be 404
     let result = agent
         .update_task(
             &ws.slug,

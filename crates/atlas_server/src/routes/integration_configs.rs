@@ -45,12 +45,12 @@ fn generate_integration_secret() -> String {
 }
 
 // ---------------------------------------------------------------------------
-// POST /v1/workspaces/{ws}/integration-configs
+// POST /api/workspaces/{ws}/integration-configs
 // ---------------------------------------------------------------------------
 
 #[utoipa::path(
     post,
-    path = "/v1/workspaces/{ws}/integration-configs",
+    path = "/api/workspaces/{ws}/integration-configs",
     tag = "integrations",
     security(("bearer_auth" = [])),
     params(("ws" = String, Path, description = "Workspace slug")),
@@ -118,12 +118,12 @@ pub(crate) async fn create_integration_config(
 }
 
 // ---------------------------------------------------------------------------
-// GET /v1/workspaces/{ws}/integration-configs
+// GET /api/workspaces/{ws}/integration-configs
 // ---------------------------------------------------------------------------
 
 #[utoipa::path(
     get,
-    path = "/v1/workspaces/{ws}/integration-configs",
+    path = "/api/workspaces/{ws}/integration-configs",
     tag = "integrations",
     security(("bearer_auth" = [])),
     params(("ws" = String, Path, description = "Workspace slug")),
@@ -147,12 +147,12 @@ pub(crate) async fn list_integration_configs(
 }
 
 // ---------------------------------------------------------------------------
-// GET /v1/workspaces/{ws}/integration-configs/{config_id}
+// GET /api/workspaces/{ws}/integration-configs/{config_id}
 // ---------------------------------------------------------------------------
 
 #[utoipa::path(
     get,
-    path = "/v1/workspaces/{ws}/integration-configs/{config_id}",
+    path = "/api/workspaces/{ws}/integration-configs/{config_id}",
     tag = "integrations",
     security(("bearer_auth" = [])),
     params(
@@ -181,12 +181,12 @@ pub(crate) async fn get_integration_config(
 }
 
 // ---------------------------------------------------------------------------
-// PATCH /v1/workspaces/{ws}/integration-configs/{config_id}
+// PATCH /api/workspaces/{ws}/integration-configs/{config_id}
 // ---------------------------------------------------------------------------
 
 #[utoipa::path(
     patch,
-    path = "/v1/workspaces/{ws}/integration-configs/{config_id}",
+    path = "/api/workspaces/{ws}/integration-configs/{config_id}",
     tag = "integrations",
     security(("bearer_auth" = [])),
     params(
@@ -227,12 +227,12 @@ pub(crate) async fn patch_integration_config(
 }
 
 // ---------------------------------------------------------------------------
-// DELETE /v1/workspaces/{ws}/integration-configs/{config_id}
+// DELETE /api/workspaces/{ws}/integration-configs/{config_id}
 // ---------------------------------------------------------------------------
 
 #[utoipa::path(
     delete,
-    path = "/v1/workspaces/{ws}/integration-configs/{config_id}",
+    path = "/api/workspaces/{ws}/integration-configs/{config_id}",
     tag = "integrations",
     security(("bearer_auth" = [])),
     params(

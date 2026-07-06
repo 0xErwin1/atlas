@@ -1,4 +1,4 @@
-//! Pagination determinism matrix for `GET /v1/workspaces/{ws}/search`.
+//! Pagination determinism matrix for `GET /api/workspaces/{ws}/search`.
 //!
 //! Guards the invariant that when two hits share an identical primary sort key
 //! (score or updated_at), the secondary sort key (id DESC, UUIDv7 time-ordering)
@@ -32,7 +32,7 @@ use uuid::Uuid;
 // ---------------------------------------------------------------------------
 
 fn search_url(base: &str, ws: &str, qs: &str) -> String {
-    format!("{base}/v1/workspaces/{ws}/search?{qs}")
+    format!("{base}/api/workspaces/{ws}/search?{qs}")
 }
 
 async fn get_search(

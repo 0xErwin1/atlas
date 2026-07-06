@@ -31,7 +31,7 @@ async fn authenticated_burst_is_rate_limited_with_retry_after() {
     // Fire concurrently so all requests reach the limiter gate before any refills.
     let futures: Vec<_> = (0..8)
         .map(|_| {
-            http.get(format!("{base_url}/v1/auth/me"))
+            http.get(format!("{base_url}/api/auth/me"))
                 .header("Authorization", format!("Bearer {token}"))
                 .send()
         })
@@ -89,7 +89,7 @@ async fn unauthenticated_request_is_401_not_429() {
     // More requests than the burst; without auth every one must be 401.
     for _ in 0..3 {
         let response = http
-            .get(format!("{base_url}/v1/auth/me"))
+            .get(format!("{base_url}/api/auth/me"))
             .send()
             .await
             .expect("request");

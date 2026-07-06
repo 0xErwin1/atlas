@@ -201,12 +201,12 @@ fn applies_to_matches(def: &AppliesTo, filter: &AppliesTo) -> bool {
 }
 
 // ---------------------------------------------------------------------------
-// GET /v1/workspaces/{ws}/property-definitions
+// GET /api/workspaces/{ws}/property-definitions
 // ---------------------------------------------------------------------------
 
 #[utoipa::path(
     get,
-    path = "/v1/workspaces/{ws}/property-definitions",
+    path = "/api/workspaces/{ws}/property-definitions",
     tag = "property-definitions",
     security(("bearer_auth" = [])),
     params(
@@ -249,12 +249,12 @@ pub(crate) async fn list_property_definitions(
 }
 
 // ---------------------------------------------------------------------------
-// POST /v1/workspaces/{ws}/property-definitions
+// POST /api/workspaces/{ws}/property-definitions
 // ---------------------------------------------------------------------------
 
 #[utoipa::path(
     post,
-    path = "/v1/workspaces/{ws}/property-definitions",
+    path = "/api/workspaces/{ws}/property-definitions",
     tag = "property-definitions",
     security(("bearer_auth" = [])),
     params(("ws" = String, Path, description = "Workspace slug")),
@@ -313,12 +313,12 @@ pub(crate) async fn create_property_definition(
 }
 
 // ---------------------------------------------------------------------------
-// DELETE /v1/workspaces/{ws}/property-definitions/{property_definition_id}
+// DELETE /api/workspaces/{ws}/property-definitions/{property_definition_id}
 // ---------------------------------------------------------------------------
 
 #[utoipa::path(
     delete,
-    path = "/v1/workspaces/{ws}/property-definitions/{property_definition_id}",
+    path = "/api/workspaces/{ws}/property-definitions/{property_definition_id}",
     tag = "property-definitions",
     security(("bearer_auth" = [])),
     params(

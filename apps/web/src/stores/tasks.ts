@@ -26,7 +26,7 @@ export const useTasksStore = defineStore('tasks', () => {
       openTask.value = null;
     }
 
-    const { data, error: apiError } = await wrappedClient.GET('/v1/workspaces/{ws}/tasks/{readable_id}', {
+    const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}', {
       params: { path: { ws, readable_id: readableId } },
     });
 
@@ -50,7 +50,7 @@ export const useTasksStore = defineStore('tasks', () => {
       openTask.value = { ...previous, description };
     }
 
-    const { data, error: apiError } = await wrappedClient.PATCH('/v1/workspaces/{ws}/tasks/{readable_id}', {
+    const { data, error: apiError } = await wrappedClient.PATCH('/api/workspaces/{ws}/tasks/{readable_id}', {
       params: { path: { ws, readable_id: readableId } },
       body: { description },
     });

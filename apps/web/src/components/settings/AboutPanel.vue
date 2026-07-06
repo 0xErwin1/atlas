@@ -10,7 +10,7 @@ const loading = ref(true);
 
 onMounted(async () => {
   try {
-    const { data } = await wrappedClient.GET('/v1/meta', {});
+    const { data } = await wrappedClient.GET('/api/meta', {});
     if (data) {
       version.value = data.version;
       build.value = data.build ?? null;

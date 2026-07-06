@@ -159,7 +159,7 @@ async fn create_api_key(
 }
 
 fn search_url(base: &str, ws: &str, q: &str) -> String {
-    format!("{base}/v1/workspaces/{ws}/search?q={q}")
+    format!("{base}/api/workspaces/{ws}/search?q={q}")
 }
 
 async fn search_hits(
@@ -328,7 +328,7 @@ async fn root_non_member_reads_document() {
 // A4 — list_workspaces returns ALL for is_root/is_system_admin
 // ---------------------------------------------------------------------------
 
-/// GET /v1/workspaces as system_admin returns ALL workspaces including
+/// GET /api/workspaces as system_admin returns ALL workspaces including
 /// ones they are NOT a member of (A4).
 #[tokio::test]
 async fn system_admin_list_workspaces_returns_all() {
@@ -355,7 +355,7 @@ async fn system_admin_list_workspaces_returns_all() {
     db.teardown().await;
 }
 
-/// GET /v1/workspaces as root returns ALL workspaces (A4).
+/// GET /api/workspaces as root returns ALL workspaces (A4).
 #[tokio::test]
 async fn root_list_workspaces_returns_all() {
     let db = TestDb::create().await.expect("TestDb::create");
@@ -554,7 +554,7 @@ async fn api_key_without_grants_gets_404_on_workspace_route() {
 
     let resp = reqwest::Client::new()
         .get(format!(
-            "{}/v1/workspaces/{}/members",
+            "{}/api/workspaces/{}/members",
             server.base_url(),
             target_ws.slug
         ))

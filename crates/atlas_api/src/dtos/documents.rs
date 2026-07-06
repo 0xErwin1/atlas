@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "openapi")]
 use utoipa::ToSchema;
 
-/// Request body for `POST /v1/workspaces/{ws}/projects/{ps}/documents`.
+/// Request body for `POST /api/workspaces/{ws}/projects/{ps}/documents`.
 ///
 /// The slug is always server-generated; any slug field provided by the client
 /// is silently ignored.
@@ -15,7 +15,7 @@ pub struct CreateDocumentRequest {
     pub content: Option<String>,
 }
 
-/// Request body for `PATCH /v1/workspaces/{ws}/documents/{slug}`.
+/// Request body for `PATCH /api/workspaces/{ws}/documents/{slug}`.
 ///
 /// Updates document metadata (title, folder). Use `PUT .../content` to update
 /// content with CAS.
@@ -26,7 +26,7 @@ pub struct UpdateDocumentRequest {
     pub folder_id: Option<uuid::Uuid>,
 }
 
-/// Request body for `PUT /v1/workspaces/{ws}/documents/{slug}/content`.
+/// Request body for `PUT /api/workspaces/{ws}/documents/{slug}/content`.
 ///
 /// Uses compare-and-swap semantics: `base_revision_id` must match the
 /// document's current revision or the server responds with 409 and a
@@ -38,14 +38,14 @@ pub struct UpdateContentRequest {
     pub base_revision_id: uuid::Uuid,
 }
 
-/// Request body for `PATCH /v1/workspaces/{ws}/documents/{slug}/move`.
+/// Request body for `PATCH /api/workspaces/{ws}/documents/{slug}/move`.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct MoveDocumentRequest {
     pub folder_id: Option<uuid::Uuid>,
 }
 
-/// Request body for `POST /v1/workspaces/{ws}/documents/{slug}/copy`.
+/// Request body for `POST /api/workspaces/{ws}/documents/{slug}/copy`.
 ///
 /// `folder_id` is the destination folder for the copy. When omitted, the copy
 /// lands in the same folder as the source document.

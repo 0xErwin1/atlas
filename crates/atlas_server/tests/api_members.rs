@@ -1023,7 +1023,7 @@ async fn patch_malformed_json_returns_400() {
     let response = owner2
         .http_client()
         .patch(format!(
-            "{}/v1/workspaces/{}/members/{}",
+            "{}/api/workspaces/{}/members/{}",
             server.base_url(),
             ws.slug,
             target_user.id.0

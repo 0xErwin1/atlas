@@ -63,7 +63,7 @@ async function onUploadImage(file: File): Promise<string | null> {
     return null;
   }
 
-  return `/v1/workspaces/${ws.value}/attachments/${attachment.id}`;
+  return `/api/workspaces/${ws.value}/attachments/${attachment.id}`;
 }
 
 const editorRef = ref<InstanceType<typeof NoteEditor> | null>(null);

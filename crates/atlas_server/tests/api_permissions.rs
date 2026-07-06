@@ -698,7 +698,7 @@ async fn share_denied_403_does_not_leak_variant_name() {
     let http = reqwest::Client::new();
     let resp = http
         .post(format!(
-            "{}/v1/workspaces/{}/projects/sharedeny-proj/grants",
+            "{}/api/workspaces/{}/projects/sharedeny-proj/grants",
             server.base_url(),
             ws.slug
         ))

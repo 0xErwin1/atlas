@@ -39,7 +39,7 @@ describe('useTagsStore', () => {
     const store = useTagsStore();
     await store.load('ws');
 
-    expect(mockGet).toHaveBeenCalledWith('/v1/workspaces/{ws}/tags', {
+    expect(mockGet).toHaveBeenCalledWith('/api/workspaces/{ws}/tags', {
       params: { path: { ws: 'ws' } },
     });
     expect(store.tags).toHaveLength(2);
@@ -55,7 +55,7 @@ describe('useTagsStore', () => {
     const ok = await store.update('ws', '1', { name: 'defect', color: 'red' });
 
     expect(ok).toBe(true);
-    expect(mockPatch).toHaveBeenCalledWith('/v1/workspaces/{ws}/tags/{tag_id}', {
+    expect(mockPatch).toHaveBeenCalledWith('/api/workspaces/{ws}/tags/{tag_id}', {
       params: { path: { ws: 'ws', tag_id: '1' } },
       body: { name: 'defect', color: 'red' },
     });
@@ -86,7 +86,7 @@ describe('useTagsStore', () => {
     const ok = await store.remove('ws', '1');
 
     expect(ok).toBe(true);
-    expect(mockDelete).toHaveBeenCalledWith('/v1/workspaces/{ws}/tags/{tag_id}', {
+    expect(mockDelete).toHaveBeenCalledWith('/api/workspaces/{ws}/tags/{tag_id}', {
       params: { path: { ws: 'ws', tag_id: '1' } },
     });
     expect(store.tags.map((t) => t.id)).toEqual(['2']);
@@ -111,7 +111,7 @@ describe('useTagsStore', () => {
     const created = await store.create('ws', 'urgent', 'amber');
 
     expect(created?.id).toBe('9');
-    expect(mockPost).toHaveBeenCalledWith('/v1/workspaces/{ws}/tags', {
+    expect(mockPost).toHaveBeenCalledWith('/api/workspaces/{ws}/tags', {
       params: { path: { ws: 'ws' } },
       body: { name: 'urgent', color: 'amber' },
     });

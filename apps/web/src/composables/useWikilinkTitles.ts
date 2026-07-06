@@ -25,7 +25,7 @@ export function useWikilinkTitles(ws: Ref<string>, body: Ref<string>): Ref<Recor
     const resolved: Record<string, string> = {};
     for (const id of missing) {
       try {
-        const { data } = await wrappedClient.GET('/v1/workspaces/{ws}/documents/{slug}', {
+        const { data } = await wrappedClient.GET('/api/workspaces/{ws}/documents/{slug}', {
           params: { path: { ws: ws.value, slug: id } },
         });
         if (data?.title) resolved[id] = data.title;

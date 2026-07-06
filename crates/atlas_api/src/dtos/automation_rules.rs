@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "openapi")]
 use utoipa::ToSchema;
 
-/// Request body for `POST /v1/workspaces/{ws}/automation-rules`.
+/// Request body for `POST /api/workspaces/{ws}/automation-rules`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct CreateAutomationRuleRequest {
@@ -22,7 +22,7 @@ pub struct CreateAutomationRuleRequest {
     pub action_params: serde_json::Value,
 }
 
-/// Partial update for `PATCH /v1/workspaces/{ws}/automation-rules/{rule_id}`.
+/// Partial update for `PATCH /api/workspaces/{ws}/automation-rules/{rule_id}`.
 ///
 /// Omitted fields are left unchanged. Pass `{"trigger_filter": null}` to clear the filter.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

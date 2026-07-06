@@ -4,11 +4,11 @@ describe('CSRF wrapper', () => {
   async function invokeMiddleware(method: string): Promise<Request> {
     const { csrfMiddlewareForTest } = await import('../api/wrapper');
 
-    const original = new Request(`http://localhost/v1/test`, { method });
+    const original = new Request(`http://localhost/api/test`, { method });
 
     const result = await csrfMiddlewareForTest.onRequest?.({
       request: original,
-      schemaPath: '/v1/test',
+      schemaPath: '/api/test',
       params: {},
       id: 'test-id',
       options: {

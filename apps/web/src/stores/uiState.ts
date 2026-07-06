@@ -10,7 +10,7 @@ import type { TaskBoardView } from '@/stores/ui';
 type UiStatePayload = components['schemas']['UpdateUiStateRequest']['state'];
 
 /**
- * Per-user UI state, persisted server-side via `/v1/me/ui-state` so preferences
+ * Per-user UI state, persisted server-side via `/api/me/ui-state` so preferences
  * (e.g. which sidebar folders are collapsed) survive refreshes and follow the
  * user across devices. Writes are debounced into a single PUT.
  */
@@ -21,7 +21,7 @@ export const useUiStateStore = defineStore('uiState', () => {
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
   async function load(): Promise<void> {
-    const { data: res } = await wrappedClient.GET('/v1/me/ui-state');
+    const { data: res } = await wrappedClient.GET('/api/me/ui-state');
     const state = (res as { state?: unknown } | undefined)?.state;
     if (state !== null && typeof state === 'object') {
       data.value = state as Record<string, unknown>;
@@ -33,7 +33,7 @@ export const useUiStateStore = defineStore('uiState', () => {
     if (saveTimer !== null) clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
       saveTimer = null;
-      void wrappedClient.PUT('/v1/me/ui-state', {
+      void wrappedClient.PUT('/api/me/ui-state', {
         body: { state: data.value as unknown as UiStatePayload },
       });
     }, 600);

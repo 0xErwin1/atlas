@@ -23,7 +23,7 @@ use crate::{
     authz::WorkspaceAccess, error::ApiError, persistence::repos::PgSearchRepo, state::AppState,
 };
 
-/// Query parameters for `GET /v1/workspaces/{ws}/search`.
+/// Query parameters for `GET /api/workspaces/{ws}/search`.
 #[derive(Debug, Deserialize)]
 pub(crate) struct SearchQueryParams {
     /// Free-text query with optional `key:value` filter tokens. Required.
@@ -42,12 +42,12 @@ pub(crate) struct SearchQueryParams {
 }
 
 // ---------------------------------------------------------------------------
-// GET /v1/workspaces/{ws}/search
+// GET /api/workspaces/{ws}/search
 // ---------------------------------------------------------------------------
 
 #[utoipa::path(
     get,
-    path = "/v1/workspaces/{ws}/search",
+    path = "/api/workspaces/{ws}/search",
     tag = "search",
     security(("bearer_auth" = [])),
     params(

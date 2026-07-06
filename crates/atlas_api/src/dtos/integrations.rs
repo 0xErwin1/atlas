@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "openapi")]
 use utoipa::ToSchema;
 
-/// Request body for `POST /v1/workspaces/{ws}/integration-configs`.
+/// Request body for `POST /api/workspaces/{ws}/integration-configs`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct CreateIntegrationConfigRequest {
@@ -27,7 +27,7 @@ pub struct IntegrationConfigDto {
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
-/// Request body for `PATCH /v1/workspaces/{ws}/integration-configs/{config_id}`.
+/// Request body for `PATCH /api/workspaces/{ws}/integration-configs/{config_id}`.
 ///
 /// Only `is_active` can be changed; the integration slug and secret are fixed at
 /// creation. Omitting `is_active` leaves the config unchanged. Setting it to
@@ -38,7 +38,7 @@ pub struct UpdateIntegrationConfigRequest {
     pub is_active: Option<bool>,
 }
 
-/// Response from `POST /v1/workspaces/{ws}/integration-configs`.
+/// Response from `POST /api/workspaces/{ws}/integration-configs`.
 ///
 /// Carries the HMAC secret in plaintext exactly once. After this response the
 /// secret is never available again — configure your integration immediately.

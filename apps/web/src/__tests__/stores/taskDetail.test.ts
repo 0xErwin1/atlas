@@ -206,7 +206,7 @@ describe('useTaskDetailStore', () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(GET).toHaveBeenCalledWith('/v1/workspaces/{ws}/tasks/{readable_id}/activity', {
+    expect(GET).toHaveBeenCalledWith('/api/workspaces/{ws}/tasks/{readable_id}/activity', {
       params: { path: { ws: 'ws', readable_id: 'ATL-1' } },
     });
     expect(store.activity.map((a) => a.kind)).toEqual(['checklist_added']);
