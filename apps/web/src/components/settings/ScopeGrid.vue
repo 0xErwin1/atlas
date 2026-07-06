@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 import type { ApiKeyScope } from '@/stores/apiKeys';
 
-const FAMILIES = ['tasks', 'docs', 'boards', 'folders', 'projects'] as const;
+const FAMILIES = ['tasks', 'docs', 'boards', 'folders', 'projects', 'webhooks'] as const;
 const ACTIONS = ['read', 'create', 'update', 'delete'] as const;
 
 type Family = (typeof FAMILIES)[number];
