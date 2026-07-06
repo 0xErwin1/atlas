@@ -31,6 +31,31 @@ impl Default for DispatcherConfig {
     }
 }
 
+/// Postgres connection-pool sizing for the shared `sea_orm` connection.
+///
+/// The server holds one connection permanently for the `LISTEN` consumer, up to
+/// `DispatcherConfig::max_concurrent` more for in-flight webhook deliveries, plus
+/// request and SSE-auth queries. Left at the driver default (10 connections, no
+/// acquire timeout) that baseline can saturate the pool and then block new
+/// acquisitions forever, so both bounds are configurable and the acquire wait is
+/// capped to fail fast instead of hanging silently.
+#[derive(Clone, Debug)]
+pub struct DbPoolConfig {
+    pub max_connections: u32,
+    pub min_connections: u32,
+    pub acquire_timeout_secs: u64,
+}
+
+impl Default for DbPoolConfig {
+    fn default() -> Self {
+        Self {
+            max_connections: 20,
+            min_connections: 1,
+            acquire_timeout_secs: 10,
+        }
+    }
+}
+
 /// Per-principal rate-limit parameters for the authenticated API surface.
 ///
 /// The limiter keys by the authenticated caller (user or API key), not by IP:
@@ -64,6 +89,11 @@ pub struct ServerConfig {
     pub dispatcher: DispatcherConfig,
     pub allow_private_webhook_targets: bool,
     pub rate_limit: RateLimitConfig,
+    pub db_pool: DbPoolConfig,
+    /// Upper bound, in seconds, on the post-signal graceful drain before the
+    /// process forces termination. Guards against long-lived SSE streams
+    /// blocking shutdown indefinitely.
+    pub shutdown_timeout_secs: u64,
 }
 
 impl ServerConfig {
@@ -90,6 +120,21 @@ impl ServerConfig {
             read_env_bool("ATLAS_ALLOW_PRIVATE_WEBHOOK_TARGETS", false);
         let rate_limit = load_rate_limit_config();
 
+        let db_pool = load_db_pool_config();
+
+        if db_pool.max_connections < 1 {
+            return Err("ATLAS_DB_MAX_CONNECTIONS must be >= 1".to_string());
+        }
+
+        if db_pool.min_connections > db_pool.max_connections {
+            return Err(format!(
+                "ATLAS_DB_MIN_CONNECTIONS ({}) must be <= ATLAS_DB_MAX_CONNECTIONS ({})",
+                db_pool.min_connections, db_pool.max_connections
+            ));
+        }
+
+        let shutdown_timeout_secs = read_env_u64("ATLAS_SHUTDOWN_TIMEOUT_SECS", 20);
+
         Ok(Self {
             database_url,
             root_password,
@@ -98,6 +143,8 @@ impl ServerConfig {
             dispatcher,
             allow_private_webhook_targets,
             rate_limit,
+            db_pool,
+            shutdown_timeout_secs,
         })
     }
 }
@@ -115,6 +162,8 @@ impl fmt::Debug for ServerConfig {
                 &self.allow_private_webhook_targets,
             )
             .field("rate_limit", &self.rate_limit)
+            .field("db_pool", &self.db_pool)
+            .field("shutdown_timeout_secs", &self.shutdown_timeout_secs)
             .finish()
     }
 }
@@ -163,6 +212,18 @@ fn load_dispatcher_config() -> DispatcherConfig {
     }
 }
 
+fn load_db_pool_config() -> DbPoolConfig {
+    let defaults = DbPoolConfig::default();
+    DbPoolConfig {
+        max_connections: read_env_u32("ATLAS_DB_MAX_CONNECTIONS", defaults.max_connections),
+        min_connections: read_env_u32("ATLAS_DB_MIN_CONNECTIONS", defaults.min_connections),
+        acquire_timeout_secs: read_env_u64(
+            "ATLAS_DB_ACQUIRE_TIMEOUT_SECS",
+            defaults.acquire_timeout_secs,
+        ),
+    }
+}
+
 fn load_rate_limit_config() -> RateLimitConfig {
     let defaults = RateLimitConfig::default();
     RateLimitConfig {
@@ -208,6 +269,8 @@ mod tests {
             dispatcher: DispatcherConfig::default(),
             allow_private_webhook_targets: false,
             rate_limit: RateLimitConfig::default(),
+            db_pool: DbPoolConfig::default(),
+            shutdown_timeout_secs: 20,
         };
 
         let output = format!("{config:?}");
@@ -236,6 +299,18 @@ mod tests {
         assert!(cfg.enabled, "rate limiting is enabled by default");
         assert_eq!(cfg.per_second, 20);
         assert_eq!(cfg.burst, 40);
+    }
+
+    #[test]
+    fn db_pool_config_has_sane_defaults() {
+        let cfg = DbPoolConfig::default();
+        assert_eq!(cfg.max_connections, 20);
+        assert_eq!(cfg.min_connections, 1);
+        assert_eq!(cfg.acquire_timeout_secs, 10);
+        assert!(
+            cfg.min_connections <= cfg.max_connections,
+            "min pool size must not exceed max pool size"
+        );
     }
 
     #[test]

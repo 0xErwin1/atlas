@@ -52,6 +52,13 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
     },
     RouteEntry {
         method: "GET",
+        path_template: "/ready",
+        kind: RouteKind::Public,
+        openapi_path: Some("/ready"),
+        capability: None,
+    },
+    RouteEntry {
+        method: "GET",
         path_template: "/version",
         kind: RouteKind::Public,
         openapi_path: Some("/version"),

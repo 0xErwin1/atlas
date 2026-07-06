@@ -69,6 +69,13 @@ impl FromRequest<AppState> for VerifiedIntegrationEvent {
             .map_err(|_| ApiError::Unauthorized)?
             .to_string();
 
+        // Validate the signature's structural form (prefix, hex, length) up front,
+        // before the workspace/config lookups and the AES-GCM secret decrypt, so a
+        // malformed or oversized signature is rejected cheaply. The constant-time
+        // comparison against the computed MAC still runs later on the real path, so
+        // this reorder does not weaken the timing-safe check.
+        let sig_bytes = parse_signature(&sig_header)?;
+
         let delivery_id = {
             let raw = parts
                 .headers
@@ -122,7 +129,7 @@ impl FromRequest<AppState> for VerifiedIntegrationEvent {
             .decrypt(&config.encrypted_secret, &config.secret_nonce)
             .map_err(|e| ApiError::Internal { message: e })?;
 
-        verify_github_signature(&sig_header, &secret_bytes, &bytes)?;
+        verify_signature_bytes(&sig_bytes, &secret_bytes, &bytes)?;
 
         let data: serde_json::Value =
             serde_json::from_slice(&bytes).map_err(|_| ApiError::BadRequest {
@@ -140,32 +147,56 @@ impl FromRequest<AppState> for VerifiedIntegrationEvent {
     }
 }
 
-/// Verifies the `X-Hub-Signature-256: sha256=<hex>` header against the raw body bytes
-/// using constant-time HMAC-SHA256 comparison.
+/// Longest `X-Hub-Signature-256` header accepted before decoding. A well-formed
+/// header is `sha256=` (7 bytes) + 64 hex chars = 71 bytes; anything materially
+/// longer is malformed and rejected without decoding, bounding work on hostile input.
+const MAX_SIG_HEADER_LEN: usize = 128;
+
+/// Parses and validates the structural form of the `X-Hub-Signature-256` header —
+/// its length, `sha256=` prefix, and hex validity — without touching the
+/// per-integration secret, returning the decoded signature bytes.
 ///
-/// Returns `ApiError::Unauthorized` on any mismatch, malformed prefix, or invalid hex.
-/// Returns `ApiError::Internal` only if the HMAC key itself is unusable (should not happen
-/// in practice after successful decryption).
-pub(crate) fn verify_github_signature(
-    sig_header: &str,
-    secret: &[u8],
-    body: &[u8],
-) -> Result<(), ApiError> {
+/// Kept separate from the secret-dependent comparison so a malformed or oversized
+/// signature can be rejected early (before the workspace/config lookups and the
+/// AES-GCM secret decrypt) as `ApiError::Unauthorized`.
+fn parse_signature(sig_header: &str) -> Result<Vec<u8>, ApiError> {
+    if sig_header.len() > MAX_SIG_HEADER_LEN {
+        return Err(ApiError::Unauthorized);
+    }
+
     let hex_str = sig_header
         .strip_prefix("sha256=")
         .ok_or(ApiError::Unauthorized)?;
 
-    let sig_bytes = decode_hex(hex_str).map_err(|_| ApiError::Unauthorized)?;
+    decode_hex(hex_str).map_err(|_| ApiError::Unauthorized)
+}
 
+/// Constant-time HMAC-SHA256 comparison of already-decoded signature bytes against
+/// the raw body under `secret`.
+///
+/// Returns `ApiError::Unauthorized` on mismatch and `ApiError::Internal` only if the
+/// HMAC key itself is unusable (should not happen after a successful decryption).
+fn verify_signature_bytes(sig_bytes: &[u8], secret: &[u8], body: &[u8]) -> Result<(), ApiError> {
     let mut mac = HmacSha256::new_from_slice(secret).map_err(|e| ApiError::Internal {
         message: format!("HMAC key error: {e}"),
     })?;
     mac.update(body);
 
-    mac.verify_slice(&sig_bytes)
-        .map_err(|_| ApiError::Unauthorized)?;
+    mac.verify_slice(sig_bytes)
+        .map_err(|_| ApiError::Unauthorized)
+}
 
-    Ok(())
+/// Verifies the `X-Hub-Signature-256: sha256=<hex>` header against the raw body bytes
+/// using constant-time HMAC-SHA256 comparison.
+///
+/// Composes `parse_signature` (structural validation) with `verify_signature_bytes`
+/// (the secret-dependent constant-time compare). The extractor calls those two steps
+/// directly so it can reject a malformed signature before the secret decrypt; this
+/// single-call wrapper is retained for the unit tests that exercise the full path.
+#[cfg(test)]
+fn verify_github_signature(sig_header: &str, secret: &[u8], body: &[u8]) -> Result<(), ApiError> {
+    let sig_bytes = parse_signature(sig_header)?;
+    verify_signature_bytes(&sig_bytes, secret, body)
 }
 
 // ---------------------------------------------------------------------------
@@ -343,6 +374,26 @@ mod tests {
     #[test]
     fn body_limit_is_one_mib() {
         assert_eq!(BODY_LIMIT, 1024 * 1024);
+    }
+
+    // [U] An oversized signature header is rejected before any hex decoding.
+    #[test]
+    fn oversized_signature_header_rejected() {
+        let oversized = format!("sha256={}", "a".repeat(MAX_SIG_HEADER_LEN));
+        assert!(oversized.len() > MAX_SIG_HEADER_LEN);
+
+        let err = parse_signature(&oversized).unwrap_err();
+        assert!(
+            matches!(err, ApiError::Unauthorized),
+            "oversized signature header must return Unauthorized, got {err:?}"
+        );
+    }
+
+    // [U] A well-formed signature parses to its raw bytes.
+    #[test]
+    fn parse_signature_decodes_valid_header() {
+        let bytes = parse_signature("sha256=deadbeef").unwrap();
+        assert_eq!(bytes, vec![0xde, 0xad, 0xbe, 0xef]);
     }
 
     // decode_hex helpers

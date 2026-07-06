@@ -69,6 +69,7 @@ use atlas_api::{
     ),
     paths(
         crate::routes::health::health,
+        crate::routes::health::ready,
         crate::routes::health::version,
         crate::routes::health::meta,
         crate::routes::activate::get_activation_info,

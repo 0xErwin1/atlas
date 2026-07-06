@@ -39,6 +39,20 @@ pub fn app(state: AppState) -> Router {
         std::sync::Arc::new(cfg)
     };
 
+    // Total-body cap for the attachment upload route. The route previously used
+    // `DefaultBodyLimit::disable()`, so the only guard was the per-chunk streaming
+    // cap inside the handler's `file` part — any other multipart part streamed
+    // unbounded and pinned a worker. Re-apply a hard total-body limit sized to the
+    // per-file cap plus slack for multipart boundaries/headers and any extra parts,
+    // so no part can stream without bound while the 20 MiB per-file cap still holds.
+    const ATTACHMENT_BODY_SLACK: u64 = 1024 * 1024;
+    let attachment_body_limit = usize::try_from(
+        state
+            .max_attachment_bytes
+            .saturating_add(ATTACHMENT_BODY_SLACK),
+    )
+    .unwrap_or(usize::MAX);
+
     let protected = Router::new()
         .route("/v1/auth/logout", axum::routing::post(routes::auth::logout))
         .route("/v1/auth/me", get(routes::auth::me))
@@ -324,7 +338,7 @@ pub fn app(state: AppState) -> Router {
             "/v1/workspaces/{ws}/tasks/{readable_id}/attachments",
             axum::routing::post(routes::tasks::upload_attachment)
                 .get(routes::tasks::list_attachments)
-                .layer(axum::extract::DefaultBodyLimit::disable()),
+                .layer(axum::extract::DefaultBodyLimit::max(attachment_body_limit)),
         )
         .route(
             "/v1/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}/content",
@@ -535,8 +549,25 @@ pub fn app(state: AppState) -> Router {
         std::sync::Arc::new(cfg)
     };
 
+    // Per-IP governor for the public, unauthenticated integration-ingest route.
+    // Same construction as the login/activate limiters; the quota is a little
+    // higher because a single GitHub source IP fans out deliveries for many
+    // repos/workspaces, and a rejected delivery is retried by GitHub.
+    // burst_size and per_second are non-zero, so finish() always returns Some here.
+    #[allow(clippy::expect_used)]
+    let ingest_config = {
+        let mut b = GovernorConfigBuilder::default();
+        let cfg = b
+            .per_second(5)
+            .burst_size(20)
+            .finish()
+            .expect("governor config");
+        std::sync::Arc::new(cfg)
+    };
+
     let public = Router::new()
         .route("/health", get(routes::health::health))
+        .route("/ready", get(routes::health::ready))
         .route("/version", get(routes::health::version))
         .route(
             "/v1/auth/login",
@@ -548,10 +579,12 @@ pub fn app(state: AppState) -> Router {
                 .post(routes::activate::post_activate)
                 .layer(GovernorLayer::new(activate_config)),
         )
-        // External event ingestion (public; HMAC-verified by the extractor)
+        // External event ingestion (public; HMAC-verified by the extractor,
+        // per-IP rate-limited to bound abuse of this unauthenticated route)
         .route(
             "/v1/workspaces/{ws}/integrations/{integration}/events",
-            axum::routing::post(routes::integrations_ingest::ingest_github_event),
+            axum::routing::post(routes::integrations_ingest::ingest_github_event)
+                .layer(GovernorLayer::new(ingest_config)),
         )
         .route("/openapi.json", get(routes::openapi::openapi_json))
         .merge(routes::openapi::scalar_router())
@@ -568,14 +601,15 @@ pub fn app(state: AppState) -> Router {
 /// handling a request is correlated by that id. Request start, completion (with
 /// status and latency), and failures are logged at INFO/ERROR.
 ///
-/// `/health` and `/version` are intentionally excluded: they are polled at high
-/// frequency by probes and carry no useful signal. Their span is disabled, and
-/// the lifecycle callbacks short-circuit on a disabled span so nothing is logged
-/// for them.
+/// `/health`, `/ready`, and `/version` are intentionally excluded: they are polled
+/// at high frequency by probes and carry no useful per-request signal. Their span
+/// is disabled, and the lifecycle callbacks short-circuit on a disabled span so
+/// nothing is logged for them (a failing readiness probe still logs from its own
+/// handler).
 fn apply_layers(router: Router) -> Router {
     let trace_layer = TraceLayer::new_for_http()
         .make_span_with(|request: &axum::http::Request<_>| {
-            if matches!(request.uri().path(), "/health" | "/version") {
+            if matches!(request.uri().path(), "/health" | "/version" | "/ready") {
                 return tracing::Span::none();
             }
 

@@ -2,7 +2,9 @@ use anyhow::Result;
 use migration::Migrator;
 use sea_orm::{ConnectOptions, Database};
 use sea_orm_migration::prelude::MigratorTrait;
+use std::future::IntoFuture;
 use std::net::SocketAddr;
+use std::time::Duration;
 use tokio::sync::watch;
 use tracing::info;
 
@@ -24,7 +26,11 @@ async fn main() -> Result<()> {
     // flood the logs with `sqlx::query` lines even when there is no work. They
     // stay available under a `sqlx=debug` filter for query-level debugging.
     let mut db_opts = ConnectOptions::new(cfg.database_url.clone());
-    db_opts.sqlx_logging_level(log::LevelFilter::Debug);
+    db_opts
+        .max_connections(cfg.db_pool.max_connections)
+        .min_connections(cfg.db_pool.min_connections)
+        .acquire_timeout(Duration::from_secs(cfg.db_pool.acquire_timeout_secs))
+        .sqlx_logging_level(log::LevelFilter::Debug);
     let db = Database::connect(db_opts).await?;
 
     info!("applying migrations");
@@ -91,12 +97,42 @@ async fn main() -> Result<()> {
         shutdown_rx,
     ));
 
-    axum::serve(
-        listener,
-        atlas_server::app(state).into_make_service_with_connect_info::<SocketAddr>(),
-    )
-    .with_graceful_shutdown(shutdown_signal())
-    .await?;
+    let make_service = atlas_server::app(state).into_make_service_with_connect_info::<SocketAddr>();
+
+    // A watch flag drives axum's graceful shutdown: it flips to `true` on the
+    // first OS signal so the server stops accepting and starts draining.
+    let (drain_tx, drain_rx) = watch::channel(false);
+
+    let mut serve_drain_rx = drain_rx.clone();
+    let server = axum::serve(listener, make_service)
+        .with_graceful_shutdown(async move {
+            let _ = serve_drain_rx.wait_for(|drained| *drained).await;
+        })
+        .into_future();
+    tokio::pin!(server);
+
+    let signal = shutdown_signal();
+    tokio::pin!(signal);
+
+    // Serve until the first shutdown signal (or an early server error). On
+    // signal, flip the drain flag and bound the drain with a timeout so
+    // long-lived SSE streams cannot block process termination indefinitely.
+    tokio::select! {
+        result = &mut server => result?,
+        _ = &mut signal => {
+            info!("shutdown signal received; draining connections");
+            let _ = drain_tx.send(true);
+
+            let drain_timeout = Duration::from_secs(cfg.shutdown_timeout_secs);
+            match tokio::time::timeout(drain_timeout, &mut server).await {
+                Ok(result) => result?,
+                Err(_) => tracing::warn!(
+                    timeout_secs = cfg.shutdown_timeout_secs,
+                    "graceful drain exceeded timeout; forcing shutdown"
+                ),
+            }
+        }
+    }
 
     // Signal the background tasks and await their clean exit.
     let _ = shutdown_tx.send(true);
@@ -116,6 +152,35 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+/// Resolves on the first process shutdown signal.
+///
+/// Awaits `Ctrl-C` on every platform and, on Unix, also `SIGTERM` so that
+/// `docker stop` and Kubernetes pod termination (which send `SIGTERM`) trigger
+/// the same graceful drain rather than being killed on the fallback timeout.
+/// Whichever signal arrives first wins.
 async fn shutdown_signal() {
-    let _ = tokio::signal::ctrl_c().await;
+    let ctrl_c = async {
+        let _ = tokio::signal::ctrl_c().await;
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut term) => {
+                term.recv().await;
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "failed to install SIGTERM handler; relying on Ctrl-C");
+                std::future::pending::<()>().await;
+            }
+        }
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {}
+        _ = terminate => {}
+    }
 }
