@@ -2,7 +2,6 @@ use atlas_domain::{
     DomainError,
     entities::identity::{ApiKeyType, NewApiKey},
     ids::UserId,
-    permissions::Capability,
 };
 use chrono::Utc;
 use sea_orm::{
@@ -40,10 +39,12 @@ impl PgIntegrationConfigRepo {
                 token_hash: random_unissued_token_hash(),
                 type_: ApiKeyType::Integration,
                 expires_at: None,
-                // This key's token_hash is never issued, so it can never authenticate
-                // and the scope set is inert; ALL keeps it consistent with a normal
-                // fully-provisioned key rather than an arbitrary distinguished value.
-                scopes: Capability::ALL.to_vec(),
+                // This key's token_hash is a hash of random bytes that is never
+                // issued, so it can never authenticate and its scope set is inert.
+                // Seed it fail-closed with no scopes: if that never-authenticates
+                // invariant were ever broken, an empty scope set denies every
+                // capability-gated route rather than granting the full catalog.
+                scopes: Vec::new(),
             },
         )
         .await?;

@@ -882,9 +882,12 @@ where
 
         if effective < floor {
             tracing::warn!(
+                target: "authz.role_denied",
+                event = "role_denied",
                 required = ?floor,
                 effective = ?effective,
                 workspace = %ws_slug,
+                principal = ?domain_principal,
                 "authorization denied: insufficient role for resource"
             );
             return Err(ApiError::Forbidden {
@@ -945,6 +948,10 @@ pub async fn enforce_api_key_scope(
 fn enforce_scope_on_key(key: &ApiKey, required: Capability) -> Result<(), ApiError> {
     if !key.scopes.contains(&required) {
         tracing::warn!(
+            target: "authz.scope_denied",
+            event = "scope_denied",
+            family = ?required.family,
+            action = ?required.action,
             capability = required.as_str(),
             key_id = %key.id.0,
             "authorization denied: api key lacks required scope"

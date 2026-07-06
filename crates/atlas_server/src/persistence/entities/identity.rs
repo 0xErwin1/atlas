@@ -241,11 +241,28 @@ pub fn api_key_from(m: api_key::Model) -> ApiKey {
 }
 
 /// Parses stored scope strings into `Capability`s, fail-closed: any entry that
-/// does not parse (corrupt row, manual DB edit) is silently dropped rather than
-/// defaulted, since defaulting an unknown scope string would risk granting a
-/// capability the row never actually held.
+/// does not parse (corrupt row, manual DB edit, or a forward-scope left behind
+/// after a rollback) is dropped rather than defaulted, since defaulting an unknown
+/// scope string would risk granting a capability the row never actually held.
+///
+/// Each dropped entry is logged: the fail-closed drop is silent to callers, so a
+/// warn is the only signal that a stored scope was discarded. The raw scope string
+/// is a capability identifier, not a secret, so it is safe to log for debugging.
 pub(crate) fn capabilities_from_stored(raw: &[String]) -> Vec<Capability> {
-    raw.iter().filter_map(|s| s.parse().ok()).collect()
+    raw.iter()
+        .filter_map(|s| match s.parse() {
+            Ok(capability) => Some(capability),
+            Err(_) => {
+                tracing::warn!(
+                    target: "authz.scope_drop",
+                    event = "scope_drop",
+                    raw_scope = %s,
+                    "dropping unparseable stored capability scope"
+                );
+                None
+            }
+        })
+        .collect()
 }
 
 /// Converts a scope set to its storage representation for the `scopes TEXT[]` column.
