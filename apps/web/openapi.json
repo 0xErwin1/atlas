@@ -26,6 +26,24 @@
         }
       }
     },
+    "/ready": {
+      "get": {
+        "tags": [
+          "crate::routes::health"
+        ],
+        "summary": "Readiness probe: liveness plus a `SELECT 1` round-trip to the database.",
+        "description": "Unlike `/health` (a cheap liveness signal), this endpoint touches the pool so\nan orchestrator can withhold traffic while the database is unreachable or the\npool is exhausted. Returns 503 on any database error.",
+        "operationId": "ready",
+        "responses": {
+          "200": {
+            "description": "Service is ready: the database is reachable"
+          },
+          "503": {
+            "description": "Service is not ready: the database is unreachable"
+          }
+        }
+      }
+    },
     "/v1/activate/{token}": {
       "get": {
         "tags": [
@@ -9905,7 +9923,7 @@
       },
       "ApiKeyScope": {
         "type": "string",
-        "description": "The closed catalog of API key capability scopes: six resource families\n(`tasks`, `docs`, `boards`, `folders`, `projects`, `webhooks`) crossed with\nfour CRUD actions (`read`, `create`, `update`, `delete`), twenty-four\nvariants total.\n\nThis is the wire mirror of `atlas_domain::permissions::Capability`; the\nserver maps between the two at the route boundary. Being a closed serde\nenum, an unrecognized wire value (e.g. `\"tasks:manage\"`) is rejected during\ndeserialization with a 422, before any handler runs.",
+        "description": "The closed catalog of API key capability scopes: resource families crossed\nwith the four CRUD actions (`read`, `create`, `update`, `delete`), except\n`grants`, which is read-only and contributes only `grants:read`.\n\nThis is the wire mirror of `atlas_domain::permissions::Capability`; the\nserver maps between the two at the route boundary. Being a closed serde\nenum, an unrecognized wire value (e.g. `\"tasks:manage\"`) is rejected during\ndeserialization with a 422, before any handler runs.",
         "enum": [
           "tasks:read",
           "tasks:create",
@@ -9930,7 +9948,20 @@
           "webhooks:read",
           "webhooks:create",
           "webhooks:update",
-          "webhooks:delete"
+          "webhooks:delete",
+          "config:read",
+          "config:create",
+          "config:update",
+          "config:delete",
+          "grants:read",
+          "saved_searches:read",
+          "saved_searches:create",
+          "saved_searches:update",
+          "saved_searches:delete",
+          "task_views:read",
+          "task_views:create",
+          "task_views:update",
+          "task_views:delete"
         ]
       },
       "AssigneeDto": {

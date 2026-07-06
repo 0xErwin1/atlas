@@ -144,6 +144,10 @@ capability_marker!(SavedSearchesRead, SavedSearches, Read);
 capability_marker!(SavedSearchesCreate, SavedSearches, Create);
 capability_marker!(SavedSearchesUpdate, SavedSearches, Update);
 capability_marker!(SavedSearchesDelete, SavedSearches, Delete);
+capability_marker!(TaskViewsRead, TaskViews, Read);
+capability_marker!(TaskViewsCreate, TaskViews, Create);
+capability_marker!(TaskViewsUpdate, TaskViews, Update);
+capability_marker!(TaskViewsDelete, TaskViews, Delete);
 
 pub trait ResolvedResource: Sized + Send {
     type PathParams: DeserializeOwned + Send;

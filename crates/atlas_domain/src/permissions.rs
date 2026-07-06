@@ -25,6 +25,7 @@ pub enum CapabilityFamily {
     Config,
     Grants,
     SavedSearches,
+    TaskViews,
 }
 
 /// The CRUD verb of a capability.
@@ -53,7 +54,7 @@ impl Capability {
     /// config` and actions ordered `read, create, update, delete`. This is the
     /// single source of truth other derived sets (defaults, wire enums) are
     /// built from.
-    pub const ALL: [Capability; 33] = [
+    pub const ALL: [Capability; 37] = [
         Capability {
             family: CapabilityFamily::Tasks,
             action: CapabilityAction::Read,
@@ -189,6 +190,22 @@ impl Capability {
             family: CapabilityFamily::SavedSearches,
             action: CapabilityAction::Delete,
         },
+        Capability {
+            family: CapabilityFamily::TaskViews,
+            action: CapabilityAction::Read,
+        },
+        Capability {
+            family: CapabilityFamily::TaskViews,
+            action: CapabilityAction::Create,
+        },
+        Capability {
+            family: CapabilityFamily::TaskViews,
+            action: CapabilityAction::Update,
+        },
+        Capability {
+            family: CapabilityFamily::TaskViews,
+            action: CapabilityAction::Delete,
+        },
     ];
 
     /// The scope set a newly created API key receives when the caller selects
@@ -259,6 +276,10 @@ impl Capability {
             (CapabilityFamily::SavedSearches, CapabilityAction::Create) => "saved_searches:create",
             (CapabilityFamily::SavedSearches, CapabilityAction::Update) => "saved_searches:update",
             (CapabilityFamily::SavedSearches, CapabilityAction::Delete) => "saved_searches:delete",
+            (CapabilityFamily::TaskViews, CapabilityAction::Read) => "task_views:read",
+            (CapabilityFamily::TaskViews, CapabilityAction::Create) => "task_views:create",
+            (CapabilityFamily::TaskViews, CapabilityAction::Update) => "task_views:update",
+            (CapabilityFamily::TaskViews, CapabilityAction::Delete) => "task_views:delete",
         }
     }
 }

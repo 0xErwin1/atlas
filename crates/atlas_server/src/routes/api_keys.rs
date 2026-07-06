@@ -128,6 +128,10 @@ fn capability_from_scope(scope: ApiKeyScope) -> Capability {
         ApiKeyScope::SavedSearchesDelete => {
             (CapabilityFamily::SavedSearches, CapabilityAction::Delete)
         }
+        ApiKeyScope::TaskViewsRead => (CapabilityFamily::TaskViews, CapabilityAction::Read),
+        ApiKeyScope::TaskViewsCreate => (CapabilityFamily::TaskViews, CapabilityAction::Create),
+        ApiKeyScope::TaskViewsUpdate => (CapabilityFamily::TaskViews, CapabilityAction::Update),
+        ApiKeyScope::TaskViewsDelete => (CapabilityFamily::TaskViews, CapabilityAction::Delete),
     };
     Capability { family, action }
 }
@@ -179,6 +183,10 @@ fn scope_from_capability(cap: Capability) -> ApiKeyScope {
         (CapabilityFamily::SavedSearches, CapabilityAction::Delete) => {
             ApiKeyScope::SavedSearchesDelete
         }
+        (CapabilityFamily::TaskViews, CapabilityAction::Read) => ApiKeyScope::TaskViewsRead,
+        (CapabilityFamily::TaskViews, CapabilityAction::Create) => ApiKeyScope::TaskViewsCreate,
+        (CapabilityFamily::TaskViews, CapabilityAction::Update) => ApiKeyScope::TaskViewsUpdate,
+        (CapabilityFamily::TaskViews, CapabilityAction::Delete) => ApiKeyScope::TaskViewsDelete,
     }
 }
 

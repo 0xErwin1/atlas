@@ -1118,41 +1118,41 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         openapi_path: Some("/v1/workspaces/{ws}/groups/{group_id}/members/{user_id}"),
         capability: None,
     },
-    // ---- Task views ----
+    // ---- Task views (per-owner; agents gated manually on task_views:{action}) ----
     RouteEntry {
         method: "GET",
         path_template: "/v1/workspaces/{ws}/task-views",
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/v1/workspaces/{ws}/task-views"),
-        capability: None,
+        capability: Some("task_views:read"),
     },
     RouteEntry {
         method: "POST",
         path_template: "/v1/workspaces/{ws}/task-views",
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/v1/workspaces/{ws}/task-views"),
-        capability: None,
+        capability: Some("task_views:create"),
     },
     RouteEntry {
         method: "GET",
         path_template: "/v1/workspaces/{ws}/task-views/00000000-0000-0000-0000-000000000001",
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/v1/workspaces/{ws}/task-views/{id}"),
-        capability: None,
+        capability: Some("task_views:read"),
     },
     RouteEntry {
         method: "PATCH",
         path_template: "/v1/workspaces/{ws}/task-views/00000000-0000-0000-0000-000000000001",
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/v1/workspaces/{ws}/task-views/{id}"),
-        capability: None,
+        capability: Some("task_views:update"),
     },
     RouteEntry {
         method: "DELETE",
         path_template: "/v1/workspaces/{ws}/task-views/00000000-0000-0000-0000-000000000001",
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/v1/workspaces/{ws}/task-views/{id}"),
-        capability: None,
+        capability: Some("task_views:delete"),
     },
     // ---- Integration configs (admin-only, agent-unreachable) ----
     RouteEntry {

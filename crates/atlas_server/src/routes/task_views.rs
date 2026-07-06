@@ -15,15 +15,42 @@ use atlas_domain::{
         ActorTypeFilter, AssigneeFilter, NewTaskView, TaskSort, TaskView, TaskViewFilters,
     },
     ids::{ApiKeyId, BoardId, ColumnId, UserId},
+    permissions::{Capability, CapabilityAction, CapabilityFamily},
 };
 
 use crate::{
-    authz::WorkspaceMember,
+    authz::{WorkspaceMember, enforce_api_key_scope},
     error::ApiError,
     persistence::repos::{PgTaskViewRepo, TaskViewRepo},
     routes::validation::{validate_name, validate_task_view_filters},
     state::AppState,
 };
+
+/// Enforces the `task_views:{action}` capability for an API-key caller.
+///
+/// Task-view routes admit any `WorkspaceMember` (a membership-based floor with
+/// no role requirement), so a human Member passes unchanged. Only an API-key
+/// principal is additionally required to hold the matching capability;
+/// `member.api_key_id` is `Some` exactly for those callers.
+async fn enforce_task_views_scope(
+    member: &WorkspaceMember,
+    state: &AppState,
+    action: CapabilityAction,
+) -> Result<(), ApiError> {
+    if let Some(key_id) = member.api_key_id {
+        enforce_api_key_scope(
+            &state.db,
+            key_id,
+            Capability {
+                family: CapabilityFamily::TaskViews,
+                action,
+            },
+        )
+        .await?;
+    }
+
+    Ok(())
+}
 
 fn actor_from_member(member: &WorkspaceMember) -> Result<Actor, ApiError> {
     match (&member.user, &member.api_key_id) {
@@ -180,6 +207,8 @@ pub(crate) async fn list_task_views(
     member: WorkspaceMember,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<TaskViewDto>>, ApiError> {
+    enforce_task_views_scope(&member, &state, CapabilityAction::Read).await?;
+
     let actor = actor_from_member(&member)?;
     let ctx = WorkspaceCtx::new(member.workspace.id, actor);
     let repo = PgTaskViewRepo::new((*state.db).clone());
@@ -213,6 +242,8 @@ pub(crate) async fn create_task_view(
     State(state): State<AppState>,
     Json(body): Json<CreateTaskViewRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
+    enforce_task_views_scope(&member, &state, CapabilityAction::Create).await?;
+
     validate_name("name", &body.name)?;
     validate_task_view_filters(&body.filters)?;
 
@@ -255,6 +286,8 @@ pub(crate) async fn get_task_view(
     Path((_ws, id)): Path<(String, uuid::Uuid)>,
     State(state): State<AppState>,
 ) -> Result<Json<TaskViewDto>, ApiError> {
+    enforce_task_views_scope(&member, &state, CapabilityAction::Read).await?;
+
     let actor = actor_from_member(&member)?;
     let ctx = WorkspaceCtx::new(member.workspace.id, actor);
     let repo = PgTaskViewRepo::new((*state.db).clone());
@@ -299,6 +332,8 @@ pub(crate) async fn update_task_view(
     State(state): State<AppState>,
     Json(body): Json<UpdateTaskViewRequest>,
 ) -> Result<Json<TaskViewDto>, ApiError> {
+    enforce_task_views_scope(&member, &state, CapabilityAction::Update).await?;
+
     validate_name("name", &body.name)?;
     validate_task_view_filters(&body.filters)?;
 
@@ -341,6 +376,8 @@ pub(crate) async fn delete_task_view(
     Path((_ws, id)): Path<(String, uuid::Uuid)>,
     State(state): State<AppState>,
 ) -> Result<StatusCode, ApiError> {
+    enforce_task_views_scope(&member, &state, CapabilityAction::Delete).await?;
+
     let actor = actor_from_member(&member)?;
     let ctx = WorkspaceCtx::new(member.workspace.id, actor);
     let repo = PgTaskViewRepo::new((*state.db).clone());

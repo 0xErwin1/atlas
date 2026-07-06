@@ -45,6 +45,7 @@ use atlas_api::{
         folders::{CreateFolderRequest, MoveFolderRequest, RenameFolderRequest},
         saved_searches::{CreateSavedSearchRequest, RenameSavedSearchRequest},
         status_templates::{CreateStatusTemplateRequest, UpdateStatusTemplateRequest},
+        task_views::{CreateTaskViewRequest, TaskViewFiltersDto, UpdateTaskViewRequest},
     },
     problem::ProblemDetails,
 };
@@ -348,6 +349,12 @@ enum Case {
     CreateSavedSearch,
     RenameSavedSearch,
     DeleteSavedSearch,
+    // ---- task_views (5) ----
+    ListTaskViews,
+    CreateTaskView,
+    GetTaskView,
+    UpdateTaskView,
+    DeleteTaskView,
 }
 
 impl Case {
@@ -453,6 +460,11 @@ impl Case {
         Case::CreateSavedSearch,
         Case::RenameSavedSearch,
         Case::DeleteSavedSearch,
+        Case::ListTaskViews,
+        Case::CreateTaskView,
+        Case::GetTaskView,
+        Case::UpdateTaskView,
+        Case::DeleteTaskView,
     ];
 
     /// `(method, capability)` as declared for this case's route — cross-checked
@@ -569,6 +581,12 @@ impl Case {
             Case::CreateSavedSearch => ("POST", "saved_searches:create"),
             Case::RenameSavedSearch => ("PATCH", "saved_searches:update"),
             Case::DeleteSavedSearch => ("DELETE", "saved_searches:delete"),
+
+            Case::ListTaskViews => ("GET", "task_views:read"),
+            Case::CreateTaskView => ("POST", "task_views:create"),
+            Case::GetTaskView => ("GET", "task_views:read"),
+            Case::UpdateTaskView => ("PATCH", "task_views:update"),
+            Case::DeleteTaskView => ("DELETE", "task_views:delete"),
         }
     }
 }
@@ -1237,6 +1255,35 @@ async fn invoke(
             .await
             .map(|_| ()),
         Case::DeleteSavedSearch => client.delete_saved_search(ws, nil).await,
+
+        // Task views mirror saved searches: WorkspaceMember is kept and the scope
+        // is enforced manually inside each handler, so the sweep uses the
+        // generated `atlas_client` methods with dummy-valid bodies (an empty
+        // filter set is a valid "all tasks" view); ids are throwaway nils.
+        Case::ListTaskViews => client.list_task_views(ws).await.map(|_| ()),
+        Case::CreateTaskView => client
+            .create_task_view(
+                ws,
+                CreateTaskViewRequest {
+                    name: "sweep".into(),
+                    filters: TaskViewFiltersDto::default(),
+                },
+            )
+            .await
+            .map(|_| ()),
+        Case::GetTaskView => client.get_task_view(ws, nil).await.map(|_| ()),
+        Case::UpdateTaskView => client
+            .update_task_view(
+                ws,
+                nil,
+                UpdateTaskViewRequest {
+                    name: "sweep-renamed".into(),
+                    filters: TaskViewFiltersDto::default(),
+                },
+            )
+            .await
+            .map(|_| ()),
+        Case::DeleteTaskView => client.delete_task_view(ws, nil).await,
     }
 }
 

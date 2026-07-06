@@ -469,7 +469,25 @@ fn self_referencing_blocks_is_rejected() {
 
 #[test]
 fn capability_all_has_expected_entries() {
-    assert_eq!(Capability::ALL.len(), 33);
+    assert_eq!(Capability::ALL.len(), 37);
+}
+
+#[test]
+fn task_views_capabilities_round_trip_underscored() {
+    for name in [
+        "task_views:read",
+        "task_views:create",
+        "task_views:update",
+        "task_views:delete",
+    ] {
+        let cap: Capability = name.parse().expect("task_views capability must parse");
+        assert_eq!(cap.family, CapabilityFamily::TaskViews);
+        assert_eq!(
+            cap.as_str(),
+            name,
+            "task_views wire form must stay underscored"
+        );
+    }
 }
 
 #[test]

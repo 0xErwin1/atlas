@@ -284,6 +284,14 @@ pub enum ApiKeyScope {
     SavedSearchesUpdate,
     #[serde(rename = "saved_searches:delete")]
     SavedSearchesDelete,
+    #[serde(rename = "task_views:read")]
+    TaskViewsRead,
+    #[serde(rename = "task_views:create")]
+    TaskViewsCreate,
+    #[serde(rename = "task_views:update")]
+    TaskViewsUpdate,
+    #[serde(rename = "task_views:delete")]
+    TaskViewsDelete,
 }
 
 /// Optional initial workspace grant included in a `POST /v1/api-keys` request.
@@ -650,6 +658,25 @@ mod tests {
             (ApiKeyScope::SavedSearchesCreate, "saved_searches:create"),
             (ApiKeyScope::SavedSearchesUpdate, "saved_searches:update"),
             (ApiKeyScope::SavedSearchesDelete, "saved_searches:delete"),
+        ];
+
+        for (scope, wire) in cases {
+            let json = serde_json::to_value(scope).expect("scope must serialize");
+            assert_eq!(json, serde_json::Value::String(wire.to_string()));
+
+            let parsed: ApiKeyScope =
+                serde_json::from_value(json).expect("wire value must deserialize");
+            assert_eq!(parsed, scope);
+        }
+    }
+
+    #[test]
+    fn task_views_scopes_round_trip_with_underscored_wire_form() {
+        let cases = [
+            (ApiKeyScope::TaskViewsRead, "task_views:read"),
+            (ApiKeyScope::TaskViewsCreate, "task_views:create"),
+            (ApiKeyScope::TaskViewsUpdate, "task_views:update"),
+            (ApiKeyScope::TaskViewsDelete, "task_views:delete"),
         ];
 
         for (scope, wire) in cases {
