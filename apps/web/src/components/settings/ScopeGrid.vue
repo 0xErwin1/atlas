@@ -2,42 +2,129 @@
 import { computed } from 'vue';
 import type { ApiKeyScope } from '@/stores/apiKeys';
 
-const FAMILIES = ['tasks', 'docs', 'boards', 'folders', 'projects', 'webhooks'] as const;
 const ACTIONS = ['read', 'create', 'update', 'delete'] as const;
 
-type Family = (typeof FAMILIES)[number];
 type Action = (typeof ACTIONS)[number];
+
+/**
+ * A capability family and the subset of actions it actually exposes. The
+ * catalog is asymmetric: most families cover all four CRUD actions, but
+ * `grants` is read-only. Every value in `cells` is typed as `ApiKeyScope`, so
+ * the compiler rejects any token absent from the generated union (e.g.
+ * `grants:create`) — the grid can only ever emit valid scopes.
+ */
+type ScopeRow = {
+  family: string;
+  label?: string;
+  cells: Partial<Record<Action, ApiKeyScope>>;
+};
+
+const SCOPE_GRID: readonly ScopeRow[] = [
+  {
+    family: 'tasks',
+    cells: { read: 'tasks:read', create: 'tasks:create', update: 'tasks:update', delete: 'tasks:delete' },
+  },
+  {
+    family: 'docs',
+    cells: { read: 'docs:read', create: 'docs:create', update: 'docs:update', delete: 'docs:delete' },
+  },
+  {
+    family: 'boards',
+    cells: { read: 'boards:read', create: 'boards:create', update: 'boards:update', delete: 'boards:delete' },
+  },
+  {
+    family: 'folders',
+    cells: { read: 'folders:read', create: 'folders:create', update: 'folders:update', delete: 'folders:delete' },
+  },
+  {
+    family: 'projects',
+    cells: {
+      read: 'projects:read',
+      create: 'projects:create',
+      update: 'projects:update',
+      delete: 'projects:delete',
+    },
+  },
+  {
+    family: 'webhooks',
+    cells: {
+      read: 'webhooks:read',
+      create: 'webhooks:create',
+      update: 'webhooks:update',
+      delete: 'webhooks:delete',
+    },
+  },
+  {
+    family: 'config',
+    cells: { read: 'config:read', create: 'config:create', update: 'config:update', delete: 'config:delete' },
+  },
+  {
+    family: 'grants',
+    cells: { read: 'grants:read' },
+  },
+  {
+    family: 'saved_searches',
+    label: 'saved searches',
+    cells: {
+      read: 'saved_searches:read',
+      create: 'saved_searches:create',
+      update: 'saved_searches:update',
+      delete: 'saved_searches:delete',
+    },
+  },
+  {
+    family: 'task_views',
+    label: 'task views',
+    cells: {
+      read: 'task_views:read',
+      create: 'task_views:create',
+      update: 'task_views:update',
+      delete: 'task_views:delete',
+    },
+  },
+];
 
 const props = defineProps<{ modelValue: ApiKeyScope[] }>();
 
 const emit = defineEmits<{ 'update:modelValue': [value: ApiKeyScope[]] }>();
 
-const selected = computed(() => new Set<string>(props.modelValue));
+const selected = computed(() => new Set<ApiKeyScope>(props.modelValue));
 
-function scopeOf(family: Family, action: Action): ApiKeyScope {
-  return `${family}:${action}`;
-}
+/**
+ * Expands the catalog into fixed four-column rows aligned to `ACTIONS`. A
+ * column is a scope when the family supports that action, otherwise `null`,
+ * which renders as an inert cell instead of a checkbox.
+ */
+const rows = computed(() =>
+  SCOPE_GRID.map((row) => ({
+    family: row.family,
+    label: row.label ?? row.family,
+    columns: ACTIONS.map((action) => {
+      const scope = row.cells[action];
+      return scope ? { scope } : null;
+    }),
+  })),
+);
 
-function isChecked(family: Family, action: Action): boolean {
-  return selected.value.has(scopeOf(family, action));
+function isChecked(scope: ApiKeyScope): boolean {
+  return selected.value.has(scope);
 }
 
 /**
  * Rebuilds the selection in canonical family×action order so the emitted list
  * is deterministic regardless of the order cells were toggled in.
  */
-function toggle(family: Family, action: Action): void {
+function toggle(scope: ApiKeyScope): void {
   const next = new Set(selected.value);
-  const scope = scopeOf(family, action);
 
   if (next.has(scope)) next.delete(scope);
   else next.add(scope);
 
   const ordered: ApiKeyScope[] = [];
-  for (const f of FAMILIES) {
-    for (const a of ACTIONS) {
-      const s = scopeOf(f, a);
-      if (next.has(s)) ordered.push(s);
+  for (const row of SCOPE_GRID) {
+    for (const action of ACTIONS) {
+      const s = row.cells[action];
+      if (s && next.has(s)) ordered.push(s);
     }
   }
 
@@ -52,17 +139,20 @@ function toggle(family: Family, action: Action): void {
       <div v-for="a in ACTIONS" :key="a" class="atl-scope-action">{{ a }}</div>
     </div>
 
-    <div v-for="fam in FAMILIES" :key="fam" class="atl-scope-row" data-scope-row>
-      <div class="atl-scope-family">{{ fam }}</div>
-      <label v-for="a in ACTIONS" :key="a" class="atl-scope-cell">
-        <input
-          type="checkbox"
-          class="atl-scope-box"
-          :data-scope="scopeOf(fam, a)"
-          :checked="isChecked(fam, a)"
-          @change="toggle(fam, a)"
-        />
-      </label>
+    <div v-for="row in rows" :key="row.family" class="atl-scope-row" data-scope-row>
+      <div class="atl-scope-family">{{ row.label }}</div>
+      <template v-for="(col, i) in row.columns" :key="i">
+        <label v-if="col" class="atl-scope-cell">
+          <input
+            type="checkbox"
+            class="atl-scope-box"
+            :data-scope="col.scope"
+            :checked="isChecked(col.scope)"
+            @change="toggle(col.scope)"
+          />
+        </label>
+        <div v-else class="atl-scope-cell atl-scope-cell--empty" aria-hidden="true"></div>
+      </template>
     </div>
   </div>
 </template>
@@ -125,6 +215,10 @@ function toggle(family: Family, action: Action): void {
   align-items: center;
   justify-content: center;
   cursor: pointer;
+}
+
+.atl-scope-cell--empty {
+  cursor: default;
 }
 
 .atl-scope-box {

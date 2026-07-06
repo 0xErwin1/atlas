@@ -299,4 +299,72 @@ describe('ApiKeysPanel — capability scope grid', () => {
 
     expect(save).toHaveBeenCalledWith('k1', ['tasks:read', 'docs:update', 'boards:create']);
   });
+
+  it('renders the four new capability families and offers grants as read-only', async () => {
+    setup([]);
+
+    const wrapper = mount(ApiKeysPanel, { attachTo: document.body });
+    activeWrapper = wrapper;
+    await flushPromises();
+
+    const newBtn = wrapper.findAll('button').find((b) => b.text().includes('New key'));
+    if (newBtn === undefined) throw new Error('expected a New key button');
+    await newBtn.trigger('click');
+    await nextTick();
+
+    // Each new family exposes a read cell.
+    expect(wrapper.find('[data-scope="config:read"]').exists()).toBe(true);
+    expect(wrapper.find('[data-scope="grants:read"]').exists()).toBe(true);
+    expect(wrapper.find('[data-scope="saved_searches:read"]').exists()).toBe(true);
+    expect(wrapper.find('[data-scope="task_views:read"]').exists()).toBe(true);
+
+    // config / saved_searches / task_views keep the full CRUD row.
+    expect(wrapper.find('[data-scope="config:delete"]').exists()).toBe(true);
+    expect(wrapper.find('[data-scope="saved_searches:update"]').exists()).toBe(true);
+    expect(wrapper.find('[data-scope="task_views:create"]').exists()).toBe(true);
+
+    // grants is read-only: the write cells are inert, never interactive checkboxes.
+    expect(wrapper.find('[data-scope="grants:create"]').exists()).toBe(false);
+    expect(wrapper.find('[data-scope="grants:update"]').exists()).toBe(false);
+    expect(wrapper.find('[data-scope="grants:delete"]').exists()).toBe(false);
+  });
+
+  it('emits new-family scopes in canonical order and never a grants write scope', async () => {
+    const store = setup([]);
+    const create = vi.spyOn(store, 'createKey').mockResolvedValue({
+      id: 'k9',
+      name: 'ci-bot',
+      type: 'agent',
+      created_at: '2024-01-01T00:00:00Z',
+      is_global: false,
+      scopes: [],
+      secret: 'sk_test',
+    } as ApiKeyCreated);
+
+    const wrapper = mount(ApiKeysPanel, { attachTo: document.body });
+    activeWrapper = wrapper;
+    await flushPromises();
+
+    const newBtn = wrapper.findAll('button').find((b) => b.text().includes('New key'));
+    if (newBtn === undefined) throw new Error('expected a New key button');
+    await newBtn.trigger('click');
+    await nextTick();
+
+    await wrapper.find('input[placeholder="ci-deploy"]').setValue('ci-bot');
+
+    // Toggle out of canonical order to prove the grid emits a sorted set that
+    // includes only grants:read from the read-only grants family.
+    await wrapper.find('[data-scope="task_views:read"]').setValue(true);
+    await wrapper.find('[data-scope="grants:read"]').setValue(true);
+    await wrapper.find('[data-scope="config:create"]').setValue(true);
+
+    const createBtn = wrapper.findAll('button').find((b) => b.text().includes('Create key'));
+    if (createBtn === undefined) throw new Error('expected a Create key button');
+    await createBtn.trigger('click');
+    await flushPromises();
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({ scopes: ['config:create', 'grants:read', 'task_views:read'] }),
+    );
+  });
 });
