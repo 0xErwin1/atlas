@@ -31,7 +31,7 @@ mod support;
 
 use atlas_api::{
     dtos::{
-        CreateProjectRequest, UpdateProjectRequest,
+        CreateProjectRequest, UpdateProjectRequest, UpdateWorkspaceRequest,
         boards_tasks::{
             AddAssigneeRequest, CreateBoardRequest, CreateChecklistItemRequest,
             CreateColumnRequest, CreateCommentRequest, CreateReferenceRequest,
@@ -341,6 +341,8 @@ enum Case {
     ListPropertyDefinitions,
     CreatePropertyDefinition,
     DeletePropertyDefinition,
+    // ---- config: workspace rename (1) ----
+    RenameWorkspace,
     // ---- grants: read-only list reads (2) ----
     ListProjectGrants,
     ListWorkspaceGrants,
@@ -454,6 +456,7 @@ impl Case {
         Case::ListPropertyDefinitions,
         Case::CreatePropertyDefinition,
         Case::DeletePropertyDefinition,
+        Case::RenameWorkspace,
         Case::ListProjectGrants,
         Case::ListWorkspaceGrants,
         Case::ListSavedSearches,
@@ -573,6 +576,8 @@ impl Case {
             Case::ListPropertyDefinitions => ("GET", "config:read"),
             Case::CreatePropertyDefinition => ("POST", "config:create"),
             Case::DeletePropertyDefinition => ("DELETE", "config:delete"),
+
+            Case::RenameWorkspace => ("PATCH", "config:update"),
 
             Case::ListProjectGrants => ("GET", "grants:read"),
             Case::ListWorkspaceGrants => ("GET", "grants:read"),
@@ -1203,6 +1208,20 @@ async fn invoke(
             )
             .await
         }
+
+        // Workspace rename keeps the WorkspaceMember extractor and gates
+        // `config:update` manually inside the handler (after the body parses), so
+        // the sweep uses the generated `atlas_client` method with a valid body;
+        // the workspace slug is the primary resource, so no secondary id is needed.
+        Case::RenameWorkspace => client
+            .update_workspace(
+                ws,
+                UpdateWorkspaceRequest {
+                    name: "sweep-renamed".into(),
+                },
+            )
+            .await
+            .map(|_| ()),
 
         // Grant list reads reuse the seeded project slug so the positive pass
         // resolves the real project (ProjectRes) and returns 200; the gate runs

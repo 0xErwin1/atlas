@@ -220,7 +220,7 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         path_template: "/v1/workspaces/{ws}",
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/v1/workspaces/{ws}"),
-        capability: None,
+        capability: Some("config:update"),
     },
     // ---- Admin (root-only) routes ----
     RouteEntry {

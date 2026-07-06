@@ -212,6 +212,148 @@ async fn rename_workspace_non_member_gets_404() {
     db.teardown().await;
 }
 
+/// An agent (API key) that is a workspace member but lacks `config:update` is
+/// denied the rename with a scope-403, while the same route stays open to human
+/// members — the capability gate fires only for the API-key principal.
+#[tokio::test]
+async fn rename_workspace_agent_without_config_update_gets_403() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner, ws, owner_user) =
+        login_user_with_workspace(&server, &db, "ws-rename-agent-deny").await;
+
+    let plain = "atlas_ws_rename_deny_secret";
+    let hash = atlas_server::auth::tokens::hash_token(plain);
+    let ctx = WorkspaceCtx::new(ws.id, Actor::User(owner_user.id));
+    let key = db
+        .api_key_repo()
+        .create(
+            &ctx,
+            NewApiKey {
+                name: "ws-rename-deny".to_string(),
+                token_hash: hash,
+                type_: atlas_domain::entities::identity::ApiKeyType::Agent,
+                expires_at: None,
+                scopes: vec![atlas_domain::permissions::Capability {
+                    family: atlas_domain::permissions::CapabilityFamily::Tasks,
+                    action: atlas_domain::permissions::CapabilityAction::Read,
+                }],
+            },
+        )
+        .await
+        .expect("create agent key without config:update");
+
+    owner
+        .create_workspace_grant(
+            &ws.slug,
+            CreateGrantRequest {
+                principal: GrantPrincipal {
+                    r#type: "api_key".to_string(),
+                    id: key.id.0,
+                },
+                role: "editor".to_string(),
+            },
+        )
+        .await
+        .expect("grant workspace editor to agent");
+
+    let agent = atlas_client::AtlasClient::new(server.base_url().to_string()).with_token(plain);
+
+    let err = agent
+        .update_workspace(
+            &ws.slug,
+            UpdateWorkspaceRequest {
+                name: "Agent Rename Attempt".to_string(),
+            },
+        )
+        .await
+        .expect_err("an agent without config:update must be denied the rename");
+
+    match err {
+        ClientError::Api(p) => {
+            assert_eq!(p.status, 403, "expected 403, got {}", p.status);
+            assert!(
+                p.detail
+                    .as_deref()
+                    .unwrap_or("")
+                    .contains("lacks required scope"),
+                "expected a scope-denial detail, got {:?}",
+                p.detail
+            );
+        }
+        other => panic!("unexpected error: {other:?}"),
+    }
+
+    db.teardown().await;
+}
+
+/// An agent (API key) that is a workspace member AND holds `config:update`
+/// renames the workspace successfully, exactly like a human member.
+#[tokio::test]
+async fn rename_workspace_agent_with_config_update_succeeds() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner, ws, owner_user) =
+        login_user_with_workspace(&server, &db, "ws-rename-agent-allow").await;
+
+    let plain = "atlas_ws_rename_allow_secret";
+    let hash = atlas_server::auth::tokens::hash_token(plain);
+    let ctx = WorkspaceCtx::new(ws.id, Actor::User(owner_user.id));
+    let key = db
+        .api_key_repo()
+        .create(
+            &ctx,
+            NewApiKey {
+                name: "ws-rename-allow".to_string(),
+                token_hash: hash,
+                type_: atlas_domain::entities::identity::ApiKeyType::Agent,
+                expires_at: None,
+                scopes: vec![atlas_domain::permissions::Capability {
+                    family: atlas_domain::permissions::CapabilityFamily::Config,
+                    action: atlas_domain::permissions::CapabilityAction::Update,
+                }],
+            },
+        )
+        .await
+        .expect("create agent key with config:update");
+
+    owner
+        .create_workspace_grant(
+            &ws.slug,
+            CreateGrantRequest {
+                principal: GrantPrincipal {
+                    r#type: "api_key".to_string(),
+                    id: key.id.0,
+                },
+                role: "editor".to_string(),
+            },
+        )
+        .await
+        .expect("grant workspace editor to agent");
+
+    let agent = atlas_client::AtlasClient::new(server.base_url().to_string()).with_token(plain);
+
+    let updated = agent
+        .update_workspace(
+            &ws.slug,
+            UpdateWorkspaceRequest {
+                name: "Agent Renamed Workspace".to_string(),
+            },
+        )
+        .await
+        .expect("an agent holding config:update must rename the workspace");
+
+    assert_eq!(
+        updated.name, "Agent Renamed Workspace",
+        "name must be updated"
+    );
+    assert_eq!(updated.slug, ws.slug, "slug must not change");
+
+    db.teardown().await;
+}
+
 // ---- B4: root workspace list ----
 
 #[tokio::test]

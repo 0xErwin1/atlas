@@ -15,13 +15,13 @@ use atlas_domain::{
     entities::status_templates::NewStatusTemplate,
     entities::workspace_core::NewProject,
     ids::{UserId, WorkspaceId},
-    permissions::{Visibility, VisibilityRole},
+    permissions::{Capability, CapabilityAction, CapabilityFamily, Visibility, VisibilityRole},
     position, resolve_collision, slugify,
 };
 
 use crate::{
     auth::middleware::Principal,
-    authz::{RequireUserAdmin, WorkspaceMember},
+    authz::{RequireUserAdmin, WorkspaceMember, enforce_api_key_scope},
     error::ApiError,
     persistence::repos::{
         ApiKeyRepo, BoardRepo, MembershipRepo, PgApiKeyRepo, PgBoardRepo, PgMembershipRepo,
@@ -319,11 +319,28 @@ pub(crate) async fn get_workspace(
 )]
 /// Renames the workspace display name. The slug is never re-derived; only
 /// `name` and `updated_at` change. Requires workspace membership.
+///
+/// A human member passes unchanged; an API-key principal is additionally
+/// required to hold `config:update`, so a scoped agent cannot rename the
+/// workspace without that capability. `member.api_key_id` is `Some` exactly for
+/// those callers.
 pub(crate) async fn update_workspace(
     member: WorkspaceMember,
     State(state): State<AppState>,
     Json(body): Json<UpdateWorkspaceRequest>,
 ) -> Result<Json<WorkspaceDto>, ApiError> {
+    if let Some(key_id) = member.api_key_id {
+        enforce_api_key_scope(
+            &state.db,
+            key_id,
+            Capability {
+                family: CapabilityFamily::Config,
+                action: CapabilityAction::Update,
+            },
+        )
+        .await?;
+    }
+
     validate_name("name", &body.name)?;
 
     let ws_repo = PgWorkspaceRepo {
