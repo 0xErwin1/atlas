@@ -112,9 +112,10 @@ pub(crate) struct ApiKeysCreateArgs {
 
     /// Capability scope to grant, in `family:action` form (repeatable).
     ///
-    /// Families: `tasks`, `docs`, `boards`, `folders`, `projects`, `webhooks`.
-    /// Actions: `read`, `create`, `update`, `delete`. Omit entirely to receive
-    /// the server's read-only default.
+    /// Families: `tasks`, `docs`, `boards`, `folders`, `projects`, `webhooks`,
+    /// `config`, `saved_searches`, `task_views` — each with actions `read`,
+    /// `create`, `update`, `delete`. `grants` is read-only: only `grants:read`
+    /// exists. Omit entirely to receive the server's read-only default.
     #[arg(long = "scope", value_name = "FAMILY:ACTION")]
     pub(crate) scopes: Vec<String>,
 }
@@ -264,8 +265,9 @@ fn parse_scope(raw: &str) -> Result<atlas_api::dtos::ApiKeyScope, CliError> {
     serde_json::from_value(serde_json::Value::String(raw.to_owned())).map_err(|_| {
         CliError::Validation(format!(
             "invalid --scope '{raw}': expected `family:action` \
-             (families: tasks, docs, boards, folders, projects, webhooks; \
-             actions: read, create, update, delete)"
+             (families: tasks, docs, boards, folders, projects, webhooks, \
+             config, saved_searches, task_views with actions read, create, \
+             update, delete; grants is read-only, only grants:read exists)"
         ))
     })
 }
@@ -488,43 +490,42 @@ mod tests {
         assert!(result.is_err(), "missing --key-id must fail");
     }
 
-    /// Every `family:action` token in the closed catalog must round-trip through
-    /// `parse_scope` into an `ApiKeyScope` variant.
+    /// Every `family:action` token in the closed domain catalog must round-trip
+    /// through `parse_scope` into an `ApiKeyScope` variant. Driving the list from
+    /// `Capability::ALL` keeps this test honest about the asymmetry: `grants`
+    /// contributes only `grants:read`, so the loop never asserts a grant-write
+    /// token — those are not valid scopes and are covered separately below.
     #[test]
     fn parse_scope_accepts_every_family_action() {
-        let all = [
-            "tasks:read",
-            "tasks:create",
-            "tasks:update",
-            "tasks:delete",
-            "docs:read",
-            "docs:create",
-            "docs:update",
-            "docs:delete",
-            "boards:read",
-            "boards:create",
-            "boards:update",
-            "boards:delete",
-            "folders:read",
-            "folders:create",
-            "folders:update",
-            "folders:delete",
-            "projects:read",
-            "projects:create",
-            "projects:update",
-            "projects:delete",
-            "webhooks:read",
-            "webhooks:create",
-            "webhooks:update",
-            "webhooks:delete",
-        ];
+        use atlas_domain::permissions::Capability;
+
         assert_eq!(
-            all.len(),
-            24,
-            "closed catalog must expose 24 family:action tokens"
+            Capability::ALL.len(),
+            37,
+            "closed catalog must expose 37 family:action tokens"
         );
-        for token in all {
+
+        for cap in Capability::ALL {
+            let token = cap.as_str();
             assert!(parse_scope(token).is_ok(), "expected `{token}` to parse");
+        }
+    }
+
+    /// `grants` is read-only: only `grants:read` is a valid scope. The write
+    /// tokens have no `ApiKeyScope` variant, so they must be rejected — this is
+    /// the asymmetry that separates `grants` from every other family.
+    #[test]
+    fn parse_scope_rejects_grants_write_tokens() {
+        assert!(
+            parse_scope("grants:read").is_ok(),
+            "grants:read is the one valid grants scope"
+        );
+
+        for token in ["grants:create", "grants:update", "grants:delete"] {
+            assert!(
+                parse_scope(token).is_err(),
+                "grants is read-only: `{token}` must be rejected"
+            );
         }
     }
 

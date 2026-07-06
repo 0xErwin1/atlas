@@ -115,7 +115,15 @@ Tools by area (see each tool's own description for parameters):\n\
 - Webhook management (requires the matching webhooks:* capability): `list_webhooks`, \
 `get_webhook`, `list_webhook_deliveries`, `create_webhook` (returns the one-time whsec_ \
 signing secret), `update_webhook`, `delete_webhook`. These manage workspace webhook \
-subscriptions; they do NOT change the calling key's own capability scopes.";
+subscriptions; they do NOT change the calling key's own capability scopes.\n\
+\n\
+Capability gating (agent keys): the tag tools (`list_tags`, `create_tag`, `update_tag`, \
+`delete_tag`) require the matching `config:*` capability; the saved-search tools \
+(`list_saved_searches`, `create_saved_search`, `rename_saved_search`, \
+`delete_saved_search`) require `saved_searches:*`; the task-view tools \
+(`list_task_views`, `create_task_view`, `update_task_view`, `delete_task_view`) require \
+`task_views:*`. Like webhooks, this is resource access control, NOT scope self-mutation: \
+none of these tools change the calling key's own capability scopes.";
 
 /// MCP server backed by an Atlas HTTP API endpoint.
 ///
@@ -3072,6 +3080,10 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
+    // Tag reads/writes (`list_tags` above plus the create/update/delete tools
+    // below) are gated server-side by the `config:{read,create,update,delete}`
+    // capabilities for agent keys. This is resource access control, NOT scope
+    // self-mutation: no tag tool edits the calling key's own capability set.
     #[tool(
         description = "Create a workspace tag. Idempotent by case-insensitive name; \
                        returns the existing tag when one already exists."
@@ -3726,6 +3738,10 @@ response — do NOT create those columns again; only add columns for statuses th
 
     // -----------------------------------------------------------------------
     // Saved search CRUD
+    //
+    // Gated server-side by the `saved_searches:{read,create,update,delete}`
+    // capabilities for agent keys. This is resource access control, NOT scope
+    // self-mutation: no tool here edits the calling key's own capability set.
     // -----------------------------------------------------------------------
 
     #[tool(description = "Create a saved search in the workspace. \
@@ -3804,6 +3820,10 @@ response — do NOT create those columns again; only add columns for statuses th
 
     // -----------------------------------------------------------------------
     // Task view CRUD
+    //
+    // Gated server-side by the `task_views:{read,create,update,delete}`
+    // capabilities for agent keys. This is resource access control, NOT scope
+    // self-mutation: no tool here edits the calling key's own capability set.
     // -----------------------------------------------------------------------
 
     #[tool(description = "Create a task view (filter preset) in the workspace. \
