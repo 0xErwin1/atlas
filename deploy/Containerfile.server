@@ -1,0 +1,23 @@
+# syntax=docker/dockerfile:1
+FROM docker.io/library/rust:1.96-slim-bookworm AS chef
+RUN cargo install cargo-chef --locked
+WORKDIR /app
+
+FROM chef AS planner
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef AS builder
+COPY --from=planner /app/recipe.json recipe.json
+RUN cargo chef cook --release --recipe-path recipe.json
+COPY . .
+RUN cargo build --release -p atlas_server -p atlas_mcp \
+ && strip target/release/atlas_server target/release/atlas_mcp
+
+FROM gcr.io/distroless/cc-debian12:nonroot AS runtime
+WORKDIR /app
+COPY --from=builder /app/target/release/atlas_server /usr/local/bin/atlas_server
+COPY --from=builder /app/target/release/atlas_mcp /usr/local/bin/atlas_mcp
+USER nonroot
+EXPOSE 8080 3001
+CMD ["/usr/local/bin/atlas_server"]
