@@ -23,6 +23,7 @@ pub enum CapabilityFamily {
     Projects,
     Webhooks,
     Config,
+    Grants,
 }
 
 /// The CRUD verb of a capability.
@@ -51,7 +52,7 @@ impl Capability {
     /// config` and actions ordered `read, create, update, delete`. This is the
     /// single source of truth other derived sets (defaults, wire enums) are
     /// built from.
-    pub const ALL: [Capability; 28] = [
+    pub const ALL: [Capability; 29] = [
         Capability {
             family: CapabilityFamily::Tasks,
             action: CapabilityAction::Read,
@@ -163,6 +164,13 @@ impl Capability {
         Capability {
             family: CapabilityFamily::Config,
             action: CapabilityAction::Delete,
+        },
+        // `grants` is read-only: grant WRITES stay domain-blocked for agents by
+        // `authorize_share` (AgentsNeverManageGrants), so the catalog exposes
+        // only `grants:read` and no grant-write capability can ever be granted.
+        Capability {
+            family: CapabilityFamily::Grants,
+            action: CapabilityAction::Read,
         },
     ];
 
@@ -223,6 +231,13 @@ impl Capability {
             (CapabilityFamily::Config, CapabilityAction::Create) => "config:create",
             (CapabilityFamily::Config, CapabilityAction::Update) => "config:update",
             (CapabilityFamily::Config, CapabilityAction::Delete) => "config:delete",
+            // The grant-write arms keep this match total; because `grants:read`
+            // is the only grants entry in `Capability::ALL` and `FromStr`
+            // iterates `ALL`, these write strings are never produced or parsed.
+            (CapabilityFamily::Grants, CapabilityAction::Read) => "grants:read",
+            (CapabilityFamily::Grants, CapabilityAction::Create) => "grants:create",
+            (CapabilityFamily::Grants, CapabilityAction::Update) => "grants:update",
+            (CapabilityFamily::Grants, CapabilityAction::Delete) => "grants:delete",
         }
     }
 }

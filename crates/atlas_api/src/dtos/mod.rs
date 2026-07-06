@@ -274,6 +274,8 @@ pub enum ApiKeyScope {
     ConfigUpdate,
     #[serde(rename = "config:delete")]
     ConfigDelete,
+    #[serde(rename = "grants:read")]
+    GrantsRead,
 }
 
 /// Optional initial workspace grant included in a `POST /v1/api-keys` request.
@@ -608,6 +610,28 @@ mod tests {
             let parsed: ApiKeyScope =
                 serde_json::from_value(json).expect("wire value must deserialize");
             assert_eq!(parsed, scope);
+        }
+    }
+
+    #[test]
+    fn grants_read_round_trips_and_grant_writes_are_rejected() {
+        let json = serde_json::to_value(ApiKeyScope::GrantsRead).expect("scope must serialize");
+        assert_eq!(json, serde_json::Value::String("grants:read".to_string()));
+
+        let parsed: ApiKeyScope =
+            serde_json::from_value(json).expect("wire value must deserialize");
+        assert_eq!(parsed, ApiKeyScope::GrantsRead);
+
+        for write in [
+            "\"grants:create\"",
+            "\"grants:update\"",
+            "\"grants:delete\"",
+        ] {
+            let result: Result<ApiKeyScope, _> = serde_json::from_str(write);
+            assert!(
+                result.is_err(),
+                "grant write {write} must be rejected by the closed enum (grants is read-only)"
+            );
         }
     }
 }

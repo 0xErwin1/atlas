@@ -339,6 +339,9 @@ enum Case {
     ListPropertyDefinitions,
     CreatePropertyDefinition,
     DeletePropertyDefinition,
+    // ---- grants: read-only list reads (2) ----
+    ListProjectGrants,
+    ListWorkspaceGrants,
 }
 
 impl Case {
@@ -438,6 +441,8 @@ impl Case {
         Case::ListPropertyDefinitions,
         Case::CreatePropertyDefinition,
         Case::DeletePropertyDefinition,
+        Case::ListProjectGrants,
+        Case::ListWorkspaceGrants,
     ];
 
     /// `(method, capability)` as declared for this case's route — cross-checked
@@ -546,6 +551,9 @@ impl Case {
             Case::ListPropertyDefinitions => ("GET", "config:read"),
             Case::CreatePropertyDefinition => ("POST", "config:create"),
             Case::DeletePropertyDefinition => ("DELETE", "config:delete"),
+
+            Case::ListProjectGrants => ("GET", "grants:read"),
+            Case::ListWorkspaceGrants => ("GET", "grants:read"),
         }
     }
 }
@@ -1159,6 +1167,30 @@ async fn invoke(
                 token,
                 "DELETE",
                 &format!("/v1/workspaces/{ws}/property-definitions/{nil}"),
+            )
+            .await
+        }
+
+        // Grant list reads reuse the seeded project slug so the positive pass
+        // resolves the real project (ProjectRes) and returns 200; the gate runs
+        // in the `Authorized` extractor, so zero/wrong-scope is denied first.
+        Case::ListProjectGrants => {
+            raw_call(
+                http,
+                base_url,
+                token,
+                "GET",
+                &format!("/v1/workspaces/{ws}/projects/{}/grants", fx.project_slug),
+            )
+            .await
+        }
+        Case::ListWorkspaceGrants => {
+            raw_call(
+                http,
+                base_url,
+                token,
+                "GET",
+                &format!("/v1/workspaces/{ws}/grants"),
             )
             .await
         }

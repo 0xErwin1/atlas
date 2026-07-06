@@ -41,7 +41,7 @@ use atlas_domain::{
 
 use crate::{
     authz::{
-        Authorized, EditorMin,
+        Authorized, EditorMin, GrantsRead,
         authorized::{ProjectRes, WorkspaceRes},
     },
     error::ApiError,
@@ -190,7 +190,7 @@ pub(crate) async fn create_project_grant(
     )
 )]
 pub(crate) async fn list_project_grants(
-    auth: Authorized<ProjectRes, EditorMin>,
+    auth: Authorized<ProjectRes, EditorMin, GrantsRead>,
     State(state): State<AppState>,
     Query(q): Query<PaginationQuery>,
 ) -> Result<Json<Page<GrantDto>>, ApiError> {
@@ -455,7 +455,7 @@ pub(crate) async fn create_workspace_grant(
     )
 )]
 pub(crate) async fn list_workspace_grants(
-    auth: Authorized<WorkspaceRes, EditorMin>,
+    auth: Authorized<WorkspaceRes, EditorMin, GrantsRead>,
     State(state): State<AppState>,
     Query(q): Query<PaginationQuery>,
 ) -> Result<Json<Page<GrantDto>>, ApiError> {

@@ -469,7 +469,36 @@ fn self_referencing_blocks_is_rejected() {
 
 #[test]
 fn capability_all_has_expected_entries() {
-    assert_eq!(Capability::ALL.len(), 28);
+    assert_eq!(Capability::ALL.len(), 29);
+}
+
+#[test]
+fn grants_family_is_read_only_in_catalog() {
+    let grant_scopes: Vec<&'static str> = Capability::ALL
+        .iter()
+        .filter(|cap| cap.family == CapabilityFamily::Grants)
+        .map(|cap| cap.as_str())
+        .collect();
+
+    assert_eq!(
+        grant_scopes,
+        vec!["grants:read"],
+        "grants exposes only a read capability; writes stay domain-blocked"
+    );
+}
+
+#[test]
+fn grants_read_round_trips_but_grant_writes_are_rejected() {
+    let cap: Capability = "grants:read".parse().expect("grants:read must parse");
+    assert_eq!(cap.family, CapabilityFamily::Grants);
+    assert_eq!(cap.as_str(), "grants:read");
+
+    for write in ["grants:create", "grants:update", "grants:delete"] {
+        assert!(
+            write.parse::<Capability>().is_err(),
+            "grant write {write} must not be a grantable capability"
+        );
+    }
 }
 
 #[test]

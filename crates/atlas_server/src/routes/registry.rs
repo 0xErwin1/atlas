@@ -329,7 +329,7 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         openapi_path: Some("/v1/workspaces/{ws}/projects/{project_slug}"),
         capability: Some("projects:delete"),
     },
-    // ---- Grants (human-only management surface) ----
+    // ---- Grants (writes human-only via authorize_share; list reads gated grants:read) ----
     RouteEntry {
         method: "POST",
         path_template: "/v1/workspaces/{ws}/projects/nonexistent-proj/grants",
@@ -342,7 +342,7 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         path_template: "/v1/workspaces/{ws}/projects/nonexistent-proj/grants",
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/v1/workspaces/{ws}/projects/{project_slug}/grants"),
-        capability: None,
+        capability: Some("grants:read"),
     },
     RouteEntry {
         method: "DELETE",
@@ -363,7 +363,7 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         path_template: "/v1/workspaces/{ws}/grants",
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/v1/workspaces/{ws}/grants"),
-        capability: None,
+        capability: Some("grants:read"),
     },
     RouteEntry {
         method: "DELETE",

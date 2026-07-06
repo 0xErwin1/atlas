@@ -139,6 +139,7 @@ capability_marker!(ConfigRead, Config, Read);
 capability_marker!(ConfigCreate, Config, Create);
 capability_marker!(ConfigUpdate, Config, Update);
 capability_marker!(ConfigDelete, Config, Delete);
+capability_marker!(GrantsRead, Grants, Read);
 
 pub trait ResolvedResource: Sized + Send {
     type PathParams: DeserializeOwned + Send;

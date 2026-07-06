@@ -117,6 +117,7 @@ fn capability_from_scope(scope: ApiKeyScope) -> Capability {
         ApiKeyScope::ConfigCreate => (CapabilityFamily::Config, CapabilityAction::Create),
         ApiKeyScope::ConfigUpdate => (CapabilityFamily::Config, CapabilityAction::Update),
         ApiKeyScope::ConfigDelete => (CapabilityFamily::Config, CapabilityAction::Delete),
+        ApiKeyScope::GrantsRead => (CapabilityFamily::Grants, CapabilityAction::Read),
     };
     Capability { family, action }
 }
@@ -152,6 +153,12 @@ fn scope_from_capability(cap: Capability) -> ApiKeyScope {
         (CapabilityFamily::Config, CapabilityAction::Create) => ApiKeyScope::ConfigCreate,
         (CapabilityFamily::Config, CapabilityAction::Update) => ApiKeyScope::ConfigUpdate,
         (CapabilityFamily::Config, CapabilityAction::Delete) => ApiKeyScope::ConfigDelete,
+        (CapabilityFamily::Grants, CapabilityAction::Read) => ApiKeyScope::GrantsRead,
+        // `grants` is read-only: `Capability::ALL` holds only `grants:read` and
+        // `canonical_scopes` filters through `ALL`, so the write actions are
+        // never constructed here. This wildcard keeps the match total without a
+        // panic (workspace clippy denies `unreachable!`/`panic!` via `-D warnings`).
+        (CapabilityFamily::Grants, _) => ApiKeyScope::GrantsRead,
     }
 }
 
