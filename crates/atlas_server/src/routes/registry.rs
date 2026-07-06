@@ -952,41 +952,41 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         openapi_path: Some("/v1/workspaces/{ws}/search"),
         capability: None,
     },
-    // ---- Tags ----
+    // ---- Tags (config family; human floor unchanged, agents gated on config:{action}) ----
     RouteEntry {
         method: "GET",
         path_template: "/v1/workspaces/{ws}/tags",
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/v1/workspaces/{ws}/tags"),
-        capability: None,
+        capability: Some("config:read"),
     },
     RouteEntry {
         method: "POST",
         path_template: "/v1/workspaces/{ws}/tags",
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/v1/workspaces/{ws}/tags"),
-        capability: None,
+        capability: Some("config:create"),
     },
     RouteEntry {
         method: "GET",
         path_template: "/v1/workspaces/{ws}/tags/used",
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/v1/workspaces/{ws}/tags/used"),
-        capability: None,
+        capability: Some("config:read"),
     },
     RouteEntry {
         method: "PATCH",
         path_template: "/v1/workspaces/{ws}/tags/00000000-0000-0000-0000-000000000001",
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/v1/workspaces/{ws}/tags/{tag_id}"),
-        capability: None,
+        capability: Some("config:update"),
     },
     RouteEntry {
         method: "DELETE",
         path_template: "/v1/workspaces/{ws}/tags/00000000-0000-0000-0000-000000000001",
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/v1/workspaces/{ws}/tags/{tag_id}"),
-        capability: None,
+        capability: Some("config:delete"),
     },
     // ---- Status templates (folded into the boards family; apply-to-board is boards:update) ----
     RouteEntry {
@@ -1024,27 +1024,27 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         openapi_path: Some("/v1/workspaces/{ws}/boards/{board_id}/apply-status-templates"),
         capability: Some("boards:update"),
     },
-    // ---- Property definitions ----
+    // ---- Property definitions (config family; no update route) ----
     RouteEntry {
         method: "GET",
         path_template: "/v1/workspaces/{ws}/property-definitions",
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/v1/workspaces/{ws}/property-definitions"),
-        capability: None,
+        capability: Some("config:read"),
     },
     RouteEntry {
         method: "POST",
         path_template: "/v1/workspaces/{ws}/property-definitions",
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/v1/workspaces/{ws}/property-definitions"),
-        capability: None,
+        capability: Some("config:create"),
     },
     RouteEntry {
         method: "DELETE",
         path_template: "/v1/workspaces/{ws}/property-definitions/00000000-0000-0000-0000-000000000001",
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/v1/workspaces/{ws}/property-definitions/{property_definition_id}"),
-        capability: None,
+        capability: Some("config:delete"),
     },
     // ---- Saved searches ----
     RouteEntry {

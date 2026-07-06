@@ -22,6 +22,7 @@ pub enum CapabilityFamily {
     Folders,
     Projects,
     Webhooks,
+    Config,
 }
 
 /// The CRUD verb of a capability.
@@ -35,8 +36,9 @@ pub enum CapabilityAction {
 }
 
 /// A single `family:action` capability, e.g. `tasks:read`. This is the unit of
-/// an API key's scope set: the closed catalog is the full cross product of the
-/// six families and four actions (`Capability::ALL`, 24 entries).
+/// an API key's scope set. The catalog (`Capability::ALL`) is the cross product
+/// of families and actions, except `grants`, which is read-only and so
+/// contributes only `grants:read`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Capability {
     pub family: CapabilityFamily,
@@ -45,10 +47,11 @@ pub struct Capability {
 
 impl Capability {
     /// The closed catalog of every valid capability, in `family:action` order
-    /// with families ordered `tasks, docs, boards, folders, projects, webhooks`
-    /// and actions ordered `read, create, update, delete`. This is the single
-    /// source of truth other derived sets (defaults, wire enums) are built from.
-    pub const ALL: [Capability; 24] = [
+    /// with families ordered `tasks, docs, boards, folders, projects, webhooks,
+    /// config` and actions ordered `read, create, update, delete`. This is the
+    /// single source of truth other derived sets (defaults, wire enums) are
+    /// built from.
+    pub const ALL: [Capability; 28] = [
         Capability {
             family: CapabilityFamily::Tasks,
             action: CapabilityAction::Read,
@@ -143,6 +146,22 @@ impl Capability {
         },
         Capability {
             family: CapabilityFamily::Webhooks,
+            action: CapabilityAction::Delete,
+        },
+        Capability {
+            family: CapabilityFamily::Config,
+            action: CapabilityAction::Read,
+        },
+        Capability {
+            family: CapabilityFamily::Config,
+            action: CapabilityAction::Create,
+        },
+        Capability {
+            family: CapabilityFamily::Config,
+            action: CapabilityAction::Update,
+        },
+        Capability {
+            family: CapabilityFamily::Config,
             action: CapabilityAction::Delete,
         },
     ];
@@ -200,6 +219,10 @@ impl Capability {
             (CapabilityFamily::Webhooks, CapabilityAction::Create) => "webhooks:create",
             (CapabilityFamily::Webhooks, CapabilityAction::Update) => "webhooks:update",
             (CapabilityFamily::Webhooks, CapabilityAction::Delete) => "webhooks:delete",
+            (CapabilityFamily::Config, CapabilityAction::Read) => "config:read",
+            (CapabilityFamily::Config, CapabilityAction::Create) => "config:create",
+            (CapabilityFamily::Config, CapabilityAction::Update) => "config:update",
+            (CapabilityFamily::Config, CapabilityAction::Delete) => "config:delete",
         }
     }
 }

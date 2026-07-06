@@ -468,8 +468,42 @@ fn self_referencing_blocks_is_rejected() {
 // ——— Capability tests ———
 
 #[test]
-fn capability_all_has_twenty_four_entries() {
-    assert_eq!(Capability::ALL.len(), 24);
+fn capability_all_has_expected_entries() {
+    assert_eq!(Capability::ALL.len(), 28);
+}
+
+#[test]
+fn capability_all_contains_every_config_action() {
+    let config_scopes: std::collections::HashSet<&'static str> = Capability::ALL
+        .iter()
+        .filter(|cap| cap.family == CapabilityFamily::Config)
+        .map(|cap| cap.as_str())
+        .collect();
+
+    let expected: std::collections::HashSet<&'static str> = [
+        "config:read",
+        "config:create",
+        "config:update",
+        "config:delete",
+    ]
+    .into_iter()
+    .collect();
+
+    assert_eq!(config_scopes, expected);
+}
+
+#[test]
+fn config_capabilities_round_trip_through_string() {
+    for name in [
+        "config:read",
+        "config:create",
+        "config:update",
+        "config:delete",
+    ] {
+        let cap: Capability = name.parse().expect("config capability must parse");
+        assert_eq!(cap.family, CapabilityFamily::Config);
+        assert_eq!(cap.as_str(), name);
+    }
 }
 
 #[test]

@@ -19,7 +19,10 @@ use atlas_domain::{
 };
 
 use crate::{
-    authz::{Authorized, EditorMin, ViewerMin, authorized::WorkspaceRes},
+    authz::{
+        Authorized, ConfigCreate, ConfigDelete, ConfigRead, EditorMin, ViewerMin,
+        authorized::WorkspaceRes,
+    },
     error::ApiError,
     persistence::repos::{PgPropertyDefinitionRepo, PropertyDefinitionRepo},
     routes::validation::validate_name,
@@ -218,7 +221,7 @@ fn applies_to_matches(def: &AppliesTo, filter: &AppliesTo) -> bool {
     )
 )]
 pub(crate) async fn list_property_definitions(
-    auth: Authorized<WorkspaceRes, ViewerMin>,
+    auth: Authorized<WorkspaceRes, ViewerMin, ConfigRead>,
     State(state): State<AppState>,
     Query(query): Query<ListPropertyDefinitionsQuery>,
 ) -> Result<Json<Vec<PropertyDefinitionDto>>, ApiError> {
@@ -265,7 +268,7 @@ pub(crate) async fn list_property_definitions(
     )
 )]
 pub(crate) async fn create_property_definition(
-    auth: Authorized<WorkspaceRes, EditorMin>,
+    auth: Authorized<WorkspaceRes, EditorMin, ConfigCreate>,
     State(state): State<AppState>,
     Json(body): Json<CreatePropertyDefinitionRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -330,7 +333,7 @@ pub(crate) async fn create_property_definition(
     )
 )]
 pub(crate) async fn delete_property_definition(
-    auth: Authorized<WorkspaceRes, EditorMin>,
+    auth: Authorized<WorkspaceRes, EditorMin, ConfigDelete>,
     State(state): State<AppState>,
     Path((_ws, property_definition_id)): Path<(String, uuid::Uuid)>,
 ) -> Result<StatusCode, ApiError> {

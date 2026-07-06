@@ -330,6 +330,15 @@ enum Case {
     UpdateWebhook,
     DeleteWebhook,
     ListWebhookDeliveries,
+    // ---- config: tags + property-definitions (8) ----
+    ListTags,
+    CreateTag,
+    ListUsedLabels,
+    UpdateTag,
+    DeleteTag,
+    ListPropertyDefinitions,
+    CreatePropertyDefinition,
+    DeletePropertyDefinition,
 }
 
 impl Case {
@@ -421,6 +430,14 @@ impl Case {
         Case::UpdateWebhook,
         Case::DeleteWebhook,
         Case::ListWebhookDeliveries,
+        Case::ListTags,
+        Case::CreateTag,
+        Case::ListUsedLabels,
+        Case::UpdateTag,
+        Case::DeleteTag,
+        Case::ListPropertyDefinitions,
+        Case::CreatePropertyDefinition,
+        Case::DeletePropertyDefinition,
     ];
 
     /// `(method, capability)` as declared for this case's route — cross-checked
@@ -520,6 +537,15 @@ impl Case {
             Case::UpdateWebhook => ("PATCH", "webhooks:update"),
             Case::DeleteWebhook => ("DELETE", "webhooks:delete"),
             Case::ListWebhookDeliveries => ("GET", "webhooks:read"),
+
+            Case::ListTags => ("GET", "config:read"),
+            Case::CreateTag => ("POST", "config:create"),
+            Case::ListUsedLabels => ("GET", "config:read"),
+            Case::UpdateTag => ("PATCH", "config:update"),
+            Case::DeleteTag => ("DELETE", "config:delete"),
+            Case::ListPropertyDefinitions => ("GET", "config:read"),
+            Case::CreatePropertyDefinition => ("POST", "config:create"),
+            Case::DeletePropertyDefinition => ("DELETE", "config:delete"),
         }
     }
 }
@@ -1046,6 +1072,93 @@ async fn invoke(
                 token,
                 "GET",
                 &format!("/v1/workspaces/{ws}/webhooks/{}/deliveries", fx.webhook_id),
+            )
+            .await
+        }
+
+        // Config family (tags + property-definitions). Like webhooks, these have
+        // no generated `atlas_client` methods, so they go through `raw_call`. The
+        // capability gate runs inside the `Authorized` extractor (the first
+        // handler param) before any secondary `Path<...>` or JSON body is read,
+        // so the wrong/zero-scope passes are denied even though `raw_call` sends
+        // no body and the tag/property ids are throwaway nils.
+        Case::ListTags => {
+            raw_call(
+                http,
+                base_url,
+                token,
+                "GET",
+                &format!("/v1/workspaces/{ws}/tags"),
+            )
+            .await
+        }
+        Case::CreateTag => {
+            raw_call(
+                http,
+                base_url,
+                token,
+                "POST",
+                &format!("/v1/workspaces/{ws}/tags"),
+            )
+            .await
+        }
+        Case::ListUsedLabels => {
+            raw_call(
+                http,
+                base_url,
+                token,
+                "GET",
+                &format!("/v1/workspaces/{ws}/tags/used"),
+            )
+            .await
+        }
+        Case::UpdateTag => {
+            raw_call(
+                http,
+                base_url,
+                token,
+                "PATCH",
+                &format!("/v1/workspaces/{ws}/tags/{nil}"),
+            )
+            .await
+        }
+        Case::DeleteTag => {
+            raw_call(
+                http,
+                base_url,
+                token,
+                "DELETE",
+                &format!("/v1/workspaces/{ws}/tags/{nil}"),
+            )
+            .await
+        }
+        Case::ListPropertyDefinitions => {
+            raw_call(
+                http,
+                base_url,
+                token,
+                "GET",
+                &format!("/v1/workspaces/{ws}/property-definitions"),
+            )
+            .await
+        }
+        Case::CreatePropertyDefinition => {
+            raw_call(
+                http,
+                base_url,
+                token,
+                "POST",
+                &format!("/v1/workspaces/{ws}/property-definitions"),
+            )
+            .await
+        }
+        Case::DeletePropertyDefinition => {
+            raw_call(
+                http,
+                base_url,
+                token,
+                "DELETE",
+                &format!("/v1/workspaces/{ws}/property-definitions/{nil}"),
             )
             .await
         }

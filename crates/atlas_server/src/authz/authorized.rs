@@ -135,6 +135,10 @@ capability_marker!(WebhooksRead, Webhooks, Read);
 capability_marker!(WebhooksCreate, Webhooks, Create);
 capability_marker!(WebhooksUpdate, Webhooks, Update);
 capability_marker!(WebhooksDelete, Webhooks, Delete);
+capability_marker!(ConfigRead, Config, Read);
+capability_marker!(ConfigCreate, Config, Create);
+capability_marker!(ConfigUpdate, Config, Update);
+capability_marker!(ConfigDelete, Config, Delete);
 
 pub trait ResolvedResource: Sized + Send {
     type PathParams: DeserializeOwned + Send;

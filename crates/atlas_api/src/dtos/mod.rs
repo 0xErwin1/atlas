@@ -207,10 +207,9 @@ pub struct ActivatePasswordRequest {
     pub password: String,
 }
 
-/// The closed catalog of API key capability scopes: six resource families
-/// (`tasks`, `docs`, `boards`, `folders`, `projects`, `webhooks`) crossed with
-/// four CRUD actions (`read`, `create`, `update`, `delete`), twenty-four
-/// variants total.
+/// The closed catalog of API key capability scopes: resource families crossed
+/// with the four CRUD actions (`read`, `create`, `update`, `delete`), except
+/// `grants`, which is read-only and contributes only `grants:read`.
 ///
 /// This is the wire mirror of `atlas_domain::permissions::Capability`; the
 /// server maps between the two at the route boundary. Being a closed serde
@@ -267,6 +266,14 @@ pub enum ApiKeyScope {
     WebhooksUpdate,
     #[serde(rename = "webhooks:delete")]
     WebhooksDelete,
+    #[serde(rename = "config:read")]
+    ConfigRead,
+    #[serde(rename = "config:create")]
+    ConfigCreate,
+    #[serde(rename = "config:update")]
+    ConfigUpdate,
+    #[serde(rename = "config:delete")]
+    ConfigDelete,
 }
 
 /// Optional initial workspace grant included in a `POST /v1/api-keys` request.
@@ -583,5 +590,24 @@ mod tests {
             result.is_err(),
             "an unknown scope string must be rejected by the closed enum"
         );
+    }
+
+    #[test]
+    fn config_scopes_round_trip_through_serde_rename() {
+        let cases = [
+            (ApiKeyScope::ConfigRead, "config:read"),
+            (ApiKeyScope::ConfigCreate, "config:create"),
+            (ApiKeyScope::ConfigUpdate, "config:update"),
+            (ApiKeyScope::ConfigDelete, "config:delete"),
+        ];
+
+        for (scope, wire) in cases {
+            let json = serde_json::to_value(scope).expect("scope must serialize");
+            assert_eq!(json, serde_json::Value::String(wire.to_string()));
+
+            let parsed: ApiKeyScope =
+                serde_json::from_value(json).expect("wire value must deserialize");
+            assert_eq!(parsed, scope);
+        }
     }
 }

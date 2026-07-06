@@ -12,7 +12,10 @@ use atlas_domain::{
 };
 
 use crate::{
-    authz::{Authorized, EditorMin, ViewerMin, authorized::WorkspaceRes},
+    authz::{
+        Authorized, ConfigCreate, ConfigDelete, ConfigRead, ConfigUpdate, EditorMin, ViewerMin,
+        authorized::WorkspaceRes,
+    },
     error::ApiError,
     persistence::repos::{PgTagRepo, TagRepo},
     routes::validation::{validate_name, validate_swatch},
@@ -55,7 +58,7 @@ fn tag_to_dto(t: Tag) -> TagDto {
     )
 )]
 pub(crate) async fn list_tags(
-    auth: Authorized<WorkspaceRes, ViewerMin>,
+    auth: Authorized<WorkspaceRes, ViewerMin, ConfigRead>,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<TagDto>>, ApiError> {
     let actor = principal_to_actor(&auth.principal);
@@ -86,7 +89,7 @@ pub(crate) async fn list_tags(
     )
 )]
 pub(crate) async fn create_tag(
-    auth: Authorized<WorkspaceRes, EditorMin>,
+    auth: Authorized<WorkspaceRes, EditorMin, ConfigCreate>,
     State(state): State<AppState>,
     Json(body): Json<CreateTagRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -143,7 +146,7 @@ pub(crate) async fn create_tag(
     )
 )]
 pub(crate) async fn patch_tag(
-    auth: Authorized<WorkspaceRes, EditorMin>,
+    auth: Authorized<WorkspaceRes, EditorMin, ConfigUpdate>,
     State(state): State<AppState>,
     Path((_ws, tag_id)): Path<(String, uuid::Uuid)>,
     Json(body): Json<UpdateTagRequest>,
@@ -185,7 +188,7 @@ pub(crate) async fn patch_tag(
     )
 )]
 pub(crate) async fn list_used_labels(
-    auth: Authorized<WorkspaceRes, ViewerMin>,
+    auth: Authorized<WorkspaceRes, ViewerMin, ConfigRead>,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<String>>, ApiError> {
     let actor = principal_to_actor(&auth.principal);
@@ -221,7 +224,7 @@ pub(crate) async fn list_used_labels(
     )
 )]
 pub(crate) async fn delete_tag(
-    auth: Authorized<WorkspaceRes, EditorMin>,
+    auth: Authorized<WorkspaceRes, EditorMin, ConfigDelete>,
     State(state): State<AppState>,
     Path((_ws, tag_id)): Path<(String, uuid::Uuid)>,
 ) -> Result<StatusCode, ApiError> {
