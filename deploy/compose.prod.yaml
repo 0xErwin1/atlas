@@ -7,8 +7,14 @@ services:
       POSTGRES_DB: atlas
     ports: ["5433:5432"]
     volumes: ["atlas-pg-data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atlas -d atlas"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
 
   atlas-backend:
+    image: atlas-server:local
     build:
       context: ..
       dockerfile: deploy/Containerfile.server
@@ -19,19 +25,25 @@ services:
       ATLAS_ROOT_PASSWORD: "admin"
       ATLAS_COOKIE_SECURE: "false"
       RUST_LOG: "info,atlas_server=debug"
-    depends_on: ["atlas-postgres"]
+    depends_on:
+      atlas-postgres:
+        condition: service_healthy
     volumes: ["atlas-attachments:/app/data/attachments"]
 
   atlas-mcp:
+    image: atlas-server:local
     build:
       context: ..
       dockerfile: deploy/Containerfile.server
     command: ["/usr/local/bin/atlas_mcp", "--transport", "http", "--bind", "0.0.0.0", "--port", "3001"]
     environment:
       ATLAS_BASE_URL: "http://atlas-backend:8080"
-    depends_on: ["atlas-backend"]
+    depends_on:
+      atlas-backend:
+        condition: service_started
 
   atlas-web:
+    image: atlas-web:local
     build:
       context: ..
       dockerfile: deploy/Containerfile.web
@@ -39,7 +51,11 @@ services:
       ATLAS_BACKEND_UPSTREAM: "atlas-backend:8080"
       ATLAS_MCP_UPSTREAM: "atlas-mcp:3001"
     ports: ["8088:80"]
-    depends_on: ["atlas-backend", "atlas-mcp"]
+    depends_on:
+      atlas-backend:
+        condition: service_started
+      atlas-mcp:
+        condition: service_started
 
 volumes:
   atlas-pg-data:
