@@ -1,0 +1,12 @@
+target/
+**/node_modules/
+apps/web/dist/
+apps/web/src/api/types.d.ts
+.git/
+.github/
+.codegraph/
+.env
+.env.*
+!.env.example
+**/*.log
+scratchpad/

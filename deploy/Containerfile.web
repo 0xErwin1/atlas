@@ -1,0 +1,18 @@
+# syntax=docker/dockerfile:1
+FROM docker.io/library/node:22-slim AS build
+RUN corepack enable
+WORKDIR /app
+# --- dependency layer: copy lockfile + all workspace manifests, then install ---
+# The only workspace member with a manifest is apps/web (pnpm-workspace.yaml
+# globs apps/* and packages/*, but packages/* is currently empty).
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY apps/web/package.json ./apps/web/
+RUN pnpm install --frozen-lockfile
+# --- build ---
+COPY . .
+RUN pnpm -C apps/web build
+
+FROM docker.io/library/nginx:1.27-alpine AS runtime
+COPY --from=build /app/apps/web/dist /usr/share/nginx/html
+COPY deploy/nginx.conf.template /etc/nginx/templates/default.conf.template
+EXPOSE 80
