@@ -18,6 +18,7 @@ import {
   taskMarkerChecked,
   tokenizeInline,
 } from '@/lib/livePreview';
+import { safeUrl } from '@/lib/sanitize';
 import { parseWikilinkInner, type WikilinkRef } from '@/lib/wikilink';
 
 /**
@@ -43,14 +44,19 @@ interface InlineCtx {
  * innerHTML), so cell content cannot inject markup. Wikilinks resolve their
  * current title and are clickable through the same callback as the editor.
  */
-function inlineNode(token: InlineToken, ctx: InlineCtx): Node {
+export function inlineNode(token: InlineToken, ctx: InlineCtx): Node {
   if (token.type === 'text') return document.createTextNode(token.value);
 
   if (token.type === 'link') {
+    // A link with a disallowed scheme (javascript:, data:, ...) is rendered as
+    // plain text: emitting a live anchor would be a stored DOM XSS sink.
+    const href = safeUrl(token.url);
+    if (href === null) return document.createTextNode(token.value);
+
     const a = document.createElement('a');
     a.className = 'cm-atlas-link';
     a.textContent = token.value;
-    a.href = token.url;
+    a.href = href;
     a.target = '_blank';
     a.rel = 'noopener noreferrer';
     return a;
@@ -251,7 +257,7 @@ class LangBadgeWidget extends WidgetType {
  * of the raw markdown, off the active line. The source markdown is restored when
  * the cursor enters the line, keeping it editable.
  */
-class ImageWidget extends WidgetType {
+export class ImageWidget extends WidgetType {
   constructor(
     private readonly url: string,
     private readonly alt: string,
@@ -264,9 +270,20 @@ class ImageWidget extends WidgetType {
   }
 
   toDOM(): HTMLElement {
+    const src = safeUrl(this.url);
+
+    // A disallowed scheme (javascript:, data:, ...) is never set as `src`; the
+    // image collapses to its alt text instead of becoming an XSS sink.
+    if (src === null) {
+      const span = document.createElement('span');
+      span.className = 'cm-atlas-img';
+      span.textContent = this.alt;
+      return span;
+    }
+
     const img = document.createElement('img');
     img.className = 'cm-atlas-img';
-    img.src = this.url;
+    img.src = src;
     img.alt = this.alt;
     return img;
   }

@@ -48,3 +48,41 @@ export function sanitizeSnippet(html: string): string {
 
   return result;
 }
+
+/**
+ * URL schemes permitted for user-authored links and images. Everything else —
+ * notably `javascript:`, `data:`, and `vbscript:` — is rejected so a crafted
+ * `[text](javascript:...)` link or `![](...)` image cannot execute script in the
+ * victim's authenticated, same-origin session (stored DOM XSS).
+ */
+const SAFE_URL_SCHEMES = new Set(['http:', 'https:', 'mailto:']);
+
+const URL_SCHEME_RE = /^([a-zA-Z][a-zA-Z0-9+.-]*):/;
+
+/**
+ * Validates a user-authored URL for safe use as an anchor `href` or image `src`,
+ * returning a normalized URL when safe and `null` when it must be neutralized.
+ *
+ * A URL is safe when it is relative/anchor/scheme-relative (no scheme, or begins
+ * with `/`, `./`, `../`, `#`) or carries an allowlisted scheme (`http:`,
+ * `https:`, `mailto:`).
+ *
+ * Normalization strips leading/trailing whitespace and every ASCII control
+ * character (tabs, newlines, and other C0/DEL bytes) BEFORE inspecting the
+ * scheme, because browsers silently drop those characters when parsing a URL —
+ * so `java\tscript:alert(1)` would run as `javascript:` unless neutralized here.
+ * The returned value is the SAME normalized string that was validated, so what
+ * the caller emits is exactly what passed the check.
+ */
+export function safeUrl(raw: string): string | null {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: browsers strip these from URLs, so they must be removed before the scheme check to avoid a `java\tscript:` bypass.
+  const normalized = raw.replace(/[\u0000-\u001f\u007f]/g, '').trim();
+
+  if (normalized.length === 0) return null;
+
+  const match = URL_SCHEME_RE.exec(normalized);
+  if (match === null) return normalized;
+
+  const scheme = `${match[1]?.toLowerCase()}:`;
+  return SAFE_URL_SCHEMES.has(scheme) ? normalized : null;
+}

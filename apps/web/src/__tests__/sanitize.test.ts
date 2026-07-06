@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sanitizeSnippet } from '../lib/sanitize';
+import { safeUrl, sanitizeSnippet } from '../lib/sanitize';
 
 describe('sanitizeSnippet (REQ-W25)', () => {
   it('strips <script> tags', () => {
@@ -75,5 +75,42 @@ describe('sanitizeSnippet (REQ-W25)', () => {
     expect(result).toContain('&amp;');
     expect(result).toContain('&quot;');
     expect(result).toContain('&#39;');
+  });
+});
+
+describe('safeUrl (ATL-83)', () => {
+  it('accepts http(s) and mailto URLs unchanged', () => {
+    expect(safeUrl('https://example.com/a?b=1#c')).toBe('https://example.com/a?b=1#c');
+    expect(safeUrl('http://example.com')).toBe('http://example.com');
+    expect(safeUrl('mailto:someone@example.com')).toBe('mailto:someone@example.com');
+  });
+
+  it('accepts relative, absolute-path, and anchor URLs (no scheme)', () => {
+    expect(safeUrl('/foo/bar')).toBe('/foo/bar');
+    expect(safeUrl('./foo')).toBe('./foo');
+    expect(safeUrl('../foo')).toBe('../foo');
+    expect(safeUrl('#anchor')).toBe('#anchor');
+    expect(safeUrl('page.html?x=a:b')).toBe('page.html?x=a:b');
+    expect(safeUrl('//cdn.example.com/x.png')).toBe('//cdn.example.com/x.png');
+  });
+
+  it('rejects javascript:, data:, and vbscript: schemes', () => {
+    expect(safeUrl('javascript:alert(1)')).toBeNull();
+    expect(safeUrl('data:text/html,<script>alert(1)</script>')).toBeNull();
+    expect(safeUrl('vbscript:msgbox(1)')).toBeNull();
+  });
+
+  it('rejects scheme obfuscated with case, whitespace, and control characters', () => {
+    expect(safeUrl('JavaScript:alert(1)')).toBeNull();
+    expect(safeUrl('  javascript:alert(1)  ')).toBeNull();
+    expect(safeUrl('java\tscript:alert(1)')).toBeNull();
+    expect(safeUrl('java\nscript:alert(1)')).toBeNull();
+    expect(safeUrl('\u0001javascript:alert(1)')).toBeNull();
+  });
+
+  it('returns null for an empty or whitespace-only URL', () => {
+    expect(safeUrl('')).toBeNull();
+    expect(safeUrl('   ')).toBeNull();
+    expect(safeUrl('\t\n')).toBeNull();
   });
 });
