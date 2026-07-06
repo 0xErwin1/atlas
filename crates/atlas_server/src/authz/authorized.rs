@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
 
 use axum::{
@@ -921,6 +921,39 @@ fn enforce_scope_on_key(key: &ApiKey, required: Capability) -> Result<(), ApiErr
     }
 
     Ok(())
+}
+
+/// The set of families an API key holds `{family}:read` on, precomputed from the
+/// key's full scope list so cross-family read feeds can be gated per family.
+///
+/// This is the single source of the "may this principal read family X" predicate
+/// for the scope-gated read feeds (search, workspace activity). Callers MUST go
+/// through [`ReadScopeSet::allows`] rather than re-deriving the check from a raw
+/// scope slice, so the read-gate semantics stay defined in exactly one place.
+#[derive(Debug, Clone)]
+pub struct ReadScopeSet {
+    readable: HashSet<CapabilityFamily>,
+}
+
+impl ReadScopeSet {
+    /// Builds the set from a key's full scope list, retaining only the families
+    /// whose `{family}:read` capability is present. Non-read capabilities are
+    /// irrelevant to read gating and are ignored.
+    pub fn from_scopes(scopes: &[Capability]) -> Self {
+        let readable = scopes
+            .iter()
+            .filter(|cap| cap.action == CapabilityAction::Read)
+            .map(|cap| cap.family)
+            .collect();
+
+        Self { readable }
+    }
+
+    /// True iff the key holds `{family}:read`, i.e. the principal may read the
+    /// given family through a scope-gated read feed.
+    pub fn allows(&self, family: CapabilityFamily) -> bool {
+        self.readable.contains(&family)
+    }
 }
 
 /// Loads the principal's grants for the resource chain and resolves the effective

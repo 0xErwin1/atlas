@@ -1062,3 +1062,136 @@ async fn workspace_activity_root_member_sees_all_via_admin_bypass() {
         "root member must see the private project's activity entries"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Capability read-scope gating for the workspace activity feed (ATL-39 S2 part 1)
+//
+// The workspace activity feed is entirely task-family, so an API-key principal
+// must hold `tasks:read` to read it. The handler gates via `enforce_api_key_scope`
+// after resolving the caller; humans and root are unaffected.
+// ---------------------------------------------------------------------------
+
+/// Seeds a workspace-visible project with one task so the activity feed is
+/// non-empty, and returns the workspace slug context via the owner client.
+async fn seed_activity_workspace(
+    owner_client: &atlas_client::AtlasClient,
+    ws_slug: &str,
+    proj_slug: &str,
+    prefix: &str,
+) {
+    let project = owner_client
+        .create_project(ws_slug, mk_project_req_workspace(proj_slug, prefix))
+        .await
+        .expect("create project");
+    let board = seed_board(owner_client, ws_slug, &project.slug, "Board").await;
+    let col = seed_column(owner_client, ws_slug, board.id, "Todo").await;
+    seed_task(owner_client, ws_slug, board.id, col.id, "seed task").await;
+}
+
+/// TEST — an API key WITHOUT `tasks:read` is forbidden (403) from the workspace
+/// activity feed, even with a workspace-scope viewer grant that admits it to the
+/// workspace.
+#[tokio::test]
+async fn workspace_activity_api_key_without_tasks_read_is_forbidden() {
+    let db = support::TestDb::create().await.expect("db");
+    let server = support::TestServer::spawn(&db).await;
+
+    let (owner_client, ws, _owner) =
+        support::login_user_with_workspace(&server, &db, "owner-s2act403").await;
+    seed_activity_workspace(&owner_client, &ws.slug, "s2act403-proj", "S2A4").await;
+
+    let key_created = owner_client
+        .create_user_api_key(atlas_api::dtos::CreateUserApiKeyRequest {
+            name: "agent-nodocs".to_string(),
+            r#type: Some("agent".to_string()),
+            expires_at: None,
+            initial_grant: Some(atlas_api::dtos::InitialGrantRequest {
+                workspace: ws.slug.clone(),
+                role: "viewer".to_string(),
+            }),
+            scopes: Some(vec![atlas_api::dtos::ApiKeyScope::DocsRead]),
+        })
+        .await
+        .expect("create api key");
+
+    let http = reqwest::Client::new();
+    let resp = http
+        .get(format!(
+            "{}/v1/workspaces/{}/activity",
+            server.base_url(),
+            ws.slug
+        ))
+        .bearer_auth(&key_created.secret)
+        .send()
+        .await
+        .expect("activity request");
+
+    assert_eq!(
+        resp.status().as_u16(),
+        403,
+        "an agent lacking tasks:read must be forbidden from the workspace activity feed; got {:?}",
+        resp.status()
+    );
+}
+
+/// TEST — an API key WITH `tasks:read` sees the full workspace activity feed.
+#[tokio::test]
+async fn workspace_activity_api_key_with_tasks_read_sees_feed() {
+    let db = support::TestDb::create().await.expect("db");
+    let server = support::TestServer::spawn(&db).await;
+
+    let (owner_client, ws, _owner) =
+        support::login_user_with_workspace(&server, &db, "owner-s2actok").await;
+    seed_activity_workspace(&owner_client, &ws.slug, "s2actok-proj", "S2AO").await;
+
+    let key_created = owner_client
+        .create_user_api_key(atlas_api::dtos::CreateUserApiKeyRequest {
+            name: "agent-tasksread".to_string(),
+            r#type: Some("agent".to_string()),
+            expires_at: None,
+            initial_grant: Some(atlas_api::dtos::InitialGrantRequest {
+                workspace: ws.slug.clone(),
+                role: "viewer".to_string(),
+            }),
+            scopes: Some(vec![atlas_api::dtos::ApiKeyScope::TasksRead]),
+        })
+        .await
+        .expect("create api key");
+
+    let api_key_client = atlas_client::AtlasClient::new(server.base_url().to_string())
+        .with_token(key_created.secret.clone());
+
+    let page = api_key_client
+        .list_workspace_activity(&ws.slug, None, None, None, None)
+        .await
+        .expect("list activity");
+
+    assert!(
+        !page.items.is_empty(),
+        "an agent holding tasks:read must see the workspace activity feed; got {}",
+        page.items.len()
+    );
+}
+
+/// TEST — a human member (owner) reads the workspace activity feed regardless of
+/// scopes; the capability gate only applies to API keys.
+#[tokio::test]
+async fn workspace_activity_human_member_sees_feed() {
+    let db = support::TestDb::create().await.expect("db");
+    let server = support::TestServer::spawn(&db).await;
+
+    let (owner_client, ws, _owner) =
+        support::login_user_with_workspace(&server, &db, "owner-s2acthuman").await;
+    seed_activity_workspace(&owner_client, &ws.slug, "s2acthuman-proj", "S2AH").await;
+
+    let page = owner_client
+        .list_workspace_activity(&ws.slug, None, None, None, None)
+        .await
+        .expect("list activity");
+
+    assert!(
+        !page.items.is_empty(),
+        "a human member must see the workspace activity feed; got {}",
+        page.items.len()
+    );
+}

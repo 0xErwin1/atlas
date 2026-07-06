@@ -46,6 +46,14 @@ pub trait SearchRepo: Send + Sync {
     /// When `bypass` is true, the per-row SQL permission predicate is short-circuited
     /// so every non-deleted row in the workspace is visible. This must only be set
     /// by the route layer when the principal is `is_root || is_system_admin`.
+    ///
+    /// `may_read_docs` / `may_read_tasks` gate the document and task result arms by
+    /// the principal's read capabilities. The route sets both to `true` for humans
+    /// (and root/bypass); for an API key each reflects whether the key holds the
+    /// matching `{family}:read` scope. A denied family's arm is dropped from the
+    /// query BEFORE the LIMIT/cursor stage, so pagination stays exact and a fully
+    /// denied request yields an empty page.
+    #[allow(clippy::too_many_arguments)]
     async fn search(
         &self,
         ctx: &WorkspaceCtx,
@@ -54,6 +62,8 @@ pub trait SearchRepo: Send + Sync {
         limit: u64,
         after: Option<SearchAfter>,
         bypass: bool,
+        may_read_docs: bool,
+        may_read_tasks: bool,
     ) -> Result<Vec<SearchHit>, DomainError>;
 }
 

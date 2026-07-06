@@ -11,6 +11,7 @@ use atlas_api::{
 };
 use atlas_domain::{
     Actor, WorkspaceCtx,
+    permissions::CapabilityFamily,
     ports::search::{SearchAfter, SearchRepo, SortKey as DomainSortKey},
     search::{
         SearchKind, SearchQuery, SearchSort, SearchWarning, TypeSet, parse_query,
@@ -92,12 +93,35 @@ pub(crate) async fn search(
 
     let actor = principal_to_actor(&auth.principal);
     let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
+
+    // Scope-gate cross-family read: an API key only sees hits for families it holds
+    // `{family}:read` on. Humans (and root/bypass) carry `read_scopes == None` and
+    // read every family. The two booleans are ANDed into the repo's per-arm emit
+    // toggles, dropping an entire family arm BEFORE the LIMIT/cursor logic so page
+    // size, `has_more`, and `next_cursor` stay exactly correct.
+    let (may_read_docs, may_read_tasks) = match &auth.read_scopes {
+        Some(scopes) => (
+            scopes.allows(CapabilityFamily::Docs),
+            scopes.allows(CapabilityFamily::Tasks),
+        ),
+        None => (true, true),
+    };
+
     let principal = auth.principal;
     let bypass = auth.bypass;
 
     let repo = PgSearchRepo::new((*state.db).clone());
     let hits = repo
-        .search(&ctx, &principal, &query, limit + 1, after, bypass)
+        .search(
+            &ctx,
+            &principal,
+            &query,
+            limit + 1,
+            after,
+            bypass,
+            may_read_docs,
+            may_read_tasks,
+        )
         .await
         .map_err(ApiError::Domain)?;
 

@@ -461,6 +461,8 @@ async fn plain_member_does_not_see_private_project_document() {
             50,
             None,
             false,
+            true,
+            true,
         )
         .await
         .expect("member search");
@@ -523,6 +525,8 @@ async fn plain_member_with_project_grant_sees_private_project_document() {
             50,
             None,
             false,
+            true,
+            true,
         )
         .await
         .expect("member search");
@@ -583,6 +587,8 @@ async fn plain_member_sees_workspace_visible_project_document() {
             50,
             None,
             false,
+            true,
+            true,
         )
         .await
         .expect("member search");
@@ -633,6 +639,8 @@ async fn owner_sees_private_project_document() {
             50,
             None,
             false,
+            true,
+            true,
         )
         .await
         .expect("owner search");
@@ -733,6 +741,8 @@ async fn plain_member_task_visibility_follows_project() {
             50,
             None,
             false,
+            true,
+            true,
         )
         .await
         .expect("member task search");
@@ -779,6 +789,8 @@ async fn snippet_carries_mark_highlight() {
             50,
             None,
             false,
+            true,
+            true,
         )
         .await
         .expect("owner search");
@@ -840,6 +852,8 @@ async fn task_of_soft_deleted_project_still_surfaces_for_owner() {
             50,
             None,
             false,
+            true,
+            true,
         )
         .await
         .expect("owner search");
@@ -891,7 +905,7 @@ async fn cross_tenant_document_isolation() {
     let query = make_search_query("uniquetoken_xten_secret");
 
     let hits = repo
-        .search(&ctx, &principal, &query, 50, None, false)
+        .search(&ctx, &principal, &query, 50, None, false, true, true)
         .await
         .expect("search");
 
@@ -963,6 +977,8 @@ async fn intra_workspace_no_grant_excludes_document() {
             50,
             None,
             false,
+            true,
+            true,
         )
         .await
         .expect("owner search");
@@ -979,6 +995,8 @@ async fn intra_workspace_no_grant_excludes_document() {
             50,
             None,
             false,
+            true,
+            true,
         )
         .await
         .expect("stranger search");
@@ -1029,6 +1047,8 @@ async fn direct_document_grant_surfaces_hit() {
             50,
             None,
             false,
+            true,
+            true,
         )
         .await
         .expect("grantee search");
@@ -1105,6 +1125,8 @@ async fn task_board_grant_surfaces_hit() {
             50,
             None,
             false,
+            true,
+            true,
         )
         .await
         .expect("grantee search");
@@ -1124,6 +1146,8 @@ async fn task_board_grant_surfaces_hit() {
             50,
             None,
             false,
+            true,
+            true,
         )
         .await
         .expect("stranger search");
@@ -1174,6 +1198,8 @@ async fn workspace_scope_grant_surfaces_all_documents() {
             50,
             None,
             false,
+            true,
+            true,
         )
         .await
         .expect("grantee search");
@@ -1220,7 +1246,7 @@ async fn pagination_relevance_no_duplicates_or_gaps() {
 
     loop {
         let hits = repo
-            .search(&ctx, &principal, &query, 2 + 1, after, false)
+            .search(&ctx, &principal, &query, 2 + 1, after, false, true, true)
             .await
             .expect("search page");
 
@@ -1282,7 +1308,7 @@ async fn pagination_updated_no_duplicates_or_gaps() {
 
     loop {
         let hits = repo
-            .search(&ctx, &principal, &query, 2 + 1, after, false)
+            .search(&ctx, &principal, &query, 2 + 1, after, false, true, true)
             .await
             .expect("search page");
 
@@ -1348,6 +1374,8 @@ async fn type_filter_documents_excludes_tasks() {
             50,
             None,
             false,
+            true,
+            true,
         )
         .await
         .expect("doc-only search");
@@ -1369,6 +1397,8 @@ async fn type_filter_documents_excludes_tasks() {
             50,
             None,
             false,
+            true,
+            true,
         )
         .await
         .expect("task-only search");
@@ -1445,7 +1475,7 @@ async fn status_filter_narrows_tasks_by_column_name() {
         ));
 
     let hits = repo
-        .search(&ctx, &principal, &status_query, 50, None, false)
+        .search(&ctx, &principal, &status_query, 50, None, false, true, true)
         .await
         .expect("status search");
 
@@ -1563,7 +1593,7 @@ async fn tag_filter_narrows_documents_and_tasks() {
         .push(atlas_domain::search::SearchFilter::Tag("rust".to_string()));
 
     let hits = repo
-        .search(&ctx, &principal, &tag_query, 50, None, false)
+        .search(&ctx, &principal, &tag_query, 50, None, false, true, true)
         .await
         .expect("tag search");
 
@@ -1615,6 +1645,8 @@ async fn title_only_match_yields_absent_snippet() {
             50,
             None,
             false,
+            true,
+            true,
         )
         .await
         .expect("owner search");
@@ -1667,6 +1699,8 @@ async fn task_hits_carry_readable_id_documents_do_not() {
             50,
             None,
             false,
+            true,
+            true,
         )
         .await
         .expect("search");
@@ -1768,6 +1802,8 @@ async fn member_sees_in_folder_non_private_project_document() {
             50,
             None,
             false,
+            true,
+            true,
         )
         .await
         .expect("member search");
@@ -1839,6 +1875,8 @@ async fn task_hit_carries_column_name_document_hit_does_not() {
             50,
             None,
             false,
+            true,
+            true,
         )
         .await
         .expect("search");
@@ -1915,6 +1953,8 @@ async fn member_gets_nothing_via_visibility_for_workspace_root_document() {
             50,
             None,
             false,
+            true,
+            true,
         )
         .await
         .expect("member search");
@@ -1976,7 +2016,16 @@ async fn prefix_search_matches_partial_word_across_boards() {
 
     // With prefix=true: "atl" matches "atlas" on the OTHER board.
     let prefix_hits = repo
-        .search(&ctx, &principal, &make_prefix_query("atl"), 50, None, false)
+        .search(
+            &ctx,
+            &principal,
+            &make_prefix_query("atl"),
+            50,
+            None,
+            false,
+            true,
+            true,
+        )
         .await
         .expect("prefix search");
     assert!(
@@ -1986,7 +2035,16 @@ async fn prefix_search_matches_partial_word_across_boards() {
 
     // Without prefix: "atl" is a whole word and must NOT match "atlas".
     let whole_word_hits = repo
-        .search(&ctx, &principal, &make_search_query("atl"), 50, None, false)
+        .search(
+            &ctx,
+            &principal,
+            &make_search_query("atl"),
+            50,
+            None,
+            false,
+            true,
+            true,
+        )
         .await
         .expect("whole-word search");
     assert!(
@@ -2033,6 +2091,8 @@ async fn search_by_task_code_matches_readable_id() {
             50,
             None,
             false,
+            true,
+            true,
         )
         .await
         .expect("code search");
@@ -2050,6 +2110,8 @@ async fn search_by_task_code_matches_readable_id() {
             50,
             None,
             false,
+            true,
+            true,
         )
         .await
         .expect("code prefix search");

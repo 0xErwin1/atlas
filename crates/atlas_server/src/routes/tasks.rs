@@ -2641,6 +2641,21 @@ pub(crate) async fn list_workspace_activity(
         _ => return Err(ApiError::Unauthorized),
     };
 
+    // The workspace activity feed is entirely task-family. Gate an API-key
+    // principal on `tasks:read` so a scope-restricted agent cannot observe task
+    // activity it lacks read capability for. Humans and root pass unchanged.
+    if let Some(key_id) = member.api_key_id {
+        enforce_api_key_scope(
+            &state.db,
+            key_id,
+            Capability {
+                family: CapabilityFamily::Tasks,
+                action: CapabilityAction::Read,
+            },
+        )
+        .await?;
+    }
+
     let actor_type = q
         .actor
         .as_deref()

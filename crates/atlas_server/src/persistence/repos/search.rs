@@ -82,6 +82,7 @@ struct SearchRow {
 
 #[async_trait]
 impl SearchRepo for PgSearchRepo {
+    #[allow(clippy::too_many_arguments)]
     async fn search(
         &self,
         ctx: &WorkspaceCtx,
@@ -90,6 +91,8 @@ impl SearchRepo for PgSearchRepo {
         limit: u64,
         after: Option<SearchAfter>,
         bypass: bool,
+        may_read_docs: bool,
+        may_read_tasks: bool,
     ) -> Result<Vec<SearchHit>, DomainError> {
         use sea_orm::Statement;
 
@@ -159,8 +162,12 @@ impl SearchRepo for PgSearchRepo {
             )
         });
 
-        let emit_docs = query.type_filter.notes && !has_task_only_filter;
-        let emit_tasks = query.type_filter.tasks;
+        // AND the request's type_filter with the principal's read capabilities:
+        // a family the principal cannot read has its arm dropped here, before the
+        // LIMIT/cursor stage, so page size and cursors stay exact. When both arms
+        // are dropped the early return yields a correct empty page.
+        let emit_docs = query.type_filter.notes && !has_task_only_filter && may_read_docs;
+        let emit_tasks = query.type_filter.tasks && may_read_tasks;
 
         if !emit_docs && !emit_tasks {
             return Ok(vec![]);

@@ -19,9 +19,9 @@
 
 mod support;
 
-use atlas_api::dtos::search::SearchHitDto;
+use atlas_api::dtos::search::{SearchHitDto, SearchKindDto};
 use atlas_api::pagination::Page;
-use atlas_domain::permissions::Principal;
+use atlas_domain::permissions::{Capability, CapabilityAction, CapabilityFamily, Principal};
 use atlas_domain::ports::search::SearchRepo;
 use atlas_domain::search::{SearchQuery, SearchSort, TypeSet};
 use atlas_domain::{
@@ -154,12 +154,14 @@ async fn grant_doc_for_key(
     .expect("grant doc-scope for key");
 }
 
-/// Creates an API key for a workspace and returns (key_id, raw_token).
-async fn create_api_key_for_ws(
+/// Creates an API key for a workspace with an explicit scope set and returns
+/// (key_id, raw_token).
+async fn create_api_key_with_scopes(
     db: &support::TestDb,
     ws_id: atlas_domain::ids::WorkspaceId,
     creator_id: atlas_domain::ids::UserId,
     name: &str,
+    scopes: Vec<Capability>,
 ) -> (atlas_domain::ids::ApiKeyId, String) {
     let raw_token = generate_api_key();
     let token_hash = hash_token(&raw_token);
@@ -175,13 +177,31 @@ async fn create_api_key_for_ws(
             token_hash,
             type_: atlas_domain::entities::identity::ApiKeyType::Agent,
             expires_at: None,
-            scopes: atlas_domain::permissions::Capability::ALL.to_vec(),
+            scopes,
         },
     )
     .await
     .expect("create api key");
 
     (key.id, raw_token)
+}
+
+/// Creates an API key for a workspace holding every capability and returns
+/// (key_id, raw_token).
+async fn create_api_key_for_ws(
+    db: &support::TestDb,
+    ws_id: atlas_domain::ids::WorkspaceId,
+    creator_id: atlas_domain::ids::UserId,
+    name: &str,
+) -> (atlas_domain::ids::ApiKeyId, String) {
+    create_api_key_with_scopes(db, ws_id, creator_id, name, Capability::ALL.to_vec()).await
+}
+
+fn read_scope(family: CapabilityFamily) -> Capability {
+    Capability {
+        family,
+        action: CapabilityAction::Read,
+    }
 }
 
 async fn seed_document(
@@ -674,7 +694,7 @@ async fn api_key_no_grant_sees_no_rows_at_sql_level() {
         prefix: false,
     };
     let hits = repo
-        .search(&ctx, &principal, &query, 50, None, false)
+        .search(&ctx, &principal, &query, 50, None, false, true, true)
         .await
         .expect("search");
 
@@ -866,6 +886,396 @@ async fn cross_tenant_document_isolation_via_http() {
         ids.iter().filter(|&&id| id == alice_doc_id.0).count(),
         ids.len(),
         "alice must see ONLY her document — extra ids are cross-tenant leaks; got: {ids:?}"
+    );
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
+// Capability read-scope gating for search (ATL-39 S2 part 1)
+//
+// An API key only sees search hits for families it holds `{family}:read` on.
+// The gate ANDs the read capability into the repo's per-family emit toggle, so a
+// denied family's arm is dropped from the query BEFORE the LIMIT/cursor stage —
+// pagination stays exact and humans (`read_scopes == None`) see every family.
+//
+// All keys below hold a workspace-scope Viewer grant so the route gate admits
+// them and the SQL grant arm surfaces every row; only the read-capability gate
+// distinguishes what they observe.
+// ---------------------------------------------------------------------------
+
+/// Fetches one search page (asserting 200) with optional `limit`/`cursor`.
+async fn search_page(
+    http: &reqwest::Client,
+    token: &str,
+    base: &str,
+    ws_slug: &str,
+    q: &str,
+    limit: Option<u32>,
+    cursor: Option<String>,
+) -> Page<SearchHitDto> {
+    // Query values are safe to inline: `q` is an alphanumeric token, `limit` is a
+    // number, and the cursor is base64url-nopad (no reserved characters).
+    let mut url = format!("{base}/v1/workspaces/{ws_slug}/search?q={q}");
+    if let Some(l) = limit {
+        url.push_str(&format!("&limit={l}"));
+    }
+    if let Some(c) = cursor {
+        url.push_str(&format!("&cursor={c}"));
+    }
+
+    let resp = http
+        .get(url)
+        .bearer_auth(token)
+        .send()
+        .await
+        .expect("HTTP request");
+    assert_eq!(
+        resp.status().as_u16(),
+        200,
+        "expected 200 for search, got {:?}",
+        resp.status()
+    );
+    resp.json().await.expect("decode page")
+}
+
+/// Returns the full hit list (all on one page) for the given query.
+async fn search_hits(
+    http: &reqwest::Client,
+    token: &str,
+    base: &str,
+    ws_slug: &str,
+    q: &str,
+) -> Vec<SearchHitDto> {
+    search_page(http, token, base, ws_slug, q, None, None)
+        .await
+        .items
+}
+
+/// An agent scoped to `tasks:read` only sees task hits — never documents — even
+/// when a workspace-scope grant would otherwise surface both.
+#[tokio::test]
+async fn agent_with_tasks_read_only_sees_only_task_hits() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let server = support::TestServer::spawn(&db).await;
+
+    let (ws, owner) = seed_workspace_with_member(&db, "s2-tasksread-owner").await;
+    let ctx = support::ctx(&ws, &owner);
+
+    let unique = "s2capstasksread9m";
+    let doc_id = seed_document(&db, &ctx, &format!("Doc {unique}"), unique).await;
+    let (task_id, _, _) = seed_task_with_board(
+        &db,
+        &ctx,
+        "s2-tr-proj",
+        "S2TR",
+        &format!("Task {unique}"),
+        unique,
+    )
+    .await;
+
+    let (key_id, raw_token) = create_api_key_with_scopes(
+        &db,
+        ws.id,
+        owner.id,
+        "agent-tasksread",
+        vec![read_scope(CapabilityFamily::Tasks)],
+    )
+    .await;
+    grant_ws_scope_for_key(&db, ws.id, key_id, owner.id).await;
+
+    let http = reqwest::Client::new();
+    let hits = search_hits(&http, &raw_token, server.base_url(), &ws.slug, unique).await;
+
+    assert!(
+        hits.iter().all(|h| h.kind == SearchKindDto::Task),
+        "an agent scoped to tasks:read must see only task hits; got: {hits:?}"
+    );
+    assert!(
+        hits.iter().any(|h| h.id == task_id.0),
+        "the task must be visible; got: {hits:?}"
+    );
+    assert!(
+        !hits.iter().any(|h| h.id == doc_id.0),
+        "no document may leak to a tasks:read-only agent; got: {hits:?}"
+    );
+
+    db.teardown().await;
+}
+
+/// An agent scoped to `docs:read` only sees document hits — never tasks.
+#[tokio::test]
+async fn agent_with_docs_read_only_sees_only_document_hits() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let server = support::TestServer::spawn(&db).await;
+
+    let (ws, owner) = seed_workspace_with_member(&db, "s2-docsread-owner").await;
+    let ctx = support::ctx(&ws, &owner);
+
+    let unique = "s2capsdocsread9n";
+    let doc_id = seed_document(&db, &ctx, &format!("Doc {unique}"), unique).await;
+    let (task_id, _, _) = seed_task_with_board(
+        &db,
+        &ctx,
+        "s2-dr-proj",
+        "S2DR",
+        &format!("Task {unique}"),
+        unique,
+    )
+    .await;
+
+    let (key_id, raw_token) = create_api_key_with_scopes(
+        &db,
+        ws.id,
+        owner.id,
+        "agent-docsread",
+        vec![read_scope(CapabilityFamily::Docs)],
+    )
+    .await;
+    grant_ws_scope_for_key(&db, ws.id, key_id, owner.id).await;
+
+    let http = reqwest::Client::new();
+    let hits = search_hits(&http, &raw_token, server.base_url(), &ws.slug, unique).await;
+
+    assert!(
+        hits.iter().all(|h| h.kind == SearchKindDto::Document),
+        "an agent scoped to docs:read must see only document hits; got: {hits:?}"
+    );
+    assert!(
+        hits.iter().any(|h| h.id == doc_id.0),
+        "the document must be visible; got: {hits:?}"
+    );
+    assert!(
+        !hits.iter().any(|h| h.id == task_id.0),
+        "no task may leak to a docs:read-only agent; got: {hits:?}"
+    );
+
+    db.teardown().await;
+}
+
+/// An agent holding neither `docs:read` nor `tasks:read` (here `boards:read`
+/// only) gets a correct empty page: 200, no items, `has_more == false`,
+/// `next_cursor == None`.
+#[tokio::test]
+async fn agent_without_doc_or_task_read_gets_empty_page() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let server = support::TestServer::spawn(&db).await;
+
+    let (ws, owner) = seed_workspace_with_member(&db, "s2-nonread-owner").await;
+    let ctx = support::ctx(&ws, &owner);
+
+    let unique = "s2capsnonread9o";
+    let _ = seed_document(&db, &ctx, &format!("Doc {unique}"), unique).await;
+    let _ = seed_task_with_board(
+        &db,
+        &ctx,
+        "s2-nr-proj",
+        "S2NR",
+        &format!("Task {unique}"),
+        unique,
+    )
+    .await;
+
+    let (key_id, raw_token) = create_api_key_with_scopes(
+        &db,
+        ws.id,
+        owner.id,
+        "agent-boardsread",
+        vec![read_scope(CapabilityFamily::Boards)],
+    )
+    .await;
+    grant_ws_scope_for_key(&db, ws.id, key_id, owner.id).await;
+
+    let http = reqwest::Client::new();
+    let page = search_page(
+        &http,
+        &raw_token,
+        server.base_url(),
+        &ws.slug,
+        unique,
+        None,
+        None,
+    )
+    .await;
+
+    assert!(
+        page.items.is_empty(),
+        "an agent without docs:read or tasks:read must get an empty page; got: {:?}",
+        page.items
+    );
+    assert!(!page.has_more, "empty page must report has_more == false");
+    assert!(
+        page.next_cursor.is_none(),
+        "empty page must carry no cursor"
+    );
+
+    db.teardown().await;
+}
+
+/// Pagination regression guard: a mixed workspace, an agent scoped to a single
+/// family, and a small page size. Each non-final page must be full up to the
+/// real remaining count, cursors must round-trip, and no row may be duplicated
+/// or skipped — proving the arm is dropped BEFORE the LIMIT, not post-filtered.
+#[tokio::test]
+async fn agent_single_family_scope_paginates_exactly() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let server = support::TestServer::spawn(&db).await;
+
+    let (ws, owner) = seed_workspace_with_member(&db, "s2-pag-owner").await;
+    let ctx = support::ctx(&ws, &owner);
+
+    let unique = "s2capspag9p";
+
+    // 3 documents and 5 tasks all matching the same query token.
+    let mut doc_ids = Vec::new();
+    for i in 0..3 {
+        doc_ids.push(seed_document(&db, &ctx, &format!("Doc {i} {unique}"), unique).await);
+    }
+
+    let mut task_ids = Vec::new();
+    for i in 0..5 {
+        let (tid, _, _) = seed_task_with_board(
+            &db,
+            &ctx,
+            &format!("s2-pag-proj-{i}"),
+            &format!("S2P{i}"),
+            &format!("Task {i} {unique}"),
+            unique,
+        )
+        .await;
+        task_ids.push(tid);
+    }
+
+    let (key_id, raw_token) = create_api_key_with_scopes(
+        &db,
+        ws.id,
+        owner.id,
+        "agent-pag-tasksread",
+        vec![read_scope(CapabilityFamily::Tasks)],
+    )
+    .await;
+    grant_ws_scope_for_key(&db, ws.id, key_id, owner.id).await;
+
+    let http = reqwest::Client::new();
+
+    let limit = 2u32;
+    let mut cursor: Option<String> = None;
+    let mut seen: Vec<Uuid> = Vec::new();
+    let mut pages = 0;
+
+    loop {
+        let page = search_page(
+            &http,
+            &raw_token,
+            server.base_url(),
+            &ws.slug,
+            unique,
+            Some(limit),
+            cursor.clone(),
+        )
+        .await;
+        pages += 1;
+        assert!(pages <= 10, "pagination did not terminate");
+
+        for h in &page.items {
+            assert_eq!(
+                h.kind,
+                SearchKindDto::Task,
+                "a tasks:read-only agent must never see a document across pages; got: {h:?}"
+            );
+            seen.push(h.id);
+        }
+
+        assert!(
+            page.items.len() <= limit as usize,
+            "a page must not exceed the requested limit"
+        );
+
+        if page.has_more {
+            assert_eq!(
+                page.items.len(),
+                limit as usize,
+                "a non-final page must be full up to the remaining count"
+            );
+            assert!(
+                page.next_cursor.is_some(),
+                "a page with has_more must carry a cursor"
+            );
+            cursor = page.next_cursor;
+        } else {
+            assert!(
+                page.next_cursor.is_none(),
+                "the final page must carry no cursor"
+            );
+            break;
+        }
+    }
+
+    let mut deduped = seen.clone();
+    deduped.sort();
+    deduped.dedup();
+    assert_eq!(
+        deduped.len(),
+        seen.len(),
+        "no row may be seen twice across pages; got: {seen:?}"
+    );
+    assert_eq!(
+        seen.len(),
+        task_ids.len(),
+        "the agent must page through exactly the {} tasks, documents excluded; got: {seen:?}",
+        task_ids.len()
+    );
+    for tid in &task_ids {
+        assert!(
+            seen.contains(&tid.0),
+            "task {tid:?} must appear across the pages; got: {seen:?}"
+        );
+    }
+    for did in &doc_ids {
+        assert!(
+            !seen.contains(&did.0),
+            "document {did:?} must never appear for a tasks:read-only agent; got: {seen:?}"
+        );
+    }
+
+    db.teardown().await;
+}
+
+/// Negative control: a human member carries no scope axis and sees every family
+/// in a single search — the capability gate must not touch users.
+#[tokio::test]
+async fn human_member_sees_all_families() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let server = support::TestServer::spawn(&db).await;
+
+    let (client, ws, user) = support::login_user_with_workspace(&server, &db, "s2-human-all").await;
+    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let token = client.token().expect("token");
+
+    let unique = "s2capshuman9q";
+    let doc_id = seed_document(&db, &ctx, &format!("Doc {unique}"), unique).await;
+    let (task_id, _, _) = seed_task_with_board(
+        &db,
+        &ctx,
+        "s2-human-proj",
+        "S2HU",
+        &format!("Task {unique}"),
+        unique,
+    )
+    .await;
+
+    let http = reqwest::Client::new();
+    let hits = search_hits(&http, token, server.base_url(), &ws.slug, unique).await;
+
+    assert!(
+        hits.iter()
+            .any(|h| h.id == doc_id.0 && h.kind == SearchKindDto::Document),
+        "a human member must see the document; got: {hits:?}"
+    );
+    assert!(
+        hits.iter()
+            .any(|h| h.id == task_id.0 && h.kind == SearchKindDto::Task),
+        "a human member must see the task; got: {hits:?}"
     );
 
     db.teardown().await;

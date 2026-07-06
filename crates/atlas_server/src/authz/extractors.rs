@@ -11,10 +11,11 @@ use atlas_domain::{
 
 use crate::{
     auth::middleware::Principal,
+    authz::authorized::ReadScopeSet,
     error::ApiError,
     persistence::repos::{
-        MembershipRepo, PgMembershipRepo, PgUserRepo, PgWorkspaceRepo, UserRepo, Workspace,
-        WorkspaceRepo,
+        ApiKeyRepo, MembershipRepo, PgApiKeyRepo, PgMembershipRepo, PgUserRepo, PgWorkspaceRepo,
+        UserRepo, Workspace, WorkspaceRepo,
     },
     state::AppState,
 };
@@ -156,6 +157,11 @@ pub struct WorkspaceAccess {
     /// membership/grant gate. Never true for an ApiKey principal.
     /// Consumed by the search route to short-circuit the SQL permission predicate.
     pub bypass: bool,
+    /// The API key's read-capability set, present ONLY for an `ApiKey` principal.
+    /// `None` for users (and groups): humans have no scope axis and read every
+    /// family. The search route uses this to gate cross-family read feeds so an
+    /// agent only sees families it holds `{family}:read` on.
+    pub read_scopes: Option<ReadScopeSet>,
 }
 
 impl FromRequestParts<AppState> for WorkspaceAccess {
@@ -217,6 +223,7 @@ impl FromRequestParts<AppState> for WorkspaceAccess {
                         workspace,
                         membership: Some(atlas_domain::entities::identity::MemberRole::Admin),
                         bypass: true,
+                        read_scopes: None,
                     });
                 }
 
@@ -255,6 +262,7 @@ impl FromRequestParts<AppState> for WorkspaceAccess {
                     workspace,
                     membership: role,
                     bypass: false,
+                    read_scopes: None,
                 })
             }
             Principal::ApiKey(key_id) => {
@@ -266,11 +274,26 @@ impl FromRequestParts<AppState> for WorkspaceAccess {
                     return Err(ApiError::NotFound);
                 }
 
+                // Load the key once to derive its read-capability set; the search
+                // route gates cross-family read feeds on this so an agent only sees
+                // families it holds `{family}:read` on.
+                let key_repo = PgApiKeyRepo {
+                    conn: (*state.db).clone(),
+                };
+                let key = key_repo
+                    .get_by_id(key_id)
+                    .await
+                    .map_err(|e| ApiError::Internal {
+                        message: e.to_string(),
+                    })?
+                    .ok_or(ApiError::NotFound)?;
+
                 Ok(WorkspaceAccess {
                     principal: atlas_domain::permissions::Principal::ApiKey(key_id),
                     workspace,
                     membership: None,
                     bypass: false,
+                    read_scopes: Some(ReadScopeSet::from_scopes(&key.scopes)),
                 })
             }
         }
