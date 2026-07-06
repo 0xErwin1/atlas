@@ -112,9 +112,9 @@ pub(crate) struct ApiKeysCreateArgs {
 
     /// Capability scope to grant, in `family:action` form (repeatable).
     ///
-    /// Families: `tasks`, `docs`, `boards`, `folders`, `projects`. Actions:
-    /// `read`, `create`, `update`, `delete`. Omit entirely to receive the
-    /// server's read-only default.
+    /// Families: `tasks`, `docs`, `boards`, `folders`, `projects`, `webhooks`.
+    /// Actions: `read`, `create`, `update`, `delete`. Omit entirely to receive
+    /// the server's read-only default.
     #[arg(long = "scope", value_name = "FAMILY:ACTION")]
     pub(crate) scopes: Vec<String>,
 }
@@ -264,7 +264,7 @@ fn parse_scope(raw: &str) -> Result<atlas_api::dtos::ApiKeyScope, CliError> {
     serde_json::from_value(serde_json::Value::String(raw.to_owned())).map_err(|_| {
         CliError::Validation(format!(
             "invalid --scope '{raw}': expected `family:action` \
-             (families: tasks, docs, boards, folders, projects; \
+             (families: tasks, docs, boards, folders, projects, webhooks; \
              actions: read, create, update, delete)"
         ))
     })
@@ -513,7 +513,16 @@ mod tests {
             "projects:create",
             "projects:update",
             "projects:delete",
+            "webhooks:read",
+            "webhooks:create",
+            "webhooks:update",
+            "webhooks:delete",
         ];
+        assert_eq!(
+            all.len(),
+            24,
+            "closed catalog must expose 24 family:action tokens"
+        );
         for token in all {
             assert!(parse_scope(token).is_ok(), "expected `{token}` to parse");
         }

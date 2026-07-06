@@ -19,6 +19,7 @@ use atlas_api::dtos::tags::{CreateTagRequest, UpdateTagRequest};
 use atlas_api::dtos::task_views::{
     CreateTaskViewRequest, TaskViewFiltersDto, UpdateTaskViewRequest,
 };
+use atlas_api::dtos::webhooks::{CreateWebhookRequest, UpdateWebhookRequest};
 use atlas_api::dtos::{CreateProjectRequest, UpdateProjectRequest};
 use atlas_client::{AtlasClient, helpers};
 use rmcp::{
@@ -57,10 +58,10 @@ use response::{
     project_promotion, project_reference, project_revision_content, project_revision_meta,
     project_saved_search, project_search_hit, project_status_template, project_tag,
     project_task_attachment, project_task_backlink, project_task_compact, project_task_full,
-    project_task_row, project_task_view, project_workspace, project_workspace_activity_entry,
-    require_confirm, resolve_column_id_on_board, validate_assignee_type, validate_estimate,
-    validate_estimate_value, validate_priority, validate_reference_kind, validate_single_target,
-    wrap_vec,
+    project_task_row, project_task_view, project_webhook, project_webhook_created,
+    project_webhook_delivery, project_workspace, project_workspace_activity_entry, require_confirm,
+    resolve_column_id_on_board, validate_assignee_type, validate_estimate, validate_estimate_value,
+    validate_priority, validate_reference_kind, validate_single_target, wrap_vec,
 };
 
 const ATLAS_INSTRUCTIONS: &str = "\
@@ -110,7 +111,11 @@ Tools by area (see each tool's own description for parameters):\n\
 - Workspace-settings writes: `create_project`, `update_project`, `delete_project`, \
 `create_status_template`, `update_status_template`, `delete_status_template`, \
 `create_saved_search`, `rename_saved_search`, `delete_saved_search`, `create_task_view`, \
-`update_task_view`, `delete_task_view`.";
+`update_task_view`, `delete_task_view`.\n\
+- Webhook management (requires the matching webhooks:* capability): `list_webhooks`, \
+`get_webhook`, `list_webhook_deliveries`, `create_webhook` (returns the one-time whsec_ \
+signing secret), `update_webhook`, `delete_webhook`. These manage workspace webhook \
+subscriptions; they do NOT change the calling key's own capability scopes.";
 
 /// MCP server backed by an Atlas HTTP API endpoint.
 ///
@@ -249,6 +254,25 @@ pub fn parse_bearer_atlas_token(header_value: &str) -> Result<&str, String> {
     }
 
     Ok(token)
+}
+
+/// Parses a required `webhook_id` tool parameter into a UUID.
+fn parse_webhook_id(raw: &str) -> Result<uuid::Uuid, String> {
+    raw.parse::<uuid::Uuid>()
+        .map_err(|_| format!("webhook_id '{raw}' is not a valid UUID"))
+}
+
+/// Parses an optional `scope_id` tool parameter into a UUID.
+///
+/// Absent (`None`) yields `Ok(None)`; a present value must be a valid UUID.
+fn parse_optional_webhook_scope_id(raw: Option<&str>) -> Result<Option<uuid::Uuid>, String> {
+    match raw {
+        None => Ok(None),
+        Some(s) => s
+            .parse::<uuid::Uuid>()
+            .map(Some)
+            .map_err(|_| format!("scope_id '{s}' is not a valid UUID")),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1414,6 +1438,107 @@ pub struct DeleteTaskViewParams {
     pub workspace: String,
     /// UUID of the task view to delete.
     pub id: String,
+}
+
+// ---------------------------------------------------------------------------
+// Webhook management params
+// ---------------------------------------------------------------------------
+
+/// Parameters accepted by the `list_webhooks` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ListWebhooksParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Opaque forward cursor from a previous page's `next_cursor`.
+    #[serde(default)]
+    pub cursor: Option<String>,
+    /// Page size (1..=50). Defaults to the server page size when omitted.
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+/// Parameters accepted by the `get_webhook` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetWebhookParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Webhook subscription UUID, from the `id` field of `list_webhooks`.
+    pub webhook_id: String,
+}
+
+/// Parameters accepted by the `list_webhook_deliveries` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ListWebhookDeliveriesParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Webhook subscription UUID, from the `id` field of `list_webhooks`.
+    pub webhook_id: String,
+    /// Opaque newest-first cursor from a previous page's `next_cursor`.
+    #[serde(default)]
+    pub cursor: Option<String>,
+    /// Page size (1..=50). Defaults to the server page size when omitted.
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+/// Parameters accepted by the `create_webhook` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CreateWebhookParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Absolute HTTPS (or HTTP for local testing) URL to POST events to.
+    pub target_url: String,
+    /// Event-type strings to subscribe to (at least one required).
+    pub event_types: Vec<String>,
+    /// Scope discriminant: `workspace` (default), `project`, or `board`.
+    #[serde(default)]
+    pub scope_type: Option<String>,
+    /// Project or board UUID; required when `scope_type` is not `workspace`.
+    #[serde(default)]
+    pub scope_id: Option<String>,
+    /// Optional human-readable label for the subscription.
+    #[serde(default)]
+    pub label: Option<String>,
+}
+
+/// Parameters accepted by the `update_webhook` tool.
+///
+/// PATCH semantics: omit a field to leave it unchanged.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct UpdateWebhookParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Webhook subscription UUID to update.
+    pub webhook_id: String,
+    /// New target URL. Omit to leave unchanged.
+    #[serde(default)]
+    pub target_url: Option<String>,
+    /// New event-type list. Omit to leave unchanged.
+    #[serde(default)]
+    pub event_types: Option<Vec<String>>,
+    /// New scope discriminant. Omit to leave unchanged.
+    #[serde(default)]
+    pub scope_type: Option<String>,
+    /// New scope UUID. Omit to leave unchanged.
+    #[serde(default)]
+    pub scope_id: Option<String>,
+    /// Enable or disable the subscription. Omit to leave unchanged.
+    #[serde(default)]
+    pub is_active: Option<bool>,
+    /// New label. Omit to leave unchanged.
+    #[serde(default)]
+    pub label: Option<String>,
+}
+
+/// Parameters accepted by the `delete_webhook` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DeleteWebhookParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Webhook subscription UUID to delete.
+    pub webhook_id: String,
+    /// Must be `true` to proceed. Soft-deletes the subscription.
+    pub confirm: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -3859,6 +3984,173 @@ response — do NOT create those columns again; only add columns for statuses th
         let result = envelope_page(page, project_audit_entry);
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
+
+    // -----------------------------------------------------------------------
+    // Webhook management
+    //
+    // These tools MANAGE webhook subscriptions for a workspace. They are gated
+    // server-side by the `webhooks:{read,create,update,delete}` capabilities
+    // (plus an Editor role floor for agent keys). This is NOT scope
+    // self-mutation: none of these tools change the calling key's own
+    // capability set — there is deliberately no tool that edits an API key's
+    // scopes.
+    // -----------------------------------------------------------------------
+
+    #[tool(
+        description = "List webhook subscriptions in a workspace (cursor-paginated). \
+        Requires the webhooks:read capability."
+    )]
+    async fn list_webhooks(
+        &self,
+        Parameters(params): Parameters<ListWebhooksParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
+        let page = client
+            .list_webhooks(&params.workspace, params.cursor.as_deref(), params.limit)
+            .await
+            .map_err(|e| enrich_client_error(e, "list_webhooks"))?;
+
+        let result = envelope_page(page, project_webhook);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Retrieve a single webhook subscription by UUID (no secret). \
+        Requires the webhooks:read capability."
+    )]
+    async fn get_webhook(
+        &self,
+        Parameters(params): Parameters<GetWebhookParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+        let webhook_id = parse_webhook_id(&params.webhook_id)?;
+
+        let webhook = client
+            .get_webhook(&params.workspace, webhook_id)
+            .await
+            .map_err(|e| enrich_client_error(e, "get_webhook"))?;
+
+        let result = project_webhook(webhook);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "List delivery attempts for a webhook, newest first (cursor-paginated). \
+        Requires the webhooks:read capability."
+    )]
+    async fn list_webhook_deliveries(
+        &self,
+        Parameters(params): Parameters<ListWebhookDeliveriesParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+        let webhook_id = parse_webhook_id(&params.webhook_id)?;
+
+        let page = client
+            .list_webhook_deliveries(
+                &params.workspace,
+                webhook_id,
+                params.cursor.as_deref(),
+                params.limit,
+            )
+            .await
+            .map_err(|e| enrich_client_error(e, "list_webhook_deliveries"))?;
+
+        let result = envelope_page(page, project_webhook_delivery);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Create a webhook subscription. Requires the webhooks:create capability. \
+        The response carries the one-time signing secret (whsec_…) under `secret`; it is \
+        shown exactly once and never retrievable again — store it immediately."
+    )]
+    async fn create_webhook(
+        &self,
+        Parameters(params): Parameters<CreateWebhookParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
+        let scope_id = parse_optional_webhook_scope_id(params.scope_id.as_deref())?;
+
+        let body = CreateWebhookRequest {
+            target_url: params.target_url,
+            event_types: params.event_types,
+            scope_type: params.scope_type.unwrap_or_else(|| "workspace".to_string()),
+            scope_id,
+            label: params.label,
+        };
+
+        let created = client
+            .create_webhook(&params.workspace, body)
+            .await
+            .map_err(|e| enrich_client_error(e, "create_webhook"))?;
+
+        let result = project_webhook_created(created);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Update a webhook subscription (PATCH: omit a field to leave it \
+        unchanged). Requires the webhooks:update capability. The signing secret is never \
+        rotated through this tool."
+    )]
+    async fn update_webhook(
+        &self,
+        Parameters(params): Parameters<UpdateWebhookParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+        let webhook_id = parse_webhook_id(&params.webhook_id)?;
+
+        let scope_id = match params.scope_id.as_deref() {
+            Some(_) => Some(parse_optional_webhook_scope_id(params.scope_id.as_deref())?),
+            None => None,
+        };
+
+        let body = UpdateWebhookRequest {
+            target_url: params.target_url,
+            event_types: params.event_types,
+            scope_type: params.scope_type,
+            scope_id,
+            is_active: params.is_active,
+            label: params.label.map(Some),
+        };
+
+        let webhook = client
+            .update_webhook(&params.workspace, webhook_id, body)
+            .await
+            .map_err(|e| enrich_client_error(e, "update_webhook"))?;
+
+        let result = project_webhook(webhook);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Delete a webhook subscription. Requires confirm: true and the \
+        webhooks:delete capability. Soft-deletes the subscription."
+    )]
+    async fn delete_webhook(
+        &self,
+        Parameters(params): Parameters<DeleteWebhookParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+        require_confirm(params.confirm, "webhook", &params.webhook_id)?;
+        let webhook_id = parse_webhook_id(&params.webhook_id)?;
+
+        client
+            .delete_webhook(&params.workspace, webhook_id)
+            .await
+            .map_err(|e| enrich_client_error(e, "delete_webhook"))?;
+
+        let result = serde_json::json!({ "deleted": true, "webhook_id": params.webhook_id });
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
 }
 
 #[tool_handler]
@@ -3976,6 +4268,41 @@ mod tests {
             info.capabilities.resources.is_some(),
             "ServerCapabilities.resources must be Some after enable_resources()"
         );
+    }
+
+    #[test]
+    fn webhook_management_tools_are_registered() {
+        let router = AtlasMcp::tool_router();
+        for name in [
+            "list_webhooks",
+            "get_webhook",
+            "list_webhook_deliveries",
+            "create_webhook",
+            "update_webhook",
+            "delete_webhook",
+        ] {
+            assert!(
+                router.has_route(name),
+                "expected MCP tool `{name}` to be registered"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_webhook_id_rejects_non_uuid() {
+        assert!(parse_webhook_id("not-a-uuid").is_err());
+        assert!(parse_webhook_id(&uuid::Uuid::nil().to_string()).is_ok());
+    }
+
+    #[test]
+    fn parse_optional_webhook_scope_id_handles_absent_and_present() {
+        assert!(parse_optional_webhook_scope_id(None).unwrap().is_none());
+        assert!(
+            parse_optional_webhook_scope_id(Some(&uuid::Uuid::nil().to_string()))
+                .unwrap()
+                .is_some()
+        );
+        assert!(parse_optional_webhook_scope_id(Some("bad")).is_err());
     }
 
     #[test]

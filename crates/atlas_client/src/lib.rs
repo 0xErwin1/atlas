@@ -40,6 +40,10 @@ use atlas_api::{
         },
         tags::{CreateTagRequest, TagDto, UpdateTagRequest},
         task_views::{CreateTaskViewRequest, TaskViewDto, UpdateTaskViewRequest},
+        webhooks::{
+            CreateWebhookRequest, UpdateWebhookRequest, WebhookCreatedDto, WebhookDeliveryDto,
+            WebhookDto,
+        },
     },
     pagination::Page,
     problem::ProblemDetails,
@@ -1447,6 +1451,112 @@ impl AtlasClient {
             .send()
             .await?;
         self.decode_response(response, "copy_document").await
+    }
+
+    // ---- Webhooks --------------------------------------------------------------
+
+    /// `POST /v1/workspaces/{ws}/webhooks`
+    ///
+    /// Creates a webhook subscription. The response carries the plaintext HMAC
+    /// signing secret (`whsec_…`) exactly once; it is never retrievable again.
+    pub async fn create_webhook(
+        &self,
+        ws: &str,
+        body: CreateWebhookRequest,
+    ) -> Result<WebhookCreatedDto, ClientError> {
+        let response = self
+            .post(&format!("/v1/workspaces/{ws}/webhooks"))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "create_webhook").await
+    }
+
+    /// `GET /v1/workspaces/{ws}/webhooks`
+    ///
+    /// The list endpoint pages forward with an opaque `after` cursor (not the
+    /// generic `cursor` param used elsewhere), so the query string is built here
+    /// with the parameter name this route expects.
+    pub async fn list_webhooks(
+        &self,
+        ws: &str,
+        after: Option<&str>,
+        limit: Option<u32>,
+    ) -> Result<Page<WebhookDto>, ClientError> {
+        let path = build_webhooks_list_path(ws, after, limit);
+        let response = self.get(&path).send().await?;
+        self.decode_response(response, "list_webhooks").await
+    }
+
+    /// `GET /v1/workspaces/{ws}/webhooks/{webhook_id}`
+    pub async fn get_webhook(
+        &self,
+        ws: &str,
+        webhook_id: uuid::Uuid,
+    ) -> Result<WebhookDto, ClientError> {
+        let response = self
+            .get(&format!("/v1/workspaces/{ws}/webhooks/{webhook_id}"))
+            .send()
+            .await?;
+        self.decode_response(response, "get_webhook").await
+    }
+
+    /// `PATCH /v1/workspaces/{ws}/webhooks/{webhook_id}`
+    ///
+    /// PATCH semantics: omitted fields are left unchanged. The signing secret is
+    /// never rotated through this endpoint.
+    pub async fn update_webhook(
+        &self,
+        ws: &str,
+        webhook_id: uuid::Uuid,
+        body: UpdateWebhookRequest,
+    ) -> Result<WebhookDto, ClientError> {
+        let response = self
+            .patch(&format!("/v1/workspaces/{ws}/webhooks/{webhook_id}"))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "update_webhook").await
+    }
+
+    /// `DELETE /v1/workspaces/{ws}/webhooks/{webhook_id}`
+    pub async fn delete_webhook(
+        &self,
+        ws: &str,
+        webhook_id: uuid::Uuid,
+    ) -> Result<(), ClientError> {
+        let response = self
+            .delete(&format!("/v1/workspaces/{ws}/webhooks/{webhook_id}"))
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        if response.status().is_success() {
+            return Ok(());
+        }
+        let problem: ProblemDetails = response
+            .json()
+            .await
+            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
+        Err(ClientError::Api(problem))
+    }
+
+    /// `GET /v1/workspaces/{ws}/webhooks/{webhook_id}/deliveries`
+    ///
+    /// Delivery attempts page newest-first with an opaque `before` cursor, so the
+    /// query string is built here with the parameter name this route expects.
+    pub async fn list_webhook_deliveries(
+        &self,
+        ws: &str,
+        webhook_id: uuid::Uuid,
+        before: Option<&str>,
+        limit: Option<u32>,
+    ) -> Result<Page<WebhookDeliveryDto>, ClientError> {
+        let path = build_webhook_deliveries_path(ws, webhook_id, before, limit);
+        let response = self.get(&path).send().await?;
+        self.decode_response(response, "list_webhook_deliveries")
+            .await
     }
 
     // ---- Boards ----------------------------------------------------------------
@@ -2881,6 +2991,55 @@ fn build_paginated_path(base: &str, cursor: Option<&str>, limit: Option<u32>) ->
     }
 }
 
+/// Builds the `GET /v1/workspaces/{ws}/webhooks` path.
+///
+/// The webhook list route paginates on `after` (forward cursor) rather than the
+/// generic `cursor` param, so it cannot reuse [`build_paginated_path`].
+fn build_webhooks_list_path(ws: &str, after: Option<&str>, limit: Option<u32>) -> String {
+    let base = format!("/v1/workspaces/{ws}/webhooks");
+
+    let mut params: Vec<String> = Vec::new();
+    if let Some(a) = after {
+        params.push(format!("after={a}"));
+    }
+    if let Some(l) = limit {
+        params.push(format!("limit={l}"));
+    }
+
+    if params.is_empty() {
+        base
+    } else {
+        format!("{}?{}", base, params.join("&"))
+    }
+}
+
+/// Builds the `GET /v1/workspaces/{ws}/webhooks/{webhook_id}/deliveries` path.
+///
+/// Delivery attempts paginate newest-first on `before`, so this route also
+/// cannot reuse [`build_paginated_path`].
+fn build_webhook_deliveries_path(
+    ws: &str,
+    webhook_id: uuid::Uuid,
+    before: Option<&str>,
+    limit: Option<u32>,
+) -> String {
+    let base = format!("/v1/workspaces/{ws}/webhooks/{webhook_id}/deliveries");
+
+    let mut params: Vec<String> = Vec::new();
+    if let Some(b) = before {
+        params.push(format!("before={b}"));
+    }
+    if let Some(l) = limit {
+        params.push(format!("limit={l}"));
+    }
+
+    if params.is_empty() {
+        base
+    } else {
+        format!("{}?{}", base, params.join("&"))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2937,6 +3096,38 @@ mod tests {
         assert!(!path.contains("sort="));
         assert!(!path.contains("cursor="));
         assert!(!path.contains("limit="));
+    }
+
+    #[test]
+    fn build_webhooks_list_path_uses_after_cursor() {
+        let path = build_webhooks_list_path("ws1", Some("cur0"), Some(25));
+        assert_eq!(path, "/v1/workspaces/ws1/webhooks?after=cur0&limit=25");
+    }
+
+    #[test]
+    fn build_webhooks_list_path_omits_params_when_none() {
+        let path = build_webhooks_list_path("ws1", None, None);
+        assert_eq!(path, "/v1/workspaces/ws1/webhooks");
+        assert!(!path.contains("cursor="));
+        assert!(!path.contains("after="));
+    }
+
+    #[test]
+    fn build_webhook_deliveries_path_uses_before_cursor() {
+        let id = uuid::Uuid::nil();
+        let path = build_webhook_deliveries_path("ws1", id, Some("cur9"), Some(10));
+        assert_eq!(
+            path,
+            format!("/v1/workspaces/ws1/webhooks/{id}/deliveries?before=cur9&limit=10")
+        );
+    }
+
+    #[test]
+    fn build_webhook_deliveries_path_omits_params_when_none() {
+        let id = uuid::Uuid::nil();
+        let path = build_webhook_deliveries_path("ws1", id, None, None);
+        assert_eq!(path, format!("/v1/workspaces/ws1/webhooks/{id}/deliveries"));
+        assert!(!path.contains("before="));
     }
 
     #[test]

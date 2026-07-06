@@ -21,6 +21,7 @@ use atlas_api::{
         status_templates::StatusTemplateDto,
         tags::TagDto,
         task_views::TaskViewDto,
+        webhooks::{WebhookCreatedDto, WebhookDeliveryDto, WebhookDto},
         {PrincipalDto, ProjectDto, WorkspaceDto},
     },
     pagination::Page,
@@ -958,6 +959,99 @@ pub(crate) fn project_audit_entry(entry: atlas_api::dtos::audit::AuditEntryDto) 
 
     map.insert("metadata".into(), entry.metadata);
     map.insert("created_at".into(), json!(entry.created_at));
+
+    Value::Object(map)
+}
+
+// ---------------------------------------------------------------------------
+// Webhook projections
+// ---------------------------------------------------------------------------
+
+/// Compact projection of a webhook subscription (list / get / update rows).
+///
+/// `workspace_id` is dropped — always implicit from the tool's workspace param.
+/// The signing secret is never present on `WebhookDto`, so this projection can
+/// never leak it. `scope_id` and `label` are omitted when absent.
+pub(crate) fn project_webhook(w: WebhookDto) -> Value {
+    let mut map = serde_json::Map::new();
+    map.insert("id".into(), json!(w.id));
+    map.insert("target_url".into(), json!(w.target_url));
+    map.insert("event_types".into(), json!(w.event_types));
+    map.insert("scope_type".into(), json!(w.scope_type));
+
+    if let Some(scope_id) = w.scope_id {
+        map.insert("scope_id".into(), json!(scope_id));
+    }
+
+    map.insert("is_active".into(), json!(w.is_active));
+
+    if let Some(label) = w.label {
+        map.insert("label".into(), json!(label));
+    }
+
+    map.insert("created_at".into(), json!(w.created_at));
+    map.insert("updated_at".into(), json!(w.updated_at));
+
+    Value::Object(map)
+}
+
+/// Projection of a freshly created webhook, INCLUDING the one-time secret.
+///
+/// The server returns the plaintext `whsec_…` HMAC secret exactly once, at
+/// creation. This projection surfaces it under `secret` (and flags it via
+/// `secret_shown_once`) so the agent can capture and store it immediately — it
+/// is never retrievable again through any read path.
+pub(crate) fn project_webhook_created(w: WebhookCreatedDto) -> Value {
+    let mut map = serde_json::Map::new();
+    map.insert("id".into(), json!(w.id));
+    map.insert("target_url".into(), json!(w.target_url));
+    map.insert("event_types".into(), json!(w.event_types));
+    map.insert("scope_type".into(), json!(w.scope_type));
+
+    if let Some(scope_id) = w.scope_id {
+        map.insert("scope_id".into(), json!(scope_id));
+    }
+
+    map.insert("is_active".into(), json!(w.is_active));
+
+    if let Some(label) = w.label {
+        map.insert("label".into(), json!(label));
+    }
+
+    map.insert("secret".into(), json!(w.secret));
+    map.insert("secret_shown_once".into(), json!(true));
+    map.insert("created_at".into(), json!(w.created_at));
+    map.insert("updated_at".into(), json!(w.updated_at));
+
+    Value::Object(map)
+}
+
+/// Compact projection of a webhook delivery-attempt log entry.
+///
+/// `subscription_id` is dropped — always implicit from the tool's `webhook_id`
+/// param. Optional outcome details (`status_code`, `response_snippet`, `error`,
+/// `duration_ms`) are omitted when absent.
+pub(crate) fn project_webhook_delivery(d: WebhookDeliveryDto) -> Value {
+    let mut map = serde_json::Map::new();
+    map.insert("id".into(), json!(d.id));
+    map.insert("outbox_event_id".into(), json!(d.outbox_event_id));
+    map.insert("attempt_no".into(), json!(d.attempt_no));
+    map.insert("outcome".into(), json!(d.outcome));
+
+    if let Some(status_code) = d.status_code {
+        map.insert("status_code".into(), json!(status_code));
+    }
+    if let Some(snippet) = d.response_snippet {
+        map.insert("response_snippet".into(), json!(snippet));
+    }
+    if let Some(error) = d.error {
+        map.insert("error".into(), json!(error));
+    }
+    if let Some(duration_ms) = d.duration_ms {
+        map.insert("duration_ms".into(), json!(duration_ms));
+    }
+
+    map.insert("created_at".into(), json!(d.created_at));
 
     Value::Object(map)
 }
@@ -2791,5 +2885,96 @@ mod tests {
         let entry = make_audit_entry_user("user.disabled", "user", None, None, json!({}));
         let val = project_audit_entry(entry);
         assert_eq!(val["metadata"], json!({}));
+    }
+
+    // -----------------------------------------------------------------------
+    // Webhook projections
+    // -----------------------------------------------------------------------
+
+    fn make_webhook_dto(scope_id: Option<Uuid>, label: Option<&str>) -> WebhookDto {
+        WebhookDto {
+            id: fixed_uuid(),
+            workspace_id: fixed_uuid(),
+            target_url: "https://example.com/hook".into(),
+            event_types: vec!["task.created".into()],
+            scope_type: "workspace".into(),
+            scope_id,
+            is_active: true,
+            label: label.map(String::from),
+            created_at: now(),
+            updated_at: now(),
+        }
+    }
+
+    #[test]
+    fn webhook_projection_drops_workspace_id_and_keeps_core_fields() {
+        let val = project_webhook(make_webhook_dto(None, None));
+        assert_eq!(val["target_url"], "https://example.com/hook");
+        assert_eq!(val["scope_type"], "workspace");
+        assert_eq!(val["is_active"], true);
+        assert!(val.get("workspace_id").is_none());
+        assert!(
+            val.get("secret").is_none(),
+            "read projection must never carry a secret"
+        );
+    }
+
+    #[test]
+    fn webhook_projection_omits_absent_scope_id_and_label() {
+        let val = project_webhook(make_webhook_dto(None, None));
+        assert!(val.get("scope_id").is_none());
+        assert!(val.get("label").is_none());
+    }
+
+    #[test]
+    fn webhook_projection_includes_scope_id_and_label_when_present() {
+        let scope = Uuid::now_v7();
+        let val = project_webhook(make_webhook_dto(Some(scope), Some("prod")));
+        assert_eq!(val["scope_id"].as_str().unwrap(), scope.to_string());
+        assert_eq!(val["label"], "prod");
+    }
+
+    #[test]
+    fn webhook_created_projection_surfaces_one_time_secret() {
+        let created = WebhookCreatedDto {
+            id: fixed_uuid(),
+            workspace_id: fixed_uuid(),
+            target_url: "https://example.com/hook".into(),
+            event_types: vec!["task.created".into()],
+            scope_type: "workspace".into(),
+            scope_id: None,
+            is_active: true,
+            label: None,
+            secret: "whsec_deadbeef".into(),
+            created_at: now(),
+            updated_at: now(),
+        };
+        let val = project_webhook_created(created);
+        assert_eq!(val["secret"], "whsec_deadbeef");
+        assert_eq!(val["secret_shown_once"], true);
+        assert!(val.get("workspace_id").is_none());
+    }
+
+    #[test]
+    fn webhook_delivery_projection_omits_absent_optionals() {
+        let delivery = WebhookDeliveryDto {
+            id: fixed_uuid(),
+            subscription_id: fixed_uuid(),
+            outbox_event_id: fixed_uuid(),
+            attempt_no: 1,
+            outcome: "success".into(),
+            status_code: Some(200),
+            response_snippet: None,
+            error: None,
+            duration_ms: Some(42),
+            created_at: now(),
+        };
+        let val = project_webhook_delivery(delivery);
+        assert_eq!(val["outcome"], "success");
+        assert_eq!(val["status_code"], 200);
+        assert_eq!(val["duration_ms"], 42);
+        assert!(val.get("subscription_id").is_none());
+        assert!(val.get("response_snippet").is_none());
+        assert!(val.get("error").is_none());
     }
 }
