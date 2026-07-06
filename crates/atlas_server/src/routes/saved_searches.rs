@@ -11,15 +11,42 @@ use atlas_api::dtos::saved_searches::{
 use atlas_domain::{
     Actor, WorkspaceCtx,
     entities::saved_searches::{NewSavedSearch, SavedSearch},
+    permissions::{Capability, CapabilityAction, CapabilityFamily},
 };
 
 use crate::{
-    authz::WorkspaceMember,
+    authz::{WorkspaceMember, enforce_api_key_scope},
     error::ApiError,
     persistence::repos::{PgSavedSearchRepo, SavedSearchRepo},
     routes::validation::{validate_name, validate_query},
     state::AppState,
 };
+
+/// Enforces the `saved_searches:{action}` capability for an API-key caller.
+///
+/// Saved-search routes admit any `WorkspaceMember` (a membership-based floor
+/// with no role requirement), so a human Member passes unchanged. Only an
+/// API-key principal is additionally required to hold the matching capability;
+/// `member.api_key_id` is `Some` exactly for those callers.
+async fn enforce_saved_searches_scope(
+    member: &WorkspaceMember,
+    state: &AppState,
+    action: CapabilityAction,
+) -> Result<(), ApiError> {
+    if let Some(key_id) = member.api_key_id {
+        enforce_api_key_scope(
+            &state.db,
+            key_id,
+            Capability {
+                family: CapabilityFamily::SavedSearches,
+                action,
+            },
+        )
+        .await?;
+    }
+
+    Ok(())
+}
 
 fn actor_from_member(member: &WorkspaceMember) -> Result<Actor, ApiError> {
     match (&member.user, &member.api_key_id) {
@@ -60,6 +87,8 @@ pub(crate) async fn list_saved_searches(
     member: WorkspaceMember,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<SavedSearchDto>>, ApiError> {
+    enforce_saved_searches_scope(&member, &state, CapabilityAction::Read).await?;
+
     let actor = actor_from_member(&member)?;
     let ctx = WorkspaceCtx::new(member.workspace.id, actor);
     let repo = PgSavedSearchRepo::new((*state.db).clone());
@@ -95,6 +124,8 @@ pub(crate) async fn create_saved_search(
     State(state): State<AppState>,
     Json(body): Json<CreateSavedSearchRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
+    enforce_saved_searches_scope(&member, &state, CapabilityAction::Create).await?;
+
     validate_name("name", &body.name)?;
     validate_query(&body.query)?;
 
@@ -146,6 +177,8 @@ pub(crate) async fn rename_saved_search(
     State(state): State<AppState>,
     Json(body): Json<RenameSavedSearchRequest>,
 ) -> Result<Json<SavedSearchDto>, ApiError> {
+    enforce_saved_searches_scope(&member, &state, CapabilityAction::Update).await?;
+
     validate_name("name", &body.name)?;
 
     let actor = actor_from_member(&member)?;
@@ -186,6 +219,8 @@ pub(crate) async fn delete_saved_search(
     Path((_ws, id)): Path<(String, uuid::Uuid)>,
     State(state): State<AppState>,
 ) -> Result<StatusCode, ApiError> {
+    enforce_saved_searches_scope(&member, &state, CapabilityAction::Delete).await?;
+
     let actor = actor_from_member(&member)?;
     let ctx = WorkspaceCtx::new(member.workspace.id, actor);
     let repo = PgSavedSearchRepo::new((*state.db).clone());

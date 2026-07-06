@@ -118,6 +118,16 @@ fn capability_from_scope(scope: ApiKeyScope) -> Capability {
         ApiKeyScope::ConfigUpdate => (CapabilityFamily::Config, CapabilityAction::Update),
         ApiKeyScope::ConfigDelete => (CapabilityFamily::Config, CapabilityAction::Delete),
         ApiKeyScope::GrantsRead => (CapabilityFamily::Grants, CapabilityAction::Read),
+        ApiKeyScope::SavedSearchesRead => (CapabilityFamily::SavedSearches, CapabilityAction::Read),
+        ApiKeyScope::SavedSearchesCreate => {
+            (CapabilityFamily::SavedSearches, CapabilityAction::Create)
+        }
+        ApiKeyScope::SavedSearchesUpdate => {
+            (CapabilityFamily::SavedSearches, CapabilityAction::Update)
+        }
+        ApiKeyScope::SavedSearchesDelete => {
+            (CapabilityFamily::SavedSearches, CapabilityAction::Delete)
+        }
     };
     Capability { family, action }
 }
@@ -159,6 +169,16 @@ fn scope_from_capability(cap: Capability) -> ApiKeyScope {
         // never constructed here. This wildcard keeps the match total without a
         // panic (workspace clippy denies `unreachable!`/`panic!` via `-D warnings`).
         (CapabilityFamily::Grants, _) => ApiKeyScope::GrantsRead,
+        (CapabilityFamily::SavedSearches, CapabilityAction::Read) => ApiKeyScope::SavedSearchesRead,
+        (CapabilityFamily::SavedSearches, CapabilityAction::Create) => {
+            ApiKeyScope::SavedSearchesCreate
+        }
+        (CapabilityFamily::SavedSearches, CapabilityAction::Update) => {
+            ApiKeyScope::SavedSearchesUpdate
+        }
+        (CapabilityFamily::SavedSearches, CapabilityAction::Delete) => {
+            ApiKeyScope::SavedSearchesDelete
+        }
     }
 }
 

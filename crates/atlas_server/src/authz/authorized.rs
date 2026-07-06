@@ -140,6 +140,10 @@ capability_marker!(ConfigCreate, Config, Create);
 capability_marker!(ConfigUpdate, Config, Update);
 capability_marker!(ConfigDelete, Config, Delete);
 capability_marker!(GrantsRead, Grants, Read);
+capability_marker!(SavedSearchesRead, SavedSearches, Read);
+capability_marker!(SavedSearchesCreate, SavedSearches, Create);
+capability_marker!(SavedSearchesUpdate, SavedSearches, Update);
+capability_marker!(SavedSearchesDelete, SavedSearches, Delete);
 
 pub trait ResolvedResource: Sized + Send {
     type PathParams: DeserializeOwned + Send;

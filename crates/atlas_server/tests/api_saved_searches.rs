@@ -8,7 +8,7 @@
 mod support;
 
 use atlas_api::dtos::{
-    CreateUserApiKeyRequest, InitialGrantRequest,
+    ApiKeyScope, CreateUserApiKeyRequest, InitialGrantRequest,
     saved_searches::{CreateSavedSearchRequest, RenameSavedSearchRequest},
 };
 use atlas_client::ClientError;
@@ -231,7 +231,7 @@ async fn create_saved_search_allows_same_name_for_different_owners() {
                 workspace: ws.slug.clone(),
                 role: "editor".to_string(),
             }),
-            scopes: None,
+            scopes: Some(vec![ApiKeyScope::SavedSearchesCreate]),
         })
         .await
         .expect("create api key");
@@ -290,7 +290,7 @@ async fn list_saved_searches_is_owner_scoped_sorted_and_excludes_deleted() {
                 workspace: ws.slug.clone(),
                 role: "editor".to_string(),
             }),
-            scopes: None,
+            scopes: Some(vec![ApiKeyScope::SavedSearchesCreate]),
         })
         .await
         .expect("create api key");
@@ -452,7 +452,7 @@ async fn rename_saved_search_returns_404_for_non_owned_id() {
                 workspace: ws.slug.clone(),
                 role: "editor".to_string(),
             }),
-            scopes: None,
+            scopes: Some(vec![ApiKeyScope::SavedSearchesUpdate]),
         })
         .await
         .expect("create api key");
@@ -586,7 +586,7 @@ async fn delete_saved_search_returns_404_for_non_owned_id() {
                 workspace: ws.slug.clone(),
                 role: "editor".to_string(),
             }),
-            scopes: None,
+            scopes: Some(vec![ApiKeyScope::SavedSearchesDelete]),
         })
         .await
         .expect("create api key");

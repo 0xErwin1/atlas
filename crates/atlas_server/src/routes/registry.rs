@@ -1046,34 +1046,34 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         openapi_path: Some("/v1/workspaces/{ws}/property-definitions/{property_definition_id}"),
         capability: Some("config:delete"),
     },
-    // ---- Saved searches ----
+    // ---- Saved searches (per-owner; agents gated manually on saved_searches:{action}) ----
     RouteEntry {
         method: "GET",
         path_template: "/v1/workspaces/{ws}/saved-searches",
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/v1/workspaces/{ws}/saved-searches"),
-        capability: None,
+        capability: Some("saved_searches:read"),
     },
     RouteEntry {
         method: "POST",
         path_template: "/v1/workspaces/{ws}/saved-searches",
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/v1/workspaces/{ws}/saved-searches"),
-        capability: None,
+        capability: Some("saved_searches:create"),
     },
     RouteEntry {
         method: "PATCH",
         path_template: "/v1/workspaces/{ws}/saved-searches/00000000-0000-0000-0000-000000000001",
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/v1/workspaces/{ws}/saved-searches/{id}"),
-        capability: None,
+        capability: Some("saved_searches:update"),
     },
     RouteEntry {
         method: "DELETE",
         path_template: "/v1/workspaces/{ws}/saved-searches/00000000-0000-0000-0000-000000000001",
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/v1/workspaces/{ws}/saved-searches/{id}"),
-        capability: None,
+        capability: Some("saved_searches:delete"),
     },
     // ---- Groups (not one of the five capability families) ----
     RouteEntry {

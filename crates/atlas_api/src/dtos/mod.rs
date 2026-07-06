@@ -276,6 +276,14 @@ pub enum ApiKeyScope {
     ConfigDelete,
     #[serde(rename = "grants:read")]
     GrantsRead,
+    #[serde(rename = "saved_searches:read")]
+    SavedSearchesRead,
+    #[serde(rename = "saved_searches:create")]
+    SavedSearchesCreate,
+    #[serde(rename = "saved_searches:update")]
+    SavedSearchesUpdate,
+    #[serde(rename = "saved_searches:delete")]
+    SavedSearchesDelete,
 }
 
 /// Optional initial workspace grant included in a `POST /v1/api-keys` request.
@@ -632,6 +640,25 @@ mod tests {
                 result.is_err(),
                 "grant write {write} must be rejected by the closed enum (grants is read-only)"
             );
+        }
+    }
+
+    #[test]
+    fn saved_searches_scopes_round_trip_with_underscored_wire_form() {
+        let cases = [
+            (ApiKeyScope::SavedSearchesRead, "saved_searches:read"),
+            (ApiKeyScope::SavedSearchesCreate, "saved_searches:create"),
+            (ApiKeyScope::SavedSearchesUpdate, "saved_searches:update"),
+            (ApiKeyScope::SavedSearchesDelete, "saved_searches:delete"),
+        ];
+
+        for (scope, wire) in cases {
+            let json = serde_json::to_value(scope).expect("scope must serialize");
+            assert_eq!(json, serde_json::Value::String(wire.to_string()));
+
+            let parsed: ApiKeyScope =
+                serde_json::from_value(json).expect("wire value must deserialize");
+            assert_eq!(parsed, scope);
         }
     }
 }

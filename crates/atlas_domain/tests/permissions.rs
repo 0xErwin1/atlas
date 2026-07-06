@@ -469,7 +469,25 @@ fn self_referencing_blocks_is_rejected() {
 
 #[test]
 fn capability_all_has_expected_entries() {
-    assert_eq!(Capability::ALL.len(), 29);
+    assert_eq!(Capability::ALL.len(), 33);
+}
+
+#[test]
+fn saved_searches_capabilities_round_trip_underscored() {
+    for name in [
+        "saved_searches:read",
+        "saved_searches:create",
+        "saved_searches:update",
+        "saved_searches:delete",
+    ] {
+        let cap: Capability = name.parse().expect("saved_searches capability must parse");
+        assert_eq!(cap.family, CapabilityFamily::SavedSearches);
+        assert_eq!(
+            cap.as_str(),
+            name,
+            "saved_searches wire form must stay underscored"
+        );
+    }
 }
 
 #[test]

@@ -9,7 +9,7 @@
 //!
 //! Two invariants, exercised through the real HTTP router (not the gate
 //! function directly), so both the `Authorized<R, M, S>` extractor path and
-//! the four manual `enforce_api_key_scope` call sites are covered identically:
+//! the manual `enforce_api_key_scope` call sites are covered identically:
 //!
 //! 1. A key with an EMPTY scope set gets 403 with a scope-denial detail on
 //!    every `ROUTE_REGISTRY` entry that declares `capability: Some(_)`.
@@ -43,6 +43,7 @@ use atlas_api::{
             CreateDocumentRequest, MoveDocumentRequest, UpdateContentRequest, UpdateDocumentRequest,
         },
         folders::{CreateFolderRequest, MoveFolderRequest, RenameFolderRequest},
+        saved_searches::{CreateSavedSearchRequest, RenameSavedSearchRequest},
         status_templates::{CreateStatusTemplateRequest, UpdateStatusTemplateRequest},
     },
     problem::ProblemDetails,
@@ -342,6 +343,11 @@ enum Case {
     // ---- grants: read-only list reads (2) ----
     ListProjectGrants,
     ListWorkspaceGrants,
+    // ---- saved_searches (4) ----
+    ListSavedSearches,
+    CreateSavedSearch,
+    RenameSavedSearch,
+    DeleteSavedSearch,
 }
 
 impl Case {
@@ -443,6 +449,10 @@ impl Case {
         Case::DeletePropertyDefinition,
         Case::ListProjectGrants,
         Case::ListWorkspaceGrants,
+        Case::ListSavedSearches,
+        Case::CreateSavedSearch,
+        Case::RenameSavedSearch,
+        Case::DeleteSavedSearch,
     ];
 
     /// `(method, capability)` as declared for this case's route — cross-checked
@@ -554,6 +564,11 @@ impl Case {
 
             Case::ListProjectGrants => ("GET", "grants:read"),
             Case::ListWorkspaceGrants => ("GET", "grants:read"),
+
+            Case::ListSavedSearches => ("GET", "saved_searches:read"),
+            Case::CreateSavedSearch => ("POST", "saved_searches:create"),
+            Case::RenameSavedSearch => ("PATCH", "saved_searches:update"),
+            Case::DeleteSavedSearch => ("DELETE", "saved_searches:delete"),
         }
     }
 }
@@ -1194,6 +1209,34 @@ async fn invoke(
             )
             .await
         }
+
+        // Saved searches are manually gated inside each handler (WorkspaceMember
+        // is kept, not switched to Authorized), so the scope check runs after the
+        // JSON body is parsed. These go through the generated `atlas_client`
+        // methods with dummy-valid bodies so the body deserializes and the gate
+        // is what denies a wrong/zero-scope caller; ids are throwaway nils.
+        Case::ListSavedSearches => client.list_saved_searches(ws).await.map(|_| ()),
+        Case::CreateSavedSearch => client
+            .create_saved_search(
+                ws,
+                CreateSavedSearchRequest {
+                    name: "sweep".into(),
+                    query: "status:open".into(),
+                },
+            )
+            .await
+            .map(|_| ()),
+        Case::RenameSavedSearch => client
+            .rename_saved_search(
+                ws,
+                nil,
+                RenameSavedSearchRequest {
+                    name: "sweep-renamed".into(),
+                },
+            )
+            .await
+            .map(|_| ()),
+        Case::DeleteSavedSearch => client.delete_saved_search(ws, nil).await,
     }
 }
 

@@ -24,6 +24,7 @@ pub enum CapabilityFamily {
     Webhooks,
     Config,
     Grants,
+    SavedSearches,
 }
 
 /// The CRUD verb of a capability.
@@ -52,7 +53,7 @@ impl Capability {
     /// config` and actions ordered `read, create, update, delete`. This is the
     /// single source of truth other derived sets (defaults, wire enums) are
     /// built from.
-    pub const ALL: [Capability; 29] = [
+    pub const ALL: [Capability; 33] = [
         Capability {
             family: CapabilityFamily::Tasks,
             action: CapabilityAction::Read,
@@ -172,6 +173,22 @@ impl Capability {
             family: CapabilityFamily::Grants,
             action: CapabilityAction::Read,
         },
+        Capability {
+            family: CapabilityFamily::SavedSearches,
+            action: CapabilityAction::Read,
+        },
+        Capability {
+            family: CapabilityFamily::SavedSearches,
+            action: CapabilityAction::Create,
+        },
+        Capability {
+            family: CapabilityFamily::SavedSearches,
+            action: CapabilityAction::Update,
+        },
+        Capability {
+            family: CapabilityFamily::SavedSearches,
+            action: CapabilityAction::Delete,
+        },
     ];
 
     /// The scope set a newly created API key receives when the caller selects
@@ -238,6 +255,10 @@ impl Capability {
             (CapabilityFamily::Grants, CapabilityAction::Create) => "grants:create",
             (CapabilityFamily::Grants, CapabilityAction::Update) => "grants:update",
             (CapabilityFamily::Grants, CapabilityAction::Delete) => "grants:delete",
+            (CapabilityFamily::SavedSearches, CapabilityAction::Read) => "saved_searches:read",
+            (CapabilityFamily::SavedSearches, CapabilityAction::Create) => "saved_searches:create",
+            (CapabilityFamily::SavedSearches, CapabilityAction::Update) => "saved_searches:update",
+            (CapabilityFamily::SavedSearches, CapabilityAction::Delete) => "saved_searches:delete",
         }
     }
 }
