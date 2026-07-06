@@ -40,7 +40,16 @@ use crate::{
 };
 
 pub trait MinRole: Send + Sync {
+    /// The minimum effective role a human (or group) principal must hold on the
+    /// resource. This is the floor applied to every principal that is not an
+    /// `ApiKey`.
     const ROLE: ResourceRole;
+
+    /// The minimum effective role an `ApiKey` (agent) principal must hold. It
+    /// defaults to `ROLE`, so agents are held to the same floor as humans unless
+    /// a marker explicitly lowers it. Overriding this is how a route admits
+    /// agents below the human floor while still enforcing a capability scope.
+    const AGENT_ROLE: ResourceRole = Self::ROLE;
 }
 
 pub struct ViewerMin;
@@ -57,10 +66,21 @@ impl MinRole for AdminMin {
     const ROLE: ResourceRole = ResourceRole::Admin;
 }
 
+/// Role floor for the webhook routes: a human principal must be `Admin` (the
+/// shipped floor, preserved byte-for-byte), while an `ApiKey` principal is
+/// admitted at `Editor` and then gated on the matching `webhooks:{action}`
+/// capability. This is the only marker that diverges `AGENT_ROLE` from `ROLE`.
+pub struct AdminMinAgentEditor;
+
+impl MinRole for AdminMinAgentEditor {
+    const ROLE: ResourceRole = ResourceRole::Admin;
+    const AGENT_ROLE: ResourceRole = ResourceRole::Editor;
+}
+
 /// Declares the API-key capability a route requires, as the third generic
 /// marker parameter on `Authorized<R, M, S>`. `NoScope` (the default) means the
-/// route has no capability gate; the twenty `{Family}{Action}` markers below
-/// each pin `CAPABILITY` to one entry of the closed catalog.
+/// route has no capability gate; the twenty-four `{Family}{Action}` markers
+/// below each pin `CAPABILITY` to one entry of the closed catalog.
 ///
 /// Only `Principal::ApiKey` requests are checked against `CAPABILITY`; `User`
 /// and `Group` principals have no scope concept and always bypass the gate.
@@ -111,6 +131,10 @@ capability_marker!(ProjectsRead, Projects, Read);
 capability_marker!(ProjectsCreate, Projects, Create);
 capability_marker!(ProjectsUpdate, Projects, Update);
 capability_marker!(ProjectsDelete, Projects, Delete);
+capability_marker!(WebhooksRead, Webhooks, Read);
+capability_marker!(WebhooksCreate, Webhooks, Create);
+capability_marker!(WebhooksUpdate, Webhooks, Update);
+capability_marker!(WebhooksDelete, Webhooks, Delete);
 
 pub trait ResolvedResource: Sized + Send {
     type PathParams: DeserializeOwned + Send;
@@ -846,9 +870,19 @@ where
 
         let effective = effective_role.ok_or(ApiError::NotFound)?;
 
-        if effective < M::ROLE {
+        // Principal-aware role floor: an ApiKey principal is held to
+        // `M::AGENT_ROLE`, every other principal to `M::ROLE`. For all markers
+        // except `AdminMinAgentEditor`, `AGENT_ROLE == ROLE`, so both branches
+        // collapse to `M::ROLE` and this is identical to the previous check.
+        let floor = if matches!(domain_principal, Principal::ApiKey(_)) {
+            M::AGENT_ROLE
+        } else {
+            M::ROLE
+        };
+
+        if effective < floor {
             tracing::warn!(
-                required = ?M::ROLE,
+                required = ?floor,
                 effective = ?effective,
                 workspace = %ws_slug,
                 "authorization denied: insufficient role for resource"

@@ -21,7 +21,10 @@ use atlas_api::{
 use atlas_domain::permissions::Principal;
 
 use crate::{
-    authz::{AdminMin, Authorized, WorkspaceRes},
+    authz::{
+        AdminMinAgentEditor, Authorized, WebhooksCreate, WebhooksDelete, WebhooksRead,
+        WebhooksUpdate, WorkspaceRes,
+    },
     error::ApiError,
     persistence::{
         entities::webhook_delivery::webhook_delivery_log,
@@ -239,7 +242,7 @@ fn generate_secret() -> String {
     )
 )]
 pub(crate) async fn create_webhook(
-    auth: Authorized<WorkspaceRes, AdminMin>,
+    auth: Authorized<WorkspaceRes, AdminMinAgentEditor, WebhooksCreate>,
     State(state): State<AppState>,
     Json(body): Json<CreateWebhookRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -316,7 +319,7 @@ pub(crate) struct ListWebhooksQuery {
     )
 )]
 pub(crate) async fn list_webhooks(
-    auth: Authorized<WorkspaceRes, AdminMin>,
+    auth: Authorized<WorkspaceRes, AdminMinAgentEditor, WebhooksRead>,
     State(state): State<AppState>,
     Query(params): Query<ListWebhooksQuery>,
 ) -> Result<Json<Page<WebhookDto>>, ApiError> {
@@ -375,7 +378,7 @@ pub(crate) async fn list_webhooks(
     )
 )]
 pub(crate) async fn get_webhook(
-    auth: Authorized<WorkspaceRes, AdminMin>,
+    auth: Authorized<WorkspaceRes, AdminMinAgentEditor, WebhooksRead>,
     Path((_ws, webhook_id)): Path<(String, Uuid)>,
     State(state): State<AppState>,
 ) -> Result<Json<WebhookDto>, ApiError> {
@@ -412,7 +415,7 @@ pub(crate) async fn get_webhook(
     )
 )]
 pub(crate) async fn update_webhook(
-    auth: Authorized<WorkspaceRes, AdminMin>,
+    auth: Authorized<WorkspaceRes, AdminMinAgentEditor, WebhooksUpdate>,
     Path((_ws, webhook_id)): Path<(String, Uuid)>,
     State(state): State<AppState>,
     Json(body): Json<UpdateWebhookRequest>,
@@ -471,7 +474,7 @@ pub(crate) async fn update_webhook(
     )
 )]
 pub(crate) async fn delete_webhook(
-    auth: Authorized<WorkspaceRes, AdminMin>,
+    auth: Authorized<WorkspaceRes, AdminMinAgentEditor, WebhooksDelete>,
     Path((_ws, webhook_id)): Path<(String, Uuid)>,
     State(state): State<AppState>,
 ) -> Result<StatusCode, ApiError> {
@@ -513,7 +516,7 @@ pub(crate) struct ListDeliveriesQuery {
     )
 )]
 pub(crate) async fn list_webhook_deliveries(
-    auth: Authorized<WorkspaceRes, AdminMin>,
+    auth: Authorized<WorkspaceRes, AdminMinAgentEditor, WebhooksRead>,
     Path((_ws, webhook_id)): Path<(String, Uuid)>,
     State(state): State<AppState>,
     Query(params): Query<ListDeliveriesQuery>,

@@ -468,8 +468,47 @@ fn self_referencing_blocks_is_rejected() {
 // ——— Capability tests ———
 
 #[test]
-fn capability_all_has_twenty_entries() {
-    assert_eq!(Capability::ALL.len(), 20);
+fn capability_all_has_twenty_four_entries() {
+    assert_eq!(Capability::ALL.len(), 24);
+}
+
+#[test]
+fn capability_all_contains_every_webhooks_action() {
+    let webhook_scopes: std::collections::HashSet<&'static str> = Capability::ALL
+        .iter()
+        .filter(|cap| cap.family == CapabilityFamily::Webhooks)
+        .map(|cap| cap.as_str())
+        .collect();
+
+    let expected: std::collections::HashSet<&'static str> = [
+        "webhooks:read",
+        "webhooks:create",
+        "webhooks:update",
+        "webhooks:delete",
+    ]
+    .into_iter()
+    .collect();
+
+    assert_eq!(webhook_scopes, expected);
+}
+
+#[test]
+fn webhooks_capabilities_round_trip_through_string() {
+    for name in [
+        "webhooks:read",
+        "webhooks:create",
+        "webhooks:update",
+        "webhooks:delete",
+    ] {
+        let cap: Capability = name.parse().expect("webhooks capability must parse");
+        assert_eq!(cap.family, CapabilityFamily::Webhooks);
+        assert_eq!(cap.as_str(), name);
+    }
+}
+
+#[test]
+fn capability_rejects_unknown_webhooks_action() {
+    assert!("webhooks:manage".parse::<Capability>().is_err());
 }
 
 #[test]

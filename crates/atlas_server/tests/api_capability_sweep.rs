@@ -13,7 +13,7 @@
 //!
 //! 1. A key with an EMPTY scope set gets 403 with a scope-denial detail on
 //!    every `ROUTE_REGISTRY` entry that declares `capability: Some(_)`.
-//! 2. A key holding all 20 catalog capabilities never gets a scope-403 on any
+//! 2. A key holding all catalog capabilities never gets a scope-403 on any
 //!    of those same entries (it may still get a 404 from an earlier
 //!    destructive call in the same sweep touching a shared fixture — that is
 //!    not a scope denial and is explicitly allowed here).
@@ -48,9 +48,10 @@ use atlas_api::{
     problem::ProblemDetails,
 };
 use atlas_client::{AtlasClient, ClientError};
-use atlas_domain::{entities::identity::ApiKeyType, permissions::Capability};
+use atlas_domain::{Actor, entities::identity::ApiKeyType, ids::UserId, permissions::Capability};
 use atlas_server::{
-    persistence::repos::{ApiKeyRepo, NewApiKey, PgApiKeyRepo},
+    crypto::WebhookCrypto,
+    persistence::repos::{ApiKeyRepo, NewApiKey, PgApiKeyRepo, PgWebhookSubscriptionRepo},
     routes::registry::ROUTE_REGISTRY,
 };
 use support::{TestDb, TestServer, login_user_with_workspace};
@@ -63,9 +64,16 @@ struct Fixtures {
     document_ref: String,
     folder_id: uuid::Uuid,
     doc_attachment_id: uuid::Uuid,
+    webhook_id: uuid::Uuid,
 }
 
-async fn seed_fixtures(owner: &AtlasClient, ws_slug: &str) -> Fixtures {
+async fn seed_fixtures(
+    owner: &AtlasClient,
+    db: &TestDb,
+    ws_slug: &str,
+    ws_id: uuid::Uuid,
+    user_id: UserId,
+) -> Fixtures {
     let project = owner
         .create_project(
             ws_slug,
@@ -157,6 +165,29 @@ async fn seed_fixtures(owner: &AtlasClient, ws_slug: &str) -> Fixtures {
         .await
         .expect("create folder");
 
+    // Seed a real webhook so the get/update/delete/deliveries webhook cases
+    // resolve a concrete `webhook_id` in the positive pass instead of 404-ing.
+    // The stored secret is never decrypted by the read/list/delete handlers, so
+    // a dummy crypto key is sufficient here.
+    let crypto = WebhookCrypto::new(&[0x42u8; 32]);
+    let (enc, nonce) = crypto
+        .encrypt(b"test-hmac-secret-32-bytes-dummy!")
+        .expect("encrypt webhook secret");
+    let webhook = PgWebhookSubscriptionRepo::create(
+        db.conn(),
+        ws_id,
+        "https://example.com/sweep-hook".to_string(),
+        vec!["task.created".to_string()],
+        "workspace".to_string(),
+        None,
+        enc,
+        nonce,
+        None,
+        &Actor::User(user_id),
+    )
+    .await
+    .expect("create sweep webhook");
+
     Fixtures {
         ws_slug: ws_slug.to_string(),
         project_slug: project.slug,
@@ -165,6 +196,7 @@ async fn seed_fixtures(owner: &AtlasClient, ws_slug: &str) -> Fixtures {
         document_ref: document.id.to_string(),
         folder_id: folder.id,
         doc_attachment_id: attachment.id,
+        webhook_id: webhook.id,
     }
 }
 
@@ -291,6 +323,13 @@ enum Case {
     GetProject,
     UpdateProject,
     DeleteProject,
+    // ---- webhooks (6) ----
+    CreateWebhook,
+    ListWebhooks,
+    GetWebhook,
+    UpdateWebhook,
+    DeleteWebhook,
+    ListWebhookDeliveries,
 }
 
 impl Case {
@@ -376,6 +415,12 @@ impl Case {
         Case::GetProject,
         Case::UpdateProject,
         Case::DeleteProject,
+        Case::CreateWebhook,
+        Case::ListWebhooks,
+        Case::GetWebhook,
+        Case::UpdateWebhook,
+        Case::DeleteWebhook,
+        Case::ListWebhookDeliveries,
     ];
 
     /// `(method, capability)` as declared for this case's route — cross-checked
@@ -468,6 +513,13 @@ impl Case {
             Case::GetProject => ("GET", "projects:read"),
             Case::UpdateProject => ("PATCH", "projects:update"),
             Case::DeleteProject => ("DELETE", "projects:delete"),
+
+            Case::CreateWebhook => ("POST", "webhooks:create"),
+            Case::ListWebhooks => ("GET", "webhooks:read"),
+            Case::GetWebhook => ("GET", "webhooks:read"),
+            Case::UpdateWebhook => ("PATCH", "webhooks:update"),
+            Case::DeleteWebhook => ("DELETE", "webhooks:delete"),
+            Case::ListWebhookDeliveries => ("GET", "webhooks:read"),
         }
     }
 }
@@ -927,6 +979,76 @@ async fn invoke(
             .await
             .map(|_| ()),
         Case::DeleteProject => client.delete_project(ws, &fx.project_slug).await,
+
+        // Webhooks have no generated `atlas_client` methods (added in a later
+        // batch), so they go through `raw_call`. The capability gate runs inside
+        // the `Authorized` extractor (the first handler param) before the JSON
+        // body is read, so the wrong/zero-scope passes are denied even though
+        // `raw_call` sends no body on POST/PATCH.
+        Case::CreateWebhook => {
+            raw_call(
+                http,
+                base_url,
+                token,
+                "POST",
+                &format!("/v1/workspaces/{ws}/webhooks"),
+            )
+            .await
+        }
+        Case::ListWebhooks => {
+            raw_call(
+                http,
+                base_url,
+                token,
+                "GET",
+                &format!("/v1/workspaces/{ws}/webhooks"),
+            )
+            .await
+        }
+        Case::GetWebhook => {
+            raw_call(
+                http,
+                base_url,
+                token,
+                "GET",
+                &format!("/v1/workspaces/{ws}/webhooks/{}", fx.webhook_id),
+            )
+            .await
+        }
+        Case::UpdateWebhook => {
+            raw_call(
+                http,
+                base_url,
+                token,
+                "PATCH",
+                &format!("/v1/workspaces/{ws}/webhooks/{}", fx.webhook_id),
+            )
+            .await
+        }
+        Case::DeleteWebhook => {
+            raw_call(
+                http,
+                base_url,
+                token,
+                "DELETE",
+                &format!("/v1/workspaces/{ws}/webhooks/{}", fx.webhook_id),
+            )
+            .await
+        }
+        // `webhook_id` here is a SECONDARY path param: the capability gate in the
+        // extractor short-circuits a wrong-scope call before the handler body
+        // ever looks the delivery up, so the seeded id only matters for the
+        // positive pass (where the handler resolves the real webhook).
+        Case::ListWebhookDeliveries => {
+            raw_call(
+                http,
+                base_url,
+                token,
+                "GET",
+                &format!("/v1/workspaces/{ws}/webhooks/{}/deliveries", fx.webhook_id),
+            )
+            .await
+        }
     }
 }
 
@@ -943,6 +1065,7 @@ async fn raw_call(
     let url = format!("{base_url}{path}");
     let builder = match method {
         "POST" => http.post(&url),
+        "PATCH" => http.patch(&url),
         "DELETE" => http.delete(&url),
         _ => http.get(&url),
     };
@@ -997,7 +1120,7 @@ async fn zero_scope_key_gets_scope_403_on_every_capability_gated_route() {
 
     let (owner, ws, owner_user) =
         login_user_with_workspace(&server, &db, "cap-sweep-zero-owner").await;
-    let fx = seed_fixtures(&owner, &ws.slug).await;
+    let fx = seed_fixtures(&owner, &db, &ws.slug, ws.id.0, owner_user.id).await;
 
     let token = create_scoped_agent(&db, owner_user.id, "cap-sweep-zero", vec![]).await;
     let agent = AtlasClient::new(server.base_url()).with_token(token.clone());
@@ -1015,13 +1138,13 @@ async fn zero_scope_key_gets_scope_403_on_every_capability_gated_route() {
 }
 
 #[tokio::test]
-async fn all_twenty_scope_key_never_gets_scope_403() {
+async fn all_capabilities_scope_key_never_gets_scope_403() {
     let db = TestDb::create().await.expect("TestDb::create");
     let server = TestServer::spawn(&db).await;
 
     let (owner, ws, owner_user) =
         login_user_with_workspace(&server, &db, "cap-sweep-all-owner").await;
-    let fx = seed_fixtures(&owner, &ws.slug).await;
+    let fx = seed_fixtures(&owner, &db, &ws.slug, ws.id.0, owner_user.id).await;
 
     let token = create_scoped_agent(
         &db,
@@ -1038,7 +1161,7 @@ async fn all_twenty_scope_key_never_gets_scope_403() {
         if let Err(e) = &result {
             assert!(
                 !is_scope_denial(e),
-                "case {case:?}: unexpected scope-403 with all 20 capabilities: {e:?}"
+                "case {case:?}: unexpected scope-403 with all catalog capabilities: {e:?}"
             );
         }
     }
@@ -1059,8 +1182,8 @@ fn representative_case_for(cap: Capability) -> Case {
 }
 
 /// Any capability guaranteed distinct from `cap`, used as the WRONG scope a key
-/// holds when proving a route's gate rejects the wrong capability. The 20-entry
-/// catalog always contains at least one other capability.
+/// holds when proving a route's gate rejects the wrong capability. The catalog
+/// always contains at least one other capability.
 fn a_different_capability(cap: Capability) -> Capability {
     Capability::ALL
         .into_iter()
@@ -1070,15 +1193,15 @@ fn a_different_capability(cap: Capability) -> Capability {
 
 /// Per-capability positive + wrong-scope matrix.
 ///
-/// The zero-scope and all-20 sweeps above prove deny-by-default and
+/// The zero-scope and all-capabilities sweeps above prove deny-by-default and
 /// never-over-deny, but neither proves a route requires its OWN capability: a
-/// route mis-annotated with the wrong marker would still pass both. For each of
-/// the 20 catalog capabilities this picks one representative route and asserts
-/// both directions of correctness:
+/// route mis-annotated with the wrong marker would still pass both. For each
+/// catalog capability this picks one representative route and asserts both
+/// directions of correctness:
 ///
 /// - **positive**: a key scoped to EXACTLY that one capability passes the gate
 ///   (result is not a scope-403; a downstream 404/400 on the throwaway ids is
-///   still a pass, mirroring the all-20 sweep's convention);
+///   still a pass, mirroring the all-capabilities sweep's convention);
 /// - **wrong-scope**: a key scoped to exactly one DIFFERENT capability is
 ///   scope-denied on the same route.
 ///
@@ -1103,7 +1226,7 @@ async fn each_capability_gate_admits_its_own_scope_and_rejects_a_wrong_one() {
     let server = TestServer::spawn(&db).await;
 
     let (owner, ws, owner_user) = login_user_with_workspace(&server, &db, "cap-matrix-owner").await;
-    let fx = seed_fixtures(&owner, &ws.slug).await;
+    let fx = seed_fixtures(&owner, &db, &ws.slug, ws.id.0, owner_user.id).await;
     let http = reqwest::Client::new();
 
     // Pass 1: a key holding a DIFFERENT capability is scope-denied on each

@@ -9905,7 +9905,7 @@
       },
       "ApiKeyScope": {
         "type": "string",
-        "description": "The closed catalog of API key capability scopes: five resource families\n(`tasks`, `docs`, `boards`, `folders`, `projects`) crossed with four CRUD\nactions (`read`, `create`, `update`, `delete`), twenty variants total.\n\nThis is the wire mirror of `atlas_domain::permissions::Capability`; the\nserver maps between the two at the route boundary. Being a closed serde\nenum, an unrecognized wire value (e.g. `\"tasks:manage\"`) is rejected during\ndeserialization with a 422, before any handler runs.",
+        "description": "The closed catalog of API key capability scopes: six resource families\n(`tasks`, `docs`, `boards`, `folders`, `projects`, `webhooks`) crossed with\nfour CRUD actions (`read`, `create`, `update`, `delete`), twenty-four\nvariants total.\n\nThis is the wire mirror of `atlas_domain::permissions::Capability`; the\nserver maps between the two at the route boundary. Being a closed serde\nenum, an unrecognized wire value (e.g. `\"tasks:manage\"`) is rejected during\ndeserialization with a 422, before any handler runs.",
         "enum": [
           "tasks:read",
           "tasks:create",
@@ -9926,7 +9926,11 @@
           "projects:read",
           "projects:create",
           "projects:update",
-          "projects:delete"
+          "projects:delete",
+          "webhooks:read",
+          "webhooks:create",
+          "webhooks:update",
+          "webhooks:delete"
         ]
       },
       "AssigneeDto": {

@@ -207,9 +207,10 @@ pub struct ActivatePasswordRequest {
     pub password: String,
 }
 
-/// The closed catalog of API key capability scopes: five resource families
-/// (`tasks`, `docs`, `boards`, `folders`, `projects`) crossed with four CRUD
-/// actions (`read`, `create`, `update`, `delete`), twenty variants total.
+/// The closed catalog of API key capability scopes: six resource families
+/// (`tasks`, `docs`, `boards`, `folders`, `projects`, `webhooks`) crossed with
+/// four CRUD actions (`read`, `create`, `update`, `delete`), twenty-four
+/// variants total.
 ///
 /// This is the wire mirror of `atlas_domain::permissions::Capability`; the
 /// server maps between the two at the route boundary. Being a closed serde
@@ -258,6 +259,14 @@ pub enum ApiKeyScope {
     ProjectsUpdate,
     #[serde(rename = "projects:delete")]
     ProjectsDelete,
+    #[serde(rename = "webhooks:read")]
+    WebhooksRead,
+    #[serde(rename = "webhooks:create")]
+    WebhooksCreate,
+    #[serde(rename = "webhooks:update")]
+    WebhooksUpdate,
+    #[serde(rename = "webhooks:delete")]
+    WebhooksDelete,
 }
 
 /// Optional initial workspace grant included in a `POST /v1/api-keys` request.
@@ -542,4 +551,37 @@ pub struct ApiKeyGrantDto {
     /// Who created this grant. `None` for legacy/system grants with no recorded creator.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub granted_by: Option<GrantedByDto>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn webhooks_scopes_round_trip_through_serde_rename() {
+        let cases = [
+            (ApiKeyScope::WebhooksRead, "webhooks:read"),
+            (ApiKeyScope::WebhooksCreate, "webhooks:create"),
+            (ApiKeyScope::WebhooksUpdate, "webhooks:update"),
+            (ApiKeyScope::WebhooksDelete, "webhooks:delete"),
+        ];
+
+        for (scope, wire) in cases {
+            let json = serde_json::to_value(scope).expect("scope must serialize");
+            assert_eq!(json, serde_json::Value::String(wire.to_string()));
+
+            let parsed: ApiKeyScope =
+                serde_json::from_value(json).expect("wire value must deserialize");
+            assert_eq!(parsed, scope);
+        }
+    }
+
+    #[test]
+    fn unknown_webhooks_scope_is_rejected() {
+        let result: Result<ApiKeyScope, _> = serde_json::from_str("\"webhooks:manage\"");
+        assert!(
+            result.is_err(),
+            "an unknown scope string must be rejected by the closed enum"
+        );
+    }
 }

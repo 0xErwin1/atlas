@@ -109,6 +109,10 @@ fn capability_from_scope(scope: ApiKeyScope) -> Capability {
         ApiKeyScope::ProjectsCreate => (CapabilityFamily::Projects, CapabilityAction::Create),
         ApiKeyScope::ProjectsUpdate => (CapabilityFamily::Projects, CapabilityAction::Update),
         ApiKeyScope::ProjectsDelete => (CapabilityFamily::Projects, CapabilityAction::Delete),
+        ApiKeyScope::WebhooksRead => (CapabilityFamily::Webhooks, CapabilityAction::Read),
+        ApiKeyScope::WebhooksCreate => (CapabilityFamily::Webhooks, CapabilityAction::Create),
+        ApiKeyScope::WebhooksUpdate => (CapabilityFamily::Webhooks, CapabilityAction::Update),
+        ApiKeyScope::WebhooksDelete => (CapabilityFamily::Webhooks, CapabilityAction::Delete),
     };
     Capability { family, action }
 }
@@ -136,6 +140,10 @@ fn scope_from_capability(cap: Capability) -> ApiKeyScope {
         (CapabilityFamily::Projects, CapabilityAction::Create) => ApiKeyScope::ProjectsCreate,
         (CapabilityFamily::Projects, CapabilityAction::Update) => ApiKeyScope::ProjectsUpdate,
         (CapabilityFamily::Projects, CapabilityAction::Delete) => ApiKeyScope::ProjectsDelete,
+        (CapabilityFamily::Webhooks, CapabilityAction::Read) => ApiKeyScope::WebhooksRead,
+        (CapabilityFamily::Webhooks, CapabilityAction::Create) => ApiKeyScope::WebhooksCreate,
+        (CapabilityFamily::Webhooks, CapabilityAction::Update) => ApiKeyScope::WebhooksUpdate,
+        (CapabilityFamily::Webhooks, CapabilityAction::Delete) => ApiKeyScope::WebhooksDelete,
     }
 }
 
