@@ -34,7 +34,12 @@ const SCOPE_GRID: readonly ScopeRow[] = [
   },
   {
     family: 'folders',
-    cells: { read: 'folders:read', create: 'folders:create', update: 'folders:update', delete: 'folders:delete' },
+    cells: {
+      read: 'folders:read',
+      create: 'folders:create',
+      update: 'folders:update',
+      delete: 'folders:delete',
+    },
   },
   {
     family: 'projects',
