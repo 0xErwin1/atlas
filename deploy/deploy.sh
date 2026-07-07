@@ -13,8 +13,13 @@ echo "==> Building atlas-web:${TAG}"
 podman build -t "atlas-web:${TAG}" -f "${REPO_ROOT}/deploy/Containerfile.web" "${REPO_ROOT}"
 
 echo "==> Transferring images to ${ATLAS_DEPLOY_HOST}"
-podman save "atlas-server:${TAG}" "atlas-web:${TAG}" | gzip | \
-  ssh "${ATLAS_DEPLOY_HOST}" 'gunzip | podman load'
+# Ship each image in its own save|load. `podman save img1 img2` (without
+# --multi-image-archive) collapses both tags onto the FIRST image and drops the
+# second, so the two must be transferred separately.
+for img in "atlas-server:${TAG}" "atlas-web:${TAG}"; do
+  echo "  -> ${img}"
+  podman save "${img}" | gzip | ssh "${ATLAS_DEPLOY_HOST}" 'gunzip | podman load'
+done
 
 echo "==> Restarting units on ${ATLAS_DEPLOY_HOST}"
 ssh "${ATLAS_DEPLOY_HOST}" 'systemctl --user restart container-atlas-backend container-atlas-mcp container-atlas-web'
