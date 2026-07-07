@@ -5,6 +5,9 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
+    # Attachment uploads flow through /api; raise from nginx's 1M default.
+    client_max_body_size 100M;
+
     location /api/ {
         proxy_pass http://${ATLAS_BACKEND_UPSTREAM};
         proxy_set_header Host $host;
