@@ -12,6 +12,7 @@ import katex from 'katex';
 import {
   fenceLanguage,
   findMathRanges,
+  findWikilinkRanges,
   type InlineToken,
   isBlockActive,
   type MathRange,
@@ -20,6 +21,7 @@ import {
   parseTable,
   taskMarkerChecked,
   tokenizeInline,
+  type WikilinkRange,
 } from '@/lib/livePreview';
 import { safeUrl, sanitizeMarkdownHtmlFragment } from '@/lib/sanitize';
 import { parseWikilinkInner, type WikilinkRef } from '@/lib/wikilink';
@@ -145,8 +147,6 @@ export interface LivePreviewOptions {
    */
   titles?: Record<string, string>;
 }
-
-const WIKILINK_RE = /\[\[([^[\]\n]+)\]\]/g;
 
 /**
  * Widget that renders a collapsed wikilink as clickable text. The raw
@@ -736,14 +736,16 @@ function buildDecorations(
     },
   });
 
+  const wikilinkRanges = findWikilinkRanges(docText, blockRanges);
+
   for (const { from, to } of view.visibleRanges) {
-    decorateSyntaxTree(view, from, to, activeLines, callbacks, titles, decos, blockRanges);
+    decorateSyntaxTree(view, from, to, activeLines, callbacks, titles, decos, blockRanges, wikilinkRanges);
   }
   for (const { from, to } of view.visibleRanges) {
     decorateInlineMath(view, from, to, activeLines, decos, blockRanges);
   }
   for (const { from, to } of view.visibleRanges) {
-    decorateWikilinks(view, from, to, activeLines, callbacks, titles, decos, blockRanges);
+    decorateWikilinks(view, from, to, activeLines, callbacks, titles, decos, blockRanges, wikilinkRanges);
   }
 
   decos.sort((a, b) => a.from - b.from || a.value.startSide - b.value.startSide);
@@ -773,6 +775,7 @@ function decorateSyntaxTree(
   titles: Record<string, string>,
   decos: Range<Decoration>[],
   blockRanges: BlockRange[],
+  wikilinkRanges: WikilinkRange[],
 ): void {
   const tree = syntaxTree(view.state);
 
@@ -781,6 +784,8 @@ function decorateSyntaxTree(
     to,
     enter: (node) => {
       const name = node.name;
+
+      if (isInsideRange(node.from, node.to, wikilinkRanges)) return false;
 
       if (/^ATXHeading[1-6]$/.test(name)) {
         const level = Number(name.slice(-1));
@@ -1068,34 +1073,28 @@ function decorateWikilinks(
   titles: Record<string, string>,
   decos: Range<Decoration>[],
   blockRanges: BlockRange[],
+  wikilinkRanges: WikilinkRange[],
 ): void {
-  const text = view.state.doc.sliceString(from, to);
-  WIKILINK_RE.lastIndex = 0;
-
-  for (let m = WIKILINK_RE.exec(text); m !== null; m = WIKILINK_RE.exec(text)) {
-    const inner = m[1];
-    if (inner === undefined) continue;
-
-    const start = from + m.index;
-    const end = start + m[0].length;
+  for (const range of wikilinkRanges) {
+    if (range.to <= from || range.from >= to) continue;
 
     // Skip wikilinks inside a block-replaced range (e.g. a rendered table cell):
     // a replace inside an already-replaced block would overlap and throw.
-    if (isInsideBlock(start, blockRanges)) continue;
+    if (isInsideBlock(range.from, blockRanges)) continue;
 
-    const lineNo = lineNumberAt(view, start);
+    const lineNo = lineNumberAt(view, range.from);
 
     if (activeLines.has(lineNo)) {
-      decos.push(Decoration.mark({ class: 'cm-atlas-wikilink-raw' }).range(start, end));
+      decos.push(Decoration.mark({ class: 'cm-atlas-wikilink-raw' }).range(range.from, range.to));
       continue;
     }
 
-    const ref = parseWikilinkInner(inner);
+    const ref = parseWikilinkInner(range.inner);
     const display = ref.id !== null ? (titles[ref.id] ?? ref.title) : ref.title;
     decos.push(
       Decoration.replace({ widget: new WikilinkWidget(ref, display, callbacks.onWikilinkClick) }).range(
-        start,
-        end,
+        range.from,
+        range.to,
       ),
     );
   }
@@ -1125,6 +1124,10 @@ function decorateLines(
 
 function isInsideBlock(pos: number, blockRanges: BlockRange[]): boolean {
   return blockRanges.some((b) => pos >= b.from && pos < b.to);
+}
+
+function isInsideRange(from: number, to: number, ranges: Array<{ from: number; to: number }>): boolean {
+  return ranges.some((range) => from >= range.from && to <= range.to);
 }
 
 /** The language label of a FencedCode node from its CodeInfo child, or null. */

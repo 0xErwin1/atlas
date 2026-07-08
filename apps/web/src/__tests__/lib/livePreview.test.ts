@@ -3,6 +3,7 @@ import {
   computeActiveLines,
   fenceLanguage,
   findMathRanges,
+  findWikilinkRanges,
   isBlockActive,
   isMarkerRevealed,
   type LineRange,
@@ -155,6 +156,19 @@ describe('findMathRanges', () => {
     expect(findMathRanges(doc, [{ from: 0, to: 8 }])).toEqual([
       { kind: 'inline', from: 14, to: 17, bodyFrom: 15, bodyTo: 16 },
     ]);
+  });
+});
+
+describe('findWikilinkRanges', () => {
+  it('finds only complete double-bracket wikilinks', () => {
+    expect(findWikilinkRanges('see [[Target]] and [Not a wikilink]')).toEqual([
+      { from: 4, to: 14, inner: 'Target' },
+    ]);
+  });
+
+  it('ignores wikilinks inside inline code and fenced code', () => {
+    const doc = 'Use `[[literal]]` here\n\n```md\n[[fenced]]\n```\nThen [[Real]]';
+    expect(findWikilinkRanges(doc)).toEqual([{ from: 50, to: 58, inner: 'Real' }]);
   });
 });
 

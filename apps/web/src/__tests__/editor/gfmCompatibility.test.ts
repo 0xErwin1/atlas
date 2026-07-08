@@ -178,6 +178,25 @@ describe('live preview GFM compatibility matrix', () => {
     expect(text(view)).not.toContain('$x + y$');
   });
 
+  it('renders only complete wikilinks and leaves code spans/fences literal', () => {
+    const doc = [
+      '[[Plain Note]] [Not a wikilink]',
+      '`[[Inline Code]]`',
+      '```md',
+      '[[Fenced Code]]',
+      '```',
+    ].join('\n');
+
+    const view = viewFor(doc);
+    const wikilinks = [...view.dom.querySelectorAll('.cm-atlas-wikilink')];
+
+    expect(wikilinks.map((node) => node.textContent)).toEqual(['Plain Note']);
+    expect(view.dom.querySelector('a.cm-atlas-link')).toBeNull();
+    expect(text(view)).toContain('[Not a wikilink]');
+    expect(text(view)).toContain('[[Inline Code]]');
+    expect(text(view)).toContain('[[Fenced Code]]');
+  });
+
   it('renders sanitized raw HTML blocks without script execution surfaces', () => {
     const doc = [
       'before',

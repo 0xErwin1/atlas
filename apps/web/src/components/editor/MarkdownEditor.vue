@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
+import { syntaxTree } from '@codemirror/language';
 import { languages } from '@codemirror/language-data';
 import { Compartment, EditorState } from '@codemirror/state';
 import { EditorView, keymap } from '@codemirror/view';
@@ -132,6 +133,12 @@ function syncWikilinkTrigger(state: EditorState): void {
     return;
   }
 
+  if (isCodeContext(state, range.head)) {
+    activeTrigger = null;
+    emit('wikilink-query', null, null);
+    return;
+  }
+
   const line = state.doc.lineAt(range.head);
   const textBefore = state.doc.sliceString(line.from, range.head);
 
@@ -147,6 +154,18 @@ function syncWikilinkTrigger(state: EditorState): void {
   const coords = view?.coordsAtPos(range.head) ?? null;
   const caret = coords === null ? null : { left: coords.left, top: coords.bottom + 4 };
   emit('wikilink-query', trigger.query, caret);
+}
+
+function isCodeContext(state: EditorState, pos: number): boolean {
+  let node: ReturnType<ReturnType<typeof syntaxTree>['resolve']> | null = syntaxTree(state).resolveInner(
+    pos,
+    -1,
+  );
+  while (node !== null) {
+    if (node.name === 'InlineCode' || node.name === 'FencedCode' || node.name === 'CodeBlock') return true;
+    node = node.parent;
+  }
+  return false;
 }
 
 function onUpdate(docChanged: boolean, selectionChanged: boolean, state: EditorState): void {

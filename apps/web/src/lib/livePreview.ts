@@ -117,6 +117,12 @@ export interface ExcludedRange {
   to: number;
 }
 
+export interface WikilinkRange {
+  from: number;
+  to: number;
+  inner: string;
+}
+
 /** A run of inline markdown produced by {@link tokenizeInline}. */
 export type InlineToken =
   | { type: 'text'; value: string }
@@ -130,6 +136,8 @@ export type InlineToken =
 
 const INLINE_RE =
   /(`[^`]+`)|(\[\[[^\]]+\]\])|(\[[^\]]+\]\([^)]+\))|(\$[^$\n]+\$)|(\*\*[^*]+\*\*|__[^_]+__)|(~~[^~]+~~)|(\*[^*]+\*|_[^_]+_)/;
+
+const WIKILINK_RE = /\[\[([^\]\n[]+)\]\]/g;
 
 /**
  * Splits a line of inline markdown into typed tokens (text, code, bold, italic,
@@ -349,6 +357,26 @@ export function findMathRanges(doc: string, excluded: ExcludedRange[] = []): Mat
   const blockRanges = findBlockMathRanges(doc, baseExcluded);
   const allExcluded = [...baseExcluded, ...blockRanges, ...inlineCodeRanges(doc, baseExcluded)];
   return [...blockRanges, ...findInlineMathRanges(doc, allExcluded)].sort((a, b) => a.from - b.from);
+}
+
+export function findWikilinkRanges(doc: string, excluded: ExcludedRange[] = []): WikilinkRange[] {
+  const baseExcluded = [...excluded, ...fencedCodeRanges(doc)];
+  const allExcluded = [...baseExcluded, ...inlineCodeRanges(doc, baseExcluded)];
+  const ranges: WikilinkRange[] = [];
+
+  WIKILINK_RE.lastIndex = 0;
+  for (let m = WIKILINK_RE.exec(doc); m !== null; m = WIKILINK_RE.exec(doc)) {
+    const inner = m[1];
+    if (inner === undefined) continue;
+
+    const from = m.index;
+    const to = from + m[0].length;
+    if (overlapsExcluded(from, to, allExcluded)) continue;
+
+    ranges.push({ from, to, inner });
+  }
+
+  return ranges;
 }
 
 /** Per-column horizontal alignment from a GFM table delimiter row. */
