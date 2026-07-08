@@ -82,6 +82,14 @@ fmt-web:
 dev: db-up
     cargo run -p atlas_server
 
+# Bring up API (:8080) + web (:5173) without managing Postgres.
+up-no-db:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export ATLAS_ROOT_PASSWORD="${ATLAS_ROOT_PASSWORD:-rootdev}"
+    export PC_PORT_NUM="${PC_PORT_NUM:-8079}"
+    process-compose -f process-compose.no-db.yaml up
+
 # Bring up the whole stack for manual testing with process-compose:
 # Postgres + dev seed (root user & sample workspace) + API (:8080) + web (:5173),
 # ordered by dependencies with health checks (see process-compose.yaml).
