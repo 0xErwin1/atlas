@@ -20,6 +20,11 @@ import Icon from '@/components/ui/Icon.vue';
 import PromptDialog from '@/components/ui/PromptDialog.vue';
 import { resolveDropTarget } from '@/composables/kanbanDrop';
 import { useContextMenu } from '@/composables/useContextMenu';
+import {
+  type DragAutoScrollMoveEvent,
+  dragAutoScrollOptions,
+  handleDragAutoScrollMove,
+} from '@/composables/useDragAutoScroll';
 import { useInlineEdit } from '@/composables/useInlineEdit';
 import { useKanbanMove } from '@/composables/useKanbanMove';
 import { useTaskInteractions } from '@/composables/useTaskInteractions';
@@ -80,6 +85,10 @@ async function onSortableDrop(event: unknown, columnId: string): Promise<void> {
   if (!result.ok) {
     ui.showBanner(result.hint ?? 'Move failed', 'error');
   }
+}
+
+function onSortableMove(event: DragAutoScrollMoveEvent, originalEvent: Event): void {
+  handleDragAutoScrollMove(event, originalEvent, listScrollRef.value);
 }
 
 interface Group {
@@ -202,6 +211,7 @@ function statusNameForTask(task: TaskSummaryDto): string {
 // Session-only collapse state per group; v-show (not v-if) keeps the rows mounted
 // so later drag-drop zones survive a collapse toggle.
 const collapsedGroups = ref<Set<string>>(new Set());
+const listScrollRef = ref<HTMLElement | null>(null);
 
 function isGroupCollapsed(key: string): boolean {
   return collapsedGroups.value.has(key);
@@ -430,7 +440,7 @@ const rowHandlers = {
 </script>
 
 <template>
-  <div class="atl-tl-scroll" @scroll="closePickers">
+  <div ref="listScrollRef" class="atl-tl-scroll" @scroll="closePickers">
     <div class="atl-tl-inner">
       <div v-if="groups.length > 0" class="atl-tl-colhead">
         <span />
@@ -470,6 +480,8 @@ const rowHandlers = {
           v-show="!isGroupCollapsed(group.key)"
           :group="'kanban'"
           :animation="150"
+          v-bind="dragAutoScrollOptions"
+          :on-move="onSortableMove"
           item-key="id"
           ghost-class="atl-tl-row-ghost"
           @update:model-value="() => undefined"
