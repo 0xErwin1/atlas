@@ -193,19 +193,23 @@ const columnById = computed<Map<string, ColumnDto>>(() => {
   return map;
 });
 
+function statusColumnForTask(task: TaskSummaryDto): ColumnDto | undefined {
+  return columnById.value.get(task.column_id);
+}
+
 function statusRingColor(task: TaskSummaryDto): string {
-  const column = columnById.value.get(task.column_id);
+  const column = statusColumnForTask(task);
   return column !== undefined ? statusColor(column) : 'var(--c-muted)';
 }
 
 function taskIsDone(task: TaskSummaryDto): boolean {
-  const column = columnById.value.get(task.column_id);
+  const column = statusColumnForTask(task);
   return column !== undefined && isDoneColumn(column);
 }
 
 function statusNameForTask(task: TaskSummaryDto): string {
-  const column = columnById.value.get(task.column_id);
-  return column?.name ?? '';
+  const column = statusColumnForTask(task);
+  return column?.name ?? task.column_name;
 }
 
 // Session-only collapse state per group; v-show (not v-if) keeps the rows mounted
@@ -284,11 +288,12 @@ function closePickers(): void {
 }
 
 function statusOptionsFor(task: TaskSummaryDto): PickerOption[] {
+  const activeColumnId = statusColumnForTask(task)?.id ?? task.column_id;
   return boards.columns.map((column) => ({
     value: column.id,
     label: column.name,
     color: statusColor(column),
-    active: column.id === task.column_id,
+    active: column.id === activeColumnId,
   }));
 }
 
@@ -329,6 +334,12 @@ async function onAssigneeOpen(task: TaskSummaryDto, value: boolean): Promise<voi
 
 function onStatusPick(task: TaskSummaryDto, columnId: string): void {
   if (columnId === task.column_id) return;
+
+  if (findCachedSubtaskParent(task.readable_id) !== null) {
+    void moveCachedSubtaskToColumn(task.readable_id, columnId);
+    return;
+  }
+
   void ti.runMoveToColumn(task.readable_id, columnId);
 }
 
@@ -368,6 +379,39 @@ function findRowTask(readableId: string): TaskSummaryDto | undefined {
 const expandedTasks = ref<Set<string>>(new Set());
 const subtaskCache = ref<Map<string, TaskSummaryDto[]>>(new Map());
 const loadingSubtasks = new Set<string>();
+
+function findCachedSubtaskParent(readableId: string): string | null {
+  for (const [parentId, children] of subtaskCache.value.entries()) {
+    if (children.some((child) => child.readable_id === readableId)) return parentId;
+  }
+  return null;
+}
+
+function patchCachedSubtaskStatus(readableId: string, columnId: string): void {
+  const parentId = findCachedSubtaskParent(readableId);
+  if (parentId === null) return;
+
+  const children = subtaskCache.value.get(parentId);
+  if (children === undefined) return;
+
+  const column = columnById.value.get(columnId);
+  const nextChildren = children.map((child) =>
+    child.readable_id === readableId
+      ? { ...child, column_id: columnId, column_name: column?.name ?? child.column_name }
+      : child,
+  );
+  subtaskCache.value = new Map(subtaskCache.value).set(parentId, nextChildren);
+}
+
+async function moveCachedSubtaskToColumn(readableId: string, columnId: string): Promise<void> {
+  const ok = await boards.moveTaskToColumn(props.ws, readableId, columnId);
+  if (!ok) {
+    if (boards.error !== null) ui.showBanner(boards.error, 'error');
+    return;
+  }
+
+  patchCachedSubtaskStatus(readableId, columnId);
+}
 
 function hasSubtasks(task: TaskSummaryDto): boolean {
   return task.subtask_count > 0;
