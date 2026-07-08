@@ -8,10 +8,13 @@ import {
   type ViewUpdate,
   WidgetType,
 } from '@codemirror/view';
+import katex from 'katex';
 import {
   fenceLanguage,
+  findMathRanges,
   type InlineToken,
   isBlockActive,
+  type MathRange,
   type ParsedTable,
   parseImage,
   parseTable,
@@ -47,6 +50,19 @@ interface InlineCtx {
 export function inlineNode(token: InlineToken, ctx: InlineCtx): Node {
   if (token.type === 'text') return document.createTextNode(token.value);
 
+  if (token.type === 'math') {
+    const span = document.createElement('span');
+    const rendered = renderMath(token.value, false);
+    span.className = rendered.invalid ? 'cm-atlas-math-inline cm-atlas-math-error' : 'cm-atlas-math-inline';
+    if (rendered.invalid) {
+      span.setAttribute('role', 'note');
+      appendMathFallback(span, token.value);
+    } else {
+      span.innerHTML = rendered.html;
+    }
+    return span;
+  }
+
   if (token.type === 'link') {
     // A link with a disallowed scheme (javascript:, data:, ...) is rendered as
     // plain text: emitting a live anchor would be a stored DOM XSS sink.
@@ -55,7 +71,7 @@ export function inlineNode(token: InlineToken, ctx: InlineCtx): Node {
 
     const a = document.createElement('a');
     a.className = 'cm-atlas-link';
-    a.textContent = token.value;
+    appendInline(a, token.value, ctx);
     a.href = href;
     a.target = '_blank';
     a.rel = 'noopener noreferrer';
@@ -160,6 +176,42 @@ class WikilinkWidget extends WidgetType {
       this.onClick(this.ref);
     });
     return span;
+  }
+
+  ignoreEvent(): boolean {
+    return false;
+  }
+}
+
+class LinkWidget extends WidgetType {
+  constructor(
+    private readonly text: string,
+    private readonly url: string,
+    private readonly ctx: InlineCtx,
+  ) {
+    super();
+  }
+
+  eq(other: LinkWidget): boolean {
+    return other.text === this.text && other.url === this.url && other.ctx.titles === this.ctx.titles;
+  }
+
+  toDOM(): HTMLElement {
+    const href = safeUrl(this.url);
+    if (href === null) {
+      const span = document.createElement('span');
+      span.className = 'cm-atlas-link';
+      span.textContent = this.text;
+      return span;
+    }
+
+    const a = document.createElement('a');
+    a.className = 'cm-atlas-link';
+    appendInline(a, this.text, this.ctx);
+    a.href = href;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    return a;
   }
 
   ignoreEvent(): boolean {
@@ -410,6 +462,105 @@ async function renderMermaid(container: HTMLElement, code: string): Promise<void
 // widget DOM so they can be disconnected when the widget is destroyed.
 const mermaidThemeObservers = new WeakMap<HTMLElement, MutationObserver>();
 
+interface RenderedMath {
+  html: string;
+  invalid: boolean;
+}
+
+function mathBody(doc: EditorState['doc'], range: MathRange): string {
+  return doc.sliceString(range.bodyFrom, range.bodyTo).trim();
+}
+
+function renderMath(formula: string, displayMode: boolean): RenderedMath {
+  try {
+    const html = katex.renderToString(formula, {
+      displayMode,
+      output: 'htmlAndMathml',
+      throwOnError: false,
+      trust: false,
+    });
+    return { html, invalid: /katex-error|merror/.test(html) };
+  } catch {
+    return { html: '', invalid: true };
+  }
+}
+
+function appendMathFallback(parent: HTMLElement, formula: string): void {
+  const label = document.createElement('span');
+  label.className = 'cm-atlas-math-error-label';
+  label.textContent = 'Invalid math';
+  parent.appendChild(label);
+
+  const source = document.createElement('code');
+  source.textContent = formula;
+  parent.appendChild(source);
+}
+
+class MathInlineWidget extends WidgetType {
+  constructor(private readonly formula: string) {
+    super();
+  }
+
+  eq(other: MathInlineWidget): boolean {
+    return other.formula === this.formula;
+  }
+
+  toDOM(): HTMLElement {
+    const span = document.createElement('span');
+    const rendered = renderMath(this.formula, false);
+    span.className = rendered.invalid ? 'cm-atlas-math-inline cm-atlas-math-error' : 'cm-atlas-math-inline';
+    if (rendered.invalid) {
+      span.setAttribute('role', 'note');
+      appendMathFallback(span, this.formula);
+    } else {
+      span.innerHTML = rendered.html;
+    }
+    return span;
+  }
+
+  ignoreEvent(): boolean {
+    return false;
+  }
+}
+
+class MathBlockWidget extends WidgetType {
+  constructor(
+    private readonly formula: string,
+    private readonly from: number,
+  ) {
+    super();
+  }
+
+  eq(other: MathBlockWidget): boolean {
+    return other.formula === this.formula && other.from === this.from;
+  }
+
+  toDOM(view: EditorView): HTMLElement {
+    const wrap = document.createElement('div');
+    const rendered = renderMath(this.formula, true);
+    wrap.className = rendered.invalid ? 'cm-atlas-math-block cm-atlas-math-error' : 'cm-atlas-math-block';
+    if (rendered.invalid) {
+      wrap.setAttribute('role', 'note');
+      appendMathFallback(wrap, this.formula);
+    } else {
+      wrap.innerHTML = rendered.html;
+    }
+
+    wrap.addEventListener('mousedown', (event) => {
+      if (view.state.readOnly) return;
+      event.preventDefault();
+      view.dispatch({ selection: { anchor: this.from }, scrollIntoView: true });
+      view.focus();
+    });
+
+    return wrap;
+  }
+
+  ignoreEvent(): boolean {
+    return false;
+  }
+}
+
 /**
  * Block widget that renders a ```mermaid code block as a diagram. The diagram is
  * rendered asynchronously (mermaid is lazy-loaded) with the current app theme and
@@ -536,9 +687,20 @@ function buildDecorations(
   // overlap and break the RangeSet. Collect them in a full first pass so every
   // block range is known before any wikilink is added.
   const blockRanges: BlockRange[] = [];
+  const docText = view.state.doc.toString();
+  for (const range of findMathRanges(docText)) {
+    if (range.kind !== 'block') continue;
+    const firstLine = view.state.doc.lineAt(range.from).number;
+    const lastLine = view.state.doc.lineAt(range.to).number;
+    if (!isBlockActive(firstLine, lastLine, activeLines))
+      blockRanges.push({ from: range.from, to: range.to });
+  }
 
   for (const { from, to } of view.visibleRanges) {
-    decorateSyntaxTree(view, from, to, activeLines, decos, blockRanges);
+    decorateSyntaxTree(view, from, to, activeLines, callbacks, titles, decos, blockRanges);
+  }
+  for (const { from, to } of view.visibleRanges) {
+    decorateInlineMath(view, from, to, activeLines, decos, blockRanges);
   }
   for (const { from, to } of view.visibleRanges) {
     decorateWikilinks(view, from, to, activeLines, callbacks, titles, decos, blockRanges);
@@ -567,6 +729,8 @@ function decorateSyntaxTree(
   from: number,
   to: number,
   activeLines: Set<number>,
+  callbacks: LivePreviewCallbacks,
+  titles: Record<string, string>,
   decos: Range<Decoration>[],
   blockRanges: BlockRange[],
 ): void {
@@ -634,8 +798,13 @@ function decorateSyntaxTree(
       }
 
       if (name === 'Link') {
-        decorateLink(view, node.node, activeLines, decos);
-        return;
+        decorateLink(view, node.node, activeLines, callbacks, titles, decos);
+        return false;
+      }
+
+      if (name === 'Autolink') {
+        decorateAutolink(view, node.node, activeLines, callbacks, titles, decos);
+        return false;
       }
 
       if (name === 'Table') {
@@ -728,34 +897,59 @@ function decorateSyntaxTree(
   });
 }
 
-/**
- * Standard markdown link `[text](url)`. Off active line: hide `[`, and the
- * `](url)` tail, leaving the link text styled. On active line: leave raw. The
- * collapse is best-effort and relies on the Lezer LinkMark / URL children.
- */
+/** Standard markdown link `[text](url)`. Off active line it renders as a safe anchor; on active line it stays raw. */
 function decorateLink(
   view: EditorView,
   node: SyntaxNode,
   activeLines: Set<number>,
+  callbacks: LivePreviewCallbacks,
+  titles: Record<string, string>,
   decos: Range<Decoration>[],
 ): void {
   const lineNo = lineNumberAt(view, node.from);
-  decos.push(Decoration.mark({ class: 'cm-atlas-link' }).range(node.from, node.to));
-
-  if (activeLines.has(lineNo)) return;
+  if (activeLines.has(lineNo)) {
+    decos.push(Decoration.mark({ class: 'cm-atlas-link' }).range(node.from, node.to));
+    return;
+  }
 
   const marks = collectChildren(node, 'LinkMark');
   const url = findChild(node.firstChild, 'URL');
-
-  // marks are: [ "[", "]", "(", ")" ] in document order for [text](url).
   const open = marks[0];
   const closeText = marks[1];
 
-  if (open) decos.push(hideDeco.range(open.from, open.to));
+  if (open && closeText && url) {
+    const text = view.state.doc.sliceString(open.to, closeText.from);
+    const href = view.state.doc.sliceString(url.from, url.to);
+    decos.push(
+      Decoration.replace({
+        widget: new LinkWidget(text, href, { titles, onWikilinkClick: callbacks.onWikilinkClick }),
+      }).range(node.from, node.to),
+    );
+  }
+}
 
-  if (closeText && url) {
-    // Hide from the closing "]" through the closing ")" (covers "](url)").
-    decos.push(hideDeco.range(closeText.from, node.to));
+function decorateAutolink(
+  view: EditorView,
+  node: SyntaxNode,
+  activeLines: Set<number>,
+  callbacks: LivePreviewCallbacks,
+  titles: Record<string, string>,
+  decos: Range<Decoration>[],
+): void {
+  const lineNo = lineNumberAt(view, node.from);
+  if (activeLines.has(lineNo)) {
+    decos.push(Decoration.mark({ class: 'cm-atlas-link' }).range(node.from, node.to));
+    return;
+  }
+
+  const url = findChild(node.firstChild, 'URL');
+  if (url) {
+    const href = view.state.doc.sliceString(url.from, url.to);
+    decos.push(
+      Decoration.replace({
+        widget: new LinkWidget(href, href, { titles, onWikilinkClick: callbacks.onWikilinkClick }),
+      }).range(node.from, node.to),
+    );
   }
 }
 
@@ -797,6 +991,30 @@ function decorateFenced(
     if (!activeLines.has(closeLine)) {
       decos.push(hideDeco.range(closeMark.from, closeMark.to));
     }
+  }
+}
+
+function decorateInlineMath(
+  view: EditorView,
+  from: number,
+  to: number,
+  activeLines: Set<number>,
+  decos: Range<Decoration>[],
+  blockRanges: BlockRange[],
+): void {
+  const doc = view.state.doc;
+  const ranges = findMathRanges(doc.toString(), blockRanges);
+
+  for (const range of ranges) {
+    if (range.kind !== 'inline' || range.to <= from || range.from >= to) continue;
+    if (isInsideBlock(range.from, blockRanges)) continue;
+
+    const lineNo = doc.lineAt(range.from).number;
+    if (activeLines.has(lineNo)) continue;
+
+    decos.push(
+      Decoration.replace({ widget: new MathInlineWidget(mathBody(doc, range)) }).range(range.from, range.to),
+    );
   }
 }
 
@@ -952,6 +1170,19 @@ export function buildBlockDecorations(state: EditorState, reveal: boolean, ctx: 
   const blockReplace = (node: SyntaxNode, widget: WidgetType): void => {
     decos.push(Decoration.replace({ widget, block: true }).range(node.from, node.to));
   };
+
+  const rangeReplace = (range: MathRange, widget: WidgetType): void => {
+    decos.push(Decoration.replace({ widget, block: true }).range(range.from, range.to));
+  };
+
+  for (const range of findMathRanges(doc.toString())) {
+    if (range.kind !== 'block') continue;
+    const firstLine = doc.lineAt(range.from).number;
+    const lastLine = doc.lineAt(range.to).number;
+    if (!isBlockActive(firstLine, lastLine, activeLines)) {
+      rangeReplace(range, new MathBlockWidget(mathBody(doc, range), range.from));
+    }
+  }
 
   tree.iterate({
     enter: (node) => {
