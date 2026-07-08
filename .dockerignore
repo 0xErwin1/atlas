@@ -1,6 +1,7 @@
 target/
 **/node_modules/
 apps/web/dist/
+apps/web/coverage/
 apps/web/src/api/types.d.ts
 .git/
 .github/
