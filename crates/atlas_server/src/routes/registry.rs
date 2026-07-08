@@ -952,6 +952,13 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         openapi_path: Some("/api/workspaces/{ws}/search"),
         capability: None,
     },
+    RouteEntry {
+        method: "GET",
+        path_template: "/api/workspaces/{ws}/semantic-search",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/api/workspaces/{ws}/semantic-search"),
+        capability: None,
+    },
     // ---- Tags (config family; human floor unchanged, agents gated on config:{action}) ----
     RouteEntry {
         method: "GET",

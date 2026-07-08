@@ -87,6 +87,7 @@ Shared behavior from `ATLAS_INSTRUCTIONS` and tool parameter docs:
 
 - `ping`
 - `search`
+- `semantic_search`
 - `get_document`
 - `list_tasks`
 - `get_task`
@@ -171,7 +172,7 @@ Shared behavior from `ATLAS_INSTRUCTIONS` and tool parameter docs:
 
 ## Recommended agent workflow
 
-1. use `search` or the list tools to discover targets first
+1. use `search` for exact lexical discovery, or `semantic_search` for embedding-backed concept discovery when embeddings are enabled
 2. use task readable IDs and document slugs in follow-up calls
 3. before implementing a task, call `get_task` with `detail=full` and `list_task_attachments` so descriptions and attached screenshots/files are considered
 4. for document edits, call `get_document` with `detail=full`, keep the returned revision id, then call `update_document_content`

@@ -82,6 +82,31 @@ The repo assumes:
 
 The shared default attachment size cap in `AppState` is `20 MiB`.
 
+### Semantic search embeddings
+
+Semantic search is an optional API and MCP surface. Lexical `/search` stays enabled
+and unchanged when embeddings are disabled.
+
+| Variable | Default | Notes |
+|---|---|---|
+| `ATLAS_EMBEDDINGS_ENABLED` | `false` | Enables `/api/workspaces/{ws}/semantic-search` and the MCP `semantic_search` tool. Disabled returns `503` on semantic search only. |
+| `ATLAS_EMBEDDINGS_PROVIDER` | `deterministic` | `deterministic`/`test` for offline development, or `openai_compatible` for an OpenAI-compatible embeddings API. |
+| `ATLAS_EMBEDDINGS_MODEL` | `atlas-test-embedding` | Stored with each embedding row; changing it requires re-indexing content for the new model. |
+| `ATLAS_EMBEDDINGS_DIMENSIONS` | `1536` | Must match the provider output and the pgvector column/index size. |
+| `ATLAS_EMBEDDINGS_API_KEY` | — | Required only when `ATLAS_EMBEDDINGS_ENABLED=true` and provider is `openai_compatible`. |
+| `ATLAS_EMBEDDINGS_BASE_URL` | `https://api.openai.com/v1` | Base URL for OpenAI-compatible providers. |
+| `ATLAS_EMBEDDINGS_BATCH_SIZE` | `64` | Batch size used by embedding writes/backfills. |
+| `ATLAS_EMBEDDINGS_TIMEOUT_MS` | `30000` | Provider request timeout. |
+| `ATLAS_EMBEDDINGS_RETRY_ATTEMPTS` | `2` | Provider retry attempts. |
+
+Backfill/indexing behavior:
+
+- Missing or stale embeddings are skipped by semantic search; they do not break lexical search.
+- Re-indexing hashes normalized chunk text and skips unchanged chunks for the active model/dimensions.
+- Task indexing includes readable ID, title, description, labels, visible comments, attachment file names, checklist items, and direct visible subtask text.
+- Document indexing includes title, content, visible comments, and attachment file names.
+- Deferred scope: durable background queue automation and HNSW tuning are not part of this slice; run explicit backfill/re-index flows when changing model or dimensions.
+
 ### Rate limiting
 
 The authenticated API surface is rate-limited per principal (the resolved user or

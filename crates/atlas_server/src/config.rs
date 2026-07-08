@@ -1,6 +1,133 @@
 use base64::{Engine, engine::general_purpose::STANDARD};
 use std::fmt;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum EmbeddingProviderKind {
+    Deterministic,
+    OpenAiCompatible,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct EmbeddingConfig {
+    pub enabled: bool,
+    pub provider: EmbeddingProviderKind,
+    pub model: String,
+    pub dimensions: usize,
+    pub api_key: Option<String>,
+    pub base_url: String,
+    pub batch_size: usize,
+    pub timeout_ms: u64,
+    pub retry_attempts: u32,
+}
+
+impl EmbeddingConfig {
+    pub fn from_env() -> Result<Self, String> {
+        Self::from_env_vars(|name| std::env::var(name).ok())
+    }
+
+    pub fn from_env_vars<F>(get: F) -> Result<Self, String>
+    where
+        F: Fn(&str) -> Option<String>,
+    {
+        let read = |name: &str| get(name);
+        let enabled = read_bool(read("ATLAS_EMBEDDINGS_ENABLED"), false);
+        let provider = match read("ATLAS_EMBEDDINGS_PROVIDER")
+            .unwrap_or_else(|| "deterministic".to_owned())
+            .as_str()
+        {
+            "deterministic" | "test" => EmbeddingProviderKind::Deterministic,
+            "openai_compatible" => EmbeddingProviderKind::OpenAiCompatible,
+            other => return Err(format!("unsupported ATLAS_EMBEDDINGS_PROVIDER: {other}")),
+        };
+        let model =
+            read("ATLAS_EMBEDDINGS_MODEL").unwrap_or_else(|| "atlas-test-embedding".to_owned());
+        if model.trim().is_empty() {
+            return Err("ATLAS_EMBEDDINGS_MODEL must not be empty".to_owned());
+        }
+        let dimensions = read("ATLAS_EMBEDDINGS_DIMENSIONS")
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(1536);
+        if dimensions == 0 {
+            return Err("ATLAS_EMBEDDINGS_DIMENSIONS must be greater than zero".to_owned());
+        }
+        let config = Self {
+            enabled,
+            provider,
+            model,
+            dimensions,
+            api_key: read("ATLAS_EMBEDDINGS_API_KEY"),
+            base_url: read("ATLAS_EMBEDDINGS_BASE_URL")
+                .unwrap_or_else(|| "https://api.openai.com/v1".to_owned()),
+            batch_size: read("ATLAS_EMBEDDINGS_BATCH_SIZE")
+                .and_then(|value| value.parse::<usize>().ok())
+                .unwrap_or(64),
+            timeout_ms: read("ATLAS_EMBEDDINGS_TIMEOUT_MS")
+                .and_then(|value| value.parse::<u64>().ok())
+                .unwrap_or(30_000),
+            retry_attempts: read("ATLAS_EMBEDDINGS_RETRY_ATTEMPTS")
+                .and_then(|value| value.parse::<u32>().ok())
+                .unwrap_or(2),
+        };
+        config.validate_for_provider()?;
+        Ok(config)
+    }
+
+    pub fn validate_for_provider(&self) -> Result<(), String> {
+        if self.dimensions == 0 {
+            return Err("ATLAS_EMBEDDINGS_DIMENSIONS must be greater than zero".to_owned());
+        }
+        if self.model.trim().is_empty() {
+            return Err("ATLAS_EMBEDDINGS_MODEL must not be empty".to_owned());
+        }
+        if matches!(self.provider, EmbeddingProviderKind::OpenAiCompatible)
+            && self.enabled
+            && self
+                .api_key
+                .as_deref()
+                .unwrap_or_default()
+                .trim()
+                .is_empty()
+        {
+            return Err(
+                "ATLAS_EMBEDDINGS_API_KEY is required for openai_compatible embeddings".to_owned(),
+            );
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Debug for EmbeddingConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EmbeddingConfig")
+            .field("enabled", &self.enabled)
+            .field("provider", &self.provider)
+            .field("model", &self.model)
+            .field("dimensions", &self.dimensions)
+            .field("api_key", &self.api_key.as_ref().map(|_| "[REDACTED]"))
+            .field("base_url", &self.base_url)
+            .field("batch_size", &self.batch_size)
+            .field("timeout_ms", &self.timeout_ms)
+            .field("retry_attempts", &self.retry_attempts)
+            .finish()
+    }
+}
+
+impl Default for EmbeddingConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            provider: EmbeddingProviderKind::Deterministic,
+            model: "atlas-test-embedding".to_owned(),
+            dimensions: 1536,
+            api_key: None,
+            base_url: "https://api.openai.com/v1".to_owned(),
+            batch_size: 64,
+            timeout_ms: 30_000,
+            retry_attempts: 2,
+        }
+    }
+}
+
 /// Runtime parameters for the webhook dispatcher.
 #[derive(Clone, Debug)]
 pub struct DispatcherConfig {
@@ -90,6 +217,7 @@ pub struct ServerConfig {
     pub allow_private_webhook_targets: bool,
     pub rate_limit: RateLimitConfig,
     pub db_pool: DbPoolConfig,
+    pub embeddings: EmbeddingConfig,
     /// Upper bound, in seconds, on the post-signal graceful drain before the
     /// process forces termination. Guards against long-lived SSE streams
     /// blocking shutdown indefinitely.
@@ -121,6 +249,7 @@ impl ServerConfig {
         let rate_limit = load_rate_limit_config();
 
         let db_pool = load_db_pool_config();
+        let embeddings = EmbeddingConfig::from_env()?;
 
         if db_pool.max_connections < 1 {
             return Err("ATLAS_DB_MAX_CONNECTIONS must be >= 1".to_string());
@@ -144,6 +273,7 @@ impl ServerConfig {
             allow_private_webhook_targets,
             rate_limit,
             db_pool,
+            embeddings,
             shutdown_timeout_secs,
         })
     }
@@ -163,6 +293,7 @@ impl fmt::Debug for ServerConfig {
             )
             .field("rate_limit", &self.rate_limit)
             .field("db_pool", &self.db_pool)
+            .field("embeddings", &self.embeddings)
             .field("shutdown_timeout_secs", &self.shutdown_timeout_secs)
             .finish()
     }
@@ -248,7 +379,11 @@ fn read_env_u64(var: &str, default: u64) -> u64 {
 }
 
 fn read_env_bool(var: &str, default: bool) -> bool {
-    std::env::var(var)
+    read_bool(std::env::var(var).ok(), default)
+}
+
+fn read_bool(value: Option<String>, default: bool) -> bool {
+    value
         .map(|s| matches!(s.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
         .unwrap_or(default)
 }
@@ -270,6 +405,7 @@ mod tests {
             allow_private_webhook_targets: false,
             rate_limit: RateLimitConfig::default(),
             db_pool: DbPoolConfig::default(),
+            embeddings: EmbeddingConfig::default(),
             shutdown_timeout_secs: 20,
         };
 

@@ -1,10 +1,11 @@
 use sea_orm::DatabaseConnection;
 use std::sync::Arc;
 
-use atlas_domain::AttachmentStore;
+use atlas_domain::{AttachmentStore, semantic_search::EmbeddingProvider};
 
-use crate::config::{DispatcherConfig, ServerConfig};
+use crate::config::{DispatcherConfig, EmbeddingProviderKind, ServerConfig};
 use crate::crypto::WebhookCrypto;
+use crate::embeddings::{DeterministicEmbeddingProvider, OpenAiCompatibleEmbeddingProvider};
 use crate::live::{DEFAULT_HUB_CAPACITY, LiveEventHub};
 use crate::middleware::rate_limit::PrincipalRateLimiter;
 use crate::persistence::repos::{DiskAttachmentStore, S3AttachmentStore, S3Config};
@@ -32,6 +33,7 @@ pub struct AppState {
     pub live: LiveEventHub,
     /// In-memory board presence registry (who is currently viewing each board).
     pub presence: Arc<PresenceRegistry>,
+    pub embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
 }
 
 impl AppState {
@@ -55,6 +57,8 @@ impl AppState {
             ))
         });
 
+        let embedding_provider = build_embedding_provider(cfg)?;
+
         Ok(Self {
             db: Arc::new(db),
             session_ttl_hours,
@@ -69,6 +73,7 @@ impl AppState {
             rate_limiter,
             live: LiveEventHub::new(DEFAULT_HUB_CAPACITY),
             presence: Arc::new(PresenceRegistry::default()),
+            embedding_provider,
         })
     }
 
@@ -105,6 +110,10 @@ impl AppState {
             rate_limiter: None,
             live: LiveEventHub::new(DEFAULT_HUB_CAPACITY),
             presence: Arc::new(PresenceRegistry::default()),
+            embedding_provider: Some(Arc::new(DeterministicEmbeddingProvider::new(
+                "atlas-test-embedding",
+                1536,
+            )?)),
         })
     }
 
@@ -143,6 +152,25 @@ impl AppState {
 /// working. The `s3` backend targets any S3-compatible object store (e.g. Cloudflare
 /// R2) and requires its connection variables; a missing required variable fails
 /// startup with a message that names the variable but never echoes a secret value.
+fn build_embedding_provider(
+    cfg: &ServerConfig,
+) -> Result<Option<Arc<dyn EmbeddingProvider>>, anyhow::Error> {
+    if !cfg.embeddings.enabled {
+        return Ok(None);
+    }
+
+    let provider: Arc<dyn EmbeddingProvider> = match cfg.embeddings.provider {
+        EmbeddingProviderKind::Deterministic => Arc::new(DeterministicEmbeddingProvider::new(
+            cfg.embeddings.model.clone(),
+            cfg.embeddings.dimensions,
+        )?),
+        EmbeddingProviderKind::OpenAiCompatible => Arc::new(
+            OpenAiCompatibleEmbeddingProvider::new(cfg.embeddings.clone())?,
+        ),
+    };
+    Ok(Some(provider))
+}
+
 async fn build_attachment_store() -> Result<Arc<dyn AttachmentStore>, anyhow::Error> {
     let backend = std::env::var("ATLAS_ATTACHMENT_BACKEND").unwrap_or_else(|_| "disk".to_string());
 

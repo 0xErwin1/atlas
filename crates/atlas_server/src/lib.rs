@@ -13,12 +13,14 @@ pub mod authz;
 pub mod config;
 pub mod crypto;
 pub mod dispatcher;
+pub mod embeddings;
 pub mod error;
 pub mod live;
 pub mod middleware;
 pub mod persistence;
 pub mod presence;
 pub mod routes;
+pub mod semantic_indexer;
 pub mod services;
 pub mod state;
 pub mod webhook_url;
@@ -524,6 +526,10 @@ pub fn app(state: AppState) -> Router {
         )
         // Search
         .route("/api/workspaces/{ws}/search", get(routes::search::search))
+        .route(
+            "/api/workspaces/{ws}/semantic-search",
+            get(routes::semantic_search::semantic_search),
+        )
         .layer(axum_middleware::from_fn(
             crate::auth::csrf::require_csrf_for_cookie_mutations,
         ))

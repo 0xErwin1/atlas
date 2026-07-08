@@ -35,6 +35,7 @@ use atlas_api::{
         property_definitions::{CreatePropertyDefinitionRequest, PropertyDefinitionDto},
         saved_searches::{CreateSavedSearchRequest, RenameSavedSearchRequest, SavedSearchDto},
         search::SearchHitDto,
+        semantic_search::SemanticSearchHitDto,
         status_templates::{
             CreateStatusTemplateRequest, StatusTemplateDto, UpdateStatusTemplateRequest,
         },
@@ -940,6 +941,20 @@ impl AtlasClient {
         let path = build_search_path(ws, q, type_filter, sort, cursor, limit);
         let response = self.get(&path).send().await?;
         self.decode_response(response, "search").await
+    }
+
+    /// `GET /api/workspaces/{ws}/semantic-search`
+    pub async fn semantic_search(
+        &self,
+        ws: &str,
+        q: &str,
+        type_filter: Option<&str>,
+        cursor: Option<&str>,
+        limit: Option<u32>,
+    ) -> Result<Page<SemanticSearchHitDto>, ClientError> {
+        let path = build_semantic_search_path(ws, q, type_filter, cursor, limit);
+        let response = self.get(&path).send().await?;
+        self.decode_response(response, "semantic_search").await
     }
 
     /// `POST /api/workspaces/{ws}/projects/{project_slug}/folders`
@@ -2839,14 +2854,38 @@ fn build_search_path(
     cursor: Option<&str>,
     limit: Option<u32>,
 ) -> String {
+    let mut params = search_params(q, type_filter, cursor, limit);
+    if let Some(s) = sort {
+        params.insert(2.min(params.len()), format!("sort={s}"));
+    }
+
+    format!("/api/workspaces/{ws}/search?{}", params.join("&"))
+}
+
+fn build_semantic_search_path(
+    ws: &str,
+    q: &str,
+    type_filter: Option<&str>,
+    cursor: Option<&str>,
+    limit: Option<u32>,
+) -> String {
+    format!(
+        "/api/workspaces/{ws}/semantic-search?{}",
+        search_params(q, type_filter, cursor, limit).join("&")
+    )
+}
+
+fn search_params(
+    q: &str,
+    type_filter: Option<&str>,
+    cursor: Option<&str>,
+    limit: Option<u32>,
+) -> Vec<String> {
     let encoded_q = encode_query_value(q);
     let mut params = vec![format!("q={encoded_q}")];
 
     if let Some(t) = type_filter {
         params.push(format!("type={t}"));
-    }
-    if let Some(s) = sort {
-        params.push(format!("sort={s}"));
     }
     if let Some(c) = cursor {
         params.push(format!("cursor={c}"));
@@ -2854,8 +2893,7 @@ fn build_search_path(
     if let Some(l) = limit {
         params.push(format!("limit={l}"));
     }
-
-    format!("/api/workspaces/{ws}/search?{}", params.join("&"))
+    params
 }
 
 /// Percent-encodes characters that are not safe in a query-string value.
@@ -3108,6 +3146,29 @@ mod tests {
         assert!(!path.contains("sort="));
         assert!(!path.contains("cursor="));
         assert!(!path.contains("limit="));
+    }
+
+    #[test]
+    fn build_semantic_search_path_targets_separate_route() {
+        let path = build_semantic_search_path(
+            "ws1",
+            "concept drift",
+            Some("document"),
+            Some("cur"),
+            Some(25),
+        );
+        assert!(path.starts_with("/api/workspaces/ws1/semantic-search?q="));
+        assert!(!path.starts_with("/api/workspaces/ws1/search"));
+        assert!(path.contains("concept%20drift"));
+        assert!(path.contains("type=document"));
+        assert!(path.contains("cursor=cur"));
+        assert!(path.contains("limit=25"));
+    }
+
+    #[test]
+    fn build_semantic_search_path_omits_optional_params_when_none() {
+        let path = build_semantic_search_path("ws1", "query", None, None, None);
+        assert_eq!(path, "/api/workspaces/ws1/semantic-search?q=query");
     }
 
     #[test]
