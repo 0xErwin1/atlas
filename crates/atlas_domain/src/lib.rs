@@ -18,6 +18,7 @@ pub mod ports;
 pub mod position;
 pub mod revision;
 pub mod search;
+pub mod semantic_search;
 pub mod slug;
 pub mod wikilink;
 

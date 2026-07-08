@@ -56,12 +56,13 @@ use response::{
     project_column, project_comment, project_document_compact, project_document_full,
     project_document_summary, project_folder, project_principal, project_project,
     project_promotion, project_reference, project_revision_content, project_revision_meta,
-    project_saved_search, project_search_hit, project_status_template, project_tag,
-    project_task_attachment, project_task_backlink, project_task_compact, project_task_full,
-    project_task_row, project_task_view, project_webhook, project_webhook_created,
-    project_webhook_delivery, project_workspace, project_workspace_activity_entry, require_confirm,
-    resolve_column_id_on_board, validate_assignee_type, validate_estimate, validate_estimate_value,
-    validate_priority, validate_reference_kind, validate_single_target, wrap_vec,
+    project_saved_search, project_search_hit, project_semantic_search_hit, project_status_template,
+    project_tag, project_task_attachment, project_task_backlink, project_task_compact,
+    project_task_full, project_task_row, project_task_view, project_webhook,
+    project_webhook_created, project_webhook_delivery, project_workspace,
+    project_workspace_activity_entry, require_confirm, resolve_column_id_on_board,
+    validate_assignee_type, validate_estimate, validate_estimate_value, validate_priority,
+    validate_reference_kind, validate_single_target, wrap_vec,
 };
 
 const ATLAS_INSTRUCTIONS: &str = "\
@@ -72,8 +73,8 @@ conventions shared across all of them.\n\
 \n\
 Conventions:\n\
 - Discover before acting: use `search` (keyword plus filters like status:open, tag:rust) \
-and the list tools to find resources first. Identify tasks by readable_id (e.g. ATL-42) \
-and documents by slug.\n\
+for lexical matches or `semantic_search` for concept matches, then list tools to find \
+resources first. Identify tasks by readable_id (e.g. ATL-42) and documents by slug.\n\
 - Pass names, not UUIDs, for boards / columns / assignees; on a miss the error lists the \
 valid options.\n\
 - List responses are paginated as {items, next_cursor, has_more}; reads are compact by \
@@ -300,6 +301,24 @@ pub struct SearchParams {
     /// Sort: `relevance` (default) or `updated`.
     #[serde(default)]
     pub sort: Option<String>,
+    /// Pass `next_cursor` from the previous response to fetch the next page.
+    #[serde(default)]
+    pub cursor: Option<String>,
+    /// Page size (default 20, max 200).
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+/// Parameters accepted by the `semantic_search` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SemanticSearchParams {
+    /// Workspace slug to search in.
+    pub workspace: String,
+    /// Natural-language concept query.
+    pub query: String,
+    /// Kind: `all` (default), `document`/`note`, or `task`.
+    #[serde(default, rename = "type")]
+    pub type_filter: Option<String>,
     /// Pass `next_cursor` from the previous response to fetch the next page.
     #[serde(default)]
     pub cursor: Option<String>,
@@ -1582,6 +1601,30 @@ impl AtlasMcp {
             .map_err(|e| format!("search failed: {e}"))?;
 
         let result = envelope_page(page, project_search_hit);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "Semantic search documents and tasks across an Atlas workspace")]
+    async fn semantic_search(
+        &self,
+        Parameters(params): Parameters<SemanticSearchParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+        let limit = params.limit.unwrap_or(20).clamp(1, 200);
+
+        let page = client
+            .semantic_search(
+                &params.workspace,
+                &params.query,
+                params.type_filter.as_deref(),
+                params.cursor.as_deref(),
+                Some(limit),
+            )
+            .await
+            .map_err(|e| format!("semantic_search failed: {e}"))?;
+
+        let result = envelope_page(page, project_semantic_search_hit);
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
@@ -4309,6 +4352,15 @@ mod tests {
     }
 
     #[test]
+    fn semantic_search_tool_is_registered() {
+        let router = AtlasMcp::tool_router();
+        assert!(
+            router.has_route("semantic_search"),
+            "expected MCP semantic_search tool to be registered"
+        );
+    }
+
+    #[test]
     fn parse_webhook_id_rejects_non_uuid() {
         assert!(parse_webhook_id("not-a-uuid").is_err());
         assert!(parse_webhook_id(&uuid::Uuid::nil().to_string()).is_ok());
@@ -4425,6 +4477,26 @@ mod tests {
         let params: SearchParams = serde_json::from_str(json).unwrap();
         assert_eq!(params.cursor.as_deref(), Some("abc123"));
         assert_eq!(params.limit, Some(10));
+    }
+
+    #[test]
+    fn semantic_search_params_deserializes_minimal() {
+        let json = r#"{"workspace":"my-ws","query":"incident response"}"#;
+        let params: SemanticSearchParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.workspace, "my-ws");
+        assert_eq!(params.query, "incident response");
+        assert!(params.type_filter.is_none());
+        assert!(params.cursor.is_none());
+        assert!(params.limit.is_none());
+    }
+
+    #[test]
+    fn semantic_search_params_deserializes_type_cursor_and_limit() {
+        let json = r#"{"workspace":"ws","query":"q","type":"task","cursor":"next","limit":7}"#;
+        let params: SemanticSearchParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.type_filter.as_deref(), Some("task"));
+        assert_eq!(params.cursor.as_deref(), Some("next"));
+        assert_eq!(params.limit, Some(7));
     }
 
     #[test]

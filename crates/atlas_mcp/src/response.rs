@@ -18,6 +18,7 @@ use atlas_api::{
         folders::FolderDto,
         saved_searches::SavedSearchDto,
         search::SearchHitDto,
+        semantic_search::SemanticSearchHitDto,
         status_templates::StatusTemplateDto,
         tags::TagDto,
         task_views::TaskViewDto,
@@ -123,6 +124,31 @@ pub(crate) fn project_search_hit(hit: SearchHitDto) -> Value {
     }
     if let Some(snip) = hit.snippet {
         map.insert("snippet".into(), json!(snip));
+    }
+    if let Some(slug) = hit.project_slug {
+        map.insert("project_slug".into(), json!(slug));
+    }
+    if let Some(col) = hit.column_name {
+        map.insert("column_name".into(), json!(col));
+    }
+
+    Value::Object(map)
+}
+
+pub(crate) fn project_semantic_search_hit(hit: SemanticSearchHitDto) -> Value {
+    let kind = serde_json::to_value(hit.kind).unwrap_or(Value::Null);
+    let source = serde_json::to_value(hit.source).unwrap_or(Value::Null);
+
+    let mut map = serde_json::Map::new();
+    map.insert("kind".into(), kind);
+    map.insert("id".into(), json!(hit.id));
+    map.insert("title".into(), json!(hit.title));
+    map.insert("similarity".into(), json!(hit.similarity));
+    map.insert("source".into(), source);
+    map.insert("excerpt".into(), json!(hit.excerpt));
+
+    if let Some(rid) = hit.readable_id {
+        map.insert("readable_id".into(), json!(rid));
     }
     if let Some(slug) = hit.project_slug {
         map.insert("project_slug".into(), json!(slug));
@@ -1077,6 +1103,7 @@ mod tests {
         folders::FolderDto,
         saved_searches::SavedSearchDto,
         search::{SearchHitDto, SearchKindDto},
+        semantic_search::{SemanticSearchHitDto, SemanticSearchKindDto, SemanticSearchSourceDto},
         tags::TagDto,
         task_views::{TaskViewDto, TaskViewFiltersDto},
     };
@@ -1417,6 +1444,67 @@ mod tests {
             val.get("column_name").is_none(),
             "column_name must be absent when None"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // project_semantic_search_hit
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn semantic_search_hit_projection_is_hydration_friendly_and_compact() {
+        let hit = SemanticSearchHitDto {
+            id: fixed_uuid(),
+            kind: SemanticSearchKindDto::Task,
+            readable_id: Some("ATL-42".into()),
+            title: "Investigate incident".into(),
+            project_slug: Some("ops".into()),
+            column_name: Some("In Progress".into()),
+            similarity: 0.91,
+            source: SemanticSearchSourceDto::Comment,
+            excerpt: "customer-impact discussion".into(),
+        };
+
+        let val = project_semantic_search_hit(hit);
+
+        assert_eq!(val["kind"], "task");
+        assert_eq!(val["id"], fixed_uuid().to_string());
+        assert_eq!(val["readable_id"], "ATL-42");
+        assert_eq!(val["title"], "Investigate incident");
+        assert_eq!(val["project_slug"], "ops");
+        assert_eq!(val["column_name"], "In Progress");
+        let similarity = val["similarity"].as_f64().expect("similarity number");
+        assert!((similarity - 0.91).abs() < 0.000_001);
+        assert_eq!(val["source"], "comment");
+        assert_eq!(val["excerpt"], "customer-impact discussion");
+        assert!(val.get("content").is_none());
+        assert!(val.get("body").is_none());
+        assert!(val.get("comments").is_none());
+        assert!(val.get("updated_at").is_none());
+        assert!(val.get("created_at").is_none());
+    }
+
+    #[test]
+    fn semantic_search_hit_projection_omits_absent_optionals() {
+        let hit = SemanticSearchHitDto {
+            id: fixed_uuid(),
+            kind: SemanticSearchKindDto::Document,
+            readable_id: None,
+            title: "Runbook".into(),
+            project_slug: None,
+            column_name: None,
+            similarity: 0.73,
+            source: SemanticSearchSourceDto::Content,
+            excerpt: "recovery steps".into(),
+        };
+
+        let val = project_semantic_search_hit(hit);
+
+        assert_eq!(val["kind"], "document");
+        assert_eq!(val["source"], "content");
+        assert_eq!(val["excerpt"], "recovery steps");
+        assert!(val.get("readable_id").is_none());
+        assert!(val.get("project_slug").is_none());
+        assert!(val.get("column_name").is_none());
     }
 
     // -----------------------------------------------------------------------

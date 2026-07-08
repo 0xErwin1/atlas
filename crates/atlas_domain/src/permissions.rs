@@ -295,7 +295,7 @@ impl std::str::FromStr for Capability {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Principal {
     User(UserId),
     ApiKey(ApiKeyId),

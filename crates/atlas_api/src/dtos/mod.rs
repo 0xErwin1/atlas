@@ -8,6 +8,7 @@ pub mod integrations;
 pub mod property_definitions;
 pub mod saved_searches;
 pub mod search;
+pub mod semantic_search;
 pub mod status_templates;
 pub mod tags;
 pub mod task_views;

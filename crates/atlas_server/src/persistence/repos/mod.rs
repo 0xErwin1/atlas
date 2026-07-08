@@ -23,6 +23,8 @@ mod search;
 #[allow(unreachable_pub)]
 mod security_audit;
 #[allow(unreachable_pub)]
+mod semantic_search;
+#[allow(unreachable_pub)]
 mod tags;
 #[allow(unreachable_pub)]
 mod webhook_delivery;
@@ -65,6 +67,7 @@ mod saved_searches;
 pub use outbox::PgOutboxRepo;
 pub use saved_searches::{PgSavedSearchRepo, SavedSearchRepo};
 pub use search::PgSearchRepo;
+pub use semantic_search::{PgSemanticIndexWriter, PgSemanticSearchRepo};
 pub use tags::{PgTagRepo, TagRepo};
 #[allow(unreachable_pub)]
 mod task_views;

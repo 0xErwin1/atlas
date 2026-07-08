@@ -89,7 +89,8 @@ Most list endpoints return:
 ```
 
 - most list limits clamp to `1..=200`
-- search uses a sort-aware cursor format distinct from ordinary list cursors
+- lexical search uses a sort-aware cursor format distinct from ordinary list cursors
+- semantic search uses a separate similarity cursor and compact hydrated-by-ID hits
 - some operational endpoints use lower caps
 
 ### Resource addressing
@@ -263,7 +264,8 @@ Most list endpoints return:
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/v1/workspaces/{ws}/search` | Unified note/task search. |
+| GET | `/v1/workspaces/{ws}/search` | Unified lexical note/task search. |
+| GET | `/api/workspaces/{ws}/semantic-search` | Optional embedding-backed document/task discovery with compact hits; requires embeddings to be enabled. |
 | GET | `/v1/workspaces/{ws}/tags` | List tags. |
 | POST | `/v1/workspaces/{ws}/tags` | Create tag. |
 | GET | `/v1/workspaces/{ws}/tags/used` | List task label strings currently in use. |

@@ -43,6 +43,9 @@ pub enum ApiError {
     PayloadTooLarge {
         message: String,
     },
+    ServiceUnavailable {
+        message: String,
+    },
     /// The authenticated principal exceeded its request quota. Carries the number
     /// of whole seconds the caller should wait, surfaced via `Retry-After`.
     TooManyRequests {
@@ -109,6 +112,15 @@ impl IntoResponse for ApiError {
                     "urn:atlas:error:payload-too-large",
                     "Payload Too Large",
                     413,
+                )
+                .with_detail(message),
+            ),
+            ApiError::ServiceUnavailable { message } => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                ProblemDetails::new(
+                    "urn:atlas:error:service-unavailable",
+                    "Service Unavailable",
+                    503,
                 )
                 .with_detail(message),
             ),
