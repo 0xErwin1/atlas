@@ -8,6 +8,11 @@ import ContextMenu, { type MenuItem } from '@/components/ui/ContextMenu.vue';
 import Icon from '@/components/ui/Icon.vue';
 import { resolveDropTarget } from '@/composables/kanbanDrop';
 import { useContextMenu } from '@/composables/useContextMenu';
+import {
+  type DragAutoScrollMoveEvent,
+  dragAutoScrollOptions,
+  handleDragAutoScrollMove,
+} from '@/composables/useDragAutoScroll';
 import { useInlineEdit } from '@/composables/useInlineEdit';
 import { resolveColumnSwatchId } from '@/lib/columnColor';
 import { swatchById } from '@/lib/swatches';
@@ -124,6 +129,10 @@ function onSortableDrop(event: unknown): void {
     return;
   }
   emit('drop', target.readableId, props.column.id, target.toIndex);
+}
+
+function onSortableMove(event: DragAutoScrollMoveEvent, originalEvent: Event): void {
+  handleDragAutoScrollMove(event, originalEvent);
 }
 </script>
 
@@ -244,6 +253,8 @@ function onSortableDrop(event: unknown): void {
       v-model="model"
       :group="'kanban'"
       :animation="150"
+      v-bind="dragAutoScrollOptions"
+      :on-move="onSortableMove"
       item-key="id"
       class="flex flex-col"
       style="gap: 8px; flex: 1 1 auto; min-height: 60px;"

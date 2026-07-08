@@ -4,7 +4,15 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('vue-draggable-plus', () => ({
   VueDraggable: {
     name: 'VueDraggable',
-    props: ['modelValue'],
+    props: [
+      'modelValue',
+      'scroll',
+      'scrollSensitivity',
+      'scrollSpeed',
+      'bubbleScroll',
+      'forceAutoScrollFallback',
+      'onMove',
+    ],
     template: '<div class="vdp-stub"><slot /></div>',
   },
 }));
@@ -110,5 +118,45 @@ describe('KanbanColumn editing', () => {
 
     expect(wrapper.find('input.atl-quick-add').exists()).toBe(false);
     expect(wrapper.emitted('create')).toBeUndefined();
+  });
+
+  it('scrolls the kanban container when dragging near an edge', () => {
+    const wrapper = mountColumn();
+    const scrollContainer = wrapper.element as HTMLElement;
+    Object.defineProperties(scrollContainer, {
+      clientHeight: { configurable: true, value: 100 },
+      clientWidth: { configurable: true, value: 100 },
+      scrollHeight: { configurable: true, value: 100 },
+      scrollWidth: { configurable: true, value: 300 },
+    });
+    scrollContainer.scrollLeft = 100;
+    scrollContainer.getBoundingClientRect = () => ({
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      right: 100,
+      bottom: 100,
+      width: 100,
+      height: 100,
+      toJSON: () => ({}),
+    });
+
+    const draggable = wrapper.findComponent({ name: 'VueDraggable' });
+    expect(draggable.props()).toMatchObject({
+      scroll: true,
+      scrollSensitivity: 60,
+      scrollSpeed: 14,
+      bubbleScroll: true,
+      forceAutoScrollFallback: true,
+    });
+
+    const onMove = draggable.props('onMove') as (event: { to: HTMLElement }, originalEvent: Event) => void;
+    onMove(
+      { to: draggable.element as HTMLElement },
+      new MouseEvent('mousemove', { clientX: 96, clientY: 50 }),
+    );
+
+    expect(scrollContainer.scrollLeft).toBe(114);
   });
 });
