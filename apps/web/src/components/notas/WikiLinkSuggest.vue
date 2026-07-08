@@ -139,7 +139,7 @@ defineExpose({ open, moveDown, moveUp, confirmActive });
       @mousedown.prevent="choose(i)"
     >
       <Icon name="file" :size="14" />
-      <span class="truncate">{{ hit.title }}</span>
+      <span class="min-w-0 flex-1 truncate">{{ hit.title }}</span>
     </button>
 
     <button
@@ -161,7 +161,7 @@ defineExpose({ open, moveDown, moveUp, confirmActive });
       @mousedown.prevent="choose(hits.length)"
     >
       <Icon name="plus" :size="14" />
-      <span class="flex-1">
+      <span class="min-w-0 flex-1 truncate">
         Create
         <span style="font-family: var(--font-mono); color: var(--c-primary);">"{{ createLabel }}"</span>
       </span>
