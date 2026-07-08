@@ -144,6 +144,20 @@ export const atlasMarkdownTheme = EditorView.theme(
       color: 'var(--c-danger)',
     },
 
+    // Sanitized raw HTML blocks, replacing source HTML off the active block.
+    '.cm-atlas-html-block': {
+      margin: '0.35em 0',
+      cursor: 'text',
+    },
+    '.cm-atlas-html-block img': {
+      maxWidth: '100%',
+      height: 'auto',
+      borderRadius: 'var(--r-lg)',
+    },
+    '.cm-atlas-html-block a': {
+      color: 'var(--c-info)',
+    },
+
     // Rendered KaTeX math, replacing raw $...$ / $$...$$ off active source.
     '.cm-atlas-math-inline': {
       display: 'inline-flex',

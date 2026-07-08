@@ -21,7 +21,7 @@ import {
   taskMarkerChecked,
   tokenizeInline,
 } from '@/lib/livePreview';
-import { safeUrl } from '@/lib/sanitize';
+import { safeUrl, sanitizeMarkdownHtmlFragment } from '@/lib/sanitize';
 import { parseWikilinkInner, type WikilinkRef } from '@/lib/wikilink';
 
 /**
@@ -561,6 +561,38 @@ class MathBlockWidget extends WidgetType {
   }
 }
 
+class HtmlBlockWidget extends WidgetType {
+  constructor(
+    private readonly html: string,
+    private readonly from: number,
+  ) {
+    super();
+  }
+
+  eq(other: HtmlBlockWidget): boolean {
+    return other.html === this.html && other.from === this.from;
+  }
+
+  toDOM(view: EditorView): HTMLElement {
+    const wrap = document.createElement('div');
+    wrap.className = 'cm-atlas-html-block';
+    wrap.appendChild(sanitizeMarkdownHtmlFragment(this.html));
+
+    wrap.addEventListener('mousedown', (event) => {
+      if (view.state.readOnly) return;
+      event.preventDefault();
+      view.dispatch({ selection: { anchor: this.from }, scrollIntoView: true });
+      view.focus();
+    });
+
+    return wrap;
+  }
+
+  ignoreEvent(): boolean {
+    return false;
+  }
+}
+
 /**
  * Block widget that renders a ```mermaid code block as a diagram. The diagram is
  * rendered asynchronously (mermaid is lazy-loaded) with the current app theme and
@@ -695,6 +727,14 @@ function buildDecorations(
     if (!isBlockActive(firstLine, lastLine, activeLines))
       blockRanges.push({ from: range.from, to: range.to });
   }
+
+  syntaxTree(view.state).iterate({
+    enter: (node) => {
+      if (node.name !== 'HTMLBlock') return undefined;
+      blockRanges.push({ from: node.from, to: node.to });
+      return false;
+    },
+  });
 
   for (const { from, to } of view.visibleRanges) {
     decorateSyntaxTree(view, from, to, activeLines, callbacks, titles, decos, blockRanges);
@@ -1194,6 +1234,15 @@ export function buildBlockDecorations(state: EditorState, reveal: boolean, ctx: 
         if (!isBlockActive(firstLine, lastLine, activeLines)) {
           const parsed = parseTable(doc.sliceString(node.from, node.to));
           if (parsed !== null) blockReplace(node.node, new TableWidget(parsed, node.from, ctx));
+        }
+        return false;
+      }
+
+      if (node.name === 'HTMLBlock') {
+        const firstLine = doc.lineAt(node.from).number;
+        const lastLine = doc.lineAt(node.to).number;
+        if (!isBlockActive(firstLine, lastLine, activeLines)) {
+          blockReplace(node.node, new HtmlBlockWidget(doc.sliceString(node.from, node.to), node.from));
         }
         return false;
       }

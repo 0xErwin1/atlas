@@ -86,3 +86,161 @@ export function safeUrl(raw: string): string | null {
   const scheme = `${match[1]?.toLowerCase()}:`;
   return SAFE_URL_SCHEMES.has(scheme) ? normalized : null;
 }
+
+const SAFE_HTML_TAGS = new Set([
+  'a',
+  'abbr',
+  'b',
+  'blockquote',
+  'br',
+  'caption',
+  'cite',
+  'code',
+  'dd',
+  'del',
+  'details',
+  'div',
+  'dl',
+  'dt',
+  'em',
+  'figcaption',
+  'figure',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'hr',
+  'i',
+  'img',
+  'ins',
+  'kbd',
+  'li',
+  'mark',
+  'ol',
+  'p',
+  'pre',
+  's',
+  'small',
+  'span',
+  'strong',
+  'sub',
+  'summary',
+  'sup',
+  'table',
+  'tbody',
+  'td',
+  'tfoot',
+  'th',
+  'thead',
+  'tr',
+  'u',
+  'ul',
+]);
+
+const DROP_HTML_SUBTREE_TAGS = new Set([
+  'base',
+  'button',
+  'embed',
+  'form',
+  'iframe',
+  'input',
+  'link',
+  'meta',
+  'object',
+  'option',
+  'script',
+  'select',
+  'style',
+  'textarea',
+]);
+
+const GLOBAL_HTML_ATTRS = new Set(['align', 'aria-hidden', 'aria-label', 'colspan', 'rowspan', 'title']);
+const URI_HTML_ATTRS = new Set(['href', 'src']);
+const SIZE_HTML_ATTRS = new Set(['height', 'width']);
+const SAFE_ALIGN_VALUES = new Set(['center', 'justify', 'left', 'right']);
+
+function safeHtmlAttr(tag: string, attr: Attr): string | null {
+  const name = attr.name.toLowerCase();
+  const value = attr.value;
+
+  if (name.startsWith('on') || name === 'style' || name === 'srcdoc') return null;
+
+  if (URI_HTML_ATTRS.has(name)) {
+    if ((tag === 'a' && name !== 'href') || (tag === 'img' && name !== 'src')) return null;
+    return safeUrl(value);
+  }
+
+  if (SIZE_HTML_ATTRS.has(name)) {
+    return /^\d{1,5}%?$/.test(value.trim()) ? value.trim() : null;
+  }
+
+  if (name === 'alt' && tag === 'img') return value;
+
+  if (name === 'align') {
+    const align = value.toLowerCase().trim();
+    return SAFE_ALIGN_VALUES.has(align) ? align : null;
+  }
+
+  if (GLOBAL_HTML_ATTRS.has(name)) return value;
+
+  return null;
+}
+
+function sanitizeHtmlNode(node: Node): Node | null {
+  if (node.nodeType === 3) return document.createTextNode(node.textContent ?? '');
+  if (!(node instanceof Element)) return null;
+
+  const tag = node.tagName.toLowerCase();
+  if (DROP_HTML_SUBTREE_TAGS.has(tag)) return null;
+
+  if (!SAFE_HTML_TAGS.has(tag)) {
+    const fragment = document.createDocumentFragment();
+    for (const child of [...node.childNodes]) {
+      const safe = sanitizeHtmlNode(child);
+      if (safe !== null) fragment.appendChild(safe);
+    }
+    return fragment;
+  }
+
+  const el = document.createElement(tag);
+  for (const attr of [...node.attributes]) {
+    const name = attr.name.toLowerCase();
+    const value = safeHtmlAttr(tag, attr);
+    if (value !== null) el.setAttribute(name, value);
+  }
+
+  if (tag === 'a') {
+    el.setAttribute('target', '_blank');
+    el.setAttribute('rel', 'noopener noreferrer');
+  }
+
+  if (tag === 'img' && !el.hasAttribute('src')) {
+    return document.createTextNode(el.getAttribute('alt') ?? '');
+  }
+
+  for (const child of [...node.childNodes]) {
+    const safe = sanitizeHtmlNode(child);
+    if (safe !== null) el.appendChild(safe);
+  }
+
+  return el;
+}
+
+export function sanitizeMarkdownHtmlFragment(html: string): DocumentFragment {
+  const fragment = document.createDocumentFragment();
+
+  if (typeof DOMParser === 'undefined') {
+    fragment.appendChild(document.createTextNode(html));
+    return fragment;
+  }
+
+  const parsed = new DOMParser().parseFromString(html, 'text/html');
+  for (const child of [...parsed.body.childNodes]) {
+    const safe = sanitizeHtmlNode(child);
+    if (safe !== null) fragment.appendChild(safe);
+  }
+
+  return fragment;
+}

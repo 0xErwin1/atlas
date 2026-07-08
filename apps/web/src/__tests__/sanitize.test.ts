@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { safeUrl, sanitizeSnippet } from '../lib/sanitize';
+import { safeUrl, sanitizeMarkdownHtmlFragment, sanitizeSnippet } from '../lib/sanitize';
 
 describe('sanitizeSnippet (REQ-W25)', () => {
   it('strips <script> tags', () => {
@@ -75,6 +75,35 @@ describe('sanitizeSnippet (REQ-W25)', () => {
     expect(result).toContain('&amp;');
     expect(result).toContain('&quot;');
     expect(result).toContain('&#39;');
+  });
+});
+
+describe('sanitizeMarkdownHtmlFragment', () => {
+  it('keeps safe block HTML and image attributes used by markdown notes', () => {
+    const fragment = sanitizeMarkdownHtmlFragment(
+      '<div align="center"><img src="https://example.com/image.png" width="600" alt="diagram"></div>',
+    );
+    const div = fragment.querySelector<HTMLDivElement>('div[align="center"]');
+    const img = fragment.querySelector<HTMLImageElement>('img');
+
+    expect(div).not.toBeNull();
+    expect(img?.getAttribute('src')).toBe('https://example.com/image.png');
+    expect(img?.getAttribute('width')).toBe('600');
+    expect(img?.getAttribute('alt')).toBe('diagram');
+  });
+
+  it('removes scripts, event handlers, styles, and unsafe URLs', () => {
+    const fragment = sanitizeMarkdownHtmlFragment(
+      '<div onclick="alert(1)" style="color:red"><script>alert(1)</script><img src="javascript:alert(1)" alt="bad"></div>',
+    );
+    const div = fragment.querySelector<HTMLDivElement>('div');
+
+    expect(div?.hasAttribute('onclick')).toBe(false);
+    expect(div?.hasAttribute('style')).toBe(false);
+    expect(fragment.querySelector('script')).toBeNull();
+    expect(fragment.querySelector('img')).toBeNull();
+    expect(fragment.textContent).toBe('bad');
+    expect(fragment.textContent).not.toContain('alert(1)');
   });
 });
 

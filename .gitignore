@@ -1,6 +1,7 @@
 /target
 node_modules
 dist
+apps/web/coverage/
 .env
 .env.*
 !.env.example
