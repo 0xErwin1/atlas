@@ -1,0 +1,34 @@
+version: "0.5"
+
+# Dev supervisor without managed Postgres: API (:8080) + web (:5173).
+# Use this when the database is already running elsewhere, or when you want the
+# server process to fail visibly instead of starting/stopping Postgres here.
+# `just up-no-db` wraps this file.
+
+processes:
+  gen-types:
+    command: "just gen-types"
+    availability:
+      restart: "no"
+
+  api:
+    command: "cargo watch -w crates -x 'run -p atlas_server'"
+    readiness_probe:
+      http_get:
+        host: "127.0.0.1"
+        scheme: "http"
+        path: "/health"
+        port: 8080
+      initial_delay_seconds: 3
+      period_seconds: 3
+      timeout_seconds: 3
+      failure_threshold: 60
+
+  web:
+    command: "pnpm dev"
+    working_dir: "apps/web"
+    depends_on:
+      gen-types:
+        condition: process_completed_successfully
+      api:
+        condition: process_healthy
