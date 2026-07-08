@@ -5,6 +5,7 @@ import { EditorSelection, EditorState } from '@codemirror/state';
 import { GFM } from '@lezer/markdown';
 import { describe, expect, it } from 'vitest';
 import { buildBlockDecorations } from '@/components/editor/livePreviewExtension';
+import { findMathRanges, isBlockActive } from '@/lib/livePreview';
 
 /**
  * The block-decoration walk skips descending into paragraphs and headings (they
@@ -27,6 +28,26 @@ function parsed(doc: string, cursor = 0): EditorState {
 
 const TABLE = ['| a | b |', '| - | - |', '| 1 | 2 |'].join('\n');
 const MERMAID = ['```mermaid', 'graph TD; A-->B;', '```'].join('\n');
+
+describe('math block range discovery', () => {
+  it('finds inactive block math as a block-level range', () => {
+    const doc = ['intro', '', '$$', 'x + y', '$$', '', 'after'].join('\n');
+    expect(findMathRanges(doc)).toEqual([{ kind: 'block', from: 7, to: 18, bodyFrom: 10, bodyTo: 16 }]);
+  });
+
+  it('reveals block math when the active line touches the block', () => {
+    const doc = ['intro', '', '$$', 'x + y', '$$', '', 'after'].join('\n');
+    const [range] = findMathRanges(doc);
+    if (range === undefined) throw new Error('expected math range');
+
+    const state = parsed(doc, range.bodyFrom);
+    const firstLine = state.doc.lineAt(range.from).number;
+    const lastLine = state.doc.lineAt(range.to).number;
+
+    expect(isBlockActive(firstLine, lastLine, new Set([state.doc.lineAt(range.bodyFrom).number]))).toBe(true);
+    expect(isBlockActive(firstLine, lastLine, new Set([state.doc.lines]))).toBe(false);
+  });
+});
 
 describe('buildBlockDecorations', () => {
   it('renders a top-level table as a block widget when the cursor is elsewhere', () => {

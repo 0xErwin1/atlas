@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   computeActiveLines,
   fenceLanguage,
+  findMathRanges,
   isBlockActive,
   isMarkerRevealed,
   type LineRange,
@@ -116,6 +117,44 @@ describe('parseImage', () => {
   it('returns null for non-image text', () => {
     expect(parseImage('[link](u)')).toBeNull();
     expect(parseImage('plain')).toBeNull();
+  });
+});
+
+describe('findMathRanges', () => {
+  it('finds inline math ranges and exposes body offsets', () => {
+    const doc = 'The area is $a^2$ units';
+    expect(findMathRanges(doc)).toEqual([{ kind: 'inline', from: 12, to: 17, bodyFrom: 13, bodyTo: 16 }]);
+  });
+
+  it('finds block math ranges on one line and across fenced lines', () => {
+    const single = 'before\n$$x + y$$\nafter';
+    expect(findMathRanges(single)).toEqual([{ kind: 'block', from: 7, to: 16, bodyFrom: 9, bodyTo: 14 }]);
+
+    const multi = 'before\n$$\nx + y\n$$\nafter';
+    expect(findMathRanges(multi)).toEqual([{ kind: 'block', from: 7, to: 18, bodyFrom: 10, bodyTo: 16 }]);
+  });
+
+  it('ignores escaped dollars, currency-like text, and unclosed math', () => {
+    expect(findMathRanges('Cost is $50.00 today and \\$x\\$ stays literal')).toEqual([]);
+    expect(findMathRanges('The value is $x + 1')).toEqual([]);
+    expect(findMathRanges('empty $$ and spaced $ x $ stay raw')).toEqual([]);
+  });
+
+  it('ignores math delimiters inside inline code and fenced code', () => {
+    const doc = 'Use `$x$` literally\n\n```ts\nconst x = "$y$";\n$$z$$\n```\nThen $a+b$ works';
+    expect(findMathRanges(doc)).toEqual([{ kind: 'inline', from: 59, to: 64, bodyFrom: 60, bodyTo: 63 }]);
+  });
+
+  it('ignores math delimiters inside repeated-backtick inline code spans', () => {
+    const doc = 'Use ``$x$`` literally, but $y$ renders';
+    expect(findMathRanges(doc)).toEqual([{ kind: 'inline', from: 27, to: 30, bodyFrom: 28, bodyTo: 29 }]);
+  });
+
+  it('supports caller-provided excluded ranges', () => {
+    const doc = 'skip $x$ keep $y$';
+    expect(findMathRanges(doc, [{ from: 0, to: 8 }])).toEqual([
+      { kind: 'inline', from: 14, to: 17, bodyFrom: 15, bodyTo: 16 },
+    ]);
   });
 });
 

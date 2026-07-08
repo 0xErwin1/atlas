@@ -144,6 +144,53 @@ export const atlasMarkdownTheme = EditorView.theme(
       color: 'var(--c-danger)',
     },
 
+    // Rendered KaTeX math, replacing raw $...$ / $$...$$ off active source.
+    '.cm-atlas-math-inline': {
+      display: 'inline-flex',
+      alignItems: 'baseline',
+      maxWidth: '100%',
+      verticalAlign: 'baseline',
+      color: 'var(--c-foreground)',
+      cursor: 'text',
+    },
+    '.cm-atlas-math-inline .katex': {
+      fontSize: '1em',
+    },
+    '.cm-atlas-math-block': {
+      display: 'block',
+      maxWidth: '100%',
+      overflowX: 'auto',
+      margin: '0.45em 0',
+      padding: '0.35em 0',
+      color: 'var(--c-foreground)',
+      cursor: 'text',
+    },
+    '.cm-atlas-math-block .katex-display': {
+      margin: '0',
+    },
+    '.cm-atlas-math-error': {
+      gap: '0.45em',
+      alignItems: 'center',
+      color: 'var(--c-danger)',
+      fontFamily: 'var(--font-mono)',
+      whiteSpace: 'pre-wrap',
+    },
+    '.cm-atlas-math-error-label': {
+      display: 'inline-block',
+      padding: '0 0.35em',
+      border: '1px solid var(--c-danger)',
+      borderRadius: 'var(--r-sm)',
+      fontSize: 'var(--fs-xs)',
+      fontWeight: 'var(--fw-semibold)',
+      lineHeight: '1.5',
+    },
+    '.cm-atlas-math-error code': {
+      color: 'var(--c-danger)',
+      backgroundColor: 'var(--c-input)',
+      borderRadius: 'var(--r-sm)',
+      padding: '1px 5px',
+    },
+
     // Blockquote.
     '.cm-atlas-quote': {
       borderLeft: '3px solid var(--c-border)',

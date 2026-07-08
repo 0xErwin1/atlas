@@ -102,6 +102,21 @@ export function parseImage(src: string): { alt: string; url: string } | null {
   return { alt: m[1] ?? '', url: m[2] ?? '' };
 }
 
+export type MathKind = 'inline' | 'block';
+
+export interface MathRange {
+  kind: MathKind;
+  from: number;
+  to: number;
+  bodyFrom: number;
+  bodyTo: number;
+}
+
+export interface ExcludedRange {
+  from: number;
+  to: number;
+}
+
 /** A run of inline markdown produced by {@link tokenizeInline}. */
 export type InlineToken =
   | { type: 'text'; value: string }
@@ -110,10 +125,11 @@ export type InlineToken =
   | { type: 'em'; value: string }
   | { type: 'strike'; value: string }
   | { type: 'link'; value: string; url: string }
-  | { type: 'wikilink'; value: string };
+  | { type: 'wikilink'; value: string }
+  | { type: 'math'; value: string };
 
 const INLINE_RE =
-  /(`[^`]+`)|(\[\[[^\]]+\]\])|(\[[^\]]+\]\([^)]+\))|(\*\*[^*]+\*\*|__[^_]+__)|(~~[^~]+~~)|(\*[^*]+\*|_[^_]+_)/;
+  /(`[^`]+`)|(\[\[[^\]]+\]\])|(\[[^\]]+\]\([^)]+\))|(\$[^$\n]+\$)|(\*\*[^*]+\*\*|__[^_]+__)|(~~[^~]+~~)|(\*[^*]+\*|_[^_]+_)/;
 
 /**
  * Splits a line of inline markdown into typed tokens (text, code, bold, italic,
@@ -129,7 +145,7 @@ export function tokenizeInline(text: string): InlineToken[] {
   for (let m = re.exec(text); m !== null; m = re.exec(text)) {
     if (m.index > last) tokens.push({ type: 'text', value: text.slice(last, m.index) });
 
-    const [whole, code, wikilink, link, strong, strike, em] = m;
+    const [whole, code, wikilink, link, math, strong, strike, em] = m;
 
     if (code !== undefined) {
       tokens.push({ type: 'code', value: code.slice(1, -1) });
@@ -139,6 +155,13 @@ export function tokenizeInline(text: string): InlineToken[] {
       const lm = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(link);
       tokens.push(
         lm !== null ? { type: 'link', value: lm[1] ?? '', url: lm[2] ?? '' } : { type: 'text', value: link },
+      );
+    } else if (math !== undefined) {
+      const [range] = findMathRanges(math);
+      tokens.push(
+        range?.kind === 'inline' && range.from === 0 && range.to === math.length
+          ? { type: 'math', value: math.slice(1, -1) }
+          : { type: 'text', value: math },
       );
     } else if (strong !== undefined) {
       tokens.push({ type: 'strong', value: strong.slice(2, -2) });
@@ -154,6 +177,178 @@ export function tokenizeInline(text: string): InlineToken[] {
   if (last < text.length) tokens.push({ type: 'text', value: text.slice(last) });
 
   return tokens;
+}
+
+function isEscaped(text: string, pos: number): boolean {
+  let count = 0;
+  for (let i = pos - 1; i >= 0 && text[i] === '\\'; i -= 1) count += 1;
+  return count % 2 === 1;
+}
+
+function overlapsExcluded(from: number, to: number, excluded: ExcludedRange[]): boolean {
+  return excluded.some((range) => from < range.to && to > range.from);
+}
+
+function containsExcluded(pos: number, excluded: ExcludedRange[]): boolean {
+  return excluded.some((range) => pos >= range.from && pos < range.to);
+}
+
+function lineRanges(doc: string): Array<{ from: number; to: number; text: string }> {
+  const lines: Array<{ from: number; to: number; text: string }> = [];
+  let from = 0;
+  for (const text of doc.split('\n')) {
+    const to = from + text.length;
+    lines.push({ from, to, text });
+    from = to + 1;
+  }
+  return lines;
+}
+
+function fencedCodeRanges(doc: string): ExcludedRange[] {
+  const ranges: ExcludedRange[] = [];
+  const lines = lineRanges(doc);
+  let open: { from: number; marker: string } | null = null;
+
+  for (const line of lines) {
+    const opening = /^( {0,3})(`{3,}|~{3,})/.exec(line.text);
+    if (open === null) {
+      if (opening !== null) open = { from: line.from, marker: opening[2] ?? '' };
+      continue;
+    }
+
+    const closing = /^( {0,3})(`{3,}|~{3,})\s*$/.exec(line.text);
+    if (closing !== null) {
+      const marker = closing[2] ?? '';
+      if (marker[0] === open.marker[0] && marker.length >= open.marker.length) {
+        ranges.push({ from: open.from, to: line.to });
+        open = null;
+      }
+    }
+  }
+
+  if (open !== null) ranges.push({ from: open.from, to: doc.length });
+  return ranges;
+}
+
+function inlineCodeRanges(doc: string, excluded: ExcludedRange[]): ExcludedRange[] {
+  const ranges: ExcludedRange[] = [];
+
+  for (const line of lineRanges(doc)) {
+    let open: { from: number; length: number } | null = null;
+    for (let pos = line.from; pos < line.to; pos += 1) {
+      if (doc[pos] !== '`' || isEscaped(doc, pos) || containsExcluded(pos, excluded)) continue;
+
+      let runEnd = pos + 1;
+      while (runEnd < line.to && doc[runEnd] === '`') runEnd += 1;
+      const length = runEnd - pos;
+
+      if (open === null) {
+        open = { from: pos, length };
+      } else if (length === open.length) {
+        ranges.push({ from: open.from, to: runEnd });
+        open = null;
+      }
+
+      pos = runEnd - 1;
+    }
+  }
+
+  return ranges;
+}
+
+function findBlockMathRanges(doc: string, excluded: ExcludedRange[]): MathRange[] {
+  const ranges: MathRange[] = [];
+  const lines = lineRanges(doc);
+  let open: { from: number; to: number } | null = null;
+
+  for (const line of lines) {
+    if (overlapsExcluded(line.from, line.to, excluded)) continue;
+
+    const trimmed = line.text.trim();
+    const indent = line.text.search(/\S/);
+    if (indent < 0) continue;
+    const trimmedFrom = line.from + indent;
+
+    if (open !== null) {
+      if (trimmed === '$$') {
+        ranges.push({
+          kind: 'block',
+          from: open.from,
+          to: trimmedFrom + 2,
+          bodyFrom: open.to + 1,
+          bodyTo: trimmedFrom,
+        });
+        open = null;
+      }
+      continue;
+    }
+
+    if (!trimmed.startsWith('$$')) continue;
+    const afterOpen = trimmed.slice(2);
+    if (afterOpen.length === 0) {
+      open = { from: trimmedFrom, to: trimmedFrom + 2 };
+      continue;
+    }
+
+    if (trimmed.endsWith('$$') && trimmed.length > 4) {
+      const closeFrom = trimmedFrom + trimmed.length - 2;
+      const bodyFrom = trimmedFrom + 2;
+      if (doc.slice(bodyFrom, closeFrom).trim().length > 0) {
+        ranges.push({ kind: 'block', from: trimmedFrom, to: closeFrom + 2, bodyFrom, bodyTo: closeFrom });
+      }
+    }
+  }
+
+  return ranges;
+}
+
+function canOpenInlineMath(doc: string, pos: number): boolean {
+  if (doc[pos] !== '$' || isEscaped(doc, pos)) return false;
+  if (doc[pos + 1] === '$' || doc[pos - 1] === '$') return false;
+  const next = doc[pos + 1];
+  if (next === undefined || /\s|\d/.test(next)) return false;
+  return true;
+}
+
+function canCloseInlineMath(doc: string, pos: number): boolean {
+  if (doc[pos] !== '$' || isEscaped(doc, pos)) return false;
+  if (doc[pos + 1] === '$' || doc[pos - 1] === '$') return false;
+  const prev = doc[pos - 1];
+  if (prev === undefined || /\s/.test(prev)) return false;
+  return true;
+}
+
+function findInlineMathRanges(doc: string, excluded: ExcludedRange[]): MathRange[] {
+  const ranges: MathRange[] = [];
+
+  for (const line of lineRanges(doc)) {
+    let open: number | null = null;
+    for (let pos = line.from; pos < line.to; pos += 1) {
+      if (doc[pos] !== '$' || containsExcluded(pos, excluded)) continue;
+
+      if (open === null) {
+        if (canOpenInlineMath(doc, pos)) open = pos;
+        continue;
+      }
+
+      if (!canCloseInlineMath(doc, pos)) continue;
+      const bodyFrom = open + 1;
+      const bodyTo = pos;
+      if (!overlapsExcluded(open, pos + 1, excluded) && doc.slice(bodyFrom, bodyTo).trim().length > 0) {
+        ranges.push({ kind: 'inline', from: open, to: pos + 1, bodyFrom, bodyTo });
+      }
+      open = null;
+    }
+  }
+
+  return ranges;
+}
+
+export function findMathRanges(doc: string, excluded: ExcludedRange[] = []): MathRange[] {
+  const baseExcluded = [...excluded, ...fencedCodeRanges(doc)];
+  const blockRanges = findBlockMathRanges(doc, baseExcluded);
+  const allExcluded = [...baseExcluded, ...blockRanges, ...inlineCodeRanges(doc, baseExcluded)];
+  return [...blockRanges, ...findInlineMathRanges(doc, allExcluded)].sort((a, b) => a.from - b.from);
 }
 
 /** Per-column horizontal alignment from a GFM table delimiter row. */
