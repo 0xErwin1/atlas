@@ -24,7 +24,9 @@ import TasksSidebar from '@/views/TasksSidebar.vue';
 function mountWithProject() {
   const workspace = useWorkspaceStore();
   workspace.setActiveWorkspace('atlas');
-  workspace.projects = [{ slug: 'roadmap', name: 'Roadmap', task_prefix: 'RD', workspace_id: 'w1' }];
+  workspace.projects = [
+    { slug: 'roadmap', name: 'Roadmap', task_prefix: 'RD', workspace_id: 'w1', visibility: 'workspace' },
+  ];
   return mount(TasksSidebar);
 }
 

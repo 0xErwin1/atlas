@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, useSlots } from 'vue';
-import ShareDialog from '@/components/share/ShareDialog.vue';
+import ShareDialog, { type Visibility } from '@/components/share/ShareDialog.vue';
 import AppRail from '@/components/shell/AppRail.vue';
 import BannerToast from '@/components/shell/BannerToast.vue';
 import ContextSidebar from '@/components/shell/ContextSidebar.vue';
@@ -53,6 +53,26 @@ const hasSidebar = computed(() => Boolean(slots.sidebar));
 
 // With no sidebar (e.g. the board) the main content is always the primary pane.
 const showMainOnMobile = computed(() => props.mobileDetail || !hasSidebar.value);
+
+const shareVisibility = computed<Visibility>(() => {
+  const projectSlug = ui.shareProjectSlug;
+  if (projectSlug === null) return 'workspace';
+
+  const visibility = workspace.projects.find((project) => project.slug === projectSlug)?.visibility;
+  return visibility === 'private' || visibility === 'workspace' || visibility === 'public'
+    ? visibility
+    : 'workspace';
+});
+
+async function updateShareVisibility(visibility: Visibility): Promise<void> {
+  const projectSlug = ui.shareProjectSlug;
+  if (projectSlug === null || ws.value === '') return;
+
+  const ok = await workspace.updateProject(ws.value, projectSlug, { visibility });
+  if (!ok && workspace.error !== null) {
+    ui.showBanner(workspace.error, 'error');
+  }
+}
 </script>
 
 <template>
@@ -136,6 +156,8 @@ const showMainOnMobile = computed(() => props.mobileDetail || !hasSidebar.value)
       :ws="ws"
       :project-slug="ui.shareProjectSlug ?? undefined"
       :resource-label="ui.shareResourceLabel"
+      :visibility="shareVisibility"
+      @update:visibility="updateShareVisibility"
       @close="ui.closeShare()"
     />
 
@@ -191,6 +213,8 @@ const showMainOnMobile = computed(() => props.mobileDetail || !hasSidebar.value)
       :ws="ws"
       :project-slug="ui.shareProjectSlug ?? undefined"
       :resource-label="ui.shareResourceLabel"
+      :visibility="shareVisibility"
+      @update:visibility="updateShareVisibility"
       @close="ui.closeShare()"
     />
 

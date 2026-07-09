@@ -9,6 +9,7 @@ vi.mock('vue-router', () => ({
 }));
 
 import { useUiStore } from '@/stores/ui';
+import { useWorkspaceStore } from '@/stores/workspace';
 import AppShell from '@/views/AppShell.vue';
 
 function setViewportWidth(width: number): void {
@@ -21,7 +22,12 @@ const stubs = {
   ContextSidebar: { template: '<aside data-stub="sidebar"><slot /></aside>' },
   InspectorDock: { template: '<aside data-stub="inspector" />' },
   MobileTabBar: { template: '<nav data-stub="tabbar" />' },
-  ShareDialog: { template: '<div />' },
+  ShareDialog: {
+    name: 'ShareDialog',
+    props: ['visibility'],
+    emits: ['update:visibility', 'close'],
+    template: '<div />',
+  },
   BannerToast: { template: '<div />' },
   EmptyState: { template: '<div data-stub="empty" />' },
 };
@@ -80,6 +86,29 @@ describe('AppShell responsive layout', () => {
     const wrapper = mountShell({}, false);
 
     expect(wrapper.find('[data-test="main"]').exists()).toBe(true);
+  });
+
+  it('persists project visibility changes from the share dialog', async () => {
+    setViewportWidth(1280);
+    const ui = useUiStore();
+    const workspace = useWorkspaceStore();
+    workspace.setActiveWorkspace('atlas');
+    workspace.projects = [
+      { slug: 'roadmap', name: 'Roadmap', task_prefix: 'RD', workspace_id: 'w1', visibility: 'private' },
+    ];
+    const updateProject = vi.spyOn(workspace, 'updateProject').mockResolvedValue(true);
+    ui.openShare('Roadmap', 'roadmap');
+
+    const wrapper = mountShell();
+    await wrapper.vm.$nextTick();
+
+    const share = wrapper.findComponent({ name: 'ShareDialog' });
+    expect(share.props('visibility')).toBe('private');
+
+    share.vm.$emit('update:visibility', 'public');
+    await wrapper.vm.$nextTick();
+
+    expect(updateProject).toHaveBeenCalledWith('atlas', 'roadmap', { visibility: 'public' });
   });
 
   it('keeps rendering both panes on desktop', () => {

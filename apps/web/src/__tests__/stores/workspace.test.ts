@@ -172,7 +172,9 @@ describe('useWorkspaceStore', () => {
   it('switchWorkspace sets the slug, clears projects and persists', () => {
     const store = useWorkspaceStore();
     store.setActiveWorkspace('first');
-    store.projects = [{ slug: 'p', name: 'P', task_prefix: 'PRJ', workspace_id: 'w' }];
+    store.projects = [
+      { slug: 'p', name: 'P', task_prefix: 'PRJ', workspace_id: 'w', visibility: 'workspace' },
+    ];
 
     store.switchWorkspace('second');
 
