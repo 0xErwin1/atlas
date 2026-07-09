@@ -23,8 +23,8 @@ function setup() {
   const workspace = useWorkspaceStore();
   workspace.setActiveWorkspace('atlas');
   workspace.projects = [
-    { slug: 'sandbox', name: 'Sandbox', task_prefix: 'SBX', workspace_id: 'w1' },
-    { slug: 'roadmap', name: 'Roadmap', task_prefix: 'RD', workspace_id: 'w1' },
+    { slug: 'sandbox', name: 'Sandbox', task_prefix: 'SBX', workspace_id: 'w1', visibility: 'workspace' },
+    { slug: 'roadmap', name: 'Roadmap', task_prefix: 'RD', workspace_id: 'w1', visibility: 'workspace' },
   ];
   const docs = useDocumentsStore();
   const folders = useFoldersStore();

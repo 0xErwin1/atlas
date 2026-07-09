@@ -19,7 +19,7 @@ describe('useWorkspaceStore — ProjectSummary.task_prefix', () => {
     vi.clearAllMocks();
   });
 
-  it('loadProjects maps task_prefix into each ProjectSummary', async () => {
+  it('loadProjects maps task_prefix and visibility into each ProjectSummary', async () => {
     GET.mockResolvedValueOnce(
       makePageResult([
         {
@@ -40,6 +40,7 @@ describe('useWorkspaceStore — ProjectSummary.task_prefix', () => {
 
     expect(store.projects).toHaveLength(1);
     expect(store.projects[0]?.task_prefix).toBe('ATL');
+    expect(store.projects[0]?.visibility).toBe('workspace');
   });
 });
 
@@ -88,6 +89,20 @@ describe('useWorkspaceStore — updateProject', () => {
     expect(PATCH).toHaveBeenCalledWith('/api/workspaces/{ws}/projects/{project_slug}', {
       params: { path: { ws: 'ws1', project_slug: 'atlas' } },
       body: { name: 'New Name' },
+    });
+  });
+
+  it('sends visibility when changing project general access', async () => {
+    PATCH.mockResolvedValueOnce({ error: undefined });
+    GET.mockResolvedValueOnce(makePageResult([]));
+
+    const store = useWorkspaceStore();
+    const ok = await store.updateProject('ws1', 'atlas', { visibility: 'public' });
+
+    expect(ok).toBe(true);
+    expect(PATCH).toHaveBeenCalledWith('/api/workspaces/{ws}/projects/{project_slug}', {
+      params: { path: { ws: 'ws1', project_slug: 'atlas' } },
+      body: { visibility: 'public' },
     });
   });
 

@@ -17,6 +17,7 @@ export interface ProjectSummary {
   name: string;
   task_prefix: string;
   workspace_id: string;
+  visibility: string;
 }
 
 const WORKSPACE_STORAGE_KEY = 'atlas:workspace';
@@ -144,6 +145,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       name: p.name,
       task_prefix: p.task_prefix,
       workspace_id: p.workspace_id,
+      visibility: p.visibility,
     }));
   }
 
@@ -196,7 +198,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   /**
-   * Updates a project's name and/or task prefix. Pass only the fields that should
+   * Updates a project's name, task prefix, and/or visibility. Pass only the fields that should
    * change; the server ignores absent fields. Returns true on success and sets
    * `error` (surfacing the API `hint`) on failure — callers show banners for 409
    * duplicate-prefix and 422 bad-format responses.
@@ -204,7 +206,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   async function updateProject(
     ws: string,
     slug: string,
-    patch: { name?: string; task_prefix?: string },
+    patch: { name?: string; task_prefix?: string; visibility?: 'private' | 'workspace' | 'public' },
   ): Promise<boolean> {
     const { error: apiError } = await wrappedClient.PATCH('/api/workspaces/{ws}/projects/{project_slug}', {
       params: { path: { ws, project_slug: slug } },

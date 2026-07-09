@@ -22,13 +22,14 @@ const grant = (id: string, type: 'user' | 'api_key', principalId: string, role: 
   created_at: '2026-01-01T00:00:00Z',
 });
 
-const mountDialog = () =>
+const mountDialog = (props: Partial<InstanceType<typeof ShareDialog>['$props']> = {}) =>
   mount(ShareDialog, {
     props: {
       open: true,
       ws: 'acme',
       resourceLabel: 'PRD — Atlas · note',
       visibility: 'workspace',
+      ...props,
     },
   });
 
@@ -88,20 +89,30 @@ describe('ShareDialog (REQ-W26/W27)', () => {
     expect(agentRow.findComponent({ name: 'AgentBadge' }).exists()).toBe(true);
   });
 
-  it('lists the public option but keeps visibility read-only: clicking does not emit or persist', async () => {
-    const wrapper = mountDialog();
+  it('emits visibility updates when a project general access option is clicked', async () => {
+    const wrapper = mountDialog({ projectSlug: 'roadmap' });
     await wrapper.vm.$nextTick();
 
     expect(wrapper.find('[data-visibility="public"]').exists()).toBe(true);
 
-    const privateOpt = wrapper.find('[data-visibility="private"]');
+    await wrapper.find('[data-visibility="private"]').trigger('click');
+    await wrapper.find('[data-visibility="public"]').trigger('click');
+
+    expect(wrapper.emitted('update:visibility')).toEqual([['private'], ['public']]);
+    expect(POST).not.toHaveBeenCalled();
+  });
+
+  it('disables general access options when the current resource cannot persist visibility', async () => {
+    const wrapper = mountDialog();
+    await wrapper.vm.$nextTick();
+
+    const privateOpt = wrapper.find<HTMLButtonElement>('[data-visibility="private"]');
+    expect(privateOpt.element.disabled).toBe(true);
+
     await privateOpt.trigger('click');
 
-    const publicOpt = wrapper.find('[data-visibility="public"]');
-    await publicOpt.trigger('click');
-
     expect(wrapper.emitted('update:visibility')).toBeUndefined();
-    expect(POST).not.toHaveBeenCalled();
+    expect(wrapper.text()).toContain('General access can be changed from project sharing.');
   });
 
   it('filters loaded members by display and adds a viewer grant on selection', async () => {

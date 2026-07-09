@@ -8,8 +8,8 @@ function setupStore() {
   const workspace = useWorkspaceStore();
   workspace.activeWorkspaceSlug = 'acme';
   workspace.projects = [
-    { slug: 'atlas', name: 'Atlas', task_prefix: 'ATL', workspace_id: 'ws1' },
-    { slug: 'backend', name: 'Backend', task_prefix: 'BE', workspace_id: 'ws1' },
+    { slug: 'atlas', name: 'Atlas', task_prefix: 'ATL', workspace_id: 'ws1', visibility: 'workspace' },
+    { slug: 'backend', name: 'Backend', task_prefix: 'BE', workspace_id: 'ws1', visibility: 'workspace' },
   ];
 
   vi.spyOn(workspace, 'loadProjects').mockResolvedValue(undefined);

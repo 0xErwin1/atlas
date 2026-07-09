@@ -33,6 +33,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   close: [];
+  'update:visibility': [visibility: Visibility];
 }>();
 
 const share = useShareStore();
@@ -129,6 +130,13 @@ async function onSelectRole(g: GrantDto, role: GrantRole) {
 
 async function onRemove(g: GrantDto) {
   await share.removeGrant(resource.value, g.id);
+}
+
+const canChangeVisibility = computed(() => props.projectSlug !== undefined);
+
+function selectVisibility(visibility: Visibility): void {
+  if (!canChangeVisibility.value || visibility === props.visibility) return;
+  emit('update:visibility', visibility);
 }
 
 const grants = computed(() => share.grants);
@@ -438,16 +446,22 @@ async function invite(): Promise<void> {
               v-if="i > 0"
               style="height: 1px; background-color: var(--c-border);"
             />
-            <div
+            <button
+              type="button"
               :data-visibility="opt.value"
               :aria-current="visibility === opt.value ? 'true' : undefined"
+              :disabled="!canChangeVisibility"
               class="flex items-center w-full text-left"
               :style="{
                 gap: '10px',
                 padding: '9px 11px',
+                border: 'none',
+                cursor: !canChangeVisibility || visibility === opt.value ? 'default' : 'pointer',
+                opacity: canChangeVisibility ? 1 : 0.72,
                 background: visibility === opt.value ? 'var(--c-selection)' : 'transparent',
                 boxShadow: visibility === opt.value ? 'inset 2px 0 0 var(--c-primary)' : 'none',
               }"
+              @click="selectVisibility(opt.value)"
             >
               <Icon
                 :name="opt.icon"
@@ -466,14 +480,19 @@ async function invite(): Promise<void> {
                 </div>
                 <div style="font-size: var(--fs-xs); color: var(--c-muted);">{{ opt.desc }}</div>
               </div>
-            </div>
+            </button>
           </template>
         </div>
 
         <div
           style="font-size: var(--fs-xs); color: var(--c-muted); margin-top: 6px; line-height: 1.4;"
         >
-          General access reflects the current scope. Switching it from here isn't available yet.
+          <template v-if="canChangeVisibility">
+            General access reflects the current project. Changes apply immediately.
+          </template>
+          <template v-else>
+            General access can be changed from project sharing.
+          </template>
         </div>
       </div>
 
