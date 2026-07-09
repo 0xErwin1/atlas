@@ -8,9 +8,9 @@ fn semantic_search_embeddings_migration_name_follows_apikey_scopes() {
 
 #[test]
 fn semantic_search_embeddings_schema_contains_required_pgvector_shape() {
-    let statements = migration::m20260708_000039_search_embeddings::up_sql();
-    let schema = statements.join("\n");
+    let schema = migration::m20260708_000039_search_embeddings::up_sql();
 
+    assert!(schema.contains("pg_available_extensions WHERE name = 'vector'"));
     assert!(schema.contains("CREATE EXTENSION IF NOT EXISTS vector"));
     assert!(schema.contains("CREATE TABLE IF NOT EXISTS search_embeddings"));
     assert!(schema.contains("embedding vector(1536)"));
@@ -19,4 +19,5 @@ fn semantic_search_embeddings_schema_contains_required_pgvector_shape() {
     assert!(schema.contains("search_embeddings_workspace_resource_idx"));
     assert!(schema.contains("search_embeddings_model_dimensions_stale_idx"));
     assert!(schema.contains("USING ivfflat (embedding vector_cosine_ops)"));
+    assert!(schema.contains("skipping optional semantic search embedding schema"));
 }
