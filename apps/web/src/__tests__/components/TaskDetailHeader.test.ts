@@ -35,8 +35,9 @@ describe('TaskDetailHeader', () => {
   it('shows a back button and emits back when showBack is set', async () => {
     const wrapper = mountHeader({ showBack: true, showClose: false });
 
-    const back = wrapper.find('[aria-label="Back to board"]');
+    const back = wrapper.find('[aria-label="Back"]');
     expect(back.exists()).toBe(true);
+    expect(back.attributes('title')).toBe('Back');
     await back.trigger('click');
 
     expect(wrapper.emitted('back')).toEqual([[]]);
@@ -46,7 +47,7 @@ describe('TaskDetailHeader', () => {
   it('hides the back button by default', () => {
     const wrapper = mountHeader();
 
-    expect(wrapper.find('[aria-label="Back to board"]').exists()).toBe(false);
+    expect(wrapper.find('[aria-label="Back"]').exists()).toBe(false);
     expect(wrapper.find('[aria-label="Close task"]').exists()).toBe(true);
   });
 

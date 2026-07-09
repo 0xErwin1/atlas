@@ -52,7 +52,10 @@ function mountDetail() {
       stubs: {
         AppShell: { template: '<main><slot name="sidebar" /><slot /></main>' },
         TasksSidebar: true,
-        TaskDetailHeader: true,
+        TaskDetailHeader: {
+          emits: ['back'],
+          template: '<button type="button" data-test="header-back" @click="$emit(\'back\')">Back</button>',
+        },
         TaskBody: true,
         TaskInspector: true,
         ErrorState: true,
@@ -112,6 +115,27 @@ describe('TaskDetail keymap wiring', () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
     await nextTick();
 
+    expect(router.push).toHaveBeenCalledWith({ name: 'tasks', params: { boardId: 'board-1' } });
+  });
+
+  it('delegates header back to useful history before board fallback', async () => {
+    const wrapper = mountDetail();
+    await flushPromises();
+
+    await wrapper.find('[data-test="header-back"]').trigger('click');
+
+    expect(router.back).toHaveBeenCalledOnce();
+    expect(router.push).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the task board when header back has no useful history entry', async () => {
+    router.options.history.state.back = null;
+    const wrapper = mountDetail();
+    await flushPromises();
+
+    await wrapper.find('[data-test="header-back"]').trigger('click');
+
+    expect(router.back).not.toHaveBeenCalled();
     expect(router.push).toHaveBeenCalledWith({ name: 'tasks', params: { boardId: 'board-1' } });
   });
 

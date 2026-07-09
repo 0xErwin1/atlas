@@ -96,8 +96,8 @@ function onConfirmDelete(): void {
       type="button"
       class="atl-gbtn"
       style="width: 26px; height: 26px;"
-      title="Back to board"
-      aria-label="Back to board"
+      title="Back"
+      aria-label="Back"
       @click="emit('back')"
     >
       <Icon name="arrow-left" :size="16" />

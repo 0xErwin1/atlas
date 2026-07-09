@@ -44,15 +44,17 @@ const task = computed(() => tasks.openTask);
 
 const keymap = useKeymap();
 const uninstallKeymapListener = installKeymapListener();
+function navigateBack(): false | undefined {
+  const currentTask = task.value;
+  if (currentTask === null) return false;
+  void safeBackOrBoard({ task: currentTask, router, route });
+}
+
 const unregisterTaskEscape = keymap.registerShortcut({
   id: 'escape',
   enabled: computed(() => task.value !== null),
   priority: KEYMAP_PRIORITIES.task,
-  handler: () => {
-    const currentTask = task.value;
-    if (currentTask === null) return false;
-    void safeBackOrBoard({ task: currentTask, router, route });
-  },
+  handler: navigateBack,
 });
 
 onBeforeUnmount(() => {
@@ -170,7 +172,7 @@ watch([readableId, ws], load, { immediate: true });
       :show-close="false"
       :show-inspector-toggle="!isMobile"
       :inspector-open="ui.taskInspectorOpen"
-      @back="backToBoard()"
+      @back="navigateBack"
       @change="onChangeMode"
       @toggle-inspector="ui.toggleTaskInspector()"
       @delete="onDeleteTask"
