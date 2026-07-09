@@ -55,6 +55,45 @@ describe('useDocumentsStore', () => {
     expect(GET.mock.calls[1]?.[1]?.params?.query?.cursor).toBe('c1');
   });
 
+  it('keeps concurrent project summary loads isolated by project slug', async () => {
+    let resolveAlpha: (value: { data: { items: ReturnType<typeof summary>[]; has_more: false } }) => void =
+      () => {};
+    GET.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveAlpha = resolve;
+      }),
+    );
+    GET.mockResolvedValueOnce({ data: { items: [summary('b1', 'Beta')], has_more: false } });
+
+    const store = useDocumentsStore();
+    const alphaLoad = store.loadSummaries('ws', 'alpha');
+    await store.loadSummaries('ws', 'beta');
+    resolveAlpha({ data: { items: [summary('a1', 'Alpha')], has_more: false } });
+    await alphaLoad;
+
+    expect(store.summariesFor('alpha').map((s) => s.id)).toEqual(['a1']);
+    expect(store.summariesFor('beta').map((s) => s.id)).toEqual(['b1']);
+    expect(store.summaries.map((s) => s.id)).toEqual(['b1']);
+  });
+
+  it('refreshes only the owning project summaries after a mutation', async () => {
+    GET.mockResolvedValueOnce({ data: { items: [summary('a1', 'Alpha')], has_more: false } });
+    GET.mockResolvedValueOnce({ data: { items: [summary('b1', 'Beta')], has_more: false } });
+    PATCH.mockResolvedValueOnce({ data: {} });
+    GET.mockResolvedValueOnce({ data: { items: [summary('a1', 'Alpha Renamed')], has_more: false } });
+
+    const store = useDocumentsStore();
+    await store.loadSummaries('ws', 'alpha');
+    await store.loadSummaries('ws', 'beta');
+    const ok = await store.rename('ws', 'alpha', 'alpha', 'Alpha Renamed');
+
+    expect(ok).toBe(true);
+    expect(store.summariesFor('alpha').map((s) => s.title)).toEqual(['Alpha Renamed']);
+    expect(store.summariesFor('beta').map((s) => s.title)).toEqual(['Beta']);
+    expect(store.summaries.map((s) => s.title)).toEqual(['Beta']);
+    expect(GET.mock.calls[2]?.[1]?.params?.path?.project_slug).toBe('alpha');
+  });
+
   it('loadSummaries surfaces the hint on error', async () => {
     GET.mockResolvedValue({ error: { hint: 'denied' } });
 

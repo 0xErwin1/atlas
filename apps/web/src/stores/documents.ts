@@ -21,43 +21,47 @@ export type AttachmentDto = components['schemas']['AttachmentDto'];
  */
 export const useDocumentsStore = defineStore('documents', () => {
   const summaries = ref<DocumentSummary[]>([]);
+  const summariesByProject = ref<Record<string, DocumentSummary[]>>({});
   const backlinks = ref<BacklinkSummary[]>([]);
   const comments = ref<CommentDto[]>([]);
   const commentsCursor = ref<string | null>(null);
   const commentsHasMore = ref(false);
   const loading = ref(false);
+  const loadingByProject = ref<Record<string, boolean>>({});
   const error = ref<string | null>(null);
-  let summariesLoadSeq = 0;
-  let summariesLoadingSeq = 0;
+  const summariesLoadSeqByProject = new Map<string, number>();
+  let summariesDisplaySeq = 0;
+  let summariesLoadingDisplaySeq = 0;
+  let summariesDisplayProjectSlug: string | null = null;
 
-  /**
-   * Load the active project's document summaries.
-   *
-   * A project/workspace switch (`silent: false`, the default) clears the list and
-   * flips `loading` so the tree shows a loader instead of the previous project's
-   * notes. A post-mutation refresh (`silent: true`) keeps the current tree in
-   * place and updates it when the response arrives, so a rename/move/create never
-   * blanks the whole tree. Both paths share the `summariesLoadSeq` guard so a
-   * slower response can never overwrite a newer one.
-   */
+  function summariesFor(projectSlug: string): DocumentSummary[] {
+    return summariesByProject.value[projectSlug] ?? [];
+  }
+
+  function isProjectLoading(projectSlug: string): boolean {
+    return loadingByProject.value[projectSlug] ?? false;
+  }
+
   async function loadSummaries(
     ws: string,
     projectSlug: string,
     opts: { silent?: boolean } = {},
   ): Promise<void> {
-    const seq = ++summariesLoadSeq;
+    const seq = (summariesLoadSeqByProject.get(projectSlug) ?? 0) + 1;
+    summariesLoadSeqByProject.set(projectSlug, seq);
+    const displaySeq = ++summariesDisplaySeq;
     const silent = opts.silent ?? false;
 
     error.value = null;
     if (!silent) {
-      summariesLoadingSeq = seq;
+      summariesDisplayProjectSlug = projectSlug;
+      summariesLoadingDisplaySeq = displaySeq;
       loading.value = true;
+      loadingByProject.value = { ...loadingByProject.value, [projectSlug]: true };
       summaries.value = [];
+      summariesByProject.value = { ...summariesByProject.value, [projectSlug]: [] };
     }
 
-    // The tree renders the whole project, but the endpoint is paginated. Page
-    // through it so all documents show — and so a newly created note (newest by
-    // UUIDv7, hence on the last page) is never dropped.
     const { items, error: apiError } = await collectPaged<DocumentSummary>((cursor) =>
       wrappedClient.GET('/api/workspaces/{ws}/projects/{project_slug}/documents', {
         params: {
@@ -67,22 +71,32 @@ export const useDocumentsStore = defineStore('documents', () => {
       }),
     );
 
-    if (seq !== summariesLoadSeq) {
-      // A newer load supersedes this one. If we still own the loader (i.e. the
-      // successor was a silent refresh, which never manages `loading`), release
-      // it so the tree can never stay stuck on the spinner.
-      if (!silent && seq === summariesLoadingSeq) loading.value = false;
+    if (seq !== summariesLoadSeqByProject.get(projectSlug)) {
+      if (!silent) {
+        loadingByProject.value = { ...loadingByProject.value, [projectSlug]: false };
+        if (displaySeq === summariesLoadingDisplaySeq) loading.value = false;
+      }
       return;
     }
 
-    if (!silent) loading.value = false;
+    if (!silent) {
+      loadingByProject.value = { ...loadingByProject.value, [projectSlug]: false };
+      if (displaySeq === summariesLoadingDisplaySeq) loading.value = false;
+    }
 
     if (apiError !== undefined) {
       error.value = errorHint(apiError, 'Failed to load documents');
       return;
     }
 
-    summaries.value = items;
+    summariesByProject.value = { ...summariesByProject.value, [projectSlug]: items };
+    if (
+      (!silent && displaySeq === summariesDisplaySeq) ||
+      summariesDisplayProjectSlug === null ||
+      summariesDisplayProjectSlug === projectSlug
+    ) {
+      summaries.value = items;
+    }
   }
 
   async function loadBacklinks(ws: string, slug: string): Promise<void> {
@@ -342,11 +356,14 @@ export const useDocumentsStore = defineStore('documents', () => {
 
   return {
     summaries,
+    summariesByProject,
     backlinks,
     comments,
     commentsHasMore,
     loading,
     error,
+    summariesFor,
+    isProjectLoading,
     loadSummaries,
     loadBacklinks,
     loadComments,

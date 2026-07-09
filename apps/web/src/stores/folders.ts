@@ -14,30 +14,37 @@ export type FolderDto = components['schemas']['FolderDto'];
  */
 export const useFoldersStore = defineStore('folders', () => {
   const folders = ref<FolderDto[]>([]);
+  const foldersByProject = ref<Record<string, FolderDto[]>>({});
   const loading = ref(false);
+  const loadingByProject = ref<Record<string, boolean>>({});
   const error = ref<string | null>(null);
-  let loadSeq = 0;
-  let loadingSeq = 0;
+  const loadSeqByProject = new Map<string, number>();
+  let displaySeq = 0;
+  let loadingDisplaySeq = 0;
+  let displayProjectSlug: string | null = null;
 
-  /**
-   * Load the active project's folders.
-   *
-   * A project/workspace switch (`silent: false`, the default) clears the list and
-   * flips `loading` so the tree shows a loader instead of the previous project's
-   * folders. A post-mutation refresh (`silent: true`) keeps the current tree in
-   * place and updates it when the response arrives, so a rename/move/create never
-   * blanks the whole tree. Both paths share the `loadSeq` guard so a slower
-   * response can never overwrite a newer one.
-   */
+  function foldersFor(projectSlug: string): FolderDto[] {
+    return foldersByProject.value[projectSlug] ?? [];
+  }
+
+  function isProjectLoading(projectSlug: string): boolean {
+    return loadingByProject.value[projectSlug] ?? false;
+  }
+
   async function load(ws: string, projectSlug: string, opts: { silent?: boolean } = {}): Promise<void> {
-    const seq = ++loadSeq;
+    const seq = (loadSeqByProject.get(projectSlug) ?? 0) + 1;
+    loadSeqByProject.set(projectSlug, seq);
+    const currentDisplaySeq = ++displaySeq;
     const silent = opts.silent ?? false;
 
     error.value = null;
     if (!silent) {
-      loadingSeq = seq;
+      displayProjectSlug = projectSlug;
+      loadingDisplaySeq = currentDisplaySeq;
       loading.value = true;
+      loadingByProject.value = { ...loadingByProject.value, [projectSlug]: true };
       folders.value = [];
+      foldersByProject.value = { ...foldersByProject.value, [projectSlug]: [] };
     }
 
     const { items, error: apiError } = await collectPaged<FolderDto>((cursor) =>
@@ -49,22 +56,32 @@ export const useFoldersStore = defineStore('folders', () => {
       }),
     );
 
-    if (seq !== loadSeq) {
-      // A newer load supersedes this one. If we still own the loader (i.e. the
-      // successor was a silent refresh, which never manages `loading`), release
-      // it so the tree can never stay stuck on the spinner.
-      if (!silent && seq === loadingSeq) loading.value = false;
+    if (seq !== loadSeqByProject.get(projectSlug)) {
+      if (!silent) {
+        loadingByProject.value = { ...loadingByProject.value, [projectSlug]: false };
+        if (currentDisplaySeq === loadingDisplaySeq) loading.value = false;
+      }
       return;
     }
 
-    if (!silent) loading.value = false;
+    if (!silent) {
+      loadingByProject.value = { ...loadingByProject.value, [projectSlug]: false };
+      if (currentDisplaySeq === loadingDisplaySeq) loading.value = false;
+    }
 
     if (apiError !== undefined) {
       error.value = errorHint(apiError, 'Failed to load folders');
       return;
     }
 
-    folders.value = items;
+    foldersByProject.value = { ...foldersByProject.value, [projectSlug]: items };
+    if (
+      (!silent && currentDisplaySeq === displaySeq) ||
+      displayProjectSlug === null ||
+      displayProjectSlug === projectSlug
+    ) {
+      folders.value = items;
+    }
   }
 
   async function create(
@@ -159,5 +176,18 @@ export const useFoldersStore = defineStore('folders', () => {
     return true;
   }
 
-  return { folders, loading, error, load, create, rename, remove, move, copy };
+  return {
+    folders,
+    foldersByProject,
+    loading,
+    error,
+    foldersFor,
+    isProjectLoading,
+    load,
+    create,
+    rename,
+    remove,
+    move,
+    copy,
+  };
 });
