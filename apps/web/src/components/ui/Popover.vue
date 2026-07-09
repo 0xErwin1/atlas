@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { nextTick, ref, watch } from 'vue';
+import { useOverlayEscape } from '@/composables/useOverlayEscape';
 
 /**
  * Single floating-surface primitive: a panel anchored to a trigger, with the
@@ -53,10 +54,6 @@ function toggle(): void {
   open.value = !open.value;
 }
 
-function onKeydown(event: KeyboardEvent): void {
-  if (event.key === 'Escape') close();
-}
-
 /**
  * Anchors the teleported panel to the trigger rect. Only the start/end edges of
  * the configured placement are honored for the fixed surface (top vs bottom,
@@ -85,15 +82,10 @@ function positionFixed(): void {
 }
 
 watch(open, (isOpen) => {
-  if (isOpen) {
-    window.addEventListener('keydown', onKeydown);
-    if (props.teleport) void nextTick(positionFixed);
-  } else {
-    window.removeEventListener('keydown', onKeydown);
-  }
+  if (isOpen && props.teleport) void nextTick(positionFixed);
 });
 
-onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
+useOverlayEscape(open, close);
 
 const PLACEMENT: Record<Placement, Record<string, string>> = {
   'bottom-start': { top: 'calc(100% + 4px)', left: '0' },

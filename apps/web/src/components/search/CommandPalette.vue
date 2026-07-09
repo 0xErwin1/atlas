@@ -3,6 +3,7 @@ import { computed, nextTick, ref, watch } from 'vue';
 import Icon from '@/components/ui/Icon.vue';
 import Kbd from '@/components/ui/Kbd.vue';
 import SectionLabel from '@/components/ui/SectionLabel.vue';
+import { useOverlayEscape } from '@/composables/useOverlayEscape';
 import { filterLocalActions, type LocalAction, useSearch } from '@/composables/useSearch';
 import { sanitizeSnippet } from '@/lib/sanitize';
 import type { SearchHitDto } from '@/stores/search';
@@ -102,6 +103,11 @@ function onKeydown(event: KeyboardEvent): void {
 function snippetHtml(hit: SearchHitDto): string {
   return hit.snippet ? sanitizeSnippet(hit.snippet) : '';
 }
+
+useOverlayEscape(
+  () => props.open,
+  () => emit('close'),
+);
 
 watch(entries, clampActive);
 

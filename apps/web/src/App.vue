@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, watch } from 'vue';
+import { computed, onBeforeUnmount, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import CommandPalette, { type PaletteSelection } from '@/components/search/CommandPalette.vue';
+import ShortcutsHelpDialog from '@/components/shell/ShortcutsHelpDialog.vue';
 import { useCrossTabSync } from '@/composables/useCrossTabSync';
+import { installKeymapListener, registerShortcut } from '@/composables/useKeymap';
 import type { LocalAction } from '@/composables/useSearch';
 import type { SearchHitDto } from '@/stores/search';
 import { useSearchStore } from '@/stores/search';
@@ -33,6 +35,7 @@ const localActions: LocalAction[] = [
   { id: 'goto-notes', label: 'Go to Notes', kind: 'navigate' },
   { id: 'goto-tasks', label: 'Go to Tasks', kind: 'navigate' },
   { id: 'goto-search', label: 'Go to Search', kind: 'navigate' },
+  { id: 'show-shortcuts-help', label: 'Show keyboard shortcuts', kind: 'action' },
 ];
 
 function runAction(action: LocalAction): void {
@@ -45,6 +48,9 @@ function runAction(action: LocalAction): void {
       break;
     case 'goto-search':
       void router.push({ name: 'search' });
+      break;
+    case 'show-shortcuts-help':
+      ui.openShortcutsHelp();
       break;
   }
 }
@@ -66,15 +72,27 @@ function onSelect(selection: PaletteSelection): void {
   }
 }
 
-function onGlobalKeydown(event: KeyboardEvent): void {
-  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
-    event.preventDefault();
+const uninstallKeymapListener = installKeymapListener();
+const unregisterPaletteShortcut = registerShortcut({
+  id: 'command-palette',
+  allowInText: true,
+  blockInMarkdown: true,
+  handler: () => {
     ui.togglePalette();
-  }
-}
+  },
+});
+const unregisterShortcutsHelp = registerShortcut({
+  id: 'shortcuts-help',
+  handler: () => {
+    ui.openShortcutsHelp();
+  },
+});
 
-onMounted(() => window.addEventListener('keydown', onGlobalKeydown));
-onBeforeUnmount(() => window.removeEventListener('keydown', onGlobalKeydown));
+onBeforeUnmount(() => {
+  unregisterShortcutsHelp();
+  unregisterPaletteShortcut();
+  uninstallKeymapListener();
+});
 </script>
 
 <template>
@@ -86,4 +104,5 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onGlobalKeydown));
     @select="onSelect"
     @close="ui.closePalette()"
   />
+  <ShortcutsHelpDialog :open="ui.shortcutsHelpOpen" @close="ui.closeShortcutsHelp()" />
 </template>

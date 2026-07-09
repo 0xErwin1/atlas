@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import Icon from '@/components/ui/Icon.vue';
+import { useOverlayEscape } from '@/composables/useOverlayEscape';
 
 /**
  * One menu entry. A plain entry renders as an action row; `{ sep: true }` renders
@@ -61,10 +62,6 @@ function onMousedown(event: MouseEvent): void {
   }
 }
 
-function onKeydown(event: KeyboardEvent): void {
-  if (event.key === 'Escape') emit('close');
-}
-
 function run(item: MenuItem): void {
   if (item.disabled === true || hasChildren(item) || item.action === undefined) return;
   item.action();
@@ -73,13 +70,16 @@ function run(item: MenuItem): void {
 
 onMounted(() => {
   window.addEventListener('mousedown', onMousedown);
-  window.addEventListener('keydown', onKeydown);
 });
 
 onUnmounted(() => {
   window.removeEventListener('mousedown', onMousedown);
-  window.removeEventListener('keydown', onKeydown);
 });
+
+useOverlayEscape(
+  () => props.open,
+  () => emit('close'),
+);
 </script>
 
 <template>

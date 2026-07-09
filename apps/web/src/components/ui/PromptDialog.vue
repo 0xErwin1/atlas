@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
+import { nextTick, ref, watch } from 'vue';
 import Btn from '@/components/ui/Btn.vue';
+import { useOverlayEscape } from '@/composables/useOverlayEscape';
 
 /**
  * A single-field modal prompt. The parent owns visibility via `open` and reacts to
@@ -45,12 +46,10 @@ watch(
   },
 );
 
-function onKeydown(event: KeyboardEvent): void {
-  if (props.open && event.key === 'Escape') emit('cancel');
-}
-
-onMounted(() => window.addEventListener('keydown', onKeydown));
-onUnmounted(() => window.removeEventListener('keydown', onKeydown));
+useOverlayEscape(
+  () => props.open,
+  () => emit('cancel'),
+);
 </script>
 
 <template>

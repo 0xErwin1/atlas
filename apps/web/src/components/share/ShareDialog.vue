@@ -7,6 +7,7 @@ import Btn from '@/components/ui/Btn.vue';
 import Icon from '@/components/ui/Icon.vue';
 import Popover from '@/components/ui/Popover.vue';
 import { useBreakpoint } from '@/composables/useBreakpoint';
+import { useOverlayEscape } from '@/composables/useOverlayEscape';
 import type { GrantRole } from '@/lib/grantRoles';
 import { useApiKeysStore } from '@/stores/apiKeys';
 import { useGroupsStore } from '@/stores/groups';
@@ -41,6 +42,11 @@ const { isMobile } = useBreakpoint();
 
 const memberQuery = ref('');
 const linkCopied = ref(false);
+
+useOverlayEscape(
+  () => props.open,
+  () => emit('close'),
+);
 
 const resource = computed<ShareResource>(() =>
   props.projectSlug !== undefined

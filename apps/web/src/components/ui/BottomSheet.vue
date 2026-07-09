@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { onBeforeUnmount, watch } from 'vue';
 import Icon from '@/components/ui/Icon.vue';
+import { useOverlayEscape } from '@/composables/useOverlayEscape';
 
 const props = withDefaults(
   defineProps<{
@@ -18,23 +18,10 @@ const emit = defineEmits<{
   close: [];
 }>();
 
-function onKeydown(event: KeyboardEvent): void {
-  if (event.key === 'Escape') emit('close');
-}
-
-watch(
+useOverlayEscape(
   () => props.open,
-  (open) => {
-    if (open) {
-      window.addEventListener('keydown', onKeydown);
-    } else {
-      window.removeEventListener('keydown', onKeydown);
-    }
-  },
-  { immediate: true },
+  () => emit('close'),
 );
-
-onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
 </script>
 
 <template>

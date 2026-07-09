@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, watch } from 'vue';
+import { computed, onBeforeUnmount, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import ErrorState from '@/components/states/ErrorState.vue';
 import LoadingState from '@/components/states/LoadingState.vue';
@@ -7,10 +7,13 @@ import TaskBody from '@/components/tareas/TaskBody.vue';
 import TaskDetailHeader from '@/components/tareas/TaskDetailHeader.vue';
 import TaskInspector from '@/components/tareas/TaskInspector.vue';
 import { useBreakpoint } from '@/composables/useBreakpoint';
+import { installKeymapListener, useKeymap } from '@/composables/useKeymap';
 import { type LiveUpdateEvent, useLiveUpdates } from '@/composables/useLiveUpdates';
 import { useOpenTaskLive } from '@/composables/useOpenTaskLive';
 import { useResizablePanel } from '@/composables/useResizablePanel';
+import { safeBackOrBoard } from '@/composables/useTaskEscapeNavigation';
 import { EVENT_TYPE, eventString } from '@/lib/eventTypes';
+import { KEYMAP_PRIORITIES } from '@/lib/keymap';
 import { useBoardsStore } from '@/stores/boards';
 import { useTaskDetailStore } from '@/stores/taskDetail';
 import { useTasksStore } from '@/stores/tasks';
@@ -38,6 +41,24 @@ const ws = computed(() => workspace.activeWorkspaceSlug ?? '');
 const openTaskLive = useOpenTaskLive(ws);
 
 const task = computed(() => tasks.openTask);
+
+const keymap = useKeymap();
+const uninstallKeymapListener = installKeymapListener();
+const unregisterTaskEscape = keymap.registerShortcut({
+  id: 'escape',
+  enabled: computed(() => task.value !== null),
+  priority: KEYMAP_PRIORITIES.task,
+  handler: () => {
+    const currentTask = task.value;
+    if (currentTask === null) return false;
+    void safeBackOrBoard({ task: currentTask, router, route });
+  },
+});
+
+onBeforeUnmount(() => {
+  unregisterTaskEscape();
+  uninstallKeymapListener();
+});
 
 // Resizable inspector (activity + comments): the user drags the divider to make
 // the panel as wide as they need; the width persists across tasks and reloads.
