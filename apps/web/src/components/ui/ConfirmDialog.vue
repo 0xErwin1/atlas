@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue';
+import { computed } from 'vue';
 import type { BtnVariant } from '@/components/ui/Btn.vue';
 import Btn from '@/components/ui/Btn.vue';
 import Icon from '@/components/ui/Icon.vue';
+import { useOverlayEscape } from '@/composables/useOverlayEscape';
 
 export type ConfirmTone = 'danger' | 'warning' | 'primary';
 
@@ -83,12 +84,10 @@ const tone = computed<ConfirmTone>(() => props.tone ?? (props.danger ? 'danger' 
 const toneStyle = computed<ToneStyle>(() => TONE[tone.value]);
 const badgeIcon = computed(() => props.icon ?? toneStyle.value.icon);
 
-function onKeydown(event: KeyboardEvent): void {
-  if (props.open && event.key === 'Escape') emit('cancel');
-}
-
-onMounted(() => window.addEventListener('keydown', onKeydown));
-onUnmounted(() => window.removeEventListener('keydown', onKeydown));
+useOverlayEscape(
+  () => props.open,
+  () => emit('cancel'),
+);
 </script>
 
 <template>

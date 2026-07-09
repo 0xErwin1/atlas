@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import Btn from '@/components/ui/Btn.vue';
 import Icon from '@/components/ui/Icon.vue';
 import { useBreakpoint } from '@/composables/useBreakpoint';
+import { useOverlayEscape } from '@/composables/useOverlayEscape';
 import { AI_ACTIONS, type AiAction, type AiPromptTask, buildTaskAiPrompt } from '@/lib/aiPrompt';
 import { useUiStore } from '@/stores/ui';
 
@@ -62,12 +63,10 @@ async function copyPrompt(): Promise<void> {
   }
 }
 
-function onKeydown(event: KeyboardEvent): void {
-  if (props.open && event.key === 'Escape') emit('close');
-}
-
-onMounted(() => window.addEventListener('keydown', onKeydown));
-onUnmounted(() => window.removeEventListener('keydown', onKeydown));
+useOverlayEscape(
+  () => props.open,
+  () => emit('close'),
+);
 </script>
 
 <template>

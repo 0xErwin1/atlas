@@ -207,6 +207,7 @@ export const useUiStore = defineStore('ui', () => {
   }
 
   const paletteOpen = ref(false);
+  const shortcutsHelpOpen = ref(false);
 
   function openPalette() {
     paletteOpen.value = true;
@@ -218,6 +219,14 @@ export const useUiStore = defineStore('ui', () => {
 
   function togglePalette() {
     paletteOpen.value = !paletteOpen.value;
+  }
+
+  function openShortcutsHelp() {
+    shortcutsHelpOpen.value = true;
+  }
+
+  function closeShortcutsHelp() {
+    shortcutsHelpOpen.value = false;
   }
 
   const sidebarCollapsed = ref(loadSidebarCollapsed());
@@ -377,6 +386,9 @@ export const useUiStore = defineStore('ui', () => {
     openPalette,
     closePalette,
     togglePalette,
+    shortcutsHelpOpen,
+    openShortcutsHelp,
+    closeShortcutsHelp,
     sidebarCollapsed,
     toggleSidebar,
     taskViewMode,

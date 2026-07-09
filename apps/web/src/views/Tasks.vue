@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import EditorToolbar from '@/components/shell/EditorToolbar.vue';
 import EmptyState from '@/components/states/EmptyState.vue';
@@ -19,9 +19,11 @@ import Popover from '@/components/ui/Popover.vue';
 import PresenceAvatars from '@/components/ui/PresenceAvatars.vue';
 import { useBoardPresence } from '@/composables/useBoardPresence';
 import { useBreakpoint } from '@/composables/useBreakpoint';
+import { installKeymapListener, useKeymap } from '@/composables/useKeymap';
 import { type LiveUpdateEvent, useLiveUpdates } from '@/composables/useLiveUpdates';
 import { useOpenTaskLive } from '@/composables/useOpenTaskLive';
 import { EVENT_TYPE, eventString, PRESENCE_UPDATED } from '@/lib/eventTypes';
+import { KEYMAP_PRIORITIES } from '@/lib/keymap';
 import { useBoardsStore } from '@/stores/boards';
 import { useTaskDetailStore } from '@/stores/taskDetail';
 import { useTasksStore } from '@/stores/tasks';
@@ -66,25 +68,14 @@ const ws = computed(() => workspace.activeWorkspaceSlug ?? '');
 // input clears the query, then blurs on a second press.
 const boardSearchRef = ref<HTMLInputElement | null>(null);
 
-function isEditableTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  const tag = target.tagName;
-  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable;
-}
-
-function onBoardSearchShortcut(event: KeyboardEvent): void {
-  if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return;
-  if (isView.value || isEditableTarget(event.target)) return;
-
-  event.preventDefault();
-  boardSearchRef.value?.focus();
-}
-
 function onSearchKeydownEsc(event: KeyboardEvent): void {
+  event.preventDefault();
+  event.stopPropagation();
+
   if (ui.taskFilterText !== '') {
     ui.setTaskFilterText('');
-  } else {
-    (event.target as HTMLInputElement).blur();
+  } else if (event.target instanceof HTMLInputElement) {
+    event.target.blur();
   }
 }
 
@@ -93,8 +84,16 @@ function clearBoardSearch(): void {
   boardSearchRef.value?.focus();
 }
 
-onMounted(() => window.addEventListener('keydown', onBoardSearchShortcut));
-onBeforeUnmount(() => window.removeEventListener('keydown', onBoardSearchShortcut));
+const keymap = useKeymap();
+const uninstallKeymapListener = installKeymapListener();
+const unregisterBoardSearch = keymap.registerShortcut({
+  id: 'board-search',
+  enabled: computed(() => !isView.value),
+  priority: KEYMAP_PRIORITIES.board,
+  handler: () => {
+    boardSearchRef.value?.focus();
+  },
+});
 
 const openTaskLive = useOpenTaskLive(ws);
 const presence = useBoardPresence(ws, boardId);
@@ -192,6 +191,21 @@ function closePane(): void {
   selectedReadableId.value = null;
   ui.clearTaskViewModeOverride();
 }
+
+const unregisterTaskEscape = keymap.registerShortcut({
+  id: 'escape',
+  enabled: paneVisible,
+  priority: KEYMAP_PRIORITIES.task,
+  handler: () => {
+    closePane();
+  },
+});
+
+onBeforeUnmount(() => {
+  unregisterBoardSearch();
+  unregisterTaskEscape();
+  uninstallKeymapListener();
+});
 
 function expandToFull(): void {
   const readableId = selectedReadableId.value;
