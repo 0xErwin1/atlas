@@ -51,6 +51,45 @@ describe('useFoldersStore', () => {
     expect(store.folders).toHaveLength(0);
   });
 
+  it('keeps concurrent project folder loads isolated by project slug', async () => {
+    let resolveAlpha: (value: { data: { items: ReturnType<typeof folder>[]; has_more: false } }) => void =
+      () => {};
+    GET.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveAlpha = resolve;
+      }),
+    );
+    GET.mockResolvedValueOnce({ data: { items: [folder('b1', 'Beta')], has_more: false } });
+
+    const store = useFoldersStore();
+    const alphaLoad = store.load('ws', 'alpha');
+    await store.load('ws', 'beta');
+    resolveAlpha({ data: { items: [folder('a1', 'Alpha')], has_more: false } });
+    await alphaLoad;
+
+    expect(store.foldersFor('alpha').map((f) => f.id)).toEqual(['a1']);
+    expect(store.foldersFor('beta').map((f) => f.id)).toEqual(['b1']);
+    expect(store.folders.map((f) => f.id)).toEqual(['b1']);
+  });
+
+  it('refreshes only the owning project folders after a mutation', async () => {
+    GET.mockResolvedValueOnce({ data: { items: [folder('a1', 'Alpha')], has_more: false } });
+    GET.mockResolvedValueOnce({ data: { items: [folder('b1', 'Beta')], has_more: false } });
+    PATCH.mockResolvedValueOnce({ data: folder('a1', 'Alpha Renamed') });
+    GET.mockResolvedValueOnce({ data: { items: [folder('a1', 'Alpha Renamed')], has_more: false } });
+
+    const store = useFoldersStore();
+    await store.load('ws', 'alpha');
+    await store.load('ws', 'beta');
+    const ok = await store.rename('ws', 'alpha', 'a1', 'Alpha Renamed');
+
+    expect(ok).toBe(true);
+    expect(store.foldersFor('alpha').map((f) => f.name)).toEqual(['Alpha Renamed']);
+    expect(store.foldersFor('beta').map((f) => f.name)).toEqual(['Beta']);
+    expect(store.folders.map((f) => f.name)).toEqual(['Beta']);
+    expect(GET.mock.calls[2]?.[1]?.params?.path?.project_slug).toBe('alpha');
+  });
+
   it('load clears stale folders while loading a new project', async () => {
     let resolveLoad: (value: { data: { items: ReturnType<typeof folder>[]; has_more: false } }) => void =
       () => {};
