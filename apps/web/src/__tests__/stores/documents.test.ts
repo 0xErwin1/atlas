@@ -627,10 +627,39 @@ describe('useDocumentsStore', () => {
     expect(store.comments.map((c) => c.id)).toEqual(['c1']);
   });
 
+  it('does not append a late added comment after navigating to another note', async () => {
+    GET.mockResolvedValueOnce({
+      data: { items: [comment('comment-a', 'Comment A')], next_cursor: null, has_more: false },
+    });
+    let resolveAdd: (value: { data: ReturnType<typeof comment> }) => void = () => {};
+    POST.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveAdd = resolve;
+      }),
+    );
+    GET.mockResolvedValueOnce({
+      data: { items: [comment('comment-b', 'Comment B')], next_cursor: null, has_more: false },
+    });
+
+    const store = useDocumentsStore();
+    await store.loadComments('workspace', 'note-a');
+    const add = store.addComment('workspace', 'note-a', 'Late comment');
+    await store.loadComments('workspace', 'note-b');
+    resolveAdd({ data: comment('late-comment', 'Late comment') });
+
+    await expect(add).resolves.toBe(true);
+    expect(store.comments.map((entry) => entry.id)).toEqual(['comment-b']);
+    expect(store.error).toBeNull();
+  });
+
   it('addComment returns false and sets error on failure', async () => {
+    GET.mockResolvedValue({
+      data: { items: [comment('c1', 'First')], next_cursor: null, has_more: false },
+    });
     POST.mockResolvedValue({ error: { hint: 'nope' } });
 
     const store = useDocumentsStore();
+    await store.loadComments('ws', 'my-doc');
     const ok = await store.addComment('ws', 'my-doc', 'Hi');
 
     expect(ok).toBe(false);
@@ -666,6 +695,31 @@ describe('useDocumentsStore', () => {
     expect(store.error).toBe('denied');
   });
 
+  it('does not roll back a failed deletion or publish its error after navigation', async () => {
+    GET.mockResolvedValueOnce({
+      data: { items: [comment('comment-a', 'Comment A')], next_cursor: null, has_more: false },
+    });
+    let resolveDelete: (value: { error: { hint: string } }) => void = () => {};
+    DELETE.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveDelete = resolve;
+      }),
+    );
+    GET.mockResolvedValueOnce({
+      data: { items: [comment('comment-b', 'Comment B')], next_cursor: null, has_more: false },
+    });
+
+    const store = useDocumentsStore();
+    await store.loadComments('workspace', 'note-a');
+    const remove = store.removeComment('workspace', 'note-a', 'comment-a');
+    await store.loadComments('workspace', 'note-b');
+    resolveDelete({ error: { hint: 'delete denied' } });
+
+    await expect(remove).resolves.toBe(false);
+    expect(store.comments.map((entry) => entry.id)).toEqual(['comment-b']);
+    expect(store.error).toBeNull();
+  });
+
   it('editComment swaps the updated DTO in place', async () => {
     GET.mockResolvedValue({
       data: { items: [comment('c1', 'First')], next_cursor: null, has_more: false },
@@ -682,13 +736,42 @@ describe('useDocumentsStore', () => {
   });
 
   it('editComment returns false and sets error on failure', async () => {
+    GET.mockResolvedValue({
+      data: { items: [comment('c1', 'First')], next_cursor: null, has_more: false },
+    });
     PATCH.mockResolvedValue({ error: { hint: 'not author' } });
 
     const store = useDocumentsStore();
+    await store.loadComments('ws', 'my-doc');
     const ok = await store.editComment('ws', 'my-doc', 'c1', 'Edited');
 
     expect(ok).toBe(false);
     expect(store.error).toBe('not author');
+  });
+
+  it('does not apply a late edit to another note with the same comment id', async () => {
+    GET.mockResolvedValueOnce({
+      data: { items: [comment('shared-comment', 'Comment A')], next_cursor: null, has_more: false },
+    });
+    let resolveEdit: (value: { data: ReturnType<typeof comment> }) => void = () => {};
+    PATCH.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveEdit = resolve;
+      }),
+    );
+    GET.mockResolvedValueOnce({
+      data: { items: [comment('shared-comment', 'Comment B')], next_cursor: null, has_more: false },
+    });
+
+    const store = useDocumentsStore();
+    await store.loadComments('workspace', 'note-a');
+    const edit = store.editComment('workspace', 'note-a', 'shared-comment', 'Edited A');
+    await store.loadComments('workspace', 'note-b');
+    resolveEdit({ data: comment('shared-comment', 'Edited A') });
+
+    await expect(edit).resolves.toBe(true);
+    expect(store.comments[0]?.body).toBe('Comment B');
+    expect(store.error).toBeNull();
   });
 
   it('uploadAttachment posts raw bytes with the file name header and returns the record', async () => {

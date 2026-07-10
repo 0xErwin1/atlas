@@ -59,6 +59,10 @@ export const useDocumentsStore = defineStore('documents', () => {
     return secondaryTarget?.workspaceSlug === ws && secondaryTarget.slug === slug;
   }
 
+  function isCurrentCommentsTarget(target: SecondaryTarget, generation: number): boolean {
+    return generation === commentsLoadSeq && isSecondaryTarget(target.workspaceSlug, target.slug);
+  }
+
   function clearSecondaryState(): void {
     backlinksLoadSeq += 1;
     commentsLoadSeq += 1;
@@ -231,6 +235,10 @@ export const useDocumentsStore = defineStore('documents', () => {
   }
 
   async function addComment(ws: string, slug: string, body: string): Promise<boolean> {
+    const target = { workspaceSlug: ws, slug };
+    const generation = commentsLoadSeq;
+    if (!isCurrentCommentsTarget(target, generation)) return false;
+
     error.value = null;
 
     const { data, error: apiError } = await wrappedClient.POST(
@@ -239,20 +247,26 @@ export const useDocumentsStore = defineStore('documents', () => {
     );
 
     if (apiError !== undefined || data === undefined) {
-      error.value = errorHint(apiError, 'Failed to add comment');
+      if (isCurrentCommentsTarget(target, generation)) {
+        error.value = errorHint(apiError, 'Failed to add comment');
+      }
       return false;
     }
 
     // Only reflect locally once the whole thread is paged in, so a newest-first
     // append can't land out of order or be re-fetched as a duplicate by a later
     // "Load more". It is persisted server-side regardless.
-    if (!commentsHasMore.value) {
+    if (isCurrentCommentsTarget(target, generation) && !commentsHasMore.value) {
       comments.value = [...comments.value, data];
     }
     return true;
   }
 
   async function removeComment(ws: string, slug: string, commentId: string): Promise<boolean> {
+    const target = { workspaceSlug: ws, slug };
+    const generation = commentsLoadSeq;
+    if (!isCurrentCommentsTarget(target, generation)) return false;
+
     error.value = null;
 
     const snapshot = [...comments.value];
@@ -264,8 +278,10 @@ export const useDocumentsStore = defineStore('documents', () => {
     );
 
     if (apiError !== undefined) {
-      comments.value = snapshot;
-      error.value = errorHint(apiError, 'Failed to remove comment');
+      if (isCurrentCommentsTarget(target, generation)) {
+        comments.value = snapshot;
+        error.value = errorHint(apiError, 'Failed to remove comment');
+      }
       return false;
     }
 
@@ -274,6 +290,10 @@ export const useDocumentsStore = defineStore('documents', () => {
 
   /** Edits a comment's body (author-only server-side); swaps the DTO in place. */
   async function editComment(ws: string, slug: string, commentId: string, body: string): Promise<boolean> {
+    const target = { workspaceSlug: ws, slug };
+    const generation = commentsLoadSeq;
+    if (!isCurrentCommentsTarget(target, generation)) return false;
+
     error.value = null;
 
     const { data, error: apiError } = await wrappedClient.PATCH(
@@ -282,12 +302,14 @@ export const useDocumentsStore = defineStore('documents', () => {
     );
 
     if (apiError !== undefined || data === undefined) {
-      error.value = errorHint(apiError, 'Failed to edit comment');
+      if (isCurrentCommentsTarget(target, generation)) {
+        error.value = errorHint(apiError, 'Failed to edit comment');
+      }
       return false;
     }
 
     const idx = comments.value.findIndex((c) => c.id === commentId);
-    if (idx !== -1) {
+    if (isCurrentCommentsTarget(target, generation) && idx !== -1) {
       const updated = [...comments.value];
       updated[idx] = data;
       comments.value = updated;
