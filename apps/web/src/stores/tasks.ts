@@ -40,20 +40,29 @@ export const useTasksStore = defineStore('tasks', () => {
       openTask.value = null;
     }
 
-    const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}', {
-      params: { path: { ws, readable_id: readableId } },
-    });
+    try {
+      const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}', {
+        params: { path: { ws, readable_id: readableId } },
+      });
 
-    if (seq !== loadSeq || !matchesTarget(activeTarget, target)) return;
+      if (seq !== loadSeq || !matchesTarget(activeTarget, target)) return;
 
-    loading.value = false;
+      loading.value = false;
 
-    if (apiError !== undefined || data === undefined) {
-      error.value = errorHint(apiError, 'Failed to load task');
-      return;
+      if (apiError !== undefined || data === undefined) {
+        openTask.value = null;
+        error.value = errorHint(apiError, 'Failed to load task');
+        return;
+      }
+
+      openTask.value = data;
+    } catch {
+      if (seq !== loadSeq || !matchesTarget(activeTarget, target)) return;
+
+      openTask.value = null;
+      loading.value = false;
+      error.value = 'Failed to load task';
     }
-
-    openTask.value = data;
   }
 
   async function updateDescription(ws: string, readableId: string, description: string): Promise<boolean> {
