@@ -34,11 +34,7 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Failed to load document';
 }
 
-export async function runNoteResourceLoad<T>(
-  state: NoteResourceState,
-  target: NoteTarget,
-  load: () => Promise<T>,
-): Promise<NoteResourceLoadResult<T>> {
+function startNoteResourceTransition(state: NoteResourceState, target: NoteTarget): number {
   const targetChanged = !targetsEqual(state.target, target);
   const sequence = state.sequence + 1;
 
@@ -48,15 +44,30 @@ export async function runNoteResourceLoad<T>(
   state.error = null;
   if (targetChanged) state.hasContent = false;
 
+  return sequence;
+}
+
+function acceptsNoteResourceLoad(state: NoteResourceState, target: NoteTarget, sequence: number): boolean {
+  return state.sequence === sequence && targetsEqual(state.target, target);
+}
+
+async function runRegisteredNoteResourceLoad<T>(
+  state: NoteResourceState,
+  target: NoteTarget,
+  sequence: number,
+  load: () => Promise<T>,
+): Promise<NoteResourceLoadResult<T>> {
+  if (!acceptsNoteResourceLoad(state, target, sequence)) return { accepted: false };
+
   try {
     const value = await load();
-    if (state.sequence !== sequence || !targetsEqual(state.target, target)) return { accepted: false };
+    if (!acceptsNoteResourceLoad(state, target, sequence)) return { accepted: false };
 
     state.status = 'ready';
     state.hasContent = true;
     return { accepted: true, value };
   } catch (error) {
-    if (state.sequence !== sequence || !targetsEqual(state.target, target)) return { accepted: false };
+    if (!acceptsNoteResourceLoad(state, target, sequence)) return { accepted: false };
 
     state.status = 'error';
     state.hasContent = false;
@@ -65,14 +76,23 @@ export async function runNoteResourceLoad<T>(
   }
 }
 
+export async function runNoteResourceLoad<T>(
+  state: NoteResourceState,
+  target: NoteTarget,
+  load: () => Promise<T>,
+): Promise<NoteResourceLoadResult<T>> {
+  return runRegisteredNoteResourceLoad(state, target, startNoteResourceTransition(state, target), load);
+}
+
 export async function flushThenLoadNoteResource<T>(
   state: NoteResourceState,
   target: NoteTarget,
   flush: () => Promise<void>,
   load: () => Promise<T>,
 ): Promise<NoteResourceLoadResult<T>> {
+  const sequence = startNoteResourceTransition(state, target);
   await flush();
-  return runNoteResourceLoad(state, target, load);
+  return runRegisteredNoteResourceLoad(state, target, sequence, load);
 }
 </script>
 
