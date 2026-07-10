@@ -105,9 +105,7 @@ async function seedLoadedBoard(): Promise<void> {
     created_by: { id: 'user-1', type: 'user', display_name: 'User' },
   };
   boards.columns = [];
-  boards.loadBoard = vi.fn().mockResolvedValue(undefined);
-  boards.loadColumns = vi.fn().mockResolvedValue(undefined);
-  boards.loadTasks = vi.fn().mockResolvedValue(undefined);
+  boards.loadBoardContents = vi.fn().mockResolvedValue(true);
   boards.loadTaskDetails = vi.fn().mockResolvedValue(undefined);
 
   useTaskDetailStore().loadAll = vi.fn().mockResolvedValue(undefined);

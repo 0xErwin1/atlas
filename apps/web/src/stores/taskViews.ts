@@ -19,21 +19,48 @@ export const useTaskViewsStore = defineStore('taskViews', () => {
   const error = ref<string | null>(null);
 
   let loadedWs: string | null = null;
+  let activeLoad: { ws: string; request: object; promise: Promise<boolean> } | null = null;
 
-  async function load(ws: string, force = false): Promise<void> {
-    if (!force && loadedWs === ws) return;
+  function load(ws: string, force = false): Promise<boolean> {
+    if (!force && loadedWs === ws) return Promise.resolve(true);
+    if (!force && activeLoad?.ws === ws) return activeLoad.promise;
 
-    const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/task-views', {
-      params: { path: { ws } },
-    });
-
-    if (apiError !== undefined || data === undefined || !Array.isArray(data)) {
-      error.value = errorHint(apiError, 'Failed to load task views');
-      return;
+    const request = {};
+    if (loadedWs !== ws) {
+      loadedWs = null;
+      items.value = [];
     }
+    error.value = null;
 
-    items.value = [...data].sort((a, b) => a.name.localeCompare(b.name));
-    loadedWs = ws;
+    const promise = fetchTaskViews(ws, request);
+    activeLoad = { ws, request, promise };
+    return promise;
+  }
+
+  async function fetchTaskViews(ws: string, request: object): Promise<boolean> {
+    try {
+      const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/task-views', {
+        params: { path: { ws } },
+      });
+
+      if (activeLoad?.request !== request) return false;
+
+      activeLoad = null;
+      if (apiError !== undefined || data === undefined || !Array.isArray(data)) {
+        error.value = errorHint(apiError, 'Failed to load task views');
+        return false;
+      }
+
+      items.value = [...data].sort((a, b) => a.name.localeCompare(b.name));
+      loadedWs = ws;
+      return true;
+    } catch (cause) {
+      if (activeLoad?.request !== request) return false;
+
+      activeLoad = null;
+      error.value = errorHint(cause, 'Failed to load task views');
+      return false;
+    }
   }
 
   async function create(

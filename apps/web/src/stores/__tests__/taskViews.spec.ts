@@ -1,5 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { deferred } from '@/__tests__/deferred';
 
 const { GET, POST, PATCH, DELETE } = vi.hoisted(() => ({
   GET: vi.fn(),
@@ -61,6 +62,22 @@ describe('useTaskViewsStore', () => {
     await store.load('ws');
 
     expect(GET).toHaveBeenCalledOnce();
+  });
+
+  it('shares an in-flight metadata load for the same workspace', async () => {
+    const response = deferred<{ data: ReturnType<typeof view>[]; error: undefined }>();
+    GET.mockReturnValue(response.promise);
+
+    const store = useTaskViewsStore();
+    const firstLoad = store.load('ws');
+    const secondLoad = store.load('ws');
+
+    expect(GET).toHaveBeenCalledOnce();
+
+    response.resolve({ data: [view('v1', 'View')], error: undefined });
+    await Promise.all([firstLoad, secondLoad]);
+
+    expect(store.items.map((item) => item.id)).toEqual(['v1']);
   });
 
   it('load re-fetches when force is true', async () => {
