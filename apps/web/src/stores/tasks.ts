@@ -6,6 +6,15 @@ import { errorHint } from '@/lib/apiError';
 
 export type TaskDto = components['schemas']['TaskDto'];
 
+interface TaskTarget {
+  readableId: string;
+  ws: string;
+}
+
+function matchesTarget(left: TaskTarget | null, right: TaskTarget): boolean {
+  return left?.ws === right.ws && left.readableId === right.readableId;
+}
+
 /**
  * Tasks store: holds the currently open task detail (REQ-W22).
  * The kanban board renders summaries from useBoardsStore; this store
@@ -16,13 +25,18 @@ export const useTasksStore = defineStore('tasks', () => {
   const loading = ref(false);
   const error = ref<string | null>(null);
   let loadSeq = 0;
+  let activeTarget: TaskTarget | null = null;
 
   async function loadTask(ws: string, readableId: string): Promise<void> {
     const seq = ++loadSeq;
+    const target = { ws, readableId };
+    const targetChanged = !matchesTarget(activeTarget, target);
+
+    activeTarget = target;
     loading.value = true;
     error.value = null;
 
-    if (openTask.value?.readable_id !== readableId) {
+    if (targetChanged) {
       openTask.value = null;
     }
 
@@ -30,7 +44,7 @@ export const useTasksStore = defineStore('tasks', () => {
       params: { path: { ws, readable_id: readableId } },
     });
 
-    if (seq !== loadSeq) return;
+    if (seq !== loadSeq || !matchesTarget(activeTarget, target)) return;
 
     loading.value = false;
 
@@ -84,7 +98,9 @@ export const useTasksStore = defineStore('tasks', () => {
 
   function clear(): void {
     openTask.value = null;
+    loading.value = false;
     error.value = null;
+    activeTarget = null;
   }
 
   return { openTask, loading, error, loadTask, updateDescription, patchOpenTask, clear };

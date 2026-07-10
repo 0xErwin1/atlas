@@ -67,6 +67,26 @@ describe('useTasksStore', () => {
       expect(store.openTask?.readable_id).toBe('ATL-2');
     });
 
+    it('clears the current task when the same readable ID loads in another workspace', async () => {
+      let resolveLoad: (value: { data: ReturnType<typeof taskDto>; error: undefined }) => void = () => {};
+      GET.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveLoad = resolve;
+        }),
+      );
+
+      const store = useTasksStore();
+      store.$patch({ openTask: taskDto('', 'ATL-1') });
+      const pending = store.loadTask('ws-2', 'ATL-1');
+
+      expect(store.openTask).toBeNull();
+      expect(store.loading).toBe(true);
+
+      resolveLoad({ data: taskDto('', 'ATL-1'), error: undefined });
+      await pending;
+      expect(store.openTask?.readable_id).toBe('ATL-1');
+    });
+
     it('does not let an older request replace the latest requested task', async () => {
       let resolveFirst: (value: { data: ReturnType<typeof taskDto>; error: undefined }) => void = () => {};
       GET.mockReturnValueOnce(
@@ -83,6 +103,45 @@ describe('useTasksStore', () => {
       await first;
 
       expect(store.openTask?.readable_id).toBe('ATL-2');
+    });
+
+    it('does not let a response from another workspace replace the current task', async () => {
+      let resolveFirst: (value: { data: ReturnType<typeof taskDto>; error: undefined }) => void = () => {};
+      GET.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveFirst = resolve;
+        }),
+      );
+      GET.mockResolvedValueOnce({ data: taskDto('', 'ATL-1'), error: undefined });
+
+      const store = useTasksStore();
+      const first = store.loadTask('ws-1', 'ATL-1');
+      await store.loadTask('ws-2', 'ATL-1');
+      resolveFirst({ data: taskDto('stale', 'ATL-1'), error: undefined });
+      await first;
+
+      expect(store.openTask?.description).toBe('');
+    });
+
+    it('keeps the current task visible during a same-target refresh', async () => {
+      let resolveRefresh: (value: { data: ReturnType<typeof taskDto>; error: undefined }) => void = () => {};
+      GET.mockResolvedValueOnce({ data: taskDto('visible', 'ATL-1'), error: undefined });
+      GET.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveRefresh = resolve;
+        }),
+      );
+
+      const store = useTasksStore();
+      await store.loadTask('ws-1', 'ATL-1');
+      const refresh = store.loadTask('ws-1', 'ATL-1');
+
+      expect(store.openTask?.description).toBe('visible');
+      expect(store.loading).toBe(true);
+
+      resolveRefresh({ data: taskDto('refreshed', 'ATL-1'), error: undefined });
+      await refresh;
+      expect(store.openTask?.description).toBe('refreshed');
     });
   });
 
