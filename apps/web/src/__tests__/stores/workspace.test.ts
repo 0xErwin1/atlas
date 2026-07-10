@@ -10,7 +10,10 @@ vi.mock('@/api/wrapper', () => ({
   },
 }));
 
+import { deferred } from '@/__tests__/deferred';
 import { wrappedClient } from '@/api/wrapper';
+import type { MeResponse } from '@/stores/auth';
+import { useAuthStore } from '@/stores/auth';
 import { useWorkspaceStore } from '@/stores/workspace';
 
 const mockGet = wrappedClient.GET as ReturnType<typeof vi.fn>;
@@ -93,6 +96,103 @@ describe('useWorkspaceStore', () => {
 
     expect(slug).toBeNull();
     expect(store.activeWorkspaceSlug).toBeNull();
+  });
+
+  it('keeps members from the latest workspace load when responses resolve out of order', async () => {
+    const firstResponse = deferred<{ data: { id: string }[]; error: undefined }>();
+    const secondResponse = deferred<{ data: { id: string }[]; error: undefined }>();
+    mockGet.mockImplementation((_path: string, request: { params: { path: { ws: string } } }) =>
+      request.params.path.ws === 'workspace-a' ? firstResponse.promise : secondResponse.promise,
+    );
+
+    const store = useWorkspaceStore();
+    store.setActiveWorkspace('workspace-a');
+    const firstLoad = store.loadMembers('workspace-a');
+    store.switchWorkspace('workspace-b');
+    const secondLoad = store.loadMembers('workspace-b');
+
+    secondResponse.resolve({ data: [{ id: 'member-b' }], error: undefined });
+    await secondLoad;
+    firstResponse.resolve({ data: [{ id: 'member-a' }], error: undefined });
+    await firstLoad;
+
+    expect(store.members.map((member) => member.id)).toEqual(['member-b']);
+  });
+
+  it('ignores a delayed member response after the active workspace changes', async () => {
+    const response = deferred<{
+      data: { id: string; display: string; principal_type: string; role: string }[];
+      error: undefined;
+    }>();
+    mockGet.mockReturnValueOnce(response.promise);
+
+    const auth = useAuthStore();
+    auth.user = { id: 'member-a', username: 'user', is_root: false } as MeResponse;
+    const store = useWorkspaceStore();
+    store.setActiveWorkspace('workspace-a');
+    const load = store.loadMembers('workspace-a');
+
+    store.activeWorkspaceSlug = 'workspace-b';
+    response.resolve({
+      data: [{ id: 'member-a', display: 'User', principal_type: 'user', role: 'owner' }],
+      error: undefined,
+    });
+    await load;
+
+    expect(store.members).toEqual([]);
+    expect(store.myWorkspaceRole).toBeNull();
+  });
+
+  it('settles member transport failures and publishes an error', async () => {
+    mockGet.mockRejectedValueOnce(new Error('network unavailable'));
+
+    const store = useWorkspaceStore();
+    store.setActiveWorkspace('workspace-a');
+    store.members = [{ id: 'stale-member' }] as typeof store.members;
+
+    await expect(store.loadMembers('workspace-a')).resolves.toBeUndefined();
+
+    expect(store.members).toEqual([]);
+    expect(store.error).toBe('Failed to load members');
+  });
+
+  it('clears cached members only when the active workspace changes', () => {
+    const auth = useAuthStore();
+    auth.user = { id: 'member-a', username: 'user', is_root: false } as MeResponse;
+    const store = useWorkspaceStore();
+    store.activeWorkspaceSlug = 'workspace-a';
+    store.members = [
+      { id: 'member-a', display: 'User', principal_type: 'user', role: 'owner' },
+    ] as typeof store.members;
+
+    store.switchWorkspace('workspace-a');
+    expect(store.members).toHaveLength(1);
+    expect(store.myWorkspaceRole).toBe('owner');
+
+    store.switchWorkspace('workspace-b');
+    expect(store.members).toEqual([]);
+    expect(store.myWorkspaceRole).toBeNull();
+  });
+
+  it('clears member state when deleting the active workspace selects a fallback', async () => {
+    mockDelete.mockResolvedValueOnce({ error: undefined });
+    const auth = useAuthStore();
+    auth.user = { id: 'member-a', username: 'user', is_root: false } as MeResponse;
+    const store = useWorkspaceStore();
+    store.workspaces = [
+      { id: '1', name: 'A', slug: 'workspace-a', created_at: 'x', updated_at: 'x' },
+      { id: '2', name: 'B', slug: 'workspace-b', created_at: 'x', updated_at: 'x' },
+    ];
+    store.setActiveWorkspace('workspace-a');
+    store.members = [
+      { id: 'member-a', display: 'User', principal_type: 'user', role: 'owner' },
+    ] as typeof store.members;
+
+    await store.deleteWorkspace('workspace-a');
+
+    expect(store.activeWorkspaceSlug).toBe('workspace-b');
+    expect(store.members).toEqual([]);
+    expect(store.myWorkspaceRole).toBeNull();
   });
 
   it('renameProject PATCHes the project and refreshes the list', async () => {

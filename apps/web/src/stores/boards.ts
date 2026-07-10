@@ -57,6 +57,17 @@ export const useBoardsStore = defineStore('boards', () => {
   // must never blank an already-loaded board.
   const loadError = ref<string | null>(null);
   const error = ref<string | null>(null);
+  interface ActiveBoardLoad {
+    ws: string;
+    boardId: string;
+    refreshColumns: boolean;
+  }
+
+  let activeBoardLoad: ActiveBoardLoad | null = null;
+  let activeBoardRequest: object | null = null;
+  let activeColumnsRequest: object | null = null;
+  let activeTasksRequest: object | null = null;
+  let activeTaskDetailsRequest: object | null = null;
 
   // Stable empty-array reference per column. Returning a fresh `[]` for an empty
   // column on every call makes the kanban draggable's bound list change identity
@@ -260,37 +271,111 @@ export const useBoardsStore = defineStore('boards', () => {
     return data.readable_id ?? null;
   }
 
+  function fetchBoard(ws: string, boardId: string) {
+    return wrappedClient.GET('/api/workspaces/{ws}/boards/{board_id}', {
+      params: { path: { ws, board_id: boardId } },
+    });
+  }
+
+  function fetchColumns(ws: string, boardId: string) {
+    return wrappedClient.GET('/api/workspaces/{ws}/boards/{board_id}/columns', {
+      params: { path: { ws, board_id: boardId } },
+    });
+  }
+
+  function fetchTasks(ws: string, boardId: string) {
+    return collectPaged<TaskSummaryDto>((cursor) =>
+      wrappedClient.GET('/api/workspaces/{ws}/boards/{board_id}/tasks', {
+        params: {
+          path: { ws, board_id: boardId },
+          query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) },
+        },
+      }),
+    );
+  }
+
+  function groupTasks(items: TaskSummaryDto[]): Map<string, TaskSummaryDto[]> {
+    const grouped = new Map<string, TaskSummaryDto[]>();
+
+    for (const task of items) {
+      const columnTasks = grouped.get(task.column_id) ?? [];
+      columnTasks.push(task);
+      grouped.set(task.column_id, columnTasks);
+    }
+
+    return grouped;
+  }
+
+  type SettledRequest<T> = { value: T } | { cause: unknown };
+
+  async function settleRequest<T>(promise: Promise<T>): Promise<SettledRequest<T>> {
+    try {
+      return { value: await promise };
+    } catch (cause) {
+      return { cause };
+    }
+  }
+
+  function settledError<T extends { error?: unknown }>(
+    result: SettledRequest<T>,
+    fallback: string,
+    isValid: (value: T) => boolean = () => true,
+  ): string | null {
+    if ('cause' in result) return errorHint(result.cause, fallback);
+    if (result.value.error !== undefined || !isValid(result.value)) {
+      return errorHint(result.value.error, fallback);
+    }
+    return null;
+  }
+
   async function loadBoard(ws: string, boardId: string): Promise<void> {
+    if (activeBoardLoad !== null) return;
+
+    const request = {};
+    activeBoardRequest = request;
     loading.value = true;
     loadError.value = null;
     error.value = null;
 
-    const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/boards/{board_id}', {
-      params: { path: { ws, board_id: boardId } },
-    });
+    const result = await settleRequest(fetchBoard(ws, boardId));
 
+    if (activeBoardRequest !== request || activeBoardLoad !== null) return;
+
+    activeBoardRequest = null;
     loading.value = false;
 
-    if (apiError !== undefined || data === undefined) {
-      loadError.value = errorHint(apiError, 'Failed to load board');
+    const nextError = settledError(result, 'Failed to load board', (value) => value.data !== undefined);
+    if (nextError !== null || !('value' in result) || result.value.data === undefined) {
+      loadError.value = nextError ?? 'Failed to load board';
       return;
     }
 
-    board.value = data;
+    board.value = result.value.data;
   }
 
   async function loadColumns(ws: string, boardId: string): Promise<void> {
-    const { data, error: apiError } = await wrappedClient.GET(
-      '/api/workspaces/{ws}/boards/{board_id}/columns',
-      { params: { path: { ws, board_id: boardId } } },
-    );
-
-    if (apiError !== undefined || data === undefined) {
-      loadError.value = errorHint(apiError, 'Failed to load columns');
+    if (activeBoardLoad !== null) {
+      if (activeBoardLoad.ws === ws && activeBoardLoad.boardId === boardId) {
+        activeBoardLoad.refreshColumns = true;
+      }
       return;
     }
 
-    columns.value = [...data].sort((a, b) => a.position_key.localeCompare(b.position_key));
+    const request = {};
+    activeColumnsRequest = request;
+
+    const result = await settleRequest(fetchColumns(ws, boardId));
+
+    if (activeColumnsRequest !== request || activeBoardLoad !== null) return;
+
+    activeColumnsRequest = null;
+    const nextError = settledError(result, 'Failed to load columns', (value) => value.data !== undefined);
+    if (nextError !== null || !('value' in result) || result.value.data === undefined) {
+      loadError.value = nextError ?? 'Failed to load columns';
+      return;
+    }
+
+    columns.value = [...result.value.data].sort((a, b) => a.position_key.localeCompare(b.position_key));
   }
 
   /**
@@ -397,34 +482,110 @@ export const useBoardsStore = defineStore('boards', () => {
   }
 
   async function loadTasks(ws: string, boardId: string): Promise<void> {
-    // The kanban shows every task on the board; page through so a board with more
-    // than one page of tasks is not silently truncated.
-    const { items, error: apiError } = await collectPaged<TaskSummaryDto>((cursor) =>
-      wrappedClient.GET('/api/workspaces/{ws}/boards/{board_id}/tasks', {
-        params: {
-          path: { ws, board_id: boardId },
-          query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) },
-        },
-      }),
-    );
+    if (activeBoardLoad !== null) return;
 
-    if (apiError !== undefined) {
-      loadError.value = errorHint(apiError, 'Failed to load tasks');
+    const request = {};
+    activeTasksRequest = request;
+
+    const result = await settleRequest(fetchTasks(ws, boardId));
+
+    if (activeTasksRequest !== request || activeBoardLoad !== null) return;
+
+    activeTasksRequest = null;
+    const nextError = settledError(result, 'Failed to load tasks');
+    if (nextError !== null || !('value' in result)) {
+      loadError.value = nextError ?? 'Failed to load tasks';
       return;
     }
 
-    const grouped = new Map<string, TaskSummaryDto[]>();
-
-    for (const t of items) {
-      const col = grouped.get(t.column_id) ?? [];
-      col.push(t);
-      grouped.set(t.column_id, col);
-    }
-
-    tasks.value = grouped;
+    tasks.value = groupTasks(result.value.items);
 
     // Feed the (endpoint-less) tag registry from real labels so facets can offer them.
-    useLabelColorsStore().recordTags(items.flatMap((t) => t.labels ?? []));
+    useLabelColorsStore().recordTags(result.value.items.flatMap((task) => task.labels ?? []));
+  }
+
+  async function loadBoardContents(ws: string, boardId: string): Promise<boolean> {
+    const operation: ActiveBoardLoad = { ws, boardId, refreshColumns: false };
+    activeBoardLoad = operation;
+    activeBoardRequest = null;
+    activeColumnsRequest = null;
+    activeTasksRequest = null;
+    invalidateTaskDetails();
+
+    loading.value = true;
+    loadError.value = null;
+    error.value = null;
+    board.value = null;
+    columns.value = [];
+    tasks.value = new Map();
+
+    const [boardResult, initialColumnsResult, tasksResult] = await Promise.all([
+      settleRequest(fetchBoard(ws, boardId)),
+      settleRequest(fetchColumns(ws, boardId)),
+      settleRequest(fetchTasks(ws, boardId)),
+    ]);
+
+    if (activeBoardLoad !== operation) return false;
+
+    let columnsResult = initialColumnsResult;
+    while (operation.refreshColumns) {
+      operation.refreshColumns = false;
+      columnsResult = await settleRequest(fetchColumns(ws, boardId));
+      if (activeBoardLoad !== operation) return false;
+    }
+
+    const boardError = settledError(boardResult, 'Failed to load board', (value) => value.data !== undefined);
+    const columnsError = settledError(
+      columnsResult,
+      'Failed to load columns',
+      (value) => value.data !== undefined,
+    );
+    const tasksError = settledError(tasksResult, 'Failed to load tasks');
+
+    activeBoardLoad = null;
+    loading.value = false;
+
+    const nextError = boardError ?? columnsError ?? tasksError;
+    if (nextError !== null) {
+      loadError.value = nextError;
+      return true;
+    }
+
+    if (
+      !('value' in boardResult) ||
+      boardResult.value.data === undefined ||
+      !('value' in columnsResult) ||
+      columnsResult.value.data === undefined ||
+      !('value' in tasksResult)
+    ) {
+      loadError.value = 'Failed to load board';
+      return true;
+    }
+
+    board.value = boardResult.value.data;
+    columns.value = [...columnsResult.value.data].sort((a, b) =>
+      a.position_key.localeCompare(b.position_key),
+    );
+    tasks.value = groupTasks(tasksResult.value.items);
+    useLabelColorsStore().recordTags(tasksResult.value.items.flatMap((task) => task.labels ?? []));
+
+    return true;
+  }
+
+  function cancelBoardLoad(): void {
+    activeBoardLoad = null;
+    activeBoardRequest = null;
+    activeColumnsRequest = null;
+    activeTasksRequest = null;
+    loading.value = false;
+    loadError.value = null;
+    invalidateTaskDetails();
+  }
+
+  function invalidateTaskDetails(): void {
+    activeTaskDetailsRequest = null;
+    taskDetails.value = new Map();
+    detailsLoading.value = false;
   }
 
   /**
@@ -495,25 +656,46 @@ export const useBoardsStore = defineStore('boards', () => {
    */
   async function loadTaskDetails(ws: string): Promise<void> {
     const ids = [...tasks.value.values()].flat().map((t) => t.readable_id);
+    const request = {};
+    activeTaskDetailsRequest = request;
 
     detailsLoading.value = true;
 
-    const results = await Promise.all(
-      ids.map((rid) =>
-        wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}', {
-          params: { path: { ws, readable_id: rid } },
-        }),
+    const result = await settleRequest(
+      Promise.all(
+        ids.map((rid) =>
+          wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}', {
+            params: { path: { ws, readable_id: rid } },
+          }),
+        ),
       ),
     );
 
+    if (activeTaskDetailsRequest !== request) return;
+
+    activeTaskDetailsRequest = null;
+    detailsLoading.value = false;
+    if ('cause' in result) {
+      error.value = errorHint(result.cause, 'Failed to load task details');
+      return;
+    }
+
+    const failedResponse = result.value.find(
+      (response) => response.error !== undefined || response.data === undefined,
+    );
+    if (failedResponse !== undefined) {
+      taskDetails.value = new Map();
+      error.value = errorHint(failedResponse.error, 'Failed to load task details');
+      return;
+    }
+
     const next = new Map<string, TaskDto>();
-    results.forEach((res, i) => {
+    result.value.forEach((res, i) => {
       const rid = ids[i];
       if (rid !== undefined && res.data !== undefined) next.set(rid, res.data);
     });
 
     taskDetails.value = next;
-    detailsLoading.value = false;
   }
 
   /**
@@ -963,6 +1145,7 @@ export const useBoardsStore = defineStore('boards', () => {
    * survive the switch.
    */
   function reset(): void {
+    cancelBoardLoad();
     board.value = null;
     boardSummaries.value = [];
     boardsByProject.value = new Map();
@@ -1003,6 +1186,8 @@ export const useBoardsStore = defineStore('boards', () => {
     moveColumn,
     deleteColumn,
     loadTasks,
+    loadBoardContents,
+    cancelBoardLoad,
     loadSubtasks,
     upsertTaskById,
     reconcileTask,

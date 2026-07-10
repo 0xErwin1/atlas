@@ -124,6 +124,7 @@ const breadcrumbs = computed(() => {
 // view mode (sidebar dock or floating dialog). Full-screen mode navigates to the
 // standalone /t/task/:id route instead of rendering inline.
 const selectedReadableId = ref<string | null>(null);
+let boardLoadOperation = 0;
 
 const paneTask = computed(() => {
   if (selectedReadableId.value === null) return null;
@@ -202,6 +203,8 @@ const unregisterTaskEscape = keymap.registerShortcut({
 });
 
 onBeforeUnmount(() => {
+  boardLoadOperation += 1;
+  boards.cancelBoardLoad();
   unregisterBoardSearch();
   unregisterTaskEscape();
   uninstallKeymapListener();
@@ -219,6 +222,7 @@ function openTask(readableId: string): void {
 }
 
 async function loadBoard(): Promise<void> {
+  const operation = ++boardLoadOperation;
   if (ws.value === '') return;
 
   selectedReadableId.value = null;
@@ -232,14 +236,23 @@ async function loadBoard(): Promise<void> {
     return;
   }
 
-  await boards.loadBoard(ws.value, boardId.value);
-  await Promise.all([
-    boards.loadColumns(ws.value, boardId.value),
-    boards.loadTasks(ws.value, boardId.value),
-    workspace.loadMembers(ws.value),
+  const targetWorkspace = ws.value;
+  const targetBoardId = boardId.value;
+  const [isCurrentLoad] = await Promise.all([
+    boards.loadBoardContents(targetWorkspace, targetBoardId),
+    workspace.loadMembers(targetWorkspace),
   ]);
+  if (
+    operation !== boardLoadOperation ||
+    !isCurrentLoad ||
+    isView.value ||
+    ws.value !== targetWorkspace ||
+    boardId.value !== targetBoardId
+  ) {
+    return;
+  }
 
-  const savedView = uiState.boardViewFor(boardId.value);
+  const savedView = uiState.boardViewFor(targetBoardId);
   ui.setTaskView(savedView ?? 'board');
 
   ensureTaskDetails();
@@ -273,14 +286,42 @@ async function openFromQuery(): Promise<void> {
 }
 
 async function loadView(): Promise<void> {
+  const operation = ++boardLoadOperation;
+  const targetWorkspace = ws.value;
   const vid = viewId.value;
-  if (ws.value === '' || vid === null) return;
+  if (targetWorkspace === '' || vid === null) return;
 
+  boards.cancelBoardLoad();
   selectedReadableId.value = null;
 
-  const customView = taskViews.items.find((v) => v.id === vid);
+  let customView = taskViews.items.find((view) => view.id === vid);
+  if (PREDEFINED_VIEW_LABELS[vid] === undefined) {
+    const metadataLoaded = await taskViews.load(targetWorkspace);
+    if (
+      !metadataLoaded ||
+      operation !== boardLoadOperation ||
+      !isView.value ||
+      ws.value !== targetWorkspace ||
+      viewId.value !== vid
+    ) {
+      return;
+    }
+
+    customView = taskViews.items.find((view) => view.id === vid);
+    if (customView === undefined) return;
+  }
+
   const params = paramsForView(vid, customView?.filters);
-  await workspaceTasks.load(ws.value, params);
+  const isCurrentLoad = await workspaceTasks.load(targetWorkspace, params);
+  if (
+    !isCurrentLoad ||
+    operation !== boardLoadOperation ||
+    !isView.value ||
+    ws.value !== targetWorkspace ||
+    viewId.value !== vid
+  ) {
+    return;
+  }
 }
 
 // Reloads whichever surface is active — the kanban board or a task view — used
@@ -563,13 +604,13 @@ watch(
     </template>
 
     <template v-else>
+      <LoadingState v-if="boards.loading" label="Loading…" />
       <ErrorState
-        v-if="boards.loadError"
+        v-else-if="boards.loadError"
         title="Couldn't load board"
         :hint="boards.loadError"
         @retry="loadBoard"
       />
-      <LoadingState v-else-if="boards.loading" label="Loading…" />
       <EmptyState
         v-else-if="boardId === null"
         title="No board selected"

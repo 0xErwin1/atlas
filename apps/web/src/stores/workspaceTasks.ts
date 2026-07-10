@@ -61,33 +61,53 @@ export const useWorkspaceTasksStore = defineStore('workspaceTasks', () => {
   const nextCursor = ref<string | null>(null);
 
   let loadedKey: string | null = null;
+  let activeLoadRequest: object | null = null;
 
-  async function load(ws: string, params: WorkspaceTaskParams, force = false): Promise<void> {
+  async function load(ws: string, params: WorkspaceTaskParams, force = false): Promise<boolean> {
     const key = paramsKey(ws, params);
 
-    if (!force && loadedKey === key) return;
+    if (!force && loadedKey === key) {
+      activeLoadRequest = null;
+      loading.value = false;
+      error.value = null;
+      return true;
+    }
 
+    const request = {};
+    activeLoadRequest = request;
     loading.value = true;
     error.value = null;
 
-    const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/tasks', {
-      params: {
-        path: { ws },
-        query: { ...params, limit: 200 } as Record<string, unknown>,
-      },
-    });
+    try {
+      const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/tasks', {
+        params: {
+          path: { ws },
+          query: { ...params, limit: 200 } as Record<string, unknown>,
+        },
+      });
 
-    loading.value = false;
+      if (activeLoadRequest !== request) return false;
 
-    if (apiError !== undefined || data === undefined) {
-      error.value = errorHint(apiError, 'Failed to load tasks');
-      return;
+      activeLoadRequest = null;
+      loading.value = false;
+      if (apiError !== undefined || data === undefined) {
+        error.value = errorHint(apiError, 'Failed to load tasks');
+        return true;
+      }
+
+      tasks.value = data.items;
+      hasMore.value = data.has_more;
+      nextCursor.value = data.next_cursor ?? null;
+      loadedKey = key;
+      return true;
+    } catch (cause) {
+      if (activeLoadRequest !== request) return false;
+
+      activeLoadRequest = null;
+      loading.value = false;
+      error.value = errorHint(cause, 'Failed to load tasks');
+      return true;
     }
-
-    tasks.value = data.items;
-    hasMore.value = data.has_more;
-    nextCursor.value = data.next_cursor ?? null;
-    loadedKey = key;
   }
 
   return { tasks, loading, error, hasMore, nextCursor, load };

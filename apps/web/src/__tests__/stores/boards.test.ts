@@ -1,5 +1,7 @@
+import { flushPromises } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { deferred } from '@/__tests__/deferred';
 
 const { GET } = vi.hoisted(() => ({ GET: vi.fn() }));
 
@@ -7,8 +9,18 @@ vi.mock('@/api/wrapper', () => ({
   wrappedClient: { GET },
 }));
 
-import type { ColumnDto, TaskSummaryDto } from '@/stores/boards';
+import type { BoardDto, ColumnDto, TaskSummaryDto } from '@/stores/boards';
 import { useBoardsStore } from '@/stores/boards';
+
+const board = (id: string): BoardDto => ({
+  id,
+  name: `Board ${id}`,
+  workspace_id: 'ws',
+  project_id: 'proj',
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-01T00:00:00Z',
+  created_by: { id: 'u1', type: 'user', display_name: 'User' },
+});
 
 const col = (id: string, positionKey: string): ColumnDto => ({
   id,
@@ -114,6 +126,262 @@ describe('useBoardsStore', () => {
     await store.loadTasks('ws', 'board-1');
 
     expect(store.loadError).toBe('board not found');
+  });
+
+  it('keeps only the newest coordinated board load when responses resolve out of order', async () => {
+    const responses = new Map<string, ReturnType<typeof deferred<{ data: unknown; error: undefined }>>>();
+    for (const boardId of ['board-1', 'board-2']) {
+      for (const resource of ['board', 'columns', 'tasks']) {
+        responses.set(`${boardId}:${resource}`, deferred());
+      }
+    }
+    GET.mockImplementation((path: string, request: { params: { path: { board_id: string } } }) => {
+      const boardId = request.params.path.board_id;
+      const resource = path.endsWith('/columns') ? 'columns' : path.endsWith('/tasks') ? 'tasks' : 'board';
+      return responses.get(`${boardId}:${resource}`)?.promise;
+    });
+
+    const store = useBoardsStore();
+    store.columns = [col('old-column', 'a')];
+    store._setTasksForTest({ 'old-column': [task('old-task', 'ATL-1', 'old-column')] });
+
+    const firstLoad = store.loadBoardContents('ws', 'board-1');
+    const secondLoad = store.loadBoardContents('ws', 'board-2');
+
+    expect(store.loading).toBe(true);
+    expect(store.columns).toEqual([]);
+    expect(store.tasksByColumn('old-column')).toEqual([]);
+
+    responses.get('board-2:board')?.resolve({ data: board('board-2'), error: undefined });
+    responses.get('board-2:columns')?.resolve({ data: [col('new-column', 'b')], error: undefined });
+    responses.get('board-2:tasks')?.resolve({
+      data: {
+        items: [task('new-task', 'ATL-2', 'new-column')],
+        has_more: false,
+        next_cursor: null,
+      },
+      error: undefined,
+    });
+    await secondLoad;
+
+    expect(store.loading).toBe(false);
+    expect(store.board?.id).toBe('board-2');
+    expect(store.columns.map((column) => column.id)).toEqual(['new-column']);
+    expect(store.tasksByColumn('new-column').map((item) => item.id)).toEqual(['new-task']);
+
+    responses.get('board-1:board')?.resolve({ data: board('board-1'), error: undefined });
+    responses.get('board-1:columns')?.resolve({ data: [col('stale-column', 'a')], error: undefined });
+    responses.get('board-1:tasks')?.resolve({
+      data: {
+        items: [task('stale-task', 'ATL-3', 'stale-column')],
+        has_more: false,
+        next_cursor: null,
+      },
+      error: undefined,
+    });
+    await firstLoad;
+
+    expect(store.board?.id).toBe('board-2');
+    expect(store.columns.map((column) => column.id)).toEqual(['new-column']);
+    expect(store.tasksByColumn('new-column').map((item) => item.id)).toEqual(['new-task']);
+  });
+
+  it('isolates a coordinated board load from standalone loaders', async () => {
+    const boardResponse = deferred<{ data: unknown; error: undefined }>();
+    const columnsResponse = deferred<{ data: unknown; error: undefined }>();
+    const tasksResponse = deferred<{ data: unknown; error: undefined }>();
+    GET.mockImplementation((path: string, request: { params: { path: { board_id: string } } }) => {
+      if (request.params.path.board_id === 'board-1') {
+        if (path.endsWith('/columns')) {
+          return Promise.resolve({ data: [col('stale-column', 'a')], error: undefined });
+        }
+        if (path.endsWith('/tasks')) {
+          return Promise.resolve({
+            data: {
+              items: [task('stale-task', 'ATL-1', 'stale-column')],
+              has_more: false,
+              next_cursor: null,
+            },
+            error: undefined,
+          });
+        }
+        return Promise.resolve({ data: board('board-1'), error: undefined });
+      }
+      if (path.endsWith('/columns')) return columnsResponse.promise;
+      if (path.endsWith('/tasks')) return tasksResponse.promise;
+      return boardResponse.promise;
+    });
+
+    const store = useBoardsStore();
+    const coordinatedLoad = store.loadBoardContents('ws', 'board-2');
+    await Promise.all([
+      store.loadBoard('ws', 'board-1'),
+      store.loadColumns('ws', 'board-1'),
+      store.loadTasks('ws', 'board-1'),
+    ]);
+
+    expect(store.loading).toBe(true);
+    expect(store.board).toBeNull();
+
+    boardResponse.resolve({ data: board('board-2'), error: undefined });
+    columnsResponse.resolve({ data: [col('new-column', 'a')], error: undefined });
+    tasksResponse.resolve({
+      data: {
+        items: [task('new-task', 'ATL-2', 'new-column')],
+        has_more: false,
+        next_cursor: null,
+      },
+      error: undefined,
+    });
+    await coordinatedLoad;
+
+    expect(store.loading).toBe(false);
+    expect(store.board?.id).toBe('board-2');
+    expect(store.columns.map((column) => column.id)).toEqual(['new-column']);
+    expect(store.tasksByColumn('new-column').map((item) => item.id)).toEqual(['new-task']);
+  });
+
+  it('replays a live column refresh requested during a coordinated load', async () => {
+    const boardResponse = deferred<{ data: unknown; error: undefined }>();
+    const initialColumnsResponse = deferred<{ data: unknown; error: undefined }>();
+    const refreshedColumnsResponse = deferred<{ data: unknown; error: undefined }>();
+    const tasksResponse = deferred<{ data: unknown; error: undefined }>();
+    let columnRequestCount = 0;
+    GET.mockImplementation((path: string) => {
+      if (path.endsWith('/columns')) {
+        columnRequestCount += 1;
+        return columnRequestCount === 1 ? initialColumnsResponse.promise : refreshedColumnsResponse.promise;
+      }
+      if (path.endsWith('/tasks')) return tasksResponse.promise;
+      return boardResponse.promise;
+    });
+
+    const store = useBoardsStore();
+    const load = store.loadBoardContents('ws', 'board-1');
+    await store.loadColumns('ws', 'board-1');
+
+    boardResponse.resolve({ data: board('board-1'), error: undefined });
+    initialColumnsResponse.resolve({ data: [col('stale-column', 'a')], error: undefined });
+    tasksResponse.resolve({ data: { items: [], has_more: false, next_cursor: null }, error: undefined });
+    await flushPromises();
+
+    expect(store.loading).toBe(true);
+    expect(columnRequestCount).toBe(2);
+
+    refreshedColumnsResponse.resolve({ data: [col('fresh-column', 'b')], error: undefined });
+    await load;
+
+    expect(store.loading).toBe(false);
+    expect(store.columns.map((column) => column.id)).toEqual(['fresh-column']);
+  });
+
+  it('publishes a coordinated load error only after all resources settle', async () => {
+    const boardResponse = deferred<{ data: unknown; error: { hint: string } }>();
+    const columnsResponse = deferred<{ data: unknown; error: undefined }>();
+    const tasksResponse = deferred<{ data: unknown; error: undefined }>();
+    GET.mockImplementation((path: string) => {
+      if (path.endsWith('/columns')) return columnsResponse.promise;
+      if (path.endsWith('/tasks')) return tasksResponse.promise;
+      return boardResponse.promise;
+    });
+
+    const store = useBoardsStore();
+    const load = store.loadBoardContents('ws', 'board-1');
+
+    boardResponse.resolve({ data: undefined, error: { hint: 'board unavailable' } });
+    tasksResponse.reject(new Error('network disconnected'));
+    await Promise.resolve();
+
+    expect(store.loading).toBe(true);
+    expect(store.loadError).toBeNull();
+
+    columnsResponse.resolve({ data: [col('column-1', 'a')], error: undefined });
+    await load;
+
+    expect(store.loading).toBe(false);
+    expect(store.loadError).toBe('board unavailable');
+    expect(store.board).toBeNull();
+    expect(store.columns).toEqual([]);
+  });
+
+  it('invalidates an in-flight task detail fan-out when a new board load starts', async () => {
+    const detailResponse = deferred<{ data: unknown; error: undefined }>();
+    GET.mockImplementation((path: string) => {
+      if (path.includes('/tasks/ATL-1')) return detailResponse.promise;
+      if (path.endsWith('/columns')) return Promise.resolve({ data: [], error: undefined });
+      if (path.endsWith('/tasks')) {
+        return Promise.resolve({
+          data: { items: [], has_more: false, next_cursor: null },
+          error: undefined,
+        });
+      }
+      return Promise.resolve({ data: board('board-2'), error: undefined });
+    });
+
+    const store = useBoardsStore();
+    store._setTasksForTest({ 'old-column': [task('old-task', 'ATL-1', 'old-column')] });
+    const detailLoad = store.loadTaskDetails('ws');
+
+    await store.loadBoardContents('ws', 'board-2');
+    detailResponse.resolve({
+      data: {
+        id: 'old-task',
+        readable_id: 'ATL-1',
+        title: 'Old task',
+      },
+      error: undefined,
+    });
+    await detailLoad;
+
+    expect(store.taskDetails.size).toBe(0);
+    expect(store.detailsLoading).toBe(false);
+  });
+
+  it('surfaces resolved task detail API errors without keeping stale details', async () => {
+    GET.mockResolvedValueOnce({
+      data: { id: 'task-1', readable_id: 'ATL-1', title: 'Task' },
+      error: undefined,
+    });
+
+    const store = useBoardsStore();
+    store._setTasksForTest({ 'column-1': [task('task-1', 'ATL-1', 'column-1')] });
+    await store.loadTaskDetails('ws');
+    expect(store.taskDetails.size).toBe(1);
+
+    GET.mockResolvedValueOnce({ data: undefined, error: { hint: 'detail unavailable' } });
+    await store.loadTaskDetails('ws');
+
+    expect(store.detailsLoading).toBe(false);
+    expect(store.taskDetails.size).toBe(0);
+    expect(store.error).toBe('detail unavailable');
+  });
+
+  it('reset invalidates a pending coordinated board load', async () => {
+    const boardResponse = deferred<{ data: unknown; error: undefined }>();
+    const columnsResponse = deferred<{ data: unknown; error: undefined }>();
+    const tasksResponse = deferred<{ data: unknown; error: undefined }>();
+    GET.mockImplementation((path: string) => {
+      if (path.endsWith('/columns')) return columnsResponse.promise;
+      if (path.endsWith('/tasks')) return tasksResponse.promise;
+      return boardResponse.promise;
+    });
+
+    const store = useBoardsStore();
+    const load = store.loadBoardContents('ws', 'board-1');
+    store.reset();
+
+    boardResponse.resolve({ data: board('board-1'), error: undefined });
+    columnsResponse.resolve({ data: [col('column-1', 'a')], error: undefined });
+    tasksResponse.resolve({
+      data: { items: [task('task-1', 'ATL-1', 'column-1')], has_more: false, next_cursor: null },
+      error: undefined,
+    });
+    await load;
+
+    expect(store.loading).toBe(false);
+    expect(store.board).toBeNull();
+    expect(store.columns).toEqual([]);
+    expect(store.tasksByColumn('column-1')).toEqual([]);
   });
 
   it('reset clears a stale load error and board-scoped state (cross-workspace bleed)', async () => {

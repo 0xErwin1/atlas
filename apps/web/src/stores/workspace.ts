@@ -50,6 +50,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   // not disabled). Populated on demand by the add-member dialog.
   const assignableUsers = ref<UserDto[]>([]);
   const error = ref<string | null>(null);
+  let membersLoadRequest: object | null = null;
 
   const auth = useAuthStore();
 
@@ -69,7 +70,11 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     return null;
   });
 
-  function setActiveWorkspace(slug: string) {
+  function setActiveWorkspace(slug: string | null) {
+    if (slug !== activeWorkspaceSlug.value) {
+      membersLoadRequest = null;
+      members.value = [];
+    }
     activeWorkspaceSlug.value = slug;
   }
 
@@ -88,7 +93,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     const stored = loadStoredWorkspace();
     const chosen = data.find((w) => w.slug === stored) ?? data[0];
     if (chosen !== undefined) {
-      activeWorkspaceSlug.value = chosen.slug;
+      setActiveWorkspace(chosen.slug);
       return chosen.slug;
     }
 
@@ -102,7 +107,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
    */
   function switchWorkspace(slug: string): void {
     if (slug === activeWorkspaceSlug.value) return;
-    activeWorkspaceSlug.value = slug;
+    setActiveWorkspace(slug);
     projects.value = [];
     persistWorkspace(slug);
   }
@@ -316,7 +321,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
     if (activeWorkspaceSlug.value === ws) {
       const next = workspaces.value[0]?.slug ?? null;
-      activeWorkspaceSlug.value = next;
+      setActiveWorkspace(next);
       projects.value = [];
       if (next !== null) persistWorkspace(next);
     }
@@ -342,16 +347,31 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   /** Loads workspace members (users and agents) for assignee pickers. */
   async function loadMembers(ws: string): Promise<void> {
-    const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/members', {
-      params: { path: { ws } },
-    });
+    const request = {};
+    membersLoadRequest = request;
 
-    if (apiError !== undefined || data === undefined) {
+    try {
+      const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/members', {
+        params: { path: { ws } },
+      });
+
+      if (membersLoadRequest !== request || activeWorkspaceSlug.value !== ws) return;
+
+      membersLoadRequest = null;
+      if (apiError !== undefined || data === undefined) {
+        members.value = [];
+        error.value = errorHint(apiError, 'Failed to load members');
+        return;
+      }
+
+      members.value = data;
+    } catch (cause) {
+      if (membersLoadRequest !== request || activeWorkspaceSlug.value !== ws) return;
+
+      membersLoadRequest = null;
       members.value = [];
-      return;
+      error.value = errorHint(cause, 'Failed to load members');
     }
-
-    members.value = data;
   }
 
   /**
