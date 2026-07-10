@@ -9,6 +9,8 @@ import { computed, watch } from 'vue';
 import CommentCard from '@/components/comments/CommentCard.vue';
 import CommentComposer from '@/components/comments/CommentComposer.vue';
 import EmptyState from '@/components/states/EmptyState.vue';
+import ErrorState from '@/components/states/ErrorState.vue';
+import LoadingState from '@/components/states/LoadingState.vue';
 import { useAuthStore } from '@/stores/auth';
 import { type CommentDto, useDocumentsStore } from '@/stores/documents';
 import { useUiStore } from '@/stores/ui';
@@ -61,13 +63,13 @@ async function onDelete(id: string): Promise<void> {
 
 async function loadMore(): Promise<void> {
   await documents.loadMoreComments(props.ws, props.slug);
-  if (documents.error) ui.showBanner(documents.error, 'error');
+  if (documents.commentsError) ui.showBanner(documents.commentsError, 'error');
 }
 
 watch(
-  () => props.slug,
-  (slug) => {
-    void documents.loadComments(props.ws, slug);
+  () => [props.ws, props.slug] as const,
+  ([ws, slug]) => {
+    void documents.loadComments(ws, slug);
   },
   { immediate: true },
 );
@@ -75,8 +77,20 @@ watch(
 
 <template>
   <section class="atl-ac">
+    <LoadingState
+      v-if="documents.commentsStatus === 'pending' && documents.comments.length === 0"
+      label="Loading comments…"
+    />
+
+    <ErrorState
+      v-else-if="documents.commentsStatus === 'error'"
+      title="Could not load comments"
+      :hint="documents.commentsError ?? undefined"
+      @retry="documents.loadComments(ws, slug)"
+    />
+
     <EmptyState
-      v-if="documents.comments.length === 0"
+      v-else-if="documents.comments.length === 0"
       compact
       icon="message-square"
       title="No comments yet"
@@ -95,7 +109,7 @@ watch(
       />
     </div>
 
-    <div v-if="documents.commentsHasMore" style="margin-top: 12px;">
+    <div v-if="documents.commentsStatus !== 'error' && documents.commentsHasMore" style="margin-top: 12px;">
       <button
         type="button"
         data-test="comment-load-more"
@@ -106,7 +120,7 @@ watch(
       </button>
     </div>
 
-    <CommentComposer :on-submit="onSubmit" />
+    <CommentComposer v-if="documents.commentsStatus !== 'error'" :on-submit="onSubmit" />
   </section>
 </template>
 

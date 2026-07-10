@@ -200,6 +200,207 @@ describe('useDocumentsStore', () => {
     expect(store.backlinks).toHaveLength(0);
   });
 
+  it('resets note secondary state when the workspace changes for the same slug', async () => {
+    GET.mockResolvedValueOnce({
+      data: {
+        items: [
+          {
+            display_title: 'Source A',
+            source_document_id: 'source-a',
+            source_slug: 'source-a',
+            source_title: 'Source A',
+          },
+        ],
+        has_more: false,
+      },
+    }).mockResolvedValueOnce({
+      data: { items: [comment('comment-a', 'Comment A')], next_cursor: null, has_more: false },
+    });
+
+    const store = useDocumentsStore();
+    await store.loadBacklinks('workspace-a', 'note');
+    await store.loadComments('workspace-a', 'note');
+    store.resetSecondaryTarget('workspace-b', 'note');
+
+    expect(store.backlinks).toEqual([]);
+    expect(store.comments).toEqual([]);
+    expect(store.backlinksStatus).toBe('idle');
+    expect(store.commentsStatus).toBe('idle');
+    expect(store.backlinksError).toBeNull();
+    expect(store.commentsError).toBeNull();
+  });
+
+  it('clears note secondary state when no note target remains selected', async () => {
+    GET.mockResolvedValueOnce({
+      data: {
+        items: [
+          {
+            display_title: 'Source',
+            source_document_id: 'source',
+            source_slug: 'source',
+            source_title: 'Source',
+          },
+        ],
+        has_more: false,
+      },
+    }).mockResolvedValueOnce({
+      data: { items: [comment('comment', 'Comment')], next_cursor: null, has_more: false },
+    });
+
+    const store = useDocumentsStore();
+    await store.loadBacklinks('workspace', 'note');
+    await store.loadComments('workspace', 'note');
+    store.clearSecondaryTarget();
+
+    expect(store.backlinks).toEqual([]);
+    expect(store.comments).toEqual([]);
+    expect(store.backlinksStatus).toBe('idle');
+    expect(store.commentsStatus).toBe('idle');
+  });
+
+  it('rejects stale backlinks and comments after a newer target begins', async () => {
+    let resolveStaleBacklinks: (value: { data: { items: object[]; has_more: false } }) => void = () => {};
+    let resolveStaleComments: (value: {
+      data: { items: ReturnType<typeof comment>[]; next_cursor: null; has_more: false };
+    }) => void = () => {};
+    GET.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveStaleBacklinks = resolve;
+      }),
+    )
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveStaleComments = resolve;
+        }),
+      )
+      .mockResolvedValueOnce({
+        data: {
+          items: [
+            {
+              display_title: 'Source B',
+              source_document_id: 'source-b',
+              source_slug: 'source-b',
+              source_title: 'Source B',
+            },
+          ],
+          has_more: false,
+        },
+      })
+      .mockResolvedValueOnce({
+        data: { items: [comment('comment-b', 'Comment B')], next_cursor: null, has_more: false },
+      });
+
+    const store = useDocumentsStore();
+    const staleBacklinks = store.loadBacklinks('workspace-a', 'note-a');
+    const staleComments = store.loadComments('workspace-a', 'note-a');
+
+    await store.loadBacklinks('workspace-b', 'note-b');
+    await store.loadComments('workspace-b', 'note-b');
+    resolveStaleBacklinks({
+      data: {
+        items: [
+          {
+            display_title: 'Stale source',
+            source_document_id: 'stale-source',
+            source_slug: 'stale-source',
+            source_title: 'Stale source',
+          },
+        ],
+        has_more: false,
+      },
+    });
+    resolveStaleComments({
+      data: { items: [comment('stale-comment', 'Stale comment')], next_cursor: null, has_more: false },
+    });
+    await Promise.all([staleBacklinks, staleComments]);
+
+    expect(store.backlinks.map((link) => link.source_slug)).toEqual(['source-b']);
+    expect(store.comments.map((entry) => entry.id)).toEqual(['comment-b']);
+    expect(store.backlinksStatus).toBe('ready');
+    expect(store.commentsStatus).toBe('ready');
+  });
+
+  it('settles backlinks and comments independently when one secondary request fails', async () => {
+    let resolveComments: (value: {
+      data: { items: ReturnType<typeof comment>[]; next_cursor: null; has_more: false };
+    }) => void = () => {};
+    GET.mockResolvedValueOnce({ error: { hint: 'backlinks denied' } }).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveComments = resolve;
+      }),
+    );
+
+    const store = useDocumentsStore();
+    const backlinksLoad = store.loadBacklinks('workspace', 'note');
+    const commentsLoad = store.loadComments('workspace', 'note');
+
+    expect(store.backlinksStatus).toBe('pending');
+    expect(store.commentsStatus).toBe('pending');
+
+    await backlinksLoad;
+    expect(store.backlinksStatus).toBe('error');
+    expect(store.backlinksError).toBe('backlinks denied');
+    expect(store.commentsStatus).toBe('pending');
+    expect(store.commentsError).toBeNull();
+
+    resolveComments({ data: { items: [comment('comment', 'Comment')], next_cursor: null, has_more: false } });
+    await commentsLoad;
+    expect(store.commentsStatus).toBe('ready');
+    expect(store.comments.map((entry) => entry.id)).toEqual(['comment']);
+    expect(store.backlinksStatus).toBe('error');
+  });
+
+  it('preserves visible secondary data during a same-target refresh', async () => {
+    GET.mockResolvedValueOnce({
+      data: {
+        items: [
+          {
+            display_title: 'Existing source',
+            source_document_id: 'existing-source',
+            source_slug: 'existing-source',
+            source_title: 'Existing source',
+          },
+        ],
+        has_more: false,
+      },
+    }).mockResolvedValueOnce({
+      data: { items: [comment('existing-comment', 'Existing comment')], next_cursor: null, has_more: false },
+    });
+    let resolveBacklinks: (value: { data: { items: object[]; has_more: false } }) => void = () => {};
+    let resolveComments: (value: {
+      data: { items: ReturnType<typeof comment>[]; next_cursor: null; has_more: false };
+    }) => void = () => {};
+    GET.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveBacklinks = resolve;
+      }),
+    ).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveComments = resolve;
+      }),
+    );
+
+    const store = useDocumentsStore();
+    await store.loadBacklinks('workspace', 'note');
+    await store.loadComments('workspace', 'note');
+    const backlinksRefresh = store.loadBacklinks('workspace', 'note');
+    const commentsRefresh = store.loadComments('workspace', 'note');
+
+    expect(store.backlinks.map((link) => link.source_slug)).toEqual(['existing-source']);
+    expect(store.comments.map((entry) => entry.id)).toEqual(['existing-comment']);
+    expect(store.backlinksStatus).toBe('pending');
+    expect(store.commentsStatus).toBe('pending');
+
+    resolveBacklinks({ data: { items: [], has_more: false } });
+    resolveComments({ data: { items: [], next_cursor: null, has_more: false } });
+    await Promise.all([backlinksRefresh, commentsRefresh]);
+
+    expect(store.backlinks).toEqual([]);
+    expect(store.comments).toEqual([]);
+    expect(store.backlinksStatus).toBe('ready');
+    expect(store.commentsStatus).toBe('ready');
+  });
+
   it('create returns the new slug and refreshes summaries on success', async () => {
     const created = {
       id: 'd2',
@@ -370,7 +571,7 @@ describe('useDocumentsStore', () => {
     expect(store.error).toBeNull();
   });
 
-  it('loadComments clears the thread and surfaces the hint on error', async () => {
+  it('loadComments clears the thread and surfaces an area-local hint on error', async () => {
     GET.mockResolvedValue({ error: { hint: 'forbidden' } });
 
     const store = useDocumentsStore();
@@ -378,7 +579,8 @@ describe('useDocumentsStore', () => {
 
     expect(store.comments).toHaveLength(0);
     expect(store.commentsHasMore).toBe(false);
-    expect(store.error).toBe('forbidden');
+    expect(store.commentsStatus).toBe('error');
+    expect(store.commentsError).toBe('forbidden');
   });
 
   it('loadMoreComments appends the next page using the stored cursor', async () => {

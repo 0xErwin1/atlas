@@ -10,6 +10,12 @@ export type DocumentSummary = components['schemas']['Page_DocumentSummaryDto']['
 export type BacklinkSummary = components['schemas']['Page_BacklinkDto']['items'][number];
 export type CommentDto = components['schemas']['CommentDto'];
 export type AttachmentDto = components['schemas']['AttachmentDto'];
+export type SecondaryLoadStatus = 'idle' | 'pending' | 'ready' | 'error';
+
+type SecondaryTarget = {
+  workspaceSlug: string;
+  slug: string;
+};
 
 /**
  * Documents store: the single caller of the document list and backlink routes
@@ -23,9 +29,13 @@ export const useDocumentsStore = defineStore('documents', () => {
   const summaries = ref<DocumentSummary[]>([]);
   const summariesByProject = ref<Record<string, DocumentSummary[]>>({});
   const backlinks = ref<BacklinkSummary[]>([]);
+  const backlinksStatus = ref<SecondaryLoadStatus>('idle');
+  const backlinksError = ref<string | null>(null);
   const comments = ref<CommentDto[]>([]);
   const commentsCursor = ref<string | null>(null);
   const commentsHasMore = ref(false);
+  const commentsStatus = ref<SecondaryLoadStatus>('idle');
+  const commentsError = ref<string | null>(null);
   const loading = ref(false);
   const loadingByProject = ref<Record<string, boolean>>({});
   const error = ref<string | null>(null);
@@ -33,6 +43,9 @@ export const useDocumentsStore = defineStore('documents', () => {
   let summariesDisplaySeq = 0;
   let summariesLoadingDisplaySeq = 0;
   let summariesDisplayProjectSlug: string | null = null;
+  let secondaryTarget: SecondaryTarget | null = null;
+  let backlinksLoadSeq = 0;
+  let commentsLoadSeq = 0;
 
   function summariesFor(projectSlug: string): DocumentSummary[] {
     return summariesByProject.value[projectSlug] ?? [];
@@ -40,6 +53,37 @@ export const useDocumentsStore = defineStore('documents', () => {
 
   function isProjectLoading(projectSlug: string): boolean {
     return loadingByProject.value[projectSlug] ?? false;
+  }
+
+  function isSecondaryTarget(ws: string, slug: string): boolean {
+    return secondaryTarget?.workspaceSlug === ws && secondaryTarget.slug === slug;
+  }
+
+  function clearSecondaryState(): void {
+    backlinksLoadSeq += 1;
+    commentsLoadSeq += 1;
+    backlinks.value = [];
+    backlinksStatus.value = 'idle';
+    backlinksError.value = null;
+    comments.value = [];
+    commentsCursor.value = null;
+    commentsHasMore.value = false;
+    commentsStatus.value = 'idle';
+    commentsError.value = null;
+  }
+
+  function resetSecondaryTarget(ws: string, slug: string): void {
+    if (isSecondaryTarget(ws, slug)) return;
+
+    secondaryTarget = { workspaceSlug: ws, slug };
+    clearSecondaryState();
+  }
+
+  function clearSecondaryTarget(): void {
+    if (secondaryTarget === null) return;
+
+    secondaryTarget = null;
+    clearSecondaryState();
   }
 
   async function loadSummaries(
@@ -100,18 +144,28 @@ export const useDocumentsStore = defineStore('documents', () => {
   }
 
   async function loadBacklinks(ws: string, slug: string): Promise<void> {
+    resetSecondaryTarget(ws, slug);
+    const seq = ++backlinksLoadSeq;
+    backlinksStatus.value = 'pending';
+    backlinksError.value = null;
+
     const { items, error: apiError } = await collectPaged<BacklinkSummary>((cursor) =>
       wrappedClient.GET('/api/workspaces/{ws}/documents/{slug}/backlinks', {
         params: { path: { ws, slug }, query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) } },
       }),
     );
 
+    if (seq !== backlinksLoadSeq || !isSecondaryTarget(ws, slug)) return;
+
     if (apiError !== undefined) {
       backlinks.value = [];
+      backlinksStatus.value = 'error';
+      backlinksError.value = errorHint(apiError, 'Failed to load backlinks');
       return;
     }
 
     backlinks.value = items;
+    backlinksStatus.value = 'ready';
   }
 
   /**
@@ -119,47 +173,61 @@ export const useDocumentsStore = defineStore('documents', () => {
    * task-comment thread in the task inspector, but keyed by document slug.
    */
   async function loadComments(ws: string, slug: string): Promise<void> {
-    error.value = null;
+    resetSecondaryTarget(ws, slug);
+    const seq = ++commentsLoadSeq;
+    commentsStatus.value = 'pending';
+    commentsError.value = null;
 
     const { data, error: apiError } = await wrappedClient.GET(
       '/api/workspaces/{ws}/documents/{slug}/comments',
       { params: { path: { ws, slug } } },
     );
 
+    if (seq !== commentsLoadSeq || !isSecondaryTarget(ws, slug)) return;
+
     if (apiError !== undefined || data === undefined) {
       comments.value = [];
       commentsCursor.value = null;
       commentsHasMore.value = false;
-      error.value = errorHint(apiError, 'Failed to load comments');
+      commentsStatus.value = 'error';
+      commentsError.value = errorHint(apiError, 'Failed to load comments');
       return;
     }
 
     comments.value = data.items;
     commentsCursor.value = data.next_cursor ?? null;
     commentsHasMore.value = data.has_more;
+    commentsStatus.value = 'ready';
   }
 
   /** Appends the next page of comments using the stored cursor. No-op at the end. */
   async function loadMoreComments(ws: string, slug: string): Promise<void> {
-    error.value = null;
-
-    if (!commentsHasMore.value || commentsCursor.value === null) {
+    if (!isSecondaryTarget(ws, slug) || !commentsHasMore.value || commentsCursor.value === null) {
       return;
     }
 
+    const seq = ++commentsLoadSeq;
+    const cursor = commentsCursor.value;
+    commentsStatus.value = 'pending';
+    commentsError.value = null;
+
     const { data, error: apiError } = await wrappedClient.GET(
       '/api/workspaces/{ws}/documents/{slug}/comments',
-      { params: { path: { ws, slug }, query: { cursor: commentsCursor.value } } },
+      { params: { path: { ws, slug }, query: { cursor } } },
     );
 
+    if (seq !== commentsLoadSeq || !isSecondaryTarget(ws, slug)) return;
+
     if (apiError !== undefined || data === undefined) {
-      error.value = errorHint(apiError, 'Failed to load comments');
+      commentsStatus.value = 'error';
+      commentsError.value = errorHint(apiError, 'Failed to load comments');
       return;
     }
 
     comments.value = [...comments.value, ...data.items];
     commentsCursor.value = data.next_cursor ?? null;
     commentsHasMore.value = data.has_more;
+    commentsStatus.value = 'ready';
   }
 
   async function addComment(ws: string, slug: string, body: string): Promise<boolean> {
@@ -358,12 +426,18 @@ export const useDocumentsStore = defineStore('documents', () => {
     summaries,
     summariesByProject,
     backlinks,
+    backlinksStatus,
+    backlinksError,
     comments,
     commentsHasMore,
+    commentsStatus,
+    commentsError,
     loading,
     error,
     summariesFor,
     isProjectLoading,
+    resetSecondaryTarget,
+    clearSecondaryTarget,
     loadSummaries,
     loadBacklinks,
     loadComments,
