@@ -51,6 +51,20 @@ function acceptsNoteResourceLoad(state: NoteResourceState, target: NoteTarget, s
   return state.sequence === sequence && targetsEqual(state.target, target);
 }
 
+function settleNoteResourceError(
+  state: NoteResourceState,
+  target: NoteTarget,
+  sequence: number,
+  error: unknown,
+): boolean {
+  if (!acceptsNoteResourceLoad(state, target, sequence)) return false;
+
+  state.status = 'error';
+  state.hasContent = false;
+  state.error = errorMessage(error);
+  return true;
+}
+
 async function runRegisteredNoteResourceLoad<T>(
   state: NoteResourceState,
   target: NoteTarget,
@@ -67,12 +81,9 @@ async function runRegisteredNoteResourceLoad<T>(
     state.hasContent = true;
     return { accepted: true, value };
   } catch (error) {
-    if (!acceptsNoteResourceLoad(state, target, sequence)) return { accepted: false };
-
-    state.status = 'error';
-    state.hasContent = false;
-    state.error = errorMessage(error);
-    return { accepted: false, error };
+    return settleNoteResourceError(state, target, sequence, error)
+      ? { accepted: false, error }
+      : { accepted: false };
   }
 }
 
@@ -91,7 +102,14 @@ export async function flushThenLoadNoteResource<T>(
   load: () => Promise<T>,
 ): Promise<NoteResourceLoadResult<T>> {
   const sequence = startNoteResourceTransition(state, target);
-  await flush();
+  try {
+    await flush();
+  } catch (error) {
+    return settleNoteResourceError(state, target, sequence, error)
+      ? { accepted: false, error }
+      : { accepted: false };
+  }
+
   return runRegisteredNoteResourceLoad(state, target, sequence, load);
 }
 </script>
