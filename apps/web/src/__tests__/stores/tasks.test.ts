@@ -143,6 +143,51 @@ describe('useTasksStore', () => {
       await refresh;
       expect(store.openTask?.description).toBe('refreshed');
     });
+
+    it('clears the current task when a same-target refresh fails', async () => {
+      GET.mockResolvedValueOnce({ data: taskDto('visible', 'ATL-1'), error: undefined });
+      GET.mockResolvedValueOnce({ data: undefined, error: { hint: 'Refresh failed' } });
+
+      const store = useTasksStore();
+      await store.loadTask('ws-1', 'ATL-1');
+      await store.loadTask('ws-1', 'ATL-1');
+
+      expect(store.openTask).toBeNull();
+      expect(store.loading).toBe(false);
+      expect(store.error).toBe('Refresh failed');
+    });
+
+    it('settles a rejected current-target request as an error', async () => {
+      GET.mockRejectedValueOnce(new Error('Network unavailable'));
+
+      const store = useTasksStore();
+      await expect(store.loadTask('ws-1', 'ATL-1')).resolves.toBeUndefined();
+
+      expect(store.openTask).toBeNull();
+      expect(store.loading).toBe(false);
+      expect(store.error).toBe('Failed to load task');
+    });
+
+    it('ignores a rejected request after another task becomes current', async () => {
+      let rejectFirst: (reason?: unknown) => void = () => {};
+      GET.mockReturnValueOnce(
+        new Promise((_, reject) => {
+          rejectFirst = reject;
+        }),
+      );
+      GET.mockResolvedValueOnce({ data: taskDto('current', 'ATL-2'), error: undefined });
+
+      const store = useTasksStore();
+      const first = store.loadTask('ws-1', 'ATL-1');
+      await store.loadTask('ws-1', 'ATL-2');
+      rejectFirst(new Error('Network unavailable'));
+
+      await expect(first).resolves.toBeUndefined();
+      expect(store.openTask?.readable_id).toBe('ATL-2');
+      expect(store.openTask?.description).toBe('current');
+      expect(store.loading).toBe(false);
+      expect(store.error).toBeNull();
+    });
   });
 
   describe('updateDescription', () => {
