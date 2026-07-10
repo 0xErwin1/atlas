@@ -46,6 +46,7 @@ export const useDocumentsStore = defineStore('documents', () => {
   let secondaryTarget: SecondaryTarget | null = null;
   let backlinksLoadSeq = 0;
   let commentsLoadSeq = 0;
+  let commentsTargetEpoch = 0;
 
   function summariesFor(projectSlug: string): DocumentSummary[] {
     return summariesByProject.value[projectSlug] ?? [];
@@ -60,12 +61,13 @@ export const useDocumentsStore = defineStore('documents', () => {
   }
 
   function isCurrentCommentsTarget(target: SecondaryTarget, generation: number): boolean {
-    return generation === commentsLoadSeq && isSecondaryTarget(target.workspaceSlug, target.slug);
+    return generation === commentsTargetEpoch && isSecondaryTarget(target.workspaceSlug, target.slug);
   }
 
   function clearSecondaryState(): void {
     backlinksLoadSeq += 1;
     commentsLoadSeq += 1;
+    commentsTargetEpoch += 1;
     backlinks.value = [];
     backlinksStatus.value = 'idle';
     backlinksError.value = null;
@@ -236,7 +238,7 @@ export const useDocumentsStore = defineStore('documents', () => {
 
   async function addComment(ws: string, slug: string, body: string): Promise<boolean> {
     const target = { workspaceSlug: ws, slug };
-    const generation = commentsLoadSeq;
+    const generation = commentsTargetEpoch;
     if (!isCurrentCommentsTarget(target, generation)) return false;
 
     error.value = null;
@@ -264,7 +266,7 @@ export const useDocumentsStore = defineStore('documents', () => {
 
   async function removeComment(ws: string, slug: string, commentId: string): Promise<boolean> {
     const target = { workspaceSlug: ws, slug };
-    const generation = commentsLoadSeq;
+    const generation = commentsTargetEpoch;
     if (!isCurrentCommentsTarget(target, generation)) return false;
 
     error.value = null;
@@ -291,7 +293,7 @@ export const useDocumentsStore = defineStore('documents', () => {
   /** Edits a comment's body (author-only server-side); swaps the DTO in place. */
   async function editComment(ws: string, slug: string, commentId: string, body: string): Promise<boolean> {
     const target = { workspaceSlug: ws, slug };
-    const generation = commentsLoadSeq;
+    const generation = commentsTargetEpoch;
     if (!isCurrentCommentsTarget(target, generation)) return false;
 
     error.value = null;

@@ -695,6 +695,70 @@ describe('useDocumentsStore', () => {
     expect(store.error).toBe('denied');
   });
 
+  it('rolls back a failed deletion after a same-target comments refresh', async () => {
+    GET.mockResolvedValueOnce({
+      data: { items: [comment('c1', 'First'), comment('c2', 'Second')], next_cursor: null, has_more: false },
+    });
+    let resolveDelete: (value: { error: { hint: string } }) => void = () => {};
+    DELETE.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveDelete = resolve;
+      }),
+    );
+    let resolveRefresh: (value: {
+      data: { items: ReturnType<typeof comment>[]; next_cursor: null; has_more: false };
+    }) => void = () => {};
+    GET.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveRefresh = resolve;
+      }),
+    );
+
+    const store = useDocumentsStore();
+    await store.loadComments('ws', 'my-doc');
+    const remove = store.removeComment('ws', 'my-doc', 'c1');
+    const refresh = store.loadComments('ws', 'my-doc');
+    resolveRefresh({ data: { items: [comment('c2', 'Second')], next_cursor: null, has_more: false } });
+    await refresh;
+    resolveDelete({ error: { hint: 'denied' } });
+
+    await expect(remove).resolves.toBe(false);
+    expect(store.comments.map((entry) => entry.id)).toEqual(['c1', 'c2']);
+    expect(store.error).toBe('denied');
+  });
+
+  it('rolls back a failed deletion after same-target comment pagination', async () => {
+    GET.mockResolvedValueOnce({
+      data: { items: [comment('c1', 'First')], next_cursor: 'cursor', has_more: true },
+    });
+    let resolveDelete: (value: { error: { hint: string } }) => void = () => {};
+    DELETE.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveDelete = resolve;
+      }),
+    );
+    let resolvePage: (value: {
+      data: { items: ReturnType<typeof comment>[]; next_cursor: null; has_more: false };
+    }) => void = () => {};
+    GET.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolvePage = resolve;
+      }),
+    );
+
+    const store = useDocumentsStore();
+    await store.loadComments('ws', 'my-doc');
+    const remove = store.removeComment('ws', 'my-doc', 'c1');
+    const page = store.loadMoreComments('ws', 'my-doc');
+    resolvePage({ data: { items: [comment('c2', 'Second')], next_cursor: null, has_more: false } });
+    await page;
+    resolveDelete({ error: { hint: 'denied' } });
+
+    await expect(remove).resolves.toBe(false);
+    expect(store.comments.map((entry) => entry.id)).toEqual(['c1']);
+    expect(store.error).toBe('denied');
+  });
+
   it('does not roll back a failed deletion or publish its error after navigation', async () => {
     GET.mockResolvedValueOnce({
       data: { items: [comment('comment-a', 'Comment A')], next_cursor: null, has_more: false },
