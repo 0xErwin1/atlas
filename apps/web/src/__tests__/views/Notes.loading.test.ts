@@ -145,6 +145,66 @@ describe('Notes route resource loading', () => {
     await transition;
   });
 
+  it('replaces a current transition with an error when its pending save fails', async () => {
+    const state = createNoteResourceState();
+    const save = deferred<void>();
+    let loadStarted = false;
+
+    const transition = flushThenLoadNoteResource(
+      state,
+      noteB,
+      () => save.promise,
+      async () => {
+        loadStarted = true;
+        return 'Note B';
+      },
+    );
+
+    save.reject(new Error('Save failed'));
+    const result = await transition;
+
+    expect(loadStarted).toBe(false);
+    expect(result).toMatchObject({ accepted: false, error: new Error('Save failed') });
+    expect(state).toMatchObject({
+      target: noteB,
+      status: 'error',
+      hasContent: false,
+      error: 'Save failed',
+    });
+  });
+
+  it('does not let a rejected obsolete save overwrite the latest transition state', async () => {
+    const state = createNoteResourceState();
+    const saveForB = deferred<void>();
+    const saveForC = deferred<void>();
+    const documentC = deferred<string>();
+
+    const transitionToB = flushThenLoadNoteResource(
+      state,
+      noteB,
+      () => saveForB.promise,
+      async () => 'Note B',
+    );
+    const transitionToC = flushThenLoadNoteResource(
+      state,
+      noteAInBeta,
+      () => saveForC.promise,
+      () => documentC.promise,
+    );
+
+    saveForB.reject(new Error('Obsolete save failed'));
+    await transitionToB;
+
+    expect(state).toMatchObject({ target: noteAInBeta, status: 'pending', hasContent: false, error: null });
+
+    saveForC.resolve();
+    await Promise.resolve();
+    documentC.resolve('Note C');
+    await transitionToC;
+
+    expect(state).toMatchObject({ target: noteAInBeta, status: 'ready', hasContent: true, error: null });
+  });
+
   it('rejects an outgoing response that settles while its save is pending', async () => {
     const state = createNoteResourceState();
     const outgoingDocument = deferred<string>();
