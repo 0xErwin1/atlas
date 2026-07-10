@@ -323,9 +323,12 @@ async function loadDoc(target: NoteTarget | null, previousTarget: NoteTarget | n
 
   if (target === null) {
     noteResource.value = createNoteResourceState();
+    documents.clearSecondaryTarget();
     clearDocument();
     return;
   }
+
+  documents.resetSecondaryTarget(target.workspaceSlug, target.slug);
 
   const targetChanged =
     previousTarget !== null &&
@@ -791,7 +794,10 @@ watch(title, (t) => {
     <template #inspector-backlinks>
       <BacklinksPanel
         :backlinks="documents.backlinks"
+        :status="documents.backlinksStatus"
+        :error="documents.backlinksError"
         @navigate="(s) => router.push({ name: 'notes', params: { slug: s } })"
+        @retry="slug && documents.loadBacklinks(ws, slug)"
       />
     </template>
 

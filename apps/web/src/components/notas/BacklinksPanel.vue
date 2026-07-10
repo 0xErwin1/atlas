@@ -1,16 +1,21 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import type { components } from '@/api/types.d.ts';
+import ErrorState from '@/components/states/ErrorState.vue';
+import LoadingState from '@/components/states/LoadingState.vue';
 import Icon from '@/components/ui/Icon.vue';
 
 type Backlink = components['schemas']['Page_BacklinkDto']['items'][number];
 
 const props = defineProps<{
   backlinks: Backlink[];
+  status: 'idle' | 'pending' | 'ready' | 'error';
+  error: string | null;
 }>();
 
 const emit = defineEmits<{
   navigate: [slug: string];
+  retry: [];
 }>();
 
 const heading = computed(() => {
@@ -34,8 +39,17 @@ const heading = computed(() => {
       {{ heading }}
     </div>
 
+    <LoadingState v-if="status === 'pending' && backlinks.length === 0" label="Loading backlinks…" />
+
+    <ErrorState
+      v-else-if="status === 'error'"
+      title="Could not load backlinks"
+      :hint="error ?? undefined"
+      @retry="emit('retry')"
+    />
+
     <p
-      v-if="backlinks.length === 0"
+      v-else-if="backlinks.length === 0"
       style="font-size: var(--fs-sm); color: var(--c-muted);"
     >
       No backlinks yet.
