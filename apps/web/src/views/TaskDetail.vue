@@ -41,6 +41,7 @@ const ws = computed(() => workspace.activeWorkspaceSlug ?? '');
 const openTaskLive = useOpenTaskLive(ws);
 
 const task = computed(() => tasks.openTask);
+let loadSeq = 0;
 
 const keymap = useKeymap();
 const uninstallKeymapListener = installKeymapListener();
@@ -84,15 +85,28 @@ async function load(): Promise<void> {
     return;
   }
 
-  await tasks.loadTask(ws.value, readableId.value);
+  const seq = ++loadSeq;
+  const target = { readableId: readableId.value, ws: ws.value };
+
+  await tasks.loadTask(target.ws, target.readableId);
+
+  if (
+    seq !== loadSeq ||
+    readableId.value !== target.readableId ||
+    ws.value !== target.ws ||
+    tasks.error !== null ||
+    tasks.openTask?.readable_id !== target.readableId
+  ) {
+    return;
+  }
 
   const boardId = tasks.openTask?.board_id;
   await Promise.all([
-    detail.loadAll(ws.value, readableId.value),
-    workspace.loadMembers(ws.value),
+    detail.loadAll(target.ws, target.readableId),
+    workspace.loadMembers(target.ws),
     boardId === undefined
       ? Promise.resolve()
-      : Promise.all([boards.loadBoard(ws.value, boardId), boards.loadColumns(ws.value, boardId)]),
+      : Promise.all([boards.loadBoard(target.ws, boardId), boards.loadColumns(target.ws, boardId)]),
   ]);
 }
 
