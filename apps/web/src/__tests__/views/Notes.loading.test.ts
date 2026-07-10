@@ -114,9 +114,14 @@ describe('Notes route resource loading', () => {
 
   it('waits for a pending save before loading a new target', async () => {
     const state = createNoteResourceState();
+    const initialDocument = deferred<string>();
     const save = deferred<void>();
     const document = deferred<string>();
     let loadStarted = false;
+
+    const initialLoad = runNoteResourceLoad(state, noteA, () => initialDocument.promise);
+    initialDocument.resolve('Note A');
+    await initialLoad;
 
     const transition = flushThenLoadNoteResource(
       state,
@@ -129,6 +134,7 @@ describe('Notes route resource loading', () => {
     );
 
     expect(loadStarted).toBe(false);
+    expect(state).toMatchObject({ target: noteB, status: 'pending', hasContent: false });
 
     save.resolve();
     await Promise.resolve();
@@ -137,5 +143,79 @@ describe('Notes route resource loading', () => {
 
     document.resolve('Note B');
     await transition;
+  });
+
+  it('rejects an outgoing response that settles while its save is pending', async () => {
+    const state = createNoteResourceState();
+    const outgoingDocument = deferred<string>();
+    const save = deferred<void>();
+    const document = deferred<string>();
+
+    const outgoingLoad = runNoteResourceLoad(state, noteA, () => outgoingDocument.promise);
+    const transition = flushThenLoadNoteResource(
+      state,
+      noteB,
+      () => save.promise,
+      () => document.promise,
+    );
+
+    outgoingDocument.resolve('Late note A');
+    await outgoingLoad;
+
+    expect(state).toMatchObject({ target: noteB, status: 'pending', hasContent: false });
+
+    save.resolve();
+    await Promise.resolve();
+    document.resolve('Note B');
+    await transition;
+
+    expect(state).toMatchObject({ target: noteB, status: 'ready', hasContent: true });
+  });
+
+  it('does not start a superseded transition after its pending save settles', async () => {
+    const state = createNoteResourceState();
+    const saveForB = deferred<void>();
+    const saveForC = deferred<void>();
+    const documentB = deferred<string>();
+    const documentC = deferred<string>();
+    let bLoadStarted = false;
+    let cLoadStarted = false;
+
+    const transitionToB = flushThenLoadNoteResource(
+      state,
+      noteB,
+      () => saveForB.promise,
+      () => {
+        bLoadStarted = true;
+        return documentB.promise;
+      },
+    );
+    const transitionToC = flushThenLoadNoteResource(
+      state,
+      noteAInBeta,
+      () => saveForC.promise,
+      () => {
+        cLoadStarted = true;
+        return documentC.promise;
+      },
+    );
+
+    expect(state).toMatchObject({ target: noteAInBeta, status: 'pending', hasContent: false });
+
+    saveForB.resolve();
+    await Promise.resolve();
+
+    expect(bLoadStarted).toBe(false);
+    expect(state).toMatchObject({ target: noteAInBeta, status: 'pending', hasContent: false });
+
+    saveForC.resolve();
+    await Promise.resolve();
+
+    expect(cLoadStarted).toBe(true);
+    documentC.resolve('Note C');
+    await transitionToC;
+    await transitionToB;
+
+    expect(state).toMatchObject({ target: noteAInBeta, status: 'ready', hasContent: true });
   });
 });
