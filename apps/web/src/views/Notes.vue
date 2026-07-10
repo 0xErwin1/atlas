@@ -1,3 +1,81 @@
+<script lang="ts">
+export type NoteTarget = {
+  workspaceSlug: string;
+  slug: string;
+};
+
+type NoteResourceStatus = 'idle' | 'pending' | 'ready' | 'error';
+
+export type NoteResourceState = {
+  target: NoteTarget | null;
+  sequence: number;
+  status: NoteResourceStatus;
+  hasContent: boolean;
+  error: string | null;
+};
+
+type NoteResourceLoadResult<T> = { accepted: true; value: T } | { accepted: false; error?: unknown };
+
+export function createNoteResourceState(): NoteResourceState {
+  return {
+    target: null,
+    sequence: 0,
+    status: 'idle',
+    hasContent: false,
+    error: null,
+  };
+}
+
+function targetsEqual(left: NoteTarget | null, right: NoteTarget): boolean {
+  return left?.workspaceSlug === right.workspaceSlug && left.slug === right.slug;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'Failed to load document';
+}
+
+export async function runNoteResourceLoad<T>(
+  state: NoteResourceState,
+  target: NoteTarget,
+  load: () => Promise<T>,
+): Promise<NoteResourceLoadResult<T>> {
+  const targetChanged = !targetsEqual(state.target, target);
+  const sequence = state.sequence + 1;
+
+  state.target = target;
+  state.sequence = sequence;
+  state.status = 'pending';
+  state.error = null;
+  if (targetChanged) state.hasContent = false;
+
+  try {
+    const value = await load();
+    if (state.sequence !== sequence || !targetsEqual(state.target, target)) return { accepted: false };
+
+    state.status = 'ready';
+    state.hasContent = true;
+    return { accepted: true, value };
+  } catch (error) {
+    if (state.sequence !== sequence || !targetsEqual(state.target, target)) return { accepted: false };
+
+    state.status = 'error';
+    state.hasContent = false;
+    state.error = errorMessage(error);
+    return { accepted: false, error };
+  }
+}
+
+export async function flushThenLoadNoteResource<T>(
+  state: NoteResourceState,
+  target: NoteTarget,
+  flush: () => Promise<void>,
+  load: () => Promise<T>,
+): Promise<NoteResourceLoadResult<T>> {
+  await flush();
+  return runNoteResourceLoad(state, target, load);
+}
+</script>
+
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router';
@@ -13,6 +91,8 @@ import PropertiesPanel from '@/components/notas/PropertiesPanel.vue';
 import WikiLinkSuggest from '@/components/notas/WikiLinkSuggest.vue';
 import SharePanel from '@/components/share/SharePanel.vue';
 import EditorToolbar from '@/components/shell/EditorToolbar.vue';
+import ErrorState from '@/components/states/ErrorState.vue';
+import LoadingState from '@/components/states/LoadingState.vue';
 import Icon from '@/components/ui/Icon.vue';
 import PresenceAvatars from '@/components/ui/PresenceAvatars.vue';
 import TabStrip, { type Tab } from '@/components/ui/TabStrip.vue';
@@ -110,7 +190,8 @@ function toggleEditorSource(): void {
 function toggleEditorReading(): void {
   editorReading.value = !editorReading.value;
 }
-const loadError = ref<string | null>(null);
+const noteResource = ref(createNoteResourceState());
+const hasDocumentContent = computed(() => noteResource.value.hasContent);
 
 // `[[wikilink]]` autocomplete glue, shared with the task description editor.
 const {
@@ -189,49 +270,60 @@ function onCloseAll(): void {
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
-async function loadDoc(): Promise<void> {
-  loadError.value = null;
+function clearDocument(): void {
+  body.value = '';
+  title.value = '';
+  meta.value = {};
+  headRevisionId.value = '';
+  baseContent.value = '';
+  dirty.value = false;
+}
+
+async function loadDoc(target: NoteTarget | null, previousTarget: NoteTarget | null): Promise<void> {
   conflictOpen.value = false;
   conflictSegments.value = [];
 
-  if (slug.value === null || ws.value === '') {
-    body.value = '';
-    title.value = '';
-    meta.value = {};
-    baseContent.value = '';
+  if (target === null) {
+    noteResource.value = createNoteResourceState();
+    clearDocument();
     return;
   }
 
-  try {
-    const result = await load(ws.value, slug.value);
+  const targetChanged =
+    previousTarget !== null &&
+    (previousTarget.workspaceSlug !== target.workspaceSlug || previousTarget.slug !== target.slug);
+  const shouldFlush = targetChanged && saveTimer !== null;
+  const loadResultPromise = shouldFlush
+    ? flushThenLoadNoteResource(noteResource.value, target, () => flushPendingSave(previousTarget), () =>
+        load(target.workspaceSlug, target.slug),
+      )
+    : runNoteResourceLoad(noteResource.value, target, () => load(target.workspaceSlug, target.slug));
 
-    // A uuid-addressed URL (from search, a wikilink, etc.) is canonicalized to
-    // the pretty slug; the watch re-runs loadDoc with the slug and proceeds.
-    if (result.slug !== null && result.slug !== slug.value) {
-      await router.replace({ name: 'notes', params: { slug: result.slug } });
-      return;
-    }
-
-    body.value = result.body;
-    meta.value = result.meta;
-    headRevisionId.value = result.headRevisionId;
-    baseContent.value = joinFrontmatter(result.meta, result.body);
-    title.value = typeof result.meta.title === 'string' ? result.meta.title : (slug.value ?? '');
-    dirty.value = false;
-    tabsStore.open(ws.value, slug.value, title.value);
-    await documents.loadBacklinks(ws.value, slug.value);
-  } catch (e) {
-    // The note is gone (deleted here, elsewhere, or a stale persisted tab): drop
-    // its tab and fall back to another open tab so the user lands on a note they
-    // still have open — never a raw error — instead of being stranded.
-    const status = (e as { status?: number }).status ?? 0;
-    if (status === 404 && slug.value !== null && ws.value !== '') {
-      const next = tabsStore.close(ws.value, slug.value) ?? tabsStore.tabs(ws.value)[0]?.slug ?? null;
+  if (!noteResource.value.hasContent) clearDocument();
+  const loadResult = await loadResultPromise;
+  if (!loadResult.accepted) {
+    const status = (loadResult.error as { status?: number } | undefined)?.status ?? 0;
+    if (status === 404) {
+      const next = tabsStore.close(target.workspaceSlug, target.slug) ?? tabsStore.tabs(target.workspaceSlug)[0]?.slug ?? null;
       void router.replace(next !== null ? { name: 'notes', params: { slug: next } } : { name: 'notes' });
-      return;
     }
-    loadError.value = e instanceof Error ? e.message : 'Failed to load document';
+    return;
   }
+
+  const result = loadResult.value;
+  if (result.slug !== null && result.slug !== target.slug) {
+    await router.replace({ name: 'notes', params: { slug: result.slug } });
+    return;
+  }
+
+  body.value = result.body;
+  meta.value = result.meta;
+  headRevisionId.value = result.headRevisionId;
+  baseContent.value = joinFrontmatter(result.meta, result.body);
+  title.value = typeof result.meta.title === 'string' ? result.meta.title : target.slug;
+  dirty.value = false;
+  tabsStore.open(target.workspaceSlug, target.slug, title.value);
+  await documents.loadBacklinks(target.workspaceSlug, target.slug);
 }
 
 async function persist(): Promise<void> {
@@ -346,16 +438,16 @@ function onChange(markdown: string): void {
  * document's own load owns them. A CAS conflict here is left unsaved (the same
  * outcome as before), rather than merged against now-stale local state.
  */
-function flushPendingSave(): void {
+async function flushPendingSave(target: NoteTarget | null = null): Promise<void> {
   if (saveTimer === null) return;
   clearTimeout(saveTimer);
   saveTimer = null;
 
-  const targetSlug = slug.value;
-  if (targetSlug === null || ws.value === '') return;
+  const saveTarget = target ?? (slug.value === null || ws.value === '' ? null : { workspaceSlug: ws.value, slug: slug.value });
+  if (saveTarget === null) return;
 
   const currentBody = editorRef.value?.currentMarkdown() ?? body.value;
-  void save(ws.value, targetSlug, currentBody, meta.value, headRevisionId.value);
+  await save(saveTarget.workspaceSlug, saveTarget.slug, currentBody, meta.value, headRevisionId.value);
 }
 
 function onMetaChange(newMeta: Record<string, unknown>): void {
@@ -374,14 +466,23 @@ function onNavigateWikilink(ref: WikilinkRef): void {
 // Flush before the outgoing document is replaced: update fires on a note→note
 // slug change, leave fires when navigating out of Notes. Both run before the
 // route (and `slug`) updates, so the pending save still targets this document.
-onBeforeRouteUpdate(() => {
-  flushPendingSave();
+onBeforeRouteUpdate(async () => {
+  await flushPendingSave();
 });
-onBeforeRouteLeave(() => {
-  flushPendingSave();
+onBeforeRouteLeave(async () => {
+  await flushPendingSave();
 });
 
-watch([slug, ws], loadDoc, { immediate: true });
+watch(
+  [slug, ws],
+  ([nextSlug, nextWorkspace], [previousSlug, previousWorkspace]) => {
+    const target = nextSlug === null || nextWorkspace === '' ? null : { workspaceSlug: nextWorkspace, slug: nextSlug };
+    const previousTarget =
+      previousSlug === null || previousWorkspace === '' ? null : { workspaceSlug: previousWorkspace, slug: previousSlug };
+    void loadDoc(target, previousTarget);
+  },
+  { immediate: true },
+);
 
 // A new note opens at the top: the scroll surface persists across switches, so
 // without this it would keep the previous note's scroll offset.
@@ -430,7 +531,7 @@ watch(title, (t) => {
     </template>
 
     <div
-      v-if="isMobile && slug"
+      v-if="isMobile && slug && hasDocumentContent"
       class="flex items-center"
       style="height: 44px; flex: 0 0 44px; padding: 0 6px; gap: 4px; border-bottom: 1px solid var(--c-border);"
     >
@@ -520,7 +621,7 @@ watch(title, (t) => {
     </TabStrip>
 
     <EditorToolbar v-if="!isMobile" :breadcrumbs="breadcrumbs" :dirty="dirty">
-      <template v-if="slug">
+      <template v-if="slug && hasDocumentContent">
         <div class="atl-seg" role="group" aria-label="Editor view mode">
           <button
             type="button"
@@ -558,7 +659,7 @@ watch(title, (t) => {
         <div aria-hidden="true" style="width: 1px; height: 18px; background: var(--c-border);" />
       </template>
 
-      <PresenceAvatars v-if="slug" :actors="presence.actors" />
+      <PresenceAvatars v-if="slug && hasDocumentContent" :actors="presence.actors" />
 
       <button
         type="button"
@@ -582,20 +683,19 @@ watch(title, (t) => {
           position: 'relative',
         }"
       >
-        <p
-          v-if="loadError"
-          style="
-            padding: 8px 12px;
-            border-radius: var(--r-md);
-            background: var(--c-banner-err-bg);
-            color: var(--c-banner-err-fg);
-            font-size: var(--fs-sm);
-          "
-        >
-          {{ loadError }}
-        </p>
+        <ErrorState
+          v-if="noteResource.status === 'error'"
+          title="Couldn’t load note"
+          :hint="noteResource.error ?? 'Failed to load document'"
+          @retry="loadDoc(noteResource.target, null)"
+        />
 
-        <template v-if="slug">
+        <LoadingState
+          v-else-if="noteResource.status === 'pending' && !hasDocumentContent"
+          label="Loading note…"
+        />
+
+        <template v-else-if="slug && hasDocumentContent">
           <h1
             style="font-size: 22px; font-weight: var(--fw-bold); letter-spacing: -0.01em; color: var(--c-foreground); margin-bottom: 14px;"
           >
