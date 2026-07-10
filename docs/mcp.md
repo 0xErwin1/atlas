@@ -25,7 +25,9 @@ ATLAS_BASE_URL=http://localhost:8080 atlas_mcp --transport http --bind 127.0.0.1
 | `ATLAS_BASE_URL` | `http://localhost:8080` | Atlas REST API base URL |
 | `ATLAS_TOKEN` | required in stdio mode | startup bearer token |
 
-HTTP mode mounts the MCP service at `/mcp`.
+HTTP mode mounts the MCP service at `/mcp`. It is stateless: responses do not issue an
+`Mcp-Session-Id`, and stale session headers are ignored so requests continue across restarts and
+load-balanced instances.
 
 ## Authentication model
 
