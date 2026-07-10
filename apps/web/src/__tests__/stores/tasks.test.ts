@@ -157,11 +157,24 @@ describe('useTasksStore', () => {
       expect(store.error).toBe('Refresh failed');
     });
 
-    it('settles a rejected current-target request as an error', async () => {
-      GET.mockRejectedValueOnce(new Error('Network unavailable'));
+    it('clears a visible current task when its same-target refresh is rejected', async () => {
+      let rejectRefresh: (reason?: unknown) => void = () => {};
+      GET.mockResolvedValueOnce({ data: taskDto('visible', 'ATL-1'), error: undefined });
+      GET.mockReturnValueOnce(
+        new Promise((_, reject) => {
+          rejectRefresh = reject;
+        }),
+      );
 
       const store = useTasksStore();
-      await expect(store.loadTask('ws-1', 'ATL-1')).resolves.toBeUndefined();
+      await store.loadTask('ws-1', 'ATL-1');
+      const refresh = store.loadTask('ws-1', 'ATL-1');
+
+      expect(store.openTask?.description).toBe('visible');
+      expect(store.loading).toBe(true);
+
+      rejectRefresh(new Error('Network unavailable'));
+      await expect(refresh).resolves.toBeUndefined();
 
       expect(store.openTask).toBeNull();
       expect(store.loading).toBe(false);

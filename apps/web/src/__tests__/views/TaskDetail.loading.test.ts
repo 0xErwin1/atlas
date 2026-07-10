@@ -10,6 +10,12 @@ import { useTasksStore } from '@/stores/tasks';
 import { useWorkspaceStore } from '@/stores/workspace';
 import TaskDetail from '@/views/TaskDetail.vue';
 
+const { GET } = vi.hoisted(() => ({ GET: vi.fn() }));
+
+vi.mock('@/api/wrapper', () => ({
+  wrappedClient: { GET },
+}));
+
 const { route } = await vi.hoisted(async () => {
   const { reactive } = await import('vue');
   return { route: reactive({ params: { readableId: 'ATL-1' } }) };
@@ -127,18 +133,26 @@ describe('TaskDetail resource loading', () => {
     expect(detail.loadAll).toHaveBeenCalledWith('ws-1', 'ATL-2');
   });
 
-  it('shows a route error without rendering an editable task after primary failure', async () => {
+  it('suppresses dependent loads after a rejected same-target primary refresh', async () => {
     const tasks = useTasksStore();
-    tasks.loadTask = vi.fn().mockImplementation(() => {
-      tasks.openTask = null;
-      tasks.error = 'Not found';
-      return Promise.resolve();
-    });
+    GET.mockResolvedValueOnce({ data: task('ATL-1'), error: undefined });
+    await tasks.loadTask('ws-1', 'ATL-1');
+    GET.mockRejectedValueOnce(new Error('Network unavailable'));
+
+    const workspace = useWorkspaceStore();
+    const boards = useBoardsStore();
+    const detail = useTaskDetailStore();
 
     const wrapper = mountDetail();
     await flushPromises();
 
-    expect(wrapper.find('[role="alert"]').text()).toContain('Couldn’t load task: Not found');
+    expect(tasks.openTask).toBeNull();
+    expect(tasks.loading).toBe(false);
+    expect(tasks.error).toBe('Failed to load task');
+    expect(workspace.loadMembers).not.toHaveBeenCalled();
+    expect(boards.loadBoard).not.toHaveBeenCalled();
+    expect(detail.loadAll).not.toHaveBeenCalled();
+    expect(wrapper.find('[role="alert"]').text()).toContain('Couldn’t load task: Failed to load task');
     expect(wrapper.find('article').exists()).toBe(false);
   });
 });
