@@ -40,6 +40,23 @@ function dropTargetOf(wrapper: ReturnType<typeof mountRow>) {
 }
 
 describe('NoteTreeRow drag-and-drop', () => {
+  it('opens the create menu from the folder add trigger', async () => {
+    const wrapper = mountRow();
+    const folderTrigger = wrapper.get('button[aria-label="Add page or folder"]');
+
+    expect(folderTrigger.find('.lucide-plus').exists()).toBe(true);
+    await wrapper.get('.atl-row').trigger('click');
+    expect(wrapper.get('button[aria-label="More actions"]')).toBeTruthy();
+
+    await folderTrigger.trigger('click');
+
+    const menu = document.body.querySelector('[role="menu"]');
+    expect(menu?.textContent).toContain('New page');
+    expect(menu?.textContent).toContain('New folder');
+
+    wrapper.unmount();
+  });
+
   it('emits move-nodes when a document is dropped on the folder', async () => {
     const wrapper = mountRow();
     const dropTarget = dropTargetOf(wrapper);

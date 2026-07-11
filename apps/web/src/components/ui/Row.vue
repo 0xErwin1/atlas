@@ -17,6 +17,9 @@ const props = withDefaults(
     disabled?: boolean;
     /** Show a kebab (⋯) button on hover that emits `menu` to open a context menu. */
     menu?: boolean;
+    menuIcon?: string;
+    menuLabel?: string;
+    menuAlwaysVisible?: boolean;
   }>(),
   {
     icon: '',
@@ -30,6 +33,9 @@ const props = withDefaults(
     right: null,
     disabled: false,
     menu: false,
+    menuIcon: 'more-horizontal',
+    menuLabel: 'More actions',
+    menuAlwaysVisible: false,
   },
 );
 
@@ -119,11 +125,12 @@ const iconColor = computed(() => (props.active ? 'var(--c-primary)' : 'var(--c-m
       v-if="menu && !disabled"
       type="button"
       class="atl-row-kebab"
-      title="More actions"
-      aria-label="More actions"
+      :class="{ 'always-visible': menuAlwaysVisible }"
+      :title="menuLabel"
+      :aria-label="menuLabel"
       @click.stop="$emit('menu', $event)"
     >
-      <Icon name="more-horizontal" :size="14" />
+      <Icon :name="menuIcon" :size="14" />
     </button>
   </div>
 </template>
@@ -153,6 +160,10 @@ const iconColor = computed(() => (props.active ? 'var(--c-primary)' : 'var(--c-m
 }
 
 .atl-row-wrap:hover .atl-row-kebab {
+  opacity: 1;
+}
+
+.atl-row-kebab.always-visible {
   opacity: 1;
 }
 
