@@ -160,6 +160,66 @@ describe('live preview GFM compatibility matrix', () => {
     expect(text(view)).not.toContain('$x$');
   });
 
+  it('does not cancel mousedown on a standard Markdown link', () => {
+    const view = viewFor('[Atlas](https://atlas.local)');
+    const link = view.dom.querySelector<HTMLAnchorElement>('a.cm-atlas-link');
+    const event = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+
+    link?.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('does not cancel mousedown on an angle autolink', () => {
+    const view = viewFor('<https://atlas.local/autolink>');
+    const link = view.dom.querySelector<HTMLAnchorElement>('a.cm-atlas-link');
+    const event = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+
+    link?.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('does not move the selection or cancel mousedown on an editable table link', () => {
+    const doc = ['| Link | Value |', '| --- | --- |', '| [Atlas](https://atlas.local) | Other |'].join('\n');
+    const view = viewFor(doc, doc.length);
+    const link = view.dom.querySelector<HTMLAnchorElement>('table.cm-atlas-table a.cm-atlas-link');
+    const event = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+
+    link?.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(view.state.selection.main.anchor).toBe(doc.length);
+  });
+
+  it('treats nested content inside an editable table anchor as a link interaction', () => {
+    const doc = ['| Link | Value |', '| --- | --- |', '| [**Atlas**](https://atlas.local) | Other |'].join(
+      '\n',
+    );
+    const view = viewFor(doc, doc.length);
+    const strong = view.dom.querySelector<HTMLElement>(
+      'table.cm-atlas-table a.cm-atlas-link .cm-atlas-strong',
+    );
+    const event = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+
+    strong?.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(view.state.selection.main.anchor).toBe(doc.length);
+  });
+
+  it('keeps editable table click-to-edit behavior for non-link content', () => {
+    const doc = ['| Link | Value |', '| --- | --- |', '| Atlas | Other |'].join('\n');
+    const view = viewFor(doc, doc.length);
+    const cell = view.dom.querySelector<HTMLTableCellElement>('table.cm-atlas-table tbody td');
+    const event = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+
+    cell?.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(view.state.selection.main.anchor).toBe(0);
+  });
+
   it('renders autolinks, images, Mermaid fences, wikilinks, and adjacent math without corrupting source syntax', () => {
     const doc = [
       '<https://atlas.local/autolink>',
