@@ -493,7 +493,11 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
           <span class="atl-tv-label"><Icon name="users" :size="14" />Assignees</span>
           <span class="atl-tv-value" style="flex-direction: column; align-items: flex-start;">
             <LoadingState
-              v-if="detail.collectionStatus.assignees === 'pending' && detail.assignees.length === 0"
+              v-if="
+                detail.collectionStatus.assignees === 'pending' &&
+                detail.assignees.length === 0 &&
+                !detail.collectionLoaded.assignees
+              "
               label="Loading assignees…"
             />
             <ErrorState
@@ -570,7 +574,11 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
 
     <div style="margin-top: 22px;">
       <LoadingState
-        v-if="detail.collectionStatus.subtasks === 'pending' && detail.subtasks.length === 0"
+        v-if="
+          detail.collectionStatus.subtasks === 'pending' &&
+          detail.subtasks.length === 0 &&
+          !detail.collectionLoaded.subtasks
+        "
         label="Loading sub-tasks…"
       />
       <ErrorState
@@ -592,7 +600,11 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
 
     <div style="margin-top: 22px;">
       <LoadingState
-        v-if="detail.collectionStatus.checklist === 'pending' && detail.checklist.length === 0"
+        v-if="
+          detail.collectionStatus.checklist === 'pending' &&
+          detail.checklist.length === 0 &&
+          !detail.collectionLoaded.checklist
+        "
         label="Loading checklist…"
       />
       <ErrorState
@@ -627,7 +639,11 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
     >
       <div class="atl-tv-section-label">Attachments</div>
       <LoadingState
-        v-if="detail.collectionStatus.attachments === 'pending' && detail.attachments.length === 0"
+        v-if="
+          detail.collectionStatus.attachments === 'pending' &&
+          detail.attachments.length === 0 &&
+          !detail.collectionLoaded.attachments
+        "
         label="Loading attachments…"
       />
       <ErrorState
@@ -659,26 +675,44 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
         <div class="atl-tv-section-label">References</div>
         <LoadingState
           v-if="
+            detail.collectionStatus.references === 'pending' &&
             detail.references.length === 0 &&
-            detail.backlinks.length === 0 &&
-            (detail.collectionStatus.references === 'pending' || detail.collectionStatus.backlinks === 'pending')
+            !detail.collectionLoaded.references
           "
           label="Loading references…"
         />
         <ErrorState
-          v-else-if="detail.collectionStatus.references === 'error' || detail.collectionStatus.backlinks === 'error'"
+          v-if="detail.collectionStatus.references === 'error'"
           title="Could not load references"
-          :hint="detail.collectionErrors.references ?? detail.collectionErrors.backlinks ?? undefined"
+          :hint="detail.collectionErrors.references ?? undefined"
           @retry="retryDetail"
         />
-        <template v-else>
-          <ReferenceList
-            :references="detail.references"
-            :backlinks="detail.backlinks"
-            @remove="onRemoveReference"
-          />
-          <ReferenceAdd :ws="ws" :current-readable-id="task.readable_id" @add="onAddReference" />
-        </template>
+        <LoadingState
+          v-if="
+            detail.collectionStatus.backlinks === 'pending' &&
+            detail.backlinks.length === 0 &&
+            !detail.collectionLoaded.backlinks
+          "
+          label="Loading backlinks…"
+        />
+        <ErrorState
+          v-if="detail.collectionStatus.backlinks === 'error'"
+          title="Could not load backlinks"
+          :hint="detail.collectionErrors.backlinks ?? undefined"
+          @retry="retryDetail"
+        />
+        <ReferenceList
+          v-if="
+            detail.collectionStatus.references !== 'pending' ||
+            detail.collectionStatus.backlinks !== 'pending' ||
+            detail.references.length > 0 ||
+            detail.backlinks.length > 0
+          "
+          :references="detail.references"
+          :backlinks="detail.backlinks"
+          @remove="onRemoveReference"
+        />
+        <ReferenceAdd :ws="ws" :current-readable-id="task.readable_id" @add="onAddReference" />
       </div>
     </template>
 
@@ -687,19 +721,42 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
         <div class="atl-tv-section-label">Activity</div>
         <LoadingState
           v-if="
+            detail.collectionStatus.activity === 'pending' &&
             detail.activity.length === 0 &&
-            detail.comments.length === 0 &&
-            (detail.collectionStatus.activity === 'pending' || detail.collectionStatus.comments === 'pending')
+            !detail.collectionLoaded.activity
           "
           label="Loading activity…"
         />
         <ErrorState
-          v-else-if="detail.collectionStatus.activity === 'error' || detail.collectionStatus.comments === 'error'"
+          v-if="detail.collectionStatus.activity === 'error'"
           title="Could not load activity"
-          :hint="detail.collectionErrors.activity ?? detail.collectionErrors.comments ?? undefined"
+          :hint="detail.collectionErrors.activity ?? undefined"
           @retry="retryDetail"
         />
-        <ActivityComments v-else :ws="ws" :readable-id="task.readable_id" />
+        <LoadingState
+          v-if="
+            detail.collectionStatus.comments === 'pending' &&
+            detail.comments.length === 0 &&
+            !detail.collectionLoaded.comments
+          "
+          label="Loading comments…"
+        />
+        <ErrorState
+          v-if="detail.collectionStatus.comments === 'error'"
+          title="Could not load comments"
+          :hint="detail.collectionErrors.comments ?? undefined"
+          @retry="retryDetail"
+        />
+        <ActivityComments
+          v-if="
+            detail.collectionStatus.activity !== 'pending' ||
+            detail.collectionStatus.comments !== 'pending' ||
+            detail.activity.length > 0 ||
+            detail.comments.length > 0
+          "
+          :ws="ws"
+          :readable-id="task.readable_id"
+        />
       </div>
     </template>
 
