@@ -1184,6 +1184,8 @@ impl TaskReferenceRepo for PgTaskReferenceRepo {
         let rows = task_reference::Entity::find()
             .filter(task_reference::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(task_reference::Column::SourceTaskId.eq(task_id.0))
+            .order_by_asc(task_reference::Column::CreatedAt)
+            .order_by_asc(task_reference::Column::Id)
             .all(&self.conn)
             .await
             .map_err(db_err)?;

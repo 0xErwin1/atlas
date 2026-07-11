@@ -2,7 +2,7 @@ use crate::{
     DomainError, WorkspaceCtx,
     entities::documents::{
         Attachment, AttachmentOwner, Document, DocumentLink, DocumentSummary, ExtractedLink,
-        NewAttachment, NewDocument, RevisionMeta,
+        NewAttachment, NewDocument, RevisionMeta, TaskDescriptionLinks,
     },
     ids::{AttachmentId, DocumentId, FolderId, ProjectId, RevisionId, TaskId},
     permissions::Principal,
@@ -121,6 +121,12 @@ pub trait DocumentLinkRepo: Send + Sync {
         source: TaskId,
         links: Vec<ExtractedLink>,
     ) -> Result<(), DomainError>;
+
+    async fn outgoing_for_task(
+        &self,
+        ctx: &WorkspaceCtx,
+        source: TaskId,
+    ) -> Result<Option<TaskDescriptionLinks>, DomainError>;
 
     async fn backlinks(
         &self,

@@ -3,15 +3,17 @@
 mod support;
 
 use atlas_domain::{
-    entities::boards_tasks::{NewBoard, NewTask, PositionBetween},
+    entities::boards_tasks::{NewBoard, NewTask, NewTaskReference, PositionBetween, ReferenceKind},
     entities::documents::{ExtractedLink, NewDocument},
     entities::workspace_core::NewProject,
     permissions::{Visibility, VisibilityRole},
 };
 use atlas_server::persistence::repos::{
     BoardRepo, DocumentLinkRepo, DocumentRepo, PgBoardRepo, PgDocumentLinkRepo, PgDocumentRepo,
-    PgProjectRepo, PgTaskRepo, ProjectRepo, TaskRepo,
+    PgProjectRepo, PgTaskReferenceRepo, PgTaskRepo, ProjectRepo, TaskReferenceRepo, TaskRepo,
 };
+use chrono::{TimeDelta, Utc};
+use sea_orm::{ConnectionTrait, Statement};
 
 async fn seed_project_board_task(
     db: &support::TestDb,
@@ -156,4 +158,174 @@ async fn replace_for_task_source_stores_and_replaces_links() {
     );
 
     db.teardown().await;
+}
+
+#[tokio::test]
+async fn outgoing_for_task_returns_description_and_workspace_scoped_links() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "outgoing-task-user").await;
+    let ctx = support::ctx(&ws, &user);
+    let (other_ws, other_user) = support::seed_workspace(&db, "outgoing-other-user").await;
+    let other_ctx = support::ctx(&other_ws, &other_user);
+    let link_repo = PgDocumentLinkRepo {
+        conn: db.conn().clone(),
+    };
+
+    let task = seed_project_board_task(&db, &ctx).await;
+    let other_task = seed_project_board_task(&db, &other_ctx).await;
+    let doc_repo = PgDocumentRepo::new(db.conn().clone(), 10);
+    let target = doc_repo
+        .create(
+            &ctx,
+            NewDocument {
+                title: "Target Doc".into(),
+                slug: None,
+                content: "".into(),
+                folder_id: None,
+                project_id: None,
+                frontmatter: None,
+            },
+        )
+        .await
+        .expect("create workspace target")
+        .id;
+    let other_target = doc_repo
+        .create(
+            &other_ctx,
+            NewDocument {
+                title: "Target Doc".into(),
+                slug: None,
+                content: "".into(),
+                folder_id: None,
+                project_id: None,
+                frontmatter: None,
+            },
+        )
+        .await
+        .expect("create other workspace target")
+        .id;
+
+    link_repo
+        .replace_for_task_source(
+            &ctx,
+            task.id,
+            vec![ExtractedLink {
+                target_title: "Target Doc".into(),
+                target_document_id: Some(target),
+            }],
+        )
+        .await
+        .expect("store workspace link");
+    link_repo
+        .replace_for_task_source(
+            &other_ctx,
+            other_task.id,
+            vec![ExtractedLink {
+                target_title: "Target Doc".into(),
+                target_document_id: Some(other_target),
+            }],
+        )
+        .await
+        .expect("store other workspace link");
+
+    let snapshot = link_repo
+        .outgoing_for_task(&ctx, task.id)
+        .await
+        .expect("read task snapshot")
+        .expect("task exists in workspace");
+
+    assert_eq!(snapshot.description, "[[Target Doc]]");
+    assert_eq!(snapshot.links.len(), 1);
+    assert_eq!(snapshot.links[0].target_document_id, Some(target));
+
+    let hidden = link_repo
+        .outgoing_for_task(&ctx, other_task.id)
+        .await
+        .expect("read cross-workspace task");
+    assert!(hidden.is_none());
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn task_references_are_ordered_by_created_at_then_id() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "reference-order-user").await;
+    let ctx = support::ctx(&ws, &user);
+    let task = seed_project_board_task(&db, &ctx).await;
+    let doc_repo = PgDocumentRepo::new(db.conn().clone(), 10);
+    let first_target = doc_repo
+        .create(&ctx, new_document("First target"))
+        .await
+        .expect("create first target");
+    let second_target = doc_repo
+        .create(&ctx, new_document("Second target"))
+        .await
+        .expect("create second target");
+    let reference_repo = PgTaskReferenceRepo::new(db.conn().clone());
+
+    let later = reference_repo
+        .create(
+            &ctx,
+            NewTaskReference {
+                source_task_id: task.id,
+                kind: ReferenceKind::Docs,
+                target_task_id: None,
+                target_document_id: Some(second_target.id),
+            },
+        )
+        .await
+        .expect("create later reference");
+    let earlier = reference_repo
+        .create(
+            &ctx,
+            NewTaskReference {
+                source_task_id: task.id,
+                kind: ReferenceKind::Docs,
+                target_task_id: None,
+                target_document_id: Some(first_target.id),
+            },
+        )
+        .await
+        .expect("create earlier reference");
+    let now = Utc::now();
+
+    db.conn()
+        .execute_raw(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "UPDATE task_references SET created_at = $1 WHERE id = $2",
+            [(now + TimeDelta::seconds(1)).into(), later.id.0.into()],
+        ))
+        .await
+        .expect("set later timestamp");
+    db.conn()
+        .execute_raw(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "UPDATE task_references SET created_at = $1 WHERE id = $2",
+            [now.into(), earlier.id.0.into()],
+        ))
+        .await
+        .expect("set earlier timestamp");
+
+    let references = reference_repo
+        .list_for_task(&ctx, task.id)
+        .await
+        .expect("list references");
+
+    assert_eq!(references.len(), 2);
+    assert_eq!(references[0].id, earlier.id);
+    assert_eq!(references[1].id, later.id);
+
+    db.teardown().await;
+}
+
+fn new_document(title: &str) -> NewDocument {
+    NewDocument {
+        title: title.into(),
+        slug: None,
+        content: "".into(),
+        folder_id: None,
+        project_id: None,
+        frontmatter: None,
+    }
 }
