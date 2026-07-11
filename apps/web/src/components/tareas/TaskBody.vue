@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import type { components } from '@/api/types.d.ts';
+import ErrorState from '@/components/states/ErrorState.vue';
+import LoadingState from '@/components/states/LoadingState.vue';
 import ActivityComments from '@/components/tareas/ActivityComments.vue';
 import AssigneeList from '@/components/tareas/AssigneeList.vue';
 import AttachmentList from '@/components/tareas/AttachmentList.vue';
@@ -126,6 +128,10 @@ const {
 
 function fail(message: string | null): void {
   if (message) ui.showBanner(message, 'error');
+}
+
+function retryDetail(): void {
+  void detail.loadAll(props.ws, props.task.readable_id);
 }
 
 async function commitTitle(readableId: string, next: string): Promise<void> {
@@ -486,13 +492,25 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
         <div class="atl-tv-field">
           <span class="atl-tv-label"><Icon name="users" :size="14" />Assignees</span>
           <span class="atl-tv-value" style="flex-direction: column; align-items: flex-start;">
-            <AssigneeList :assignees="detail.assignees" @remove="onRemoveAssignee" />
-            <Dropdown
-              v-if="assignableOptions.length"
-              :options="assignableOptions"
-              placeholder="+ Add assignee"
-              @change="onAddAssignee"
+            <LoadingState
+              v-if="detail.collectionStatus.assignees === 'pending' && detail.assignees.length === 0"
+              label="Loading assignees…"
             />
+            <ErrorState
+              v-else-if="detail.collectionStatus.assignees === 'error'"
+              title="Could not load assignees"
+              :hint="detail.collectionErrors.assignees ?? undefined"
+              @retry="retryDetail"
+            />
+            <template v-else>
+              <AssigneeList :assignees="detail.assignees" @remove="onRemoveAssignee" />
+              <Dropdown
+                v-if="assignableOptions.length"
+                :options="assignableOptions"
+                placeholder="+ Add assignee"
+                @change="onAddAssignee"
+              />
+            </template>
           </span>
         </div>
         <div class="atl-tv-field">
@@ -551,7 +569,18 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
     <TaskDescription :markdown="task.description" :ws="ws" :readable-id="task.readable_id" />
 
     <div style="margin-top: 22px;">
+      <LoadingState
+        v-if="detail.collectionStatus.subtasks === 'pending' && detail.subtasks.length === 0"
+        label="Loading sub-tasks…"
+      />
+      <ErrorState
+        v-else-if="detail.collectionStatus.subtasks === 'error'"
+        title="Could not load sub-tasks"
+        :hint="detail.collectionErrors.subtasks ?? undefined"
+        @retry="retryDetail"
+      />
       <SubtaskList
+        v-else
         :subtasks="detail.subtasks"
         :columns="boards.columns"
         @add="onAddSubtask"
@@ -562,7 +591,18 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
     </div>
 
     <div style="margin-top: 22px;">
+      <LoadingState
+        v-if="detail.collectionStatus.checklist === 'pending' && detail.checklist.length === 0"
+        label="Loading checklist…"
+      />
+      <ErrorState
+        v-else-if="detail.collectionStatus.checklist === 'error'"
+        title="Could not load checklist"
+        :hint="detail.collectionErrors.checklist ?? undefined"
+        @retry="retryDetail"
+      />
       <Checklist
+        v-else
         :items="detail.checklist"
         :columns="boards.columns"
         @toggle="onChecklistToggle"
@@ -577,9 +617,27 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
       <CustomFieldsSection :ws="ws" :task="task" />
     </div>
 
-    <div v-if="detail.attachments.length" style="margin-top: 22px;">
+    <div
+      v-if="
+        detail.collectionStatus.attachments === 'pending' ||
+        detail.collectionStatus.attachments === 'error' ||
+        detail.attachments.length
+      "
+      style="margin-top: 22px;"
+    >
       <div class="atl-tv-section-label">Attachments</div>
+      <LoadingState
+        v-if="detail.collectionStatus.attachments === 'pending' && detail.attachments.length === 0"
+        label="Loading attachments…"
+      />
+      <ErrorState
+        v-else-if="detail.collectionStatus.attachments === 'error'"
+        title="Could not load attachments"
+        :hint="detail.collectionErrors.attachments ?? undefined"
+        @retry="retryDetail"
+      />
       <AttachmentList
+        v-else
         :attachments="detail.attachments"
         :ws="ws"
         :readable-id="task.readable_id"
@@ -599,19 +657,49 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
     <template v-if="showReferences">
       <div style="margin-top: 22px;">
         <div class="atl-tv-section-label">References</div>
-        <ReferenceList
-          :references="detail.references"
-          :backlinks="detail.backlinks"
-          @remove="onRemoveReference"
+        <LoadingState
+          v-if="
+            detail.references.length === 0 &&
+            detail.backlinks.length === 0 &&
+            (detail.collectionStatus.references === 'pending' || detail.collectionStatus.backlinks === 'pending')
+          "
+          label="Loading references…"
         />
-        <ReferenceAdd :ws="ws" :current-readable-id="task.readable_id" @add="onAddReference" />
+        <ErrorState
+          v-else-if="detail.collectionStatus.references === 'error' || detail.collectionStatus.backlinks === 'error'"
+          title="Could not load references"
+          :hint="detail.collectionErrors.references ?? detail.collectionErrors.backlinks ?? undefined"
+          @retry="retryDetail"
+        />
+        <template v-else>
+          <ReferenceList
+            :references="detail.references"
+            :backlinks="detail.backlinks"
+            @remove="onRemoveReference"
+          />
+          <ReferenceAdd :ws="ws" :current-readable-id="task.readable_id" @add="onAddReference" />
+        </template>
       </div>
     </template>
 
     <template v-if="showSecondary">
       <div style="margin-top: 22px;">
         <div class="atl-tv-section-label">Activity</div>
-        <ActivityComments :ws="ws" :readable-id="task.readable_id" />
+        <LoadingState
+          v-if="
+            detail.activity.length === 0 &&
+            detail.comments.length === 0 &&
+            (detail.collectionStatus.activity === 'pending' || detail.collectionStatus.comments === 'pending')
+          "
+          label="Loading activity…"
+        />
+        <ErrorState
+          v-else-if="detail.collectionStatus.activity === 'error' || detail.collectionStatus.comments === 'error'"
+          title="Could not load activity"
+          :hint="detail.collectionErrors.activity ?? detail.collectionErrors.comments ?? undefined"
+          @retry="retryDetail"
+        />
+        <ActivityComments v-else :ws="ws" :readable-id="task.readable_id" />
       </div>
     </template>
 

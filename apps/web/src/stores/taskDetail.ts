@@ -26,6 +26,52 @@ export interface PromoteResult {
   hint?: string;
 }
 
+type CollectionName =
+  | 'assignees'
+  | 'references'
+  | 'backlinks'
+  | 'subtasks'
+  | 'checklist'
+  | 'activity'
+  | 'attachments'
+  | 'comments';
+
+type CollectionStatus = 'idle' | 'pending' | 'ready' | 'error';
+
+interface DetailTarget {
+  ws: string;
+  readableId: string;
+}
+
+const collectionNames: CollectionName[] = [
+  'assignees',
+  'references',
+  'backlinks',
+  'subtasks',
+  'checklist',
+  'activity',
+  'attachments',
+  'comments',
+];
+
+function initialCollectionStatus(status: CollectionStatus): Record<CollectionName, CollectionStatus> {
+  return Object.fromEntries(collectionNames.map((name) => [name, status])) as Record<
+    CollectionName,
+    CollectionStatus
+  >;
+}
+
+function initialCollectionErrors(): Record<CollectionName, string | null> {
+  return Object.fromEntries(collectionNames.map((name) => [name, null])) as Record<
+    CollectionName,
+    string | null
+  >;
+}
+
+function sameTarget(left: DetailTarget | null, right: DetailTarget): boolean {
+  return left?.ws === right.ws && left.readableId === right.readableId;
+}
+
 /**
  * Task detail store (REQ-W22): owns the related collections of the open task —
  * assignees (user and agent), references, checklist, and the actor-attributed
@@ -45,58 +91,158 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
   const commentsHasMore = ref(false);
   const loading = ref(false);
   const error = ref<string | null>(null);
+  const collectionStatus = ref(initialCollectionStatus('idle'));
+  const collectionErrors = ref(initialCollectionErrors());
+  const activeTarget = ref<DetailTarget | null>(null);
+  let loadSequence = 0;
+
+  function clearCollections(): void {
+    assignees.value = [];
+    references.value = [];
+    backlinks.value = [];
+    checklist.value = [];
+    subtasks.value = [];
+    activity.value = [];
+    attachments.value = [];
+    comments.value = [];
+    commentsCursor.value = null;
+    commentsHasMore.value = false;
+  }
+
+  function startCollectionLoads(): void {
+    collectionStatus.value = initialCollectionStatus('pending');
+    collectionErrors.value = initialCollectionErrors();
+  }
+
+  function isCurrent(sequence: number, target: DetailTarget): boolean {
+    return loadSequence === sequence && sameTarget(activeTarget.value, target);
+  }
+
+  async function settleCollection<T>(
+    name: CollectionName,
+    request: Promise<{ data?: T; error?: unknown }>,
+    sequence: number,
+    target: DetailTarget,
+    apply: (data: T) => void,
+  ): Promise<void> {
+    try {
+      const { data, error: apiError } = await request;
+      if (!isCurrent(sequence, target)) return;
+
+      if (apiError !== undefined || data === undefined) {
+        collectionStatus.value = { ...collectionStatus.value, [name]: 'error' };
+        collectionErrors.value = {
+          ...collectionErrors.value,
+          [name]: errorHint(apiError, 'Failed to load task detail'),
+        };
+        return;
+      }
+
+      apply(data);
+      collectionStatus.value = { ...collectionStatus.value, [name]: 'ready' };
+    } catch {
+      if (!isCurrent(sequence, target)) return;
+
+      collectionStatus.value = { ...collectionStatus.value, [name]: 'error' };
+      collectionErrors.value = {
+        ...collectionErrors.value,
+        [name]: 'Failed to load task detail',
+      };
+    }
+  }
 
   async function loadAll(ws: string, readableId: string): Promise<void> {
+    const target = { ws, readableId };
+    const targetChanged = !sameTarget(activeTarget.value, target);
+    const sequence = ++loadSequence;
+
+    activeTarget.value = target;
+    if (targetChanged) clearCollections();
+
     loading.value = true;
     error.value = null;
+    startCollectionLoads();
 
     const path = { ws, readable_id: readableId };
 
-    const [a, r, bl, s, cl, act, at, cm] = await Promise.all([
-      wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/assignees', { params: { path } }),
-      wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/references', { params: { path } }),
-      wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/backlinks', { params: { path } }),
-      wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/subtasks', { params: { path } }),
-      wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/checklist', { params: { path } }),
-      wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/activity', { params: { path } }),
-      wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/attachments', { params: { path } }),
-      wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/comments', { params: { path } }),
+    await Promise.all([
+      settleCollection(
+        'assignees',
+        wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/assignees', { params: { path } }),
+        sequence,
+        target,
+        (data) => {
+          assignees.value = data;
+        },
+      ),
+      settleCollection(
+        'references',
+        wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/references', { params: { path } }),
+        sequence,
+        target,
+        (data) => {
+          references.value = data;
+        },
+      ),
+      settleCollection(
+        'backlinks',
+        wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/backlinks', { params: { path } }),
+        sequence,
+        target,
+        (data) => {
+          backlinks.value = data.items;
+        },
+      ),
+      settleCollection(
+        'subtasks',
+        wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/subtasks', { params: { path } }),
+        sequence,
+        target,
+        (data) => {
+          subtasks.value = data;
+        },
+      ),
+      settleCollection(
+        'checklist',
+        wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/checklist', { params: { path } }),
+        sequence,
+        target,
+        (data) => {
+          checklist.value = data;
+        },
+      ),
+      settleCollection(
+        'activity',
+        wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/activity', { params: { path } }),
+        sequence,
+        target,
+        (data) => {
+          activity.value = data.items;
+        },
+      ),
+      settleCollection(
+        'attachments',
+        wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/attachments', { params: { path } }),
+        sequence,
+        target,
+        (data) => {
+          attachments.value = data;
+        },
+      ),
+      settleCollection(
+        'comments',
+        wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/comments', { params: { path } }),
+        sequence,
+        target,
+        (data) => {
+          comments.value = data.items;
+          commentsCursor.value = data.next_cursor ?? null;
+          commentsHasMore.value = data.has_more;
+        },
+      ),
     ]);
 
-    loading.value = false;
-
-    if (a.data !== undefined) {
-      assignees.value = a.data;
-    }
-    if (r.data !== undefined) {
-      references.value = r.data;
-    }
-    if (bl.data !== undefined) {
-      backlinks.value = bl.data.items;
-    }
-    if (s.data !== undefined) {
-      subtasks.value = s.data;
-    }
-    if (cl.data !== undefined) {
-      checklist.value = cl.data;
-    }
-    if (act.data !== undefined) {
-      activity.value = act.data.items;
-    }
-    if (at.data !== undefined) {
-      attachments.value = at.data;
-    }
-    if (cm.data !== undefined) {
-      comments.value = cm.data.items;
-      commentsCursor.value = cm.data.next_cursor ?? null;
-      commentsHasMore.value = cm.data.has_more;
-    }
-
-    const firstError =
-      a.error ?? r.error ?? bl.error ?? s.error ?? cl.error ?? act.error ?? at.error ?? cm.error;
-    if (firstError !== undefined) {
-      error.value = errorHint(firstError, 'Failed to load task detail');
-    }
+    if (isCurrent(sequence, target)) loading.value = false;
   }
 
   /**
@@ -616,16 +762,12 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
   }
 
   function clear(): void {
-    assignees.value = [];
-    references.value = [];
-    backlinks.value = [];
-    checklist.value = [];
-    subtasks.value = [];
-    activity.value = [];
-    attachments.value = [];
-    comments.value = [];
-    commentsCursor.value = null;
-    commentsHasMore.value = false;
+    loadSequence += 1;
+    activeTarget.value = null;
+    clearCollections();
+    collectionStatus.value = initialCollectionStatus('idle');
+    collectionErrors.value = initialCollectionErrors();
+    loading.value = false;
     error.value = null;
   }
 
@@ -666,6 +808,8 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     commentsHasMore,
     loading,
     error,
+    collectionStatus,
+    collectionErrors,
     loadAll,
     addAssignee,
     removeAssignee,

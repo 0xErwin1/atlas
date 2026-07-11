@@ -85,6 +85,45 @@ const comment = (
   updated_at: updatedAt,
 });
 
+const collectionResponse = (index: number, name: string) => {
+  switch (index) {
+    case 0:
+      return { data: [assignee(`u-${name}`, 'user', name)], error: undefined };
+    case 1:
+      return { data: [reference(`r-${name}`, 'relates')], error: undefined };
+    case 2:
+      return {
+        data: { items: [{ source_readable_id: `ATL-${name}`, source_title: name, kind: 'relates' }] },
+        error: undefined,
+      };
+    case 3:
+      return { data: [subtaskSummary(`s-${name}`, `ATL-${name}`, name)], error: undefined };
+    case 4:
+      return { data: [checklistItem(`c-${name}`, name, false)], error: undefined };
+    case 5:
+      return { data: { items: [activityEntry(`a-${name}`, 'created', 'user', name)] }, error: undefined };
+    case 6:
+      return { data: [{ id: `at-${name}`, file_name: `${name}.txt` }], error: undefined };
+    default:
+      return {
+        data: { items: [comment(`cm-${name}`, name, 'user', name)], has_more: false, next_cursor: null },
+        error: undefined,
+      };
+  }
+};
+
+const collectionIndex = (path: string): number =>
+  [
+    'assignees',
+    'references',
+    'backlinks',
+    'subtasks',
+    'checklist',
+    'activity',
+    'attachments',
+    'comments',
+  ].findIndex((suffix) => path.endsWith(`/${suffix}`));
+
 describe('useTaskDetailStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
@@ -158,6 +197,119 @@ describe('useTaskDetailStore', () => {
     expect(store.comments[0]?.body).toBe('First comment');
     expect(store.commentsHasMore).toBe(true);
     expect(store.commentsCursor).toBe('cm1');
+  });
+
+  it('resets every detail collection for a workspace-only target change and rejects late results', async () => {
+    const pending: Array<{ resolve: (value: unknown) => void }> = [];
+    GET.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          pending.push({ resolve });
+        }),
+    );
+
+    const store = useTaskDetailStore();
+    store._setForTest({
+      assignees: [assignee('u1', 'user', 'Ann')],
+      references: [reference('r1', 'relates')],
+      backlinks: [{ source_readable_id: 'ATL-2', source_title: 'Old', kind: 'relates' }],
+      subtasks: [subtaskSummary('s1', 'ATL-2', 'Old child')],
+      checklist: [checklistItem('c1', 'Old item', false)],
+      activity: [activityEntry('a1', 'created', 'user', 'Ann')],
+      attachments: [{ id: 'at1', file_name: 'old.txt' }],
+      comments: [comment('cm1', 'Old comment', 'user', 'Ann')],
+      commentsCursor: 'cm1',
+      commentsHasMore: true,
+    });
+
+    const prior = store.loadAll('workspace-a', 'ATL-1');
+    const current = store.loadAll('workspace-b', 'ATL-1');
+
+    expect(store.assignees).toEqual([]);
+    expect(store.references).toEqual([]);
+    expect(store.backlinks).toEqual([]);
+    expect(store.subtasks).toEqual([]);
+    expect(store.checklist).toEqual([]);
+    expect(store.activity).toEqual([]);
+    expect(store.attachments).toEqual([]);
+    expect(store.comments).toEqual([]);
+    expect(store.commentsCursor).toBeNull();
+    expect(store.commentsHasMore).toBe(false);
+    expect(Object.values(store.collectionStatus)).toEqual(Array(8).fill('pending'));
+
+    for (const [index, request] of pending.slice(0, 8).entries()) {
+      request.resolve(collectionResponse(index, 'Old workspace'));
+    }
+    await prior;
+
+    expect(store.assignees).toEqual([]);
+    expect(store.references).toEqual([]);
+    expect(store.backlinks).toEqual([]);
+    expect(store.subtasks).toEqual([]);
+    expect(store.checklist).toEqual([]);
+    expect(store.activity).toEqual([]);
+    expect(store.attachments).toEqual([]);
+    expect(store.comments).toEqual([]);
+
+    for (const [index, request] of pending.slice(8).entries()) {
+      request.resolve(collectionResponse(index, 'Current workspace'));
+    }
+    await current;
+
+    expect(store.assignees[0]?.assignee.display_name).toBe('Current workspace');
+    expect(store.references[0]?.id).toBe('r-Current workspace');
+    expect(store.backlinks[0]?.source_title).toBe('Current workspace');
+    expect(store.subtasks[0]?.title).toBe('Current workspace');
+    expect(store.checklist[0]?.title).toBe('Current workspace');
+    expect(store.activity[0]?.actor.display_name).toBe('Current workspace');
+    expect(store.attachments[0]?.file_name).toBe('Current workspace.txt');
+    expect(store.comments[0]?.body).toBe('Current workspace');
+    expect(Object.values(store.collectionStatus)).toEqual(Array(8).fill('ready'));
+  });
+
+  it('settles the eight detail collections independently and preserves ready content for a same-target refresh', async () => {
+    const store = useTaskDetailStore();
+    GET.mockImplementation((path: string) =>
+      Promise.resolve(collectionResponse(collectionIndex(path), 'Ready')),
+    );
+
+    await store.loadAll('ws', 'ATL-1');
+    const retained = store.assignees[0];
+
+    GET.mockImplementation((path: string) => {
+      if (path.endsWith('/references')) {
+        return Promise.resolve({ data: undefined, error: { hint: 'References unavailable' } });
+      }
+      return Promise.resolve(collectionResponse(collectionIndex(path), 'Refreshed'));
+    });
+
+    const refresh = store.loadAll('ws', 'ATL-1');
+
+    expect(store.assignees[0]).toBe(retained);
+    expect(Object.values(store.collectionStatus)).toEqual(Array(8).fill('pending'));
+
+    await refresh;
+
+    expect(store.collectionStatus.assignees).toBe('ready');
+    expect(store.collectionStatus.references).toBe('error');
+    expect(store.collectionErrors.references).toBe('References unavailable');
+    expect(store.collectionStatus.backlinks).toBe('ready');
+    expect(store.collectionStatus.subtasks).toBe('ready');
+    expect(store.collectionStatus.checklist).toBe('ready');
+    expect(store.collectionStatus.activity).toBe('ready');
+    expect(store.collectionStatus.attachments).toBe('ready');
+    expect(store.collectionStatus.comments).toBe('ready');
+  });
+
+  it('settles rejected current-target collection requests as area-local errors', async () => {
+    const store = useTaskDetailStore();
+    GET.mockRejectedValue(new Error('Network unavailable'));
+
+    await store.loadAll('ws', 'ATL-1');
+
+    expect(Object.values(store.collectionStatus)).toEqual(Array(8).fill('error'));
+    expect(Object.values(store.collectionErrors)).toEqual(Array(8).fill('Failed to load task detail'));
+    expect(store.loading).toBe(false);
   });
 
   it('addChecklistItem appends the created item to checklist on success', async () => {
