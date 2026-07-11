@@ -124,6 +124,15 @@ const collectionIndex = (path: string): number =>
     'comments',
   ].findIndex((suffix) => path.endsWith(`/${suffix}`));
 
+function deferred<T>() {
+  let resolve: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+
+  return { promise, resolve: (value: T) => resolve(value) };
+}
+
 describe('useTaskDetailStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
@@ -299,6 +308,92 @@ describe('useTaskDetailStore', () => {
     expect(store.collectionStatus.activity).toBe('ready');
     expect(store.collectionStatus.attachments).toBe('ready');
     expect(store.collectionStatus.comments).toBe('ready');
+  });
+
+  it('keeps untouched collections pending while each current-target collection settles', async () => {
+    const requests: Array<ReturnType<typeof deferred<unknown>>> = [];
+    GET.mockImplementation(() => {
+      const request = deferred<unknown>();
+      requests.push(request);
+      return request.promise;
+    });
+
+    const store = useTaskDetailStore();
+    const load = store.loadAll('ws', 'ATL-1');
+
+    requests[0]?.resolve(collectionResponse(0, 'Ann'));
+    await Promise.resolve();
+
+    expect(store.collectionStatus.assignees).toBe('ready');
+    expect(store.assignees[0]?.assignee.display_name).toBe('Ann');
+    expect(store.collectionStatus.references).toBe('pending');
+    expect(store.collectionStatus.backlinks).toBe('pending');
+    expect(store.collectionStatus.subtasks).toBe('pending');
+    expect(store.collectionStatus.checklist).toBe('pending');
+    expect(store.collectionStatus.activity).toBe('pending');
+    expect(store.collectionStatus.attachments).toBe('pending');
+    expect(store.collectionStatus.comments).toBe('pending');
+
+    for (const [index, request] of requests.slice(1).entries()) {
+      request.resolve(collectionResponse(index + 1, 'Current'));
+    }
+    await load;
+  });
+
+  it('rejects stale comment pagination, activity reloads, and mutation rollbacks after a target change', async () => {
+    const requests: Array<ReturnType<typeof deferred<unknown>>> = [];
+    GET.mockImplementation(() => {
+      const request = deferred<unknown>();
+      requests.push(request);
+      return request.promise;
+    });
+
+    const store = useTaskDetailStore();
+    const firstLoad = store.loadAll('ws', 'ATL-1');
+    for (const [index, request] of requests.slice(0, 8).entries()) {
+      request.resolve(collectionResponse(index, 'First'));
+    }
+    await firstLoad;
+
+    store._setForTest({
+      comments: [comment('cm-first', 'First', 'user', 'Ann')],
+      commentsCursor: 'cm-first',
+      commentsHasMore: true,
+      checklist: [checklistItem('c-first', 'First', false)],
+    });
+
+    const removeResponse = deferred<{ data?: undefined; error?: { hint: string } }>();
+    DELETE.mockReturnValueOnce(removeResponse.promise);
+    const page = store.loadMoreComments('ws', 'ATL-1');
+    const remove = store.removeComment('ws', 'ATL-1', 'cm-first');
+    POST.mockResolvedValueOnce({ data: checklistItem('c-created', 'Created', false), error: undefined });
+    const addChecklist = await store.addChecklistItem('ws', 'ATL-1', 'Created');
+
+    expect(addChecklist).toBe(true);
+
+    const secondLoad = store.loadAll('ws', 'ATL-2');
+    for (const [index, request] of requests.slice(10, 18).entries()) {
+      request.resolve(collectionResponse(index, 'Second'));
+    }
+    await secondLoad;
+
+    requests[8]?.resolve({
+      data: { items: [comment('cm-stale', 'Stale page', 'user', 'Ann')], has_more: false, next_cursor: null },
+      error: undefined,
+    });
+    requests[9]?.resolve({
+      data: { items: [activityEntry('stale', 'stale', 'user', 'Ann')] },
+      error: undefined,
+    });
+    removeResponse.resolve({ data: undefined, error: { hint: 'Stale remove failure' } });
+
+    await page;
+
+    expect(await remove).toBe(false);
+
+    expect(store.comments.map((item) => item.body)).toEqual(['Second']);
+    expect(store.activity[0]?.actor.display_name).toBe('Second');
+    expect(store.error).toBeNull();
   });
 
   it('settles rejected current-target collection requests as area-local errors', async () => {

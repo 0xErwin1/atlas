@@ -43,6 +43,11 @@ interface DetailTarget {
   readableId: string;
 }
 
+interface DetailOperation {
+  target: DetailTarget;
+  generation: number;
+}
+
 const collectionNames: CollectionName[] = [
   'assignees',
   'references',
@@ -66,6 +71,10 @@ function initialCollectionErrors(): Record<CollectionName, string | null> {
     CollectionName,
     string | null
   >;
+}
+
+function initialCollectionLoaded(): Record<CollectionName, boolean> {
+  return Object.fromEntries(collectionNames.map((name) => [name, false])) as Record<CollectionName, boolean>;
 }
 
 function sameTarget(left: DetailTarget | null, right: DetailTarget): boolean {
@@ -93,8 +102,10 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
   const error = ref<string | null>(null);
   const collectionStatus = ref(initialCollectionStatus('idle'));
   const collectionErrors = ref(initialCollectionErrors());
+  const collectionLoaded = ref(initialCollectionLoaded());
   const activeTarget = ref<DetailTarget | null>(null);
   let loadSequence = 0;
+  let targetGeneration = 0;
 
   function clearCollections(): void {
     assignees.value = [];
@@ -116,6 +127,21 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
 
   function isCurrent(sequence: number, target: DetailTarget): boolean {
     return loadSequence === sequence && sameTarget(activeTarget.value, target);
+  }
+
+  function beginOperation(ws: string, readableId: string): DetailOperation {
+    return { target: { ws, readableId }, generation: targetGeneration };
+  }
+
+  function isOperationCurrent(operation: DetailOperation): boolean {
+    return (
+      operation.generation === targetGeneration &&
+      (activeTarget.value === null || sameTarget(activeTarget.value, operation.target))
+    );
+  }
+
+  function publishOperationError(operation: DetailOperation, message: string): void {
+    if (isOperationCurrent(operation)) error.value = message;
   }
 
   async function settleCollection<T>(
@@ -140,6 +166,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
 
       apply(data);
       collectionStatus.value = { ...collectionStatus.value, [name]: 'ready' };
+      collectionLoaded.value = { ...collectionLoaded.value, [name]: true };
     } catch {
       if (!isCurrent(sequence, target)) return;
 
@@ -156,8 +183,12 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     const targetChanged = !sameTarget(activeTarget.value, target);
     const sequence = ++loadSequence;
 
+    if (targetChanged) targetGeneration += 1;
     activeTarget.value = target;
-    if (targetChanged) clearCollections();
+    if (targetChanged) {
+      clearCollections();
+      collectionLoaded.value = initialCollectionLoaded();
+    }
 
     loading.value = true;
     error.value = null;
@@ -251,33 +282,53 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
    * server, so appending preserves conversation order.
    */
   async function loadMoreComments(ws: string, readableId: string): Promise<void> {
-    error.value = null;
+    const operation = beginOperation(ws, readableId);
+    if (!isOperationCurrent(operation)) return;
 
     if (!commentsHasMore.value || commentsCursor.value === null) {
       return;
     }
 
-    const { data, error: apiError } = await wrappedClient.GET(
-      '/api/workspaces/{ws}/tasks/{readable_id}/comments',
-      {
-        params: {
-          path: { ws, readable_id: readableId },
-          query: { cursor: commentsCursor.value },
+    const cursor = commentsCursor.value;
+    collectionStatus.value = { ...collectionStatus.value, comments: 'pending' };
+    collectionErrors.value = { ...collectionErrors.value, comments: null };
+
+    try {
+      const { data, error: apiError } = await wrappedClient.GET(
+        '/api/workspaces/{ws}/tasks/{readable_id}/comments',
+        {
+          params: {
+            path: { ws, readable_id: readableId },
+            query: { cursor },
+          },
         },
-      },
-    );
+      );
+      if (!isOperationCurrent(operation)) return;
 
-    if (apiError !== undefined || data === undefined) {
-      error.value = errorHint(apiError, 'Failed to load comments');
-      return;
+      if (apiError !== undefined || data === undefined) {
+        collectionStatus.value = { ...collectionStatus.value, comments: 'error' };
+        collectionErrors.value = {
+          ...collectionErrors.value,
+          comments: errorHint(apiError, 'Failed to load comments'),
+        };
+        return;
+      }
+
+      comments.value = [...comments.value, ...data.items];
+      commentsCursor.value = data.next_cursor ?? null;
+      commentsHasMore.value = data.has_more;
+      collectionStatus.value = { ...collectionStatus.value, comments: 'ready' };
+    } catch {
+      if (!isOperationCurrent(operation)) return;
+
+      collectionStatus.value = { ...collectionStatus.value, comments: 'error' };
+      collectionErrors.value = { ...collectionErrors.value, comments: 'Failed to load comments' };
     }
-
-    comments.value = [...comments.value, ...data.items];
-    commentsCursor.value = data.next_cursor ?? null;
-    commentsHasMore.value = data.has_more;
   }
 
   async function addComment(ws: string, readableId: string, body: string): Promise<boolean> {
+    const operation = beginOperation(ws, readableId);
+    if (!isOperationCurrent(operation)) return false;
     error.value = null;
 
     const { data, error: apiError } = await wrappedClient.POST(
@@ -286,22 +337,26 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     );
 
     if (apiError !== undefined || data === undefined) {
-      error.value = errorHint(apiError, 'Failed to add comment');
+      publishOperationError(operation, errorHint(apiError, 'Failed to add comment'));
       return false;
     }
+
+    if (!isOperationCurrent(operation)) return false;
 
     // The thread is oldest-first with a forward cursor. Appending the new
     // (newest) comment while earlier pages are still unloaded would place it
     // out of order and let a later "Load more" re-fetch it as a duplicate, so
     // only reflect it locally once the full thread is paged in. It is persisted
     // server-side either way.
-    if (!commentsHasMore.value) {
+    if (isOperationCurrent(operation) && !commentsHasMore.value) {
       comments.value = [...comments.value, data];
     }
-    return true;
+    return isOperationCurrent(operation);
   }
 
   async function removeComment(ws: string, readableId: string, commentId: string): Promise<boolean> {
+    const operation = beginOperation(ws, readableId);
+    if (!isOperationCurrent(operation)) return false;
     error.value = null;
 
     const snapshot = [...comments.value];
@@ -313,12 +368,13 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     );
 
     if (apiError !== undefined) {
+      if (!isOperationCurrent(operation)) return false;
       comments.value = snapshot;
-      error.value = errorHint(apiError, 'Failed to remove comment');
+      publishOperationError(operation, errorHint(apiError, 'Failed to remove comment'));
       return false;
     }
 
-    return true;
+    return isOperationCurrent(operation);
   }
 
   /**
@@ -332,6 +388,8 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     commentId: string,
     body: string,
   ): Promise<boolean> {
+    const operation = beginOperation(ws, readableId);
+    if (!isOperationCurrent(operation)) return false;
     error.value = null;
 
     const { data, error: apiError } = await wrappedClient.PATCH(
@@ -343,9 +401,11 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     );
 
     if (apiError !== undefined || data === undefined) {
-      error.value = errorHint(apiError, 'Failed to edit comment');
+      publishOperationError(operation, errorHint(apiError, 'Failed to edit comment'));
       return false;
     }
+
+    if (!isOperationCurrent(operation)) return false;
 
     const idx = comments.value.findIndex((c) => c.id === commentId);
     if (idx !== -1) {
@@ -354,10 +414,12 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
       comments.value = updated;
     }
 
-    return true;
+    return isOperationCurrent(operation);
   }
 
   async function addAssignee(ws: string, readableId: string, input: AddAssigneeInput): Promise<boolean> {
+    const operation = beginOperation(ws, readableId);
+    if (!isOperationCurrent(operation)) return false;
     error.value = null;
 
     const { data, error: apiError } = await wrappedClient.POST(
@@ -370,15 +432,17 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
 
     if (apiError !== undefined || data === undefined) {
       const problem = apiError as { detail?: string; status?: number } | undefined;
-      error.value =
+      const message =
         problem?.status === 422
           ? (problem.detail ?? 'Cannot assign this user')
           : errorHint(apiError, 'Failed to add assignee');
+      publishOperationError(operation, message);
       return false;
     }
 
+    if (!isOperationCurrent(operation)) return false;
     assignees.value = [...assignees.value, data];
-    return true;
+    return isOperationCurrent(operation);
   }
 
   async function removeAssignee(
@@ -387,6 +451,8 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     assigneeType: string,
     assigneeId: string,
   ): Promise<boolean> {
+    const operation = beginOperation(ws, readableId);
+    if (!isOperationCurrent(operation)) return false;
     error.value = null;
 
     const snapshot = [...assignees.value];
@@ -400,12 +466,13 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     );
 
     if (apiError !== undefined) {
+      if (!isOperationCurrent(operation)) return false;
       assignees.value = snapshot;
-      error.value = errorHint(apiError, 'Failed to remove assignee');
+      publishOperationError(operation, errorHint(apiError, 'Failed to remove assignee'));
       return false;
     }
 
-    return true;
+    return isOperationCurrent(operation);
   }
 
   /**
@@ -416,17 +483,38 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
    * are swallowed — a stale feed must never surface as a mutation error.
    */
   async function reloadActivity(ws: string, readableId: string): Promise<void> {
+    const operation = beginOperation(ws, readableId);
+    if (!isOperationCurrent(operation)) return;
+
+    collectionStatus.value = { ...collectionStatus.value, activity: 'pending' };
+    collectionErrors.value = { ...collectionErrors.value, activity: null };
+
     try {
       const result = await wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/activity', {
         params: { path: { ws, readable_id: readableId } },
       });
-      if (result?.data !== undefined) activity.value = result.data.items;
+      if (!isOperationCurrent(operation)) return;
+
+      if (result.data !== undefined) {
+        activity.value = result.data.items;
+        collectionStatus.value = { ...collectionStatus.value, activity: 'ready' };
+        collectionLoaded.value = { ...collectionLoaded.value, activity: true };
+        return;
+      }
+
+      collectionStatus.value = { ...collectionStatus.value, activity: 'error' };
+      collectionErrors.value = { ...collectionErrors.value, activity: 'Failed to load activity' };
     } catch {
-      // A stale activity feed must never surface as a mutation error.
+      if (!isOperationCurrent(operation)) return;
+
+      collectionStatus.value = { ...collectionStatus.value, activity: 'error' };
+      collectionErrors.value = { ...collectionErrors.value, activity: 'Failed to load activity' };
     }
   }
 
   async function toggleChecklistItem(ws: string, readableId: string, itemId: string): Promise<boolean> {
+    const operation = beginOperation(ws, readableId);
+    if (!isOperationCurrent(operation)) return false;
     error.value = null;
 
     const idx = checklist.value.findIndex((i) => i.id === itemId);
@@ -454,13 +542,15 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     );
 
     if (apiError !== undefined || data === undefined) {
+      if (!isOperationCurrent(operation)) return false;
       const rolledBack = [...checklist.value];
       rolledBack[idx] = item;
       checklist.value = rolledBack;
-      error.value = errorHint(apiError, 'Failed to update checklist item');
+      publishOperationError(operation, errorHint(apiError, 'Failed to update checklist item'));
       return false;
     }
 
+    if (!isOperationCurrent(operation)) return false;
     const reconciled = [...checklist.value];
     reconciled[idx] = data;
     checklist.value = reconciled;
@@ -474,6 +564,8 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     itemId: string,
     title: string,
   ): Promise<boolean> {
+    const operation = beginOperation(ws, readableId);
+    if (!isOperationCurrent(operation)) return false;
     error.value = null;
 
     const trimmed = title.trim();
@@ -502,13 +594,15 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     );
 
     if (apiError !== undefined || data === undefined) {
+      if (!isOperationCurrent(operation)) return false;
       const rolledBack = [...checklist.value];
       rolledBack[idx] = item;
       checklist.value = rolledBack;
-      error.value = errorHint(apiError, 'Failed to update checklist item');
+      publishOperationError(operation, errorHint(apiError, 'Failed to update checklist item'));
       return false;
     }
 
+    if (!isOperationCurrent(operation)) return false;
     const reconciled = [...checklist.value];
     reconciled[idx] = data;
     checklist.value = reconciled;
@@ -523,6 +617,8 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     boardId: string,
     columnId: string,
   ): Promise<PromoteResult> {
+    const operation = beginOperation(ws, readableId);
+    if (!isOperationCurrent(operation)) return { ok: false };
     error.value = null;
 
     const { data, error: apiError } = await wrappedClient.POST(
@@ -534,10 +630,12 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     );
 
     if (apiError !== undefined || data === undefined) {
-      error.value = errorHint(apiError, 'Failed to promote checklist item');
-      return { ok: false, hint: error.value };
+      const hint = errorHint(apiError, 'Failed to promote checklist item');
+      publishOperationError(operation, hint);
+      return { ok: false, hint };
     }
 
+    if (!isOperationCurrent(operation)) return { ok: false };
     const idx = checklist.value.findIndex((i) => i.id === itemId);
     if (idx !== -1) {
       const updated = [...checklist.value];
@@ -550,6 +648,8 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
   }
 
   async function addChecklistItem(ws: string, readableId: string, title: string): Promise<boolean> {
+    const operation = beginOperation(ws, readableId);
+    if (!isOperationCurrent(operation)) return false;
     error.value = null;
 
     const { data, error: apiError } = await wrappedClient.POST(
@@ -558,16 +658,19 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     );
 
     if (apiError !== undefined || data === undefined) {
-      error.value = errorHint(apiError, 'Failed to add sub-task');
+      publishOperationError(operation, errorHint(apiError, 'Failed to add sub-task'));
       return false;
     }
 
+    if (!isOperationCurrent(operation)) return false;
     checklist.value = [...checklist.value, data];
     void reloadActivity(ws, readableId);
     return true;
   }
 
   async function removeChecklistItem(ws: string, readableId: string, itemId: string): Promise<boolean> {
+    const operation = beginOperation(ws, readableId);
+    if (!isOperationCurrent(operation)) return false;
     error.value = null;
 
     const { error: apiError } = await wrappedClient.DELETE(
@@ -576,16 +679,19 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     );
 
     if (apiError !== undefined) {
-      error.value = errorHint(apiError, 'Failed to delete sub-task');
+      publishOperationError(operation, errorHint(apiError, 'Failed to delete sub-task'));
       return false;
     }
 
+    if (!isOperationCurrent(operation)) return false;
     checklist.value = checklist.value.filter((i) => i.id !== itemId);
     void reloadActivity(ws, readableId);
     return true;
   }
 
   async function addSubtask(ws: string, readableId: string, title: string): Promise<boolean> {
+    const operation = beginOperation(ws, readableId);
+    if (!isOperationCurrent(operation)) return false;
     error.value = null;
 
     const { data, error: apiError } = await wrappedClient.POST(
@@ -594,10 +700,11 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     );
 
     if (apiError !== undefined || data === undefined) {
-      error.value = errorHint(apiError, 'Failed to add sub-task');
+      publishOperationError(operation, errorHint(apiError, 'Failed to add sub-task'));
       return false;
     }
 
+    if (!isOperationCurrent(operation)) return false;
     subtasks.value = [
       ...subtasks.value,
       {
@@ -628,6 +735,10 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     subtaskReadableId: string,
     columnId: string,
   ): Promise<boolean> {
+    const target = activeTarget.value;
+    if (target?.ws !== undefined && target.ws !== ws) return false;
+    const operation = beginOperation(ws, target?.readableId ?? subtaskReadableId);
+    if (!isOperationCurrent(operation)) return false;
     error.value = null;
 
     const idx = subtasks.value.findIndex((s) => s.readable_id === subtaskReadableId);
@@ -645,19 +756,24 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     });
 
     if (apiError !== undefined) {
+      if (!isOperationCurrent(operation)) return false;
       if (idx !== -1 && previous !== undefined) {
         const rolledBack = [...subtasks.value];
         rolledBack[idx] = previous;
         subtasks.value = rolledBack;
       }
-      error.value = errorHint(apiError, 'Failed to update sub-task');
+      publishOperationError(operation, errorHint(apiError, 'Failed to update sub-task'));
       return false;
     }
 
-    return true;
+    return isOperationCurrent(operation);
   }
 
   async function promoteSubtask(ws: string, subtaskReadableId: string): Promise<boolean> {
+    const target = activeTarget.value;
+    if (target?.ws !== undefined && target.ws !== ws) return false;
+    const operation = beginOperation(ws, target?.readableId ?? subtaskReadableId);
+    if (!isOperationCurrent(operation)) return false;
     error.value = null;
 
     const { error: apiError } = await wrappedClient.POST('/api/workspaces/{ws}/tasks/{readable_id}/promote', {
@@ -665,10 +781,11 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     });
 
     if (apiError !== undefined) {
-      error.value = errorHint(apiError, 'Failed to promote sub-task');
+      publishOperationError(operation, errorHint(apiError, 'Failed to promote sub-task'));
       return false;
     }
 
+    if (!isOperationCurrent(operation)) return false;
     subtasks.value = subtasks.value.filter((s) => s.readable_id !== subtaskReadableId);
     return true;
   }
@@ -678,6 +795,8 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     readableId: string,
     body: components['schemas']['CreateReferenceRequest'],
   ): Promise<boolean> {
+    const operation = beginOperation(ws, readableId);
+    if (!isOperationCurrent(operation)) return false;
     error.value = null;
 
     const { data, error: apiError } = await wrappedClient.POST(
@@ -686,15 +805,18 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     );
 
     if (apiError !== undefined || data === undefined) {
-      error.value = errorHint(apiError, 'Failed to add reference');
+      publishOperationError(operation, errorHint(apiError, 'Failed to add reference'));
       return false;
     }
 
+    if (!isOperationCurrent(operation)) return false;
     references.value = [...references.value, data];
     return true;
   }
 
   async function removeReference(ws: string, readableId: string, referenceId: string): Promise<boolean> {
+    const operation = beginOperation(ws, readableId);
+    if (!isOperationCurrent(operation)) return false;
     error.value = null;
 
     const snapshot = [...references.value];
@@ -706,15 +828,18 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     );
 
     if (apiError !== undefined) {
+      if (!isOperationCurrent(operation)) return false;
       references.value = snapshot;
-      error.value = errorHint(apiError, 'Failed to remove reference');
+      publishOperationError(operation, errorHint(apiError, 'Failed to remove reference'));
       return false;
     }
 
-    return true;
+    return isOperationCurrent(operation);
   }
 
   async function uploadAttachment(ws: string, readableId: string, file: File): Promise<boolean> {
+    const operation = beginOperation(ws, readableId);
+    if (!isOperationCurrent(operation)) return false;
     error.value = null;
 
     const { data, error: apiError } = await wrappedClient.POST(
@@ -733,15 +858,18 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     );
 
     if (apiError !== undefined || data === undefined) {
-      error.value = errorHint(apiError, 'Failed to upload attachment');
+      publishOperationError(operation, errorHint(apiError, 'Failed to upload attachment'));
       return false;
     }
 
+    if (!isOperationCurrent(operation)) return false;
     attachments.value = [...attachments.value, data];
     return true;
   }
 
   async function removeAttachment(ws: string, readableId: string, attachmentId: string): Promise<boolean> {
+    const operation = beginOperation(ws, readableId);
+    if (!isOperationCurrent(operation)) return false;
     error.value = null;
 
     const snapshot = [...attachments.value];
@@ -753,20 +881,23 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     );
 
     if (apiError !== undefined) {
+      if (!isOperationCurrent(operation)) return false;
       attachments.value = snapshot;
-      error.value = errorHint(apiError, 'Failed to remove attachment');
+      publishOperationError(operation, errorHint(apiError, 'Failed to remove attachment'));
       return false;
     }
 
-    return true;
+    return isOperationCurrent(operation);
   }
 
   function clear(): void {
     loadSequence += 1;
+    targetGeneration += 1;
     activeTarget.value = null;
     clearCollections();
     collectionStatus.value = initialCollectionStatus('idle');
     collectionErrors.value = initialCollectionErrors();
+    collectionLoaded.value = initialCollectionLoaded();
     loading.value = false;
     error.value = null;
   }
@@ -810,6 +941,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     error,
     collectionStatus,
     collectionErrors,
+    collectionLoaded,
     loadAll,
     addAssignee,
     removeAssignee,

@@ -60,31 +60,46 @@ function retryDetail(): void {
       <div v-if="active === 'details'" class="atl-tv-inspector-scroll">
         <LoadingState
           v-if="
+            detail.collectionStatus.assignees === 'pending' &&
             detail.assignees.length === 0 &&
-            detail.references.length === 0 &&
-            detail.subtasks.length === 0 &&
-            (detail.collectionStatus.assignees === 'pending' ||
-              detail.collectionStatus.references === 'pending' ||
-              detail.collectionStatus.subtasks === 'pending')
+            !detail.collectionLoaded.assignees
           "
-          label="Loading task details…"
+          label="Loading assignees…"
         />
         <ErrorState
-          v-else-if="
-            detail.collectionStatus.assignees === 'error' ||
-            detail.collectionStatus.references === 'error' ||
-            detail.collectionStatus.subtasks === 'error'
-          "
-          title="Could not load task details"
-          :hint="
-            detail.collectionErrors.assignees ??
-            detail.collectionErrors.references ??
-            detail.collectionErrors.subtasks ??
-            undefined
-          "
+          v-if="detail.collectionStatus.assignees === 'error'"
+          title="Could not load assignees"
+          :hint="detail.collectionErrors.assignees ?? undefined"
           @retry="retryDetail"
         />
-        <template v-else>
+        <LoadingState
+          v-if="
+            detail.collectionStatus.references === 'pending' &&
+            detail.references.length === 0 &&
+            !detail.collectionLoaded.references
+          "
+          label="Loading references…"
+        />
+        <ErrorState
+          v-if="detail.collectionStatus.references === 'error'"
+          title="Could not load references"
+          :hint="detail.collectionErrors.references ?? undefined"
+          @retry="retryDetail"
+        />
+        <LoadingState
+          v-if="
+            detail.collectionStatus.subtasks === 'pending' &&
+            detail.subtasks.length === 0 &&
+            !detail.collectionLoaded.subtasks
+          "
+          label="Loading sub-tasks…"
+        />
+        <ErrorState
+          v-if="detail.collectionStatus.subtasks === 'error'"
+          title="Could not load sub-tasks"
+          :hint="detail.collectionErrors.subtasks ?? undefined"
+          @retry="retryDetail"
+        />
         <MetaRow label="Created">
           <Avatar :name="creatorName" :agent="isAgentCreator" :size="18" />
           <span style="font-family: var(--font-mono);">{{ creatorName }}</span>
@@ -105,30 +120,41 @@ function retryDetail(): void {
         <MetaRow label="Assignees">
           <span style="font-family: var(--font-mono);">{{ detail.assignees.length }}</span>
         </MetaRow>
-        </template>
       </div>
 
       <LoadingState
-        v-else-if="
+        v-if="
           active === 'activity' &&
+          detail.collectionStatus.activity === 'pending' &&
           detail.activity.length === 0 &&
-          detail.comments.length === 0 &&
-          (detail.collectionStatus.activity === 'pending' || detail.collectionStatus.comments === 'pending')
+          !detail.collectionLoaded.activity
         "
         label="Loading activity…"
       />
       <ErrorState
-        v-else-if="
-          active === 'activity' &&
-          (detail.collectionStatus.activity === 'error' || detail.collectionStatus.comments === 'error')
-        "
+        v-if="active === 'activity' && detail.collectionStatus.activity === 'error'"
         title="Could not load activity"
-        :hint="detail.collectionErrors.activity ?? detail.collectionErrors.comments ?? undefined"
+        :hint="detail.collectionErrors.activity ?? undefined"
         @retry="retryDetail"
       />
-      <ActivityComments v-else-if="active === 'activity'" :ws="ws" :readable-id="task.readable_id" pinned />
+      <LoadingState
+        v-if="
+          active === 'activity' &&
+          detail.collectionStatus.comments === 'pending' &&
+          detail.comments.length === 0 &&
+          !detail.collectionLoaded.comments
+        "
+        label="Loading comments…"
+      />
+      <ErrorState
+        v-if="active === 'activity' && detail.collectionStatus.comments === 'error'"
+        title="Could not load comments"
+        :hint="detail.collectionErrors.comments ?? undefined"
+        @retry="retryDetail"
+      />
+      <ActivityComments v-if="active === 'activity'" :ws="ws" :readable-id="task.readable_id" pinned />
 
-      <div v-else class="atl-tv-inspector-scroll">
+      <div v-if="active === 'share'" class="atl-tv-inspector-scroll">
         <SharePanel :resource-label="`${task.readable_id} · task`" />
       </div>
     </div>
