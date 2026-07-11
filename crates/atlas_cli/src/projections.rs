@@ -12,6 +12,7 @@ use atlas_api::dtos::audit::AuditEntryDto;
 use atlas_api::dtos::boards_tasks::{
     ActivityEntryDto, AssigneeDto, BoardSummaryDto, ChecklistItemDto, ColumnDto, CommentDto,
     PromotionDto, ReferenceDto, TaskAttachmentDto, TaskBacklinkDto, TaskDto, TaskSummaryDto,
+    UnifiedReferenceDto,
 };
 use atlas_api::dtos::documents::{
     ActorDto, AttachmentDto, BacklinkDto, DocumentDto, DocumentSummaryDto, RevisionContentDto,
@@ -863,7 +864,9 @@ impl TableRow for FolderProjection {
 /// the reference. Optional target fields are omitted when absent.
 #[derive(Debug, Serialize)]
 pub(crate) struct TaskRefProjection {
-    pub(crate) kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) manual_kind: Option<String>,
+    pub(crate) origins: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) target_readable_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -873,10 +876,33 @@ pub(crate) struct TaskRefProjection {
     pub(crate) target_resolved: bool,
 }
 
+impl From<UnifiedReferenceDto> for TaskRefProjection {
+    fn from(r: UnifiedReferenceDto) -> Self {
+        Self {
+            manual_kind: r.manual_kind,
+            origins: r
+                .origins
+                .into_iter()
+                .map(|origin| match origin {
+                    atlas_api::dtos::boards_tasks::ReferenceOriginDto::Manual => "manual".into(),
+                    atlas_api::dtos::boards_tasks::ReferenceOriginDto::Wikilink => {
+                        "wikilink".into()
+                    }
+                })
+                .collect(),
+            target_readable_id: r.target_readable_id,
+            target_document_id: r.target_document_id,
+            target_title: r.target_title,
+            target_resolved: r.target_resolved,
+        }
+    }
+}
+
 impl From<ReferenceDto> for TaskRefProjection {
     fn from(r: ReferenceDto) -> Self {
         Self {
-            kind: r.kind,
+            manual_kind: Some(r.kind),
+            origins: vec!["manual".into()],
             target_readable_id: r.target_readable_id,
             target_document_id: r.target_document_id,
             target_title: r.target_title,
@@ -887,12 +913,20 @@ impl From<ReferenceDto> for TaskRefProjection {
 
 impl TableRow for TaskRefProjection {
     fn headers() -> &'static [&'static str] {
-        &["Kind", "Target Task", "Target Doc", "Title", "Resolved"]
+        &[
+            "Manual Kind",
+            "Origins",
+            "Target Task",
+            "Target Doc",
+            "Title",
+            "Resolved",
+        ]
     }
 
     fn row(&self) -> Vec<String> {
         vec![
-            self.kind.clone(),
+            self.manual_kind.clone().unwrap_or_default(),
+            self.origins.join(","),
             self.target_readable_id.clone().unwrap_or_default(),
             self.target_document_id
                 .map(|id| id.to_string())
@@ -2967,7 +3001,7 @@ mod tests {
         let value = serde_json::to_value(&proj).unwrap();
         assert_projection_fields(
             &value,
-            &["kind", "target_resolved"],
+            &["manual_kind", "origins", "target_resolved"],
             &["target_readable_id", "target_document_id", "target_title"],
         );
     }

@@ -1684,6 +1684,107 @@ async fn create_and_list_references() {
 }
 
 #[tokio::test]
+async fn list_references_merges_manual_and_wikilink_origins() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "unified-ref").await;
+
+    client
+        .create_project(&ws.slug, project_req("unified-ref-proj", "UR"))
+        .await
+        .expect("create project");
+    let doc = client
+        .create_document(
+            &ws.slug,
+            "unified-ref-proj",
+            CreateDocumentRequest {
+                title: "Linked document".into(),
+                folder_id: None,
+                content: None,
+            },
+        )
+        .await
+        .expect("create document");
+    let board = client
+        .create_board(
+            &ws.slug,
+            "unified-ref-proj",
+            CreateBoardRequest {
+                name: "Board".into(),
+            },
+        )
+        .await
+        .expect("create board");
+    let column = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "Todo".into(),
+                before: None,
+                after: None,
+                color: None,
+            },
+        )
+        .await
+        .expect("create column");
+    let task = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: column.id,
+                title: "Source".into(),
+                description: Some("[[Linked document]] [[Missing document]]".into()),
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create task");
+    let manual = client
+        .create_reference(
+            &ws.slug,
+            &task.readable_id,
+            CreateReferenceRequest {
+                kind: "docs".into(),
+                target_task_readable_id: None,
+                target_document_id: Some(doc.id),
+            },
+        )
+        .await
+        .expect("create manual reference");
+
+    let refs = client
+        .list_references(&ws.slug, &task.readable_id)
+        .await
+        .expect("list unified references");
+
+    assert_eq!(refs.len(), 2);
+    assert_eq!(refs[0].manual_reference_id, Some(manual.id));
+    assert_eq!(refs[0].origins.len(), 2);
+    assert!(refs[0].target_resolved);
+    assert_eq!(refs[1].manual_reference_id, None);
+    assert!(!refs[1].target_resolved);
+    assert_eq!(refs[1].target_title.as_deref(), Some("Missing document"));
+
+    client
+        .delete_reference(&ws.slug, &task.readable_id, manual.id)
+        .await
+        .expect("delete manual reference");
+    let refs = client
+        .list_references(&ws.slug, &task.readable_id)
+        .await
+        .expect("reload unified references");
+    assert_eq!(refs.len(), 2);
+    assert_eq!(refs[0].manual_reference_id, None);
+    assert!(refs[0].target_resolved);
+
+    db.teardown().await;
+}
+
+#[tokio::test]
 async fn backlinks_surface_pending_references() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;

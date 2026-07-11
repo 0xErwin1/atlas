@@ -3248,7 +3248,7 @@ response — do NOT create those columns again; only add columns for statuses th
             .await
             .map_err(|e| enrich_client_error(e, "add_task_reference"))?;
 
-        let result = project_reference(reference);
+        let result = response::project_manual_reference(reference);
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 

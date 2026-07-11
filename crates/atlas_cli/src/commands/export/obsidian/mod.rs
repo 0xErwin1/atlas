@@ -203,7 +203,10 @@ async fn collect_board_task_files(
         let refs = client
             .list_references(ws, &task_summary.readable_id)
             .await?;
-        let ref_kinds: Vec<&str> = refs.iter().map(|r| r.kind.as_str()).collect();
+        let ref_kinds: Vec<&str> = refs
+            .iter()
+            .filter_map(|reference| reference.manual_kind.as_deref())
+            .collect();
 
         if !task_needs_file(&ref_kinds) {
             continue;
@@ -211,7 +214,7 @@ async fn collect_board_task_files(
 
         let depends: Vec<String> = refs
             .iter()
-            .filter(|r| r.kind == "parent")
+            .filter(|r| r.manual_kind.as_deref() == Some("parent"))
             .filter_map(|r| r.target_readable_id.clone())
             .collect();
 

@@ -17,7 +17,7 @@ use atlas_api::{
             CreateChecklistItemRequest, CreateColumnRequest, CreateCommentRequest,
             CreateReferenceRequest, CreateSubtaskRequest, CreateTaskRequest, MoveTaskRequest,
             PromoteChecklistItemRequest, PromotionDto, ReferenceDto, TaskAttachmentDto,
-            TaskBacklinkDto, TaskDto, TaskSummaryDto, UpdateBoardRequest,
+            TaskBacklinkDto, TaskDto, TaskSummaryDto, UnifiedReferenceDto, UpdateBoardRequest,
             UpdateChecklistItemRequest, UpdateColumnRequest, UpdateCommentRequest,
             UpdateTaskRequest, WorkspaceTaskQueryParams,
         },
@@ -2241,7 +2241,7 @@ impl AtlasClient {
         &self,
         ws: &str,
         readable_id: &str,
-    ) -> Result<Vec<ReferenceDto>, ClientError> {
+    ) -> Result<Vec<UnifiedReferenceDto>, ClientError> {
         let response = self
             .get(&format!(
                 "/api/workspaces/{ws}/tasks/{readable_id}/references"
