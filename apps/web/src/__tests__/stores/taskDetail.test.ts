@@ -221,11 +221,22 @@ describe('useTaskDetailStore', () => {
     store._setForTest({
       assignees: [assignee('u1', 'user', 'Ann')],
       references: [reference('r1', 'relates')],
-      backlinks: [{ source_readable_id: 'ATL-2', source_title: 'Old', kind: 'relates' }],
+      backlinks: [
+        { source_task_id: 't2', source_readable_id: 'ATL-2', source_title: 'Old', kind: 'relates' },
+      ],
       subtasks: [subtaskSummary('s1', 'ATL-2', 'Old child')],
       checklist: [checklistItem('c1', 'Old item', false)],
       activity: [activityEntry('a1', 'created', 'user', 'Ann')],
-      attachments: [{ id: 'at1', file_name: 'old.txt' }],
+      attachments: [
+        {
+          id: 'at1',
+          file_name: 'old.txt',
+          content_type: 'text/plain',
+          created_at: '2026-01-01T00:00:00Z',
+          created_by: actor('u1', 'user', 'User'),
+          size_bytes: 1,
+        },
+      ],
       comments: [comment('cm1', 'Old comment', 'user', 'Ann')],
       commentsCursor: 'cm1',
       commentsHasMore: true,

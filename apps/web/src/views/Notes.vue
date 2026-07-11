@@ -517,9 +517,14 @@ onBeforeRouteLeave(async () => {
 watch(
   [slug, ws],
   ([nextSlug, nextWorkspace], [previousSlug, previousWorkspace]) => {
-    const target = nextSlug === null || nextWorkspace === '' ? null : { workspaceSlug: nextWorkspace, slug: nextSlug };
+    const target =
+      typeof nextSlug !== 'string' || typeof nextWorkspace !== 'string' || nextWorkspace === ''
+        ? null
+        : { workspaceSlug: nextWorkspace, slug: nextSlug };
     const previousTarget =
-      previousSlug === null || previousWorkspace === '' ? null : { workspaceSlug: previousWorkspace, slug: previousSlug };
+      typeof previousSlug !== 'string' || typeof previousWorkspace !== 'string' || previousWorkspace === ''
+        ? null
+        : { workspaceSlug: previousWorkspace, slug: previousSlug };
     void loadDoc(target, previousTarget);
   },
   { immediate: true },
