@@ -105,6 +105,19 @@ describe('live preview GFM compatibility matrix', () => {
     expect(text(view)).not.toContain('[[Table Note]]');
   });
 
+  it('renders stable-id wikilinks inside table cells with their current title', () => {
+    const doc = ['| Note | Kind |', '| --- | --- |', `| [[${NOTE_ID}|Old Note]] | Document |`].join('\n');
+
+    const view = viewFor(doc);
+    const cells = [...view.dom.querySelectorAll<HTMLTableCellElement>('table.cm-atlas-table tbody td')];
+
+    expect(cells).toHaveLength(2);
+    expect(cells[0]?.querySelector('.cm-atlas-wikilink')?.textContent).toBe('Resolved Note');
+    expect(cells[0]?.textContent).toBe('Resolved Note');
+    expect(cells[1]?.textContent).toBe('Document');
+    expect(text(view)).not.toContain(`[[${NOTE_ID}|Old Note]]`);
+  });
+
   it('renders task lists, headings, unordered lists, emphasis, strong, strikethrough, and inline links', () => {
     const doc = [
       '# Heading',

@@ -392,7 +392,26 @@ function splitTableRow(line: string): string[] {
   let s = line.trim();
   if (s.startsWith('|')) s = s.slice(1);
   if (s.endsWith('|')) s = s.slice(0, -1);
-  return s.split('|').map((cell) => cell.trim());
+
+  const cells: string[] = [];
+  let cellFrom = 0;
+  let inWikilink = false;
+
+  for (let pos = 0; pos < s.length; pos += 1) {
+    if (!inWikilink && s.startsWith('[[', pos) && s.indexOf(']]', pos + 2) !== -1) {
+      inWikilink = true;
+      pos += 1;
+    } else if (inWikilink && s.startsWith(']]', pos)) {
+      inWikilink = false;
+      pos += 1;
+    } else if (!inWikilink && s[pos] === '|') {
+      cells.push(s.slice(cellFrom, pos).trim());
+      cellFrom = pos + 1;
+    }
+  }
+
+  cells.push(s.slice(cellFrom).trim());
+  return cells;
 }
 
 /**
