@@ -8869,7 +8869,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/ReferenceDto"
+                    "$ref": "#/components/schemas/UnifiedReferenceDto"
                   }
                 }
               }
@@ -12974,6 +12974,14 @@
           }
         }
       },
+      "ReferenceOriginDto": {
+        "type": "string",
+        "description": "The source of a task-reference entry in the unified read model.",
+        "enum": [
+          "manual",
+          "wikilink"
+        ]
+      },
       "RenameFolderRequest": {
         "type": "object",
         "description": "Request body for `PATCH /api/workspaces/{ws}/folders/{folder_id}`.",
@@ -13686,6 +13694,93 @@
         "properties": {
           "state": {
             "type": "object"
+          }
+        }
+      },
+      "UnifiedReferenceDto": {
+        "type": "object",
+        "description": "A unified outbound reference read from manual references and task-description wikilinks.",
+        "required": [
+          "id",
+          "origins",
+          "target_resolved"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "manual_created_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "manual_created_by": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ActorDto"
+              }
+            ]
+          },
+          "manual_kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "manual_reference_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "origins": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReferenceOriginDto"
+            }
+          },
+          "target_document_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "target_readable_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target_resolved": {
+            "type": "boolean"
+          },
+          "target_task_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "target_title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "wikilink_reference_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
           }
         }
       },

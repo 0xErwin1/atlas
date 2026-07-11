@@ -1762,7 +1762,12 @@ async fn list_references_merges_manual_and_wikilink_origins() {
         .expect("list unified references");
 
     assert_eq!(refs.len(), 2);
+    assert_eq!(refs[0].id, manual.id);
     assert_eq!(refs[0].manual_reference_id, Some(manual.id));
+    assert!(
+        refs[0].wikilink_reference_id.is_some(),
+        "a merged row must retain its representative wikilink identity"
+    );
     assert_eq!(refs[0].origins.len(), 2);
     assert!(refs[0].target_resolved);
     assert_eq!(refs[1].manual_reference_id, None);
@@ -1779,6 +1784,10 @@ async fn list_references_merges_manual_and_wikilink_origins() {
         .expect("reload unified references");
     assert_eq!(refs.len(), 2);
     assert_eq!(refs[0].manual_reference_id, None);
+    assert_eq!(
+        refs[0].id,
+        refs[0].wikilink_reference_id.expect("wikilink identity")
+    );
     assert!(refs[0].target_resolved);
 
     db.teardown().await;
