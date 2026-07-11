@@ -3,16 +3,17 @@ use atlas_domain::{
     Actor, DomainError, RevisionConflict, WorkspaceCtx,
     entities::documents::{
         Attachment, AttachmentOwner, Document, DocumentLink, DocumentSummary, ExtractedLink,
-        NewAttachment, NewDocument, RevisionMeta,
+        NewAttachment, NewDocument, RevisionMeta, TaskDescriptionLinks,
     },
-    ids::{AttachmentId, DocumentId, FolderId, ProjectId, RevisionId, TaskId},
+    ids::{AttachmentId, DocumentId, FolderId, ProjectId, RevisionId, TaskId, WorkspaceId},
     permissions::Principal,
     revision::{create_revision_patch, is_anchor_seq, reconstruct},
 };
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection,
-    EntityTrait, IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
+    EntityTrait, IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, Statement,
+    TransactionTrait,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -888,6 +889,41 @@ impl DocumentLinkRepo for PgDocumentLinkRepo {
         Ok(())
     }
 
+    async fn outgoing_for_task(
+        &self,
+        ctx: &WorkspaceCtx,
+        source: TaskId,
+    ) -> Result<Option<TaskDescriptionLinks>, DomainError> {
+        let rows = self
+            .conn
+            .query_all_raw(Statement::from_sql_and_values(
+                sea_orm::DatabaseBackend::Postgres,
+                "SELECT t.description, dl.id AS link_id, dl.workspace_id AS link_workspace_id, \
+                 dl.source_document_id AS link_source_document_id, dl.source_task_id AS link_source_task_id, \
+                 dl.target_document_id AS link_target_document_id, dl.target_title AS link_target_title, \
+                 dl.created_at AS link_created_at \
+                 FROM tasks t \
+                 LEFT JOIN document_links dl ON dl.workspace_id = t.workspace_id AND dl.source_task_id = t.id \
+                 WHERE t.id = $1 AND t.workspace_id = $2 AND t.deleted_at IS NULL \
+                 ORDER BY dl.created_at ASC NULLS LAST, dl.id ASC NULLS LAST",
+                [source.0.into(), ctx.workspace_id.0.into()],
+            ))
+            .await
+            .map_err(db_err)?;
+
+        let Some(first) = rows.first() else {
+            return Ok(None);
+        };
+
+        let description: String = first.try_get("", "description").map_err(db_err)?;
+        let links = rows
+            .into_iter()
+            .filter_map(|row| document_link_from_snapshot_row(&row).transpose())
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(Some(TaskDescriptionLinks { description, links }))
+    }
+
     async fn backlinks(
         &self,
         ctx: &WorkspaceCtx,
@@ -1022,6 +1058,36 @@ fn actor_fields(actor: &Actor) -> (Option<Uuid>, Option<Uuid>) {
         Actor::User(uid) => (Some(uid.0), None),
         Actor::ApiKey(kid) => (None, Some(kid.0)),
     }
+}
+
+fn document_link_from_snapshot_row(
+    row: &sea_orm::QueryResult,
+) -> Result<Option<DocumentLink>, DomainError> {
+    let id: Option<Uuid> = row.try_get("", "link_id").map_err(db_err)?;
+    let Some(id) = id else {
+        return Ok(None);
+    };
+
+    Ok(Some(DocumentLink {
+        id: DocumentId(id),
+        workspace_id: WorkspaceId(row.try_get("", "link_workspace_id").map_err(db_err)?),
+        source_document_id: row
+            .try_get::<Option<Uuid>>("", "link_source_document_id")
+            .map_err(db_err)?
+            .map(DocumentId),
+        source_task_id: row
+            .try_get::<Option<Uuid>>("", "link_source_task_id")
+            .map_err(db_err)?
+            .map(TaskId),
+        target_document_id: row
+            .try_get::<Option<Uuid>>("", "link_target_document_id")
+            .map_err(db_err)?
+            .map(DocumentId),
+        target_title: row.try_get("", "link_target_title").map_err(db_err)?,
+        created_at: row
+            .try_get::<DateTime<Utc>>("", "link_created_at")
+            .map_err(db_err)?,
+    }))
 }
 
 fn db_err(e: sea_orm::DbErr) -> DomainError {
