@@ -235,8 +235,14 @@ async fn outgoing_for_task_returns_description_and_workspace_scoped_links() {
         .expect("task exists in workspace");
 
     assert_eq!(snapshot.description, "[[Target Doc]]");
-    assert_eq!(snapshot.links.len(), 1);
-    assert_eq!(snapshot.links[0].target_document_id, Some(target));
+    assert_eq!(
+        snapshot
+            .links
+            .iter()
+            .map(|link| link.target_document_id)
+            .collect::<Vec<_>>(),
+        vec![Some(target)]
+    );
 
     let hidden = link_repo
         .outgoing_for_task(&ctx, other_task.id)
@@ -312,9 +318,13 @@ async fn task_references_are_ordered_by_created_at_then_id() {
         .await
         .expect("list references");
 
-    assert_eq!(references.len(), 2);
-    assert_eq!(references[0].id, earlier.id);
-    assert_eq!(references[1].id, later.id);
+    assert_eq!(
+        references
+            .iter()
+            .map(|reference| reference.id)
+            .collect::<Vec<_>>(),
+        vec![earlier.id, later.id]
+    );
 
     db.teardown().await;
 }
