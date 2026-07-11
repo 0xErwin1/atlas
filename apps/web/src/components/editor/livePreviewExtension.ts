@@ -215,7 +215,7 @@ class LinkWidget extends WidgetType {
   }
 
   ignoreEvent(): boolean {
-    return false;
+    return true;
   }
 }
 
@@ -409,6 +409,7 @@ class TableWidget extends WidgetType {
 
     wrap.addEventListener('mousedown', (event) => {
       if (view.state.readOnly) return;
+      if (event.target instanceof Element && event.target.closest('a')) return;
       event.preventDefault();
       view.dispatch({ selection: { anchor: this.from }, scrollIntoView: true });
       view.focus();
@@ -418,7 +419,7 @@ class TableWidget extends WidgetType {
   }
 
   ignoreEvent(): boolean {
-    return false;
+    return true;
   }
 }
 
