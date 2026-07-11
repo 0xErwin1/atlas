@@ -865,6 +865,8 @@ impl TableRow for FolderProjection {
 #[derive(Debug, Serialize)]
 pub(crate) struct TaskRefProjection {
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) manual_reference_id: Option<Uuid>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) manual_kind: Option<String>,
     pub(crate) origins: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -879,6 +881,7 @@ pub(crate) struct TaskRefProjection {
 impl From<UnifiedReferenceDto> for TaskRefProjection {
     fn from(r: UnifiedReferenceDto) -> Self {
         Self {
+            manual_reference_id: r.manual_reference_id,
             manual_kind: r.manual_kind,
             origins: r
                 .origins
@@ -901,6 +904,7 @@ impl From<UnifiedReferenceDto> for TaskRefProjection {
 impl From<ReferenceDto> for TaskRefProjection {
     fn from(r: ReferenceDto) -> Self {
         Self {
+            manual_reference_id: Some(r.id),
             manual_kind: Some(r.kind),
             origins: vec!["manual".into()],
             target_readable_id: r.target_readable_id,
@@ -914,6 +918,7 @@ impl From<ReferenceDto> for TaskRefProjection {
 impl TableRow for TaskRefProjection {
     fn headers() -> &'static [&'static str] {
         &[
+            "Manual Reference ID",
             "Manual Kind",
             "Origins",
             "Target Task",
@@ -925,6 +930,9 @@ impl TableRow for TaskRefProjection {
 
     fn row(&self) -> Vec<String> {
         vec![
+            self.manual_reference_id
+                .map(|id| id.to_string())
+                .unwrap_or_default(),
             self.manual_kind.clone().unwrap_or_default(),
             self.origins.join(","),
             self.target_readable_id.clone().unwrap_or_default(),
@@ -3001,17 +3009,54 @@ mod tests {
         let value = serde_json::to_value(&proj).unwrap();
         assert_projection_fields(
             &value,
-            &["manual_kind", "origins", "target_resolved"],
+            &[
+                "manual_reference_id",
+                "manual_kind",
+                "origins",
+                "target_resolved",
+            ],
             &["target_readable_id", "target_document_id", "target_title"],
         );
     }
 
     #[test]
-    fn task_ref_projection_drops_id_and_attribution() {
-        let dto = make_reference_dto();
+    fn unified_task_ref_projection_preserves_manual_reference_actionability() {
+        let manual_reference_id = Uuid::now_v7();
+        let dto = atlas_api::dtos::boards_tasks::UnifiedReferenceDto {
+            id: manual_reference_id,
+            origins: vec![
+                atlas_api::dtos::boards_tasks::ReferenceOriginDto::Manual,
+                atlas_api::dtos::boards_tasks::ReferenceOriginDto::Wikilink,
+            ],
+            manual_reference_id: Some(manual_reference_id),
+            manual_kind: Some("relates".to_owned()),
+            target_task_id: None,
+            target_readable_id: None,
+            target_document_id: Some(Uuid::now_v7()),
+            target_title: Some("Linked document".to_owned()),
+            target_resolved: true,
+            manual_created_by: Some(make_actor_dto()),
+            manual_created_at: Some(Utc::now()),
+        };
+
         let proj = TaskRefProjection::from(dto);
         let value = serde_json::to_value(&proj).unwrap();
-        assert!(value.get("id").is_none(), "id must be dropped");
+
+        assert_eq!(proj.manual_reference_id, Some(manual_reference_id));
+        assert_eq!(
+            value["manual_reference_id"],
+            manual_reference_id.to_string()
+        );
+        assert_eq!(proj.row()[0], manual_reference_id.to_string());
+    }
+
+    #[test]
+    fn task_ref_projection_preserves_manual_id_and_drops_attribution() {
+        let dto = make_reference_dto();
+        let reference_id = dto.id;
+        let proj = TaskRefProjection::from(dto);
+        let value = serde_json::to_value(&proj).unwrap();
+        assert_eq!(value["manual_reference_id"], reference_id.to_string());
         assert!(
             value.get("created_by").is_none(),
             "created_by must be dropped"

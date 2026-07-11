@@ -1785,6 +1785,241 @@ async fn list_references_merges_manual_and_wikilink_origins() {
 }
 
 #[tokio::test]
+async fn list_references_returns_three_distinct_resolved_wikilinks_exactly_once() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "three-wikilinks").await;
+
+    client
+        .create_project(&ws.slug, project_req("three-wikilinks-proj", "TW"))
+        .await
+        .expect("create project");
+
+    let documents = ["First", "Second", "Third"]
+        .into_iter()
+        .map(|title| CreateDocumentRequest {
+            title: title.to_owned(),
+            folder_id: None,
+            content: None,
+        })
+        .collect::<Vec<_>>();
+
+    let mut document_ids = Vec::new();
+    for document in documents {
+        document_ids.push(
+            client
+                .create_document(&ws.slug, "three-wikilinks-proj", document)
+                .await
+                .expect("create linked document")
+                .id,
+        );
+    }
+
+    let board = client
+        .create_board(
+            &ws.slug,
+            "three-wikilinks-proj",
+            CreateBoardRequest {
+                name: "Board".into(),
+            },
+        )
+        .await
+        .expect("create board");
+    let column = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "Todo".into(),
+                before: None,
+                after: None,
+                color: None,
+            },
+        )
+        .await
+        .expect("create column");
+    let task = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: column.id,
+                title: "Source".into(),
+                description: Some("[[First]] [[Second]] [[Third]]".into()),
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create task");
+
+    let refs = client
+        .list_references(&ws.slug, &task.readable_id)
+        .await
+        .expect("list references");
+
+    assert_eq!(refs.len(), 3);
+    assert_eq!(
+        refs.iter()
+            .map(|reference| reference.target_document_id)
+            .collect::<Vec<_>>(),
+        document_ids.into_iter().map(Some).collect::<Vec<_>>()
+    );
+    assert!(refs.iter().all(|reference| {
+        reference.origins == vec![atlas_api::dtos::boards_tasks::ReferenceOriginDto::Wikilink]
+            && reference.manual_reference_id.is_none()
+            && reference.target_resolved
+    }));
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn reference_read_and_delete_enforce_viewer_and_editor_boundaries() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (owner, ws, _) = support::login_user_with_workspace(&server, &db, "reference-roles").await;
+
+    owner
+        .create_project(
+            &ws.slug,
+            CreateProjectRequest {
+                name: "Reference Roles".into(),
+                slug: "reference-roles-proj".into(),
+                task_prefix: "RR".into(),
+                visibility: Some("private".into()),
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create project");
+    let board = owner
+        .create_board(
+            &ws.slug,
+            "reference-roles-proj",
+            CreateBoardRequest {
+                name: "Board".into(),
+            },
+        )
+        .await
+        .expect("create board");
+    let column = owner
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "Todo".into(),
+                before: None,
+                after: None,
+                color: None,
+            },
+        )
+        .await
+        .expect("create column");
+    let source = owner
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: column.id,
+                title: "Source".into(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create source task");
+    let target = owner
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: column.id,
+                title: "Target".into(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create target task");
+    let reference = owner
+        .create_reference(
+            &ws.slug,
+            &source.readable_id,
+            CreateReferenceRequest {
+                kind: "relates".into(),
+                target_task_readable_id: Some(target.readable_id),
+                target_document_id: None,
+            },
+        )
+        .await
+        .expect("create reference");
+
+    let (viewer, viewer_user) =
+        add_member(&db, &server, ws.id, "reference-viewer", MemberRole::Member).await;
+    let (editor, editor_user) =
+        add_member(&db, &server, ws.id, "reference-editor", MemberRole::Member).await;
+    let grant_repo = PgPermissionGrantRepo {
+        conn: db.conn().clone(),
+    };
+
+    for (user_id, role) in [
+        (viewer_user.id, ResourceRole::Viewer),
+        (editor_user.id, ResourceRole::Editor),
+    ] {
+        grant_repo
+            .upsert(NewPermissionGrant {
+                workspace_id: ws.id,
+                user_id: Some(user_id),
+                api_key_id: None,
+                group_id: None,
+                project_id: None,
+                folder_id: None,
+                document_id: None,
+                board_id: Some(BoardId(board.id)),
+                role,
+                created_by_user_id: None,
+                created_by_api_key_id: None,
+            })
+            .await
+            .expect("upsert board grant");
+    }
+
+    let viewer_refs = viewer
+        .list_references(&ws.slug, &source.readable_id)
+        .await
+        .expect("viewer lists references");
+    assert_eq!(viewer_refs.len(), 1);
+    assert_eq!(viewer_refs[0].manual_reference_id, Some(reference.id));
+
+    let viewer_delete = viewer
+        .delete_reference(&ws.slug, &source.readable_id, reference.id)
+        .await;
+    assert!(
+        matches!(viewer_delete, Err(ClientError::Api(ref problem)) if problem.status == 403),
+        "viewer delete must return 403, got: {viewer_delete:?}"
+    );
+
+    editor
+        .delete_reference(&ws.slug, &source.readable_id, reference.id)
+        .await
+        .expect("editor deletes reference");
+
+    let refs_after_delete = owner
+        .list_references(&ws.slug, &source.readable_id)
+        .await
+        .expect("list references after editor delete");
+    assert!(refs_after_delete.is_empty());
+
+    db.teardown().await;
+}
+
+#[tokio::test]
 async fn backlinks_surface_pending_references() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;
