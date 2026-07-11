@@ -244,6 +244,9 @@ const inlinePaddingLeft = computed(() => `${8 + (props.depth + 1) * 14}px`);
         chevron
         :open="expanded"
         menu
+        menu-icon="plus"
+        menu-label="Add page or folder"
+        menu-always-visible
         @click="onFolderClick"
         @menu="openFolderMenu"
         @contextmenu.prevent.stop="openFolderMenu"
