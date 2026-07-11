@@ -661,7 +661,7 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
       />
     </div>
 
-    <input ref="fileInput" type="file" class="hidden" @change="onFileSelected" />
+    <input ref="fileInput" type="file" class="hidden" multiple @change="onFileSelected" />
 
     <div class="atl-tv-actions">
       <button type="button" class="atl-tv-attach" :disabled="uploading" @click="onAttachClick">
