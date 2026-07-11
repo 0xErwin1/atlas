@@ -14,9 +14,9 @@ use atlas_api::{
         ActivityEntryDto, AddAssigneeRequest, AssigneeDto, ChecklistItemDto, CommentDto,
         CreateChecklistItemRequest, CreateCommentRequest, CreateReferenceRequest,
         CreateSubtaskRequest, CreateTaskRequest, MoveTaskRequest, PromoteChecklistItemRequest,
-        PromotionDto, ReferenceDto, TaskAttachmentDto, TaskBacklinkDto, TaskDto, TaskSummaryDto,
-        UpdateChecklistItemRequest, UpdateCommentRequest, UpdateTaskRequest,
-        WorkspaceTaskQueryParams,
+        PromotionDto, ReferenceDto, ReferenceOriginDto, TaskAttachmentDto, TaskBacklinkDto,
+        TaskDto, TaskSummaryDto, UnifiedReferenceDto, UpdateChecklistItemRequest,
+        UpdateCommentRequest, UpdateTaskRequest, WorkspaceTaskQueryParams,
     },
     dtos::documents::ActorDto,
     pagination::{Cursor, Page, SearchCursor, SortKey},
@@ -29,7 +29,9 @@ use atlas_domain::{
         TaskReference,
     },
     entities::comments::CommentOwner,
-    entities::documents::{AttachmentOwner, NewAttachment},
+    entities::documents::{
+        AttachmentOwner, NewAttachment, RankedTaskDescriptionLink, rank_task_description_links,
+    },
     entities::identity::MemberRole,
     entities::task_views::{ActorTypeFilter, AssigneeFilter, TaskSort, TaskViewFilters},
     entities::workspace_core::{AppliesTo, PropertyDefinition},
@@ -41,7 +43,10 @@ use atlas_domain::{
         Capability, CapabilityAction, CapabilityFamily, ChainSegment, Principal, ResolutionInput,
         ResourceChain, ResourceRef,
     },
-    ports::boards_tasks::{WorkspaceActivityFilters, WorkspaceActivityScope},
+    ports::{
+        boards_tasks::{WorkspaceActivityFilters, WorkspaceActivityScope},
+        documents::DocumentLinkRepo,
+    },
 };
 
 use crate::{
@@ -53,11 +58,11 @@ use crate::{
     error::ApiError,
     persistence::repos::{
         ApiKeyRepo, AttachmentRepo, DocumentRepo, MembershipRepo, PgApiKeyRepo, PgAttachmentRepo,
-        PgBoardRepo, PgDocumentRepo, PgMembershipRepo, PgPermissionGrantRepo, PgProjectRepo,
-        PgPropertyDefinitionRepo, PgTaskActivityRepo, PgTaskAssigneeRepo, PgTaskChecklistRepo,
-        PgTaskReferenceRepo, PgTaskRepo, PgUserRepo, ProjectRepo, PropertyDefinitionRepo,
-        TaskActivityRepo, TaskAssigneeRepo, TaskChecklistRepo, TaskReferenceRepo, TaskRepo,
-        UserRepo,
+        PgBoardRepo, PgDocumentLinkRepo, PgDocumentRepo, PgMembershipRepo, PgPermissionGrantRepo,
+        PgProjectRepo, PgPropertyDefinitionRepo, PgTaskActivityRepo, PgTaskAssigneeRepo,
+        PgTaskChecklistRepo, PgTaskReferenceRepo, PgTaskRepo, PgUserRepo, ProjectRepo,
+        PropertyDefinitionRepo, TaskActivityRepo, TaskAssigneeRepo, TaskChecklistRepo,
+        TaskReferenceRepo, TaskRepo, UserRepo,
     },
     routes::comments::{comment_to_dto, enrich_comment_entries},
     routes::documents::content_disposition_attachment,
@@ -216,6 +221,48 @@ fn reference_to_dto(
         target_resolved,
         created_by: actor_to_dto(&r.created_by),
         created_at: r.created_at,
+    }
+}
+
+fn manual_reference_to_unified_dto(
+    r: TaskReference,
+    target_resolved: bool,
+    target_readable_id: Option<String>,
+    target_title: Option<String>,
+) -> UnifiedReferenceDto {
+    UnifiedReferenceDto {
+        id: r.id.0,
+        origins: vec![ReferenceOriginDto::Manual],
+        manual_reference_id: Some(r.id.0),
+        manual_kind: Some(r.kind.as_str().to_string()),
+        target_task_id: r.target_task_id.map(|id| id.0),
+        target_readable_id,
+        target_document_id: r.target_document_id.map(|id| id.0),
+        target_title,
+        target_resolved,
+        manual_created_by: Some(actor_to_dto(&r.created_by)),
+        manual_created_at: Some(r.created_at),
+    }
+}
+
+fn wikilink_to_unified_dto(
+    link: RankedTaskDescriptionLink,
+    target_title: Option<String>,
+) -> UnifiedReferenceDto {
+    let target_document_id = link.link.target_document_id.map(|id| id.0);
+
+    UnifiedReferenceDto {
+        id: link.link.id.0,
+        origins: vec![ReferenceOriginDto::Wikilink],
+        manual_reference_id: None,
+        manual_kind: None,
+        target_task_id: None,
+        target_readable_id: None,
+        target_document_id,
+        target_title: target_title.or(Some(link.link.target_title)),
+        target_resolved: target_document_id.is_some(),
+        manual_created_by: None,
+        manual_created_at: None,
     }
 }
 
@@ -1302,7 +1349,7 @@ pub(crate) async fn remove_assignee(
         ("readable_id" = String, Path, description = "Task readable ID"),
     ),
     responses(
-        (status = 200, description = "Reference list", body = Vec<ReferenceDto>),
+        (status = 200, description = "Reference list", body = Vec<UnifiedReferenceDto>),
         (status = 401, description = "Unauthenticated"),
         (status = 403, description = "Insufficient permissions"),
         (status = 404, description = "Task not found"),
@@ -1311,7 +1358,7 @@ pub(crate) async fn remove_assignee(
 pub(crate) async fn list_references(
     auth: Authorized<TaskRes, ViewerMin, TasksRead>,
     State(state): State<AppState>,
-) -> Result<Json<Vec<ReferenceDto>>, ApiError> {
+) -> Result<Json<Vec<UnifiedReferenceDto>>, ApiError> {
     use std::collections::{HashMap, HashSet};
 
     let actor = principal_to_actor(&auth.principal);
@@ -1354,7 +1401,7 @@ pub(crate) async fn list_references(
         }
     }
 
-    let dtos = refs
+    let mut dtos: Vec<_> = refs
         .into_iter()
         .map(|r| {
             let (target_resolved, target_readable_id, target_title) =
@@ -1369,9 +1416,44 @@ pub(crate) async fn list_references(
                     }
                     _ => (false, None, None),
                 };
-            reference_to_dto(r, target_resolved, target_readable_id, target_title)
+            manual_reference_to_unified_dto(r, target_resolved, target_readable_id, target_title)
         })
         .collect();
+
+    let link_repo = PgDocumentLinkRepo {
+        conn: (*state.db).clone(),
+    };
+    let link_snapshot = link_repo
+        .outgoing_for_task(&ctx, auth.resource.0.id)
+        .await
+        .map_err(ApiError::Domain)?;
+
+    if let Some(snapshot) = link_snapshot {
+        for link in rank_task_description_links(&snapshot) {
+            let target_document_id = link.link.target_document_id;
+
+            if let Some(document_id) = target_document_id
+                && let Some(manual) = dtos.iter_mut().find(|entry| {
+                    entry.target_document_id == Some(document_id.0)
+                        && entry.manual_reference_id.is_some()
+                })
+            {
+                manual.origins.push(ReferenceOriginDto::Wikilink);
+                continue;
+            }
+
+            let target_title = match target_document_id {
+                Some(document_id) => doc_repo
+                    .get(&ctx, document_id)
+                    .await
+                    .map_err(ApiError::Domain)?
+                    .map(|document| document.title),
+                None => None,
+            };
+
+            dtos.push(wikilink_to_unified_dto(link, target_title));
+        }
+    }
 
     Ok(Json(dtos))
 }

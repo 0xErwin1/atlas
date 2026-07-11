@@ -10,6 +10,7 @@ use atlas_api::{
         boards_tasks::{
             ActivityEntryDto, AssigneeDto, BoardSummaryDto, ChecklistItemDto, ColumnDto,
             CommentDto, ReferenceDto, TaskAttachmentDto, TaskBacklinkDto, TaskDto, TaskSummaryDto,
+            UnifiedReferenceDto,
         },
         documents::{
             ActorDto, AttachmentDto, BacklinkDto, DocumentDto, DocumentSummaryDto,
@@ -408,9 +409,24 @@ pub(crate) fn project_column(col: ColumnDto) -> Value {
 // ---------------------------------------------------------------------------
 
 /// Projects an outbound task reference to the compact MCP shape.
-pub(crate) fn project_reference(r: ReferenceDto) -> Value {
+pub(crate) fn project_reference(r: UnifiedReferenceDto) -> Value {
     json!({
+        "origins": r.origins,
+        "manual_reference_id": r.manual_reference_id,
+        "manual_kind": r.manual_kind,
+        "target_readable_id": r.target_readable_id,
+        "target_document_id": r.target_document_id,
+        "target_title": r.target_title,
+        "target_resolved": r.target_resolved,
+    })
+}
+
+pub(crate) fn project_manual_reference(r: ReferenceDto) -> Value {
+    json!({
+        "origins": ["manual"],
+        "manual_reference_id": r.id,
         "kind": r.kind,
+        "manual_kind": r.kind,
         "target_readable_id": r.target_readable_id,
         "target_document_id": r.target_document_id,
         "target_title": r.target_title,
@@ -759,7 +775,7 @@ pub(crate) fn project_promotion(p: atlas_api::dtos::boards_tasks::PromotionDto) 
     );
 
     if let Some(r) = p.parent_reference {
-        map.insert("parent_reference".into(), project_reference(r));
+        map.insert("parent_reference".into(), project_manual_reference(r));
     }
 
     Value::Object(map)
@@ -1702,8 +1718,8 @@ mod tests {
             created_by: actor(),
             created_at: now(),
         };
-        let val = project_reference(r);
-        assert_eq!(val["kind"], "blocks");
+        let val = project_manual_reference(r);
+        assert_eq!(val["manual_kind"], "blocks");
         assert_eq!(val["target_readable_id"], "ATL-3");
         assert_eq!(val["target_resolved"], true);
         // Heavy fields dropped

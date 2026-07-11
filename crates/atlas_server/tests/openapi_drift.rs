@@ -68,6 +68,8 @@ const EXPECTED_SCHEMAS: &[&str] = &[
     "AssigneeDto",
     "AddAssigneeRequest",
     "ReferenceDto",
+    "ReferenceOriginDto",
+    "UnifiedReferenceDto",
     "TaskAttachmentDto",
     "TaskBacklinkDto",
     "CreateReferenceRequest",

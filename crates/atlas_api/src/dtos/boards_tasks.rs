@@ -194,6 +194,71 @@ pub struct ReferenceDto {
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
+/// The source of a task-reference entry in the unified read model.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub enum ReferenceOriginDto {
+    Manual,
+    Wikilink,
+}
+
+/// A unified outbound reference read from manual references and task-description wikilinks.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct UnifiedReferenceDto {
+    pub id: uuid::Uuid,
+    pub origins: Vec<ReferenceOriginDto>,
+    pub manual_reference_id: Option<uuid::Uuid>,
+    pub manual_kind: Option<String>,
+    pub target_task_id: Option<uuid::Uuid>,
+    pub target_readable_id: Option<String>,
+    pub target_document_id: Option<uuid::Uuid>,
+    pub target_title: Option<String>,
+    pub target_resolved: bool,
+    pub manual_created_by: Option<ActorDto>,
+    pub manual_created_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+#[cfg(test)]
+mod reference_tests {
+    use super::*;
+
+    #[test]
+    fn unified_wikilink_reference_serializes_null_manual_metadata() {
+        let reference = UnifiedReferenceDto {
+            id: uuid::Uuid::nil(),
+            origins: vec![ReferenceOriginDto::Wikilink],
+            manual_reference_id: None,
+            manual_kind: None,
+            target_task_id: None,
+            target_readable_id: None,
+            target_document_id: None,
+            target_title: Some("Missing document".into()),
+            target_resolved: false,
+            manual_created_by: None,
+            manual_created_at: None,
+        };
+
+        assert_eq!(
+            serde_json::to_value(reference).expect("serialize unified reference"),
+            serde_json::json!({
+                "id": uuid::Uuid::nil(),
+                "origins": ["wikilink"],
+                "manual_reference_id": null,
+                "manual_kind": null,
+                "target_task_id": null,
+                "target_readable_id": null,
+                "target_document_id": null,
+                "target_title": "Missing document",
+                "target_resolved": false,
+                "manual_created_by": null,
+                "manual_created_at": null,
+            })
+        );
+    }
+}
+
 /// An inbound reference — another task that points to this one.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]

@@ -240,7 +240,9 @@ async fn run_get(ctx: &Ctx, args: TasksGetArgs) -> Result<(), CliError> {
                     v.into_iter()
                         .map(|r| {
                             serde_json::json!({
-                                "kind": r.kind,
+                                "origins": r.origins,
+                                "manual_reference_id": r.manual_reference_id,
+                                "manual_kind": r.manual_kind,
                                 "target_readable_id": r.target_readable_id,
                                 "target_document_id": r.target_document_id,
                                 "target_title": r.target_title,
