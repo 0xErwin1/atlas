@@ -774,7 +774,10 @@ describe('useTaskDetailStore', () => {
     const store = useTaskDetailStore();
     store._setForTest({ references: [mergedReference('manual-1', 'link-1')] });
     DELETE.mockResolvedValueOnce({ data: undefined, error: undefined });
-    GET.mockResolvedValueOnce({ data: [wikilinkReference('link-1', 'Authoritative title')], error: undefined });
+    GET.mockResolvedValueOnce({
+      data: [wikilinkReference('link-1', 'Authoritative title')],
+      error: undefined,
+    });
 
     const removing = store.removeReference('ws', 'ATL-1', 'manual-1');
 
