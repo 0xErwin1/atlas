@@ -233,6 +233,7 @@ fn manual_reference_to_unified_dto(
     UnifiedReferenceDto {
         id: r.id.0,
         origins: vec![ReferenceOriginDto::Manual],
+        wikilink_reference_id: None,
         manual_reference_id: Some(r.id.0),
         manual_kind: Some(r.kind.as_str().to_string()),
         target_task_id: r.target_task_id.map(|id| id.0),
@@ -254,6 +255,7 @@ fn wikilink_to_unified_dto(
     UnifiedReferenceDto {
         id: link.link.id.0,
         origins: vec![ReferenceOriginDto::Wikilink],
+        wikilink_reference_id: Some(link.link.id.0),
         manual_reference_id: None,
         manual_kind: None,
         target_task_id: None,
@@ -1439,6 +1441,7 @@ pub(crate) async fn list_references(
                 })
             {
                 manual.origins.push(ReferenceOriginDto::Wikilink);
+                manual.wikilink_reference_id = Some(link.link.id.0);
                 continue;
             }
 

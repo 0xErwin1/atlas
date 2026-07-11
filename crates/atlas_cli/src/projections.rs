@@ -3022,12 +3022,14 @@ mod tests {
     #[test]
     fn unified_task_ref_projection_preserves_manual_reference_actionability() {
         let manual_reference_id = Uuid::now_v7();
+        let wikilink_reference_id = Uuid::now_v7();
         let dto = atlas_api::dtos::boards_tasks::UnifiedReferenceDto {
             id: manual_reference_id,
             origins: vec![
                 atlas_api::dtos::boards_tasks::ReferenceOriginDto::Manual,
                 atlas_api::dtos::boards_tasks::ReferenceOriginDto::Wikilink,
             ],
+            wikilink_reference_id: Some(wikilink_reference_id),
             manual_reference_id: Some(manual_reference_id),
             manual_kind: Some("relates".to_owned()),
             target_task_id: None,
@@ -3043,6 +3045,10 @@ mod tests {
         let value = serde_json::to_value(&proj).unwrap();
 
         assert_eq!(proj.manual_reference_id, Some(manual_reference_id));
+        assert!(
+            value.get("wikilink_reference_id").is_none(),
+            "the CLI projection intentionally omits the non-actionable wikilink row identity"
+        );
         assert_eq!(
             value["manual_reference_id"],
             manual_reference_id.to_string()

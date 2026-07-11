@@ -5,7 +5,7 @@ import { wrappedClient } from '@/api/wrapper';
 import { errorHint } from '@/lib/apiError';
 
 export type AssigneeDto = components['schemas']['AssigneeDto'];
-export type ReferenceDto = components['schemas']['ReferenceDto'];
+export type ReferenceDto = components['schemas']['UnifiedReferenceDto'];
 export type TaskBacklinkDto = components['schemas']['TaskBacklinkDto'];
 export type ChecklistItemDto = components['schemas']['ChecklistItemDto'];
 export type ActivityEntryDto = components['schemas']['ActivityEntryDto'];
@@ -820,7 +820,24 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     error.value = null;
 
     const snapshot = [...references.value];
-    references.value = references.value.filter((r) => r.id !== referenceId);
+    references.value = references.value.flatMap((reference) => {
+      if (reference.manual_reference_id !== referenceId) return [reference];
+      if (reference.wikilink_reference_id === null || reference.wikilink_reference_id === undefined) {
+        return [];
+      }
+
+      return [
+        {
+          ...reference,
+          id: reference.wikilink_reference_id,
+          origins: ['wikilink'],
+          manual_reference_id: null,
+          manual_kind: null,
+          manual_created_by: null,
+          manual_created_at: null,
+        },
+      ];
+    });
 
     const { error: apiError } = await wrappedClient.DELETE(
       '/api/workspaces/{ws}/tasks/{readable_id}/references/{reference_id}',
@@ -834,7 +851,17 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
       return false;
     }
 
-    return isOperationCurrent(operation);
+    if (!isOperationCurrent(operation)) return false;
+
+    const { data, error: reloadError } = await wrappedClient.GET(
+      '/api/workspaces/{ws}/tasks/{readable_id}/references',
+      { params: { path: { ws, readable_id: readableId } } },
+    );
+
+    if (!isOperationCurrent(operation)) return false;
+    if (reloadError === undefined && data !== undefined) references.value = data;
+
+    return true;
   }
 
   async function uploadAttachment(ws: string, readableId: string, file: File): Promise<boolean> {

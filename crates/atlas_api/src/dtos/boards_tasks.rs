@@ -209,6 +209,7 @@ pub enum ReferenceOriginDto {
 pub struct UnifiedReferenceDto {
     pub id: uuid::Uuid,
     pub origins: Vec<ReferenceOriginDto>,
+    pub wikilink_reference_id: Option<uuid::Uuid>,
     pub manual_reference_id: Option<uuid::Uuid>,
     pub manual_kind: Option<String>,
     pub target_task_id: Option<uuid::Uuid>,
@@ -229,6 +230,7 @@ mod reference_tests {
         let reference = UnifiedReferenceDto {
             id: uuid::Uuid::nil(),
             origins: vec![ReferenceOriginDto::Wikilink],
+            wikilink_reference_id: Some(uuid::Uuid::nil()),
             manual_reference_id: None,
             manual_kind: None,
             target_task_id: None,
@@ -245,6 +247,7 @@ mod reference_tests {
             serde_json::json!({
                 "id": uuid::Uuid::nil(),
                 "origins": ["wikilink"],
+                "wikilink_reference_id": uuid::Uuid::nil(),
                 "manual_reference_id": null,
                 "manual_kind": null,
                 "target_task_id": null,

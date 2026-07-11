@@ -53,11 +53,42 @@ const subtaskSummary = (id: string, readableId: string, title: string) => ({
 
 const reference = (id: string, kind: string) => ({
   id,
-  kind,
-  created_at: '2026-01-01T00:00:00Z',
-  created_by: actor('u1', 'user', 'User'),
+  origins: ['manual'],
+  wikilink_reference_id: null,
+  manual_reference_id: id,
+  manual_kind: kind,
+  manual_created_at: '2026-01-01T00:00:00Z',
+  manual_created_by: actor('u1', 'user', 'User'),
+  target_task_id: 'task-9',
+  target_document_id: null,
+  target_title: null,
   target_resolved: true,
   target_readable_id: 'ATL-9',
+});
+
+const mergedReference = (manualId: string, wikilinkId: string) => ({
+  ...reference(manualId, 'docs'),
+  origins: ['manual', 'wikilink'],
+  wikilink_reference_id: wikilinkId,
+  target_task_id: null,
+  target_document_id: 'doc-9',
+  target_readable_id: null,
+  target_title: 'Linked document',
+});
+
+const wikilinkReference = (id: string, title: string) => ({
+  id,
+  origins: ['wikilink'],
+  wikilink_reference_id: id,
+  manual_reference_id: null,
+  manual_kind: null,
+  manual_created_at: null,
+  manual_created_by: null,
+  target_task_id: null,
+  target_document_id: 'doc-9',
+  target_readable_id: null,
+  target_title: title,
+  target_resolved: true,
 });
 
 const activityEntry = (id: string, kind: string, actorType: string, name: string) => ({
@@ -136,7 +167,10 @@ function deferred<T>() {
 describe('useTaskDetailStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
-    vi.clearAllMocks();
+    GET.mockReset();
+    POST.mockReset();
+    DELETE.mockReset();
+    PATCH.mockReset();
   });
 
   it('loadAll populates assignees, references, subtasks, checklist, activity and comments', async () => {
@@ -720,6 +754,113 @@ describe('useTaskDetailStore', () => {
     expect(result.ok).toBe(false);
     expect(store.error).toBe('Cannot promote');
     expect(store.checklist[0]?.promoted_readable_id).toBeFalsy();
+  });
+
+  it('removeReference removes a manual-only row after a successful deletion', async () => {
+    const store = useTaskDetailStore();
+    store._setForTest({ references: [reference('manual-1', 'relates')] });
+    DELETE.mockResolvedValueOnce({ data: undefined, error: undefined });
+    GET.mockResolvedValueOnce({ data: [], error: undefined });
+
+    const ok = await store.removeReference('ws', 'ATL-1', 'manual-1');
+
+    expect(ok).toBe(true);
+    expect(store.references).toEqual([]);
+    const [, options] = DELETE.mock.calls[0] as [string, { params: { path: { reference_id: string } } }];
+    expect(options.params.path.reference_id).toBe('manual-1');
+  });
+
+  it('removeReference converts a merged row to a non-actionable wikilink before reconciliation', async () => {
+    const store = useTaskDetailStore();
+    store._setForTest({ references: [mergedReference('manual-1', 'link-1')] });
+    DELETE.mockResolvedValueOnce({ data: undefined, error: undefined });
+    GET.mockResolvedValueOnce({ data: [wikilinkReference('link-1', 'Authoritative title')], error: undefined });
+
+    const removing = store.removeReference('ws', 'ATL-1', 'manual-1');
+
+    expect(store.references).toEqual([wikilinkReference('link-1', 'Linked document')]);
+    expect(await removing).toBe(true);
+    expect(store.references).toEqual([wikilinkReference('link-1', 'Authoritative title')]);
+    expect(GET).toHaveBeenCalledWith('/api/workspaces/{ws}/tasks/{readable_id}/references', {
+      params: { path: { ws: 'ws', readable_id: 'ATL-1' } },
+    });
+  });
+
+  it('removeReference keeps its optimistic state when reconciliation fails', async () => {
+    const store = useTaskDetailStore();
+    store._setForTest({ references: [mergedReference('manual-1', 'link-1')] });
+    DELETE.mockResolvedValueOnce({ data: undefined, error: undefined });
+    GET.mockResolvedValueOnce({ data: undefined, error: { hint: 'References unavailable' } });
+
+    const ok = await store.removeReference('ws', 'ATL-1', 'manual-1');
+
+    expect(ok).toBe(true);
+    expect(store.references).toEqual([wikilinkReference('link-1', 'Linked document')]);
+    expect(store.error).toBeNull();
+  });
+
+  it('removeReference restores the exact merged snapshot when deletion fails', async () => {
+    const store = useTaskDetailStore();
+    const merged = mergedReference('manual-1', 'link-1');
+    store._setForTest({ references: [merged] });
+    DELETE.mockResolvedValueOnce({ data: undefined, error: { hint: 'Cannot remove reference' } });
+
+    const ok = await store.removeReference('ws', 'ATL-1', 'manual-1');
+
+    expect(ok).toBe(false);
+    expect(store.references).toEqual([merged]);
+    expect(store.error).toBe('Cannot remove reference');
+  });
+
+  it('does not restore an old reference when a stale deletion fails', async () => {
+    const store = useTaskDetailStore();
+    const deleteResponse = deferred<{ data?: undefined; error?: { hint: string } }>();
+    store._setForTest({ references: [reference('manual-old', 'relates')] });
+    DELETE.mockReturnValueOnce(deleteResponse.promise);
+
+    const removing = store.removeReference('ws', 'ATL-1', 'manual-old');
+    store._setForTest({ references: [reference('manual-new', 'blocks')] });
+    GET.mockImplementation((path: string) =>
+      Promise.resolve({
+        data: path.endsWith('/references') ? [reference('manual-new', 'blocks')] : undefined,
+        error: undefined,
+      }),
+    );
+    const replacementLoad = store.loadAll('ws', 'ATL-2');
+    await Promise.resolve();
+
+    deleteResponse.resolve({ data: undefined, error: { hint: 'Old deletion failed' } });
+    await replacementLoad;
+
+    expect(await removing).toBe(false);
+    expect(store.references).toEqual([reference('manual-new', 'blocks')]);
+    expect(store.error).toBeNull();
+  });
+
+  it('does not apply a stale reconciliation response over a new target', async () => {
+    const store = useTaskDetailStore();
+    const reloadResponse = deferred<{ data?: ReturnType<typeof wikilinkReference>[]; error?: undefined }>();
+    store._setForTest({ references: [mergedReference('manual-old', 'link-old')] });
+    DELETE.mockResolvedValueOnce({ data: undefined, error: undefined });
+    GET.mockReturnValueOnce(reloadResponse.promise);
+
+    const removing = store.removeReference('ws', 'ATL-1', 'manual-old');
+    await Promise.resolve();
+    store._setForTest({ references: [reference('manual-new', 'blocks')] });
+    GET.mockImplementation((path: string) =>
+      Promise.resolve({
+        data: path.endsWith('/references') ? [reference('manual-new', 'blocks')] : undefined,
+        error: undefined,
+      }),
+    );
+    const replacementLoad = store.loadAll('ws', 'ATL-2');
+    await Promise.resolve();
+
+    reloadResponse.resolve({ data: [wikilinkReference('link-old', 'Stale title')], error: undefined });
+    await replacementLoad;
+
+    expect(await removing).toBe(false);
+    expect(store.references).toEqual([reference('manual-new', 'blocks')]);
   });
 
   it('clear resets all collections', async () => {

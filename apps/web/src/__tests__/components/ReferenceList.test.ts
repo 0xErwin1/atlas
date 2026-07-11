@@ -32,7 +32,10 @@ function reference(overrides: Partial<ReferenceDto>): ReferenceDto {
 function mountList(references: ReferenceDto[], backlinks: TaskBacklinkDto[] = []) {
   return mount(ReferenceList, {
     props: { references, backlinks },
-    global: { plugins: [router], stubs: { Icon: true, Chip: true } },
+    global: {
+      plugins: [router],
+      stubs: { Icon: true, Chip: { template: '<span class="chip"><slot /></span>' } },
+    },
   });
 }
 
@@ -79,6 +82,41 @@ describe('ReferenceList', () => {
     expect(row.text()).toContain('ATL-7');
     expect(row.text()).toContain('Blocks this one');
     expect(row.get('a.atl-ref-target').attributes('href')).toBe('/t/task/ATL-7');
+  });
+
+  it('labels merged and broken wikilinks and emits only an actionable manual reference id', async () => {
+    const wrapper = mountList([
+      reference({
+        id: 'manual-1',
+        origins: ['manual', 'wikilink'],
+        wikilink_reference_id: 'link-1',
+        manual_reference_id: 'manual-1',
+        manual_kind: 'docs',
+        manual_created_at: '2026-01-01T00:00:00Z',
+        manual_created_by: { type: 'user', id: 'u1' },
+        target_document_id: 'doc-1',
+        target_title: 'Merged document',
+      }),
+      reference({
+        id: 'link-2',
+        origins: ['wikilink'],
+        wikilink_reference_id: 'link-2',
+        manual_reference_id: null,
+        manual_kind: null,
+        manual_created_at: null,
+        manual_created_by: null,
+        target_resolved: false,
+        target_title: 'Missing document',
+      }),
+    ]);
+
+    expect(wrapper.text()).toContain('manual');
+    expect(wrapper.text()).toContain('wikilink');
+    expect(wrapper.text()).toContain('broken');
+    expect(wrapper.findAll('button')).toHaveLength(1);
+
+    await wrapper.get('button').trigger('click');
+    expect(wrapper.emitted('remove')).toEqual([['manual-1']]);
   });
 
   it('shows the empty state only when there are neither references nor backlinks', () => {
