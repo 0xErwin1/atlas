@@ -2,6 +2,8 @@
 import { ref } from 'vue';
 import type { components } from '@/api/types.d.ts';
 import SharePanel from '@/components/share/SharePanel.vue';
+import ErrorState from '@/components/states/ErrorState.vue';
+import LoadingState from '@/components/states/LoadingState.vue';
 import ActivityComments from '@/components/tareas/ActivityComments.vue';
 import AgentBadge from '@/components/ui/AgentBadge.vue';
 import Avatar from '@/components/ui/Avatar.vue';
@@ -44,6 +46,10 @@ const active = ref('activity');
 const creator = props.task.created_by;
 const creatorName = creator.display_name ?? (creator.type === 'api_key' ? 'Agent' : 'User');
 const isAgentCreator = creator.type === 'api_key';
+
+function retryDetail(): void {
+  void detail.loadAll(props.ws, props.task.readable_id);
+}
 </script>
 
 <template>
@@ -52,6 +58,33 @@ const isAgentCreator = creator.type === 'api_key';
 
     <div class="atl-tv-inspector-body">
       <div v-if="active === 'details'" class="atl-tv-inspector-scroll">
+        <LoadingState
+          v-if="
+            detail.assignees.length === 0 &&
+            detail.references.length === 0 &&
+            detail.subtasks.length === 0 &&
+            (detail.collectionStatus.assignees === 'pending' ||
+              detail.collectionStatus.references === 'pending' ||
+              detail.collectionStatus.subtasks === 'pending')
+          "
+          label="Loading task details…"
+        />
+        <ErrorState
+          v-else-if="
+            detail.collectionStatus.assignees === 'error' ||
+            detail.collectionStatus.references === 'error' ||
+            detail.collectionStatus.subtasks === 'error'
+          "
+          title="Could not load task details"
+          :hint="
+            detail.collectionErrors.assignees ??
+            detail.collectionErrors.references ??
+            detail.collectionErrors.subtasks ??
+            undefined
+          "
+          @retry="retryDetail"
+        />
+        <template v-else>
         <MetaRow label="Created">
           <Avatar :name="creatorName" :agent="isAgentCreator" :size="18" />
           <span style="font-family: var(--font-mono);">{{ creatorName }}</span>
@@ -72,8 +105,27 @@ const isAgentCreator = creator.type === 'api_key';
         <MetaRow label="Assignees">
           <span style="font-family: var(--font-mono);">{{ detail.assignees.length }}</span>
         </MetaRow>
+        </template>
       </div>
 
+      <LoadingState
+        v-else-if="
+          active === 'activity' &&
+          detail.activity.length === 0 &&
+          detail.comments.length === 0 &&
+          (detail.collectionStatus.activity === 'pending' || detail.collectionStatus.comments === 'pending')
+        "
+        label="Loading activity…"
+      />
+      <ErrorState
+        v-else-if="
+          active === 'activity' &&
+          (detail.collectionStatus.activity === 'error' || detail.collectionStatus.comments === 'error')
+        "
+        title="Could not load activity"
+        :hint="detail.collectionErrors.activity ?? detail.collectionErrors.comments ?? undefined"
+        @retry="retryDetail"
+      />
       <ActivityComments v-else-if="active === 'activity'" :ws="ws" :readable-id="task.readable_id" pinned />
 
       <div v-else class="atl-tv-inspector-scroll">
