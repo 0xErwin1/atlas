@@ -15,6 +15,7 @@ const RESOURCE_PARAM_BY_ROUTE: Record<string, string> = {
   notes: 'slug',
   'task-detail': 'readableId',
   tasks: 'boardId',
+  'task-view': 'viewId',
 };
 
 function redirectTarget(to: { query: Record<string, unknown> }): string {

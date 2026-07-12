@@ -97,11 +97,12 @@ async function confirmDelete(): Promise<void> {
   deleteTarget.value = null;
 
   const ok = await workspace.deleteWorkspace(target.slug);
-  if (ok) {
-    ui.showBanner(`Workspace "${target.name}" deleted`, 'success');
-  } else if (workspace.error) {
-    ui.showBanner(workspace.error, 'error');
+  if (!ok) {
+    if (workspace.error) ui.showBanner(workspace.error, 'error');
+    return;
   }
+
+  ui.showBanner(`Workspace "${target.name}" deleted`, 'success');
 }
 </script>
 
