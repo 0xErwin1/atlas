@@ -5,6 +5,7 @@ import { wrappedClient } from '@/api/wrapper';
 import { errorHint } from '@/lib/apiError';
 import { collectPaged } from '@/lib/pagination';
 import { useAuthStore } from '@/stores/auth';
+import { useLastViewedStore } from '@/stores/lastViewed';
 
 type ProjectDto = components['schemas']['Page_ProjectDto']['items'][number];
 
@@ -40,11 +41,16 @@ function persistWorkspace(slug: string): void {
 
 export const useWorkspaceStore = defineStore('workspace', () => {
   const activeWorkspaceSlug = ref<string | null>(null);
-  // True while the rail is switching workspace: the active slug is briefly null
-  // during the switch, and this flag lets the router guards tell that transient
-  // null apart from a cold start so they neither bootstrap from localStorage nor
-  // record the restored resource under the wrong workspace.
-  const switching = ref(false);
+  // Concurrency-safe switch tracking: the active slug is briefly null during a
+  // switch, and `switching` lets the router guards tell that transient null apart
+  // from a cold start so they neither bootstrap from localStorage nor record the
+  // restored resource under the wrong workspace. Each switch takes a monotonic
+  // token from `beginSwitch`; `endSwitch` settles only when its token is still the
+  // latest, so an earlier switch's completion never clears the flag while a later
+  // overlapping switch is still navigating.
+  const switchGeneration = ref(0);
+  const switchSettled = ref(0);
+  const switching = computed(() => switchGeneration.value !== switchSettled.value);
   const projects = ref<ProjectSummary[]>([]);
   const workspaces = ref<WorkspaceDto[]>([]);
   // Every workspace in the system, loaded on demand for the root-only admin
@@ -83,12 +89,17 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     activeWorkspaceSlug.value = slug;
   }
 
-  function beginSwitch(): void {
-    switching.value = true;
+  /** Starts a switch and returns its token, to be passed back to `endSwitch`. */
+  function beginSwitch(): number {
+    switchGeneration.value += 1;
+    return switchGeneration.value;
   }
 
-  function endSwitch(): void {
-    switching.value = false;
+  /** Ends a switch, clearing `switching` only when this token is still the latest. */
+  function endSwitch(token: number): void {
+    if (token === switchGeneration.value) {
+      switchSettled.value = token;
+    }
   }
 
   async function loadWorkspaces(): Promise<string | null> {
@@ -308,6 +319,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     if (activeWorkspaceSlug.value === ws) {
       activeWorkspaceSlug.value = data.slug;
       persistWorkspace(data.slug);
+      useLastViewedStore().rekey(ws, data.slug);
     }
 
     return true;
@@ -331,6 +343,9 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
     workspaces.value = workspaces.value.filter((w) => w.slug !== ws);
     adminWorkspaces.value = adminWorkspaces.value.filter((w) => w.slug !== ws);
+
+    // Drop the deleted workspace's stored resource so it is never restored.
+    useLastViewedStore().clear(ws);
 
     if (activeWorkspaceSlug.value === ws) {
       const next = workspaces.value[0]?.slug ?? null;

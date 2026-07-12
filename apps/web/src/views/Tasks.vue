@@ -55,6 +55,11 @@ const { isMobile } = useBreakpoint();
 // not an error, and stop restoring the dead entry on the next workspace switch.
 const boardNotFound = computed(() => boards.loadError !== null && boards.loadErrorStatus === 404);
 
+// A restored task view that was deleted resolves to no metadata: show an empty
+// state (never a raw error) and stop restoring the dead entry, mirroring the
+// board 404 fallback above.
+const viewNotFound = ref(false);
+
 const boardId = computed(() => {
   const id = route.params.boardId;
   return typeof id === 'string' ? id : null;
@@ -229,6 +234,7 @@ function openTask(readableId: string): void {
 
 async function loadBoard(): Promise<void> {
   const operation = ++boardLoadOperation;
+  viewNotFound.value = false;
   if (ws.value === '') return;
 
   selectedReadableId.value = null;
@@ -300,6 +306,8 @@ async function openFromQuery(): Promise<void> {
 
 async function loadView(): Promise<void> {
   const operation = ++boardLoadOperation;
+  viewNotFound.value = false;
+
   const targetWorkspace = ws.value;
   const vid = viewId.value;
   if (targetWorkspace === '' || vid === null) return;
@@ -321,7 +329,11 @@ async function loadView(): Promise<void> {
     }
 
     customView = taskViews.items.find((view) => view.id === vid);
-    if (customView === undefined) return;
+    if (customView === undefined) {
+      viewNotFound.value = true;
+      lastViewed.clearIfMatches(targetWorkspace, { name: 'task-view', params: { viewId: vid } });
+      return;
+    }
   }
 
   const params = paramsForView(vid, customView?.filters);
@@ -589,8 +601,14 @@ watch(
     </EditorToolbar>
 
     <template v-if="isView">
+      <EmptyState
+        v-if="viewNotFound"
+        title="View not found"
+        hint="This view no longer exists. Pick another view from the sidebar."
+        icon="square-kanban"
+      />
       <ErrorState
-        v-if="workspaceTasks.error"
+        v-else-if="workspaceTasks.error"
         title="Couldn't load view"
         :hint="workspaceTasks.error"
         @retry="loadView"

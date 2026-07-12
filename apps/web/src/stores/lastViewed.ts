@@ -71,6 +71,26 @@ export const useLastViewedStore = defineStore('lastViewed', () => {
   }
 
   /**
+   * Moves a workspace's entry to a new key, keeping the last-viewed resource
+   * restorable after the workspace is re-slugged (entries are keyed by slug).
+   * A no-op when the source has no entry or the key is unchanged. If the target
+   * key already holds an entry it is left untouched (never clobbered) and the
+   * source entry is not moved.
+   */
+  function rekey(oldWs: string, newWs: string): void {
+    if (oldWs === newWs) return;
+
+    const stored = byWorkspace.value[oldWs];
+    if (stored === undefined) return;
+
+    if (byWorkspace.value[newWs] !== undefined) return;
+
+    delete byWorkspace.value[oldWs];
+    byWorkspace.value[newWs] = stored;
+    persist();
+  }
+
+  /**
    * Drops the entry only when it still points at `target`. Guards against a 404
    * on some other resource wiping a valid stored pointer for the workspace.
    */
@@ -81,5 +101,5 @@ export const useLastViewedStore = defineStore('lastViewed', () => {
     persist();
   }
 
-  return { byWorkspace, record, forWorkspace, clear, clearIfMatches };
+  return { byWorkspace, record, forWorkspace, clear, clearIfMatches, rekey };
 });
