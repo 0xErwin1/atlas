@@ -4,11 +4,16 @@ import { useLiveUpdates } from '@/composables/useLiveUpdates';
 
 class FakeEventSource {
   static instances: FakeEventSource[] = [];
+  static readonly CONNECTING = 0;
+  static readonly OPEN = 1;
+  static readonly CLOSED = 2;
 
   url: string;
   closed = false;
+  readyState = FakeEventSource.CONNECTING;
   onopen: ((ev: Event) => void) | null = null;
   onmessage: ((ev: MessageEvent) => void) | null = null;
+  onerror: ((ev: Event) => void) | null = null;
   private listeners: Record<string, ((ev: Event) => void)[]> = {};
 
   constructor(url: string) {
@@ -24,10 +29,17 @@ class FakeEventSource {
 
   close(): void {
     this.closed = true;
+    this.readyState = FakeEventSource.CLOSED;
   }
 
   emitOpen(): void {
+    this.readyState = FakeEventSource.OPEN;
     this.onopen?.(new Event('open'));
+  }
+
+  emitError(readyState: number): void {
+    this.readyState = readyState;
+    this.onerror?.(new Event('error'));
   }
 
   emit(type: string, data: string): void {
@@ -200,5 +212,310 @@ describe('useLiveUpdates', () => {
     expect(onResync).toHaveBeenCalledTimes(1);
 
     scope.stop();
+  });
+
+  describe('bounded reconnect with backoff', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('does not take over when readyState is CONNECTING (lets native retry)', () => {
+      const ws = ref('acme');
+      const scope = effectScope();
+      scope.run(() => useLiveUpdates(ws, { onEvent: vi.fn(), onResync: vi.fn() }));
+
+      FakeEventSource.instances[0]?.emitError(FakeEventSource.CONNECTING);
+      vi.advanceTimersByTime(60_000);
+
+      expect(FakeEventSource.instances).toHaveLength(1);
+
+      scope.stop();
+    });
+
+    it('schedules a reopen with base backoff after a CLOSED error', () => {
+      vi.spyOn(Math, 'random').mockReturnValue(0);
+      const ws = ref('acme');
+      const scope = effectScope();
+      scope.run(() => useLiveUpdates(ws, { onEvent: vi.fn(), onResync: vi.fn() }));
+
+      FakeEventSource.instances[0]?.emitError(FakeEventSource.CLOSED);
+
+      vi.advanceTimersByTime(499);
+      expect(FakeEventSource.instances).toHaveLength(1);
+
+      vi.advanceTimersByTime(1);
+      expect(FakeEventSource.instances).toHaveLength(2);
+      expect(FakeEventSource.instances[1]?.url).toBe('/api/workspaces/acme/events');
+
+      scope.stop();
+    });
+
+    it('doubles the backoff delay per attempt up to the 30s cap', () => {
+      vi.spyOn(Math, 'random').mockReturnValue(0);
+      const ws = ref('acme');
+      const scope = effectScope();
+      scope.run(() => useLiveUpdates(ws, { onEvent: vi.fn(), onResync: vi.fn() }));
+
+      const expectedDelays = [500, 1000, 2000, 4000, 8000, 15_000, 15_000];
+
+      for (const delay of expectedDelays) {
+        const before = FakeEventSource.instances.length;
+        FakeEventSource.instances[before - 1]?.emitError(FakeEventSource.CLOSED);
+
+        vi.advanceTimersByTime(delay - 1);
+        expect(FakeEventSource.instances).toHaveLength(before);
+
+        vi.advanceTimersByTime(1);
+        expect(FakeEventSource.instances).toHaveLength(before + 1);
+      }
+
+      scope.stop();
+    });
+
+    it('fires onResync (not first) and resets the attempt counter when the reopened stream connects', () => {
+      vi.spyOn(Math, 'random').mockReturnValue(0);
+      const ws = ref('acme');
+      const onResync = vi.fn();
+      const scope = effectScope();
+      scope.run(() => useLiveUpdates(ws, { onEvent: vi.fn(), onResync }));
+
+      const first = FakeEventSource.instances[0];
+      first?.emitOpen();
+      first?.emitError(FakeEventSource.CLOSED);
+      vi.advanceTimersByTime(500);
+
+      const reopened = FakeEventSource.instances[1];
+      reopened?.emitOpen();
+      expect(onResync).toHaveBeenCalledTimes(1);
+
+      reopened?.emitError(FakeEventSource.CLOSED);
+      vi.advanceTimersByTime(499);
+      expect(FakeEventSource.instances).toHaveLength(2);
+      vi.advanceTimersByTime(1);
+      expect(FakeEventSource.instances).toHaveLength(3);
+
+      scope.stop();
+    });
+
+    it('stops after the max reconnect attempts and calls onReconnectFailed', () => {
+      vi.spyOn(Math, 'random').mockReturnValue(0);
+      const ws = ref('acme');
+      const onReconnectFailed = vi.fn();
+      const scope = effectScope();
+      scope.run(() => useLiveUpdates(ws, { onEvent: vi.fn(), onResync: vi.fn(), onReconnectFailed }));
+
+      for (let attempt = 0; attempt < 10; attempt++) {
+        const last = FakeEventSource.instances[FakeEventSource.instances.length - 1];
+        last?.emitError(FakeEventSource.CLOSED);
+        vi.advanceTimersByTime(30_000);
+      }
+
+      expect(FakeEventSource.instances).toHaveLength(11);
+      expect(onReconnectFailed).not.toHaveBeenCalled();
+
+      const last = FakeEventSource.instances[FakeEventSource.instances.length - 1];
+      last?.emitError(FakeEventSource.CLOSED);
+      vi.advanceTimersByTime(30_000);
+
+      expect(FakeEventSource.instances).toHaveLength(11);
+      expect(onReconnectFailed).toHaveBeenCalledTimes(1);
+
+      scope.stop();
+    });
+
+    it('cancels a pending reconnect timer on scope dispose', () => {
+      vi.spyOn(Math, 'random').mockReturnValue(0);
+      const ws = ref('acme');
+      const scope = effectScope();
+      scope.run(() => useLiveUpdates(ws, { onEvent: vi.fn(), onResync: vi.fn() }));
+
+      FakeEventSource.instances[0]?.emitError(FakeEventSource.CLOSED);
+      scope.stop();
+
+      vi.advanceTimersByTime(60_000);
+      expect(FakeEventSource.instances).toHaveLength(1);
+    });
+  });
+
+  describe('foreground recovery (visibility/focus/online)', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      Object.defineProperty(document, 'visibilityState', {
+        value: 'visible',
+        configurable: true,
+      });
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    function setVisibility(state: 'visible' | 'hidden'): void {
+      Object.defineProperty(document, 'visibilityState', { value: state, configurable: true });
+    }
+
+    it('reopens and resyncs when the tab becomes visible on a stale/closed stream', () => {
+      const ws = ref('acme');
+      const onResync = vi.fn();
+      const scope = effectScope();
+      scope.run(() => useLiveUpdates(ws, { onEvent: vi.fn(), onResync }));
+
+      const stream = FakeEventSource.instances[0];
+      stream?.emitOpen();
+      // Simulate a frozen backgrounded tab: readyState looks CLOSED without
+      // `onerror` ever firing, since the browser throttled the timers/socket.
+      if (stream) stream.readyState = FakeEventSource.CLOSED;
+
+      setVisibility('visible');
+      document.dispatchEvent(new Event('visibilitychange'));
+      vi.advanceTimersByTime(300);
+
+      expect(FakeEventSource.instances).toHaveLength(2);
+
+      FakeEventSource.instances[1]?.emitOpen();
+      expect(onResync).toHaveBeenCalledTimes(1);
+
+      scope.stop();
+    });
+
+    it('fires onResync only (no reopen) on window focus when the stream is healthy/OPEN', () => {
+      const ws = ref('acme');
+      const onResync = vi.fn();
+      const scope = effectScope();
+      scope.run(() => useLiveUpdates(ws, { onEvent: vi.fn(), onResync }));
+
+      FakeEventSource.instances[0]?.emitOpen();
+
+      window.dispatchEvent(new Event('focus'));
+      vi.advanceTimersByTime(300);
+
+      expect(FakeEventSource.instances).toHaveLength(1);
+      expect(onResync).toHaveBeenCalledTimes(1);
+
+      scope.stop();
+    });
+
+    it('reopens on the online event when the stream is CLOSED', () => {
+      const ws = ref('acme');
+      const scope = effectScope();
+      scope.run(() => useLiveUpdates(ws, { onEvent: vi.fn(), onResync: vi.fn() }));
+
+      const stream = FakeEventSource.instances[0];
+      stream?.emitOpen();
+      if (stream) stream.readyState = FakeEventSource.CLOSED;
+
+      window.dispatchEvent(new Event('online'));
+      vi.advanceTimersByTime(300);
+
+      expect(FakeEventSource.instances).toHaveLength(2);
+
+      scope.stop();
+    });
+
+    it('does not disturb a healthy stream when visibility toggles', () => {
+      const ws = ref('acme');
+      const onResync = vi.fn();
+      const scope = effectScope();
+      scope.run(() => useLiveUpdates(ws, { onEvent: vi.fn(), onResync }));
+
+      FakeEventSource.instances[0]?.emitOpen();
+      onResync.mockClear();
+
+      setVisibility('hidden');
+      document.dispatchEvent(new Event('visibilitychange'));
+      vi.advanceTimersByTime(300);
+
+      expect(FakeEventSource.instances).toHaveLength(1);
+      expect(onResync).not.toHaveBeenCalled();
+
+      scope.stop();
+    });
+
+    it('coalesces N rapid toggles within the debounce window into a single reopen', () => {
+      const ws = ref('acme');
+      const scope = effectScope();
+      scope.run(() => useLiveUpdates(ws, { onEvent: vi.fn(), onResync: vi.fn() }));
+
+      const stream = FakeEventSource.instances[0];
+      stream?.emitOpen();
+      if (stream) stream.readyState = FakeEventSource.CLOSED;
+
+      document.dispatchEvent(new Event('visibilitychange'));
+      vi.advanceTimersByTime(100);
+      window.dispatchEvent(new Event('focus'));
+      vi.advanceTimersByTime(100);
+      window.dispatchEvent(new Event('online'));
+
+      vi.advanceTimersByTime(299);
+      expect(FakeEventSource.instances).toHaveLength(1);
+
+      vi.advanceTimersByTime(1);
+      expect(FakeEventSource.instances).toHaveLength(2);
+
+      scope.stop();
+    });
+
+    it('does not open a second socket if a foreground reopen is already in flight', () => {
+      const ws = ref('acme');
+      const scope = effectScope();
+      scope.run(() => useLiveUpdates(ws, { onEvent: vi.fn(), onResync: vi.fn() }));
+
+      const stream = FakeEventSource.instances[0];
+      stream?.emitOpen();
+      if (stream) stream.readyState = FakeEventSource.CLOSED;
+
+      document.dispatchEvent(new Event('visibilitychange'));
+      vi.advanceTimersByTime(300);
+      expect(FakeEventSource.instances).toHaveLength(2);
+
+      // The reopened stream is still CONNECTING (FakeEventSource default); a
+      // second foreground signal before it settles must not spawn a third.
+      window.dispatchEvent(new Event('focus'));
+      vi.advanceTimersByTime(300);
+      expect(FakeEventSource.instances).toHaveLength(2);
+
+      scope.stop();
+    });
+
+    it('removes visibility/focus/online listeners on scope dispose (no leak)', () => {
+      const addDocSpy = vi.spyOn(document, 'addEventListener');
+      const removeDocSpy = vi.spyOn(document, 'removeEventListener');
+      const addWinSpy = vi.spyOn(window, 'addEventListener');
+      const removeWinSpy = vi.spyOn(window, 'removeEventListener');
+
+      const ws = ref('acme');
+      const scope = effectScope();
+      scope.run(() => useLiveUpdates(ws, { onEvent: vi.fn(), onResync: vi.fn() }));
+
+      expect(addDocSpy).toHaveBeenCalledWith('visibilitychange', expect.any(Function));
+      expect(addWinSpy).toHaveBeenCalledWith('focus', expect.any(Function));
+      expect(addWinSpy).toHaveBeenCalledWith('online', expect.any(Function));
+
+      scope.stop();
+
+      expect(removeDocSpy).toHaveBeenCalledWith('visibilitychange', expect.any(Function));
+      expect(removeWinSpy).toHaveBeenCalledWith('focus', expect.any(Function));
+      expect(removeWinSpy).toHaveBeenCalledWith('online', expect.any(Function));
+    });
+
+    it('does not double-register listeners across a slug-change reopen', async () => {
+      const addWinSpy = vi.spyOn(window, 'addEventListener');
+
+      const ws = ref('acme');
+      const scope = effectScope();
+      scope.run(() => useLiveUpdates(ws, { onEvent: vi.fn(), onResync: vi.fn() }));
+
+      ws.value = 'globex';
+      await nextTick();
+
+      const focusRegistrations = addWinSpy.mock.calls.filter(([type]) => type === 'focus');
+      expect(focusRegistrations).toHaveLength(2);
+
+      scope.stop();
+    });
   });
 });
