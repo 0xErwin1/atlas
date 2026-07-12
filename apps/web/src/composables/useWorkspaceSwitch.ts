@@ -36,8 +36,6 @@ export function useWorkspaceSwitch() {
   async function switchTo(slug: string): Promise<void> {
     if (slug === workspace.activeWorkspaceSlug) return;
 
-    const previousSlug = workspace.activeWorkspaceSlug;
-
     const restored = lastViewed.forWorkspace(slug);
     const target = restored ?? { name: sectionAfterSwitch() };
 
@@ -54,17 +52,22 @@ export function useWorkspaceSwitch() {
         isNavigationFailure(failure, NavigationFailureType.aborted) ||
         isNavigationFailure(failure, NavigationFailureType.cancelled);
       if (blocked) {
-        workspace.setActiveWorkspace(previousSlug);
+        // A superseded switch must not revert: the newer switch owns the outcome.
+        // Revert to the last committed workspace, not a per-call snapshot: an
+        // overlapping switch may have already nulled the active slug, so the
+        // snapshot could be null even though a real workspace is committed.
+        if (workspace.isCurrentSwitch(token)) workspace.setActiveWorkspace(workspace.committedSlug);
         return;
       }
     } catch {
-      workspace.setActiveWorkspace(previousSlug);
+      if (workspace.isCurrentSwitch(token)) workspace.setActiveWorkspace(workspace.committedSlug);
       return;
     } finally {
       workspace.endSwitch(token);
     }
 
-    workspace.switchWorkspace(slug);
+    // A superseded switch must not commit its stale target either.
+    if (workspace.isCurrentSwitch(token)) workspace.switchWorkspace(slug);
   }
 
   return { switchTo };
