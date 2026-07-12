@@ -34,7 +34,7 @@ Run everything through `just` (the canonical command surface) inside the dev she
 | Format / check format | `just fmt` / `just fmt-check` |
 | Tests | `just test` — starts Postgres wait, runs `cargo nextest run --workspace` + doctests |
 | Build | `just build` |
-| Full gate (matches CI) | `just verify` — fmt-check + clippy + test + build + web lint |
+| Full gate (matches CI) | `just verify` — backend and frontend compile, lint, format checks, and tests |
 | Start dev Postgres | `just db-up` (podman compose, `postgres:17`) |
 | Reset schema | `just db-reset` / apply migrations `just migrate` |
 | Seed dev data | `just seed-dev` |
@@ -71,6 +71,7 @@ A Vue 3 SPA (Vite, Pinia per-domain stores, vue-router, Tailwind v4) — one of 
 
 ## Conventions
 
+- **Merge gate.** Merging to `main` is forbidden unless `nix develop --command just verify` passes. This gate compiles, lints, and checks formatting for both the backend and frontend, and runs the test suite.
 - **Strict TDD.** Write the failing test first, see it red, then implement to green. Tests run with `cargo nextest`; doctests run separately.
 - **No panics.** Lints deny `unwrap_used`, `expect_used`, `panic`, `unwrap_in_result`, `dbg_macro`; `unsafe_code` is forbidden. Propagate with `?`; return `Result`. `todo!`/`unimplemented!` warn — never ship them.
 - **No silently discarded errors.** Never use `let _ =` on a fallible expression. Propagate with `?`, branch explicitly with `match`/`if let`, log it, or surface it to the user — but never swallow a `Result`/`Option` error.

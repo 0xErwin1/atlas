@@ -114,4 +114,4 @@ build-images tag="local":
     podman build -t atlas-server:{{tag}} -f deploy/Containerfile.server .
     podman build -t atlas-web:{{tag}} -f deploy/Containerfile.web .
 
-verify: fmt-check clippy test build lint-web
+verify: fmt-check clippy test build lint-web build-web

@@ -810,7 +810,21 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     }
 
     if (!isOperationCurrent(operation)) return false;
-    references.value = [...references.value, data];
+    const reference: ReferenceDto = {
+      id: data.id,
+      origins: ['manual'],
+      wikilink_reference_id: null,
+      manual_reference_id: data.id,
+      manual_kind: data.kind,
+      manual_created_at: data.created_at,
+      manual_created_by: data.created_by,
+      target_task_id: data.target_task_id,
+      target_document_id: data.target_document_id,
+      target_readable_id: data.target_readable_id,
+      target_title: data.target_title,
+      target_resolved: data.target_resolved,
+    };
+    references.value = [...references.value, reference];
     return true;
   }
 
