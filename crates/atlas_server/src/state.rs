@@ -1,4 +1,5 @@
 use sea_orm::DatabaseConnection;
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use atlas_domain::{AttachmentStore, semantic_search::EmbeddingProvider};
@@ -24,6 +25,10 @@ pub struct AppState {
     pub anchor_interval: u32,
     pub attachments: Arc<dyn AttachmentStore>,
     pub max_attachment_bytes: u64,
+    /// Configurable allow-list of upload file extensions. `None` means no
+    /// positive extension gate is applied (only the built-in blocklist and the
+    /// content allowlist run).
+    pub upload_allowed_extensions: Option<Arc<HashSet<String>>>,
     pub webhook_crypto: Arc<WebhookCrypto>,
     pub dispatcher_config: DispatcherConfig,
     pub allow_private_webhook_targets: bool,
@@ -59,6 +64,9 @@ impl AppState {
 
         let embedding_provider = build_embedding_provider(cfg)?;
 
+        let upload_allowed_extensions =
+            parse_upload_allowed_extensions(std::env::var("ATLAS_UPLOAD_ALLOWED_EXTENSIONS").ok());
+
         Ok(Self {
             db: Arc::new(db),
             session_ttl_hours,
@@ -67,6 +75,7 @@ impl AppState {
             anchor_interval,
             attachments,
             max_attachment_bytes: DEFAULT_MAX_ATTACHMENT_BYTES,
+            upload_allowed_extensions,
             webhook_crypto,
             dispatcher_config: cfg.dispatcher.clone(),
             allow_private_webhook_targets: cfg.allow_private_webhook_targets,
@@ -104,6 +113,7 @@ impl AppState {
             anchor_interval,
             attachments: Arc::new(attachments),
             max_attachment_bytes: DEFAULT_MAX_ATTACHMENT_BYTES,
+            upload_allowed_extensions: None,
             webhook_crypto: Arc::new(WebhookCrypto::generate_for_test()),
             dispatcher_config: DispatcherConfig::default(),
             allow_private_webhook_targets: true,
@@ -123,6 +133,25 @@ impl AppState {
     /// without uploading a real 20 MiB body.
     pub fn with_max_attachment_bytes(mut self, cap: u64) -> Self {
         self.max_attachment_bytes = cap;
+        self
+    }
+
+    /// Returns a clone of this state with a custom upload extension allow-list.
+    ///
+    /// Intended for integration tests that exercise the positive extension gate
+    /// without setting `ATLAS_UPLOAD_ALLOWED_EXTENSIONS` in the process
+    /// environment. Each entry is normalized like the env var; an empty iterator
+    /// yields `None` (no positive gate).
+    pub fn with_upload_allowed_extensions(
+        mut self,
+        exts: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        let set: HashSet<String> = exts
+            .into_iter()
+            .filter_map(|e| normalize_extension(&e.into()))
+            .collect();
+
+        self.upload_allowed_extensions = (!set.is_empty()).then(|| Arc::new(set));
         self
     }
 
@@ -231,12 +260,60 @@ fn read_env_u32(var: &str, default: u32) -> u32 {
         .unwrap_or(default)
 }
 
+/// Normalizes a single extension entry: trims surrounding whitespace, strips a
+/// single leading `.`, and lowercases ASCII. Returns `None` for an entry that is
+/// empty after normalization.
+fn normalize_extension(raw: &str) -> Option<String> {
+    let trimmed = raw.trim().strip_prefix('.').unwrap_or(raw.trim());
+
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_ascii_lowercase())
+    }
+}
+
+/// Parses `ATLAS_UPLOAD_ALLOWED_EXTENSIONS` into a normalized set of extensions.
+///
+/// Splits on `,`, normalizes each entry (trim, strip one leading `.`, lowercase),
+/// and drops empties. Returns `None` when the raw value is absent or the
+/// resulting set is empty, so an unset or blank value applies no positive gate.
+fn parse_upload_allowed_extensions(raw: Option<String>) -> Option<Arc<HashSet<String>>> {
+    let raw = raw?;
+
+    let set: HashSet<String> = raw.split(',').filter_map(normalize_extension).collect();
+
+    (!set.is_empty()).then(|| Arc::new(set))
+}
+
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn anchor_interval_floor_clamps_1_to_2() {
         let raw: u32 = 1;
         let effective = raw.max(2);
         assert_eq!(effective, 2, "interval of 1 must be clamped to floor of 2");
+    }
+
+    #[test]
+    fn parses_and_normalizes_allowed_extensions() {
+        let parsed =
+            parse_upload_allowed_extensions(Some("PNG, .jpg ,pdf,".to_string())).expect("some set");
+
+        let expected: HashSet<String> = ["png", "jpg", "pdf"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+
+        assert_eq!(*parsed, expected);
+    }
+
+    #[test]
+    fn empty_or_unset_allowed_extensions_is_none() {
+        assert!(parse_upload_allowed_extensions(Some(String::new())).is_none());
+        assert!(parse_upload_allowed_extensions(None).is_none());
+        assert!(parse_upload_allowed_extensions(Some("   ,  , ".to_string())).is_none());
     }
 }

@@ -68,7 +68,7 @@ use crate::{
     routes::documents::content_disposition_attachment,
     routes::validation::{
         validate_comment_body, validate_custom_entry_count, validate_custom_properties,
-        validate_description, validate_labels, validate_name,
+        validate_description, validate_labels, validate_name, validate_upload,
     },
     state::AppState,
 };
@@ -1728,6 +1728,12 @@ pub(crate) async fn upload_attachment(
     let (file_name, content_type, data) = captured.ok_or_else(|| ApiError::InvalidInput {
         message: "multipart form must contain a 'file' part".into(),
     })?;
+
+    validate_upload(
+        &file_name,
+        &data,
+        state.upload_allowed_extensions.as_deref(),
+    )?;
 
     let sha256 = state
         .attachments

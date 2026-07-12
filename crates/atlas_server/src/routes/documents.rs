@@ -42,7 +42,7 @@ use crate::{
         PgDocumentRepo,
     },
     routes::comments::{comment_to_dto, enrich_comment_entries},
-    routes::validation::{validate_comment_body, validate_name},
+    routes::validation::{validate_comment_body, validate_name, validate_upload},
     services::DocumentService,
     state::AppState,
 };
@@ -739,6 +739,12 @@ pub(crate) async fn upload_attachment(
             ),
         });
     }
+
+    validate_upload(
+        &file_name,
+        &body,
+        state.upload_allowed_extensions.as_deref(),
+    )?;
 
     let sha256 = state
         .attachments
