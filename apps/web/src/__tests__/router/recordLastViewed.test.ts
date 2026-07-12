@@ -32,13 +32,13 @@ describe('recordLastViewed guard', () => {
 
   it('records under the destination workspace once the switch has ended', () => {
     const workspace = useWorkspaceStore();
-    workspace.beginSwitch();
+    const token = workspace.beginSwitch();
     workspace.setActiveWorkspace(null);
 
     // Mid-switch navigation to the restored resource must not be recorded.
     recordLastViewed({ name: 'notes', params: { slug: 'restored-note' } });
 
-    workspace.endSwitch();
+    workspace.endSwitch(token);
     workspace.switchWorkspace('personal');
 
     // A normal navigation after the switch records under the destination slug.

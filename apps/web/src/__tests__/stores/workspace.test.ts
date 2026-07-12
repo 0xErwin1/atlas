@@ -14,6 +14,7 @@ import { deferred } from '@/__tests__/deferred';
 import { wrappedClient } from '@/api/wrapper';
 import type { MeResponse } from '@/stores/auth';
 import { useAuthStore } from '@/stores/auth';
+import { useLastViewedStore } from '@/stores/lastViewed';
 import { useWorkspaceStore } from '@/stores/workspace';
 
 const mockGet = wrappedClient.GET as ReturnType<typeof vi.fn>;
@@ -193,6 +194,62 @@ describe('useWorkspaceStore', () => {
     expect(store.activeWorkspaceSlug).toBe('workspace-b');
     expect(store.members).toEqual([]);
     expect(store.myWorkspaceRole).toBeNull();
+  });
+
+  it('deleteWorkspace clears the deleted workspace last-viewed entry', async () => {
+    mockDelete.mockResolvedValueOnce({ error: undefined });
+    const store = useWorkspaceStore();
+    store.workspaces = [
+      { id: '1', name: 'A', slug: 'workspace-a', created_at: 'x', updated_at: 'x' },
+      { id: '2', name: 'B', slug: 'workspace-b', created_at: 'x', updated_at: 'x' },
+    ];
+    store.setActiveWorkspace('workspace-a');
+
+    const lastViewed = useLastViewedStore();
+    lastViewed.record('workspace-a', { name: 'tasks', params: { boardId: 'board-1' } });
+    lastViewed.record('workspace-b', { name: 'notes', params: { slug: 'keep' } });
+
+    await store.deleteWorkspace('workspace-a');
+
+    expect(lastViewed.forWorkspace('workspace-a')).toBeNull();
+    expect(lastViewed.forWorkspace('workspace-b')).toEqual({ name: 'notes', params: { slug: 'keep' } });
+  });
+
+  it('updateWorkspaceSlug rekeys the active workspace last-viewed entry', async () => {
+    mockPatch.mockResolvedValueOnce({
+      data: { id: '1', name: 'Atlas', slug: 'atlas-new', created_at: 'x', updated_at: 'y' },
+      error: undefined,
+    });
+    const store = useWorkspaceStore();
+    store.workspaces = [{ id: '1', name: 'Atlas', slug: 'atlas', created_at: 'x', updated_at: 'x' }];
+    store.setActiveWorkspace('atlas');
+
+    const lastViewed = useLastViewedStore();
+    lastViewed.record('atlas', { name: 'tasks', params: { boardId: 'board-1' } });
+
+    const ok = await store.updateWorkspaceSlug('atlas', 'atlas-new');
+
+    expect(ok).toBe(true);
+    expect(store.activeWorkspaceSlug).toBe('atlas-new');
+    expect(lastViewed.forWorkspace('atlas')).toBeNull();
+    expect(lastViewed.forWorkspace('atlas-new')).toEqual({
+      name: 'tasks',
+      params: { boardId: 'board-1' },
+    });
+  });
+
+  it('beginSwitch/endSwitch keep switching true until the latest overlapping switch ends', () => {
+    const store = useWorkspaceStore();
+
+    const first = store.beginSwitch();
+    const second = store.beginSwitch();
+    expect(store.switching).toBe(true);
+
+    store.endSwitch(first);
+    expect(store.switching).toBe(true);
+
+    store.endSwitch(second);
+    expect(store.switching).toBe(false);
   });
 
   it('renameProject PATCHes the project and refreshes the list', async () => {

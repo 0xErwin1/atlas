@@ -77,6 +77,57 @@ describe('useLastViewedStore', () => {
     expect(store.forWorkspace('atlas')).toEqual({ name: 'notes', params: { slug: 'keep' } });
   });
 
+  it('rekey moves the entry to the new key and drops the old one', () => {
+    const store = useLastViewedStore();
+    store.record('old-slug', { name: 'tasks', params: { boardId: 'board-1' } });
+
+    store.rekey('old-slug', 'new-slug');
+
+    expect(store.forWorkspace('old-slug')).toBeNull();
+    expect(store.forWorkspace('new-slug')).toEqual({ name: 'tasks', params: { boardId: 'board-1' } });
+  });
+
+  it('rekey persists the moved entry', () => {
+    const store = useLastViewedStore();
+    store.record('old-slug', { name: 'notes', params: { slug: 'doc' } });
+
+    store.rekey('old-slug', 'new-slug');
+
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY) as string)).toEqual({
+      'new-slug': { name: 'notes', params: { slug: 'doc' } },
+    });
+  });
+
+  it('rekey is a no-op when the source workspace has no entry', () => {
+    const store = useLastViewedStore();
+    store.record('keep', { name: 'notes', params: { slug: 'x' } });
+
+    store.rekey('missing', 'target');
+
+    expect(store.forWorkspace('target')).toBeNull();
+    expect(store.forWorkspace('keep')).toEqual({ name: 'notes', params: { slug: 'x' } });
+  });
+
+  it('rekey is a no-op when the key is unchanged', () => {
+    const store = useLastViewedStore();
+    store.record('same', { name: 'notes', params: { slug: 'x' } });
+
+    store.rekey('same', 'same');
+
+    expect(store.forWorkspace('same')).toEqual({ name: 'notes', params: { slug: 'x' } });
+  });
+
+  it('rekey does not clobber an existing entry at the target key', () => {
+    const store = useLastViewedStore();
+    store.record('old-slug', { name: 'tasks', params: { boardId: 'from' } });
+    store.record('new-slug', { name: 'notes', params: { slug: 'existing' } });
+
+    store.rekey('old-slug', 'new-slug');
+
+    expect(store.forWorkspace('new-slug')).toEqual({ name: 'notes', params: { slug: 'existing' } });
+    expect(store.forWorkspace('old-slug')).toEqual({ name: 'tasks', params: { boardId: 'from' } });
+  });
+
   it('persists to localStorage and rehydrates on a fresh store', () => {
     const store = useLastViewedStore();
     store.record('atlas', { name: 'tasks', params: { boardId: 'board-1' } });

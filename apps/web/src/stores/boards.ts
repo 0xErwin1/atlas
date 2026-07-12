@@ -560,8 +560,9 @@ export const useBoardsStore = defineStore('boards', () => {
     const nextError = boardError ?? columnsError ?? tasksError;
     if (nextError !== null) {
       loadError.value = nextError;
-      loadErrorStatus.value =
-        settledStatus(boardResult) ?? settledStatus(columnsResult) ?? settledStatus(tasksResult);
+      // Only the board fetch's own status classifies "not found": a 404 from a
+      // sub-fetch (columns/tasks) must not misclassify a live board as deleted.
+      loadErrorStatus.value = settledStatus(boardResult);
       return true;
     }
 
