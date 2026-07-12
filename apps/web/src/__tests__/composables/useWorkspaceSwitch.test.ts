@@ -106,4 +106,103 @@ describe('useWorkspaceSwitch', () => {
     expect(workspace.activeWorkspaceSlug).toBe('atlas');
     expect(workspace.switching).toBe(false);
   });
+
+  it('a superseded switch neither reverts nor commits after a newer switch committed', async () => {
+    const abortedFirst = { type: NavigationFailureType.aborted };
+    let resolveFirst: ((value: unknown) => void) | undefined;
+    push
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFirst = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(undefined);
+    isNavigationFailure.mockImplementation(
+      (result, type) => result === abortedFirst && type === NavigationFailureType.aborted,
+    );
+
+    const workspace = useWorkspaceStore();
+    workspace.setActiveWorkspace('atlas');
+
+    const { switchTo } = useWorkspaceSwitch();
+    const pendingFirst = switchTo('workspace-a');
+    const pendingSecond = switchTo('personal');
+
+    await pendingSecond;
+    expect(workspace.activeWorkspaceSlug).toBe('personal');
+
+    resolveFirst?.(abortedFirst);
+    await pendingFirst;
+
+    expect(workspace.activeWorkspaceSlug).toBe('personal');
+    expect(workspace.switching).toBe(false);
+  });
+
+  it('a superseded switch that navigates successfully does not clobber the newer committed slug', async () => {
+    let resolveFirst: ((value: unknown) => void) | undefined;
+    push
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFirst = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(undefined);
+
+    const workspace = useWorkspaceStore();
+    workspace.setActiveWorkspace('atlas');
+
+    const { switchTo } = useWorkspaceSwitch();
+    const pendingFirst = switchTo('workspace-a');
+    const pendingSecond = switchTo('personal');
+
+    await pendingSecond;
+    expect(workspace.activeWorkspaceSlug).toBe('personal');
+
+    // The older switch now resolves with a SUCCESSFUL navigation. Without the
+    // isCurrentSwitch guard on the final commit it would call switchWorkspace and
+    // overwrite the newer workspace with its own stale target.
+    resolveFirst?.(undefined);
+    await pendingFirst;
+
+    expect(workspace.activeWorkspaceSlug).toBe('personal');
+    expect(workspace.switching).toBe(false);
+  });
+
+  it('reverts the newest aborted switch to the committed workspace, not a transient null', async () => {
+    const abortedSecond = { type: NavigationFailureType.aborted };
+    let resolveFirst: ((value: unknown) => void) | undefined;
+    push
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFirst = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(abortedSecond);
+    isNavigationFailure.mockImplementation(
+      (result, type) => result === abortedSecond && type === NavigationFailureType.aborted,
+    );
+
+    const workspace = useWorkspaceStore();
+    workspace.setActiveWorkspace('atlas');
+
+    const { switchTo } = useWorkspaceSwitch();
+    const pendingFirst = switchTo('workspace-a');
+    const pendingSecond = switchTo('personal');
+
+    await pendingSecond;
+
+    // The earlier switch already nulled the active slug before this newest switch
+    // ran, so a per-call snapshot would revert to null. It must revert to the last
+    // committed workspace instead.
+    expect(workspace.activeWorkspaceSlug).toBe('atlas');
+
+    resolveFirst?.(undefined);
+    await pendingFirst;
+
+    expect(workspace.activeWorkspaceSlug).toBe('atlas');
+    expect(workspace.switching).toBe(false);
+  });
 });

@@ -238,18 +238,57 @@ describe('useWorkspaceStore', () => {
     });
   });
 
-  it('beginSwitch/endSwitch keep switching true until the latest overlapping switch ends', () => {
+  it('switching stays true until all overlapping switches settle, regardless of end order', () => {
     const store = useWorkspaceStore();
 
     const first = store.beginSwitch();
     const second = store.beginSwitch();
     expect(store.switching).toBe(true);
 
-    store.endSwitch(first);
+    // End the NEWEST token first: an in-flight count stays true here, whereas a
+    // monotonic newest-token model would clear the flag on this first end.
+    store.endSwitch(second);
     expect(store.switching).toBe(true);
 
-    store.endSwitch(second);
+    store.endSwitch(first);
     expect(store.switching).toBe(false);
+  });
+
+  it('isCurrentSwitch is true only for the latest overlapping switch token', () => {
+    const store = useWorkspaceStore();
+
+    const first = store.beginSwitch();
+    expect(store.isCurrentSwitch(first)).toBe(true);
+
+    const second = store.beginSwitch();
+    expect(store.isCurrentSwitch(first)).toBe(false);
+    expect(store.isCurrentSwitch(second)).toBe(true);
+  });
+
+  it('updateWorkspaceSlug rekeys a non-active workspace last-viewed entry', async () => {
+    mockPatch.mockResolvedValueOnce({
+      data: { id: '2', name: 'Other', slug: 'other-new', created_at: 'x', updated_at: 'y' },
+      error: undefined,
+    });
+    const store = useWorkspaceStore();
+    store.workspaces = [
+      { id: '1', name: 'Atlas', slug: 'atlas', created_at: 'x', updated_at: 'x' },
+      { id: '2', name: 'Other', slug: 'other', created_at: 'x', updated_at: 'x' },
+    ];
+    store.setActiveWorkspace('atlas');
+
+    const lastViewed = useLastViewedStore();
+    lastViewed.record('other', { name: 'notes', params: { slug: 'doc-1' } });
+
+    const ok = await store.updateWorkspaceSlug('other', 'other-new');
+
+    expect(ok).toBe(true);
+    expect(store.activeWorkspaceSlug).toBe('atlas');
+    expect(lastViewed.forWorkspace('other')).toBeNull();
+    expect(lastViewed.forWorkspace('other-new')).toEqual({
+      name: 'notes',
+      params: { slug: 'doc-1' },
+    });
   });
 
   it('renameProject PATCHes the project and refreshes the list', async () => {
