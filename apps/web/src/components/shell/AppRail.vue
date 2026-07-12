@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { isNavigationFailure, useRoute, useRouter } from 'vue-router';
 import Avatar from '@/components/ui/Avatar.vue';
 import Icon from '@/components/ui/Icon.vue';
 import Popover from '@/components/ui/Popover.vue';
@@ -74,10 +74,24 @@ function sectionAfterSwitch(): string {
   return 'notes';
 }
 
-function pickWorkspace(slug: string): void {
+async function pickWorkspace(slug: string): Promise<void> {
   if (slug === workspace.activeWorkspaceSlug) return;
+
+  const previousSlug = workspace.activeWorkspaceSlug;
+  workspace.setActiveWorkspace(null);
+
+  try {
+    const failure = await router.push({ name: sectionAfterSwitch() });
+    if (isNavigationFailure(failure)) {
+      workspace.setActiveWorkspace(previousSlug);
+      return;
+    }
+  } catch {
+    workspace.setActiveWorkspace(previousSlug);
+    return;
+  }
+
   workspace.switchWorkspace(slug);
-  router.push({ name: sectionAfterSwitch() });
 }
 
 function startNewWorkspace(): void {
