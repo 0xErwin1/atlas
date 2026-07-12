@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import EmptyState from '@/components/states/EmptyState.vue';
 import ErrorState from '@/components/states/ErrorState.vue';
 import LoadingState from '@/components/states/LoadingState.vue';
 import TaskBody from '@/components/tareas/TaskBody.vue';
@@ -15,6 +16,7 @@ import { safeBackOrBoard } from '@/composables/useTaskEscapeNavigation';
 import { EVENT_TYPE, eventString } from '@/lib/eventTypes';
 import { KEYMAP_PRIORITIES } from '@/lib/keymap';
 import { useBoardsStore } from '@/stores/boards';
+import { useLastViewedStore } from '@/stores/lastViewed';
 import { useTaskDetailStore } from '@/stores/taskDetail';
 import { useTasksStore } from '@/stores/tasks';
 import { type TaskViewMode, useUiStore } from '@/stores/ui';
@@ -29,7 +31,12 @@ const tasks = useTasksStore();
 const detail = useTaskDetailStore();
 const boards = useBoardsStore();
 const ui = useUiStore();
+const lastViewed = useLastViewedStore();
 const { isMobile } = useBreakpoint();
+
+// A restored task that no longer exists loads as a 404: show an empty state, not
+// an error, and stop restoring the dead entry on the next workspace switch.
+const notFound = computed(() => tasks.error !== null && tasks.errorStatus === 404);
 
 const readableId = computed(() => {
   const id = route.params.readableId;
@@ -90,13 +97,20 @@ async function load(): Promise<void> {
 
   await tasks.loadTask(target.ws, target.readableId);
 
-  if (
-    seq !== loadSeq ||
-    readableId.value !== target.readableId ||
-    ws.value !== target.ws ||
-    tasks.error !== null ||
-    tasks.openTask?.readable_id !== target.readableId
-  ) {
+  const superseded = seq !== loadSeq || readableId.value !== target.readableId || ws.value !== target.ws;
+  if (superseded) return;
+
+  if (tasks.error !== null) {
+    if (tasks.errorStatus === 404) {
+      lastViewed.clearIfMatches(target.ws, {
+        name: 'task-detail',
+        params: { readableId: target.readableId },
+      });
+    }
+    return;
+  }
+
+  if (tasks.openTask?.readable_id !== target.readableId) {
     return;
   }
 
@@ -214,8 +228,14 @@ watch([readableId, ws], load, { immediate: true });
       </template>
     </div>
     <div v-else class="flex-1 overflow-y-auto" style="padding: 24px 40px;">
+      <EmptyState
+        v-if="notFound"
+        title="Task not found"
+        hint="This task no longer exists. Pick another task from the board."
+        icon="square-kanban"
+      />
       <ErrorState
-        v-if="tasks.error"
+        v-else-if="tasks.error"
         title="Couldn’t load task"
         :hint="tasks.error"
         @retry="load"

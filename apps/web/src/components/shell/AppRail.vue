@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { isNavigationFailure, useRoute, useRouter } from 'vue-router';
+import { isNavigationFailure, NavigationFailureType, useRoute, useRouter } from 'vue-router';
 import Avatar from '@/components/ui/Avatar.vue';
 import Icon from '@/components/ui/Icon.vue';
 import Popover from '@/components/ui/Popover.vue';
 import PromptDialog from '@/components/ui/PromptDialog.vue';
 import { useAuthStore } from '@/stores/auth';
+import { useLastViewedStore } from '@/stores/lastViewed';
 import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 
@@ -14,6 +15,7 @@ const router = useRouter();
 const auth = useAuthStore();
 const ui = useUiStore();
 const workspace = useWorkspaceStore();
+const lastViewed = useLastViewedStore();
 
 interface RailItem {
   name: string;
@@ -78,17 +80,33 @@ async function pickWorkspace(slug: string): Promise<void> {
   if (slug === workspace.activeWorkspaceSlug) return;
 
   const previousSlug = workspace.activeWorkspaceSlug;
+
+  // Restore the resource last viewed in the destination workspace; fall back to
+  // the current section's root when that workspace has no history.
+  const restored = lastViewed.forWorkspace(slug);
+  const target = restored ?? { name: sectionAfterSwitch() };
+
+  workspace.beginSwitch();
   workspace.setActiveWorkspace(null);
 
   try {
-    const failure = await router.push({ name: sectionAfterSwitch() });
-    if (isNavigationFailure(failure)) {
+    const failure = await router.push(target);
+
+    // A `duplicated` failure (the restored URL equals the current one) is not a
+    // real block — the destination is already shown — so we still activate the
+    // new workspace. Only an aborted/cancelled navigation reverts the switch.
+    const blocked =
+      isNavigationFailure(failure, NavigationFailureType.aborted) ||
+      isNavigationFailure(failure, NavigationFailureType.cancelled);
+    if (blocked) {
       workspace.setActiveWorkspace(previousSlug);
       return;
     }
   } catch {
     workspace.setActiveWorkspace(previousSlug);
     return;
+  } finally {
+    workspace.endSwitch();
   }
 
   workspace.switchWorkspace(slug);
