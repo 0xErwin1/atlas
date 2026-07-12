@@ -40,6 +40,11 @@ function persistWorkspace(slug: string): void {
 
 export const useWorkspaceStore = defineStore('workspace', () => {
   const activeWorkspaceSlug = ref<string | null>(null);
+  // True while the rail is switching workspace: the active slug is briefly null
+  // during the switch, and this flag lets the router guards tell that transient
+  // null apart from a cold start so they neither bootstrap from localStorage nor
+  // record the restored resource under the wrong workspace.
+  const switching = ref(false);
   const projects = ref<ProjectSummary[]>([]);
   const workspaces = ref<WorkspaceDto[]>([]);
   // Every workspace in the system, loaded on demand for the root-only admin
@@ -76,6 +81,14 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       members.value = [];
     }
     activeWorkspaceSlug.value = slug;
+  }
+
+  function beginSwitch(): void {
+    switching.value = true;
+  }
+
+  function endSwitch(): void {
+    switching.value = false;
   }
 
   async function loadWorkspaces(): Promise<string | null> {
@@ -455,6 +468,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   return {
     activeWorkspaceSlug,
+    switching,
     projects,
     workspaces,
     adminWorkspaces,
@@ -463,6 +477,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     myWorkspaceRole,
     error,
     setActiveWorkspace,
+    beginSwitch,
+    endSwitch,
     switchWorkspace,
     createWorkspace,
     renameWorkspace,

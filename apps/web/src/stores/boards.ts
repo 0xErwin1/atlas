@@ -56,6 +56,10 @@ export const useBoardsStore = defineStore('boards', () => {
   // action channel (assign, move, delete, …) surfaced as toasts; a failed action
   // must never blank an already-loaded board.
   const loadError = ref<string | null>(null);
+  // HTTP status of the last failed board load, so callers can tell a deleted
+  // board (404) apart from a transient failure and render an empty state instead
+  // of the "Couldn't load board" panel. Null when there is no board load error.
+  const loadErrorStatus = ref<number | null>(null);
   const error = ref<string | null>(null);
   interface ActiveBoardLoad {
     ws: string;
@@ -328,6 +332,11 @@ export const useBoardsStore = defineStore('boards', () => {
     return null;
   }
 
+  function settledStatus<T extends { error?: unknown }>(result: SettledRequest<T>): number | null {
+    if ('cause' in result) return null;
+    return (result.value.error as { status?: number } | undefined)?.status ?? null;
+  }
+
   async function loadBoard(ws: string, boardId: string): Promise<void> {
     if (activeBoardLoad !== null) return;
 
@@ -335,6 +344,7 @@ export const useBoardsStore = defineStore('boards', () => {
     activeBoardRequest = request;
     loading.value = true;
     loadError.value = null;
+    loadErrorStatus.value = null;
     error.value = null;
 
     const result = await settleRequest(fetchBoard(ws, boardId));
@@ -347,6 +357,7 @@ export const useBoardsStore = defineStore('boards', () => {
     const nextError = settledError(result, 'Failed to load board', (value) => value.data !== undefined);
     if (nextError !== null || !('value' in result) || result.value.data === undefined) {
       loadError.value = nextError ?? 'Failed to load board';
+      loadErrorStatus.value = settledStatus(result);
       return;
     }
 
@@ -514,6 +525,7 @@ export const useBoardsStore = defineStore('boards', () => {
 
     loading.value = true;
     loadError.value = null;
+    loadErrorStatus.value = null;
     error.value = null;
     board.value = null;
     columns.value = [];
@@ -548,6 +560,8 @@ export const useBoardsStore = defineStore('boards', () => {
     const nextError = boardError ?? columnsError ?? tasksError;
     if (nextError !== null) {
       loadError.value = nextError;
+      loadErrorStatus.value =
+        settledStatus(boardResult) ?? settledStatus(columnsResult) ?? settledStatus(tasksResult);
       return true;
     }
 
@@ -579,6 +593,7 @@ export const useBoardsStore = defineStore('boards', () => {
     activeTasksRequest = null;
     loading.value = false;
     loadError.value = null;
+    loadErrorStatus.value = null;
     invalidateTaskDetails();
   }
 
@@ -1155,6 +1170,7 @@ export const useBoardsStore = defineStore('boards', () => {
     loading.value = false;
     detailsLoading.value = false;
     loadError.value = null;
+    loadErrorStatus.value = null;
     error.value = null;
   }
 
@@ -1165,6 +1181,7 @@ export const useBoardsStore = defineStore('boards', () => {
     loading,
     error,
     loadError,
+    loadErrorStatus,
     reset,
     taskDetails,
     detailsLoading,

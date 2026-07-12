@@ -24,6 +24,10 @@ export const useTasksStore = defineStore('tasks', () => {
   const openTask = ref<TaskDto | null>(null);
   const loading = ref(false);
   const error = ref<string | null>(null);
+  // HTTP status of the last failed load, so callers can tell a missing task
+  // (404) apart from a transient failure and render an empty state instead of an
+  // error. Null when there is no error.
+  const errorStatus = ref<number | null>(null);
   let loadSeq = 0;
   let activeTarget: TaskTarget | null = null;
 
@@ -35,6 +39,7 @@ export const useTasksStore = defineStore('tasks', () => {
     activeTarget = target;
     loading.value = true;
     error.value = null;
+    errorStatus.value = null;
 
     if (targetChanged) {
       openTask.value = null;
@@ -52,6 +57,7 @@ export const useTasksStore = defineStore('tasks', () => {
       if (apiError !== undefined || data === undefined) {
         openTask.value = null;
         error.value = errorHint(apiError, 'Failed to load task');
+        errorStatus.value = (apiError as { status?: number } | undefined)?.status ?? null;
         return;
       }
 
@@ -62,6 +68,7 @@ export const useTasksStore = defineStore('tasks', () => {
       openTask.value = null;
       loading.value = false;
       error.value = 'Failed to load task';
+      errorStatus.value = null;
     }
   }
 
@@ -109,8 +116,9 @@ export const useTasksStore = defineStore('tasks', () => {
     openTask.value = null;
     loading.value = false;
     error.value = null;
+    errorStatus.value = null;
     activeTarget = null;
   }
 
-  return { openTask, loading, error, loadTask, updateDescription, patchOpenTask, clear };
+  return { openTask, loading, error, errorStatus, loadTask, updateDescription, patchOpenTask, clear };
 });

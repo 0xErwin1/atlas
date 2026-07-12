@@ -2,19 +2,22 @@ import { flushPromises, mount } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { isNavigationFailure, routeState, push } = vi.hoisted(() => ({
-  isNavigationFailure: vi.fn((_result: unknown) => false),
+const { isNavigationFailure, NavigationFailureType, routeState, push } = vi.hoisted(() => ({
+  isNavigationFailure: vi.fn((_result: unknown, _type?: number) => false),
+  NavigationFailureType: { redirected: 2, aborted: 4, cancelled: 8, duplicated: 16 },
   routeState: { name: 'notes' as string },
   push: vi.fn(),
 }));
 
 vi.mock('vue-router', () => ({
   isNavigationFailure,
+  NavigationFailureType,
   useRoute: () => routeState,
   useRouter: () => ({ push }),
 }));
 
 import AppRail from '@/components/shell/AppRail.vue';
+import { useLastViewedStore } from '@/stores/lastViewed';
 import { useWorkspaceStore } from '@/stores/workspace';
 
 async function switchToPersonal(): Promise<void> {
@@ -41,6 +44,11 @@ describe('AppRail workspace switcher', () => {
     vi.clearAllMocks();
     isNavigationFailure.mockReturnValue(false);
     routeState.name = 'notes';
+    try {
+      localStorage.clear();
+    } catch {
+      // jsdom provides localStorage; ignore if absent
+    }
   });
 
   it('lists every workspace and a create action in the menu', async () => {
@@ -129,14 +137,44 @@ describe('AppRail workspace switcher', () => {
   });
 
   it('keeps the old workspace active when navigation is aborted', async () => {
-    const failure = { type: 'aborted' };
+    const failure = { type: NavigationFailureType.aborted };
     push.mockResolvedValueOnce(failure);
-    isNavigationFailure.mockImplementationOnce((result) => result === failure);
+    isNavigationFailure.mockImplementation(
+      (result, type) => result === failure && type === NavigationFailureType.aborted,
+    );
+    const workspace = seed();
+    const spy = vi.spyOn(workspace, 'switchWorkspace');
+
+    await switchToPersonal();
+
+    expect(spy).not.toHaveBeenCalled();
+    expect(workspace.activeWorkspaceSlug).toBe('atlas');
+  });
+
+  it('activates the destination workspace when the restored route duplicates the current URL (ATL-77)', async () => {
+    const failure = { type: NavigationFailureType.duplicated };
+    push.mockResolvedValueOnce(failure);
+    isNavigationFailure.mockImplementation((result, type) => result === failure && type === failure.type);
+    const workspace = seed();
+    const spy = vi.spyOn(workspace, 'switchWorkspace');
+
+    await switchToPersonal();
+
+    expect(spy).toHaveBeenCalledWith('personal');
+    expect(workspace.activeWorkspaceSlug).toBe('personal');
+  });
+
+  it('clears the switching flag on every exit path', async () => {
+    const failure = { type: NavigationFailureType.aborted };
+    push.mockResolvedValueOnce(failure);
+    isNavigationFailure.mockImplementation(
+      (result, type) => result === failure && type === NavigationFailureType.aborted,
+    );
     const workspace = seed();
 
     await switchToPersonal();
 
-    expect(workspace.activeWorkspaceSlug).toBe('atlas');
+    expect(workspace.switching).toBe(false);
   });
 
   it('restores the old workspace when navigation rejects', async () => {
@@ -147,5 +185,24 @@ describe('AppRail workspace switcher', () => {
     await flushPromises();
 
     expect(workspace.activeWorkspaceSlug).toBe('atlas');
+  });
+
+  it('restores the last-viewed resource of the destination workspace (ATL-77)', async () => {
+    seed();
+    const lastViewed = useLastViewedStore();
+    lastViewed.record('personal', { name: 'notes', params: { slug: 'restored-note' } });
+
+    await switchToPersonal();
+
+    expect(push).toHaveBeenCalledWith({ name: 'notes', params: { slug: 'restored-note' } });
+  });
+
+  it('lands on the section root when the destination workspace has no history (ATL-77)', async () => {
+    routeState.name = 'task-detail';
+    seed();
+
+    await switchToPersonal();
+
+    expect(push).toHaveBeenCalledWith({ name: 'tasks' });
   });
 });
