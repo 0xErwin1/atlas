@@ -164,7 +164,16 @@ describe('AppRail workspace switcher', () => {
     expect(workspace.activeWorkspaceSlug).toBe('personal');
   });
 
-  it('clears the switching flag on every exit path', async () => {
+  it('clears the switching flag when navigation succeeds', async () => {
+    const workspace = seed();
+
+    await switchToPersonal();
+
+    expect(workspace.switching).toBe(false);
+    expect(workspace.activeWorkspaceSlug).toBe('personal');
+  });
+
+  it('clears the switching flag when navigation is aborted', async () => {
     const failure = { type: NavigationFailureType.aborted };
     push.mockResolvedValueOnce(failure);
     isNavigationFailure.mockImplementation(
@@ -173,6 +182,16 @@ describe('AppRail workspace switcher', () => {
     const workspace = seed();
 
     await switchToPersonal();
+
+    expect(workspace.switching).toBe(false);
+  });
+
+  it('clears the switching flag when navigation rejects', async () => {
+    push.mockRejectedValueOnce(new Error('navigation rejected'));
+    const workspace = seed();
+
+    await switchToPersonal();
+    await flushPromises();
 
     expect(workspace.switching).toBe(false);
   });

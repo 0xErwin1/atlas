@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { isNavigationFailure, NavigationFailureType, useRoute, useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import Avatar from '@/components/ui/Avatar.vue';
 import Icon from '@/components/ui/Icon.vue';
 import Popover from '@/components/ui/Popover.vue';
 import PromptDialog from '@/components/ui/PromptDialog.vue';
+import { useWorkspaceSwitch } from '@/composables/useWorkspaceSwitch';
 import { useAuthStore } from '@/stores/auth';
-import { useLastViewedStore } from '@/stores/lastViewed';
 import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 
@@ -15,7 +15,7 @@ const router = useRouter();
 const auth = useAuthStore();
 const ui = useUiStore();
 const workspace = useWorkspaceStore();
-const lastViewed = useLastViewedStore();
+const { switchTo } = useWorkspaceSwitch();
 
 interface RailItem {
   name: string;
@@ -62,54 +62,8 @@ const workspaceInitial = computed(() => {
 
 const newWorkspaceOpen = ref(false);
 
-// Task surfaces that should keep the user in Tasks after a workspace switch.
-const TASK_ROUTES = new Set(['tasks', 'task-view', 'task-detail']);
-
-// Keep the user in the same section when they switch workspace: from any Tasks
-// route land on the new workspace's board, from Search stay in Search, otherwise
-// (Notes, Settings, …) go to Notes. The specific board/task/note id belongs to the
-// old workspace, so we drop it and navigate to the section root.
-function sectionAfterSwitch(): string {
-  const name = typeof route.name === 'string' ? route.name : '';
-  if (TASK_ROUTES.has(name)) return 'tasks';
-  if (name === 'search') return 'search';
-  return 'notes';
-}
-
-async function pickWorkspace(slug: string): Promise<void> {
-  if (slug === workspace.activeWorkspaceSlug) return;
-
-  const previousSlug = workspace.activeWorkspaceSlug;
-
-  // Restore the resource last viewed in the destination workspace; fall back to
-  // the current section's root when that workspace has no history.
-  const restored = lastViewed.forWorkspace(slug);
-  const target = restored ?? { name: sectionAfterSwitch() };
-
-  workspace.beginSwitch();
-  workspace.setActiveWorkspace(null);
-
-  try {
-    const failure = await router.push(target);
-
-    // A `duplicated` failure (the restored URL equals the current one) is not a
-    // real block — the destination is already shown — so we still activate the
-    // new workspace. Only an aborted/cancelled navigation reverts the switch.
-    const blocked =
-      isNavigationFailure(failure, NavigationFailureType.aborted) ||
-      isNavigationFailure(failure, NavigationFailureType.cancelled);
-    if (blocked) {
-      workspace.setActiveWorkspace(previousSlug);
-      return;
-    }
-  } catch {
-    workspace.setActiveWorkspace(previousSlug);
-    return;
-  } finally {
-    workspace.endSwitch();
-  }
-
-  workspace.switchWorkspace(slug);
+function pickWorkspace(slug: string): Promise<void> {
+  return switchTo(slug);
 }
 
 function startNewWorkspace(): void {
