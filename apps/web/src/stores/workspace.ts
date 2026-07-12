@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { computed, ref } from 'vue';
+import { computed, readonly, ref } from 'vue';
 import type { components } from '@/api/types';
 import { wrappedClient } from '@/api/wrapper';
 import { errorHint } from '@/lib/apiError';
@@ -41,16 +41,24 @@ function persistWorkspace(slug: string): void {
 
 export const useWorkspaceStore = defineStore('workspace', () => {
   const activeWorkspaceSlug = ref<string | null>(null);
+  // The last non-null active workspace. Unlike `activeWorkspaceSlug`, it is not
+  // cleared while a switch briefly nulls the active slug, so a failed switch can
+  // revert to the workspace that was actually committed last rather than to the
+  // transient null an overlapping switch may have left behind.
+  const committedSlug = ref<string | null>(null);
   // Concurrency-safe switch tracking: the active slug is briefly null during a
   // switch, and `switching` lets the router guards tell that transient null apart
   // from a cold start so they neither bootstrap from localStorage nor record the
   // restored resource under the wrong workspace. Each switch takes a monotonic
-  // token from `beginSwitch`; `endSwitch` settles only when its token is still the
-  // latest, so an earlier switch's completion never clears the flag while a later
-  // overlapping switch is still navigating.
-  const switchGeneration = ref(0);
-  const switchSettled = ref(0);
-  const switching = computed(() => switchGeneration.value !== switchSettled.value);
+  // token from `beginSwitch` and a matching `endSwitch` in its `finally`;
+  // `switching` stays true until every in-flight switch has settled (an in-flight
+  // count, so an earlier switch's completion never clears the flag while a later
+  // overlapping switch is still navigating). `isCurrentSwitch` lets a switch tell
+  // whether it is still the latest before it reverts or commits its target, so a
+  // superseded switch never clobbers a newer one's outcome.
+  let switchGeneration = 0;
+  const activeSwitchCount = ref(0);
+  const switching = computed(() => activeSwitchCount.value > 0);
   const projects = ref<ProjectSummary[]>([]);
   const workspaces = ref<WorkspaceDto[]>([]);
   // Every workspace in the system, loaded on demand for the root-only admin
@@ -87,19 +95,30 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       members.value = [];
     }
     activeWorkspaceSlug.value = slug;
+    if (slug !== null) committedSlug.value = slug;
   }
 
   /** Starts a switch and returns its token, to be passed back to `endSwitch`. */
   function beginSwitch(): number {
-    switchGeneration.value += 1;
-    return switchGeneration.value;
+    activeSwitchCount.value += 1;
+    switchGeneration += 1;
+    return switchGeneration;
   }
 
-  /** Ends a switch, clearing `switching` only when this token is still the latest. */
-  function endSwitch(token: number): void {
-    if (token === switchGeneration.value) {
-      switchSettled.value = token;
+  /**
+   * Ends a switch, decrementing the in-flight count so `switching` clears once all
+   * settle. The sole invariant is the 1-begin/1-end `finally` pairing; the `token`
+   * is accepted only for symmetry with `beginSwitch`/`isCurrentSwitch` and is unused.
+   */
+  function endSwitch(_token: number): void {
+    if (activeSwitchCount.value > 0) {
+      activeSwitchCount.value -= 1;
     }
+  }
+
+  /** True only when `token` is still the latest switch — no newer switch has started. */
+  function isCurrentSwitch(token: number): boolean {
+    return token === switchGeneration;
   }
 
   async function loadWorkspaces(): Promise<string | null> {
@@ -316,10 +335,11 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     workspaces.value = apply(workspaces.value);
     adminWorkspaces.value = apply(adminWorkspaces.value);
 
+    useLastViewedStore().rekey(ws, data.slug);
+
     if (activeWorkspaceSlug.value === ws) {
       activeWorkspaceSlug.value = data.slug;
       persistWorkspace(data.slug);
-      useLastViewedStore().rekey(ws, data.slug);
     }
 
     return true;
@@ -483,6 +503,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   return {
     activeWorkspaceSlug,
+    committedSlug: readonly(committedSlug),
     switching,
     projects,
     workspaces,
@@ -494,6 +515,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     setActiveWorkspace,
     beginSwitch,
     endSwitch,
+    isCurrentSwitch,
     switchWorkspace,
     createWorkspace,
     renameWorkspace,
