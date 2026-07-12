@@ -74,6 +74,7 @@ The repo assumes:
 |---|---|---|
 | `ATLAS_ATTACHMENT_BACKEND` | `disk` | `disk` or `s3` |
 | `ATLAS_ATTACHMENT_ROOT` | `./data/attachments` | disk backend root |
+| `ATLAS_UPLOAD_ALLOWED_EXTENSIONS` | — | comma-separated allow-list of upload extensions (e.g. `png,jpg,pdf,txt`); when set, an upload's declared extension must be in the list and pass the content check. Empty/unset keeps the default (all safe types allowed; executables always blocked). |
 | `ATLAS_S3_BUCKET` | — | required when backend is `s3` |
 | `ATLAS_S3_ENDPOINT` | — | required when backend is `s3` |
 | `ATLAS_S3_ACCESS_KEY_ID` | — | required when backend is `s3` |

@@ -32,6 +32,92 @@ pub(crate) fn validate_name(field: &str, value: &str) -> Result<(), ApiError> {
     Ok(())
 }
 
+/// Extensions that always denote executable or script content.
+///
+/// Uploads with any of these extensions are rejected regardless of their bytes:
+/// an executable payload disguised under a benign name is still an executable.
+/// The magic-byte layer below is an independent check — per ATL-75 we reject an
+/// upload if either the extension or the sniffed content signals a disallowed
+/// type.
+const BLOCKED_EXTENSIONS: &[&str] = &[
+    "exe", "com", "scr", "msi", "msix", "appx", "bat", "cmd", "ps1", "psm1", "vbs", "vbe", "sh",
+    "bash", "zsh", "ksh", "run", "bin", "elf", "so", "dll", "dylib", "o", "out", "jar", "class",
+    "app", "apk", "deb", "rpm", "wasm", "dmg", "pkg",
+];
+
+/// Enforces the upload content policy for attachment bytes.
+///
+/// Rejects executables and scripts by two independent signals: a hard-floor
+/// blocklist of dangerous file extensions and magic-byte inspection of the actual
+/// content. Only images, documents/e-books, and plain text (including files with
+/// no known binary signature that decode as valid UTF-8) are accepted.
+///
+/// When `allowed_extensions` is `Some`, an additional positive gate is ANDed with
+/// the content check: the upload's declared extension must appear in that
+/// (non-empty) allow-list, otherwise the upload is rejected regardless of its
+/// bytes. When `None`, no positive gate is applied. The size limit is enforced
+/// elsewhere and is intentionally untouched here.
+pub(crate) fn validate_upload(
+    file_name: &str,
+    data: &[u8],
+    allowed_extensions: Option<&std::collections::HashSet<String>>,
+) -> Result<(), ApiError> {
+    let extension = file_name
+        .rsplit_once('.')
+        .map(|(_, ext)| ext.to_ascii_lowercase());
+
+    if let Some(ext) = &extension
+        && BLOCKED_EXTENSIONS.contains(&ext.as_str())
+    {
+        return Err(ApiError::InvalidInput {
+            message: format!("File extension '{ext}' is not allowed"),
+        });
+    }
+
+    if let Some(allowed) = allowed_extensions {
+        match &extension {
+            Some(ext) if allowed.contains(ext) => {}
+            Some(ext) => {
+                return Err(ApiError::InvalidInput {
+                    message: format!("File extension '{ext}' is not allowed"),
+                });
+            }
+            None => {
+                return Err(ApiError::InvalidInput {
+                    message: "files without an extension are not allowed".to_string(),
+                });
+            }
+        }
+    }
+
+    match infer::get(data) {
+        Some(kind) => {
+            use infer::MatcherType::*;
+
+            // `infer` classifies PDF under `Archive`, not `Doc`, so PDFs are
+            // allowed explicitly by MIME type rather than by matcher category.
+            let allowed = matches!(kind.matcher_type(), Image | Doc | Book)
+                || kind.mime_type() == "application/pdf"
+                || (kind.matcher_type() == Text && kind.extension() != "sh");
+
+            if !allowed {
+                return Err(ApiError::InvalidInput {
+                    message: format!("File content type '{}' is not allowed", kind.mime_type()),
+                });
+            }
+        }
+        None => {
+            if data.contains(&0) || std::str::from_utf8(data).is_err() {
+                return Err(ApiError::InvalidInput {
+                    message: "File type could not be identified or is not allowed".to_string(),
+                });
+            }
+        }
+    }
+
+    Ok(())
+}
+
 const MAX_SLUG_LEN: usize = 80;
 
 /// Validates a user-supplied workspace slug.
@@ -393,4 +479,91 @@ pub(crate) fn validate_task_view_filters(filters: &TaskViewFiltersDto) -> Result
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn accepts_png_by_magic_bytes() {
+        let data = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR";
+        assert!(validate_upload("photo.png", data, None).is_ok());
+    }
+
+    #[test]
+    fn accepts_pdf_by_magic_bytes() {
+        let data = b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n";
+        assert!(validate_upload("doc.pdf", data, None).is_ok());
+    }
+
+    #[test]
+    fn accepts_plain_text() {
+        let data = b"hello world";
+        assert!(validate_upload("note.txt", data, None).is_ok());
+    }
+
+    #[test]
+    fn accepts_markdown() {
+        let data = b"# Title\n\nSome **markdown** content.\n";
+        assert!(validate_upload("readme.md", data, None).is_ok());
+    }
+
+    #[test]
+    fn rejects_elf_with_spoofed_extension() {
+        let data = b"\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00";
+        assert!(validate_upload("photo.png", data, None).is_err());
+    }
+
+    #[test]
+    fn rejects_shell_script_content() {
+        let data = b"#!/bin/bash\necho hi\n";
+        assert!(validate_upload("script.txt", data, None).is_err());
+    }
+
+    #[test]
+    fn rejects_blocked_extension_regardless_of_content() {
+        let data = b"harmless text";
+        assert!(validate_upload("malware.exe", data, None).is_err());
+    }
+
+    #[test]
+    fn rejects_binary_without_signature() {
+        let data = b"some text\x00more binary";
+        assert!(validate_upload("data.txt", data, None).is_err());
+    }
+
+    #[test]
+    fn allowlist_accepts_declared_extension_in_set() {
+        let set = HashSet::from(["png".to_string(), "txt".to_string()]);
+        let data = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR";
+        assert!(validate_upload("photo.png", data, Some(&set)).is_ok());
+    }
+
+    #[test]
+    fn allowlist_rejects_declared_extension_not_in_set() {
+        let set = HashSet::from(["png".to_string(), "txt".to_string()]);
+        let data = b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n";
+        assert!(validate_upload("doc.pdf", data, Some(&set)).is_err());
+    }
+
+    #[test]
+    fn allowlist_accepts_plain_text_with_allowed_extension() {
+        let set = HashSet::from(["png".to_string(), "txt".to_string()]);
+        assert!(validate_upload("note.txt", b"hello", Some(&set)).is_ok());
+    }
+
+    #[test]
+    fn allowlist_rejects_file_without_extension() {
+        let set = HashSet::from(["png".to_string(), "txt".to_string()]);
+        assert!(validate_upload("noext", b"hello", Some(&set)).is_err());
+    }
+
+    #[test]
+    fn allowlist_still_rejects_executable_content_with_allowed_extension() {
+        let set = HashSet::from(["png".to_string(), "txt".to_string()]);
+        let data = b"\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00";
+        assert!(validate_upload("photo.png", data, Some(&set)).is_err());
+    }
 }
