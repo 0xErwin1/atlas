@@ -112,6 +112,30 @@ export async function flushThenLoadNoteResource<T>(
 
   return runRegisteredNoteResourceLoad(state, target, sequence, load);
 }
+
+export type ReconcileDecision = 'ignore' | 'apply' | 'keep-and-flag';
+
+/**
+ * Decides how a realtime `document.updated`/resync signal should reconcile
+ * against the currently open note. Dirty local edits are never overwritten —
+ * they are flagged instead, so the next save runs through the existing CAS
+ * conflict flow rather than silently losing unsaved work.
+ */
+export function planDocumentReconcile(
+  openDocumentId: string | null,
+  eventDocumentId: string | null,
+  dirty: boolean,
+): ReconcileDecision {
+  if (openDocumentId === null || eventDocumentId === null || eventDocumentId !== openDocumentId) {
+    return 'ignore';
+  }
+
+  return dirty ? 'keep-and-flag' : 'apply';
+}
+
+export function isDocumentMissingError(error: unknown): boolean {
+  return (error as { status?: number } | undefined)?.status === 404;
+}
 </script>
 
 <script setup lang="ts">
@@ -140,10 +164,11 @@ import type { MergeSegment } from '@/composables/useCasMerge';
 import { useCasMerge } from '@/composables/useCasMerge';
 import { useDocumentPresence } from '@/composables/useDocumentPresence';
 import { useLiveUpdates } from '@/composables/useLiveUpdates';
+import type { LoadResult } from '@/composables/useMarkdownDoc';
 import { useMarkdownDoc } from '@/composables/useMarkdownDoc';
 import { useWikilinkSuggest } from '@/composables/useWikilinkSuggest';
 import { useWikilinkTitles } from '@/composables/useWikilinkTitles';
-import { PRESENCE_UPDATED } from '@/lib/eventTypes';
+import { EVENT_TYPE, PRESENCE_UPDATED } from '@/lib/eventTypes';
 import { joinFrontmatter, splitFrontmatter } from '@/lib/frontmatter';
 import { type WikilinkRef, wikilinkHref } from '@/lib/wikilink';
 import { useDocumentsStore } from '@/stores/documents';
@@ -202,15 +227,19 @@ const slug = computed(() => {
 const ws = computed(() => workspace.activeWorkspaceSlug ?? '');
 
 // Live document presence: heartbeat the viewer into the open note and surface who
-// else is editing it. `presence.updated` is the only live event this view acts on;
-// the note list is refreshed by the sidebar's own stream and the open editor is
-// CAS-managed, so a reconnect needs no resync here (the next heartbeat re-seeds).
+// else is editing it. `document.updated` for the open note and every resync
+// (reconnect or explicit `resync` marker) reconcile the open note via CAS,
+// scoped to it by `documentId` so other notes' edits never touch this buffer.
 const presence = useDocumentPresence(ws, slug);
 useLiveUpdates(ws, {
   onEvent: (evt) => {
-    if (evt.type === PRESENCE_UPDATED) presence.apply(evt.envelope);
+    if (evt.type === PRESENCE_UPDATED) {
+      presence.apply(evt.envelope);
+      return;
+    }
+    if (evt.type === EVENT_TYPE.DOCUMENT_UPDATED) void reconcileOpenNote(evt.envelope.document_id ?? null);
   },
-  onResync: () => {},
+  onResync: () => void reconcileOpenNote(documentId.value),
 });
 
 const title = ref('');
@@ -218,6 +247,11 @@ const body = ref('');
 const meta = ref<Record<string, unknown>>({});
 const headRevisionId = ref('');
 const dirty = ref(false);
+// The open note's stable id, used to scope realtime reconcile to this note.
+const documentId = ref<string | null>(null);
+// Set when a remote edit arrived while the open note had unsaved local edits;
+// cleared by the next successful save or a clean reconcile.
+const remoteChangesPending = ref(false);
 
 // Editor view mode, owned here so the toolbar's segmented control drives the
 // shared editor (which renders no in-body controls for Notes).
@@ -318,6 +352,65 @@ function clearDocument(): void {
   headRevisionId.value = '';
   baseContent.value = '';
   dirty.value = false;
+  documentId.value = null;
+  remoteChangesPending.value = false;
+}
+
+/**
+ * Applies a loaded document to the editor state. Shared by the route-driven
+ * `loadDoc` and the realtime reconcile path, so both advance the CAS base
+ * (`baseContent`/`headRevisionId`) through the exact same assignments.
+ */
+function applyLoadedDocument(result: LoadResult, fallbackTitle: string): void {
+  body.value = result.body;
+  meta.value = result.meta;
+  headRevisionId.value = result.headRevisionId;
+  baseContent.value = joinFrontmatter(result.meta, result.body);
+  title.value = typeof result.meta.title === 'string' ? result.meta.title : fallbackTitle;
+  dirty.value = false;
+  documentId.value = result.id;
+}
+
+/**
+ * Recovers from a document that no longer exists (404): drops the stale
+ * last-viewed pointer and the tab, then routes to the next open tab or the
+ * notes root. Shared by `loadDoc` and the realtime reconcile path.
+ */
+function handleMissingDocument(target: NoteTarget): void {
+  lastViewed.clearIfMatches(target.workspaceSlug, {
+    name: 'notes',
+    params: { slug: target.slug },
+  });
+  const next = tabsStore.close(target.workspaceSlug, target.slug) ?? tabsStore.tabs(target.workspaceSlug)[0]?.slug ?? null;
+  void router.replace(next !== null ? { name: 'notes', params: { slug: next } } : { name: 'notes' });
+}
+
+/**
+ * Reconciles the open note against a realtime signal (a `document.updated`
+ * event scoped to this note, or a full resync). A clean note advances its CAS
+ * base to the remote revision; a dirty note is left untouched and flagged so
+ * the next save runs through the existing CAS conflict/merge flow instead of
+ * silently losing unsaved edits.
+ */
+async function reconcileOpenNote(eventDocumentId: string | null): Promise<void> {
+  if (slug.value === null || ws.value === '') return;
+
+  const decision = planDocumentReconcile(documentId.value, eventDocumentId, dirty.value);
+  if (decision === 'ignore') return;
+
+  if (decision === 'keep-and-flag') {
+    remoteChangesPending.value = true;
+    return;
+  }
+
+  const target: NoteTarget = { workspaceSlug: ws.value, slug: slug.value };
+  try {
+    const result = await load(target.workspaceSlug, target.slug);
+    applyLoadedDocument(result, target.slug);
+    remoteChangesPending.value = false;
+  } catch (error) {
+    if (isDocumentMissingError(error)) handleMissingDocument(target);
+  }
 }
 
 async function loadDoc(target: NoteTarget | null, previousTarget: NoteTarget | null): Promise<void> {
@@ -346,15 +439,7 @@ async function loadDoc(target: NoteTarget | null, previousTarget: NoteTarget | n
   if (!noteResource.value.hasContent) clearDocument();
   const loadResult = await loadResultPromise;
   if (!loadResult.accepted) {
-    const status = (loadResult.error as { status?: number } | undefined)?.status ?? 0;
-    if (status === 404) {
-      lastViewed.clearIfMatches(target.workspaceSlug, {
-        name: 'notes',
-        params: { slug: target.slug },
-      });
-      const next = tabsStore.close(target.workspaceSlug, target.slug) ?? tabsStore.tabs(target.workspaceSlug)[0]?.slug ?? null;
-      void router.replace(next !== null ? { name: 'notes', params: { slug: next } } : { name: 'notes' });
-    }
+    if (isDocumentMissingError(loadResult.error)) handleMissingDocument(target);
     return;
   }
 
@@ -364,12 +449,7 @@ async function loadDoc(target: NoteTarget | null, previousTarget: NoteTarget | n
     return;
   }
 
-  body.value = result.body;
-  meta.value = result.meta;
-  headRevisionId.value = result.headRevisionId;
-  baseContent.value = joinFrontmatter(result.meta, result.body);
-  title.value = typeof result.meta.title === 'string' ? result.meta.title : target.slug;
-  dirty.value = false;
+  applyLoadedDocument(result, target.slug);
   tabsStore.open(target.workspaceSlug, target.slug, title.value);
   await documents.loadBacklinks(target.workspaceSlug, target.slug);
 }
@@ -454,6 +534,7 @@ function onSaved(content: string, revisionId: string): void {
   conflictSegments.value = [];
   baseContent.value = content;
   if (revisionId !== '') headRevisionId.value = revisionId;
+  remoteChangesPending.value = false;
 }
 
 async function onConflictResolve(content: string): Promise<void> {
@@ -711,6 +792,18 @@ watch(title, (t) => {
 
         <div aria-hidden="true" style="width: 1px; height: 18px; background: var(--c-border);" />
       </template>
+
+      <button
+        v-if="slug && hasDocumentContent && remoteChangesPending"
+        type="button"
+        title="Remote changes pending — click to reconcile"
+        aria-label="Remote changes pending"
+        class="atl-gbtn on"
+        style="width: 28px; height: 28px;"
+        @click="reconcileOpenNote(documentId)"
+      >
+        <Icon name="refresh-cw" :size="15" />
+      </button>
 
       <PresenceAvatars v-if="slug && hasDocumentContent" :actors="presence.actors" />
 

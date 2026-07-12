@@ -4,6 +4,8 @@ import { wrappedClient } from '@/api/wrapper';
 import { joinFrontmatter, splitFrontmatter } from '@/lib/frontmatter';
 
 export interface LoadResult {
+  /** The document's stable id, used to scope realtime reconcile to the open note. */
+  id: string;
   body: string;
   meta: Record<string, unknown>;
   headRevisionId: string;
@@ -50,6 +52,7 @@ export function useMarkdownDoc() {
     const { body, meta } = splitFrontmatter(raw);
 
     return {
+      id: data.id ?? '',
       body,
       meta,
       headRevisionId: data.head_revision_id ?? '',
