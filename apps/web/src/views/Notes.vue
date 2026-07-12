@@ -129,6 +129,7 @@ import PropertiesPanel from '@/components/notas/PropertiesPanel.vue';
 import WikiLinkSuggest from '@/components/notas/WikiLinkSuggest.vue';
 import SharePanel from '@/components/share/SharePanel.vue';
 import EditorToolbar from '@/components/shell/EditorToolbar.vue';
+import EmptyState from '@/components/states/EmptyState.vue';
 import ErrorState from '@/components/states/ErrorState.vue';
 import LoadingState from '@/components/states/LoadingState.vue';
 import Icon from '@/components/ui/Icon.vue';
@@ -146,6 +147,7 @@ import { PRESENCE_UPDATED } from '@/lib/eventTypes';
 import { joinFrontmatter, splitFrontmatter } from '@/lib/frontmatter';
 import { type WikilinkRef, wikilinkHref } from '@/lib/wikilink';
 import { useDocumentsStore } from '@/stores/documents';
+import { useLastViewedStore } from '@/stores/lastViewed';
 import { useNotesTabsStore } from '@/stores/notesTabs';
 import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
@@ -159,6 +161,7 @@ const workspace = useWorkspaceStore();
 const documents = useDocumentsStore();
 const ui = useUiStore();
 const tabsStore = useNotesTabsStore();
+const lastViewed = useLastViewedStore();
 const { load, save } = useMarkdownDoc();
 const { merge } = useCasMerge();
 const { isMobile } = useBreakpoint();
@@ -345,6 +348,10 @@ async function loadDoc(target: NoteTarget | null, previousTarget: NoteTarget | n
   if (!loadResult.accepted) {
     const status = (loadResult.error as { status?: number } | undefined)?.status ?? 0;
     if (status === 404) {
+      lastViewed.clearIfMatches(target.workspaceSlug, {
+        name: 'notes',
+        params: { slug: target.slug },
+      });
       const next = tabsStore.close(target.workspaceSlug, target.slug) ?? tabsStore.tabs(target.workspaceSlug)[0]?.slug ?? null;
       void router.replace(next !== null ? { name: 'notes', params: { slug: next } } : { name: 'notes' });
     }
@@ -783,12 +790,11 @@ watch(title, (t) => {
           </div>
         </template>
 
-        <p
+        <EmptyState
           v-else
-          style="font-size: var(--fs-sm); color: var(--c-muted);"
-        >
-          Select a document from the tree to start editing.
-        </p>
+          title="No document open"
+          hint="Select a document from the tree to start editing."
+        />
       </div>
     </div>
 

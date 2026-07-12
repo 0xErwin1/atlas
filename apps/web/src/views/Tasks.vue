@@ -25,6 +25,7 @@ import { useOpenTaskLive } from '@/composables/useOpenTaskLive';
 import { EVENT_TYPE, eventString, PRESENCE_UPDATED } from '@/lib/eventTypes';
 import { KEYMAP_PRIORITIES } from '@/lib/keymap';
 import { useBoardsStore } from '@/stores/boards';
+import { useLastViewedStore } from '@/stores/lastViewed';
 import { useTaskDetailStore } from '@/stores/taskDetail';
 import { useTasksStore } from '@/stores/tasks';
 import { useTaskViewsStore } from '@/stores/taskViews';
@@ -47,7 +48,12 @@ const ui = useUiStore();
 const uiState = useUiStateStore();
 const workspaceTasks = useWorkspaceTasksStore();
 const taskViews = useTaskViewsStore();
+const lastViewed = useLastViewedStore();
 const { isMobile } = useBreakpoint();
+
+// A restored board that no longer exists loads as a 404: show an empty state,
+// not an error, and stop restoring the dead entry on the next workspace switch.
+const boardNotFound = computed(() => boards.loadError !== null && boards.loadErrorStatus === 404);
 
 const boardId = computed(() => {
   const id = route.params.boardId;
@@ -249,6 +255,13 @@ async function loadBoard(): Promise<void> {
     ws.value !== targetWorkspace ||
     boardId.value !== targetBoardId
   ) {
+    return;
+  }
+
+  if (boards.loadError !== null) {
+    if (boards.loadErrorStatus === 404) {
+      lastViewed.clearIfMatches(targetWorkspace, { name: 'tasks', params: { boardId: targetBoardId } });
+    }
     return;
   }
 
@@ -605,6 +618,12 @@ watch(
 
     <template v-else>
       <LoadingState v-if="boards.loading" label="Loading…" />
+      <EmptyState
+        v-else-if="boardNotFound"
+        title="Board not found"
+        hint="This board no longer exists. Pick another board from the sidebar."
+        icon="square-kanban"
+      />
       <ErrorState
         v-else-if="boards.loadError"
         title="Couldn't load board"
