@@ -17,16 +17,19 @@ const router = createRouter({
 function reference(overrides: Partial<ReferenceDto>): ReferenceDto {
   return {
     id: 'r1',
-    kind: 'blocks',
+    origins: ['manual'],
+    wikilink_reference_id: null,
+    manual_reference_id: 'r1',
+    manual_kind: 'blocks',
+    manual_created_at: '2026-01-01T00:00:00Z',
+    manual_created_by: { id: 'u1', type: 'user', display_name: 'U' },
     target_task_id: null,
     target_readable_id: null,
     target_document_id: null,
     target_title: null,
     target_resolved: true,
-    created_at: '2026-01-01T00:00:00Z',
-    created_by: { type: 'user', display_name: 'U' },
     ...overrides,
-  } as ReferenceDto;
+  };
 }
 
 function mountList(references: ReferenceDto[], backlinks: TaskBacklinkDto[] = []) {
@@ -50,7 +53,7 @@ describe('ReferenceList', () => {
 
   it('links a resolved document reference to the notes route by id', () => {
     const wrapper = mountList([
-      reference({ kind: 'docs', target_document_id: 'doc-9', target_title: 'Spec' }),
+      reference({ manual_kind: 'docs', target_document_id: 'doc-9', target_title: 'Spec' }),
     ]);
 
     expect(wrapper.get('a.atl-ref-target').attributes('href')).toBe('/n/doc-9');

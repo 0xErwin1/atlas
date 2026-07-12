@@ -12,7 +12,7 @@ vi.mock('@/api/wrapper', () => ({
   wrappedClient: { GET, POST, DELETE, PATCH },
 }));
 
-import { useTaskDetailStore } from '@/stores/taskDetail';
+import { type ReferenceDto, useTaskDetailStore } from '@/stores/taskDetail';
 
 const actor = (id: string, type: string, name: string) => ({
   id,
@@ -51,7 +51,7 @@ const subtaskSummary = (id: string, readableId: string, title: string) => ({
   updated_at: '2026-01-01T00:00:00Z',
 });
 
-const reference = (id: string, kind: string) => ({
+const reference = (id: string, kind: string): ReferenceDto => ({
   id,
   origins: ['manual'],
   wikilink_reference_id: null,
@@ -66,7 +66,7 @@ const reference = (id: string, kind: string) => ({
   target_readable_id: 'ATL-9',
 });
 
-const mergedReference = (manualId: string, wikilinkId: string) => ({
+const mergedReference = (manualId: string, wikilinkId: string): ReferenceDto => ({
   ...reference(manualId, 'docs'),
   origins: ['manual', 'wikilink'],
   wikilink_reference_id: wikilinkId,
@@ -76,7 +76,7 @@ const mergedReference = (manualId: string, wikilinkId: string) => ({
   target_title: 'Linked document',
 });
 
-const wikilinkReference = (id: string, title: string) => ({
+const wikilinkReference = (id: string, title: string): ReferenceDto => ({
   id,
   origins: ['wikilink'],
   wikilink_reference_id: id,

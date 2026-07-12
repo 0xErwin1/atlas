@@ -343,12 +343,18 @@ describe('ActivityComments feed (ATL-19)', () => {
   it('links a reference_added entry to the referenced task (ATL-65)', () => {
     const reference: ReferenceDto = {
       id: 'r1',
-      kind: 'relates',
+      origins: ['manual'],
+      wikilink_reference_id: null,
+      manual_reference_id: 'r1',
+      manual_kind: 'relates',
+      manual_created_at: '2026-01-01T00:00:00Z',
+      manual_created_by: { id: 'u1', type: 'user', display_name: 'Robin' },
+      target_task_id: 't9',
+      target_document_id: null,
+      target_title: null,
       target_readable_id: 'ATL-9',
       target_resolved: true,
-      created_at: '2026-01-01T00:00:00Z',
-      created_by: { id: 'u1', type: 'user', display_name: 'Robin' },
-    } as ReferenceDto;
+    };
 
     const entry: ActivityEntryDto = {
       id: 'a1',
