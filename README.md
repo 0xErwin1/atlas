@@ -4,8 +4,6 @@ Atlas is an AI-first workspace platform — markdown **notes** (with wikilinks a
 
 Start with [docs/README.md](docs/README.md) for the documentation portal: product/features, web app, REST API, CLI, MCP, operations, limitations, and contributor entry points.
 
-See [docs/README.md](docs/README.md) for the documentation portal aimed at product users, API consumers, CLI users, MCP consumers, and contributors.
-
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the crate map, request lifecycle, data model, permission model, and the web frontend overview.
 
 ## Quick start
