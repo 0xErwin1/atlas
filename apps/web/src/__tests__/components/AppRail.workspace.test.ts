@@ -1,13 +1,15 @@
-import { mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { routeState, push } = vi.hoisted(() => ({
+const { isNavigationFailure, routeState, push } = vi.hoisted(() => ({
+  isNavigationFailure: vi.fn((_result: unknown) => false),
   routeState: { name: 'notes' as string },
   push: vi.fn(),
 }));
 
 vi.mock('vue-router', () => ({
+  isNavigationFailure,
   useRoute: () => routeState,
   useRouter: () => ({ push }),
 }));
@@ -37,6 +39,7 @@ describe('AppRail workspace switcher', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
+    isNavigationFailure.mockReturnValue(false);
     routeState.name = 'notes';
   });
 
@@ -61,13 +64,26 @@ describe('AppRail workspace switcher', () => {
     expect(spy).toHaveBeenCalledWith('personal');
   });
 
-  it('keeps the user in Tasks after switching from a task route (ATL-49)', async () => {
-    routeState.name = 'task-detail';
+  it.each([
+    'tasks',
+    'task-view',
+    'task-detail',
+  ])('keeps the user in Tasks after switching from %s (ATL-49)', async (routeName) => {
+    routeState.name = routeName;
     seed();
 
     await switchToPersonal();
 
     expect(push).toHaveBeenCalledWith({ name: 'tasks' });
+  });
+
+  it('keeps the user in Search after switching from Search (ATL-49)', async () => {
+    routeState.name = 'search';
+    seed();
+
+    await switchToPersonal();
+
+    expect(push).toHaveBeenCalledWith({ name: 'search' });
   });
 
   it('lands on Notes after switching from a note route (ATL-49)', async () => {
@@ -77,5 +93,59 @@ describe('AppRail workspace switcher', () => {
     await switchToPersonal();
 
     expect(push).toHaveBeenCalledWith({ name: 'notes' });
+  });
+
+  it('drops the stale resource route before activating the destination workspace', async () => {
+    let finishNavigation: (() => void) | undefined;
+    push.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishNavigation = resolve;
+        }),
+    );
+    const workspace = seed();
+
+    const switching = switchToPersonal();
+
+    await vi.waitFor(() => expect(push).toHaveBeenCalledWith({ name: 'notes' }));
+    expect(workspace.activeWorkspaceSlug).toBeNull();
+
+    finishNavigation?.();
+    await switching;
+
+    expect(workspace.activeWorkspaceSlug).toBe('personal');
+  });
+
+  it('does not mount the Tasks root with the old workspace active', async () => {
+    routeState.name = 'task-detail';
+    const workspace = seed();
+    push.mockImplementationOnce(async () => {
+      expect(workspace.activeWorkspaceSlug).toBeNull();
+    });
+
+    await switchToPersonal();
+
+    expect(workspace.activeWorkspaceSlug).toBe('personal');
+  });
+
+  it('keeps the old workspace active when navigation is aborted', async () => {
+    const failure = { type: 'aborted' };
+    push.mockResolvedValueOnce(failure);
+    isNavigationFailure.mockImplementationOnce((result) => result === failure);
+    const workspace = seed();
+
+    await switchToPersonal();
+
+    expect(workspace.activeWorkspaceSlug).toBe('atlas');
+  });
+
+  it('restores the old workspace when navigation rejects', async () => {
+    push.mockRejectedValueOnce(new Error('navigation rejected'));
+    const workspace = seed();
+
+    await switchToPersonal();
+    await flushPromises();
+
+    expect(workspace.activeWorkspaceSlug).toBe('atlas');
   });
 });
