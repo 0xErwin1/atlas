@@ -1052,13 +1052,30 @@ impl PgAttachmentLifecycle {
     pub async fn run_reconciler(
         conn: DatabaseConnection,
         store: std::sync::Arc<dyn AttachmentStore>,
-        mut shutdown: tokio::sync::watch::Receiver<bool>,
+        shutdown: tokio::sync::watch::Receiver<bool>,
     ) {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(300));
+        Self::run_reconciler_with_timing(
+            conn,
+            store,
+            shutdown,
+            std::time::Duration::from_secs(300),
+            chrono::Duration::minutes(10),
+        )
+        .await;
+    }
+
+    pub async fn run_reconciler_with_timing(
+        conn: DatabaseConnection,
+        store: std::sync::Arc<dyn AttachmentStore>,
+        mut shutdown: tokio::sync::watch::Receiver<bool>,
+        interval_period: std::time::Duration,
+        stale_after: chrono::Duration,
+    ) {
+        let mut interval = tokio::time::interval(interval_period);
         loop {
             tokio::select! {
                 _ = interval.tick() => {
-                    let older_than = Utc::now() - chrono::Duration::minutes(10);
+                    let older_than = Utc::now() - stale_after;
                     if let Err(error) = Self::reconcile_stale(&conn, store.as_ref(), older_than).await {
                         tracing::warn!(%error, "attachment intent reconciliation failed");
                     }
@@ -1114,45 +1131,58 @@ impl PgAttachmentLifecycle {
     ) -> Result<(), DomainError> {
         let intents = attachment_write_intent::Entity::find()
             .filter(attachment_write_intent::Column::CreatedAt.lt(older_than))
+            .order_by_asc(attachment_write_intent::Column::CreatedAt)
+            .order_by_asc(attachment_write_intent::Column::Id)
             .all(conn)
             .await
             .map_err(db_err)?;
 
         for intent in intents {
-            let txn = conn.begin().await.map_err(db_err)?;
-            lock_digest(&txn, &intent.digest).await?;
-
-            let current = attachment_write_intent::Entity::find_by_id(intent.id)
-                .filter(attachment_write_intent::Column::CreatedAt.lt(older_than))
-                .one(&txn)
-                .await
-                .map_err(db_err)?;
-
-            let Some(current) = current else {
-                txn.commit().await.map_err(db_err)?;
-                continue;
-            };
-
-            let has_live_reference = attachment::Entity::find()
-                .filter(attachment::Column::Sha256.eq(&current.digest))
-                .filter(attachment::Column::DeletedAt.is_null())
-                .one(&txn)
-                .await
-                .map_err(db_err)?
-                .is_some();
-
-            if !has_live_reference {
-                store.delete(&current.digest).await?;
+            if let Err(error) = Self::reconcile_intent(conn, store, older_than, intent).await {
+                tracing::warn!(%error, "attachment intent cleanup failed");
             }
-
-            attachment_write_intent::Entity::delete_by_id(current.id)
-                .exec(&txn)
-                .await
-                .map_err(db_err)?;
-            txn.commit().await.map_err(db_err)?;
         }
 
         Ok(())
+    }
+
+    async fn reconcile_intent(
+        conn: &DatabaseConnection,
+        store: &dyn AttachmentStore,
+        older_than: DateTime<Utc>,
+        intent: attachment_write_intent::Model,
+    ) -> Result<(), DomainError> {
+        let txn = conn.begin().await.map_err(db_err)?;
+        lock_digest(&txn, &intent.digest).await?;
+
+        let current = attachment_write_intent::Entity::find_by_id(intent.id)
+            .filter(attachment_write_intent::Column::CreatedAt.lt(older_than))
+            .one(&txn)
+            .await
+            .map_err(db_err)?;
+
+        let Some(current) = current else {
+            txn.commit().await.map_err(db_err)?;
+            return Ok(());
+        };
+
+        let has_live_reference = attachment::Entity::find()
+            .filter(attachment::Column::Sha256.eq(&current.digest))
+            .filter(attachment::Column::DeletedAt.is_null())
+            .one(&txn)
+            .await
+            .map_err(db_err)?
+            .is_some();
+
+        if !has_live_reference {
+            store.delete(&current.digest).await?;
+        }
+
+        attachment_write_intent::Entity::delete_by_id(current.id)
+            .exec(&txn)
+            .await
+            .map_err(db_err)?;
+        txn.commit().await.map_err(db_err)
     }
 }
 

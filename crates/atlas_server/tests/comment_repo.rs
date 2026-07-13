@@ -451,6 +451,123 @@ async fn comment_freedom_schema_enforces_owner_and_link_constraints() {
 }
 
 #[tokio::test]
+async fn comment_freedom_migration_defines_required_constraints_and_indexes() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+
+    let constraints = db
+        .conn()
+        .query_all_raw(Statement::from_string(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT pg_get_constraintdef(c.oid) AS definition \
+             FROM pg_constraint c \
+             JOIN pg_class t ON t.oid = c.conrelid \
+             WHERE t.relname IN ('comment_links', 'attachments')",
+        ))
+        .await
+        .expect("read constraint definitions")
+        .into_iter()
+        .map(|row| {
+            row.try_get::<String>("", "definition")
+                .expect("constraint definition")
+        })
+        .collect::<Vec<_>>();
+
+    assert!(
+        constraints.iter().any(|definition| {
+            definition.contains("CHECK ((num_nonnulls(target_document_id, target_task_id, target_attachment_id) = 1))")
+        }),
+        "comment links must require exactly one target"
+    );
+    assert!(
+        constraints.iter().any(|definition| {
+            definition.contains("CHECK ((num_nonnulls(document_id, task_id, comment_id) = 1))")
+        }),
+        "attachments must require exactly one document, task, or comment owner"
+    );
+
+    let cascade_references = db
+        .conn()
+        .query_all_raw(Statement::from_string(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT source.relname AS source_table, target.relname AS target_table \
+             FROM pg_constraint c \
+             JOIN pg_class source ON source.oid = c.conrelid \
+             JOIN pg_class target ON target.oid = c.confrelid \
+             WHERE c.contype = 'f' AND c.confdeltype = 'c' \
+               AND source.relname IN ('comment_links', 'attachments')",
+        ))
+        .await
+        .expect("read cascade references")
+        .into_iter()
+        .map(|row| {
+            (
+                row.try_get::<String>("", "source_table")
+                    .expect("source table"),
+                row.try_get::<String>("", "target_table")
+                    .expect("target table"),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    for target in ["comments", "documents", "tasks", "attachments"] {
+        assert!(
+            cascade_references
+                .iter()
+                .any(|(source, reference)| source == "comment_links" && reference == target),
+            "comment links must cascade when {target} is deleted"
+        );
+    }
+    assert!(
+        cascade_references
+            .iter()
+            .any(|(source, target)| source == "attachments" && target == "comments"),
+        "comment-owned attachments must cascade when the comment is deleted"
+    );
+
+    let indexes = db
+        .conn()
+        .query_all_raw(Statement::from_string(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT indexname, indexdef FROM pg_indexes \
+             WHERE tablename IN ('comment_links', 'attachment_write_intents')",
+        ))
+        .await
+        .expect("read index definitions")
+        .into_iter()
+        .map(|row| {
+            (
+                row.try_get::<String>("", "indexname").expect("index name"),
+                row.try_get::<String>("", "indexdef")
+                    .expect("index definition"),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    for index in [
+        "comment_links_document_unique",
+        "comment_links_task_unique",
+        "comment_links_attachment_unique",
+    ] {
+        assert!(
+            indexes.iter().any(|(name, definition)| {
+                name == index && definition.contains("UNIQUE") && definition.contains("WHERE")
+            }),
+            "{index} must be a partial unique index"
+        );
+    }
+    assert!(
+        indexes.iter().any(|(name, definition)| {
+            name == "attachment_write_intents_digest_idx"
+                && definition.contains("UNIQUE")
+                && definition.contains("(digest)")
+        }),
+        "write intents must have a unique digest index"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
 async fn stale_intent_without_live_attachment_is_reconciled() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let tempdir = TempDir::new().expect("tempdir");
@@ -486,6 +603,160 @@ async fn stale_intent_without_live_attachment_is_reconciled() {
             .expect("list intents")
             .is_empty(),
         "the completed reconciliation must remove its intent"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn failed_object_delete_keeps_intent_for_a_later_reconciliation() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let store = FailOnceDeleteStore::new();
+    let data = b"retry object cleanup";
+    let digest = format!("{:x}", sha2::Sha256::digest(data));
+    store.put(data).await.expect("seed object");
+
+    let intents = PgAttachmentWriteIntentRepo {
+        conn: db.conn().clone(),
+    };
+    intents.create(digest.clone()).await.expect("seed intent");
+
+    PgAttachmentLifecycle::reconcile_stale(
+        &db.conn().clone(),
+        &store,
+        Utc::now() + Duration::seconds(1),
+    )
+    .await
+    .expect("a failed individual cleanup must not abort the sweep");
+    assert_eq!(
+        intents
+            .list_stale(Utc::now() + Duration::seconds(1))
+            .await
+            .expect("list retained intent")
+            .len(),
+        1,
+        "failed cleanup must keep durable retry intent"
+    );
+
+    PgAttachmentLifecycle::reconcile_stale(
+        &db.conn().clone(),
+        &store,
+        Utc::now() + Duration::seconds(1),
+    )
+    .await
+    .expect("retry reconciliation");
+
+    assert!(
+        !store.exists(&digest).await.expect("object existence"),
+        "a later reconciliation must retry and remove the object"
+    );
+    assert!(
+        intents
+            .list_stale(Utc::now() + Duration::seconds(1))
+            .await
+            .expect("list completed intents")
+            .is_empty(),
+        "successful retry must remove the intent"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn reconciliation_continues_after_an_independent_delete_failure() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let failing_data = b"first cleanup fails";
+    let succeeding_data = b"later cleanup succeeds";
+    let failing_digest = format!("{:x}", sha2::Sha256::digest(failing_data));
+    let succeeding_digest = format!("{:x}", sha2::Sha256::digest(succeeding_data));
+    let store = SelectiveFailDeleteStore::new(failing_digest.clone());
+    store.put(failing_data).await.expect("seed failing object");
+    store
+        .put(succeeding_data)
+        .await
+        .expect("seed succeeding object");
+
+    let intents = PgAttachmentWriteIntentRepo {
+        conn: db.conn().clone(),
+    };
+    intents
+        .create(failing_digest.clone())
+        .await
+        .expect("seed failing intent");
+    intents
+        .create(succeeding_digest.clone())
+        .await
+        .expect("seed succeeding intent");
+
+    PgAttachmentLifecycle::reconcile_stale(
+        &db.conn().clone(),
+        &store,
+        Utc::now() + Duration::seconds(1),
+    )
+    .await
+    .expect("one failed intent must not abort the sweep");
+
+    assert!(
+        store
+            .exists(&failing_digest)
+            .await
+            .expect("failing object existence"),
+        "the failed object remains for retry"
+    );
+    assert!(
+        !store
+            .exists(&succeeding_digest)
+            .await
+            .expect("succeeding object existence"),
+        "a later independent intent must reconcile in the same sweep"
+    );
+    assert_eq!(
+        intents
+            .list_stale(Utc::now() + Duration::seconds(1))
+            .await
+            .expect("list retained intents")
+            .into_iter()
+            .map(|intent| intent.digest)
+            .collect::<Vec<_>>(),
+        vec![failing_digest],
+        "only the failed intent remains retryable"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn reconciler_runs_immediately_and_periodically_despite_failures() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let store = AlwaysFailDeleteStore::new();
+    let digest = format!("{:x}", sha2::Sha256::digest(b"periodic reconciliation"));
+    store
+        .put(b"periodic reconciliation")
+        .await
+        .expect("seed object");
+    PgAttachmentWriteIntentRepo {
+        conn: db.conn().clone(),
+    }
+    .create(digest)
+    .await
+    .expect("seed intent");
+
+    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+    let reconciler = tokio::spawn(PgAttachmentLifecycle::run_reconciler_with_timing(
+        db.conn().clone(),
+        Arc::new(store.clone()),
+        shutdown_rx,
+        std::time::Duration::from_millis(10),
+        Duration::zero(),
+    ));
+
+    store.wait_for_delete_attempts(2).await;
+    shutdown_tx.send(true).expect("signal shutdown");
+    reconciler.await.expect("reconciler task");
+
+    assert!(
+        store.delete_attempts() >= 2,
+        "startup-immediate and periodic attempts must both execute"
     );
 
     db.teardown().await;
@@ -758,6 +1029,180 @@ struct IntentCheckingStore {
     conn: sea_orm::DatabaseConnection,
     delete_started: Notify,
     allow_delete: Notify,
+}
+
+#[derive(Clone)]
+struct MemoryDeleteStore {
+    objects: Arc<tokio::sync::Mutex<std::collections::HashSet<String>>>,
+}
+
+impl MemoryDeleteStore {
+    fn new() -> Self {
+        Self {
+            objects: Arc::new(tokio::sync::Mutex::new(std::collections::HashSet::new())),
+        }
+    }
+
+    async fn store(&self, data: &[u8]) -> String {
+        let digest = format!("{:x}", sha2::Sha256::digest(data));
+        self.objects.lock().await.insert(digest.clone());
+        digest
+    }
+
+    async fn object_exists(&self, digest: &str) -> bool {
+        self.objects.lock().await.contains(digest)
+    }
+
+    async fn remove(&self, digest: &str) {
+        self.objects.lock().await.remove(digest);
+    }
+}
+
+#[derive(Clone)]
+struct FailOnceDeleteStore {
+    inner: MemoryDeleteStore,
+    failures_remaining: Arc<tokio::sync::Mutex<u8>>,
+}
+
+impl FailOnceDeleteStore {
+    fn new() -> Self {
+        Self {
+            inner: MemoryDeleteStore::new(),
+            failures_remaining: Arc::new(tokio::sync::Mutex::new(1)),
+        }
+    }
+}
+
+#[async_trait]
+impl AttachmentStore for FailOnceDeleteStore {
+    async fn put(&self, data: &[u8]) -> Result<String, DomainError> {
+        Ok(self.inner.store(data).await)
+    }
+
+    async fn get(&self, _digest: &str) -> Result<bytes::Bytes, DomainError> {
+        Err(DomainError::NotFound {
+            entity: "attachment",
+            id: uuid::Uuid::nil(),
+        })
+    }
+
+    async fn exists(&self, digest: &str) -> Result<bool, DomainError> {
+        Ok(self.inner.object_exists(digest).await)
+    }
+
+    async fn delete(&self, digest: &str) -> Result<(), DomainError> {
+        let mut failures_remaining = self.failures_remaining.lock().await;
+        if *failures_remaining > 0 {
+            *failures_remaining -= 1;
+            return Err(DomainError::Internal {
+                message: "injected delete failure".into(),
+            });
+        }
+        drop(failures_remaining);
+
+        self.inner.remove(digest).await;
+        Ok(())
+    }
+}
+
+#[derive(Clone)]
+struct SelectiveFailDeleteStore {
+    inner: MemoryDeleteStore,
+    failing_digest: String,
+}
+
+impl SelectiveFailDeleteStore {
+    fn new(failing_digest: String) -> Self {
+        Self {
+            inner: MemoryDeleteStore::new(),
+            failing_digest,
+        }
+    }
+}
+
+#[async_trait]
+impl AttachmentStore for SelectiveFailDeleteStore {
+    async fn put(&self, data: &[u8]) -> Result<String, DomainError> {
+        Ok(self.inner.store(data).await)
+    }
+
+    async fn get(&self, _digest: &str) -> Result<bytes::Bytes, DomainError> {
+        Err(DomainError::NotFound {
+            entity: "attachment",
+            id: uuid::Uuid::nil(),
+        })
+    }
+
+    async fn exists(&self, digest: &str) -> Result<bool, DomainError> {
+        Ok(self.inner.object_exists(digest).await)
+    }
+
+    async fn delete(&self, digest: &str) -> Result<(), DomainError> {
+        if digest == self.failing_digest {
+            return Err(DomainError::Internal {
+                message: "injected selected delete failure".into(),
+            });
+        }
+
+        self.inner.remove(digest).await;
+        Ok(())
+    }
+}
+
+#[derive(Clone)]
+struct AlwaysFailDeleteStore {
+    inner: MemoryDeleteStore,
+    delete_attempts: Arc<std::sync::atomic::AtomicUsize>,
+    delete_attempted: Arc<Notify>,
+}
+
+impl AlwaysFailDeleteStore {
+    fn new() -> Self {
+        Self {
+            inner: MemoryDeleteStore::new(),
+            delete_attempts: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            delete_attempted: Arc::new(Notify::new()),
+        }
+    }
+
+    async fn wait_for_delete_attempts(&self, minimum: usize) {
+        while self.delete_attempts() < minimum {
+            self.delete_attempted.notified().await;
+        }
+    }
+
+    fn delete_attempts(&self) -> usize {
+        self.delete_attempts
+            .load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+#[async_trait]
+impl AttachmentStore for AlwaysFailDeleteStore {
+    async fn put(&self, data: &[u8]) -> Result<String, DomainError> {
+        Ok(self.inner.store(data).await)
+    }
+
+    async fn get(&self, _digest: &str) -> Result<bytes::Bytes, DomainError> {
+        Err(DomainError::NotFound {
+            entity: "attachment",
+            id: uuid::Uuid::nil(),
+        })
+    }
+
+    async fn exists(&self, digest: &str) -> Result<bool, DomainError> {
+        Ok(self.inner.object_exists(digest).await)
+    }
+
+    async fn delete(&self, _digest: &str) -> Result<(), DomainError> {
+        self.delete_attempts
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.delete_attempted.notify_waiters();
+
+        Err(DomainError::Internal {
+            message: "injected periodic delete failure".into(),
+        })
+    }
 }
 
 #[async_trait]
