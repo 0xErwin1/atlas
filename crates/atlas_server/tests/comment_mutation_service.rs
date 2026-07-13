@@ -314,3 +314,86 @@ async fn task_comment_mutations_keep_markdown_verbatim_and_replace_only_derived_
 
     db.teardown().await;
 }
+
+#[tokio::test]
+async fn attachment_urls_require_the_canonical_task_comment_owner_chain() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (workspace, user) = support::seed_workspace(&db, "comment-owner-chain").await;
+    let ctx = support::ctx(&workspace, &user);
+    let attachment_parent = seed_task(&db, &ctx, "Attachment parent").await;
+    let claimed_parent = seed_task(&db, &ctx, "Claimed parent").await;
+    let source_parent = seed_task(&db, &ctx, "Source parent").await;
+    let service = CommentService::new(db.conn().clone());
+
+    let attachment_comment = service
+        .create(
+            &ctx,
+            CommentOwner::Task(attachment_parent.id),
+            "attachment owner".into(),
+        )
+        .await
+        .expect("create attachment owner comment");
+    let attachment = PgAttachmentRepo {
+        conn: db.conn().clone(),
+    }
+    .record(
+        &ctx,
+        NewAttachment {
+            document_id: None,
+            task_id: None,
+            comment_id: Some(attachment_comment.id),
+            file_name: "attachment.txt".into(),
+            content_type: "text/plain".into(),
+            size_bytes: 1,
+            sha256: "a".repeat(64),
+        },
+    )
+    .await
+    .expect("record comment attachment");
+
+    let valid_source = service
+        .create(
+            &ctx,
+            CommentOwner::Task(source_parent.id),
+            format!(
+                "[matching owner](/api/workspaces/ws-comment-owner-chain/tasks/{}/comments/{}/attachments/{}/content)",
+                attachment_parent.readable_id, attachment_comment.id.0, attachment.id.0
+            ),
+        )
+        .await
+        .expect("create comment with matching attachment URL");
+    assert_eq!(
+        PgCommentLinkRepo::new(db.conn().clone())
+            .links_for_comments(&ctx, &[valid_source.id])
+            .await
+            .expect("load matching derived link")
+            .into_iter()
+            .map(|link| link.target)
+            .collect::<Vec<_>>(),
+        vec![CommentLinkTarget::Attachment(attachment.id)],
+        "a canonical URL must resolve when it names the actual task parent"
+    );
+
+    let source = service
+        .create(
+            &ctx,
+            CommentOwner::Task(source_parent.id),
+            format!(
+                "[mismatched owner](/api/workspaces/ws-comment-owner-chain/tasks/{}/comments/{}/attachments/{}/content)",
+                claimed_parent.readable_id, attachment_comment.id.0, attachment.id.0
+            ),
+        )
+        .await
+        .expect("create comment with mismatched attachment URL");
+
+    assert!(
+        PgCommentLinkRepo::new(db.conn().clone())
+            .links_for_comments(&ctx, &[source.id])
+            .await
+            .expect("load derived links")
+            .is_empty(),
+        "a canonical URL must name the actual task parent of its comment attachment"
+    );
+
+    db.teardown().await;
+}
