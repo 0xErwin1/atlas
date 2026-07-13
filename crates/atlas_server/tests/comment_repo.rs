@@ -22,6 +22,7 @@ use atlas_server::persistence::repos::{
     PgAttachmentWriteIntentRepo, PgBoardRepo, PgCommentLinkRepo, PgCommentRepo, PgProjectRepo,
     PgTaskRepo, ProjectRepo, TaskRepo,
 };
+use atlas_server::services::CommentService;
 use chrono::{Duration, Utc};
 use sea_orm::{ConnectionTrait, Statement};
 use sha2::Digest;
@@ -700,7 +701,8 @@ async fn comment_link_repo_replaces_live_edges_and_retains_diff_events() {
     let events = links
         .feed_for_owner(&ctx, CommentOwner::Task(parent.id), None, 20)
         .await
-        .expect("parent feed");
+        .expect("parent feed")
+        .entries;
     assert_eq!(
         events
             .into_iter()
@@ -714,6 +716,105 @@ async fn comment_link_repo_replaces_live_edges_and_retains_diff_events() {
             atlas_domain::entities::comments::CommentLinkEventKind::LinkRemoved,
             atlas_domain::entities::comments::CommentLinkEventKind::LinkAdded,
         ]
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn comment_feed_paginates_merged_comments_and_retained_events_without_duplicates() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "comment-feed-page-user").await;
+    let ctx = support::ctx(&ws, &user);
+    let (project, board, column) =
+        seed_project_board_column(&db, &ctx, "comment-feed-page-proj", "FP").await;
+    let parent = seed_task(&db, &ctx, project.id, board.id, column.id, "Parent").await;
+    let target = seed_task(&db, &ctx, project.id, board.id, column.id, "Target").await;
+    let comments = PgCommentRepo::new(db.conn().clone());
+    let links = PgCommentLinkRepo::new(db.conn().clone());
+
+    let first = comments
+        .create(
+            &ctx,
+            NewComment {
+                owner: CommentOwner::Task(parent.id),
+                body: "first".into(),
+            },
+        )
+        .await
+        .expect("create first comment");
+    links
+        .replace_for_comment(&ctx, first.id, vec![CommentLinkTarget::Task(target.id)])
+        .await
+        .expect("create link-added event");
+    let second = comments
+        .create(
+            &ctx,
+            NewComment {
+                owner: CommentOwner::Task(parent.id),
+                body: "second".into(),
+            },
+        )
+        .await
+        .expect("create second comment");
+    links
+        .remove_for_comment(&ctx, first.id)
+        .await
+        .expect("create link-removed event");
+    CommentService::new(db.conn().clone())
+        .remove(&ctx, CommentOwner::Task(parent.id), first.id, false)
+        .await
+        .expect("retain deletion event while soft-deleting first comment");
+
+    let first_page = links
+        .feed_for_owner(&ctx, CommentOwner::Task(parent.id), None, 2)
+        .await
+        .expect("load first merged page");
+    assert_eq!(first_page.entries.len(), 2);
+    assert!(first_page.has_more, "the n+1 row must set has_more");
+
+    let cursor = first_page
+        .entries
+        .last()
+        .expect("non-empty first page")
+        .cursor();
+    let second_page = links
+        .feed_for_owner(&ctx, CommentOwner::Task(parent.id), Some(cursor), 2)
+        .await
+        .expect("load second merged page");
+    assert_eq!(second_page.entries.len(), 2);
+    assert!(!second_page.has_more);
+    assert!(matches!(
+        second_page.entries.last(),
+        Some(CommentFeedEntry::Event(event))
+            if event.kind == atlas_domain::entities::comments::CommentLinkEventKind::CommentDeleted
+    ));
+    assert_eq!(
+        second.id,
+        first_page
+            .entries
+            .iter()
+            .chain(second_page.entries.iter())
+            .find_map(|entry| match entry {
+                CommentFeedEntry::Comment(comment) if comment.id == second.id => Some(comment.id),
+                _ => None,
+            })
+            .expect("live second comment appears exactly once"),
+    );
+
+    let mut cursors = first_page
+        .entries
+        .iter()
+        .chain(second_page.entries.iter())
+        .map(CommentFeedEntry::cursor)
+        .collect::<Vec<_>>();
+    let original_len = cursors.len();
+    cursors.sort();
+    cursors.dedup();
+    assert_eq!(
+        cursors.len(),
+        original_len,
+        "pages must not duplicate entries"
     );
 
     db.teardown().await;
