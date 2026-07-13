@@ -235,6 +235,20 @@ pub struct AttachmentDto {
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
+/// Metadata for a file owned by a task or document comment.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct CommentAttachmentDto {
+    pub id: uuid::Uuid,
+    pub comment_id: uuid::Uuid,
+    pub file_name: String,
+    pub content_type: String,
+    pub size_bytes: i64,
+    pub sha256: String,
+    pub actor: Option<ActorDto>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
 /// RFC 9457 problem+json extension for CAS revision conflicts (status 409).
 ///
 /// Flattens `ProblemDetails` fields alongside conflict-specific fields so the

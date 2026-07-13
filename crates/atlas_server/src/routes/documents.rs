@@ -16,10 +16,10 @@ use atlas_api::{
         CommentDto, CommentListResponseDto, CreateCommentRequest, UpdateCommentRequest,
     },
     dtos::documents::{
-        ActorDto, AttachmentDto, BacklinkDto, CommentBacklinkParentDto, CommentBacklinkSourceDto,
-        CopyDocumentRequest, CreateDocumentRequest, DocumentDto, DocumentSummaryDto,
-        FrontmatterDto, MoveDocumentRequest, RevisionContentDto, RevisionMetaDto,
-        UpdateContentRequest, UpdateDocumentRequest,
+        ActorDto, AttachmentDto, BacklinkDto, CommentAttachmentDto, CommentBacklinkParentDto,
+        CommentBacklinkSourceDto, CopyDocumentRequest, CreateDocumentRequest, DocumentDto,
+        DocumentSummaryDto, FrontmatterDto, MoveDocumentRequest, RevisionContentDto,
+        RevisionMetaDto, UpdateContentRequest, UpdateDocumentRequest,
     },
     pagination::{Cursor, Page},
 };
@@ -30,7 +30,7 @@ use atlas_domain::{
     entities::identity::MemberRole,
     ids::{AttachmentId, CommentId, DocumentId, FolderId, RevisionId, UserId},
     permissions::{Capability, CapabilityAction, CapabilityFamily, Principal},
-    ports::comments::CommentLinkRepo,
+    ports::comments::{CommentLinkRepo, CommentRepo},
     resolve_collision, slugify,
 };
 
@@ -48,7 +48,7 @@ use crate::{
     persistence::entities::documents::document,
     persistence::repos::{
         AttachmentRepo, DocumentLinkRepo, DocumentRepo, PgAttachmentLifecycle, PgAttachmentRepo,
-        PgCommentLinkRepo, PgDocumentLinkRepo, PgDocumentRepo,
+        PgCommentLinkRepo, PgCommentRepo, PgDocumentLinkRepo, PgDocumentRepo,
     },
     routes::comments::{
         comment_to_dto, decode_feed_cursor, enrich_comment_entries, project_comment_feed,
@@ -1041,6 +1041,206 @@ pub(crate) async fn delete_attachment(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments",
+    operation_id = "upload_document_comment_attachment",
+    tag = "documents",
+    security(("bearer_auth" = [])),
+    params(("ws" = String, Path), ("slug" = String, Path), ("comment_id" = String, Path)),
+    responses((status = 201, body = CommentAttachmentDto), (status = 404), (status = 413), (status = 422))
+)]
+pub(crate) async fn upload_comment_attachment(
+    auth: Authorized<DocumentSlugRes, ViewerMin, DocsUpdate>,
+    Path(path): Path<DocumentCommentPath>,
+    State(state): State<AppState>,
+    request: Request,
+) -> Result<impl IntoResponse, ApiError> {
+    let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
+    let owner = CommentOwner::Document(auth.resource.0.id);
+    let comment = PgCommentRepo::new((*state.db).clone())
+        .get_for_owner(&ctx, owner, CommentId(path.comment_id))
+        .await
+        .map_err(ApiError::Domain)?;
+    let can_moderate = matches!(
+        auth.membership,
+        Some(MemberRole::Owner) | Some(MemberRole::Admin)
+    );
+    if comment.created_by != ctx.actor && !can_moderate {
+        return Err(ApiError::Domain(atlas_domain::DomainError::Forbidden {
+            message: "only the comment's author or a workspace admin/owner may manage attachments"
+                .into(),
+        }));
+    }
+    let file_name = request
+        .headers()
+        .get("x-file-name")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("upload")
+        .to_string();
+    let content_type = request
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("application/octet-stream")
+        .to_string();
+    let read_limit = state.max_attachment_bytes.saturating_add(1) as usize;
+    let body = axum::body::to_bytes(request.into_body(), read_limit)
+        .await
+        .map_err(|_| ApiError::PayloadTooLarge {
+            message: format!(
+                "attachment exceeds maximum size of {} bytes",
+                state.max_attachment_bytes
+            ),
+        })?;
+    if body.len() as u64 > state.max_attachment_bytes {
+        return Err(ApiError::PayloadTooLarge {
+            message: format!(
+                "attachment exceeds maximum size of {} bytes",
+                state.max_attachment_bytes
+            ),
+        });
+    }
+    validate_upload(
+        &file_name,
+        &body,
+        state.upload_allowed_extensions.as_deref(),
+    )?;
+    let attachment = PgAttachmentLifecycle::store_and_record(
+        state.db.as_ref(),
+        &ctx,
+        NewAttachment {
+            document_id: None,
+            task_id: None,
+            comment_id: Some(comment.id),
+            file_name,
+            content_type,
+            size_bytes: body.len() as i64,
+            sha256: String::new(),
+        },
+        &body,
+        state.attachments.as_ref(),
+    )
+    .await
+    .map_err(ApiError::Domain)?;
+    Ok((
+        StatusCode::CREATED,
+        Json(comment_attachment_to_dto(attachment)),
+    ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments",
+    operation_id = "list_document_comment_attachments",
+    tag = "documents",
+    security(("bearer_auth" = [])),
+    params(("ws" = String, Path), ("slug" = String, Path), ("comment_id" = String, Path)),
+    responses((status = 200, body = Vec<CommentAttachmentDto>), (status = 404))
+)]
+pub(crate) async fn list_comment_attachments(
+    auth: Authorized<DocumentSlugRes, ViewerMin, DocsRead>,
+    Path(path): Path<DocumentCommentPath>,
+    State(state): State<AppState>,
+) -> Result<Json<Vec<CommentAttachmentDto>>, ApiError> {
+    let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
+    let comment_id = CommentId(path.comment_id);
+    PgCommentRepo::new((*state.db).clone())
+        .get_for_owner(&ctx, CommentOwner::Document(auth.resource.0.id), comment_id)
+        .await
+        .map_err(ApiError::Domain)?;
+    let items = PgAttachmentRepo {
+        conn: (*state.db).clone(),
+    }
+    .list_for_owner(&ctx, AttachmentOwner::Comment(comment_id))
+    .await
+    .map_err(ApiError::Domain)?;
+    Ok(Json(
+        items.into_iter().map(comment_attachment_to_dto).collect(),
+    ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}",
+    operation_id = "download_document_comment_attachment",
+    tag = "documents",
+    security(("bearer_auth" = [])),
+    params(("ws" = String, Path), ("slug" = String, Path), ("comment_id" = String, Path), ("attachment_id" = String, Path)),
+    responses((status = 200, description = "Binary attachment content"), (status = 404))
+)]
+pub(crate) async fn download_comment_attachment(
+    auth: Authorized<DocumentSlugRes, ViewerMin, DocsRead>,
+    Path(path): Path<DocumentCommentAttachmentPath>,
+    State(state): State<AppState>,
+) -> Result<Response, ApiError> {
+    let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
+    let comment_id = CommentId(path.comment_id);
+    PgCommentRepo::new((*state.db).clone())
+        .get_for_owner(&ctx, CommentOwner::Document(auth.resource.0.id), comment_id)
+        .await
+        .map_err(ApiError::Domain)?;
+    let attachment = PgAttachmentRepo {
+        conn: (*state.db).clone(),
+    }
+    .find(&ctx, AttachmentId(path.attachment_id))
+    .await
+    .map_err(ApiError::Domain)?
+    .filter(|attachment| attachment.comment_id == Some(comment_id))
+    .ok_or(ApiError::NotFound)?;
+    comment_attachment_response(&state, attachment).await
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}",
+    operation_id = "delete_document_comment_attachment",
+    tag = "documents",
+    security(("bearer_auth" = [])),
+    params(("ws" = String, Path), ("slug" = String, Path), ("comment_id" = String, Path), ("attachment_id" = String, Path)),
+    responses((status = 204), (status = 404))
+)]
+pub(crate) async fn delete_comment_attachment(
+    auth: Authorized<DocumentSlugRes, ViewerMin, DocsUpdate>,
+    Path(path): Path<DocumentCommentAttachmentPath>,
+    State(state): State<AppState>,
+) -> Result<StatusCode, ApiError> {
+    let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
+    let comment_id = CommentId(path.comment_id);
+    let comment = PgCommentRepo::new((*state.db).clone())
+        .get_for_owner(&ctx, CommentOwner::Document(auth.resource.0.id), comment_id)
+        .await
+        .map_err(ApiError::Domain)?;
+    let can_moderate = matches!(
+        auth.membership,
+        Some(MemberRole::Owner) | Some(MemberRole::Admin)
+    );
+    if comment.created_by != ctx.actor && !can_moderate {
+        return Err(ApiError::Domain(atlas_domain::DomainError::Forbidden {
+            message: "only the comment's author or a workspace admin/owner may manage attachments"
+                .into(),
+        }));
+    }
+    let repo = PgAttachmentRepo {
+        conn: (*state.db).clone(),
+    };
+    let attachment_id = AttachmentId(path.attachment_id);
+    let attachment = repo
+        .find(&ctx, attachment_id)
+        .await
+        .map_err(ApiError::Domain)?;
+    if attachment
+        .and_then(|attachment| (attachment.comment_id == Some(comment_id)).then_some(attachment))
+        .is_none()
+    {
+        return Err(ApiError::NotFound);
+    }
+    repo.soft_delete(&ctx, attachment_id)
+        .await
+        .map_err(ApiError::Domain)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 // ---------------------------------------------------------------------------
 // PATCH /api/workspaces/{ws}/documents/{slug}/move
 // ---------------------------------------------------------------------------
@@ -1284,6 +1484,16 @@ pub(crate) struct DocumentCommentPath {
     #[allow(dead_code)]
     slug: String,
     comment_id: uuid::Uuid,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct DocumentCommentAttachmentPath {
+    #[allow(dead_code)]
+    ws: String,
+    #[allow(dead_code)]
+    slug: String,
+    comment_id: uuid::Uuid,
+    attachment_id: uuid::Uuid,
 }
 
 // GET /api/workspaces/{ws}/documents/{slug}/comments
@@ -1573,6 +1783,55 @@ fn attachment_to_dto(a: atlas_domain::entities::documents::Attachment) -> Attach
         ),
         created_at: a.created_at,
     }
+}
+
+fn comment_attachment_to_dto(
+    attachment: atlas_domain::entities::documents::Attachment,
+) -> CommentAttachmentDto {
+    CommentAttachmentDto {
+        id: attachment.id.0,
+        comment_id: attachment
+            .comment_id
+            .map(|id| id.0)
+            .unwrap_or_else(uuid::Uuid::nil),
+        file_name: attachment.file_name,
+        content_type: attachment.content_type,
+        size_bytes: attachment.size_bytes,
+        sha256: attachment.sha256,
+        actor: make_actor_dto(
+            attachment.created_by_user_id.map(|id| id.0),
+            attachment.created_by_api_key_id.map(|id| id.0),
+        ),
+        created_at: attachment.created_at,
+    }
+}
+
+async fn comment_attachment_response(
+    state: &AppState,
+    attachment: atlas_domain::entities::documents::Attachment,
+) -> Result<Response, ApiError> {
+    let bytes = state
+        .attachments
+        .get(&attachment.sha256)
+        .await
+        .map_err(|error| match error {
+            atlas_domain::DomainError::NotFound { .. } => ApiError::NotFound,
+            other => ApiError::Internal {
+                message: other.to_string(),
+            },
+        })?;
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, attachment.content_type)
+        .header(
+            header::CONTENT_DISPOSITION,
+            content_disposition_attachment(&attachment.file_name),
+        )
+        .header("x-content-type-options", "nosniff")
+        .body(Body::from(bytes))
+        .map_err(|error| ApiError::Internal {
+            message: error.to_string(),
+        })
 }
 
 /// Builds a `Content-Disposition: attachment` header value for a client-supplied
