@@ -491,6 +491,268 @@ async fn stale_intent_without_live_attachment_is_reconciled() {
     db.teardown().await;
 }
 
+#[tokio::test]
+async fn upload_commits_write_intent_before_object_put() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "intent-before-put-user").await;
+    let ctx = support::ctx(&ws, &user);
+    let (project, board, column) =
+        seed_project_board_column(&db, &ctx, "intent-before-put-proj", "IB").await;
+    let task = seed_task(&db, &ctx, project.id, board.id, column.id, "Task").await;
+    let tempdir = TempDir::new().expect("tempdir");
+    let store = IntentCheckingStore {
+        inner: DiskAttachmentStore::new(tempdir.path())
+            .await
+            .expect("attachment store"),
+        conn: db.conn().clone(),
+        delete_started: Notify::new(),
+        allow_delete: Notify::new(),
+    };
+    let data = b"intent must precede object put";
+
+    let attachment = PgAttachmentLifecycle::store_and_record(
+        &db.conn().clone(),
+        &ctx,
+        NewAttachment {
+            document_id: None,
+            task_id: Some(task.id),
+            comment_id: None,
+            file_name: "intent.txt".into(),
+            content_type: "text/plain".into(),
+            size_bytes: data.len() as i64,
+            sha256: String::new(),
+        },
+        data,
+        &store,
+    )
+    .await
+    .expect("upload");
+
+    assert!(
+        store
+            .exists(&attachment.sha256)
+            .await
+            .expect("stored object exists"),
+        "put must only run after the durable intent is externally observable"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn failed_finalization_leaves_object_for_later_reconciliation() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "failed-finalization-user").await;
+    let ctx = support::ctx(&ws, &user);
+    let tempdir = TempDir::new().expect("tempdir");
+    let store = DiskAttachmentStore::new(tempdir.path())
+        .await
+        .expect("attachment store");
+    let data = b"object survives failed finalization";
+    let digest = format!("{:x}", sha2::Sha256::digest(data));
+    let intents = PgAttachmentWriteIntentRepo {
+        conn: db.conn().clone(),
+    };
+
+    let upload = PgAttachmentLifecycle::store_and_record(
+        &db.conn().clone(),
+        &ctx,
+        NewAttachment {
+            document_id: None,
+            task_id: None,
+            comment_id: None,
+            file_name: "failed.txt".into(),
+            content_type: "text/plain".into(),
+            size_bytes: data.len() as i64,
+            sha256: String::new(),
+        },
+        data,
+        &store,
+    )
+    .await;
+
+    assert!(upload.is_err(), "an ownerless attachment cannot finalize");
+    assert!(
+        store.exists(&digest).await.expect("object existence"),
+        "a post-put finalization failure leaves a recoverable object"
+    );
+    assert_eq!(
+        intents
+            .list_stale(Utc::now() + Duration::seconds(1))
+            .await
+            .expect("list intents")
+            .len(),
+        1,
+        "the durable intent must survive a failed finalization"
+    );
+
+    PgAttachmentLifecycle::reconcile_stale(
+        &db.conn().clone(),
+        &store,
+        Utc::now() + Duration::seconds(1),
+    )
+    .await
+    .expect("reconcile failed finalization");
+
+    assert!(
+        !store.exists(&digest).await.expect("object existence"),
+        "reconciliation removes the orphaned object"
+    );
+    assert!(
+        intents
+            .list_stale(Utc::now() + Duration::seconds(1))
+            .await
+            .expect("list intents")
+            .is_empty(),
+        "reconciliation removes the recovered intent"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn concurrent_same_digest_uploads_finalize_without_residual_intent() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "concurrent-finalization-user").await;
+    let ctx = support::ctx(&ws, &user);
+    let (project, board, column) =
+        seed_project_board_column(&db, &ctx, "concurrent-finalization-proj", "CF").await;
+    let task = seed_task(&db, &ctx, project.id, board.id, column.id, "Task").await;
+    let tempdir = TempDir::new().expect("tempdir");
+    let store = Arc::new(
+        DiskAttachmentStore::new(tempdir.path())
+            .await
+            .expect("attachment store"),
+    );
+    let data = b"concurrent same digest finalization";
+    let digest = format!("{:x}", sha2::Sha256::digest(data));
+    let first_conn = db.conn().clone();
+    let second_conn = db.conn().clone();
+
+    let first = PgAttachmentLifecycle::store_and_record(
+        &first_conn,
+        &ctx,
+        NewAttachment {
+            document_id: None,
+            task_id: Some(task.id),
+            comment_id: None,
+            file_name: "first.txt".into(),
+            content_type: "text/plain".into(),
+            size_bytes: data.len() as i64,
+            sha256: String::new(),
+        },
+        data,
+        store.as_ref(),
+    );
+    let second = PgAttachmentLifecycle::store_and_record(
+        &second_conn,
+        &ctx,
+        NewAttachment {
+            document_id: None,
+            task_id: Some(task.id),
+            comment_id: None,
+            file_name: "second.txt".into(),
+            content_type: "text/plain".into(),
+            size_bytes: data.len() as i64,
+            sha256: String::new(),
+        },
+        data,
+        store.as_ref(),
+    );
+
+    let (first, second) = tokio::join!(first, second);
+    let first = first.expect("first upload");
+    let second = second.expect("second upload");
+
+    assert_eq!(first.sha256, digest);
+    assert_eq!(second.sha256, digest);
+    assert!(
+        store.exists(&digest).await.expect("object existence"),
+        "both uploads must retain their shared object"
+    );
+    assert!(
+        PgAttachmentWriteIntentRepo {
+            conn: db.conn().clone(),
+        }
+        .list_stale(Utc::now() + Duration::seconds(1))
+        .await
+        .expect("list intents")
+        .is_empty(),
+        "both successful finalizations must clear their shared intent"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn cross_workspace_live_attachment_preserves_shared_object() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (first_ws, first_user) = support::seed_workspace(&db, "first-live-reference-user").await;
+    let first_ctx = support::ctx(&first_ws, &first_user);
+    let (second_ws, second_user) = support::seed_workspace(&db, "second-live-reference-user").await;
+    let second_ctx = support::ctx(&second_ws, &second_user);
+    let (project, board, column) =
+        seed_project_board_column(&db, &second_ctx, "second-live-reference-proj", "LR").await;
+    let task = seed_task(&db, &second_ctx, project.id, board.id, column.id, "Task").await;
+    let tempdir = TempDir::new().expect("tempdir");
+    let store = DiskAttachmentStore::new(tempdir.path())
+        .await
+        .expect("attachment store");
+    let data = b"cross workspace shared object";
+
+    let attachment = PgAttachmentLifecycle::store_and_record(
+        &db.conn().clone(),
+        &second_ctx,
+        NewAttachment {
+            document_id: None,
+            task_id: Some(task.id),
+            comment_id: None,
+            file_name: "shared.txt".into(),
+            content_type: "text/plain".into(),
+            size_bytes: data.len() as i64,
+            sha256: String::new(),
+        },
+        data,
+        &store,
+    )
+    .await
+    .expect("record live attachment in second workspace");
+    let intents = PgAttachmentWriteIntentRepo {
+        conn: db.conn().clone(),
+    };
+    intents
+        .create(attachment.sha256.clone())
+        .await
+        .expect("seed stale intent in first workspace context");
+
+    PgAttachmentLifecycle::reconcile_stale(
+        &db.conn().clone(),
+        &store,
+        Utc::now() + Duration::seconds(1),
+    )
+    .await
+    .expect("reconcile stale intent");
+
+    assert!(
+        store
+            .exists(&attachment.sha256)
+            .await
+            .expect("object existence"),
+        "a live attachment in another workspace must preserve the shared object"
+    );
+    assert!(
+        intents
+            .list_stale(Utc::now() + Duration::seconds(1))
+            .await
+            .expect("list intents")
+            .is_empty(),
+        "the stale intent is removed without deleting a globally live object"
+    );
+
+    assert_ne!(first_ctx.workspace_id, second_ctx.workspace_id);
+    db.teardown().await;
+}
+
 struct IntentCheckingStore {
     inner: DiskAttachmentStore,
     conn: sea_orm::DatabaseConnection,
