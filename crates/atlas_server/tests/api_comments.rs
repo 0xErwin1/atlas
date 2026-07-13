@@ -606,6 +606,442 @@ async fn full_feeds_redact_deleted_targets_for_human_and_api_key_viewers() {
 }
 
 #[tokio::test]
+async fn full_feeds_retain_deleted_comment_events_without_deleted_comment_data_or_actor_identity() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (owner, ws, owner_user) =
+        support::login_user_with_workspace(&server, &db, "comment-feed-retained-events").await;
+    let task_id = seed_task(&owner, &ws.slug, "comment-feed-retained-proj", "CFR").await;
+    let document = owner
+        .create_document(
+            &ws.slug,
+            "comment-feed-retained-proj",
+            atlas_api::dtos::documents::CreateDocumentRequest {
+                title: "Document feed parent".into(),
+                folder_id: None,
+                content: None,
+            },
+        )
+        .await
+        .expect("create document parent");
+    let document_slug = document.slug.expect("document slug");
+
+    let task_comment = owner
+        .add_comment(
+            &ws.slug,
+            &task_id,
+            CreateCommentRequest {
+                body: "task comment that must disappear".into(),
+            },
+        )
+        .await
+        .expect("create task comment");
+    let document_comment = owner
+        .add_document_comment(
+            &ws.slug,
+            &document_slug,
+            CreateCommentRequest {
+                body: "document comment that must disappear".into(),
+            },
+        )
+        .await
+        .expect("create document comment");
+
+    let target_document = owner
+        .create_document(
+            &ws.slug,
+            "comment-feed-retained-proj",
+            atlas_api::dtos::documents::CreateDocumentRequest {
+                title: "Retained event target".into(),
+                folder_id: None,
+                content: None,
+            },
+        )
+        .await
+        .expect("create retained event target");
+
+    for comment_id in [task_comment.id, document_comment.id] {
+        db.conn()
+            .execute_unprepared(&format!(
+                "INSERT INTO comment_links (id, workspace_id, comment_id, target_document_id, created_at) VALUES ('{}', '{}', '{comment_id}', '{}', now())",
+                uuid::Uuid::now_v7(), ws.id.0, target_document.id,
+            ))
+            .await
+            .expect("insert comment link");
+    }
+
+    let (viewer, _) = add_member(
+        &db,
+        &server,
+        ws.id,
+        "comment-feed-retained-viewer",
+        MemberRole::Member,
+    )
+    .await;
+
+    owner
+        .delete_comment(&ws.slug, &task_id, task_comment.id)
+        .await
+        .expect("delete task comment");
+    owner
+        .delete_document_comment(&ws.slug, &document_slug, document_comment.id)
+        .await
+        .expect("delete document comment");
+
+    db.conn()
+        .execute_unprepared(&format!(
+            "UPDATE users SET disabled_at = now() WHERE id = '{}'",
+            owner_user.id.0
+        ))
+        .await
+        .expect("disable deleted-comment actor");
+
+    for url in [
+        format!(
+            "{}/api/workspaces/{}/tasks/{task_id}/comments?feed=full",
+            server.base_url(),
+            ws.slug
+        ),
+        format!(
+            "{}/api/workspaces/{}/documents/{document_slug}/comments?feed=full",
+            server.base_url(),
+            ws.slug
+        ),
+    ] {
+        let page: Value = reqwest::Client::new()
+            .get(url)
+            .bearer_auth(viewer.token().expect("viewer token"))
+            .send()
+            .await
+            .expect("get retained event feed")
+            .json()
+            .await
+            .expect("decode retained event feed");
+        let items = page["items"].as_array().expect("feed items");
+
+        assert_eq!(items.len(), 2, "only retained deletion events remain");
+        assert!(items.iter().all(|entry| entry["type"] == "event"));
+        assert!(items.iter().any(|entry| entry["kind"] == "link_removed"));
+        assert!(items.iter().any(|entry| entry["kind"] == "comment_deleted"));
+        for entry in items {
+            assert_eq!(entry["actor"], Value::Null);
+            assert!(entry.get("body").is_none());
+            assert!(entry.get("links").is_none());
+            assert!(entry.get("attachments").is_none());
+        }
+    }
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn full_feeds_fail_closed_with_the_internal_problem_for_invalid_cursors() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (owner, ws, _) =
+        support::login_user_with_workspace(&server, &db, "comment-feed-invalid-cursor").await;
+    let task_id = seed_task(&owner, &ws.slug, "comment-feed-invalid-cursor-proj", "CFC").await;
+    let document = owner
+        .create_document(
+            &ws.slug,
+            "comment-feed-invalid-cursor-proj",
+            atlas_api::dtos::documents::CreateDocumentRequest {
+                title: "Document feed parent".into(),
+                folder_id: None,
+                content: None,
+            },
+        )
+        .await
+        .expect("create document parent");
+    let document_slug = document.slug.expect("document slug");
+
+    for url in [
+        format!(
+            "{}/api/workspaces/{}/tasks/{task_id}/comments?feed=full&cursor=not-a-feed-cursor",
+            server.base_url(),
+            ws.slug
+        ),
+        format!(
+            "{}/api/workspaces/{}/documents/{document_slug}/comments?feed=full&cursor=not-a-feed-cursor",
+            server.base_url(),
+            ws.slug
+        ),
+    ] {
+        let response = reqwest::Client::new()
+            .get(url)
+            .bearer_auth(owner.token().expect("owner token"))
+            .send()
+            .await
+            .expect("invalid cursor response");
+        let status = response.status();
+        let problem: Value = response.json().await.expect("internal problem JSON");
+
+        assert_eq!(status, reqwest::StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(problem["type"], "urn:atlas:error:internal");
+    }
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn full_feeds_recheck_target_access_after_the_link_is_written() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (owner, ws, _) =
+        support::login_user_with_workspace(&server, &db, "comment-feed-revoked-target").await;
+    let task_id = seed_task(&owner, &ws.slug, "comment-feed-source", "CFS").await;
+    owner
+        .create_project(&ws.slug, project_req("comment-feed-target", "CFT"))
+        .await
+        .expect("create target project");
+    let source_document = owner
+        .create_document(
+            &ws.slug,
+            "comment-feed-source",
+            atlas_api::dtos::documents::CreateDocumentRequest {
+                title: "Source document".into(),
+                folder_id: None,
+                content: None,
+            },
+        )
+        .await
+        .expect("create source document");
+    let source_slug = source_document.slug.expect("source slug");
+    let target_document = owner
+        .create_document(
+            &ws.slug,
+            "comment-feed-target",
+            atlas_api::dtos::documents::CreateDocumentRequest {
+                title: "Target document".into(),
+                folder_id: None,
+                content: None,
+            },
+        )
+        .await
+        .expect("create target document");
+    let task_comment = owner
+        .add_comment(
+            &ws.slug,
+            &task_id,
+            CreateCommentRequest {
+                body: "task".into(),
+            },
+        )
+        .await
+        .expect("create task comment");
+    let document_comment = owner
+        .add_document_comment(
+            &ws.slug,
+            &source_slug,
+            CreateCommentRequest {
+                body: "document".into(),
+            },
+        )
+        .await
+        .expect("create document comment");
+    for comment_id in [task_comment.id, document_comment.id] {
+        db.conn()
+            .execute_unprepared(&format!(
+                "INSERT INTO comment_links (id, workspace_id, comment_id, target_document_id, created_at) VALUES ('{}', '{}', '{comment_id}', '{}', now())",
+                uuid::Uuid::now_v7(), ws.id.0, target_document.id,
+            ))
+            .await
+            .expect("insert target link");
+    }
+    let (viewer, _) = add_member(
+        &db,
+        &server,
+        ws.id,
+        "comment-feed-revoked-viewer",
+        MemberRole::Member,
+    )
+    .await;
+    db.conn()
+        .execute_unprepared("UPDATE projects SET visibility = 'workspace', visibility_role = 'viewer' WHERE slug IN ('comment-feed-source', 'comment-feed-target')")
+        .await
+        .expect("make projects visible");
+
+    let urls = [
+        format!(
+            "{}/api/workspaces/{}/tasks/{task_id}/comments?feed=full",
+            server.base_url(),
+            ws.slug
+        ),
+        format!(
+            "{}/api/workspaces/{}/documents/{source_slug}/comments?feed=full",
+            server.base_url(),
+            ws.slug
+        ),
+    ];
+    for url in &urls {
+        let page: Value = reqwest::Client::new()
+            .get(url)
+            .bearer_auth(viewer.token().expect("viewer token"))
+            .send()
+            .await
+            .expect("initial feed")
+            .json()
+            .await
+            .expect("initial JSON");
+        assert_eq!(
+            page["items"][0]["links"][0]["target"]["status"],
+            "available"
+        );
+    }
+    db.conn()
+        .execute_unprepared("UPDATE projects SET visibility = 'private', visibility_role = NULL WHERE slug = 'comment-feed-target'")
+        .await
+        .expect("revoke target visibility");
+    for url in &urls {
+        let page: Value = reqwest::Client::new()
+            .get(url)
+            .bearer_auth(viewer.token().expect("viewer token"))
+            .send()
+            .await
+            .expect("revoked feed")
+            .json()
+            .await
+            .expect("revoked JSON");
+        assert_eq!(
+            page["items"][0]["links"][0]["target"],
+            serde_json::json!({"status":"unavailable","label":"Recurso no disponible"})
+        );
+    }
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn full_feeds_paginate_merged_comment_and_event_boundaries_without_gaps_or_duplicates() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (owner, ws, user) =
+        support::login_user_with_workspace(&server, &db, "comment-feed-merged-pages").await;
+    let task_id = seed_task(&owner, &ws.slug, "comment-feed-merged-pages", "CFP").await;
+    let document = owner
+        .create_document(
+            &ws.slug,
+            "comment-feed-merged-pages",
+            atlas_api::dtos::documents::CreateDocumentRequest {
+                title: "Document parent".into(),
+                folder_id: None,
+                content: None,
+            },
+        )
+        .await
+        .expect("create document");
+    let document_slug = document.slug.expect("document slug");
+    let task_comments = [
+        owner
+            .add_comment(
+                &ws.slug,
+                &task_id,
+                CreateCommentRequest {
+                    body: "task one".into(),
+                },
+            )
+            .await
+            .expect("task comment one"),
+        owner
+            .add_comment(
+                &ws.slug,
+                &task_id,
+                CreateCommentRequest {
+                    body: "task two".into(),
+                },
+            )
+            .await
+            .expect("task comment two"),
+    ];
+    let document_comments = [
+        owner
+            .add_document_comment(
+                &ws.slug,
+                &document_slug,
+                CreateCommentRequest {
+                    body: "document one".into(),
+                },
+            )
+            .await
+            .expect("document comment one"),
+        owner
+            .add_document_comment(
+                &ws.slug,
+                &document_slug,
+                CreateCommentRequest {
+                    body: "document two".into(),
+                },
+            )
+            .await
+            .expect("document comment two"),
+    ];
+    for (task_parent, document_parent, comment_id) in [
+        (task_comments[0].task_id, None, task_comments[1].id),
+        (None, Some(document.id), document_comments[1].id),
+    ] {
+        let task_parent = task_parent
+            .map(|id| format!("'{id}'"))
+            .unwrap_or_else(|| "NULL".into());
+        let document_parent = document_parent
+            .map(|id| format!("'{id}'"))
+            .unwrap_or_else(|| "NULL".into());
+        db.conn().execute_unprepared(&format!("INSERT INTO comment_link_events (id, workspace_id, parent_task_id, parent_document_id, comment_id, event_kind, actor_type, actor_id, created_at) VALUES ('{}', '{}', {task_parent}, {document_parent}, '{comment_id}', 'comment_deleted', 'user', '{}', now())", uuid::Uuid::now_v7(), ws.id.0, user.id.0)).await.expect("insert retained event");
+    }
+    for (url, first, second) in [
+        (
+            format!(
+                "{}/api/workspaces/{}/tasks/{task_id}/comments?feed=full&limit=2",
+                server.base_url(),
+                ws.slug
+            ),
+            task_comments[0].id,
+            task_comments[1].id,
+        ),
+        (
+            format!(
+                "{}/api/workspaces/{}/documents/{document_slug}/comments?feed=full&limit=2",
+                server.base_url(),
+                ws.slug
+            ),
+            document_comments[0].id,
+            document_comments[1].id,
+        ),
+    ] {
+        let first_page: Value = reqwest::Client::new()
+            .get(&url)
+            .bearer_auth(owner.token().expect("owner token"))
+            .send()
+            .await
+            .expect("first page")
+            .json()
+            .await
+            .expect("first JSON");
+        assert_eq!(
+            first_page["items"].as_array().expect("first items").len(),
+            2
+        );
+        assert_eq!(first_page["items"][0]["comment"]["id"], first.to_string());
+        assert_eq!(first_page["items"][1]["comment"]["id"], second.to_string());
+        let cursor = first_page["next_cursor"].as_str().expect("next cursor");
+        let second_page: Value = reqwest::Client::new()
+            .get(format!("{url}&cursor={cursor}"))
+            .bearer_auth(owner.token().expect("owner token"))
+            .send()
+            .await
+            .expect("second page")
+            .json()
+            .await
+            .expect("second JSON");
+        assert_eq!(
+            second_page["items"].as_array().expect("second items").len(),
+            1
+        );
+        assert_eq!(second_page["items"][0]["type"], "event");
+        assert!(!second_page["has_more"].as_bool().expect("has more"));
+    }
+    db.teardown().await;
+}
+
+#[tokio::test]
 async fn disabled_or_revoked_principals_are_rejected_before_full_feed_projection() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;
