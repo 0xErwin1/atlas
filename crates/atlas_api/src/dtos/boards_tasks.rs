@@ -349,6 +349,52 @@ pub struct CommentDto {
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
+/// A viewer-authorized navigation target derived from a comment link.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum CommentLinkTargetDto {
+    Available { r#type: String, id: uuid::Uuid },
+    Unavailable { label: String },
+}
+
+/// A derived comment link projected for the requesting viewer.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct CommentLinkProjectionDto {
+    pub target: CommentLinkTargetDto,
+}
+
+/// One full comment-feed entry, including retained lifecycle events.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum CommentFeedEntryDto {
+    Comment {
+        comment: CommentDto,
+        links: Vec<CommentLinkProjectionDto>,
+    },
+    Event {
+        id: uuid::Uuid,
+        kind: String,
+        comment_id: uuid::Uuid,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        target: Option<CommentLinkTargetDto>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        actor: Option<ActorDto>,
+        created_at: chrono::DateTime<chrono::Utc>,
+    },
+}
+
+/// The compatible default comment page or the opt-in full comment feed page.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+#[serde(untagged)]
+pub enum CommentListResponseDto {
+    Default(crate::pagination::Page<CommentDto>),
+    Full(crate::pagination::Page<CommentFeedEntryDto>),
+}
+
 /// Request body for `POST .../comments`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]

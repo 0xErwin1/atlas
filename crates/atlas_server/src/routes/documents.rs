@@ -11,7 +11,9 @@ use bytes::Bytes;
 use serde::Deserialize;
 
 use atlas_api::{
-    dtos::boards_tasks::{CommentDto, CreateCommentRequest, UpdateCommentRequest},
+    dtos::boards_tasks::{
+        CommentDto, CommentListResponseDto, CreateCommentRequest, UpdateCommentRequest,
+    },
     dtos::documents::{
         ActorDto, AttachmentDto, BacklinkDto, CopyDocumentRequest, CreateDocumentRequest,
         DocumentDto, DocumentSummaryDto, FrontmatterDto, MoveDocumentRequest, RevisionContentDto,
@@ -41,7 +43,9 @@ use crate::{
         AttachmentRepo, DocumentLinkRepo, DocumentRepo, PgAttachmentLifecycle, PgAttachmentRepo,
         PgDocumentLinkRepo, PgDocumentRepo,
     },
-    routes::comments::{comment_to_dto, enrich_comment_entries},
+    routes::comments::{
+        comment_to_dto, decode_feed_cursor, enrich_comment_entries, project_comment_feed,
+    },
     routes::validation::{validate_comment_body, validate_name, validate_upload},
     services::DocumentService,
     state::AppState,
@@ -51,6 +55,7 @@ use crate::{
 pub(crate) struct PaginationQuery {
     cursor: Option<String>,
     limit: Option<u32>,
+    feed: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -1230,7 +1235,7 @@ pub(crate) struct DocumentCommentPath {
         ("limit" = Option<u32>, Query, description = "Page size"),
     ),
     responses(
-        (status = 200, description = "Comment page", body = Page<CommentDto>),
+        (status = 200, description = "Comment page. `feed=full` returns authorized links and retained events.", body = CommentListResponseDto),
         (status = 401, description = "Unauthenticated"),
         (status = 403, description = "Insufficient permissions"),
         (status = 404, description = "Document not found"),
@@ -1240,17 +1245,35 @@ pub(crate) async fn list_comments(
     auth: Authorized<DocumentSlugRes, ViewerMin, DocsRead>,
     State(state): State<AppState>,
     Query(q): Query<PaginationQuery>,
-) -> Result<Json<Page<CommentDto>>, ApiError> {
+) -> Result<Response, ApiError> {
     let limit = q.limit.unwrap_or(50).clamp(1, 200) as u64;
     let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
+    let document_id = auth.resource.0.id;
+
+    if q.feed.as_deref() == Some("full") {
+        let after = decode_feed_cursor(q.cursor.as_deref())?;
+        let (entries, next_cursor, has_more) = project_comment_feed(
+            &state,
+            &ctx,
+            CommentOwner::Document(document_id),
+            auth.projection_context(),
+            after,
+            limit,
+        )
+        .await?;
+        return Ok(Json(Page {
+            items: entries,
+            next_cursor,
+            has_more,
+        })
+        .into_response());
+    }
 
     let after_id = q
         .cursor
         .as_deref()
         .and_then(Cursor::decode)
         .map(|c| CommentId(c.0));
-
-    let document_id = auth.resource.0.id;
 
     let mut entries = state
         .document_service()
@@ -1271,7 +1294,7 @@ pub(crate) async fn list_comments(
 
     let dtos = enrich_comment_entries(&state, CommentOwner::Document(document_id), entries).await?;
 
-    Ok(Json(Page::new(dtos, next_cursor, has_more)))
+    Ok(Json(Page::new(dtos, next_cursor, has_more)).into_response())
 }
 
 // POST /api/workspaces/{ws}/documents/{slug}/comments
