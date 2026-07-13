@@ -937,10 +937,8 @@ where
         Ok(Authorized {
             principal: domain_principal.clone(),
             projection_context: ProjectionAuthContext::from_validated(
-                workspace.clone(),
+                workspace.id,
                 domain_principal.clone(),
-                membership_role.clone(),
-                api_key,
             ),
             workspace,
             resource,
