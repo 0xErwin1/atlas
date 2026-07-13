@@ -8,17 +8,20 @@
 mod support;
 
 use atlas_domain::{
-    Actor, DomainError,
+    Actor, AttachmentStore, DomainError,
     entities::boards_tasks::{NewBoard, NewTask, PositionBetween},
     entities::comments::{CommentOwner, NewComment},
     entities::workspace_core::NewProject,
     permissions::{Visibility, VisibilityRole},
 };
 use atlas_server::persistence::repos::{
-    BoardRepo, CommentRepo, PgBoardRepo, PgCommentRepo, PgProjectRepo, PgTaskRepo, ProjectRepo,
-    TaskRepo,
+    AttachmentWriteIntentRepo, BoardRepo, CommentRepo, DiskAttachmentStore, PgAttachmentLifecycle,
+    PgAttachmentWriteIntentRepo, PgBoardRepo, PgCommentRepo, PgProjectRepo, PgTaskRepo,
+    ProjectRepo, TaskRepo,
 };
+use chrono::{Duration, Utc};
 use sea_orm::{ConnectionTrait, Statement};
+use tempfile::TempDir;
 
 async fn seed_project_board_column(
     db: &support::TestDb,
@@ -437,6 +440,47 @@ async fn comment_freedom_schema_enforces_owner_and_link_constraints() {
     assert!(
         duplicate.is_err(),
         "per-target partial uniqueness must reject duplicates"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn stale_intent_without_live_attachment_is_reconciled() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let tempdir = TempDir::new().expect("tempdir");
+    let store = DiskAttachmentStore::new(tempdir.path())
+        .await
+        .expect("attachment store");
+    let data = b"orphaned after a crash";
+    let digest = store.put(data).await.expect("put object");
+    let intents = PgAttachmentWriteIntentRepo {
+        conn: db.conn().clone(),
+    };
+    intents
+        .create(digest.clone())
+        .await
+        .expect("commit intent before put");
+
+    PgAttachmentLifecycle::reconcile_stale(
+        &db.conn().clone(),
+        &store,
+        Utc::now() + Duration::seconds(1),
+    )
+    .await
+    .expect("reconcile stale intent");
+
+    assert!(
+        !store.exists(&digest).await.expect("object existence"),
+        "an unreferenced stale object must be removed"
+    );
+    assert!(
+        intents
+            .list_stale(Utc::now() + Duration::seconds(1))
+            .await
+            .expect("list intents")
+            .is_empty(),
+        "the completed reconciliation must remove its intent"
     );
 
     db.teardown().await;
