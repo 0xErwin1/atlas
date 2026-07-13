@@ -94,3 +94,10 @@ pub struct CommentFeedCursor {
     pub created_at: DateTime<Utc>,
     pub id: uuid::Uuid,
 }
+
+/// One oldest-first page from a comment parent feed.
+#[derive(Debug, Clone)]
+pub struct CommentFeedPage {
+    pub entries: Vec<CommentFeedEntry>,
+    pub has_more: bool,
+}

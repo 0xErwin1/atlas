@@ -191,6 +191,7 @@ async fn document_comment_delete_retains_events_and_preserves_shared_digest_for_
         .feed_for_owner(&ctx, CommentOwner::Document(parent.id), None, 20)
         .await
         .expect("load retained events")
+        .entries
         .into_iter()
         .filter_map(|entry| match entry {
             CommentFeedEntry::Event(event) => Some(event.kind),

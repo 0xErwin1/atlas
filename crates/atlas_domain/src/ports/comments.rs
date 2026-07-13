@@ -1,7 +1,7 @@
 use crate::{
     DomainError, WorkspaceCtx,
     entities::comments::{
-        Comment, CommentFeedCursor, CommentFeedEntry, CommentLink, CommentLinkTarget, CommentOwner,
+        Comment, CommentFeedCursor, CommentFeedPage, CommentLink, CommentLinkTarget, CommentOwner,
         NewComment,
     },
     ids::CommentId,
@@ -79,7 +79,7 @@ pub trait CommentLinkRepo: Send + Sync {
         owner: CommentOwner,
         after: Option<CommentFeedCursor>,
         limit: u64,
-    ) -> Result<Vec<CommentFeedEntry>, DomainError>;
+    ) -> Result<CommentFeedPage, DomainError>;
 }
 
 #[async_trait]

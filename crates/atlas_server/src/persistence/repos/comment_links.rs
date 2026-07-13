@@ -1,12 +1,12 @@
 use crate::persistence::entities::comments::{
-    comment, comment_from, comment_link, comment_link_event, comment_link_from,
+    comment, comment_link, comment_link_event, comment_link_from,
 };
 use async_trait::async_trait;
 use atlas_domain::{
     Actor, DomainError, WorkspaceCtx,
     entities::comments::{
-        CommentFeedCursor, CommentFeedEntry, CommentLink, CommentLinkEvent, CommentLinkEventKind,
-        CommentLinkTarget, CommentOwner,
+        CommentFeedCursor, CommentFeedEntry, CommentFeedPage, CommentLink, CommentLinkEvent,
+        CommentLinkEventKind, CommentLinkTarget, CommentOwner,
     },
     ids::{ApiKeyId, CommentId, CommentLinkEventId, DocumentId, TaskId, UserId},
     ports::comments::CommentLinkRepo,
@@ -188,35 +188,62 @@ impl CommentLinkRepo for PgCommentLinkRepo {
         owner: CommentOwner,
         after: Option<CommentFeedCursor>,
         limit: u64,
-    ) -> Result<Vec<CommentFeedEntry>, DomainError> {
-        let (comments, events) = tokio::try_join!(
-            comment::Entity::find()
-                .filter(comment::Column::WorkspaceId.eq(ctx.workspace_id.0))
-                .filter(owner_condition(owner))
-                .filter(comment::Column::DeletedAt.is_null())
-                .all(&self.conn),
-            comment_link_event::Entity::find()
-                .filter(comment_link_event::Column::WorkspaceId.eq(ctx.workspace_id.0))
-                .filter(event_owner_condition(owner))
-                .all(&self.conn),
-        )
-        .map_err(db_err)?;
-        let mut entries = comments
-            .into_iter()
-            .map(|row| CommentFeedEntry::Comment(comment_from(row)))
-            .collect::<Vec<_>>();
-        entries.extend(
-            events
-                .into_iter()
-                .map(event_from)
-                .collect::<Result<Vec<_>, _>>()?,
+    ) -> Result<CommentFeedPage, DomainError> {
+        let (parent_column, parent_id) = match owner {
+            CommentOwner::Task(id) => ("task_id", id.0),
+            CommentOwner::Document(id) => ("document_id", id.0),
+        };
+        let (cursor_predicate, mut values, limit_parameter) = match after {
+            Some(cursor) => (
+                " AND (created_at, id) > ($3, $4)",
+                vec![
+                    ctx.workspace_id.0.into(),
+                    parent_id.into(),
+                    cursor.created_at.into(),
+                    cursor.id.into(),
+                ],
+                "$5",
+            ),
+            None => ("", vec![ctx.workspace_id.0.into(), parent_id.into()], "$3"),
+        };
+        values.push((limit.saturating_add(1) as i64).into());
+
+        let statement = Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            format!(
+                "WITH feed AS (\
+                    SELECT id, id AS comment_id, workspace_id, task_id AS parent_task_id, document_id AS parent_document_id, \
+                           body, created_by_user_id, created_by_api_key_id, created_at, updated_at, \
+                           NULL::text AS event_kind, NULL::uuid AS target_document_id, \
+                           NULL::uuid AS target_task_id, NULL::uuid AS target_attachment_id, \
+                           NULL::text AS actor_type, NULL::uuid AS actor_id, 'comment'::text AS entry_type \
+                    FROM comments \
+                    WHERE workspace_id = $1 AND {parent_column} = $2 AND deleted_at IS NULL{cursor_predicate} \
+                    UNION ALL \
+                    SELECT id, comment_id, workspace_id, parent_task_id, parent_document_id, \
+                           NULL::text AS body, NULL::uuid AS created_by_user_id, \
+                           NULL::uuid AS created_by_api_key_id, created_at, created_at AS updated_at, \
+                           event_kind, target_document_id, target_task_id, target_attachment_id, \
+                           actor_type, actor_id, 'event'::text AS entry_type \
+                    FROM comment_link_events \
+                    WHERE workspace_id = $1 AND parent_{parent_column} = $2{cursor_predicate} \
+                ) \
+                SELECT * FROM feed ORDER BY created_at ASC, id ASC LIMIT {limit_parameter}",
+            ),
+            values,
         );
-        entries.sort_by_key(|entry| entry.cursor());
-        Ok(entries
+        let mut entries = self
+            .conn
+            .query_all_raw(statement)
+            .await
+            .map_err(db_err)?
             .into_iter()
-            .filter(|entry| after.is_none_or(|cursor| entry.cursor() > cursor))
-            .take(limit as usize)
-            .collect())
+            .map(feed_entry_from_row)
+            .collect::<Result<Vec<_>, _>>()?;
+        let has_more = entries.len() > limit as usize;
+        entries.truncate(limit as usize);
+
+        Ok(CommentFeedPage { entries, has_more })
     }
 }
 
@@ -369,24 +396,6 @@ fn owner_from_comment(row: &comment::Model) -> Result<CommentOwner, DomainError>
         }),
     }
 }
-fn owner_condition(owner: CommentOwner) -> sea_orm::Condition {
-    match owner {
-        CommentOwner::Task(id) => sea_orm::Condition::all().add(comment::Column::TaskId.eq(id.0)),
-        CommentOwner::Document(id) => {
-            sea_orm::Condition::all().add(comment::Column::DocumentId.eq(id.0))
-        }
-    }
-}
-fn event_owner_condition(owner: CommentOwner) -> sea_orm::Condition {
-    match owner {
-        CommentOwner::Task(id) => {
-            sea_orm::Condition::all().add(comment_link_event::Column::ParentTaskId.eq(id.0))
-        }
-        CommentOwner::Document(id) => {
-            sea_orm::Condition::all().add(comment_link_event::Column::ParentDocumentId.eq(id.0))
-        }
-    }
-}
 fn target_columns(
     target: CommentLinkTarget,
 ) -> (Option<uuid::Uuid>, Option<uuid::Uuid>, Option<uuid::Uuid>) {
@@ -450,8 +459,49 @@ async fn insert_event(
     .map_err(db_err)
     .map(|_| ())
 }
-fn event_from(row: comment_link_event::Model) -> Result<CommentFeedEntry, DomainError> {
-    let parent = match (row.parent_task_id, row.parent_document_id) {
+fn feed_entry_from_row(row: sea_orm::QueryResult) -> Result<CommentFeedEntry, DomainError> {
+    let entry_type = row.try_get::<String>("", "entry_type").map_err(row_err)?;
+    let id = row.try_get("", "id").map_err(row_err)?;
+    let workspace_id = row.try_get("", "workspace_id").map_err(row_err)?;
+    let created_at = row.try_get("", "created_at").map_err(row_err)?;
+
+    if entry_type == "comment" {
+        return Ok(CommentFeedEntry::Comment(
+            atlas_domain::entities::comments::Comment {
+                id: CommentId(id),
+                workspace_id: atlas_domain::WorkspaceId(workspace_id),
+                task_id: row
+                    .try_get::<Option<uuid::Uuid>>("", "parent_task_id")
+                    .map_err(row_err)?
+                    .map(TaskId),
+                document_id: row
+                    .try_get::<Option<uuid::Uuid>>("", "parent_document_id")
+                    .map_err(row_err)?
+                    .map(DocumentId),
+                body: row.try_get("", "body").map_err(row_err)?,
+                created_by: crate::persistence::entities::boards_tasks::actor_from_columns(
+                    row.try_get("", "created_by_user_id").map_err(row_err)?,
+                    row.try_get("", "created_by_api_key_id").map_err(row_err)?,
+                ),
+                created_at,
+                updated_at: row.try_get("", "updated_at").map_err(row_err)?,
+                deleted_at: None,
+            },
+        ));
+    }
+
+    if entry_type != "event" {
+        return Err(DomainError::Internal {
+            message: "unknown comment feed entry type".into(),
+        });
+    }
+
+    let parent = match (
+        row.try_get::<Option<uuid::Uuid>>("", "parent_task_id")
+            .map_err(row_err)?,
+        row.try_get::<Option<uuid::Uuid>>("", "parent_document_id")
+            .map_err(row_err)?,
+    ) {
         (Some(id), None) => CommentOwner::Task(TaskId(id)),
         (None, Some(id)) => CommentOwner::Document(DocumentId(id)),
         _ => {
@@ -460,7 +510,8 @@ fn event_from(row: comment_link_event::Model) -> Result<CommentFeedEntry, Domain
             });
         }
     };
-    let kind = match row.event_kind.as_str() {
+    let event_kind = row.try_get::<String>("", "event_kind").map_err(row_err)?;
+    let kind = match event_kind.as_str() {
         "link_added" => CommentLinkEventKind::LinkAdded,
         "link_removed" => CommentLinkEventKind::LinkRemoved,
         "comment_deleted" => CommentLinkEventKind::CommentDeleted,
@@ -471,9 +522,12 @@ fn event_from(row: comment_link_event::Model) -> Result<CommentFeedEntry, Domain
         }
     };
     let target = match (
-        row.target_document_id,
-        row.target_task_id,
-        row.target_attachment_id,
+        row.try_get::<Option<uuid::Uuid>>("", "target_document_id")
+            .map_err(row_err)?,
+        row.try_get::<Option<uuid::Uuid>>("", "target_task_id")
+            .map_err(row_err)?,
+        row.try_get::<Option<uuid::Uuid>>("", "target_attachment_id")
+            .map_err(row_err)?,
     ) {
         (Some(id), None, None) => Some(CommentLinkTarget::Document(DocumentId(id))),
         (None, Some(id), None) => Some(CommentLinkTarget::Task(TaskId(id))),
@@ -487,9 +541,11 @@ fn event_from(row: comment_link_event::Model) -> Result<CommentFeedEntry, Domain
             });
         }
     };
-    let actor = match row.actor_type.as_str() {
-        "user" => Actor::User(UserId(row.actor_id)),
-        "api_key" => Actor::ApiKey(ApiKeyId(row.actor_id)),
+    let actor_type = row.try_get::<String>("", "actor_type").map_err(row_err)?;
+    let actor_id = row.try_get::<uuid::Uuid>("", "actor_id").map_err(row_err)?;
+    let actor = match actor_type.as_str() {
+        "user" => Actor::User(UserId(actor_id)),
+        "api_key" => Actor::ApiKey(ApiKeyId(actor_id)),
         _ => {
             return Err(DomainError::Internal {
                 message: "unknown comment link event actor".into(),
@@ -497,15 +553,21 @@ fn event_from(row: comment_link_event::Model) -> Result<CommentFeedEntry, Domain
         }
     };
     Ok(CommentFeedEntry::Event(CommentLinkEvent {
-        id: CommentLinkEventId(row.id),
-        workspace_id: atlas_domain::WorkspaceId(row.workspace_id),
+        id: CommentLinkEventId(id),
+        workspace_id: atlas_domain::WorkspaceId(workspace_id),
         parent,
-        comment_id: CommentId(row.comment_id),
+        comment_id: CommentId(row.try_get("", "comment_id").map_err(row_err)?),
         kind,
         target,
         actor,
-        created_at: row.created_at,
+        created_at,
     }))
+}
+
+fn row_err(error: sea_orm::DbErr) -> DomainError {
+    DomainError::Internal {
+        message: error.to_string(),
+    }
 }
 fn db_err(error: sea_orm::DbErr) -> DomainError {
     DomainError::Internal {
