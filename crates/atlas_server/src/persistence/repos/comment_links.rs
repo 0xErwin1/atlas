@@ -1,6 +1,7 @@
 use crate::persistence::entities::comments::{
     comment, comment_link, comment_link_event, comment_link_from,
 };
+use crate::services::CommentMutationFault;
 use async_trait::async_trait;
 use atlas_domain::{
     Actor, DomainError, WorkspaceCtx,
@@ -33,6 +34,16 @@ impl PgCommentLinkRepo {
         comment_id: CommentId,
         targets: Vec<CommentLinkTarget>,
     ) -> Result<(), DomainError> {
+        Self::replace_for_comment_with_fault_in(conn, ctx, comment_id, targets, None).await
+    }
+
+    pub(crate) async fn replace_for_comment_with_fault_in(
+        conn: &impl ConnectionTrait,
+        ctx: &WorkspaceCtx,
+        comment_id: CommentId,
+        targets: Vec<CommentLinkTarget>,
+        fault: Option<CommentMutationFault>,
+    ) -> Result<(), DomainError> {
         let comment = scoped_comment(conn, ctx, comment_id).await?;
         let owner = owner_from_comment(&comment)?;
         let existing = comment_link::Entity::find()
@@ -53,29 +64,24 @@ impl PgCommentLinkRepo {
             .map(comment_link_from)
             .collect::<Vec<_>>();
 
-        for link in current
+        let removed = current
             .iter()
             .filter(|link| !desired.contains(&link.target))
-        {
+            .cloned()
+            .collect::<Vec<_>>();
+        let added = desired
+            .into_iter()
+            .filter(|target| !current.iter().any(|link| link.target == *target))
+            .collect::<Vec<_>>();
+
+        for link in &removed {
             comment_link::Entity::delete_by_id(link.id.0)
                 .exec(conn)
                 .await
                 .map_err(db_err)?;
-            insert_event(
-                conn,
-                ctx,
-                owner,
-                comment_id,
-                CommentLinkEventKind::LinkRemoved,
-                Some(link.target),
-            )
-            .await?;
         }
-        for target in desired
-            .into_iter()
-            .filter(|target| !current.iter().any(|link| link.target == *target))
-        {
-            let (document, task, attachment) = target_columns(target);
+        for target in &added {
+            let (document, task, attachment) = target_columns(*target);
             comment_link::ActiveModel {
                 id: Set(uuid::Uuid::now_v7()),
                 workspace_id: Set(ctx.workspace_id.0),
@@ -88,6 +94,24 @@ impl PgCommentLinkRepo {
             .insert(conn)
             .await
             .map_err(db_err)?;
+        }
+
+        if fault == Some(CommentMutationFault::AfterGraphReplace) {
+            return Err(injected_fault(CommentMutationFault::AfterGraphReplace));
+        }
+
+        for link in removed {
+            insert_event(
+                conn,
+                ctx,
+                owner,
+                comment_id,
+                CommentLinkEventKind::LinkRemoved,
+                Some(link.target),
+            )
+            .await?;
+        }
+        for target in added {
             insert_event(
                 conn,
                 ctx,
@@ -98,6 +122,11 @@ impl PgCommentLinkRepo {
             )
             .await?;
         }
+
+        if fault == Some(CommentMutationFault::AfterEventAppend) {
+            return Err(injected_fault(CommentMutationFault::AfterEventAppend));
+        }
+
         Ok(())
     }
 
@@ -627,5 +656,11 @@ fn row_err(error: sea_orm::DbErr) -> DomainError {
 fn db_err(error: sea_orm::DbErr) -> DomainError {
     DomainError::Internal {
         message: error.to_string(),
+    }
+}
+
+fn injected_fault(point: CommentMutationFault) -> DomainError {
+    DomainError::Internal {
+        message: format!("injected comment mutation fault at {point:?}"),
     }
 }
