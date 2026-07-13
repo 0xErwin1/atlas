@@ -18,6 +18,7 @@ use atlas_server::persistence::repos::{
     BoardRepo, CommentRepo, PgBoardRepo, PgCommentRepo, PgProjectRepo, PgTaskRepo, ProjectRepo,
     TaskRepo,
 };
+use sea_orm::{ConnectionTrait, Statement};
 
 async fn seed_project_board_column(
     db: &support::TestDb,
@@ -364,6 +365,79 @@ async fn comment_cross_task_id_is_not_found() {
         .await
         .expect_err("deleting under the wrong owner must not succeed");
     assert!(matches!(err, DomainError::NotFound { .. }));
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn comment_freedom_schema_enforces_owner_and_link_constraints() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "comment-freedom-schema-user").await;
+    let ctx = support::ctx(&ws, &user);
+
+    let (proj, board, col) =
+        seed_project_board_column(&db, &ctx, "comment-freedom-schema-proj", "CF").await;
+    let task = seed_task(&db, &ctx, proj.id, board.id, col.id, "Task").await;
+    let comment = PgCommentRepo::new(db.conn().clone())
+        .create(
+            &ctx,
+            NewComment {
+                owner: CommentOwner::Task(task.id),
+                body: "comment".into(),
+            },
+        )
+        .await
+        .expect("create comment");
+
+    let invalid_attachment = db
+        .conn()
+        .execute_unprepared(&format!(
+            "INSERT INTO attachments (id, workspace_id, task_id, comment_id, file_name, content_type, size_bytes, sha256, created_by_user_id, created_at, updated_at) \
+             VALUES ('{}', '{}', '{}', '{}', 'invalid.txt', 'text/plain', 1, '{}', '{}', now(), now())",
+            uuid::Uuid::now_v7(),
+            ws.id.0,
+            task.id.0,
+            comment.id.0,
+            "a".repeat(64),
+            user.id.0,
+        ))
+        .await;
+    assert!(
+        invalid_attachment.is_err(),
+        "attachment owner XOR must reject task plus comment"
+    );
+
+    let link_id = uuid::Uuid::now_v7();
+    let insert_link = Statement::from_sql_and_values(
+        sea_orm::DatabaseBackend::Postgres,
+        "INSERT INTO comment_links (id, workspace_id, comment_id, target_task_id, created_at) VALUES ($1, $2, $3, $4, now())",
+        [
+            link_id.into(),
+            ws.id.0.into(),
+            comment.id.0.into(),
+            task.id.0.into(),
+        ],
+    );
+    db.conn()
+        .execute_raw(insert_link)
+        .await
+        .expect("insert link");
+
+    let duplicate_statement = Statement::from_sql_and_values(
+        sea_orm::DatabaseBackend::Postgres,
+        "INSERT INTO comment_links (id, workspace_id, comment_id, target_task_id, created_at) VALUES ($1, $2, $3, $4, now())",
+        [
+            uuid::Uuid::now_v7().into(),
+            ws.id.0.into(),
+            comment.id.0.into(),
+            task.id.0.into(),
+        ],
+    );
+    let duplicate = db.conn().execute_raw(duplicate_statement).await;
+    assert!(
+        duplicate.is_err(),
+        "per-target partial uniqueness must reject duplicates"
+    );
 
     db.teardown().await;
 }

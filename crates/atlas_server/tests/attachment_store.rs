@@ -71,3 +71,17 @@ async fn get_nonexistent_digest_returns_not_found() {
         "expected NotFound, got {result:?}"
     );
 }
+
+#[tokio::test]
+async fn delete_removes_an_object_and_is_idempotent() {
+    let (store, _dir) = make_store().await;
+    let digest = store.put(b"delete me").await.expect("put");
+
+    store.delete(&digest).await.expect("first delete");
+    store.delete(&digest).await.expect("repeated delete");
+
+    assert!(
+        !store.exists(&digest).await.expect("exists after delete"),
+        "deleted content must not remain in the store"
+    );
+}
