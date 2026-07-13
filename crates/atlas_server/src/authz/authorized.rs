@@ -21,6 +21,7 @@ use atlas_domain::{
     ports::permission_grant_repo::ResolutionQuery,
 };
 
+use super::batch_authorization::ProjectionAuthContext;
 use crate::{
     auth::middleware::Principal as MiddlewarePrincipal,
     error::ApiError,
@@ -732,7 +733,22 @@ pub struct Authorized<R: ResolvedResource, M: MinRole, S: RequiredScope = NoScop
     pub resource: R,
     pub effective: ResourceRole,
     pub membership: Option<atlas_domain::entities::identity::MemberRole>,
+    #[allow(
+        dead_code,
+        reason = "WU2-C1a retains request authorization state before route wiring"
+    )]
+    projection_context: ProjectionAuthContext,
     _min: PhantomData<(M, S)>,
+}
+
+impl<R: ResolvedResource, M: MinRole, S: RequiredScope> Authorized<R, M, S> {
+    #[allow(
+        dead_code,
+        reason = "WU2-C1a exposes the context for the next projection slice"
+    )]
+    pub(crate) fn projection_context(&self) -> &ProjectionAuthContext {
+        &self.projection_context
+    }
 }
 
 impl<R, M, S> FromRequestParts<AppState> for Authorized<R, M, S>
@@ -919,7 +935,13 @@ where
         }
 
         Ok(Authorized {
-            principal: domain_principal,
+            principal: domain_principal.clone(),
+            projection_context: ProjectionAuthContext::from_validated(
+                workspace.clone(),
+                domain_principal.clone(),
+                membership_role.clone(),
+                api_key,
+            ),
             workspace,
             resource,
             effective,
