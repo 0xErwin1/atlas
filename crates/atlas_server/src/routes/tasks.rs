@@ -7,6 +7,7 @@ use axum::{
     http::{StatusCode, header},
     response::{IntoResponse, Response},
 };
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use serde::Deserialize;
 
 use atlas_api::{
@@ -19,7 +20,7 @@ use atlas_api::{
         UpdateChecklistItemRequest, UpdateCommentRequest, UpdateTaskRequest,
         WorkspaceTaskQueryParams,
     },
-    dtos::documents::ActorDto,
+    dtos::documents::{ActorDto, CommentBacklinkParentDto, CommentBacklinkSourceDto},
     pagination::{Cursor, Page, SearchCursor, SortKey},
 };
 use atlas_domain::{
@@ -29,7 +30,7 @@ use atlas_domain::{
         PositionBetween, Priority, Task, TaskActivity, TaskAssignee, TaskChecklistItem, TaskPatch,
         TaskReference,
     },
-    entities::comments::CommentOwner,
+    entities::comments::{CommentLinkTarget, CommentOwner},
     entities::documents::{
         AttachmentOwner, NewAttachment, RankedTaskDescriptionLink, rank_task_description_links,
     },
@@ -46,6 +47,7 @@ use atlas_domain::{
     },
     ports::{
         boards_tasks::{WorkspaceActivityFilters, WorkspaceActivityScope},
+        comments::CommentLinkRepo,
         documents::DocumentLinkRepo,
     },
 };
@@ -54,16 +56,21 @@ use crate::{
     authz::{
         Authorized, BoardRes, EditorMin, MinRole, TaskRes, TasksCreate, TasksDelete, TasksRead,
         TasksUpdate, ViewerMin, WorkspaceMember, authorize_board_destination,
+        batch_authorization::{
+            BatchAuthorizationService, PgBatchAuthorizationSource, ProjectionSubject,
+        },
         enforce_api_key_scope,
     },
     error::ApiError,
+    persistence::entities::boards_tasks::task,
     persistence::repos::{
         ApiKeyRepo, AttachmentRepo, DocumentRepo, MembershipRepo, PgApiKeyRepo,
-        PgAttachmentLifecycle, PgAttachmentRepo, PgBoardRepo, PgDocumentLinkRepo, PgDocumentRepo,
-        PgMembershipRepo, PgPermissionGrantRepo, PgProjectRepo, PgPropertyDefinitionRepo,
-        PgTaskActivityRepo, PgTaskAssigneeRepo, PgTaskChecklistRepo, PgTaskReferenceRepo,
-        PgTaskRepo, PgUserRepo, ProjectRepo, PropertyDefinitionRepo, TaskActivityRepo,
-        TaskAssigneeRepo, TaskChecklistRepo, TaskReferenceRepo, TaskRepo, UserRepo,
+        PgAttachmentLifecycle, PgAttachmentRepo, PgBoardRepo, PgCommentLinkRepo,
+        PgDocumentLinkRepo, PgDocumentRepo, PgMembershipRepo, PgPermissionGrantRepo, PgProjectRepo,
+        PgPropertyDefinitionRepo, PgTaskActivityRepo, PgTaskAssigneeRepo, PgTaskChecklistRepo,
+        PgTaskReferenceRepo, PgTaskRepo, PgUserRepo, ProjectRepo, PropertyDefinitionRepo,
+        TaskActivityRepo, TaskAssigneeRepo, TaskChecklistRepo, TaskReferenceRepo, TaskRepo,
+        UserRepo,
     },
     routes::comments::{
         comment_to_dto, decode_feed_cursor, enrich_comment_entries, project_comment_feed,
@@ -1963,7 +1970,6 @@ pub(crate) async fn list_backlinks(
     let actor = principal_to_actor(&auth.principal);
     let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
     let ref_repo = PgTaskReferenceRepo::new((*state.db).clone());
-    let task_repo = PgTaskRepo::new((*state.db).clone());
 
     let mut inbound = ref_repo
         .list_inbound(&ctx, auth.resource.0.id)
@@ -1988,20 +1994,79 @@ pub(crate) async fn list_backlinks(
         None
     };
 
+    let source_ids = inbound
+        .iter()
+        .map(|reference| reference.source_task_id.0)
+        .collect::<Vec<_>>();
+    let sources = task::Entity::find()
+        .filter(task::Column::WorkspaceId.eq(ctx.workspace_id.0))
+        .filter(task::Column::DeletedAt.is_null())
+        .filter(task::Column::Id.is_in(source_ids))
+        .all(&*state.db)
+        .await
+        .map_err(|error| ApiError::Internal {
+            message: error.to_string(),
+        })?
+        .into_iter()
+        .map(|source| (source.id, source))
+        .collect::<std::collections::HashMap<_, _>>();
+
     let mut dtos = Vec::with_capacity(inbound.len());
     for r in inbound {
-        let source_task = task_repo
-            .find(&ctx, r.source_task_id)
-            .await
-            .map_err(ApiError::Domain)?;
-        if let Some(t) = source_task {
+        if let Some(t) = sources.get(&r.source_task_id.0) {
             dtos.push(TaskBacklinkDto {
-                source_task_id: t.id.0,
-                source_readable_id: t.readable_id,
-                source_title: t.title,
+                source_task_id: t.id,
+                source_readable_id: t.readable_id.clone(),
+                source_title: t.title.clone(),
                 kind: r.kind.as_str().to_string(),
+                comment_source: None,
             });
         }
+    }
+
+    let comment_links = PgCommentLinkRepo::new((*state.db).clone())
+        .backlinks_for_target(&ctx, CommentLinkTarget::Task(auth.resource.0.id))
+        .await
+        .map_err(ApiError::Domain)?;
+    let subjects = comment_links
+        .iter()
+        .map(|link| ProjectionSubject::SourceComment(link.comment_id.0))
+        .collect::<Vec<_>>();
+    let decisions = if subjects.is_empty() {
+        Vec::new()
+    } else {
+        BatchAuthorizationService::new(PgBatchAuthorizationSource::new((*state.db).clone()))
+            .authorize(auth.projection_context(), &subjects)
+            .await
+            .map_err(ApiError::Domain)?
+    };
+    for (link, allowed) in comment_links.into_iter().zip(decisions) {
+        if !allowed {
+            continue;
+        }
+        let parent = match link.parent {
+            CommentOwner::Task(id) => CommentBacklinkParentDto::Task {
+                id: id.0,
+                readable_id: link.parent_readable_id.unwrap_or_default(),
+                title: link.parent_title,
+            },
+            CommentOwner::Document(id) => CommentBacklinkParentDto::Document {
+                id: id.0,
+                slug: link.parent_slug,
+                title: link.parent_title,
+            },
+        };
+        dtos.push(TaskBacklinkDto {
+            source_task_id: link.comment_id.0,
+            source_readable_id: String::new(),
+            source_title: String::new(),
+            kind: "comment".into(),
+            comment_source: Some(CommentBacklinkSourceDto {
+                kind: "comment".into(),
+                comment_id: link.comment_id.0,
+                parent,
+            }),
+        });
     }
 
     Ok(Json(Page::new(dtos, next_cursor, has_more)))

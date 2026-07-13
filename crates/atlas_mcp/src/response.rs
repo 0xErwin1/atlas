@@ -2137,6 +2137,7 @@ mod tests {
             source_readable_id: "ATL-7".into(),
             source_title: "Blocker task".into(),
             kind: kind.into(),
+            comment_source: None,
         }
     }
 
@@ -2174,6 +2175,7 @@ mod tests {
             source_slug: slug.map(String::from),
             source_title: "Source Doc".into(),
             display_title: "Custom Link Text".into(),
+            comment_source: None,
         }
     }
 

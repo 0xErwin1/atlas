@@ -1,8 +1,8 @@
 use crate::{
     DomainError, WorkspaceCtx,
     entities::comments::{
-        Comment, CommentFeedCursor, CommentFeedPage, CommentLink, CommentLinkTarget, CommentOwner,
-        NewComment,
+        Comment, CommentBacklink, CommentFeedCursor, CommentFeedPage, CommentLink,
+        CommentLinkTarget, CommentOwner, NewComment,
     },
     ids::CommentId,
     wikilink::CommentLinkCandidate,
@@ -65,7 +65,7 @@ pub trait CommentLinkRepo: Send + Sync {
         &self,
         ctx: &WorkspaceCtx,
         target: CommentLinkTarget,
-    ) -> Result<Vec<CommentLink>, DomainError>;
+    ) -> Result<Vec<CommentBacklink>, DomainError>;
 
     async fn links_for_comments(
         &self,

@@ -151,6 +151,67 @@ pub struct BacklinkDto {
     pub source_slug: Option<String>,
     pub source_title: String,
     pub display_title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comment_source: Option<CommentBacklinkSourceDto>,
+}
+
+/// Authorized navigation metadata for a comment that links to a resource.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct CommentBacklinkSourceDto {
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub comment_id: uuid::Uuid,
+    pub parent: CommentBacklinkParentDto,
+}
+
+/// The authorized parent that owns a comment backlink.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub enum CommentBacklinkParentDto {
+    Task {
+        id: uuid::Uuid,
+        readable_id: String,
+        title: String,
+    },
+    Document {
+        id: uuid::Uuid,
+        slug: Option<String>,
+        title: String,
+    },
+}
+
+#[cfg(test)]
+mod backlink_tests {
+    use super::*;
+
+    #[test]
+    fn comment_backlink_source_serializes_only_comment_and_parent_navigation() {
+        let source = CommentBacklinkSourceDto {
+            kind: "comment".into(),
+            comment_id: uuid::Uuid::nil(),
+            parent: CommentBacklinkParentDto::Task {
+                id: uuid::Uuid::from_u128(1),
+                readable_id: "ATL-1".into(),
+                title: "Source task".into(),
+            },
+        };
+
+        assert_eq!(
+            serde_json::to_value(source).expect("serialize comment backlink source"),
+            serde_json::json!({
+                "type": "comment",
+                "comment_id": uuid::Uuid::nil(),
+                "parent": {
+                    "type": "task",
+                    "id": uuid::Uuid::from_u128(1),
+                    "readable_id": "ATL-1",
+                    "title": "Source task",
+                },
+            })
+        );
+    }
 }
 
 /// Document frontmatter extracted from the leading YAML block.

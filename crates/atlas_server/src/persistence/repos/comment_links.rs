@@ -5,8 +5,8 @@ use async_trait::async_trait;
 use atlas_domain::{
     Actor, DomainError, WorkspaceCtx,
     entities::comments::{
-        CommentFeedCursor, CommentFeedEntry, CommentFeedPage, CommentLink, CommentLinkEvent,
-        CommentLinkEventKind, CommentLinkTarget, CommentOwner,
+        CommentBacklink, CommentFeedCursor, CommentFeedEntry, CommentFeedPage, CommentLink,
+        CommentLinkEvent, CommentLinkEventKind, CommentLinkTarget, CommentOwner,
     },
     ids::{ApiKeyId, CommentId, CommentLinkEventId, DocumentId, TaskId, UserId},
     ports::comments::CommentLinkRepo,
@@ -15,7 +15,7 @@ use atlas_domain::{
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection,
-    EntityTrait, QueryFilter, QueryOrder, Statement, TransactionTrait,
+    EntityTrait, QueryFilter, Statement, TransactionTrait,
 };
 
 pub struct PgCommentLinkRepo {
@@ -158,15 +158,35 @@ impl CommentLinkRepo for PgCommentLinkRepo {
         &self,
         ctx: &WorkspaceCtx,
         target: CommentLinkTarget,
-    ) -> Result<Vec<CommentLink>, DomainError> {
-        comment_link::Entity::find()
-            .filter(comment_link::Column::WorkspaceId.eq(ctx.workspace_id.0))
-            .filter(target_condition(target))
-            .order_by_asc(comment_link::Column::CreatedAt)
-            .all(&self.conn)
+    ) -> Result<Vec<CommentBacklink>, DomainError> {
+        let (target_column, target_id) = match target {
+            CommentLinkTarget::Document(id) => ("target_document_id", id.0),
+            CommentLinkTarget::Task(id) => ("target_task_id", id.0),
+            CommentLinkTarget::Attachment(_) => return Ok(Vec::new()),
+        };
+        let rows = self
+            .conn
+            .query_all_raw(Statement::from_sql_and_values(
+                sea_orm::DatabaseBackend::Postgres,
+                format!(
+                    "SELECT cl.id, cl.workspace_id, cl.comment_id, cl.target_document_id, cl.target_task_id, \
+                     cl.target_attachment_id, cl.created_at, c.task_id AS parent_task_id, \
+                     c.document_id AS parent_document_id, parent_task.readable_id AS parent_readable_id, \
+                     parent_document.slug AS parent_slug, \
+                     COALESCE(parent_task.title, parent_document.title) AS parent_title \
+                     FROM comment_links cl \
+                     JOIN comments c ON c.id = cl.comment_id AND c.workspace_id = cl.workspace_id \
+                     LEFT JOIN tasks parent_task ON parent_task.id = c.task_id AND parent_task.workspace_id = c.workspace_id AND parent_task.deleted_at IS NULL \
+                     LEFT JOIN documents parent_document ON parent_document.id = c.document_id AND parent_document.workspace_id = c.workspace_id AND parent_document.deleted_at IS NULL \
+                     WHERE cl.workspace_id = $1 AND cl.{target_column} = $2 AND c.deleted_at IS NULL \
+                     ORDER BY cl.created_at ASC, cl.id ASC"
+                ),
+                [ctx.workspace_id.0.into(), target_id.into()],
+            ))
             .await
-            .map_err(db_err)
-            .map(|rows| rows.into_iter().map(comment_link_from).collect())
+            .map_err(db_err)?;
+
+        rows.into_iter().map(comment_backlink_from_row).collect()
     }
     async fn links_for_comments(
         &self,
@@ -405,18 +425,51 @@ fn target_columns(
         CommentLinkTarget::Attachment(id) => (None, None, Some(id.0)),
     }
 }
-fn target_condition(target: CommentLinkTarget) -> sea_orm::Condition {
-    match target {
-        CommentLinkTarget::Document(id) => {
-            sea_orm::Condition::all().add(comment_link::Column::TargetDocumentId.eq(id.0))
+fn comment_backlink_from_row(row: sea_orm::QueryResult) -> Result<CommentBacklink, DomainError> {
+    let target = match (
+        row.try_get::<Option<uuid::Uuid>>("", "target_document_id")
+            .map_err(row_err)?,
+        row.try_get::<Option<uuid::Uuid>>("", "target_task_id")
+            .map_err(row_err)?,
+        row.try_get::<Option<uuid::Uuid>>("", "target_attachment_id")
+            .map_err(row_err)?,
+    ) {
+        (Some(id), None, None) => CommentLinkTarget::Document(DocumentId(id)),
+        (None, Some(id), None) => CommentLinkTarget::Task(TaskId(id)),
+        (None, None, Some(id)) => {
+            CommentLinkTarget::Attachment(atlas_domain::ids::AttachmentId(id))
         }
-        CommentLinkTarget::Task(id) => {
-            sea_orm::Condition::all().add(comment_link::Column::TargetTaskId.eq(id.0))
+        _ => {
+            return Err(DomainError::Internal {
+                message: "comment backlink target invariant violated".into(),
+            });
         }
-        CommentLinkTarget::Attachment(id) => {
-            sea_orm::Condition::all().add(comment_link::Column::TargetAttachmentId.eq(id.0))
+    };
+    let parent = match (
+        row.try_get::<Option<uuid::Uuid>>("", "parent_task_id")
+            .map_err(row_err)?,
+        row.try_get::<Option<uuid::Uuid>>("", "parent_document_id")
+            .map_err(row_err)?,
+    ) {
+        (Some(id), None) => CommentOwner::Task(TaskId(id)),
+        (None, Some(id)) => CommentOwner::Document(DocumentId(id)),
+        _ => {
+            return Err(DomainError::Internal {
+                message: "comment backlink parent invariant violated".into(),
+            });
         }
-    }
+    };
+    Ok(CommentBacklink {
+        id: atlas_domain::ids::CommentLinkId(row.try_get("", "id").map_err(row_err)?),
+        workspace_id: atlas_domain::WorkspaceId(row.try_get("", "workspace_id").map_err(row_err)?),
+        comment_id: CommentId(row.try_get("", "comment_id").map_err(row_err)?),
+        parent,
+        parent_readable_id: row.try_get("", "parent_readable_id").map_err(row_err)?,
+        parent_slug: row.try_get("", "parent_slug").map_err(row_err)?,
+        parent_title: row.try_get("", "parent_title").map_err(row_err)?,
+        target,
+        created_at: row.try_get("", "created_at").map_err(row_err)?,
+    })
 }
 async fn insert_event(
     conn: &impl ConnectionTrait,
