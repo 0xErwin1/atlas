@@ -372,6 +372,333 @@ async fn full_feed_is_opt_in_and_default_comment_page_is_unchanged() {
     db.teardown().await;
 }
 
+#[tokio::test]
+async fn full_feeds_redact_deleted_targets_for_human_and_api_key_viewers() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (owner, ws, user) =
+        support::login_user_with_workspace(&server, &db, "comment-feed-target-matrix").await;
+    let task_id = seed_task(&owner, &ws.slug, "comment-feed-target-proj", "CFM").await;
+
+    let document = owner
+        .create_document(
+            &ws.slug,
+            "comment-feed-target-proj",
+            atlas_api::dtos::documents::CreateDocumentRequest {
+                title: "Document feed parent".into(),
+                folder_id: None,
+                content: None,
+            },
+        )
+        .await
+        .expect("create document feed parent");
+    let document_slug = document.slug.clone().expect("document slug");
+
+    let source_task_comment = owner
+        .add_comment(
+            &ws.slug,
+            &task_id,
+            CreateCommentRequest {
+                body: "task source".into(),
+            },
+        )
+        .await
+        .expect("create task source comment");
+    let source_document_comment = owner
+        .add_document_comment(
+            &ws.slug,
+            &document_slug,
+            CreateCommentRequest {
+                body: "document source".into(),
+            },
+        )
+        .await
+        .expect("create document source comment");
+
+    let target_document = owner
+        .create_document(
+            &ws.slug,
+            "comment-feed-target-proj",
+            atlas_api::dtos::documents::CreateDocumentRequest {
+                title: "Linked document".into(),
+                folder_id: None,
+                content: None,
+            },
+        )
+        .await
+        .expect("create linked document");
+    let target_task = owner
+        .create_task(
+            &ws.slug,
+            owner
+                .list_boards(&ws.slug, "comment-feed-target-proj", None, None)
+                .await
+                .expect("list boards")
+                .items[0]
+                .id,
+            CreateTaskRequest {
+                column_id: owner
+                    .list_columns(
+                        &ws.slug,
+                        owner
+                            .list_boards(&ws.slug, "comment-feed-target-proj", None, None)
+                            .await
+                            .expect("list boards")
+                            .items[0]
+                            .id,
+                    )
+                    .await
+                    .expect("list columns")[0]
+                    .id,
+                title: "Linked task".into(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create linked task");
+    let attachment_comment = owner
+        .add_comment(
+            &ws.slug,
+            &target_task.readable_id,
+            CreateCommentRequest {
+                body: "attachment owner".into(),
+            },
+        )
+        .await
+        .expect("create attachment owner comment");
+    let direct_attachment = uuid::Uuid::now_v7();
+    let comment_attachment = uuid::Uuid::now_v7();
+
+    for (attachment_id, task_owner, comment_owner, digest) in [
+        (
+            direct_attachment,
+            Some(target_task.id),
+            None,
+            "a".repeat(64),
+        ),
+        (
+            comment_attachment,
+            None,
+            Some(attachment_comment.id),
+            "b".repeat(64),
+        ),
+    ] {
+        let task_owner = task_owner
+            .map(|id| format!("'{id}'"))
+            .unwrap_or_else(|| "NULL".into());
+        let comment_owner = comment_owner
+            .map(|id| format!("'{id}'"))
+            .unwrap_or_else(|| "NULL".into());
+        db.conn()
+            .execute_unprepared(&format!(
+                "INSERT INTO attachments (id, workspace_id, task_id, comment_id, file_name, content_type, size_bytes, sha256, created_by_user_id, created_at, updated_at) VALUES ('{attachment_id}', '{}', {task_owner}, {comment_owner}, 'target.txt', 'text/plain', 1, '{digest}', '{}', now(), now())",
+                ws.id.0, user.id.0,
+            ))
+            .await
+            .expect("insert target attachment");
+    }
+
+    for source_comment in [source_task_comment.id, source_document_comment.id] {
+        for (column, target) in [
+            ("target_document_id", target_document.id),
+            ("target_task_id", target_task.id),
+            ("target_attachment_id", direct_attachment),
+            ("target_attachment_id", comment_attachment),
+        ] {
+            db.conn()
+                .execute_unprepared(&format!(
+                    "INSERT INTO comment_links (id, workspace_id, comment_id, {column}, created_at) VALUES ('{}', '{}', '{}', '{target}', now())",
+                    uuid::Uuid::now_v7(), ws.id.0, source_comment,
+                ))
+                .await
+                .expect("insert derived target link");
+        }
+    }
+
+    let api_key = owner
+        .create_user_api_key(CreateUserApiKeyRequest {
+            name: "feed-reader".into(),
+            r#type: None,
+            expires_at: None,
+            initial_grant: Some(InitialGrantRequest {
+                workspace: ws.slug.clone(),
+                role: "editor".into(),
+            }),
+            scopes: Some(vec![ApiKeyScope::DocsRead, ApiKeyScope::TasksRead]),
+        })
+        .await
+        .expect("create feed reader key");
+
+    for token in [owner.token().expect("owner token"), api_key.secret.as_str()] {
+        for url in [
+            format!(
+                "{}/api/workspaces/{}/tasks/{task_id}/comments?feed=full",
+                server.base_url(),
+                ws.slug
+            ),
+            format!(
+                "{}/api/workspaces/{}/documents/{document_slug}/comments?feed=full",
+                server.base_url(),
+                ws.slug
+            ),
+        ] {
+            let page: Value = reqwest::Client::new()
+                .get(url)
+                .bearer_auth(token)
+                .send()
+                .await
+                .expect("get full feed")
+                .json()
+                .await
+                .expect("decode full feed");
+            let links = page["items"][0]["links"].as_array().expect("feed links");
+            assert_eq!(links.len(), 4);
+            for link in links {
+                assert_eq!(link["target"]["status"], "available");
+                assert!(link["target"].get("type").is_some());
+                assert!(link["target"].get("id").is_some());
+                assert!(link["target"].get("title").is_none());
+            }
+        }
+    }
+
+    db.conn()
+        .execute_unprepared(&format!(
+            "UPDATE documents SET deleted_at = now() WHERE id = '{}'; UPDATE tasks SET deleted_at = now() WHERE id = '{}'; UPDATE attachments SET deleted_at = now() WHERE id IN ('{direct_attachment}', '{comment_attachment}')",
+            target_document.id, target_task.id,
+        ))
+        .await
+        .expect("delete linked targets");
+
+    for url in [
+        format!(
+            "{}/api/workspaces/{}/tasks/{task_id}/comments?feed=full",
+            server.base_url(),
+            ws.slug
+        ),
+        format!(
+            "{}/api/workspaces/{}/documents/{document_slug}/comments?feed=full",
+            server.base_url(),
+            ws.slug
+        ),
+    ] {
+        let page: Value = reqwest::Client::new()
+            .get(url)
+            .bearer_auth(owner.token().expect("owner token"))
+            .send()
+            .await
+            .expect("get deleted-target feed")
+            .json()
+            .await
+            .expect("decode deleted-target feed");
+        for link in page["items"][0]["links"].as_array().expect("feed links") {
+            assert_eq!(
+                link["target"],
+                serde_json::json!({"status":"unavailable","label":"Recurso no disponible"})
+            );
+        }
+    }
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn disabled_or_revoked_principals_are_rejected_before_full_feed_projection() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (owner, ws, user) =
+        support::login_user_with_workspace(&server, &db, "comment-feed-rejected-principals").await;
+    let task_id = seed_task(&owner, &ws.slug, "comment-feed-rejected-proj", "CFR").await;
+    let url = format!(
+        "{}/api/workspaces/{}/tasks/{task_id}/comments?feed=full",
+        server.base_url(),
+        ws.slug
+    );
+
+    db.conn()
+        .execute_unprepared(&format!(
+            "UPDATE users SET disabled_at = now() WHERE id = '{}'",
+            user.id.0
+        ))
+        .await
+        .expect("disable owner");
+    let disabled = reqwest::Client::new()
+        .get(&url)
+        .bearer_auth(owner.token().expect("owner token"))
+        .send()
+        .await
+        .expect("disabled owner response");
+    assert_eq!(disabled.status(), reqwest::StatusCode::UNAUTHORIZED);
+
+    db.conn()
+        .execute_unprepared(&format!(
+            "UPDATE users SET disabled_at = NULL WHERE id = '{}'",
+            user.id.0
+        ))
+        .await
+        .expect("reenable owner");
+    let api_key = owner
+        .create_user_api_key(CreateUserApiKeyRequest {
+            name: "revoked-feed-reader".into(),
+            r#type: None,
+            expires_at: None,
+            initial_grant: Some(InitialGrantRequest {
+                workspace: ws.slug.clone(),
+                role: "editor".into(),
+            }),
+            scopes: Some(vec![ApiKeyScope::TasksRead]),
+        })
+        .await
+        .expect("create api key");
+    db.conn()
+        .execute_unprepared(&format!(
+            "UPDATE api_keys SET revoked_at = now() WHERE id = '{}'",
+            api_key.id
+        ))
+        .await
+        .expect("revoke api key");
+    let revoked = reqwest::Client::new()
+        .get(&url)
+        .bearer_auth(api_key.secret)
+        .send()
+        .await
+        .expect("revoked key response");
+    assert_eq!(revoked.status(), reqwest::StatusCode::UNAUTHORIZED);
+
+    let creator_disabled_key = owner
+        .create_user_api_key(CreateUserApiKeyRequest {
+            name: "disabled-creator-feed-reader".into(),
+            r#type: None,
+            expires_at: None,
+            initial_grant: Some(InitialGrantRequest {
+                workspace: ws.slug.clone(),
+                role: "editor".into(),
+            }),
+            scopes: Some(vec![ApiKeyScope::TasksRead]),
+        })
+        .await
+        .expect("create creator-disabled key");
+    db.conn()
+        .execute_unprepared(&format!(
+            "UPDATE users SET disabled_at = now() WHERE id = '{}'",
+            user.id.0
+        ))
+        .await
+        .expect("disable key creator");
+    let creator_disabled = reqwest::Client::new()
+        .get(url)
+        .bearer_auth(creator_disabled_key.secret)
+        .send()
+        .await
+        .expect("disabled creator response");
+    assert_eq!(creator_disabled.status(), reqwest::StatusCode::UNAUTHORIZED);
+
+    db.teardown().await;
+}
+
 // ---------------------------------------------------------------------------
 // Body validation
 // ---------------------------------------------------------------------------
