@@ -1084,6 +1084,11 @@ impl PgAttachmentLifecycle {
 
         let txn = conn.begin().await.map_err(db_err)?;
         lock_digest(&txn, &digest).await?;
+
+        PgAttachmentWriteIntentRepo { conn: conn.clone() }
+            .create_if_absent(digest.clone())
+            .await?;
+
         let stored = store.put(data).await?;
 
         if stored != digest {

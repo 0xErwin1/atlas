@@ -7,10 +7,12 @@
 
 mod support;
 
+use async_trait::async_trait;
 use atlas_domain::{
     Actor, AttachmentStore, DomainError,
     entities::boards_tasks::{NewBoard, NewTask, PositionBetween},
     entities::comments::{CommentOwner, NewComment},
+    entities::documents::NewAttachment,
     entities::workspace_core::NewProject,
     permissions::{Visibility, VisibilityRole},
 };
@@ -21,7 +23,10 @@ use atlas_server::persistence::repos::{
 };
 use chrono::{Duration, Utc};
 use sea_orm::{ConnectionTrait, Statement};
+use sha2::Digest;
+use std::sync::Arc;
 use tempfile::TempDir;
+use tokio::sync::Notify;
 
 async fn seed_project_board_column(
     db: &support::TestDb,
@@ -481,6 +486,172 @@ async fn stale_intent_without_live_attachment_is_reconciled() {
             .expect("list intents")
             .is_empty(),
         "the completed reconciliation must remove its intent"
+    );
+
+    db.teardown().await;
+}
+
+struct IntentCheckingStore {
+    inner: DiskAttachmentStore,
+    conn: sea_orm::DatabaseConnection,
+    delete_started: Notify,
+    allow_delete: Notify,
+}
+
+#[async_trait]
+impl AttachmentStore for IntentCheckingStore {
+    async fn put(&self, data: &[u8]) -> Result<String, DomainError> {
+        let row = self
+            .conn
+            .query_one_raw(Statement::from_sql_and_values(
+                sea_orm::DatabaseBackend::Postgres,
+                "SELECT EXISTS(SELECT 1 FROM attachment_write_intents) AS has_intent",
+                [],
+            ))
+            .await
+            .map_err(|error| DomainError::Internal {
+                message: error.to_string(),
+            })?
+            .ok_or_else(|| DomainError::Internal {
+                message: "intent query returned no row".into(),
+            })?;
+
+        let has_intent: bool =
+            row.try_get("", "has_intent")
+                .map_err(|error| DomainError::Internal {
+                    message: error.to_string(),
+                })?;
+
+        if !has_intent {
+            return Err(DomainError::Internal {
+                message: "write intent was removed before put".into(),
+            });
+        }
+
+        self.inner.put(data).await
+    }
+
+    async fn get(&self, digest: &str) -> Result<bytes::Bytes, DomainError> {
+        self.inner.get(digest).await
+    }
+
+    async fn exists(&self, digest: &str) -> Result<bool, DomainError> {
+        self.inner.exists(digest).await
+    }
+
+    async fn delete(&self, digest: &str) -> Result<(), DomainError> {
+        self.delete_started.notify_one();
+        self.allow_delete.notified().await;
+        self.inner.delete(digest).await
+    }
+}
+
+async fn wait_for_advisory_lock_waiter(db: &support::TestDb) {
+    for _ in 0..100 {
+        let row = db
+            .conn()
+            .query_one_raw(Statement::from_sql_and_values(
+                sea_orm::DatabaseBackend::Postgres,
+                "SELECT EXISTS(\
+                    SELECT 1 FROM pg_stat_activity \
+                    WHERE wait_event = 'advisory' \
+                      AND query LIKE 'SELECT pg_advisory_xact_lock%'\
+                ) AS waiting",
+                [],
+            ))
+            .await
+            .expect("query advisory lock waiters")
+            .expect("waiter query row");
+
+        let waiting: bool = row.try_get("", "waiting").expect("read waiter state");
+        if waiting {
+            return;
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+
+    panic!("upload did not wait for the reconciler digest lock");
+}
+
+#[tokio::test]
+async fn same_digest_reconciler_race_recommits_intent_before_put() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "comment-intent-race-user").await;
+    let ctx = support::ctx(&ws, &user);
+    let (project, board, column) =
+        seed_project_board_column(&db, &ctx, "comment-intent-race-proj", "CR").await;
+    let task = seed_task(&db, &ctx, project.id, board.id, column.id, "Task").await;
+    let tempdir = TempDir::new().expect("tempdir");
+    let store = Arc::new(IntentCheckingStore {
+        inner: DiskAttachmentStore::new(tempdir.path())
+            .await
+            .expect("attachment store"),
+        conn: db.conn().clone(),
+        delete_started: Notify::new(),
+        allow_delete: Notify::new(),
+    });
+    let data = b"same digest race";
+    let digest = format!("{:x}", sha2::Sha256::digest(data));
+    let intents = PgAttachmentWriteIntentRepo {
+        conn: db.conn().clone(),
+    };
+    intents.create(digest).await.expect("seed stale intent");
+
+    let reconcile_store = Arc::clone(&store);
+    let reconcile_conn = db.conn().clone();
+    let reconcile = tokio::spawn(async move {
+        PgAttachmentLifecycle::reconcile_stale(
+            &reconcile_conn,
+            reconcile_store.as_ref(),
+            Utc::now() + Duration::seconds(1),
+        )
+        .await
+    });
+
+    store.delete_started.notified().await;
+
+    let upload_store = Arc::clone(&store);
+    let upload_conn = db.conn().clone();
+    let upload_ctx = ctx.clone();
+    let upload = tokio::spawn(async move {
+        PgAttachmentLifecycle::store_and_record(
+            &upload_conn,
+            &upload_ctx,
+            NewAttachment {
+                document_id: None,
+                task_id: Some(task.id),
+                comment_id: None,
+                file_name: "race.txt".into(),
+                content_type: "text/plain".into(),
+                size_bytes: data.len() as i64,
+                sha256: String::new(),
+            },
+            data,
+            upload_store.as_ref(),
+        )
+        .await
+    });
+
+    wait_for_advisory_lock_waiter(&db).await;
+    store.allow_delete.notify_one();
+
+    reconcile
+        .await
+        .expect("reconciler task")
+        .expect("reconciler result");
+    let attachment = upload.await.expect("upload task").expect("upload result");
+
+    assert_eq!(
+        attachment.sha256,
+        format!("{:x}", sha2::Sha256::digest(data))
+    );
+    assert!(
+        store
+            .exists(&attachment.sha256)
+            .await
+            .expect("stored object exists"),
+        "the uploader must retain the object after finalization"
     );
 
     db.teardown().await;
