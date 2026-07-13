@@ -254,12 +254,424 @@ async fn task_backlinks_expose_only_authorized_comment_parent_navigation() {
 }
 
 #[tokio::test]
-async fn document_backlinks_expose_comment_source_without_attachment_links() {
+async fn task_backlinks_omit_comment_sources_with_deleted_parents() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;
     let (client, ws, _) =
+        support::login_user_with_workspace(&server, &db, "comment-backlink-deleted-parent").await;
+    let source_readable_id =
+        seed_task(&client, &ws.slug, "comment-backlink-deleted-source", "CBD").await;
+    let target_readable_id =
+        seed_task(&client, &ws.slug, "comment-backlink-deleted-target", "CBT").await;
+    let target_task = client
+        .get_task(&ws.slug, &target_readable_id)
+        .await
+        .expect("get target task");
+    let comment = client
+        .add_comment(
+            &ws.slug,
+            &source_readable_id,
+            CreateCommentRequest {
+                body: "linked comment".into(),
+            },
+        )
+        .await
+        .expect("create source comment");
+
+    db.conn()
+        .execute_unprepared(&format!(
+            "INSERT INTO comment_links (id, workspace_id, comment_id, target_task_id, created_at) VALUES ('{}', '{}', '{}', '{}', now()); UPDATE tasks SET deleted_at = now() WHERE readable_id = '{}'",
+            uuid::Uuid::now_v7(), ws.id.0, comment.id, target_task.id, source_readable_id,
+        ))
+        .await
+        .expect("link comment then delete source parent");
+
+    let backlinks = client
+        .list_task_backlinks(&ws.slug, &target_readable_id)
+        .await
+        .expect("list target backlinks after source parent deletion");
+
+    assert!(
+        backlinks
+            .items
+            .iter()
+            .all(|backlink| backlink.comment_source.is_none()),
+        "deleted source parent must not expose a comment backlink"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn document_backlinks_omit_comment_sources_with_deleted_parents() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) =
+        support::login_user_with_workspace(&server, &db, "document-backlink-deleted-parent").await;
+    let project = client
+        .create_project(&ws.slug, project_req("document-backlink-deleted", "DBD"))
+        .await
+        .expect("create project");
+    let source = client
+        .create_document(
+            &ws.slug,
+            &project.slug,
+            CreateDocumentRequest {
+                title: "Deleted source".into(),
+                folder_id: None,
+                content: None,
+            },
+        )
+        .await
+        .expect("create source document");
+    let target = client
+        .create_document(
+            &ws.slug,
+            &project.slug,
+            CreateDocumentRequest {
+                title: "Backlink target".into(),
+                folder_id: None,
+                content: None,
+            },
+        )
+        .await
+        .expect("create target document");
+    let source_slug = source.slug.expect("source slug");
+    let target_slug = target.slug.expect("target slug");
+    let comment = client
+        .add_document_comment(
+            &ws.slug,
+            &source_slug,
+            CreateCommentRequest {
+                body: "linked comment".into(),
+            },
+        )
+        .await
+        .expect("create source comment");
+
+    db.conn()
+        .execute_unprepared(&format!(
+            "INSERT INTO comment_links (id, workspace_id, comment_id, target_document_id, created_at) VALUES ('{}', '{}', '{}', '{}', now()); UPDATE documents SET deleted_at = now() WHERE id = '{}'",
+            uuid::Uuid::now_v7(), ws.id.0, comment.id, target.id, source.id,
+        ))
+        .await
+        .expect("link comment then delete source parent");
+
+    let backlinks = client
+        .list_backlinks(&ws.slug, &target_slug, None, None)
+        .await
+        .expect("list target backlinks after source parent deletion");
+
+    assert!(
+        backlinks
+            .items
+            .iter()
+            .all(|backlink| backlink.comment_source.is_none()),
+        "deleted source parent must not expose a comment backlink"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn document_backlinks_batch_authorize_many_comment_sources() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (owner, ws, _) =
+        support::login_user_with_workspace(&server, &db, "document-backlink-batch").await;
+    let target_project = owner
+        .create_project(&ws.slug, project_req("document-backlink-target", "DBT"))
+        .await
+        .expect("create target project");
+    let source_project = owner
+        .create_project(&ws.slug, project_req("document-backlink-private", "DBP"))
+        .await
+        .expect("create source project");
+    let target = owner
+        .create_document(
+            &ws.slug,
+            &target_project.slug,
+            CreateDocumentRequest {
+                title: "Backlink target".into(),
+                folder_id: None,
+                content: None,
+            },
+        )
+        .await
+        .expect("create target document");
+    let source = owner
+        .create_document(
+            &ws.slug,
+            &source_project.slug,
+            CreateDocumentRequest {
+                title: "Private backlink source".into(),
+                folder_id: None,
+                content: None,
+            },
+        )
+        .await
+        .expect("create source document");
+    let target_slug = target.slug.expect("target slug");
+    let source_slug = source.slug.expect("source slug");
+
+    for index in 0..16 {
+        let comment = owner
+            .add_document_comment(
+                &ws.slug,
+                &source_slug,
+                CreateCommentRequest {
+                    body: format!("private document source {index}"),
+                },
+            )
+            .await
+            .expect("create source comment");
+        db.conn()
+            .execute_unprepared(&format!(
+                "INSERT INTO comment_links (id, workspace_id, comment_id, target_document_id, created_at) VALUES ('{}', '{}', '{}', '{}', now())",
+                uuid::Uuid::now_v7(), ws.id.0, comment.id, target.id,
+            ))
+            .await
+            .expect("insert private source link");
+    }
+
+    let (viewer, _) = add_member(
+        &db,
+        &server,
+        ws.id,
+        "document-backlink-batch-viewer",
+        MemberRole::Member,
+    )
+    .await;
+    db.conn()
+        .execute_unprepared(
+            "UPDATE projects SET visibility = 'workspace', visibility_role = 'viewer' WHERE slug = 'document-backlink-target'; UPDATE projects SET visibility = 'private', visibility_role = NULL WHERE slug = 'document-backlink-private'",
+        )
+        .await
+        .expect("set source and target visibility");
+
+    let hidden = viewer
+        .list_backlinks(&ws.slug, &target_slug, None, None)
+        .await
+        .expect("list inaccessible sources");
+    assert!(
+        hidden
+            .items
+            .iter()
+            .all(|backlink| backlink.comment_source.is_none()),
+        "inaccessible document comment sources must not leak metadata"
+    );
+
+    db.conn()
+        .execute_unprepared(
+            "UPDATE projects SET visibility = 'workspace', visibility_role = 'viewer' WHERE slug = 'document-backlink-private'",
+        )
+        .await
+        .expect("make source project visible");
+
+    let visible = viewer
+        .list_backlinks(&ws.slug, &target_slug, None, None)
+        .await
+        .expect("list authorized sources");
+    let comments = visible
+        .items
+        .iter()
+        .filter_map(|backlink| backlink.comment_source.as_ref())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        comments.len(),
+        16,
+        "every authorized source comment is present"
+    );
+    assert!(comments.iter().all(|source| {
+        matches!(
+            &source.parent,
+            atlas_api::dtos::documents::CommentBacklinkParentDto::Document { slug, .. }
+                if slug.as_deref() == Some(source_slug.as_str())
+        )
+    }));
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn task_backlinks_batch_authorize_many_comment_sources_without_source_leakage() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (owner, ws, _) =
+        support::login_user_with_workspace(&server, &db, "comment-backlink-batch").await;
+    let target_readable_id = seed_task(&owner, &ws.slug, "comment-backlink-target", "CBT").await;
+    let target_task = owner
+        .get_task(&ws.slug, &target_readable_id)
+        .await
+        .expect("get target task");
+    let source_readable_id = seed_task(&owner, &ws.slug, "comment-backlink-private", "CBP").await;
+
+    for index in 0..16 {
+        let comment = owner
+            .add_comment(
+                &ws.slug,
+                &source_readable_id,
+                CreateCommentRequest {
+                    body: format!("private source {index}"),
+                },
+            )
+            .await
+            .expect("create private source comment");
+        db.conn()
+            .execute_unprepared(&format!(
+                "INSERT INTO comment_links (id, workspace_id, comment_id, target_task_id, created_at) VALUES ('{}', '{}', '{}', '{}', now())",
+                uuid::Uuid::now_v7(), ws.id.0, comment.id, target_task.id,
+            ))
+            .await
+            .expect("insert private source link");
+    }
+
+    let (viewer, _) = add_member(
+        &db,
+        &server,
+        ws.id,
+        "comment-backlink-batch-viewer",
+        MemberRole::Member,
+    )
+    .await;
+    db.conn()
+        .execute_unprepared(
+            "UPDATE projects SET visibility = 'workspace', visibility_role = 'viewer' WHERE slug = 'comment-backlink-target'; UPDATE projects SET visibility = 'private', visibility_role = NULL WHERE slug = 'comment-backlink-private'",
+        )
+        .await
+        .expect("make target project visible");
+
+    let hidden = viewer
+        .list_task_backlinks(&ws.slug, &target_readable_id)
+        .await
+        .expect("list backlinks with inaccessible sources");
+    assert!(
+        hidden
+            .items
+            .iter()
+            .all(|backlink| backlink.comment_source.is_none()),
+        "inaccessible comment sources must not disclose their comment, parent, or type"
+    );
+
+    db.conn()
+        .execute_unprepared(
+            "UPDATE projects SET visibility = 'workspace', visibility_role = 'viewer' WHERE slug = 'comment-backlink-private'",
+        )
+        .await
+        .expect("make source project visible");
+
+    let visible = viewer
+        .list_task_backlinks(&ws.slug, &target_readable_id)
+        .await
+        .expect("list backlinks with authorized sources");
+    let comments = visible
+        .items
+        .iter()
+        .filter_map(|backlink| backlink.comment_source.as_ref())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        comments.len(),
+        16,
+        "every authorized source comment is present"
+    );
+    assert!(comments.iter().all(|source| {
+        matches!(
+            &source.parent,
+            atlas_api::dtos::documents::CommentBacklinkParentDto::Task { readable_id, .. }
+                if readable_id == &source_readable_id
+        )
+    }));
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn task_backlinks_omit_deleted_and_cross_workspace_comment_sources() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (owner, ws, _) =
+        support::login_user_with_workspace(&server, &db, "comment-backlink-source-omission").await;
+    let target_readable_id =
+        seed_task(&owner, &ws.slug, "comment-backlink-source-target", "CBS").await;
+    let source_readable_id =
+        seed_task(&owner, &ws.slug, "comment-backlink-source-local", "CBL").await;
+    let target_task = owner
+        .get_task(&ws.slug, &target_readable_id)
+        .await
+        .expect("get target task");
+    let deleted_comment = owner
+        .add_comment(
+            &ws.slug,
+            &source_readable_id,
+            CreateCommentRequest {
+                body: "deleted source comment".into(),
+            },
+        )
+        .await
+        .expect("create deleted source comment");
+
+    let (other, other_ws, _) =
+        support::login_user_with_workspace(&server, &db, "comment-backlink-source-other").await;
+    let other_readable_id = seed_task(
+        &other,
+        &other_ws.slug,
+        "comment-backlink-source-other",
+        "CBO",
+    )
+    .await;
+    let other_comment = other
+        .add_comment(
+            &other_ws.slug,
+            &other_readable_id,
+            CreateCommentRequest {
+                body: "cross workspace source comment".into(),
+            },
+        )
+        .await
+        .expect("create cross workspace comment");
+
+    db.conn()
+        .execute_unprepared(&format!(
+            "INSERT INTO comment_links (id, workspace_id, comment_id, target_task_id, created_at) VALUES ('{}', '{}', '{}', '{}', now()), ('{}', '{}', '{}', '{}', now()); UPDATE comments SET deleted_at = now() WHERE id = '{}'",
+            uuid::Uuid::now_v7(),
+            ws.id.0,
+            deleted_comment.id,
+            target_task.id,
+            uuid::Uuid::now_v7(),
+            ws.id.0,
+            other_comment.id,
+            target_task.id,
+            deleted_comment.id,
+        ))
+        .await
+        .expect("insert omitted source links");
+
+    let backlinks = owner
+        .list_task_backlinks(&ws.slug, &target_readable_id)
+        .await
+        .expect("list backlinks with deleted and cross-workspace sources");
+    assert!(
+        backlinks
+            .items
+            .iter()
+            .all(|backlink| backlink.comment_source.is_none()),
+        "deleted and cross-workspace sources must not disclose comment metadata or existence"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn document_backlinks_expose_comment_source_without_attachment_links() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, user) =
         support::login_user_with_workspace(&server, &db, "comment-document-backlink").await;
     let source_readable_id = seed_task(&client, &ws.slug, "comment-document-source", "CDS").await;
+    let source_task = client
+        .get_task(&ws.slug, &source_readable_id)
+        .await
+        .expect("get source task");
     let project = client
         .create_project(&ws.slug, project_req("comment-document-target", "CDT"))
         .await
@@ -287,13 +699,24 @@ async fn document_backlinks_expose_comment_source_without_attachment_links() {
         .await
         .expect("create source comment");
 
+    let attachment_id = uuid::Uuid::now_v7();
     db.conn()
         .execute_unprepared(&format!(
-            "INSERT INTO comment_links (id, workspace_id, comment_id, target_document_id, created_at) VALUES ('{}', '{}', '{}', '{}', now())",
-            uuid::Uuid::now_v7(), ws.id.0, comment.id, target.id,
+            "INSERT INTO attachments (id, workspace_id, task_id, file_name, content_type, size_bytes, sha256, created_by_user_id, created_at, updated_at) VALUES ('{attachment_id}', '{}', '{}', 'attachment.txt', 'text/plain', 1, '{}', '{}', now(), now()); INSERT INTO comment_links (id, workspace_id, comment_id, target_document_id, created_at) VALUES ('{}', '{}', '{}', '{}', now()); INSERT INTO comment_links (id, workspace_id, comment_id, target_attachment_id, created_at) VALUES ('{}', '{}', '{}', '{attachment_id}', now())",
+            ws.id.0,
+            source_task.id,
+            "c".repeat(64),
+            user.id.0,
+            uuid::Uuid::now_v7(),
+            ws.id.0,
+            comment.id,
+            target.id,
+            uuid::Uuid::now_v7(),
+            ws.id.0,
+            comment.id,
         ))
         .await
-        .expect("insert derived comment link");
+        .expect("insert document and attachment comment links");
 
     let backlinks = client
         .list_backlinks(
@@ -304,11 +727,17 @@ async fn document_backlinks_expose_comment_source_without_attachment_links() {
         )
         .await
         .expect("list document backlinks");
-    let source = backlinks
+    let comment_sources = backlinks
         .items
         .iter()
-        .find_map(|backlink| backlink.comment_source.as_ref())
-        .expect("comment backlink source");
+        .filter_map(|backlink| backlink.comment_source.as_ref())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        comment_sources.len(),
+        1,
+        "attachment links are not global backlinks"
+    );
+    let source = comment_sources[0];
     assert_eq!(source.kind, "comment");
     assert_eq!(source.comment_id, comment.id);
     assert!(matches!(
@@ -316,6 +745,24 @@ async fn document_backlinks_expose_comment_source_without_attachment_links() {
         atlas_api::dtos::documents::CommentBacklinkParentDto::Task { readable_id, .. }
             if readable_id == &source_readable_id
     ));
+
+    let search: Value = reqwest::Client::new()
+        .get(format!(
+            "{}/api/workspaces/{}/search?q={attachment_id}",
+            server.base_url(),
+            ws.slug
+        ))
+        .bearer_auth(client.token().expect("session token"))
+        .send()
+        .await
+        .expect("search attachment id")
+        .json()
+        .await
+        .expect("decode attachment search");
+    assert!(
+        search["items"].as_array().expect("search items").is_empty(),
+        "attachment-target comment links must not make comments globally searchable"
+    );
 
     db.teardown().await;
 }
