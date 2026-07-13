@@ -5,6 +5,8 @@ mod automation_rule;
 #[allow(unreachable_pub)]
 mod boards_tasks;
 #[allow(unreachable_pub)]
+mod comment_links;
+#[allow(unreachable_pub)]
 mod comments;
 #[allow(unreachable_pub)]
 mod documents;
@@ -46,6 +48,7 @@ pub use boards_tasks::{
     PgTaskReferenceRepo, PgTaskRepo, TaskActivityRepo, TaskAssigneeRepo, TaskChecklistRepo,
     TaskReferenceRepo, TaskRepo, resequence_column,
 };
+pub use comment_links::PgCommentLinkRepo;
 pub use comments::{CommentRepo, PgCommentRepo};
 pub use documents::{
     AttachmentRepo, AttachmentWriteIntentRepo, DocumentLinkRepo, DocumentRepo,
