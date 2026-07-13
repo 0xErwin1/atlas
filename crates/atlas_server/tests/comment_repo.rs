@@ -27,6 +27,7 @@ use sha2::Digest;
 use std::sync::Arc;
 use tempfile::TempDir;
 use tokio::sync::Notify;
+use tokio::time::timeout;
 
 async fn seed_project_board_column(
     db: &support::TestDb,
@@ -956,6 +957,93 @@ async fn concurrent_same_digest_uploads_finalize_without_residual_intent() {
 }
 
 #[tokio::test]
+async fn delayed_put_does_not_hold_a_transaction_while_serializing_same_digest_uploads() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "session-lock-upload-user").await;
+    let ctx = support::ctx(&ws, &user);
+    let (project, board, column) =
+        seed_project_board_column(&db, &ctx, "session-lock-upload-proj", "SL").await;
+    let task = seed_task(&db, &ctx, project.id, board.id, column.id, "Task").await;
+    let store = Arc::new(DelayedPutStore::new());
+    let data = b"session lock upload";
+
+    let first_started = store.put_started.notified();
+    let first_store = Arc::clone(&store);
+    let first_conn = db.conn().clone();
+    let first_ctx = ctx.clone();
+    let first = tokio::spawn(async move {
+        PgAttachmentLifecycle::store_and_record(
+            &first_conn,
+            &first_ctx,
+            NewAttachment {
+                document_id: None,
+                task_id: Some(task.id),
+                comment_id: None,
+                file_name: "first.txt".into(),
+                content_type: "text/plain".into(),
+                size_bytes: data.len() as i64,
+                sha256: String::new(),
+            },
+            data,
+            first_store.as_ref(),
+        )
+        .await
+    });
+    first_started.await;
+
+    let second_store = Arc::clone(&store);
+    let second_conn = db.conn().clone();
+    let second_ctx = ctx.clone();
+    let mut second = tokio::spawn(async move {
+        PgAttachmentLifecycle::store_and_record(
+            &second_conn,
+            &second_ctx,
+            NewAttachment {
+                document_id: None,
+                task_id: Some(task.id),
+                comment_id: None,
+                file_name: "second.txt".into(),
+                content_type: "text/plain".into(),
+                size_bytes: data.len() as i64,
+                sha256: String::new(),
+            },
+            data,
+            second_store.as_ref(),
+        )
+        .await
+    });
+
+    assert!(
+        timeout(std::time::Duration::from_millis(100), &mut second)
+            .await
+            .is_err(),
+        "a same-digest upload must wait for the delayed upload to finalize"
+    );
+
+    let has_open_transaction = database_has_open_transaction(&db).await;
+
+    let second_started = store.put_started.notified();
+    store.allow_put.notify_one();
+    first
+        .await
+        .expect("first upload task")
+        .expect("first upload");
+    second_started.await;
+    store.allow_put.notify_one();
+    second
+        .await
+        .expect("second upload task")
+        .expect("second upload");
+
+    db.teardown().await;
+
+    assert!(
+        !has_open_transaction,
+        "delayed object-store I/O must not retain an open database transaction"
+    );
+}
+
+#[tokio::test]
 async fn cross_workspace_live_attachment_preserves_shared_object() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let (first_ws, first_user) = support::seed_workspace(&db, "first-live-reference-user").await;
@@ -1029,6 +1117,48 @@ struct IntentCheckingStore {
     conn: sea_orm::DatabaseConnection,
     delete_started: Notify,
     allow_delete: Notify,
+}
+
+#[derive(Clone)]
+struct DelayedPutStore {
+    inner: MemoryDeleteStore,
+    put_started: Arc<Notify>,
+    allow_put: Arc<Notify>,
+}
+
+impl DelayedPutStore {
+    fn new() -> Self {
+        Self {
+            inner: MemoryDeleteStore::new(),
+            put_started: Arc::new(Notify::new()),
+            allow_put: Arc::new(Notify::new()),
+        }
+    }
+}
+
+#[async_trait]
+impl AttachmentStore for DelayedPutStore {
+    async fn put(&self, data: &[u8]) -> Result<String, DomainError> {
+        self.put_started.notify_one();
+        self.allow_put.notified().await;
+        Ok(self.inner.store(data).await)
+    }
+
+    async fn get(&self, _digest: &str) -> Result<bytes::Bytes, DomainError> {
+        Err(DomainError::NotFound {
+            entity: "attachment",
+            id: uuid::Uuid::nil(),
+        })
+    }
+
+    async fn exists(&self, digest: &str) -> Result<bool, DomainError> {
+        Ok(self.inner.object_exists(digest).await)
+    }
+
+    async fn delete(&self, digest: &str) -> Result<(), DomainError> {
+        self.inner.remove(digest).await;
+        Ok(())
+    }
 }
 
 #[derive(Clone)]
@@ -1262,7 +1392,7 @@ async fn wait_for_advisory_lock_waiter(db: &support::TestDb) {
                 "SELECT EXISTS(\
                     SELECT 1 FROM pg_stat_activity \
                     WHERE wait_event = 'advisory' \
-                      AND query LIKE 'SELECT pg_advisory_xact_lock%'\
+                      AND query LIKE 'SELECT pg_advisory%lock%'\
                 ) AS waiting",
                 [],
             ))
@@ -1279,6 +1409,30 @@ async fn wait_for_advisory_lock_waiter(db: &support::TestDb) {
     }
 
     panic!("upload did not wait for the reconciler digest lock");
+}
+
+async fn database_has_open_transaction(db: &support::TestDb) -> bool {
+    let row = db
+        .conn()
+        .query_one_raw(Statement::from_string(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT EXISTS(\
+                SELECT 1 \
+                FROM pg_stat_activity activity \
+                JOIN pg_locks locks ON locks.pid = activity.pid \
+                WHERE activity.datname = current_database() \
+                  AND activity.xact_start IS NOT NULL \
+                  AND locks.locktype = 'advisory' \
+                  AND locks.granted \
+                  AND activity.query LIKE 'SELECT pg_advisory%lock%'\
+            ) AS has_open_transaction",
+        ))
+        .await
+        .expect("query open transactions")
+        .expect("open transaction query row");
+
+    row.try_get("", "has_open_transaction")
+        .expect("read open transaction state")
 }
 
 #[tokio::test]

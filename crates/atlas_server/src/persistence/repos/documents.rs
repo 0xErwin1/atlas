@@ -18,6 +18,7 @@ use sea_orm::{
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
+use sqlx::{Postgres, pool::PoolConnection};
 use uuid::Uuid;
 
 use crate::persistence::entities::documents::{
@@ -32,6 +33,51 @@ pub use atlas_domain::ports::documents::{
 pub struct PgDocumentRepo {
     pub conn: DatabaseConnection,
     pub anchor_interval: u32,
+}
+
+const ATTACHMENT_STORE_IO_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+struct DigestSessionLock {
+    connection: PoolConnection<Postgres>,
+    digest: String,
+}
+
+impl DigestSessionLock {
+    async fn acquire(conn: &DatabaseConnection, digest: &str) -> Result<Self, DomainError> {
+        let mut connection = conn
+            .get_postgres_connection_pool()
+            .acquire()
+            .await
+            .map_err(sqlx_err)?;
+
+        sqlx::query("SELECT pg_advisory_lock(hashtextextended($1, 0))")
+            .bind(digest)
+            .execute(&mut *connection)
+            .await
+            .map_err(sqlx_err)?;
+
+        Ok(Self {
+            connection,
+            digest: digest.into(),
+        })
+    }
+
+    async fn release(mut self) -> Result<(), DomainError> {
+        let unlocked: bool =
+            sqlx::query_scalar("SELECT pg_advisory_unlock(hashtextextended($1, 0))")
+                .bind(&self.digest)
+                .fetch_one(&mut *self.connection)
+                .await
+                .map_err(sqlx_err)?;
+
+        if unlocked {
+            Ok(())
+        } else {
+            Err(DomainError::Internal {
+                message: "attachment digest session lock was not held".into(),
+            })
+        }
+    }
 }
 
 impl PgDocumentRepo {
@@ -1099,28 +1145,35 @@ impl PgAttachmentLifecycle {
             .create_if_absent(digest.clone())
             .await?;
 
-        let txn = conn.begin().await.map_err(db_err)?;
-        lock_digest(&txn, &digest).await?;
+        let lock = DigestSessionLock::acquire(conn, &digest).await?;
+        let result = async {
+            PgAttachmentWriteIntentRepo { conn: conn.clone() }
+                .create_if_absent(digest.clone())
+                .await?;
 
-        PgAttachmentWriteIntentRepo { conn: conn.clone() }
-            .create_if_absent(digest.clone())
-            .await?;
+            let stored = bounded_store_put(store, data).await?;
+            if stored != digest {
+                return Err(DomainError::Internal {
+                    message: "attachment store returned an unexpected digest".into(),
+                });
+            }
 
-        let stored = store.put(data).await?;
-
-        if stored != digest {
-            return Err(DomainError::Internal {
-                message: "attachment store returned an unexpected digest".into(),
-            });
+            let txn = conn.begin().await.map_err(db_err)?;
+            let attachment = PgAttachmentRepo::record_in(&txn, ctx, new, digest).await?;
+            attachment_write_intent::Entity::delete_many()
+                .filter(attachment_write_intent::Column::Digest.eq(&attachment.sha256))
+                .exec(&txn)
+                .await
+                .map_err(db_err)?;
+            txn.commit().await.map_err(db_err)?;
+            Ok(attachment)
         }
+        .await;
+        let unlock = lock.release().await;
 
-        let attachment = PgAttachmentRepo::record_in(&txn, ctx, new, digest).await?;
-        attachment_write_intent::Entity::delete_many()
-            .filter(attachment_write_intent::Column::Digest.eq(&attachment.sha256))
-            .exec(&txn)
-            .await
-            .map_err(db_err)?;
-        txn.commit().await.map_err(db_err)?;
+        let attachment = result?;
+        unlock?;
+
         Ok(attachment)
     }
 
@@ -1152,49 +1205,72 @@ impl PgAttachmentLifecycle {
         older_than: DateTime<Utc>,
         intent: attachment_write_intent::Model,
     ) -> Result<(), DomainError> {
-        let txn = conn.begin().await.map_err(db_err)?;
-        lock_digest(&txn, &intent.digest).await?;
+        let lock = DigestSessionLock::acquire(conn, &intent.digest).await?;
+        let result = async {
+            let current = attachment_write_intent::Entity::find_by_id(intent.id)
+                .filter(attachment_write_intent::Column::CreatedAt.lt(older_than))
+                .one(conn)
+                .await
+                .map_err(db_err)?;
 
-        let current = attachment_write_intent::Entity::find_by_id(intent.id)
-            .filter(attachment_write_intent::Column::CreatedAt.lt(older_than))
-            .one(&txn)
-            .await
-            .map_err(db_err)?;
+            let Some(current) = current else {
+                return Ok(());
+            };
 
-        let Some(current) = current else {
-            txn.commit().await.map_err(db_err)?;
-            return Ok(());
-        };
+            let has_live_reference = attachment::Entity::find()
+                .filter(attachment::Column::Sha256.eq(&current.digest))
+                .filter(attachment::Column::DeletedAt.is_null())
+                .one(conn)
+                .await
+                .map_err(db_err)?
+                .is_some();
 
-        let has_live_reference = attachment::Entity::find()
-            .filter(attachment::Column::Sha256.eq(&current.digest))
-            .filter(attachment::Column::DeletedAt.is_null())
-            .one(&txn)
-            .await
-            .map_err(db_err)?
-            .is_some();
+            if !has_live_reference {
+                bounded_store_delete(store, &current.digest).await?;
+            }
 
-        if !has_live_reference {
-            store.delete(&current.digest).await?;
+            attachment_write_intent::Entity::delete_by_id(current.id)
+                .exec(conn)
+                .await
+                .map(|_| ())
+                .map_err(db_err)
         }
+        .await;
+        let unlock = lock.release().await;
 
-        attachment_write_intent::Entity::delete_by_id(current.id)
-            .exec(&txn)
-            .await
-            .map_err(db_err)?;
-        txn.commit().await.map_err(db_err)
+        result?;
+        unlock
     }
 }
 
-async fn lock_digest(conn: &impl ConnectionTrait, digest: &str) -> Result<(), DomainError> {
-    conn.execute_raw(Statement::from_sql_and_values(
-        sea_orm::DatabaseBackend::Postgres,
-        "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
-        [digest.into()],
-    ))
-    .await
-    .map(|_| ())
-    .map_err(db_err)
+async fn bounded_store_put(
+    store: &dyn AttachmentStore,
+    data: &[u8],
+) -> Result<String, DomainError> {
+    tokio::time::timeout(ATTACHMENT_STORE_IO_TIMEOUT, store.put(data))
+        .await
+        .map_err(|_| attachment_store_timeout("put"))?
+}
+
+async fn bounded_store_delete(
+    store: &dyn AttachmentStore,
+    digest: &str,
+) -> Result<(), DomainError> {
+    tokio::time::timeout(ATTACHMENT_STORE_IO_TIMEOUT, store.delete(digest))
+        .await
+        .map_err(|_| attachment_store_timeout("delete"))?
+}
+
+fn attachment_store_timeout(operation: &str) -> DomainError {
+    DomainError::Internal {
+        message: format!("attachment store {operation} timed out"),
+    }
+}
+
+fn sqlx_err(error: sqlx::Error) -> DomainError {
+    DomainError::Internal {
+        message: error.to_string(),
+    }
 }
 
 #[async_trait]
