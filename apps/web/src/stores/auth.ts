@@ -2,6 +2,10 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
+import {
+  disposeWorkspaceLiveUpdates,
+  setWorkspaceLiveUpdatesAuthorizationInvalidator,
+} from '@/lib/workspaceLiveUpdates';
 
 export type MeResponse = components['schemas']['MeResponse'];
 
@@ -42,10 +46,13 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function clearUser() {
+    disposeWorkspaceLiveUpdates();
     user.value = null;
     isAuthenticated.value = false;
     apiKeyWarning.value = false;
   }
+
+  setWorkspaceLiveUpdatesAuthorizationInvalidator(clearUser);
 
   async function fetchMe(): Promise<void> {
     const { data, error } = await wrappedClient.GET('/api/auth/me', {});
@@ -117,6 +124,7 @@ export const useAuthStore = defineStore('auth', () => {
     user,
     isAuthenticated,
     apiKeyWarning,
+    clearUser,
     fetchMe,
     login,
     logout,

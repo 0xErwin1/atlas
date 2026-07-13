@@ -8,8 +8,17 @@ vi.mock('@/api/wrapper', () => ({
   },
 }));
 
+vi.mock('@/lib/workspaceLiveUpdates', () => ({
+  disposeWorkspaceLiveUpdates: vi.fn(),
+  setWorkspaceLiveUpdatesAuthorizationInvalidator: vi.fn(),
+}));
+
 import { wrappedClient } from '@/api/wrapper';
-import { useAuthStore } from '@/stores/auth';
+import {
+  disposeWorkspaceLiveUpdates,
+  setWorkspaceLiveUpdatesAuthorizationInvalidator,
+} from '@/lib/workspaceLiveUpdates';
+import { type MeResponse, useAuthStore } from '@/stores/auth';
 
 const mockGet = wrappedClient.GET as ReturnType<typeof vi.fn>;
 const mockPost = wrappedClient.POST as ReturnType<typeof vi.fn>;
@@ -51,6 +60,30 @@ describe('useAuthStore', () => {
 
     expect(store.isAuthenticated).toBe(false);
     expect(store.user).toBeNull();
+  });
+
+  it('disposes live updates before clearing authentication state', () => {
+    const store = useAuthStore();
+    store.user = { username: 'alice' } as MeResponse;
+    store.isAuthenticated = true;
+
+    store.clearUser();
+
+    expect(disposeWorkspaceLiveUpdates).toHaveBeenCalledOnce();
+    expect(store.user).toBeNull();
+    expect(store.isAuthenticated).toBe(false);
+  });
+
+  it('registers the default broker invalidator through clearUser', () => {
+    const store = useAuthStore();
+    store.user = { username: 'alice' } as MeResponse;
+    store.isAuthenticated = true;
+
+    const invalidate = vi.mocked(setWorkspaceLiveUpdatesAuthorizationInvalidator).mock.calls[0]?.[0];
+    invalidate?.();
+
+    expect(disposeWorkspaceLiveUpdates).toHaveBeenCalledOnce();
+    expect(store.isAuthenticated).toBe(false);
   });
 
   it('fetchMe 200 hydrates user and sets isAuthenticated true (REQ-W8)', async () => {
