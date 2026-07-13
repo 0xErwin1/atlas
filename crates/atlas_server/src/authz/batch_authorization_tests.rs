@@ -125,6 +125,23 @@ async fn batch_authorization_propagates_source_failures_without_a_decision() {
 }
 
 #[tokio::test]
+async fn batch_authorization_rejects_duplicate_subject_ordinals() {
+    let document = DocumentId(Uuid::now_v7());
+    let source = TestSource::with_facts(vec![
+        workspace_fact(0, SubjectFamily::Documents),
+        workspace_fact(0, SubjectFamily::Documents),
+    ]);
+    let service = BatchAuthorizationService::new(source);
+
+    let error = service
+        .authorize(&user_context(), &[ProjectionSubject::Document(document.0)])
+        .await
+        .unwrap_err();
+
+    assert!(matches!(error, DomainError::Internal { .. }));
+}
+
+#[tokio::test]
 async fn batch_authorization_caps_api_keys_and_requires_the_family_read_scope() {
     let document = DocumentId(Uuid::now_v7());
     let source = TestSource::with_facts(vec![workspace_fact(0, SubjectFamily::Documents)]);
