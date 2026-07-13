@@ -891,12 +891,6 @@ where
             return Ok(Vec::new());
         }
 
-        if subjects.len() > 200 {
-            return Err(DomainError::InvalidInput {
-                message: "batch authorization accepts at most 200 subjects".into(),
-            });
-        }
-
         let facts = self.source.load_subject_facts(context, subjects).await?;
         validate_subject_facts(&facts, subjects)?;
         let resources = distinct_resources(&facts);

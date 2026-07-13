@@ -51,11 +51,11 @@ pub(crate) fn decode_feed_cursor(
 
     let bytes = URL_SAFE_NO_PAD
         .decode(cursor)
-        .map_err(|_| ApiError::BadRequest {
+        .map_err(|_| ApiError::Internal {
             message: "invalid comment feed cursor".into(),
         })?;
     let cursor: FeedCursorWire =
-        serde_json::from_slice(&bytes).map_err(|_| ApiError::BadRequest {
+        serde_json::from_slice(&bytes).map_err(|_| ApiError::Internal {
             message: "invalid comment feed cursor".into(),
         })?;
 
@@ -317,16 +317,10 @@ async fn authorize_targets(
 
     let service =
         BatchAuthorizationService::new(PgBatchAuthorizationSource::new((*state.db).clone()));
-    let mut decisions = Vec::with_capacity(subjects.len());
-    for chunk in subjects.chunks(200) {
-        decisions.extend(
-            service
-                .authorize(context, chunk)
-                .await
-                .map_err(ApiError::Domain)?,
-        );
-    }
-    Ok(decisions)
+    service
+        .authorize(context, subjects)
+        .await
+        .map_err(ApiError::Domain)
 }
 
 fn project_target(
@@ -402,28 +396,32 @@ async fn load_event_actors(
 
     let mut actors = HashMap::new();
     for user in users {
-        actors.insert(
-            actor_key(Actor::User(user.id)),
-            ActorDto {
-                r#type: "user".into(),
-                id: user.id.0,
-                display_name: Some(user.display_name),
-                key_type: None,
-                account_status: None,
-            },
-        );
+        if user.disabled_at.is_none() {
+            actors.insert(
+                actor_key(Actor::User(user.id)),
+                ActorDto {
+                    r#type: "user".into(),
+                    id: user.id.0,
+                    display_name: Some(user.display_name),
+                    key_type: None,
+                    account_status: None,
+                },
+            );
+        }
     }
     for key in keys {
-        actors.insert(
-            actor_key(Actor::ApiKey(key.id)),
-            ActorDto {
-                r#type: "api_key".into(),
-                id: key.id.0,
-                display_name: Some(key.name),
-                key_type: Some(key.type_.as_str().into()),
-                account_status: None,
-            },
-        );
+        if key.revoked_at.is_none() {
+            actors.insert(
+                actor_key(Actor::ApiKey(key.id)),
+                ActorDto {
+                    r#type: "api_key".into(),
+                    id: key.id.0,
+                    display_name: Some(key.name),
+                    key_type: Some(key.type_.as_str().into()),
+                    account_status: None,
+                },
+            );
+        }
     }
     Ok(actors)
 }
