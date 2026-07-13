@@ -74,6 +74,14 @@ async fn main() -> Result<()> {
     );
     let dispatcher_handle = tokio::spawn(dispatcher.run(shutdown_rx.clone()));
 
+    let attachment_reconciler_handle = tokio::spawn(
+        atlas_server::persistence::repos::PgAttachmentLifecycle::run_reconciler(
+            (*state.db).clone(),
+            state.attachments.clone(),
+            shutdown_rx.clone(),
+        ),
+    );
+
     // Spawn the Postgres LISTEN consumer that feeds the in-process live-event
     // hub. It shares the same watch-based shutdown signal as the dispatcher and
     // is drained on graceful shutdown alongside it.
@@ -138,6 +146,9 @@ async fn main() -> Result<()> {
     let _ = shutdown_tx.send(true);
     if let Err(e) = dispatcher_handle.await {
         tracing::error!(error = %e, "dispatcher task panicked during shutdown");
+    }
+    if let Err(e) = attachment_reconciler_handle.await {
+        tracing::error!(error = %e, "attachment reconciler task panicked during shutdown");
     }
     if let Err(e) = listener_handle.await {
         tracing::error!(error = %e, "live event listener task panicked during shutdown");

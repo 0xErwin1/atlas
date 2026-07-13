@@ -57,12 +57,12 @@ use crate::{
     },
     error::ApiError,
     persistence::repos::{
-        ApiKeyRepo, AttachmentRepo, DocumentRepo, MembershipRepo, PgApiKeyRepo, PgAttachmentRepo,
-        PgBoardRepo, PgDocumentLinkRepo, PgDocumentRepo, PgMembershipRepo, PgPermissionGrantRepo,
-        PgProjectRepo, PgPropertyDefinitionRepo, PgTaskActivityRepo, PgTaskAssigneeRepo,
-        PgTaskChecklistRepo, PgTaskReferenceRepo, PgTaskRepo, PgUserRepo, ProjectRepo,
-        PropertyDefinitionRepo, TaskActivityRepo, TaskAssigneeRepo, TaskChecklistRepo,
-        TaskReferenceRepo, TaskRepo, UserRepo,
+        ApiKeyRepo, AttachmentRepo, DocumentRepo, MembershipRepo, PgApiKeyRepo,
+        PgAttachmentLifecycle, PgAttachmentRepo, PgBoardRepo, PgDocumentLinkRepo, PgDocumentRepo,
+        PgMembershipRepo, PgPermissionGrantRepo, PgProjectRepo, PgPropertyDefinitionRepo,
+        PgTaskActivityRepo, PgTaskAssigneeRepo, PgTaskChecklistRepo, PgTaskReferenceRepo,
+        PgTaskRepo, PgUserRepo, ProjectRepo, PropertyDefinitionRepo, TaskActivityRepo,
+        TaskAssigneeRepo, TaskChecklistRepo, TaskReferenceRepo, TaskRepo, UserRepo,
     },
     routes::comments::{comment_to_dto, enrich_comment_entries},
     routes::documents::content_disposition_attachment,
@@ -1735,35 +1735,24 @@ pub(crate) async fn upload_attachment(
         state.upload_allowed_extensions.as_deref(),
     )?;
 
-    let sha256 = state
-        .attachments
-        .put(&data)
-        .await
-        .map_err(|e| ApiError::Internal {
-            message: e.to_string(),
-        })?;
-
     let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
-
-    let attachment_repo = PgAttachmentRepo {
-        conn: (*state.db).clone(),
-    };
-
-    let attachment = attachment_repo
-        .record(
-            &ctx,
-            NewAttachment {
-                document_id: None,
-                task_id: Some(auth.resource.0.id),
-                comment_id: None,
-                file_name,
-                content_type,
-                size_bytes: data.len() as i64,
-                sha256,
-            },
-        )
-        .await
-        .map_err(ApiError::Domain)?;
+    let attachment = PgAttachmentLifecycle::store_and_record(
+        state.db.as_ref(),
+        &ctx,
+        NewAttachment {
+            document_id: None,
+            task_id: Some(auth.resource.0.id),
+            comment_id: None,
+            file_name,
+            content_type,
+            size_bytes: data.len() as i64,
+            sha256: String::new(),
+        },
+        &data,
+        state.attachments.as_ref(),
+    )
+    .await
+    .map_err(ApiError::Domain)?;
 
     Ok((StatusCode::CREATED, Json(attachment_to_dto(attachment))))
 }
