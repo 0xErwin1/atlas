@@ -16,11 +16,22 @@ use crate::persistence::{
     repos::{PgAttachmentLifecycle, PgCommentLinkRepo, PgCommentRepo},
 };
 
+/// Internal test seam for proving comment mutations commit as one transaction.
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommentMutationFault {
+    AfterBodyWrite,
+    AfterGraphReplace,
+    AfterEventAppend,
+}
+
 /// Coordinates comment bodies, their derived graph, and comment-owned blob cleanup.
 #[derive(Clone)]
 pub struct CommentService {
     conn: DatabaseConnection,
     attachments: Option<Arc<dyn AttachmentStore>>,
+    #[cfg(debug_assertions)]
+    fault: Option<CommentMutationFault>,
 }
 
 impl CommentService {
@@ -28,6 +39,8 @@ impl CommentService {
         Self {
             conn,
             attachments: None,
+            #[cfg(debug_assertions)]
+            fault: None,
         }
     }
 
@@ -38,6 +51,18 @@ impl CommentService {
         Self {
             conn,
             attachments: Some(attachments),
+            #[cfg(debug_assertions)]
+            fault: None,
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    #[doc(hidden)]
+    pub fn with_fault_injection(conn: DatabaseConnection, fault: CommentMutationFault) -> Self {
+        Self {
+            conn,
+            attachments: None,
+            fault: Some(fault),
         }
     }
 
@@ -51,8 +76,17 @@ impl CommentService {
         let txn = self.conn.begin().await.map_err(db_err)?;
 
         let comment = PgCommentRepo::create_in(&txn, ctx, NewComment { owner, body }).await?;
+        #[cfg(debug_assertions)]
+        self.fail_if(CommentMutationFault::AfterBodyWrite)?;
         let targets = PgCommentLinkRepo::classify_candidates_in(&txn, ctx, candidates).await?;
-        PgCommentLinkRepo::replace_for_comment_in(&txn, ctx, comment.id, targets).await?;
+        PgCommentLinkRepo::replace_for_comment_with_fault_in(
+            &txn,
+            ctx,
+            comment.id,
+            targets,
+            self.fault_for_mutation(),
+        )
+        .await?;
 
         txn.commit().await.map_err(db_err)?;
         Ok(comment)
@@ -76,8 +110,17 @@ impl CommentService {
         }
 
         let updated = PgCommentRepo::update_body_from(&txn, ctx, owner, comment, body).await?;
+        #[cfg(debug_assertions)]
+        self.fail_if(CommentMutationFault::AfterBodyWrite)?;
         let targets = PgCommentLinkRepo::classify_candidates_in(&txn, ctx, candidates).await?;
-        PgCommentLinkRepo::replace_for_comment_in(&txn, ctx, comment_id, targets).await?;
+        PgCommentLinkRepo::replace_for_comment_with_fault_in(
+            &txn,
+            ctx,
+            comment_id,
+            targets,
+            self.fault_for_mutation(),
+        )
+        .await?;
 
         txn.commit().await.map_err(db_err)?;
         Ok(updated)
@@ -119,6 +162,27 @@ impl CommentService {
         }
 
         Ok(())
+    }
+
+    #[cfg(debug_assertions)]
+    fn fail_if(&self, point: CommentMutationFault) -> Result<(), DomainError> {
+        if self.fault == Some(point) {
+            return Err(DomainError::Internal {
+                message: format!("injected comment mutation fault at {point:?}"),
+            });
+        }
+
+        Ok(())
+    }
+
+    #[cfg(debug_assertions)]
+    fn fault_for_mutation(&self) -> Option<CommentMutationFault> {
+        self.fault
+    }
+
+    #[cfg(not(debug_assertions))]
+    fn fault_for_mutation(&self) -> Option<CommentMutationFault> {
+        None
     }
 }
 
