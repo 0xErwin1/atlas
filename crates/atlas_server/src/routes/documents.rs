@@ -38,8 +38,8 @@ use crate::{
     },
     error::ApiError,
     persistence::repos::{
-        AttachmentRepo, DocumentLinkRepo, DocumentRepo, PgAttachmentRepo, PgDocumentLinkRepo,
-        PgDocumentRepo,
+        AttachmentRepo, DocumentLinkRepo, DocumentRepo, PgAttachmentLifecycle, PgAttachmentRepo,
+        PgDocumentLinkRepo, PgDocumentRepo,
     },
     routes::comments::{comment_to_dto, enrich_comment_entries},
     routes::validation::{validate_comment_body, validate_name, validate_upload},
@@ -746,35 +746,24 @@ pub(crate) async fn upload_attachment(
         state.upload_allowed_extensions.as_deref(),
     )?;
 
-    let sha256 = state
-        .attachments
-        .put(&body)
-        .await
-        .map_err(|e| ApiError::Internal {
-            message: e.to_string(),
-        })?;
-
     let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
-
-    let attachment_repo = PgAttachmentRepo {
-        conn: (*state.db).clone(),
-    };
-
-    let attachment = attachment_repo
-        .record(
-            &ctx,
-            NewAttachment {
-                document_id: Some(auth.resource.0.id),
-                task_id: None,
-                comment_id: None,
-                file_name,
-                content_type,
-                size_bytes: body.len() as i64,
-                sha256,
-            },
-        )
-        .await
-        .map_err(ApiError::Domain)?;
+    let attachment = PgAttachmentLifecycle::store_and_record(
+        state.db.as_ref(),
+        &ctx,
+        NewAttachment {
+            document_id: Some(auth.resource.0.id),
+            task_id: None,
+            comment_id: None,
+            file_name,
+            content_type,
+            size_bytes: body.len() as i64,
+            sha256: String::new(),
+        },
+        &body,
+        state.attachments.as_ref(),
+    )
+    .await
+    .map_err(ApiError::Domain)?;
 
     Ok((StatusCode::CREATED, Json(attachment_to_dto(attachment))))
 }

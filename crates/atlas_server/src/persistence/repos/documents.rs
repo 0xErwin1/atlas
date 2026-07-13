@@ -17,6 +17,7 @@ use sea_orm::{
     TransactionTrait,
 };
 use serde_json::json;
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::persistence::entities::documents::{
@@ -1048,6 +1049,59 @@ pub struct PgAttachmentWriteIntentRepo {
 pub struct PgAttachmentLifecycle;
 
 impl PgAttachmentLifecycle {
+    pub async fn run_reconciler(
+        conn: DatabaseConnection,
+        store: std::sync::Arc<dyn AttachmentStore>,
+        mut shutdown: tokio::sync::watch::Receiver<bool>,
+    ) {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(300));
+        loop {
+            tokio::select! {
+                _ = interval.tick() => {
+                    let older_than = Utc::now() - chrono::Duration::minutes(10);
+                    if let Err(error) = Self::reconcile_stale(&conn, store.as_ref(), older_than).await {
+                        tracing::warn!(%error, "attachment intent reconciliation failed");
+                    }
+                }
+                changed = shutdown.changed() => {
+                    if changed.is_err() || *shutdown.borrow() { return; }
+                }
+            }
+        }
+    }
+
+    pub async fn store_and_record(
+        conn: &DatabaseConnection,
+        ctx: &WorkspaceCtx,
+        new: NewAttachment,
+        data: &[u8],
+        store: &dyn AttachmentStore,
+    ) -> Result<Attachment, DomainError> {
+        let digest = hex_digest(data);
+        PgAttachmentWriteIntentRepo { conn: conn.clone() }
+            .create_if_absent(digest.clone())
+            .await?;
+
+        let txn = conn.begin().await.map_err(db_err)?;
+        lock_digest(&txn, &digest).await?;
+        let stored = store.put(data).await?;
+
+        if stored != digest {
+            return Err(DomainError::Internal {
+                message: "attachment store returned an unexpected digest".into(),
+            });
+        }
+
+        let attachment = PgAttachmentRepo::record_in(&txn, ctx, new, digest).await?;
+        attachment_write_intent::Entity::delete_many()
+            .filter(attachment_write_intent::Column::Digest.eq(&attachment.sha256))
+            .exec(&txn)
+            .await
+            .map_err(db_err)?;
+        txn.commit().await.map_err(db_err)?;
+        Ok(attachment)
+    }
+
     pub async fn reconcile_stale(
         conn: &DatabaseConnection,
         store: &dyn AttachmentStore,
@@ -1142,6 +1196,54 @@ impl AttachmentWriteIntentRepo for PgAttachmentWriteIntentRepo {
             .map(|rows| rows.into_iter().map(attachment_write_intent_from).collect())
             .map_err(db_err)
     }
+}
+
+impl PgAttachmentWriteIntentRepo {
+    async fn create_if_absent(&self, digest: String) -> Result<(), DomainError> {
+        self.conn
+            .execute_unprepared(&format!(
+                "INSERT INTO attachment_write_intents (id, digest, created_at) VALUES ('{}', '{}', now()) ON CONFLICT (digest) DO NOTHING",
+                Uuid::now_v7(), digest
+            ))
+            .await
+            .map(|_| ())
+            .map_err(db_err)
+    }
+}
+
+impl PgAttachmentRepo {
+    async fn record_in(
+        conn: &impl ConnectionTrait,
+        ctx: &WorkspaceCtx,
+        new: NewAttachment,
+        sha256: String,
+    ) -> Result<Attachment, DomainError> {
+        let (by_user, by_key) = actor_fields(&ctx.actor);
+        attachment::ActiveModel {
+            id: Set(AttachmentId::new().0),
+            workspace_id: Set(ctx.workspace_id.0),
+            document_id: Set(new.document_id.map(|id| id.0)),
+            task_id: Set(new.task_id.map(|id| id.0)),
+            comment_id: Set(new.comment_id.map(|id| id.0)),
+            file_name: Set(new.file_name),
+            content_type: Set(new.content_type),
+            size_bytes: Set(new.size_bytes),
+            sha256: Set(sha256),
+            created_by_user_id: Set(by_user),
+            created_by_api_key_id: Set(by_key),
+            created_at: Set(Utc::now()),
+            updated_at: Set(Utc::now()),
+            deleted_at: Set(None),
+        }
+        .insert(conn)
+        .await
+        .map(attachment_from)
+        .map_err(db_err)
+    }
+}
+
+fn hex_digest(data: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(data))
 }
 
 async fn update_backlink_titles(
