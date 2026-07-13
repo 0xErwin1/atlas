@@ -196,10 +196,7 @@ export function createWorkspaceLiveUpdatesBroker(): WorkspaceLiveUpdatesBroker {
       candidate.foregroundTimer = null;
       if (!isCurrent(candidate, undefined, recoveryAttempt)) return;
 
-      if (candidate.source.readyState === READY_STATE_OPEN) {
-        dispatch(candidate, (subscriber) => subscriber.onResync());
-        return;
-      }
+      if (candidate.source.readyState === READY_STATE_OPEN) return;
       if (candidate.foregroundReopenSourceToken === candidate.sourceToken) return;
 
       openSource(candidate, true, true);

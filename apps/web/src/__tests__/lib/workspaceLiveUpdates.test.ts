@@ -473,7 +473,7 @@ describe('workspace live updates broker', () => {
       vi.advanceTimersByTime(30_000);
     });
 
-    it('debounces foreground signals, resyncs an OPEN source, and reopens a non-OPEN source once', () => {
+    it('ignores foreground signals for an OPEN source and reopens a non-OPEN source once', () => {
       const broker = createWorkspaceLiveUpdatesBroker();
       const subscriber = handlers();
 
@@ -486,7 +486,7 @@ describe('workspace live updates broker', () => {
       vi.advanceTimersByTime(299);
       expect(subscriber.onResync).not.toHaveBeenCalled();
       vi.advanceTimersByTime(1);
-      expect(subscriber.onResync).toHaveBeenCalledExactlyOnceWith();
+      expect(subscriber.onResync).not.toHaveBeenCalled();
       expect(FakeEventSource.instances).toHaveLength(1);
 
       if (source !== undefined) source.readyState = FakeEventSource.CLOSED;
@@ -496,6 +496,8 @@ describe('workspace live updates broker', () => {
       vi.advanceTimersByTime(300);
 
       expect(FakeEventSource.instances).toHaveLength(2);
+      FakeEventSource.instances[1]?.emitOpen();
+      expect(subscriber.onResync).toHaveBeenCalledExactlyOnceWith();
       subscription.release();
       vi.advanceTimersByTime(30_000);
     });
