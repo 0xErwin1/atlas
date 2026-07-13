@@ -1,6 +1,6 @@
 use crate::persistence::entities::boards_tasks::actor_from_columns;
-use atlas_domain::entities::comments::Comment;
-use atlas_domain::ids::{CommentId, DocumentId, TaskId, WorkspaceId};
+use atlas_domain::entities::comments::{Comment, CommentLink, CommentLinkTarget};
+use atlas_domain::ids::{AttachmentId, CommentId, CommentLinkId, DocumentId, TaskId, WorkspaceId};
 use chrono::{DateTime, Utc};
 use sea_orm::entity::prelude::*;
 
@@ -29,6 +29,51 @@ pub mod comment {
     impl ActiveModelBehavior for ActiveModel {}
 }
 
+pub mod comment_link {
+    use super::*;
+
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+    #[sea_orm(table_name = "comment_links")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        pub workspace_id: Uuid,
+        pub comment_id: Uuid,
+        pub target_document_id: Option<Uuid>,
+        pub target_task_id: Option<Uuid>,
+        pub target_attachment_id: Option<Uuid>,
+        pub created_at: DateTime<Utc>,
+    }
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
+pub mod comment_link_event {
+    use super::*;
+
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+    #[sea_orm(table_name = "comment_link_events")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        pub workspace_id: Uuid,
+        pub parent_task_id: Option<Uuid>,
+        pub parent_document_id: Option<Uuid>,
+        pub comment_id: Uuid,
+        pub event_kind: String,
+        pub target_document_id: Option<Uuid>,
+        pub target_task_id: Option<Uuid>,
+        pub target_attachment_id: Option<Uuid>,
+        pub actor_type: String,
+        pub actor_id: Uuid,
+        pub created_at: DateTime<Utc>,
+    }
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
 pub fn comment_from(m: comment::Model) -> Comment {
     Comment {
         id: CommentId(m.id),
@@ -40,6 +85,27 @@ pub fn comment_from(m: comment::Model) -> Comment {
         created_at: m.created_at,
         updated_at: m.updated_at,
         deleted_at: m.deleted_at,
+    }
+}
+
+pub fn comment_link_from(m: comment_link::Model) -> CommentLink {
+    let target = match (
+        m.target_document_id,
+        m.target_task_id,
+        m.target_attachment_id,
+    ) {
+        (Some(id), None, None) => CommentLinkTarget::Document(DocumentId(id)),
+        (None, Some(id), None) => CommentLinkTarget::Task(TaskId(id)),
+        (None, None, Some(id)) => CommentLinkTarget::Attachment(AttachmentId(id)),
+        _ => unreachable!("comment_links target constraint must hold"),
+    };
+
+    CommentLink {
+        id: CommentLinkId(m.id),
+        workspace_id: WorkspaceId(m.workspace_id),
+        comment_id: CommentId(m.comment_id),
+        target,
+        created_at: m.created_at,
     }
 }
 

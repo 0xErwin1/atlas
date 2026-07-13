@@ -8,18 +8,19 @@
 mod support;
 
 use async_trait::async_trait;
+use atlas_domain::ports::comments::CommentLinkRepo;
 use atlas_domain::{
     Actor, AttachmentStore, DomainError,
     entities::boards_tasks::{NewBoard, NewTask, PositionBetween},
-    entities::comments::{CommentOwner, NewComment},
+    entities::comments::{CommentFeedEntry, CommentLinkTarget, CommentOwner, NewComment},
     entities::documents::NewAttachment,
     entities::workspace_core::NewProject,
     permissions::{Visibility, VisibilityRole},
 };
 use atlas_server::persistence::repos::{
     AttachmentWriteIntentRepo, BoardRepo, CommentRepo, DiskAttachmentStore, PgAttachmentLifecycle,
-    PgAttachmentWriteIntentRepo, PgBoardRepo, PgCommentRepo, PgProjectRepo, PgTaskRepo,
-    ProjectRepo, TaskRepo,
+    PgAttachmentWriteIntentRepo, PgBoardRepo, PgCommentLinkRepo, PgCommentRepo, PgProjectRepo,
+    PgTaskRepo, ProjectRepo, TaskRepo,
 };
 use chrono::{Duration, Utc};
 use sea_orm::{ConnectionTrait, Statement};
@@ -563,6 +564,156 @@ async fn comment_freedom_migration_defines_required_constraints_and_indexes() {
                 && definition.contains("(digest)")
         }),
         "write intents must have a unique digest index"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn comment_link_events_retain_parent_owned_history_with_reverse_indexes() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+
+    let constraints = db
+        .conn()
+        .query_all_raw(Statement::from_string(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT pg_get_constraintdef(c.oid) AS definition \
+             FROM pg_constraint c \
+             JOIN pg_class t ON t.oid = c.conrelid \
+             WHERE t.relname = 'comment_link_events'",
+        ))
+        .await
+        .expect("read event constraint definitions")
+        .into_iter()
+        .map(|row| {
+            row.try_get::<String>("", "definition")
+                .expect("event constraint definition")
+        })
+        .collect::<Vec<_>>();
+
+    assert!(
+        constraints.iter().any(|definition| {
+            definition.contains("CHECK ((num_nonnulls(parent_task_id, parent_document_id) = 1))")
+        }),
+        "events must belong to exactly one comment parent"
+    );
+    assert!(
+        constraints.iter().any(|definition| {
+            definition.contains("event_kind")
+                && definition.contains(
+                    "num_nonnulls(target_document_id, target_task_id, target_attachment_id) = 1",
+                )
+                && definition.contains(
+                    "num_nonnulls(target_document_id, target_task_id, target_attachment_id) = 0",
+                )
+        }),
+        "link events must retain one target for link events and none for deletion events"
+    );
+
+    let indexes = db
+        .conn()
+        .query_all_raw(Statement::from_string(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT indexname FROM pg_indexes \
+             WHERE tablename IN ('comment_links', 'comment_link_events', 'attachments')",
+        ))
+        .await
+        .expect("read comment freedom indexes")
+        .into_iter()
+        .map(|row| row.try_get::<String>("", "indexname").expect("index name"))
+        .collect::<Vec<_>>();
+
+    for index in [
+        "comment_link_events_task_feed_idx",
+        "comment_link_events_document_feed_idx",
+        "comment_link_events_document_reverse_idx",
+        "comment_link_events_task_reverse_idx",
+        "comment_link_events_attachment_reverse_idx",
+        "comment_links_document_reverse_idx",
+        "comment_links_task_reverse_idx",
+        "comment_links_attachment_reverse_idx",
+        "attachments_comment_owner_idx",
+    ] {
+        assert!(indexes.iter().any(|name| name == index), "missing {index}");
+    }
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn comment_link_repo_replaces_live_edges_and_retains_diff_events() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "comment-link-diff-user").await;
+    let ctx = support::ctx(&ws, &user);
+    let (project, board, column) =
+        seed_project_board_column(&db, &ctx, "comment-link-diff-proj", "CL").await;
+    let parent = seed_task(&db, &ctx, project.id, board.id, column.id, "Parent").await;
+    let first_target = seed_task(&db, &ctx, project.id, board.id, column.id, "First").await;
+    let second_target = seed_task(&db, &ctx, project.id, board.id, column.id, "Second").await;
+    let comment = PgCommentRepo::new(db.conn().clone())
+        .create(
+            &ctx,
+            NewComment {
+                owner: CommentOwner::Task(parent.id),
+                body: "derived links".into(),
+            },
+        )
+        .await
+        .expect("create comment");
+    let links = PgCommentLinkRepo::new(db.conn().clone());
+
+    links
+        .replace_for_comment(
+            &ctx,
+            comment.id,
+            vec![CommentLinkTarget::Task(first_target.id)],
+        )
+        .await
+        .expect("add first target");
+    links
+        .replace_for_comment(
+            &ctx,
+            comment.id,
+            vec![CommentLinkTarget::Task(second_target.id)],
+        )
+        .await
+        .expect("replace target");
+
+    assert!(
+        links
+            .backlinks_for_target(&ctx, CommentLinkTarget::Task(first_target.id))
+            .await
+            .expect("first backlink")
+            .is_empty()
+    );
+    assert_eq!(
+        links
+            .backlinks_for_target(&ctx, CommentLinkTarget::Task(second_target.id))
+            .await
+            .expect("second backlink")
+            .into_iter()
+            .map(|link| link.comment_id)
+            .collect::<Vec<_>>(),
+        vec![comment.id]
+    );
+
+    let events = links
+        .feed_for_owner(&ctx, CommentOwner::Task(parent.id), None, 20)
+        .await
+        .expect("parent feed");
+    assert_eq!(
+        events
+            .into_iter()
+            .filter_map(|entry| match entry {
+                CommentFeedEntry::Event(event) => Some(event.kind),
+                CommentFeedEntry::Comment(_) => None,
+            })
+            .collect::<Vec<_>>(),
+        vec![
+            atlas_domain::entities::comments::CommentLinkEventKind::LinkAdded,
+            atlas_domain::entities::comments::CommentLinkEventKind::LinkRemoved,
+            atlas_domain::entities::comments::CommentLinkEventKind::LinkAdded,
+        ]
     );
 
     db.teardown().await;

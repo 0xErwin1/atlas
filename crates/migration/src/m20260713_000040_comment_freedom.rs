@@ -48,6 +48,58 @@ impl MigrationTrait for Migration {
             CREATE UNIQUE INDEX comment_links_attachment_unique
                 ON comment_links (comment_id, target_attachment_id)
                 WHERE target_attachment_id IS NOT NULL;
+
+            CREATE INDEX comment_links_document_reverse_idx
+                ON comment_links (workspace_id, target_document_id, created_at, id)
+                WHERE target_document_id IS NOT NULL;
+            CREATE INDEX comment_links_task_reverse_idx
+                ON comment_links (workspace_id, target_task_id, created_at, id)
+                WHERE target_task_id IS NOT NULL;
+            CREATE INDEX comment_links_attachment_reverse_idx
+                ON comment_links (workspace_id, target_attachment_id, created_at, id)
+                WHERE target_attachment_id IS NOT NULL;
+            CREATE INDEX attachments_comment_owner_idx
+                ON attachments (workspace_id, comment_id)
+                WHERE comment_id IS NOT NULL;
+
+            CREATE TABLE comment_link_events (
+                id UUID PRIMARY KEY,
+                workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+                parent_task_id UUID REFERENCES tasks(id) ON DELETE CASCADE,
+                parent_document_id UUID REFERENCES documents(id) ON DELETE CASCADE,
+                comment_id UUID NOT NULL,
+                event_kind TEXT NOT NULL
+                    CHECK (event_kind IN ('link_added', 'link_removed', 'comment_deleted')),
+                target_document_id UUID,
+                target_task_id UUID,
+                target_attachment_id UUID,
+                actor_type TEXT NOT NULL CHECK (actor_type IN ('user', 'api_key')),
+                actor_id UUID NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                CONSTRAINT comment_link_events_parent_check
+                    CHECK (num_nonnulls(parent_task_id, parent_document_id) = 1),
+                CONSTRAINT comment_link_events_target_check CHECK (
+                    (event_kind IN ('link_added', 'link_removed')
+                        AND num_nonnulls(target_document_id, target_task_id, target_attachment_id) = 1)
+                    OR (event_kind = 'comment_deleted'
+                        AND num_nonnulls(target_document_id, target_task_id, target_attachment_id) = 0)
+                )
+            );
+            CREATE INDEX comment_link_events_task_feed_idx
+                ON comment_link_events (workspace_id, parent_task_id, created_at, id)
+                WHERE parent_task_id IS NOT NULL;
+            CREATE INDEX comment_link_events_document_feed_idx
+                ON comment_link_events (workspace_id, parent_document_id, created_at, id)
+                WHERE parent_document_id IS NOT NULL;
+            CREATE INDEX comment_link_events_document_reverse_idx
+                ON comment_link_events (workspace_id, target_document_id, created_at, id)
+                WHERE target_document_id IS NOT NULL;
+            CREATE INDEX comment_link_events_task_reverse_idx
+                ON comment_link_events (workspace_id, target_task_id, created_at, id)
+                WHERE target_task_id IS NOT NULL;
+            CREATE INDEX comment_link_events_attachment_reverse_idx
+                ON comment_link_events (workspace_id, target_attachment_id, created_at, id)
+                WHERE target_attachment_id IS NOT NULL;
             "#,
         )
         .await
@@ -59,6 +111,7 @@ impl MigrationTrait for Migration {
 
         conn.execute_unprepared(
             r#"
+            DROP TABLE IF EXISTS comment_link_events CASCADE;
             DROP TABLE IF EXISTS comment_links CASCADE;
             DROP TABLE IF EXISTS attachment_write_intents CASCADE;
             ALTER TABLE attachments DROP CONSTRAINT IF EXISTS attachments_owner_check;
