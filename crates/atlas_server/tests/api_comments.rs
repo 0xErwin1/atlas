@@ -19,6 +19,7 @@ use atlas_client::ClientError;
 use atlas_domain::{Actor, WorkspaceCtx, entities::identity::MemberRole};
 use atlas_server::persistence::repos::{MembershipRepo, NewUser, UserRepo};
 use sea_orm::ConnectionTrait;
+use serde_json::Value;
 
 fn project_req(slug: &str, prefix: &str) -> CreateProjectRequest {
     CreateProjectRequest {
@@ -320,6 +321,53 @@ async fn list_comments_oldest_first_with_cursor_walk_has_no_gaps_or_duplicates()
         collected, created_ids,
         "cursor walk must return every comment exactly once, oldest-first, no gaps or duplicates"
     );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn full_feed_is_opt_in_and_default_comment_page_is_unchanged() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _user) =
+        support::login_user_with_workspace(&server, &db, "comment-full-feed").await;
+    let readable_id = seed_task(&client, &ws.slug, "comment-full-feed-proj", "CF").await;
+
+    client
+        .add_comment(
+            &ws.slug,
+            &readable_id,
+            CreateCommentRequest {
+                body: "Comment with no links".to_string(),
+            },
+        )
+        .await
+        .expect("create comment");
+
+    let default_page = client
+        .list_comments(&ws.slug, &readable_id, None, None)
+        .await
+        .expect("default list comments");
+    assert_eq!(default_page.items.len(), 1);
+    assert_eq!(default_page.items[0].body, "Comment with no links");
+
+    let response = reqwest::Client::new()
+        .get(format!(
+            "{}/api/workspaces/{}/tasks/{}/comments?feed=full",
+            server.base_url(),
+            ws.slug,
+            readable_id
+        ))
+        .bearer_auth(client.token().expect("session token"))
+        .send()
+        .await
+        .expect("full feed response");
+
+    assert!(response.status().is_success());
+    let page: Value = response.json().await.expect("full feed JSON");
+    assert_eq!(page["items"][0]["type"], "comment");
+    assert_eq!(page["items"][0]["comment"]["body"], "Comment with no links");
+    assert_eq!(page["items"][0]["links"], serde_json::json!([]));
 
     db.teardown().await;
 }

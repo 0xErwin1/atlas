@@ -38,7 +38,7 @@ impl ProjectionAuthContext {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum ProjectionSubject {
     Document(Uuid),
     Task(Uuid),
