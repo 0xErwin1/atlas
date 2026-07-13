@@ -6,14 +6,13 @@ use std::sync::{
 use async_trait::async_trait;
 use atlas_domain::{
     DomainError,
-    entities::identity::{MemberRole, Workspace},
+    entities::identity::MemberRole,
     ids::{ApiKeyId, DocumentId, ProjectId, UserId, WorkspaceId},
     permissions::{
         Capability, CapabilityAction, CapabilityFamily, ChainSegment, Principal, ResourceChain,
         ResourceRef, ResourceRole, Visibility, VisibilityRole,
     },
 };
-use chrono::Utc;
 use uuid::Uuid;
 
 use super::batch_authorization::{
@@ -45,10 +44,10 @@ async fn batch_authorization_resolves_direct_and_inherited_grants_with_two_sourc
         },
         family: SubjectFamily::Documents,
     }]);
-    source.set_principal_facts(PrincipalFacts {
-        principal_grants: vec![(ResourceRef::Project(project), ResourceRole::Viewer)],
-        ..PrincipalFacts::default()
-    });
+    source.set_principal_facts(PrincipalFacts::active_user(
+        Some(MemberRole::Member),
+        vec![(ResourceRef::Project(project), ResourceRole::Viewer)],
+    ));
 
     let service = BatchAuthorizationService::new(source.clone());
     let decisions = service
@@ -145,19 +144,15 @@ async fn batch_authorization_rejects_duplicate_subject_ordinals() {
 async fn batch_authorization_caps_api_keys_and_requires_the_family_read_scope() {
     let document = DocumentId(Uuid::now_v7());
     let source = TestSource::with_facts(vec![workspace_fact(0, SubjectFamily::Documents)]);
-    source.set_principal_facts(PrincipalFacts {
-        principal_grants: vec![(ResourceRef::Workspace, ResourceRole::Admin)],
-        creator_membership: Some(MemberRole::Member),
-        creator_grants: vec![(ResourceRef::Workspace, ResourceRole::Admin)],
-    });
+    source.set_principal_facts(PrincipalFacts::ApiKey(api_key_facts(vec![Capability {
+        family: CapabilityFamily::Docs,
+        action: CapabilityAction::Read,
+    }])));
     let service = BatchAuthorizationService::new(source);
 
     let decisions = service
         .authorize(
-            &api_key_context(vec![Capability {
-                family: CapabilityFamily::Docs,
-                action: CapabilityAction::Read,
-            }]),
+            &api_key_context(),
             &[ProjectionSubject::Document(document.0)],
         )
         .await
@@ -167,15 +162,11 @@ async fn batch_authorization_caps_api_keys_and_requires_the_family_read_scope() 
 
     let missing_scope_source =
         TestSource::with_facts(vec![workspace_fact(0, SubjectFamily::Documents)]);
-    missing_scope_source.set_principal_facts(PrincipalFacts {
-        principal_grants: vec![(ResourceRef::Workspace, ResourceRole::Admin)],
-        creator_membership: Some(MemberRole::Member),
-        creator_grants: vec![(ResourceRef::Workspace, ResourceRole::Admin)],
-    });
+    missing_scope_source.set_principal_facts(PrincipalFacts::ApiKey(api_key_facts(Vec::new())));
     let missing_scope = BatchAuthorizationService::new(missing_scope_source);
     let decisions = missing_scope
         .authorize(
-            &api_key_context(Vec::new()),
+            &api_key_context(),
             &[ProjectionSubject::Document(document.0)],
         )
         .await
@@ -202,6 +193,122 @@ async fn batch_authorization_uses_the_same_two_source_calls_for_two_hundred_subj
     assert_eq!(source.principal_calls.load(Ordering::Relaxed), 1);
 }
 
+#[tokio::test]
+async fn batch_authorization_uses_fresh_user_facts_instead_of_request_membership() {
+    let document = DocumentId(Uuid::now_v7());
+    let source = TestSource::with_facts(vec![workspace_fact(0, SubjectFamily::Documents)]);
+    source.set_principal_facts(PrincipalFacts::active_user(
+        Some(MemberRole::Member),
+        vec![(ResourceRef::Workspace, ResourceRole::Viewer)],
+    ));
+    let service = BatchAuthorizationService::new(source);
+
+    let decisions = service
+        .authorize(
+            &ProjectionAuthContext::from_validated(
+                workspace_id(),
+                Principal::User(UserId(Uuid::nil())),
+            ),
+            &[ProjectionSubject::Document(document.0)],
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(decisions, vec![true]);
+}
+
+#[tokio::test]
+async fn batch_authorization_denies_disabled_fresh_user_facts() {
+    let document = DocumentId(Uuid::now_v7());
+    let source = TestSource::with_facts(vec![workspace_fact(0, SubjectFamily::Documents)]);
+    source.set_principal_facts(PrincipalFacts::User(
+        super::batch_authorization::UserFacts {
+            user_id: UserId(Uuid::nil()),
+            is_active: false,
+            effective_membership: Some(MemberRole::Admin),
+            is_root_admin: false,
+            grants: vec![(ResourceRef::Workspace, ResourceRole::Admin)],
+        },
+    ));
+
+    let decisions = BatchAuthorizationService::new(source)
+        .authorize(
+            &ProjectionAuthContext::from_validated(
+                workspace_id(),
+                Principal::User(UserId(Uuid::nil())),
+            ),
+            &[ProjectionSubject::Document(document.0)],
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(decisions, vec![false]);
+}
+
+#[tokio::test]
+async fn batch_authorization_uses_fresh_root_admin_facts_without_membership() {
+    let document = DocumentId(Uuid::now_v7());
+    let source = TestSource::with_facts(vec![workspace_fact(0, SubjectFamily::Documents)]);
+    source.set_principal_facts(PrincipalFacts::User(
+        super::batch_authorization::UserFacts {
+            user_id: UserId(Uuid::nil()),
+            is_active: true,
+            effective_membership: None,
+            is_root_admin: true,
+            grants: Vec::new(),
+        },
+    ));
+
+    let decisions = BatchAuthorizationService::new(source)
+        .authorize(&user_context(), &[ProjectionSubject::Document(document.0)])
+        .await
+        .unwrap();
+
+    assert_eq!(decisions, vec![true]);
+}
+
+#[tokio::test]
+async fn batch_authorization_denies_revoked_fresh_api_key_facts() {
+    let document = DocumentId(Uuid::now_v7());
+    let source = TestSource::with_facts(vec![workspace_fact(0, SubjectFamily::Documents)]);
+    let mut facts = api_key_facts(vec![Capability {
+        family: CapabilityFamily::Docs,
+        action: CapabilityAction::Read,
+    }]);
+    facts.is_revoked = true;
+    source.set_principal_facts(PrincipalFacts::ApiKey(facts));
+
+    let decisions = BatchAuthorizationService::new(source)
+        .authorize(
+            &api_key_context(),
+            &[ProjectionSubject::Document(document.0)],
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(decisions, vec![false]);
+}
+
+#[tokio::test]
+async fn batch_authorization_rejects_conflicting_fresh_grants() {
+    let document = DocumentId(Uuid::now_v7());
+    let source = TestSource::with_facts(vec![workspace_fact(0, SubjectFamily::Documents)]);
+    source.set_principal_facts(PrincipalFacts::active_user(
+        Some(MemberRole::Member),
+        vec![
+            (ResourceRef::Workspace, ResourceRole::Viewer),
+            (ResourceRef::Workspace, ResourceRole::Editor),
+        ],
+    ));
+
+    let error = BatchAuthorizationService::new(source)
+        .authorize(&user_context(), &[ProjectionSubject::Document(document.0)])
+        .await
+        .unwrap_err();
+
+    assert!(matches!(error, DomainError::Internal { .. }));
+}
+
 #[derive(Clone)]
 struct TestSource {
     facts: Arc<std::sync::Mutex<Vec<SubjectFact>>>,
@@ -215,7 +322,10 @@ impl TestSource {
     fn with_facts(facts: Vec<SubjectFact>) -> Self {
         Self {
             facts: Arc::new(std::sync::Mutex::new(facts)),
-            principal_facts: Arc::new(std::sync::Mutex::new(PrincipalFacts::default())),
+            principal_facts: Arc::new(std::sync::Mutex::new(PrincipalFacts::active_user(
+                Some(MemberRole::Member),
+                Vec::new(),
+            ))),
             failure: false,
             subject_calls: Arc::new(AtomicUsize::new(0)),
             principal_calls: Arc::new(AtomicUsize::new(0)),
@@ -262,36 +372,31 @@ impl BatchAuthorizationSource for TestSource {
 }
 
 fn user_context() -> ProjectionAuthContext {
-    ProjectionAuthContext::from_validated(
-        workspace(),
-        Principal::User(UserId(Uuid::now_v7())),
-        Some(MemberRole::Member),
-        None,
-    )
+    ProjectionAuthContext::from_validated(workspace_id(), Principal::User(UserId(Uuid::nil())))
 }
 
-fn api_key_context(scopes: Vec<Capability>) -> ProjectionAuthContext {
-    let key_id = ApiKeyId(Uuid::now_v7());
-    let creator_id = UserId(Uuid::now_v7());
-    ProjectionAuthContext::from_validated(
-        workspace(),
-        Principal::ApiKey(key_id),
-        None,
-        Some(atlas_domain::entities::identity::ApiKey {
-            id: key_id,
-            workspace_id: None,
-            created_by_user_id: creator_id,
-            name: "key".into(),
-            token_hash: "hash".into(),
-            type_: Default::default(),
-            expires_at: None,
-            last_used_at: None,
-            revoked_at: None,
-            created_at: Utc::now(),
-            is_global: false,
-            scopes,
-        }),
-    )
+fn api_key_context() -> ProjectionAuthContext {
+    let key_id = ApiKeyId(Uuid::from_u128(1));
+    ProjectionAuthContext::from_validated(workspace_id(), Principal::ApiKey(key_id))
+}
+
+fn api_key_facts(scopes: Vec<Capability>) -> super::batch_authorization::ApiKeyFacts {
+    super::batch_authorization::ApiKeyFacts {
+        key_id: ApiKeyId(Uuid::from_u128(1)),
+        is_active: true,
+        is_revoked: false,
+        is_expired: false,
+        is_global: false,
+        scopes,
+        grants: vec![(ResourceRef::Workspace, ResourceRole::Admin)],
+        creator: super::batch_authorization::UserFacts {
+            user_id: UserId(Uuid::from_u128(2)),
+            is_active: true,
+            effective_membership: Some(MemberRole::Member),
+            is_root_admin: false,
+            grants: vec![(ResourceRef::Workspace, ResourceRole::Admin)],
+        },
+    }
 }
 
 fn workspace_fact(ordinal: usize, family: SubjectFamily) -> SubjectFact {
@@ -307,12 +412,6 @@ fn workspace_fact(ordinal: usize, family: SubjectFamily) -> SubjectFact {
     }
 }
 
-fn workspace() -> Workspace {
-    Workspace {
-        id: WorkspaceId(Uuid::now_v7()),
-        name: "workspace".into(),
-        slug: "workspace".into(),
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
-    }
+fn workspace_id() -> WorkspaceId {
+    WorkspaceId(Uuid::from_u128(3))
 }
