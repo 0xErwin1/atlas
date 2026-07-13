@@ -424,7 +424,7 @@ describe('useLiveUpdates', () => {
       scope.stop();
     });
 
-    it('fires onResync only (no reopen) on window focus when the stream is healthy/OPEN', () => {
+    it('does not resync or reopen on foreground signals when the stream is healthy/OPEN', () => {
       const ws = ref('acme');
       const onResync = vi.fn();
       const scope = effectScope();
@@ -432,11 +432,13 @@ describe('useLiveUpdates', () => {
 
       FakeEventSource.instances[0]?.emitOpen();
 
+      document.dispatchEvent(new Event('visibilitychange'));
       window.dispatchEvent(new Event('focus'));
+      window.dispatchEvent(new Event('online'));
       vi.advanceTimersByTime(300);
 
       expect(FakeEventSource.instances).toHaveLength(1);
-      expect(onResync).toHaveBeenCalledTimes(1);
+      expect(onResync).not.toHaveBeenCalled();
 
       scope.stop();
     });
