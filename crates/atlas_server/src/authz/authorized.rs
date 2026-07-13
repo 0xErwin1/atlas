@@ -1124,6 +1124,10 @@ async fn resolve_agent_effective_role_with_key(
     workspace: &Workspace,
     chain: &ResourceChain,
 ) -> Result<Option<ResourceRole>, ApiError> {
+    if !user_is_active(db, key.created_by_user_id).await? {
+        return Ok(None);
+    }
+
     let creator_membership =
         effective_membership_for_user(db, key.created_by_user_id, workspace).await?;
     let creator_principal = Principal::User(key.created_by_user_id);
@@ -1139,6 +1143,21 @@ async fn resolve_agent_effective_role_with_key(
     };
 
     Ok(base.map(|r| r.min(ResourceRole::Editor)))
+}
+
+async fn user_is_active(
+    db: &sea_orm::DatabaseConnection,
+    user_id: UserId,
+) -> Result<bool, ApiError> {
+    let user_repo = PgUserRepo { conn: db.clone() };
+    let user = user_repo
+        .find_by_id(user_id)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?;
+
+    Ok(user.is_some_and(|user| user.disabled_at.is_none()))
 }
 
 /// The effective workspace membership a user would resolve with: `Admin` for a
@@ -1198,6 +1217,21 @@ pub async fn api_key_can_access_workspace(
     key_id: ApiKeyId,
     workspace: &Workspace,
 ) -> Result<bool, ApiError> {
+    let key_repo = PgApiKeyRepo { conn: db.clone() };
+    let Some(key) = key_repo
+        .get_by_id(key_id)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?
+    else {
+        return Ok(false);
+    };
+
+    if !user_is_active(db, key.created_by_user_id).await? {
+        return Ok(false);
+    }
+
     let grant_repo = PgPermissionGrantRepo { conn: db.clone() };
     let has_grant = grant_repo
         .principal_has_any_grant_in_workspace(workspace.id, None, Some(key_id))
@@ -1209,17 +1243,6 @@ pub async fn api_key_can_access_workspace(
     if has_grant {
         return Ok(true);
     }
-
-    let key_repo = PgApiKeyRepo { conn: db.clone() };
-    let Some(key) = key_repo
-        .get_by_id(key_id)
-        .await
-        .map_err(|e| ApiError::Internal {
-            message: e.to_string(),
-        })?
-    else {
-        return Ok(false);
-    };
 
     if !key.is_global {
         return Ok(false);

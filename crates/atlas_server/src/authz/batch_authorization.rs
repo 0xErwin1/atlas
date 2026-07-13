@@ -120,6 +120,7 @@ where
         }
 
         let facts = self.source.load_subject_facts(context, subjects).await?;
+        validate_subject_facts(&facts, subjects)?;
         let resources = distinct_resources(&facts);
         let principal_facts = self
             .source
@@ -128,23 +129,71 @@ where
 
         let mut decisions = vec![false; subjects.len()];
         for fact in facts {
-            if fact.ordinal >= decisions.len() {
-                return Err(DomainError::Internal {
-                    message: "batch authorization source returned an invalid ordinal".into(),
-                });
-            }
-
-            let Some(decision) = decisions.get_mut(fact.ordinal) else {
-                return Err(DomainError::Internal {
-                    message: "batch authorization source returned an invalid ordinal".into(),
-                });
-            };
-
+            let decision =
+                decisions
+                    .get_mut(fact.ordinal)
+                    .ok_or_else(|| DomainError::Internal {
+                        message: "batch authorization source returned an invalid ordinal".into(),
+                    })?;
             *decision = authorize_fact(context, &principal_facts, &fact);
         }
 
         Ok(decisions)
     }
+}
+
+fn validate_subject_facts(
+    facts: &[SubjectFact],
+    subjects: &[ProjectionSubject],
+) -> Result<(), DomainError> {
+    let mut seen_ordinals = vec![false; subjects.len()];
+
+    for fact in facts {
+        let Some(subject) = subjects.get(fact.ordinal) else {
+            return Err(DomainError::Internal {
+                message: "batch authorization source returned an invalid ordinal".into(),
+            });
+        };
+
+        let seen = seen_ordinals
+            .get_mut(fact.ordinal)
+            .ok_or_else(|| DomainError::Internal {
+                message: "batch authorization source returned an invalid ordinal".into(),
+            })?;
+
+        if *seen {
+            return Err(DomainError::Internal {
+                message: "batch authorization source returned duplicate subject facts".into(),
+            });
+        }
+
+        if !subject_matches_family(*subject, fact.family) {
+            return Err(DomainError::Internal {
+                message: "batch authorization source returned facts for the wrong subject family"
+                    .into(),
+            });
+        }
+
+        *seen = true;
+    }
+
+    Ok(())
+}
+
+fn subject_matches_family(subject: ProjectionSubject, family: SubjectFamily) -> bool {
+    matches!(
+        (subject, family),
+        (ProjectionSubject::Document(_), SubjectFamily::Documents)
+            | (ProjectionSubject::Task(_), SubjectFamily::Tasks)
+            | (
+                ProjectionSubject::Attachment(_),
+                SubjectFamily::Documents | SubjectFamily::Tasks
+            )
+            | (
+                ProjectionSubject::SourceComment(_),
+                SubjectFamily::Documents | SubjectFamily::Tasks
+            )
+    )
 }
 
 fn distinct_resources(facts: &[SubjectFact]) -> Vec<ResourceRef> {
