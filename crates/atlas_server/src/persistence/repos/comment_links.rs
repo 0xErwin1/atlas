@@ -105,6 +105,31 @@ impl PgCommentLinkRepo {
     ) -> Result<(), DomainError> {
         Self::replace_for_comment_in(conn, ctx, comment_id, Vec::new()).await
     }
+
+    pub async fn classify_candidates_in(
+        conn: &impl ConnectionTrait,
+        ctx: &WorkspaceCtx,
+        candidates: Vec<CommentLinkCandidate>,
+    ) -> Result<Vec<CommentLinkTarget>, DomainError> {
+        classify_candidates(conn, ctx, candidates).await
+    }
+
+    pub async fn record_comment_deleted_in(
+        conn: &impl ConnectionTrait,
+        ctx: &WorkspaceCtx,
+        comment_id: CommentId,
+    ) -> Result<(), DomainError> {
+        let comment = scoped_comment(conn, ctx, comment_id).await?;
+        insert_event(
+            conn,
+            ctx,
+            owner_from_comment(&comment)?,
+            comment_id,
+            CommentLinkEventKind::CommentDeleted,
+            None,
+        )
+        .await
+    }
 }
 
 #[async_trait]
@@ -199,48 +224,89 @@ impl atlas_domain::ports::comments::CommentLinkTargetRepo for PgCommentLinkRepo 
         ctx: &WorkspaceCtx,
         candidates: Vec<CommentLinkCandidate>,
     ) -> Result<Vec<CommentLinkTarget>, DomainError> {
-        let mut targets = Vec::new();
-        for candidate in candidates {
-            match candidate {
-                CommentLinkCandidate::Uuid(id) => {
-                    if crate::persistence::entities::documents::document::Entity::find_by_id(id)
-                        .filter(
-                            crate::persistence::entities::documents::document::Column::WorkspaceId
-                                .eq(ctx.workspace_id.0),
-                        )
-                        .one(&self.conn)
-                        .await
-                        .map_err(db_err)?
-                        .is_some()
-                    {
-                        targets.push(CommentLinkTarget::Document(DocumentId(id)));
-                    } else if crate::persistence::entities::boards_tasks::task::Entity::find_by_id(
-                        id,
+        classify_candidates(&self.conn, ctx, candidates).await
+    }
+}
+
+async fn classify_candidates(
+    conn: &impl ConnectionTrait,
+    ctx: &WorkspaceCtx,
+    candidates: Vec<CommentLinkCandidate>,
+) -> Result<Vec<CommentLinkTarget>, DomainError> {
+    let mut targets = Vec::new();
+
+    for candidate in candidates {
+        match candidate {
+            CommentLinkCandidate::Uuid(id) => {
+                if crate::persistence::entities::documents::document::Entity::find_by_id(id)
+                    .filter(
+                        crate::persistence::entities::documents::document::Column::WorkspaceId
+                            .eq(ctx.workspace_id.0),
                     )
+                    .filter(
+                        crate::persistence::entities::documents::document::Column::DeletedAt
+                            .is_null(),
+                    )
+                    .one(conn)
+                    .await
+                    .map_err(db_err)?
+                    .is_some()
+                {
+                    targets.push(CommentLinkTarget::Document(DocumentId(id)));
+                } else if crate::persistence::entities::boards_tasks::task::Entity::find_by_id(id)
                     .filter(
                         crate::persistence::entities::boards_tasks::task::Column::WorkspaceId
                             .eq(ctx.workspace_id.0),
                     )
-                    .one(&self.conn)
+                    .filter(
+                        crate::persistence::entities::boards_tasks::task::Column::DeletedAt
+                            .is_null(),
+                    )
+                    .one(conn)
                     .await
                     .map_err(db_err)?
                     .is_some()
-                    {
-                        targets.push(CommentLinkTarget::Task(TaskId(id)));
-                    }
+                {
+                    targets.push(CommentLinkTarget::Task(TaskId(id)));
                 }
-                CommentLinkCandidate::AttachmentUrl(url) => {
-                    let valid_owner = match url.owner {
-                        CommentAttachmentUrlOwner::Task { .. }
-                        | CommentAttachmentUrlOwner::Document { .. } => true,
-                    };
-                    if valid_owner && crate::persistence::entities::documents::attachment::Entity::find_by_id(url.attachment_id).filter(crate::persistence::entities::documents::attachment::Column::WorkspaceId.eq(ctx.workspace_id.0)).filter(crate::persistence::entities::documents::attachment::Column::CommentId.eq(url.comment_id)).one(&self.conn).await.map_err(db_err)?.is_some() { targets.push(CommentLinkTarget::Attachment(atlas_domain::ids::AttachmentId(url.attachment_id))); }
+            }
+            CommentLinkCandidate::AttachmentUrl(url) => {
+                let valid_owner = match url.owner {
+                    CommentAttachmentUrlOwner::Task { .. }
+                    | CommentAttachmentUrlOwner::Document { .. } => true,
+                };
+
+                if valid_owner
+                    && crate::persistence::entities::documents::attachment::Entity::find_by_id(
+                        url.attachment_id,
+                    )
+                    .filter(
+                        crate::persistence::entities::documents::attachment::Column::WorkspaceId
+                            .eq(ctx.workspace_id.0),
+                    )
+                    .filter(
+                        crate::persistence::entities::documents::attachment::Column::CommentId
+                            .eq(url.comment_id),
+                    )
+                    .filter(
+                        crate::persistence::entities::documents::attachment::Column::DeletedAt
+                            .is_null(),
+                    )
+                    .one(conn)
+                    .await
+                    .map_err(db_err)?
+                    .is_some()
+                {
+                    targets.push(CommentLinkTarget::Attachment(
+                        atlas_domain::ids::AttachmentId(url.attachment_id),
+                    ));
                 }
             }
         }
-        targets.dedup();
-        Ok(targets)
     }
+
+    targets.dedup();
+    Ok(targets)
 }
 
 async fn scoped_comment(
