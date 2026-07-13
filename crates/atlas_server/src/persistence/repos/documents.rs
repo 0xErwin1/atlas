@@ -2,8 +2,9 @@ use async_trait::async_trait;
 use atlas_domain::{
     Actor, DomainError, RevisionConflict, WorkspaceCtx,
     entities::documents::{
-        Attachment, AttachmentOwner, Document, DocumentLink, DocumentSummary, ExtractedLink,
-        NewAttachment, NewDocument, RevisionMeta, TaskDescriptionLinks,
+        Attachment, AttachmentOwner, AttachmentWriteIntent, Document, DocumentLink,
+        DocumentSummary, ExtractedLink, NewAttachment, NewDocument, RevisionMeta,
+        TaskDescriptionLinks,
     },
     ids::{AttachmentId, DocumentId, FolderId, ProjectId, RevisionId, TaskId, WorkspaceId},
     permissions::Principal,
@@ -19,11 +20,13 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::persistence::entities::documents::{
-    attachment, attachment_from, document, document_from, document_link, document_link_from,
-    document_revision, revision_meta_from,
+    attachment, attachment_from, attachment_write_intent, attachment_write_intent_from, document,
+    document_from, document_link, document_link_from, document_revision, revision_meta_from,
 };
 
-pub use atlas_domain::ports::documents::{AttachmentRepo, DocumentLinkRepo, DocumentRepo};
+pub use atlas_domain::ports::documents::{
+    AttachmentRepo, AttachmentWriteIntentRepo, DocumentLinkRepo, DocumentRepo,
+};
 
 pub struct PgDocumentRepo {
     pub conn: DatabaseConnection,
@@ -956,6 +959,7 @@ impl AttachmentRepo for PgAttachmentRepo {
             workspace_id: Set(ctx.workspace_id.0),
             document_id: Set(new.document_id.map(|id| id.0)),
             task_id: Set(new.task_id.map(|id| id.0)),
+            comment_id: Set(new.comment_id.map(|id| id.0)),
             file_name: Set(new.file_name),
             content_type: Set(new.content_type),
             size_bytes: Set(new.size_bytes),
@@ -1007,6 +1011,11 @@ impl AttachmentRepo for PgAttachmentRepo {
                 .all(&self.conn)
                 .await
                 .map_err(db_err)?,
+            AttachmentOwner::Comment(comment_id) => q
+                .filter(attachment::Column::CommentId.eq(comment_id.0))
+                .all(&self.conn)
+                .await
+                .map_err(db_err)?,
         };
 
         Ok(rows.into_iter().map(attachment_from).collect())
@@ -1029,6 +1038,46 @@ impl AttachmentRepo for PgAttachmentRepo {
         active.updated_at = Set(Utc::now());
         active.update(&self.conn).await.map_err(db_err)?;
         Ok(())
+    }
+}
+
+pub struct PgAttachmentWriteIntentRepo {
+    pub conn: DatabaseConnection,
+}
+
+#[async_trait]
+impl AttachmentWriteIntentRepo for PgAttachmentWriteIntentRepo {
+    async fn create(&self, digest: String) -> Result<AttachmentWriteIntent, DomainError> {
+        attachment_write_intent::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            digest: Set(digest),
+            created_at: Set(Utc::now()),
+        }
+        .insert(&self.conn)
+        .await
+        .map(attachment_write_intent_from)
+        .map_err(db_err)
+    }
+
+    async fn remove(&self, digest: &str) -> Result<(), DomainError> {
+        attachment_write_intent::Entity::delete_many()
+            .filter(attachment_write_intent::Column::Digest.eq(digest))
+            .exec(&self.conn)
+            .await
+            .map(|_| ())
+            .map_err(db_err)
+    }
+
+    async fn list_stale(
+        &self,
+        older_than: DateTime<Utc>,
+    ) -> Result<Vec<AttachmentWriteIntent>, DomainError> {
+        attachment_write_intent::Entity::find()
+            .filter(attachment_write_intent::Column::CreatedAt.lt(older_than))
+            .all(&self.conn)
+            .await
+            .map(|rows| rows.into_iter().map(attachment_write_intent_from).collect())
+            .map_err(db_err)
     }
 }
 

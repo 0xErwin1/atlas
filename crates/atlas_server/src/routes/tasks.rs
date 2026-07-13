@@ -1755,6 +1755,7 @@ pub(crate) async fn upload_attachment(
             NewAttachment {
                 document_id: None,
                 task_id: Some(auth.resource.0.id),
+                comment_id: None,
                 file_name,
                 content_type,
                 size_bytes: data.len() as i64,

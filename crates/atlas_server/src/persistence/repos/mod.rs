@@ -48,9 +48,9 @@ pub use boards_tasks::{
 };
 pub use comments::{CommentRepo, PgCommentRepo};
 pub use documents::{
-    AttachmentRepo, DocumentLinkRepo, DocumentRepo, PgAttachmentRepo, PgDocumentLinkRepo,
-    PgDocumentRepo, create_in as doc_create_in, move_to_in as doc_move_to_in,
-    rename_in as doc_rename_in, soft_delete_in as doc_soft_delete_in,
+    AttachmentRepo, AttachmentWriteIntentRepo, DocumentLinkRepo, DocumentRepo, PgAttachmentRepo,
+    PgAttachmentWriteIntentRepo, PgDocumentLinkRepo, PgDocumentRepo, create_in as doc_create_in,
+    move_to_in as doc_move_to_in, rename_in as doc_rename_in, soft_delete_in as doc_soft_delete_in,
     update_content_in as doc_update_content_in,
 };
 pub use s3_attachment_store::{S3AttachmentStore, S3Config};
