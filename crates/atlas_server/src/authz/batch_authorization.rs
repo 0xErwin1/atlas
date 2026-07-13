@@ -7,7 +7,7 @@ use atlas_domain::{
     ids::{ApiKeyId, UserId, WorkspaceId},
     permissions::{
         Capability, CapabilityAction, CapabilityFamily, Principal, ResolutionInput, ResourceChain,
-        ResourceRef, ResourceRole,
+        ResourceRef, ResourceRole, Visibility, VisibilityRole,
     },
 };
 use sea_orm::{DatabaseBackend, DatabaseConnection, FromQueryResult, Statement};
@@ -131,6 +131,31 @@ struct PrincipalFactsRow {
     facts: serde_json::Value,
 }
 
+#[derive(FromQueryResult)]
+struct SubjectFactsRow {
+    fact: serde_json::Value,
+}
+
+#[derive(Deserialize)]
+struct StoredSubjectFact {
+    ordinal: usize,
+    family: String,
+    chain: Vec<StoredChainSegment>,
+}
+
+#[derive(Deserialize)]
+struct StoredChainSegment {
+    kind: String,
+    id: Option<Uuid>,
+    visibility: Option<StoredVisibility>,
+}
+
+#[derive(Deserialize)]
+struct StoredVisibility {
+    visibility: String,
+    role: Option<String>,
+}
+
 #[derive(Deserialize)]
 struct StoredGrant {
     resource: StoredResource,
@@ -175,12 +200,30 @@ enum StoredPrincipalFacts {
 impl BatchAuthorizationSource for PgBatchAuthorizationSource {
     async fn load_subject_facts(
         &self,
-        _context: &ProjectionAuthContext,
-        _subjects: &[ProjectionSubject],
+        context: &ProjectionAuthContext,
+        subjects: &[ProjectionSubject],
     ) -> Result<Vec<SubjectFact>, DomainError> {
-        Err(DomainError::Internal {
-            message: "batch subject facts are not implemented".into(),
-        })
+        let rows = SubjectFactsRow::find_by_statement(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            QUERY_A_SUBJECT_FACTS,
+            [
+                context.workspace_id.0.into(),
+                subjects_json(subjects).into(),
+            ],
+        ))
+        .all(&self.conn)
+        .await
+        .map_err(db_error)?;
+
+        rows.into_iter()
+            .map(|row| {
+                serde_json::from_value(row.fact)
+                    .map_err(|error| DomainError::Internal {
+                        message: format!("invalid batch subject facts payload: {error}"),
+                    })
+                    .and_then(decode_subject_fact)
+            })
+            .collect()
     }
 
     async fn load_principal_facts(
@@ -227,7 +270,160 @@ impl BatchAuthorizationSource for PgBatchAuthorizationSource {
     }
 }
 
+const QUERY_A_SUBJECT_FACTS: &str = r#"
+/* atlas_batch_subject_facts */
+WITH RECURSIVE requested AS (
+    SELECT ordinal, kind, id
+    FROM jsonb_to_recordset($2::jsonb) AS subjects(ordinal bigint, kind text, id uuid)
+), subject_targets AS (
+    SELECT requested.ordinal, 'documents'::text AS family, documents.id AS document_id, NULL::uuid AS task_id
+    FROM requested
+    JOIN documents ON requested.kind = 'document'
+        AND documents.id = requested.id
+        AND documents.workspace_id = $1::uuid
+        AND documents.deleted_at IS NULL
+    UNION ALL
+    SELECT requested.ordinal, 'tasks'::text, NULL, tasks.id
+    FROM requested
+    JOIN tasks ON requested.kind = 'task'
+        AND tasks.id = requested.id
+        AND tasks.workspace_id = $1::uuid
+        AND tasks.deleted_at IS NULL
+    UNION ALL
+    SELECT requested.ordinal, 'documents'::text, documents.id, NULL
+    FROM requested
+    JOIN attachments ON requested.kind = 'attachment'
+        AND attachments.id = requested.id
+        AND attachments.workspace_id = $1::uuid
+        AND attachments.deleted_at IS NULL
+        AND num_nonnulls(attachments.document_id, attachments.task_id, attachments.comment_id) = 1
+    JOIN documents ON documents.id = attachments.document_id
+        AND documents.workspace_id = $1::uuid
+        AND documents.deleted_at IS NULL
+    UNION ALL
+    SELECT requested.ordinal, 'tasks'::text, NULL, tasks.id
+    FROM requested
+    JOIN attachments ON requested.kind = 'attachment'
+        AND attachments.id = requested.id
+        AND attachments.workspace_id = $1::uuid
+        AND attachments.deleted_at IS NULL
+        AND num_nonnulls(attachments.document_id, attachments.task_id, attachments.comment_id) = 1
+    JOIN tasks ON tasks.id = attachments.task_id
+        AND tasks.workspace_id = $1::uuid
+        AND tasks.deleted_at IS NULL
+    UNION ALL
+    SELECT requested.ordinal, 'documents'::text, documents.id, NULL
+    FROM requested
+    JOIN attachments ON requested.kind = 'attachment'
+        AND attachments.id = requested.id
+        AND attachments.workspace_id = $1::uuid
+        AND attachments.deleted_at IS NULL
+        AND num_nonnulls(attachments.document_id, attachments.task_id, attachments.comment_id) = 1
+    JOIN comments ON comments.id = attachments.comment_id
+        AND comments.workspace_id = $1::uuid
+        AND comments.deleted_at IS NULL
+        AND num_nonnulls(comments.document_id, comments.task_id) = 1
+    JOIN documents ON documents.id = comments.document_id
+        AND documents.workspace_id = $1::uuid
+        AND documents.deleted_at IS NULL
+    UNION ALL
+    SELECT requested.ordinal, 'tasks'::text, NULL, tasks.id
+    FROM requested
+    JOIN attachments ON requested.kind = 'attachment'
+        AND attachments.id = requested.id
+        AND attachments.workspace_id = $1::uuid
+        AND attachments.deleted_at IS NULL
+        AND num_nonnulls(attachments.document_id, attachments.task_id, attachments.comment_id) = 1
+    JOIN comments ON comments.id = attachments.comment_id
+        AND comments.workspace_id = $1::uuid
+        AND comments.deleted_at IS NULL
+        AND num_nonnulls(comments.document_id, comments.task_id) = 1
+    JOIN tasks ON tasks.id = comments.task_id
+        AND tasks.workspace_id = $1::uuid
+        AND tasks.deleted_at IS NULL
+    UNION ALL
+    SELECT requested.ordinal, 'documents'::text, documents.id, NULL
+    FROM requested
+    JOIN comments ON requested.kind = 'source_comment'
+        AND comments.id = requested.id
+        AND comments.workspace_id = $1::uuid
+        AND comments.deleted_at IS NULL
+        AND num_nonnulls(comments.document_id, comments.task_id) = 1
+    JOIN documents ON documents.id = comments.document_id
+        AND documents.workspace_id = $1::uuid
+        AND documents.deleted_at IS NULL
+    UNION ALL
+    SELECT requested.ordinal, 'tasks'::text, NULL, tasks.id
+    FROM requested
+    JOIN comments ON requested.kind = 'source_comment'
+        AND comments.id = requested.id
+        AND comments.workspace_id = $1::uuid
+        AND comments.deleted_at IS NULL
+        AND num_nonnulls(comments.document_id, comments.task_id) = 1
+    JOIN tasks ON tasks.id = comments.task_id
+        AND tasks.workspace_id = $1::uuid
+        AND tasks.deleted_at IS NULL
+), folder_ancestry AS (
+    SELECT subject_targets.ordinal, folders.id, folders.parent_folder_id, folders.project_id, 0 AS depth
+    FROM subject_targets
+    JOIN documents ON documents.id = subject_targets.document_id
+    JOIN folders ON folders.id = documents.folder_id
+        AND folders.workspace_id = $1::uuid
+        AND folders.deleted_at IS NULL
+    UNION ALL
+    SELECT folder_ancestry.ordinal, folders.id, folders.parent_folder_id, folders.project_id,
+           folder_ancestry.depth + 1
+    FROM folder_ancestry
+    JOIN folders ON folders.id = folder_ancestry.parent_folder_id
+        AND folders.workspace_id = $1::uuid
+        AND folders.deleted_at IS NULL
+    WHERE folder_ancestry.depth < 31
+), document_chains AS (
+    SELECT subject_targets.ordinal,
+           jsonb_build_array(jsonb_build_object('kind', 'document', 'id', documents.id, 'visibility', NULL))
+           || COALESCE(folder_rows.folders, '[]'::jsonb)
+           || CASE WHEN projects.id IS NULL THEN '[]'::jsonb ELSE jsonb_build_array(jsonb_build_object(
+               'kind', 'project', 'id', projects.id,
+               'visibility', jsonb_build_object('visibility', projects.visibility, 'role', projects.visibility_role)
+           )) END
+           || jsonb_build_array(jsonb_build_object('kind', 'workspace', 'id', NULL, 'visibility', NULL)) AS chain
+    FROM subject_targets
+    JOIN documents ON documents.id = subject_targets.document_id
+    LEFT JOIN LATERAL (
+        SELECT jsonb_agg(jsonb_build_object('kind', 'folder', 'id', id, 'visibility', NULL) ORDER BY depth) AS folders,
+               (array_agg(project_id ORDER BY depth DESC))[1] AS inherited_project_id
+        FROM folder_ancestry
+        WHERE folder_ancestry.ordinal = subject_targets.ordinal
+    ) folder_rows ON true
+    LEFT JOIN projects ON projects.id = COALESCE(documents.project_id, folder_rows.inherited_project_id)
+        AND projects.workspace_id = $1::uuid
+        AND projects.deleted_at IS NULL
+    WHERE subject_targets.document_id IS NOT NULL
+), task_chains AS (
+    SELECT subject_targets.ordinal,
+           jsonb_build_array(jsonb_build_object('kind', 'board', 'id', tasks.board_id, 'visibility', NULL))
+           || CASE WHEN projects.id IS NULL THEN '[]'::jsonb ELSE jsonb_build_array(jsonb_build_object(
+               'kind', 'project', 'id', projects.id,
+               'visibility', jsonb_build_object('visibility', projects.visibility, 'role', projects.visibility_role)
+           )) END
+           || jsonb_build_array(jsonb_build_object('kind', 'workspace', 'id', NULL, 'visibility', NULL)) AS chain
+    FROM subject_targets
+    JOIN tasks ON tasks.id = subject_targets.task_id
+    LEFT JOIN projects ON projects.id = tasks.project_id
+        AND projects.workspace_id = $1::uuid
+        AND projects.deleted_at IS NULL
+    WHERE subject_targets.task_id IS NOT NULL
+)
+SELECT jsonb_build_object('ordinal', subject_targets.ordinal, 'family', subject_targets.family,
+                          'chain', COALESCE(document_chains.chain, task_chains.chain)) AS fact
+FROM subject_targets
+LEFT JOIN document_chains ON document_chains.ordinal = subject_targets.ordinal
+LEFT JOIN task_chains ON task_chains.ordinal = subject_targets.ordinal
+ORDER BY subject_targets.ordinal
+"#;
+
 const QUERY_B_PRINCIPAL_FACTS: &str = r#"
+/* atlas_batch_principal_facts */
 WITH requested AS (
     SELECT $1::uuid AS workspace_id, $2::text AS principal_type, $3::uuid AS principal_id
 ), requested_resources AS (
@@ -377,6 +573,182 @@ fn resources_json(resources: &[ResourceRef]) -> serde_json::Value {
             .map(|(kind, id)| serde_json::json!({ "kind": kind, "id": id }))
             .collect(),
     )
+}
+
+fn subjects_json(subjects: &[ProjectionSubject]) -> serde_json::Value {
+    serde_json::Value::Array(
+        subjects
+            .iter()
+            .enumerate()
+            .map(|(ordinal, subject)| {
+                let (kind, id) = match subject {
+                    ProjectionSubject::Document(id) => ("document", *id),
+                    ProjectionSubject::Task(id) => ("task", *id),
+                    ProjectionSubject::Attachment(id) => ("attachment", *id),
+                    ProjectionSubject::SourceComment(id) => ("source_comment", *id),
+                };
+                serde_json::json!({ "ordinal": ordinal, "kind": kind, "id": id })
+            })
+            .collect(),
+    )
+}
+
+fn decode_subject_fact(fact: StoredSubjectFact) -> Result<SubjectFact, DomainError> {
+    let family = match fact.family.as_str() {
+        "documents" => SubjectFamily::Documents,
+        "tasks" => SubjectFamily::Tasks,
+        _ => {
+            return Err(DomainError::Internal {
+                message: "batch subject facts contained an invalid subject family".into(),
+            });
+        }
+    };
+
+    let chain = ResourceChain {
+        segments: fact
+            .chain
+            .into_iter()
+            .map(decode_chain_segment)
+            .collect::<Result<Vec<_>, _>>()?,
+    };
+    validate_subject_chain(&chain, family)?;
+
+    Ok(SubjectFact {
+        ordinal: fact.ordinal,
+        chain,
+        family,
+    })
+}
+
+fn decode_chain_segment(
+    segment: StoredChainSegment,
+) -> Result<atlas_domain::permissions::ChainSegment, DomainError> {
+    let resource = decode_resource(StoredResource {
+        kind: segment.kind,
+        id: segment.id,
+    })?;
+    let visibility = segment.visibility.map(decode_visibility).transpose()?;
+
+    Ok(atlas_domain::permissions::ChainSegment {
+        resource,
+        visibility,
+    })
+}
+
+fn decode_visibility(visibility: StoredVisibility) -> Result<Visibility, DomainError> {
+    if visibility.visibility == "private" {
+        if visibility
+            .role
+            .as_deref()
+            .is_some_and(|role| role != "viewer" && role != "editor")
+        {
+            return Err(DomainError::Internal {
+                message: "batch subject facts contained an invalid visibility role".into(),
+            });
+        }
+        return Ok(Visibility::Private);
+    }
+
+    let role = match visibility.role.as_deref() {
+        Some("viewer") => VisibilityRole::Viewer,
+        Some("editor") => VisibilityRole::Editor,
+        _ => {
+            return Err(DomainError::Internal {
+                message: "batch subject facts contained an invalid visibility role".into(),
+            });
+        }
+    };
+
+    match visibility.visibility.as_str() {
+        "workspace" => Ok(Visibility::Workspace(role)),
+        "public" => Ok(Visibility::Public(role)),
+        _ => Err(DomainError::Internal {
+            message: "batch subject facts contained an invalid visibility".into(),
+        }),
+    }
+}
+
+fn validate_subject_chain(chain: &ResourceChain, family: SubjectFamily) -> Result<(), DomainError> {
+    let Some((last, prefixes)) = chain.segments.split_last() else {
+        return Err(invalid_subject_chain());
+    };
+    if last.resource != ResourceRef::Workspace || last.visibility.is_some() {
+        return Err(invalid_subject_chain());
+    }
+
+    let mut seen = BTreeSet::new();
+    for segment in &chain.segments {
+        if !seen.insert(resource_key(&segment.resource)) {
+            return Err(invalid_subject_chain());
+        }
+    }
+
+    match family {
+        SubjectFamily::Documents => {
+            let Some((document, rest)) = prefixes.split_first() else {
+                return Err(invalid_subject_chain());
+            };
+            if !matches!(document.resource, ResourceRef::Document(_))
+                || document.visibility.is_some()
+            {
+                return Err(invalid_subject_chain());
+            }
+            let (folders, project) = split_document_chain(rest);
+            if folders.len() > 32
+                || folders.iter().any(|segment| {
+                    !matches!(segment.resource, ResourceRef::Folder(_))
+                        || segment.visibility.is_some()
+                })
+                || project.is_some_and(|segment| !is_project_segment(segment))
+            {
+                return Err(invalid_subject_chain());
+            }
+        }
+        SubjectFamily::Tasks => {
+            let Some((board, rest)) = prefixes.split_first() else {
+                return Err(invalid_subject_chain());
+            };
+            if !matches!(board.resource, ResourceRef::Board(_)) || board.visibility.is_some() {
+                return Err(invalid_subject_chain());
+            }
+            if rest.len() > 1
+                || rest
+                    .first()
+                    .is_some_and(|segment| !is_project_segment(segment))
+            {
+                return Err(invalid_subject_chain());
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn split_document_chain(
+    segments: &[atlas_domain::permissions::ChainSegment],
+) -> (
+    &[atlas_domain::permissions::ChainSegment],
+    Option<&atlas_domain::permissions::ChainSegment>,
+) {
+    let Some((last, prefixes)) = segments.split_last() else {
+        return (segments, None);
+    };
+
+    if matches!(last.resource, ResourceRef::Project(_)) {
+        (prefixes, Some(last))
+    } else {
+        (segments, None)
+    }
+}
+
+fn is_project_segment(segment: &atlas_domain::permissions::ChainSegment) -> bool {
+    matches!(segment.resource, ResourceRef::Project(_)) && segment.visibility.is_some()
+}
+
+fn invalid_subject_chain() -> DomainError {
+    DomainError::Internal {
+        message: "batch subject facts contained a noncanonical resource chain".into(),
+    }
 }
 
 fn decode_principal_facts(facts: StoredPrincipalFacts) -> Result<PrincipalFacts, DomainError> {
