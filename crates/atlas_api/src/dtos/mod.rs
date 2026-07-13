@@ -150,6 +150,8 @@ pub struct ServerMetaDto {
     /// Public base URL of this server, when configured (`ATLAS_SERVER_URL`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_attachment_bytes: Option<u64>,
 }
 
 /// Request body for `POST /api/users`.
