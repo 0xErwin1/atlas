@@ -12,6 +12,7 @@ import { useWorkspaceTasksStore } from '@/stores/workspaceTasks';
 import Tasks from '@/views/Tasks.vue';
 
 const { GET } = vi.hoisted(() => ({ GET: vi.fn() }));
+const { useLiveUpdates } = vi.hoisted(() => ({ useLiveUpdates: vi.fn() }));
 const route = vi.hoisted(() => ({
   params: { boardId: 'board-2' } as Record<string, string>,
   query: {} as Record<string, string>,
@@ -26,7 +27,7 @@ vi.mock('vue-router', () => ({
   useRouter: () => router,
 }));
 vi.mock('@/composables/useBreakpoint', () => ({ useBreakpoint: () => ({ isMobile: false }) }));
-vi.mock('@/composables/useLiveUpdates', () => ({ useLiveUpdates: vi.fn() }));
+vi.mock('@/composables/useLiveUpdates', () => ({ useLiveUpdates }));
 vi.mock('@/composables/useOpenTaskLive', () => ({ useOpenTaskLive: () => ({ apply: vi.fn() }) }));
 vi.mock('@/composables/useBoardPresence', () => ({
   useBoardPresence: () => ({ actors: [], apply: vi.fn() }),
@@ -100,6 +101,15 @@ function mountTasks() {
       },
     },
   });
+}
+
+function capturedLiveHandlers(): {
+  onEvent: (event: { type: string; data: Record<string, string>; envelope: { board_id?: string } }) => void;
+  onResync?: () => void;
+} {
+  const handlers = useLiveUpdates.mock.calls.at(-1)?.[1];
+  if (handlers === undefined) throw new Error('Expected Tasks to register live update handlers');
+  return handlers;
 }
 
 describe('Tasks board loading', () => {
@@ -291,5 +301,87 @@ describe('Tasks board loading', () => {
 
     expect(useTaskViewsStore().items).toHaveLength(1);
     expect(workspaceTasks.load).toHaveBeenCalledWith('ws', { priority: ['high'] });
+  });
+
+  it('resyncs a saved view only after its metadata settles, without reloading the board', async () => {
+    delete route.params.boardId;
+    route.params.viewId = 'custom-view';
+
+    const workspace = useWorkspaceStore();
+    workspace.activeWorkspaceSlug = 'ws';
+
+    const taskViews = useTaskViewsStore();
+    taskViews.items = [
+      {
+        id: 'custom-view',
+        name: 'High priority',
+        workspace_id: 'ws',
+        filters: { priorities: ['high'] },
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+    ];
+    taskViews.load = vi.fn().mockResolvedValue(true);
+
+    const boards = useBoardsStore();
+    boards.loadBoardContents = vi.fn().mockResolvedValue(true);
+    const workspaceTasks = useWorkspaceTasksStore();
+    workspaceTasks.load = vi.fn().mockResolvedValue(true);
+
+    mountTasks();
+    await flushPromises();
+    vi.mocked(taskViews.load).mockClear();
+    vi.mocked(workspaceTasks.load).mockClear();
+    vi.mocked(boards.loadBoardContents).mockClear();
+
+    const metadataReload = deferred<boolean>();
+    vi.mocked(taskViews.load).mockReturnValueOnce(metadataReload.promise);
+    capturedLiveHandlers().onResync?.();
+    await Promise.resolve();
+
+    expect(taskViews.load).toHaveBeenCalledWith('ws');
+    expect(workspaceTasks.load).not.toHaveBeenCalled();
+    expect(boards.loadBoardContents).not.toHaveBeenCalled();
+
+    metadataReload.resolve(true);
+    await flushPromises();
+
+    expect(workspaceTasks.load).toHaveBeenCalledOnce();
+    expect(workspaceTasks.load).toHaveBeenCalledWith('ws', { priority: ['high'] });
+    expect(boards.loadBoardContents).not.toHaveBeenCalled();
+  });
+
+  it('filters board task events and reloads the active board on resync', async () => {
+    const workspace = useWorkspaceStore();
+    workspace.activeWorkspaceSlug = 'ws';
+    workspace.loadMembers = vi.fn().mockResolvedValue(undefined);
+
+    const boards = useBoardsStore();
+    boards.loadBoardContents = vi.fn().mockResolvedValue(true);
+    const upsertTask = vi.spyOn(boards, 'upsertTaskById').mockResolvedValue();
+
+    mountTasks();
+    await flushPromises();
+    upsertTask.mockClear();
+    (boards.loadBoardContents as ReturnType<typeof vi.fn>).mockClear();
+
+    const handlers = capturedLiveHandlers();
+    handlers.onEvent({
+      type: 'task.updated',
+      data: { task_id: 'task-1' },
+      envelope: { board_id: 'other-board' },
+    });
+    handlers.onEvent({
+      type: 'task.updated',
+      data: { task_id: 'task-2' },
+      envelope: { board_id: 'board-2' },
+    });
+
+    expect(upsertTask).toHaveBeenCalledOnce();
+    expect(upsertTask).toHaveBeenCalledWith('ws', 'task-2');
+
+    handlers.onResync?.();
+    await flushPromises();
+    expect(boards.loadBoardContents).toHaveBeenCalledWith('ws', 'board-2');
   });
 });

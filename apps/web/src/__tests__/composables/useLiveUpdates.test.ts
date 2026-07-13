@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { effectScope, nextTick, ref } from 'vue';
 import { useLiveUpdates } from '@/composables/useLiveUpdates';
+import { resetWorkspaceLiveUpdatesForTest } from '@/lib/workspaceLiveUpdates';
 
 class FakeEventSource {
   static instances: FakeEventSource[] = [];
@@ -65,13 +66,48 @@ function envelope(eventType: string, data: unknown): string {
 
 describe('useLiveUpdates', () => {
   beforeEach(() => {
+    resetWorkspaceLiveUpdatesForTest();
     FakeEventSource.instances = [];
     vi.stubGlobal('EventSource', FakeEventSource);
   });
 
   afterEach(() => {
+    resetWorkspaceLiveUpdatesForTest();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+
+  it('shares one native source and fans out events and resyncs across concurrent scopes', () => {
+    const ws = ref('acme');
+    const first = { onEvent: vi.fn(), onResync: vi.fn() };
+    const second = { onEvent: vi.fn(), onResync: vi.fn() };
+    const firstScope = effectScope();
+    const secondScope = effectScope();
+
+    firstScope.run(() => useLiveUpdates(ws, first));
+    secondScope.run(() => useLiveUpdates(ws, second));
+
+    expect(FakeEventSource.instances).toHaveLength(1);
+
+    const stream = FakeEventSource.instances[0];
+    stream?.emit('task.updated', envelope('task.updated', { task_id: 't1' }));
+    stream?.emit('resync', 'reload');
+
+    expect(first.onEvent).toHaveBeenCalledTimes(1);
+    expect(second.onEvent).toHaveBeenCalledTimes(1);
+    expect(first.onResync).toHaveBeenCalledTimes(1);
+    expect(second.onResync).toHaveBeenCalledTimes(1);
+
+    firstScope.stop();
+    stream?.emit('task.updated', envelope('task.updated', { task_id: 't2' }));
+    stream?.emit('resync', 'reload');
+
+    expect(first.onEvent).toHaveBeenCalledTimes(1);
+    expect(first.onResync).toHaveBeenCalledTimes(1);
+    expect(second.onEvent).toHaveBeenCalledTimes(2);
+    expect(second.onResync).toHaveBeenCalledTimes(2);
+
+    secondScope.stop();
   });
 
   it('opens a stream for the workspace when the slug is set', () => {
@@ -110,13 +146,16 @@ describe('useLiveUpdates', () => {
     scope.stop();
   });
 
-  it('closes the stream on scope dispose', () => {
+  it('retains the stream for the broker idle grace period on scope dispose', () => {
+    vi.useFakeTimers();
     const ws = ref('acme');
     const scope = effectScope();
     scope.run(() => useLiveUpdates(ws, { onEvent: vi.fn(), onResync: vi.fn() }));
 
     scope.stop();
+    expect(FakeEventSource.instances[0]?.closed).toBe(false);
 
+    vi.advanceTimersByTime(30_000);
     expect(FakeEventSource.instances[0]?.closed).toBe(true);
   });
 
@@ -197,18 +236,21 @@ describe('useLiveUpdates', () => {
     scope.stop();
   });
 
-  it('does not resync on the first open but resyncs on a reconnect', () => {
+  it('does not resync on the first open but resyncs after a reconnect', () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, 'random').mockReturnValue(0);
     const ws = ref('acme');
     const onResync = vi.fn();
     const scope = effectScope();
     scope.run(() => useLiveUpdates(ws, { onEvent: vi.fn(), onResync }));
 
     const stream = FakeEventSource.instances[0];
-
     stream?.emitOpen();
     expect(onResync).not.toHaveBeenCalled();
 
-    stream?.emitOpen();
+    stream?.emitError(FakeEventSource.CLOSED);
+    vi.advanceTimersByTime(500);
+    FakeEventSource.instances[1]?.emitOpen();
     expect(onResync).toHaveBeenCalledTimes(1);
 
     scope.stop();
@@ -327,7 +369,7 @@ describe('useLiveUpdates', () => {
       scope.stop();
     });
 
-    it('cancels a pending reconnect timer on scope dispose', () => {
+    it('retains a pending reconnect timer during the broker idle grace period', () => {
       vi.spyOn(Math, 'random').mockReturnValue(0);
       const ws = ref('acme');
       const scope = effectScope();
@@ -336,8 +378,8 @@ describe('useLiveUpdates', () => {
       FakeEventSource.instances[0]?.emitError(FakeEventSource.CLOSED);
       scope.stop();
 
-      vi.advanceTimersByTime(60_000);
-      expect(FakeEventSource.instances).toHaveLength(1);
+      vi.advanceTimersByTime(500);
+      expect(FakeEventSource.instances).toHaveLength(2);
     });
   });
 
@@ -481,7 +523,33 @@ describe('useLiveUpdates', () => {
       scope.stop();
     });
 
-    it('removes visibility/focus/online listeners on scope dispose (no leak)', () => {
+    it('replaces an established native CONNECTING source once and preserves the foreground replacement', () => {
+      const ws = ref('acme');
+      const scope = effectScope();
+      scope.run(() => useLiveUpdates(ws, { onEvent: vi.fn(), onResync: vi.fn() }));
+      const nativeSource = FakeEventSource.instances[0];
+
+      window.dispatchEvent(new Event('focus'));
+      vi.advanceTimersByTime(300);
+
+      expect(nativeSource?.closed).toBe(true);
+      expect(FakeEventSource.instances).toHaveLength(2);
+      const foregroundSource = FakeEventSource.instances[1];
+
+      window.dispatchEvent(new Event('focus'));
+      vi.advanceTimersByTime(300);
+
+      expect(foregroundSource?.closed).toBe(false);
+      expect(FakeEventSource.instances).toHaveLength(2);
+
+      foregroundSource?.emitError(FakeEventSource.CONNECTING);
+      vi.advanceTimersByTime(60_000);
+      expect(FakeEventSource.instances).toHaveLength(2);
+
+      scope.stop();
+    });
+
+    it('removes visibility/focus/online listeners after idle teardown', () => {
       const addDocSpy = vi.spyOn(document, 'addEventListener');
       const removeDocSpy = vi.spyOn(document, 'removeEventListener');
       const addWinSpy = vi.spyOn(window, 'addEventListener');
@@ -496,6 +564,7 @@ describe('useLiveUpdates', () => {
       expect(addWinSpy).toHaveBeenCalledWith('online', expect.any(Function));
 
       scope.stop();
+      vi.advanceTimersByTime(30_000);
 
       expect(removeDocSpy).toHaveBeenCalledWith('visibilitychange', expect.any(Function));
       expect(removeWinSpy).toHaveBeenCalledWith('focus', expect.any(Function));

@@ -10,8 +10,14 @@ vi.mock('@/api/wrapper', () => ({
   },
 }));
 
+vi.mock('@/lib/workspaceLiveUpdates', () => ({
+  disposeWorkspaceLiveUpdates: vi.fn(),
+  setWorkspaceLiveUpdatesAuthorizationInvalidator: vi.fn(),
+}));
+
 import { deferred } from '@/__tests__/deferred';
 import { wrappedClient } from '@/api/wrapper';
+import { disposeWorkspaceLiveUpdates } from '@/lib/workspaceLiveUpdates';
 import type { MeResponse } from '@/stores/auth';
 import { useAuthStore } from '@/stores/auth';
 import { useLastViewedStore } from '@/stores/lastViewed';
@@ -51,6 +57,34 @@ describe('useWorkspaceStore', () => {
     store.setActiveWorkspace('first');
     store.setActiveWorkspace('second');
     expect(store.activeWorkspaceSlug).toBe('second');
+  });
+
+  it('disposes live updates on a committed workspace switch, but not a transient null', () => {
+    const store = useWorkspaceStore();
+    store.setActiveWorkspace('first');
+    vi.mocked(disposeWorkspaceLiveUpdates).mockClear();
+
+    store.setActiveWorkspace(null);
+    expect(disposeWorkspaceLiveUpdates).not.toHaveBeenCalled();
+
+    store.switchWorkspace('second');
+    expect(disposeWorkspaceLiveUpdates).toHaveBeenCalledOnce();
+  });
+
+  it('restores committed A when a pending switch to B transiently clears active before returning to A', () => {
+    const store = useWorkspaceStore();
+    store.setActiveWorkspace('workspace-a');
+    store.projects = [{ slug: 'keep' }] as typeof store.projects;
+    localStorage.setItem('atlas:workspace', 'workspace-a');
+    vi.mocked(disposeWorkspaceLiveUpdates).mockClear();
+
+    store.setActiveWorkspace(null);
+    store.switchWorkspace('workspace-a');
+
+    expect(store.activeWorkspaceSlug).toBe('workspace-a');
+    expect(disposeWorkspaceLiveUpdates).not.toHaveBeenCalled();
+    expect(store.projects).toEqual([{ slug: 'keep' }]);
+    expect(localStorage.getItem('atlas:workspace')).toBe('workspace-a');
   });
 
   it('loadWorkspaces sets activeWorkspaceSlug to first returned workspace', async () => {
@@ -194,6 +228,7 @@ describe('useWorkspaceStore', () => {
     expect(store.activeWorkspaceSlug).toBe('workspace-b');
     expect(store.members).toEqual([]);
     expect(store.myWorkspaceRole).toBeNull();
+    expect(disposeWorkspaceLiveUpdates).toHaveBeenCalledOnce();
   });
 
   it('deleteWorkspace clears the deleted workspace last-viewed entry', async () => {
@@ -236,6 +271,7 @@ describe('useWorkspaceStore', () => {
       name: 'tasks',
       params: { boardId: 'board-1' },
     });
+    expect(disposeWorkspaceLiveUpdates).toHaveBeenCalledOnce();
   });
 
   it('switching stays true until all overlapping switches settle, regardless of end order', () => {

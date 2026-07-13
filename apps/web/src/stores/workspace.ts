@@ -4,6 +4,7 @@ import type { components } from '@/api/types';
 import { wrappedClient } from '@/api/wrapper';
 import { errorHint } from '@/lib/apiError';
 import { collectPaged } from '@/lib/pagination';
+import { disposeWorkspaceLiveUpdates } from '@/lib/workspaceLiveUpdates';
 import { useAuthStore } from '@/stores/auth';
 import { useLastViewedStore } from '@/stores/lastViewed';
 
@@ -149,7 +150,11 @@ export const useWorkspaceStore = defineStore('workspace', () => {
    * the choice so it survives a refresh.
    */
   function switchWorkspace(slug: string): void {
-    if (slug === activeWorkspaceSlug.value) return;
+    if (slug === committedSlug.value) {
+      if (activeWorkspaceSlug.value !== slug) setActiveWorkspace(slug);
+      return;
+    }
+    if (committedSlug.value !== null) disposeWorkspaceLiveUpdates();
     setActiveWorkspace(slug);
     projects.value = [];
     persistWorkspace(slug);
@@ -338,7 +343,9 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     useLastViewedStore().rekey(ws, data.slug);
 
     if (activeWorkspaceSlug.value === ws) {
+      disposeWorkspaceLiveUpdates();
       activeWorkspaceSlug.value = data.slug;
+      committedSlug.value = data.slug;
       persistWorkspace(data.slug);
     }
 
@@ -369,6 +376,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
     if (activeWorkspaceSlug.value === ws) {
       const next = workspaces.value[0]?.slug ?? null;
+      disposeWorkspaceLiveUpdates();
       setActiveWorkspace(next);
       projects.value = [];
       if (next !== null) persistWorkspace(next);
