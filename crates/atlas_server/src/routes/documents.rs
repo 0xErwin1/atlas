@@ -1233,6 +1233,7 @@ pub(crate) struct DocumentCommentPath {
         ("slug" = String, Path, description = "Document slug"),
         ("cursor" = Option<String>, Query, description = "Pagination cursor"),
         ("limit" = Option<u32>, Query, description = "Page size"),
+        ("feed" = Option<String>, Query, description = "Set to `full` for authorized links and retained events"),
     ),
     responses(
         (status = 200, description = "Comment page. `feed=full` returns authorized links and retained events.", body = CommentListResponseDto),

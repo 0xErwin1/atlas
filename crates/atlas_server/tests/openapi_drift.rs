@@ -2,6 +2,7 @@
 
 use atlas_server::routes::openapi::openapi;
 use atlas_server::routes::registry::ROUTE_REGISTRY;
+use serde_json::Value;
 
 /// All schema component names that must be present in the generated OpenAPI document.
 ///
@@ -230,4 +231,24 @@ fn openapi_document_has_correct_info() {
 
     assert_eq!(doc.info.title, "Atlas API");
     assert!(!doc.info.version.is_empty(), "version must not be empty");
+}
+
+#[test]
+fn full_comment_feed_query_is_documented_for_both_parent_routes() {
+    let document = serde_json::to_value(openapi()).expect("serialize OpenAPI document");
+
+    for path in [
+        "/api/workspaces/{ws}/tasks/{readable_id}/comments",
+        "/api/workspaces/{ws}/documents/{slug}/comments",
+    ] {
+        let pointer = format!("/paths/{}/get/parameters", path.replace('/', "~1"));
+        let parameters = document.pointer(&pointer).and_then(Value::as_array);
+        assert!(
+            parameters.is_some_and(|parameters| parameters.iter().any(|parameter| {
+                parameter.get("name") == Some(&Value::String("feed".into()))
+                    && parameter.get("in") == Some(&Value::String("query".into()))
+            })),
+            "{path} must document the feed query selector"
+        );
+    }
 }
