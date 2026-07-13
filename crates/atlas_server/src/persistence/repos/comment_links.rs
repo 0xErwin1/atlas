@@ -1,3 +1,6 @@
+use crate::persistence::entities::comments::{
+    comment, comment_from, comment_link, comment_link_event, comment_link_from,
+};
 use async_trait::async_trait;
 use atlas_domain::{
     Actor, DomainError, WorkspaceCtx,
@@ -12,12 +15,7 @@ use atlas_domain::{
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection,
-    EntityTrait, QueryFilter, QueryOrder, TransactionTrait,
-};
-use std::collections::HashSet;
-
-use crate::persistence::entities::comments::{
-    comment, comment_from, comment_link, comment_link_event, comment_link_from,
+    EntityTrait, QueryFilter, QueryOrder, Statement, TransactionTrait,
 };
 
 pub struct PgCommentLinkRepo {
@@ -43,7 +41,12 @@ impl PgCommentLinkRepo {
             .all(conn)
             .await
             .map_err(db_err)?;
-        let desired = targets.into_iter().collect::<HashSet<_>>();
+        let desired = targets.into_iter().fold(Vec::new(), |mut unique, target| {
+            if !unique.contains(&target) {
+                unique.push(target);
+            }
+            unique
+        });
         let current = existing
             .iter()
             .cloned()
@@ -271,32 +274,7 @@ async fn classify_candidates(
                 }
             }
             CommentLinkCandidate::AttachmentUrl(url) => {
-                let valid_owner = match url.owner {
-                    CommentAttachmentUrlOwner::Task { .. }
-                    | CommentAttachmentUrlOwner::Document { .. } => true,
-                };
-
-                if valid_owner
-                    && crate::persistence::entities::documents::attachment::Entity::find_by_id(
-                        url.attachment_id,
-                    )
-                    .filter(
-                        crate::persistence::entities::documents::attachment::Column::WorkspaceId
-                            .eq(ctx.workspace_id.0),
-                    )
-                    .filter(
-                        crate::persistence::entities::documents::attachment::Column::CommentId
-                            .eq(url.comment_id),
-                    )
-                    .filter(
-                        crate::persistence::entities::documents::attachment::Column::DeletedAt
-                            .is_null(),
-                    )
-                    .one(conn)
-                    .await
-                    .map_err(db_err)?
-                    .is_some()
-                {
+                if attachment_url_matches_owner(conn, ctx, &url).await? {
                     targets.push(CommentLinkTarget::Attachment(
                         atlas_domain::ids::AttachmentId(url.attachment_id),
                     ));
@@ -307,6 +285,63 @@ async fn classify_candidates(
 
     targets.dedup();
     Ok(targets)
+}
+
+async fn attachment_url_matches_owner(
+    conn: &impl ConnectionTrait,
+    ctx: &WorkspaceCtx,
+    url: &atlas_domain::wikilink::CommentAttachmentUrl,
+) -> Result<bool, DomainError> {
+    let (owner_join, owner_predicate) = match &url.owner {
+        CommentAttachmentUrlOwner::Task { readable_id } => (
+            "JOIN tasks parent ON parent.id = comment.task_id AND parent.workspace_id = attachment.workspace_id AND parent.deleted_at IS NULL",
+            ("parent.readable_id", readable_id),
+        ),
+        CommentAttachmentUrlOwner::Document { slug } => (
+            "JOIN documents parent ON parent.id = comment.document_id AND parent.workspace_id = attachment.workspace_id AND parent.deleted_at IS NULL",
+            ("parent.slug", slug),
+        ),
+    };
+    let statement = Statement::from_sql_and_values(
+        sea_orm::DatabaseBackend::Postgres,
+        format!(
+            "SELECT EXISTS(
+                SELECT 1
+                FROM attachments attachment
+                JOIN comments comment ON comment.id = attachment.comment_id
+                  AND comment.workspace_id = attachment.workspace_id
+                  AND comment.deleted_at IS NULL
+                JOIN workspaces workspace ON workspace.id = attachment.workspace_id
+                {owner_join}
+                WHERE attachment.id = $1
+                  AND attachment.workspace_id = $2
+                  AND attachment.comment_id = $3
+                  AND attachment.deleted_at IS NULL
+                  AND workspace.slug = $4
+                  AND {} = $5
+            ) AS matches",
+            owner_predicate.0
+        ),
+        [
+            url.attachment_id.into(),
+            ctx.workspace_id.0.into(),
+            url.comment_id.into(),
+            url.workspace_slug.clone().into(),
+            owner_predicate.1.clone().into(),
+        ],
+    );
+    let row = conn
+        .query_one_raw(statement)
+        .await
+        .map_err(db_err)?
+        .ok_or_else(|| DomainError::Internal {
+            message: "attachment owner-chain query returned no row".into(),
+        })?;
+
+    row.try_get("", "matches")
+        .map_err(|error| DomainError::Internal {
+            message: error.to_string(),
+        })
 }
 
 async fn scoped_comment(
