@@ -2494,6 +2494,7 @@ pub(crate) async fn list_activity(
         ("readable_id" = String, Path, description = "Task readable ID"),
         ("cursor" = Option<String>, Query, description = "Pagination cursor"),
         ("limit" = Option<u32>, Query, description = "Page size (max 200)"),
+        ("feed" = Option<String>, Query, description = "Set to `full` for authorized links and retained events"),
     ),
     responses(
         (status = 200, description = "Task comments, oldest first. `feed=full` returns authorized links and retained events.", body = CommentListResponseDto),
