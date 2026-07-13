@@ -5,13 +5,280 @@ use atlas_domain::{
         Capability, CapabilityAction, CapabilityFamily, Principal, ResourceRef, ResourceRole,
     },
 };
+use std::sync::{Arc, Mutex};
+
 use sea_orm::{ConnectionTrait, Database, DatabaseConnection};
 use sea_orm_migration::prelude::MigratorTrait;
 use uuid::Uuid;
 
 use super::batch_authorization::{
-    BatchAuthorizationSource, PgBatchAuthorizationSource, PrincipalFacts, ProjectionAuthContext,
+    BatchAuthorizationService, BatchAuthorizationSource, PgBatchAuthorizationSource,
+    PrincipalFacts, ProjectionAuthContext, ProjectionSubject, SubjectFamily,
 };
+
+#[tokio::test]
+async fn query_a_resolves_live_document_task_attachment_and_comment_subject_chains() {
+    let db = BatchAuthorizationDb::create().await;
+    let workspace_id = Uuid::now_v7();
+    let user_id = Uuid::now_v7();
+    let project_id = Uuid::now_v7();
+    let folder_id = Uuid::now_v7();
+    let document_id = Uuid::now_v7();
+    let board_id = Uuid::now_v7();
+    let column_id = Uuid::now_v7();
+    let task_id = Uuid::now_v7();
+    let document_attachment_id = Uuid::now_v7();
+    let task_comment_id = Uuid::now_v7();
+    let comment_attachment_id = Uuid::now_v7();
+
+    seed_workspace_user(&db.conn, workspace_id, user_id, true).await;
+    seed_projection_subjects(
+        &db.conn,
+        ProjectionSubjects {
+            workspace_id,
+            user_id,
+            project_id,
+            folder_id,
+            document_id,
+            board_id,
+            column_id,
+            task_id,
+            document_attachment_id,
+            task_comment_id,
+            comment_attachment_id,
+        },
+    )
+    .await;
+
+    let source = PgBatchAuthorizationSource::new(db.conn.clone());
+    let facts = source
+        .load_subject_facts(
+            &user_context(workspace_id, user_id),
+            &[
+                ProjectionSubject::Document(document_id),
+                ProjectionSubject::Task(task_id),
+                ProjectionSubject::Attachment(document_attachment_id),
+                ProjectionSubject::SourceComment(task_comment_id),
+                ProjectionSubject::Attachment(comment_attachment_id),
+            ],
+        )
+        .await
+        .expect("load subject facts");
+
+    assert_eq!(facts.len(), 5);
+    let [
+        document,
+        task,
+        document_attachment,
+        comment,
+        comment_attachment,
+    ] = facts.as_slice()
+    else {
+        panic!("expected one fact for each requested live subject");
+    };
+    assert_eq!(document.ordinal, 0);
+    assert_eq!(document.family, SubjectFamily::Documents);
+    assert_chain(
+        document,
+        &[
+            ResourceRef::Document(atlas_domain::DocumentId(document_id)),
+            ResourceRef::Folder(atlas_domain::FolderId(folder_id)),
+            ResourceRef::Project(atlas_domain::ProjectId(project_id)),
+            ResourceRef::Workspace,
+        ],
+    );
+    assert_eq!(task.ordinal, 1);
+    assert_eq!(task.family, SubjectFamily::Tasks);
+    assert_chain(
+        task,
+        &[
+            ResourceRef::Board(atlas_domain::BoardId(board_id)),
+            ResourceRef::Project(atlas_domain::ProjectId(project_id)),
+            ResourceRef::Workspace,
+        ],
+    );
+    assert_eq!(document_attachment.family, SubjectFamily::Documents);
+    assert_chain(
+        document_attachment,
+        &document
+            .chain
+            .segments
+            .iter()
+            .map(|segment| segment.resource.clone())
+            .collect::<Vec<_>>(),
+    );
+    assert_eq!(comment.family, SubjectFamily::Tasks);
+    assert_chain(
+        comment,
+        &task
+            .chain
+            .segments
+            .iter()
+            .map(|segment| segment.resource.clone())
+            .collect::<Vec<_>>(),
+    );
+    assert_eq!(comment_attachment.family, SubjectFamily::Tasks);
+    assert_chain(
+        comment_attachment,
+        &task
+            .chain
+            .segments
+            .iter()
+            .map(|segment| segment.resource.clone())
+            .collect::<Vec<_>>(),
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn batch_authorization_executes_exactly_two_marked_statements_for_nonempty_batches() {
+    let db = BatchAuthorizationDb::create().await;
+    let workspace_id = Uuid::now_v7();
+    let user_id = Uuid::now_v7();
+    let document_id = Uuid::now_v7();
+
+    seed_workspace_user(&db.conn, workspace_id, user_id, true).await;
+    seed_minimal_document(&db.conn, workspace_id, user_id, document_id).await;
+
+    let statements = Arc::new(Mutex::new(Vec::new()));
+    let mut measured = db.conn.clone();
+    let measured_statements = Arc::clone(&statements);
+    measured.set_metric_callback(move |info| {
+        if info.statement.sql.contains("atlas_batch_") {
+            measured_statements
+                .lock()
+                .expect("statement metric lock")
+                .push(info.statement.sql.clone());
+        }
+    });
+
+    let service = BatchAuthorizationService::new(PgBatchAuthorizationSource::new(measured));
+    let context = user_context(workspace_id, user_id);
+
+    let decisions = service
+        .authorize(
+            &context,
+            &[
+                ProjectionSubject::Document(document_id),
+                ProjectionSubject::Attachment(Uuid::now_v7()),
+            ],
+        )
+        .await
+        .expect("authorize mixed batch");
+    assert_eq!(decisions, vec![false, false]);
+    assert_marked_statement_pair(&statements);
+
+    statements.lock().expect("statement metric lock").clear();
+    let decisions = service
+        .authorize(&context, &[ProjectionSubject::Document(Uuid::now_v7())])
+        .await
+        .expect("authorize all-missing batch");
+    assert_eq!(decisions, vec![false]);
+    assert_marked_statement_pair(&statements);
+
+    statements.lock().expect("statement metric lock").clear();
+    assert!(
+        service
+            .authorize(&context, &[])
+            .await
+            .expect("authorize empty batch")
+            .is_empty()
+    );
+    assert!(statements.lock().expect("statement metric lock").is_empty());
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn query_a_omits_dead_projects_and_unavailable_subjects() {
+    let db = BatchAuthorizationDb::create().await;
+    let workspace_id = Uuid::now_v7();
+    let user_id = Uuid::now_v7();
+    let ids = ProjectionSubjects {
+        workspace_id,
+        user_id,
+        project_id: Uuid::now_v7(),
+        folder_id: Uuid::now_v7(),
+        document_id: Uuid::now_v7(),
+        board_id: Uuid::now_v7(),
+        column_id: Uuid::now_v7(),
+        task_id: Uuid::now_v7(),
+        document_attachment_id: Uuid::now_v7(),
+        task_comment_id: Uuid::now_v7(),
+        comment_attachment_id: Uuid::now_v7(),
+    };
+
+    seed_workspace_user(&db.conn, workspace_id, user_id, true).await;
+    seed_projection_subjects(&db.conn, ids).await;
+
+    db.conn
+        .execute_unprepared(&format!(
+            "UPDATE projects SET deleted_at = now() WHERE id = '{}'",
+            ids.project_id
+        ))
+        .await
+        .expect("soft-delete project");
+
+    let source = PgBatchAuthorizationSource::new(db.conn.clone());
+    let context = user_context(workspace_id, user_id);
+    let other_workspace_id = Uuid::now_v7();
+    let other_user_id = Uuid::now_v7();
+    let other_document_id = Uuid::now_v7();
+    seed_workspace_user(&db.conn, other_workspace_id, other_user_id, true).await;
+    seed_minimal_document(
+        &db.conn,
+        other_workspace_id,
+        other_user_id,
+        other_document_id,
+    )
+    .await;
+    let facts = source
+        .load_subject_facts(
+            &context,
+            &[
+                ProjectionSubject::Document(ids.document_id),
+                ProjectionSubject::Task(ids.task_id),
+            ],
+        )
+        .await
+        .expect("load chains without dead project");
+    assert_eq!(facts.len(), 2);
+    assert!(facts.iter().all(|fact| {
+        fact.chain
+            .segments
+            .iter()
+            .all(|segment| !matches!(segment.resource, ResourceRef::Project(_)))
+    }));
+
+    db.conn
+        .execute_unprepared(&format!(
+            "UPDATE documents SET deleted_at = now() WHERE id = '{}'; \
+             UPDATE tasks SET deleted_at = now() WHERE id = '{}'",
+            ids.document_id, ids.task_id
+        ))
+        .await
+        .expect("soft-delete parents");
+
+    let facts = source
+        .load_subject_facts(
+            &context,
+            &[
+                ProjectionSubject::Document(ids.document_id),
+                ProjectionSubject::Task(ids.task_id),
+                ProjectionSubject::Attachment(ids.document_attachment_id),
+                ProjectionSubject::SourceComment(ids.task_comment_id),
+                ProjectionSubject::Attachment(ids.comment_attachment_id),
+                ProjectionSubject::Document(Uuid::now_v7()),
+                ProjectionSubject::Document(other_document_id),
+            ],
+        )
+        .await
+        .expect("omit unavailable subjects");
+    assert!(facts.is_empty());
+
+    db.teardown().await;
+}
 
 #[tokio::test]
 async fn query_b_reloads_user_membership_and_active_state() {
@@ -182,6 +449,121 @@ async fn query_b_rejects_unknown_scopes_and_propagates_sql_failures() {
     assert!(source.load_principal_facts(&context, &[]).await.is_err());
 
     db.teardown().await;
+}
+
+#[derive(Clone, Copy)]
+struct ProjectionSubjects {
+    workspace_id: Uuid,
+    user_id: Uuid,
+    project_id: Uuid,
+    folder_id: Uuid,
+    document_id: Uuid,
+    board_id: Uuid,
+    column_id: Uuid,
+    task_id: Uuid,
+    document_attachment_id: Uuid,
+    task_comment_id: Uuid,
+    comment_attachment_id: Uuid,
+}
+
+async fn seed_projection_subjects(conn: &DatabaseConnection, ids: ProjectionSubjects) {
+    conn.execute_unprepared(&format!(
+        "INSERT INTO projects (id, workspace_id, name, slug, task_prefix, next_task_number, visibility, created_by_user_id, created_at, updated_at) \
+         VALUES ('{}', '{}', 'Project', 'project-{}', 'AT', 1, 'workspace', '{}', now(), now()); \
+         INSERT INTO folders (id, workspace_id, project_id, name, created_by_user_id, created_at, updated_at) \
+         VALUES ('{}', '{}', '{}', 'Folder', '{}', now(), now()); \
+         INSERT INTO documents (id, workspace_id, project_id, folder_id, title, slug, content, frontmatter, current_revision_seq, created_by_user_id, created_at, updated_at) \
+         VALUES ('{}', '{}', '{}', '{}', 'Document', 'document-{}', '', '{{}}', 1, '{}', now(), now()); \
+         INSERT INTO boards (id, workspace_id, project_id, name, created_by_user_id, created_at, updated_at) \
+         VALUES ('{}', '{}', '{}', 'Board', '{}', now(), now()); \
+         INSERT INTO board_columns (id, workspace_id, board_id, name, position_key, created_by_user_id, created_at, updated_at) \
+         VALUES ('{}', '{}', '{}', 'Todo', 'a0', '{}', now(), now()); \
+         INSERT INTO tasks (id, workspace_id, project_id, board_id, column_id, readable_id, title, description, labels, position_key, created_by_user_id, created_at, updated_at) \
+         VALUES ('{}', '{}', '{}', '{}', '{}', 'AT-1', 'Task', '', ARRAY[]::text[], 'a0', '{}', now(), now()); \
+         INSERT INTO attachments (id, workspace_id, document_id, file_name, content_type, size_bytes, sha256, created_by_user_id, created_at, updated_at) \
+         VALUES ('{}', '{}', '{}', 'document.txt', 'text/plain', 1, 'document-digest', '{}', now(), now()); \
+         INSERT INTO comments (id, workspace_id, task_id, body, created_by_user_id, created_at, updated_at) \
+         VALUES ('{}', '{}', '{}', 'comment', '{}', now(), now()); \
+         INSERT INTO attachments (id, workspace_id, comment_id, file_name, content_type, size_bytes, sha256, created_by_user_id, created_at, updated_at) \
+         VALUES ('{}', '{}', '{}', 'comment.txt', 'text/plain', 1, 'comment-digest', '{}', now(), now())",
+        ids.project_id,
+        ids.workspace_id,
+        ids.project_id,
+        ids.user_id,
+        ids.folder_id,
+        ids.workspace_id,
+        ids.project_id,
+        ids.user_id,
+        ids.document_id,
+        ids.workspace_id,
+        ids.project_id,
+        ids.folder_id,
+        ids.document_id,
+        ids.user_id,
+        ids.board_id,
+        ids.workspace_id,
+        ids.project_id,
+        ids.user_id,
+        ids.column_id,
+        ids.workspace_id,
+        ids.board_id,
+        ids.user_id,
+        ids.task_id,
+        ids.workspace_id,
+        ids.project_id,
+        ids.board_id,
+        ids.column_id,
+        ids.user_id,
+        ids.document_attachment_id,
+        ids.workspace_id,
+        ids.document_id,
+        ids.user_id,
+        ids.task_comment_id,
+        ids.workspace_id,
+        ids.task_id,
+        ids.user_id,
+        ids.comment_attachment_id,
+        ids.workspace_id,
+        ids.task_comment_id,
+        ids.user_id,
+    ))
+    .await
+    .expect("seed projection subjects");
+}
+
+async fn seed_minimal_document(
+    conn: &DatabaseConnection,
+    workspace_id: Uuid,
+    user_id: Uuid,
+    document_id: Uuid,
+) {
+    conn.execute_unprepared(&format!(
+        "INSERT INTO documents (id, workspace_id, title, slug, content, frontmatter, current_revision_seq, created_by_user_id, created_at, updated_at) \
+         VALUES ('{document_id}', '{workspace_id}', 'Document', 'document-{document_id}', '', '{{}}', 1, '{user_id}', now(), now())"
+    ))
+    .await
+    .expect("seed minimal document");
+}
+
+fn assert_marked_statement_pair(statements: &Arc<Mutex<Vec<String>>>) {
+    let statements = statements.lock().expect("statement metric lock");
+    assert_eq!(statements.len(), 2);
+    let [subject_statement, principal_statement] = statements.as_slice() else {
+        panic!("expected exactly the marked subject and principal statements");
+    };
+    assert!(subject_statement.contains("atlas_batch_subject_facts"));
+    assert!(principal_statement.contains("atlas_batch_principal_facts"));
+}
+
+fn assert_chain(fact: &super::batch_authorization::SubjectFact, expected: &[ResourceRef]) {
+    assert_eq!(
+        fact.chain
+            .segments
+            .iter()
+            .map(|segment| segment.resource.clone())
+            .collect::<Vec<_>>(),
+        expected
+    );
 }
 
 fn user_context(workspace_id: Uuid, user_id: Uuid) -> ProjectionAuthContext {
