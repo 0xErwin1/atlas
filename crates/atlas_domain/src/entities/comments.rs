@@ -49,6 +49,20 @@ pub struct CommentLink {
     pub created_at: DateTime<Utc>,
 }
 
+/// A live derived comment link together with its live owning parent.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CommentBacklink {
+    pub id: CommentLinkId,
+    pub workspace_id: WorkspaceId,
+    pub comment_id: CommentId,
+    pub parent: CommentOwner,
+    pub parent_readable_id: Option<String>,
+    pub parent_slug: Option<String>,
+    pub parent_title: String,
+    pub target: CommentLinkTarget,
+    pub created_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CommentLinkEventKind {
     LinkAdded,

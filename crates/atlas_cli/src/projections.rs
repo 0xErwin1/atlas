@@ -2920,6 +2920,7 @@ mod tests {
             source_readable_id: "ATL-5".to_owned(),
             source_title: "Blocker task".to_owned(),
             kind: "blocks".to_owned(),
+            comment_source: None,
         }
     }
 
@@ -2999,6 +3000,7 @@ mod tests {
             source_slug: slug.map(str::to_owned),
             source_title: "Source Doc".to_owned(),
             display_title: "Source Doc".to_owned(),
+            comment_source: None,
         }
     }
 

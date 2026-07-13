@@ -14,6 +14,7 @@ use atlas_api::dtos::{
         CreateBoardRequest, CreateColumnRequest, CreateCommentRequest, CreateTaskRequest,
         UpdateCommentRequest,
     },
+    documents::CreateDocumentRequest,
 };
 use atlas_client::ClientError;
 use atlas_domain::{Actor, WorkspaceCtx, entities::identity::MemberRole};
@@ -192,6 +193,129 @@ async fn create_list_delete_comment_roundtrip() {
         after_delete.items.is_empty(),
         "soft-deleted comment must not appear in the list"
     );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn task_backlinks_expose_only_authorized_comment_parent_navigation() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) =
+        support::login_user_with_workspace(&server, &db, "comment-backlink").await;
+    let source_readable_id = seed_task(&client, &ws.slug, "comment-backlink-source", "CBS").await;
+    let target_readable_id = seed_task(&client, &ws.slug, "comment-backlink-target", "CBT").await;
+    let source_task = client
+        .get_task(&ws.slug, &source_readable_id)
+        .await
+        .expect("get source task");
+    let target_task = client
+        .get_task(&ws.slug, &target_readable_id)
+        .await
+        .expect("get target task");
+    let comment = client
+        .add_comment(
+            &ws.slug,
+            &source_readable_id,
+            CreateCommentRequest {
+                body: "linked comment".into(),
+            },
+        )
+        .await
+        .expect("create source comment");
+
+    db.conn()
+        .execute_unprepared(&format!(
+            "INSERT INTO comment_links (id, workspace_id, comment_id, target_task_id, created_at) VALUES ('{}', '{}', '{}', '{}', now())",
+            uuid::Uuid::now_v7(), ws.id.0, comment.id, target_task.id,
+        ))
+        .await
+        .expect("insert derived comment link");
+
+    let backlinks = client
+        .list_task_backlinks(&ws.slug, &target_readable_id)
+        .await
+        .expect("list target backlinks");
+    let backlink = backlinks
+        .items
+        .iter()
+        .find(|backlink| backlink.comment_source.is_some())
+        .expect("comment backlink");
+    let source = backlink.comment_source.as_ref().expect("comment source");
+    assert_eq!(source.kind, "comment");
+    assert_eq!(source.comment_id, comment.id);
+    assert!(matches!(
+        &source.parent,
+        atlas_api::dtos::documents::CommentBacklinkParentDto::Task { id, readable_id, title }
+            if *id == source_task.id && readable_id == &source_readable_id && title == "Task with comments"
+    ));
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn document_backlinks_expose_comment_source_without_attachment_links() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) =
+        support::login_user_with_workspace(&server, &db, "comment-document-backlink").await;
+    let source_readable_id = seed_task(&client, &ws.slug, "comment-document-source", "CDS").await;
+    let project = client
+        .create_project(&ws.slug, project_req("comment-document-target", "CDT"))
+        .await
+        .expect("create document project");
+    let target = client
+        .create_document(
+            &ws.slug,
+            &project.slug,
+            CreateDocumentRequest {
+                title: "Comment target".into(),
+                folder_id: None,
+                content: None,
+            },
+        )
+        .await
+        .expect("create target document");
+    let comment = client
+        .add_comment(
+            &ws.slug,
+            &source_readable_id,
+            CreateCommentRequest {
+                body: "linked comment".into(),
+            },
+        )
+        .await
+        .expect("create source comment");
+
+    db.conn()
+        .execute_unprepared(&format!(
+            "INSERT INTO comment_links (id, workspace_id, comment_id, target_document_id, created_at) VALUES ('{}', '{}', '{}', '{}', now())",
+            uuid::Uuid::now_v7(), ws.id.0, comment.id, target.id,
+        ))
+        .await
+        .expect("insert derived comment link");
+
+    let backlinks = client
+        .list_backlinks(
+            &ws.slug,
+            target.slug.as_deref().expect("target slug"),
+            None,
+            None,
+        )
+        .await
+        .expect("list document backlinks");
+    let source = backlinks
+        .items
+        .iter()
+        .find_map(|backlink| backlink.comment_source.as_ref())
+        .expect("comment backlink source");
+    assert_eq!(source.kind, "comment");
+    assert_eq!(source.comment_id, comment.id);
+    assert!(matches!(
+        &source.parent,
+        atlas_api::dtos::documents::CommentBacklinkParentDto::Task { readable_id, .. }
+            if readable_id == &source_readable_id
+    ));
 
     db.teardown().await;
 }

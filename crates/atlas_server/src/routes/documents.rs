@@ -8,6 +8,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use bytes::Bytes;
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use serde::Deserialize;
 
 use atlas_api::{
@@ -15,19 +16,21 @@ use atlas_api::{
         CommentDto, CommentListResponseDto, CreateCommentRequest, UpdateCommentRequest,
     },
     dtos::documents::{
-        ActorDto, AttachmentDto, BacklinkDto, CopyDocumentRequest, CreateDocumentRequest,
-        DocumentDto, DocumentSummaryDto, FrontmatterDto, MoveDocumentRequest, RevisionContentDto,
-        RevisionMetaDto, UpdateContentRequest, UpdateDocumentRequest,
+        ActorDto, AttachmentDto, BacklinkDto, CommentBacklinkParentDto, CommentBacklinkSourceDto,
+        CopyDocumentRequest, CreateDocumentRequest, DocumentDto, DocumentSummaryDto,
+        FrontmatterDto, MoveDocumentRequest, RevisionContentDto, RevisionMetaDto,
+        UpdateContentRequest, UpdateDocumentRequest,
     },
     pagination::{Cursor, Page},
 };
 use atlas_domain::{
     Actor, WorkspaceCtx,
-    entities::comments::CommentOwner,
+    entities::comments::{CommentLinkTarget, CommentOwner},
     entities::documents::{AttachmentOwner, ExtractedLink, NewAttachment, NewDocument},
     entities::identity::MemberRole,
     ids::{AttachmentId, CommentId, DocumentId, FolderId, RevisionId, UserId},
     permissions::{Capability, CapabilityAction, CapabilityFamily, Principal},
+    ports::comments::CommentLinkRepo,
     resolve_collision, slugify,
 };
 
@@ -36,12 +39,16 @@ use crate::{
         Authorized, DocsCreate, DocsDelete, DocsRead, DocsUpdate, EditorMin, MinRole, ViewerMin,
         WorkspaceMember, authorize_folder_destination,
         authorized::{DocumentSlugRes, ProjectRes},
+        batch_authorization::{
+            BatchAuthorizationService, PgBatchAuthorizationSource, ProjectionSubject,
+        },
         enforce_api_key_scope, resolve_folder_ancestry,
     },
     error::ApiError,
+    persistence::entities::documents::document,
     persistence::repos::{
         AttachmentRepo, DocumentLinkRepo, DocumentRepo, PgAttachmentLifecycle, PgAttachmentRepo,
-        PgDocumentLinkRepo, PgDocumentRepo,
+        PgCommentLinkRepo, PgDocumentLinkRepo, PgDocumentRepo,
     },
     routes::comments::{
         comment_to_dto, decode_feed_cursor, enrich_comment_entries, project_comment_feed,
@@ -605,7 +612,6 @@ pub(crate) async fn list_backlinks(
     let link_repo = PgDocumentLinkRepo {
         conn: (*state.db).clone(),
     };
-    let doc_repo = PgDocumentRepo::new((*state.db).clone(), state.anchor_interval);
 
     let mut links = link_repo
         .backlinks(&ctx, auth.resource.0.id)
@@ -629,24 +635,83 @@ pub(crate) async fn list_backlinks(
         None
     };
 
+    let source_ids = links
+        .iter()
+        .filter_map(|link| link.source_document_id.map(|id| id.0))
+        .collect::<Vec<_>>();
+    let sources = document::Entity::find()
+        .filter(document::Column::WorkspaceId.eq(ctx.workspace_id.0))
+        .filter(document::Column::DeletedAt.is_null())
+        .filter(document::Column::Id.is_in(source_ids))
+        .all(&*state.db)
+        .await
+        .map_err(|error| ApiError::Internal {
+            message: error.to_string(),
+        })?
+        .into_iter()
+        .map(|source| (source.id, source))
+        .collect::<std::collections::HashMap<_, _>>();
+
     let mut dtos: Vec<BacklinkDto> = Vec::with_capacity(links.len());
     for link in links {
         let Some(src_doc_id) = link.source_document_id else {
             continue;
         };
-        let source_doc = doc_repo
-            .get(&ctx, src_doc_id)
-            .await
-            .map_err(ApiError::Domain)?;
-
-        let source_slug = source_doc.as_ref().and_then(|d| d.slug.clone());
-        let source_title = source_doc.map(|d| d.title).unwrap_or_default();
+        let Some(source_doc) = sources.get(&src_doc_id.0) else {
+            continue;
+        };
 
         dtos.push(BacklinkDto {
             source_document_id: src_doc_id.0,
-            source_slug,
-            source_title,
+            source_slug: source_doc.slug.clone(),
+            source_title: source_doc.title.clone(),
             display_title: link.target_title,
+            comment_source: None,
+        });
+    }
+
+    let comment_links = PgCommentLinkRepo::new((*state.db).clone())
+        .backlinks_for_target(&ctx, CommentLinkTarget::Document(auth.resource.0.id))
+        .await
+        .map_err(ApiError::Domain)?;
+    let subjects = comment_links
+        .iter()
+        .map(|link| ProjectionSubject::SourceComment(link.comment_id.0))
+        .collect::<Vec<_>>();
+    let decisions = if subjects.is_empty() {
+        Vec::new()
+    } else {
+        BatchAuthorizationService::new(PgBatchAuthorizationSource::new((*state.db).clone()))
+            .authorize(auth.projection_context(), &subjects)
+            .await
+            .map_err(ApiError::Domain)?
+    };
+    for (link, allowed) in comment_links.into_iter().zip(decisions) {
+        if !allowed {
+            continue;
+        }
+        let parent = match link.parent {
+            CommentOwner::Task(id) => CommentBacklinkParentDto::Task {
+                id: id.0,
+                readable_id: link.parent_readable_id.unwrap_or_default(),
+                title: link.parent_title,
+            },
+            CommentOwner::Document(id) => CommentBacklinkParentDto::Document {
+                id: id.0,
+                slug: link.parent_slug,
+                title: link.parent_title,
+            },
+        };
+        dtos.push(BacklinkDto {
+            source_document_id: link.comment_id.0,
+            source_slug: None,
+            source_title: String::new(),
+            display_title: String::new(),
+            comment_source: Some(CommentBacklinkSourceDto {
+                kind: "comment".into(),
+                comment_id: link.comment_id.0,
+                parent,
+            }),
         });
     }
 

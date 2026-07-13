@@ -48,6 +48,8 @@ const EXPECTED_SCHEMAS: &[&str] = &[
     "RevisionContentDto",
     "BacklinkDto",
     "FrontmatterDto",
+    "CommentBacklinkSourceDto",
+    "CommentBacklinkParentDto",
     "AttachmentDto",
     "ActorDto",
     "ConflictProblemDto",

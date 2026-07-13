@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "openapi")]
 use utoipa::ToSchema;
 
-use super::documents::ActorDto;
+use super::documents::{ActorDto, CommentBacklinkSourceDto};
 
 // ---------------------------------------------------------------------------
 // Board DTOs
@@ -271,6 +271,8 @@ pub struct TaskBacklinkDto {
     pub source_title: String,
     /// "relates" | "blocks" | "parent" | "spec" | "docs"
     pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comment_source: Option<CommentBacklinkSourceDto>,
 }
 
 // ---------------------------------------------------------------------------
