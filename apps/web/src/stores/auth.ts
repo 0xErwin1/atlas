@@ -117,6 +117,7 @@ export const useAuthStore = defineStore('auth', () => {
     user,
     isAuthenticated,
     apiKeyWarning,
+    clearUser,
     fetchMe,
     login,
     logout,

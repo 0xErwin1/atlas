@@ -240,7 +240,7 @@ describe('Notes.vue open-note reconcile wiring', () => {
     // not just body — by letting the next save fire and inspecting what it CASes
     // against. If applyLoadedDocument stopped short of updating headRevisionId,
     // this would still show the stale 'rev-1'.
-    const editor = wrapper.findComponent('[data-test="note-editor"]');
+    const editor = wrapper.findComponent({ name: 'NoteEditor' });
     await editor.vm.$emit('change', 'Edited after reconcile');
     await vi.advanceTimersByTimeAsync(800);
     await settle();
@@ -257,7 +257,7 @@ describe('Notes.vue open-note reconcile wiring', () => {
     const wrapper = mountNotes();
     await settle();
 
-    const editor = wrapper.findComponent('[data-test="note-editor"]');
+    const editor = wrapper.findComponent({ name: 'NoteEditor' });
     await editor.vm.$emit('change', 'My unsaved edit');
     await settle();
 
