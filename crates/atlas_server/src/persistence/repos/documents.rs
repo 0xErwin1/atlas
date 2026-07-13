@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use atlas_domain::{
-    Actor, DomainError, RevisionConflict, WorkspaceCtx,
+    Actor, AttachmentStore, DomainError, RevisionConflict, WorkspaceCtx,
     entities::documents::{
         Attachment, AttachmentOwner, AttachmentWriteIntent, Document, DocumentLink,
         DocumentSummary, ExtractedLink, NewAttachment, NewDocument, RevisionMeta,
@@ -1043,6 +1043,69 @@ impl AttachmentRepo for PgAttachmentRepo {
 
 pub struct PgAttachmentWriteIntentRepo {
     pub conn: DatabaseConnection,
+}
+
+pub struct PgAttachmentLifecycle;
+
+impl PgAttachmentLifecycle {
+    pub async fn reconcile_stale(
+        conn: &DatabaseConnection,
+        store: &dyn AttachmentStore,
+        older_than: DateTime<Utc>,
+    ) -> Result<(), DomainError> {
+        let intents = attachment_write_intent::Entity::find()
+            .filter(attachment_write_intent::Column::CreatedAt.lt(older_than))
+            .all(conn)
+            .await
+            .map_err(db_err)?;
+
+        for intent in intents {
+            let txn = conn.begin().await.map_err(db_err)?;
+            lock_digest(&txn, &intent.digest).await?;
+
+            let current = attachment_write_intent::Entity::find_by_id(intent.id)
+                .filter(attachment_write_intent::Column::CreatedAt.lt(older_than))
+                .one(&txn)
+                .await
+                .map_err(db_err)?;
+
+            let Some(current) = current else {
+                txn.commit().await.map_err(db_err)?;
+                continue;
+            };
+
+            let has_live_reference = attachment::Entity::find()
+                .filter(attachment::Column::Sha256.eq(&current.digest))
+                .filter(attachment::Column::DeletedAt.is_null())
+                .one(&txn)
+                .await
+                .map_err(db_err)?
+                .is_some();
+
+            if !has_live_reference {
+                store.delete(&current.digest).await?;
+            }
+
+            attachment_write_intent::Entity::delete_by_id(current.id)
+                .exec(&txn)
+                .await
+                .map_err(db_err)?;
+            txn.commit().await.map_err(db_err)?;
+        }
+
+        Ok(())
+    }
+}
+
+async fn lock_digest(conn: &impl ConnectionTrait, digest: &str) -> Result<(), DomainError> {
+    conn.execute_raw(Statement::from_sql_and_values(
+        sea_orm::DatabaseBackend::Postgres,
+        "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+        [digest.into()],
+    ))
+    .await
+    .map(|_| ())
+    .map_err(db_err)
 }
 
 #[async_trait]
