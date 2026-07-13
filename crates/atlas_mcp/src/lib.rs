@@ -20,7 +20,7 @@ use atlas_api::dtos::task_views::{
     CreateTaskViewRequest, TaskViewFiltersDto, UpdateTaskViewRequest,
 };
 use atlas_api::dtos::webhooks::{CreateWebhookRequest, UpdateWebhookRequest};
-use atlas_api::dtos::{CreateProjectRequest, UpdateProjectRequest};
+use atlas_api::dtos::{CreateProjectRequest, ServerMetaDto, UpdateProjectRequest};
 use atlas_client::{AtlasClient, helpers};
 use rmcp::{
     ErrorData as McpError, ServerHandler,
@@ -53,16 +53,16 @@ use response::{
     Detail, enrich_client_error, envelope_page, map_present_value, parse_atlas_doc_uri, parse_csv,
     parse_detail, project_activity_entry, project_assignee, project_attachment,
     project_audit_entry, project_backlink, project_board_summary, project_checklist_item,
-    project_column, project_comment, project_document_compact, project_document_full,
-    project_document_summary, project_folder, project_principal, project_project,
-    project_promotion, project_reference, project_revision_content, project_revision_meta,
-    project_saved_search, project_search_hit, project_semantic_search_hit, project_status_template,
-    project_tag, project_task_attachment, project_task_backlink, project_task_compact,
-    project_task_full, project_task_row, project_task_view, project_webhook,
-    project_webhook_created, project_webhook_delivery, project_workspace,
-    project_workspace_activity_entry, require_confirm, resolve_column_id_on_board,
-    validate_assignee_type, validate_estimate, validate_estimate_value, validate_priority,
-    validate_reference_kind, validate_single_target, wrap_vec,
+    project_column, project_comment, project_comment_attachment, project_comment_feed_entry,
+    project_document_compact, project_document_full, project_document_summary, project_folder,
+    project_principal, project_project, project_promotion, project_reference,
+    project_revision_content, project_revision_meta, project_saved_search, project_search_hit,
+    project_semantic_search_hit, project_status_template, project_tag, project_task_attachment,
+    project_task_backlink, project_task_compact, project_task_full, project_task_row,
+    project_task_view, project_webhook, project_webhook_created, project_webhook_delivery,
+    project_workspace, project_workspace_activity_entry, require_confirm,
+    resolve_column_id_on_board, validate_assignee_type, validate_estimate, validate_estimate_value,
+    validate_priority, validate_reference_kind, validate_single_target, wrap_vec,
 };
 
 const ATLAS_INSTRUCTIONS: &str = "\
@@ -282,6 +282,53 @@ fn parse_optional_webhook_scope_id(raw: Option<&str>) -> Result<Option<uuid::Uui
             .map(Some)
             .map_err(|_| format!("scope_id '{s}' is not a valid UUID")),
     }
+}
+
+fn parse_comment_attachment_id(field: &str, raw: &str) -> Result<uuid::Uuid, String> {
+    raw.parse()
+        .map_err(|_| format!("{field} '{raw}' is not a valid UUID"))
+}
+
+fn decode_comment_attachment_data(
+    data_base64: &str,
+    max_attachment_bytes: u64,
+) -> Result<Vec<u8>, String> {
+    use base64::Engine as _;
+
+    let encoded_len = u64::try_from(data_base64.len())
+        .map_err(|_| "attachment content is too large to validate".to_string())?;
+    let max_encoded_len = max_attachment_bytes.div_ceil(3).saturating_mul(4);
+    if encoded_len > max_encoded_len {
+        return Err("attachment content exceeds the server attachment limit".to_string());
+    }
+    if !data_base64.len().is_multiple_of(4) {
+        return Err("attachment content must be padded standard base64".to_string());
+    }
+
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data_base64)
+        .map_err(|_| "attachment content must be padded standard base64".to_string())?;
+    if u64::try_from(bytes.len()).is_ok_and(|len| len > max_attachment_bytes) {
+        return Err("attachment content exceeds the server attachment limit".to_string());
+    }
+    Ok(bytes)
+}
+
+fn require_comment_attachment_limit(
+    result: Result<ServerMetaDto, atlas_client::ClientError>,
+    operation: &str,
+) -> Result<u64, String> {
+    result
+        .map_err(|e| {
+            format!(
+                "{operation}: server attachment limit could not be discovered; upload was not attempted: {}",
+                enrich_client_error(e, "server_meta")
+            )
+        })?
+        .max_attachment_bytes
+        .ok_or_else(|| {
+            format!("{operation}: server attachment limit could not be discovered; upload was not attempted")
+        })
 }
 
 // ---------------------------------------------------------------------------
@@ -1226,6 +1273,68 @@ pub struct ListDocumentCommentsParams {
     pub limit: Option<u32>,
 }
 
+/// Parameters accepted by task-comment attachment lifecycle tools.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct TaskCommentAttachmentParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Task readable ID, e.g. `ATL-42`.
+    pub readable_id: String,
+    /// UUID of the owning comment.
+    pub comment_id: String,
+    /// UUID of the comment attachment. Required for download and deletion.
+    #[serde(default)]
+    pub attachment_id: Option<String>,
+}
+
+/// Parameters accepted by `upload_task_comment_attachment`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct UploadTaskCommentAttachmentParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Task readable ID, e.g. `ATL-42`.
+    pub readable_id: String,
+    /// UUID of the owning comment.
+    pub comment_id: String,
+    /// File name sent to the server.
+    pub file_name: String,
+    /// MIME content type sent to the server.
+    pub content_type: String,
+    /// Strict padded standard-base64 file bytes.
+    pub data_base64: String,
+}
+
+/// Parameters accepted by document-comment attachment lifecycle tools.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DocumentCommentAttachmentParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Document slug.
+    pub slug: String,
+    /// UUID of the owning comment.
+    pub comment_id: String,
+    /// UUID of the comment attachment. Required for download and deletion.
+    #[serde(default)]
+    pub attachment_id: Option<String>,
+}
+
+/// Parameters accepted by `upload_document_comment_attachment`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct UploadDocumentCommentAttachmentParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Document slug.
+    pub slug: String,
+    /// UUID of the owning comment.
+    pub comment_id: String,
+    /// File name sent to the server.
+    pub file_name: String,
+    /// MIME content type sent to the server.
+    pub content_type: String,
+    /// Strict padded standard-base64 file bytes.
+    pub data_base64: String,
+}
+
 /// Parameters accepted by the `add_document_comment` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct AddDocumentCommentParams {
@@ -2155,6 +2264,131 @@ impl AtlasMcp {
 
         let result = envelope_page(page, project_comment);
         serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "List the full authorized task comment feed, including derived links and retained events, oldest first"
+    )]
+    async fn list_comment_feed(
+        &self,
+        Parameters(params): Parameters<ListCommentsParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+        let limit = params.limit.unwrap_or(50).clamp(1, 200);
+        let page = client
+            .list_comment_feed(
+                &params.workspace,
+                &params.readable_id,
+                params.cursor.as_deref(),
+                Some(limit),
+            )
+            .await
+            .map_err(|e| enrich_client_error(e, "list_comment_feed"))?;
+        serde_json::to_string(&envelope_page(page, project_comment_feed_entry))
+            .map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Upload a file owned by a task comment. Content must be strict padded standard base64."
+    )]
+    async fn upload_task_comment_attachment(
+        &self,
+        Parameters(params): Parameters<UploadTaskCommentAttachmentParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+        let comment_id = parse_comment_attachment_id("comment_id", &params.comment_id)?;
+        let max_attachment_bytes = require_comment_attachment_limit(
+            client.server_meta().await,
+            "upload_task_comment_attachment",
+        )?;
+        let data = decode_comment_attachment_data(&params.data_base64, max_attachment_bytes)?;
+        let attachment = client
+            .upload_task_comment_attachment(
+                &params.workspace,
+                &params.readable_id,
+                comment_id,
+                &params.file_name,
+                &params.content_type,
+                data,
+            )
+            .await
+            .map_err(|e| enrich_client_error(e, "upload_task_comment_attachment"))?;
+        serde_json::to_string(&project_comment_attachment(attachment)).map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "List attachment metadata for a task comment")]
+    async fn list_task_comment_attachments(
+        &self,
+        Parameters(params): Parameters<TaskCommentAttachmentParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+        let comment_id = parse_comment_attachment_id("comment_id", &params.comment_id)?;
+        let attachments = client
+            .list_task_comment_attachments(&params.workspace, &params.readable_id, comment_id)
+            .await
+            .map_err(|e| enrich_client_error(e, "list_task_comment_attachments"))?;
+        serde_json::to_string(&wrap_vec(attachments, project_comment_attachment))
+            .map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "Download a task comment attachment as standard base64 content")]
+    async fn get_task_comment_attachment(
+        &self,
+        Parameters(params): Parameters<TaskCommentAttachmentParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        use base64::Engine as _;
+        let client = self.resolve_client(&ctx)?;
+        let comment_id = parse_comment_attachment_id("comment_id", &params.comment_id)?;
+        let attachment_id = parse_comment_attachment_id(
+            "attachment_id",
+            params
+                .attachment_id
+                .as_deref()
+                .ok_or_else(|| "attachment_id is required".to_string())?,
+        )?;
+        let (data, content_type) = client
+            .download_task_comment_attachment(
+                &params.workspace,
+                &params.readable_id,
+                comment_id,
+                attachment_id,
+            )
+            .await
+            .map_err(|e| enrich_client_error(e, "get_task_comment_attachment"))?;
+        serde_json::to_string(&json!({"data_base64": base64::engine::general_purpose::STANDARD.encode(data), "content_type": content_type}))
+            .map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "Delete a task comment attachment.")]
+    async fn delete_task_comment_attachment(
+        &self,
+        Parameters(params): Parameters<TaskCommentAttachmentParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+        let comment_id = parse_comment_attachment_id("comment_id", &params.comment_id)?;
+        let attachment_id = parse_comment_attachment_id(
+            "attachment_id",
+            params
+                .attachment_id
+                .as_deref()
+                .ok_or_else(|| "attachment_id is required".to_string())?,
+        )?;
+        client
+            .delete_task_comment_attachment(
+                &params.workspace,
+                &params.readable_id,
+                comment_id,
+                attachment_id,
+            )
+            .await
+            .map_err(|e| enrich_client_error(e, "delete_task_comment_attachment"))?;
+        serde_json::to_string(&json!({"deleted": true, "attachment_id": attachment_id}))
+            .map_err(|e| e.to_string())
     }
 
     #[tool(
@@ -3455,6 +3689,131 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
+    #[tool(
+        description = "List the full authorized document comment feed, including derived links and retained events, oldest first"
+    )]
+    async fn list_document_comment_feed(
+        &self,
+        Parameters(params): Parameters<ListDocumentCommentsParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+        let limit = params.limit.unwrap_or(50).clamp(1, 200);
+        let page = client
+            .list_document_comment_feed(
+                &params.workspace,
+                &params.slug,
+                params.cursor.as_deref(),
+                Some(limit),
+            )
+            .await
+            .map_err(|e| enrich_client_error(e, "list_document_comment_feed"))?;
+        serde_json::to_string(&envelope_page(page, project_comment_feed_entry))
+            .map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Upload a file owned by a document comment. Content must be strict padded standard base64."
+    )]
+    async fn upload_document_comment_attachment(
+        &self,
+        Parameters(params): Parameters<UploadDocumentCommentAttachmentParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+        let comment_id = parse_comment_attachment_id("comment_id", &params.comment_id)?;
+        let max_attachment_bytes = require_comment_attachment_limit(
+            client.server_meta().await,
+            "upload_document_comment_attachment",
+        )?;
+        let data = decode_comment_attachment_data(&params.data_base64, max_attachment_bytes)?;
+        let attachment = client
+            .upload_document_comment_attachment(
+                &params.workspace,
+                &params.slug,
+                comment_id,
+                &params.file_name,
+                &params.content_type,
+                data,
+            )
+            .await
+            .map_err(|e| enrich_client_error(e, "upload_document_comment_attachment"))?;
+        serde_json::to_string(&project_comment_attachment(attachment)).map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "List attachment metadata for a document comment")]
+    async fn list_document_comment_attachments(
+        &self,
+        Parameters(params): Parameters<DocumentCommentAttachmentParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+        let comment_id = parse_comment_attachment_id("comment_id", &params.comment_id)?;
+        let attachments = client
+            .list_document_comment_attachments(&params.workspace, &params.slug, comment_id)
+            .await
+            .map_err(|e| enrich_client_error(e, "list_document_comment_attachments"))?;
+        serde_json::to_string(&wrap_vec(attachments, project_comment_attachment))
+            .map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "Download a document comment attachment as standard base64 content")]
+    async fn get_document_comment_attachment(
+        &self,
+        Parameters(params): Parameters<DocumentCommentAttachmentParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        use base64::Engine as _;
+        let client = self.resolve_client(&ctx)?;
+        let comment_id = parse_comment_attachment_id("comment_id", &params.comment_id)?;
+        let attachment_id = parse_comment_attachment_id(
+            "attachment_id",
+            params
+                .attachment_id
+                .as_deref()
+                .ok_or_else(|| "attachment_id is required".to_string())?,
+        )?;
+        let (data, content_type) = client
+            .download_document_comment_attachment(
+                &params.workspace,
+                &params.slug,
+                comment_id,
+                attachment_id,
+            )
+            .await
+            .map_err(|e| enrich_client_error(e, "get_document_comment_attachment"))?;
+        serde_json::to_string(&json!({"data_base64": base64::engine::general_purpose::STANDARD.encode(data), "content_type": content_type}))
+            .map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "Delete a document comment attachment.")]
+    async fn delete_document_comment_attachment(
+        &self,
+        Parameters(params): Parameters<DocumentCommentAttachmentParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+        let comment_id = parse_comment_attachment_id("comment_id", &params.comment_id)?;
+        let attachment_id = parse_comment_attachment_id(
+            "attachment_id",
+            params
+                .attachment_id
+                .as_deref()
+                .ok_or_else(|| "attachment_id is required".to_string())?,
+        )?;
+        client
+            .delete_document_comment_attachment(
+                &params.workspace,
+                &params.slug,
+                comment_id,
+                attachment_id,
+            )
+            .await
+            .map_err(|e| enrich_client_error(e, "delete_document_comment_attachment"))?;
+        serde_json::to_string(&json!({"deleted": true, "attachment_id": attachment_id}))
+            .map_err(|e| e.to_string())
+    }
+
     #[tool(description = "Post a markdown comment on a document (max 10 000 characters)")]
     async fn add_document_comment(
         &self,
@@ -4358,6 +4717,67 @@ mod tests {
             router.has_route("semantic_search"),
             "expected MCP semantic_search tool to be registered"
         );
+    }
+
+    #[test]
+    fn comment_attachment_tools_are_registered() {
+        let router = AtlasMcp::tool_router();
+        for name in [
+            "list_comment_feed",
+            "list_document_comment_feed",
+            "upload_task_comment_attachment",
+            "list_task_comment_attachments",
+            "get_task_comment_attachment",
+            "delete_task_comment_attachment",
+            "upload_document_comment_attachment",
+            "list_document_comment_attachments",
+            "get_document_comment_attachment",
+            "delete_document_comment_attachment",
+        ] {
+            assert!(
+                router.has_route(name),
+                "expected MCP tool `{name}` to be registered"
+            );
+        }
+    }
+
+    #[test]
+    fn comment_attachment_data_rejects_invalid_or_unpadded_base64() {
+        assert!(decode_comment_attachment_data("not base64", 16).is_err());
+        assert!(decode_comment_attachment_data("YQ", 16).is_err());
+        assert!(decode_comment_attachment_data("YQ==\n", 16).is_err());
+    }
+
+    #[test]
+    fn comment_attachment_data_rejects_encoded_and_decoded_oversize_payloads() {
+        assert!(decode_comment_attachment_data("YWJjZA==", 3).is_err());
+        assert!(decode_comment_attachment_data("YWI=", 1).is_err());
+        assert_eq!(decode_comment_attachment_data("YWI=", 2).unwrap(), b"ab");
+    }
+
+    #[test]
+    fn comment_attachment_limit_discovery_fails_closed_when_absent_or_null() {
+        let absent = ServerMetaDto {
+            version: "1".into(),
+            build: None,
+            url: None,
+            max_attachment_bytes: None,
+        };
+        let error = require_comment_attachment_limit(Ok(absent), "upload_task_comment_attachment")
+            .unwrap_err();
+        assert!(error.contains("could not be discovered"));
+        assert!(error.contains("not attempted"));
+    }
+
+    #[test]
+    fn upload_comment_attachment_params_require_metadata_and_base64_content() {
+        let params: UploadTaskCommentAttachmentParams = serde_json::from_str(
+            r#"{"workspace":"ws","readable_id":"ATL-1","comment_id":"00000000-0000-0000-0000-000000000000","file_name":"note.txt","content_type":"text/plain","data_base64":"YQ=="}"#,
+        )
+        .unwrap();
+        assert_eq!(params.file_name, "note.txt");
+        assert_eq!(params.content_type, "text/plain");
+        assert_eq!(params.data_base64, "YQ==");
     }
 
     #[test]

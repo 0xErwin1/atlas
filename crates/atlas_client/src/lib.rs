@@ -13,7 +13,7 @@ use atlas_api::{
         UserMembershipDto, WorkspaceDto,
         boards_tasks::{
             ActivityEntryDto, AddAssigneeRequest, AssigneeDto, BoardDto, BoardSummaryDto,
-            ChecklistItemDto, ColumnDto, CommentDto, CreateBoardRequest,
+            ChecklistItemDto, ColumnDto, CommentDto, CommentFeedEntryDto, CreateBoardRequest,
             CreateChecklistItemRequest, CreateColumnRequest, CreateCommentRequest,
             CreateReferenceRequest, CreateSubtaskRequest, CreateTaskRequest, MoveTaskRequest,
             PromoteChecklistItemRequest, PromotionDto, ReferenceDto, TaskAttachmentDto,
@@ -22,10 +22,10 @@ use atlas_api::{
             UpdateTaskRequest, WorkspaceTaskQueryParams,
         },
         documents::{
-            AttachmentDto, BacklinkDto, ConflictProblemDto, CopyDocumentRequest,
-            CreateDocumentRequest, DocumentDto, DocumentSummaryDto, FrontmatterDto,
-            MoveDocumentRequest, RevisionContentDto, RevisionMetaDto, UpdateContentRequest,
-            UpdateDocumentRequest,
+            AttachmentDto, BacklinkDto, CommentAttachmentDto, ConflictProblemDto,
+            CopyDocumentRequest, CreateDocumentRequest, DocumentDto, DocumentSummaryDto,
+            FrontmatterDto, MoveDocumentRequest, RevisionContentDto, RevisionMetaDto,
+            UpdateContentRequest, UpdateDocumentRequest,
         },
         folders::{
             CopyFolderRequest, CreateFolderRequest, FolderDto, MoveFolderRequest,
@@ -2485,6 +2485,112 @@ impl AtlasClient {
         self.decode_response(response, "list_comments").await
     }
 
+    /// `GET /api/workspaces/{ws}/tasks/{readable_id}/comments?feed=full`
+    pub async fn list_comment_feed(
+        &self,
+        ws: &str,
+        readable_id: &str,
+        cursor: Option<&str>,
+        limit: Option<u32>,
+    ) -> Result<Page<CommentFeedEntryDto>, ClientError> {
+        let path = build_comment_feed_path(
+            &format!("/api/workspaces/{ws}/tasks/{readable_id}/comments"),
+            cursor,
+            limit,
+        );
+        let response = self.get(&path).send().await?;
+        self.decode_response(response, "list_comment_feed").await
+    }
+
+    /// `POST /api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments`
+    pub async fn upload_task_comment_attachment(
+        &self,
+        ws: &str,
+        readable_id: &str,
+        comment_id: uuid::Uuid,
+        file_name: &str,
+        content_type: &str,
+        data: Vec<u8>,
+    ) -> Result<CommentAttachmentDto, ClientError> {
+        let boundary = format!("atlasboundary{}", uuid::Uuid::now_v7().as_simple());
+        let mut body = Vec::new();
+        body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+        body.extend_from_slice(
+            format!("Content-Disposition: form-data; name=\"file\"; filename=\"{file_name}\"\r\n")
+                .as_bytes(),
+        );
+        body.extend_from_slice(format!("Content-Type: {content_type}\r\n\r\n").as_bytes());
+        body.extend_from_slice(&data);
+        body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+
+        let response = self
+            .post(&format!(
+                "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments"
+            ))
+            .header("x-atlas-csrf", "1")
+            .header(
+                "content-type",
+                format!("multipart/form-data; boundary={boundary}"),
+            )
+            .body(body)
+            .send()
+            .await?;
+        self.decode_response(response, "upload_task_comment_attachment")
+            .await
+    }
+
+    /// `GET /api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments`
+    pub async fn list_task_comment_attachments(
+        &self,
+        ws: &str,
+        readable_id: &str,
+        comment_id: uuid::Uuid,
+    ) -> Result<Vec<CommentAttachmentDto>, ClientError> {
+        let response = self
+            .get(&format!(
+                "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments"
+            ))
+            .send()
+            .await?;
+        self.decode_response(response, "list_task_comment_attachments")
+            .await
+    }
+
+    /// `GET /api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}/content`
+    pub async fn download_task_comment_attachment(
+        &self,
+        ws: &str,
+        readable_id: &str,
+        comment_id: uuid::Uuid,
+        attachment_id: uuid::Uuid,
+    ) -> Result<(Vec<u8>, Option<String>), ClientError> {
+        let response = self
+            .get(&format!(
+                "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}/content"
+            ))
+            .send()
+            .await?;
+        decode_attachment_content(response).await
+    }
+
+    /// `DELETE /api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}`
+    pub async fn delete_task_comment_attachment(
+        &self,
+        ws: &str,
+        readable_id: &str,
+        comment_id: uuid::Uuid,
+        attachment_id: uuid::Uuid,
+    ) -> Result<(), ClientError> {
+        let response = self
+            .delete(&format!(
+                "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}"
+            ))
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        decode_empty_response(response).await
+    }
+
     /// `POST /api/workspaces/{ws}/tasks/{readable_id}/comments`
     pub async fn add_comment(
         &self,
@@ -2562,6 +2668,100 @@ impl AtlasClient {
         let response = self.get(&path).send().await?;
         self.decode_response(response, "list_document_comments")
             .await
+    }
+
+    /// `GET /api/workspaces/{ws}/documents/{slug}/comments?feed=full`
+    pub async fn list_document_comment_feed(
+        &self,
+        ws: &str,
+        slug: &str,
+        cursor: Option<&str>,
+        limit: Option<u32>,
+    ) -> Result<Page<CommentFeedEntryDto>, ClientError> {
+        let path = build_comment_feed_path(
+            &format!("/api/workspaces/{ws}/documents/{slug}/comments"),
+            cursor,
+            limit,
+        );
+        let response = self.get(&path).send().await?;
+        self.decode_response(response, "list_document_comment_feed")
+            .await
+    }
+
+    /// `POST /api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments`
+    pub async fn upload_document_comment_attachment(
+        &self,
+        ws: &str,
+        slug: &str,
+        comment_id: uuid::Uuid,
+        file_name: &str,
+        content_type: &str,
+        data: Vec<u8>,
+    ) -> Result<CommentAttachmentDto, ClientError> {
+        let response = self
+            .post(&format!(
+                "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments"
+            ))
+            .header("x-atlas-csrf", "1")
+            .header("x-file-name", file_name)
+            .header("content-type", content_type)
+            .body(data)
+            .send()
+            .await?;
+        self.decode_response(response, "upload_document_comment_attachment")
+            .await
+    }
+
+    /// `GET /api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments`
+    pub async fn list_document_comment_attachments(
+        &self,
+        ws: &str,
+        slug: &str,
+        comment_id: uuid::Uuid,
+    ) -> Result<Vec<CommentAttachmentDto>, ClientError> {
+        let response = self
+            .get(&format!(
+                "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments"
+            ))
+            .send()
+            .await?;
+        self.decode_response(response, "list_document_comment_attachments")
+            .await
+    }
+
+    /// `GET /api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}`
+    pub async fn download_document_comment_attachment(
+        &self,
+        ws: &str,
+        slug: &str,
+        comment_id: uuid::Uuid,
+        attachment_id: uuid::Uuid,
+    ) -> Result<(Vec<u8>, Option<String>), ClientError> {
+        let response = self
+            .get(&format!(
+                "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}"
+            ))
+            .send()
+            .await?;
+        decode_attachment_content(response).await
+    }
+
+    /// `DELETE /api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}`
+    pub async fn delete_document_comment_attachment(
+        &self,
+        ws: &str,
+        slug: &str,
+        comment_id: uuid::Uuid,
+        attachment_id: uuid::Uuid,
+    ) -> Result<(), ClientError> {
+        let response = self
+            .delete(&format!(
+                "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}"
+            ))
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        decode_empty_response(response).await
     }
 
     /// `POST /api/workspaces/{ws}/documents/{slug}/comments`
@@ -3041,6 +3241,48 @@ fn build_paginated_path(base: &str, cursor: Option<&str>, limit: Option<u32>) ->
     }
 }
 
+fn build_comment_feed_path(base: &str, cursor: Option<&str>, limit: Option<u32>) -> String {
+    let mut params = vec!["feed=full".to_string()];
+    if let Some(cursor) = cursor {
+        params.push(format!("cursor={cursor}"));
+    }
+    if let Some(limit) = limit {
+        params.push(format!("limit={limit}"));
+    }
+    format!("{}?{}", base, params.join("&"))
+}
+
+async fn decode_empty_response(response: reqwest::Response) -> Result<(), ClientError> {
+    if response.status().is_success() {
+        return Ok(());
+    }
+    let problem = response
+        .json()
+        .await
+        .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
+    Err(ClientError::Api(problem))
+}
+
+async fn decode_attachment_content(
+    response: reqwest::Response,
+) -> Result<(Vec<u8>, Option<String>), ClientError> {
+    if !response.status().is_success() {
+        let problem = response
+            .json()
+            .await
+            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
+        return Err(ClientError::Api(problem));
+    }
+
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .and_then(|value| value.to_str().ok())
+        .map(ToString::to_string);
+    let bytes = response.bytes().await?;
+    Ok((bytes.to_vec(), content_type))
+}
+
 /// Builds the `GET /api/workspaces/{ws}/webhooks` path.
 ///
 /// The webhook list route paginates on `after` (forward cursor) rather than the
@@ -3207,6 +3449,26 @@ mod tests {
     }
 
     #[test]
+    fn build_comment_feed_path_keeps_feed_before_pagination() {
+        assert_eq!(
+            build_comment_feed_path(
+                "/api/workspaces/ws/tasks/ATL-1/comments",
+                Some("cursor"),
+                Some(25)
+            ),
+            "/api/workspaces/ws/tasks/ATL-1/comments?feed=full&cursor=cursor&limit=25"
+        );
+    }
+
+    #[test]
+    fn build_comment_feed_path_always_requests_full_feed() {
+        assert_eq!(
+            build_comment_feed_path("/api/workspaces/ws/documents/doc/comments", None, None),
+            "/api/workspaces/ws/documents/doc/comments?feed=full"
+        );
+    }
+
+    #[test]
     fn encode_query_value_encodes_spaces() {
         let encoded = encode_query_value("hello world");
         assert!(encoded.contains("%20") || !encoded.contains(' '));
@@ -3235,5 +3497,83 @@ mod tests {
     fn parse_retry_after_clamps_to_bounds() {
         assert_eq!(parse_retry_after(Some("0")), MIN_RETRY_WAIT);
         assert_eq!(parse_retry_after(Some("9999")), MAX_RETRY_WAIT);
+    }
+
+    fn serve_once(status: &'static str, body: &'static str) -> String {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 1024];
+            let _ = stream.read(&mut request).unwrap();
+            write!(
+                stream,
+                "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            )
+            .unwrap();
+        });
+        format!("http://{address}")
+    }
+
+    #[tokio::test]
+    async fn server_meta_preserves_optional_limit_and_decode_context() {
+        let absent = AtlasClient::new(serve_once(
+            "200 OK",
+            r#"{"version":"1","build":null,"url":null}"#,
+        ));
+        assert!(
+            absent
+                .server_meta()
+                .await
+                .unwrap()
+                .max_attachment_bytes
+                .is_none()
+        );
+
+        let null = AtlasClient::new(serve_once(
+            "200 OK",
+            r#"{"version":"1","build":null,"url":null,"max_attachment_bytes":null}"#,
+        ));
+        assert!(
+            null.server_meta()
+                .await
+                .unwrap()
+                .max_attachment_bytes
+                .is_none()
+        );
+
+        let malformed = AtlasClient::new(serve_once(
+            "200 OK",
+            r#"{"version":"1","build":null,"url":null,"max_attachment_bytes":"large"}"#,
+        ));
+        assert!(matches!(
+            malformed.server_meta().await,
+            Err(ClientError::Decode {
+                context: "server_meta",
+                ..
+            })
+        ));
+    }
+
+    #[tokio::test]
+    async fn server_meta_preserves_api_and_transport_errors() {
+        let api = AtlasClient::new(serve_once(
+            "503 Service Unavailable",
+            r#"{"type":"urn:atlas:error","title":"Unavailable","status":503}"#,
+        ));
+        assert!(matches!(api.server_meta().await, Err(ClientError::Api(_))));
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        drop(listener);
+        let transport = AtlasClient::new(format!("http://{address}"));
+        assert!(matches!(
+            transport.server_meta().await,
+            Err(ClientError::Transport(_))
+        ));
     }
 }
