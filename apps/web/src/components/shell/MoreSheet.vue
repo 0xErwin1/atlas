@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router';
 import Avatar from '@/components/ui/Avatar.vue';
 import BottomSheet from '@/components/ui/BottomSheet.vue';
 import Icon from '@/components/ui/Icon.vue';
+import { useWorkspaceSwitch } from '@/composables/useWorkspaceSwitch';
 import { useAuthStore } from '@/stores/auth';
 import { useWorkspaceStore } from '@/stores/workspace';
 
@@ -18,12 +19,24 @@ const emit = defineEmits<{
 const router = useRouter();
 const auth = useAuthStore();
 const workspace = useWorkspaceStore();
+const { switchTo } = useWorkspaceSwitch();
 
 const userInitials = computed(() => (auth.user?.username ?? '?').slice(0, 2).toUpperCase());
 
-const workspaceSlug = computed(() => workspace.activeWorkspaceSlug ?? 'Atlas');
+const activeWorkspace = computed(() =>
+  workspace.workspaces.find((candidate) => candidate.slug === workspace.activeWorkspaceSlug),
+);
 
-const workspaceInitial = computed(() => workspaceSlug.value.charAt(0).toUpperCase() || 'A');
+const workspaceLabel = computed(
+  () => activeWorkspace.value?.name || workspace.activeWorkspaceSlug || 'Atlas',
+);
+
+const workspaceInitial = computed(() => workspaceLabel.value.charAt(0).toUpperCase() || 'A');
+
+async function pickWorkspace(slug: string): Promise<void> {
+  await switchTo(slug);
+  emit('close');
+}
 
 function openSettings(): void {
   emit('close');
@@ -67,9 +80,24 @@ async function handleLogout(): Promise<void> {
           Workspace
         </div>
         <div class="truncate" style="font-size: var(--fs-base); font-weight: var(--fw-semibold); color: var(--c-foreground);">
-          {{ workspaceSlug }}
+          {{ workspaceLabel }}
         </div>
       </div>
+    </div>
+
+    <div class="atl-workspace-list" role="group" aria-label="Workspaces">
+      <button
+        v-for="candidate in workspace.workspaces"
+        :key="candidate.id"
+        type="button"
+        class="atl-workspace-option"
+        :data-workspace-option="candidate.slug"
+        :aria-current="candidate.slug === workspace.activeWorkspaceSlug ? 'true' : undefined"
+        @click="pickWorkspace(candidate.slug)"
+      >
+        <Icon :name="candidate.slug === workspace.activeWorkspaceSlug ? 'check' : 'folder'" :size="15" />
+        <span class="truncate">{{ candidate.name || candidate.slug }}</span>
+      </button>
     </div>
 
     <div style="height: 1px; background: var(--c-border); margin: 2px 0 10px;" aria-hidden="true" />
@@ -98,6 +126,39 @@ async function handleLogout(): Promise<void> {
 </template>
 
 <style scoped>
+.atl-workspace-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 10px;
+}
+
+.atl-workspace-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 42px;
+  padding: 0 8px;
+  border: none;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--c-foreground);
+  cursor: pointer;
+  font-size: var(--fs-base);
+  text-align: left;
+}
+
+.atl-workspace-option[aria-current='true'] {
+  background: var(--c-raised);
+  color: var(--c-primary);
+  font-weight: var(--fw-semibold);
+}
+
+.atl-workspace-option:active {
+  background: var(--c-raised);
+}
+
 .atl-more-item {
   display: flex;
   align-items: center;
