@@ -10,6 +10,8 @@ use atlas_domain::{
         ResourceRef, ResourceRole,
     },
 };
+use sea_orm::{DatabaseBackend, DatabaseConnection, FromQueryResult, Statement};
+use serde::Deserialize;
 use uuid::Uuid;
 
 /// Request-bound authorization state for viewer-relative projections.
@@ -83,6 +85,16 @@ pub(crate) enum PrincipalFacts {
     ApiKey(ApiKeyFacts),
 }
 
+pub(crate) struct PgBatchAuthorizationSource {
+    conn: DatabaseConnection,
+}
+
+impl PgBatchAuthorizationSource {
+    pub(crate) fn new(conn: DatabaseConnection) -> Self {
+        Self { conn }
+    }
+}
+
 impl PrincipalFacts {
     #[cfg(test)]
     pub(super) fn active_user(
@@ -112,6 +124,373 @@ pub(crate) trait BatchAuthorizationSource: Send + Sync {
         context: &ProjectionAuthContext,
         resources: &[ResourceRef],
     ) -> Result<PrincipalFacts, DomainError>;
+}
+
+#[derive(FromQueryResult)]
+struct PrincipalFactsRow {
+    facts: serde_json::Value,
+}
+
+#[derive(Deserialize)]
+struct StoredGrant {
+    resource: StoredResource,
+    role: String,
+}
+
+#[derive(Deserialize)]
+struct StoredResource {
+    kind: String,
+    id: Option<Uuid>,
+}
+
+#[derive(Deserialize)]
+struct StoredUserFacts {
+    user_id: Uuid,
+    is_active: bool,
+    effective_membership: Option<String>,
+    is_root_admin: bool,
+    grants: Vec<StoredGrant>,
+}
+
+#[derive(Deserialize)]
+struct StoredApiKeyFacts {
+    key_id: Uuid,
+    is_active: bool,
+    is_revoked: bool,
+    is_expired: bool,
+    is_global: bool,
+    scopes: Vec<String>,
+    grants: Vec<StoredGrant>,
+    creator: StoredUserFacts,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum StoredPrincipalFacts {
+    User(StoredUserFacts),
+    ApiKey(StoredApiKeyFacts),
+}
+
+#[async_trait]
+impl BatchAuthorizationSource for PgBatchAuthorizationSource {
+    async fn load_subject_facts(
+        &self,
+        _context: &ProjectionAuthContext,
+        _subjects: &[ProjectionSubject],
+    ) -> Result<Vec<SubjectFact>, DomainError> {
+        Err(DomainError::Internal {
+            message: "batch subject facts are not implemented".into(),
+        })
+    }
+
+    async fn load_principal_facts(
+        &self,
+        context: &ProjectionAuthContext,
+        resources: &[ResourceRef],
+    ) -> Result<PrincipalFacts, DomainError> {
+        let (principal_type, principal_id) = match context.principal {
+            Principal::User(user_id) => ("user", user_id.0),
+            Principal::ApiKey(key_id) => ("api_key", key_id.0),
+            Principal::Group(_) => {
+                return Err(DomainError::Internal {
+                    message: "groups cannot authorize comment projections".into(),
+                });
+            }
+        };
+
+        let rows = PrincipalFactsRow::find_by_statement(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            QUERY_B_PRINCIPAL_FACTS,
+            [
+                context.workspace_id.0.into(),
+                principal_type.into(),
+                principal_id.into(),
+                resources_json(resources).into(),
+            ],
+        ))
+        .all(&self.conn)
+        .await
+        .map_err(db_error)?;
+
+        let [row] = rows.as_slice() else {
+            return Err(DomainError::Internal {
+                message: "batch principal facts returned an invalid envelope cardinality".into(),
+            });
+        };
+
+        let facts: StoredPrincipalFacts =
+            serde_json::from_value(row.facts.clone()).map_err(|error| DomainError::Internal {
+                message: format!("invalid batch principal facts payload: {error}"),
+            })?;
+
+        decode_principal_facts(facts)
+    }
+}
+
+const QUERY_B_PRINCIPAL_FACTS: &str = r#"
+WITH requested AS (
+    SELECT $1::uuid AS workspace_id, $2::text AS principal_type, $3::uuid AS principal_id
+), requested_resources AS (
+    SELECT kind, id
+    FROM jsonb_to_recordset($4::jsonb) AS resources(kind text, id uuid)
+), principal_users AS (
+    SELECT workspace_id, principal_id AS user_id
+    FROM requested
+    WHERE principal_type = 'user'
+    UNION ALL
+    SELECT requested.workspace_id, keys.created_by_user_id
+    FROM requested
+    JOIN api_keys keys ON keys.id = requested.principal_id
+    WHERE requested.principal_type = 'api_key'
+), user_grants AS (
+    SELECT principal_users.user_id,
+           COALESCE(jsonb_agg(jsonb_build_object(
+               'resource', jsonb_build_object(
+                   'kind', CASE
+                       WHEN grants.project_id IS NOT NULL THEN 'project'
+                       WHEN grants.folder_id IS NOT NULL THEN 'folder'
+                       WHEN grants.document_id IS NOT NULL THEN 'document'
+                       WHEN grants.board_id IS NOT NULL THEN 'board'
+                       ELSE 'workspace'
+                   END,
+                   'id', COALESCE(grants.project_id, grants.folder_id, grants.document_id, grants.board_id)
+               ),
+               'role', grants.role
+           )) FILTER (WHERE grants.id IS NOT NULL), '[]'::jsonb) AS grants
+    FROM principal_users
+    LEFT JOIN permission_grants grants ON grants.workspace_id = principal_users.workspace_id
+        AND (
+            grants.user_id = principal_users.user_id
+            OR (
+                grants.group_id IS NOT NULL
+                AND EXISTS (
+                    SELECT 1
+                    FROM group_members
+                    JOIN groups ON groups.id = group_members.group_id
+                    WHERE group_members.group_id = grants.group_id
+                      AND group_members.user_id = principal_users.user_id
+                      AND groups.workspace_id = principal_users.workspace_id
+                      AND groups.deleted_at IS NULL
+                )
+            )
+        )
+        AND (
+            num_nonnulls(grants.project_id, grants.folder_id, grants.document_id, grants.board_id) = 0
+            OR EXISTS (
+                SELECT 1 FROM requested_resources
+                WHERE (requested_resources.kind = 'project' AND requested_resources.id = grants.project_id)
+                   OR (requested_resources.kind = 'folder' AND requested_resources.id = grants.folder_id)
+                   OR (requested_resources.kind = 'document' AND requested_resources.id = grants.document_id)
+                   OR (requested_resources.kind = 'board' AND requested_resources.id = grants.board_id)
+            )
+        )
+    GROUP BY principal_users.user_id
+), key_grants AS (
+    SELECT requested.principal_id AS key_id,
+           COALESCE(jsonb_agg(jsonb_build_object(
+               'resource', jsonb_build_object(
+                   'kind', CASE
+                       WHEN grants.project_id IS NOT NULL THEN 'project'
+                       WHEN grants.folder_id IS NOT NULL THEN 'folder'
+                       WHEN grants.document_id IS NOT NULL THEN 'document'
+                       WHEN grants.board_id IS NOT NULL THEN 'board'
+                       ELSE 'workspace'
+                   END,
+                   'id', COALESCE(grants.project_id, grants.folder_id, grants.document_id, grants.board_id)
+               ),
+               'role', grants.role
+           )) FILTER (WHERE grants.id IS NOT NULL), '[]'::jsonb) AS grants
+    FROM requested
+    LEFT JOIN permission_grants grants ON grants.workspace_id = requested.workspace_id
+        AND grants.api_key_id = requested.principal_id
+        AND (
+            num_nonnulls(grants.project_id, grants.folder_id, grants.document_id, grants.board_id) = 0
+            OR EXISTS (
+                SELECT 1 FROM requested_resources
+                WHERE (requested_resources.kind = 'project' AND requested_resources.id = grants.project_id)
+                   OR (requested_resources.kind = 'folder' AND requested_resources.id = grants.folder_id)
+                   OR (requested_resources.kind = 'document' AND requested_resources.id = grants.document_id)
+                   OR (requested_resources.kind = 'board' AND requested_resources.id = grants.board_id)
+            )
+        )
+    WHERE requested.principal_type = 'api_key'
+    GROUP BY requested.principal_id
+), user_facts AS (
+    SELECT jsonb_build_object(
+        'kind', 'user',
+        'user_id', requested.principal_id,
+        'is_active', users.id IS NOT NULL AND users.disabled_at IS NULL,
+        'effective_membership', memberships.role,
+        'is_root_admin', COALESCE(users.is_root OR users.is_system_admin, false),
+        'grants', COALESCE(user_grants.grants, '[]'::jsonb)
+    ) AS facts
+    FROM requested
+    LEFT JOIN users ON users.id = requested.principal_id
+    LEFT JOIN workspace_memberships memberships
+        ON memberships.workspace_id = requested.workspace_id AND memberships.user_id = users.id
+    LEFT JOIN user_grants ON user_grants.user_id = users.id
+    WHERE requested.principal_type = 'user'
+), key_facts AS (
+    SELECT jsonb_build_object(
+        'kind', 'api_key',
+        'key_id', requested.principal_id,
+        'is_active', keys.id IS NOT NULL,
+        'is_revoked', keys.revoked_at IS NOT NULL,
+        'is_expired', keys.expires_at IS NOT NULL AND keys.expires_at <= CURRENT_TIMESTAMP,
+        'is_global', COALESCE(keys.is_global, false),
+        'scopes', COALESCE(to_jsonb(keys.scopes), '[]'::jsonb),
+        'grants', COALESCE(key_grants.grants, '[]'::jsonb),
+        'creator', jsonb_build_object(
+            'user_id', creator.id,
+            'is_active', creator.id IS NOT NULL AND creator.disabled_at IS NULL,
+            'effective_membership', creator_membership.role,
+            'is_root_admin', COALESCE(creator.is_root OR creator.is_system_admin, false),
+            'grants', COALESCE(user_grants.grants, '[]'::jsonb)
+        )
+    ) AS facts
+    FROM requested
+    LEFT JOIN api_keys keys ON keys.id = requested.principal_id
+    LEFT JOIN users creator ON creator.id = keys.created_by_user_id
+    LEFT JOIN workspace_memberships creator_membership
+        ON creator_membership.workspace_id = requested.workspace_id
+        AND creator_membership.user_id = creator.id
+    LEFT JOIN key_grants ON key_grants.key_id = keys.id
+    LEFT JOIN user_grants ON user_grants.user_id = creator.id
+    WHERE requested.principal_type = 'api_key'
+)
+SELECT facts FROM user_facts
+UNION ALL
+SELECT facts FROM key_facts
+"#;
+
+fn resources_json(resources: &[ResourceRef]) -> serde_json::Value {
+    serde_json::Value::Array(
+        resources
+            .iter()
+            .filter_map(|resource| match resource {
+                ResourceRef::Workspace => None,
+                ResourceRef::Project(id) => Some(("project", id.0)),
+                ResourceRef::Folder(id) => Some(("folder", id.0)),
+                ResourceRef::Document(id) => Some(("document", id.0)),
+                ResourceRef::Board(id) => Some(("board", id.0)),
+            })
+            .map(|(kind, id)| serde_json::json!({ "kind": kind, "id": id }))
+            .collect(),
+    )
+}
+
+fn decode_principal_facts(facts: StoredPrincipalFacts) -> Result<PrincipalFacts, DomainError> {
+    match facts {
+        StoredPrincipalFacts::User(facts) => Ok(PrincipalFacts::User(decode_user_facts(facts)?)),
+        StoredPrincipalFacts::ApiKey(facts) => Ok(PrincipalFacts::ApiKey(ApiKeyFacts {
+            key_id: ApiKeyId(facts.key_id),
+            is_active: facts.is_active,
+            is_revoked: facts.is_revoked,
+            is_expired: facts.is_expired,
+            is_global: facts.is_global,
+            scopes: decode_scopes(facts.scopes)?,
+            grants: decode_grants(facts.grants)?,
+            creator: decode_user_facts(facts.creator)?,
+        })),
+    }
+}
+
+fn decode_user_facts(facts: StoredUserFacts) -> Result<UserFacts, DomainError> {
+    Ok(UserFacts {
+        user_id: UserId(facts.user_id),
+        is_active: facts.is_active,
+        effective_membership: facts
+            .effective_membership
+            .as_deref()
+            .map(decode_membership)
+            .transpose()?,
+        is_root_admin: facts.is_root_admin,
+        grants: decode_grants(facts.grants)?,
+    })
+}
+
+fn decode_membership(role: &str) -> Result<MemberRole, DomainError> {
+    match role {
+        "owner" => Ok(MemberRole::Owner),
+        "admin" => Ok(MemberRole::Admin),
+        "member" => Ok(MemberRole::Member),
+        _ => Err(DomainError::Internal {
+            message: "batch principal facts contained an invalid membership role".into(),
+        }),
+    }
+}
+
+fn decode_grants(
+    grants: Vec<StoredGrant>,
+) -> Result<Vec<(ResourceRef, ResourceRole)>, DomainError> {
+    let mut decoded = Vec::with_capacity(grants.len());
+    let mut resources = BTreeSet::new();
+
+    for grant in grants {
+        let resource = decode_resource(grant.resource)?;
+        if !resources.insert(resource_key(&resource)) {
+            return Err(DomainError::Internal {
+                message: "batch principal facts contained duplicate grants".into(),
+            });
+        }
+        decoded.push((resource, decode_role(&grant.role)?));
+    }
+
+    Ok(decoded)
+}
+
+fn decode_scopes(scopes: Vec<String>) -> Result<Vec<Capability>, DomainError> {
+    let mut decoded = Vec::with_capacity(scopes.len());
+    let mut seen = BTreeSet::new();
+
+    for scope in scopes {
+        if !seen.insert(scope.clone()) {
+            return Err(DomainError::Internal {
+                message: "batch principal facts contained duplicate key scopes".into(),
+            });
+        }
+        decoded.push(scope.parse().map_err(|_| DomainError::Internal {
+            message: "batch principal facts contained an unknown key capability".into(),
+        })?);
+    }
+
+    Ok(decoded)
+}
+
+fn decode_resource(resource: StoredResource) -> Result<ResourceRef, DomainError> {
+    let id = resource.id;
+    match resource.kind.as_str() {
+        "workspace" if id.is_none() => Some(ResourceRef::Workspace),
+        "project" => id
+            .map(atlas_domain::ids::ProjectId)
+            .map(ResourceRef::Project),
+        "folder" => id.map(atlas_domain::ids::FolderId).map(ResourceRef::Folder),
+        "document" => id
+            .map(atlas_domain::ids::DocumentId)
+            .map(ResourceRef::Document),
+        "board" => id.map(atlas_domain::ids::BoardId).map(ResourceRef::Board),
+        _ => None,
+    }
+    .ok_or_else(|| DomainError::Internal {
+        message: "batch principal facts contained an invalid grant resource".into(),
+    })
+}
+
+fn decode_role(role: &str) -> Result<ResourceRole, DomainError> {
+    match role {
+        "viewer" => Ok(ResourceRole::Viewer),
+        "editor" => Ok(ResourceRole::Editor),
+        "admin" => Ok(ResourceRole::Admin),
+        _ => Err(DomainError::Internal {
+            message: "batch principal facts contained an invalid grant role".into(),
+        }),
+    }
+}
+
+fn db_error(error: sea_orm::DbErr) -> DomainError {
+    DomainError::Internal {
+        message: error.to_string(),
+    }
 }
 
 /// Applies the existing permission resolver to a bounded heterogeneous batch.

@@ -5,6 +5,8 @@ pub mod authorized;
 )]
 pub(crate) mod batch_authorization;
 #[cfg(test)]
+mod batch_authorization_db_tests;
+#[cfg(test)]
 mod batch_authorization_tests;
 pub mod extractors;
 
