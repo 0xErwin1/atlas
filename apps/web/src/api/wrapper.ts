@@ -2,6 +2,9 @@ import createClient, { type Middleware } from 'openapi-fetch';
 import type { paths } from './types.d.ts';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'TRACE']);
+const LOCALLY_HANDLED_UNAUTHORIZED_PATHS = new Set(['/api/auth/login', '/api/auth/me']);
+
+let unauthorizedHandler: (() => void) | undefined;
 
 export const csrfMiddlewareForTest: Middleware = {
   onRequest({ request }) {
@@ -13,6 +16,18 @@ export const csrfMiddlewareForTest: Middleware = {
   },
 };
 
+export const unauthorizedMiddlewareForTest: Middleware = {
+  onResponse({ request, response }) {
+    if (response.status === 401 && !LOCALLY_HANDLED_UNAUTHORIZED_PATHS.has(new URL(request.url).pathname)) {
+      unauthorizedHandler?.();
+    }
+  },
+};
+
+export function setUnauthorizedHandler(handler: () => void): void {
+  unauthorizedHandler = handler;
+}
+
 export const wrappedClient = createClient<paths>({
   baseUrl: '',
   credentials: 'include',
@@ -20,3 +35,4 @@ export const wrappedClient = createClient<paths>({
 });
 
 wrappedClient.use(csrfMiddlewareForTest);
+wrappedClient.use(unauthorizedMiddlewareForTest);
