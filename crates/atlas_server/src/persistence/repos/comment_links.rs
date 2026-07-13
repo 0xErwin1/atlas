@@ -178,8 +178,10 @@ impl CommentLinkRepo for PgCommentLinkRepo {
                      JOIN comments c ON c.id = cl.comment_id AND c.workspace_id = cl.workspace_id \
                      LEFT JOIN tasks parent_task ON parent_task.id = c.task_id AND parent_task.workspace_id = c.workspace_id AND parent_task.deleted_at IS NULL \
                      LEFT JOIN documents parent_document ON parent_document.id = c.document_id AND parent_document.workspace_id = c.workspace_id AND parent_document.deleted_at IS NULL \
-                     WHERE cl.workspace_id = $1 AND cl.{target_column} = $2 AND c.deleted_at IS NULL \
-                     ORDER BY cl.created_at ASC, cl.id ASC"
+                      WHERE cl.workspace_id = $1 AND cl.{target_column} = $2 AND c.deleted_at IS NULL \
+                        AND ((c.task_id IS NOT NULL AND parent_task.id IS NOT NULL) \
+                          OR (c.document_id IS NOT NULL AND parent_document.id IS NOT NULL)) \
+                      ORDER BY cl.created_at ASC, cl.id ASC"
                 ),
                 [ctx.workspace_id.0.into(), target_id.into()],
             ))
