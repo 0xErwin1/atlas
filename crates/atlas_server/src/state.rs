@@ -11,7 +11,7 @@ use crate::live::{DEFAULT_HUB_CAPACITY, LiveEventHub};
 use crate::middleware::rate_limit::PrincipalRateLimiter;
 use crate::persistence::repos::{DiskAttachmentStore, S3AttachmentStore, S3Config};
 use crate::presence::PresenceRegistry;
-use crate::services::{DocumentService, TaskService};
+use crate::services::{CommentService, DocumentService, TaskService};
 
 const DEFAULT_MAX_ATTACHMENT_BYTES: u64 = 20 * 1024 * 1024; // 20 MiB
 
@@ -166,12 +166,20 @@ impl AppState {
 
     /// Builds a `TaskService` bound to this state's database connection.
     pub fn task_service(&self) -> TaskService {
-        TaskService::new((*self.db).clone())
+        TaskService::with_comment_service((*self.db).clone(), self.comment_service())
     }
 
     /// Builds a `DocumentService` bound to this state's database connection.
     pub fn document_service(&self) -> DocumentService {
-        DocumentService::new((*self.db).clone(), self.anchor_interval)
+        DocumentService::with_comment_service(
+            (*self.db).clone(),
+            self.anchor_interval,
+            self.comment_service(),
+        )
+    }
+
+    fn comment_service(&self) -> CommentService {
+        CommentService::with_attachment_store((*self.db).clone(), self.attachments.clone())
     }
 }
 

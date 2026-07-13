@@ -1095,6 +1095,50 @@ pub struct PgAttachmentWriteIntentRepo {
 pub struct PgAttachmentLifecycle;
 
 impl PgAttachmentLifecycle {
+    /// Finishes a committed comment-attachment purge while holding the same
+    /// digest lock used by writes and stale-intent reconciliation.
+    pub async fn finish_purge_digest(
+        conn: &DatabaseConnection,
+        store: &dyn AttachmentStore,
+        digest: &str,
+    ) -> Result<(), DomainError> {
+        let lock = DigestSessionLock::acquire(conn, digest).await?;
+        let result = async {
+            let intent = attachment_write_intent::Entity::find()
+                .filter(attachment_write_intent::Column::Digest.eq(digest))
+                .one(conn)
+                .await
+                .map_err(db_err)?;
+
+            let Some(intent) = intent else {
+                return Ok(());
+            };
+
+            let has_live_reference = attachment::Entity::find()
+                .filter(attachment::Column::Sha256.eq(digest))
+                .filter(attachment::Column::DeletedAt.is_null())
+                .one(conn)
+                .await
+                .map_err(db_err)?
+                .is_some();
+
+            if !has_live_reference {
+                bounded_store_delete(store, digest).await?;
+            }
+
+            attachment_write_intent::Entity::delete_by_id(intent.id)
+                .exec(conn)
+                .await
+                .map(|_| ())
+                .map_err(db_err)
+        }
+        .await;
+        let unlock = lock.release().await;
+
+        result?;
+        unlock
+    }
+
     pub async fn run_reconciler(
         conn: DatabaseConnection,
         store: std::sync::Arc<dyn AttachmentStore>,
@@ -1205,41 +1249,17 @@ impl PgAttachmentLifecycle {
         older_than: DateTime<Utc>,
         intent: attachment_write_intent::Model,
     ) -> Result<(), DomainError> {
-        let lock = DigestSessionLock::acquire(conn, &intent.digest).await?;
-        let result = async {
-            let current = attachment_write_intent::Entity::find_by_id(intent.id)
-                .filter(attachment_write_intent::Column::CreatedAt.lt(older_than))
-                .one(conn)
-                .await
-                .map_err(db_err)?;
+        let current = attachment_write_intent::Entity::find_by_id(intent.id)
+            .filter(attachment_write_intent::Column::CreatedAt.lt(older_than))
+            .one(conn)
+            .await
+            .map_err(db_err)?;
 
-            let Some(current) = current else {
-                return Ok(());
-            };
+        let Some(current) = current else {
+            return Ok(());
+        };
 
-            let has_live_reference = attachment::Entity::find()
-                .filter(attachment::Column::Sha256.eq(&current.digest))
-                .filter(attachment::Column::DeletedAt.is_null())
-                .one(conn)
-                .await
-                .map_err(db_err)?
-                .is_some();
-
-            if !has_live_reference {
-                bounded_store_delete(store, &current.digest).await?;
-            }
-
-            attachment_write_intent::Entity::delete_by_id(current.id)
-                .exec(conn)
-                .await
-                .map(|_| ())
-                .map_err(db_err)
-        }
-        .await;
-        let unlock = lock.release().await;
-
-        result?;
-        unlock
+        Self::finish_purge_digest(conn, store, &current.digest).await
     }
 }
 

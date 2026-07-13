@@ -1,6 +1,6 @@
 use atlas_domain::{
     DomainError, WorkspaceCtx,
-    entities::comments::{Comment, CommentOwner, NewComment},
+    entities::comments::{Comment, CommentOwner},
     entities::documents::{Document, NewDocument},
     entities::events::{
         DocumentCreatedPayload, DocumentDeletedPayload, DocumentMovedPayload,
@@ -29,13 +29,27 @@ use crate::persistence::repos::{
 pub struct DocumentService {
     conn: DatabaseConnection,
     anchor_interval: u32,
+    comments: crate::services::CommentService,
 }
 
 impl DocumentService {
     pub fn new(conn: DatabaseConnection, anchor_interval: u32) -> Self {
         Self {
+            comments: crate::services::CommentService::new(conn.clone()),
             conn,
             anchor_interval,
+        }
+    }
+
+    pub fn with_comment_service(
+        conn: DatabaseConnection,
+        anchor_interval: u32,
+        comments: crate::services::CommentService,
+    ) -> Self {
+        Self {
+            conn,
+            anchor_interval,
+            comments,
         }
     }
 
@@ -185,20 +199,9 @@ impl DocumentService {
         document_id: DocumentId,
         body: String,
     ) -> Result<Comment, DomainError> {
-        let txn = self.conn.begin().await.map_err(db_err)?;
-
-        let comment = PgCommentRepo::create_in(
-            &txn,
-            ctx,
-            NewComment {
-                owner: CommentOwner::Document(document_id),
-                body,
-            },
-        )
-        .await?;
-
-        txn.commit().await.map_err(db_err)?;
-        Ok(comment)
+        self.comments
+            .create(ctx, CommentOwner::Document(document_id), body)
+            .await
     }
 
     /// Returns paginated comments for a document, oldest-first.
@@ -226,22 +229,14 @@ impl DocumentService {
         comment_id: CommentId,
         can_moderate: bool,
     ) -> Result<(), DomainError> {
-        let txn = self.conn.begin().await.map_err(db_err)?;
-        let owner = CommentOwner::Document(document_id);
-
-        let comment = PgCommentRepo::get_for_owner_in(&txn, ctx, owner, comment_id).await?;
-
-        if comment.created_by != ctx.actor && !can_moderate {
-            return Err(DomainError::Forbidden {
-                message: "only the comment's author or a workspace admin/owner may delete it"
-                    .into(),
-            });
-        }
-
-        PgCommentRepo::soft_delete_in(&txn, ctx, owner, comment_id).await?;
-
-        txn.commit().await.map_err(db_err)?;
-        Ok(())
+        self.comments
+            .remove(
+                ctx,
+                CommentOwner::Document(document_id),
+                comment_id,
+                can_moderate,
+            )
+            .await
     }
 
     /// Edits the body of a document comment. Only the comment's author may edit it
@@ -254,21 +249,9 @@ impl DocumentService {
         comment_id: CommentId,
         body: String,
     ) -> Result<Comment, DomainError> {
-        let txn = self.conn.begin().await.map_err(db_err)?;
-        let owner = CommentOwner::Document(document_id);
-
-        let comment = PgCommentRepo::get_for_owner_in(&txn, ctx, owner, comment_id).await?;
-
-        if comment.created_by != ctx.actor {
-            return Err(DomainError::Forbidden {
-                message: "only the comment's author may edit it".into(),
-            });
-        }
-
-        let updated = PgCommentRepo::update_body_from(&txn, ctx, owner, comment, body).await?;
-
-        txn.commit().await.map_err(db_err)?;
-        Ok(updated)
+        self.comments
+            .update(ctx, CommentOwner::Document(document_id), comment_id, body)
+            .await
     }
 }
 

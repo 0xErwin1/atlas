@@ -5,7 +5,7 @@ use atlas_domain::{
         NewTaskChecklistItem, NewTaskReference, PositionBetween, ReferenceKind, Task, TaskActivity,
         TaskAssignee, TaskChecklistItem, TaskChecklistItemPatch, TaskPatch, TaskReference,
     },
-    entities::comments::{Comment, CommentOwner, NewComment},
+    entities::comments::{Comment, CommentOwner},
     entities::events::{
         DomainEvent, TaskCreatedPayload, TaskDeletedPayload, TaskMovedPayload, TaskUpdatedPayload,
     },
@@ -49,11 +49,22 @@ pub struct PromotionResult {
 /// guarantee from the design.
 pub struct TaskService {
     conn: DatabaseConnection,
+    comments: crate::services::CommentService,
 }
 
 impl TaskService {
     pub fn new(conn: DatabaseConnection) -> Self {
-        Self { conn }
+        Self {
+            comments: crate::services::CommentService::new(conn.clone()),
+            conn,
+        }
+    }
+
+    pub fn with_comment_service(
+        conn: DatabaseConnection,
+        comments: crate::services::CommentService,
+    ) -> Self {
+        Self { conn, comments }
     }
 
     /// Creates a task and appends a `Created` activity in the same transaction.
@@ -848,20 +859,9 @@ impl TaskService {
         task_id: TaskId,
         body: String,
     ) -> Result<Comment, DomainError> {
-        let txn = self.conn.begin().await.map_err(db_err)?;
-
-        let comment = PgCommentRepo::create_in(
-            &txn,
-            ctx,
-            NewComment {
-                owner: CommentOwner::Task(task_id),
-                body,
-            },
-        )
-        .await?;
-
-        txn.commit().await.map_err(db_err)?;
-        Ok(comment)
+        self.comments
+            .create(ctx, CommentOwner::Task(task_id), body)
+            .await
     }
 
     /// Returns paginated comments for a task, oldest-first.
@@ -889,22 +889,9 @@ impl TaskService {
         comment_id: CommentId,
         can_moderate: bool,
     ) -> Result<(), DomainError> {
-        let txn = self.conn.begin().await.map_err(db_err)?;
-        let owner = CommentOwner::Task(task_id);
-
-        let comment = PgCommentRepo::get_for_owner_in(&txn, ctx, owner, comment_id).await?;
-
-        if comment.created_by != ctx.actor && !can_moderate {
-            return Err(DomainError::Forbidden {
-                message: "only the comment's author or a workspace admin/owner may delete it"
-                    .into(),
-            });
-        }
-
-        PgCommentRepo::soft_delete_in(&txn, ctx, owner, comment_id).await?;
-
-        txn.commit().await.map_err(db_err)?;
-        Ok(())
+        self.comments
+            .remove(ctx, CommentOwner::Task(task_id), comment_id, can_moderate)
+            .await
     }
 
     /// Edits the body of a task comment.
@@ -920,21 +907,9 @@ impl TaskService {
         comment_id: CommentId,
         body: String,
     ) -> Result<Comment, DomainError> {
-        let txn = self.conn.begin().await.map_err(db_err)?;
-        let owner = CommentOwner::Task(task_id);
-
-        let comment = PgCommentRepo::get_for_owner_in(&txn, ctx, owner, comment_id).await?;
-
-        if comment.created_by != ctx.actor {
-            return Err(DomainError::Forbidden {
-                message: "only the comment's author may edit it".into(),
-            });
-        }
-
-        let updated = PgCommentRepo::update_body_from(&txn, ctx, owner, comment, body).await?;
-
-        txn.commit().await.map_err(db_err)?;
-        Ok(updated)
+        self.comments
+            .update(ctx, CommentOwner::Task(task_id), comment_id, body)
+            .await
     }
 }
 
