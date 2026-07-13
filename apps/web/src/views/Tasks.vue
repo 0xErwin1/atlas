@@ -23,7 +23,7 @@ import { installKeymapListener, useKeymap } from '@/composables/useKeymap';
 import { type LiveUpdateEvent, useLiveUpdates } from '@/composables/useLiveUpdates';
 import { useOpenTaskLive } from '@/composables/useOpenTaskLive';
 import { EVENT_TYPE, eventString, PRESENCE_UPDATED } from '@/lib/eventTypes';
-import { KEYMAP_PRIORITIES } from '@/lib/keymap';
+import { formatShortcut, KEYMAP_PRIORITIES } from '@/lib/keymap';
 import { useBoardsStore } from '@/stores/boards';
 import { useLastViewedStore } from '@/stores/lastViewed';
 import { useTaskDetailStore } from '@/stores/taskDetail';
@@ -50,6 +50,7 @@ const workspaceTasks = useWorkspaceTasksStore();
 const taskViews = useTaskViewsStore();
 const lastViewed = useLastViewedStore();
 const { isMobile } = useBreakpoint();
+const commandPaletteShortcut = formatShortcut('command-palette');
 
 // A restored board that no longer exists loads as a 404: show an empty state,
 // not an error, and stop restoring the dead entry on the next workspace switch.
@@ -455,7 +456,7 @@ watch(
 <template>
   <AppShell sidebar-title="Tasks" sidebar-icon="square-kanban" :mobile-detail="true">
     <template #sidebar-actions>
-      <button type="button" class="atl-gbtn" title="Search ⌘K" aria-label="Search" @click="ui.openPalette()">
+      <button type="button" class="atl-gbtn" :title="`Search ${commandPaletteShortcut}`" aria-label="Search" @click="ui.openPalette()">
         <Icon name="search" :size="14" />
       </button>
       <button
@@ -493,7 +494,7 @@ watch(
       <span class="flex-1 truncate" style="font-size: var(--fs-lg); font-weight: var(--fw-bold); color: var(--c-foreground);">
         {{ boards.board?.name ?? 'Board' }}
       </span>
-      <button type="button" class="atl-gbtn" title="Search ⌘K" aria-label="Search" @click="ui.openPalette()">
+      <button type="button" class="atl-gbtn" :title="`Search ${commandPaletteShortcut}`" aria-label="Search" @click="ui.openPalette()">
         <Icon name="search" :size="15" />
       </button>
     </div>
@@ -592,7 +593,7 @@ watch(
       <button
         type="button"
         class="atl-gbtn"
-        title="Command palette ⌘K"
+        :title="`Command palette ${commandPaletteShortcut}`"
         aria-label="Command palette"
         @click="ui.openPalette()"
       >

@@ -170,6 +170,7 @@ import { useWikilinkSuggest } from '@/composables/useWikilinkSuggest';
 import { useWikilinkTitles } from '@/composables/useWikilinkTitles';
 import { EVENT_TYPE, PRESENCE_UPDATED } from '@/lib/eventTypes';
 import { joinFrontmatter, splitFrontmatter } from '@/lib/frontmatter';
+import { formatShortcut } from '@/lib/keymap';
 import { type WikilinkRef, wikilinkHref } from '@/lib/wikilink';
 import { useDocumentsStore } from '@/stores/documents';
 import { useLastViewedStore } from '@/stores/lastViewed';
@@ -190,6 +191,7 @@ const lastViewed = useLastViewedStore();
 const { load, save } = useMarkdownDoc();
 const { merge } = useCasMerge();
 const { isMobile } = useBreakpoint();
+const commandPaletteShortcut = formatShortcut('command-palette');
 
 function goBackToTree(): void {
   void router.push({ name: 'notes' });
@@ -634,7 +636,7 @@ watch(title, (t) => {
 <template>
   <AppShell sidebar-title="Notes" sidebar-icon="file-text" :mobile-detail="slug !== null">
     <template #sidebar-actions>
-      <button type="button" class="atl-gbtn" title="Search ⌘K" aria-label="Search" @click="ui.openPalette()">
+      <button type="button" class="atl-gbtn" :title="`Search ${commandPaletteShortcut}`" aria-label="Search" @click="ui.openPalette()">
         <Icon name="search" :size="14" />
       </button>
       <button
@@ -745,7 +747,7 @@ watch(title, (t) => {
         <button
           type="button"
           class="atl-gbtn"
-          title="Command palette ⌘K"
+          :title="`Command palette ${commandPaletteShortcut}`"
           aria-label="Command palette"
           @click="ui.openPalette()"
         >

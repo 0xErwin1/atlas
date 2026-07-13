@@ -1,5 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  formatShortcut,
+  formatShortcutKey,
   getShortcutCatalog,
   isMarkdownEditorTarget,
   isTextEntryTarget,
@@ -31,6 +33,10 @@ function shortcutById(id: ShortcutId): ShortcutMeta {
 }
 
 describe('keymap catalog', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it('lists the v1 shortcuts from the spec scenarios', () => {
     expect(shortcutCatalog).toEqual(
       expect.arrayContaining([
@@ -67,6 +73,17 @@ describe('keymap catalog', () => {
     first.pop();
 
     expect(getShortcutCatalog()).toHaveLength(shortcutCatalog.length);
+  });
+
+  it('formats the platform modifier for display', () => {
+    expect(formatShortcutKey('mod+k', 'Linux x86_64')).toBe('Ctrl+K');
+    expect(formatShortcutKey('mod+k', 'MacIntel')).toBe('⌘K');
+  });
+
+  it('formats a catalog shortcut for toolbar titles', () => {
+    vi.stubGlobal('navigator', { ...navigator, platform: 'Linux x86_64' });
+
+    expect(formatShortcut('command-palette')).toBe('Ctrl+K');
   });
 });
 
