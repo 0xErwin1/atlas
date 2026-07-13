@@ -240,7 +240,7 @@ describe('Notes.vue open-note reconcile wiring', () => {
     // not just body — by letting the next save fire and inspecting what it CASes
     // against. If applyLoadedDocument stopped short of updating headRevisionId,
     // this would still show the stale 'rev-1'.
-    const editor = wrapper.findComponent({ name: 'NoteEditor' });
+    const editor = wrapper.findComponent<typeof NoteEditorStub>('[data-test="note-editor"]');
     await editor.vm.$emit('change', 'Edited after reconcile');
     await vi.advanceTimersByTimeAsync(800);
     await settle();
@@ -257,7 +257,7 @@ describe('Notes.vue open-note reconcile wiring', () => {
     const wrapper = mountNotes();
     await settle();
 
-    const editor = wrapper.findComponent({ name: 'NoteEditor' });
+    const editor = wrapper.findComponent<typeof NoteEditorStub>('[data-test="note-editor"]');
     await editor.vm.$emit('change', 'My unsaved edit');
     await settle();
 
@@ -318,19 +318,7 @@ describe('Notes.vue open-note reconcile wiring', () => {
     expect(router.replace).toHaveBeenCalledWith({ name: 'notes' });
   });
 
-  it('routes a 401 from the resync load through the real wrapped API client, without misrouting it as a missing document', async () => {
-    // W2: no reactive "global 401 handler" exists in this codebase to route to
-    // auth from a background resync failure — confirmed by reading api/wrapper.ts
-    // (only CSRF middleware is registered, no onResponse/401 interceptor) and by
-    // grepping the test suite (no test anywhere asserts a redirect-to-login from
-    // an arbitrary failed request; `workspaceBeforeEach.test.ts` covers only the
-    // workspace-bootstrap branches, never the `!isAuthenticated` redirect branch).
-    // Design decision #3's "existing global 401 handler" refers to the fact that
-    // `auth.isAuthenticated` is checked by the router guard on the *next*
-    // navigation — not to anything reactively triggered by this resync path. So
-    // this test proves what is actually true and load-bearing here: the resync
-    // path genuinely reaches `wrappedClient` (the delegation is real, not a
-    // stub/no-op), and a 401 is not mistaken for a 404 (no tab-close/route-away).
+  it('does not treat a 401 from the resync load as a missing document', async () => {
     const wrapper = mountNotes();
     await settle();
     const getCallsBefore = mockGet.mock.calls.length;
