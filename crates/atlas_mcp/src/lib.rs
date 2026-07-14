@@ -4641,6 +4641,296 @@ impl ServerHandler for AtlasMcp {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rmcp::{
+        ClientHandler, ServiceExt,
+        model::{CallToolRequestParams, ClientInfo},
+    };
+
+    const COMMENT_ID: uuid::Uuid = uuid::uuid!("00000000-0000-0000-0000-000000000001");
+    const ATTACHMENT_ID: uuid::Uuid = uuid::uuid!("00000000-0000-0000-0000-000000000002");
+    const COMMENT_ATTACHMENT: &str = r#"{"id":"00000000-0000-0000-0000-000000000002","comment_id":"00000000-0000-0000-0000-000000000001","file_name":"note.txt","content_type":"text/plain","size_bytes":2,"sha256":"digest","actor":null,"created_at":"2026-01-01T00:00:00Z"}"#;
+
+    #[derive(Debug, Clone, Default)]
+    struct TestClientHandler;
+
+    impl ClientHandler for TestClientHandler {
+        fn get_info(&self) -> ClientInfo {
+            ClientInfo::default()
+        }
+    }
+
+    async fn start_mcp_client(
+        server: AtlasMcp,
+    ) -> rmcp::service::RunningService<rmcp::RoleClient, TestClientHandler> {
+        let (server_transport, client_transport) = tokio::io::duplex(64 * 1024);
+        tokio::spawn(async move {
+            let running = server
+                .serve(server_transport)
+                .await
+                .expect("MCP server starts");
+            running.waiting().await.expect("MCP server runs");
+        });
+
+        TestClientHandler
+            .serve(client_transport)
+            .await
+            .expect("MCP client starts")
+    }
+
+    fn call_tool_params(name: &str, arguments: serde_json::Value) -> CallToolRequestParams {
+        CallToolRequestParams::new(name.to_string()).with_arguments(
+            arguments
+                .as_object()
+                .expect("tool arguments are an object")
+                .clone(),
+        )
+    }
+
+    fn tool_text(result: &rmcp::model::CallToolResult) -> &str {
+        result
+            .content
+            .first()
+            .and_then(|content| content.raw.as_text())
+            .map(|text| text.text.as_str())
+            .expect("tool returns text content")
+    }
+
+    fn serve_recording_atlas(
+        responses: Vec<(&'static str, String)>,
+    ) -> (String, std::sync::mpsc::Receiver<String>) {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("recording server binds");
+        let address = listener.local_addr().expect("recording server has address");
+        let (request_tx, request_rx) = std::sync::mpsc::channel();
+
+        std::thread::spawn(move || {
+            for (status, body) in responses {
+                let (mut stream, _) = listener.accept().expect("recording server accepts request");
+                let mut request = [0_u8; 8192];
+                let length = stream
+                    .read(&mut request)
+                    .expect("recording server reads request");
+                request_tx
+                    .send(
+                        String::from_utf8_lossy(request.get(..length).unwrap_or_default())
+                            .into_owned(),
+                    )
+                    .expect("recording server records request");
+                write!(
+                    stream,
+                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                )
+                .expect("recording server writes response");
+            }
+        });
+
+        (format!("http://{address}"), request_rx)
+    }
+
+    fn serve_transport_failing_meta() -> (String, std::sync::mpsc::Receiver<String>) {
+        use std::io::Read;
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("recording server binds");
+        let address = listener.local_addr().expect("recording server has address");
+        let (request_tx, request_rx) = std::sync::mpsc::channel();
+
+        std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("recording server accepts request");
+            let mut request = [0_u8; 8192];
+            let length = stream
+                .read(&mut request)
+                .expect("recording server reads request");
+            request_tx
+                .send(
+                    String::from_utf8_lossy(request.get(..length).unwrap_or_default()).into_owned(),
+                )
+                .expect("recording server records request");
+        });
+
+        (format!("http://{address}"), request_rx)
+    }
+
+    #[tokio::test]
+    async fn public_mcp_comment_attachment_tools_call_the_atlas_lifecycle() {
+        let responses = vec![
+            (
+                "200 OK",
+                r#"{"items":[],"next_cursor":null,"has_more":false}"#.to_string(),
+            ),
+            (
+                "200 OK",
+                r#"{"items":[],"next_cursor":null,"has_more":false}"#.to_string(),
+            ),
+            (
+                "200 OK",
+                r#"{"version":"1","build":null,"url":null,"max_attachment_bytes":16}"#.to_string(),
+            ),
+            ("201 Created", COMMENT_ATTACHMENT.to_string()),
+            ("200 OK", format!("[{COMMENT_ATTACHMENT}]")),
+            ("200 OK", "ok".to_string()),
+            ("204 No Content", String::new()),
+            (
+                "200 OK",
+                r#"{"version":"1","build":null,"url":null,"max_attachment_bytes":16}"#.to_string(),
+            ),
+            ("201 Created", COMMENT_ATTACHMENT.to_string()),
+            ("200 OK", format!("[{COMMENT_ATTACHMENT}]")),
+            ("200 OK", "ok".to_string()),
+            ("204 No Content", String::new()),
+        ];
+        let (base_url, requests) = serve_recording_atlas(responses);
+        let client =
+            start_mcp_client(AtlasMcp::new(base_url, "atlas_test").expect("server config")).await;
+
+        for (name, arguments) in [
+            (
+                "list_comment_feed",
+                serde_json::json!({"workspace":"ws","readable_id":"ATL-1"}),
+            ),
+            (
+                "list_document_comment_feed",
+                serde_json::json!({"workspace":"ws","slug":"note"}),
+            ),
+            (
+                "upload_task_comment_attachment",
+                serde_json::json!({"workspace":"ws","readable_id":"ATL-1","comment_id":COMMENT_ID,"file_name":"note.txt","content_type":"text/plain","data_base64":"b2s="}),
+            ),
+            (
+                "list_task_comment_attachments",
+                serde_json::json!({"workspace":"ws","readable_id":"ATL-1","comment_id":COMMENT_ID}),
+            ),
+            (
+                "get_task_comment_attachment",
+                serde_json::json!({"workspace":"ws","readable_id":"ATL-1","comment_id":COMMENT_ID,"attachment_id":ATTACHMENT_ID}),
+            ),
+            (
+                "delete_task_comment_attachment",
+                serde_json::json!({"workspace":"ws","readable_id":"ATL-1","comment_id":COMMENT_ID,"attachment_id":ATTACHMENT_ID}),
+            ),
+            (
+                "upload_document_comment_attachment",
+                serde_json::json!({"workspace":"ws","slug":"note","comment_id":COMMENT_ID,"file_name":"note.txt","content_type":"text/plain","data_base64":"b2s="}),
+            ),
+            (
+                "list_document_comment_attachments",
+                serde_json::json!({"workspace":"ws","slug":"note","comment_id":COMMENT_ID}),
+            ),
+            (
+                "get_document_comment_attachment",
+                serde_json::json!({"workspace":"ws","slug":"note","comment_id":COMMENT_ID,"attachment_id":ATTACHMENT_ID}),
+            ),
+            (
+                "delete_document_comment_attachment",
+                serde_json::json!({"workspace":"ws","slug":"note","comment_id":COMMENT_ID,"attachment_id":ATTACHMENT_ID}),
+            ),
+        ] {
+            let result = client
+                .call_tool(call_tool_params(name, arguments))
+                .await
+                .expect("public MCP call succeeds");
+            assert!(
+                !result.is_error.unwrap_or(false),
+                "{name} returned an MCP error: {}",
+                tool_text(&result)
+            );
+        }
+
+        let requests: Vec<_> = (0..12)
+            .map(|_| requests.recv().expect("Atlas received request"))
+            .collect();
+        let expected_paths = [
+            "GET /api/workspaces/ws/tasks/ATL-1/comments?feed=full&limit=50 ",
+            "GET /api/workspaces/ws/documents/note/comments?feed=full&limit=50 ",
+            "GET /api/meta ",
+            "POST /api/workspaces/ws/tasks/ATL-1/comments/00000000-0000-0000-0000-000000000001/attachments ",
+            "GET /api/workspaces/ws/tasks/ATL-1/comments/00000000-0000-0000-0000-000000000001/attachments ",
+            "GET /api/workspaces/ws/tasks/ATL-1/comments/00000000-0000-0000-0000-000000000001/attachments/00000000-0000-0000-0000-000000000002/content ",
+            "DELETE /api/workspaces/ws/tasks/ATL-1/comments/00000000-0000-0000-0000-000000000001/attachments/00000000-0000-0000-0000-000000000002 ",
+            "GET /api/meta ",
+            "POST /api/workspaces/ws/documents/note/comments/00000000-0000-0000-0000-000000000001/attachments ",
+            "GET /api/workspaces/ws/documents/note/comments/00000000-0000-0000-0000-000000000001/attachments ",
+            "GET /api/workspaces/ws/documents/note/comments/00000000-0000-0000-0000-000000000001/attachments/00000000-0000-0000-0000-000000000002 ",
+            "DELETE /api/workspaces/ws/documents/note/comments/00000000-0000-0000-0000-000000000001/attachments/00000000-0000-0000-0000-000000000002 ",
+        ];
+        assert_eq!(requests.len(), expected_paths.len());
+        for (request, expected_path) in requests.iter().zip(expected_paths) {
+            assert!(
+                request.starts_with(expected_path),
+                "expected `{expected_path}`, received `{request}`"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn public_mcp_upload_fails_closed_when_metadata_discovery_cannot_supply_a_limit() {
+        for body in [
+            r#"{"version":"1","build":null,"url":null}"#,
+            r#"{"version":"1","build":null,"url":null,"max_attachment_bytes":null}"#,
+            r#"{"version":"1","build":null,"url":null,"max_attachment_bytes":"large"}"#,
+            r#"{"type":"urn:atlas:error","title":"Unavailable","status":503}"#,
+        ] {
+            let status = if body.contains("Unavailable") {
+                "503 Service Unavailable"
+            } else {
+                "200 OK"
+            };
+            let (base_url, requests) = serve_recording_atlas(vec![(status, body.to_string())]);
+            let client =
+                start_mcp_client(AtlasMcp::new(base_url, "atlas_test").expect("server config"))
+                    .await;
+
+            let result = client
+                .call_tool(call_tool_params(
+                    "upload_task_comment_attachment",
+                    serde_json::json!({"workspace":"ws","readable_id":"ATL-1","comment_id":COMMENT_ID,"file_name":"note.txt","content_type":"text/plain","data_base64":"b2s="}),
+                ))
+                .await
+                .expect("MCP call completes with a tool error");
+
+            assert!(result.is_error.unwrap_or(false));
+            assert!(tool_text(&result).contains("upload was not attempted"));
+            assert!(
+                requests
+                    .recv()
+                    .expect("metadata request is recorded")
+                    .starts_with("GET /api/meta ")
+            );
+            assert!(
+                requests
+                    .recv_timeout(std::time::Duration::from_millis(50))
+                    .is_err()
+            );
+        }
+
+        let (base_url, requests) = serve_transport_failing_meta();
+        let client =
+            start_mcp_client(AtlasMcp::new(base_url, "atlas_test").expect("server config")).await;
+        let result = client
+            .call_tool(call_tool_params(
+                "upload_document_comment_attachment",
+                serde_json::json!({"workspace":"ws","slug":"note","comment_id":COMMENT_ID,"file_name":"note.txt","content_type":"text/plain","data_base64":"b2s="}),
+            ))
+            .await
+            .expect("MCP call completes with a tool error");
+
+        assert!(result.is_error.unwrap_or(false));
+        assert!(tool_text(&result).contains("upload was not attempted"));
+        assert!(
+            requests
+                .recv()
+                .expect("metadata request is recorded")
+                .starts_with("GET /api/meta ")
+        );
+        assert!(
+            requests
+                .recv_timeout(std::time::Duration::from_millis(50))
+                .is_err()
+        );
+    }
 
     #[test]
     fn rejects_missing_token() {

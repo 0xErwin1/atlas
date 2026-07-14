@@ -3687,4 +3687,49 @@ mod tests {
         )
         .await;
     }
+
+    #[tokio::test]
+    async fn comment_attachment_lifecycle_methods_preserve_api_decode_and_transport_errors() {
+        const COMMENT_ID: uuid::Uuid = uuid::uuid!("00000000-0000-0000-0000-000000000001");
+        const ATTACHMENT_ID: uuid::Uuid = uuid::uuid!("00000000-0000-0000-0000-000000000002");
+
+        let api = AtlasClient::new(serve_once(
+            "403 Forbidden",
+            r#"{"type":"urn:atlas:error:forbidden","title":"Forbidden","status":403}"#,
+        ));
+        assert!(matches!(
+            api.upload_task_comment_attachment(
+                "ws",
+                "ATL-1",
+                COMMENT_ID,
+                "note.txt",
+                "text/plain",
+                b"ok".to_vec(),
+            )
+            .await,
+            Err(ClientError::Api(_))
+        ));
+
+        let decode = AtlasClient::new(serve_once("200 OK", "not attachment metadata"));
+        assert!(matches!(
+            decode
+                .list_document_comment_attachments("ws", "note", COMMENT_ID)
+                .await,
+            Err(ClientError::Decode {
+                context: "list_document_comment_attachments",
+                ..
+            })
+        ));
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        drop(listener);
+        let transport = AtlasClient::new(format!("http://{address}"));
+        assert!(matches!(
+            transport
+                .delete_document_comment_attachment("ws", "note", COMMENT_ID, ATTACHMENT_ID)
+                .await,
+            Err(ClientError::Transport(_))
+        ));
+    }
 }
