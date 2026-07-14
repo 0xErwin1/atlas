@@ -200,6 +200,26 @@ describe('useDocumentsStore', () => {
     expect(store.backlinks).toHaveLength(0);
   });
 
+  it('loads the default document comment page without a feed selector and rejects a full feed', async () => {
+    GET.mockResolvedValueOnce({
+      data: {
+        items: [{ type: 'comment', comment: comment('comment-1', 'Unexpected full feed') }],
+        next_cursor: null,
+        has_more: false,
+      },
+    });
+
+    const store = useDocumentsStore();
+    await store.loadComments('ws', 'note');
+
+    expect(GET).toHaveBeenCalledWith('/api/workspaces/{ws}/documents/{slug}/comments', {
+      params: { path: { ws: 'ws', slug: 'note' } },
+    });
+    expect(store.comments).toEqual([]);
+    expect(store.commentsStatus).toBe('error');
+    expect(store.commentsError).toBe('Received an unsupported full comment feed');
+  });
+
   it('resets note secondary state when the workspace changes for the same slug', async () => {
     GET.mockResolvedValueOnce({
       data: {

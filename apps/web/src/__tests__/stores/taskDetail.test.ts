@@ -242,6 +242,33 @@ describe('useTaskDetailStore', () => {
     expect(store.commentsCursor).toBe('cm1');
   });
 
+  it('uses the default task comment page and fails closed for a full feed response', async () => {
+    GET.mockImplementation((path: string) => {
+      const index = collectionIndex(path);
+      if (index !== 7) return Promise.resolve(collectionResponse(index, 'default'));
+      return Promise.resolve({
+        data: {
+          items: [{ type: 'comment', comment: comment('cm-full', 'Unexpected full feed', 'user', 'Jordan') }],
+          has_more: false,
+          next_cursor: null,
+        },
+        error: undefined,
+      });
+    });
+
+    const store = useTaskDetailStore();
+    await store.loadAll('ws', 'ATL-1');
+
+    const commentCall = GET.mock.calls.find(([path]) => path.endsWith('/comments'));
+    expect(commentCall).toEqual([
+      '/api/workspaces/{ws}/tasks/{readable_id}/comments',
+      { params: { path: { ws: 'ws', readable_id: 'ATL-1' } } },
+    ]);
+    expect(store.comments).toEqual([]);
+    expect(store.collectionStatus.comments).toBe('error');
+    expect(store.collectionErrors.comments).not.toBeNull();
+  });
+
   it('resets every detail collection for a workspace-only target change and rejects late results', async () => {
     const pending: Array<{ resolve: (value: unknown) => void }> = [];
     GET.mockImplementation(

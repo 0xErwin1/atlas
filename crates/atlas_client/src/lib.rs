@@ -3500,15 +3500,26 @@ mod tests {
     }
 
     fn serve_once(status: &'static str, body: &'static str) -> String {
+        serve_once_observing(status, body).0
+    }
+
+    fn serve_once_observing(
+        status: &'static str,
+        body: impl Into<String> + Send + 'static,
+    ) -> (String, std::sync::mpsc::Receiver<String>) {
         use std::io::{Read, Write};
         use std::net::TcpListener;
 
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
+        let (request_tx, request_rx) = std::sync::mpsc::channel();
+        let body = body.into();
         std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
-            let mut request = [0_u8; 1024];
-            let _ = stream.read(&mut request).unwrap();
+            let mut request = [0_u8; 4096];
+            let length = stream.read(&mut request).unwrap();
+            let request = request.get(..length).unwrap_or_default();
+            let _ = request_tx.send(String::from_utf8_lossy(request).into_owned());
             write!(
                 stream,
                 "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
@@ -3516,7 +3527,21 @@ mod tests {
             )
             .unwrap();
         });
-        format!("http://{address}")
+        (format!("http://{address}"), request_rx)
+    }
+
+    async fn assert_comment_attachment_request<T>(
+        requests: std::sync::mpsc::Receiver<String>,
+        expected_prefix: &str,
+        request: impl std::future::Future<Output = Result<T, ClientError>>,
+    ) -> T {
+        let result = request.await.expect("client lifecycle request succeeds");
+        let raw = requests.recv().expect("mock server received request");
+        assert!(
+            raw.starts_with(expected_prefix),
+            "expected `{expected_prefix}`, received `{raw}`"
+        );
+        result
     }
 
     #[tokio::test]
@@ -3575,5 +3600,91 @@ mod tests {
             transport.server_meta().await,
             Err(ClientError::Transport(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn comment_attachment_lifecycle_methods_use_canonical_task_and_document_routes() {
+        const COMMENT_ID: uuid::Uuid = uuid::uuid!("00000000-0000-0000-0000-000000000001");
+        const ATTACHMENT_ID: uuid::Uuid = uuid::uuid!("00000000-0000-0000-0000-000000000002");
+        const ATTACHMENT: &str = r#"{"id":"00000000-0000-0000-0000-000000000002","comment_id":"00000000-0000-0000-0000-000000000001","file_name":"note.txt","content_type":"text/plain","size_bytes":2,"sha256":"digest","actor":null,"created_at":"2026-01-01T00:00:00Z"}"#;
+
+        let (base_url, requests) = serve_once_observing("201 Created", ATTACHMENT);
+        let client = AtlasClient::new(base_url);
+        let attachment = assert_comment_attachment_request(
+            requests,
+            "POST /api/workspaces/ws/tasks/ATL-1/comments/00000000-0000-0000-0000-000000000001/attachments ",
+            client.upload_task_comment_attachment("ws", "ATL-1", COMMENT_ID, "note.txt", "text/plain", b"ok".to_vec()),
+        )
+        .await;
+        assert_eq!(attachment.id, ATTACHMENT_ID);
+
+        let (base_url, requests) = serve_once_observing("200 OK", format!("[{ATTACHMENT}]"));
+        let client = AtlasClient::new(base_url);
+        let attachments = assert_comment_attachment_request(
+            requests,
+            "GET /api/workspaces/ws/tasks/ATL-1/comments/00000000-0000-0000-0000-000000000001/attachments ",
+            client.list_task_comment_attachments("ws", "ATL-1", COMMENT_ID),
+        )
+        .await;
+        assert_eq!(attachments.len(), 1);
+        assert_eq!(
+            attachments.first().map(|attachment| attachment.id),
+            Some(ATTACHMENT_ID)
+        );
+
+        let (base_url, requests) = serve_once_observing("200 OK", "ok");
+        let client = AtlasClient::new(base_url);
+        let (data, _) = assert_comment_attachment_request(
+            requests,
+            "GET /api/workspaces/ws/tasks/ATL-1/comments/00000000-0000-0000-0000-000000000001/attachments/00000000-0000-0000-0000-000000000002/content ",
+            client.download_task_comment_attachment("ws", "ATL-1", COMMENT_ID, ATTACHMENT_ID),
+        )
+        .await;
+        assert_eq!(data, b"ok");
+
+        let (base_url, requests) = serve_once_observing("204 No Content", "");
+        let client = AtlasClient::new(base_url);
+        assert_comment_attachment_request(
+            requests,
+            "DELETE /api/workspaces/ws/tasks/ATL-1/comments/00000000-0000-0000-0000-000000000001/attachments/00000000-0000-0000-0000-000000000002 ",
+            client.delete_task_comment_attachment("ws", "ATL-1", COMMENT_ID, ATTACHMENT_ID),
+        )
+        .await;
+
+        let (base_url, requests) = serve_once_observing("201 Created", ATTACHMENT);
+        let client = AtlasClient::new(base_url);
+        assert_comment_attachment_request(
+            requests,
+            "POST /api/workspaces/ws/documents/note/comments/00000000-0000-0000-0000-000000000001/attachments ",
+            client.upload_document_comment_attachment("ws", "note", COMMENT_ID, "note.txt", "text/plain", b"ok".to_vec()),
+        )
+        .await;
+
+        let (base_url, requests) = serve_once_observing("200 OK", format!("[{ATTACHMENT}]"));
+        let client = AtlasClient::new(base_url);
+        assert_comment_attachment_request(
+            requests,
+            "GET /api/workspaces/ws/documents/note/comments/00000000-0000-0000-0000-000000000001/attachments ",
+            client.list_document_comment_attachments("ws", "note", COMMENT_ID),
+        )
+        .await;
+
+        let (base_url, requests) = serve_once_observing("200 OK", "ok");
+        let client = AtlasClient::new(base_url);
+        assert_comment_attachment_request(
+            requests,
+            "GET /api/workspaces/ws/documents/note/comments/00000000-0000-0000-0000-000000000001/attachments/00000000-0000-0000-0000-000000000002 ",
+            client.download_document_comment_attachment("ws", "note", COMMENT_ID, ATTACHMENT_ID),
+        )
+        .await;
+
+        let (base_url, requests) = serve_once_observing("204 No Content", "");
+        let client = AtlasClient::new(base_url);
+        assert_comment_attachment_request(
+            requests,
+            "DELETE /api/workspaces/ws/documents/note/comments/00000000-0000-0000-0000-000000000001/attachments/00000000-0000-0000-0000-000000000002 ",
+            client.delete_document_comment_attachment("ws", "note", COMMENT_ID, ATTACHMENT_ID),
+        )
+        .await;
     }
 }
