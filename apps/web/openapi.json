@@ -3424,8 +3424,32 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "x-file-name",
+            "in": "header",
+            "description": "Original attachment file name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "int32",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "201": {
             "description": "",

@@ -296,6 +296,34 @@ fn comment_freedom_contract_is_exact_for_feeds_backlinks_attachments_and_metadat
         "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}",
     );
 
+    let document_upload = operation(
+        &document,
+        "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments",
+        "post",
+    );
+    assert_eq!(
+        document_upload.pointer("/requestBody/content/application~1octet-stream/schema/type"),
+        Some(&Value::String("array".into())),
+        "document comment uploads must accept raw binary request bytes"
+    );
+    assert_eq!(
+        document_upload
+            .pointer("/requestBody/content/application~1octet-stream/schema/items/format"),
+        Some(&Value::String("int32".into())),
+        "document comment uploads must identify each raw body byte"
+    );
+    assert!(
+        document_upload
+            .pointer("/parameters")
+            .and_then(Value::as_array)
+            .is_some_and(|parameters| parameters.iter().any(|parameter| {
+                parameter.get("name") == Some(&Value::String("x-file-name".into()))
+                    && parameter.get("in") == Some(&Value::String("header".into()))
+                    && parameter.get("required") == Some(&Value::Bool(true))
+            })),
+        "document comment uploads must require the x-file-name header"
+    );
+
     let limit = document
         .pointer("/components/schemas/ServerMetaDto/properties/max_attachment_bytes")
         .expect("server metadata must advertise the optional attachment limit");

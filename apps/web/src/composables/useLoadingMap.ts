@@ -12,9 +12,13 @@ export function useLoadingMap() {
     map.value = { ...map.value, [id]: value };
   }
 
+  function clear(): void {
+    map.value = {};
+  }
+
   function isLoading(id: string): boolean {
     return map.value[id] === true;
   }
 
-  return { isLoading, set };
+  return { isLoading, set, clear };
 }
