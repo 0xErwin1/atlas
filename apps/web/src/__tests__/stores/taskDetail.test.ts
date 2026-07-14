@@ -242,6 +242,42 @@ describe('useTaskDetailStore', () => {
     expect(store.commentsCursor).toBe('cm1');
   });
 
+  it('preserves the authorized comment backlink source projection', async () => {
+    GET.mockImplementation((path: string) => {
+      if (path.endsWith('/backlinks')) {
+        return Promise.resolve({
+          data: {
+            items: [
+              {
+                source_task_id: 'source-task',
+                source_readable_id: 'ATL-2',
+                source_title: 'Source',
+                kind: 'comment',
+                comment_source: {
+                  type: 'comment',
+                  comment_id: 'comment-1',
+                  parent: { type: 'document', id: 'document-1', slug: 'source-note', title: 'Source note' },
+                },
+              },
+            ],
+            has_more: false,
+          },
+          error: undefined,
+        });
+      }
+
+      return Promise.resolve(collectionResponse(collectionIndex(path), 'default'));
+    });
+
+    const store = useTaskDetailStore();
+    await store.loadAll('ws', 'ATL-1');
+
+    expect(store.backlinks[0]?.comment_source).toMatchObject({
+      comment_id: 'comment-1',
+      parent: { type: 'document', slug: 'source-note' },
+    });
+  });
+
   it('uses the default task comment page and fails closed for a full feed response', async () => {
     GET.mockImplementation((path: string) => {
       const index = collectionIndex(path);

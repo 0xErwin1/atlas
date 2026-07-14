@@ -191,6 +191,35 @@ describe('useDocumentsStore', () => {
     expect(store.backlinks[0]?.source_slug).toBe('source');
   });
 
+  it('preserves the authorized comment backlink source projection', async () => {
+    GET.mockResolvedValue({
+      data: {
+        items: [
+          {
+            display_title: 'Comment on roadmap',
+            source_document_id: 'source',
+            source_slug: 'source',
+            source_title: 'Source',
+            comment_source: {
+              type: 'comment',
+              comment_id: 'comment-1',
+              parent: { type: 'task', id: 'task-1', readable_id: 'ATL-1', title: 'Roadmap' },
+            },
+          },
+        ],
+        has_more: false,
+      },
+    });
+
+    const store = useDocumentsStore();
+    await store.loadBacklinks('ws', 'target');
+
+    expect(store.backlinks[0]?.comment_source).toMatchObject({
+      comment_id: 'comment-1',
+      parent: { type: 'task', readable_id: 'ATL-1' },
+    });
+  });
+
   it('loadBacklinks clears the list on error (never crashes)', async () => {
     GET.mockResolvedValue({ error: { status: 404 } });
 
