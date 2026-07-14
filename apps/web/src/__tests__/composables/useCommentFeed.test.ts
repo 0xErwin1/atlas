@@ -74,6 +74,7 @@ describe('useCommentFeed', () => {
             comment_id: '1',
             kind: 'link_added',
             created_at: '2026-01-01T00:00:02Z',
+            target: { status: 'unavailable', label: 'leaked', id: 'hidden' },
           },
         ],
         next_cursor: null,
@@ -92,6 +93,10 @@ describe('useCommentFeed', () => {
     expect(feed.entries.value[0]).toMatchObject({
       type: 'comment',
       links: [{ target: { label: 'Recurso no disponible' } }],
+    });
+    expect(feed.entries.value[1]).toMatchObject({
+      type: 'event',
+      target: { status: 'unavailable', label: 'Recurso no disponible' },
     });
     expect(feed.hasMore.value).toBe(false);
     expect(feed.status.value).toBe('ready');
@@ -152,21 +157,62 @@ describe('useCommentFeed', () => {
     expect(feed.attachmentError.value['comment-1']).toBeUndefined();
   });
 
-  it('uses document attachment routes and preserves API errors', async () => {
+  it('uploads and deletes document attachments with raw file bytes and canonical headers', async () => {
     GET.mockResolvedValueOnce({ data: [attachment('attachment-1', 'existing.txt')] }).mockResolvedValueOnce({
       error: { hint: 'Download denied' },
     });
-    POST.mockResolvedValueOnce({ error: { hint: 'Upload denied' } });
+    POST.mockResolvedValueOnce({ data: attachment('attachment-2', 'new.txt') });
+    DELETE.mockResolvedValueOnce({});
 
     const feed = useCommentFeed();
     const target = { kind: 'document' as const, ws: 'acme', slug: 'note' };
     await feed.loadAttachments(target, 'comment-1');
-    const uploaded = await feed.uploadAttachment(target, 'comment-1', new File(['new'], 'new.txt'));
+    const file = new File(['new'], 'new.txt', { type: 'text/plain' });
+    const uploaded = await feed.uploadAttachment(target, 'comment-1', file);
     const downloaded = await feed.downloadAttachment(target, 'comment-1', 'attachment-1');
+    const deleted = await feed.deleteAttachment(target, 'comment-1', 'attachment-1');
 
     expect(GET.mock.calls[0]?.[0]).toContain('/documents/{slug}/comments/{comment_id}/attachments');
-    expect(uploaded).toBeNull();
+    expect(POST.mock.calls[0]?.[0]).toBe(
+      '/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments',
+    );
+    expect(POST.mock.calls[0]?.[1]).toMatchObject({
+      body: [110, 101, 119],
+      params: { header: { 'x-file-name': 'new.txt' } },
+      headers: { 'Content-Type': 'text/plain' },
+    });
+    expect(POST.mock.calls[0]?.[1]?.bodySerializer([110, 101, 119])).toBe(file);
+    expect(uploaded).toMatchObject({ id: 'attachment-2', file_name: 'new.txt' });
     expect(downloaded).toBeNull();
-    expect(feed.attachmentError.value['comment-1']).toBe('Download denied');
+    expect(deleted).toBe(true);
+    expect(feed.attachments.value['comment-1']).toEqual([
+      expect.objectContaining({ id: 'attachment-2', file_name: 'new.txt' }),
+    ]);
+    expect(feed.attachmentError.value['comment-1']).toBeUndefined();
+  });
+
+  it('clears stale attachment loading state after switching targets', async () => {
+    let resolveTask: (value: unknown) => void = () => {};
+    GET.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveTask = resolve;
+      }),
+    ).mockResolvedValueOnce({ data: [attachment('attachment-2', 'document.txt')] });
+
+    const feed = useCommentFeed();
+    const task = { kind: 'task' as const, ws: 'acme', readableId: 'ATL-1' };
+    const document = { kind: 'document' as const, ws: 'acme', slug: 'note' };
+    const stale = feed.loadAttachments(task, 'task-comment');
+
+    await feed.loadAttachments(document, 'document-comment');
+    resolveTask({ data: [attachment('attachment-1', 'task.txt')] });
+    await stale;
+
+    expect(feed.isAttachmentListLoading('task-comment')).toBe(false);
+    expect(feed.isAttachmentListLoading('document-comment')).toBe(false);
+    expect(feed.attachments.value['task-comment']).toBeUndefined();
+    expect(feed.attachments.value['document-comment']).toEqual([
+      expect.objectContaining({ id: 'attachment-2', file_name: 'document.txt' }),
+    ]);
   });
 });

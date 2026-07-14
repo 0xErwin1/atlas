@@ -18,13 +18,18 @@ export type AvailableCommentLinkTarget = Extract<CommentLinkTarget, { status: 'a
 export type UnavailableCommentLinkTarget = { status: 'unavailable'; label: 'Recurso no disponible' };
 export type NormalizedCommentLinkTarget = AvailableCommentLinkTarget | UnavailableCommentLinkTarget;
 
+type CommentFeedEvent = Extract<CommentFeedEntry, { type: 'event' }>;
+type NormalizedCommentFeedEvent = Omit<CommentFeedEvent, 'target'> & {
+  target?: NormalizedCommentLinkTarget | null;
+};
+
 export type NormalizedCommentFeedEntry =
   | {
       type: 'comment';
       comment: components['schemas']['CommentDto'];
       links: Array<{ target: NormalizedCommentLinkTarget }>;
     }
-  | Extract<CommentFeedEntry, { type: 'event' }>;
+  | NormalizedCommentFeedEvent;
 
 type FeedStatus = 'idle' | 'pending' | 'ready' | 'error';
 
@@ -53,8 +58,17 @@ function normalizeFeedEntries(entries: CommentFeedEntry[]): NormalizedCommentFee
   return entries.map((entry) =>
     entry.type === 'comment'
       ? { ...entry, links: entry.links.map((link) => ({ target: normalizeCommentLinkTarget(link.target) })) }
-      : entry,
+      : normalizeCommentFeedEvent(entry),
   );
+}
+
+function normalizeCommentFeedEvent(entry: CommentFeedEvent): NormalizedCommentFeedEvent {
+  const { target, ...event } = entry;
+
+  if (target === undefined) return event;
+  if (target === null) return { ...event, target: null };
+
+  return { ...event, target: normalizeCommentLinkTarget(target) };
 }
 
 export function normalizeCommentLinkTarget(target: CommentLinkTarget): NormalizedCommentLinkTarget {
@@ -104,6 +118,10 @@ export function useCommentFeed() {
       hasMore.value = false;
       attachments.value = {};
       attachmentError.value = {};
+      attachmentListLoading.clear();
+      attachmentUploadLoading.clear();
+      attachmentDownloadLoading.clear();
+      attachmentDeleteLoading.clear();
     }
 
     return generation;
@@ -273,10 +291,6 @@ export function useCommentFeed() {
     setAttachmentError(commentId, null);
 
     try {
-      const request = {
-        body: '',
-        bodySerializer: () => formData(file),
-      };
       const response =
         requestTarget.kind === 'task'
           ? await wrappedClient.POST(
@@ -289,10 +303,11 @@ export function useCommentFeed() {
                     comment_id: commentId,
                   },
                 },
-                ...request,
+                body: '',
+                bodySerializer: () => formData(file),
               },
             )
-          : await uploadDocumentCommentAttachment(requestTarget, commentId, request);
+          : await uploadDocumentCommentAttachment(requestTarget, commentId, file);
 
       if (!currentAttachmentTarget(requestTarget, requestGeneration)) return null;
 
@@ -466,13 +481,19 @@ export function useCommentFeed() {
 async function uploadDocumentCommentAttachment(
   target: Extract<CommentParentTarget, { kind: 'document' }>,
   commentId: string,
-  request: { body: string; bodySerializer: () => FormData },
+  file: File,
 ) {
-  // The generated document upload operation omits its multipart request body even
-  // though the server route accepts it; keep this exception local to that mismatch.
-  // @ts-expect-error Generated OpenAPI incorrectly declares this multipart endpoint body-less.
+  const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
+
   return wrappedClient.POST('/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments', {
-    params: { path: { ws: target.ws, slug: target.slug, comment_id: commentId } },
-    ...request,
+    params: {
+      path: { ws: target.ws, slug: target.slug, comment_id: commentId },
+      header: { 'x-file-name': file.name },
+    },
+    body: bytes,
+    bodySerializer: () => file,
+    headers: {
+      'Content-Type': file.type || 'application/octet-stream',
+    },
   });
 }

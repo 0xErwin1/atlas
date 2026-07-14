@@ -1047,7 +1047,13 @@ pub(crate) async fn delete_attachment(
     operation_id = "upload_document_comment_attachment",
     tag = "documents",
     security(("bearer_auth" = [])),
-    params(("ws" = String, Path), ("slug" = String, Path), ("comment_id" = String, Path)),
+    params(
+        ("ws" = String, Path),
+        ("slug" = String, Path),
+        ("comment_id" = String, Path),
+        ("x-file-name" = String, Header, description = "Original attachment file name"),
+    ),
+    request_body = Vec<u8>,
     responses((status = 201, body = CommentAttachmentDto), (status = 404), (status = 413), (status = 422))
 )]
 pub(crate) async fn upload_comment_attachment(
