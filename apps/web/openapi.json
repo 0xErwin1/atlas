@@ -3105,15 +3105,24 @@
               "format": "int32",
               "minimum": 0
             }
+          },
+          {
+            "name": "feed",
+            "in": "query",
+            "description": "Set to `full` for authorized links and retained events",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "Comment page",
+            "description": "Comment page. `feed=full` returns authorized links and retained events.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Page_CommentDto"
+                  "$ref": "#/components/schemas/CommentListResponseDto"
                 }
               }
             }
@@ -3321,6 +3330,229 @@
           },
           "422": {
             "description": "Comment body is blank or exceeds the maximum length"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments": {
+      "get": {
+        "tags": [
+          "documents"
+        ],
+        "operationId": "list_document_comment_attachments",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CommentAttachmentDto"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "documents"
+        ],
+        "operationId": "upload_document_comment_attachment",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentAttachmentDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": ""
+          },
+          "413": {
+            "description": ""
+          },
+          "422": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}": {
+      "get": {
+        "tags": [
+          "documents"
+        ],
+        "operationId": "download_document_comment_attachment",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "attachment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Binary attachment content"
+          },
+          "404": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "documents"
+        ],
+        "operationId": "delete_document_comment_attachment",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "attachment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "description": ""
           }
         },
         "security": [
@@ -6517,6 +6749,162 @@
         ]
       }
     },
+    "/api/workspaces/{ws}/semantic-search": {
+      "get": {
+        "tags": [
+          "search"
+        ],
+        "operationId": "semantic_search",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Semantic search query (required).",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "description": "Comma-separated kinds: document/note, task, all.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Opaque semantic-search cursor.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size, default 50, clamped to [1,200]",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Semantic search results page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Paginated response envelope.",
+                  "required": [
+                    "items",
+                    "has_more"
+                  ],
+                  "properties": {
+                    "has_more": {
+                      "type": "boolean"
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "kind",
+                          "title",
+                          "similarity",
+                          "source",
+                          "excerpt"
+                        ],
+                        "properties": {
+                          "column_name": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "excerpt": {
+                            "type": "string"
+                          },
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "kind": {
+                            "$ref": "#/components/schemas/SemanticSearchKindDto"
+                          },
+                          "project_slug": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "readable_id": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "similarity": {
+                            "type": "number",
+                            "format": "float"
+                          },
+                          "source": {
+                            "$ref": "#/components/schemas/SemanticSearchSourceDto"
+                          },
+                          "title": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "next_cursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "404": {
+            "description": "Workspace not found or principal has no access"
+          },
+          "422": {
+            "description": "Invalid input: absent q or malformed cursor"
+          },
+          "503": {
+            "description": "Semantic search is disabled or embedding provider is unavailable"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/api/workspaces/{ws}/status-templates": {
       "get": {
         "tags": [
@@ -8489,15 +8877,24 @@
               "format": "int32",
               "minimum": 0
             }
+          },
+          {
+            "name": "feed",
+            "in": "query",
+            "description": "Set to `full` for authorized links and retained events",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "Task comments, oldest first",
+            "description": "Task comments, oldest first. `feed=full` returns authorized links and retained events.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Page_CommentDto"
+                  "$ref": "#/components/schemas/CommentListResponseDto"
                 }
               }
             }
@@ -8705,6 +9102,244 @@
           },
           "422": {
             "description": "Comment body is blank or exceeds the maximum length"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "operationId": "list_task_comment_attachments",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "readable_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CommentAttachmentDto"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "tasks"
+        ],
+        "operationId": "upload_task_comment_attachment",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "readable_id",
+            "in": "path",
+            "description": "Task readable ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "comment_id",
+            "in": "path",
+            "description": "Comment UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentAttachmentDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": ""
+          },
+          "413": {
+            "description": ""
+          },
+          "422": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}": {
+      "delete": {
+        "tags": [
+          "tasks"
+        ],
+        "operationId": "delete_task_comment_attachment",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "readable_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "attachment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}/content": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "operationId": "download_task_comment_attachment",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "readable_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "attachment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Binary attachment content"
+          },
+          "404": {
+            "description": ""
           }
         },
         "security": [
@@ -10154,6 +10789,16 @@
           "display_title"
         ],
         "properties": {
+          "comment_source": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CommentBacklinkSourceDto"
+              }
+            ]
+          },
           "display_title": {
             "type": "string"
           },
@@ -10367,6 +11012,138 @@
           }
         }
       },
+      "CommentAttachmentDto": {
+        "type": "object",
+        "description": "Metadata for a file owned by a task or document comment.",
+        "required": [
+          "id",
+          "comment_id",
+          "file_name",
+          "content_type",
+          "size_bytes",
+          "sha256",
+          "created_at"
+        ],
+        "properties": {
+          "actor": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ActorDto"
+              }
+            ]
+          },
+          "comment_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "file_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "CommentBacklinkParentDto": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "readable_id",
+              "title",
+              "type"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "readable_id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "task"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "title",
+              "type"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "slug": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "document"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "The authorized parent that owns a comment backlink."
+      },
+      "CommentBacklinkSourceDto": {
+        "type": "object",
+        "description": "Authorized navigation metadata for a comment that links to a resource.",
+        "required": [
+          "type",
+          "comment_id",
+          "parent"
+        ],
+        "properties": {
+          "comment_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "parent": {
+            "$ref": "#/components/schemas/CommentBacklinkParentDto"
+          },
+          "type": {
+            "type": "string"
+          }
+        }
+      },
       "CommentDto": {
         "type": "object",
         "description": "A single markdown comment on a task or a document.\n\nComments are polymorphic: exactly one of `task_id` / `document_id` is present,\nidentifying the owner the comment was loaded from.",
@@ -10411,6 +11188,75 @@
             "format": "date-time"
           }
         }
+      },
+      "CommentLinkProjectionDto": {
+        "type": "object",
+        "description": "A derived comment link projected for the requesting viewer.",
+        "required": [
+          "target"
+        ],
+        "properties": {
+          "target": {
+            "$ref": "#/components/schemas/CommentLinkTargetDto"
+          }
+        }
+      },
+      "CommentLinkTargetDto": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "type",
+              "id",
+              "status"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "available"
+                ]
+              },
+              "type": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "label",
+              "status"
+            ],
+            "properties": {
+              "label": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "unavailable"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "A viewer-authorized navigation target derived from a comment link."
+      },
+      "CommentListResponseDto": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/Page_CommentDto"
+          },
+          {
+            "$ref": "#/components/schemas/Page_CommentFeedEntryDto"
+          }
+        ],
+        "description": "The compatible default comment page or the opt-in full comment feed page."
       },
       "ConflictProblemDto": {
         "type": "object",
@@ -11948,6 +12794,16 @@
                 "display_title"
               ],
               "properties": {
+                "comment_source": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/components/schemas/CommentBacklinkSourceDto"
+                    }
+                  ]
+                },
                 "display_title": {
                   "type": "string"
                 },
@@ -12081,6 +12937,111 @@
                   "format": "date-time"
                 }
               }
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "Page_CommentFeedEntryDto": {
+        "type": "object",
+        "description": "Paginated response envelope.",
+        "required": [
+          "items",
+          "has_more"
+        ],
+        "properties": {
+          "has_more": {
+            "type": "boolean"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "comment",
+                    "links",
+                    "type"
+                  ],
+                  "properties": {
+                    "comment": {
+                      "$ref": "#/components/schemas/CommentDto"
+                    },
+                    "links": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CommentLinkProjectionDto"
+                      }
+                    },
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "comment"
+                      ]
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "kind",
+                    "comment_id",
+                    "created_at",
+                    "type"
+                  ],
+                  "properties": {
+                    "actor": {
+                      "oneOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "$ref": "#/components/schemas/ActorDto"
+                        }
+                      ]
+                    },
+                    "comment_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "created_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "target": {
+                      "oneOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "$ref": "#/components/schemas/CommentLinkTargetDto"
+                        }
+                      ]
+                    },
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "event"
+                      ]
+                    }
+                  }
+                }
+              ],
+              "description": "One full comment-feed entry, including retained lifecycle events."
             }
           },
           "next_cursor": {
@@ -12364,6 +13325,16 @@
                 "kind"
               ],
               "properties": {
+                "comment_source": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/components/schemas/CommentBacklinkSourceDto"
+                    }
+                  ]
+                },
                 "kind": {
                   "type": "string",
                   "description": "\"relates\" | \"blocks\" | \"parent\" | \"spec\" | \"docs\""
@@ -13195,6 +14166,76 @@
           "task"
         ]
       },
+      "SemanticSearchHitDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "similarity",
+          "source",
+          "excerpt"
+        ],
+        "properties": {
+          "column_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "excerpt": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/SemanticSearchKindDto"
+          },
+          "project_slug": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "readable_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "similarity": {
+            "type": "number",
+            "format": "float"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SemanticSearchSourceDto"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "SemanticSearchKindDto": {
+        "type": "string",
+        "enum": [
+          "document",
+          "task"
+        ]
+      },
+      "SemanticSearchSourceDto": {
+        "type": "string",
+        "enum": [
+          "title",
+          "content",
+          "comment",
+          "attachment_name",
+          "checklist",
+          "subtask",
+          "aggregate"
+        ]
+      },
       "ServerMetaDto": {
         "type": "object",
         "description": "Response from `GET /api/meta`. Server build information for the About screen.",
@@ -13207,6 +14248,14 @@
               "string",
               "null"
             ]
+          },
+          "max_attachment_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
           },
           "url": {
             "type": [
@@ -13357,6 +14406,16 @@
           "kind"
         ],
         "properties": {
+          "comment_source": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CommentBacklinkSourceDto"
+              }
+            ]
+          },
           "kind": {
             "type": "string",
             "description": "\"relates\" | \"blocks\" | \"parent\" | \"spec\" | \"docs\""

@@ -12,10 +12,23 @@ export type CommentDto = components['schemas']['CommentDto'];
 export type AttachmentDto = components['schemas']['AttachmentDto'];
 export type SecondaryLoadStatus = 'idle' | 'pending' | 'ready' | 'error';
 
+type CommentListResponse = components['schemas']['CommentListResponseDto'];
+
 type SecondaryTarget = {
   workspaceSlug: string;
   slug: string;
 };
+
+function legacyCommentItems(data: CommentListResponse): CommentDto[] | null {
+  const legacyItems: CommentDto[] = [];
+
+  for (const item of data.items) {
+    if ('type' in item) return null;
+    legacyItems.push(item);
+  }
+
+  return legacyItems;
+}
 
 /**
  * Documents store: the single caller of the document list and backlink routes
@@ -200,7 +213,17 @@ export const useDocumentsStore = defineStore('documents', () => {
       return;
     }
 
-    comments.value = data.items;
+    const legacyItems = legacyCommentItems(data);
+    if (legacyItems === null) {
+      comments.value = [];
+      commentsCursor.value = null;
+      commentsHasMore.value = false;
+      commentsStatus.value = 'error';
+      commentsError.value = 'Received an unsupported full comment feed';
+      return;
+    }
+
+    comments.value = legacyItems;
     commentsCursor.value = data.next_cursor ?? null;
     commentsHasMore.value = data.has_more;
     commentsStatus.value = 'ready';
@@ -230,7 +253,14 @@ export const useDocumentsStore = defineStore('documents', () => {
       return;
     }
 
-    comments.value = [...comments.value, ...data.items];
+    const legacyItems = legacyCommentItems(data);
+    if (legacyItems === null) {
+      commentsStatus.value = 'error';
+      commentsError.value = 'Received an unsupported full comment feed';
+      return;
+    }
+
+    comments.value = [...comments.value, ...legacyItems];
     commentsCursor.value = data.next_cursor ?? null;
     commentsHasMore.value = data.has_more;
     commentsStatus.value = 'ready';

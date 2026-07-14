@@ -255,3 +255,100 @@ fn full_comment_feed_query_is_documented_for_both_parent_routes() {
         );
     }
 }
+
+#[test]
+fn comment_freedom_contract_is_exact_for_feeds_backlinks_attachments_and_metadata() {
+    let document = serde_json::to_value(openapi()).expect("serialize OpenAPI document");
+
+    for path in [
+        "/api/workspaces/{ws}/tasks/{readable_id}/comments",
+        "/api/workspaces/{ws}/documents/{slug}/comments",
+    ] {
+        let get = operation(&document, path, "get");
+
+        assert_eq!(
+            get.pointer("/responses/200/content/application~1json/schema/$ref"),
+            Some(&Value::String(
+                "#/components/schemas/CommentListResponseDto".into()
+            )),
+            "{path} must preserve the compatible default comment page and opt-in full feed union"
+        );
+    }
+
+    assert_eq!(
+        document.pointer("/components/schemas/BacklinkDto/properties/comment_source/oneOf/1/$ref"),
+        Some(&Value::String(
+            "#/components/schemas/CommentBacklinkSourceDto".into()
+        )),
+        "backlinks must expose the authorized comment source projection"
+    );
+
+    assert_attachment_lifecycle(
+        &document,
+        "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments",
+        "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}",
+        "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}/content",
+    );
+    assert_attachment_lifecycle(
+        &document,
+        "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments",
+        "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}",
+        "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}",
+    );
+
+    let limit = document
+        .pointer("/components/schemas/ServerMetaDto/properties/max_attachment_bytes")
+        .expect("server metadata must advertise the optional attachment limit");
+
+    assert_eq!(
+        limit.get("type"),
+        Some(&serde_json::json!(["integer", "null"]))
+    );
+    assert_eq!(limit.get("format"), Some(&Value::String("int64".into())));
+    assert_eq!(limit.get("minimum"), Some(&serde_json::json!(0)));
+}
+
+fn operation<'a>(document: &'a Value, path: &str, method: &str) -> &'a Value {
+    let pointer = format!("/paths/{}/{}", path.replace('/', "~1"), method);
+
+    document
+        .pointer(&pointer)
+        .unwrap_or_else(|| panic!("{method} {path} must be present in OpenAPI"))
+}
+
+fn assert_attachment_lifecycle(
+    document: &Value,
+    collection_path: &str,
+    item_path: &str,
+    content_path: &str,
+) {
+    let collection_get = operation(document, collection_path, "get");
+    let collection_post = operation(document, collection_path, "post");
+
+    assert_eq!(
+        collection_get.pointer("/responses/200/content/application~1json/schema/items/$ref"),
+        Some(&Value::String(
+            "#/components/schemas/CommentAttachmentDto".into()
+        )),
+        "{collection_path} must list comment-owned attachment metadata"
+    );
+    assert_eq!(
+        collection_post.pointer("/responses/201/content/application~1json/schema/$ref"),
+        Some(&Value::String(
+            "#/components/schemas/CommentAttachmentDto".into()
+        )),
+        "{collection_path} must upload comment-owned attachment metadata"
+    );
+    assert!(
+        operation(document, item_path, "delete")
+            .pointer("/responses/204")
+            .is_some(),
+        "{item_path} must delete a comment-owned attachment"
+    );
+    assert!(
+        operation(document, content_path, "get")
+            .pointer("/responses/200")
+            .is_some(),
+        "{content_path} must download comment-owned attachment content"
+    );
+}
