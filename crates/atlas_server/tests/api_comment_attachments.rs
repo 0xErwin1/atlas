@@ -95,6 +95,46 @@ async fn delete(client: &atlas_client::AtlasClient, url: String) -> Response {
         .expect("send delete")
 }
 
+async fn request_without_credentials(method: reqwest::Method, url: String) -> Response {
+    reqwest::Client::new()
+        .request(method, url)
+        .header("content-type", "text/plain")
+        .body("untrusted bytes")
+        .send()
+        .await
+        .expect("send unauthenticated request")
+}
+
+async fn assert_unauthorized_attachment_operations(
+    attachment_url: &str,
+    attachment_id: uuid::Uuid,
+    secret: &str,
+) {
+    let operations = [
+        (reqwest::Method::POST, attachment_url.to_string()),
+        (reqwest::Method::GET, attachment_url.to_string()),
+        (
+            reqwest::Method::GET,
+            format!("{attachment_url}/{attachment_id}/content"),
+        ),
+        (
+            reqwest::Method::DELETE,
+            format!("{attachment_url}/{attachment_id}"),
+        ),
+    ];
+
+    for (method, url) in operations {
+        let response = request_without_credentials(method, url).await;
+        assert_eq!(response.status(), reqwest::StatusCode::UNAUTHORIZED);
+
+        let body = response.text().await.expect("read unauthorized response");
+        assert!(
+            !body.contains(secret),
+            "unauthorized responses must not disclose attachment metadata"
+        );
+    }
+}
+
 #[tokio::test]
 async fn task_comment_attachment_routes_round_trip_raw_bytes() {
     let db = support::TestDb::create().await.expect("TestDb::create");
@@ -181,6 +221,8 @@ async fn task_comment_attachment_routes_round_trip_raw_bytes() {
         .expect("attachment id")
         .parse::<uuid::Uuid>()
         .expect("UUID attachment id");
+
+    assert_unauthorized_attachment_operations(&attachment_url, attachment_id, "task.txt").await;
 
     let list_response = get(&client, attachment_url.clone()).await;
     assert_eq!(list_response.status(), reqwest::StatusCode::OK);
@@ -287,6 +329,25 @@ async fn document_comment_attachment_routes_round_trip_raw_bytes() {
         .parse::<uuid::Uuid>()
         .expect("UUID attachment id");
     assert_eq!(attachment["comment_id"], comment.id.to_string());
+
+    assert_unauthorized_attachment_operations(&attachment_url, attachment_id, "document.txt").await;
+
+    let mismatched_comment_content = get(
+        &client,
+        format!(
+            "{}/api/workspaces/{}/documents/{}/comments/{}/attachments/{attachment_id}",
+            server.base_url(),
+            ws.slug,
+            slug,
+            uuid::Uuid::now_v7()
+        ),
+    )
+    .await;
+    assert_eq!(
+        mismatched_comment_content.status(),
+        reqwest::StatusCode::NOT_FOUND,
+        "an attachment must not disclose itself through a different document comment owner chain"
+    );
 
     let content_response = get(&client, format!("{attachment_url}/{attachment_id}")).await;
     assert_eq!(content_response.status(), reqwest::StatusCode::OK);
