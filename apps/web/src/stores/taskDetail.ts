@@ -15,6 +15,14 @@ export type TaskDto = components['schemas']['TaskDto'];
 export type TaskAttachmentDto = components['schemas']['TaskAttachmentDto'];
 export type CommentDto = components['schemas']['CommentDto'];
 
+type CommentListResponse = components['schemas']['CommentListResponseDto'];
+
+type LegacyCommentPage = {
+  has_more: boolean;
+  items: CommentDto[];
+  next_cursor?: string | null;
+};
+
 export interface AddAssigneeInput {
   assignee_id: string;
   assignee_type: string;
@@ -46,6 +54,37 @@ interface DetailTarget {
 interface DetailOperation {
   target: DetailTarget;
   generation: number;
+}
+
+function legacyCommentItems(data: CommentListResponse): CommentDto[] | null {
+  const legacyItems: CommentDto[] = [];
+
+  for (const item of data.items) {
+    if ('type' in item) return null;
+    legacyItems.push(item);
+  }
+
+  return legacyItems;
+}
+
+async function getLegacyTaskCommentPage(
+  ws: string,
+  readableId: string,
+  cursor?: string,
+): Promise<{ data?: LegacyCommentPage; error?: unknown }> {
+  const { data, error } = await wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/comments', {
+    params: {
+      path: { ws, readable_id: readableId },
+      ...(cursor !== undefined ? { query: { cursor } } : {}),
+    },
+  });
+
+  if (error !== undefined || data === undefined) return { error };
+
+  const items = legacyCommentItems(data);
+  if (items === null) return { error: new Error('Received an unsupported full comment feed') };
+
+  return { data: { items, next_cursor: data.next_cursor, has_more: data.has_more } };
 }
 
 const collectionNames: CollectionName[] = [
@@ -260,17 +299,11 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
           attachments.value = data;
         },
       ),
-      settleCollection(
-        'comments',
-        wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/comments', { params: { path } }),
-        sequence,
-        target,
-        (data) => {
-          comments.value = data.items;
-          commentsCursor.value = data.next_cursor ?? null;
-          commentsHasMore.value = data.has_more;
-        },
-      ),
+      settleCollection('comments', getLegacyTaskCommentPage(ws, readableId), sequence, target, (data) => {
+        comments.value = data.items;
+        commentsCursor.value = data.next_cursor ?? null;
+        commentsHasMore.value = data.has_more;
+      }),
     ]);
 
     if (isCurrent(sequence, target)) loading.value = false;
@@ -294,15 +327,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     collectionErrors.value = { ...collectionErrors.value, comments: null };
 
     try {
-      const { data, error: apiError } = await wrappedClient.GET(
-        '/api/workspaces/{ws}/tasks/{readable_id}/comments',
-        {
-          params: {
-            path: { ws, readable_id: readableId },
-            query: { cursor },
-          },
-        },
-      );
+      const { data, error: apiError } = await getLegacyTaskCommentPage(ws, readableId, cursor);
       if (!isOperationCurrent(operation)) return;
 
       if (apiError !== undefined || data === undefined) {
