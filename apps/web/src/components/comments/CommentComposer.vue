@@ -39,7 +39,7 @@ async function submit(): Promise<void> {
   if (!canSubmit.value || submitting.value) return;
 
   submitting.value = true;
-  const ok = await props.onSubmit(draft.value.trim());
+  const ok = await props.onSubmit(draft.value);
   submitting.value = false;
 
   if (ok) draft.value = '';

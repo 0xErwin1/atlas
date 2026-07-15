@@ -396,6 +396,21 @@ describe('ActivityComments feed (ATL-19)', () => {
     expect(wrapper.find('[data-comment-id="c1"] [data-test="comment-edit-save"]').exists()).toBe(false);
   });
 
+  it('preserves verbatim Markdown when creating a comment', async () => {
+    const detail = useTaskDetailStore();
+    const addComment = vi.spyOn(detail, 'addComment').mockResolvedValue(true);
+    const body = '  leading\n```md\ncode\n```\ntrailing  ';
+
+    signInAs('me');
+
+    const wrapper = mountFeed();
+    await wrapper.get('[data-comment-composer] textarea').setValue(body);
+    await wrapper.get('[data-test="comment-submit"]').trigger('click');
+    await flushPromises();
+
+    expect(addComment).toHaveBeenCalledWith('acme', 'ATL-1', body);
+  });
+
   it('discards an inline edit on cancel without calling editComment', async () => {
     const detail = useTaskDetailStore();
     detail._setForTest({ comments: [comment('c1', 'Original', 'me', 'user', 'Me')] });

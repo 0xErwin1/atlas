@@ -296,6 +296,23 @@ describe('DocumentComments (ATL-37)', () => {
     expect(wrapper.find('[data-comment-id="c1"] [data-test="comment-edit-save"]').exists()).toBe(false);
   });
 
+  it('preserves verbatim Markdown when editing a comment', async () => {
+    const store = setup([comment('c1', 'Original', 'me', 'user', 'Me')]);
+    const editComment = vi.spyOn(store, 'editComment').mockResolvedValue(true);
+    const body = '  leading\n```md\ncode\n```\ntrailing  ';
+
+    signInAs('me');
+
+    const wrapper = mountPanel();
+    await wrapper.get('[data-comment-id="c1"] [aria-label="Comment actions"]').trigger('click');
+    await menuItem(wrapper, 'Edit')?.trigger('click');
+    await wrapper.get('[data-comment-id="c1"] textarea').setValue(body);
+    await wrapper.get('[data-comment-id="c1"] [data-test="comment-edit-save"]').trigger('click');
+    await flushPromises();
+
+    expect(editComment).toHaveBeenCalledWith('acme', 'my-doc', 'c1', body);
+  });
+
   it('loads the next shared-feed page when more remain', async () => {
     setup([comment('c1', 'First', 'u1')], true);
 

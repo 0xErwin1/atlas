@@ -167,7 +167,7 @@ async function saveEdit(): Promise<void> {
   if (!canSaveEdit.value || saving.value || props.comment === undefined || props.onSave === undefined) return;
 
   saving.value = true;
-  const ok = await props.onSave(props.comment.id, editDraft.value.trim());
+  const ok = await props.onSave(props.comment.id, editDraft.value);
   saving.value = false;
 
   if (ok) cancelEdit();
