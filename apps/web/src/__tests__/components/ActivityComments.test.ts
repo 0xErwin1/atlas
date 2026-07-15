@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { nextTick, ref } from 'vue';
 import { createMemoryHistory, createRouter } from 'vue-router';
+import CommentCard from '@/components/comments/CommentCard.vue';
 import ActivityComments from '@/components/tareas/ActivityComments.vue';
 import { useAuthStore } from '@/stores/auth';
 import {
@@ -49,6 +50,7 @@ const testRouter = createRouter({
   routes: [
     { path: '/t/task/:readableId', name: 'task-detail', component: RouteStub },
     { path: '/n/:slug?', name: 'notes', component: RouteStub },
+    { path: '/:pathMatch(.*)*', component: RouteStub },
   ],
 });
 
@@ -113,7 +115,7 @@ function mountFeed() {
 
   return mount(ActivityComments, {
     props: { ws: 'acme', readableId: 'ATL-1' },
-    global: { stubs: { MarkdownEditor: MarkdownEditorStub, teleport: true } },
+    global: { plugins: [testRouter], stubs: { MarkdownEditor: MarkdownEditorStub, teleport: true } },
   });
 }
 
@@ -380,6 +382,36 @@ describe('ActivityComments feed (ATL-19)', () => {
     expect(wrapper.find('[data-comment-id="c1"] [aria-label="Comment actions"]').exists()).toBe(false);
   });
 
+  it('does not provide image uploads for a comment the current actor cannot edit', () => {
+    useTaskDetailStore()._setForTest({ comments: [comment('c1', 'Theirs', 'someone-else')] });
+    signInAs('me');
+
+    const wrapper = mountFeed();
+
+    expect(wrapper.getComponent(CommentCard).props('uploadImage')).toBeUndefined();
+  });
+
+  it('derives task image Markdown URLs from the shared uploaded attachment ID', async () => {
+    useTaskDetailStore()._setForTest({ comments: [comment('c1', 'Mine', 'me', 'user', 'Me')] });
+    commentAttachments.upload.mockResolvedValue({ id: 'image-1' });
+    commentAttachments.contentUrl.mockReturnValue(
+      '/api/workspaces/acme/tasks/ATL-1/comments/c1/attachments/image-1/content',
+    );
+    signInAs('me');
+
+    const wrapper = mountFeed();
+    const uploadImage = wrapper.getComponent(CommentCard).props('uploadImage') as
+      | ((file: File) => Promise<string | null>)
+      | undefined;
+    const file = new File(['image'], 'diagram.png', { type: 'image/png' });
+
+    expect(await uploadImage?.(file)).toBe(
+      '/api/workspaces/acme/tasks/ATL-1/comments/c1/attachments/image-1/content',
+    );
+    expect(commentAttachments.upload).toHaveBeenCalledWith('c1', file);
+    expect(commentAttachments.contentUrl).toHaveBeenCalledWith('c1', 'image-1');
+  });
+
   it('saves an inline edit via editComment and exits edit mode', async () => {
     const detail = useTaskDetailStore();
     detail._setForTest({ comments: [comment('c1', 'Original', 'me', 'user', 'Me')] });
@@ -445,7 +477,7 @@ describe('ActivityComments feed (ATL-19)', () => {
 
     const wrapper = mount(ActivityComments, {
       props: { ws: 'acme', readableId: 'ATL-1', pinned: true },
-      global: { stubs: { MarkdownEditor: MarkdownEditorStub, teleport: true } },
+      global: { plugins: [testRouter], stubs: { MarkdownEditor: MarkdownEditorStub, teleport: true } },
     });
 
     expect(wrapper.get('.atl-ac').classes()).toContain('pinned');

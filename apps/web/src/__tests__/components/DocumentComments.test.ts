@@ -2,6 +2,8 @@ import { type DOMWrapper, flushPromises, mount, type VueWrapper } from '@vue/tes
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ref } from 'vue';
+import { createMemoryHistory, createRouter } from 'vue-router';
+import CommentCard from '@/components/comments/CommentCard.vue';
 import DocumentComments from '@/components/notas/DocumentComments.vue';
 import { useAuthStore } from '@/stores/auth';
 import { type CommentDto, useDocumentsStore } from '@/stores/documents';
@@ -38,6 +40,15 @@ vi.mock('@/composables/useCommentAttachments', () => ({
 }));
 
 const editorFocus = vi.fn();
+const RouteStub = { template: '<div />' };
+const testRouter = createRouter({
+  history: createMemoryHistory(),
+  routes: [
+    { path: '/t/task/:readableId', name: 'task-detail', component: RouteStub },
+    { path: '/n/:slug?', name: 'notes', component: RouteStub },
+    { path: '/:pathMatch(.*)*', component: RouteStub },
+  ],
+});
 
 const MarkdownEditorStub = {
   name: 'MarkdownEditor',
@@ -86,7 +97,7 @@ function setup(comments: CommentDto[], commentsHasMore = false) {
 function mountPanel() {
   return mount(DocumentComments, {
     props: { ws: 'acme', slug: 'my-doc' },
-    global: { stubs: { MarkdownEditor: MarkdownEditorStub, teleport: true } },
+    global: { plugins: [testRouter], stubs: { MarkdownEditor: MarkdownEditorStub, teleport: true } },
   });
 }
 
@@ -245,6 +256,36 @@ describe('DocumentComments (ATL-37)', () => {
     const wrapper = mountPanel();
 
     expect(wrapper.find('[data-comment-id="c1"] [aria-label="Comment actions"]').exists()).toBe(false);
+  });
+
+  it('does not provide image uploads for a comment the current actor cannot edit', () => {
+    setup([comment('c1', 'Theirs', 'someone-else')]);
+    signInAs('me');
+
+    const wrapper = mountPanel();
+
+    expect(wrapper.getComponent(CommentCard).props('uploadImage')).toBeUndefined();
+  });
+
+  it('derives document image Markdown URLs from the shared uploaded attachment ID', async () => {
+    setup([comment('c1', 'Mine', 'me', 'user', 'Me')]);
+    commentAttachments.upload.mockResolvedValue({ id: 'image-1' });
+    commentAttachments.contentUrl.mockReturnValue(
+      '/api/workspaces/acme/documents/my-doc/comments/c1/attachments/image-1',
+    );
+    signInAs('me');
+
+    const wrapper = mountPanel();
+    const uploadImage = wrapper.getComponent(CommentCard).props('uploadImage') as
+      | ((file: File) => Promise<string | null>)
+      | undefined;
+    const file = new File(['image'], 'diagram.png', { type: 'image/png' });
+
+    expect(await uploadImage?.(file)).toBe(
+      '/api/workspaces/acme/documents/my-doc/comments/c1/attachments/image-1',
+    );
+    expect(commentAttachments.upload).toHaveBeenCalledWith('c1', file);
+    expect(commentAttachments.contentUrl).toHaveBeenCalledWith('c1', 'image-1');
   });
 
   it("lets a workspace admin delete but not edit another member's comment", async () => {

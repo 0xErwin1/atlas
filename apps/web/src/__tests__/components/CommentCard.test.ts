@@ -143,14 +143,44 @@ describe('CommentCard', () => {
     await wrapper.get('[data-test="comment-edit-save"]').trigger('click');
     await flushPromises();
 
-    expect(onSave).toHaveBeenCalledWith(
+    await wrapper.get('[data-test="comment-edit-save"]').trigger('click');
+    await flushPromises();
+
+    expect(onSave).toHaveBeenNthCalledWith(
+      1,
       'comment-1',
       '![image](/api/comments/comment-1/attachments/image-1/content)',
     );
+    expect(onSave).toHaveBeenNthCalledWith(
+      2,
+      'comment-1',
+      '![image](/api/comments/comment-1/attachments/image-1/content)',
+    );
+    expect(uploadImage).not.toHaveBeenCalled();
     expect(wrapper.find('[data-test="comment-edit-save"]').exists()).toBe(true);
     expect(wrapper.get('[data-markdown]').text()).toContain(
       '![image](/api/comments/comment-1/attachments/image-1/content)',
     );
+  });
+
+  it('forwards image uploads to edit mode only when the editor can also manage attachments', async () => {
+    const uploadImage = vi.fn().mockResolvedValue('/api/comments/comment-1/attachments/image-1/content');
+    const wrapper = mountCard({
+      canEdit: true,
+      canManageAttachments: false,
+      uploadImage,
+    });
+
+    await wrapper.get('[aria-label="Comment actions"]').trigger('click');
+    await wrapper
+      .findAll('[role="menuitem"]')
+      .find((item) => item.text() === 'Edit')
+      ?.trigger('click');
+
+    const editor = wrapper
+      .findAllComponents(MarkdownEditorStub)
+      .find((item) => item.props('editable') === true);
+    expect(editor?.props('uploadImage')).toBeUndefined();
   });
 
   it('preserves author edit/delete permissions and hides attachment mutations without permission', () => {

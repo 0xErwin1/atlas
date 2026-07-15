@@ -79,6 +79,9 @@ const hasActions = computed(() => props.canEdit === true || props.canDelete === 
 const isEdited = computed(
   () => props.comment !== undefined && props.comment.updated_at !== props.comment.created_at,
 );
+const imageUpload = computed(() =>
+  props.canEdit === true && props.canManageAttachments === true ? props.uploadImage : undefined,
+);
 
 const authorName = computed(() =>
   props.comment === undefined ? '' : actorName(props.comment.author.display_name, props.comment.author.type),
@@ -244,7 +247,7 @@ async function confirmDelete(): Promise<void> {
           :embedded-controls="false"
           :width-toggle="false"
           :follow-caret="false"
-          :upload-image="uploadImage"
+          :upload-image="imageUpload"
           min-height="2.5rem"
           @change="onEditChange"
         />
