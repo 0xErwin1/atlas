@@ -347,6 +347,37 @@ describe('ActivityComments feed (ATL-19)', () => {
     expect((input.element as HTMLTextAreaElement).value).toBe('');
   });
 
+  it('retains a failed task publication verbatim, exposes retry, and creates only one comment after retry', async () => {
+    const detail = useTaskDetailStore();
+    detail._setForTest({ comments: [] });
+    const addComment = vi
+      .spyOn(detail, 'addComment')
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
+    const body = '  exact **task** Markdown\n\nwith whitespace  ';
+
+    const wrapper = mountFeed();
+    const input = wrapper.get('[data-comment-composer] textarea');
+    commentFeed.load.mockClear();
+    await input.setValue(body);
+    await wrapper.get('[data-test="comment-submit"]').trigger('click');
+    await flushPromises();
+
+    expect((input.element as HTMLTextAreaElement).value).toBe(body);
+    expect(wrapper.get('[data-comment-composer] [role="alert"]').text()).toContain('try again');
+    expect(wrapper.get('[data-test="comment-submit"]').text()).toContain('Retry');
+    expect(commentAttachments.upload).not.toHaveBeenCalled();
+    expect(commentFeed.load).not.toHaveBeenCalledWith({ kind: 'task', ws: 'acme', readableId: 'ATL-1' });
+
+    await wrapper.get('[data-test="comment-submit"]').trigger('click');
+    await flushPromises();
+
+    expect(addComment).toHaveBeenNthCalledWith(1, 'acme', 'ATL-1', body);
+    expect(addComment).toHaveBeenNthCalledWith(2, 'acme', 'ATL-1', body);
+    expect((input.element as HTMLTextAreaElement).value).toBe('');
+    expect(commentAttachments.upload).not.toHaveBeenCalled();
+  });
+
   it('focuses the editor when the composer box is clicked', async () => {
     useTaskDetailStore()._setForTest({ comments: [] });
 
@@ -558,6 +589,8 @@ describe('ActivityComments feed (ATL-19)', () => {
     await flushPromises();
     await wrapper.get('[data-comment-id="c1"] [data-test="comment-edit-save"]').trigger('click');
     await flushPromises();
+    expect(wrapper.get('[data-comment-id="c1"] [role="alert"]').text()).toContain('Could not save comment');
+    expect(wrapper.find('[data-comment-attachment-announcement]').exists()).toBe(false);
     await wrapper.get('[data-comment-id="c1"] [data-test="comment-edit-save"]').trigger('click');
     await flushPromises();
 
@@ -567,6 +600,7 @@ describe('ActivityComments feed (ATL-19)', () => {
     expect(editComment).toHaveBeenNthCalledWith(1, 'acme', 'ATL-1', 'c1', body);
     expect(editComment).toHaveBeenNthCalledWith(2, 'acme', 'ATL-1', 'c1', body);
     expect(wrapper.find('[data-comment-id="c1"] [data-test="comment-edit-save"]').exists()).toBe(false);
+    expect(wrapper.get('[data-comment-attachment-announcement]').text()).toBe('Comment saved');
   });
 
   it('binds attachment-list retry to the current published task comment', async () => {
@@ -578,6 +612,83 @@ describe('ActivityComments feed (ATL-19)', () => {
     await retry();
 
     expect(commentAttachments.reload).toHaveBeenCalledWith('c1');
+  });
+
+  it('announces completed task attachment upload, download, and delete through the host card flow', async () => {
+    useTaskDetailStore()._setForTest({ comments: [comment('c1', 'Mine', 'me', 'user', 'Me')] });
+    commentAttachments.items.value = {
+      c1: [
+        {
+          id: 'attachment-1',
+          comment_id: 'c1',
+          content_type: 'text/plain',
+          created_at: '2026-01-01T00:00:00Z',
+          file_name: 'notes.txt',
+          size_bytes: 12,
+        },
+      ],
+    };
+    commentAttachments.upload.mockResolvedValue({ id: 'attachment-2' });
+    commentAttachments.download.mockResolvedValue(new Blob(['download']));
+    commentAttachments.delete.mockResolvedValue(true);
+    signInAs('me');
+
+    const wrapper = mountFeed();
+    const picker = wrapper.get('[data-comment-attachment-picker]');
+    Object.defineProperty(picker.element, 'files', {
+      configurable: true,
+      value: [new File(['upload'], 'upload.txt', { type: 'text/plain' })],
+    });
+    await picker.trigger('change');
+    await flushPromises();
+    expect(wrapper.get('[data-comment-attachment-announcement]').text()).toBe('Attachment uploaded');
+
+    await wrapper.get('[aria-label="Download notes.txt"]').trigger('click');
+    await flushPromises();
+    expect(wrapper.get('[data-comment-attachment-announcement]').text()).toBe('Attachment downloaded');
+
+    await wrapper.get('[aria-label="Delete notes.txt"]').trigger('click');
+    await wrapper.get('[data-test="confirm"]').trigger('click');
+    await flushPromises();
+    expect(wrapper.get('[data-comment-attachment-announcement]').text()).toBe('Attachment deleted');
+  });
+
+  it('keeps task attachment failures actionable without a success announcement', async () => {
+    useTaskDetailStore()._setForTest({ comments: [comment('c1', 'Mine', 'me', 'user', 'Me')] });
+    commentAttachments.items.value = {
+      c1: [
+        {
+          id: 'attachment-1',
+          comment_id: 'c1',
+          content_type: 'text/plain',
+          created_at: '2026-01-01T00:00:00Z',
+          file_name: 'notes.txt',
+          size_bytes: 12,
+        },
+      ],
+    };
+    commentAttachments.error.value = { c1: 'Attachment operation failed. Retry attachment load.' };
+    commentAttachments.upload.mockResolvedValue(null);
+    commentAttachments.download.mockResolvedValue(null);
+    commentAttachments.delete.mockResolvedValue(false);
+    signInAs('me');
+
+    const wrapper = mountFeed();
+    const picker = wrapper.get('[data-comment-attachment-picker]');
+    Object.defineProperty(picker.element, 'files', {
+      configurable: true,
+      value: [new File(['upload'], 'upload.txt', { type: 'text/plain' })],
+    });
+    await picker.trigger('change');
+    await wrapper.get('[aria-label="Download notes.txt"]').trigger('click');
+    await wrapper.get('[aria-label="Delete notes.txt"]').trigger('click');
+    await wrapper.get('[data-test="confirm"]').trigger('click');
+    await flushPromises();
+
+    expect(wrapper.get('[data-comment-id="c1"] [role="alert"]').text()).toContain(
+      'Attachment operation failed',
+    );
+    expect(wrapper.find('[data-comment-attachment-announcement]').exists()).toBe(false);
   });
 
   it('saves an inline edit via editComment and exits edit mode', async () => {

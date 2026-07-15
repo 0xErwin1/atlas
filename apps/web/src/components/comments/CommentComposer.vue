@@ -21,6 +21,7 @@ const props = withDefaults(
 
 const draft = ref('');
 const submitting = ref(false);
+const submissionFailed = ref(false);
 
 const editor = ref<{ focus: () => void } | null>(null);
 
@@ -41,7 +42,12 @@ async function submit(): Promise<void> {
   const ok = await props.onSubmit(draft.value);
   submitting.value = false;
 
-  if (ok) draft.value = '';
+  if (ok) {
+    draft.value = '';
+    submissionFailed.value = false;
+  } else {
+    submissionFailed.value = true;
+  }
 }
 
 defineExpose({ focus });
@@ -61,16 +67,19 @@ defineExpose({ focus });
       @change="onDraftChange"
     />
     <div class="flex justify-end" style="margin-top: 8px;">
+      <p v-if="submissionFailed" role="alert" style="margin-right: auto;">
+        Could not post comment. Your text is still here; try again.
+      </p>
       <button
         type="button"
         data-test="comment-submit"
-        aria-label="Post comment"
+        :aria-label="submissionFailed ? 'Retry comment' : 'Post comment'"
         class="atl-comment-submit"
         :disabled="!canSubmit || submitting"
         @click.stop="submit"
       >
         <Icon name="send" :size="13" />
-        {{ submitting ? 'Posting…' : 'Comment' }}
+        {{ submitting ? 'Posting…' : submissionFailed ? 'Retry comment' : 'Comment' }}
       </button>
     </div>
   </div>

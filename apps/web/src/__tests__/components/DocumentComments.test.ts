@@ -280,6 +280,33 @@ describe('DocumentComments (ATL-37)', () => {
     expect((input.element as HTMLTextAreaElement).value).toBe('');
   });
 
+  it('retains a failed document publication verbatim, exposes retry, and creates only one comment after retry', async () => {
+    const store = setup([]);
+    const addComment = vi.spyOn(store, 'addComment').mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    const body = '  exact **document** Markdown\n\nwith whitespace  ';
+
+    const wrapper = mountPanel();
+    const input = wrapper.get('[data-comment-composer] textarea');
+    commentFeed.load.mockClear();
+    await input.setValue(body);
+    await wrapper.get('[data-test="comment-submit"]').trigger('click');
+    await flushPromises();
+
+    expect((input.element as HTMLTextAreaElement).value).toBe(body);
+    expect(wrapper.get('[data-comment-composer] [role="alert"]').text()).toContain('try again');
+    expect(wrapper.get('[data-test="comment-submit"]').text()).toContain('Retry');
+    expect(commentAttachments.upload).not.toHaveBeenCalled();
+    expect(commentFeed.load).not.toHaveBeenCalledWith({ kind: 'document', ws: 'acme', slug: 'my-doc' });
+
+    await wrapper.get('[data-test="comment-submit"]').trigger('click');
+    await flushPromises();
+
+    expect(addComment).toHaveBeenNthCalledWith(1, 'acme', 'my-doc', body);
+    expect(addComment).toHaveBeenNthCalledWith(2, 'acme', 'my-doc', body);
+    expect((input.element as HTMLTextAreaElement).value).toBe('');
+    expect(commentAttachments.upload).not.toHaveBeenCalled();
+  });
+
   it('offers the actions menu to the comment author', async () => {
     setup([comment('c1', 'Mine', 'me', 'user', 'Me')]);
     signInAs('me');
@@ -402,9 +429,12 @@ describe('DocumentComments (ATL-37)', () => {
     expect(commentAttachments.contentUrl).toHaveBeenCalledWith('c1', 'image-1');
   });
 
-  it('drops an image through the real document comment editor and saves the canonical Markdown', async () => {
+  it('drops an image through the real document comment editor, retains a failed save, and announces retry success', async () => {
     const store = setup([comment('c1', 'Original', 'me', 'user', 'Me')]);
-    const editComment = vi.spyOn(store, 'editComment').mockResolvedValue(true);
+    const editComment = vi
+      .spyOn(store, 'editComment')
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
     const image = new File(['image'], 'diagram.png', { type: 'image/png' });
     commentAttachments.upload.mockResolvedValue({ id: 'image-1' });
     commentAttachments.contentUrl.mockReturnValue(
@@ -424,6 +454,10 @@ describe('DocumentComments (ATL-37)', () => {
     await flushPromises();
     await wrapper.get('[data-comment-id="c1"] [data-test="comment-edit-save"]').trigger('click');
     await flushPromises();
+    expect(wrapper.get('[data-comment-id="c1"] [role="alert"]').text()).toContain('Could not save comment');
+    expect(wrapper.find('[data-comment-attachment-announcement]').exists()).toBe(false);
+    await wrapper.get('[data-comment-id="c1"] [data-test="comment-edit-save"]').trigger('click');
+    await flushPromises();
 
     expect(commentAttachments.upload).toHaveBeenCalledWith('c1', image);
     expect(editComment).toHaveBeenCalledWith(
@@ -432,6 +466,7 @@ describe('DocumentComments (ATL-37)', () => {
       'c1',
       '![diagram](/api/workspaces/acme/documents/my-doc/comments/c1/attachments/image-1)\nOriginal',
     );
+    expect(wrapper.get('[data-comment-attachment-announcement]').text()).toBe('Comment saved');
   });
 
   it('binds attachment-list retry to the current published document comment', async () => {
@@ -443,6 +478,83 @@ describe('DocumentComments (ATL-37)', () => {
     await retry();
 
     expect(commentAttachments.reload).toHaveBeenCalledWith('c1');
+  });
+
+  it('announces completed document attachment upload, download, and delete through the host card flow', async () => {
+    setup([comment('c1', 'Mine', 'me', 'user', 'Me')]);
+    commentAttachments.items.value = {
+      c1: [
+        {
+          id: 'attachment-1',
+          comment_id: 'c1',
+          content_type: 'text/plain',
+          created_at: '2026-01-01T00:00:00Z',
+          file_name: 'notes.txt',
+          size_bytes: 12,
+        },
+      ],
+    };
+    commentAttachments.upload.mockResolvedValue({ id: 'attachment-2' });
+    commentAttachments.download.mockResolvedValue(new Blob(['download']));
+    commentAttachments.delete.mockResolvedValue(true);
+    signInAs('me');
+
+    const wrapper = mountPanel();
+    const picker = wrapper.get('[data-comment-attachment-picker]');
+    Object.defineProperty(picker.element, 'files', {
+      configurable: true,
+      value: [new File(['upload'], 'upload.txt', { type: 'text/plain' })],
+    });
+    await picker.trigger('change');
+    await flushPromises();
+    expect(wrapper.get('[data-comment-attachment-announcement]').text()).toBe('Attachment uploaded');
+
+    await wrapper.get('[aria-label="Download notes.txt"]').trigger('click');
+    await flushPromises();
+    expect(wrapper.get('[data-comment-attachment-announcement]').text()).toBe('Attachment downloaded');
+
+    await wrapper.get('[aria-label="Delete notes.txt"]').trigger('click');
+    await wrapper.get('[data-test="confirm"]').trigger('click');
+    await flushPromises();
+    expect(wrapper.get('[data-comment-attachment-announcement]').text()).toBe('Attachment deleted');
+  });
+
+  it('keeps document attachment failures actionable without a success announcement', async () => {
+    setup([comment('c1', 'Mine', 'me', 'user', 'Me')]);
+    commentAttachments.items.value = {
+      c1: [
+        {
+          id: 'attachment-1',
+          comment_id: 'c1',
+          content_type: 'text/plain',
+          created_at: '2026-01-01T00:00:00Z',
+          file_name: 'notes.txt',
+          size_bytes: 12,
+        },
+      ],
+    };
+    commentAttachments.error.value = { c1: 'Attachment operation failed. Retry attachment load.' };
+    commentAttachments.upload.mockResolvedValue(null);
+    commentAttachments.download.mockResolvedValue(null);
+    commentAttachments.delete.mockResolvedValue(false);
+    signInAs('me');
+
+    const wrapper = mountPanel();
+    const picker = wrapper.get('[data-comment-attachment-picker]');
+    Object.defineProperty(picker.element, 'files', {
+      configurable: true,
+      value: [new File(['upload'], 'upload.txt', { type: 'text/plain' })],
+    });
+    await picker.trigger('change');
+    await wrapper.get('[aria-label="Download notes.txt"]').trigger('click');
+    await wrapper.get('[aria-label="Delete notes.txt"]').trigger('click');
+    await wrapper.get('[data-test="confirm"]').trigger('click');
+    await flushPromises();
+
+    expect(wrapper.get('[data-comment-id="c1"] [role="alert"]').text()).toContain(
+      'Attachment operation failed',
+    );
+    expect(wrapper.find('[data-comment-attachment-announcement]').exists()).toBe(false);
   });
 
   it("lets a workspace admin delete but not edit another member's comment", async () => {

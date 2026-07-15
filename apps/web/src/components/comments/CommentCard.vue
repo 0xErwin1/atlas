@@ -74,6 +74,7 @@ const pendingAttachmentDelete = ref<CommentAttachment | null>(null);
 const editing = ref(false);
 const editDraft = ref('');
 const saving = ref(false);
+const saveFailed = ref(false);
 const attachmentAnnouncement = ref('');
 
 const canSaveEdit = computed(() => editDraft.value.trim().length > 0);
@@ -95,11 +96,13 @@ function startEdit(): void {
 
   editing.value = true;
   editDraft.value = props.comment.body;
+  saveFailed.value = false;
 }
 
 function cancelEdit(): void {
   editing.value = false;
   editDraft.value = '';
+  saveFailed.value = false;
 }
 
 function requestDelete(): void {
@@ -183,8 +186,12 @@ async function saveEdit(): Promise<void> {
   const ok = await props.onSave(props.comment.id, editDraft.value);
   saving.value = false;
 
-  if (ok) cancelEdit();
-  if (ok) attachmentAnnouncement.value = 'Comment saved';
+  if (ok) {
+    cancelEdit();
+    attachmentAnnouncement.value = 'Comment saved';
+  } else {
+    saveFailed.value = true;
+  }
 }
 
 function cancelDelete(): void {
@@ -260,6 +267,9 @@ async function confirmDelete(): Promise<void> {
           @change="onEditChange"
         />
         <div class="flex justify-end" style="gap: 8px; margin-top: 8px;">
+          <p v-if="saveFailed" role="alert" style="margin-right: auto;">
+            Could not save comment. Your edits are still here; try again.
+          </p>
           <button
             type="button"
             data-test="comment-edit-cancel"
