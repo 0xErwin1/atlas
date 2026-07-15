@@ -94,6 +94,11 @@ async function onDelete(id: string): Promise<void> {
   if (ok) await commentFeed.load(commentTarget.value);
 }
 
+async function uploadImage(commentId: string, file: File): Promise<string | null> {
+  const attachment = await uploadCommentAttachment(commentId, file);
+  return attachment === null ? null : attachmentContentUrl(commentId, attachment.id);
+}
+
 async function loadMore(): Promise<void> {
   await commentFeed.loadMore(commentTarget.value);
   if (commentFeed.error.value !== null) ui.showBanner(commentFeed.error.value, 'error');
@@ -158,10 +163,7 @@ watch(
           :on-upload-attachment="(file) => uploadCommentAttachment(entry.comment.id, file)"
           :on-download-attachment="(attachmentId) => downloadCommentAttachment(entry.comment.id, attachmentId)"
           :on-delete-attachment="(attachmentId) => deleteCommentAttachment(entry.comment.id, attachmentId)"
-          :upload-image="async (file) => {
-            const attachment = await uploadCommentAttachment(entry.comment.id, file);
-            return attachment === null ? null : attachmentContentUrl(entry.comment.id, attachment.id);
-          }"
+          :upload-image="canEdit(entry.comment) && canDelete(entry.comment) ? (file) => uploadImage(entry.comment.id, file) : undefined"
           @navigate-link="navigateCommentTarget"
         />
         <CommentCard v-else :event="entry" @navigate-link="navigateCommentTarget" />
