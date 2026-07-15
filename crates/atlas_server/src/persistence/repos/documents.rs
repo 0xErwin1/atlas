@@ -1095,6 +1095,46 @@ pub struct PgAttachmentWriteIntentRepo {
 pub struct PgAttachmentLifecycle;
 
 impl PgAttachmentLifecycle {
+    pub async fn delete_comment_attachment(
+        conn: &DatabaseConnection,
+        ctx: &WorkspaceCtx,
+        comment_id: atlas_domain::ids::CommentId,
+        attachment_id: AttachmentId,
+        store: &dyn AttachmentStore,
+    ) -> Result<(), DomainError> {
+        let txn = conn.begin().await.map_err(db_err)?;
+        let attachment = attachment::Entity::find_by_id(attachment_id.0)
+            .filter(attachment::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(attachment::Column::CommentId.eq(comment_id.0))
+            .filter(attachment::Column::DeletedAt.is_null())
+            .one(&txn)
+            .await
+            .map_err(db_err)?;
+
+        let Some(attachment) = attachment else {
+            return Ok(());
+        };
+
+        txn.execute_raw(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "INSERT INTO attachment_write_intents (id, digest, created_at) VALUES ($1, $2, now()) ON CONFLICT (digest) DO NOTHING",
+            [Uuid::now_v7().into(), attachment.sha256.clone().into()],
+        ))
+        .await
+        .map_err(db_err)?;
+        attachment::Entity::delete_by_id(attachment.id)
+            .exec(&txn)
+            .await
+            .map_err(db_err)?;
+        txn.commit().await.map_err(db_err)?;
+
+        if let Err(error) = Self::finish_purge_digest(conn, store, &attachment.sha256).await {
+            tracing::warn!(%error, digest = %attachment.sha256, "comment attachment cleanup will be retried");
+        }
+
+        Ok(())
+    }
+
     /// Finishes a committed comment-attachment purge while holding the same
     /// digest lock used by writes and stale-intent reconciliation.
     pub async fn finish_purge_digest(

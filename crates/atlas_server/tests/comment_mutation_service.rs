@@ -778,6 +778,165 @@ async fn task_comment_delete_keeps_rows_unreachable_when_post_commit_object_clea
     db.teardown().await;
 }
 
+#[tokio::test]
+async fn explicit_attachment_delete_keeps_retry_state_after_object_cleanup_failure() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (workspace, user) = support::seed_workspace(&db, "attachment-delete-retry").await;
+    let ctx = support::ctx(&workspace, &user);
+    let parent = seed_task(&db, &ctx, "Attachment parent").await;
+    let comment = CommentService::new(db.conn().clone())
+        .create(
+            &ctx,
+            CommentOwner::Task(parent.id),
+            "Attachment owner".into(),
+        )
+        .await
+        .expect("create comment");
+    let store_root =
+        std::env::temp_dir().join(format!("atlas-attachment-retry-{}", uuid::Uuid::now_v7()));
+    let store = FailOnceDeleteStore::new(&store_root).await;
+    let digest = store
+        .put(b"explicit purge retry")
+        .await
+        .expect("store object");
+    let attachments = PgAttachmentRepo {
+        conn: db.conn().clone(),
+    };
+    let attachment = attachments
+        .record(
+            &ctx,
+            NewAttachment {
+                document_id: None,
+                task_id: None,
+                comment_id: Some(comment.id),
+                file_name: "retry.txt".into(),
+                content_type: "text/plain".into(),
+                size_bytes: 20,
+                sha256: digest.clone(),
+            },
+        )
+        .await
+        .expect("record comment attachment");
+
+    PgAttachmentLifecycle::delete_comment_attachment(
+        db.conn(),
+        &ctx,
+        comment.id,
+        attachment.id,
+        &store,
+    )
+    .await
+    .expect("delete commits despite object cleanup failure");
+
+    assert!(
+        attachments
+            .find(&ctx, attachment.id)
+            .await
+            .expect("find deleted attachment")
+            .is_none(),
+        "the row must be unreachable immediately"
+    );
+    assert!(
+        store
+            .exists(&digest)
+            .await
+            .expect("object remains for retry")
+    );
+    assert!(digest_has_cleanup_intent(&db, &digest).await);
+
+    PgAttachmentLifecycle::finish_purge_digest(db.conn(), &store, &digest)
+        .await
+        .expect("retry cleanup");
+    assert!(
+        !store
+            .exists(&digest)
+            .await
+            .expect("object removed on retry")
+    );
+    assert!(!digest_has_cleanup_intent(&db, &digest).await);
+
+    std::fs::remove_dir_all(store_root).expect("remove attachment store");
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn explicit_attachment_delete_preserves_a_digest_referenced_in_another_workspace() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (workspace, user) = support::seed_workspace(&db, "attachment-delete-owner").await;
+    let ctx = support::ctx(&workspace, &user);
+    let parent = seed_task(&db, &ctx, "Attachment parent").await;
+    let comment = CommentService::new(db.conn().clone())
+        .create(
+            &ctx,
+            CommentOwner::Task(parent.id),
+            "Attachment owner".into(),
+        )
+        .await
+        .expect("create comment");
+    let (other_workspace, other_user) =
+        support::seed_workspace(&db, "attachment-delete-shared").await;
+    let other_ctx = support::ctx(&other_workspace, &other_user);
+    let other_task = seed_task(&db, &other_ctx, "Cross-workspace owner").await;
+    let store_root =
+        std::env::temp_dir().join(format!("atlas-attachment-shared-{}", uuid::Uuid::now_v7()));
+    let store = DiskAttachmentStore::new(&store_root)
+        .await
+        .expect("create attachment store");
+    let digest = store
+        .put(b"cross workspace digest")
+        .await
+        .expect("store object");
+    let attachments = PgAttachmentRepo {
+        conn: db.conn().clone(),
+    };
+    attachments
+        .record(
+            &other_ctx,
+            NewAttachment {
+                document_id: None,
+                task_id: Some(other_task.id),
+                comment_id: None,
+                file_name: "shared.txt".into(),
+                content_type: "text/plain".into(),
+                size_bytes: 22,
+                sha256: digest.clone(),
+            },
+        )
+        .await
+        .expect("record cross-workspace attachment");
+    let attachment = attachments
+        .record(
+            &ctx,
+            NewAttachment {
+                document_id: None,
+                task_id: None,
+                comment_id: Some(comment.id),
+                file_name: "comment.txt".into(),
+                content_type: "text/plain".into(),
+                size_bytes: 22,
+                sha256: digest.clone(),
+            },
+        )
+        .await
+        .expect("record comment attachment");
+
+    PgAttachmentLifecycle::delete_comment_attachment(
+        db.conn(),
+        &ctx,
+        comment.id,
+        attachment.id,
+        &store,
+    )
+    .await
+    .expect("delete shared attachment row");
+
+    assert!(store.exists(&digest).await.expect("shared object remains"));
+    assert!(!digest_has_cleanup_intent(&db, &digest).await);
+
+    std::fs::remove_dir_all(store_root).expect("remove attachment store");
+    db.teardown().await;
+}
+
 async fn comment_body(db: &support::TestDb, comment_id: atlas_domain::ids::CommentId) -> String {
     db.conn()
         .query_one_raw(Statement::from_sql_and_values(
