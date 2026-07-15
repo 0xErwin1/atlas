@@ -6,8 +6,10 @@ import {
   isCanonicalPrincipal,
   isCanonicalWorkspaceId,
   ResourceCache,
+  type ResourceCacheLoad,
   type ResourceCacheRequest,
   type ResourceCacheRevalidationResult,
+  startHydrationAndRevalidation,
 } from './resourceCache';
 
 interface ResourceCacheRuntime {
@@ -87,6 +89,14 @@ export function setResourceCachePrincipal(principal: string | undefined): void {
 
 export function getResourceCachePrincipal(): string | undefined {
   return currentPrincipal;
+}
+
+export function hydrateAndRevalidateResource<T>(request: ResourceCacheRequest<T>): ResourceCacheLoad<T> {
+  const epoch = resourceCacheEpoch.value;
+  return startHydrationAndRevalidation(resourceCache, {
+    ...request,
+    isCurrent: () => epoch === resourceCacheEpoch.value && request.isCurrent(),
+  });
 }
 
 export function blockResourceCacheForUnknownAlias(): void {

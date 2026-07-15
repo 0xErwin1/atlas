@@ -3,7 +3,7 @@ import { ref } from 'vue';
 import { z } from 'zod';
 import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
-import { getResourceCachePrincipal, resourceCache } from '@/cache/cacheRuntime';
+import { getResourceCachePrincipal, hydrateAndRevalidateResource, resourceCache } from '@/cache/cacheRuntime';
 import { buildCacheKey, CACHE_CADENCE } from '@/cache/resourceCache';
 import { errorHint } from '@/lib/apiError';
 import { attachmentFileName } from '@/lib/fileTransfer';
@@ -222,7 +222,13 @@ export const useDocumentsStore = defineStore('documents', () => {
         }),
       );
 
-      if (apiError !== undefined) throw new Error(errorHint(apiError, 'Failed to load backlinks'));
+      if (apiError !== undefined) {
+        const failure = new Error(errorHint(apiError, 'Failed to load backlinks')) as Error & {
+          status?: number;
+        };
+        failure.status = (apiError as { status?: number }).status;
+        throw failure;
+      }
       return items;
     };
     const key =
@@ -254,14 +260,21 @@ export const useDocumentsStore = defineStore('documents', () => {
         isCurrent: () => seq === backlinksLoadSeq && isSecondaryTarget(ws, slug),
       };
       activeBacklinksCacheKey = key;
-      await resourceCache.hydrate(request);
-      if (activeBacklinksCacheKey !== key || !request.isCurrent()) return;
-
-      resourceCache.activate(request);
-      await resourceCache.revalidate(request);
+      await hydrateAndRevalidateResource(request).completion;
     } catch (error) {
       if (seq !== backlinksLoadSeq || !isSecondaryTarget(ws, slug)) return;
 
+      const status = (error as { status?: number } | null)?.status;
+      if (status === 403 || status === 404) {
+        backlinks.value = [];
+        if (cache !== undefined) {
+          await resourceCache.purgeTags(
+            [`document:${slug}`, 'secondary:backlinks'],
+            getResourceCachePrincipal(),
+            cache.workspaceId,
+          );
+        }
+      }
       backlinksStatus.value = 'error';
       backlinksError.value = error instanceof Error ? error.message : 'Failed to load backlinks';
     }

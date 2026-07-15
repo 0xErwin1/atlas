@@ -304,6 +304,36 @@ describe('NotesSidebar project selector', () => {
     expect(wrapper.text()).toContain('Fresh document');
   });
 
+  it('shows the loader and starts the initial network request while an empty cache lookup is pending', async () => {
+    const store = new MemoryCacheStore();
+    let resolveCache: (() => void) | undefined;
+    vi.spyOn(store, 'get').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveCache = () => resolve(null);
+        }),
+    );
+    configureCatalogRuntime(store);
+    GET.mockReturnValue(new Promise(() => {}));
+    setupCatalogWorkspace();
+
+    const wrapper = mount(NotesSidebar);
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.text()).toContain('Loading notes…');
+    expect(GET).toHaveBeenCalledWith(
+      '/api/workspaces/{ws}/projects/{project_slug}/folders',
+      expect.anything(),
+    );
+    expect(GET).toHaveBeenCalledWith(
+      '/api/workspaces/{ws}/projects/{project_slug}/documents',
+      expect.anything(),
+    );
+
+    resolveCache?.();
+    wrapper.unmount();
+  });
+
   it('does not let a stale cached composite overwrite the store refresh after a successful rename', async () => {
     const store = new MemoryCacheStore();
     const stale = catalog('Existing folder', 'Old title');
@@ -311,9 +341,22 @@ describe('NotesSidebar project selector', () => {
     seedCatalog(store, 'sandbox', stale);
     configureCatalogRuntime(store);
 
-    GET.mockResolvedValueOnce({ data: { items: stale.folders, has_more: false } })
-      .mockResolvedValueOnce({ data: { items: stale.summaries, has_more: false } })
-      .mockResolvedValueOnce({ data: { items: renamed.summaries, has_more: false } });
+    let renamedOnServer = false;
+    PATCH.mockImplementationOnce(async () => {
+      renamedOnServer = true;
+      return { data: {}, error: undefined };
+    });
+    GET.mockImplementation(async (path: string) => ({
+      data: {
+        items: path.endsWith('/folders')
+          ? stale.folders
+          : renamedOnServer
+            ? renamed.summaries
+            : stale.summaries,
+        has_more: false,
+      },
+      error: undefined,
+    }));
     setupCatalogWorkspace();
     const wrapper = mount(NotesSidebar);
     await flushPromises();

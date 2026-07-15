@@ -5,6 +5,7 @@ import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
 import {
   getResourceCachePrincipal,
+  hydrateAndRevalidateResource,
   invalidateWorkspaceTaskQueryCache,
   resourceCache,
   resourceCacheEpoch,
@@ -292,13 +293,8 @@ export const useWorkspaceTasksStore = defineStore('workspaceTasks', () => {
 
     if (cacheRequest !== null && resourceCache.isAvailable()) {
       activeTaskCacheKey = cacheKey;
-      await resourceCache.hydrate(cacheRequest);
-      if (isCurrent()) resourceCache.activate(cacheRequest);
-
-      let fallbackRequired = false;
       try {
-        const revalidation = await resourceCache.revalidate(cacheRequest);
-        fallbackRequired = revalidation?.published === false;
+        await hydrateAndRevalidateResource(cacheRequest).completion;
       } catch (cause) {
         if (!isCurrent()) return false;
 
@@ -308,15 +304,6 @@ export const useWorkspaceTasksStore = defineStore('workspaceTasks', () => {
           if (workspaceId !== undefined) await invalidateWorkspaceTaskQueryCache(workspaceId);
         }
         error.value = failure.hint;
-      }
-
-      if ((fallbackRequired || !resourceCache.isAvailable()) && isCurrent()) {
-        try {
-          const page = await fetchPage();
-          if (key !== null) publishPage(page, key, request);
-        } catch (cause) {
-          error.value = taskErrorHint(cause);
-        }
       }
 
       if (!isCurrent()) return false;

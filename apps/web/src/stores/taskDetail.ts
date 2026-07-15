@@ -5,6 +5,7 @@ import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
 import {
   getResourceCachePrincipal,
+  hydrateAndRevalidateResource,
   invalidateTaskCache,
   resourceCache,
   resourceCacheEpoch,
@@ -321,13 +322,8 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
       };
 
       activeCollectionCacheKeys.add(cacheKey);
-      await resourceCache.hydrate(cacheRequest);
-      resourceCache.activate(cacheRequest);
-
-      let fallbackRequired = false;
       try {
-        const revalidation = await resourceCache.revalidate(cacheRequest);
-        fallbackRequired = revalidation?.published === false;
+        await hydrateAndRevalidateResource(cacheRequest).completion;
       } catch (cause) {
         if (!isCurrent(sequence, target)) return;
 
@@ -336,19 +332,6 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
         collectionErrors.value = { ...collectionErrors.value, [name]: failure.message };
         if (failure.status === 403 || failure.status === 404) {
           await retractDeniedDetail(target, workspaceId, taskUuid);
-        }
-      }
-
-      if ((fallbackRequired || !resourceCache.isAvailable()) && isCurrent(sequence, target)) {
-        try {
-          publish(await resolve(request()));
-        } catch (cause) {
-          const failure = detailLoadError(cause);
-          collectionStatus.value = { ...collectionStatus.value, [name]: 'error' };
-          collectionErrors.value = { ...collectionErrors.value, [name]: failure.message };
-          if (failure.status === 403 || failure.status === 404) {
-            await retractDeniedDetail(target, workspaceId, taskUuid);
-          }
         }
       }
       return;
@@ -567,15 +550,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
         };
 
         activeCollectionCacheKeys.add(cacheKey);
-        await resourceCache.hydrate(request);
-        resourceCache.activate(request);
-        const revalidation = await resourceCache.revalidate(request);
-        if (
-          (revalidation?.published === false || !resourceCache.isAvailable()) &&
-          isOperationCurrent(operation)
-        ) {
-          publish(await load());
-        }
+        await hydrateAndRevalidateResource(request).completion;
         return;
       }
 

@@ -22,18 +22,24 @@ vi.mock('@/api/wrapper', () => ({
   wrappedClient: { GET, POST, DELETE, PATCH },
 }));
 
-vi.mock('@/cache/cacheRuntime', () => ({
-  getResourceCachePrincipal: () => 'user:018f0000-0000-7000-8000-000000000001',
-  resourceCacheEpoch: { __v_isRef: true, value: 0 },
-  invalidateTaskCache: cachePurgeTags,
-  resourceCache: {
+vi.mock('@/cache/cacheRuntime', async () => {
+  const { startHydrationAndRevalidation } = await import('@/cache/resourceCache');
+  const resourceCache = {
     isAvailable: cacheIsAvailable,
     hydrate: cacheHydrate,
     revalidate: cacheRevalidate,
     activate: cacheActivate,
     deactivate: cacheDeactivate,
-  },
-}));
+  };
+
+  return {
+    getResourceCachePrincipal: () => 'user:018f0000-0000-7000-8000-000000000001',
+    hydrateAndRevalidateResource: (request: never) => startHydrationAndRevalidation(resourceCache, request),
+    resourceCacheEpoch: { __v_isRef: true, value: 0 },
+    invalidateTaskCache: cachePurgeTags,
+    resourceCache,
+  };
+});
 
 import { type ReferenceDto, useTaskDetailStore } from '@/stores/taskDetail';
 import { useTasksStore } from '@/stores/tasks';

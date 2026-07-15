@@ -355,6 +355,169 @@ describe('useWorkspaceTasksStore', () => {
     });
   });
 
+  it('starts the initial network request while an empty cache lookup is pending', async () => {
+    let resolveCache: (() => void) | undefined;
+    const store = cacheStore(new Map());
+    store.get = vi.fn(
+      <T>(_key: string, _schema: ZodType<T>) =>
+        new Promise<CacheEnvelope<T> | null>((resolve) => {
+          resolveCache = () => resolve(null);
+        }),
+    ) as ResourceCacheStore['get'];
+    configureResourceCacheForTest(new ResourceCache({ store }));
+    allowResourceCache();
+    const response = deferred<{
+      data: { items: TaskSummaryDto[]; has_more: false; next_cursor: null };
+      error: undefined;
+    }>();
+    GET.mockReturnValueOnce(response.promise);
+
+    const storeUnderTest = useWorkspaceTasksStore();
+    const load = storeUnderTest.load('ws', { assignee: 'me' }, false, WORKSPACE_ID);
+
+    expect(storeUnderTest.loading).toBe(true);
+    expect(GET).toHaveBeenCalledOnce();
+
+    resolveCache?.();
+    response.resolve({
+      data: { items: [task('1')], has_more: false, next_cursor: null },
+      error: undefined,
+    });
+    await load;
+  });
+
+  it('publishes success and settles loading without waiting for hung hydration', async () => {
+    const store = cacheStore(new Map());
+    store.get = vi.fn(() => new Promise(() => undefined)) as ResourceCacheStore['get'];
+    configureResourceCacheForTest(new ResourceCache({ store }));
+    allowResourceCache();
+    GET.mockResolvedValueOnce({
+      data: { items: [task('fresh')], has_more: false, next_cursor: null },
+      error: undefined,
+    });
+
+    const workspaceTasks = useWorkspaceTasksStore();
+    await workspaceTasks.load('ws', { assignee: 'me' }, false, WORKSPACE_ID);
+
+    expect(workspaceTasks.loading).toBe(false);
+    expect(workspaceTasks.tasks.map((item) => item.id)).toEqual(['fresh']);
+    expect(GET).toHaveBeenCalledOnce();
+  });
+
+  it('settles a transport failure without waiting for hung hydration', async () => {
+    const store = cacheStore(new Map());
+    store.get = vi.fn(() => new Promise(() => undefined)) as ResourceCacheStore['get'];
+    configureResourceCacheForTest(new ResourceCache({ store }));
+    allowResourceCache();
+    GET.mockRejectedValueOnce(new Error('network unavailable'));
+
+    const workspaceTasks = useWorkspaceTasksStore();
+    await workspaceTasks.load('ws', { assignee: 'me' }, false, WORKSPACE_ID);
+
+    expect(workspaceTasks.loading).toBe(false);
+    expect(workspaceTasks.tasks).toEqual([]);
+    expect(workspaceTasks.error).toBe('Failed to load tasks');
+    expect(GET).toHaveBeenCalledOnce();
+  });
+
+  it('accepts slow cached data after a transient failure has already settled loading', async () => {
+    let resolveCache: ((entry: CacheEnvelope<unknown>) => void) | undefined;
+    const store = cacheStore(new Map());
+    store.get = vi.fn(
+      <T>(_key: string, schema: ZodType<T>) =>
+        new Promise<CacheEnvelope<T> | null>((resolve) => {
+          resolveCache = (entry) => resolve({ ...entry, payload: schema.parse(entry.payload) });
+        }),
+    ) as ResourceCacheStore['get'];
+    configureResourceCacheForTest(new ResourceCache({ store }));
+    allowResourceCache();
+    GET.mockRejectedValueOnce(new Error('network unavailable'));
+    const workspaceTasks = useWorkspaceTasksStore();
+
+    await workspaceTasks.load('ws', { assignee: 'me' }, false, WORKSPACE_ID);
+
+    expect(workspaceTasks.loading).toBe(false);
+    expect(workspaceTasks.tasks).toEqual([]);
+    expect(workspaceTasks.error).toBe('Failed to load tasks');
+
+    const key = buildCacheKey({
+      principal: PRINCIPAL,
+      workspaceId: WORKSPACE_ID,
+      resourceKind: 'task-list',
+      resourceId: 'workspace-tasks',
+      query: { assignee: 'me', limit: 200 },
+      setValuedQueryKeys: ['column_id', 'label', 'priority'],
+    });
+    if (key === null) throw new Error('Expected a canonical workspace task cache key');
+    const now = Date.now();
+    resolveCache?.({
+      schema: 1,
+      key,
+      payloadVersion: 1,
+      storedAt: now,
+      validatedAt: now,
+      lastAccessedAt: now,
+      retentionExpiresAt: now + 60_000,
+      bytes: 128,
+      stale: false,
+      tags: ['workspace-tasks'],
+      payload: { items: [task('cached')], has_more: false, next_cursor: null },
+    });
+    await vi.waitFor(() => expect(workspaceTasks.tasks.map((item) => item.id)).toEqual(['cached']));
+
+    expect(workspaceTasks.loading).toBe(false);
+    expect(workspaceTasks.error).toBe('Failed to load tasks');
+    expect(GET).toHaveBeenCalledOnce();
+  });
+
+  it('settles a denial before hung hydration and suppresses its late cached page', async () => {
+    let resolveCache: ((entry: CacheEnvelope<unknown>) => void) | undefined;
+    const store = cacheStore(new Map());
+    store.get = vi.fn(
+      <T>(_key: string, schema: ZodType<T>) =>
+        new Promise<CacheEnvelope<T> | null>((resolve) => {
+          resolveCache = (entry) => resolve({ ...entry, payload: schema.parse(entry.payload) });
+        }),
+    ) as ResourceCacheStore['get'];
+    configureResourceCacheForTest(new ResourceCache({ store }));
+    allowResourceCache();
+    GET.mockResolvedValueOnce({ data: undefined, error: { status: 403, hint: 'Denied' } });
+    const workspaceTasks = useWorkspaceTasksStore();
+
+    await workspaceTasks.load('ws', { assignee: 'me' }, false, WORKSPACE_ID);
+
+    expect(workspaceTasks.loading).toBe(false);
+    expect(workspaceTasks.tasks).toEqual([]);
+    expect(workspaceTasks.error).toBe('Denied');
+
+    const key = buildCacheKey({
+      principal: PRINCIPAL,
+      workspaceId: WORKSPACE_ID,
+      resourceKind: 'task-list',
+      resourceId: 'workspace-tasks',
+      query: { assignee: 'me', limit: 200 },
+      setValuedQueryKeys: ['column_id', 'label', 'priority'],
+    });
+    if (key === null) throw new Error('Expected a canonical workspace task cache key');
+    const now = Date.now();
+    resolveCache?.({
+      schema: 1,
+      key,
+      payloadVersion: 1,
+      storedAt: now,
+      validatedAt: now,
+      lastAccessedAt: now,
+      retentionExpiresAt: now + 60_000,
+      bytes: 128,
+      stale: false,
+      tags: ['workspace-tasks'],
+      payload: { items: [task('denied-cache')], has_more: false, next_cursor: null },
+    });
+    await Promise.resolve();
+
+    expect(workspaceTasks.tasks).toEqual([]);
+  });
+
   it('settles transport failures without leaving the saved view loading', async () => {
     GET.mockRejectedValueOnce(new Error('network unavailable'));
 

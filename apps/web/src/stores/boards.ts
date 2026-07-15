@@ -3,7 +3,12 @@ import { ref } from 'vue';
 import { z } from 'zod';
 import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
-import { getResourceCachePrincipal, invalidateTaskCache, resourceCache } from '@/cache/cacheRuntime';
+import {
+  getResourceCachePrincipal,
+  hydrateAndRevalidateResource,
+  invalidateTaskCache,
+  resourceCache,
+} from '@/cache/cacheRuntime';
 import { buildCacheKey, CACHE_CADENCE } from '@/cache/resourceCache';
 import { errorHint } from '@/lib/apiError';
 import { collectPaged } from '@/lib/pagination';
@@ -790,13 +795,8 @@ export const useBoardsStore = defineStore('boards', () => {
 
       activeBoardCacheKey = cacheKey;
       activeBoardCacheScope = { boardId, workspaceId };
-      await resourceCache.hydrate(request);
-      resourceCache.activate(request);
-
-      let fallbackRequired = false;
       try {
-        const revalidation = await resourceCache.revalidate(request);
-        fallbackRequired = revalidation?.published === false;
+        await hydrateAndRevalidateResource(request).completion;
       } catch (cause) {
         if (!isCurrent()) return false;
 
@@ -805,19 +805,6 @@ export const useBoardsStore = defineStore('boards', () => {
         loadErrorStatus.value = error.status ?? null;
         if (error.status === 403 || error.status === 404) {
           await retractDeniedBoard(boardId, workspaceId, cacheKey);
-        }
-      }
-
-      if ((fallbackRequired || !resourceCache.isAvailable()) && isCurrent()) {
-        try {
-          publish(await load());
-        } catch (cause) {
-          const error = cause as Error & { status?: number };
-          loadError.value = error.message;
-          loadErrorStatus.value = error.status ?? null;
-          if (error.status === 403 || error.status === 404) {
-            await retractDeniedBoard(boardId, workspaceId, cacheKey);
-          }
         }
       }
 

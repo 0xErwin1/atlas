@@ -154,6 +154,38 @@ describe('useMarkdownDoc', () => {
     expect(mockGet).toHaveBeenCalledOnce();
   });
 
+  it('load: shares one same-key network result across concurrent callers', async () => {
+    let resolveNetwork:
+      | ((value: {
+          data: { id: string; slug: string; content: string; head_revision_id: string };
+          error: undefined;
+        }) => void)
+      | undefined;
+    mockGet.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveNetwork = resolve;
+      }),
+    );
+    const firstCached = vi.fn();
+    const secondCached = vi.fn();
+    const { load } = useMarkdownDoc();
+
+    const first = load(WS, SLUG, { workspaceId: WORKSPACE_ID, onCached: firstCached });
+    const second = load(WS, SLUG, { workspaceId: WORKSPACE_ID, onCached: secondCached });
+
+    expect(mockGet).toHaveBeenCalledOnce();
+    resolveNetwork?.({
+      data: { id: 'doc-1', slug: SLUG, content: 'Shared body', head_revision_id: 'shared-revision' },
+      error: undefined,
+    });
+
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      expect.objectContaining({ body: 'Shared body', headRevisionId: 'shared-revision' }),
+      expect.objectContaining({ body: 'Shared body', headRevisionId: 'shared-revision' }),
+    ]);
+    expect(mockGet).toHaveBeenCalledOnce();
+  });
+
   it('load: keeps a cached body eligible for an active recovery retry after its refresh fails', async () => {
     const key = buildCacheKey({
       principal: PRINCIPAL,

@@ -405,6 +405,117 @@ describe('useDocumentsStore', () => {
     expect(deactivate).toHaveBeenCalledWith(firstKey);
   });
 
+  it('settles a denied backlinks refresh before slow hydration and never exposes the cached backlinks', async () => {
+    const key = buildCacheKey({
+      principal: PRINCIPAL,
+      workspaceId: WORKSPACE_ID,
+      resourceKind: 'note-secondary',
+      resourceId: 'target',
+      query: { type: 'backlinks' },
+    });
+    if (key === null) throw new Error('Expected a canonical backlinks cache key');
+
+    let resolveGet: ((entry: CacheEnvelope<unknown>) => void) | undefined;
+    const store: ResourceCacheStore = {
+      get: vi.fn(
+        <T>(_key: string, schema: ZodType<T>) =>
+          new Promise<CacheEnvelope<T> | null>((resolve) => {
+            resolveGet = (entry) => resolve({ ...entry, payload: schema.parse(entry.payload) });
+          }),
+      ) as ResourceCacheStore['get'],
+      putMany: vi.fn().mockResolvedValue(true),
+      deleteMany: vi.fn().mockResolvedValue(true),
+      clear: vi.fn().mockResolvedValue(true),
+    };
+    configureResourceCacheForTest(new ResourceCache({ store }));
+    allowResourceCache();
+    GET.mockResolvedValue({ error: { status: 403, hint: 'Denied' } });
+    const documents = useDocumentsStore();
+
+    const load = documents.loadBacklinks('ws', 'target', { workspaceId: WORKSPACE_ID });
+    await vi.waitFor(() => expect(documents.backlinksStatus).toBe('error'));
+    await load;
+
+    expect(documents.backlinks).toEqual([]);
+    resolveGet?.({
+      schema: 1,
+      key,
+      payloadVersion: 1,
+      storedAt: Date.now(),
+      validatedAt: Date.now(),
+      lastAccessedAt: Date.now(),
+      retentionExpiresAt: Date.now() + 60_000,
+      bytes: 128,
+      stale: false,
+      tags: ['document:target', 'secondary:backlinks'],
+      payload: [
+        {
+          display_title: 'Denied cached source',
+          source_document_id: 'denied-source',
+          source_slug: 'denied-source',
+          source_title: 'Denied cached source',
+        },
+      ],
+    });
+    await Promise.resolve();
+
+    expect(documents.backlinks).toEqual([]);
+  });
+
+  it.each([
+    403, 404,
+  ])('retracts cache-first backlinks after an authoritative %i and evicts the denied cache', async (status) => {
+    const key = buildCacheKey({
+      principal: PRINCIPAL,
+      workspaceId: WORKSPACE_ID,
+      resourceKind: 'note-secondary',
+      resourceId: 'target',
+      query: { type: 'backlinks' },
+    });
+    if (key === null) throw new Error('Expected a canonical backlinks cache key');
+
+    const now = Date.now();
+    const entries = new Map<string, CacheEnvelope<unknown>>([
+      [
+        key,
+        {
+          schema: 1,
+          key,
+          payloadVersion: 1,
+          storedAt: now,
+          validatedAt: now,
+          lastAccessedAt: now,
+          retentionExpiresAt: now + 60_000,
+          bytes: 128,
+          stale: false,
+          tags: ['document:target', 'secondary:backlinks'],
+          payload: [
+            {
+              display_title: 'Denied cached source',
+              source_document_id: 'denied-source',
+              source_slug: 'denied-source',
+              source_title: 'Denied cached source',
+            },
+          ],
+        },
+      ],
+    ]);
+    const cache = new ResourceCache({ store: cacheStore(entries) });
+    configureResourceCacheForTest(cache);
+    allowResourceCache();
+    GET.mockResolvedValue({ error: { status, hint: 'Denied' } });
+    const documents = useDocumentsStore();
+
+    await documents.loadBacklinks('ws', 'target', { workspaceId: WORKSPACE_ID });
+
+    expect(documents.backlinks).toEqual([]);
+    expect(documents.backlinksStatus).toBe('error');
+    expect(entries).toEqual(new Map());
+
+    await documents.loadBacklinks('ws', 'target', { workspaceId: WORKSPACE_ID });
+    expect(documents.backlinks).toEqual([]);
+  });
+
   it('loadBacklinks clears the list on error (never crashes)', async () => {
     GET.mockResolvedValue({ error: { status: 404 } });
 

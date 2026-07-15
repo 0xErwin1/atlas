@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { AtlasProblem, ConflictProblem } from '@/api/problem';
 import { isConflictProblem } from '@/api/problem';
 import { wrappedClient } from '@/api/wrapper';
-import { getResourceCachePrincipal, resourceCache } from '@/cache/cacheRuntime';
+import { getResourceCachePrincipal, hydrateAndRevalidateResource } from '@/cache/cacheRuntime';
 import { buildCacheKey, CACHE_CADENCE } from '@/cache/resourceCache';
 import { joinFrontmatter, splitFrontmatter } from '@/lib/frontmatter';
 
@@ -103,22 +103,14 @@ export function useMarkdownDoc() {
       isCurrent,
     };
 
-    await resourceCache.hydrate({ ...request, publish: cache.onCached });
-    let result: LoadResult | undefined;
     const refresh = {
       ...request,
       publish: cache.onCached,
-      load: async () => {
-        result = await loadFromNetwork(ws, slug);
-        return result;
-      },
     };
 
-    resourceCache.activate(refresh);
-    await resourceCache.revalidate(refresh);
-
-    if (result === undefined) return loadFromNetwork(ws, slug);
-    return result;
+    const result = await hydrateAndRevalidateResource(refresh).completion;
+    if (result.payload === undefined) throw new Error('Document load completed without a payload.');
+    return result.payload;
   }
 
   async function save(

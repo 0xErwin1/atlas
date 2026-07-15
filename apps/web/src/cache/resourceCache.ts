@@ -107,7 +107,24 @@ export interface ResourceCacheRequest<T> {
 }
 
 export interface ResourceCacheRevalidationResult {
+  fallback?: boolean;
   published: boolean;
+  payload?: unknown;
+}
+
+export interface ResourceCacheLoad<T> {
+  hydration: Promise<T | null>;
+  revalidation: Promise<ResourceCacheRevalidationResult>;
+  completion: Promise<{ published: boolean; payload?: T }>;
+}
+
+export interface ResourceCacheLoader {
+  hydrate<T>(
+    request: Pick<ResourceCacheRequest<T>, 'key' | 'payloadSchema' | 'publish' | 'isCurrent'>,
+  ): Promise<T | null>;
+  revalidate<T>(request: ResourceCacheRequest<T>): Promise<ResourceCacheRevalidationResult>;
+  activate<T>(request: ResourceCacheRequest<T>): void;
+  isAvailable(): boolean;
 }
 
 export interface ResourceCacheOptions {
@@ -132,6 +149,60 @@ export const DEFAULT_CACHE_POLICY: CachePolicy = {
   },
 };
 
+export function startHydrationAndRevalidation<T>(
+  cache: ResourceCacheLoader,
+  request: ResourceCacheRequest<T>,
+): ResourceCacheLoad<T> {
+  let authoritativeSettled = false;
+  let publishedPayload: T | undefined;
+  const hydration = cache.hydrate({
+    ...request,
+    publish: (payload) => {
+      if (!authoritativeSettled) request.publish(payload);
+    },
+  });
+  const revalidation = cache.revalidate({
+    ...request,
+    publish: (payload) => {
+      authoritativeSettled = true;
+      publishedPayload = payload;
+      request.publish(payload);
+    },
+  });
+  const completion = (async () => {
+    try {
+      const result = await revalidation;
+      authoritativeSettled = true;
+      let payload =
+        result?.payload === undefined ? publishedPayload : request.payloadSchema.parse(result.payload);
+      let published = result?.published ?? publishedPayload !== undefined;
+
+      if (payload === undefined && result?.fallback === true && request.isCurrent()) {
+        payload = request.payloadSchema.parse(await request.load());
+      }
+
+      if (!published && payload !== undefined && request.isCurrent()) {
+        request.publish(payload);
+        published = true;
+      }
+
+      if (request.isCurrent() && cache.isAvailable()) cache.activate(request);
+      return { published, ...(payload === undefined ? {} : { payload }) };
+    } catch (error) {
+      const denied = isAuthoritativeDenial(error);
+      authoritativeSettled = denied;
+      if (!denied && request.isCurrent() && cache.isAvailable()) {
+        cache.activate(request);
+      }
+      throw error;
+    }
+  })();
+
+  void hydration.catch(() => undefined);
+  void completion.catch(() => undefined);
+  return { hydration, revalidation, completion };
+}
+
 export class ResourceCache {
   private readonly activeKeys = new Map<
     string,
@@ -148,6 +219,10 @@ export class ResourceCache {
   private readonly clock: CacheClock;
   private readonly hot = new Map<string, CacheEnvelope<unknown>>();
   private readonly inflight = new Map<string, Promise<ResourceCacheRevalidationResult>>();
+  private readonly inflightPublishers = new Map<
+    string,
+    { isCurrent: () => boolean; publish: (payload: unknown) => void }
+  >();
   private readonly policy: CachePolicy;
   private readonly random: CacheRandom;
   private readonly store: ResourceCacheStore;
@@ -187,6 +262,8 @@ export class ResourceCache {
       } catch {
         return null;
       }
+
+      entry = (this.hot.get(request.key) as CacheEnvelope<T> | undefined) ?? entry;
     }
 
     if (
@@ -204,8 +281,16 @@ export class ResourceCache {
     return entry.payload;
   }
 
+  hydrateAndRevalidate<T>(request: ResourceCacheRequest<T>): ResourceCacheLoad<T> {
+    return startHydrationAndRevalidation(this, request);
+  }
+
   revalidate<T>(request: ResourceCacheRequest<T>): Promise<ResourceCacheRevalidationResult> {
-    if (this.isSuspended()) return Promise.resolve({ published: false });
+    if (this.isSuspended()) return Promise.resolve({ fallback: true, published: false });
+    this.inflightPublishers.set(request.key, {
+      isCurrent: request.isCurrent,
+      publish: (payload) => request.publish(request.payloadSchema.parse(payload)),
+    });
     const existing = this.inflight.get(request.key);
     if (existing) return existing;
 
@@ -214,6 +299,9 @@ export class ResourceCache {
       .load()
       .then(async (payload) => {
         if (this.isSuspended() || generation !== this.generation) return { published: false };
+
+        const publisher = this.inflightPublishers.get(request.key);
+        if (publisher?.isCurrent() !== true) return { published: false };
 
         const parsedPayload = request.payloadSchema.parse(payload);
         const tags = mergeCacheTags(request.tags, request.deriveTags?.(parsedPayload) ?? []);
@@ -238,30 +326,48 @@ export class ResourceCache {
             const persisted = await this.store.putMany([entry]);
             if (!persisted) {
               this.hot.delete(entry.key);
-              return { published: false };
+
+              const currentPublisher = this.inflightPublishers.get(request.key);
+              if (
+                this.isSuspended() ||
+                generation !== this.generation ||
+                currentPublisher?.isCurrent() !== true
+              ) {
+                return { published: false };
+              }
+
+              return { published: false, payload: parsedPayload };
             }
           } catch {
             this.hot.delete(entry.key);
           }
 
-          if (this.isSuspended() || generation !== this.generation) {
+          const currentPublisher = this.inflightPublishers.get(request.key);
+          if (
+            this.isSuspended() ||
+            generation !== this.generation ||
+            currentPublisher?.isCurrent() !== true
+          ) {
             this.hot.delete(entry.key);
             await this.store.deleteMany([entry.key]);
             return { published: false };
           }
         }
 
-        if (!this.isSuspended() && generation === this.generation && request.isCurrent()) {
+        if (!this.isSuspended() && generation === this.generation && publisher.isCurrent()) {
           const active = this.activeKeys.get(request.key);
           if (active !== undefined) active.tags = tags;
-          request.publish(parsedPayload);
-          return { published: true };
+          publisher.publish(parsedPayload);
+          return { published: true, payload: parsedPayload };
         }
 
         return { published: false };
       })
       .finally(() => {
-        if (this.inflight.get(request.key) === revalidation) this.inflight.delete(request.key);
+        if (this.inflight.get(request.key) === revalidation) {
+          this.inflight.delete(request.key);
+          this.inflightPublishers.delete(request.key);
+        }
       });
 
     this.inflight.set(request.key, revalidation);
@@ -335,7 +441,6 @@ export class ResourceCache {
     this.hot.clear();
     this.authorizationLeaseExpiresAt = 0;
     this.dropActiveCallbacks();
-    await this.settleInflight();
     return this.finishPurge(purge, await this.store.clear());
   }
 
@@ -539,10 +644,6 @@ export class ResourceCache {
     );
   }
 
-  private async settleInflight(): Promise<void> {
-    await Promise.allSettled([...this.inflight.values()]);
-  }
-
   private beginPurge(): {
     canReleaseFailure: boolean;
   } {
@@ -585,6 +686,11 @@ export class ResourceCache {
   private isSuspended(): boolean {
     return this.blocked || this.pendingPurges > 0;
   }
+}
+
+function isAuthoritativeDenial(error: unknown): boolean {
+  const status = (error as { status?: unknown } | null)?.status;
+  return status === 403 || status === 404;
 }
 
 function jitteredBackoff(failures: number, random: CacheRandom): number {
