@@ -1,5 +1,6 @@
 import { type ZodType, z } from 'zod';
 import {
+  type CacheDeleteScope,
   type CacheEnvelope,
   type CacheLimits,
   createCacheEnvelopeSchema,
@@ -163,6 +164,45 @@ export class IndexedDbCacheStore {
         store.delete(key);
       }
     });
+  }
+
+  async deleteScope(scope: CacheDeleteScope): Promise<boolean> {
+    const database = await this.open();
+
+    if (!database) return false;
+
+    try {
+      const transaction = database.transaction(STORE_NAME, 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.getAll(null, this.limits.maxEntries + 1);
+
+      return new Promise((resolve) => {
+        let settled = false;
+        const complete = (result: boolean) => {
+          if (!settled) {
+            settled = true;
+            resolve(result);
+          }
+        };
+
+        request.onerror = () => transaction.abort();
+        request.onsuccess = () => {
+          if (request.result.length > this.limits.maxEntries) {
+            transaction.abort();
+            return;
+          }
+
+          for (const candidate of request.result) {
+            if (matchesScope(candidate, scope)) store.delete(candidate.key);
+          }
+        };
+        transaction.oncomplete = () => complete(true);
+        transaction.onabort = () => complete(false);
+        transaction.onerror = () => complete(false);
+      });
+    } catch {
+      return false;
+    }
   }
 
   async clear(): Promise<boolean> {
@@ -332,6 +372,14 @@ function cacheKeyOf(candidate: unknown): string | null {
   const { key } = candidate;
 
   return typeof key === 'string' ? key : null;
+}
+
+function matchesScope(candidate: unknown, scope: CacheDeleteScope): candidate is CacheEnvelope<unknown> {
+  if (!isUnknownEnvelope(candidate) || !candidate.key.includes(`|p=${scope.principal}|`)) return false;
+  if (scope.workspaceId !== undefined && !candidate.key.includes(`|w=${scope.workspaceId}|`)) return false;
+  return scope.tagsAny === undefined || scope.tagsAny.length === 0
+    ? true
+    : candidate.tags.some((tag) => scope.tagsAny?.includes(tag));
 }
 
 function transactionResult(transaction: IDBTransaction): Promise<boolean> {

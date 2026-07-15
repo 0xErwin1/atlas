@@ -21,7 +21,7 @@ import { disposeWorkspaceLiveUpdates } from '@/lib/workspaceLiveUpdates';
 import type { MeResponse } from '@/stores/auth';
 import { useAuthStore } from '@/stores/auth';
 import { useLastViewedStore } from '@/stores/lastViewed';
-import { useWorkspaceStore } from '@/stores/workspace';
+import { setWorkspaceAliasInvalidationHandler, useWorkspaceStore } from '@/stores/workspace';
 
 const mockGet = wrappedClient.GET as ReturnType<typeof vi.fn>;
 const mockPost = wrappedClient.POST as ReturnType<typeof vi.fn>;
@@ -39,6 +39,7 @@ describe('useWorkspaceStore', () => {
     } catch {
       // jsdom provides localStorage; ignore if absent
     }
+    setWorkspaceAliasInvalidationHandler(async () => true);
   });
 
   it('starts with no active workspace', () => {
@@ -108,6 +109,329 @@ describe('useWorkspaceStore', () => {
     expect(store.activeWorkspaceSlug).toBe('atlas');
     expect(store.workspaces).toHaveLength(1);
     expect(store.workspaces.at(0)?.slug).toBe('atlas');
+  });
+
+  it('forgets slug aliases when authentication is cleared so a later failure cannot target a prior principal', async () => {
+    mockGet.mockResolvedValueOnce({
+      data: [
+        {
+          id: '019ef171-bbcf-7b90-9be6-5dbb382afd08',
+          name: 'Atlas',
+          slug: 'atlas',
+          created_at: '2024-01-01T00:00:00Z',
+          updated_at: '2024-01-01T00:00:00Z',
+        },
+      ],
+      error: undefined,
+    });
+    const store = useWorkspaceStore();
+
+    await store.loadWorkspaces();
+    useAuthStore().clearUser();
+
+    expect(store.workspaceIdForSlug('atlas')).toBeNull();
+  });
+
+  it('replaces aliases with each successful workspace list so removed workspaces cannot be invalidated', async () => {
+    mockGet
+      .mockResolvedValueOnce({
+        data: [
+          {
+            id: '019ef171-bbcf-7b90-9be6-5dbb382afd08',
+            name: 'Atlas',
+            slug: 'atlas',
+            created_at: 'x',
+            updated_at: 'x',
+          },
+          {
+            id: '019ef171-bbcf-7b90-9be6-5dbb382afd09',
+            name: 'Personal',
+            slug: 'personal',
+            created_at: 'x',
+            updated_at: 'x',
+          },
+        ],
+        error: undefined,
+      })
+      .mockResolvedValueOnce({
+        data: [
+          {
+            id: '019ef171-bbcf-7b90-9be6-5dbb382afd08',
+            name: 'Atlas',
+            slug: 'atlas',
+            created_at: 'x',
+            updated_at: 'x',
+          },
+        ],
+        error: undefined,
+      });
+    const store = useWorkspaceStore();
+
+    await store.loadWorkspaces();
+    await store.loadWorkspaces();
+
+    expect(store.workspaceIdForSlug('atlas')).toBe('019ef171-bbcf-7b90-9be6-5dbb382afd08');
+    expect(store.workspaceIdForSlug('personal')).toBeNull();
+  });
+
+  it('does not install a prior session workspace response after authentication clears', async () => {
+    const response = deferred<{ data: { id: string; name: string; slug: string }[]; error: undefined }>();
+    mockGet.mockReturnValueOnce(response.promise);
+    const store = useWorkspaceStore();
+
+    const loading = store.loadWorkspaces();
+    await useAuthStore().clearUser();
+    response.resolve({ data: [{ id: 'workspace-a-id', name: 'A', slug: 'workspace-a' }], error: undefined });
+
+    await expect(loading).resolves.toBeNull();
+    expect(store.workspaceIdForSlug('workspace-a')).toBeNull();
+    expect(store.activeWorkspaceSlug).toBeNull();
+  });
+
+  it('does not install a stale workspace refresh after a newer workspace load', async () => {
+    const first = deferred<{ data: { id: string; name: string; slug: string }[]; error: undefined }>();
+    mockGet.mockReturnValueOnce(first.promise).mockResolvedValueOnce({
+      data: [{ id: 'workspace-b-id', name: 'B', slug: 'workspace-b' }],
+      error: undefined,
+    });
+    const store = useWorkspaceStore();
+
+    const staleLoad = store.loadWorkspaces();
+    await store.loadWorkspaces();
+    first.resolve({ data: [{ id: 'workspace-a-id', name: 'A', slug: 'workspace-a' }], error: undefined });
+    await staleLoad;
+
+    expect(store.workspaceIdForSlug('workspace-a')).toBeNull();
+    expect(store.workspaceIdForSlug('workspace-b')).toBe('workspace-b-id');
+  });
+
+  it('does not install a create refresh response after authentication clears', async () => {
+    const refresh = deferred<{ data: { id: string; name: string; slug: string }[]; error: undefined }>();
+    mockPost.mockResolvedValueOnce({
+      data: { id: 'workspace-a-id', name: 'A', slug: 'workspace-a' },
+      error: undefined,
+    });
+    mockGet.mockReturnValueOnce(refresh.promise);
+    const store = useWorkspaceStore();
+
+    const creation = store.createWorkspace('A');
+    await Promise.resolve();
+    await useAuthStore().clearUser();
+    refresh.resolve({ data: [{ id: 'workspace-a-id', name: 'A', slug: 'workspace-a' }], error: undefined });
+
+    await expect(creation).resolves.toBeNull();
+    expect(store.workspaceIdForSlug('workspace-a')).toBeNull();
+    expect(store.activeWorkspaceSlug).toBeNull();
+  });
+
+  it('does not publish a workspace list when authentication clears during alias invalidation flush', async () => {
+    const invalidation = deferred<boolean>();
+    const invalidate = vi.fn().mockReturnValue(invalidation.promise);
+    setWorkspaceAliasInvalidationHandler(invalidate);
+    const store = useWorkspaceStore();
+    const pending = store.queueCacheInvalidation({
+      status: 403,
+      scope: 'workspace',
+      workspaceSlug: 'workspace-a',
+      tags: [],
+    });
+    mockGet.mockResolvedValueOnce({
+      data: [{ id: 'workspace-a-id', name: 'A', slug: 'workspace-a' }],
+      error: undefined,
+    });
+
+    const loading = store.loadWorkspaces();
+    await Promise.resolve();
+    expect(invalidate).toHaveBeenCalledOnce();
+
+    useAuthStore().clearUser();
+    invalidation.resolve(true);
+
+    await expect(loading).resolves.toBeNull();
+    await expect(pending).resolves.toBe(false);
+    expect(store.workspaces).toEqual([]);
+    expect(store.workspaceIdForSlug('workspace-a')).toBeNull();
+    expect(store.activeWorkspaceSlug).toBeNull();
+  });
+
+  it('does not let an older list replace a newer workspace list during alias invalidation flush', async () => {
+    const invalidation = deferred<boolean>();
+    const invalidate = vi.fn().mockReturnValue(invalidation.promise);
+    setWorkspaceAliasInvalidationHandler(invalidate);
+    const store = useWorkspaceStore();
+    store.queueCacheInvalidation({
+      status: 403,
+      scope: 'workspace',
+      workspaceSlug: 'workspace-a',
+      tags: [],
+    });
+    mockGet
+      .mockResolvedValueOnce({
+        data: [{ id: 'workspace-a-id', name: 'A', slug: 'workspace-a' }],
+        error: undefined,
+      })
+      .mockResolvedValueOnce({
+        data: [{ id: 'workspace-b-id', name: 'B', slug: 'workspace-b' }],
+        error: undefined,
+      });
+
+    const staleLoad = store.loadWorkspaces();
+    await Promise.resolve();
+    expect(invalidate).toHaveBeenCalledOnce();
+
+    await expect(store.loadWorkspaces()).resolves.toBe('workspace-b');
+    invalidation.resolve(true);
+
+    await expect(staleLoad).resolves.toBeNull();
+    expect(store.workspaces.map((workspace) => workspace.slug)).toEqual(['workspace-b']);
+    expect(store.workspaceIdForSlug('workspace-a')).toBeNull();
+    expect(store.workspaceIdForSlug('workspace-b')).toBe('workspace-b-id');
+    expect(store.activeWorkspaceSlug).toBe('workspace-b');
+  });
+
+  it('keeps an older alias hidden while a newer workspace response is pending during alias invalidation', async () => {
+    const invalidation = deferred<boolean>();
+    const newerResponse = deferred<{
+      data: { id: string; name: string; slug: string }[];
+      error: undefined;
+    }>();
+    const invalidate = vi.fn().mockReturnValue(invalidation.promise);
+    setWorkspaceAliasInvalidationHandler(invalidate);
+    const store = useWorkspaceStore();
+    store.queueCacheInvalidation({
+      status: 403,
+      scope: 'workspace',
+      workspaceSlug: 'workspace-a',
+      tags: [],
+    });
+    mockGet
+      .mockResolvedValueOnce({
+        data: [{ id: 'workspace-a-id', name: 'A', slug: 'workspace-a' }],
+        error: undefined,
+      })
+      .mockReturnValueOnce(newerResponse.promise);
+
+    const staleLoad = store.loadWorkspaces();
+    await Promise.resolve();
+    expect(invalidate).toHaveBeenCalledOnce();
+
+    const newerLoad = store.loadWorkspaces();
+    expect(store.workspaceIdForSlug('workspace-a')).toBeNull();
+
+    invalidation.resolve(true);
+    await expect(staleLoad).resolves.toBeNull();
+    expect(store.workspaces).toEqual([]);
+    expect(store.workspaceIdForSlug('workspace-a')).toBeNull();
+
+    newerResponse.resolve({
+      data: [{ id: 'workspace-b-id', name: 'B', slug: 'workspace-b' }],
+      error: undefined,
+    });
+
+    await expect(newerLoad).resolves.toBe('workspace-b');
+    expect(store.workspaceIdForSlug('workspace-a')).toBeNull();
+    expect(store.workspaceIdForSlug('workspace-b')).toBe('workspace-b-id');
+  });
+
+  it('clears an alias immediately when authentication clears during alias invalidation flush', async () => {
+    const invalidation = deferred<boolean>();
+    const invalidate = vi.fn().mockReturnValue(invalidation.promise);
+    setWorkspaceAliasInvalidationHandler(invalidate);
+    const store = useWorkspaceStore();
+    store.queueCacheInvalidation({
+      status: 403,
+      scope: 'workspace',
+      workspaceSlug: 'workspace-a',
+      tags: [],
+    });
+    mockGet.mockResolvedValueOnce({
+      data: [{ id: 'workspace-a-id', name: 'A', slug: 'workspace-a' }],
+      error: undefined,
+    });
+
+    const loading = store.loadWorkspaces();
+    await Promise.resolve();
+    expect(invalidate).toHaveBeenCalledOnce();
+
+    useAuthStore().clearUser();
+    expect(store.workspaceIdForSlug('workspace-a')).toBeNull();
+    expect(store.workspaces).toEqual([]);
+
+    invalidation.resolve(true);
+    await expect(loading).resolves.toBeNull();
+    expect(store.workspaceIdForSlug('workspace-a')).toBeNull();
+  });
+
+  it('does not switch to a created workspace when authentication clears during refresh alias invalidation', async () => {
+    const invalidation = deferred<boolean>();
+    const invalidate = vi.fn().mockReturnValue(invalidation.promise);
+    setWorkspaceAliasInvalidationHandler(invalidate);
+    const store = useWorkspaceStore();
+    store.queueCacheInvalidation({
+      status: 403,
+      scope: 'workspace',
+      workspaceSlug: 'workspace-a',
+      tags: [],
+    });
+    mockPost.mockResolvedValueOnce({
+      data: { id: 'workspace-a-id', name: 'A', slug: 'workspace-a' },
+      error: undefined,
+    });
+    mockGet.mockResolvedValueOnce({
+      data: [{ id: 'workspace-a-id', name: 'A', slug: 'workspace-a' }],
+      error: undefined,
+    });
+
+    const creation = store.createWorkspace('A');
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(invalidate).toHaveBeenCalledOnce();
+
+    useAuthStore().clearUser();
+    invalidation.resolve(true);
+
+    await expect(creation).resolves.toBeNull();
+    expect(store.workspaces).toEqual([]);
+    expect(store.workspaceIdForSlug('workspace-a')).toBeNull();
+    expect(store.activeWorkspaceSlug).toBeNull();
+  });
+
+  it('does not publish a re-slugged workspace after a newer load begins during alias invalidation', async () => {
+    const invalidation = deferred<boolean>();
+    const invalidate = vi.fn().mockReturnValue(invalidation.promise);
+    setWorkspaceAliasInvalidationHandler(invalidate);
+    mockPatch.mockResolvedValueOnce({
+      data: { id: 'workspace-a-id', name: 'A', slug: 'workspace-a-new', created_at: 'x', updated_at: 'y' },
+      error: undefined,
+    });
+    mockGet.mockResolvedValueOnce({
+      data: [{ id: 'workspace-b-id', name: 'B', slug: 'workspace-b' }],
+      error: undefined,
+    });
+    const store = useWorkspaceStore();
+    store.workspaces = [
+      { id: 'workspace-a-id', name: 'A', slug: 'workspace-a', created_at: 'x', updated_at: 'x' },
+    ];
+    store.setActiveWorkspace('workspace-a');
+    store.queueCacheInvalidation({
+      status: 403,
+      scope: 'workspace',
+      workspaceSlug: 'workspace-a-new',
+      tags: [],
+    });
+
+    const reSlug = store.updateWorkspaceSlug('workspace-a', 'workspace-a-new');
+    await Promise.resolve();
+    expect(invalidate).toHaveBeenCalledOnce();
+
+    await expect(store.loadWorkspaces()).resolves.toBe('workspace-b');
+    invalidation.resolve(true);
+
+    await expect(reSlug).resolves.toBe(false);
+    expect(store.workspaces.map((workspace) => workspace.slug)).toEqual(['workspace-b']);
+    expect(store.workspaceIdForSlug('workspace-a-new')).toBeNull();
+    expect(store.workspaceIdForSlug('workspace-b')).toBe('workspace-b-id');
+    expect(store.activeWorkspaceSlug).toBe('workspace-b');
   });
 
   it('loadWorkspaces returns null and does not set slug when list is empty', async () => {
@@ -250,6 +574,20 @@ describe('useWorkspaceStore', () => {
     expect(lastViewed.forWorkspace('workspace-b')).toEqual({ name: 'notes', params: { slug: 'keep' } });
   });
 
+  it('removes a deleted workspace alias so a later authorization failure cannot resolve its former UUID', async () => {
+    mockGet.mockResolvedValueOnce({
+      data: [{ id: 'workspace-a-id', name: 'A', slug: 'workspace-a', created_at: 'x', updated_at: 'x' }],
+      error: undefined,
+    });
+    mockDelete.mockResolvedValueOnce({ error: undefined });
+    const store = useWorkspaceStore();
+
+    await store.loadWorkspaces();
+    await store.deleteWorkspace('workspace-a');
+
+    expect(store.workspaceIdForSlug('workspace-a')).toBeNull();
+  });
+
   it('updateWorkspaceSlug rekeys the active workspace last-viewed entry', async () => {
     mockPatch.mockResolvedValueOnce({
       data: { id: '1', name: 'Atlas', slug: 'atlas-new', created_at: 'x', updated_at: 'y' },
@@ -272,6 +610,87 @@ describe('useWorkspaceStore', () => {
       params: { boardId: 'board-1' },
     });
     expect(disposeWorkspaceLiveUpdates).toHaveBeenCalledOnce();
+  });
+
+  it('flushes a pending unknown alias when re-slug registration provides its canonical UUID', async () => {
+    const invalidate = vi.fn().mockResolvedValue(true);
+    setWorkspaceAliasInvalidationHandler(invalidate);
+    mockPatch.mockResolvedValueOnce({
+      data: {
+        id: '019ef171-bbcf-7b90-9be6-5dbb382afd08',
+        name: 'Atlas',
+        slug: 'atlas-new',
+        created_at: 'x',
+        updated_at: 'y',
+      },
+      error: undefined,
+    });
+    const store = useWorkspaceStore();
+    store.workspaces = [
+      {
+        id: '019ef171-bbcf-7b90-9be6-5dbb382afd08',
+        name: 'Atlas',
+        slug: 'atlas',
+        created_at: 'x',
+        updated_at: 'x',
+      },
+    ];
+    const pending = store.queueCacheInvalidation({
+      status: 404,
+      scope: 'resource',
+      workspaceSlug: 'atlas-new',
+      tags: ['document:document-a'],
+    });
+
+    await expect(store.updateWorkspaceSlug('atlas', 'atlas-new')).resolves.toBe(true);
+    await expect(pending).resolves.toBe(true);
+
+    expect(invalidate).toHaveBeenCalledWith(
+      {
+        status: 404,
+        scope: 'resource',
+        workspaceSlug: 'atlas-new',
+        tags: ['document:document-a'],
+      },
+      '019ef171-bbcf-7b90-9be6-5dbb382afd08',
+    );
+  });
+
+  it('settles unknown alias invalidations without a global purge when aliases are cleared or expire', async () => {
+    vi.useFakeTimers();
+    const invalidate = vi.fn().mockResolvedValue(true);
+    setWorkspaceAliasInvalidationHandler(invalidate);
+    const store = useWorkspaceStore();
+    const cleared = store.queueCacheInvalidation({
+      status: 403,
+      scope: 'workspace',
+      workspaceSlug: 'unknown',
+      tags: [],
+    });
+
+    store.clearWorkspaceAliases();
+    await expect(cleared).resolves.toBe(false);
+
+    const terminated = store.queueCacheInvalidation({
+      status: 404,
+      scope: 'resource',
+      workspaceSlug: 'terminated',
+      tags: ['document:document-a'],
+    });
+    useAuthStore().clearUser();
+    await expect(terminated).resolves.toBe(false);
+
+    const expired = store.queueCacheInvalidation({
+      status: 404,
+      scope: 'resource',
+      workspaceSlug: 'expired',
+      tags: ['document:document-a'],
+    });
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+
+    await expect(expired).resolves.toBe(false);
+    expect(invalidate).not.toHaveBeenCalled();
+    vi.useRealTimers();
   });
 
   it('switching stays true until all overlapping switches settle, regardless of end order', () => {

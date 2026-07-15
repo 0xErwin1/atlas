@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import {
+  configureResourceCacheForTest,
+  runHardRefresh,
+  setResourceCachePrincipal,
+} from '@/cache/cacheRuntime';
 import { evictEntries, IndexedDbCacheStore, validatePersistedEnvelope } from '@/cache/indexedDbCacheStore';
-import { buildCacheKey, type CacheEnvelope, createCacheEnvelope } from '@/cache/resourceCache';
+import { buildCacheKey, type CacheEnvelope, createCacheEnvelope, ResourceCache } from '@/cache/resourceCache';
 
 const payloadSchema = z.object({ title: z.string() });
 const workspaceId = '018f8e6d-7c15-7c72-8a41-2f5295e0c0f1';
@@ -168,7 +173,8 @@ class FakeTransaction {
         this.changes.set(key, undefined);
       },
       get: (key: string) => this.request(this.entries.get(key)),
-      getAll: () => this.request([...this.entries.values()]),
+      getAll: (_query?: IDBValidKey | IDBKeyRange | null, count?: number) =>
+        this.request([...this.entries.values()].slice(0, count)),
       put: (value: { key: string }) => {
         if (this.factory.failWrites) {
           this.abort();
@@ -220,6 +226,112 @@ class FakeTransaction {
 }
 
 describe('IndexedDbCacheStore contracts', () => {
+  it('atomically deletes only cold entries matching a principal workspace and tag scope', async () => {
+    const indexedDb = new FakeIndexedDbFactory();
+    const matchingKey = keyFor('matching');
+    const unrelatedKey = keyFor('unrelated');
+    const otherPrincipal = buildCacheKey({
+      principal: 'user:018f8e6d-7c15-7c72-8a41-2f5295e0c0f3',
+      workspaceId,
+      resourceKind: 'task-detail',
+      resourceId: 'other-principal',
+    });
+
+    if (otherPrincipal === null) throw new Error('test cache key must be valid');
+
+    indexedDb.databases.set('scoped-delete', {
+      entries: new Map([
+        [matchingKey, entry(matchingKey, { tags: ['document:matching'] })],
+        [unrelatedKey, entry(unrelatedKey, { tags: ['document:unrelated'] })],
+        [otherPrincipal, entry(otherPrincipal, { tags: ['document:matching'] })],
+      ]),
+      version: 1,
+    });
+    const store = new IndexedDbCacheStore({
+      indexedDb: indexedDb.asIdbFactory(),
+      databaseName: 'scoped-delete',
+    });
+
+    await expect(store.deleteScope({ principal, workspaceId, tagsAny: ['document:matching'] })).resolves.toBe(
+      true,
+    );
+    expect(indexedDb.databases.get('scoped-delete')?.entries.has(matchingKey)).toBe(false);
+    expect(indexedDb.databases.get('scoped-delete')?.entries.has(unrelatedKey)).toBe(true);
+    expect(indexedDb.databases.get('scoped-delete')?.entries.has(otherPrincipal)).toBe(true);
+  });
+
+  it('fails closed without deleting records when matching entries exceed the scan bound', async () => {
+    const indexedDb = new FakeIndexedDbFactory();
+    const keys = Array.from({ length: 501 }, (_, index) => keyFor(`bounded-${index}`));
+    const unrelatedKey = keyFor('bounded-unrelated');
+    indexedDb.databases.set('bounded-delete', {
+      entries: new Map([
+        ...keys.map((key) => [key, entry(key, { tags: ['document:matching'] })] as const),
+        [unrelatedKey, entry(unrelatedKey, { tags: ['document:unrelated'] })],
+      ]),
+      version: 1,
+    });
+    const store = new IndexedDbCacheStore({
+      indexedDb: indexedDb.asIdbFactory(),
+      databaseName: 'bounded-delete',
+    });
+
+    await expect(store.deleteScope({ principal, workspaceId, tagsAny: ['document:matching'] })).resolves.toBe(
+      false,
+    );
+    expect(indexedDb.databases.get('bounded-delete')?.entries.has(keys[0] ?? '')).toBe(true);
+    expect(indexedDb.databases.get('bounded-delete')?.entries.has(keys[499] ?? '')).toBe(true);
+    expect(indexedDb.databases.get('bounded-delete')?.entries.has(keys[500] ?? '')).toBe(true);
+    expect(indexedDb.databases.get('bounded-delete')?.entries.has(unrelatedKey)).toBe(true);
+  });
+
+  it('fails closed when a matching record is beyond the first scan page', async () => {
+    const indexedDb = new FakeIndexedDbFactory();
+    const unrelatedKeys = Array.from({ length: 500 }, (_, index) => keyFor(`unrelated-${index}`));
+    const matchingKey = keyFor('after-first-page');
+    indexedDb.databases.set('beyond-page-delete', {
+      entries: new Map([
+        ...unrelatedKeys.map((key) => [key, entry(key, { tags: ['document:unrelated'] })] as const),
+        [matchingKey, entry(matchingKey, { tags: ['document:matching'] })],
+      ]),
+      version: 1,
+    });
+    const store = new IndexedDbCacheStore({
+      indexedDb: indexedDb.asIdbFactory(),
+      databaseName: 'beyond-page-delete',
+    });
+
+    await expect(store.deleteScope({ principal, workspaceId, tagsAny: ['document:matching'] })).resolves.toBe(
+      false,
+    );
+    expect(indexedDb.databases.get('beyond-page-delete')?.entries.has(matchingKey)).toBe(true);
+    expect(indexedDb.databases.get('beyond-page-delete')?.entries.has(unrelatedKeys[499] ?? '')).toBe(true);
+  });
+
+  it('fails closed and preserves all records when scoped deletion aborts', async () => {
+    const indexedDb = new FakeIndexedDbFactory();
+    const matchingKey = keyFor('failed-delete');
+    const unrelatedKey = keyFor('failed-delete-unrelated');
+    indexedDb.databases.set('failed-scope-delete', {
+      entries: new Map([
+        [matchingKey, entry(matchingKey, { tags: ['document:matching'] })],
+        [unrelatedKey, entry(unrelatedKey, { tags: ['document:unrelated'] })],
+      ]),
+      version: 1,
+    });
+    indexedDb.failDeletes = true;
+    const store = new IndexedDbCacheStore({
+      indexedDb: indexedDb.asIdbFactory(),
+      databaseName: 'failed-scope-delete',
+    });
+
+    await expect(store.deleteScope({ principal, workspaceId, tagsAny: ['document:matching'] })).resolves.toBe(
+      false,
+    );
+    expect(indexedDb.databases.get('failed-scope-delete')?.entries.has(matchingKey)).toBe(true);
+    expect(indexedDb.databases.get('failed-scope-delete')?.entries.has(unrelatedKey)).toBe(true);
+  });
+
   it('executes successful transactions and fails closed on storage failure', async () => {
     const indexedDb = new FakeIndexedDbFactory();
     const store = new IndexedDbCacheStore({
@@ -358,5 +470,37 @@ describe('IndexedDbCacheStore contracts', () => {
         },
       ).map((candidate) => candidate.key),
     ).toEqual(['expired', 'inactive', 'active-a']);
+  });
+
+  it('removes the actual hot and IndexedDB cold envelope before hard refresh reloads', async () => {
+    const indexedDb = new FakeIndexedDbFactory();
+    const store = new IndexedDbCacheStore({
+      indexedDb: indexedDb.asIdbFactory(),
+      databaseName: 'hard-refresh',
+    });
+    const cache = new ResourceCache({ store });
+    const key = keyFor('hard-refresh');
+    const reload = async () => {
+      expect(await store.get(key, payloadSchema)).toBeNull();
+      expect(
+        await cache.hydrate({ key, payloadSchema, publish: () => undefined, isCurrent: () => true }),
+      ).toBeNull();
+    };
+
+    cache.allow();
+    await cache.revalidate({
+      key,
+      payloadSchema,
+      tags: [`workspace:${workspaceId}`, 'document:hard-refresh'],
+      freshForMs: 30_000,
+      retentionForMs: 60_000,
+      load: async () => ({ title: 'Hot and cold' }),
+      publish: () => undefined,
+      isCurrent: () => true,
+    });
+    configureResourceCacheForTest(cache);
+    setResourceCachePrincipal(principal);
+
+    await expect(runHardRefresh(workspaceId, reload)).resolves.toBe(true);
   });
 });

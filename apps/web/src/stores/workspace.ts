@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 import { computed, readonly, ref } from 'vue';
 import type { components } from '@/api/types';
-import { wrappedClient } from '@/api/wrapper';
+import { type CacheInvalidationScope, wrappedClient } from '@/api/wrapper';
 import { errorHint } from '@/lib/apiError';
 import { collectPaged } from '@/lib/pagination';
 import { disposeWorkspaceLiveUpdates } from '@/lib/workspaceLiveUpdates';
@@ -23,6 +23,19 @@ export interface ProjectSummary {
 }
 
 const WORKSPACE_STORAGE_KEY = 'atlas:workspace';
+const PENDING_INVALIDATION_MAX_AGE_MS = 5 * 60_000;
+const PENDING_INVALIDATION_MAX_ENTRIES = 100;
+
+type WorkspaceAliasInvalidationHandler = (
+  scope: CacheInvalidationScope,
+  workspaceId: string,
+) => Promise<boolean>;
+
+let workspaceAliasInvalidationHandler: WorkspaceAliasInvalidationHandler | undefined;
+
+export function setWorkspaceAliasInvalidationHandler(handler: WorkspaceAliasInvalidationHandler): void {
+  workspaceAliasInvalidationHandler = handler;
+}
 
 function loadStoredWorkspace(): string | null {
   try {
@@ -70,7 +83,17 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   // not disabled). Populated on demand by the add-member dialog.
   const assignableUsers = ref<UserDto[]>([]);
   const error = ref<string | null>(null);
+  const workspaceAliases = new Map<string, string>();
+  const pendingCacheInvalidations = new Map<
+    string,
+    {
+      scope: CacheInvalidationScope;
+      resolvers: Array<(invalidated: boolean) => void>;
+      timeout: ReturnType<typeof setTimeout>;
+    }
+  >();
   let membersLoadRequest: object | null = null;
+  let workspaceLoadGeneration = 0;
 
   const auth = useAuthStore();
 
@@ -99,6 +122,88 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     if (slug !== null) committedSlug.value = slug;
   }
 
+  function isCurrentWorkspaceRequest(requestGeneration: number, requestSessionGeneration: number): boolean {
+    return (
+      requestGeneration === workspaceLoadGeneration && requestSessionGeneration === auth.sessionGeneration
+    );
+  }
+
+  function stagedWorkspaceAliases(items: readonly WorkspaceDto[], replace: boolean): Map<string, string> {
+    const aliases = replace ? new Map<string, string>() : new Map(workspaceAliases);
+    for (const workspace of items) aliases.set(workspace.slug, workspace.id);
+    return aliases;
+  }
+
+  function publishWorkspaceAliases(aliases: ReadonlyMap<string, string>): void {
+    workspaceAliases.clear();
+    for (const [slug, id] of aliases) workspaceAliases.set(slug, id);
+  }
+
+  function workspaceIdForSlug(slug: string): string | null {
+    return workspaceAliases.get(slug) ?? null;
+  }
+
+  function clearWorkspaceAliases(): void {
+    workspaceLoadGeneration += 1;
+    workspaceAliases.clear();
+    settleAllPendingCacheInvalidations(false);
+  }
+
+  function queueCacheInvalidation(scope: CacheInvalidationScope): Promise<boolean> {
+    if (scope.workspaceSlug === null || scope.scope === 'none') return Promise.resolve(true);
+
+    const key = `${scope.workspaceSlug}|${scope.scope}|${scope.tags.join(',')}`;
+    const pending = pendingCacheInvalidations.get(key);
+
+    return new Promise((resolve) => {
+      if (pending !== undefined) {
+        pending.resolvers.push(resolve);
+        return;
+      }
+
+      const timeout = setTimeout(
+        () => settlePendingCacheInvalidation(key, false),
+        PENDING_INVALIDATION_MAX_AGE_MS,
+      );
+      pendingCacheInvalidations.set(key, { scope, resolvers: [resolve], timeout });
+
+      while (pendingCacheInvalidations.size > PENDING_INVALIDATION_MAX_ENTRIES) {
+        const oldest = pendingCacheInvalidations.keys().next().value;
+        if (oldest === undefined) return;
+        settlePendingCacheInvalidation(oldest, false);
+      }
+    });
+  }
+
+  async function flushPendingCacheInvalidations(aliases: ReadonlyMap<string, string>): Promise<void> {
+    const handler = workspaceAliasInvalidationHandler;
+    if (!handler) return;
+
+    for (const [key, pending] of pendingCacheInvalidations) {
+      const workspaceId = pending.scope.workspaceSlug ? aliases.get(pending.scope.workspaceSlug) : undefined;
+      if (workspaceId === undefined) continue;
+
+      try {
+        settlePendingCacheInvalidation(key, await handler(pending.scope, workspaceId));
+      } catch {
+        settlePendingCacheInvalidation(key, false);
+      }
+    }
+  }
+
+  function settlePendingCacheInvalidation(key: string, invalidated: boolean): void {
+    const pending = pendingCacheInvalidations.get(key);
+    if (pending === undefined) return;
+
+    clearTimeout(pending.timeout);
+    pendingCacheInvalidations.delete(key);
+    for (const resolve of pending.resolvers) resolve(invalidated);
+  }
+
+  function settleAllPendingCacheInvalidations(invalidated: boolean): void {
+    for (const key of pendingCacheInvalidations.keys()) settlePendingCacheInvalidation(key, invalidated);
+  }
+
   /** Starts a switch and returns its token, to be passed back to `endSwitch`. */
   function beginSwitch(): number {
     activeSwitchCount.value += 1;
@@ -123,7 +228,11 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   async function loadWorkspaces(): Promise<string | null> {
+    const requestGeneration = ++workspaceLoadGeneration;
+    const requestSessionGeneration = auth.sessionGeneration;
     const { data, error } = await wrappedClient.GET('/api/workspaces');
+
+    if (!isCurrentWorkspaceRequest(requestGeneration, requestSessionGeneration)) return null;
 
     if (error !== undefined || data === undefined) {
       const hint = (error as { hint?: string } | undefined)?.hint;
@@ -131,6 +240,11 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       return null;
     }
 
+    const aliases = stagedWorkspaceAliases(data, true);
+    await flushPendingCacheInvalidations(aliases);
+    if (!isCurrentWorkspaceRequest(requestGeneration, requestSessionGeneration)) return null;
+
+    publishWorkspaceAliases(aliases);
     workspaces.value = data;
 
     // Restore the last-used workspace when it still exists, otherwise the first.
@@ -165,9 +279,13 @@ export const useWorkspaceStore = defineStore('workspace', () => {
    * failure (with `error` set).
    */
   async function createWorkspace(name: string): Promise<string | null> {
+    const requestGeneration = ++workspaceLoadGeneration;
+    const requestSessionGeneration = auth.sessionGeneration;
     const { data, error: apiError } = await wrappedClient.POST('/api/workspaces', {
       body: { name },
     });
+
+    if (!isCurrentWorkspaceRequest(requestGeneration, requestSessionGeneration)) return null;
 
     if (apiError !== undefined || data === undefined) {
       error.value = errorHint(apiError, 'Failed to create workspace');
@@ -175,7 +293,16 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
 
     const list = await wrappedClient.GET('/api/workspaces');
-    if (list.data !== undefined) workspaces.value = list.data;
+    if (!isCurrentWorkspaceRequest(requestGeneration, requestSessionGeneration)) return null;
+
+    if (list.data !== undefined) {
+      const aliases = stagedWorkspaceAliases(list.data, true);
+      await flushPendingCacheInvalidations(aliases);
+      if (!isCurrentWorkspaceRequest(requestGeneration, requestSessionGeneration)) return null;
+
+      publishWorkspaceAliases(aliases);
+      workspaces.value = list.data;
+    }
 
     switchWorkspace(data.slug);
     return data.slug;
@@ -300,10 +427,14 @@ export const useWorkspaceStore = defineStore('workspace', () => {
    * on success; sets `error` and returns false otherwise.
    */
   async function renameWorkspace(ws: string, name: string): Promise<boolean> {
+    const requestGeneration = ++workspaceLoadGeneration;
+    const requestSessionGeneration = auth.sessionGeneration;
     const { data, error: apiError } = await wrappedClient.PATCH('/api/workspaces/{ws}', {
       params: { path: { ws } },
       body: { name },
     });
+
+    if (!isCurrentWorkspaceRequest(requestGeneration, requestSessionGeneration)) return false;
 
     if (apiError !== undefined || data === undefined) {
       error.value = errorHint(apiError, 'Failed to rename workspace');
@@ -312,6 +443,11 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
     const apply = (list: WorkspaceDto[]): WorkspaceDto[] => list.map((w) => (w.slug === ws ? data : w));
 
+    const aliases = stagedWorkspaceAliases([data], false);
+    await flushPendingCacheInvalidations(aliases);
+    if (!isCurrentWorkspaceRequest(requestGeneration, requestSessionGeneration)) return false;
+
+    publishWorkspaceAliases(aliases);
     workspaces.value = apply(workspaces.value);
     adminWorkspaces.value = apply(adminWorkspaces.value);
     return true;
@@ -325,10 +461,14 @@ export const useWorkspaceStore = defineStore('workspace', () => {
    * for an invalid or already-taken slug).
    */
   async function updateWorkspaceSlug(ws: string, slug: string): Promise<boolean> {
+    const requestGeneration = ++workspaceLoadGeneration;
+    const requestSessionGeneration = auth.sessionGeneration;
     const { data, error: apiError } = await wrappedClient.PATCH('/api/admin/workspaces/{ws}', {
       params: { path: { ws } },
       body: { slug },
     });
+
+    if (!isCurrentWorkspaceRequest(requestGeneration, requestSessionGeneration)) return false;
 
     if (apiError !== undefined || data === undefined) {
       error.value = errorHint(apiError, 'Failed to update workspace slug');
@@ -337,6 +477,12 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
     const apply = (list: WorkspaceDto[]): WorkspaceDto[] => list.map((w) => (w.slug === ws ? data : w));
 
+    const aliases = stagedWorkspaceAliases([data], false);
+    aliases.delete(ws);
+    await flushPendingCacheInvalidations(aliases);
+    if (!isCurrentWorkspaceRequest(requestGeneration, requestSessionGeneration)) return false;
+
+    publishWorkspaceAliases(aliases);
     workspaces.value = apply(workspaces.value);
     adminWorkspaces.value = apply(adminWorkspaces.value);
 
@@ -370,6 +516,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
     workspaces.value = workspaces.value.filter((w) => w.slug !== ws);
     adminWorkspaces.value = adminWorkspaces.value.filter((w) => w.slug !== ws);
+    workspaceAliases.delete(ws);
 
     // Drop the deleted workspace's stored resource so it is never restored.
     useLastViewedStore().clear(ws);
@@ -521,6 +668,9 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     myWorkspaceRole,
     error,
     setActiveWorkspace,
+    clearWorkspaceAliases,
+    queueCacheInvalidation,
+    workspaceIdForSlug,
     beginSwitch,
     endSwitch,
     isCurrentSwitch,
