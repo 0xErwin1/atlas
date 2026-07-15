@@ -25,6 +25,7 @@ const commentAttachments = {
   isUploading: () => false,
   isDownloading: () => false,
   isDeleting: () => false,
+  reload: vi.fn().mockResolvedValue(undefined),
   upload: vi.fn().mockResolvedValue(null),
   download: vi.fn().mockResolvedValue(undefined),
   delete: vi.fn().mockResolvedValue(true),
@@ -286,6 +287,17 @@ describe('DocumentComments (ATL-37)', () => {
     );
     expect(commentAttachments.upload).toHaveBeenCalledWith('c1', file);
     expect(commentAttachments.contentUrl).toHaveBeenCalledWith('c1', 'image-1');
+  });
+
+  it('binds attachment-list retry to the current published document comment', async () => {
+    setup([comment('c1', 'Mine', 'me', 'user', 'Me')]);
+    signInAs('me');
+
+    const wrapper = mountPanel();
+    const retry = wrapper.getComponent(CommentCard).props('onReloadAttachments') as () => Promise<void>;
+    await retry();
+
+    expect(commentAttachments.reload).toHaveBeenCalledWith('c1');
   });
 
   it("lets a workspace admin delete but not edit another member's comment", async () => {

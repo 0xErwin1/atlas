@@ -128,4 +128,44 @@ describe('useCommentAttachments', () => {
     ]);
     expect(attachments.error.value['comment-1']).toBe('Upload not allowed');
   });
+
+  it('retains a successful same-comment upload when an older list finishes afterward', async () => {
+    let resolveList: (value: unknown) => void = () => {};
+    GET.mockResolvedValueOnce({ data: [attachment('existing', 'existing.txt')] }).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveList = resolve;
+      }),
+    );
+    POST.mockResolvedValueOnce({ data: attachment('new', 'new.txt') });
+    const currentTarget = ref({ kind: 'task' as const, ws: 'acme', readableId: 'ATL-1' });
+    const attachments = useCommentAttachments(currentTarget, entries);
+    await vi.waitFor(() => expect(attachments.items.value['comment-1']).toHaveLength(1));
+
+    const reload = attachments.reload('comment-1');
+    await attachments.upload('comment-1', new File(['new'], 'new.txt', { type: 'text/plain' }));
+    resolveList({ data: [attachment('stale', 'stale.txt')] });
+    await reload;
+
+    expect(attachments.items.value['comment-1']?.map((item) => item.file_name)).toEqual([
+      'existing.txt',
+      'new.txt',
+    ]);
+  });
+
+  it('retains rows and exposes actionable errors when upload, download, and delete fail', async () => {
+    GET.mockResolvedValueOnce({ data: [attachment('existing', 'existing.txt')] });
+    POST.mockResolvedValueOnce({ error: { hint: 'Upload denied' } });
+    GET.mockResolvedValueOnce({ error: { hint: 'Download denied' } });
+    DELETE.mockResolvedValueOnce({ error: { hint: 'Delete denied' } });
+    const currentTarget = ref({ kind: 'document' as const, ws: 'acme', slug: 'note' });
+    const attachments = useCommentAttachments(currentTarget, entries);
+    await vi.waitFor(() => expect(attachments.items.value['comment-1']).toHaveLength(1));
+
+    expect(await attachments.upload('comment-1', new File(['new'], 'new.txt'))).toBeNull();
+    expect(await attachments.download('comment-1', 'existing')).toBeNull();
+    expect(await attachments.delete('comment-1', 'existing')).toBe(false);
+
+    expect(attachments.items.value['comment-1']?.map((item) => item.id)).toEqual(['existing']);
+    expect(attachments.error.value['comment-1']).toBe('Delete denied');
+  });
 });

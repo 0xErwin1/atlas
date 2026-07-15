@@ -58,7 +58,7 @@ interface BacklinkRow {
   kind: string;
   readableId: string;
   title: string;
-  to: RouteLocationRaw;
+  to: RouteLocationRaw | null;
 }
 
 function commentBacklinkRow(commentSource: NonNullable<TaskBacklinkDto['comment_source']>): BacklinkRow {
@@ -74,11 +74,21 @@ function commentBacklinkRow(commentSource: NonNullable<TaskBacklinkDto['comment_
     };
   }
 
+  if (parent.slug === null || parent.slug === undefined) {
+    return {
+      id: commentSource.comment_id,
+      kind: 'comment',
+      readableId: 'Recurso no disponible',
+      title: 'Recurso no disponible',
+      to: null,
+    };
+  }
+
   return {
     id: commentSource.comment_id,
     kind: 'comment',
-    readableId: parent.slug ?? 'Recurso no disponible',
-    title: parent.slug === null || parent.slug === undefined ? 'Recurso no disponible' : parent.title,
+    readableId: parent.slug,
+    title: parent.title,
     to: { name: 'notes', params: { slug: parent.slug } },
   };
 }
@@ -149,7 +159,16 @@ const isEmpty = computed(() => rows.value.length === 0 && backlinkRows.value.len
         :data-backlink-id="row.id"
       >
         <Chip>{{ row.kind }}</Chip>
+        <span
+          v-if="row.to === null"
+          data-backlink-unavailable
+          class="atl-ref-target flex items-baseline min-w-0"
+          style="gap: 6px;"
+        >
+          Recurso no disponible
+        </span>
         <RouterLink
+          v-else
           :to="row.to"
           class="atl-ref-target flex items-baseline min-w-0"
           style="gap: 6px;"

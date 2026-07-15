@@ -30,6 +30,7 @@ const commentAttachments = {
   isUploading: () => false,
   isDownloading: () => false,
   isDeleting: () => false,
+  reload: vi.fn().mockResolvedValue(undefined),
   upload: vi.fn().mockResolvedValue(null),
   download: vi.fn().mockResolvedValue(undefined),
   delete: vi.fn().mockResolvedValue(true),
@@ -410,6 +411,17 @@ describe('ActivityComments feed (ATL-19)', () => {
     );
     expect(commentAttachments.upload).toHaveBeenCalledWith('c1', file);
     expect(commentAttachments.contentUrl).toHaveBeenCalledWith('c1', 'image-1');
+  });
+
+  it('binds attachment-list retry to the current published task comment', async () => {
+    useTaskDetailStore()._setForTest({ comments: [comment('c1', 'Mine', 'me', 'user', 'Me')] });
+    signInAs('me');
+
+    const wrapper = mountFeed();
+    const retry = wrapper.getComponent(CommentCard).props('onReloadAttachments') as () => Promise<void>;
+    await retry();
+
+    expect(commentAttachments.reload).toHaveBeenCalledWith('c1');
   });
 
   it('saves an inline edit via editComment and exits edit mode', async () => {
