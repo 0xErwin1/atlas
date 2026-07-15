@@ -901,6 +901,7 @@ watch(title, (t) => {
         :status="documents.backlinksStatus"
         :error="documents.backlinksError"
         @navigate="(s) => router.push({ name: 'notes', params: { slug: s } })"
+        @navigate-task="(readableId) => router.push({ name: 'task-detail', params: { readableId } })"
         @retry="slug && documents.loadBacklinks(ws, slug)"
       />
     </template>

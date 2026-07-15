@@ -87,6 +87,29 @@ describe('ReferenceList', () => {
     expect(row.get('a.atl-ref-target').attributes('href')).toBe('/t/task/ATL-7');
   });
 
+  it('uses each authorized comment source identity and parent route for comment backlinks', () => {
+    const wrapper = mountList(
+      [],
+      [
+        {
+          source_task_id: 'legacy-task',
+          source_readable_id: 'ATL-legacy',
+          source_title: 'Legacy source',
+          kind: 'comment',
+          comment_source: {
+            type: 'comment',
+            comment_id: 'comment-7',
+            parent: { type: 'document', id: 'note-7', slug: 'source-note', title: 'Source note' },
+          },
+        },
+      ],
+    );
+
+    const row = wrapper.get('[data-backlink-id="comment-7"]');
+    expect(row.text()).toContain('Source note');
+    expect(row.get('a.atl-ref-target').attributes('href')).toBe('/n/source-note');
+  });
+
   it('labels merged and broken wikilinks and emits only an actionable manual reference id', async () => {
     const wrapper = mountList([
       reference({

@@ -61,15 +61,39 @@ interface BacklinkRow {
   to: RouteLocationRaw;
 }
 
-// The backlinks endpoint only returns live source tasks, so every backlink is
-// navigable — no broken state to render.
+function commentBacklinkRow(commentSource: NonNullable<TaskBacklinkDto['comment_source']>): BacklinkRow {
+  const { parent } = commentSource;
+
+  if (parent.type === 'task') {
+    return {
+      id: commentSource.comment_id,
+      kind: 'comment',
+      readableId: parent.readable_id,
+      title: parent.title,
+      to: { name: 'task-detail', params: { readableId: parent.readable_id } },
+    };
+  }
+
+  return {
+    id: commentSource.comment_id,
+    kind: 'comment',
+    readableId: parent.slug ?? 'Recurso no disponible',
+    title: parent.slug === null || parent.slug === undefined ? 'Recurso no disponible' : parent.title,
+    to: { name: 'notes', params: { slug: parent.slug } },
+  };
+}
+
 const backlinkRows = computed<BacklinkRow[]>(() =>
   props.backlinks.map((b) => ({
-    id: b.source_task_id,
-    kind: b.kind,
-    readableId: b.source_readable_id,
-    title: b.source_title,
-    to: { name: 'task-detail', params: { readableId: b.source_readable_id } },
+    ...(b.comment_source === null || b.comment_source === undefined
+      ? {
+          id: b.source_task_id,
+          kind: b.kind,
+          readableId: b.source_readable_id,
+          title: b.source_title,
+          to: { name: 'task-detail', params: { readableId: b.source_readable_id } },
+        }
+      : commentBacklinkRow(b.comment_source)),
   })),
 );
 
