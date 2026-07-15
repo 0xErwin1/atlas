@@ -102,6 +102,24 @@ function mountPanel() {
   });
 }
 
+function mountPanelWithRealEditor() {
+  return mount(DocumentComments, {
+    props: { ws: 'acme', slug: 'my-doc' },
+    global: { plugins: [testRouter], stubs: { CommentComposer: true, teleport: true } },
+  });
+}
+
+function droppedImage(file: File): DataTransfer {
+  return { files: [file], items: [] } as unknown as DataTransfer;
+}
+
+function enableCodeMirrorDropCoordinates(): void {
+  Object.defineProperty(Range.prototype, 'getClientRects', {
+    configurable: true,
+    value: () => [],
+  });
+}
+
 function menuItem(wrapper: VueWrapper, label: string): DOMWrapper<Element> | undefined {
   return wrapper.findAll('[role="menuitem"]').find((node) => node.text().trim() === label);
 }
@@ -287,6 +305,38 @@ describe('DocumentComments (ATL-37)', () => {
     );
     expect(commentAttachments.upload).toHaveBeenCalledWith('c1', file);
     expect(commentAttachments.contentUrl).toHaveBeenCalledWith('c1', 'image-1');
+  });
+
+  it('drops an image through the real document comment editor and saves the canonical Markdown', async () => {
+    const store = setup([comment('c1', 'Original', 'me', 'user', 'Me')]);
+    const editComment = vi.spyOn(store, 'editComment').mockResolvedValue(true);
+    const image = new File(['image'], 'diagram.png', { type: 'image/png' });
+    commentAttachments.upload.mockResolvedValue({ id: 'image-1' });
+    commentAttachments.contentUrl.mockReturnValue(
+      '/api/workspaces/acme/documents/my-doc/comments/c1/attachments/image-1',
+    );
+    signInAs('me');
+    enableCodeMirrorDropCoordinates();
+
+    const wrapper = mountPanelWithRealEditor();
+    await wrapper.get('[data-comment-id="c1"] [aria-label="Comment actions"]').trigger('click');
+    await menuItem(wrapper, 'Edit')?.trigger('click');
+    await wrapper.get('[data-comment-id="c1"] .cm-content').trigger('drop', {
+      clientX: 0,
+      clientY: 0,
+      dataTransfer: droppedImage(image),
+    });
+    await flushPromises();
+    await wrapper.get('[data-comment-id="c1"] [data-test="comment-edit-save"]').trigger('click');
+    await flushPromises();
+
+    expect(commentAttachments.upload).toHaveBeenCalledWith('c1', image);
+    expect(editComment).toHaveBeenCalledWith(
+      'acme',
+      'my-doc',
+      'c1',
+      '![diagram](/api/workspaces/acme/documents/my-doc/comments/c1/attachments/image-1)\nOriginal',
+    );
   });
 
   it('binds attachment-list retry to the current published document comment', async () => {
