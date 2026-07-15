@@ -21,17 +21,6 @@ const comment = (id: string, body: string) => ({
   updated_at: `2026-01-01T00:00:0${id}Z`,
 });
 
-const attachment = (id: string, fileName: string) => ({
-  id,
-  comment_id: 'comment-1',
-  file_name: fileName,
-  content_type: 'text/plain',
-  size_bytes: 4,
-  sha256: 'digest-not-exposed-by-state',
-  created_at: '2026-01-01T00:00:00Z',
-  actor: null,
-});
-
 describe('useCommentFeed', () => {
   beforeEach(() => {
     GET.mockReset();
@@ -135,105 +124,5 @@ describe('useCommentFeed', () => {
     expect(feed.entries.value).toEqual([]);
     expect(feed.status.value).toBe('error');
     expect(feed.error.value).toBe('No permitido');
-  });
-
-  it('runs the task comment attachment lifecycle with isolated loading and error state', async () => {
-    GET.mockResolvedValueOnce({ data: [attachment('attachment-1', 'existing.txt')] }).mockResolvedValueOnce({
-      data: new Blob(['download']),
-    });
-    POST.mockResolvedValueOnce({ data: attachment('attachment-2', 'new.txt') });
-    DELETE.mockResolvedValueOnce({});
-
-    const feed = useCommentFeed();
-    const target = { kind: 'task' as const, ws: 'acme', readableId: 'ATL-1' };
-    await feed.loadAttachments(target, 'comment-1');
-    await feed.uploadAttachment(target, 'comment-1', new File(['new'], 'new.txt', { type: 'text/plain' }));
-    const downloaded = await feed.downloadAttachment(target, 'comment-1', 'attachment-2');
-    await feed.deleteAttachment(target, 'comment-1', 'attachment-1');
-
-    expect(feed.attachments.value['comment-1']?.map((item) => item.file_name)).toEqual(['new.txt']);
-    expect(downloaded).toBeInstanceOf(Blob);
-    expect(POST.mock.calls[0]?.[0]).toContain('/tasks/{readable_id}/comments/{comment_id}/attachments');
-    expect(feed.attachmentError.value['comment-1']).toBeUndefined();
-  });
-
-  it('uploads and deletes document attachments with raw file bytes and canonical headers', async () => {
-    GET.mockResolvedValueOnce({ data: [attachment('attachment-1', 'existing.txt')] }).mockResolvedValueOnce({
-      error: { hint: 'Download denied' },
-    });
-    POST.mockResolvedValueOnce({ data: attachment('attachment-2', 'new.txt') });
-    DELETE.mockResolvedValueOnce({});
-
-    const feed = useCommentFeed();
-    const target = { kind: 'document' as const, ws: 'acme', slug: 'note' };
-    await feed.loadAttachments(target, 'comment-1');
-    const file = new File(['new'], 'new.txt', { type: 'text/plain' });
-    const uploaded = await feed.uploadAttachment(target, 'comment-1', file);
-    const downloaded = await feed.downloadAttachment(target, 'comment-1', 'attachment-1');
-    const deleted = await feed.deleteAttachment(target, 'comment-1', 'attachment-1');
-
-    expect(GET.mock.calls[0]?.[0]).toContain('/documents/{slug}/comments/{comment_id}/attachments');
-    expect(POST.mock.calls[0]?.[0]).toBe(
-      '/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments',
-    );
-    expect(POST.mock.calls[0]?.[1]).toMatchObject({
-      body: [110, 101, 119],
-      params: { header: { 'x-file-name': 'new.txt' } },
-      headers: { 'Content-Type': 'text/plain' },
-    });
-    expect(POST.mock.calls[0]?.[1]?.bodySerializer([110, 101, 119])).toBe(file);
-    expect(uploaded).toMatchObject({ id: 'attachment-2', file_name: 'new.txt' });
-    expect(downloaded).toBeNull();
-    expect(deleted).toBe(true);
-    expect(feed.attachments.value['comment-1']).toEqual([
-      expect.objectContaining({ id: 'attachment-2', file_name: 'new.txt' }),
-    ]);
-    expect(feed.attachmentError.value['comment-1']).toBeUndefined();
-  });
-
-  it('clears stale attachment loading state after switching targets', async () => {
-    let resolveTask: (value: unknown) => void = () => {};
-    GET.mockReturnValueOnce(
-      new Promise((resolve) => {
-        resolveTask = resolve;
-      }),
-    ).mockResolvedValueOnce({ data: [attachment('attachment-2', 'document.txt')] });
-
-    const feed = useCommentFeed();
-    const task = { kind: 'task' as const, ws: 'acme', readableId: 'ATL-1' };
-    const document = { kind: 'document' as const, ws: 'acme', slug: 'note' };
-    const stale = feed.loadAttachments(task, 'task-comment');
-
-    await feed.loadAttachments(document, 'document-comment');
-    resolveTask({ data: [attachment('attachment-1', 'task.txt')] });
-    await stale;
-
-    expect(feed.isAttachmentListLoading('task-comment')).toBe(false);
-    expect(feed.isAttachmentListLoading('document-comment')).toBe(false);
-    expect(feed.attachments.value['task-comment']).toBeUndefined();
-    expect(feed.attachments.value['document-comment']).toEqual([
-      expect.objectContaining({ id: 'attachment-2', file_name: 'document.txt' }),
-    ]);
-  });
-
-  it('does not let an older same-comment list overwrite a newer upload', async () => {
-    let resolveList: (value: unknown) => void = () => {};
-    GET.mockReturnValueOnce(
-      new Promise((resolve) => {
-        resolveList = resolve;
-      }),
-    );
-    POST.mockResolvedValueOnce({ data: attachment('attachment-2', 'new.txt') });
-
-    const feed = useCommentFeed();
-    const target = { kind: 'task' as const, ws: 'acme', readableId: 'ATL-1' };
-    const staleList = feed.loadAttachments(target, 'comment-1');
-    await feed.uploadAttachment(target, 'comment-1', new File(['new'], 'new.txt'));
-    resolveList({ data: [attachment('attachment-1', 'old.txt')] });
-    await staleList;
-
-    expect(feed.attachments.value['comment-1']).toEqual([
-      expect.objectContaining({ id: 'attachment-2', file_name: 'new.txt' }),
-    ]);
   });
 });

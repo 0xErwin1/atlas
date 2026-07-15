@@ -12,6 +12,7 @@ import CommentComposer from '@/components/comments/CommentComposer.vue';
 import EmptyState from '@/components/states/EmptyState.vue';
 import ErrorState from '@/components/states/ErrorState.vue';
 import LoadingState from '@/components/states/LoadingState.vue';
+import { useCommentAttachments } from '@/composables/useCommentAttachments';
 import {
   type AvailableCommentLinkTarget,
   type CommentParentTarget,
@@ -37,14 +38,23 @@ const commentEntries = commentFeed.entries;
 const commentHasMore = commentFeed.hasMore;
 const commentStatus = commentFeed.status;
 const commentError = commentFeed.error;
-const commentAttachments = commentFeed.attachments;
-const commentAttachmentError = commentFeed.attachmentError;
 const commentTarget = computed<CommentParentTarget>(() => ({
   kind: 'document',
   ws: props.ws,
   slug: props.slug,
 }));
-const attachmentCommentsLoaded = new Set<string>();
+const {
+  items: commentAttachmentItems,
+  error: commentAttachmentError,
+  isListing: isAttachmentListing,
+  isUploading: isAttachmentUploading,
+  isDownloading: isAttachmentDownloading,
+  isDeleting: isAttachmentDeleting,
+  upload: uploadCommentAttachment,
+  download: downloadCommentAttachment,
+  delete: deleteCommentAttachment,
+  contentUrl: attachmentContentUrl,
+} = useCommentAttachments(commentTarget, commentEntries);
 
 const currentActorId = computed(() => auth.user?.id ?? null);
 
@@ -97,53 +107,12 @@ async function navigateCommentTarget(target: AvailableCommentLinkTarget, comment
   }
 }
 
-function attachmentUrl(commentId: string, attachmentId: string): string {
-  return `/api/workspaces/${props.ws}/documents/${props.slug}/comments/${commentId}/attachments/${attachmentId}`;
-}
-
-async function uploadCommentAttachment(commentId: string, file: File) {
-  return commentFeed.uploadAttachment(commentTarget.value, commentId, file);
-}
-
-async function downloadCommentAttachment(commentId: string, attachmentId: string): Promise<Blob | null> {
-  const blob = await commentFeed.downloadAttachment(commentTarget.value, commentId, attachmentId);
-  if (blob === null) return null;
-
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download =
-    commentFeed.attachments.value[commentId]?.find((item) => item.id === attachmentId)?.file_name ??
-    'attachment';
-  anchor.click();
-  URL.revokeObjectURL(url);
-  return blob;
-}
-
-async function deleteCommentAttachment(commentId: string, attachmentId: string): Promise<boolean> {
-  return commentFeed.deleteAttachment(commentTarget.value, commentId, attachmentId);
-}
-
 watch(
   commentTarget,
   (target) => {
-    attachmentCommentsLoaded.clear();
     void commentFeed.load(target);
   },
   { immediate: true },
-);
-
-watch(
-  () => commentFeed.entries.value,
-  (entries) => {
-    for (const entry of entries) {
-      if (entry.type !== 'comment' || attachmentCommentsLoaded.has(entry.comment.id)) continue;
-
-      attachmentCommentsLoaded.add(entry.comment.id);
-      void commentFeed.loadAttachments(commentTarget.value, entry.comment.id);
-    }
-  },
-  { deep: true, immediate: true },
 );
 </script>
 
@@ -179,19 +148,19 @@ watch(
           :on-save="onSave"
           :on-delete="onDelete"
           :links="entry.links"
-          :attachments="commentAttachments[entry.comment.id] ?? []"
+          :attachments="commentAttachmentItems[entry.comment.id] ?? []"
           :can-manage-attachments="canDelete(entry.comment)"
-          :attachment-uploading="commentFeed.isAttachmentUploadLoading(entry.comment.id)"
-          :attachment-listing="commentFeed.isAttachmentListLoading(entry.comment.id)"
+          :attachment-uploading="isAttachmentUploading(entry.comment.id)"
+          :attachment-listing="isAttachmentListing(entry.comment.id)"
           :attachment-error="commentAttachmentError[entry.comment.id]"
-          :is-attachment-downloading="(attachmentId) => commentFeed.isAttachmentDownloadLoading(`${entry.comment.id}:${attachmentId}`)"
-          :is-attachment-deleting="(attachmentId) => commentFeed.isAttachmentDeleteLoading(`${entry.comment.id}:${attachmentId}`)"
+          :is-attachment-downloading="(attachmentId) => isAttachmentDownloading(`${entry.comment.id}:${attachmentId}`)"
+          :is-attachment-deleting="(attachmentId) => isAttachmentDeleting(`${entry.comment.id}:${attachmentId}`)"
           :on-upload-attachment="(file) => uploadCommentAttachment(entry.comment.id, file)"
           :on-download-attachment="(attachmentId) => downloadCommentAttachment(entry.comment.id, attachmentId)"
           :on-delete-attachment="(attachmentId) => deleteCommentAttachment(entry.comment.id, attachmentId)"
           :upload-image="async (file) => {
             const attachment = await uploadCommentAttachment(entry.comment.id, file);
-            return attachment === null ? null : attachmentUrl(entry.comment.id, attachment.id);
+            return attachment === null ? null : attachmentContentUrl(entry.comment.id, attachment.id);
           }"
           @navigate-link="navigateCommentTarget"
         />
