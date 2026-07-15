@@ -124,7 +124,7 @@ describe('useWorkspaceTasksStore', () => {
     expect(store.error).toBe('Failed to load tasks');
   });
 
-  it('load skips the request when params and workspace are unchanged (cache hit)', async () => {
+  it('re-fetches without an authoritative cache scope even when params are unchanged', async () => {
     GET.mockResolvedValue({
       data: { items: [], has_more: false, next_cursor: null },
       error: undefined,
@@ -134,7 +134,7 @@ describe('useWorkspaceTasksStore', () => {
     await store.load('ws', { assignee: 'me' });
     await store.load('ws', { assignee: 'me' });
 
-    expect(GET).toHaveBeenCalledOnce();
+    expect(GET).toHaveBeenCalledTimes(2);
   });
 
   it('load re-fetches when force is true even with same params', async () => {

@@ -1,11 +1,16 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
+import { z } from 'zod';
 import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
+import { getResourceCachePrincipal, invalidateTaskCache, resourceCache } from '@/cache/cacheRuntime';
+import { buildCacheKey, CACHE_CADENCE } from '@/cache/resourceCache';
 import { errorHint } from '@/lib/apiError';
 import { collectPaged } from '@/lib/pagination';
 import { useLabelColorsStore } from '@/stores/labelColors';
 import { useUiStore } from '@/stores/ui';
+import { useWorkspaceStore } from '@/stores/workspace';
+import { useWorkspaceTasksStore } from '@/stores/workspaceTasks';
 
 export type BoardDto = components['schemas']['BoardDto'];
 export type BoardSummaryDto = components['schemas']['BoardSummaryDto'];
@@ -13,6 +18,107 @@ export type ColumnDto = components['schemas']['ColumnDto'];
 export type TaskSummaryDto = components['schemas']['TaskSummaryDto'];
 export type ActorDto = components['schemas']['ActorDto'];
 export type TaskDto = components['schemas']['TaskDto'];
+
+type BoardComposite = {
+  board: BoardDto;
+  columns: ColumnDto[];
+  tasks: TaskSummaryDto[];
+};
+
+const boardCompositeSchema: z.ZodType<BoardComposite> = z.object({
+  board: z.object({
+    created_at: z.string(),
+    created_by: z
+      .object({
+        account_status: z.string().nullable().optional(),
+        display_name: z.string().nullable().optional(),
+        id: z.string().min(1),
+        key_type: z.string().nullable().optional(),
+        type: z.string(),
+      })
+      .passthrough(),
+    id: z.string().min(1),
+    name: z.string(),
+    project_id: z.string().min(1),
+    updated_at: z.string(),
+    workspace_id: z.string().min(1),
+  }),
+  columns: z.array(
+    z.object({
+      board_id: z.string().min(1),
+      color: z.string().nullable().optional(),
+      created_at: z.string(),
+      id: z.string().min(1),
+      name: z.string(),
+      position_key: z.string(),
+      updated_at: z.string(),
+    }),
+  ),
+  tasks: z.array(
+    z.object({
+      assignees: z
+        .array(
+          z
+            .object({
+              account_status: z.string().nullable().optional(),
+              display_name: z.string().nullable().optional(),
+              id: z.string().min(1),
+              key_type: z.string().nullable().optional(),
+              type: z.string(),
+            })
+            .passthrough(),
+        )
+        .optional(),
+      board_id: z.string().min(1),
+      board_name: z.string(),
+      column_id: z.string().min(1),
+      column_name: z.string(),
+      estimate: z.number().nullable().optional(),
+      id: z.string().min(1),
+      labels: z.array(z.string()).optional(),
+      priority: z.string().nullable().optional(),
+      readable_id: z.string(),
+      subtask_count: z.number(),
+      title: z.string(),
+      updated_at: z.string(),
+    }),
+  ),
+});
+
+function boardCompositePayloadSchema(boardId: string, workspaceId: string): z.ZodType<BoardComposite> {
+  return boardCompositeSchema.superRefine((composite, context) => {
+    if (composite.board.id !== boardId) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['board', 'id'], message: 'Board mismatch' });
+    }
+    if (composite.board.workspace_id !== workspaceId) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['board', 'workspace_id'],
+        message: 'Workspace mismatch',
+      });
+    }
+
+    for (const [index, column] of composite.columns.entries()) {
+      if (column.board_id !== boardId) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['columns', index, 'board_id'],
+          message: 'Board mismatch',
+        });
+      }
+    }
+
+    for (const [index, task] of composite.tasks.entries()) {
+      if (task.board_id !== boardId) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['tasks', index, 'board_id'],
+          message: 'Board mismatch',
+        });
+      }
+    }
+  });
+}
 
 /**
  * Reconcile shape: a subset of TaskDto fields we need to update a summary after a move.
@@ -72,6 +178,8 @@ export const useBoardsStore = defineStore('boards', () => {
   let activeColumnsRequest: object | null = null;
   let activeTasksRequest: object | null = null;
   let activeTaskDetailsRequest: object | null = null;
+  let activeBoardCacheKey: string | null = null;
+  let activeBoardCacheScope: { boardId: string; workspaceId: string } | null = null;
 
   // Stable empty-array reference per column. Returning a fresh `[]` for an empty
   // column on every call makes the kanban draggable's bound list change identity
@@ -272,6 +380,8 @@ export const useBoardsStore = defineStore('boards', () => {
     }
 
     await loadTasks(ws, boardId);
+    await evictActiveBoardCache(boardId);
+    if (data.readable_id !== undefined) await invalidateTaskCaches(ws, data.readable_id, boardId);
     return data.readable_id ?? null;
   }
 
@@ -308,6 +418,62 @@ export const useBoardsStore = defineStore('boards', () => {
     }
 
     return grouped;
+  }
+
+  function publishBoardComposite(composite: BoardComposite): void {
+    board.value = composite.board;
+    columns.value = [...composite.columns].sort((a, b) => a.position_key.localeCompare(b.position_key));
+    tasks.value = groupTasks(composite.tasks);
+    useLabelColorsStore().recordTags(composite.tasks.flatMap((task) => task.labels ?? []));
+  }
+
+  function clearBoardComposite(): void {
+    board.value = null;
+    columns.value = [];
+    tasks.value = new Map();
+  }
+
+  function deactivateActiveBoardCache(): void {
+    if (activeBoardCacheKey !== null) resourceCache.deactivate(activeBoardCacheKey);
+    activeBoardCacheKey = null;
+    activeBoardCacheScope = null;
+  }
+
+  async function evictActiveBoardCache(boardId = board.value?.id): Promise<void> {
+    if (
+      boardId === undefined ||
+      activeBoardCacheScope === null ||
+      activeBoardCacheScope.boardId !== boardId
+    ) {
+      return;
+    }
+
+    await resourceCache.purgeTags(
+      [`board:${boardId}`],
+      getResourceCachePrincipal(),
+      activeBoardCacheScope.workspaceId,
+    );
+  }
+
+  async function retractDeniedBoard(
+    boardId: string,
+    workspaceId: string | undefined,
+    cacheKey: string | null,
+  ): Promise<void> {
+    if (cacheKey !== null) resourceCache.deactivate(cacheKey);
+    if (workspaceId !== undefined) {
+      await resourceCache.purgeTags([`board:${boardId}`], getResourceCachePrincipal(), workspaceId);
+    }
+    deactivateActiveBoardCache();
+    clearBoardComposite();
+  }
+
+  async function invalidateTaskCaches(ws: string, readableId: string, boardId?: string): Promise<void> {
+    const workspaceId = useWorkspaceStore().workspaceIdForSlug(ws);
+    if (workspaceId === null) return;
+
+    await invalidateTaskCache(workspaceId, readableId, boardId);
+    await useWorkspaceTasksStore().refreshCurrent();
   }
 
   type SettledRequest<T> = { value: T } | { cause: unknown };
@@ -412,6 +578,7 @@ export const useBoardsStore = defineStore('boards', () => {
     }
 
     columns.value = [...columns.value, data].sort((a, b) => a.position_key.localeCompare(b.position_key));
+    await evictActiveBoardCache(boardId);
     return data;
   }
 
@@ -443,6 +610,7 @@ export const useBoardsStore = defineStore('boards', () => {
     columns.value = columns.value
       .map((c) => (c.id === columnId ? data : c))
       .sort((a, b) => a.position_key.localeCompare(b.position_key));
+    await evictActiveBoardCache(boardId);
     return true;
   }
 
@@ -473,6 +641,7 @@ export const useBoardsStore = defineStore('boards', () => {
     columns.value = columns.value
       .map((c) => (c.id === columnId ? data : c))
       .sort((a, b) => a.position_key.localeCompare(b.position_key));
+    await evictActiveBoardCache(boardId);
     return true;
   }
 
@@ -489,6 +658,7 @@ export const useBoardsStore = defineStore('boards', () => {
     }
 
     columns.value = columns.value.filter((c) => c.id !== columnId);
+    await evictActiveBoardCache(boardId);
     return true;
   }
 
@@ -515,7 +685,8 @@ export const useBoardsStore = defineStore('boards', () => {
     useLabelColorsStore().recordTags(result.value.items.flatMap((task) => task.labels ?? []));
   }
 
-  async function loadBoardContents(ws: string, boardId: string): Promise<boolean> {
+  async function loadBoardContents(ws: string, boardId: string, workspaceId?: string): Promise<boolean> {
+    deactivateActiveBoardCache();
     const operation: ActiveBoardLoad = { ws, boardId, refreshColumns: false };
     activeBoardLoad = operation;
     activeBoardRequest = null;
@@ -527,67 +698,155 @@ export const useBoardsStore = defineStore('boards', () => {
     loadError.value = null;
     loadErrorStatus.value = null;
     error.value = null;
-    board.value = null;
-    columns.value = [];
-    tasks.value = new Map();
+    clearBoardComposite();
 
-    const [boardResult, initialColumnsResult, tasksResult] = await Promise.all([
-      settleRequest(fetchBoard(ws, boardId)),
-      settleRequest(fetchColumns(ws, boardId)),
-      settleRequest(fetchTasks(ws, boardId)),
-    ]);
+    const cacheKey =
+      workspaceId === undefined
+        ? null
+        : buildCacheKey({
+            principal: getResourceCachePrincipal(),
+            workspaceId,
+            resourceKind: 'task-board',
+            resourceId: boardId,
+          });
 
-    if (activeBoardLoad !== operation) return false;
+    const isCurrent = () => activeBoardLoad === operation;
 
-    let columnsResult = initialColumnsResult;
-    while (operation.refreshColumns) {
-      operation.refreshColumns = false;
-      columnsResult = await settleRequest(fetchColumns(ws, boardId));
-      if (activeBoardLoad !== operation) return false;
+    const load = async (): Promise<BoardComposite> => {
+      const [boardResult, initialColumnsResult, tasksResult] = await Promise.all([
+        settleRequest(fetchBoard(ws, boardId)),
+        settleRequest(fetchColumns(ws, boardId)),
+        settleRequest(fetchTasks(ws, boardId)),
+      ]);
+
+      let columnsResult = initialColumnsResult;
+      while (operation.refreshColumns) {
+        operation.refreshColumns = false;
+        columnsResult = await settleRequest(fetchColumns(ws, boardId));
+      }
+
+      const boardError = settledError(
+        boardResult,
+        'Failed to load board',
+        (value) => value.data !== undefined,
+      );
+      const columnsError = settledError(
+        columnsResult,
+        'Failed to load columns',
+        (value) => value.data !== undefined,
+      );
+      const tasksError = settledError(tasksResult, 'Failed to load tasks');
+      const nextError = boardError ?? columnsError ?? tasksError;
+
+      if (nextError !== null) {
+        const error = new Error(nextError) as Error & { status?: number };
+        error.status =
+          settledStatus(boardResult) ??
+          settledStatus(columnsResult) ??
+          settledStatus(tasksResult) ??
+          undefined;
+        throw error;
+      }
+
+      if (
+        !('value' in boardResult) ||
+        boardResult.value.data === undefined ||
+        !('value' in columnsResult) ||
+        columnsResult.value.data === undefined ||
+        !('value' in tasksResult)
+      ) {
+        throw new Error('Failed to load board');
+      }
+
+      return {
+        board: boardResult.value.data,
+        columns: columnsResult.value.data,
+        tasks: tasksResult.value.items,
+      };
+    };
+
+    const validateComposite =
+      workspaceId === undefined ? boardCompositeSchema : boardCompositePayloadSchema(boardId, workspaceId);
+    const publish = (composite: BoardComposite): void => {
+      if (!isCurrent()) return;
+      publishBoardComposite(validateComposite.parse(composite));
+      loading.value = false;
+    };
+
+    if (cacheKey !== null && workspaceId !== undefined && resourceCache.isAvailable()) {
+      const request = {
+        key: cacheKey,
+        payloadSchema: boardCompositePayloadSchema(boardId, workspaceId),
+        tags: [`board:${boardId}`, 'task-board', `workspace:${workspaceId}`],
+        deriveTags: (composite: BoardComposite) =>
+          composite.tasks.flatMap((task) => [`task:${task.readable_id}`, `task-uuid:${task.id}`]),
+        freshForMs: CACHE_CADENCE.primary.freshForMs,
+        activeForMs: CACHE_CADENCE.primary.activeForMs,
+        retentionForMs: 24 * 60 * 60 * 1000,
+        load,
+        publish,
+        isCurrent,
+      };
+
+      activeBoardCacheKey = cacheKey;
+      activeBoardCacheScope = { boardId, workspaceId };
+      await resourceCache.hydrate(request);
+      resourceCache.activate(request);
+
+      let fallbackRequired = false;
+      try {
+        const revalidation = await resourceCache.revalidate(request);
+        fallbackRequired = revalidation?.published === false;
+      } catch (cause) {
+        if (!isCurrent()) return false;
+
+        const error = cause as Error & { status?: number };
+        loadError.value = error.message;
+        loadErrorStatus.value = error.status ?? null;
+        if (error.status === 403 || error.status === 404) {
+          await retractDeniedBoard(boardId, workspaceId, cacheKey);
+        }
+      }
+
+      if ((fallbackRequired || !resourceCache.isAvailable()) && isCurrent()) {
+        try {
+          publish(await load());
+        } catch (cause) {
+          const error = cause as Error & { status?: number };
+          loadError.value = error.message;
+          loadErrorStatus.value = error.status ?? null;
+          if (error.status === 403 || error.status === 404) {
+            await retractDeniedBoard(boardId, workspaceId, cacheKey);
+          }
+        }
+      }
+
+      if (!isCurrent()) return false;
+      activeBoardLoad = null;
+      loading.value = false;
+      return true;
     }
 
-    const boardError = settledError(boardResult, 'Failed to load board', (value) => value.data !== undefined);
-    const columnsError = settledError(
-      columnsResult,
-      'Failed to load columns',
-      (value) => value.data !== undefined,
-    );
-    const tasksError = settledError(tasksResult, 'Failed to load tasks');
+    try {
+      publish(await load());
+    } catch (cause) {
+      if (!isCurrent()) return false;
+      const error = cause as Error & { status?: number };
+      loadError.value = error.message;
+      loadErrorStatus.value = error.status ?? null;
+      if (error.status === 403 || error.status === 404) {
+        await retractDeniedBoard(boardId, workspaceId, cacheKey);
+      }
+    }
 
+    if (!isCurrent()) return false;
     activeBoardLoad = null;
     loading.value = false;
-
-    const nextError = boardError ?? columnsError ?? tasksError;
-    if (nextError !== null) {
-      loadError.value = nextError;
-      // Only the board fetch's own status classifies "not found": a 404 from a
-      // sub-fetch (columns/tasks) must not misclassify a live board as deleted.
-      loadErrorStatus.value = settledStatus(boardResult);
-      return true;
-    }
-
-    if (
-      !('value' in boardResult) ||
-      boardResult.value.data === undefined ||
-      !('value' in columnsResult) ||
-      columnsResult.value.data === undefined ||
-      !('value' in tasksResult)
-    ) {
-      loadError.value = 'Failed to load board';
-      return true;
-    }
-
-    board.value = boardResult.value.data;
-    columns.value = [...columnsResult.value.data].sort((a, b) =>
-      a.position_key.localeCompare(b.position_key),
-    );
-    tasks.value = groupTasks(tasksResult.value.items);
-    useLabelColorsStore().recordTags(tasksResult.value.items.flatMap((task) => task.labels ?? []));
-
     return true;
   }
 
   function cancelBoardLoad(): void {
+    deactivateActiveBoardCache();
     activeBoardLoad = null;
     activeBoardRequest = null;
     activeColumnsRequest = null;
@@ -753,6 +1012,7 @@ export const useBoardsStore = defineStore('boards', () => {
       updated_at: moved.updated_at,
     };
     tasks.value.set(newColumnId, [...dest, updated]);
+    void evictActiveBoardCache();
   }
 
   /**
@@ -785,6 +1045,7 @@ export const useBoardsStore = defineStore('boards', () => {
     const dest = [...(tasks.value.get(toColumnId) ?? [])];
     dest.splice(toIndex, 0, updated);
     tasks.value.set(toColumnId, dest);
+    void evictActiveBoardCache();
   }
 
   /**
@@ -854,6 +1115,7 @@ export const useBoardsStore = defineStore('boards', () => {
       const newList = [...colTasks];
       newList[idx] = updated;
       tasks.value.set(colId, newList);
+      void evictActiveBoardCache();
       break;
     }
   }
@@ -865,6 +1127,7 @@ export const useBoardsStore = defineStore('boards', () => {
           colId,
           colTasks.filter((t) => t.id !== taskId),
         );
+        void evictActiveBoardCache();
         break;
       }
     }
@@ -905,6 +1168,9 @@ export const useBoardsStore = defineStore('boards', () => {
     if (patch.labels !== undefined) summaryPatch.labels = data.labels ?? [];
     updateTaskFields(summaryPatch);
 
+    await evictActiveBoardCache();
+    await invalidateTaskCaches(ws, readableId, data.board_id);
+
     return true;
   }
 
@@ -921,6 +1187,7 @@ export const useBoardsStore = defineStore('boards', () => {
     }
 
     if (target !== undefined) removeTaskById(target.id);
+    await invalidateTaskCaches(ws, readableId, target?.board_id);
     return true;
   }
 
@@ -955,7 +1222,10 @@ export const useBoardsStore = defineStore('boards', () => {
     // Scoped to the active board; cross-board list views update on their next load.
     if (board.value !== null) {
       await loadTasks(ws, board.value.id);
+      await evictActiveBoardCache();
     }
+
+    await invalidateTaskCaches(ws, readableId);
 
     return true;
   }
@@ -983,7 +1253,10 @@ export const useBoardsStore = defineStore('boards', () => {
 
     if (board.value !== null) {
       await loadTasks(ws, board.value.id);
+      await evictActiveBoardCache();
     }
+
+    await invalidateTaskCaches(ws, readableId);
 
     return true;
   }
@@ -1030,6 +1303,8 @@ export const useBoardsStore = defineStore('boards', () => {
     }
 
     await loadTasks(ws, boardId);
+    await evictActiveBoardCache(boardId);
+    if (created.readable_id !== undefined) await invalidateTaskCaches(ws, created.readable_id, boardId);
     return created.readable_id ?? null;
   }
 
@@ -1050,7 +1325,11 @@ export const useBoardsStore = defineStore('boards', () => {
     }
 
     const activeBoardId = board.value?.id;
-    if (activeBoardId !== undefined) await loadTasks(ws, activeBoardId);
+    if (activeBoardId !== undefined) {
+      await loadTasks(ws, activeBoardId);
+      await evictActiveBoardCache(activeBoardId);
+    }
+    await invalidateTaskCaches(ws, readableId, activeBoardId);
     return true;
   }
 

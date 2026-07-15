@@ -4,7 +4,7 @@ import Icon from '@/components/ui/Icon.vue';
 import Kbd from '@/components/ui/Kbd.vue';
 import SectionLabel from '@/components/ui/SectionLabel.vue';
 import { useOverlayEscape } from '@/composables/useOverlayEscape';
-import { getShortcutCatalog, type ShortcutMeta, type ShortcutScope } from '@/lib/keymap';
+import { formatShortcutKey, getShortcutCatalog, type ShortcutMeta, type ShortcutScope } from '@/lib/keymap';
 
 const props = defineProps<{
   open: boolean;
@@ -30,14 +30,6 @@ const shortcutsByScope = computed(() => {
   }
   return Array.from(groups.entries());
 });
-
-function displayKey(token: string): string {
-  return token
-    .replace('mod', '⌘/Ctrl')
-    .replace('shift', 'Shift')
-    .replace('escape', 'Esc')
-    .replace(/\b([a-z])\b/g, (letter) => letter.toUpperCase());
-}
 
 useOverlayEscape(
   () => props.open,
@@ -86,7 +78,7 @@ useOverlayEscape(
               <div v-for="shortcut in shortcuts" :key="shortcut.id" class="atl-shortcuts-row">
                 <span class="atl-shortcuts-label">{{ shortcut.label }}</span>
                 <span class="atl-shortcuts-keys">
-                  <Kbd v-for="key in shortcut.keys" :key="key">{{ displayKey(key) }}</Kbd>
+                  <Kbd v-for="key in shortcut.keys" :key="key">{{ formatShortcutKey(key) }}</Kbd>
                 </span>
               </div>
             </div>

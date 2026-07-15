@@ -1,7 +1,18 @@
 import { defineStore } from 'pinia';
-import { ref } from 'vue';
+import { readonly, ref } from 'vue';
 import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
+import {
+  allowResourceCache,
+  blockAndPurgeResourceCache,
+  setResourceCachePrincipal,
+} from '@/cache/cacheRuntime';
+import { isCanonicalPrincipal } from '@/cache/resourceCache';
+import {
+  disposeWorkspaceLiveUpdates,
+  setWorkspaceLiveUpdatesAuthorizationInvalidator,
+} from '@/lib/workspaceLiveUpdates';
+import { useWorkspaceStore } from '@/stores/workspace';
 
 export type MeResponse = components['schemas']['MeResponse'];
 
@@ -30,32 +41,68 @@ const UNREACHABLE_PROBLEM: NonNullable<LoginResult['problem']> = {
   hint: 'The Atlas server is not responding. Check it is running and try again.',
 };
 
+function cachePrincipal(data: MeResponse): string | undefined {
+  const principalId = data.principal_type === 'api_key' ? data.agent?.id : data.id;
+  if (typeof principalId !== 'string') return undefined;
+
+  const principal = `${data.principal_type}:${principalId}`;
+  return isCanonicalPrincipal(principal) ? principal : undefined;
+}
+
 export const useAuthStore = defineStore('auth', () => {
   const user = ref<MeResponse | null>(null);
   const isAuthenticated = ref(false);
   const apiKeyWarning = ref(false);
+  const sessionGeneration = ref(0);
+  let fetchGeneration = 0;
 
-  function hydrateUser(data: MeResponse) {
+  function hydrateUser(data: MeResponse, principal: string) {
+    setResourceCachePrincipal(principal);
+    allowResourceCache();
     user.value = data;
     isAuthenticated.value = true;
     apiKeyWarning.value = data.principal_type === 'api_key';
   }
 
-  function clearUser() {
+  function clearUser(): Promise<boolean> {
+    sessionGeneration.value += 1;
+    const purge = blockAndPurgeResourceCache();
+    setResourceCachePrincipal(undefined);
+    disposeWorkspaceLiveUpdates();
+    useWorkspaceStore().clearWorkspaceAliases();
     user.value = null;
     isAuthenticated.value = false;
     apiKeyWarning.value = false;
+    return purge;
   }
 
+  setWorkspaceLiveUpdatesAuthorizationInvalidator(clearUser);
+
   async function fetchMe(): Promise<void> {
+    const requestGeneration = ++fetchGeneration;
+    const requestSessionGeneration = sessionGeneration.value;
     const { data, error } = await wrappedClient.GET('/api/auth/me', {});
 
+    if (requestGeneration !== fetchGeneration || requestSessionGeneration !== sessionGeneration.value) return;
+
     if (error || !data) {
-      clearUser();
+      await clearUser();
       return;
     }
 
-    hydrateUser(data);
+    const nextPrincipal = cachePrincipal(data);
+    if (nextPrincipal === undefined) {
+      await clearUser();
+      return;
+    }
+
+    const currentPrincipal = user.value === null ? undefined : cachePrincipal(user.value);
+    if (currentPrincipal !== undefined && currentPrincipal !== nextPrincipal) {
+      const purged = await clearUser();
+      if (!purged || requestGeneration !== fetchGeneration) return;
+    }
+
+    hydrateUser(data, nextPrincipal);
   }
 
   async function login(credentials: { username: string; password: string }): Promise<LoginResult> {
@@ -78,12 +125,13 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function logout(): Promise<void> {
+    const purged = await clearUser();
+    if (!purged) return;
+
     try {
       await wrappedClient.POST('/api/auth/logout', {});
     } catch {
       // failure is intentional: always clear local state regardless of server response
-    } finally {
-      clearUser();
     }
   }
 
@@ -117,6 +165,7 @@ export const useAuthStore = defineStore('auth', () => {
     user,
     isAuthenticated,
     apiKeyWarning,
+    sessionGeneration: readonly(sessionGeneration),
     clearUser,
     fetchMe,
     login,

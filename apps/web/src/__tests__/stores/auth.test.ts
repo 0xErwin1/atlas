@@ -8,14 +8,57 @@ vi.mock('@/api/wrapper', () => ({
   },
 }));
 
+vi.mock('@/lib/workspaceLiveUpdates', () => ({
+  disposeWorkspaceLiveUpdates: vi.fn(),
+  setWorkspaceLiveUpdatesAuthorizationInvalidator: vi.fn(),
+}));
+
+vi.mock('@/cache/cacheRuntime', () => ({
+  allowResourceCache: vi.fn(),
+  blockAndPurgeResourceCache: vi.fn().mockResolvedValue(true),
+  setResourceCachePrincipal: vi.fn(),
+}));
+
 import { wrappedClient } from '@/api/wrapper';
-import { useAuthStore } from '@/stores/auth';
+import {
+  allowResourceCache,
+  blockAndPurgeResourceCache,
+  setResourceCachePrincipal,
+} from '@/cache/cacheRuntime';
+import {
+  disposeWorkspaceLiveUpdates,
+  setWorkspaceLiveUpdatesAuthorizationInvalidator,
+} from '@/lib/workspaceLiveUpdates';
+import { type MeResponse, useAuthStore } from '@/stores/auth';
 
 const mockGet = wrappedClient.GET as ReturnType<typeof vi.fn>;
 const mockPost = wrappedClient.POST as ReturnType<typeof vi.fn>;
 
-const meOk = (username: string, principal_type = 'user') =>
-  Promise.resolve({ data: { principal_type, username }, error: undefined });
+const meOk = (username: string, id = '019ef171-bbcf-7b90-9be6-5dbb382afd08') =>
+  Promise.resolve({
+    data: {
+      agent: null,
+      id,
+      is_root: false,
+      is_system_admin: false,
+      principal_type: 'user',
+      username,
+    } satisfies MeResponse,
+    error: undefined,
+  });
+
+const apiKeyMe = (username: string, agentId = '019ef171-bbcf-7b90-9be6-5dbb382afd08') =>
+  Promise.resolve({
+    data: {
+      agent: { id: agentId, name: username, scopes: [] },
+      id: null,
+      is_root: false,
+      is_system_admin: false,
+      principal_type: 'api_key',
+      username,
+    } satisfies MeResponse,
+    error: undefined,
+  });
 
 const meErr = () =>
   Promise.resolve({
@@ -53,6 +96,31 @@ describe('useAuthStore', () => {
     expect(store.user).toBeNull();
   });
 
+  it('disposes live updates before clearing authentication state', () => {
+    const store = useAuthStore();
+    store.user = { username: 'alice' } as MeResponse;
+    store.isAuthenticated = true;
+
+    store.clearUser();
+
+    expect(blockAndPurgeResourceCache).toHaveBeenCalledOnce();
+    expect(disposeWorkspaceLiveUpdates).toHaveBeenCalledOnce();
+    expect(store.user).toBeNull();
+    expect(store.isAuthenticated).toBe(false);
+  });
+
+  it('registers the default broker invalidator through clearUser', () => {
+    const store = useAuthStore();
+    store.user = { username: 'alice' } as MeResponse;
+    store.isAuthenticated = true;
+
+    const invalidate = vi.mocked(setWorkspaceLiveUpdatesAuthorizationInvalidator).mock.calls[0]?.[0];
+    invalidate?.();
+
+    expect(disposeWorkspaceLiveUpdates).toHaveBeenCalledOnce();
+    expect(store.isAuthenticated).toBe(false);
+  });
+
   it('fetchMe 200 hydrates user and sets isAuthenticated true (REQ-W8)', async () => {
     mockGet.mockReturnValueOnce(meOk('alice'));
 
@@ -62,15 +130,126 @@ describe('useAuthStore', () => {
     expect(store.isAuthenticated).toBe(true);
     expect(store.user?.username).toBe('alice');
     expect(store.apiKeyWarning).toBe(false);
+    expect(allowResourceCache).toHaveBeenCalledOnce();
+    expect(setResourceCachePrincipal).toHaveBeenCalledWith('user:019ef171-bbcf-7b90-9be6-5dbb382afd08');
+  });
+
+  it('purges and blocks the prior principal before accepting a different /auth/me identity', async () => {
+    const store = useAuthStore();
+    store.user = {
+      id: '019ef171-bbcf-7b90-9be6-5dbb382afd09',
+      principal_type: 'user',
+      username: 'prior',
+    } as MeResponse;
+    store.isAuthenticated = true;
+    mockGet.mockReturnValueOnce(meOk('current'));
+
+    await store.fetchMe();
+
+    expect(blockAndPurgeResourceCache).toHaveBeenCalledOnce();
+    expect(setResourceCachePrincipal).toHaveBeenNthCalledWith(1, undefined);
+    expect(setResourceCachePrincipal).toHaveBeenLastCalledWith('user:019ef171-bbcf-7b90-9be6-5dbb382afd08');
+    expect(store.user?.username).toBe('current');
+  });
+
+  it('does not accept a recovered identity when the prior principal purge fails', async () => {
+    const store = useAuthStore();
+    store.user = {
+      id: '019ef171-bbcf-7b90-9be6-5dbb382afd09',
+      principal_type: 'user',
+      username: 'prior',
+    } as MeResponse;
+    store.isAuthenticated = true;
+    vi.mocked(blockAndPurgeResourceCache).mockResolvedValueOnce(false);
+    mockGet.mockReturnValueOnce(meOk('current'));
+
+    await store.fetchMe();
+
+    expect(store.isAuthenticated).toBe(false);
+    expect(store.user).toBeNull();
+    expect(allowResourceCache).not.toHaveBeenCalled();
+  });
+
+  it('does not let a response from before clearUser revive a prior session over a newer fetch', async () => {
+    let resolvePrior: ((value: Awaited<ReturnType<typeof meOk>>) => void) | undefined;
+    mockGet.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePrior = resolve;
+        }),
+    );
+    mockGet.mockReturnValueOnce(meOk('new-session'));
+    const store = useAuthStore();
+
+    const priorFetch = store.fetchMe();
+    await store.clearUser();
+    await store.fetchMe();
+    resolvePrior?.(await meOk('prior-session'));
+    await priorFetch;
+
+    expect(store.isAuthenticated).toBe(true);
+    expect(store.user?.username).toBe('new-session');
+  });
+
+  it('forgets the cache principal before beginning the logout purge', () => {
+    const store = useAuthStore();
+    store.user = { username: 'alice' } as MeResponse;
+    store.isAuthenticated = true;
+
+    store.clearUser();
+
+    expect(setResourceCachePrincipal).toHaveBeenCalledWith(undefined);
+    expect(blockAndPurgeResourceCache).toHaveBeenCalledOnce();
   });
 
   it('api_key principal_type sets apiKeyWarning (REQ-W8)', async () => {
-    mockGet.mockReturnValueOnce(meOk('agent', 'api_key'));
+    mockGet.mockReturnValueOnce(apiKeyMe('agent'));
 
     const store = useAuthStore();
     await store.fetchMe();
 
     expect(store.apiKeyWarning).toBe(true);
+    expect(setResourceCachePrincipal).toHaveBeenCalledWith('api_key:019ef171-bbcf-7b90-9be6-5dbb382afd08');
+  });
+
+  it('purges an API-key session before accepting a different recovered API-key identity', async () => {
+    const store = useAuthStore();
+    mockGet.mockReturnValueOnce(apiKeyMe('first', '019ef171-bbcf-7b90-9be6-5dbb382afd08'));
+    await store.fetchMe();
+    mockGet.mockReturnValueOnce(apiKeyMe('second', '019ef171-bbcf-7b90-9be6-5dbb382afd09'));
+
+    await store.fetchMe();
+
+    expect(blockAndPurgeResourceCache).toHaveBeenCalledOnce();
+    expect(setResourceCachePrincipal).toHaveBeenNthCalledWith(2, undefined);
+    expect(setResourceCachePrincipal).toHaveBeenLastCalledWith(
+      'api_key:019ef171-bbcf-7b90-9be6-5dbb382afd09',
+    );
+    expect(store.user?.agent?.id).toBe('019ef171-bbcf-7b90-9be6-5dbb382afd09');
+  });
+
+  it('fails closed when an API-key /auth/me response omits its agent identity', async () => {
+    mockGet.mockReturnValueOnce(
+      Promise.resolve({
+        data: {
+          agent: null,
+          id: null,
+          is_root: false,
+          is_system_admin: false,
+          principal_type: 'api_key',
+          username: 'agent',
+        } satisfies MeResponse,
+        error: undefined,
+      }),
+    );
+
+    const store = useAuthStore();
+    await store.fetchMe();
+
+    expect(store.isAuthenticated).toBe(false);
+    expect(store.user).toBeNull();
+    expect(allowResourceCache).not.toHaveBeenCalled();
+    expect(setResourceCachePrincipal).toHaveBeenCalledWith(undefined);
   });
 
   it('logout clears store even when POST fails (REQ-W9)', async () => {
@@ -84,6 +263,48 @@ describe('useAuthStore', () => {
 
     expect(store.isAuthenticated).toBe(false);
     expect(store.user).toBeNull();
+  });
+
+  it('blocks and hides synchronously, then awaits the purge before logout waits on the server', async () => {
+    let resolvePurge: (() => void) | undefined;
+    let resolveLogout: (() => void) | undefined;
+    vi.mocked(blockAndPurgeResourceCache).mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolvePurge = () => resolve(true);
+        }),
+    );
+    mockGet.mockReturnValueOnce(meOk('alice'));
+    await useAuthStore().fetchMe();
+    mockPost.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveLogout = () => resolve({ data: {}, error: undefined });
+        }),
+    );
+
+    const store = useAuthStore();
+    const logout = store.logout();
+
+    expect(store.isAuthenticated).toBe(false);
+    expect(store.user).toBeNull();
+    expect(mockPost).not.toHaveBeenCalled();
+
+    resolvePurge?.();
+    await vi.waitFor(() => expect(mockPost).toHaveBeenCalledOnce());
+    resolveLogout?.();
+    await logout;
+  });
+
+  it('does not send the logout request when the global cache purge fails', async () => {
+    mockGet.mockReturnValueOnce(meOk('alice'));
+    vi.mocked(blockAndPurgeResourceCache).mockResolvedValueOnce(false);
+    await useAuthStore().fetchMe();
+
+    await useAuthStore().logout();
+
+    expect(mockPost).not.toHaveBeenCalled();
+    expect(useAuthStore().isAuthenticated).toBe(false);
   });
 
   it('login returns ok on 200', async () => {

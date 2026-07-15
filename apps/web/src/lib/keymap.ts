@@ -35,6 +35,21 @@ export function getShortcutCatalog(): ShortcutMeta[] {
   return shortcutCatalog.map((shortcut) => ({ ...shortcut, keys: [...shortcut.keys] }));
 }
 
+export function formatShortcutKey(token: string, platform = currentPlatform()): string {
+  const modifier = platform.startsWith('Mac') ? '⌘' : 'Ctrl+';
+
+  return token
+    .replace('mod+', modifier)
+    .replace('shift', 'Shift')
+    .replace('escape', 'Esc')
+    .replace(/\b([a-z])\b/g, (letter) => letter.toUpperCase());
+}
+
+export function formatShortcut(id: ShortcutId): string {
+  const shortcut = shortcutCatalog.find((entry) => entry.id === id);
+  return shortcut?.keys.map((key) => formatShortcutKey(key)).join(' / ') ?? '';
+}
+
 export function matchesShortcut(event: KeyboardEvent, shortcut: ShortcutMeta): boolean {
   if (event.isComposing) return false;
 
@@ -114,4 +129,8 @@ function matchesKeyToken(event: KeyboardEvent, token: string): boolean {
 function normalizeEventKey(key: string): string {
   if (key === 'Esc') return 'escape';
   return key.toLowerCase();
+}
+
+function currentPlatform(): string {
+  return typeof navigator === 'undefined' ? '' : navigator.platform;
 }
