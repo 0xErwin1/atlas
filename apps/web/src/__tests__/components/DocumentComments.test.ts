@@ -1,7 +1,7 @@
 import { type DOMWrapper, flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ref } from 'vue';
+import { nextTick, ref } from 'vue';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import CommentCard from '@/components/comments/CommentCard.vue';
 import DocumentComments from '@/components/notas/DocumentComments.vue';
@@ -109,8 +109,32 @@ function mountPanelWithRealEditor() {
   });
 }
 
+function mountPanelWithRealEditors() {
+  return mount(DocumentComments, {
+    props: { ws: 'acme', slug: 'my-doc' },
+    global: { plugins: [testRouter], stubs: { teleport: true } },
+  });
+}
+
 function droppedImage(file: File): DataTransfer {
-  return { files: [file], items: [] } as unknown as DataTransfer;
+  return { files: [file], items: [], getData: () => '' } as unknown as DataTransfer;
+}
+
+function textClipboard(text: string): DataTransfer {
+  return {
+    files: [],
+    items: [],
+    getData: (type: string) => (type === 'text/plain' ? text : ''),
+  } as unknown as DataTransfer;
+}
+
+function deferred<T>() {
+  let resolve: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+
+  return { promise, resolve: (value: T) => resolve(value) };
 }
 
 function enableCodeMirrorDropCoordinates(): void {
@@ -284,6 +308,77 @@ describe('DocumentComments (ATL-37)', () => {
     const wrapper = mountPanel();
 
     expect(wrapper.getComponent(CommentCard).props('uploadImage')).toBeUndefined();
+  });
+
+  it('keeps the real document composer text-only for image drop while preserving ordinary text paste', async () => {
+    const store = setup([]);
+    const addComment = vi.spyOn(store, 'addComment').mockResolvedValue(true);
+    const wrapper = mountPanelWithRealEditors();
+    const content = wrapper.get('[data-comment-composer] .cm-content');
+    enableCodeMirrorDropCoordinates();
+    const ordinaryPaste = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(ordinaryPaste, 'clipboardData', { value: textClipboard('ordinary **Markdown**') });
+
+    content.element.dispatchEvent(ordinaryPaste);
+    await content.trigger('drop', {
+      clientX: 0,
+      clientY: 0,
+      dataTransfer: droppedImage(new File(['image'], 'diagram.png', { type: 'image/png' })),
+    });
+    await flushPromises();
+
+    expect(ordinaryPaste.defaultPrevented).toBe(true);
+    expect(content.text()).toBe('ordinary **Markdown**');
+    expect(commentAttachments.upload).not.toHaveBeenCalled();
+    expect(addComment).not.toHaveBeenCalled();
+  });
+
+  it('does not upload or alter a document comment when a non-author drops an image into its real read-only editor', async () => {
+    setup([comment('c1', 'Original', 'someone-else')]);
+    signInAs('me');
+    const wrapper = mountPanelWithRealEditors();
+
+    await wrapper.get('[data-comment-id="c1"] .cm-content').trigger('drop', {
+      clientX: 0,
+      clientY: 0,
+      dataTransfer: droppedImage(new File(['image'], 'diagram.png', { type: 'image/png' })),
+    });
+    await flushPromises();
+
+    expect(commentAttachments.upload).not.toHaveBeenCalled();
+    expect(wrapper.get('[data-comment-id="c1"] .cm-content').text()).toBe('Original');
+  });
+
+  it('ignores a document image upload that completes after edit permission is revoked', async () => {
+    setup([comment('c1', 'Original', 'me', 'user', 'Me')]);
+    const pendingUpload = deferred<{ id: string } | null>();
+    commentAttachments.upload.mockReturnValue(pendingUpload.promise);
+    commentAttachments.contentUrl.mockReturnValue('/document-image');
+    signInAs('me');
+    enableCodeMirrorDropCoordinates();
+
+    const wrapper = mountPanelWithRealEditor();
+    await wrapper.get('[data-comment-id="c1"] [aria-label="Comment actions"]').trigger('click');
+    await menuItem(wrapper, 'Edit')?.trigger('click');
+    await wrapper.get('[data-comment-id="c1"] .cm-content').trigger('drop', {
+      clientX: 0,
+      clientY: 0,
+      dataTransfer: droppedImage(new File(['image'], 'diagram.png', { type: 'image/png' })),
+    });
+    await flushPromises();
+
+    commentFeed.entries.value = [
+      { type: 'comment', comment: comment('c2', 'Replacement', 'other', 'user', 'Other'), links: [] },
+    ];
+    await wrapper.setProps({ ws: 'next', slug: 'next-doc' });
+    signInAs('other');
+    await nextTick();
+    pendingUpload.resolve({ id: 'image-1' });
+    await flushPromises();
+
+    expect(commentAttachments.upload).toHaveBeenCalledTimes(1);
+    expect(wrapper.find('[data-comment-id="c1"]').exists()).toBe(false);
+    expect(wrapper.get('[data-comment-id="c2"] .cm-content').text()).toBe('Replacement');
   });
 
   it('derives document image Markdown URLs from the shared uploaded attachment ID', async () => {
