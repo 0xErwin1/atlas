@@ -206,21 +206,6 @@ export const useWorkspaceTasksStore = defineStore('workspaceTasks', () => {
       principal === undefined || workspaceId === undefined ? null : paramsKey(principal, workspaceId, params);
 
     if (!force && key !== null && loadedKey === key) {
-      activeLoadRequest = null;
-      loading.value = false;
-      error.value = null;
-      return true;
-    }
-
-    const remembered = !force && key !== null ? loadedPages.get(key) : undefined;
-    if (remembered !== undefined) {
-      activeLoadRequest = null;
-      activeTaskCacheKey = null;
-      tasks.value = remembered.items;
-      hasMore.value = remembered.has_more;
-      nextCursor.value = remembered.next_cursor;
-      loadedKey = key;
-      hasData.value = true;
       loading.value = false;
       error.value = null;
       return true;
@@ -231,15 +216,6 @@ export const useWorkspaceTasksStore = defineStore('workspaceTasks', () => {
 
     const request = {};
     const epoch = resourceCacheEpoch.value;
-    activeLoadRequest = request;
-    loading.value = true;
-    error.value = null;
-    loadedKey = null;
-    hasData.value = false;
-    tasks.value = [];
-    hasMore.value = false;
-    nextCursor.value = null;
-
     const requestParams = queryParams(params);
     const cacheKey =
       workspaceId === undefined
@@ -269,27 +245,55 @@ export const useWorkspaceTasksStore = defineStore('workspaceTasks', () => {
     };
 
     const isCurrent = () => activeLoadRequest === request && resourceCacheEpoch.value === epoch;
+    const cacheRequest =
+      cacheKey === null
+        ? null
+        : {
+            key: cacheKey,
+            payloadSchema: workspaceTaskPageSchema(params),
+            tags: ['workspace-tasks', `workspace:${workspaceId}`],
+            deriveTags: (page: WorkspaceTaskPage) =>
+              page.items.flatMap((task) => [`task:${task.readable_id}`, `task-uuid:${task.id}`]),
+            freshForMs: CACHE_CADENCE.catalog.freshForMs,
+            activeForMs: CACHE_CADENCE.catalog.activeForMs,
+            retentionForMs: 24 * 60 * 60 * 1000,
+            load: fetchPage,
+            publish: (page: WorkspaceTaskPage) => {
+              if (key !== null) publishPage(page, key, request);
+            },
+            isCurrent,
+          };
 
-    if (cacheKey !== null && resourceCache.isAvailable()) {
-      const cacheRequest = {
-        key: cacheKey,
-        payloadSchema: workspaceTaskPageSchema(params),
-        tags: ['workspace-tasks', `workspace:${workspaceId}`],
-        deriveTags: (page: WorkspaceTaskPage) =>
-          page.items.flatMap((task) => [`task:${task.readable_id}`, `task-uuid:${task.id}`]),
-        freshForMs: CACHE_CADENCE.catalog.freshForMs,
-        activeForMs: CACHE_CADENCE.catalog.activeForMs,
-        retentionForMs: 24 * 60 * 60 * 1000,
-        load: fetchPage,
-        publish: (page: WorkspaceTaskPage) => {
-          if (key !== null) publishPage(page, key, request);
-        },
-        isCurrent,
-      };
+    const remembered = !force && key !== null ? loadedPages.get(key) : undefined;
+    if (remembered !== undefined) {
+      activeLoadRequest = request;
+      if (cacheRequest !== null && resourceCache.isAvailable()) {
+        activeTaskCacheKey = cacheRequest.key;
+        resourceCache.activate(cacheRequest);
+      }
+      tasks.value = remembered.items;
+      hasMore.value = remembered.has_more;
+      nextCursor.value = remembered.next_cursor;
+      loadedKey = key;
+      hasData.value = true;
+      loading.value = false;
+      error.value = null;
+      return true;
+    }
 
+    activeLoadRequest = request;
+    loading.value = true;
+    error.value = null;
+    loadedKey = null;
+    hasData.value = false;
+    tasks.value = [];
+    hasMore.value = false;
+    nextCursor.value = null;
+
+    if (cacheRequest !== null && resourceCache.isAvailable()) {
       activeTaskCacheKey = cacheKey;
       await resourceCache.hydrate(cacheRequest);
-      resourceCache.activate(cacheRequest);
+      if (isCurrent()) resourceCache.activate(cacheRequest);
 
       let fallbackRequired = false;
       try {
@@ -300,7 +304,7 @@ export const useWorkspaceTasksStore = defineStore('workspaceTasks', () => {
 
         const failure = taskLoadError(cause);
         if (failure.status === 403 || failure.status === 404) {
-          retractDeniedPage(key, cacheKey);
+          retractDeniedPage(key, cacheRequest.key);
           if (workspaceId !== undefined) await invalidateWorkspaceTaskQueryCache(workspaceId);
         }
         error.value = failure.hint;
@@ -317,7 +321,6 @@ export const useWorkspaceTasksStore = defineStore('workspaceTasks', () => {
 
       if (!isCurrent()) return false;
 
-      activeLoadRequest = null;
       loading.value = false;
       return true;
     }
@@ -335,12 +338,10 @@ export const useWorkspaceTasksStore = defineStore('workspaceTasks', () => {
         hasData.value = true;
         loading.value = false;
       }
-      activeLoadRequest = null;
       return true;
     } catch (cause) {
       if (activeLoadRequest !== request) return false;
 
-      activeLoadRequest = null;
       loading.value = false;
       error.value = taskErrorHint(cause);
       return true;

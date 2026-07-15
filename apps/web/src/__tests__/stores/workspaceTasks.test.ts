@@ -305,6 +305,56 @@ describe('useWorkspaceTasksStore', () => {
     expect(store.tasks.map((item) => item.id)).toEqual(['1']);
   });
 
+  it('moves periodic ownership from B back to remembered A without publishing B late', async () => {
+    let now = 0;
+    const scheduled: Array<{ callback: () => void; delay: number }> = [];
+    const timer = {
+      clear: vi.fn(),
+      schedule: vi.fn((delay: number, callback: () => void) => {
+        scheduled.push({ delay, callback });
+        return scheduled.length;
+      }),
+    };
+    const cache = new ResourceCache({
+      store: cacheStore(new Map()),
+      clock: { now: () => now },
+      timer,
+    });
+    configureResourceCacheForTest(cache);
+    allowResourceCache();
+    const bResponse = deferred<{
+      data: { items: TaskSummaryDto[]; has_more: false; next_cursor: null };
+      error: undefined;
+    }>();
+    GET.mockResolvedValueOnce({
+      data: { items: [task('a')], has_more: false, next_cursor: null },
+      error: undefined,
+    });
+    GET.mockReturnValueOnce(bResponse.promise).mockResolvedValueOnce({
+      data: { items: [task('a-refreshed')], has_more: false, next_cursor: null },
+      error: undefined,
+    });
+
+    const store = useWorkspaceTasksStore();
+    await store.load('ws', { assignee: 'me' }, false, WORKSPACE_ID);
+    const loadB = store.load('ws', { sort: 'updated_at_desc' }, false, WORKSPACE_ID);
+    await store.load('ws', { assignee: 'me' }, false, WORKSPACE_ID);
+
+    bResponse.resolve({
+      data: { items: [task('b-late')], has_more: false, next_cursor: null },
+      error: undefined,
+    });
+    await loadB;
+
+    now = 60_000;
+    scheduled.at(-1)?.callback();
+    await vi.waitFor(() => expect(store.tasks.map((item) => item.id)).toEqual(['a-refreshed']));
+
+    expect(GET).toHaveBeenLastCalledWith('/api/workspaces/{ws}/tasks', {
+      params: { path: { ws: 'ws' }, query: { assignee: 'me', limit: 200 } },
+    });
+  });
+
   it('settles transport failures without leaving the saved view loading', async () => {
     GET.mockRejectedValueOnce(new Error('network unavailable'));
 

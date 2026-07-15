@@ -235,7 +235,11 @@ export class ResourceCache {
         if (this.policy.enabled) {
           this.remember(entry);
           try {
-            await this.store.putMany([entry]);
+            const persisted = await this.store.putMany([entry]);
+            if (!persisted) {
+              this.hot.delete(entry.key);
+              return { published: false };
+            }
           } catch {
             this.hot.delete(entry.key);
           }
