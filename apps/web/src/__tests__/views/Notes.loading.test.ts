@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  canApplyCachedDocument,
   createNoteResourceState,
   flushThenLoadNoteResource,
+  hydrateNoteResource,
   type NoteTarget,
+  retractNoteResourceForDeniedLoad,
   runNoteResourceLoad,
 } from '@/views/Notes.vue';
 
@@ -29,6 +32,16 @@ const noteB: NoteTarget = { workspaceSlug: 'alpha', slug: 'note-b' };
 const noteAInBeta: NoteTarget = { workspaceSlug: 'beta', slug: 'note-a' };
 
 describe('Notes route resource loading', () => {
+  it('rejects a same-target cached document while the editor is dirty or the load is superseded', () => {
+    const state = createNoteResourceState();
+    state.target = noteA;
+    state.sequence = 4;
+
+    expect(canApplyCachedDocument(state, noteA, 4, true)).toBe(false);
+    expect(canApplyCachedDocument(state, noteA, 3, false)).toBe(false);
+    expect(canApplyCachedDocument(state, noteA, 4, false)).toBe(true);
+  });
+
   it('hides the prior note immediately when the slug changes', async () => {
     const state = createNoteResourceState();
     const first = deferred<string>();
@@ -96,6 +109,22 @@ describe('Notes route resource loading', () => {
     await refreshLoad;
   });
 
+  it('accepts an exact cached target without reviving the former target', async () => {
+    const state = createNoteResourceState();
+    const first = deferred<string>();
+
+    const firstLoad = runNoteResourceLoad(state, noteA, () => first.promise);
+    first.resolve('Note A');
+    await firstLoad;
+    const nextLoad = runNoteResourceLoad(state, noteB, async () => 'Fresh note B');
+
+    expect(hydrateNoteResource(state, noteB)).toBe(true);
+    expect(state).toMatchObject({ target: noteB, status: 'pending', hasContent: true });
+    expect(hydrateNoteResource(state, noteA)).toBe(false);
+
+    await nextLoad;
+  });
+
   it('replaces a current-target load with an error state', async () => {
     const state = createNoteResourceState();
     const failingLoad = runNoteResourceLoad(state, noteA, async () => {
@@ -109,6 +138,30 @@ describe('Notes route resource loading', () => {
       status: 'error',
       hasContent: false,
       error: 'Document unavailable',
+    });
+  });
+
+  it('retracts cached content synchronously for forbidden and missing note loads', async () => {
+    const state = createNoteResourceState();
+    await runNoteResourceLoad(state, noteA, async () => 'Cached note A');
+
+    retractNoteResourceForDeniedLoad(state, noteA, new Error('Forbidden'));
+
+    expect(state).toMatchObject({
+      target: noteA,
+      status: 'error',
+      hasContent: false,
+      error: 'Forbidden',
+    });
+
+    await runNoteResourceLoad(state, noteB, async () => 'Cached note B');
+    retractNoteResourceForDeniedLoad(state, noteB, new Error('Not Found'));
+
+    expect(state).toMatchObject({
+      target: noteB,
+      status: 'error',
+      hasContent: false,
+      error: 'Not Found',
     });
   });
 

@@ -1,5 +1,18 @@
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ZodType } from 'zod';
+import {
+  allowResourceCache,
+  blockResourceCacheForUnknownAlias,
+  configureResourceCacheForTest,
+  setResourceCachePrincipal,
+} from '@/cache/cacheRuntime';
+import {
+  buildCacheKey,
+  type CacheEnvelope,
+  ResourceCache,
+  type ResourceCacheStore,
+} from '@/cache/resourceCache';
 
 vi.mock('@/api/wrapper', () => ({
   wrappedClient: {
@@ -16,10 +29,35 @@ const mockPut = wrappedClient.PUT as ReturnType<typeof vi.fn>;
 
 const WS = 'acme';
 const SLUG = 'my-doc';
+const PRINCIPAL = 'user:019ef171-bbcf-7b90-9be6-5dbb382afd08';
+const WORKSPACE_ID = '019ef171-bbcf-7b90-9be6-5dbb382afd08';
+
+function cacheStore(entries: Map<string, CacheEnvelope<unknown>>): ResourceCacheStore {
+  return {
+    async get<T>(key: string, _schema: ZodType<T>): Promise<CacheEnvelope<T> | null> {
+      const entry = entries.get(key);
+      return entry === undefined ? null : (entry as CacheEnvelope<T>);
+    },
+    async putMany(newEntries) {
+      for (const entry of newEntries) entries.set(entry.key, entry);
+      return true;
+    },
+    async deleteMany(keys) {
+      for (const key of keys) entries.delete(key);
+      return true;
+    },
+    async clear() {
+      return true;
+    },
+  };
+}
 
 beforeEach(() => {
   setActivePinia(createPinia());
   vi.clearAllMocks();
+  setResourceCachePrincipal(PRINCIPAL);
+  configureResourceCacheForTest(new ResourceCache({ store: cacheStore(new Map()) }));
+  allowResourceCache();
 });
 
 describe('useMarkdownDoc', () => {
@@ -58,6 +96,181 @@ describe('useMarkdownDoc', () => {
     expect(result.body).toBe('No frontmatter here.');
     expect(result.meta).toEqual({});
     expect(result.headRevisionId).toBe('rev-xyz');
+  });
+
+  it('load: publishes an exact cached body before its matching network refresh resolves', async () => {
+    const key = buildCacheKey({
+      principal: PRINCIPAL,
+      workspaceId: WORKSPACE_ID,
+      resourceKind: 'note-body',
+      resourceId: SLUG,
+    });
+    if (key === null) throw new Error('Expected a canonical note body cache key');
+
+    const now = Date.now();
+    const entries = new Map<string, CacheEnvelope<unknown>>([
+      [
+        key,
+        {
+          schema: 1,
+          key,
+          payloadVersion: 1,
+          storedAt: now,
+          validatedAt: now,
+          lastAccessedAt: now,
+          retentionExpiresAt: now + 60_000,
+          bytes: 128,
+          stale: false,
+          tags: [`document:${SLUG}`],
+          payload: {
+            id: 'doc-1',
+            body: 'Cached body',
+            meta: { title: 'Cached title' },
+            headRevisionId: 'cached-revision',
+            slug: SLUG,
+          },
+        },
+      ],
+    ]);
+    configureResourceCacheForTest(new ResourceCache({ store: cacheStore(entries) }));
+    allowResourceCache();
+    mockGet.mockResolvedValue({
+      data: { id: 'doc-1', slug: SLUG, content: 'Fresh body', head_revision_id: 'fresh-revision' },
+      error: undefined,
+    });
+    const cached: unknown[] = [];
+
+    const { load } = useMarkdownDoc();
+    const result = await load(WS, SLUG, {
+      workspaceId: WORKSPACE_ID,
+      onCached: (document) => cached.push(document),
+    });
+
+    expect(cached).toEqual([
+      expect.objectContaining({ body: 'Cached body', headRevisionId: 'cached-revision' }),
+      expect.objectContaining({ body: 'Fresh body', headRevisionId: 'fresh-revision' }),
+    ]);
+    expect(result).toMatchObject({ body: 'Fresh body', headRevisionId: 'fresh-revision' });
+    expect(mockGet).toHaveBeenCalledOnce();
+  });
+
+  it('load: keeps a cached body eligible for an active recovery retry after its refresh fails', async () => {
+    const key = buildCacheKey({
+      principal: PRINCIPAL,
+      workspaceId: WORKSPACE_ID,
+      resourceKind: 'note-body',
+      resourceId: SLUG,
+    });
+    if (key === null) throw new Error('Expected a canonical note body cache key');
+
+    const now = Date.now();
+    const entries = new Map<string, CacheEnvelope<unknown>>([
+      [
+        key,
+        {
+          schema: 1,
+          key,
+          payloadVersion: 1,
+          storedAt: now,
+          validatedAt: now,
+          lastAccessedAt: now,
+          retentionExpiresAt: now + 60_000,
+          bytes: 128,
+          stale: false,
+          tags: [`document:${SLUG}`],
+          payload: {
+            id: 'doc-1',
+            body: 'Cached body',
+            meta: {},
+            headRevisionId: 'cached-revision',
+            slug: SLUG,
+          },
+        },
+      ],
+    ]);
+    const cache = new ResourceCache({ store: cacheStore(entries) });
+    configureResourceCacheForTest(cache);
+    allowResourceCache();
+    mockGet.mockResolvedValueOnce({ error: { title: 'Offline' } }).mockResolvedValueOnce({
+      data: { id: 'doc-1', slug: SLUG, content: 'Recovered body', head_revision_id: 'recovered-revision' },
+    });
+    const cached: unknown[] = [];
+
+    const { load } = useMarkdownDoc();
+    await expect(
+      load(WS, SLUG, { workspaceId: WORKSPACE_ID, onCached: (document) => cached.push(document) }),
+    ).rejects.toThrow('Offline');
+
+    await cache.retry(key);
+
+    expect(cached).toEqual([
+      expect.objectContaining({ body: 'Cached body', headRevisionId: 'cached-revision' }),
+      expect.objectContaining({ body: 'Recovered body', headRevisionId: 'recovered-revision' }),
+    ]);
+    expect(mockGet).toHaveBeenCalledTimes(2);
+  });
+
+  it('load: uses the online request when the cache kill switch has blocked cache publication', async () => {
+    const cache = new ResourceCache({ store: cacheStore(new Map()) });
+    configureResourceCacheForTest(cache);
+    allowResourceCache();
+    mockGet.mockResolvedValue({
+      data: { id: 'doc-1', slug: SLUG, content: 'Online body', head_revision_id: 'online-revision' },
+      error: undefined,
+    });
+
+    blockResourceCacheForUnknownAlias();
+
+    const { load } = useMarkdownDoc();
+    await expect(load(WS, SLUG, { workspaceId: WORKSPACE_ID, onCached: vi.fn() })).resolves.toMatchObject({
+      body: 'Online body',
+      headRevisionId: 'online-revision',
+    });
+
+    expect(mockGet).toHaveBeenCalledOnce();
+  });
+
+  it('load: falls back to the network after a failed durable cache write', async () => {
+    const entries = new Map<string, CacheEnvelope<unknown>>();
+    const failedStore: ResourceCacheStore = {
+      async get<T>(key: string, _schema: ZodType<T>): Promise<CacheEnvelope<T> | null> {
+        return (entries.get(key) as CacheEnvelope<T> | undefined) ?? null;
+      },
+      async putMany() {
+        return false;
+      },
+      async deleteMany() {
+        return true;
+      },
+      async clear() {
+        return true;
+      },
+    };
+    const firstCache = new ResourceCache({ store: failedStore });
+    firstCache.allow();
+    configureResourceCacheForTest(firstCache);
+    mockGet.mockResolvedValueOnce({
+      data: { id: 'doc-1', slug: SLUG, content: 'Online body', head_revision_id: 'online-revision' },
+      error: undefined,
+    });
+
+    const { load } = useMarkdownDoc();
+    await load(WS, SLUG, { workspaceId: WORKSPACE_ID, onCached: vi.fn() });
+    expect(entries).toEqual(new Map());
+
+    const restartedCache = new ResourceCache({ store: failedStore });
+    restartedCache.allow();
+    configureResourceCacheForTest(restartedCache);
+    mockGet.mockResolvedValueOnce({
+      data: { id: 'doc-1', slug: SLUG, content: 'Reloaded body', head_revision_id: 'reloaded-revision' },
+      error: undefined,
+    });
+
+    await expect(load(WS, SLUG, { workspaceId: WORKSPACE_ID, onCached: vi.fn() })).resolves.toMatchObject({
+      body: 'Reloaded body',
+      headRevisionId: 'reloaded-revision',
+    });
+    expect(mockGet).toHaveBeenCalledTimes(2);
   });
 
   it('load: throws with the HTTP status from the response, even when the body omits it', async () => {

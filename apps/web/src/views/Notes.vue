@@ -60,7 +60,6 @@ function settleNoteResourceError(
   if (!acceptsNoteResourceLoad(state, target, sequence)) return false;
 
   state.status = 'error';
-  state.hasContent = false;
   state.error = errorMessage(error);
   return true;
 }
@@ -93,6 +92,22 @@ export async function runNoteResourceLoad<T>(
   load: () => Promise<T>,
 ): Promise<NoteResourceLoadResult<T>> {
   return runRegisteredNoteResourceLoad(state, target, startNoteResourceTransition(state, target), load);
+}
+
+export function hydrateNoteResource(state: NoteResourceState, target: NoteTarget): boolean {
+  if (!targetsEqual(state.target, target)) return false;
+
+  state.hasContent = true;
+  return true;
+}
+
+export function canApplyCachedDocument(
+  state: NoteResourceState,
+  target: NoteTarget,
+  sequence: number,
+  dirty: boolean,
+): boolean {
+  return !dirty && acceptsNoteResourceLoad(state, target, sequence);
 }
 
 export async function flushThenLoadNoteResource<T>(
@@ -136,6 +151,25 @@ export function planDocumentReconcile(
 export function isDocumentMissingError(error: unknown): boolean {
   return (error as { status?: number } | undefined)?.status === 404;
 }
+
+export function isDocumentDeniedError(error: unknown): boolean {
+  const status = (error as { status?: number } | undefined)?.status;
+  return status === 403 || status === 404;
+}
+
+export function retractNoteResourceForDeniedLoad(
+  state: NoteResourceState,
+  target: NoteTarget,
+  error: unknown,
+): boolean {
+  if (!targetsEqual(state.target, target)) return false;
+
+  state.sequence += 1;
+  state.status = 'error';
+  state.hasContent = false;
+  state.error = errorMessage(error);
+  return true;
+}
 </script>
 
 <script setup lang="ts">
@@ -155,6 +189,7 @@ import SharePanel from '@/components/share/SharePanel.vue';
 import EditorToolbar from '@/components/shell/EditorToolbar.vue';
 import EmptyState from '@/components/states/EmptyState.vue';
 import ErrorState from '@/components/states/ErrorState.vue';
+import FreshnessStatus from '@/components/states/FreshnessStatus.vue';
 import LoadingState from '@/components/states/LoadingState.vue';
 import Icon from '@/components/ui/Icon.vue';
 import PresenceAvatars from '@/components/ui/PresenceAvatars.vue';
@@ -168,6 +203,7 @@ import type { LoadResult } from '@/composables/useMarkdownDoc';
 import { useMarkdownDoc } from '@/composables/useMarkdownDoc';
 import { useWikilinkSuggest } from '@/composables/useWikilinkSuggest';
 import { useWikilinkTitles } from '@/composables/useWikilinkTitles';
+import { getResourceCachePrincipal, resourceCacheEpoch, resourceCacheIsPurging } from '@/cache/cacheRuntime';
 import { EVENT_TYPE, PRESENCE_UPDATED } from '@/lib/eventTypes';
 import { joinFrontmatter, splitFrontmatter } from '@/lib/frontmatter';
 import { formatShortcut } from '@/lib/keymap';
@@ -177,6 +213,7 @@ import { useLastViewedStore } from '@/stores/lastViewed';
 import { useNotesTabsStore } from '@/stores/notesTabs';
 import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
+import { useResourceStatusStore } from '@/stores/resourceStatus';
 import AppShell from '@/views/AppShell.vue';
 // biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
 import NotesSidebar from '@/views/NotesSidebar.vue';
@@ -184,6 +221,7 @@ import NotesSidebar from '@/views/NotesSidebar.vue';
 const route = useRoute();
 const router = useRouter();
 const workspace = useWorkspaceStore();
+const resourceStatus = useResourceStatusStore();
 const documents = useDocumentsStore();
 const ui = useUiStore();
 const tabsStore = useNotesTabsStore();
@@ -269,6 +307,11 @@ function toggleEditorReading(): void {
 }
 const noteResource = ref(createNoteResourceState());
 const hasDocumentContent = computed(() => noteResource.value.hasContent);
+const noteStatusKey = computed(() => (slug.value === null || ws.value === '' ? '' : `note:${ws.value}:${slug.value}`));
+const noteFreshnessStatus = computed(() =>
+  noteStatusKey.value === '' ? 'empty' : resourceStatus.statusFor(noteStatusKey.value),
+);
+let cachePrincipal = getResourceCachePrincipal();
 
 // `[[wikilink]]` autocomplete glue, shared with the task description editor.
 const {
@@ -411,6 +454,11 @@ async function reconcileOpenNote(eventDocumentId: string | null): Promise<void> 
     applyLoadedDocument(result, target.slug);
     remoteChangesPending.value = false;
   } catch (error) {
+    if (isDocumentDeniedError(error)) {
+      retractNoteResourceForDeniedLoad(noteResource.value, target, error);
+      clearDocument();
+      documents.clearSecondaryTarget();
+    }
     if (isDocumentMissingError(error)) handleMissingDocument(target);
   }
 }
@@ -427,21 +475,58 @@ async function loadDoc(target: NoteTarget | null, previousTarget: NoteTarget | n
   }
 
   documents.resetSecondaryTarget(target.workspaceSlug, target.slug);
+  const workspaceId = workspace.workspaceIdForSlug(target.workspaceSlug);
+  void documents.loadBacklinks(target.workspaceSlug, target.slug, {
+    workspaceId: workspaceId ?? '',
+  });
+  const statusKey = `note:${target.workspaceSlug}:${target.slug}`;
+  const onlineHint = typeof navigator === 'undefined' || navigator.onLine;
+  resourceStatus.beginRequest(statusKey, onlineHint);
 
   const targetChanged =
     previousTarget !== null &&
     (previousTarget.workspaceSlug !== target.workspaceSlug || previousTarget.slug !== target.slug);
   const shouldFlush = targetChanged && saveTimer !== null;
+  const expectedSequence = noteResource.value.sequence + 1;
+  const onCached = (result: LoadResult): void => {
+    if (!canApplyCachedDocument(noteResource.value, target, expectedSequence, dirty.value)) return;
+    if (!hydrateNoteResource(noteResource.value, target)) return;
+
+    applyLoadedDocument(result, target.slug);
+    resourceStatus.recordRequestSuccess(statusKey, true);
+    resourceStatus.setRefreshing(statusKey);
+  };
   const loadResultPromise = shouldFlush
     ? flushThenLoadNoteResource(noteResource.value, target, () => flushPendingSave(previousTarget), () =>
-        load(target.workspaceSlug, target.slug),
+        load(target.workspaceSlug, target.slug, {
+          workspaceId: workspaceId ?? '',
+          isCurrent: () => canApplyCachedDocument(noteResource.value, target, expectedSequence, dirty.value),
+          onCached,
+        }),
       )
-    : runNoteResourceLoad(noteResource.value, target, () => load(target.workspaceSlug, target.slug));
+    : runNoteResourceLoad(noteResource.value, target, () =>
+        load(target.workspaceSlug, target.slug, {
+          workspaceId: workspaceId ?? '',
+          isCurrent: () => canApplyCachedDocument(noteResource.value, target, expectedSequence, dirty.value),
+          onCached,
+        }),
+      );
 
   if (!noteResource.value.hasContent) clearDocument();
   const loadResult = await loadResultPromise;
   if (!loadResult.accepted) {
+    if (isDocumentDeniedError(loadResult.error)) {
+      retractNoteResourceForDeniedLoad(noteResource.value, target, loadResult.error);
+      clearDocument();
+      documents.clearSecondaryTarget();
+    }
+    resourceStatus.recordRequestFailure(statusKey, onlineHint);
     if (isDocumentMissingError(loadResult.error)) handleMissingDocument(target);
+    return;
+  }
+
+  if (!canApplyCachedDocument(noteResource.value, target, expectedSequence, dirty.value)) {
+    remoteChangesPending.value = true;
     return;
   }
 
@@ -452,8 +537,23 @@ async function loadDoc(target: NoteTarget | null, previousTarget: NoteTarget | n
   }
 
   applyLoadedDocument(result, target.slug);
+  resourceStatus.recordRequestSuccess(statusKey, true);
   tabsStore.open(target.workspaceSlug, target.slug, title.value);
-  await documents.loadBacklinks(target.workspaceSlug, target.slug);
+}
+
+function resetOpenNoteForCacheEpoch(preserveDirty: boolean): void {
+  noteResource.value = {
+    ...noteResource.value,
+    sequence: noteResource.value.sequence + 1,
+    status: 'pending',
+    hasContent: preserveDirty && dirty.value ? noteResource.value.hasContent : false,
+    error: null,
+  };
+  documents.clearSecondaryTarget();
+  conflictOpen.value = false;
+  conflictSegments.value = [];
+
+  if (!preserveDirty) clearDocument();
 }
 
 async function persist(): Promise<void> {
@@ -618,6 +718,23 @@ watch(
     void loadDoc(target, previousTarget);
   },
   { immediate: true },
+);
+
+watch(
+  () => resourceCacheEpoch.value,
+  () => {
+    const nextPrincipal = getResourceCachePrincipal();
+    const preserveDirty = cachePrincipal !== undefined && cachePrincipal === nextPrincipal;
+    cachePrincipal = nextPrincipal;
+    resetOpenNoteForCacheEpoch(preserveDirty);
+
+    if (resourceCacheIsPurging.value) return;
+
+    if (nextPrincipal !== undefined && slug.value !== null && ws.value !== '') {
+      void loadDoc({ workspaceSlug: ws.value, slug: slug.value }, null);
+    }
+  },
+  { flush: 'pre' },
 );
 
 // A new note opens at the top: the scroll surface persists across switches, so
@@ -832,7 +949,7 @@ watch(title, (t) => {
         }"
       >
         <ErrorState
-          v-if="noteResource.status === 'error'"
+          v-if="noteResource.status === 'error' && !hasDocumentContent"
           title="Couldn’t load note"
           :hint="noteResource.error ?? 'Failed to load document'"
           @retry="loadDoc(noteResource.target, null)"
@@ -849,6 +966,8 @@ watch(title, (t) => {
           >
             {{ title || 'Untitled' }}
           </h1>
+
+          <FreshnessStatus :status="noteFreshnessStatus" @retry="loadDoc(noteResource.target, null)" />
 
           <PropertiesEditor :ws="ws" :meta="meta" @change="onMetaChange" />
 
@@ -903,7 +1022,7 @@ watch(title, (t) => {
         :status="documents.backlinksStatus"
         :error="documents.backlinksError"
         @navigate="(s) => router.push({ name: 'notes', params: { slug: s } })"
-        @retry="slug && documents.loadBacklinks(ws, slug)"
+        @retry="slug && documents.loadBacklinks(ws, slug, { workspaceId: workspace.workspaceIdForSlug(ws) ?? '' })"
       />
     </template>
 

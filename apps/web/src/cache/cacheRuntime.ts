@@ -1,5 +1,11 @@
+import { ref } from 'vue';
 import { IndexedDbCacheStore } from './indexedDbCacheStore';
-import { isCanonicalPrincipal, isCanonicalWorkspaceId, ResourceCache } from './resourceCache';
+import {
+  isCanonicalPrincipal,
+  isCanonicalWorkspaceId,
+  ResourceCache,
+  type ResourceCacheRequest,
+} from './resourceCache';
 
 interface ResourceCacheRuntime {
   allow(): void;
@@ -8,10 +14,18 @@ interface ResourceCacheRuntime {
   purge(): Promise<boolean>;
   purgeTags(tags: readonly string[], principal?: string, workspaceId?: string): Promise<boolean>;
   purgeWorkspace(workspaceId: string, principal?: string): Promise<boolean>;
+  hydrate<T>(
+    request: Pick<ResourceCacheRequest<T>, 'key' | 'payloadSchema' | 'publish' | 'isCurrent'>,
+  ): Promise<T | null>;
+  isAvailable(): boolean;
+  revalidate<T>(request: ResourceCacheRequest<T>): Promise<void>;
+  activate<T>(request: ResourceCacheRequest<T>): void;
 }
 
 let resourceCache: ResourceCacheRuntime = new ResourceCache({ store: new IndexedDbCacheStore() });
 let currentPrincipal: string | undefined;
+export const resourceCacheEpoch = ref(0);
+export const resourceCacheIsPurging = ref(false);
 const globalPurgeFailures = new Set<string>();
 const unresolvedAliasBlocks = new Set<string>();
 
@@ -28,17 +42,23 @@ export function allowResourceCache(): void {
 }
 
 export async function blockAndPurgeResourceCache(): Promise<boolean> {
+  resourceCacheIsPurging.value = true;
+  resourceCacheEpoch.value += 1;
   const principal = currentPrincipal;
-  const purged = await resourceCache.purge();
+  try {
+    const purged = await resourceCache.purge();
 
-  if (purged) {
-    globalPurgeFailures.clear();
-    unresolvedAliasBlocks.clear();
-  } else if (principal !== undefined) {
-    globalPurgeFailures.add(principal);
+    if (purged) {
+      globalPurgeFailures.clear();
+      unresolvedAliasBlocks.clear();
+    } else if (principal !== undefined) {
+      globalPurgeFailures.add(principal);
+    }
+
+    return purged;
+  } finally {
+    resourceCacheIsPurging.value = false;
   }
-
-  return purged;
 }
 
 export function hardRefreshResourceCache(workspaceId: string): Promise<boolean> {
@@ -50,7 +70,13 @@ export function hardRefreshResourceCache(workspaceId: string): Promise<boolean> 
 }
 
 export function setResourceCachePrincipal(principal: string | undefined): void {
+  const changed = currentPrincipal !== principal;
   currentPrincipal = principal;
+  if (changed) resourceCacheEpoch.value += 1;
+}
+
+export function getResourceCachePrincipal(): string | undefined {
+  return currentPrincipal;
 }
 
 export function blockResourceCacheForUnknownAlias(): void {
@@ -58,8 +84,14 @@ export function blockResourceCacheForUnknownAlias(): void {
   resourceCache.block();
 }
 
-export function purgeResourceCache(): Promise<boolean> {
-  return resourceCache.clear();
+export async function purgeResourceCache(): Promise<boolean> {
+  resourceCacheIsPurging.value = true;
+  resourceCacheEpoch.value += 1;
+  try {
+    return await resourceCache.clear();
+  } finally {
+    resourceCacheIsPurging.value = false;
+  }
 }
 
 export async function runHardRefresh(workspaceId: string, reload: () => Promise<unknown>): Promise<boolean> {

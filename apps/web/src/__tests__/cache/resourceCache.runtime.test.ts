@@ -13,6 +13,7 @@ import {
   CACHE_CADENCE,
   type CacheEnvelope,
   ResourceCache,
+  type ResourceCacheRequest,
   type ResourceCacheStore,
 } from '@/cache/resourceCache';
 
@@ -1041,6 +1042,106 @@ describe('ResourceCache runtime', () => {
     expect(load).toHaveBeenCalledOnce();
     expect(store.clear).toHaveBeenCalledOnce();
     expect(store.putMany).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the network when durable cache access is unavailable', async () => {
+    const store = {
+      get: vi.fn().mockRejectedValue(new Error('IndexedDB unavailable')),
+      putMany: vi.fn().mockRejectedValue(new Error('IndexedDB unavailable')),
+      deleteMany: vi.fn().mockResolvedValue(true),
+      clear: vi.fn().mockResolvedValue(true),
+    };
+    const cache = new ResourceCache({ store });
+    const publish = vi.fn();
+    const request = {
+      key: 'unavailable-cache-key',
+      payloadSchema,
+      tags: ['workspace:workspace-a'],
+      freshForMs: 30_000,
+      retentionForMs: 60_000,
+      load: vi.fn().mockResolvedValue({ title: 'Online' }),
+      publish,
+      isCurrent: () => true,
+    };
+
+    cache.allow();
+
+    await expect(cache.hydrate(request)).resolves.toBeNull();
+    await expect(cache.revalidate(request)).resolves.toBeUndefined();
+
+    expect(request.load).toHaveBeenCalledOnce();
+    expect(publish).toHaveBeenCalledWith({ title: 'Online' });
+  });
+
+  it('keeps unrelated active requests scheduled after an exact tag purge', async () => {
+    let now = 0;
+    const scheduled: Array<{ delay: number; callback: () => void }> = [];
+    const principal = 'user:019ef171-bbcf-7b90-9be6-5dbb382afd08';
+    const workspaceId = '019ef171-bbcf-7b90-9be6-5dbb382afd08';
+    const store = {
+      get: vi.fn(),
+      putMany: vi.fn().mockResolvedValue(true),
+      deleteMany: vi.fn().mockResolvedValue(true),
+      deleteScope: vi.fn().mockResolvedValue(true),
+      clear: vi.fn().mockResolvedValue(true),
+    };
+    const cache = new ResourceCache({
+      store,
+      clock: { now: () => now },
+      timer: {
+        clear: vi.fn(),
+        schedule: (delay, callback) => {
+          scheduled.push({ delay, callback });
+          return scheduled.length;
+        },
+      },
+    });
+    const catalogLoad = vi.fn().mockResolvedValue({ title: 'Catalog' });
+    const bodyLoad = vi.fn().mockResolvedValue({ title: 'Body' });
+    const backlinksLoad = vi.fn().mockResolvedValue({ title: 'Backlinks' });
+    const request = (
+      key: string,
+      tags: string[],
+      load: () => Promise<{ title: string }>,
+    ): ResourceCacheRequest<{ title: string }> => ({
+      key,
+      payloadSchema,
+      tags,
+      freshForMs: 10,
+      activeForMs: 10,
+      retentionForMs: 60_000,
+      load,
+      publish: vi.fn(),
+      isCurrent: () => true,
+    });
+    const catalog = request(
+      `v1|p=${principal}|w=${workspaceId}|k=note-tree|r=project-a|q={}`,
+      ['project:project-a'],
+      catalogLoad,
+    );
+    const body = request(
+      `v1|p=${principal}|w=${workspaceId}|k=note-body|r=note-a|q={}`,
+      ['document:note-a'],
+      bodyLoad,
+    );
+    const backlinks = request(
+      `v1|p=${principal}|w=${workspaceId}|k=note-secondary|r=note-a|q={"type":"backlinks"}`,
+      ['document:note-a', 'secondary:backlinks'],
+      backlinksLoad,
+    );
+
+    cache.allow();
+    cache.activate(catalog);
+    cache.activate(body);
+    cache.activate(backlinks);
+
+    await expect(cache.purgeTags(['project:project-a'], principal, workspaceId)).resolves.toBe(true);
+
+    now = 10;
+    scheduled.at(-1)?.callback();
+    await vi.waitFor(() => expect(bodyLoad).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(backlinksLoad).toHaveBeenCalledOnce());
+    expect(catalogLoad).not.toHaveBeenCalled();
   });
 
   it('does not hydrate after the authorization lease expires', async () => {

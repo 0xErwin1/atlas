@@ -1,5 +1,17 @@
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ZodType } from 'zod';
+import {
+  allowResourceCache,
+  configureResourceCacheForTest,
+  setResourceCachePrincipal,
+} from '@/cache/cacheRuntime';
+import {
+  buildCacheKey,
+  type CacheEnvelope,
+  ResourceCache,
+  type ResourceCacheStore,
+} from '@/cache/resourceCache';
 
 const { GET, POST, PATCH, DELETE } = vi.hoisted(() => ({
   GET: vi.fn(),
@@ -7,6 +19,29 @@ const { GET, POST, PATCH, DELETE } = vi.hoisted(() => ({
   PATCH: vi.fn(),
   DELETE: vi.fn(),
 }));
+
+const PRINCIPAL = 'user:019ef171-bbcf-7b90-9be6-5dbb382afd08';
+const WORKSPACE_ID = '019ef171-bbcf-7b90-9be6-5dbb382afd08';
+
+function cacheStore(entries: Map<string, CacheEnvelope<unknown>>): ResourceCacheStore {
+  return {
+    async get<T>(key: string, _schema: ZodType<T>): Promise<CacheEnvelope<T> | null> {
+      const entry = entries.get(key);
+      return entry === undefined ? null : (entry as CacheEnvelope<T>);
+    },
+    async putMany(newEntries) {
+      for (const entry of newEntries) entries.set(entry.key, entry);
+      return true;
+    },
+    async deleteMany(keys) {
+      for (const key of keys) entries.delete(key);
+      return true;
+    },
+    async clear() {
+      return true;
+    },
+  };
+}
 
 vi.mock('@/api/wrapper', () => ({
   wrappedClient: { GET, POST, PATCH, DELETE },
@@ -27,6 +62,9 @@ describe('useDocumentsStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
+    setResourceCachePrincipal(PRINCIPAL);
+    configureResourceCacheForTest(new ResourceCache({ store: cacheStore(new Map()) }));
+    allowResourceCache();
   });
 
   it('loadSummaries populates document summaries (REQ-W14)', async () => {
@@ -189,6 +227,95 @@ describe('useDocumentsStore', () => {
 
     expect(store.backlinks).toHaveLength(1);
     expect(store.backlinks[0]?.source_slug).toBe('source');
+  });
+
+  it('retains cached backlinks when a refresh fails', async () => {
+    GET.mockResolvedValueOnce({
+      data: {
+        items: [
+          {
+            display_title: 'Source',
+            source_document_id: 's1',
+            source_slug: 'source',
+            source_title: 'Source',
+          },
+        ],
+        has_more: false,
+      },
+    }).mockResolvedValueOnce({ error: { hint: 'offline' } });
+
+    const store = useDocumentsStore();
+    await store.loadBacklinks('ws', 'target');
+    await store.loadBacklinks('ws', 'target');
+
+    expect(store.backlinks.map((link) => link.source_slug)).toEqual(['source']);
+    expect(store.backlinksStatus).toBe('error');
+    expect(store.backlinksError).toBe('offline');
+  });
+
+  it('hydrates cached backlinks before a failed refresh and recovers them through the active retry', async () => {
+    const key = buildCacheKey({
+      principal: PRINCIPAL,
+      workspaceId: WORKSPACE_ID,
+      resourceKind: 'note-secondary',
+      resourceId: 'target',
+      query: { type: 'backlinks' },
+    });
+    if (key === null) throw new Error('Expected a canonical backlinks cache key');
+
+    const now = Date.now();
+    const entries = new Map<string, CacheEnvelope<unknown>>([
+      [
+        key,
+        {
+          schema: 1,
+          key,
+          payloadVersion: 1,
+          storedAt: now,
+          validatedAt: now,
+          lastAccessedAt: now,
+          retentionExpiresAt: now + 60_000,
+          bytes: 128,
+          stale: false,
+          tags: ['document:target', 'secondary:backlinks'],
+          payload: [
+            {
+              display_title: 'Cached source',
+              source_document_id: 'cached-source',
+              source_slug: 'cached-source',
+              source_title: 'Cached source',
+            },
+          ],
+        },
+      ],
+    ]);
+    const cache = new ResourceCache({ store: cacheStore(entries) });
+    configureResourceCacheForTest(cache);
+    allowResourceCache();
+    GET.mockResolvedValueOnce({ error: { hint: 'offline' } }).mockResolvedValueOnce({
+      data: {
+        items: [
+          {
+            display_title: 'Recovered source',
+            source_document_id: 'recovered-source',
+            source_slug: 'recovered-source',
+            source_title: 'Recovered source',
+          },
+        ],
+        has_more: false,
+      },
+    });
+
+    const store = useDocumentsStore();
+    await store.loadBacklinks('ws', 'target', { workspaceId: WORKSPACE_ID });
+
+    expect(store.backlinks.map((link) => link.source_slug)).toEqual(['cached-source']);
+    expect(store.backlinksStatus).toBe('error');
+
+    await cache.retry(key);
+
+    expect(store.backlinks.map((link) => link.source_slug)).toEqual(['recovered-source']);
+    expect(store.backlinksStatus).toBe('ready');
   });
 
   it('loadBacklinks clears the list on error (never crashes)', async () => {
@@ -473,6 +600,19 @@ describe('useDocumentsStore', () => {
     expect(ok).toBe(true);
     expect(DELETE).toHaveBeenCalledOnce();
     expect(store.summaries).toHaveLength(0);
+  });
+
+  it('evicts only the deleted document and project cache tags before returning success', async () => {
+    DELETE.mockResolvedValue({ data: undefined });
+    GET.mockResolvedValue({ data: { items: [], has_more: false } });
+    const purgeTags = vi.fn().mockResolvedValue(true);
+    configureResourceCacheForTest({ purgeTags });
+
+    const store = useDocumentsStore();
+    const ok = await store.remove('ws', 'proj', 'my-doc', { workspaceId: WORKSPACE_ID });
+
+    expect(ok).toBe(true);
+    expect(purgeTags).toHaveBeenCalledWith(['document:my-doc', 'project:proj'], PRINCIPAL, WORKSPACE_ID);
   });
 
   it('remove returns false and sets error on failure', async () => {
