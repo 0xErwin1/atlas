@@ -114,6 +114,7 @@ const editStateCompartment = new Compartment();
 // `body` prop change (must replace the doc) from an echo of our own edit (must
 // be ignored, to avoid resetting the cursor).
 let lastEmitted: string | null = null;
+let imageUploadGeneration = 0;
 
 function currentMarkdown(): string {
   return view === null ? props.body : view.state.doc.toString();
@@ -363,11 +364,11 @@ function handleImageFiles(files: File[], pos: number | null): boolean {
   const images = files.filter(isImageFile);
   if (images.length === 0) return false;
 
-  void uploadAndInsertImages(images, pos);
+  void uploadAndInsertImages(images, pos, imageUploadGeneration);
   return true;
 }
 
-async function uploadAndInsertImages(images: File[], pos: number | null): Promise<void> {
+async function uploadAndInsertImages(images: File[], pos: number | null, generation: number): Promise<void> {
   const upload = props.uploadImage;
   if (upload === undefined || view === null) return;
 
@@ -375,7 +376,14 @@ async function uploadAndInsertImages(images: File[], pos: number | null): Promis
 
   for (const file of images) {
     const url = await upload(file);
-    if (url === null || view === null) continue;
+    if (
+      url === null ||
+      view === null ||
+      generation !== imageUploadGeneration ||
+      upload !== props.uploadImage ||
+      !effectiveEditable()
+    )
+      continue;
 
     const insert = imageSnippet(view.state, at, imageAlt(file), url);
     view.dispatch({
@@ -427,6 +435,7 @@ watch(
     if (body === lastEmitted) return;
     if (body === view.state.doc.toString()) return;
 
+    imageUploadGeneration += 1;
     const nextSelection = restoreSelection(snapshotSelection(view.state.selection), body.length);
     view.dispatch({
       changes: { from: 0, to: view.state.doc.length, insert: body },
@@ -435,6 +444,13 @@ watch(
     lastEmitted = body;
 
     if (props.autofocus && effectiveEditable()) view.focus();
+  },
+);
+
+watch(
+  () => props.uploadImage,
+  () => {
+    imageUploadGeneration += 1;
   },
 );
 
@@ -449,6 +465,7 @@ watch(
 );
 
 onBeforeUnmount(() => {
+  imageUploadGeneration += 1;
   view?.destroy();
   view = null;
 });

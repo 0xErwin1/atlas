@@ -127,11 +127,43 @@ function mountFeedWithRealEditor() {
   });
 }
 
+function mountFeedWithRealEditors() {
+  return mount(ActivityComments, {
+    props: { ws: 'acme', readableId: 'ATL-1' },
+    global: { plugins: [testRouter], stubs: { teleport: true } },
+  });
+}
+
 function imageClipboard(file: File): DataTransfer {
   return {
     files: [file],
     items: [{ kind: 'file', getAsFile: () => file }],
+    getData: () => '',
   } as unknown as DataTransfer;
+}
+
+function textClipboard(text: string): DataTransfer {
+  return {
+    files: [],
+    items: [],
+    getData: (type: string) => (type === 'text/plain' ? text : ''),
+  } as unknown as DataTransfer;
+}
+
+function deferred<T>() {
+  let resolve: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+
+  return { promise, resolve: (value: T) => resolve(value) };
+}
+
+function enableCodeMirrorCoordinates(): void {
+  Object.defineProperty(Range.prototype, 'getClientRects', {
+    configurable: true,
+    value: () => [],
+  });
 }
 
 function menuItem(wrapper: VueWrapper, label: string): DOMWrapper<Element> | undefined {
@@ -404,6 +436,77 @@ describe('ActivityComments feed (ATL-19)', () => {
     const wrapper = mountFeed();
 
     expect(wrapper.getComponent(CommentCard).props('uploadImage')).toBeUndefined();
+  });
+
+  it('keeps the real task composer text-only for image paste while preserving ordinary text paste', async () => {
+    const detail = useTaskDetailStore();
+    detail._setForTest({ comments: [] });
+    const addComment = vi.spyOn(detail, 'addComment').mockResolvedValue(true);
+    const image = new File(['image'], 'diagram.png', { type: 'image/png' });
+    const wrapper = mountFeedWithRealEditors();
+    const content = wrapper.get('[data-comment-composer] .cm-content');
+    enableCodeMirrorCoordinates();
+    const ordinaryPaste = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(ordinaryPaste, 'clipboardData', { value: textClipboard('ordinary **Markdown**') });
+
+    content.element.dispatchEvent(ordinaryPaste);
+    await content.trigger('paste', { clipboardData: imageClipboard(image) });
+    await flushPromises();
+
+    expect(ordinaryPaste.defaultPrevented).toBe(true);
+    expect(content.text()).toBe('ordinary **Markdown**');
+    expect(commentAttachments.upload).not.toHaveBeenCalled();
+    expect(addComment).not.toHaveBeenCalled();
+  });
+
+  it('does not upload or alter a task comment when a non-author pastes an image into its real read-only editor', async () => {
+    useTaskDetailStore()._setForTest({ comments: [comment('c1', 'Original', 'someone-else')] });
+    commentFeed.entries.value = [
+      { type: 'comment', comment: comment('c1', 'Original', 'someone-else'), links: [] },
+    ];
+    signInAs('me');
+    const wrapper = mountFeedWithRealEditors();
+
+    await wrapper.get('[data-comment-id="c1"] .cm-content').trigger('paste', {
+      clipboardData: imageClipboard(new File(['image'], 'diagram.png', { type: 'image/png' })),
+    });
+    await flushPromises();
+
+    expect(commentAttachments.upload).not.toHaveBeenCalled();
+    expect(wrapper.get('[data-comment-id="c1"] .cm-content').text()).toBe('Original');
+  });
+
+  it('ignores a task image upload that completes after edit permission is revoked', async () => {
+    const detail = useTaskDetailStore();
+    detail._setForTest({ comments: [comment('c1', 'Original', 'me', 'user', 'Me')] });
+    commentFeed.entries.value = [
+      { type: 'comment', comment: comment('c1', 'Original', 'me', 'user', 'Me'), links: [] },
+    ];
+    const pendingUpload = deferred<{ id: string } | null>();
+    commentAttachments.upload.mockReturnValue(pendingUpload.promise);
+    commentAttachments.contentUrl.mockReturnValue('/task-image');
+    signInAs('me');
+
+    const wrapper = mountFeedWithRealEditor();
+    await wrapper.get('[data-comment-id="c1"] [aria-label="Comment actions"]').trigger('click');
+    await menuItem(wrapper, 'Edit')?.trigger('click');
+    await wrapper.get('[data-comment-id="c1"] .cm-content').trigger('paste', {
+      clipboardData: imageClipboard(new File(['image'], 'diagram.png', { type: 'image/png' })),
+    });
+    await flushPromises();
+
+    commentFeed.entries.value = [
+      { type: 'comment', comment: comment('c2', 'Replacement', 'other', 'user', 'Other'), links: [] },
+    ];
+    await wrapper.setProps({ ws: 'next', readableId: 'ATL-2' });
+    signInAs('other');
+    await nextTick();
+    pendingUpload.resolve({ id: 'image-1' });
+    await flushPromises();
+
+    expect(commentAttachments.upload).toHaveBeenCalledTimes(1);
+    expect(wrapper.find('[data-comment-id="c1"]').exists()).toBe(false);
+    expect(wrapper.get('[data-comment-id="c2"] .cm-content').text()).toBe('Replacement');
   });
 
   it('derives task image Markdown URLs from the shared uploaded attachment ID', async () => {
