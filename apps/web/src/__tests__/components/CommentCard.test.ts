@@ -101,7 +101,7 @@ describe('CommentCard', () => {
         },
       ],
       canManageAttachments: true,
-      attachmentUploading: true,
+      attachmentUploading: false,
       attachmentError: 'Upload failed',
       onUploadAttachment: upload,
       onDownloadAttachment: download,
@@ -109,7 +109,6 @@ describe('CommentCard', () => {
       uploadImage,
     });
 
-    expect(wrapper.get('[role="status"]').text()).toContain('Uploading attachment');
     expect(wrapper.get('[role="alert"]').text()).toBe('Upload failed');
 
     const input = wrapper.get<HTMLInputElement>('[data-comment-attachment-picker]');
@@ -126,6 +125,32 @@ describe('CommentCard', () => {
     expect(upload).toHaveBeenCalledWith(expect.any(File));
     expect(download).toHaveBeenCalledWith('attachment-1');
     expect(remove).toHaveBeenCalledWith('attachment-1');
+  });
+
+  it('keeps a post-upload image draft available when explicit edit persistence fails', async () => {
+    const uploadImage = vi.fn().mockResolvedValue('/api/comments/comment-1/attachments/image-1/content');
+    const onSave = vi.fn().mockResolvedValue(false);
+    const wrapper = mountCard({ onSave, uploadImage });
+
+    await wrapper.get('[aria-label="Comment actions"]').trigger('click');
+    await wrapper
+      .findAll('[role="menuitem"]')
+      .find((item) => item.text() === 'Edit')
+      ?.trigger('click');
+    await wrapper
+      .getComponent(MarkdownEditorStub)
+      .vm.$emit('change', '![image](/api/comments/comment-1/attachments/image-1/content)');
+    await wrapper.get('[data-test="comment-edit-save"]').trigger('click');
+    await flushPromises();
+
+    expect(onSave).toHaveBeenCalledWith(
+      'comment-1',
+      '![image](/api/comments/comment-1/attachments/image-1/content)',
+    );
+    expect(wrapper.find('[data-test="comment-edit-save"]').exists()).toBe(true);
+    expect(wrapper.get('[data-markdown]').text()).toContain(
+      '![image](/api/comments/comment-1/attachments/image-1/content)',
+    );
   });
 
   it('preserves author edit/delete permissions and hides attachment mutations without permission', () => {

@@ -10,14 +10,13 @@ const MarkdownEditorStub = {
 };
 
 describe('CommentComposer', () => {
-  it('forwards the image upload hook to MarkdownEditor and labels the composer controls', () => {
-    const uploadImage = vi.fn().mockResolvedValue('/attachments/image-1');
+  it('is text-only by construction and labels the composer controls', () => {
     const wrapper = mount(CommentComposer, {
-      props: { onSubmit: vi.fn().mockResolvedValue(true), uploadImage },
+      props: { onSubmit: vi.fn().mockResolvedValue(true) },
       global: { stubs: { MarkdownEditor: MarkdownEditorStub } },
     });
 
-    expect(wrapper.getComponent(MarkdownEditorStub).props('uploadImage')).toBe(uploadImage);
+    expect(wrapper.getComponent(MarkdownEditorStub).props('uploadImage')).toBeUndefined();
     expect(wrapper.get('[data-test="comment-submit"]').attributes('aria-label')).toBe('Post comment');
   });
 

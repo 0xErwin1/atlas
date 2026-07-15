@@ -215,4 +215,25 @@ describe('useCommentFeed', () => {
       expect.objectContaining({ id: 'attachment-2', file_name: 'document.txt' }),
     ]);
   });
+
+  it('does not let an older same-comment list overwrite a newer upload', async () => {
+    let resolveList: (value: unknown) => void = () => {};
+    GET.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveList = resolve;
+      }),
+    );
+    POST.mockResolvedValueOnce({ data: attachment('attachment-2', 'new.txt') });
+
+    const feed = useCommentFeed();
+    const target = { kind: 'task' as const, ws: 'acme', readableId: 'ATL-1' };
+    const staleList = feed.loadAttachments(target, 'comment-1');
+    await feed.uploadAttachment(target, 'comment-1', new File(['new'], 'new.txt'));
+    resolveList({ data: [attachment('attachment-1', 'old.txt')] });
+    await staleList;
+
+    expect(feed.attachments.value['comment-1']).toEqual([
+      expect.objectContaining({ id: 'attachment-2', file_name: 'new.txt' }),
+    ]);
+  });
 });

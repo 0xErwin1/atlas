@@ -92,6 +92,7 @@ export function useCommentFeed() {
   const attachmentDownloadLoading = useLoadingMap();
   const attachmentDeleteLoading = useLoadingMap();
   const target = ref<CommentParentTarget | null>(null);
+  const attachmentRevision = new Map<string, number>();
   let generation = 0;
   let requestSequence = 0;
 
@@ -122,6 +123,7 @@ export function useCommentFeed() {
       attachmentUploadLoading.clear();
       attachmentDownloadLoading.clear();
       attachmentDeleteLoading.clear();
+      attachmentRevision.clear();
     }
 
     return generation;
@@ -233,6 +235,24 @@ export function useCommentFeed() {
     attachmentError.value = next;
   }
 
+  function nextAttachmentRevision(commentId: string): number {
+    const revision = (attachmentRevision.get(commentId) ?? 0) + 1;
+    attachmentRevision.set(commentId, revision);
+    return revision;
+  }
+
+  function isCurrentAttachmentRequest(
+    requestTarget: CommentParentTarget,
+    requestGeneration: number,
+    commentId: string,
+    revision: number,
+  ): boolean {
+    return (
+      currentAttachmentTarget(requestTarget, requestGeneration) &&
+      attachmentRevision.get(commentId) === revision
+    );
+  }
+
   async function listAttachmentRequest(
     requestTarget: CommentParentTarget,
     commentId: string,
@@ -252,12 +272,13 @@ export function useCommentFeed() {
 
   async function loadAttachments(requestTarget: CommentParentTarget, commentId: string): Promise<void> {
     const requestGeneration = reset(requestTarget);
+    const revision = nextAttachmentRevision(commentId);
     attachmentListLoading.set(commentId, true);
     setAttachmentError(commentId, null);
 
     try {
       const { data, error: apiError } = await listAttachmentRequest(requestTarget, commentId);
-      if (!currentAttachmentTarget(requestTarget, requestGeneration)) return;
+      if (!isCurrentAttachmentRequest(requestTarget, requestGeneration, commentId, revision)) return;
 
       if (apiError !== undefined || data === undefined) {
         setAttachmentError(commentId, errorHint(apiError, 'Failed to load comment attachments'));
@@ -266,7 +287,7 @@ export function useCommentFeed() {
 
       attachments.value = { ...attachments.value, [commentId]: data.map(omitAttachmentDigest) };
     } catch (cause) {
-      if (currentAttachmentTarget(requestTarget, requestGeneration)) {
+      if (isCurrentAttachmentRequest(requestTarget, requestGeneration, commentId, revision)) {
         setAttachmentError(commentId, errorHint(cause, 'Failed to load comment attachments'));
       }
     } finally {
@@ -287,6 +308,7 @@ export function useCommentFeed() {
     file: File,
   ): Promise<CommentAttachment | null> {
     const requestGeneration = reset(requestTarget);
+    const revision = nextAttachmentRevision(commentId);
     attachmentUploadLoading.set(commentId, true);
     setAttachmentError(commentId, null);
 
@@ -309,7 +331,7 @@ export function useCommentFeed() {
             )
           : await uploadDocumentCommentAttachment(requestTarget, commentId, file);
 
-      if (!currentAttachmentTarget(requestTarget, requestGeneration)) return null;
+      if (!isCurrentAttachmentRequest(requestTarget, requestGeneration, commentId, revision)) return null;
 
       if (response.error !== undefined || response.data === undefined) {
         setAttachmentError(commentId, errorHint(response.error, 'Failed to upload comment attachment'));
@@ -321,7 +343,7 @@ export function useCommentFeed() {
       attachments.value = { ...attachments.value, [commentId]: [...current, uploaded] };
       return uploaded;
     } catch (cause) {
-      if (currentAttachmentTarget(requestTarget, requestGeneration)) {
+      if (isCurrentAttachmentRequest(requestTarget, requestGeneration, commentId, revision)) {
         setAttachmentError(commentId, errorHint(cause, 'Failed to upload comment attachment'));
       }
       return null;
@@ -337,6 +359,7 @@ export function useCommentFeed() {
     attachmentId: string,
   ): Promise<Blob | null> {
     const requestGeneration = reset(requestTarget);
+    const revision = nextAttachmentRevision(commentId);
     const loadingId = `${commentId}:${attachmentId}`;
     attachmentDownloadLoading.set(loadingId, true);
     setAttachmentError(commentId, null);
@@ -373,7 +396,7 @@ export function useCommentFeed() {
               },
             );
 
-      if (!currentAttachmentTarget(requestTarget, requestGeneration)) return null;
+      if (!isCurrentAttachmentRequest(requestTarget, requestGeneration, commentId, revision)) return null;
 
       if (response.error !== undefined || response.data === undefined) {
         setAttachmentError(commentId, errorHint(response.error, 'Failed to download comment attachment'));
@@ -382,7 +405,7 @@ export function useCommentFeed() {
 
       return response.data;
     } catch (cause) {
-      if (currentAttachmentTarget(requestTarget, requestGeneration)) {
+      if (isCurrentAttachmentRequest(requestTarget, requestGeneration, commentId, revision)) {
         setAttachmentError(commentId, errorHint(cause, 'Failed to download comment attachment'));
       }
       return null;
@@ -398,6 +421,7 @@ export function useCommentFeed() {
     attachmentId: string,
   ): Promise<boolean> {
     const requestGeneration = reset(requestTarget);
+    const revision = nextAttachmentRevision(commentId);
     const loadingId = `${commentId}:${attachmentId}`;
     attachmentDeleteLoading.set(loadingId, true);
     setAttachmentError(commentId, null);
@@ -432,7 +456,7 @@ export function useCommentFeed() {
               },
             );
 
-      if (!currentAttachmentTarget(requestTarget, requestGeneration)) return false;
+      if (!isCurrentAttachmentRequest(requestTarget, requestGeneration, commentId, revision)) return false;
 
       if (response.error !== undefined) {
         setAttachmentError(commentId, errorHint(response.error, 'Failed to delete comment attachment'));
@@ -446,7 +470,7 @@ export function useCommentFeed() {
       };
       return true;
     } catch (cause) {
-      if (currentAttachmentTarget(requestTarget, requestGeneration)) {
+      if (isCurrentAttachmentRequest(requestTarget, requestGeneration, commentId, revision)) {
         setAttachmentError(commentId, errorHint(cause, 'Failed to delete comment attachment'));
       }
       return false;
