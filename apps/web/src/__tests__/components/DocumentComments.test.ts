@@ -1,10 +1,34 @@
 import { type DOMWrapper, flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { ref } from 'vue';
 import DocumentComments from '@/components/notas/DocumentComments.vue';
 import { useAuthStore } from '@/stores/auth';
 import { type CommentDto, useDocumentsStore } from '@/stores/documents';
 import { useWorkspaceStore } from '@/stores/workspace';
+
+const commentFeed = {
+  entries: ref<unknown[]>([]),
+  hasMore: ref(false),
+  status: ref<'idle' | 'pending' | 'ready' | 'error'>('ready'),
+  error: ref<string | null>(null),
+  attachments: ref<Record<string, unknown[]>>({}),
+  attachmentError: ref<Record<string, string>>({}),
+  isAttachmentListLoading: () => false,
+  isAttachmentUploadLoading: () => false,
+  isAttachmentDownloadLoading: () => false,
+  isAttachmentDeleteLoading: () => false,
+  load: vi.fn().mockResolvedValue(undefined),
+  loadMore: vi.fn().mockResolvedValue(undefined),
+  loadAttachments: vi.fn().mockResolvedValue(undefined),
+  uploadAttachment: vi.fn().mockResolvedValue(null),
+  downloadAttachment: vi.fn().mockResolvedValue(null),
+  deleteAttachment: vi.fn().mockResolvedValue(true),
+};
+
+vi.mock('@/composables/useCommentFeed', () => ({
+  useCommentFeed: () => commentFeed,
+}));
 
 const editorFocus = vi.fn();
 
@@ -43,6 +67,12 @@ function setup(comments: CommentDto[], commentsHasMore = false) {
   const store = useDocumentsStore();
   vi.spyOn(store, 'loadComments').mockResolvedValue();
   store.$patch({ comments, commentsHasMore });
+  commentFeed.hasMore.value = commentsHasMore;
+  commentFeed.entries.value = comments.map((loadedComment) => ({
+    type: 'comment',
+    comment: loadedComment,
+    links: [],
+  }));
   return store;
 }
 
@@ -76,15 +106,86 @@ function signInAs(id: string, role: 'member' | 'admin' = 'member'): void {
 beforeEach(() => {
   setActivePinia(createPinia());
   editorFocus.mockClear();
+  commentFeed.entries.value = [];
+  commentFeed.hasMore.value = false;
+  commentFeed.status.value = 'ready';
+  commentFeed.error.value = null;
+  commentFeed.attachments.value = {};
+  commentFeed.attachmentError.value = {};
+  vi.clearAllMocks();
 });
 
 describe('DocumentComments (ATL-37)', () => {
-  it('loads the thread for the open document on mount', () => {
+  it('loads and renders the shared document feed with retained events and attachment lifecycle callbacks', async () => {
+    const store = setup([]);
+    commentFeed.entries.value = [
+      {
+        type: 'comment',
+        comment: comment('c1', 'Attached note', 'me', 'user', 'Me'),
+        links: [{ target: { status: 'available', id: 'attachment-1', type: 'attachment' } }],
+      },
+      {
+        type: 'event',
+        id: 'e1',
+        kind: 'link_removed',
+        created_at: '2026-01-01T01:00:00Z',
+        target: { status: 'unavailable', label: 'Recurso no disponible' },
+      },
+    ];
+    commentFeed.attachments.value = {
+      c1: [
+        {
+          id: 'attachment-1',
+          comment_id: 'c1',
+          content_type: 'image/png',
+          created_at: '2026-01-01T00:00:00Z',
+          file_name: 'image.png',
+          size_bytes: 12,
+        },
+      ],
+    };
+    signInAs('me');
+
+    const wrapper = mountPanel();
+    await flushPromises();
+
+    expect(store.loadComments).not.toHaveBeenCalled();
+    expect(commentFeed.load).toHaveBeenCalledWith({ kind: 'document', ws: 'acme', slug: 'my-doc' });
+    expect(commentFeed.loadAttachments).toHaveBeenCalledWith(
+      { kind: 'document', ws: 'acme', slug: 'my-doc' },
+      'c1',
+    );
+    expect(wrapper.get('[data-comment-event="e1"]').text()).toContain('Recurso no disponible');
+    expect(wrapper.get('[aria-label="Download image.png"]')).toBeDefined();
+
+    await wrapper.get('[data-comment-link="attachment-1"]').trigger('click');
+    await flushPromises();
+    expect(commentFeed.downloadAttachment).toHaveBeenCalledWith(
+      { kind: 'document', ws: 'acme', slug: 'my-doc' },
+      'c1',
+      'attachment-1',
+    );
+  });
+
+  it('shows the shared feed error and retries it without falling back to the legacy document collection', async () => {
+    const store = setup([]);
+    commentFeed.status.value = 'error';
+    commentFeed.error.value = 'Comment feed denied';
+
+    const wrapper = mountPanel();
+    await wrapper.get('[data-state="error"] button').trigger('click');
+
+    expect(wrapper.text()).toContain('Comment feed denied');
+    expect(commentFeed.load).toHaveBeenCalledWith({ kind: 'document', ws: 'acme', slug: 'my-doc' });
+    expect(store.loadComments).not.toHaveBeenCalled();
+  });
+  it('loads the shared feed for the open document on mount', () => {
     const store = setup([]);
 
     mountPanel();
 
-    expect(store.loadComments).toHaveBeenCalledWith('acme', 'my-doc');
+    expect(store.loadComments).not.toHaveBeenCalled();
+    expect(commentFeed.load).toHaveBeenCalledWith({ kind: 'document', ws: 'acme', slug: 'my-doc' });
   });
 
   it('shows a compact empty state when there are no comments', () => {
@@ -195,14 +296,13 @@ describe('DocumentComments (ATL-37)', () => {
     expect(wrapper.find('[data-comment-id="c1"] [data-test="comment-edit-save"]').exists()).toBe(false);
   });
 
-  it('loads the next page via loadMoreComments when more remain', async () => {
-    const store = setup([comment('c1', 'First', 'u1')], true);
-    const loadMore = vi.spyOn(store, 'loadMoreComments').mockResolvedValue();
+  it('loads the next shared-feed page when more remain', async () => {
+    setup([comment('c1', 'First', 'u1')], true);
 
     const wrapper = mountPanel();
 
     await wrapper.get('[data-test="comment-load-more"]').trigger('click');
 
-    expect(loadMore).toHaveBeenCalledWith('acme', 'my-doc');
+    expect(commentFeed.loadMore).toHaveBeenCalledWith({ kind: 'document', ws: 'acme', slug: 'my-doc' });
   });
 });

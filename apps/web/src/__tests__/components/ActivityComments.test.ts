@@ -1,7 +1,7 @@
 import { type DOMWrapper, flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { nextTick } from 'vue';
+import { nextTick, ref } from 'vue';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import ActivityComments from '@/components/tareas/ActivityComments.vue';
 import { useAuthStore } from '@/stores/auth';
@@ -12,6 +12,29 @@ import {
   useTaskDetailStore,
 } from '@/stores/taskDetail';
 import { useWorkspaceStore } from '@/stores/workspace';
+
+const commentFeed = {
+  entries: ref<unknown[]>([]),
+  hasMore: ref(false),
+  status: ref<'idle' | 'pending' | 'ready' | 'error'>('ready'),
+  error: ref<string | null>(null),
+  attachments: ref<Record<string, unknown[]>>({}),
+  attachmentError: ref<Record<string, string>>({}),
+  isAttachmentListLoading: () => false,
+  isAttachmentUploadLoading: () => false,
+  isAttachmentDownloadLoading: () => false,
+  isAttachmentDeleteLoading: () => false,
+  load: vi.fn().mockResolvedValue(undefined),
+  loadMore: vi.fn().mockResolvedValue(undefined),
+  loadAttachments: vi.fn().mockResolvedValue(undefined),
+  uploadAttachment: vi.fn().mockResolvedValue(null),
+  downloadAttachment: vi.fn().mockResolvedValue(null),
+  deleteAttachment: vi.fn().mockResolvedValue(true),
+};
+
+vi.mock('@/composables/useCommentFeed', () => ({
+  useCommentFeed: () => commentFeed,
+}));
 
 const RouteStub = { template: '<div />' };
 const testRouter = createRouter({
@@ -72,6 +95,15 @@ const activity = (
 });
 
 function mountFeed() {
+  if (commentFeed.entries.value.length === 0) {
+    commentFeed.entries.value = useTaskDetailStore().comments.map((loadedComment) => ({
+      type: 'comment',
+      comment: loadedComment,
+      links: [],
+    }));
+  }
+  commentFeed.hasMore.value = useTaskDetailStore().commentsHasMore;
+
   return mount(ActivityComments, {
     props: { ws: 'acme', readableId: 'ATL-1' },
     global: { stubs: { MarkdownEditor: MarkdownEditorStub, teleport: true } },
@@ -101,9 +133,76 @@ function signInAs(id: string, role: 'member' | 'admin' = 'member'): void {
 beforeEach(() => {
   setActivePinia(createPinia());
   editorFocus.mockClear();
+  commentFeed.entries.value = [];
+  commentFeed.hasMore.value = false;
+  commentFeed.status.value = 'ready';
+  commentFeed.error.value = null;
+  commentFeed.attachments.value = {};
+  commentFeed.attachmentError.value = {};
+  vi.clearAllMocks();
 });
 
 describe('ActivityComments feed (ATL-19)', () => {
+  it('renders shared comments, retained events, and existing activity in chronological order', async () => {
+    useTaskDetailStore()._setForTest({
+      activity: [activity('a1', 'created', '2026-01-01T09:00:00Z')],
+    });
+    commentFeed.entries.value = [
+      {
+        type: 'comment',
+        comment: comment('c1', 'Linked note', 'u1', 'user', 'Jordan', '2026-01-01T10:00:00Z'),
+        links: [{ target: { status: 'available', id: 'ATL-9', type: 'task', label: 'ATL-9' } }],
+      },
+      {
+        type: 'event',
+        id: 'e1',
+        kind: 'link_added',
+        created_at: '2026-01-01T11:00:00Z',
+        target: { status: 'unavailable', label: 'Recurso no disponible' },
+      },
+    ];
+
+    const wrapper = mountFeed();
+    await flushPromises();
+
+    expect(commentFeed.load).toHaveBeenCalledWith({ kind: 'task', ws: 'acme', readableId: 'ATL-1' });
+    expect(
+      wrapper
+        .findAll('[data-activity-id], [data-comment-id], [data-comment-event]')
+        .map(
+          (node) =>
+            node.attributes('data-activity-id') ??
+            node.attributes('data-comment-id') ??
+            node.attributes('data-comment-event'),
+        ),
+    ).toEqual(['a1', 'c1', 'e1']);
+    expect(wrapper.get('[data-comment-link="ATL-9"]').text()).toBe('ATL-9');
+    expect(wrapper.get('[data-comment-event="e1"]').text()).toContain('Recurso no disponible');
+  });
+
+  it('navigates available shared task links without exposing unavailable target metadata', async () => {
+    commentFeed.entries.value = [
+      {
+        type: 'comment',
+        comment: comment('c1', 'Linked task', 'u1'),
+        links: [
+          { target: { status: 'available', id: 'ATL-9', type: 'task', label: 'ATL-9' } },
+          { target: { status: 'unavailable', label: 'Recurso no disponible', id: 'hidden-title' } },
+        ],
+      },
+    ];
+
+    const wrapper = mount(ActivityComments, {
+      props: { ws: 'acme', readableId: 'ATL-1' },
+      global: { plugins: [testRouter], stubs: { MarkdownEditor: MarkdownEditorStub, teleport: true } },
+    });
+    await wrapper.get('[data-comment-link="ATL-9"]').trigger('click');
+    await flushPromises();
+
+    expect(testRouter.currentRoute.value.fullPath).toBe('/t/task/ATL-9');
+    expect(wrapper.text()).toContain('Recurso no disponible');
+    expect(wrapper.text()).not.toContain('hidden-title');
+  });
   it('interleaves activity entries and comments in chronological order', () => {
     useTaskDetailStore()._setForTest({
       activity: [
@@ -381,15 +480,14 @@ describe('ActivityComments feed (ATL-19)', () => {
     expect(link.attributes('href')).toBe('/t/task/ATL-9');
   });
 
-  it('loads the next page via loadMoreComments when more remain', async () => {
+  it('loads the next shared-feed page when more remain', async () => {
     const detail = useTaskDetailStore();
     detail._setForTest({ comments: [comment('c1', 'First', 'u1')], commentsHasMore: true });
-    const loadMore = vi.spyOn(detail, 'loadMoreComments').mockResolvedValue();
 
     const wrapper = mountFeed();
 
     await wrapper.get('[data-test="comment-load-more"]').trigger('click');
 
-    expect(loadMore).toHaveBeenCalledWith('acme', 'ATL-1');
+    expect(commentFeed.loadMore).toHaveBeenCalledWith({ kind: 'task', ws: 'acme', readableId: 'ATL-1' });
   });
 });

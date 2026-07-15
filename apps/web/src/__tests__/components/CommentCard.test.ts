@@ -48,7 +48,7 @@ describe('CommentCard', () => {
 
     await wrapper.get('[data-comment-link="task-1"]').trigger('click');
     expect(wrapper.emitted('navigate-link')).toEqual([
-      [{ status: 'available', id: 'task-1', type: 'task', label: 'ATL-1' }],
+      [{ status: 'available', id: 'task-1', type: 'task', label: 'ATL-1' }, 'comment-1'],
     ]);
   });
 
