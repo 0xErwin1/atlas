@@ -1,7 +1,10 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
+import { z } from 'zod';
 import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
+import { getResourceCachePrincipal, resourceCache } from '@/cache/cacheRuntime';
+import { buildCacheKey, CACHE_CADENCE } from '@/cache/resourceCache';
 import { errorHint } from '@/lib/apiError';
 import { attachmentFileName } from '@/lib/fileTransfer';
 import { collectPaged } from '@/lib/pagination';
@@ -29,6 +32,21 @@ function legacyCommentItems(data: CommentListResponse): CommentDto[] | null {
 
   return legacyItems;
 }
+
+type BacklinksCacheOptions = {
+  workspaceId: string;
+};
+
+const backlinksSchema: z.ZodType<BacklinkSummary[]> = z.array(
+  z
+    .object({
+      source_document_id: z.string(),
+      source_slug: z.string().nullable().optional(),
+      source_title: z.string().nullable().optional(),
+      display_title: z.string().nullable().optional(),
+    })
+    .passthrough(),
+) as z.ZodType<BacklinkSummary[]>;
 
 /**
  * Documents store: the single caller of the document list and backlink routes
@@ -60,6 +78,7 @@ export const useDocumentsStore = defineStore('documents', () => {
   let backlinksLoadSeq = 0;
   let commentsLoadSeq = 0;
   let commentsTargetEpoch = 0;
+  let activeBacklinksCacheKey: string | null = null;
 
   function summariesFor(projectSlug: string): DocumentSummary[] {
     return summariesByProject.value[projectSlug] ?? [];
@@ -67,6 +86,26 @@ export const useDocumentsStore = defineStore('documents', () => {
 
   function isProjectLoading(projectSlug: string): boolean {
     return loadingByProject.value[projectSlug] ?? false;
+  }
+
+  function clearProjectBuckets(): void {
+    summariesLoadSeqByProject.clear();
+    summariesDisplaySeq += 1;
+    summariesLoadingDisplaySeq = summariesDisplaySeq;
+    summariesDisplayProjectSlug = null;
+    summaries.value = [];
+    summariesByProject.value = {};
+    loading.value = false;
+    loadingByProject.value = {};
+    error.value = null;
+    clearSecondaryTarget();
+  }
+
+  function publishSummariesForProject(projectSlug: string, items: DocumentSummary[]): void {
+    summariesByProject.value = { ...summariesByProject.value, [projectSlug]: items };
+    if (summariesDisplayProjectSlug === null || summariesDisplayProjectSlug === projectSlug) {
+      summaries.value = items;
+    }
   }
 
   function isSecondaryTarget(ws: string, slug: string): boolean {
@@ -77,7 +116,15 @@ export const useDocumentsStore = defineStore('documents', () => {
     return generation === commentsTargetEpoch && isSecondaryTarget(target.workspaceSlug, target.slug);
   }
 
+  function deactivateBacklinksCache(): void {
+    if (activeBacklinksCacheKey === null) return;
+
+    resourceCache.deactivate(activeBacklinksCacheKey);
+    activeBacklinksCacheKey = null;
+  }
+
   function clearSecondaryState(): void {
+    deactivateBacklinksCache();
     backlinksLoadSeq += 1;
     commentsLoadSeq += 1;
     commentsTargetEpoch += 1;
@@ -152,39 +199,72 @@ export const useDocumentsStore = defineStore('documents', () => {
       return;
     }
 
-    summariesByProject.value = { ...summariesByProject.value, [projectSlug]: items };
-    if (
-      (!silent && displaySeq === summariesDisplaySeq) ||
-      summariesDisplayProjectSlug === null ||
-      summariesDisplayProjectSlug === projectSlug
-    ) {
-      summaries.value = items;
-    }
+    publishSummariesForProject(projectSlug, items);
   }
 
-  async function loadBacklinks(ws: string, slug: string): Promise<void> {
+  async function loadBacklinks(ws: string, slug: string, cache?: BacklinksCacheOptions): Promise<void> {
     resetSecondaryTarget(ws, slug);
+    deactivateBacklinksCache();
     const seq = ++backlinksLoadSeq;
     backlinksStatus.value = 'pending';
     backlinksError.value = null;
 
-    const { items, error: apiError } = await collectPaged<BacklinkSummary>((cursor) =>
-      wrappedClient.GET('/api/workspaces/{ws}/documents/{slug}/backlinks', {
-        params: { path: { ws, slug }, query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) } },
-      }),
-    );
+    const publish = (items: BacklinkSummary[]): void => {
+      if (seq !== backlinksLoadSeq || !isSecondaryTarget(ws, slug)) return;
 
-    if (seq !== backlinksLoadSeq || !isSecondaryTarget(ws, slug)) return;
+      backlinks.value = items;
+      backlinksStatus.value = 'ready';
+    };
+    const load = async (): Promise<BacklinkSummary[]> => {
+      const { items, error: apiError } = await collectPaged<BacklinkSummary>((cursor) =>
+        wrappedClient.GET('/api/workspaces/{ws}/documents/{slug}/backlinks', {
+          params: { path: { ws, slug }, query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) } },
+        }),
+      );
 
-    if (apiError !== undefined) {
-      backlinks.value = [];
+      if (apiError !== undefined) throw new Error(errorHint(apiError, 'Failed to load backlinks'));
+      return items;
+    };
+    const key =
+      cache === undefined
+        ? null
+        : buildCacheKey({
+            principal: getResourceCachePrincipal(),
+            workspaceId: cache.workspaceId,
+            resourceKind: 'note-secondary',
+            resourceId: slug,
+            query: { type: 'backlinks' },
+          });
+
+    try {
+      if (key === null || !resourceCache.isAvailable()) {
+        publish(await load());
+        return;
+      }
+
+      const request = {
+        key,
+        payloadSchema: backlinksSchema,
+        tags: [`document:${slug}`, 'secondary:backlinks'],
+        freshForMs: CACHE_CADENCE.secondary.freshForMs,
+        activeForMs: CACHE_CADENCE.secondary.activeForMs,
+        retentionForMs: 24 * 60 * 60 * 1000,
+        load,
+        publish,
+        isCurrent: () => seq === backlinksLoadSeq && isSecondaryTarget(ws, slug),
+      };
+      activeBacklinksCacheKey = key;
+      await resourceCache.hydrate(request);
+      if (activeBacklinksCacheKey !== key || !request.isCurrent()) return;
+
+      resourceCache.activate(request);
+      await resourceCache.revalidate(request);
+    } catch (error) {
+      if (seq !== backlinksLoadSeq || !isSecondaryTarget(ws, slug)) return;
+
       backlinksStatus.value = 'error';
-      backlinksError.value = errorHint(apiError, 'Failed to load backlinks');
-      return;
+      backlinksError.value = error instanceof Error ? error.message : 'Failed to load backlinks';
     }
-
-    backlinks.value = items;
-    backlinksStatus.value = 'ready';
   }
 
   /**
@@ -388,7 +468,12 @@ export const useDocumentsStore = defineStore('documents', () => {
     return true;
   }
 
-  async function remove(ws: string, projectSlug: string, slug: string): Promise<boolean> {
+  async function remove(
+    ws: string,
+    projectSlug: string,
+    slug: string,
+    cache?: { workspaceId: string },
+  ): Promise<boolean> {
     const { error: apiError } = await wrappedClient.DELETE('/api/workspaces/{ws}/documents/{slug}', {
       params: { path: { ws, slug } },
     });
@@ -396,6 +481,14 @@ export const useDocumentsStore = defineStore('documents', () => {
     if (apiError !== undefined) {
       error.value = errorHint(apiError, 'Failed to delete document');
       return false;
+    }
+
+    if (cache !== undefined) {
+      await resourceCache.purgeTags(
+        [`document:${slug}`, `project:${projectSlug}`],
+        getResourceCachePrincipal(),
+        cache.workspaceId,
+      );
     }
 
     await loadSummaries(ws, projectSlug, { silent: true });
@@ -490,6 +583,8 @@ export const useDocumentsStore = defineStore('documents', () => {
     error,
     summariesFor,
     isProjectLoading,
+    clearProjectBuckets,
+    publishSummariesForProject,
     resetSecondaryTarget,
     clearSecondaryTarget,
     loadSummaries,

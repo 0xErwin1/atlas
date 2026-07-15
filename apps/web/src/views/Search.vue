@@ -14,6 +14,7 @@ import Icon from '@/components/ui/Icon.vue';
 import Popover from '@/components/ui/Popover.vue';
 import { useBreakpoint } from '@/composables/useBreakpoint';
 import { useSearch } from '@/composables/useSearch';
+import { formatShortcut } from '@/lib/keymap';
 import { validateForm } from '@/lib/validation';
 import { useSavedSearchesStore } from '@/stores/savedSearches';
 import { type SearchHitDto, type SearchSort, useSearchStore } from '@/stores/search';
@@ -26,6 +27,7 @@ const router = useRouter();
 const workspace = useWorkspaceStore();
 const ui = useUiStore();
 const { isMobile } = useBreakpoint();
+const commandPaletteShortcut = formatShortcut('command-palette');
 
 const ws = computed(() => workspace.activeWorkspaceSlug ?? '');
 
@@ -198,7 +200,7 @@ function onListKeydown(event: KeyboardEvent): void {
     </template>
 
     <template #sidebar-actions>
-      <button type="button" class="atl-gbtn" title="Command palette ⌘K" aria-label="Command palette" @click="ui.openPalette()">
+      <button type="button" class="atl-gbtn" :title="`Command palette ${commandPaletteShortcut}`" aria-label="Command palette" @click="ui.openPalette()">
         <Icon name="command" :size="14" />
       </button>
     </template>
@@ -369,7 +371,7 @@ function onListKeydown(event: KeyboardEvent): void {
       <button
         type="button"
         class="atl-gbtn"
-        title="Command palette ⌘K"
+        :title="`Command palette ${commandPaletteShortcut}`"
         aria-label="Command palette"
         @click="ui.openPalette()"
       >

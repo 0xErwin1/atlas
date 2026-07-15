@@ -8,11 +8,35 @@ const { GET, POST, DELETE, PATCH } = vi.hoisted(() => ({
   PATCH: vi.fn(),
 }));
 
+const { cacheHydrate, cacheRevalidate, cacheActivate, cacheDeactivate, cachePurgeTags, cacheIsAvailable } =
+  vi.hoisted(() => ({
+    cacheHydrate: vi.fn(),
+    cacheRevalidate: vi.fn(),
+    cacheActivate: vi.fn(),
+    cacheDeactivate: vi.fn(),
+    cachePurgeTags: vi.fn(),
+    cacheIsAvailable: vi.fn(() => true),
+  }));
+
 vi.mock('@/api/wrapper', () => ({
   wrappedClient: { GET, POST, DELETE, PATCH },
 }));
 
+vi.mock('@/cache/cacheRuntime', () => ({
+  getResourceCachePrincipal: () => 'user:018f0000-0000-7000-8000-000000000001',
+  resourceCacheEpoch: { __v_isRef: true, value: 0 },
+  invalidateTaskCache: cachePurgeTags,
+  resourceCache: {
+    isAvailable: cacheIsAvailable,
+    hydrate: cacheHydrate,
+    revalidate: cacheRevalidate,
+    activate: cacheActivate,
+    deactivate: cacheDeactivate,
+  },
+}));
+
 import { type ReferenceDto, useTaskDetailStore } from '@/stores/taskDetail';
+import { useTasksStore } from '@/stores/tasks';
 
 const actor = (id: string, type: string, name: string) => ({
   id,
@@ -171,6 +195,13 @@ describe('useTaskDetailStore', () => {
     POST.mockReset();
     DELETE.mockReset();
     PATCH.mockReset();
+    cacheHydrate.mockReset();
+    cacheRevalidate.mockReset();
+    cacheActivate.mockReset();
+    cacheDeactivate.mockReset();
+    cachePurgeTags.mockReset();
+    cacheIsAvailable.mockReset();
+    cacheIsAvailable.mockReturnValue(true);
   });
 
   it('loadAll populates assignees, references, subtasks, checklist, activity and comments', async () => {
@@ -303,6 +334,285 @@ describe('useTaskDetailStore', () => {
     expect(store.comments).toEqual([]);
     expect(store.collectionStatus.comments).toBe('error');
     expect(store.collectionErrors.comments).not.toBeNull();
+  });
+
+  it('hydrates each current task collection independently before failed refreshes retain cached data', async () => {
+    cacheHydrate.mockImplementation(async (request) => {
+      if (request.key.includes('assignees')) {
+        request.publish([assignee('u-cache', 'user', 'Cached user')]);
+      }
+      return null;
+    });
+    cacheRevalidate.mockRejectedValue(new Error('Network unavailable'));
+
+    const store = useTaskDetailStore();
+    await store.loadAll(
+      'ws',
+      'ATL-1',
+      '018f0000-0000-7000-8000-000000000002',
+      '018f0000-0000-7000-8000-000000000003',
+    );
+
+    expect(store.assignees[0]?.assignee.display_name).toBe('Cached user');
+    expect(store.collectionStatus.assignees).toBe('error');
+    expect(store.collectionStatus.references).toBe('error');
+    expect(cacheHydrate).toHaveBeenCalledTimes(8);
+    expect(cacheActivate).toHaveBeenCalledTimes(8);
+    expect(cacheHydrate.mock.calls[0]?.[0].tags).toContain('task-uuid:018f0000-0000-7000-8000-000000000003');
+  });
+
+  it.each([
+    403, 404,
+  ])('retracts every collection and the primary task after an initial %i detail denial', async (status) => {
+    cacheHydrate.mockResolvedValue(null);
+    cacheRevalidate.mockImplementation(async (request) => request.publish(await request.load()));
+    GET.mockImplementation((path: string) => {
+      if (path.endsWith('/references')) {
+        return Promise.resolve({ data: undefined, error: { status, hint: 'Denied' } });
+      }
+      return Promise.resolve(collectionResponse(collectionIndex(path), 'Visible'));
+    });
+
+    const primary = useTasksStore();
+    GET.mockResolvedValueOnce({
+      data: {
+        id: '018f0000-0000-7000-8000-000000000003',
+        readable_id: 'ATL-1',
+        workspace_id: 'workspace',
+        board_id: 'board-1',
+        column_id: 'column-1',
+        project_id: 'project-1',
+        title: 'Visible task',
+        description: '',
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+        created_by: actor('u1', 'user', 'User'),
+      },
+      error: undefined,
+    });
+    await primary.loadTask('ws', 'ATL-1');
+    const store = useTaskDetailStore();
+    await store.loadAll(
+      'ws',
+      'ATL-1',
+      '018f0000-0000-7000-8000-000000000002',
+      '018f0000-0000-7000-8000-000000000003',
+    );
+
+    expect(store.assignees).toEqual([]);
+    expect(store.references).toEqual([]);
+    expect(store.comments).toEqual([]);
+    expect(primary.openTask).toBeNull();
+    expect(cachePurgeTags).toHaveBeenCalledWith(
+      '018f0000-0000-7000-8000-000000000002',
+      'ATL-1',
+      undefined,
+      '018f0000-0000-7000-8000-000000000003',
+    );
+  });
+
+  it.each([403, 404])('retracts all detail state after an online-only initial %i denial', async (status) => {
+    cacheIsAvailable.mockReturnValue(false);
+    GET.mockImplementation((path: string) => {
+      if (path.endsWith('/references')) {
+        return Promise.resolve({ data: undefined, error: { status, hint: 'Denied' } });
+      }
+      return Promise.resolve(collectionResponse(collectionIndex(path), 'Visible'));
+    });
+
+    const primary = useTasksStore();
+    GET.mockResolvedValueOnce({
+      data: {
+        id: '018f0000-0000-7000-8000-000000000003',
+        readable_id: 'ATL-1',
+        workspace_id: 'workspace',
+        board_id: 'board-1',
+        column_id: 'column-1',
+        project_id: 'project-1',
+        title: 'Visible task',
+        description: '',
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+        created_by: actor('u1', 'user', 'User'),
+      },
+      error: undefined,
+    });
+    await primary.loadTask('ws', 'ATL-1');
+
+    const store = useTaskDetailStore();
+    await store.loadAll(
+      'ws',
+      'ATL-1',
+      '018f0000-0000-7000-8000-000000000002',
+      '018f0000-0000-7000-8000-000000000003',
+    );
+
+    expect(store.assignees).toEqual([]);
+    expect(store.references).toEqual([]);
+    expect(store.comments).toEqual([]);
+    expect(primary.openTask).toBeNull();
+    expect(cachePurgeTags).toHaveBeenCalledWith(
+      '018f0000-0000-7000-8000-000000000002',
+      'ATL-1',
+      undefined,
+      '018f0000-0000-7000-8000-000000000003',
+    );
+  });
+
+  it.each([
+    403, 404,
+  ])('invalidates in-flight and subsequent mutations after an initial %i denial', async (status) => {
+    cacheIsAvailable.mockReturnValue(false);
+    const denial = deferred<{ data: undefined; error: { status: number; hint: string } }>();
+    const mutation = deferred<{ data: ReturnType<typeof assignee>; error: undefined }>();
+    GET.mockImplementation((path: string) =>
+      path.endsWith('/references')
+        ? denial.promise
+        : Promise.resolve(collectionResponse(collectionIndex(path), 'Visible')),
+    );
+    POST.mockReturnValueOnce(mutation.promise);
+
+    const store = useTaskDetailStore();
+    const load = store.loadAll(
+      'ws',
+      'ATL-1',
+      '018f0000-0000-7000-8000-000000000002',
+      '018f0000-0000-7000-8000-000000000003',
+    );
+    const add = store.addAssignee('ws', 'ATL-1', {
+      assignee_id: 'late-user',
+      assignee_type: 'user',
+    });
+
+    denial.resolve({ data: undefined, error: { status, hint: 'Denied' } });
+    await load;
+    mutation.resolve({ data: assignee('late-user', 'user', 'Late user'), error: undefined });
+
+    expect(await add).toBe(false);
+    expect(store.assignees).toEqual([]);
+    expect(
+      await store.addAssignee('ws', 'ATL-1', {
+        assignee_id: 'blocked-user',
+        assignee_type: 'user',
+      }),
+    ).toBe(false);
+    expect(POST).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows a legitimate reload and mutation after a denial retraction', async () => {
+    cacheIsAvailable.mockReturnValue(false);
+    let denyReferences = true;
+    GET.mockImplementation((path: string) => {
+      if (denyReferences && path.endsWith('/references')) {
+        return Promise.resolve({ data: undefined, error: { status: 403, hint: 'Denied' } });
+      }
+      return Promise.resolve(collectionResponse(collectionIndex(path), 'Reloaded'));
+    });
+
+    const store = useTaskDetailStore();
+    await store.loadAll(
+      'ws',
+      'ATL-1',
+      '018f0000-0000-7000-8000-000000000002',
+      '018f0000-0000-7000-8000-000000000003',
+    );
+    denyReferences = false;
+    await store.loadAll(
+      'ws',
+      'ATL-1',
+      '018f0000-0000-7000-8000-000000000002',
+      '018f0000-0000-7000-8000-000000000003',
+    );
+    POST.mockResolvedValueOnce({ data: assignee('new-user', 'user', 'New user'), error: undefined });
+
+    expect(
+      await store.addAssignee('ws', 'ATL-1', {
+        assignee_id: 'new-user',
+        assignee_type: 'user',
+      }),
+    ).toBe(true);
+    expect(store.assignees.some((item) => item.assignee.id === 'new-user')).toBe(true);
+  });
+
+  it.each([403, 404])('invalidates mutation currency when comment pagination receives %i', async (status) => {
+    cacheIsAvailable.mockReturnValue(false);
+    GET.mockImplementation((path: string) =>
+      Promise.resolve(collectionResponse(collectionIndex(path), 'Initial')),
+    );
+    const store = useTaskDetailStore();
+    await store.loadAll(
+      'ws',
+      'ATL-1',
+      '018f0000-0000-7000-8000-000000000002',
+      '018f0000-0000-7000-8000-000000000003',
+    );
+    store._setForTest({
+      comments: [comment('cm1', 'Original', 'user', 'Jordan')],
+      commentsCursor: 'next-page',
+      commentsHasMore: true,
+    });
+    const mutation = deferred<{ data: ReturnType<typeof comment>; error: undefined }>();
+    PATCH.mockReturnValueOnce(mutation.promise);
+    GET.mockImplementation((path: string) =>
+      path.endsWith('/comments')
+        ? Promise.resolve({ data: undefined, error: { status, hint: 'Denied' } })
+        : Promise.resolve(collectionResponse(collectionIndex(path), 'Initial')),
+    );
+
+    const edit = store.editComment('ws', 'ATL-1', 'cm1', 'Late edit');
+    await store.loadMoreComments('ws', 'ATL-1');
+    mutation.resolve({ data: comment('cm1', 'Late edit', 'user', 'Jordan'), error: undefined });
+
+    expect(await edit).toBe(false);
+    expect(store.comments).toEqual([]);
+    expect(await store.addComment('ws', 'ATL-1', 'Blocked comment')).toBe(false);
+    expect(POST).not.toHaveBeenCalled();
+  });
+
+  it('keeps detail collections online-only when the authoritative task UUID is unavailable', async () => {
+    GET.mockImplementation((path: string) =>
+      Promise.resolve(collectionResponse(collectionIndex(path), 'Online')),
+    );
+
+    const store = useTaskDetailStore();
+    await store.loadAll('ws', 'ATL-1', '018f0000-0000-7000-8000-000000000002');
+
+    expect(store.assignees[0]?.assignee.display_name).toBe('Online');
+    expect(cacheHydrate).not.toHaveBeenCalled();
+    expect(cacheActivate).not.toHaveBeenCalled();
+  });
+
+  it('caches each comments page under its exact cursor and preserves page order', async () => {
+    cacheHydrate.mockImplementation(async () => null);
+    cacheRevalidate.mockImplementation(async (request) => request.publish(await request.load()));
+    GET.mockImplementation((path: string, options?: { params?: { query?: { cursor?: string } } }) => {
+      if (path.endsWith('/comments') && options?.params?.query?.cursor === 'page-1') {
+        return Promise.resolve({
+          data: { items: [comment('cm2', 'Second', 'user', 'Jordan')], has_more: false, next_cursor: null },
+          error: undefined,
+        });
+      }
+      return Promise.resolve(collectionResponse(collectionIndex(path), 'First'));
+    });
+
+    const store = useTaskDetailStore();
+    await store.loadAll(
+      'ws',
+      'ATL-1',
+      '018f0000-0000-7000-8000-000000000002',
+      '018f0000-0000-7000-8000-000000000003',
+    );
+    store._setForTest({
+      comments: [comment('cm1', 'First', 'user', 'Jordan')],
+      commentsCursor: 'page-1',
+      commentsHasMore: true,
+    });
+
+    await store.loadMoreComments('ws', 'ATL-1');
+
+    expect(store.comments.map((item) => item.body)).toEqual(['First', 'Second']);
+    expect(cacheHydrate.mock.calls.at(-1)?.[0].key).toContain('comments:page-1');
+    expect(cacheActivate.mock.calls.at(-1)?.[0].key).toContain('comments:page-1');
   });
 
   it('resets every detail collection for a workspace-only target change and rejects late results', async () => {
@@ -600,6 +910,43 @@ describe('useTaskDetailStore', () => {
 
     expect(ok).toBe(true);
     expect(store.subtasks).toHaveLength(0);
+  });
+
+  it.each([
+    'moveSubtaskToColumn',
+    'promoteSubtask',
+  ] as const)('invalidates parent and child task cache scopes after %s succeeds', async (method) => {
+    const store = useTaskDetailStore();
+    GET.mockImplementation((path: string) =>
+      Promise.resolve(collectionResponse(collectionIndex(path), 'Parent')),
+    );
+    await store.loadAll(
+      'ws',
+      'ATL-1',
+      '018f0000-0000-7000-8000-000000000002',
+      '018f0000-0000-7000-8000-000000000003',
+    );
+    store._setForTest({ subtasks: [subtaskSummary('s1', 'ATL-2', 'Child')] });
+    POST.mockResolvedValueOnce({ data: undefined, error: undefined });
+
+    const ok =
+      method === 'moveSubtaskToColumn'
+        ? await store.moveSubtaskToColumn('ws', 'ATL-2', 'col-2')
+        : await store.promoteSubtask('ws', 'ATL-2');
+
+    expect(ok).toBe(true);
+    expect(cachePurgeTags).toHaveBeenCalledWith(
+      '018f0000-0000-7000-8000-000000000002',
+      'ATL-2',
+      undefined,
+      's1',
+    );
+    expect(cachePurgeTags).toHaveBeenCalledWith(
+      '018f0000-0000-7000-8000-000000000002',
+      'ATL-1',
+      undefined,
+      '018f0000-0000-7000-8000-000000000003',
+    );
   });
 
   it('addAssignee optimistically appends, then reconciles with the server DTO', async () => {

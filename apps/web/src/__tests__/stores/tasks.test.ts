@@ -6,8 +6,31 @@ const { GET, PATCH } = vi.hoisted(() => ({
   PATCH: vi.fn(),
 }));
 
+const { cacheHydrate, cacheRevalidate, cacheActivate, cacheDeactivate, cachePurgeTags, cachePrincipal } =
+  vi.hoisted(() => ({
+    cacheHydrate: vi.fn(),
+    cacheRevalidate: vi.fn(),
+    cacheActivate: vi.fn(),
+    cacheDeactivate: vi.fn(),
+    cachePurgeTags: vi.fn(),
+    cachePrincipal: { value: 'user:018f0000-0000-7000-8000-000000000001' },
+  }));
+
 vi.mock('@/api/wrapper', () => ({
   wrappedClient: { GET, PATCH },
+}));
+
+vi.mock('@/cache/cacheRuntime', () => ({
+  getResourceCachePrincipal: () => cachePrincipal.value,
+  resourceCacheEpoch: { __v_isRef: true, value: 0 },
+  invalidateTaskCache: cachePurgeTags,
+  resourceCache: {
+    isAvailable: () => true,
+    hydrate: cacheHydrate,
+    revalidate: cacheRevalidate,
+    activate: cacheActivate,
+    deactivate: cacheDeactivate,
+  },
 }));
 
 import { useTasksStore } from '@/stores/tasks';
@@ -30,6 +53,7 @@ describe('useTasksStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
+    cachePrincipal.value = 'user:018f0000-0000-7000-8000-000000000001';
   });
 
   describe('loadTask', () => {
@@ -42,6 +66,52 @@ describe('useTasksStore', () => {
       expect(store.openTask?.readable_id).toBe('ATL-1');
       expect(store.loading).toBe(false);
       expect(store.error).toBeNull();
+    });
+
+    it('rejects a network task payload with another workspace or readable ID', async () => {
+      GET.mockResolvedValueOnce({
+        data: { ...taskDto('', 'ATL-2'), workspace_id: 'ws-2' },
+        error: undefined,
+      });
+
+      const store = useTasksStore();
+      await store.loadTask('ws-1', 'ATL-1', 'ws-1');
+
+      expect(store.openTask).toBeNull();
+      expect(store.error).toBe('Failed to load task');
+    });
+
+    it('hydrates the exact cached task before a failed refresh retains it', async () => {
+      const cached = taskDto('cached task', 'ATL-1');
+      cacheHydrate.mockImplementationOnce(async (request) => {
+        request.publish(cached);
+        return cached;
+      });
+      cacheRevalidate.mockRejectedValueOnce(new Error('Network unavailable'));
+
+      const store = useTasksStore();
+      await store.loadTask('ws-1', 'ATL-1', '018f0000-0000-7000-8000-000000000002');
+
+      expect(store.openTask?.description).toBe('cached task');
+      expect(store.loading).toBe(false);
+      expect(store.error).toBe('Failed to load task');
+      expect(cacheHydrate).toHaveBeenCalledOnce();
+      expect(cacheActivate).toHaveBeenCalledOnce();
+    });
+
+    it('retracts the current task and its exact cache after deletion', async () => {
+      cacheHydrate.mockImplementationOnce(async (request) => {
+        request.publish(taskDto('cached task'));
+        return taskDto('cached task');
+      });
+      cacheRevalidate.mockResolvedValueOnce(undefined);
+
+      const store = useTasksStore();
+      await store.loadTask('ws-1', 'ATL-1', '018f0000-0000-7000-8000-000000000002');
+      await store.retractTask('ATL-1');
+
+      expect(store.openTask).toBeNull();
+      expect(cachePurgeTags).toHaveBeenCalledWith('018f0000-0000-7000-8000-000000000002', 'ATL-1');
     });
 
     it('sets error on failure', async () => {
@@ -85,6 +155,27 @@ describe('useTasksStore', () => {
       resolveLoad({ data: taskDto('', 'ATL-1'), error: undefined });
       await pending;
       expect(store.openTask?.readable_id).toBe('ATL-1');
+    });
+
+    it('retracts the same route target and rejects its late completion after a principal change', async () => {
+      let resolveCurrent: (value: { data: ReturnType<typeof taskDto>; error: undefined }) => void = () => {};
+      GET.mockResolvedValueOnce({ data: taskDto('former principal'), error: undefined });
+      GET.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveCurrent = resolve;
+        }),
+      );
+
+      const store = useTasksStore();
+      await store.loadTask('ws-1', 'ATL-1', 'ws-1');
+      cachePrincipal.value = 'user:018f0000-0000-7000-8000-000000000002';
+      const current = store.loadTask('ws-1', 'ATL-1', 'ws-1');
+
+      expect(store.openTask).toBeNull();
+      resolveCurrent({ data: taskDto('current principal'), error: undefined });
+      await current;
+
+      expect(store.openTask?.description).toBe('current principal');
     });
 
     it('does not let an older request replace the latest requested task', async () => {
@@ -144,7 +235,7 @@ describe('useTasksStore', () => {
       expect(store.openTask?.description).toBe('refreshed');
     });
 
-    it('clears the current task when a same-target refresh fails', async () => {
+    it('keeps the current task when a same-target refresh returns an error', async () => {
       GET.mockResolvedValueOnce({ data: taskDto('visible', 'ATL-1'), error: undefined });
       GET.mockResolvedValueOnce({ data: undefined, error: { hint: 'Refresh failed' } });
 
@@ -152,12 +243,12 @@ describe('useTasksStore', () => {
       await store.loadTask('ws-1', 'ATL-1');
       await store.loadTask('ws-1', 'ATL-1');
 
-      expect(store.openTask).toBeNull();
+      expect(store.openTask?.description).toBe('visible');
       expect(store.loading).toBe(false);
       expect(store.error).toBe('Refresh failed');
     });
 
-    it('clears a visible current task when its same-target refresh is rejected', async () => {
+    it('keeps a visible current task when its same-target refresh is rejected', async () => {
       let rejectRefresh: (reason?: unknown) => void = () => {};
       GET.mockResolvedValueOnce({ data: taskDto('visible', 'ATL-1'), error: undefined });
       GET.mockReturnValueOnce(
@@ -176,7 +267,7 @@ describe('useTasksStore', () => {
       rejectRefresh(new Error('Network unavailable'));
       await expect(refresh).resolves.toBeUndefined();
 
-      expect(store.openTask).toBeNull();
+      expect(store.openTask?.description).toBe('visible');
       expect(store.loading).toBe(false);
       expect(store.error).toBe('Failed to load task');
     });

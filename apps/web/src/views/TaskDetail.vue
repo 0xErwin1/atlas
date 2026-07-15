@@ -94,13 +94,19 @@ async function load(): Promise<void> {
 
   const seq = ++loadSeq;
   const target = { readableId: readableId.value, ws: ws.value };
+  const workspaceId = workspace.workspaceIdForSlug(target.ws);
+  detail.clear();
 
-  await tasks.loadTask(target.ws, target.readableId);
+  if (workspaceId === null) {
+    await tasks.loadTask(target.ws, target.readableId);
+  } else {
+    await tasks.loadTask(target.ws, target.readableId, workspaceId);
+  }
 
   const superseded = seq !== loadSeq || readableId.value !== target.readableId || ws.value !== target.ws;
   if (superseded) return;
 
-  if (tasks.error !== null) {
+  if (tasks.error !== null && tasks.openTask?.readable_id !== target.readableId) {
     if (tasks.errorStatus === 404) {
       lastViewed.clearIfMatches(target.ws, {
         name: 'task-detail',
@@ -114,9 +120,12 @@ async function load(): Promise<void> {
     return;
   }
 
-  const boardId = tasks.openTask?.board_id;
+  const openTask = tasks.openTask;
+  const boardId = openTask?.board_id;
   await Promise.all([
-    detail.loadAll(target.ws, target.readableId),
+    workspaceId === null
+      ? detail.loadAll(target.ws, target.readableId, undefined, openTask.id)
+      : detail.loadAll(target.ws, target.readableId, workspaceId, openTask.id),
     workspace.loadMembers(target.ws),
     boardId === undefined
       ? Promise.resolve()
@@ -136,6 +145,8 @@ async function onDeleteTask(): Promise<void> {
 
   const ok = await boards.deleteTask(ws.value, id);
   if (ok) {
+    await tasks.retractTask(id);
+    detail.clear();
     ui.showBanner('Task deleted', 'success');
     backToBoard();
   } else {

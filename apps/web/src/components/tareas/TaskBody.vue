@@ -131,7 +131,8 @@ function fail(message: string | null): void {
 }
 
 function retryDetail(): void {
-  void detail.loadAll(props.ws, props.task.readable_id);
+  const workspaceId = workspace.workspaceIdForSlug(props.ws);
+  void detail.loadAll(props.ws, props.task.readable_id, workspaceId ?? undefined, props.task.id);
 }
 
 async function commitTitle(readableId: string, next: string): Promise<void> {

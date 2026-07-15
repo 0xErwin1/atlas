@@ -2,7 +2,15 @@ import { mount } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { nextTick } from 'vue';
+import {
+  blockAndPurgeResourceCache,
+  configureResourceCacheForTest,
+  resourceCacheEpoch,
+  setResourceCachePrincipal,
+} from '@/cache/cacheRuntime';
+import { buildCacheKey, type CacheEnvelope, ResourceCache } from '@/cache/resourceCache';
 import { EVENT_TYPE } from '@/lib/eventTypes';
+import { useDocumentsStore } from '@/stores/documents';
 import { useWorkspaceStore } from '@/stores/workspace';
 import Notes, { isDocumentMissingError, planDocumentReconcile } from '@/views/Notes.vue';
 
@@ -61,6 +69,14 @@ const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
 const liveHandlers = vi.hoisted<{ current: CapturedLiveHandlers | null }>(() => ({ current: null }));
 const { mockGet, mockPut } = vi.hoisted(() => ({ mockGet: vi.fn(), mockPut: vi.fn() }));
 
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 vi.mock('vue-router', () => ({
   useRoute: () => route,
   useRouter: () => router,
@@ -118,7 +134,9 @@ function mountNotes() {
   return mount(Notes, {
     global: {
       stubs: {
-        AppShell: { template: '<div><slot name="sidebar" /><slot /></div>' },
+        AppShell: {
+          template: '<div><slot name="sidebar" /><slot /><slot name="inspector-backlinks" /></div>',
+        },
         NotesSidebar: true,
         BacklinksPanel: true,
         CasConflictView: true,
@@ -240,7 +258,7 @@ describe('Notes.vue open-note reconcile wiring', () => {
     // not just body — by letting the next save fire and inspecting what it CASes
     // against. If applyLoadedDocument stopped short of updating headRevisionId,
     // this would still show the stale 'rev-1'.
-    const editor = wrapper.findComponent({ name: 'NoteEditor' });
+    const editor = wrapper.findComponent<typeof NoteEditorStub>('[data-test="note-editor"]');
     await editor.vm.$emit('change', 'Edited after reconcile');
     await vi.advanceTimersByTimeAsync(800);
     await settle();
@@ -257,7 +275,7 @@ describe('Notes.vue open-note reconcile wiring', () => {
     const wrapper = mountNotes();
     await settle();
 
-    const editor = wrapper.findComponent({ name: 'NoteEditor' });
+    const editor = wrapper.findComponent<typeof NoteEditorStub>('[data-test="note-editor"]');
     await editor.vm.$emit('change', 'My unsaved edit');
     await settle();
 
@@ -279,6 +297,245 @@ describe('Notes.vue open-note reconcile wiring', () => {
     // keep-and-flag must never re-fetch — that would race the in-flight local edit.
     expect(mockGet.mock.calls.length).toBe(getCallsBeforeReconcile);
     expect(wrapper.find('[aria-label="Remote changes pending"]').exists()).toBe(true);
+  });
+
+  it('does not let a same-target cached refresh overwrite dirty editor content or its CAS base', async () => {
+    const principal = 'user:019ef171-bbcf-7b90-9be6-5dbb382afd08';
+    const workspaceId = '019ef171-bbcf-7b90-9be6-5dbb382afd08';
+    const key = `v1|p=${principal}|w=${workspaceId}|k=note-body|r=note-a|q={}`;
+    const now = Date.now();
+    const entries = new Map<string, CacheEnvelope<unknown>>([
+      [
+        key,
+        {
+          schema: 1,
+          key,
+          payloadVersion: 1,
+          storedAt: now,
+          validatedAt: now,
+          lastAccessedAt: now,
+          retentionExpiresAt: now + 60_000,
+          bytes: 128,
+          stale: false,
+          tags: ['document:note-a'],
+          payload: {
+            id: 'doc-1',
+            body: 'Cached body',
+            meta: {},
+            headRevisionId: 'cached-revision',
+            slug: 'note-a',
+          },
+        },
+      ],
+    ]);
+    const cache = new ResourceCache({
+      store: {
+        get: async (entryKey) => (entries.get(entryKey) as never) ?? null,
+        putMany: async () => true,
+        deleteMany: async () => true,
+        clear: async () => true,
+      },
+    });
+    cache.allow();
+    configureResourceCacheForTest(cache);
+    setResourceCachePrincipal(principal);
+    vi.spyOn(useWorkspaceStore(), 'workspaceIdForSlug').mockReturnValue(workspaceId);
+
+    const networkResolvers: Array<(value: unknown) => void> = [];
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/api/workspaces/{ws}/documents/{slug}/backlinks') {
+        return Promise.resolve({ data: { items: [], has_more: false }, error: undefined });
+      }
+      if (url === '/api/workspaces/{ws}/documents/{slug}') {
+        return new Promise((resolve) => {
+          networkResolvers.push(resolve);
+        });
+      }
+      return Promise.resolve({ error: { title: 'Unhandled URL in test' }, response: { status: 500 } });
+    });
+
+    const wrapper = mountNotes();
+    await settle();
+    const editor = wrapper.findComponent<typeof NoteEditorStub>('[data-test="note-editor"]');
+    expect(editor.text()).toBe('Cached body');
+    await editor.vm.$emit('change', 'My unsaved edit');
+    await settle();
+
+    networkResolvers[0]?.({
+      data: { id: 'doc-1', slug: 'note-a', content: 'Remote body', head_revision_id: 'remote-revision' },
+      error: undefined,
+    });
+    await settle();
+
+    expect(editor.text()).toBe('My unsaved edit');
+    await vi.advanceTimersByTimeAsync(800);
+    expect(mockPut).toHaveBeenLastCalledWith(
+      expect.stringContaining('/documents/{slug}/content'),
+      expect.objectContaining({ body: expect.objectContaining({ base_revision_id: 'cached-revision' }) }),
+    );
+  });
+
+  it('synchronously clears a cached note on a principal change and rejects the prior principal network result', async () => {
+    const priorPrincipal = 'user:019ef171-bbcf-7b90-9be6-5dbb382afd08';
+    const nextPrincipal = 'user:019ef171-bbcf-7b90-9be6-5dbb382afd09';
+    const workspaceId = '019ef171-bbcf-7b90-9be6-5dbb382afd08';
+    const key = `v1|p=${priorPrincipal}|w=${workspaceId}|k=note-body|r=note-a|q={}`;
+    const now = Date.now();
+    const entries = new Map<string, CacheEnvelope<unknown>>([
+      [
+        key,
+        {
+          schema: 1,
+          key,
+          payloadVersion: 1,
+          storedAt: now,
+          validatedAt: now,
+          lastAccessedAt: now,
+          retentionExpiresAt: now + 60_000,
+          bytes: 128,
+          stale: false,
+          tags: ['document:note-a'],
+          payload: {
+            id: 'doc-1',
+            body: 'Prior principal cache',
+            meta: {},
+            headRevisionId: 'prior-revision',
+            slug: 'note-a',
+          },
+        },
+      ],
+    ]);
+    const cache = new ResourceCache({
+      store: {
+        get: async (entryKey) => (entries.get(entryKey) as never) ?? null,
+        putMany: async () => true,
+        deleteMany: async () => true,
+        clear: async () => true,
+      },
+    });
+    cache.allow();
+    configureResourceCacheForTest(cache);
+    setResourceCachePrincipal(priorPrincipal);
+    vi.spyOn(useWorkspaceStore(), 'workspaceIdForSlug').mockReturnValue(workspaceId);
+
+    const networkResolvers: Array<(value: unknown) => void> = [];
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/api/workspaces/{ws}/documents/{slug}/backlinks') {
+        return Promise.resolve({ data: { items: [], has_more: false }, error: undefined });
+      }
+      if (url === '/api/workspaces/{ws}/documents/{slug}') {
+        return new Promise((resolve) => {
+          networkResolvers.push(resolve);
+        });
+      }
+      return Promise.resolve({ error: { title: 'Unhandled URL in test' }, response: { status: 500 } });
+    });
+
+    const wrapper = mountNotes();
+    await settle();
+    expect(wrapper.get('[data-test="note-editor"]').text()).toBe('Prior principal cache');
+
+    setResourceCachePrincipal(nextPrincipal);
+    await nextTick();
+
+    expect(wrapper.find('[data-test="note-editor"]').exists()).toBe(false);
+
+    networkResolvers[0]?.({
+      data: {
+        id: 'doc-1',
+        slug: 'note-a',
+        content: 'Prior principal network',
+        head_revision_id: 'prior-network',
+      },
+      error: undefined,
+    });
+    await settle();
+
+    expect(wrapper.find('[data-test="note-editor"]').exists()).toBe(false);
+  });
+
+  it('keeps dirty local edits visible across a same-principal cache epoch', async () => {
+    const wrapper = mountNotes();
+    await settle();
+    const editor = wrapper.findComponent<typeof NoteEditorStub>('[data-test="note-editor"]');
+    await editor.vm.$emit('change', 'My same-principal edit');
+    await settle();
+
+    resourceCacheEpoch.value += 1;
+    await nextTick();
+
+    expect(wrapper.get('[data-test="note-editor"]').text()).toBe('My same-principal edit');
+  });
+
+  it('retries backlinks through the exact cache-aware request and persists the recovered result', async () => {
+    const principal = 'user:019ef171-bbcf-7b90-9be6-5dbb382afd08';
+    const workspaceId = '019ef171-bbcf-7b90-9be6-5dbb382afd08';
+    const key = buildCacheKey({
+      principal,
+      workspaceId,
+      resourceKind: 'note-secondary',
+      resourceId: 'note-a',
+      query: { type: 'backlinks' },
+    });
+    if (key === null) throw new Error('Expected a canonical backlinks cache key');
+
+    const entries = new Map<string, CacheEnvelope<unknown>>();
+    const cache = new ResourceCache({
+      store: {
+        get: async (entryKey) => (entries.get(entryKey) as never) ?? null,
+        putMany: async (newEntries) => {
+          for (const entry of newEntries) entries.set(entry.key, entry);
+          return true;
+        },
+        deleteMany: async () => true,
+        clear: async () => true,
+      },
+    });
+    cache.allow();
+    configureResourceCacheForTest(cache);
+    setResourceCachePrincipal(principal);
+    vi.spyOn(useWorkspaceStore(), 'workspaceIdForSlug').mockReturnValue(workspaceId);
+
+    let backlinksAttempt = 0;
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/api/workspaces/{ws}/documents/{slug}/backlinks') {
+        backlinksAttempt += 1;
+        return Promise.resolve(
+          backlinksAttempt === 1
+            ? { error: { hint: 'offline' } }
+            : {
+                data: {
+                  items: [
+                    {
+                      display_title: 'Recovered source',
+                      source_document_id: 'source-1',
+                      source_slug: 'source-1',
+                      source_title: 'Recovered source',
+                    },
+                  ],
+                  has_more: false,
+                },
+                error: undefined,
+              },
+        );
+      }
+      if (url === '/api/workspaces/{ws}/documents/{slug}') {
+        return Promise.resolve({
+          data: { id: 'doc-1', slug: 'note-a', content: 'Hello', head_revision_id: 'rev-1' },
+          error: undefined,
+        });
+      }
+      return Promise.resolve({ error: { title: 'Unhandled URL in test' }, response: { status: 500 } });
+    });
+
+    const wrapper = mountNotes();
+    await settle();
+
+    await wrapper.findComponent({ name: 'BacklinksPanel' }).vm.$emit('retry');
+    await settle();
+
+    expect(useDocumentsStore().backlinks.map((link) => link.source_slug)).toEqual(['source-1']);
+    expect((entries.get(key)?.payload as Array<{ source_slug: string }>)[0]?.source_slug).toBe('source-1');
   });
 
   it('ignores a document.updated event scoped to a different document than the open note', async () => {
@@ -318,19 +575,7 @@ describe('Notes.vue open-note reconcile wiring', () => {
     expect(router.replace).toHaveBeenCalledWith({ name: 'notes' });
   });
 
-  it('routes a 401 from the resync load through the real wrapped API client, without misrouting it as a missing document', async () => {
-    // W2: no reactive "global 401 handler" exists in this codebase to route to
-    // auth from a background resync failure — confirmed by reading api/wrapper.ts
-    // (only CSRF middleware is registered, no onResponse/401 interceptor) and by
-    // grepping the test suite (no test anywhere asserts a redirect-to-login from
-    // an arbitrary failed request; `workspaceBeforeEach.test.ts` covers only the
-    // workspace-bootstrap branches, never the `!isAuthenticated` redirect branch).
-    // Design decision #3's "existing global 401 handler" refers to the fact that
-    // `auth.isAuthenticated` is checked by the router guard on the *next*
-    // navigation — not to anything reactively triggered by this resync path. So
-    // this test proves what is actually true and load-bearing here: the resync
-    // path genuinely reaches `wrappedClient` (the delegation is real, not a
-    // stub/no-op), and a 401 is not mistaken for a 404 (no tab-close/route-away).
+  it('does not treat a 401 from the resync load as a missing document', async () => {
     const wrapper = mountNotes();
     await settle();
     const getCallsBefore = mockGet.mock.calls.length;
@@ -346,5 +591,46 @@ describe('Notes.vue open-note reconcile wiring', () => {
     );
     expect(router.replace).not.toHaveBeenCalled();
     expect(wrapper.get('[data-test="note-editor"]').text()).toBe('Hello');
+  });
+
+  it.each([403, 404])('retracts the editor before presenting a known denial (%i)', async (status) => {
+    const wrapper = mountNotes();
+    await settle();
+
+    docFixture = { kind: 'error', status };
+    liveHandlers.current?.onResync();
+    await settle();
+
+    expect(wrapper.find('[data-test="note-editor"]').exists()).toBe(false);
+    if (status === 404) expect(router.replace).toHaveBeenCalledWith({ name: 'notes' });
+  });
+
+  it('does not start a replacement GET while logout cache purge is underway', async () => {
+    const purge = deferred<boolean>();
+    const cache = new ResourceCache({
+      store: {
+        get: async () => null,
+        putMany: async () => true,
+        deleteMany: async () => true,
+        clear: async () => true,
+      },
+    });
+    cache.allow();
+    vi.spyOn(cache, 'purge').mockReturnValue(purge.promise);
+    configureResourceCacheForTest(cache);
+    setResourceCachePrincipal('user:019ef171-bbcf-7b90-9be6-5dbb382afd08');
+    const wrapper = mountNotes();
+    await settle();
+    const getCallsBeforeLogout = mockGet.mock.calls.length;
+
+    const purging = blockAndPurgeResourceCache();
+    setResourceCachePrincipal(undefined);
+    await nextTick();
+
+    expect(wrapper.find('[data-test="note-editor"]').exists()).toBe(false);
+    expect(mockGet.mock.calls.length).toBe(getCallsBeforeLogout);
+
+    purge.resolve(true);
+    await purging;
   });
 });

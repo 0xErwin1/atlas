@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import TaskInspector from '@/components/tareas/TaskInspector.vue';
 import { useTaskDetailStore } from '@/stores/taskDetail';
 
@@ -23,7 +23,11 @@ const task = {
 const stubs = {
   AgentBadge: true,
   Avatar: true,
-  ErrorState: { props: ['title'], template: '<p role="alert">{{ title }}</p>' },
+  ErrorState: {
+    props: ['title'],
+    emits: ['retry'],
+    template: '<button type="button" role="alert" @click="$emit(\'retry\')">{{ title }}</button>',
+  },
   LoadingState: { props: ['label'], template: '<p>{{ label }}</p>' },
   MetaRow: { props: ['label'], template: '<p>{{ label }}<slot /></p>' },
   SharePanel: true,
@@ -79,5 +83,17 @@ describe('TaskInspector collection status presentation', () => {
 
     expect(wrapper.text()).not.toContain('Loading activity…');
     expect(wrapper.text()).toContain('Activity feed');
+  });
+
+  it('retries detail collections with the authoritative task UUID', async () => {
+    const detail = useTaskDetailStore();
+    const loadAll = vi.spyOn(detail, 'loadAll').mockResolvedValue();
+    detail.collectionStatus = { ...detail.collectionStatus, comments: 'error' };
+    detail.collectionErrors = { ...detail.collectionErrors, comments: 'Comments unavailable' };
+
+    const wrapper = mountInspector();
+    await wrapper.get('[role="alert"]').trigger('click');
+
+    expect(loadAll).toHaveBeenCalledWith('ws', 'ATL-1', undefined, 'task-1');
   });
 });
