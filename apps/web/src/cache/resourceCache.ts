@@ -133,6 +133,7 @@ export class ResourceCache {
     {
       freshForMs: number;
       activeForMs: number;
+      tags: string[];
       nextAttemptAt: number;
       failures: number;
       attempting: boolean;
@@ -174,9 +175,14 @@ export class ResourceCache {
       return null;
 
     const generation = this.generation;
-    const entry =
-      (this.hot.get(request.key) as CacheEnvelope<T> | undefined) ??
-      (await this.store.get(request.key, request.payloadSchema));
+    let entry = this.hot.get(request.key) as CacheEnvelope<T> | undefined;
+    if (entry === undefined) {
+      try {
+        entry = (await this.store.get(request.key, request.payloadSchema)) ?? undefined;
+      } catch {
+        return null;
+      }
+    }
 
     if (
       !entry ||
@@ -220,7 +226,11 @@ export class ResourceCache {
 
         if (this.policy.enabled) {
           this.remember(entry);
-          await this.store.putMany([entry]);
+          try {
+            await this.store.putMany([entry]);
+          } catch {
+            this.hot.delete(entry.key);
+          }
 
           if (this.isSuspended() || generation !== this.generation) {
             this.hot.delete(entry.key);
@@ -265,6 +275,7 @@ export class ResourceCache {
     this.activeKeys.set(active.key, {
       freshForMs: active.freshForMs,
       activeForMs,
+      tags: typeof requestOrKey === 'string' ? [] : requestOrKey.tags,
       nextAttemptAt,
       failures: 0,
       attempting: false,
@@ -275,6 +286,10 @@ export class ResourceCache {
 
   deactivate(key: string): void {
     this.activeKeys.delete(key);
+  }
+
+  isAvailable(): boolean {
+    return !this.isSuspended();
   }
 
   async retry(key: string): Promise<void> {
@@ -345,8 +360,11 @@ export class ResourceCache {
       return false;
     }
 
-    const purge = this.beginPurge();
     const tagSet = new Set(tags);
+    const purge = this.beginPurge(
+      (key, active) =>
+        cacheKeyMatchesScope(key, principal, workspaceId) && active.tags.some((tag) => tagSet.has(tag)),
+    );
     const keys = [...this.hot.values()]
       .filter(
         (entry) =>
@@ -437,11 +455,27 @@ export class ResourceCache {
       });
   }
 
-  private dropActiveCallbacks(): void {
+  private dropActiveCallbacks(
+    matches:
+      | ((
+          key: string,
+          active: {
+            tags: string[];
+          },
+        ) => boolean)
+      | undefined = undefined,
+  ): void {
     if (this.scheduler !== null) this.timer.clear(this.scheduler);
     this.scheduler = null;
     this.schedulerDueAt = null;
-    this.activeKeys.clear();
+    if (matches === undefined) {
+      this.activeKeys.clear();
+      return;
+    }
+
+    for (const [key, active] of this.activeKeys) {
+      if (matches(key, active)) this.activeKeys.delete(key);
+    }
   }
 
   private recordRevalidationResult(
@@ -491,11 +525,13 @@ export class ResourceCache {
     await Promise.allSettled([...this.inflight.values()]);
   }
 
-  private beginPurge(): { canReleaseFailure: boolean } {
+  private beginPurge(activeMatches?: (key: string, active: { tags: string[] }) => boolean): {
+    canReleaseFailure: boolean;
+  } {
     const canReleaseFailure = this.pendingPurges === 0;
     this.pendingPurges += 1;
     this.generation += 1;
-    this.dropActiveCallbacks();
+    this.dropActiveCallbacks(activeMatches);
     return { canReleaseFailure };
   }
 
@@ -518,6 +554,7 @@ export class ResourceCache {
       }
     }
 
+    if (!this.isSuspended()) this.reschedule();
     return succeeded;
   }
 

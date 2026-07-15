@@ -31,6 +31,23 @@ export const useFoldersStore = defineStore('folders', () => {
     return loadingByProject.value[projectSlug] ?? false;
   }
 
+  function clearProjectBuckets(): void {
+    loadSeqByProject.clear();
+    displaySeq += 1;
+    loadingDisplaySeq = displaySeq;
+    displayProjectSlug = null;
+    folders.value = [];
+    foldersByProject.value = {};
+    loading.value = false;
+    loadingByProject.value = {};
+    error.value = null;
+  }
+
+  function publishForProject(projectSlug: string, items: FolderDto[]): void {
+    foldersByProject.value = { ...foldersByProject.value, [projectSlug]: items };
+    if (displayProjectSlug === null || displayProjectSlug === projectSlug) folders.value = items;
+  }
+
   async function load(ws: string, projectSlug: string, opts: { silent?: boolean } = {}): Promise<void> {
     const seq = (loadSeqByProject.get(projectSlug) ?? 0) + 1;
     loadSeqByProject.set(projectSlug, seq);
@@ -74,14 +91,7 @@ export const useFoldersStore = defineStore('folders', () => {
       return;
     }
 
-    foldersByProject.value = { ...foldersByProject.value, [projectSlug]: items };
-    if (
-      (!silent && currentDisplaySeq === displaySeq) ||
-      displayProjectSlug === null ||
-      displayProjectSlug === projectSlug
-    ) {
-      folders.value = items;
-    }
+    publishForProject(projectSlug, items);
   }
 
   async function create(
@@ -183,6 +193,8 @@ export const useFoldersStore = defineStore('folders', () => {
     error,
     foldersFor,
     isProjectLoading,
+    clearProjectBuckets,
+    publishForProject,
     load,
     create,
     rename,

@@ -1,6 +1,9 @@
+import { z } from 'zod';
 import type { AtlasProblem, ConflictProblem } from '@/api/problem';
 import { isConflictProblem } from '@/api/problem';
 import { wrappedClient } from '@/api/wrapper';
+import { getResourceCachePrincipal, resourceCache } from '@/cache/cacheRuntime';
+import { buildCacheKey, CACHE_CADENCE } from '@/cache/resourceCache';
 import { joinFrontmatter, splitFrontmatter } from '@/lib/frontmatter';
 
 export interface LoadResult {
@@ -18,6 +21,20 @@ export type SaveResult =
   | { kind: 'conflict'; problem: ConflictProblem }
   | { kind: 'error'; hint: string | undefined; title: string };
 
+export interface MarkdownDocCacheOptions {
+  workspaceId: string;
+  onCached(document: LoadResult): void;
+  isCurrent?(): boolean;
+}
+
+const loadResultSchema = z.object({
+  id: z.string(),
+  body: z.string(),
+  meta: z.record(z.string(), z.unknown()),
+  headRevisionId: z.string(),
+  slug: z.string().nullable(),
+});
+
 /**
  * Composable that bridges the Atlas document API with the Tiptap editor.
  *
@@ -33,7 +50,7 @@ export type SaveResult =
  * useCasMerge. It signals conflicts back to the caller cleanly.
  */
 export function useMarkdownDoc() {
-  async function load(ws: string, slug: string): Promise<LoadResult> {
+  async function loadFromNetwork(ws: string, slug: string): Promise<LoadResult> {
     const { data, error, response } = await wrappedClient.GET('/api/workspaces/{ws}/documents/{slug}', {
       params: { path: { ws, slug } },
     });
@@ -58,6 +75,50 @@ export function useMarkdownDoc() {
       headRevisionId: data.head_revision_id ?? '',
       slug: data.slug ?? null,
     };
+  }
+
+  async function load(ws: string, slug: string, cache?: MarkdownDocCacheOptions): Promise<LoadResult> {
+    const key =
+      cache === undefined
+        ? null
+        : buildCacheKey({
+            principal: getResourceCachePrincipal(),
+            workspaceId: cache.workspaceId,
+            resourceKind: 'note-body',
+            resourceId: slug,
+          });
+
+    if (key === null || cache === undefined) return loadFromNetwork(ws, slug);
+
+    const isCurrent = cache.isCurrent ?? (() => true);
+    const request = {
+      key,
+      payloadSchema: loadResultSchema,
+      tags: [`document:${slug}`],
+      freshForMs: CACHE_CADENCE.primary.freshForMs,
+      activeForMs: CACHE_CADENCE.primary.activeForMs,
+      retentionForMs: 24 * 60 * 60 * 1000,
+      load: () => loadFromNetwork(ws, slug),
+      publish: () => {},
+      isCurrent,
+    };
+
+    await resourceCache.hydrate({ ...request, publish: cache.onCached });
+    let result: LoadResult | undefined;
+    const refresh = {
+      ...request,
+      publish: cache.onCached,
+      load: async () => {
+        result = await loadFromNetwork(ws, slug);
+        return result;
+      },
+    };
+
+    resourceCache.activate(refresh);
+    await resourceCache.revalidate(refresh);
+
+    if (result === undefined) return loadFromNetwork(ws, slug);
+    return result;
   }
 
   async function save(
