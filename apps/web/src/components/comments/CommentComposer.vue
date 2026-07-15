@@ -13,6 +13,7 @@ const props = withDefaults(
   defineProps<{
     placeholder?: string;
     onSubmit: (body: string) => Promise<boolean>;
+    uploadImage?: (file: File) => Promise<string | null>;
   }>(),
   {
     placeholder: 'Write a comment…',
@@ -58,12 +59,14 @@ defineExpose({ focus });
       :follow-caret="false"
       min-height="1.75rem"
       :placeholder="placeholder"
+      :upload-image="uploadImage"
       @change="onDraftChange"
     />
     <div class="flex justify-end" style="margin-top: 8px;">
       <button
         type="button"
         data-test="comment-submit"
+        aria-label="Post comment"
         class="atl-comment-submit"
         :disabled="!canSubmit || submitting"
         @click.stop="submit"
