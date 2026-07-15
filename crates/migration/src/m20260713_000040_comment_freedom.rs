@@ -111,6 +111,17 @@ impl MigrationTrait for Migration {
 
         conn.execute_unprepared(
             r#"
+            DO $$
+            BEGIN
+                IF EXISTS (SELECT 1 FROM attachments WHERE comment_id IS NOT NULL) THEN
+                    RAISE EXCEPTION 'cannot roll back comment freedom while live comment-owned attachments exist';
+                END IF;
+
+                IF EXISTS (SELECT 1 FROM attachment_write_intents) THEN
+                    RAISE EXCEPTION 'cannot roll back comment freedom while live attachment write intents exist';
+                END IF;
+            END $$;
+
             DROP TABLE IF EXISTS comment_link_events CASCADE;
             DROP TABLE IF EXISTS comment_links CASCADE;
             DROP TABLE IF EXISTS attachment_write_intents CASCADE;
