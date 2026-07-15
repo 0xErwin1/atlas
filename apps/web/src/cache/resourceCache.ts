@@ -97,12 +97,17 @@ export interface ResourceCacheRequest<T> {
   key: string;
   payloadSchema: ZodType<T>;
   tags: string[];
+  deriveTags?: (payload: T) => readonly string[];
   freshForMs: number;
   activeForMs?: number;
   retentionForMs: number;
   load(): Promise<T>;
   publish(payload: T): void;
   isCurrent(): boolean;
+}
+
+export interface ResourceCacheRevalidationResult {
+  published: boolean;
 }
 
 export interface ResourceCacheOptions {
@@ -142,7 +147,7 @@ export class ResourceCache {
   >();
   private readonly clock: CacheClock;
   private readonly hot = new Map<string, CacheEnvelope<unknown>>();
-  private readonly inflight = new Map<string, Promise<void>>();
+  private readonly inflight = new Map<string, Promise<ResourceCacheRevalidationResult>>();
   private readonly policy: CachePolicy;
   private readonly random: CacheRandom;
   private readonly store: ResourceCacheStore;
@@ -199,8 +204,8 @@ export class ResourceCache {
     return entry.payload;
   }
 
-  revalidate<T>(request: ResourceCacheRequest<T>): Promise<void> {
-    if (this.isSuspended()) return Promise.resolve();
+  revalidate<T>(request: ResourceCacheRequest<T>): Promise<ResourceCacheRevalidationResult> {
+    if (this.isSuspended()) return Promise.resolve({ published: false });
     const existing = this.inflight.get(request.key);
     if (existing) return existing;
 
@@ -208,8 +213,11 @@ export class ResourceCache {
     const revalidation = request
       .load()
       .then(async (payload) => {
-        if (this.isSuspended() || generation !== this.generation) return;
+        if (this.isSuspended() || generation !== this.generation) return { published: false };
 
+        const parsedPayload = request.payloadSchema.parse(payload);
+        const tags = mergeCacheTags(request.tags, request.deriveTags?.(parsedPayload) ?? []);
+        if (!isCachePayloadAllowed(parsedPayload)) throw new Error('Cache payload contains excluded data.');
         const now = this.clock.now();
         const entry = createCacheEnvelope({
           key: request.key,
@@ -220,8 +228,8 @@ export class ResourceCache {
           retentionExpiresAt: now + request.retentionForMs,
           bytes: JSON.stringify(payload).length,
           stale: false,
-          tags: request.tags,
-          payload,
+          tags,
+          payload: parsedPayload,
         });
 
         if (this.policy.enabled) {
@@ -235,13 +243,18 @@ export class ResourceCache {
           if (this.isSuspended() || generation !== this.generation) {
             this.hot.delete(entry.key);
             await this.store.deleteMany([entry.key]);
-            return;
+            return { published: false };
           }
         }
 
         if (!this.isSuspended() && generation === this.generation && request.isCurrent()) {
-          request.publish(payload);
+          const active = this.activeKeys.get(request.key);
+          if (active !== undefined) active.tags = tags;
+          request.publish(parsedPayload);
+          return { published: true };
         }
+
+        return { published: false };
       })
       .finally(() => {
         if (this.inflight.get(request.key) === revalidation) this.inflight.delete(request.key);
@@ -264,7 +277,9 @@ export class ResourceCache {
         : {
             key: requestOrKey.key,
             freshForMs: requestOrKey.freshForMs,
-            revalidate: () => this.revalidate(requestOrKey),
+            revalidate: async () => {
+              await this.revalidate(requestOrKey);
+            },
           };
 
     const activeForMs =
@@ -275,7 +290,10 @@ export class ResourceCache {
     this.activeKeys.set(active.key, {
       freshForMs: active.freshForMs,
       activeForMs,
-      tags: typeof requestOrKey === 'string' ? [] : requestOrKey.tags,
+      tags:
+        typeof requestOrKey === 'string'
+          ? []
+          : mergeCacheTags(requestOrKey.tags, this.hot.get(requestOrKey.key)?.tags ?? []),
       nextAttemptAt,
       failures: 0,
       attempting: false,
@@ -312,6 +330,7 @@ export class ResourceCache {
     const purge = this.beginPurge();
     this.hot.clear();
     this.authorizationLeaseExpiresAt = 0;
+    this.dropActiveCallbacks();
     await this.settleInflight();
     return this.finishPurge(purge, await this.store.clear());
   }
@@ -329,7 +348,6 @@ export class ResourceCache {
       .map((entry) => entry.key);
 
     for (const key of keys) this.hot.delete(key);
-    await this.settleInflight();
     const hotDeleted = keys.length === 0 || (await this.store.deleteMany(keys));
     const coldDeleted = await (this.store.deleteScope?.({ principal, workspaceId }) ??
       Promise.resolve(false));
@@ -361,10 +379,7 @@ export class ResourceCache {
     }
 
     const tagSet = new Set(tags);
-    const purge = this.beginPurge(
-      (key, active) =>
-        cacheKeyMatchesScope(key, principal, workspaceId) && active.tags.some((tag) => tagSet.has(tag)),
-    );
+    const purge = this.beginPurge();
     const keys = [...this.hot.values()]
       .filter(
         (entry) =>
@@ -374,7 +389,6 @@ export class ResourceCache {
       .map((entry) => entry.key);
 
     for (const key of keys) this.hot.delete(key);
-    await this.settleInflight();
     const hotDeleted = keys.length === 0 || (await this.store.deleteMany(keys));
     const coldDeleted = await (this.store.deleteScope?.({ principal, workspaceId, tagsAny: tags }) ??
       Promise.resolve(false));
@@ -525,14 +539,20 @@ export class ResourceCache {
     await Promise.allSettled([...this.inflight.values()]);
   }
 
-  private beginPurge(activeMatches?: (key: string, active: { tags: string[] }) => boolean): {
+  private beginPurge(): {
     canReleaseFailure: boolean;
   } {
     const canReleaseFailure = this.pendingPurges === 0;
     this.pendingPurges += 1;
     this.generation += 1;
-    this.dropActiveCallbacks(activeMatches);
+    this.pauseScheduler();
     return { canReleaseFailure };
+  }
+
+  private pauseScheduler(): void {
+    if (this.scheduler !== null) this.timer.clear(this.scheduler);
+    this.scheduler = null;
+    this.schedulerDueAt = null;
   }
 
   private finishPurge(purge: { canReleaseFailure: boolean }, succeeded: boolean): boolean {
@@ -622,6 +642,10 @@ export function createCacheEnvelopeSchema<T>(payloadSchema: ZodType<T>) {
       if (!isCachePayloadAllowed(envelope.payload)) {
         context.addIssue({ code: z.ZodIssueCode.custom, message: 'Cache payload contains excluded data.' });
       }
+
+      if (!areCacheTagsValid(envelope.tags)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: 'Cache tags are invalid.' });
+      }
     });
 }
 
@@ -630,6 +654,12 @@ export function createCacheEnvelope<T>(input: Omit<CacheEnvelope<T>, 'schema'>):
     schema: CACHE_SCHEMA_VERSION,
     ...input,
   };
+}
+
+function mergeCacheTags(staticTags: readonly string[], derivedTags: readonly string[]): string[] {
+  const tags = [...new Set([...staticTags, ...derivedTags])];
+  if (!areCacheTagsValid(tags)) throw new Error('Cache tags are invalid.');
+  return tags;
 }
 
 export function isCacheEnabled(policy: CachePolicy = DEFAULT_CACHE_POLICY): boolean {
@@ -671,6 +701,14 @@ const resourceKinds = new Set<CacheResourceKind>([
 ]);
 const excludedPayloadKey =
   /(?:authorization|cookie|credential|password|secret|token|api[_-]?key|attachment.*(?:bytes|data|content))/i;
+const CACHE_TAG_PATTERN = /^[A-Za-z0-9._:-]+$/;
+
+function areCacheTagsValid(tags: readonly string[]): boolean {
+  return tags.every(
+    (tag) =>
+      tag.length > 0 && tag.length <= 200 && CACHE_TAG_PATTERN.test(tag) && !excludedPayloadKey.test(tag),
+  );
+}
 
 export function isCanonicalPrincipal(principal: string | null | undefined): principal is string {
   return typeof principal === 'string' && PRINCIPAL_PATTERN.test(principal);

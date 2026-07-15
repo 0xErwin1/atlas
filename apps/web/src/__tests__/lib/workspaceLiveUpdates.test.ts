@@ -1,4 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const { invalidateLiveResourceCache, resourceCacheEpoch } = vi.hoisted(() => ({
+  invalidateLiveResourceCache: vi.fn().mockResolvedValue(true),
+  resourceCacheEpoch: { value: 0 },
+}));
+
+vi.mock('@/cache/cacheRuntime', () => ({ invalidateLiveResourceCache, resourceCacheEpoch }));
+
 import { wrappedClient } from '@/api/wrapper';
 import { createWorkspaceLiveUpdatesBroker, type WorkspaceLiveUpdate } from '@/lib/workspaceLiveUpdates';
 
@@ -93,6 +101,8 @@ function handlers(
 describe('workspace live updates broker', () => {
   beforeEach(() => {
     FakeEventSource.instances = [];
+    invalidateLiveResourceCache.mockClear();
+    resourceCacheEpoch.value = 0;
     vi.useFakeTimers();
     vi.stubGlobal('EventSource', FakeEventSource);
   });
@@ -128,6 +138,28 @@ describe('workspace live updates broker', () => {
     vi.advanceTimersByTime(30_000);
   });
 
+  it('starts cache invalidation before dispatching a valid task event to subscribers', () => {
+    const broker = createWorkspaceLiveUpdatesBroker();
+    const order: string[] = [];
+    invalidateLiveResourceCache.mockImplementation(() => {
+      order.push('cache');
+      return Promise.resolve(true);
+    });
+    const onEvent = vi.fn(() => order.push('subscriber'));
+    const subscription = broker.acquire('acme', { ...handlers(), onEvent });
+
+    FakeEventSource.instances[0]?.emit('task.created', event('task.created', { task_id: 'task-1' }));
+
+    expect(onEvent).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ type: 'task.created' }));
+    expect(invalidateLiveResourceCache).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ event_type: 'task.created' }),
+      'acme',
+    );
+    expect(order).toEqual(['cache', 'subscriber']);
+    subscription.release();
+    vi.advanceTimersByTime(30_000);
+  });
+
   it('fans resync and reconnect failures out exactly once to current subscribers', () => {
     const broker = createWorkspaceLiveUpdatesBroker();
     const first = handlers();
@@ -146,6 +178,77 @@ describe('workspace live updates broker', () => {
 
     firstSubscription.release();
     secondSubscription.release();
+    vi.advanceTimersByTime(30_000);
+  });
+
+  it('stales the current broker workspace before dispatching a resync', () => {
+    const broker = createWorkspaceLiveUpdatesBroker();
+    const order: string[] = [];
+    invalidateLiveResourceCache.mockImplementation(() => {
+      order.push('cache');
+      return Promise.resolve(true);
+    });
+    const onResync = vi.fn(() => order.push('subscriber'));
+    const subscription = broker.acquire('acme', { ...handlers(), onResync });
+
+    FakeEventSource.instances[0]?.emit('resync', 'reload');
+
+    expect(onResync).toHaveBeenCalledExactlyOnceWith();
+    expect(invalidateLiveResourceCache).toHaveBeenCalledExactlyOnceWith(undefined, 'acme');
+    expect(order).toEqual(['cache', 'subscriber']);
+    subscription.release();
+    vi.advanceTimersByTime(30_000);
+  });
+
+  it('stales the current broker workspace and resyncs subscribers for malformed envelopes', () => {
+    const broker = createWorkspaceLiveUpdatesBroker();
+    const subscriber = handlers();
+    const consoleDebug = vi.spyOn(console, 'debug').mockImplementation(() => {});
+    const subscription = broker.acquire('acme', subscriber);
+
+    FakeEventSource.instances[0]?.emit('task.created', '{not-json');
+
+    expect(invalidateLiveResourceCache).toHaveBeenCalledExactlyOnceWith(undefined, 'acme');
+    expect(subscriber.onEvent).not.toHaveBeenCalled();
+    expect(subscriber.onResync).toHaveBeenCalledExactlyOnceWith();
+    expect(consoleDebug).toHaveBeenCalledOnce();
+    subscription.release();
+    vi.advanceTimersByTime(30_000);
+  });
+
+  it('generation-fails late principal-A callbacks before they can invalidate principal-B cache state', () => {
+    resourceCacheEpoch.value = 1;
+    const consoleDebug = vi.spyOn(console, 'debug').mockImplementation(() => {});
+    const broker = createWorkspaceLiveUpdatesBroker();
+    const principalA = broker.acquire('acme', handlers());
+    const sourceA = FakeEventSource.instances[0];
+
+    resourceCacheEpoch.value = 2;
+    sourceA?.emit('task.created', '{not-json');
+
+    expect(invalidateLiveResourceCache).not.toHaveBeenCalled();
+
+    const principalB = broker.acquire('acme', handlers());
+    FakeEventSource.instances[1]?.emit('task.created', '{not-json');
+
+    expect(invalidateLiveResourceCache).toHaveBeenCalledExactlyOnceWith(undefined, 'acme');
+    principalA.release();
+    principalB.release();
+    vi.advanceTimersByTime(30_000);
+    consoleDebug.mockRestore();
+  });
+
+  it('passes the current broker alias with valid envelopes while preserving one source', () => {
+    const broker = createWorkspaceLiveUpdatesBroker();
+    const first = broker.acquire('acme', handlers());
+    const second = broker.acquire('acme', handlers());
+
+    FakeEventSource.instances[0]?.emit('task.created', event('task.created', { task_id: 'task-1' }));
+
+    expect(FakeEventSource.instances).toHaveLength(1);
+    expect(invalidateLiveResourceCache).toHaveBeenCalledWith(expect.any(Object), 'acme');
+    first.release();
+    second.release();
     vi.advanceTimersByTime(30_000);
   });
 
@@ -406,6 +509,7 @@ describe('workspace live updates broker', () => {
 
       expect(FakeEventSource.instances).toHaveLength(11);
       expect(reconnectFailed).toHaveBeenCalledExactlyOnceWith();
+      expect(invalidateLiveResourceCache).toHaveBeenCalledExactlyOnceWith(undefined, 'acme');
       subscription.release();
       vi.advanceTimersByTime(30_000);
     });

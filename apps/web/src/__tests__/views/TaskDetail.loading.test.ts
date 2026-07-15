@@ -31,6 +31,7 @@ vi.mock('@/composables/useBreakpoint', () => ({ useBreakpoint: () => ({ isMobile
 vi.mock('@/composables/useLiveUpdates', () => ({ useLiveUpdates }));
 
 type TaskDto = components['schemas']['TaskDto'];
+let unmountDetail: (() => void) | null = null;
 
 function task(readableId: string): TaskDto {
   return {
@@ -53,7 +54,7 @@ function task(readableId: string): TaskDto {
 }
 
 function mountDetail() {
-  return mount(TaskDetail, {
+  const wrapper = mount(TaskDetail, {
     global: {
       stubs: {
         AppShell: { template: '<main><slot name="sidebar" /><slot /></main>' },
@@ -66,6 +67,8 @@ function mountDetail() {
       },
     },
   });
+  unmountDetail = () => wrapper.unmount();
+  return wrapper;
 }
 
 function capturedLiveHandlers(): {
@@ -85,6 +88,7 @@ describe('TaskDetail resource loading', () => {
 
     const workspace = useWorkspaceStore();
     workspace.activeWorkspaceSlug = 'ws-1';
+    workspace.workspaceIdForSlug = vi.fn().mockReturnValue('workspace-1');
     workspace.loadMembers = vi.fn().mockResolvedValue(undefined);
 
     const boards = useBoardsStore();
@@ -96,6 +100,8 @@ describe('TaskDetail resource loading', () => {
   });
 
   afterEach(() => {
+    unmountDetail?.();
+    unmountDetail = null;
     resetKeymapForTests();
   });
 
@@ -139,13 +145,13 @@ describe('TaskDetail resource loading', () => {
 
     const detail = useTaskDetailStore();
     expect(detail.loadAll).toHaveBeenCalledTimes(1);
-    expect(detail.loadAll).toHaveBeenCalledWith('ws-1', 'ATL-2');
+    expect(detail.loadAll).toHaveBeenCalledWith('ws-1', 'ATL-2', 'workspace-1', 'task-ATL-2');
   });
 
-  it('suppresses dependent loads after a rejected same-target primary refresh', async () => {
+  it('keeps matching task detail visible after a rejected same-target primary refresh', async () => {
     const tasks = useTasksStore();
     GET.mockResolvedValueOnce({ data: task('ATL-1'), error: undefined });
-    await tasks.loadTask('ws-1', 'ATL-1');
+    await tasks.loadTask('ws-1', 'ATL-1', 'workspace-1');
     GET.mockRejectedValueOnce(new Error('Network unavailable'));
 
     const workspace = useWorkspaceStore();
@@ -155,14 +161,13 @@ describe('TaskDetail resource loading', () => {
     const wrapper = mountDetail();
     await flushPromises();
 
-    expect(tasks.openTask).toBeNull();
+    expect(tasks.openTask?.readable_id).toBe('ATL-1');
     expect(tasks.loading).toBe(false);
     expect(tasks.error).toBe('Failed to load task');
-    expect(workspace.loadMembers).not.toHaveBeenCalled();
-    expect(boards.loadBoard).not.toHaveBeenCalled();
-    expect(detail.loadAll).not.toHaveBeenCalled();
-    expect(wrapper.find('[role="alert"]').text()).toContain('Couldn’t load task: Failed to load task');
-    expect(wrapper.find('article').exists()).toBe(false);
+    expect(workspace.loadMembers).toHaveBeenCalledWith('ws-1');
+    expect(boards.loadBoard).toHaveBeenCalledWith('ws-1', 'board-1');
+    expect(detail.loadAll).toHaveBeenCalledWith('ws-1', 'ATL-1', 'workspace-1', 'task-ATL-1');
+    expect(wrapper.find('article').text()).toBe('Task ATL-1');
   });
 
   it('uses the real open-task boundary to exclude unrelated events and reloads on resync', async () => {
@@ -180,7 +185,7 @@ describe('TaskDetail resource loading', () => {
 
     handlers.onEvent({ type: 'task.updated', data: { task_id: 'task-ATL-1' }, envelope: {} });
     expect(tasks.loadTask).toHaveBeenCalledOnce();
-    expect(tasks.loadTask).toHaveBeenCalledWith('ws-1', 'ATL-1');
+    expect(tasks.loadTask).toHaveBeenCalledWith('ws-1', 'ATL-1', 'workspace-1');
 
     handlers.onResync?.();
     await flushPromises();

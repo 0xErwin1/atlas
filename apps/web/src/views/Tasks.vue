@@ -74,6 +74,7 @@ const viewId = computed(() => {
 const isView = computed(() => viewId.value !== null);
 
 const ws = computed(() => workspace.activeWorkspaceSlug ?? '');
+const workspaceId = computed(() => (ws.value === '' ? null : workspace.workspaceIdForSlug(ws.value)));
 
 // Quick board finder: a "/" from anywhere on the board (while not already typing)
 // focuses the search input, mirroring the search-shortcut convention. Esc in the
@@ -193,9 +194,15 @@ async function onSelect(readableId: string, mode?: TaskViewMode): Promise<void> 
   }
 
   selectedReadableId.value = readableId;
+  const targetWorkspaceId = workspaceId.value ?? undefined;
+  detail.clear();
+  await tasks.loadTask(ws.value, readableId, targetWorkspaceId);
+
+  const selectedTask = tasks.openTask;
+  if (selectedTask?.readable_id !== readableId) return;
+
   await Promise.all([
-    tasks.loadTask(ws.value, readableId),
-    detail.loadAll(ws.value, readableId),
+    detail.loadAll(ws.value, readableId, targetWorkspaceId, selectedTask.id),
     workspace.loadMembers(ws.value),
   ]);
 }
@@ -251,8 +258,11 @@ async function loadBoard(): Promise<void> {
 
   const targetWorkspace = ws.value;
   const targetBoardId = boardId.value;
+  const targetWorkspaceId = workspaceId.value;
   const [isCurrentLoad] = await Promise.all([
-    boards.loadBoardContents(targetWorkspace, targetBoardId),
+    targetWorkspaceId === null
+      ? boards.loadBoardContents(targetWorkspace, targetBoardId)
+      : boards.loadBoardContents(targetWorkspace, targetBoardId, targetWorkspaceId),
     workspace.loadMembers(targetWorkspace),
   ]);
   if (
@@ -305,12 +315,13 @@ async function openFromQuery(): Promise<void> {
   await onSelect(open);
 }
 
-async function loadView(): Promise<void> {
+async function loadView(force = false): Promise<void> {
   const operation = ++boardLoadOperation;
   viewNotFound.value = false;
 
   const targetWorkspace = ws.value;
   const vid = viewId.value;
+  const targetWorkspaceId = workspaceId.value;
   if (targetWorkspace === '' || vid === null) return;
 
   boards.cancelBoardLoad();
@@ -338,7 +349,12 @@ async function loadView(): Promise<void> {
   }
 
   const params = paramsForView(vid, customView?.filters);
-  const isCurrentLoad = await workspaceTasks.load(targetWorkspace, params);
+  const isCurrentLoad = await workspaceTasks.load(
+    targetWorkspace,
+    params,
+    force,
+    targetWorkspaceId ?? undefined,
+  );
   if (
     !isCurrentLoad ||
     operation !== boardLoadOperation ||
@@ -353,7 +369,7 @@ async function loadView(): Promise<void> {
 // Reloads whichever surface is active — the kanban board or a task view — used
 // to fully resynchronize after the live stream reconnects or on a board delete.
 function reloadActive(): void {
-  if (isView.value) void loadView();
+  if (isView.value) void loadView(true);
   else void loadBoard();
 }
 
@@ -609,10 +625,10 @@ watch(
         icon="square-kanban"
       />
       <ErrorState
-        v-else-if="workspaceTasks.error"
+        v-else-if="workspaceTasks.error && !workspaceTasks.hasData"
         title="Couldn't load view"
         :hint="workspaceTasks.error"
-        @retry="loadView"
+        @retry="() => loadView(true)"
       />
       <LoadingState v-else-if="workspaceTasks.loading" label="Loading…" />
       <div v-else class="flex flex-1 min-h-0" style="position: relative;">
@@ -636,15 +652,15 @@ watch(
     </template>
 
     <template v-else>
-      <LoadingState v-if="boards.loading" label="Loading…" />
+      <LoadingState v-if="boards.loading && boards.board === null" label="Loading…" />
       <EmptyState
-        v-else-if="boardNotFound"
+        v-else-if="boardNotFound && boards.board === null"
         title="Board not found"
         hint="This board no longer exists. Pick another board from the sidebar."
         icon="square-kanban"
       />
       <ErrorState
-        v-else-if="boards.loadError"
+        v-else-if="boards.loadError && boards.board === null"
         title="Couldn't load board"
         :hint="boards.loadError"
         @retry="loadBoard"

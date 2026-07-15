@@ -11,6 +11,7 @@ import InspectorTabs from '@/components/ui/InspectorTabs.vue';
 import MetaRow from '@/components/ui/MetaRow.vue';
 import { relativeTime } from '@/lib/relativeTime';
 import { useTaskDetailStore } from '@/stores/taskDetail';
+import { useWorkspaceStore } from '@/stores/workspace';
 
 type TaskDto = components['schemas']['TaskDto'];
 
@@ -34,6 +35,7 @@ const props = withDefaults(
 );
 
 const detail = useTaskDetailStore();
+const workspace = useWorkspaceStore();
 
 type Tab = 'details' | 'activity' | 'share';
 const TABS: Array<{ id: Tab; label: string; icon: string }> = [
@@ -48,7 +50,8 @@ const creatorName = creator.display_name ?? (creator.type === 'api_key' ? 'Agent
 const isAgentCreator = creator.type === 'api_key';
 
 function retryDetail(): void {
-  void detail.loadAll(props.ws, props.task.readable_id);
+  const workspaceId = workspace.workspaceIdForSlug(props.ws);
+  void detail.loadAll(props.ws, props.task.readable_id, workspaceId ?? undefined, props.task.id);
 }
 </script>
 

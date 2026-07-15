@@ -1,7 +1,19 @@
 import { flushPromises } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { type ZodType, z } from 'zod';
 import { deferred } from '@/__tests__/deferred';
+import {
+  allowResourceCache,
+  configureResourceCacheForTest,
+  setResourceCachePrincipal,
+} from '@/cache/cacheRuntime';
+import {
+  buildCacheKey,
+  type CacheEnvelope,
+  ResourceCache,
+  type ResourceCacheStore,
+} from '@/cache/resourceCache';
 
 const { GET } = vi.hoisted(() => ({ GET: vi.fn() }));
 
@@ -12,10 +24,43 @@ vi.mock('@/api/wrapper', () => ({
 import type { BoardDto, ColumnDto, TaskSummaryDto } from '@/stores/boards';
 import { useBoardsStore } from '@/stores/boards';
 
-const board = (id: string): BoardDto => ({
+const PRINCIPAL = 'user:019ef171-bbcf-7b90-9be6-5dbb382afd08';
+const WORKSPACE_ID = '019ef171-bbcf-7b90-9be6-5dbb382afd08';
+
+function cacheStore(entries: Map<string, CacheEnvelope<unknown>>): ResourceCacheStore {
+  return {
+    async get<T>(key: string, _schema: ZodType<T>): Promise<CacheEnvelope<T> | null> {
+      const entry = entries.get(key);
+      return entry === undefined ? null : (entry as CacheEnvelope<T>);
+    },
+    async putMany(newEntries) {
+      for (const entry of newEntries) entries.set(entry.key, entry);
+      return true;
+    },
+    async deleteMany(keys) {
+      for (const key of keys) entries.delete(key);
+      return true;
+    },
+    async deleteScope(scope) {
+      for (const [key, entry] of entries) {
+        const inWorkspace =
+          key.includes(`|p=${scope.principal}|`) &&
+          (scope.workspaceId === undefined || key.includes(`|w=${scope.workspaceId}|`));
+        const hasTag = scope.tagsAny === undefined || entry.tags.some((tag) => scope.tagsAny?.includes(tag));
+        if (inWorkspace && hasTag) entries.delete(key);
+      }
+      return true;
+    },
+    async clear() {
+      return true;
+    },
+  };
+}
+
+const board = (id: string, workspaceId = WORKSPACE_ID): BoardDto => ({
   id,
   name: `Board ${id}`,
-  workspace_id: 'ws',
+  workspace_id: workspaceId,
   project_id: 'proj',
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
@@ -48,6 +93,9 @@ describe('useBoardsStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
+    setResourceCachePrincipal(PRINCIPAL);
+    configureResourceCacheForTest(new ResourceCache({ store: cacheStore(new Map()) }));
+    allowResourceCache();
   });
 
   it('returns a stable array reference for an empty column (guards the kanban render loop)', () => {
@@ -184,6 +232,239 @@ describe('useBoardsStore', () => {
     expect(store.board?.id).toBe('board-2');
     expect(store.columns.map((column) => column.id)).toEqual(['new-column']);
     expect(store.tasksByColumn('new-column').map((item) => item.id)).toEqual(['new-task']);
+  });
+
+  it('hydrates an exact board composite before an offline refresh and keeps it usable for active retry', async () => {
+    const key = buildCacheKey({
+      principal: PRINCIPAL,
+      workspaceId: WORKSPACE_ID,
+      resourceKind: 'task-board',
+      resourceId: 'board-2',
+    });
+    if (key === null) throw new Error('Expected a canonical board cache key');
+
+    const now = Date.now();
+    const entries = new Map<string, CacheEnvelope<unknown>>([
+      [
+        key,
+        {
+          schema: 1,
+          key,
+          payloadVersion: 1,
+          storedAt: now,
+          validatedAt: now,
+          lastAccessedAt: now,
+          retentionExpiresAt: now + 60_000,
+          bytes: 128,
+          stale: false,
+          tags: ['board:board-2'],
+          payload: {
+            board: board('board-2'),
+            columns: [{ ...col('cached-column', 'a'), board_id: 'board-2' }],
+            tasks: [{ ...task('cached-task', 'ATL-2', 'cached-column'), board_id: 'board-2' }],
+          },
+        },
+      ],
+    ]);
+    const cache = new ResourceCache({ store: cacheStore(entries) });
+    configureResourceCacheForTest(cache);
+    allowResourceCache();
+    GET.mockResolvedValue({ data: undefined, error: { hint: 'offline' } });
+
+    const store = useBoardsStore();
+    await store.loadBoardContents('ws', 'board-2', WORKSPACE_ID);
+
+    expect(store.loading).toBe(false);
+    expect(store.board?.id).toBe('board-2');
+    expect(store.columns.map((column) => column.id)).toEqual(['cached-column']);
+    expect(store.tasksByColumn('cached-column').map((item) => item.id)).toEqual(['cached-task']);
+    expect(store.loadError).toBe('offline');
+
+    GET.mockResolvedValue({
+      data: { items: [task('fresh-task', 'ATL-3', 'fresh-column')], has_more: false, next_cursor: null },
+      error: undefined,
+    });
+    await cache.retry(key);
+
+    expect(store.tasksByColumn('cached-column').map((item) => item.id)).toEqual(['cached-task']);
+  });
+
+  it.each([
+    403, 404,
+  ])('evicts the exact board composite after a %i response before it can hydrate again', async (status) => {
+    const key = buildCacheKey({
+      principal: PRINCIPAL,
+      workspaceId: WORKSPACE_ID,
+      resourceKind: 'task-board',
+      resourceId: 'board-1',
+    });
+    if (key === null) throw new Error('Expected a canonical board cache key');
+
+    const now = Date.now();
+    const entries = new Map<string, CacheEnvelope<unknown>>([
+      [
+        key,
+        {
+          schema: 1,
+          key,
+          payloadVersion: 1,
+          storedAt: now,
+          validatedAt: now,
+          lastAccessedAt: now,
+          retentionExpiresAt: now + 60_000,
+          bytes: 128,
+          stale: false,
+          tags: ['board:board-1'],
+          payload: {
+            board: board('board-1'),
+            columns: [col('cached-column', 'a')],
+            tasks: [task('cached-task', 'ATL-1', 'cached-column')],
+          },
+        },
+      ],
+    ]);
+    const cache = new ResourceCache({ store: cacheStore(entries) });
+    configureResourceCacheForTest(cache);
+    allowResourceCache();
+    GET.mockResolvedValue({ data: undefined, error: { status, hint: 'Denied' } });
+
+    const store = useBoardsStore();
+    await store.loadBoardContents('ws', 'board-1', WORKSPACE_ID);
+
+    expect(store.board).toBeNull();
+    expect(entries.has(key)).toBe(false);
+
+    GET.mockImplementation((path: string) => {
+      if (path.endsWith('/columns'))
+        return Promise.resolve({ data: [col('fresh-column', 'a')], error: undefined });
+      if (path.endsWith('/tasks')) {
+        return Promise.resolve({
+          data: { items: [task('fresh-task', 'ATL-2', 'fresh-column')], has_more: false, next_cursor: null },
+          error: undefined,
+        });
+      }
+      return Promise.resolve({ data: board('board-1'), error: undefined });
+    });
+    await store.loadBoardContents('ws', 'board-1', WORKSPACE_ID);
+
+    expect(store.tasksByColumn('fresh-column').map((item) => item.id)).toEqual(['fresh-task']);
+    expect(store.tasksByColumn('cached-column')).toEqual([]);
+  });
+
+  it.each([
+    'columns',
+    'tasks',
+  ] as const)('retracts and evicts the board composite when %s is denied', async (deniedResource) => {
+    const entries = new Map<string, CacheEnvelope<unknown>>();
+    configureResourceCacheForTest(new ResourceCache({ store: cacheStore(entries) }));
+    allowResourceCache();
+    GET.mockImplementation((path: string) => {
+      if (path.endsWith(`/${deniedResource}`)) {
+        return Promise.resolve({ data: undefined, error: { status: 403, hint: 'Denied' } });
+      }
+      if (path.endsWith('/columns'))
+        return Promise.resolve({ data: [col('column-1', 'a')], error: undefined });
+      if (path.endsWith('/tasks')) {
+        return Promise.resolve({
+          data: { items: [task('task-1', 'ATL-1', 'column-1')], has_more: false, next_cursor: null },
+          error: undefined,
+        });
+      }
+      return Promise.resolve({ data: board('board-1'), error: undefined });
+    });
+
+    const store = useBoardsStore();
+    await store.loadBoardContents('ws', 'board-1', WORKSPACE_ID);
+
+    expect(store.board).toBeNull();
+    expect(store.columns).toEqual([]);
+    expect(store.tasksByColumn('column-1')).toEqual([]);
+    expect(entries.size).toBe(0);
+  });
+
+  it('rejects a swapped board composite instead of publishing it under the requested board key', async () => {
+    GET.mockImplementation((path: string) => {
+      if (path.endsWith('/columns'))
+        return Promise.resolve({ data: [col('column-1', 'a')], error: undefined });
+      if (path.endsWith('/tasks')) {
+        return Promise.resolve({
+          data: { items: [task('task-1', 'ATL-1', 'column-1')], has_more: false, next_cursor: null },
+          error: undefined,
+        });
+      }
+      return Promise.resolve({ data: board('another-board'), error: undefined });
+    });
+
+    const store = useBoardsStore();
+    await store.loadBoardContents('ws', 'board-1', WORKSPACE_ID);
+
+    expect(store.board).toBeNull();
+    expect(store.columns).toEqual([]);
+    expect(store.tasksByColumn('column-1')).toEqual([]);
+  });
+
+  it('rejects a swapped board composite during the direct online fallback', async () => {
+    configureResourceCacheForTest({ isAvailable: () => false });
+    GET.mockImplementation((path: string) => {
+      if (path.endsWith('/columns'))
+        return Promise.resolve({ data: [col('column-1', 'a')], error: undefined });
+      if (path.endsWith('/tasks')) {
+        return Promise.resolve({
+          data: { items: [task('task-1', 'ATL-1', 'column-1')], has_more: false, next_cursor: null },
+          error: undefined,
+        });
+      }
+      return Promise.resolve({ data: board('another-board'), error: undefined });
+    });
+
+    const store = useBoardsStore();
+    await store.loadBoardContents('ws', 'board-1', WORKSPACE_ID);
+
+    expect(store.board).toBeNull();
+    expect(store.columns).toEqual([]);
+    expect(store.tasksByColumn('column-1')).toEqual([]);
+  });
+
+  it('evicts the active exact board composite after a task mutation', async () => {
+    const entries = new Map<string, CacheEnvelope<unknown>>();
+    const cache = new ResourceCache({ store: cacheStore(entries) });
+    configureResourceCacheForTest(cache);
+    allowResourceCache();
+    GET.mockImplementation((path: string) => {
+      if (path.endsWith('/columns'))
+        return Promise.resolve({ data: [col('column-1', 'a')], error: undefined });
+      if (path.endsWith('/tasks')) {
+        return Promise.resolve({
+          data: { items: [task('task-1', 'ATL-1', 'column-1')], has_more: false, next_cursor: null },
+          error: undefined,
+        });
+      }
+      return Promise.resolve({ data: board('board-1'), error: undefined });
+    });
+
+    const key = buildCacheKey({
+      principal: PRINCIPAL,
+      workspaceId: WORKSPACE_ID,
+      resourceKind: 'task-board',
+      resourceId: 'board-1',
+    });
+    if (key === null) throw new Error('Expected a canonical board cache key');
+
+    const store = useBoardsStore();
+    await store.loadBoardContents('ws', 'board-1', WORKSPACE_ID);
+    store.reconcileTask({
+      id: 'task-1',
+      readable_id: 'ATL-1',
+      column_id: 'column-1',
+      title: 'Updated task',
+      priority: null,
+      updated_at: '2026-01-02T00:00:00Z',
+    });
+    await vi.waitFor(() => expect(entries.has(key)).toBe(false));
+
+    expect(
+      await cache.hydrate({ key, payloadSchema: z.unknown(), publish: vi.fn(), isCurrent: () => true }),
+    ).toBeNull();
   });
 
   it('isolates a coordinated board load from standalone loaders', async () => {
