@@ -18,22 +18,29 @@ const commentFeed = {
   hasMore: ref(false),
   status: ref<'idle' | 'pending' | 'ready' | 'error'>('ready'),
   error: ref<string | null>(null),
-  attachments: ref<Record<string, unknown[]>>({}),
-  attachmentError: ref<Record<string, string>>({}),
-  isAttachmentListLoading: () => false,
-  isAttachmentUploadLoading: () => false,
-  isAttachmentDownloadLoading: () => false,
-  isAttachmentDeleteLoading: () => false,
   load: vi.fn().mockResolvedValue(undefined),
   loadMore: vi.fn().mockResolvedValue(undefined),
-  loadAttachments: vi.fn().mockResolvedValue(undefined),
-  uploadAttachment: vi.fn().mockResolvedValue(null),
-  downloadAttachment: vi.fn().mockResolvedValue(null),
-  deleteAttachment: vi.fn().mockResolvedValue(true),
+};
+
+const commentAttachments = {
+  items: ref<Record<string, unknown[]>>({}),
+  error: ref<Record<string, string>>({}),
+  isListing: () => false,
+  isUploading: () => false,
+  isDownloading: () => false,
+  isDeleting: () => false,
+  upload: vi.fn().mockResolvedValue(null),
+  download: vi.fn().mockResolvedValue(undefined),
+  delete: vi.fn().mockResolvedValue(true),
+  contentUrl: vi.fn().mockReturnValue('/attachment'),
 };
 
 vi.mock('@/composables/useCommentFeed', () => ({
   useCommentFeed: () => commentFeed,
+}));
+
+vi.mock('@/composables/useCommentAttachments', () => ({
+  useCommentAttachments: vi.fn(() => commentAttachments),
 }));
 
 const RouteStub = { template: '<div />' };
@@ -137,8 +144,8 @@ beforeEach(() => {
   commentFeed.hasMore.value = false;
   commentFeed.status.value = 'ready';
   commentFeed.error.value = null;
-  commentFeed.attachments.value = {};
-  commentFeed.attachmentError.value = {};
+  commentAttachments.items.value = {};
+  commentAttachments.error.value = {};
   vi.clearAllMocks();
 });
 

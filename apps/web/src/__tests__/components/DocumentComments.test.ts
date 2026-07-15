@@ -12,22 +12,29 @@ const commentFeed = {
   hasMore: ref(false),
   status: ref<'idle' | 'pending' | 'ready' | 'error'>('ready'),
   error: ref<string | null>(null),
-  attachments: ref<Record<string, unknown[]>>({}),
-  attachmentError: ref<Record<string, string>>({}),
-  isAttachmentListLoading: () => false,
-  isAttachmentUploadLoading: () => false,
-  isAttachmentDownloadLoading: () => false,
-  isAttachmentDeleteLoading: () => false,
   load: vi.fn().mockResolvedValue(undefined),
   loadMore: vi.fn().mockResolvedValue(undefined),
-  loadAttachments: vi.fn().mockResolvedValue(undefined),
-  uploadAttachment: vi.fn().mockResolvedValue(null),
-  downloadAttachment: vi.fn().mockResolvedValue(null),
-  deleteAttachment: vi.fn().mockResolvedValue(true),
+};
+
+const commentAttachments = {
+  items: ref<Record<string, unknown[]>>({}),
+  error: ref<Record<string, string>>({}),
+  isListing: () => false,
+  isUploading: () => false,
+  isDownloading: () => false,
+  isDeleting: () => false,
+  upload: vi.fn().mockResolvedValue(null),
+  download: vi.fn().mockResolvedValue(undefined),
+  delete: vi.fn().mockResolvedValue(true),
+  contentUrl: vi.fn().mockReturnValue('/attachment'),
 };
 
 vi.mock('@/composables/useCommentFeed', () => ({
   useCommentFeed: () => commentFeed,
+}));
+
+vi.mock('@/composables/useCommentAttachments', () => ({
+  useCommentAttachments: vi.fn(() => commentAttachments),
 }));
 
 const editorFocus = vi.fn();
@@ -110,8 +117,8 @@ beforeEach(() => {
   commentFeed.hasMore.value = false;
   commentFeed.status.value = 'ready';
   commentFeed.error.value = null;
-  commentFeed.attachments.value = {};
-  commentFeed.attachmentError.value = {};
+  commentAttachments.items.value = {};
+  commentAttachments.error.value = {};
   vi.clearAllMocks();
 });
 
@@ -132,7 +139,7 @@ describe('DocumentComments (ATL-37)', () => {
         target: { status: 'unavailable', label: 'Recurso no disponible' },
       },
     ];
-    commentFeed.attachments.value = {
+    commentAttachments.items.value = {
       c1: [
         {
           id: 'attachment-1',
@@ -151,20 +158,12 @@ describe('DocumentComments (ATL-37)', () => {
 
     expect(store.loadComments).not.toHaveBeenCalled();
     expect(commentFeed.load).toHaveBeenCalledWith({ kind: 'document', ws: 'acme', slug: 'my-doc' });
-    expect(commentFeed.loadAttachments).toHaveBeenCalledWith(
-      { kind: 'document', ws: 'acme', slug: 'my-doc' },
-      'c1',
-    );
     expect(wrapper.get('[data-comment-event="e1"]').text()).toContain('Recurso no disponible');
     expect(wrapper.get('[aria-label="Download image.png"]')).toBeDefined();
 
     await wrapper.get('[data-comment-link="attachment-1"]').trigger('click');
     await flushPromises();
-    expect(commentFeed.downloadAttachment).toHaveBeenCalledWith(
-      { kind: 'document', ws: 'acme', slug: 'my-doc' },
-      'c1',
-      'attachment-1',
-    );
+    expect(commentAttachments.download).toHaveBeenCalledWith('c1', 'attachment-1');
   });
 
   it('shows the shared feed error and retries it without falling back to the legacy document collection', async () => {

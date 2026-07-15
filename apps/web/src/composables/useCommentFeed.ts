@@ -1,13 +1,11 @@
 import { computed, ref } from 'vue';
 import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
-import { useLoadingMap } from '@/composables/useLoadingMap';
 import { errorHint } from '@/lib/apiError';
 
 type CommentListResponse = components['schemas']['CommentListResponseDto'];
 type CommentFeedPage = components['schemas']['Page_CommentFeedEntryDto'];
 type CommentFeedEntry = CommentFeedPage['items'][number];
-type CommentAttachment = Omit<components['schemas']['CommentAttachmentDto'], 'sha256'>;
 type CommentLinkTarget = components['schemas']['CommentLinkTargetDto'];
 
 export type CommentParentTarget =
@@ -49,11 +47,6 @@ function entryId(entry: NormalizedCommentFeedEntry): string {
   return entry.type === 'comment' ? `comment:${entry.comment.id}` : `event:${entry.id}`;
 }
 
-function omitAttachmentDigest(attachment: components['schemas']['CommentAttachmentDto']): CommentAttachment {
-  const { sha256: _sha256, ...safeAttachment } = attachment;
-  return safeAttachment;
-}
-
 function normalizeFeedEntries(entries: CommentFeedEntry[]): NormalizedCommentFeedEntry[] {
   return entries.map((entry) =>
     entry.type === 'comment'
@@ -85,14 +78,7 @@ export function useCommentFeed() {
   const hasMore = ref(false);
   const status = ref<FeedStatus>('idle');
   const error = ref<string | null>(null);
-  const attachments = ref<Record<string, CommentAttachment[]>>({});
-  const attachmentError = ref<Record<string, string>>({});
-  const attachmentListLoading = useLoadingMap();
-  const attachmentUploadLoading = useLoadingMap();
-  const attachmentDownloadLoading = useLoadingMap();
-  const attachmentDeleteLoading = useLoadingMap();
   const target = ref<CommentParentTarget | null>(null);
-  const attachmentRevision = new Map<string, number>();
   let generation = 0;
   let requestSequence = 0;
 
@@ -117,13 +103,6 @@ export function useCommentFeed() {
       entries.value = [];
       cursor.value = null;
       hasMore.value = false;
-      attachments.value = {};
-      attachmentError.value = {};
-      attachmentListLoading.clear();
-      attachmentUploadLoading.clear();
-      attachmentDownloadLoading.clear();
-      attachmentDeleteLoading.clear();
-      attachmentRevision.clear();
     }
 
     return generation;
@@ -224,262 +203,6 @@ export function useCommentFeed() {
     }
   }
 
-  function currentAttachmentTarget(requestTarget: CommentParentTarget, requestGeneration: number): boolean {
-    return generation === requestGeneration && sameTarget(target.value, requestTarget);
-  }
-
-  function setAttachmentError(commentId: string, message: string | null): void {
-    const next = { ...attachmentError.value };
-    if (message === null) delete next[commentId];
-    else next[commentId] = message;
-    attachmentError.value = next;
-  }
-
-  function nextAttachmentRevision(commentId: string): number {
-    const revision = (attachmentRevision.get(commentId) ?? 0) + 1;
-    attachmentRevision.set(commentId, revision);
-    return revision;
-  }
-
-  function isCurrentAttachmentRequest(
-    requestTarget: CommentParentTarget,
-    requestGeneration: number,
-    commentId: string,
-    revision: number,
-  ): boolean {
-    return (
-      currentAttachmentTarget(requestTarget, requestGeneration) &&
-      attachmentRevision.get(commentId) === revision
-    );
-  }
-
-  async function listAttachmentRequest(
-    requestTarget: CommentParentTarget,
-    commentId: string,
-  ): Promise<{ data?: components['schemas']['CommentAttachmentDto'][]; error?: unknown }> {
-    if (requestTarget.kind === 'task') {
-      return wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments', {
-        params: {
-          path: { ws: requestTarget.ws, readable_id: requestTarget.readableId, comment_id: commentId },
-        },
-      });
-    }
-
-    return wrappedClient.GET('/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments', {
-      params: { path: { ws: requestTarget.ws, slug: requestTarget.slug, comment_id: commentId } },
-    });
-  }
-
-  async function loadAttachments(requestTarget: CommentParentTarget, commentId: string): Promise<void> {
-    const requestGeneration = reset(requestTarget);
-    const revision = nextAttachmentRevision(commentId);
-    attachmentListLoading.set(commentId, true);
-    setAttachmentError(commentId, null);
-
-    try {
-      const { data, error: apiError } = await listAttachmentRequest(requestTarget, commentId);
-      if (!isCurrentAttachmentRequest(requestTarget, requestGeneration, commentId, revision)) return;
-
-      if (apiError !== undefined || data === undefined) {
-        setAttachmentError(commentId, errorHint(apiError, 'Failed to load comment attachments'));
-        return;
-      }
-
-      attachments.value = { ...attachments.value, [commentId]: data.map(omitAttachmentDigest) };
-    } catch (cause) {
-      if (isCurrentAttachmentRequest(requestTarget, requestGeneration, commentId, revision)) {
-        setAttachmentError(commentId, errorHint(cause, 'Failed to load comment attachments'));
-      }
-    } finally {
-      if (currentAttachmentTarget(requestTarget, requestGeneration))
-        attachmentListLoading.set(commentId, false);
-    }
-  }
-
-  function formData(file: File): FormData {
-    const form = new FormData();
-    form.append('file', file);
-    return form;
-  }
-
-  async function uploadAttachment(
-    requestTarget: CommentParentTarget,
-    commentId: string,
-    file: File,
-  ): Promise<CommentAttachment | null> {
-    const requestGeneration = reset(requestTarget);
-    const revision = nextAttachmentRevision(commentId);
-    attachmentUploadLoading.set(commentId, true);
-    setAttachmentError(commentId, null);
-
-    try {
-      const response =
-        requestTarget.kind === 'task'
-          ? await wrappedClient.POST(
-              '/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments',
-              {
-                params: {
-                  path: {
-                    ws: requestTarget.ws,
-                    readable_id: requestTarget.readableId,
-                    comment_id: commentId,
-                  },
-                },
-                body: '',
-                bodySerializer: () => formData(file),
-              },
-            )
-          : await uploadDocumentCommentAttachment(requestTarget, commentId, file);
-
-      if (!isCurrentAttachmentRequest(requestTarget, requestGeneration, commentId, revision)) return null;
-
-      if (response.error !== undefined || response.data === undefined) {
-        setAttachmentError(commentId, errorHint(response.error, 'Failed to upload comment attachment'));
-        return null;
-      }
-
-      const uploaded = omitAttachmentDigest(response.data);
-      const current = attachments.value[commentId] ?? [];
-      attachments.value = { ...attachments.value, [commentId]: [...current, uploaded] };
-      return uploaded;
-    } catch (cause) {
-      if (isCurrentAttachmentRequest(requestTarget, requestGeneration, commentId, revision)) {
-        setAttachmentError(commentId, errorHint(cause, 'Failed to upload comment attachment'));
-      }
-      return null;
-    } finally {
-      if (currentAttachmentTarget(requestTarget, requestGeneration))
-        attachmentUploadLoading.set(commentId, false);
-    }
-  }
-
-  async function downloadAttachment(
-    requestTarget: CommentParentTarget,
-    commentId: string,
-    attachmentId: string,
-  ): Promise<Blob | null> {
-    const requestGeneration = reset(requestTarget);
-    const revision = nextAttachmentRevision(commentId);
-    const loadingId = `${commentId}:${attachmentId}`;
-    attachmentDownloadLoading.set(loadingId, true);
-    setAttachmentError(commentId, null);
-
-    try {
-      const response =
-        requestTarget.kind === 'task'
-          ? await wrappedClient.GET(
-              '/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}/content',
-              {
-                params: {
-                  path: {
-                    ws: requestTarget.ws,
-                    readable_id: requestTarget.readableId,
-                    comment_id: commentId,
-                    attachment_id: attachmentId,
-                  },
-                },
-                parseAs: 'blob',
-              },
-            )
-          : await wrappedClient.GET(
-              '/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}',
-              {
-                params: {
-                  path: {
-                    ws: requestTarget.ws,
-                    slug: requestTarget.slug,
-                    comment_id: commentId,
-                    attachment_id: attachmentId,
-                  },
-                },
-                parseAs: 'blob',
-              },
-            );
-
-      if (!isCurrentAttachmentRequest(requestTarget, requestGeneration, commentId, revision)) return null;
-
-      if (response.error !== undefined || response.data === undefined) {
-        setAttachmentError(commentId, errorHint(response.error, 'Failed to download comment attachment'));
-        return null;
-      }
-
-      return response.data;
-    } catch (cause) {
-      if (isCurrentAttachmentRequest(requestTarget, requestGeneration, commentId, revision)) {
-        setAttachmentError(commentId, errorHint(cause, 'Failed to download comment attachment'));
-      }
-      return null;
-    } finally {
-      if (currentAttachmentTarget(requestTarget, requestGeneration))
-        attachmentDownloadLoading.set(loadingId, false);
-    }
-  }
-
-  async function deleteAttachment(
-    requestTarget: CommentParentTarget,
-    commentId: string,
-    attachmentId: string,
-  ): Promise<boolean> {
-    const requestGeneration = reset(requestTarget);
-    const revision = nextAttachmentRevision(commentId);
-    const loadingId = `${commentId}:${attachmentId}`;
-    attachmentDeleteLoading.set(loadingId, true);
-    setAttachmentError(commentId, null);
-
-    try {
-      const response =
-        requestTarget.kind === 'task'
-          ? await wrappedClient.DELETE(
-              '/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}',
-              {
-                params: {
-                  path: {
-                    ws: requestTarget.ws,
-                    readable_id: requestTarget.readableId,
-                    comment_id: commentId,
-                    attachment_id: attachmentId,
-                  },
-                },
-              },
-            )
-          : await wrappedClient.DELETE(
-              '/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}',
-              {
-                params: {
-                  path: {
-                    ws: requestTarget.ws,
-                    slug: requestTarget.slug,
-                    comment_id: commentId,
-                    attachment_id: attachmentId,
-                  },
-                },
-              },
-            );
-
-      if (!isCurrentAttachmentRequest(requestTarget, requestGeneration, commentId, revision)) return false;
-
-      if (response.error !== undefined) {
-        setAttachmentError(commentId, errorHint(response.error, 'Failed to delete comment attachment'));
-        return false;
-      }
-
-      const current = attachments.value[commentId] ?? [];
-      attachments.value = {
-        ...attachments.value,
-        [commentId]: current.filter((item) => item.id !== attachmentId),
-      };
-      return true;
-    } catch (cause) {
-      if (isCurrentAttachmentRequest(requestTarget, requestGeneration, commentId, revision)) {
-        setAttachmentError(commentId, errorHint(cause, 'Failed to delete comment attachment'));
-      }
-      return false;
-    } finally {
-      if (currentAttachmentTarget(requestTarget, requestGeneration))
-        attachmentDeleteLoading.set(loadingId, false);
-    }
-  }
-
   return {
     entries,
     cursor,
@@ -487,37 +210,7 @@ export function useCommentFeed() {
     status,
     error,
     isLoading,
-    attachments,
-    attachmentError,
-    isAttachmentListLoading: attachmentListLoading.isLoading,
-    isAttachmentUploadLoading: attachmentUploadLoading.isLoading,
-    isAttachmentDownloadLoading: attachmentDownloadLoading.isLoading,
-    isAttachmentDeleteLoading: attachmentDeleteLoading.isLoading,
     load,
     loadMore,
-    loadAttachments,
-    uploadAttachment,
-    downloadAttachment,
-    deleteAttachment,
   };
-}
-
-async function uploadDocumentCommentAttachment(
-  target: Extract<CommentParentTarget, { kind: 'document' }>,
-  commentId: string,
-  file: File,
-) {
-  const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
-
-  return wrappedClient.POST('/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments', {
-    params: {
-      path: { ws: target.ws, slug: target.slug, comment_id: commentId },
-      header: { 'x-file-name': file.name },
-    },
-    body: bytes,
-    bodySerializer: () => file,
-    headers: {
-      'Content-Type': file.type || 'application/octet-stream',
-    },
-  });
 }
