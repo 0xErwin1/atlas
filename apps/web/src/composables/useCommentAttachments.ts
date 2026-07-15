@@ -40,7 +40,7 @@ export function useCommentAttachments(target: Ref<CommentParentTarget>, entries:
   const downloading = useLoadingMap();
   const deleting = useLoadingMap();
   const loadedCommentIds = new Set<string>();
-  const revision = new Map<string, number>();
+  const mutationRevision = new Map<string, number>();
   let activeTarget: CommentParentTarget | null = null;
   let generation = 0;
 
@@ -51,7 +51,7 @@ export function useCommentAttachments(target: Ref<CommentParentTarget>, entries:
       items.value = {};
       error.value = {};
       loadedCommentIds.clear();
-      revision.clear();
+      mutationRevision.clear();
       listing.clear();
       uploading.clear();
       downloading.clear();
@@ -69,19 +69,22 @@ export function useCommentAttachments(target: Ref<CommentParentTarget>, entries:
     );
   }
 
-  function advanceRevision(commentId: string): number {
-    const next = (revision.get(commentId) ?? 0) + 1;
-    revision.set(commentId, next);
+  function advanceMutationRevision(commentId: string): number {
+    const next = (mutationRevision.get(commentId) ?? 0) + 1;
+    mutationRevision.set(commentId, next);
     return next;
   }
 
-  function isCurrentRequest(
+  function isCurrentListRequest(
     requestTarget: CommentParentTarget,
     requestGeneration: number,
     commentId: string,
-    requestRevision: number,
+    requestMutationRevision: number,
   ): boolean {
-    return isCurrent(requestTarget, requestGeneration) && revision.get(commentId) === requestRevision;
+    return (
+      isCurrent(requestTarget, requestGeneration) &&
+      (mutationRevision.get(commentId) ?? 0) === requestMutationRevision
+    );
   }
 
   function setError(commentId: string, message: string | null): void {
@@ -110,13 +113,13 @@ export function useCommentAttachments(target: Ref<CommentParentTarget>, entries:
 
     const requestTarget = target.value;
     const requestGeneration = reset(requestTarget);
-    const requestRevision = advanceRevision(commentId);
+    const requestMutationRevision = mutationRevision.get(commentId) ?? 0;
     listing.set(commentId, true);
     setError(commentId, null);
 
     try {
       const { data, error: apiError } = await listRequest(requestTarget, commentId);
-      if (!isCurrentRequest(requestTarget, requestGeneration, commentId, requestRevision)) return;
+      if (!isCurrentListRequest(requestTarget, requestGeneration, commentId, requestMutationRevision)) return;
 
       if (apiError !== undefined || data === undefined) {
         setError(commentId, errorHint(apiError, 'Failed to load comment attachments'));
@@ -125,7 +128,7 @@ export function useCommentAttachments(target: Ref<CommentParentTarget>, entries:
 
       items.value = { ...items.value, [commentId]: data.map(omitAttachmentDigest) };
     } catch (cause) {
-      if (isCurrentRequest(requestTarget, requestGeneration, commentId, requestRevision)) {
+      if (isCurrentListRequest(requestTarget, requestGeneration, commentId, requestMutationRevision)) {
         setError(commentId, errorHint(cause, 'Failed to load comment attachments'));
       }
     } finally {
@@ -138,7 +141,6 @@ export function useCommentAttachments(target: Ref<CommentParentTarget>, entries:
 
     const requestTarget = target.value;
     const requestGeneration = reset(requestTarget);
-    const requestRevision = advanceRevision(commentId);
     uploading.set(commentId, true);
     setError(commentId, null);
 
@@ -161,7 +163,7 @@ export function useCommentAttachments(target: Ref<CommentParentTarget>, entries:
             )
           : await uploadDocumentCommentAttachment(requestTarget, commentId, file);
 
-      if (!isCurrentRequest(requestTarget, requestGeneration, commentId, requestRevision)) return null;
+      if (!isCurrent(requestTarget, requestGeneration)) return null;
 
       if (response.error !== undefined || response.data === undefined) {
         setError(commentId, errorHint(response.error, 'Failed to upload comment attachment'));
@@ -169,10 +171,11 @@ export function useCommentAttachments(target: Ref<CommentParentTarget>, entries:
       }
 
       const uploaded = omitAttachmentDigest(response.data);
+      advanceMutationRevision(commentId);
       items.value = { ...items.value, [commentId]: [...(items.value[commentId] ?? []), uploaded] };
       return uploaded;
     } catch (cause) {
-      if (isCurrentRequest(requestTarget, requestGeneration, commentId, requestRevision)) {
+      if (isCurrent(requestTarget, requestGeneration)) {
         setError(commentId, errorHint(cause, 'Failed to upload comment attachment'));
       }
       return null;
@@ -194,13 +197,12 @@ export function useCommentAttachments(target: Ref<CommentParentTarget>, entries:
 
     const requestTarget = target.value;
     const requestGeneration = reset(requestTarget);
-    const requestRevision = advanceRevision(commentId);
     downloading.set(loadingId, true);
     setError(commentId, null);
 
     try {
       const response = await downloadCommentAttachment(requestTarget, commentId, attachmentId);
-      if (!isCurrentRequest(requestTarget, requestGeneration, commentId, requestRevision)) return null;
+      if (!isCurrent(requestTarget, requestGeneration)) return null;
 
       if (response.error !== undefined || response.data === undefined) {
         setError(commentId, errorHint(response.error, 'Failed to download comment attachment'));
@@ -216,7 +218,7 @@ export function useCommentAttachments(target: Ref<CommentParentTarget>, entries:
       URL.revokeObjectURL(objectUrl);
       return response.data;
     } catch (cause) {
-      if (isCurrentRequest(requestTarget, requestGeneration, commentId, requestRevision)) {
+      if (isCurrent(requestTarget, requestGeneration)) {
         setError(commentId, errorHint(cause, 'Failed to download comment attachment'));
       }
       return null;
@@ -231,26 +233,26 @@ export function useCommentAttachments(target: Ref<CommentParentTarget>, entries:
 
     const requestTarget = target.value;
     const requestGeneration = reset(requestTarget);
-    const requestRevision = advanceRevision(commentId);
     deleting.set(loadingId, true);
     setError(commentId, null);
 
     try {
       const response = await deleteCommentAttachment(requestTarget, commentId, attachmentId);
-      if (!isCurrentRequest(requestTarget, requestGeneration, commentId, requestRevision)) return false;
+      if (!isCurrent(requestTarget, requestGeneration)) return false;
 
       if (response.error !== undefined) {
         setError(commentId, errorHint(response.error, 'Failed to delete comment attachment'));
         return false;
       }
 
+      advanceMutationRevision(commentId);
       items.value = {
         ...items.value,
         [commentId]: (items.value[commentId] ?? []).filter((item) => item.id !== attachmentId),
       };
       return true;
     } catch (cause) {
-      if (isCurrentRequest(requestTarget, requestGeneration, commentId, requestRevision)) {
+      if (isCurrent(requestTarget, requestGeneration)) {
         setError(commentId, errorHint(cause, 'Failed to delete comment attachment'));
       }
       return false;
