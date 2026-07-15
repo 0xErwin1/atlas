@@ -15,6 +15,7 @@ use atlas_api::dtos::{
     documents::CreateDocumentRequest,
 };
 use reqwest::Response;
+use sea_orm::{ConnectionTrait, Statement};
 use serde_json::Value;
 
 fn project_req(slug: &str, prefix: &str) -> CreateProjectRequest {
@@ -257,6 +258,9 @@ async fn task_comment_attachment_routes_round_trip_raw_bytes() {
 
     let delete_response = delete(&client, format!("{attachment_url}/{attachment_id}")).await;
     assert_eq!(delete_response.status(), reqwest::StatusCode::NO_CONTENT);
+    let repeated_delete = delete(&client, format!("{attachment_url}/{attachment_id}")).await;
+    assert_eq!(repeated_delete.status(), reqwest::StatusCode::NO_CONTENT);
+    assert_attachment_row_removed(&db, attachment_id).await;
     let listed_after_delete = get(&client, attachment_url).await;
     assert_eq!(listed_after_delete.status(), reqwest::StatusCode::OK);
     assert!(
@@ -358,6 +362,9 @@ async fn document_comment_attachment_routes_round_trip_raw_bytes() {
 
     let delete_response = delete(&client, format!("{attachment_url}/{attachment_id}")).await;
     assert_eq!(delete_response.status(), reqwest::StatusCode::NO_CONTENT);
+    let repeated_delete = delete(&client, format!("{attachment_url}/{attachment_id}")).await;
+    assert_eq!(repeated_delete.status(), reqwest::StatusCode::NO_CONTENT);
+    assert_attachment_row_removed(&db, attachment_id).await;
     let list_response = get(&client, attachment_url).await;
     assert_eq!(list_response.status(), reqwest::StatusCode::OK);
     assert!(
@@ -369,4 +376,24 @@ async fn document_comment_attachment_routes_round_trip_raw_bytes() {
     );
 
     db.teardown().await;
+}
+
+async fn assert_attachment_row_removed(db: &support::TestDb, attachment_id: uuid::Uuid) {
+    let count: i64 = db
+        .conn()
+        .query_one_raw(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT count(*) AS count FROM attachments WHERE id = $1",
+            [attachment_id.into()],
+        ))
+        .await
+        .expect("count attachment rows")
+        .expect("attachment count row")
+        .try_get("", "count")
+        .expect("attachment count");
+
+    assert_eq!(
+        count, 0,
+        "explicit deletion must permanently remove the row"
+    );
 }

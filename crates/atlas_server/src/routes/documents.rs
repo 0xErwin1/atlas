@@ -1227,23 +1227,16 @@ pub(crate) async fn delete_comment_attachment(
                 .into(),
         }));
     }
-    let repo = PgAttachmentRepo {
-        conn: (*state.db).clone(),
-    };
     let attachment_id = AttachmentId(path.attachment_id);
-    let attachment = repo
-        .find(&ctx, attachment_id)
-        .await
-        .map_err(ApiError::Domain)?;
-    if attachment
-        .and_then(|attachment| (attachment.comment_id == Some(comment_id)).then_some(attachment))
-        .is_none()
-    {
-        return Err(ApiError::NotFound);
-    }
-    repo.soft_delete(&ctx, attachment_id)
-        .await
-        .map_err(ApiError::Domain)?;
+    PgAttachmentLifecycle::delete_comment_attachment(
+        state.db.as_ref(),
+        &ctx,
+        comment_id,
+        attachment_id,
+        state.attachments.as_ref(),
+    )
+    .await
+    .map_err(ApiError::Domain)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
