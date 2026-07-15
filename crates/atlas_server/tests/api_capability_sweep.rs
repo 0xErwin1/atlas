@@ -66,6 +66,10 @@ struct Fixtures {
     document_ref: String,
     folder_id: uuid::Uuid,
     doc_attachment_id: uuid::Uuid,
+    task_comment_id: uuid::Uuid,
+    task_comment_attachment_id: uuid::Uuid,
+    document_comment_id: uuid::Uuid,
+    document_comment_attachment_id: uuid::Uuid,
     webhook_id: uuid::Uuid,
 }
 
@@ -155,6 +159,52 @@ async fn seed_fixtures(
         .await
         .expect("upload document attachment");
 
+    let task_comment = owner
+        .add_comment(
+            ws_slug,
+            &task.readable_id,
+            CreateCommentRequest {
+                body: "Sweep task comment".into(),
+            },
+        )
+        .await
+        .expect("create task comment");
+
+    let task_comment_attachment = owner
+        .upload_task_comment_attachment(
+            ws_slug,
+            &task.readable_id,
+            task_comment.id,
+            "sweep-task-comment.txt",
+            "text/plain",
+            b"hello".to_vec(),
+        )
+        .await
+        .expect("upload task comment attachment");
+
+    let document_comment = owner
+        .add_document_comment(
+            ws_slug,
+            &document.id.to_string(),
+            CreateCommentRequest {
+                body: "Sweep document comment".into(),
+            },
+        )
+        .await
+        .expect("create document comment");
+
+    let document_comment_attachment = owner
+        .upload_document_comment_attachment(
+            ws_slug,
+            &document.id.to_string(),
+            document_comment.id,
+            "sweep-document-comment.txt",
+            "text/plain",
+            b"hello".to_vec(),
+        )
+        .await
+        .expect("upload document comment attachment");
+
     let folder = owner
         .create_folder(
             ws_slug,
@@ -198,6 +248,10 @@ async fn seed_fixtures(
         document_ref: document.id.to_string(),
         folder_id: folder.id,
         doc_attachment_id: attachment.id,
+        task_comment_id: task_comment.id,
+        task_comment_attachment_id: task_comment_attachment.id,
+        document_comment_id: document_comment.id,
+        document_comment_attachment_id: document_comment_attachment.id,
         webhook_id: webhook.id,
     }
 }
@@ -271,6 +325,10 @@ enum Case {
     AddTaskComment,
     UpdateTaskComment,
     DeleteTaskComment,
+    UploadTaskCommentAttachment,
+    ListTaskCommentAttachments,
+    DownloadTaskCommentAttachment,
+    DeleteTaskCommentAttachment,
     // ---- docs (22) ----
     CreateDocument,
     ListDocuments,
@@ -292,6 +350,10 @@ enum Case {
     AddDocComment,
     UpdateDocComment,
     DeleteDocComment,
+    UploadDocumentCommentAttachment,
+    ListDocumentCommentAttachments,
+    DownloadDocumentCommentAttachment,
+    DeleteDocumentCommentAttachment,
     DocumentHeartbeat,
     DocumentLeave,
     // ---- boards (12) ----
@@ -392,6 +454,10 @@ impl Case {
         Case::AddTaskComment,
         Case::UpdateTaskComment,
         Case::DeleteTaskComment,
+        Case::UploadTaskCommentAttachment,
+        Case::ListTaskCommentAttachments,
+        Case::DownloadTaskCommentAttachment,
+        Case::DeleteTaskCommentAttachment,
         Case::CreateDocument,
         Case::ListDocuments,
         Case::GetDocument,
@@ -412,6 +478,10 @@ impl Case {
         Case::AddDocComment,
         Case::UpdateDocComment,
         Case::DeleteDocComment,
+        Case::UploadDocumentCommentAttachment,
+        Case::ListDocumentCommentAttachments,
+        Case::DownloadDocumentCommentAttachment,
+        Case::DeleteDocumentCommentAttachment,
         Case::DocumentHeartbeat,
         Case::DocumentLeave,
         Case::CreateBoard,
@@ -506,6 +576,10 @@ impl Case {
             Case::AddTaskComment => ("POST", "tasks:update"),
             Case::UpdateTaskComment => ("PATCH", "tasks:update"),
             Case::DeleteTaskComment => ("DELETE", "tasks:update"),
+            Case::UploadTaskCommentAttachment => ("POST", "tasks:update"),
+            Case::ListTaskCommentAttachments => ("GET", "tasks:read"),
+            Case::DownloadTaskCommentAttachment => ("GET", "tasks:read"),
+            Case::DeleteTaskCommentAttachment => ("DELETE", "tasks:update"),
 
             Case::CreateDocument => ("POST", "docs:create"),
             Case::ListDocuments => ("GET", "docs:read"),
@@ -527,6 +601,10 @@ impl Case {
             Case::AddDocComment => ("POST", "docs:update"),
             Case::UpdateDocComment => ("PATCH", "docs:update"),
             Case::DeleteDocComment => ("DELETE", "docs:update"),
+            Case::UploadDocumentCommentAttachment => ("POST", "docs:update"),
+            Case::ListDocumentCommentAttachments => ("GET", "docs:read"),
+            Case::DownloadDocumentCommentAttachment => ("GET", "docs:read"),
+            Case::DeleteDocumentCommentAttachment => ("DELETE", "docs:update"),
             Case::DocumentHeartbeat => ("POST", "docs:read"),
             Case::DocumentLeave => ("DELETE", "docs:read"),
 
@@ -800,6 +878,40 @@ async fn invoke(
             .await
             .map(|_| ()),
         Case::DeleteTaskComment => client.delete_comment(ws, &fx.task_readable_id, nil).await,
+        Case::UploadTaskCommentAttachment => client
+            .upload_task_comment_attachment(
+                ws,
+                &fx.task_readable_id,
+                fx.task_comment_id,
+                "f.txt",
+                "text/plain",
+                vec![1, 2, 3],
+            )
+            .await
+            .map(|_| ()),
+        Case::ListTaskCommentAttachments => client
+            .list_task_comment_attachments(ws, &fx.task_readable_id, fx.task_comment_id)
+            .await
+            .map(|_| ()),
+        Case::DownloadTaskCommentAttachment => client
+            .download_task_comment_attachment(
+                ws,
+                &fx.task_readable_id,
+                fx.task_comment_id,
+                fx.task_comment_attachment_id,
+            )
+            .await
+            .map(|_| ()),
+        Case::DeleteTaskCommentAttachment => {
+            client
+                .delete_task_comment_attachment(
+                    ws,
+                    &fx.task_readable_id,
+                    fx.task_comment_id,
+                    fx.task_comment_attachment_id,
+                )
+                .await
+        }
 
         Case::CreateDocument => client
             .create_document(
@@ -895,6 +1007,40 @@ async fn invoke(
         Case::DeleteDocComment => {
             client
                 .delete_document_comment(ws, &fx.document_ref, nil)
+                .await
+        }
+        Case::UploadDocumentCommentAttachment => client
+            .upload_document_comment_attachment(
+                ws,
+                &fx.document_ref,
+                fx.document_comment_id,
+                "f.txt",
+                "text/plain",
+                vec![1, 2, 3],
+            )
+            .await
+            .map(|_| ()),
+        Case::ListDocumentCommentAttachments => client
+            .list_document_comment_attachments(ws, &fx.document_ref, fx.document_comment_id)
+            .await
+            .map(|_| ()),
+        Case::DownloadDocumentCommentAttachment => client
+            .download_document_comment_attachment(
+                ws,
+                &fx.document_ref,
+                fx.document_comment_id,
+                fx.document_comment_attachment_id,
+            )
+            .await
+            .map(|_| ()),
+        Case::DeleteDocumentCommentAttachment => {
+            client
+                .delete_document_comment_attachment(
+                    ws,
+                    &fx.document_ref,
+                    fx.document_comment_id,
+                    fx.document_comment_attachment_id,
+                )
                 .await
         }
         Case::DocumentHeartbeat => {
