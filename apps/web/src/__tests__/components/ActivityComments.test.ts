@@ -120,6 +120,20 @@ function mountFeed() {
   });
 }
 
+function mountFeedWithRealEditor() {
+  return mount(ActivityComments, {
+    props: { ws: 'acme', readableId: 'ATL-1' },
+    global: { plugins: [testRouter], stubs: { CommentComposer: true, teleport: true } },
+  });
+}
+
+function imageClipboard(file: File): DataTransfer {
+  return {
+    files: [file],
+    items: [{ kind: 'file', getAsFile: () => file }],
+  } as unknown as DataTransfer;
+}
+
 function menuItem(wrapper: VueWrapper, label: string): DOMWrapper<Element> | undefined {
   return wrapper.findAll('[role="menuitem"]').find((node) => node.text().trim() === label);
 }
@@ -411,6 +425,45 @@ describe('ActivityComments feed (ATL-19)', () => {
     );
     expect(commentAttachments.upload).toHaveBeenCalledWith('c1', file);
     expect(commentAttachments.contentUrl).toHaveBeenCalledWith('c1', 'image-1');
+  });
+
+  it('pastes an image through the real task comment editor, retains a failed save draft, and retries without reuploading', async () => {
+    const detail = useTaskDetailStore();
+    detail._setForTest({ comments: [comment('c1', 'Original', 'me', 'user', 'Me')] });
+    commentFeed.entries.value = [
+      { type: 'comment', comment: comment('c1', 'Original', 'me', 'user', 'Me'), links: [] },
+    ];
+    const editComment = vi
+      .spyOn(detail, 'editComment')
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
+    const image = new File(['image'], 'diagram.png', { type: 'image/png' });
+    commentAttachments.upload.mockResolvedValue({ id: 'image-1' });
+    commentAttachments.contentUrl.mockReturnValue(
+      '/api/workspaces/acme/tasks/ATL-1/comments/c1/attachments/image-1/content',
+    );
+    signInAs('me');
+
+    const wrapper = mountFeedWithRealEditor();
+    await wrapper.get('[data-comment-id="c1"] [aria-label="Comment actions"]').trigger('click');
+    await menuItem(wrapper, 'Edit')?.trigger('click');
+    await nextTick();
+
+    await wrapper
+      .get('[data-comment-id="c1"] .cm-content')
+      .trigger('paste', { clipboardData: imageClipboard(image) });
+    await flushPromises();
+    await wrapper.get('[data-comment-id="c1"] [data-test="comment-edit-save"]').trigger('click');
+    await flushPromises();
+    await wrapper.get('[data-comment-id="c1"] [data-test="comment-edit-save"]').trigger('click');
+    await flushPromises();
+
+    const body =
+      '![diagram](/api/workspaces/acme/tasks/ATL-1/comments/c1/attachments/image-1/content)\nOriginal';
+    expect(commentAttachments.upload).toHaveBeenCalledTimes(1);
+    expect(editComment).toHaveBeenNthCalledWith(1, 'acme', 'ATL-1', 'c1', body);
+    expect(editComment).toHaveBeenNthCalledWith(2, 'acme', 'ATL-1', 'c1', body);
+    expect(wrapper.find('[data-comment-id="c1"] [data-test="comment-edit-save"]').exists()).toBe(false);
   });
 
   it('binds attachment-list retry to the current published task comment', async () => {
