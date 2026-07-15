@@ -52,7 +52,10 @@ const props = defineProps<{
   attachments?: CommentAttachment[];
   canManageAttachments?: boolean;
   attachmentUploading?: boolean;
+  attachmentListing?: boolean;
   attachmentError?: string | null;
+  isAttachmentDownloading?: (attachmentId: string) => boolean;
+  isAttachmentDeleting?: (attachmentId: string) => boolean;
   onUploadAttachment?: (file: File) => Promise<CommentAttachment | null>;
   onDownloadAttachment?: (attachmentId: string) => Promise<Blob | null>;
   onDeleteAttachment?: (attachmentId: string) => Promise<boolean>;
@@ -318,9 +321,12 @@ async function confirmDelete(): Promise<void> {
           class="sr-only"
           type="file"
           aria-label="Attach file"
+          :disabled="attachmentUploading"
           @change="uploadAttachment"
         />
-        <span v-if="attachmentUploading" role="status" style="margin-left: 8px;">Uploading attachment…</span>
+        <span v-if="attachmentUploading || attachmentListing" role="status" aria-live="polite" style="margin-left: 8px;">
+          {{ attachmentUploading ? 'Uploading attachment…' : 'Loading attachments…' }}
+        </span>
         <p v-if="attachmentError !== null && attachmentError !== undefined" role="alert">{{ attachmentError }}</p>
         <ul v-if="attachments.length > 0" style="margin-top: 6px;">
           <li v-for="attachment in attachments" :key="attachment.id" class="flex items-center" style="gap: 6px;">
@@ -329,18 +335,22 @@ async function confirmDelete(): Promise<void> {
               type="button"
               class="atl-comment-btn"
               :aria-label="`Download ${attachment.file_name}`"
+              :aria-busy="isAttachmentDownloading?.(attachment.id) === true"
+              :disabled="isAttachmentDownloading?.(attachment.id) === true"
               @click="downloadAttachment(attachment.id)"
             >
-              Download
+              {{ isAttachmentDownloading?.(attachment.id) === true ? 'Downloading…' : 'Download' }}
             </button>
             <button
               v-if="canManageAttachments"
               type="button"
               class="atl-comment-btn"
               :aria-label="`Delete ${attachment.file_name}`"
+              :aria-busy="isAttachmentDeleting?.(attachment.id) === true"
+              :disabled="isAttachmentDeleting?.(attachment.id) === true"
               @click="requestAttachmentDelete(attachment)"
             >
-              Delete
+              {{ isAttachmentDeleting?.(attachment.id) === true ? 'Deleting…' : 'Delete' }}
             </button>
           </li>
         </ul>
