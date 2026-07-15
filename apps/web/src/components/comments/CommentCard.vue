@@ -35,17 +35,18 @@ type CommentAttachment = {
 
 type CommentEvent = {
   id: string;
+  comment_id?: string;
   kind: string;
   created_at: string;
   target?: CommentLinkTarget | null;
 };
 
 const props = defineProps<{
-  comment: CommentDto;
-  canEdit: boolean;
-  canDelete: boolean;
-  onSave: (id: string, body: string) => Promise<boolean>;
-  onDelete: (id: string) => Promise<void> | Promise<boolean>;
+  comment?: CommentDto;
+  canEdit?: boolean;
+  canDelete?: boolean;
+  onSave?: (id: string, body: string) => Promise<boolean>;
+  onDelete?: (id: string) => Promise<void> | Promise<boolean>;
   links?: Array<{ target: CommentLinkTarget }>;
   event?: CommentEvent;
   attachments?: CommentAttachment[];
@@ -59,7 +60,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  'navigate-link': [target: Extract<CommentLinkTarget, { status: 'available' }>];
+  'navigate-link': [target: Extract<CommentLinkTarget, { status: 'available' }>, commentId?: string];
 }>();
 
 const menu = useContextMenu();
@@ -71,13 +72,19 @@ const editDraft = ref('');
 const saving = ref(false);
 
 const canSaveEdit = computed(() => editDraft.value.trim().length > 0);
-const hasActions = computed(() => props.canEdit || props.canDelete);
-const isEdited = computed(() => props.comment.updated_at !== props.comment.created_at);
+const hasActions = computed(() => props.canEdit === true || props.canDelete === true);
+const isEdited = computed(
+  () => props.comment !== undefined && props.comment.updated_at !== props.comment.created_at,
+);
 
-const authorName = computed(() => actorName(props.comment.author.display_name, props.comment.author.type));
-const authorIsAgent = computed(() => isAgent(props.comment.author.type));
+const authorName = computed(() =>
+  props.comment === undefined ? '' : actorName(props.comment.author.display_name, props.comment.author.type),
+);
+const authorIsAgent = computed(() => props.comment !== undefined && isAgent(props.comment.author.type));
 
 function startEdit(): void {
+  if (props.comment === undefined) return;
+
   editing.value = true;
   editDraft.value = props.comment.body;
 }
@@ -109,7 +116,9 @@ function eventLabel(kind: string): string {
 }
 
 function navigate(target: CommentLinkTarget): void {
-  if (target.status === 'available') emit('navigate-link', target);
+  if (target.status === 'available') {
+    emit('navigate-link', target, props.comment?.id ?? props.event?.comment_id);
+  }
 }
 
 async function uploadAttachment(event: Event): Promise<void> {
@@ -155,7 +164,7 @@ function onEditChange(markdown: string): void {
 }
 
 async function saveEdit(): Promise<void> {
-  if (!canSaveEdit.value || saving.value) return;
+  if (!canSaveEdit.value || saving.value || props.comment === undefined || props.onSave === undefined) return;
 
   saving.value = true;
   const ok = await props.onSave(props.comment.id, editDraft.value.trim());
@@ -170,12 +179,32 @@ function cancelDelete(): void {
 
 async function confirmDelete(): Promise<void> {
   pendingDelete.value = false;
-  await props.onDelete(props.comment.id);
+  if (props.comment !== undefined && props.onDelete !== undefined) await props.onDelete(props.comment.id);
 }
 </script>
 
 <template>
-  <article :data-comment-id="comment.id" class="atl-comment group">
+  <article
+    v-if="comment === undefined && event !== undefined"
+    :data-comment-event="event.id"
+    class="atl-comment"
+  >
+    <div style="color: var(--c-muted);">
+      {{ eventLabel(event.kind) }}
+      <button
+        v-if="event.target?.status === 'available'"
+        type="button"
+        class="atl-comment-btn"
+        @click="navigate(event.target)"
+      >
+        {{ linkLabel(event.target) }}
+      </button>
+      <span v-else-if="event.target?.status === 'unavailable'">{{ linkLabel(event.target) }}</span>
+    </div>
+    <span style="font-size: var(--fs-xs); color: var(--c-muted);">{{ formatDate(event.created_at) }}</span>
+  </article>
+
+  <article v-else-if="comment !== undefined" :data-comment-id="comment.id" class="atl-comment group">
     <div class="flex items-center" style="gap: 8px;">
       <Avatar :name="authorName" :agent="authorIsAgent" :size="22" />
       <span
@@ -261,7 +290,7 @@ async function confirmDelete(): Promise<void> {
         </template>
       </div>
 
-      <div v-if="event !== undefined" data-comment-event style="margin-top: 8px; color: var(--c-muted);">
+      <div v-if="event !== undefined" :data-comment-event="event.id" style="margin-top: 8px; color: var(--c-muted);">
         {{ eventLabel(event.kind) }}
         <button
           v-if="event.target?.status === 'available'"
