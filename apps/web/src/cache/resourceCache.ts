@@ -63,6 +63,56 @@ export interface CacheNetwork {
   isOnline(): boolean;
 }
 
+export interface CacheTimer {
+  schedule(delayMs: number, callback: () => void): unknown;
+  clear(handle: unknown): void;
+}
+
+export interface ResourceCacheStore {
+  get<T>(key: string, payloadSchema: ZodType<T>): Promise<CacheEnvelope<T> | null>;
+  putMany(entries: readonly CacheEnvelope<unknown>[]): Promise<boolean>;
+  deleteMany(keys: readonly string[]): Promise<boolean>;
+  deleteScope?(scope: CacheDeleteScope): Promise<boolean>;
+  clear(): Promise<boolean>;
+}
+
+export interface CacheDeleteScope {
+  principal: string;
+  workspaceId?: string;
+  tagsAny?: readonly string[];
+}
+
+export interface CacheCadence {
+  freshForMs: number;
+  activeForMs: number;
+}
+
+export const CACHE_CADENCE: Record<'catalog' | 'primary' | 'secondary', CacheCadence> = {
+  catalog: { freshForMs: 30_000, activeForMs: 60_000 },
+  primary: { freshForMs: 120_000, activeForMs: 300_000 },
+  secondary: { freshForMs: 60_000, activeForMs: 120_000 },
+};
+
+export interface ResourceCacheRequest<T> {
+  key: string;
+  payloadSchema: ZodType<T>;
+  tags: string[];
+  freshForMs: number;
+  activeForMs?: number;
+  retentionForMs: number;
+  load(): Promise<T>;
+  publish(payload: T): void;
+  isCurrent(): boolean;
+}
+
+export interface ResourceCacheOptions {
+  store: ResourceCacheStore;
+  policy?: CachePolicy;
+  clock?: CacheClock;
+  random?: CacheRandom;
+  timer?: CacheTimer;
+}
+
 export const DEFAULT_CACHE_POLICY: CachePolicy = {
   enabled: true,
   authorizationLeaseMs: AUTHORIZATION_LEASE_MS,
@@ -76,6 +126,416 @@ export const DEFAULT_CACHE_POLICY: CachePolicy = {
     maxOtherEntryBytes: 4 * 1024 * 1024,
   },
 };
+
+export class ResourceCache {
+  private readonly activeKeys = new Map<
+    string,
+    {
+      freshForMs: number;
+      activeForMs: number;
+      nextAttemptAt: number;
+      failures: number;
+      attempting: boolean;
+      revalidate: () => Promise<void>;
+    }
+  >();
+  private readonly clock: CacheClock;
+  private readonly hot = new Map<string, CacheEnvelope<unknown>>();
+  private readonly inflight = new Map<string, Promise<void>>();
+  private readonly policy: CachePolicy;
+  private readonly random: CacheRandom;
+  private readonly store: ResourceCacheStore;
+  private readonly timer: CacheTimer;
+  private blocked = false;
+  private purgeFailure = false;
+  private pendingPurges = 0;
+  private scheduler: unknown | null = null;
+  private schedulerDueAt: number | null = null;
+  private authorizationLeaseExpiresAt = 0;
+  private generation = 0;
+
+  constructor(options: ResourceCacheOptions) {
+    this.store = options.store;
+    this.policy = options.policy ?? DEFAULT_CACHE_POLICY;
+    this.clock = options.clock ?? { now: Date.now };
+    this.random = options.random ?? { next: Math.random };
+    this.timer = options.timer ?? {
+      clear: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+      schedule: (delayMs, callback) => setTimeout(callback, delayMs),
+    };
+
+    if (!this.policy.enabled) void this.store.clear();
+  }
+
+  async hydrate<T>(
+    request: Pick<ResourceCacheRequest<T>, 'key' | 'payloadSchema' | 'publish' | 'isCurrent'>,
+  ): Promise<T | null> {
+    if (!this.policy.enabled || this.isSuspended() || this.authorizationLeaseExpiresAt <= this.clock.now())
+      return null;
+
+    const generation = this.generation;
+    const entry =
+      (this.hot.get(request.key) as CacheEnvelope<T> | undefined) ??
+      (await this.store.get(request.key, request.payloadSchema));
+
+    if (
+      !entry ||
+      this.isSuspended() ||
+      generation !== this.generation ||
+      entry.retentionExpiresAt <= this.clock.now() ||
+      !request.isCurrent()
+    ) {
+      return null;
+    }
+
+    this.remember(entry);
+    request.publish(entry.payload);
+    return entry.payload;
+  }
+
+  revalidate<T>(request: ResourceCacheRequest<T>): Promise<void> {
+    if (this.isSuspended()) return Promise.resolve();
+    const existing = this.inflight.get(request.key);
+    if (existing) return existing;
+
+    const generation = this.generation;
+    const revalidation = request
+      .load()
+      .then(async (payload) => {
+        if (this.isSuspended() || generation !== this.generation) return;
+
+        const now = this.clock.now();
+        const entry = createCacheEnvelope({
+          key: request.key,
+          payloadVersion: 1,
+          storedAt: now,
+          validatedAt: now,
+          lastAccessedAt: now,
+          retentionExpiresAt: now + request.retentionForMs,
+          bytes: JSON.stringify(payload).length,
+          stale: false,
+          tags: request.tags,
+          payload,
+        });
+
+        if (this.policy.enabled) {
+          this.remember(entry);
+          await this.store.putMany([entry]);
+
+          if (this.isSuspended() || generation !== this.generation) {
+            this.hot.delete(entry.key);
+            await this.store.deleteMany([entry.key]);
+            return;
+          }
+        }
+
+        if (!this.isSuspended() && generation === this.generation && request.isCurrent()) {
+          request.publish(payload);
+        }
+      })
+      .finally(() => {
+        if (this.inflight.get(request.key) === revalidation) this.inflight.delete(request.key);
+      });
+
+    this.inflight.set(request.key, revalidation);
+    return revalidation;
+  }
+
+  activate<T>(request: ResourceCacheRequest<T>): void;
+  activate(key: string, revalidate: () => Promise<void>, freshForMs?: number): void;
+  activate<T>(
+    requestOrKey: ResourceCacheRequest<T> | string,
+    revalidate?: () => Promise<void>,
+    freshForMs = 60_000,
+  ): void {
+    const active =
+      typeof requestOrKey === 'string'
+        ? { key: requestOrKey, freshForMs, revalidate: revalidate ?? (() => Promise.resolve()) }
+        : {
+            key: requestOrKey.key,
+            freshForMs: requestOrKey.freshForMs,
+            revalidate: () => this.revalidate(requestOrKey),
+          };
+
+    const activeForMs =
+      typeof requestOrKey === 'string' ? freshForMs : (requestOrKey.activeForMs ?? requestOrKey.freshForMs);
+    if (this.isSuspended()) return;
+
+    const nextAttemptAt = this.clock.now() + activeForMs;
+    this.activeKeys.set(active.key, {
+      freshForMs: active.freshForMs,
+      activeForMs,
+      nextAttemptAt,
+      failures: 0,
+      attempting: false,
+      revalidate: active.revalidate,
+    });
+    this.rescheduleIfEarlier(nextAttemptAt);
+  }
+
+  deactivate(key: string): void {
+    this.activeKeys.delete(key);
+  }
+
+  async retry(key: string): Promise<void> {
+    if (this.isSuspended()) return;
+
+    const active = this.activeKeys.get(key);
+    if (!active) return;
+
+    try {
+      await active.revalidate();
+      this.recordRevalidationResult(key, active, true);
+    } catch {
+      this.recordRevalidationResult(key, active, false);
+    }
+
+    this.reschedule();
+  }
+
+  async purge(): Promise<boolean> {
+    const purge = this.beginPurge();
+    this.hot.clear();
+    this.authorizationLeaseExpiresAt = 0;
+    await this.settleInflight();
+    return this.finishPurge(purge, await this.store.clear());
+  }
+
+  async purgeWorkspace(workspaceId: string, principal?: string): Promise<boolean> {
+    if (principal === undefined) {
+      this.block();
+      return false;
+    }
+
+    const purge = this.beginPurge();
+
+    const keys = [...this.hot.values()]
+      .filter((entry) => cacheKeyMatchesScope(entry.key, principal, workspaceId))
+      .map((entry) => entry.key);
+
+    for (const key of keys) this.hot.delete(key);
+    await this.settleInflight();
+    const hotDeleted = keys.length === 0 || (await this.store.deleteMany(keys));
+    const coldDeleted = await (this.store.deleteScope?.({ principal, workspaceId }) ??
+      Promise.resolve(false));
+    const deleted = hotDeleted && coldDeleted;
+    return this.finishPurge(purge, deleted);
+  }
+
+  clear(): Promise<boolean> {
+    return this.purge();
+  }
+
+  block(): void {
+    this.generation += 1;
+    this.blocked = true;
+    this.hot.clear();
+    this.authorizationLeaseExpiresAt = 0;
+    this.dropActiveCallbacks();
+  }
+
+  allow(): void {
+    this.blocked = false;
+    this.authorizationLeaseExpiresAt = this.clock.now() + this.policy.authorizationLeaseMs;
+  }
+
+  async purgeTags(tags: readonly string[], principal?: string, workspaceId?: string): Promise<boolean> {
+    if (principal === undefined) {
+      this.block();
+      return false;
+    }
+
+    const purge = this.beginPurge();
+    const tagSet = new Set(tags);
+    const keys = [...this.hot.values()]
+      .filter(
+        (entry) =>
+          cacheKeyMatchesScope(entry.key, principal, workspaceId) &&
+          entry.tags.some((tag) => tagSet.has(tag)),
+      )
+      .map((entry) => entry.key);
+
+    for (const key of keys) this.hot.delete(key);
+    await this.settleInflight();
+    const hotDeleted = keys.length === 0 || (await this.store.deleteMany(keys));
+    const coldDeleted = await (this.store.deleteScope?.({ principal, workspaceId, tagsAny: tags }) ??
+      Promise.resolve(false));
+    const deleted = hotDeleted && coldDeleted;
+    return this.finishPurge(purge, deleted);
+  }
+
+  dispose(): void {
+    this.block();
+  }
+
+  private remember(entry: CacheEnvelope<unknown>): void {
+    this.hot.delete(entry.key);
+    this.hot.set(entry.key, entry);
+
+    while (this.hot.size > this.policy.hot.maxEntries) {
+      const oldest = this.hot.keys().next().value;
+      if (oldest === undefined) return;
+      this.hot.delete(oldest);
+    }
+  }
+
+  private schedule(): void {
+    if (this.scheduler !== null || this.activeKeys.size === 0 || this.isSuspended()) return;
+
+    const delay = this.nextScheduleDelay();
+    this.schedulerDueAt = this.clock.now() + delay;
+    this.scheduler = this.timer.schedule(delay, () => {
+      this.scheduler = null;
+      this.schedulerDueAt = null;
+      const now = this.clock.now();
+      for (const [key, request] of this.activeKeys.entries()) {
+        if (request.nextAttemptAt > now) continue;
+
+        const entry = this.hot.get(key);
+        if (entry !== undefined && entry.validatedAt + request.freshForMs > now) {
+          request.nextAttemptAt = entry.validatedAt + request.freshForMs;
+          continue;
+        }
+
+        this.runScheduledRevalidation(key, request, now);
+      }
+
+      this.schedule();
+    });
+  }
+
+  private runScheduledRevalidation(
+    key: string,
+    active: {
+      activeForMs: number;
+      attempting: boolean;
+      failures: number;
+      nextAttemptAt: number;
+      revalidate: () => Promise<void>;
+    },
+    now: number,
+  ): void {
+    if (active.attempting) {
+      active.nextAttemptAt = now + active.activeForMs;
+      return;
+    }
+
+    active.attempting = true;
+    active.nextAttemptAt = now + active.activeForMs;
+
+    void active
+      .revalidate()
+      .then(
+        () => this.recordRevalidationResult(key, active, true),
+        () => this.recordRevalidationResult(key, active, false),
+      )
+      .finally(() => {
+        if (this.activeKeys.get(key) !== active) return;
+
+        active.attempting = false;
+        this.reschedule();
+      });
+  }
+
+  private dropActiveCallbacks(): void {
+    if (this.scheduler !== null) this.timer.clear(this.scheduler);
+    this.scheduler = null;
+    this.schedulerDueAt = null;
+    this.activeKeys.clear();
+  }
+
+  private recordRevalidationResult(
+    key: string,
+    active: { activeForMs: number; failures: number; nextAttemptAt: number },
+    succeeded: boolean,
+    now = this.clock.now(),
+  ): void {
+    const current = this.activeKeys.get(key);
+    if (current !== active) return;
+
+    if (succeeded) {
+      current.failures = 0;
+      current.nextAttemptAt = now + current.activeForMs;
+      return;
+    }
+
+    current.failures += 1;
+    current.nextAttemptAt = now + jitteredBackoff(current.failures, this.random);
+  }
+
+  private reschedule(): void {
+    if (this.scheduler !== null) this.timer.clear(this.scheduler);
+    this.scheduler = null;
+    this.schedulerDueAt = null;
+    this.schedule();
+  }
+
+  private rescheduleIfEarlier(nextAttemptAt: number): void {
+    if (this.scheduler === null || this.schedulerDueAt === null) {
+      this.schedule();
+      return;
+    }
+
+    if (nextAttemptAt < this.schedulerDueAt) this.reschedule();
+  }
+
+  private nextScheduleDelay(): number {
+    const now = this.clock.now();
+    return Math.max(
+      0,
+      Math.min(...[...this.activeKeys.values()].map((request) => request.nextAttemptAt - now)),
+    );
+  }
+
+  private async settleInflight(): Promise<void> {
+    await Promise.allSettled([...this.inflight.values()]);
+  }
+
+  private beginPurge(): { canReleaseFailure: boolean } {
+    const canReleaseFailure = this.pendingPurges === 0;
+    this.pendingPurges += 1;
+    this.generation += 1;
+    this.dropActiveCallbacks();
+    return { canReleaseFailure };
+  }
+
+  private finishPurge(purge: { canReleaseFailure: boolean }, succeeded: boolean): boolean {
+    this.pendingPurges -= 1;
+
+    if (!succeeded) {
+      this.purgeFailure = true;
+      this.block();
+    }
+
+    if (this.pendingPurges > 0) return succeeded;
+
+    if (this.purgeFailure) {
+      if (succeeded && purge.canReleaseFailure) {
+        this.purgeFailure = false;
+        this.blocked = false;
+      } else {
+        this.block();
+      }
+    }
+
+    return succeeded;
+  }
+
+  private isSuspended(): boolean {
+    return this.blocked || this.pendingPurges > 0;
+  }
+}
+
+function jitteredBackoff(failures: number, random: CacheRandom): number {
+  const base = [60_000, 120_000, 240_000, 480_000, 900_000][Math.min(failures - 1, 4)] ?? 900_000;
+  return Math.round(base * (0.8 + random.next() * 0.4));
+}
+
+function cacheKeyMatchesScope(key: string, principal: string, workspaceId?: string): boolean {
+  return (
+    key.includes(`|p=${principal}|`) && (workspaceId === undefined || key.includes(`|w=${workspaceId}|`))
+  );
+}
 
 const envelopeShape = {
   schema: z.literal(CACHE_SCHEMA_VERSION),
@@ -175,11 +635,11 @@ const resourceKinds = new Set<CacheResourceKind>([
 const excludedPayloadKey =
   /(?:authorization|cookie|credential|password|secret|token|api[_-]?key|attachment.*(?:bytes|data|content))/i;
 
-function isCanonicalPrincipal(principal: string | null | undefined): principal is string {
+export function isCanonicalPrincipal(principal: string | null | undefined): principal is string {
   return typeof principal === 'string' && PRINCIPAL_PATTERN.test(principal);
 }
 
-function isCanonicalWorkspaceId(workspaceId: string | null | undefined): workspaceId is string {
+export function isCanonicalWorkspaceId(workspaceId: string | null | undefined): workspaceId is string {
   return typeof workspaceId === 'string' && UUID_PATTERN.test(workspaceId);
 }
 

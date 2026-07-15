@@ -1,11 +1,14 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import { useRouter } from 'vue-router';
+import { computed, ref } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+import { runHardRefresh } from '@/cache/cacheRuntime';
 import Avatar from '@/components/ui/Avatar.vue';
 import BottomSheet from '@/components/ui/BottomSheet.vue';
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import Icon from '@/components/ui/Icon.vue';
 import { useWorkspaceSwitch } from '@/composables/useWorkspaceSwitch';
 import { useAuthStore } from '@/stores/auth';
+import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 
 defineProps<{
@@ -17,7 +20,9 @@ const emit = defineEmits<{
 }>();
 
 const router = useRouter();
+const route = useRoute();
 const auth = useAuthStore();
+const ui = useUiStore();
 const workspace = useWorkspaceStore();
 const { switchTo } = useWorkspaceSwitch();
 
@@ -32,6 +37,7 @@ const workspaceLabel = computed(
 );
 
 const workspaceInitial = computed(() => workspaceLabel.value.charAt(0).toUpperCase() || 'A');
+const hardRefreshOpen = ref(false);
 
 async function pickWorkspace(slug: string): Promise<void> {
   await switchTo(slug);
@@ -47,6 +53,30 @@ async function handleLogout(): Promise<void> {
   emit('close');
   await auth.logout();
   router.push({ name: 'login' });
+}
+
+function requestHardRefresh(): void {
+  hardRefreshOpen.value = true;
+}
+
+async function confirmHardRefresh(): Promise<void> {
+  const workspaceId = activeWorkspace.value?.id;
+  if (workspaceId === undefined) return;
+
+  try {
+    const refreshed = await runHardRefresh(workspaceId, async () => {
+      router.go(0);
+    });
+    if (!refreshed) {
+      ui.showBanner('Could not refresh cached data. Try again.', 'error');
+      return;
+    }
+
+    hardRefreshOpen.value = false;
+    emit('close');
+  } catch {
+    ui.showBanner('Could not refresh cached data. Try again.', 'error');
+  }
 }
 </script>
 
@@ -118,10 +148,25 @@ async function handleLogout(): Promise<void> {
       <Icon name="chevron-right" :size="15" :style="{ color: 'var(--c-muted)' }" />
     </button>
 
+    <button type="button" class="atl-more-item" data-action="hard-refresh" @click="requestHardRefresh">
+      <Icon name="refresh-cw" :size="17" />
+      <span class="flex-1 text-left">Refresh data</span>
+    </button>
+
     <button type="button" class="atl-more-item danger" @click="handleLogout">
       <Icon name="log-out" :size="17" />
       <span class="flex-1 text-left">Log out</span>
     </button>
+    <ConfirmDialog
+      :open="hardRefreshOpen"
+      title="Refresh cached data?"
+      message="Saved data for this workspace will be removed before the current route reloads."
+      confirm-label="Refresh data"
+      confirm-icon="refresh-cw"
+      tone="warning"
+      @cancel="hardRefreshOpen = false"
+      @confirm="confirmHardRefresh"
+    />
   </BottomSheet>
 </template>
 

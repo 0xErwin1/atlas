@@ -2,22 +2,28 @@ import { flushPromises, mount } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { isNavigationFailure, NavigationFailureType, routeState, push } = vi.hoisted(() => ({
+const { go, isNavigationFailure, NavigationFailureType, routeState, push, replace } = vi.hoisted(() => ({
+  go: vi.fn(),
   isNavigationFailure: vi.fn((_result: unknown, _type?: number) => false),
   NavigationFailureType: { redirected: 2, aborted: 4, cancelled: 8, duplicated: 16 },
-  routeState: { name: 'notes' as string },
+  routeState: { name: 'notes' as string, fullPath: '/w/atlas/notes' },
   push: vi.fn(),
+  replace: vi.fn(),
 }));
 
 vi.mock('vue-router', () => ({
   isNavigationFailure,
   NavigationFailureType,
   useRoute: () => routeState,
-  useRouter: () => ({ push }),
+  useRouter: () => ({ go, push, replace }),
 }));
 
+import { configureResourceCacheForTest, setResourceCachePrincipal } from '@/cache/cacheRuntime';
+import { ResourceCache } from '@/cache/resourceCache';
 import AppRail from '@/components/shell/AppRail.vue';
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import { useLastViewedStore } from '@/stores/lastViewed';
+import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 
 async function switchToPersonal(): Promise<void> {
@@ -32,8 +38,20 @@ function seed() {
   const workspace = useWorkspaceStore();
   workspace.setActiveWorkspace('atlas');
   workspace.workspaces = [
-    { id: '1', name: 'Atlas', slug: 'atlas', created_at: 'x', updated_at: 'x' },
-    { id: '2', name: 'Personal', slug: 'personal', created_at: 'x', updated_at: 'x' },
+    {
+      id: '019ef171-bbcf-7b90-9be6-5dbb382afd08',
+      name: 'Atlas',
+      slug: 'atlas',
+      created_at: 'x',
+      updated_at: 'x',
+    },
+    {
+      id: '019ef171-bbcf-7b90-9be6-5dbb382afd09',
+      name: 'Personal',
+      slug: 'personal',
+      created_at: 'x',
+      updated_at: 'x',
+    },
   ];
   return workspace;
 }
@@ -49,6 +67,14 @@ describe('AppRail workspace switcher', () => {
     } catch {
       // jsdom provides localStorage; ignore if absent
     }
+    configureResourceCacheForTest({
+      allow: vi.fn(),
+      block: vi.fn(),
+      clear: vi.fn().mockResolvedValue(undefined),
+      purge: vi.fn().mockResolvedValue(undefined),
+      purgeTags: vi.fn().mockResolvedValue(undefined),
+      purgeWorkspace: vi.fn().mockImplementation(async () => undefined),
+    });
   });
 
   it('lists every workspace and a create action in the menu', async () => {
@@ -223,5 +249,71 @@ describe('AppRail workspace switcher', () => {
     await switchToPersonal();
 
     expect(push).toHaveBeenCalledWith({ name: 'tasks' });
+  });
+
+  it('purges the real current workspace cache before reloading the current route', async () => {
+    const workspace = seed();
+    const events: string[] = [];
+    const deleteScope = vi.fn().mockImplementation(async () => {
+      events.push('purge');
+      return true;
+    });
+    configureResourceCacheForTest(
+      new ResourceCache({
+        store: {
+          get: vi.fn(),
+          putMany: vi.fn().mockResolvedValue(true),
+          deleteMany: vi.fn().mockResolvedValue(true),
+          deleteScope,
+          clear: vi.fn().mockResolvedValue(true),
+        },
+      }),
+    );
+    setResourceCachePrincipal('user:019ef171-bbcf-7b90-9be6-5dbb382afd08');
+    go.mockImplementation(() => {
+      events.push('reload');
+    });
+    const wrapper = mount(AppRail);
+
+    await wrapper.get('[aria-label="Account"]').trigger('click');
+    await wrapper.get('[data-action="hard-refresh"]').trigger('click');
+    expect(events).toEqual([]);
+    await wrapper.findComponent(ConfirmDialog).vm.$emit('confirm');
+    await flushPromises();
+
+    expect(events).toEqual(['purge', 'reload']);
+    expect(deleteScope).toHaveBeenCalledWith({
+      principal: 'user:019ef171-bbcf-7b90-9be6-5dbb382afd08',
+      workspaceId: workspace.workspaces[0]?.id,
+    });
+  });
+
+  it('keeps the confirmation open when the real workspace cache purge fails', async () => {
+    seed();
+    configureResourceCacheForTest(
+      new ResourceCache({
+        store: {
+          get: vi.fn(),
+          putMany: vi.fn().mockResolvedValue(true),
+          deleteMany: vi.fn().mockResolvedValue(true),
+          deleteScope: vi.fn().mockResolvedValue(false),
+          clear: vi.fn().mockResolvedValue(true),
+        },
+      }),
+    );
+    setResourceCachePrincipal('user:019ef171-bbcf-7b90-9be6-5dbb382afd08');
+    const wrapper = mount(AppRail);
+
+    await wrapper.get('[aria-label="Account"]').trigger('click');
+    await wrapper.get('[data-action="hard-refresh"]').trigger('click');
+    await wrapper.findComponent(ConfirmDialog).vm.$emit('confirm');
+    await flushPromises();
+
+    expect(go).not.toHaveBeenCalled();
+    expect(wrapper.findComponent(ConfirmDialog).props('open')).toBe(true);
+    expect(useUiStore().banner).toMatchObject({
+      message: 'Could not refresh cached data. Try again.',
+      type: 'error',
+    });
   });
 });

@@ -13,7 +13,18 @@ vi.mock('@/lib/workspaceLiveUpdates', () => ({
   setWorkspaceLiveUpdatesAuthorizationInvalidator: vi.fn(),
 }));
 
+vi.mock('@/cache/cacheRuntime', () => ({
+  allowResourceCache: vi.fn(),
+  blockAndPurgeResourceCache: vi.fn().mockResolvedValue(true),
+  setResourceCachePrincipal: vi.fn(),
+}));
+
 import { wrappedClient } from '@/api/wrapper';
+import {
+  allowResourceCache,
+  blockAndPurgeResourceCache,
+  setResourceCachePrincipal,
+} from '@/cache/cacheRuntime';
 import {
   disposeWorkspaceLiveUpdates,
   setWorkspaceLiveUpdatesAuthorizationInvalidator,
@@ -24,7 +35,10 @@ const mockGet = wrappedClient.GET as ReturnType<typeof vi.fn>;
 const mockPost = wrappedClient.POST as ReturnType<typeof vi.fn>;
 
 const meOk = (username: string, principal_type = 'user') =>
-  Promise.resolve({ data: { principal_type, username }, error: undefined });
+  Promise.resolve({
+    data: { id: '019ef171-bbcf-7b90-9be6-5dbb382afd08', principal_type, username },
+    error: undefined,
+  });
 
 const meErr = () =>
   Promise.resolve({
@@ -69,6 +83,7 @@ describe('useAuthStore', () => {
 
     store.clearUser();
 
+    expect(blockAndPurgeResourceCache).toHaveBeenCalledOnce();
     expect(disposeWorkspaceLiveUpdates).toHaveBeenCalledOnce();
     expect(store.user).toBeNull();
     expect(store.isAuthenticated).toBe(false);
@@ -95,6 +110,40 @@ describe('useAuthStore', () => {
     expect(store.isAuthenticated).toBe(true);
     expect(store.user?.username).toBe('alice');
     expect(store.apiKeyWarning).toBe(false);
+    expect(allowResourceCache).toHaveBeenCalledOnce();
+    expect(setResourceCachePrincipal).toHaveBeenCalledWith('user:019ef171-bbcf-7b90-9be6-5dbb382afd08');
+  });
+
+  it('does not let a response from before clearUser revive a prior session over a newer fetch', async () => {
+    let resolvePrior: ((value: Awaited<ReturnType<typeof meOk>>) => void) | undefined;
+    mockGet.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePrior = resolve;
+        }),
+    );
+    mockGet.mockReturnValueOnce(meOk('new-session'));
+    const store = useAuthStore();
+
+    const priorFetch = store.fetchMe();
+    await store.clearUser();
+    await store.fetchMe();
+    resolvePrior?.(await meOk('prior-session'));
+    await priorFetch;
+
+    expect(store.isAuthenticated).toBe(true);
+    expect(store.user?.username).toBe('new-session');
+  });
+
+  it('forgets the cache principal before beginning the logout purge', () => {
+    const store = useAuthStore();
+    store.user = { username: 'alice' } as MeResponse;
+    store.isAuthenticated = true;
+
+    store.clearUser();
+
+    expect(setResourceCachePrincipal).toHaveBeenCalledWith(undefined);
+    expect(blockAndPurgeResourceCache).toHaveBeenCalledOnce();
   });
 
   it('api_key principal_type sets apiKeyWarning (REQ-W8)', async () => {
@@ -117,6 +166,48 @@ describe('useAuthStore', () => {
 
     expect(store.isAuthenticated).toBe(false);
     expect(store.user).toBeNull();
+  });
+
+  it('blocks and hides synchronously, then awaits the purge before logout waits on the server', async () => {
+    let resolvePurge: (() => void) | undefined;
+    let resolveLogout: (() => void) | undefined;
+    vi.mocked(blockAndPurgeResourceCache).mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolvePurge = () => resolve(true);
+        }),
+    );
+    mockGet.mockReturnValueOnce(meOk('alice'));
+    await useAuthStore().fetchMe();
+    mockPost.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveLogout = () => resolve({ data: {}, error: undefined });
+        }),
+    );
+
+    const store = useAuthStore();
+    const logout = store.logout();
+
+    expect(store.isAuthenticated).toBe(false);
+    expect(store.user).toBeNull();
+    expect(mockPost).not.toHaveBeenCalled();
+
+    resolvePurge?.();
+    await vi.waitFor(() => expect(mockPost).toHaveBeenCalledOnce());
+    resolveLogout?.();
+    await logout;
+  });
+
+  it('does not send the logout request when the global cache purge fails', async () => {
+    mockGet.mockReturnValueOnce(meOk('alice'));
+    vi.mocked(blockAndPurgeResourceCache).mockResolvedValueOnce(false);
+    await useAuthStore().fetchMe();
+
+    await useAuthStore().logout();
+
+    expect(mockPost).not.toHaveBeenCalled();
+    expect(useAuthStore().isAuthenticated).toBe(false);
   });
 
   it('login returns ok on 200', async () => {

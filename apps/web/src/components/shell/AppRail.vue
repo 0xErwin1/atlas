@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { runHardRefresh } from '@/cache/cacheRuntime';
 import Avatar from '@/components/ui/Avatar.vue';
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import Icon from '@/components/ui/Icon.vue';
 import Popover from '@/components/ui/Popover.vue';
 import PromptDialog from '@/components/ui/PromptDialog.vue';
@@ -61,6 +63,30 @@ const workspaceInitial = computed(() => {
 });
 
 const newWorkspaceOpen = ref(false);
+const hardRefreshOpen = ref(false);
+
+function requestHardRefresh(): void {
+  hardRefreshOpen.value = true;
+}
+
+async function confirmHardRefresh(): Promise<void> {
+  const workspaceId = activeWorkspace.value?.id;
+  if (workspaceId === undefined) return;
+
+  try {
+    const refreshed = await runHardRefresh(workspaceId, async () => {
+      router.go(0);
+    });
+    if (!refreshed) {
+      ui.showBanner('Could not refresh cached data. Try again.', 'error');
+      return;
+    }
+
+    hardRefreshOpen.value = false;
+  } catch {
+    ui.showBanner('Could not refresh cached data. Try again.', 'error');
+  }
+}
 
 function pickWorkspace(slug: string): Promise<void> {
   return switchTo(slug);
@@ -234,6 +260,10 @@ async function confirmNewWorkspace(name: string): Promise<void> {
               <Icon name="settings" :size="14" />
               Settings
             </button>
+            <button type="button" role="menuitem" class="atl-account-item" data-action="hard-refresh" @click="requestHardRefresh(), close()">
+              <Icon name="refresh-cw" :size="14" />
+              Refresh data
+            </button>
             <button type="button" role="menuitem" class="atl-account-item danger" @click="handleLogout(), close()">
               <Icon name="log-out" :size="14" />
               Log out
@@ -250,6 +280,16 @@ async function confirmNewWorkspace(name: string): Promise<void> {
       confirm-label="Create"
       @confirm="confirmNewWorkspace"
       @cancel="newWorkspaceOpen = false"
+    />
+    <ConfirmDialog
+      :open="hardRefreshOpen"
+      title="Refresh cached data?"
+      message="Saved data for this workspace will be removed before the current route reloads."
+      confirm-label="Refresh data"
+      confirm-icon="refresh-cw"
+      tone="warning"
+      @cancel="hardRefreshOpen = false"
+      @confirm="confirmHardRefresh"
     />
   </nav>
 </template>
