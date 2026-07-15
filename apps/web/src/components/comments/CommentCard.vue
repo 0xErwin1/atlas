@@ -7,6 +7,7 @@
  * failures, e.g. an error banner). Edit mode is left only on a successful save.
  */
 import { computed, ref } from 'vue';
+import type { components } from '@/api/types.d.ts';
 import MarkdownEditor from '@/components/editor/MarkdownEditor.vue';
 import AgentBadge from '@/components/ui/AgentBadge.vue';
 import Avatar from '@/components/ui/Avatar.vue';
@@ -16,7 +17,28 @@ import Icon from '@/components/ui/Icon.vue';
 import { useContextMenu } from '@/composables/useContextMenu';
 import { actorName, isAgent } from '@/lib/actor';
 import { formatDate } from '@/lib/format';
-import type { CommentDto } from '@/stores/documents';
+
+type CommentDto = components['schemas']['CommentDto'];
+
+type CommentLinkTarget =
+  | { status: 'available'; id: string; type: string; label?: string }
+  | { status: 'unavailable'; label: 'Recurso no disponible' };
+
+type CommentAttachment = {
+  id: string;
+  comment_id: string;
+  content_type: string;
+  created_at: string;
+  file_name: string;
+  size_bytes: number;
+};
+
+type CommentEvent = {
+  id: string;
+  kind: string;
+  created_at: string;
+  target?: CommentLinkTarget | null;
+};
 
 const props = defineProps<{
   comment: CommentDto;
@@ -24,10 +46,25 @@ const props = defineProps<{
   canDelete: boolean;
   onSave: (id: string, body: string) => Promise<boolean>;
   onDelete: (id: string) => Promise<void> | Promise<boolean>;
+  links?: Array<{ target: CommentLinkTarget }>;
+  event?: CommentEvent;
+  attachments?: CommentAttachment[];
+  canManageAttachments?: boolean;
+  attachmentUploading?: boolean;
+  attachmentError?: string | null;
+  onUploadAttachment?: (file: File) => Promise<CommentAttachment | null>;
+  onDownloadAttachment?: (attachmentId: string) => Promise<Blob | null>;
+  onDeleteAttachment?: (attachmentId: string) => Promise<boolean>;
+  uploadImage?: (file: File) => Promise<string | null>;
+}>();
+
+const emit = defineEmits<{
+  'navigate-link': [target: Extract<CommentLinkTarget, { status: 'available' }>];
 }>();
 
 const menu = useContextMenu();
 const pendingDelete = ref(false);
+const pendingAttachmentDelete = ref<CommentAttachment | null>(null);
 
 const editing = ref(false);
 const editDraft = ref('');
@@ -52,6 +89,52 @@ function cancelEdit(): void {
 
 function requestDelete(): void {
   pendingDelete.value = true;
+}
+
+function linkLabel(target: CommentLinkTarget): string {
+  if (target.status === 'unavailable') return 'Recurso no disponible';
+  if (target.label !== undefined) return target.label;
+
+  if (target.type === 'task') return 'Task link';
+  if (target.type === 'document') return 'Note link';
+  if (target.type === 'attachment') return 'Attachment link';
+  return 'Linked resource';
+}
+
+function eventLabel(kind: string): string {
+  if (kind === 'link_added') return 'Link added';
+  if (kind === 'link_removed') return 'Link removed';
+  if (kind === 'comment_deleted') return 'Comment deleted';
+  return 'Comment activity';
+}
+
+function navigate(target: CommentLinkTarget): void {
+  if (target.status === 'available') emit('navigate-link', target);
+}
+
+async function uploadAttachment(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = '';
+
+  if (file !== undefined && props.onUploadAttachment !== undefined) {
+    await props.onUploadAttachment(file);
+  }
+}
+
+async function downloadAttachment(attachmentId: string): Promise<void> {
+  await props.onDownloadAttachment?.(attachmentId);
+}
+
+function requestAttachmentDelete(attachment: CommentAttachment): void {
+  pendingAttachmentDelete.value = attachment;
+}
+
+async function confirmAttachmentDelete(): Promise<void> {
+  const attachment = pendingAttachmentDelete.value;
+  pendingAttachmentDelete.value = null;
+
+  if (attachment !== null) await props.onDeleteAttachment?.(attachment.id);
 }
 
 const menuItems = computed<MenuItem[]>(() => {
@@ -113,7 +196,7 @@ async function confirmDelete(): Promise<void> {
         type="button"
         aria-label="Comment actions"
         title="Comment actions"
-        class="shrink-0 cursor-pointer opacity-0 group-hover:opacity-100 flex items-center justify-center"
+        class="shrink-0 cursor-pointer opacity-0 group-hover:opacity-100 focus-visible:opacity-100 flex items-center justify-center"
         style="width: 22px; height: 22px; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-secondary); color: var(--c-muted);"
         @click="menu.openAt($event)"
       >
@@ -129,6 +212,7 @@ async function confirmDelete(): Promise<void> {
           :embedded-controls="false"
           :width-toggle="false"
           :follow-caret="false"
+          :upload-image="uploadImage"
           min-height="2.5rem"
           @change="onEditChange"
         />
@@ -161,6 +245,77 @@ async function confirmDelete(): Promise<void> {
         :width-toggle="false"
         min-height="1rem"
       />
+
+      <div v-if="links !== undefined && links.length > 0" class="flex flex-wrap" style="gap: 6px; margin-top: 8px;">
+        <template v-for="link in links" :key="link.target.status === 'available' ? link.target.id : link.target.label">
+          <button
+            v-if="link.target.status === 'available'"
+            type="button"
+            :data-comment-link="link.target.id"
+            class="atl-comment-btn"
+            @click="navigate(link.target)"
+          >
+            {{ linkLabel(link.target) }}
+          </button>
+          <span v-else data-comment-link-unavailable>{{ linkLabel(link.target) }}</span>
+        </template>
+      </div>
+
+      <div v-if="event !== undefined" data-comment-event style="margin-top: 8px; color: var(--c-muted);">
+        {{ eventLabel(event.kind) }}
+        <button
+          v-if="event.target?.status === 'available'"
+          type="button"
+          class="atl-comment-btn"
+          @click="navigate(event.target)"
+        >
+          {{ linkLabel(event.target) }}
+        </button>
+        <span v-else-if="event.target?.status === 'unavailable'">{{ linkLabel(event.target) }}</span>
+      </div>
+
+      <div v-if="attachments !== undefined" style="margin-top: 8px;">
+        <label
+          v-if="canManageAttachments"
+          class="atl-comment-btn"
+          :for="`comment-attachment-picker-${comment.id}`"
+        >
+          Attach file
+        </label>
+        <input
+          v-if="canManageAttachments"
+          :id="`comment-attachment-picker-${comment.id}`"
+          data-comment-attachment-picker
+          class="sr-only"
+          type="file"
+          aria-label="Attach file"
+          @change="uploadAttachment"
+        />
+        <span v-if="attachmentUploading" role="status" style="margin-left: 8px;">Uploading attachment…</span>
+        <p v-if="attachmentError !== null && attachmentError !== undefined" role="alert">{{ attachmentError }}</p>
+        <ul v-if="attachments.length > 0" style="margin-top: 6px;">
+          <li v-for="attachment in attachments" :key="attachment.id" class="flex items-center" style="gap: 6px;">
+            <span>{{ attachment.file_name }}</span>
+            <button
+              type="button"
+              class="atl-comment-btn"
+              :aria-label="`Download ${attachment.file_name}`"
+              @click="downloadAttachment(attachment.id)"
+            >
+              Download
+            </button>
+            <button
+              v-if="canManageAttachments"
+              type="button"
+              class="atl-comment-btn"
+              :aria-label="`Delete ${attachment.file_name}`"
+              @click="requestAttachmentDelete(attachment)"
+            >
+              Delete
+            </button>
+          </li>
+        </ul>
+      </div>
     </div>
 
     <ContextMenu
@@ -180,6 +335,16 @@ async function confirmDelete(): Promise<void> {
       confirm-label="Delete"
       @confirm="confirmDelete"
       @cancel="cancelDelete"
+    />
+
+    <ConfirmDialog
+      :open="pendingAttachmentDelete !== null"
+      title="Delete attachment"
+      message="This permanently removes the attachment. This cannot be undone."
+      tone="danger"
+      confirm-label="Delete"
+      @confirm="confirmAttachmentDelete"
+      @cancel="pendingAttachmentDelete = null"
     />
   </article>
 </template>
