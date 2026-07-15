@@ -34,9 +34,29 @@ import { type MeResponse, useAuthStore } from '@/stores/auth';
 const mockGet = wrappedClient.GET as ReturnType<typeof vi.fn>;
 const mockPost = wrappedClient.POST as ReturnType<typeof vi.fn>;
 
-const meOk = (username: string, principal_type = 'user') =>
+const meOk = (username: string, id = '019ef171-bbcf-7b90-9be6-5dbb382afd08') =>
   Promise.resolve({
-    data: { id: '019ef171-bbcf-7b90-9be6-5dbb382afd08', principal_type, username },
+    data: {
+      agent: null,
+      id,
+      is_root: false,
+      is_system_admin: false,
+      principal_type: 'user',
+      username,
+    } satisfies MeResponse,
+    error: undefined,
+  });
+
+const apiKeyMe = (username: string, agentId = '019ef171-bbcf-7b90-9be6-5dbb382afd08') =>
+  Promise.resolve({
+    data: {
+      agent: { id: agentId, name: username, scopes: [] },
+      id: null,
+      is_root: false,
+      is_system_admin: false,
+      principal_type: 'api_key',
+      username,
+    } satisfies MeResponse,
     error: undefined,
   });
 
@@ -114,6 +134,42 @@ describe('useAuthStore', () => {
     expect(setResourceCachePrincipal).toHaveBeenCalledWith('user:019ef171-bbcf-7b90-9be6-5dbb382afd08');
   });
 
+  it('purges and blocks the prior principal before accepting a different /auth/me identity', async () => {
+    const store = useAuthStore();
+    store.user = {
+      id: '019ef171-bbcf-7b90-9be6-5dbb382afd09',
+      principal_type: 'user',
+      username: 'prior',
+    } as MeResponse;
+    store.isAuthenticated = true;
+    mockGet.mockReturnValueOnce(meOk('current'));
+
+    await store.fetchMe();
+
+    expect(blockAndPurgeResourceCache).toHaveBeenCalledOnce();
+    expect(setResourceCachePrincipal).toHaveBeenNthCalledWith(1, undefined);
+    expect(setResourceCachePrincipal).toHaveBeenLastCalledWith('user:019ef171-bbcf-7b90-9be6-5dbb382afd08');
+    expect(store.user?.username).toBe('current');
+  });
+
+  it('does not accept a recovered identity when the prior principal purge fails', async () => {
+    const store = useAuthStore();
+    store.user = {
+      id: '019ef171-bbcf-7b90-9be6-5dbb382afd09',
+      principal_type: 'user',
+      username: 'prior',
+    } as MeResponse;
+    store.isAuthenticated = true;
+    vi.mocked(blockAndPurgeResourceCache).mockResolvedValueOnce(false);
+    mockGet.mockReturnValueOnce(meOk('current'));
+
+    await store.fetchMe();
+
+    expect(store.isAuthenticated).toBe(false);
+    expect(store.user).toBeNull();
+    expect(allowResourceCache).not.toHaveBeenCalled();
+  });
+
   it('does not let a response from before clearUser revive a prior session over a newer fetch', async () => {
     let resolvePrior: ((value: Awaited<ReturnType<typeof meOk>>) => void) | undefined;
     mockGet.mockImplementationOnce(
@@ -147,12 +203,53 @@ describe('useAuthStore', () => {
   });
 
   it('api_key principal_type sets apiKeyWarning (REQ-W8)', async () => {
-    mockGet.mockReturnValueOnce(meOk('agent', 'api_key'));
+    mockGet.mockReturnValueOnce(apiKeyMe('agent'));
 
     const store = useAuthStore();
     await store.fetchMe();
 
     expect(store.apiKeyWarning).toBe(true);
+    expect(setResourceCachePrincipal).toHaveBeenCalledWith('api_key:019ef171-bbcf-7b90-9be6-5dbb382afd08');
+  });
+
+  it('purges an API-key session before accepting a different recovered API-key identity', async () => {
+    const store = useAuthStore();
+    mockGet.mockReturnValueOnce(apiKeyMe('first', '019ef171-bbcf-7b90-9be6-5dbb382afd08'));
+    await store.fetchMe();
+    mockGet.mockReturnValueOnce(apiKeyMe('second', '019ef171-bbcf-7b90-9be6-5dbb382afd09'));
+
+    await store.fetchMe();
+
+    expect(blockAndPurgeResourceCache).toHaveBeenCalledOnce();
+    expect(setResourceCachePrincipal).toHaveBeenNthCalledWith(2, undefined);
+    expect(setResourceCachePrincipal).toHaveBeenLastCalledWith(
+      'api_key:019ef171-bbcf-7b90-9be6-5dbb382afd09',
+    );
+    expect(store.user?.agent?.id).toBe('019ef171-bbcf-7b90-9be6-5dbb382afd09');
+  });
+
+  it('fails closed when an API-key /auth/me response omits its agent identity', async () => {
+    mockGet.mockReturnValueOnce(
+      Promise.resolve({
+        data: {
+          agent: null,
+          id: null,
+          is_root: false,
+          is_system_admin: false,
+          principal_type: 'api_key',
+          username: 'agent',
+        } satisfies MeResponse,
+        error: undefined,
+      }),
+    );
+
+    const store = useAuthStore();
+    await store.fetchMe();
+
+    expect(store.isAuthenticated).toBe(false);
+    expect(store.user).toBeNull();
+    expect(allowResourceCache).not.toHaveBeenCalled();
+    expect(setResourceCachePrincipal).toHaveBeenCalledWith(undefined);
   });
 
   it('logout clears store even when POST fails (REQ-W9)', async () => {

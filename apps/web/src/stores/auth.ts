@@ -7,6 +7,7 @@ import {
   blockAndPurgeResourceCache,
   setResourceCachePrincipal,
 } from '@/cache/cacheRuntime';
+import { isCanonicalPrincipal } from '@/cache/resourceCache';
 import {
   disposeWorkspaceLiveUpdates,
   setWorkspaceLiveUpdatesAuthorizationInvalidator,
@@ -40,6 +41,14 @@ const UNREACHABLE_PROBLEM: NonNullable<LoginResult['problem']> = {
   hint: 'The Atlas server is not responding. Check it is running and try again.',
 };
 
+function cachePrincipal(data: MeResponse): string | undefined {
+  const principalId = data.principal_type === 'api_key' ? data.agent?.id : data.id;
+  if (typeof principalId !== 'string') return undefined;
+
+  const principal = `${data.principal_type}:${principalId}`;
+  return isCanonicalPrincipal(principal) ? principal : undefined;
+}
+
 export const useAuthStore = defineStore('auth', () => {
   const user = ref<MeResponse | null>(null);
   const isAuthenticated = ref(false);
@@ -47,8 +56,8 @@ export const useAuthStore = defineStore('auth', () => {
   const sessionGeneration = ref(0);
   let fetchGeneration = 0;
 
-  function hydrateUser(data: MeResponse) {
-    setResourceCachePrincipal(`${data.principal_type}:${data.id}`);
+  function hydrateUser(data: MeResponse, principal: string) {
+    setResourceCachePrincipal(principal);
     allowResourceCache();
     user.value = data;
     isAuthenticated.value = true;
@@ -81,7 +90,19 @@ export const useAuthStore = defineStore('auth', () => {
       return;
     }
 
-    hydrateUser(data);
+    const nextPrincipal = cachePrincipal(data);
+    if (nextPrincipal === undefined) {
+      await clearUser();
+      return;
+    }
+
+    const currentPrincipal = user.value === null ? undefined : cachePrincipal(user.value);
+    if (currentPrincipal !== undefined && currentPrincipal !== nextPrincipal) {
+      const purged = await clearUser();
+      if (!purged || requestGeneration !== fetchGeneration) return;
+    }
+
+    hydrateUser(data, nextPrincipal);
   }
 
   async function login(credentials: { username: string; password: string }): Promise<LoginResult> {

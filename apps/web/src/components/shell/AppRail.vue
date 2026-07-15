@@ -64,15 +64,19 @@ const workspaceInitial = computed(() => {
 
 const newWorkspaceOpen = ref(false);
 const hardRefreshOpen = ref(false);
+const hardRefreshPending = ref(false);
 
 function requestHardRefresh(): void {
   hardRefreshOpen.value = true;
 }
 
 async function confirmHardRefresh(): Promise<void> {
+  if (hardRefreshPending.value) return;
+
   const workspaceId = activeWorkspace.value?.id;
   if (workspaceId === undefined) return;
 
+  hardRefreshPending.value = true;
   try {
     const refreshed = await runHardRefresh(workspaceId, async () => {
       router.go(0);
@@ -85,6 +89,8 @@ async function confirmHardRefresh(): Promise<void> {
     hardRefreshOpen.value = false;
   } catch {
     ui.showBanner('Could not refresh cached data. Try again.', 'error');
+  } finally {
+    hardRefreshPending.value = false;
   }
 }
 

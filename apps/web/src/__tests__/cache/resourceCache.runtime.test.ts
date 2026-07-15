@@ -70,6 +70,53 @@ describe('ResourceCache runtime', () => {
     expect(purge).not.toHaveBeenCalled();
   });
 
+  it('does not let a wrong-workspace unknown envelope poison the alias used by later broker recovery', async () => {
+    const principal = 'user:019ef171-bbcf-7b90-9be6-5dbb382afd08';
+    const brokerWorkspaceId = '019ef171-bbcf-7b90-9be6-5dbb382afd08';
+    const wrongWorkspaceId = '019ef171-bbcf-7b90-9be6-5dbb382afd09';
+    const purgeWorkspace = vi.fn().mockResolvedValue(true);
+    const purgeTags = vi.fn().mockResolvedValue(true);
+    const purge = vi.fn().mockResolvedValue(true);
+    configureResourceCacheForTest({ allow: vi.fn(), block: vi.fn(), purgeTags, purgeWorkspace, purge });
+    setResourceCachePrincipal(principal);
+
+    await invalidateLiveResourceCache(
+      {
+        id: 'event-valid',
+        event_type: 'task.created',
+        version: 1,
+        source: 'test',
+        workspace_id: brokerWorkspaceId,
+        occurred_at: '2026-01-01T00:00:00Z',
+        actor: { type: 'user', id: 'user-1' },
+        data: { task_id: '019ef171-bbcf-7b90-9be6-5dbb382afd10' },
+      },
+      'acme',
+    );
+    purgeWorkspace.mockClear();
+
+    await invalidateLiveResourceCache(
+      {
+        id: 'event-wrong',
+        event_type: 'unknown.event',
+        version: 1,
+        source: 'test',
+        workspace_id: wrongWorkspaceId,
+        occurred_at: '2026-01-01T00:00:00Z',
+        actor: { type: 'user', id: 'user-1' },
+        data: {},
+      },
+      'acme',
+    );
+    purgeWorkspace.mockClear();
+
+    await expect(invalidateLiveResourceCache(undefined, 'acme')).resolves.toBe(true);
+
+    expect(purgeWorkspace).toHaveBeenCalledWith(brokerWorkspaceId, principal);
+    expect(purgeWorkspace).not.toHaveBeenCalledWith(wrongWorkspaceId, principal);
+    expect(purge).not.toHaveBeenCalled();
+  });
+
   it('requires the current principal to re-register a same-slug broker alias before recovery', async () => {
     const principalA = 'user:019ef171-bbcf-7b90-9be6-5dbb382afd08';
     const principalB = 'user:019ef171-bbcf-7b90-9be6-5dbb382afd09';
@@ -1166,6 +1213,35 @@ describe('ResourceCache runtime', () => {
 
     expect(request.load).toHaveBeenCalledOnce();
     expect(publish).toHaveBeenCalledWith({ title: 'Online' });
+  });
+
+  it('does not retain or publish a response when durable persistence resolves false', async () => {
+    const store = {
+      get: vi.fn().mockResolvedValue(null),
+      putMany: vi.fn().mockResolvedValue(false),
+      deleteMany: vi.fn().mockResolvedValue(true),
+      clear: vi.fn().mockResolvedValue(true),
+    };
+    const cache = new ResourceCache({ store });
+    const publish = vi.fn();
+    const request = {
+      key: 'persistence-false-key',
+      payloadSchema,
+      tags: ['workspace:workspace-a'],
+      freshForMs: 30_000,
+      retentionForMs: 60_000,
+      load: vi.fn().mockResolvedValue({ title: 'Online only' }),
+      publish,
+      isCurrent: () => true,
+    };
+
+    cache.allow();
+
+    await expect(cache.revalidate(request)).resolves.toEqual({ published: false });
+    await expect(cache.hydrate(request)).resolves.toBeNull();
+
+    expect(store.putMany).toHaveBeenCalledOnce();
+    expect(publish).not.toHaveBeenCalled();
   });
 
   it('stable-merges validated payload-derived tags before persisting and activating a request', async () => {

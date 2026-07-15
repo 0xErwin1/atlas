@@ -152,4 +152,39 @@ describe('MoreSheet workspace switcher', () => {
       type: 'error',
     });
   });
+
+  it('runs only one purge and reload for overlapping hard-refresh confirmations', async () => {
+    seedWorkspaces();
+    let resolveDelete: ((result: boolean) => void) | undefined;
+    const deleteScope = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveDelete = resolve;
+        }),
+    );
+    configureResourceCacheForTest(
+      new ResourceCache({
+        store: {
+          get: vi.fn(),
+          putMany: vi.fn().mockResolvedValue(true),
+          deleteMany: vi.fn().mockResolvedValue(true),
+          deleteScope,
+          clear: vi.fn().mockResolvedValue(true),
+        },
+      }),
+    );
+    setResourceCachePrincipal('user:019ef171-bbcf-7b90-9be6-5dbb382afd08');
+    const wrapper = mount(MoreSheet, { props: { open: true } });
+
+    await wrapper.get('[data-action="hard-refresh"]').trigger('click');
+    const dialog = wrapper.findComponent(ConfirmDialog);
+    dialog.vm.$emit('confirm');
+    dialog.vm.$emit('confirm');
+    await vi.waitFor(() => expect(deleteScope).toHaveBeenCalledOnce());
+
+    resolveDelete?.(true);
+    await flushPromises();
+
+    expect(go).toHaveBeenCalledOnce();
+  });
 });

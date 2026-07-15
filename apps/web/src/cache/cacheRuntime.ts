@@ -158,10 +158,6 @@ export async function invalidateLiveResourceCache(
     return invalidateResourceCache('workspace', workspaceId, []);
   }
 
-  if (isCanonicalWorkspaceId(envelope.workspace_id) && workspaceSlug !== undefined) {
-    workspaceAliases.set(workspaceSlug, envelope.workspace_id);
-  }
-
   const invalidation = mapLiveCacheInvalidation(envelope);
   if (invalidation === null) {
     if (envelope.event_type === PRESENCE_UPDATED) return true;
@@ -173,6 +169,15 @@ export async function invalidateLiveResourceCache(
     }
 
     return invalidateResourceCache('workspace', workspaceId, []);
+  }
+
+  if (workspaceSlug !== undefined) {
+    const brokerWorkspaceId = resolveWorkspaceAlias(workspaceSlug);
+    if (brokerWorkspaceId !== undefined && brokerWorkspaceId !== invalidation.workspaceId) {
+      return invalidateResourceCache('workspace', brokerWorkspaceId, []);
+    }
+
+    workspaceAliases.set(workspaceSlug, invalidation.workspaceId);
   }
 
   return invalidateResourceCache(invalidation.scope, invalidation.workspaceId, invalidation.tags ?? []);
