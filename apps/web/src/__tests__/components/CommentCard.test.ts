@@ -127,6 +127,52 @@ describe('CommentCard', () => {
     expect(remove).toHaveBeenCalledWith('attachment-1');
   });
 
+  it('offers an explicit attachment-list retry and announces completed attachment operations', async () => {
+    const retry = vi.fn().mockResolvedValue(undefined);
+    const upload = vi.fn().mockResolvedValue({
+      id: 'attachment-2',
+      comment_id: 'comment-1',
+      file_name: 'new.png',
+      content_type: 'image/png',
+      size_bytes: 20,
+      created_at: '2026-01-01T00:00:00Z',
+    });
+    const download = vi.fn().mockResolvedValue(new Blob(['file']));
+    const remove = vi.fn().mockResolvedValue(true);
+    const wrapper = mountCard({
+      attachments: [
+        {
+          id: 'attachment-1',
+          comment_id: 'comment-1',
+          file_name: 'report.pdf',
+          content_type: 'application/pdf',
+          size_bytes: 12,
+          created_at: '2026-01-01T00:00:00Z',
+        },
+      ],
+      canManageAttachments: true,
+      attachmentError: 'Could not load attachments',
+      onReloadAttachments: retry,
+      onUploadAttachment: upload,
+      onDownloadAttachment: download,
+      onDeleteAttachment: remove,
+    });
+
+    await wrapper.get('[data-test="comment-attachment-retry"]').trigger('click');
+    const input = wrapper.get<HTMLInputElement>('[data-comment-attachment-picker]');
+    Object.defineProperty(input.element, 'files', {
+      value: [new File(['x'], 'new.png', { type: 'image/png' })],
+    });
+    await input.trigger('change');
+    await wrapper.get('[aria-label="Download report.pdf"]').trigger('click');
+    await wrapper.get('[aria-label="Delete report.pdf"]').trigger('click');
+    await wrapper.get('[data-test="confirm"]').trigger('click');
+    await flushPromises();
+
+    expect(retry).toHaveBeenCalledTimes(1);
+    expect(wrapper.get('[data-comment-attachment-announcement]').text()).toBe('Attachment deleted');
+  });
+
   it('keeps a post-upload image draft available when explicit edit persistence fails', async () => {
     const uploadImage = vi.fn().mockResolvedValue('/api/comments/comment-1/attachments/image-1/content');
     const onSave = vi.fn().mockResolvedValue(false);

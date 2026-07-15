@@ -54,6 +54,7 @@ const props = defineProps<{
   attachmentUploading?: boolean;
   attachmentListing?: boolean;
   attachmentError?: string | null;
+  onReloadAttachments?: () => Promise<void>;
   isAttachmentDownloading?: (attachmentId: string) => boolean;
   isAttachmentDeleting?: (attachmentId: string) => boolean;
   onUploadAttachment?: (file: File) => Promise<CommentAttachment | null>;
@@ -73,6 +74,7 @@ const pendingAttachmentDelete = ref<CommentAttachment | null>(null);
 const editing = ref(false);
 const editDraft = ref('');
 const saving = ref(false);
+const attachmentAnnouncement = ref('');
 
 const canSaveEdit = computed(() => editDraft.value.trim().length > 0);
 const hasActions = computed(() => props.canEdit === true || props.canDelete === true);
@@ -133,12 +135,14 @@ async function uploadAttachment(event: Event): Promise<void> {
   input.value = '';
 
   if (file !== undefined && props.onUploadAttachment !== undefined) {
-    await props.onUploadAttachment(file);
+    const uploaded = await props.onUploadAttachment(file);
+    if (uploaded !== null) attachmentAnnouncement.value = 'Attachment uploaded';
   }
 }
 
 async function downloadAttachment(attachmentId: string): Promise<void> {
-  await props.onDownloadAttachment?.(attachmentId);
+  const downloaded = await props.onDownloadAttachment?.(attachmentId);
+  if (downloaded !== null && downloaded !== undefined) attachmentAnnouncement.value = 'Attachment downloaded';
 }
 
 function requestAttachmentDelete(attachment: CommentAttachment): void {
@@ -149,7 +153,10 @@ async function confirmAttachmentDelete(): Promise<void> {
   const attachment = pendingAttachmentDelete.value;
   pendingAttachmentDelete.value = null;
 
-  if (attachment !== null) await props.onDeleteAttachment?.(attachment.id);
+  if (attachment === null) return;
+
+  const deleted = await props.onDeleteAttachment?.(attachment.id);
+  if (deleted === true) attachmentAnnouncement.value = 'Attachment deleted';
 }
 
 const menuItems = computed<MenuItem[]>(() => {
@@ -177,6 +184,7 @@ async function saveEdit(): Promise<void> {
   saving.value = false;
 
   if (ok) cancelEdit();
+  if (ok) attachmentAnnouncement.value = 'Comment saved';
 }
 
 function cancelDelete(): void {
@@ -331,6 +339,24 @@ async function confirmDelete(): Promise<void> {
           {{ attachmentUploading ? 'Uploading attachment…' : 'Loading attachments…' }}
         </span>
         <p v-if="attachmentError !== null && attachmentError !== undefined" role="alert">{{ attachmentError }}</p>
+        <button
+          v-if="attachmentError !== null && attachmentError !== undefined && onReloadAttachments !== undefined"
+          type="button"
+          data-test="comment-attachment-retry"
+          class="atl-comment-btn"
+          @click="onReloadAttachments"
+        >
+          Retry attachment load
+        </button>
+        <span
+          v-if="attachmentAnnouncement !== ''"
+          data-comment-attachment-announcement
+          role="status"
+          aria-live="polite"
+          class="sr-only"
+        >
+          {{ attachmentAnnouncement }}
+        </span>
         <ul v-if="attachments.length > 0" style="margin-top: 6px;">
           <li v-for="attachment in attachments" :key="attachment.id" class="flex items-center" style="gap: 6px;">
             <span>{{ attachment.file_name }}</span>

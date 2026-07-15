@@ -110,6 +110,31 @@ describe('ReferenceList', () => {
     expect(row.get('a.atl-ref-target').attributes('href')).toBe('/n/source-note');
   });
 
+  it('renders an unavailable comment source as the exact non-navigable sentinel', () => {
+    const wrapper = mountList(
+      [],
+      [
+        {
+          source_task_id: 'legacy-task',
+          source_readable_id: 'ATL-legacy',
+          source_title: 'Legacy source',
+          kind: 'comment',
+          comment_source: {
+            type: 'comment',
+            comment_id: 'comment-8',
+            parent: { type: 'document', id: 'hidden-note', slug: null, title: 'Hidden note' },
+          },
+        },
+      ],
+    );
+
+    const row = wrapper.get('[data-backlink-id="comment-8"]');
+    expect(row.find('a.atl-ref-target').exists()).toBe(false);
+    expect(row.get('[data-backlink-unavailable]').text()).toBe('Recurso no disponible');
+    expect(row.text()).not.toContain('Hidden note');
+    expect(row.text()).not.toContain('hidden-note');
+  });
+
   it('labels merged and broken wikilinks and emits only an actionable manual reference id', async () => {
     const wrapper = mountList([
       reference({

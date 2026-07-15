@@ -50,6 +50,7 @@ const {
   isUploading: isAttachmentUploading,
   isDownloading: isAttachmentDownloading,
   isDeleting: isAttachmentDeleting,
+  reload: reloadCommentAttachments,
   upload: uploadCommentAttachment,
   download: downloadCommentAttachment,
   delete: deleteCommentAttachment,
@@ -158,6 +159,7 @@ watch(
           :attachment-uploading="isAttachmentUploading(entry.comment.id)"
           :attachment-listing="isAttachmentListing(entry.comment.id)"
           :attachment-error="commentAttachmentError[entry.comment.id]"
+          :on-reload-attachments="() => reloadCommentAttachments(entry.comment.id)"
           :is-attachment-downloading="(attachmentId) => isAttachmentDownloading(`${entry.comment.id}:${attachmentId}`)"
           :is-attachment-deleting="(attachmentId) => isAttachmentDeleting(`${entry.comment.id}:${attachmentId}`)"
           :on-upload-attachment="(file) => uploadCommentAttachment(entry.comment.id, file)"
