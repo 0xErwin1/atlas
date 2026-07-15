@@ -1,7 +1,11 @@
 use crate::{
     DomainError, WorkspaceCtx,
-    entities::comments::{Comment, CommentOwner, NewComment},
+    entities::comments::{
+        Comment, CommentBacklink, CommentFeedCursor, CommentFeedPage, CommentLink,
+        CommentLinkTarget, CommentOwner, NewComment,
+    },
     ids::CommentId,
+    wikilink::CommentLinkCandidate,
 };
 use async_trait::async_trait;
 
@@ -40,6 +44,53 @@ pub trait CommentRepo: Send + Sync {
         owner: CommentOwner,
         id: CommentId,
     ) -> Result<(), DomainError>;
+}
+
+#[async_trait]
+pub trait CommentLinkRepo: Send + Sync {
+    async fn replace_for_comment(
+        &self,
+        ctx: &WorkspaceCtx,
+        comment_id: CommentId,
+        targets: Vec<CommentLinkTarget>,
+    ) -> Result<(), DomainError>;
+
+    async fn remove_for_comment(
+        &self,
+        ctx: &WorkspaceCtx,
+        comment_id: CommentId,
+    ) -> Result<(), DomainError>;
+
+    async fn backlinks_for_target(
+        &self,
+        ctx: &WorkspaceCtx,
+        target: CommentLinkTarget,
+    ) -> Result<Vec<CommentBacklink>, DomainError>;
+
+    async fn links_for_comments(
+        &self,
+        ctx: &WorkspaceCtx,
+        comment_ids: &[CommentId],
+    ) -> Result<Vec<CommentLink>, DomainError>;
+
+    async fn feed_for_owner(
+        &self,
+        ctx: &WorkspaceCtx,
+        owner: CommentOwner,
+        after: Option<CommentFeedCursor>,
+        limit: u64,
+    ) -> Result<CommentFeedPage, DomainError>;
+}
+
+#[async_trait]
+pub trait CommentLinkTargetRepo: Send + Sync {
+    /// Resolves syntactically valid candidates under workspace ownership only.
+    /// Authorization is deliberately applied later by projection callers.
+    async fn classify_candidates(
+        &self,
+        ctx: &WorkspaceCtx,
+        candidates: Vec<CommentLinkCandidate>,
+    ) -> Result<Vec<CommentLinkTarget>, DomainError>;
 }
 
 #[cfg(test)]

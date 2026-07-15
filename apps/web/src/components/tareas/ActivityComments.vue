@@ -1,11 +1,18 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
-import { type RouteLocationRaw, RouterLink } from 'vue-router';
+import { type RouteLocationRaw, RouterLink, useRouter } from 'vue-router';
 import CommentCard from '@/components/comments/CommentCard.vue';
 import CommentComposer from '@/components/comments/CommentComposer.vue';
 import EmptyState from '@/components/states/EmptyState.vue';
 import AgentBadge from '@/components/ui/AgentBadge.vue';
 import Avatar from '@/components/ui/Avatar.vue';
+import { useCommentAttachments } from '@/composables/useCommentAttachments';
+import {
+  type AvailableCommentLinkTarget,
+  type CommentParentTarget,
+  type NormalizedCommentFeedEntry,
+  useCommentFeed,
+} from '@/composables/useCommentFeed';
 import { activityVerb } from '@/lib/activityVerb';
 import { actorName, isAgent } from '@/lib/actor';
 import { formatDate } from '@/lib/format';
@@ -30,6 +37,30 @@ const detail = useTaskDetailStore();
 const ui = useUiStore();
 const auth = useAuthStore();
 const workspace = useWorkspaceStore();
+const router = useRouter();
+const commentFeed = useCommentFeed();
+const commentEntries = commentFeed.entries;
+const commentHasMore = commentFeed.hasMore;
+const commentStatus = commentFeed.status;
+const commentError = commentFeed.error;
+const commentTarget = computed<CommentParentTarget>(() => ({
+  kind: 'task',
+  ws: props.ws,
+  readableId: props.readableId,
+}));
+const {
+  items: commentAttachmentItems,
+  error: commentAttachmentError,
+  isListing: isAttachmentListing,
+  isUploading: isAttachmentUploading,
+  isDownloading: isAttachmentDownloading,
+  isDeleting: isAttachmentDeleting,
+  reload: reloadCommentAttachments,
+  upload: uploadCommentAttachment,
+  download: downloadCommentAttachment,
+  delete: deleteCommentAttachment,
+  contentUrl: attachmentContentUrl,
+} = useCommentAttachments(commentTarget, commentEntries);
 
 /** A navigable target surfaced next to a reference/mention activity entry. */
 interface ActivityLink {
@@ -41,7 +72,19 @@ interface ActivityLink {
 // by time (oldest first), with the composer pinned below. ISO timestamps sort
 // lexicographically, so a string compare is chronological.
 type FeedItem =
-  | { kind: 'comment'; key: string; at: string; comment: CommentDto }
+  | {
+      kind: 'comment';
+      key: string;
+      at: string;
+      comment: CommentDto;
+      links: Extract<NormalizedCommentFeedEntry, { type: 'comment' }>['links'];
+    }
+  | {
+      kind: 'comment-event';
+      key: string;
+      at: string;
+      event: Extract<NormalizedCommentFeedEntry, { type: 'event' }>;
+    }
   | { kind: 'activity'; key: string; at: string; entry: ActivityEntryDto; link: ActivityLink | null };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -95,8 +138,17 @@ function activityLink(entry: ActivityEntryDto): ActivityLink | null {
 
 const feed = computed<FeedItem[]>(() => {
   const items: FeedItem[] = [
-    ...detail.comments.map(
-      (comment): FeedItem => ({ kind: 'comment', key: `c:${comment.id}`, at: comment.created_at, comment }),
+    ...commentFeed.entries.value.map(
+      (entry): FeedItem =>
+        entry.type === 'comment'
+          ? {
+              kind: 'comment',
+              key: `c:${entry.comment.id}`,
+              at: entry.comment.created_at,
+              comment: entry.comment,
+              links: entry.links,
+            }
+          : { kind: 'comment-event', key: `e:${entry.id}`, at: entry.created_at, event: entry },
     ),
     ...detail.activity.map(
       (entry): FeedItem => ({
@@ -112,7 +164,7 @@ const feed = computed<FeedItem[]>(() => {
   return items.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
 });
 
-const isEmpty = computed(() => detail.comments.length === 0 && detail.activity.length === 0);
+const isEmpty = computed(() => feed.value.length === 0 && commentStatus.value !== 'pending');
 
 // The scrollable feed viewport (pinned mode only). Entering a task lands at the
 // newest entry, and posting a comment follows the thread down; a user who has
@@ -185,30 +237,62 @@ async function onSubmit(body: string): Promise<boolean> {
   const ok = await detail.addComment(props.ws, props.readableId, body);
   if (!ok && detail.error) ui.showBanner(detail.error, 'error');
   // Follow the user's own comment down to the bottom of the thread.
-  if (ok && props.pinned) void nextTick(scrollToBottom);
+  if (ok) {
+    await commentFeed.load(commentTarget.value);
+    if (props.pinned) void nextTick(scrollToBottom);
+  }
   return ok;
 }
 
 async function onSave(id: string, body: string): Promise<boolean> {
   const ok = await detail.editComment(props.ws, props.readableId, id, body);
   if (!ok && detail.error) ui.showBanner(detail.error, 'error');
+  if (ok) await commentFeed.load(commentTarget.value);
   return ok;
 }
 
 async function onDelete(id: string): Promise<void> {
   const ok = await detail.removeComment(props.ws, props.readableId, id);
   if (!ok && detail.error) ui.showBanner(detail.error, 'error');
+  if (ok) await commentFeed.load(commentTarget.value);
+}
+
+async function uploadImage(commentId: string, file: File): Promise<string | null> {
+  const attachment = await uploadCommentAttachment(commentId, file);
+  return attachment === null ? null : attachmentContentUrl(commentId, attachment.id);
 }
 
 async function loadMore(): Promise<void> {
-  await detail.loadMoreComments(props.ws, props.readableId);
-  if (detail.error) ui.showBanner(detail.error, 'error');
+  await commentFeed.loadMore(commentTarget.value);
+  if (commentFeed.error.value !== null) ui.showBanner(commentFeed.error.value, 'error');
 }
+
+async function navigateCommentTarget(target: AvailableCommentLinkTarget, commentId?: string): Promise<void> {
+  if (target.type === 'task') void router.push({ name: 'task-detail', params: { readableId: target.id } });
+  else if (target.type === 'document') void router.push({ name: 'notes', params: { slug: target.id } });
+  else if (target.type === 'attachment' && commentId !== undefined) {
+    await downloadCommentAttachment(commentId, target.id);
+  }
+}
+
+watch(
+  commentTarget,
+  (target) => {
+    void commentFeed.load(target);
+  },
+  { immediate: true },
+);
 </script>
 
 <template>
   <section class="atl-ac" :class="{ pinned }">
     <div ref="scrollRef" class="atl-ac-scroll">
+      <div v-if="commentStatus === 'pending' && feed.length === 0" role="status">Loading comments…</div>
+      <div v-else-if="commentStatus === 'error'" role="alert">
+        {{ commentError ?? 'Could not load comments' }}
+        <button type="button" class="atl-comment-btn" @click="commentFeed.load(commentTarget)">Retry</button>
+      </div>
+
       <EmptyState
         v-if="isEmpty"
         compact
@@ -251,17 +335,32 @@ async function loadMore(): Promise<void> {
         </div>
 
         <CommentCard
-            v-else
+            v-else-if="item.kind === 'comment'"
             :comment="item.comment"
             :can-edit="canEdit(item.comment)"
             :can-delete="canDelete(item.comment)"
             :on-save="onSave"
             :on-delete="onDelete"
+            :links="item.links"
+            :attachments="commentAttachmentItems[item.comment.id] ?? []"
+            :can-manage-attachments="canDelete(item.comment)"
+            :attachment-uploading="isAttachmentUploading(item.comment.id)"
+            :attachment-listing="isAttachmentListing(item.comment.id)"
+            :attachment-error="commentAttachmentError[item.comment.id]"
+            :on-reload-attachments="() => reloadCommentAttachments(item.comment.id)"
+            :is-attachment-downloading="(attachmentId) => isAttachmentDownloading(`${item.comment.id}:${attachmentId}`)"
+            :is-attachment-deleting="(attachmentId) => isAttachmentDeleting(`${item.comment.id}:${attachmentId}`)"
+            :on-upload-attachment="(file) => uploadCommentAttachment(item.comment.id, file)"
+            :on-download-attachment="(attachmentId) => downloadCommentAttachment(item.comment.id, attachmentId)"
+            :on-delete-attachment="(attachmentId) => deleteCommentAttachment(item.comment.id, attachmentId)"
+            :upload-image="canEdit(item.comment) && canDelete(item.comment) ? (file) => uploadImage(item.comment.id, file) : undefined"
+            @navigate-link="navigateCommentTarget"
           />
+        <CommentCard v-else :event="item.event" @navigate-link="navigateCommentTarget" />
         </template>
       </div>
 
-      <div v-if="detail.commentsHasMore" style="margin-top: 12px;">
+      <div v-if="commentHasMore" style="margin-top: 12px;">
         <button
           type="button"
           data-test="comment-load-more"

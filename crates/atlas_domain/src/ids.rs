@@ -51,6 +51,8 @@ define_id!(TaskId);
 define_id!(TaskReferenceId);
 define_id!(ChecklistItemId);
 define_id!(CommentId);
+define_id!(CommentLinkId);
+define_id!(CommentLinkEventId);
 define_id!(TaskActivityId);
 define_id!(PropertyDefinitionId);
 define_id!(MembershipId);

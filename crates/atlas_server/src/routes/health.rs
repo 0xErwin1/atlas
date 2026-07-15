@@ -79,10 +79,11 @@ pub(crate) async fn version() -> impl IntoResponse {
         (status = 401, description = "Unauthenticated"),
     )
 )]
-pub(crate) async fn meta() -> impl IntoResponse {
+pub(crate) async fn meta(State(state): State<AppState>) -> impl IntoResponse {
     Json(ServerMetaDto {
         version: env!("CARGO_PKG_VERSION").to_string(),
         build: std::env::var("ATLAS_BUILD").ok(),
         url: std::env::var("ATLAS_SERVER_URL").ok(),
+        max_attachment_bytes: Some(state.max_attachment_bytes),
     })
 }

@@ -1,9 +1,10 @@
 use async_trait::async_trait;
 use atlas_domain::{
-    Actor, DomainError, RevisionConflict, WorkspaceCtx,
+    Actor, AttachmentStore, DomainError, RevisionConflict, WorkspaceCtx,
     entities::documents::{
-        Attachment, AttachmentOwner, Document, DocumentLink, DocumentSummary, ExtractedLink,
-        NewAttachment, NewDocument, RevisionMeta, TaskDescriptionLinks,
+        Attachment, AttachmentOwner, AttachmentWriteIntent, Document, DocumentLink,
+        DocumentSummary, ExtractedLink, NewAttachment, NewDocument, RevisionMeta,
+        TaskDescriptionLinks,
     },
     ids::{AttachmentId, DocumentId, FolderId, ProjectId, RevisionId, TaskId, WorkspaceId},
     permissions::Principal,
@@ -16,18 +17,67 @@ use sea_orm::{
     TransactionTrait,
 };
 use serde_json::json;
+use sha2::{Digest, Sha256};
+use sqlx::{Postgres, pool::PoolConnection};
 use uuid::Uuid;
 
 use crate::persistence::entities::documents::{
-    attachment, attachment_from, document, document_from, document_link, document_link_from,
-    document_revision, revision_meta_from,
+    attachment, attachment_from, attachment_write_intent, attachment_write_intent_from, document,
+    document_from, document_link, document_link_from, document_revision, revision_meta_from,
 };
 
-pub use atlas_domain::ports::documents::{AttachmentRepo, DocumentLinkRepo, DocumentRepo};
+pub use atlas_domain::ports::documents::{
+    AttachmentRepo, AttachmentWriteIntentRepo, DocumentLinkRepo, DocumentRepo,
+};
 
 pub struct PgDocumentRepo {
     pub conn: DatabaseConnection,
     pub anchor_interval: u32,
+}
+
+const ATTACHMENT_STORE_IO_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+struct DigestSessionLock {
+    connection: PoolConnection<Postgres>,
+    digest: String,
+}
+
+impl DigestSessionLock {
+    async fn acquire(conn: &DatabaseConnection, digest: &str) -> Result<Self, DomainError> {
+        let mut connection = conn
+            .get_postgres_connection_pool()
+            .acquire()
+            .await
+            .map_err(sqlx_err)?;
+
+        sqlx::query("SELECT pg_advisory_lock(hashtextextended($1, 0))")
+            .bind(digest)
+            .execute(&mut *connection)
+            .await
+            .map_err(sqlx_err)?;
+
+        Ok(Self {
+            connection,
+            digest: digest.into(),
+        })
+    }
+
+    async fn release(mut self) -> Result<(), DomainError> {
+        let unlocked: bool =
+            sqlx::query_scalar("SELECT pg_advisory_unlock(hashtextextended($1, 0))")
+                .bind(&self.digest)
+                .fetch_one(&mut *self.connection)
+                .await
+                .map_err(sqlx_err)?;
+
+        if unlocked {
+            Ok(())
+        } else {
+            Err(DomainError::Internal {
+                message: "attachment digest session lock was not held".into(),
+            })
+        }
+    }
 }
 
 impl PgDocumentRepo {
@@ -956,6 +1006,7 @@ impl AttachmentRepo for PgAttachmentRepo {
             workspace_id: Set(ctx.workspace_id.0),
             document_id: Set(new.document_id.map(|id| id.0)),
             task_id: Set(new.task_id.map(|id| id.0)),
+            comment_id: Set(new.comment_id.map(|id| id.0)),
             file_name: Set(new.file_name),
             content_type: Set(new.content_type),
             size_bytes: Set(new.size_bytes),
@@ -1007,6 +1058,11 @@ impl AttachmentRepo for PgAttachmentRepo {
                 .all(&self.conn)
                 .await
                 .map_err(db_err)?,
+            AttachmentOwner::Comment(comment_id) => q
+                .filter(attachment::Column::CommentId.eq(comment_id.0))
+                .all(&self.conn)
+                .await
+                .map_err(db_err)?,
         };
 
         Ok(rows.into_iter().map(attachment_from).collect())
@@ -1030,6 +1086,335 @@ impl AttachmentRepo for PgAttachmentRepo {
         active.update(&self.conn).await.map_err(db_err)?;
         Ok(())
     }
+}
+
+pub struct PgAttachmentWriteIntentRepo {
+    pub conn: DatabaseConnection,
+}
+
+pub struct PgAttachmentLifecycle;
+
+impl PgAttachmentLifecycle {
+    pub async fn delete_comment_attachment(
+        conn: &DatabaseConnection,
+        ctx: &WorkspaceCtx,
+        comment_id: atlas_domain::ids::CommentId,
+        attachment_id: AttachmentId,
+        store: &dyn AttachmentStore,
+    ) -> Result<(), DomainError> {
+        let txn = conn.begin().await.map_err(db_err)?;
+        let attachment = attachment::Entity::find_by_id(attachment_id.0)
+            .filter(attachment::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(attachment::Column::CommentId.eq(comment_id.0))
+            .filter(attachment::Column::DeletedAt.is_null())
+            .one(&txn)
+            .await
+            .map_err(db_err)?;
+
+        let Some(attachment) = attachment else {
+            return Ok(());
+        };
+
+        txn.execute_raw(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "INSERT INTO attachment_write_intents (id, digest, created_at) VALUES ($1, $2, now()) ON CONFLICT (digest) DO NOTHING",
+            [Uuid::now_v7().into(), attachment.sha256.clone().into()],
+        ))
+        .await
+        .map_err(db_err)?;
+        attachment::Entity::delete_by_id(attachment.id)
+            .exec(&txn)
+            .await
+            .map_err(db_err)?;
+        txn.commit().await.map_err(db_err)?;
+
+        if let Err(error) = Self::finish_purge_digest(conn, store, &attachment.sha256).await {
+            tracing::warn!(%error, digest = %attachment.sha256, "comment attachment cleanup will be retried");
+        }
+
+        Ok(())
+    }
+
+    /// Finishes a committed comment-attachment purge while holding the same
+    /// digest lock used by writes and stale-intent reconciliation.
+    pub async fn finish_purge_digest(
+        conn: &DatabaseConnection,
+        store: &dyn AttachmentStore,
+        digest: &str,
+    ) -> Result<(), DomainError> {
+        let lock = DigestSessionLock::acquire(conn, digest).await?;
+        let result = async {
+            let intent = attachment_write_intent::Entity::find()
+                .filter(attachment_write_intent::Column::Digest.eq(digest))
+                .one(conn)
+                .await
+                .map_err(db_err)?;
+
+            let Some(intent) = intent else {
+                return Ok(());
+            };
+
+            let has_live_reference = attachment::Entity::find()
+                .filter(attachment::Column::Sha256.eq(digest))
+                .filter(attachment::Column::DeletedAt.is_null())
+                .one(conn)
+                .await
+                .map_err(db_err)?
+                .is_some();
+
+            if !has_live_reference {
+                bounded_store_delete(store, digest).await?;
+            }
+
+            attachment_write_intent::Entity::delete_by_id(intent.id)
+                .exec(conn)
+                .await
+                .map(|_| ())
+                .map_err(db_err)
+        }
+        .await;
+        let unlock = lock.release().await;
+
+        result?;
+        unlock
+    }
+
+    pub async fn run_reconciler(
+        conn: DatabaseConnection,
+        store: std::sync::Arc<dyn AttachmentStore>,
+        shutdown: tokio::sync::watch::Receiver<bool>,
+    ) {
+        Self::run_reconciler_with_timing(
+            conn,
+            store,
+            shutdown,
+            std::time::Duration::from_secs(300),
+            chrono::Duration::minutes(10),
+        )
+        .await;
+    }
+
+    pub async fn run_reconciler_with_timing(
+        conn: DatabaseConnection,
+        store: std::sync::Arc<dyn AttachmentStore>,
+        mut shutdown: tokio::sync::watch::Receiver<bool>,
+        interval_period: std::time::Duration,
+        stale_after: chrono::Duration,
+    ) {
+        let mut interval = tokio::time::interval(interval_period);
+        loop {
+            tokio::select! {
+                _ = interval.tick() => {
+                    let older_than = Utc::now() - stale_after;
+                    if let Err(error) = Self::reconcile_stale(&conn, store.as_ref(), older_than).await {
+                        tracing::warn!(%error, "attachment intent reconciliation failed");
+                    }
+                }
+                changed = shutdown.changed() => {
+                    if changed.is_err() || *shutdown.borrow() { return; }
+                }
+            }
+        }
+    }
+
+    pub async fn store_and_record(
+        conn: &DatabaseConnection,
+        ctx: &WorkspaceCtx,
+        new: NewAttachment,
+        data: &[u8],
+        store: &dyn AttachmentStore,
+    ) -> Result<Attachment, DomainError> {
+        let digest = hex_digest(data);
+        PgAttachmentWriteIntentRepo { conn: conn.clone() }
+            .create_if_absent(digest.clone())
+            .await?;
+
+        let lock = DigestSessionLock::acquire(conn, &digest).await?;
+        let result = async {
+            PgAttachmentWriteIntentRepo { conn: conn.clone() }
+                .create_if_absent(digest.clone())
+                .await?;
+
+            let stored = bounded_store_put(store, data).await?;
+            if stored != digest {
+                return Err(DomainError::Internal {
+                    message: "attachment store returned an unexpected digest".into(),
+                });
+            }
+
+            let txn = conn.begin().await.map_err(db_err)?;
+            let attachment = PgAttachmentRepo::record_in(&txn, ctx, new, digest).await?;
+            attachment_write_intent::Entity::delete_many()
+                .filter(attachment_write_intent::Column::Digest.eq(&attachment.sha256))
+                .exec(&txn)
+                .await
+                .map_err(db_err)?;
+            txn.commit().await.map_err(db_err)?;
+            Ok(attachment)
+        }
+        .await;
+        let unlock = lock.release().await;
+
+        let attachment = result?;
+        unlock?;
+
+        Ok(attachment)
+    }
+
+    pub async fn reconcile_stale(
+        conn: &DatabaseConnection,
+        store: &dyn AttachmentStore,
+        older_than: DateTime<Utc>,
+    ) -> Result<(), DomainError> {
+        let intents = attachment_write_intent::Entity::find()
+            .filter(attachment_write_intent::Column::CreatedAt.lt(older_than))
+            .order_by_asc(attachment_write_intent::Column::CreatedAt)
+            .order_by_asc(attachment_write_intent::Column::Id)
+            .all(conn)
+            .await
+            .map_err(db_err)?;
+
+        for intent in intents {
+            if let Err(error) = Self::reconcile_intent(conn, store, older_than, intent).await {
+                tracing::warn!(%error, "attachment intent cleanup failed");
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn reconcile_intent(
+        conn: &DatabaseConnection,
+        store: &dyn AttachmentStore,
+        older_than: DateTime<Utc>,
+        intent: attachment_write_intent::Model,
+    ) -> Result<(), DomainError> {
+        let current = attachment_write_intent::Entity::find_by_id(intent.id)
+            .filter(attachment_write_intent::Column::CreatedAt.lt(older_than))
+            .one(conn)
+            .await
+            .map_err(db_err)?;
+
+        let Some(current) = current else {
+            return Ok(());
+        };
+
+        Self::finish_purge_digest(conn, store, &current.digest).await
+    }
+}
+
+async fn bounded_store_put(
+    store: &dyn AttachmentStore,
+    data: &[u8],
+) -> Result<String, DomainError> {
+    tokio::time::timeout(ATTACHMENT_STORE_IO_TIMEOUT, store.put(data))
+        .await
+        .map_err(|_| attachment_store_timeout("put"))?
+}
+
+async fn bounded_store_delete(
+    store: &dyn AttachmentStore,
+    digest: &str,
+) -> Result<(), DomainError> {
+    tokio::time::timeout(ATTACHMENT_STORE_IO_TIMEOUT, store.delete(digest))
+        .await
+        .map_err(|_| attachment_store_timeout("delete"))?
+}
+
+fn attachment_store_timeout(operation: &str) -> DomainError {
+    DomainError::Internal {
+        message: format!("attachment store {operation} timed out"),
+    }
+}
+
+fn sqlx_err(error: sqlx::Error) -> DomainError {
+    DomainError::Internal {
+        message: error.to_string(),
+    }
+}
+
+#[async_trait]
+impl AttachmentWriteIntentRepo for PgAttachmentWriteIntentRepo {
+    async fn create(&self, digest: String) -> Result<AttachmentWriteIntent, DomainError> {
+        attachment_write_intent::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            digest: Set(digest),
+            created_at: Set(Utc::now()),
+        }
+        .insert(&self.conn)
+        .await
+        .map(attachment_write_intent_from)
+        .map_err(db_err)
+    }
+
+    async fn remove(&self, digest: &str) -> Result<(), DomainError> {
+        attachment_write_intent::Entity::delete_many()
+            .filter(attachment_write_intent::Column::Digest.eq(digest))
+            .exec(&self.conn)
+            .await
+            .map(|_| ())
+            .map_err(db_err)
+    }
+
+    async fn list_stale(
+        &self,
+        older_than: DateTime<Utc>,
+    ) -> Result<Vec<AttachmentWriteIntent>, DomainError> {
+        attachment_write_intent::Entity::find()
+            .filter(attachment_write_intent::Column::CreatedAt.lt(older_than))
+            .all(&self.conn)
+            .await
+            .map(|rows| rows.into_iter().map(attachment_write_intent_from).collect())
+            .map_err(db_err)
+    }
+}
+
+impl PgAttachmentWriteIntentRepo {
+    async fn create_if_absent(&self, digest: String) -> Result<(), DomainError> {
+        self.conn
+            .execute_unprepared(&format!(
+                "INSERT INTO attachment_write_intents (id, digest, created_at) VALUES ('{}', '{}', now()) ON CONFLICT (digest) DO NOTHING",
+                Uuid::now_v7(), digest
+            ))
+            .await
+            .map(|_| ())
+            .map_err(db_err)
+    }
+}
+
+impl PgAttachmentRepo {
+    async fn record_in(
+        conn: &impl ConnectionTrait,
+        ctx: &WorkspaceCtx,
+        new: NewAttachment,
+        sha256: String,
+    ) -> Result<Attachment, DomainError> {
+        let (by_user, by_key) = actor_fields(&ctx.actor);
+        attachment::ActiveModel {
+            id: Set(AttachmentId::new().0),
+            workspace_id: Set(ctx.workspace_id.0),
+            document_id: Set(new.document_id.map(|id| id.0)),
+            task_id: Set(new.task_id.map(|id| id.0)),
+            comment_id: Set(new.comment_id.map(|id| id.0)),
+            file_name: Set(new.file_name),
+            content_type: Set(new.content_type),
+            size_bytes: Set(new.size_bytes),
+            sha256: Set(sha256),
+            created_by_user_id: Set(by_user),
+            created_by_api_key_id: Set(by_key),
+            created_at: Set(Utc::now()),
+            updated_at: Set(Utc::now()),
+            deleted_at: Set(None),
+        }
+        .insert(conn)
+        .await
+        .map(attachment_from)
+        .map_err(db_err)
+    }
+}
+
+fn hex_digest(data: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(data))
 }
 
 async fn update_backlink_titles(

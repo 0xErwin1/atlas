@@ -548,6 +548,42 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         openapi_path: Some("/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}"),
         capability: Some("docs:update"),
     },
+    RouteEntry {
+        method: "POST",
+        path_template: "/api/workspaces/{ws}/documents/nonexistent-slug/comments/00000000-0000-0000-0000-000000000001/attachments",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some(
+            "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments",
+        ),
+        capability: Some("docs:update"),
+    },
+    RouteEntry {
+        method: "GET",
+        path_template: "/api/workspaces/{ws}/documents/nonexistent-slug/comments/00000000-0000-0000-0000-000000000001/attachments",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some(
+            "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments",
+        ),
+        capability: Some("docs:read"),
+    },
+    RouteEntry {
+        method: "GET",
+        path_template: "/api/workspaces/{ws}/documents/nonexistent-slug/comments/00000000-0000-0000-0000-000000000001/attachments/00000000-0000-0000-0000-000000000001",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some(
+            "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}",
+        ),
+        capability: Some("docs:read"),
+    },
+    RouteEntry {
+        method: "DELETE",
+        path_template: "/api/workspaces/{ws}/documents/nonexistent-slug/comments/00000000-0000-0000-0000-000000000001/attachments/00000000-0000-0000-0000-000000000001",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some(
+            "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}",
+        ),
+        capability: Some("docs:update"),
+    },
     // ---- Board routes ----
     RouteEntry {
         method: "POST",
@@ -832,6 +868,42 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         path_template: "/api/workspaces/{ws}/tasks/ATL-0/comments/00000000-0000-0000-0000-000000000001",
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}"),
+        capability: Some("tasks:update"),
+    },
+    RouteEntry {
+        method: "POST",
+        path_template: "/api/workspaces/{ws}/tasks/ATL-0/comments/00000000-0000-0000-0000-000000000001/attachments",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some(
+            "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments",
+        ),
+        capability: Some("tasks:update"),
+    },
+    RouteEntry {
+        method: "GET",
+        path_template: "/api/workspaces/{ws}/tasks/ATL-0/comments/00000000-0000-0000-0000-000000000001/attachments",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some(
+            "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments",
+        ),
+        capability: Some("tasks:read"),
+    },
+    RouteEntry {
+        method: "GET",
+        path_template: "/api/workspaces/{ws}/tasks/ATL-0/comments/00000000-0000-0000-0000-000000000001/attachments/00000000-0000-0000-0000-000000000001/content",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some(
+            "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}/content",
+        ),
+        capability: Some("tasks:read"),
+    },
+    RouteEntry {
+        method: "DELETE",
+        path_template: "/api/workspaces/{ws}/tasks/ATL-0/comments/00000000-0000-0000-0000-000000000001/attachments/00000000-0000-0000-0000-000000000001",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some(
+            "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}",
+        ),
         capability: Some("tasks:update"),
     },
     RouteEntry {

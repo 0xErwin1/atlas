@@ -58,18 +58,52 @@ interface BacklinkRow {
   kind: string;
   readableId: string;
   title: string;
-  to: RouteLocationRaw;
+  to: RouteLocationRaw | null;
 }
 
-// The backlinks endpoint only returns live source tasks, so every backlink is
-// navigable — no broken state to render.
+function commentBacklinkRow(commentSource: NonNullable<TaskBacklinkDto['comment_source']>): BacklinkRow {
+  const { parent } = commentSource;
+
+  if (parent.type === 'task') {
+    return {
+      id: commentSource.comment_id,
+      kind: 'comment',
+      readableId: parent.readable_id,
+      title: parent.title,
+      to: { name: 'task-detail', params: { readableId: parent.readable_id } },
+    };
+  }
+
+  if (parent.slug === null || parent.slug === undefined) {
+    return {
+      id: commentSource.comment_id,
+      kind: 'comment',
+      readableId: 'Recurso no disponible',
+      title: 'Recurso no disponible',
+      to: null,
+    };
+  }
+
+  return {
+    id: commentSource.comment_id,
+    kind: 'comment',
+    readableId: parent.slug,
+    title: parent.title,
+    to: { name: 'notes', params: { slug: parent.slug } },
+  };
+}
+
 const backlinkRows = computed<BacklinkRow[]>(() =>
   props.backlinks.map((b) => ({
-    id: b.source_task_id,
-    kind: b.kind,
-    readableId: b.source_readable_id,
-    title: b.source_title,
-    to: { name: 'task-detail', params: { readableId: b.source_readable_id } },
+    ...(b.comment_source === null || b.comment_source === undefined
+      ? {
+          id: b.source_task_id,
+          kind: b.kind,
+          readableId: b.source_readable_id,
+          title: b.source_title,
+          to: { name: 'task-detail', params: { readableId: b.source_readable_id } },
+        }
+      : commentBacklinkRow(b.comment_source)),
   })),
 );
 
@@ -125,7 +159,16 @@ const isEmpty = computed(() => rows.value.length === 0 && backlinkRows.value.len
         :data-backlink-id="row.id"
       >
         <Chip>{{ row.kind }}</Chip>
+        <span
+          v-if="row.to === null"
+          data-backlink-unavailable
+          class="atl-ref-target flex items-baseline min-w-0"
+          style="gap: 6px;"
+        >
+          Recurso no disponible
+        </span>
         <RouterLink
+          v-else
           :to="row.to"
           class="atl-ref-target flex items-baseline min-w-0"
           style="gap: 6px;"

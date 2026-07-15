@@ -138,6 +138,17 @@ impl AttachmentStore for S3AttachmentStore {
         let location = self.object_path(digest)?;
         self.object_exists(&location).await
     }
+
+    async fn delete(&self, digest: &str) -> Result<(), DomainError> {
+        let location = self.object_path(digest)?;
+
+        match self.store.delete(&location).await {
+            Ok(()) | Err(ObjectStoreError::NotFound { .. }) => Ok(()),
+            Err(e) => Err(DomainError::Internal {
+                message: format!("delete attachment {digest}: {e}"),
+            }),
+        }
+    }
 }
 
 fn hex_sha256(data: &[u8]) -> String {

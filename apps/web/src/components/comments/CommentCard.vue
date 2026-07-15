@@ -7,6 +7,7 @@
  * failures, e.g. an error banner). Edit mode is left only on a successful save.
  */
 import { computed, ref } from 'vue';
+import type { components } from '@/api/types.d.ts';
 import MarkdownEditor from '@/components/editor/MarkdownEditor.vue';
 import AgentBadge from '@/components/ui/AgentBadge.vue';
 import Avatar from '@/components/ui/Avatar.vue';
@@ -16,42 +17,149 @@ import Icon from '@/components/ui/Icon.vue';
 import { useContextMenu } from '@/composables/useContextMenu';
 import { actorName, isAgent } from '@/lib/actor';
 import { formatDate } from '@/lib/format';
-import type { CommentDto } from '@/stores/documents';
+
+type CommentDto = components['schemas']['CommentDto'];
+
+type CommentLinkTarget =
+  | { status: 'available'; id: string; type: string; label?: string }
+  | { status: 'unavailable'; label: 'Recurso no disponible' };
+
+type CommentAttachment = {
+  id: string;
+  comment_id: string;
+  content_type: string;
+  created_at: string;
+  file_name: string;
+  size_bytes: number;
+};
+
+type CommentEvent = {
+  id: string;
+  comment_id?: string;
+  kind: string;
+  created_at: string;
+  target?: CommentLinkTarget | null;
+};
 
 const props = defineProps<{
-  comment: CommentDto;
-  canEdit: boolean;
-  canDelete: boolean;
-  onSave: (id: string, body: string) => Promise<boolean>;
-  onDelete: (id: string) => Promise<void> | Promise<boolean>;
+  comment?: CommentDto;
+  canEdit?: boolean;
+  canDelete?: boolean;
+  onSave?: (id: string, body: string) => Promise<boolean>;
+  onDelete?: (id: string) => Promise<void> | Promise<boolean>;
+  links?: Array<{ target: CommentLinkTarget }>;
+  event?: CommentEvent;
+  attachments?: CommentAttachment[];
+  canManageAttachments?: boolean;
+  attachmentUploading?: boolean;
+  attachmentListing?: boolean;
+  attachmentError?: string | null;
+  onReloadAttachments?: () => Promise<void>;
+  isAttachmentDownloading?: (attachmentId: string) => boolean;
+  isAttachmentDeleting?: (attachmentId: string) => boolean;
+  onUploadAttachment?: (file: File) => Promise<CommentAttachment | null>;
+  onDownloadAttachment?: (attachmentId: string) => Promise<Blob | null>;
+  onDeleteAttachment?: (attachmentId: string) => Promise<boolean>;
+  uploadImage?: (file: File) => Promise<string | null>;
+}>();
+
+const emit = defineEmits<{
+  'navigate-link': [target: Extract<CommentLinkTarget, { status: 'available' }>, commentId?: string];
 }>();
 
 const menu = useContextMenu();
 const pendingDelete = ref(false);
+const pendingAttachmentDelete = ref<CommentAttachment | null>(null);
 
 const editing = ref(false);
 const editDraft = ref('');
 const saving = ref(false);
+const saveFailed = ref(false);
+const attachmentAnnouncement = ref('');
 
 const canSaveEdit = computed(() => editDraft.value.trim().length > 0);
-const hasActions = computed(() => props.canEdit || props.canDelete);
-const isEdited = computed(() => props.comment.updated_at !== props.comment.created_at);
+const hasActions = computed(() => props.canEdit === true || props.canDelete === true);
+const isEdited = computed(
+  () => props.comment !== undefined && props.comment.updated_at !== props.comment.created_at,
+);
+const imageUpload = computed(() =>
+  props.canEdit === true && props.canManageAttachments === true ? props.uploadImage : undefined,
+);
 
-const authorName = computed(() => actorName(props.comment.author.display_name, props.comment.author.type));
-const authorIsAgent = computed(() => isAgent(props.comment.author.type));
+const authorName = computed(() =>
+  props.comment === undefined ? '' : actorName(props.comment.author.display_name, props.comment.author.type),
+);
+const authorIsAgent = computed(() => props.comment !== undefined && isAgent(props.comment.author.type));
 
 function startEdit(): void {
+  if (props.comment === undefined) return;
+
   editing.value = true;
   editDraft.value = props.comment.body;
+  saveFailed.value = false;
 }
 
 function cancelEdit(): void {
   editing.value = false;
   editDraft.value = '';
+  saveFailed.value = false;
 }
 
 function requestDelete(): void {
   pendingDelete.value = true;
+}
+
+function linkLabel(target: CommentLinkTarget): string {
+  if (target.status === 'unavailable') return 'Recurso no disponible';
+  if (target.label !== undefined) return target.label;
+
+  if (target.type === 'task') return 'Task link';
+  if (target.type === 'document') return 'Note link';
+  if (target.type === 'attachment') return 'Attachment link';
+  return 'Linked resource';
+}
+
+function eventLabel(kind: string): string {
+  if (kind === 'link_added') return 'Link added';
+  if (kind === 'link_removed') return 'Link removed';
+  if (kind === 'comment_deleted') return 'Comment deleted';
+  return 'Comment activity';
+}
+
+function navigate(target: CommentLinkTarget): void {
+  if (target.status === 'available') {
+    emit('navigate-link', target, props.comment?.id ?? props.event?.comment_id);
+  }
+}
+
+async function uploadAttachment(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = '';
+
+  if (file !== undefined && props.onUploadAttachment !== undefined) {
+    const uploaded = await props.onUploadAttachment(file);
+    if (uploaded !== null) attachmentAnnouncement.value = 'Attachment uploaded';
+  }
+}
+
+async function downloadAttachment(attachmentId: string): Promise<void> {
+  const downloaded = await props.onDownloadAttachment?.(attachmentId);
+  if (downloaded !== null && downloaded !== undefined) attachmentAnnouncement.value = 'Attachment downloaded';
+}
+
+function requestAttachmentDelete(attachment: CommentAttachment): void {
+  pendingAttachmentDelete.value = attachment;
+}
+
+async function confirmAttachmentDelete(): Promise<void> {
+  const attachment = pendingAttachmentDelete.value;
+  pendingAttachmentDelete.value = null;
+
+  if (attachment === null) return;
+
+  const deleted = await props.onDeleteAttachment?.(attachment.id);
+  if (deleted === true) attachmentAnnouncement.value = 'Attachment deleted';
 }
 
 const menuItems = computed<MenuItem[]>(() => {
@@ -72,13 +180,18 @@ function onEditChange(markdown: string): void {
 }
 
 async function saveEdit(): Promise<void> {
-  if (!canSaveEdit.value || saving.value) return;
+  if (!canSaveEdit.value || saving.value || props.comment === undefined || props.onSave === undefined) return;
 
   saving.value = true;
-  const ok = await props.onSave(props.comment.id, editDraft.value.trim());
+  const ok = await props.onSave(props.comment.id, editDraft.value);
   saving.value = false;
 
-  if (ok) cancelEdit();
+  if (ok) {
+    cancelEdit();
+    attachmentAnnouncement.value = 'Comment saved';
+  } else {
+    saveFailed.value = true;
+  }
 }
 
 function cancelDelete(): void {
@@ -87,12 +200,32 @@ function cancelDelete(): void {
 
 async function confirmDelete(): Promise<void> {
   pendingDelete.value = false;
-  await props.onDelete(props.comment.id);
+  if (props.comment !== undefined && props.onDelete !== undefined) await props.onDelete(props.comment.id);
 }
 </script>
 
 <template>
-  <article :data-comment-id="comment.id" class="atl-comment group">
+  <article
+    v-if="comment === undefined && event !== undefined"
+    :data-comment-event="event.id"
+    class="atl-comment"
+  >
+    <div style="color: var(--c-muted);">
+      {{ eventLabel(event.kind) }}
+      <button
+        v-if="event.target?.status === 'available'"
+        type="button"
+        class="atl-comment-btn"
+        @click="navigate(event.target)"
+      >
+        {{ linkLabel(event.target) }}
+      </button>
+      <span v-else-if="event.target?.status === 'unavailable'">{{ linkLabel(event.target) }}</span>
+    </div>
+    <span style="font-size: var(--fs-xs); color: var(--c-muted);">{{ formatDate(event.created_at) }}</span>
+  </article>
+
+  <article v-else-if="comment !== undefined" :data-comment-id="comment.id" class="atl-comment group">
     <div class="flex items-center" style="gap: 8px;">
       <Avatar :name="authorName" :agent="authorIsAgent" :size="22" />
       <span
@@ -113,7 +246,7 @@ async function confirmDelete(): Promise<void> {
         type="button"
         aria-label="Comment actions"
         title="Comment actions"
-        class="shrink-0 cursor-pointer opacity-0 group-hover:opacity-100 flex items-center justify-center"
+        class="shrink-0 cursor-pointer opacity-0 group-hover:opacity-100 focus-visible:opacity-100 flex items-center justify-center"
         style="width: 22px; height: 22px; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-secondary); color: var(--c-muted);"
         @click="menu.openAt($event)"
       >
@@ -129,10 +262,14 @@ async function confirmDelete(): Promise<void> {
           :embedded-controls="false"
           :width-toggle="false"
           :follow-caret="false"
+          :upload-image="imageUpload"
           min-height="2.5rem"
           @change="onEditChange"
         />
         <div class="flex justify-end" style="gap: 8px; margin-top: 8px;">
+          <p v-if="saveFailed" role="alert" style="margin-right: auto;">
+            Could not save comment. Your edits are still here; try again.
+          </p>
           <button
             type="button"
             data-test="comment-edit-cancel"
@@ -161,6 +298,102 @@ async function confirmDelete(): Promise<void> {
         :width-toggle="false"
         min-height="1rem"
       />
+
+      <div v-if="links !== undefined && links.length > 0" class="flex flex-wrap" style="gap: 6px; margin-top: 8px;">
+        <template v-for="link in links" :key="link.target.status === 'available' ? link.target.id : link.target.label">
+          <button
+            v-if="link.target.status === 'available'"
+            type="button"
+            :data-comment-link="link.target.id"
+            class="atl-comment-btn"
+            @click="navigate(link.target)"
+          >
+            {{ linkLabel(link.target) }}
+          </button>
+          <span v-else data-comment-link-unavailable>{{ linkLabel(link.target) }}</span>
+        </template>
+      </div>
+
+      <div v-if="event !== undefined" :data-comment-event="event.id" style="margin-top: 8px; color: var(--c-muted);">
+        {{ eventLabel(event.kind) }}
+        <button
+          v-if="event.target?.status === 'available'"
+          type="button"
+          class="atl-comment-btn"
+          @click="navigate(event.target)"
+        >
+          {{ linkLabel(event.target) }}
+        </button>
+        <span v-else-if="event.target?.status === 'unavailable'">{{ linkLabel(event.target) }}</span>
+      </div>
+
+      <div v-if="attachments !== undefined" style="margin-top: 8px;">
+        <label
+          v-if="canManageAttachments"
+          class="atl-comment-btn"
+          :for="`comment-attachment-picker-${comment.id}`"
+        >
+          Attach file
+        </label>
+        <input
+          v-if="canManageAttachments"
+          :id="`comment-attachment-picker-${comment.id}`"
+          data-comment-attachment-picker
+          class="sr-only"
+          type="file"
+          aria-label="Attach file"
+          :disabled="attachmentUploading"
+          @change="uploadAttachment"
+        />
+        <span v-if="attachmentUploading || attachmentListing" role="status" aria-live="polite" style="margin-left: 8px;">
+          {{ attachmentUploading ? 'Uploading attachment…' : 'Loading attachments…' }}
+        </span>
+        <p v-if="attachmentError !== null && attachmentError !== undefined" role="alert">{{ attachmentError }}</p>
+        <button
+          v-if="attachmentError !== null && attachmentError !== undefined && onReloadAttachments !== undefined"
+          type="button"
+          data-test="comment-attachment-retry"
+          class="atl-comment-btn"
+          @click="onReloadAttachments"
+        >
+          Retry attachment load
+        </button>
+        <span
+          v-if="attachmentAnnouncement !== ''"
+          data-comment-attachment-announcement
+          role="status"
+          aria-live="polite"
+          class="sr-only"
+        >
+          {{ attachmentAnnouncement }}
+        </span>
+        <ul v-if="attachments.length > 0" style="margin-top: 6px;">
+          <li v-for="attachment in attachments" :key="attachment.id" class="flex items-center" style="gap: 6px;">
+            <span>{{ attachment.file_name }}</span>
+            <button
+              type="button"
+              class="atl-comment-btn"
+              :aria-label="`Download ${attachment.file_name}`"
+              :aria-busy="isAttachmentDownloading?.(attachment.id) === true"
+              :disabled="isAttachmentDownloading?.(attachment.id) === true"
+              @click="downloadAttachment(attachment.id)"
+            >
+              {{ isAttachmentDownloading?.(attachment.id) === true ? 'Downloading…' : 'Download' }}
+            </button>
+            <button
+              v-if="canManageAttachments"
+              type="button"
+              class="atl-comment-btn"
+              :aria-label="`Delete ${attachment.file_name}`"
+              :aria-busy="isAttachmentDeleting?.(attachment.id) === true"
+              :disabled="isAttachmentDeleting?.(attachment.id) === true"
+              @click="requestAttachmentDelete(attachment)"
+            >
+              {{ isAttachmentDeleting?.(attachment.id) === true ? 'Deleting…' : 'Delete' }}
+            </button>
+          </li>
+        </ul>
+      </div>
     </div>
 
     <ContextMenu
@@ -180,6 +413,16 @@ async function confirmDelete(): Promise<void> {
       confirm-label="Delete"
       @confirm="confirmDelete"
       @cancel="cancelDelete"
+    />
+
+    <ConfirmDialog
+      :open="pendingAttachmentDelete !== null"
+      title="Delete attachment"
+      message="This permanently removes the attachment. This cannot be undone."
+      tone="danger"
+      confirm-label="Delete"
+      @confirm="confirmAttachmentDelete"
+      @cancel="pendingAttachmentDelete = null"
     />
   </article>
 </template>

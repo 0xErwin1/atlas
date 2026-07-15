@@ -21,6 +21,10 @@ pub trait AttachmentStore: Send + Sync {
 
     /// Returns `true` if an object with this digest already exists in the store.
     async fn exists(&self, digest: &str) -> Result<bool, DomainError>;
+
+    /// Removes an object if present. Repeated deletes are successful so durable
+    /// cleanup can retry safely after a process crash.
+    async fn delete(&self, digest: &str) -> Result<(), DomainError>;
 }
 
 #[cfg(test)]

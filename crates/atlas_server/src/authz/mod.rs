@@ -1,4 +1,13 @@
 pub mod authorized;
+#[allow(
+    dead_code,
+    reason = "WU2-C1a establishes the server-only projection boundary before route wiring"
+)]
+pub(crate) mod batch_authorization;
+#[cfg(test)]
+mod batch_authorization_db_tests;
+#[cfg(test)]
+mod batch_authorization_tests;
 pub mod extractors;
 
 pub use authorized::{

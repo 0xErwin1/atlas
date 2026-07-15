@@ -7,18 +7,22 @@ use axum::{
     http::{StatusCode, header},
     response::{IntoResponse, Response},
 };
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use serde::Deserialize;
 
 use atlas_api::{
     dtos::boards_tasks::{
         ActivityEntryDto, AddAssigneeRequest, AssigneeDto, ChecklistItemDto, CommentDto,
-        CreateChecklistItemRequest, CreateCommentRequest, CreateReferenceRequest,
-        CreateSubtaskRequest, CreateTaskRequest, MoveTaskRequest, PromoteChecklistItemRequest,
-        PromotionDto, ReferenceDto, ReferenceOriginDto, TaskAttachmentDto, TaskBacklinkDto,
-        TaskDto, TaskSummaryDto, UnifiedReferenceDto, UpdateChecklistItemRequest,
-        UpdateCommentRequest, UpdateTaskRequest, WorkspaceTaskQueryParams,
+        CommentListResponseDto, CreateChecklistItemRequest, CreateCommentRequest,
+        CreateReferenceRequest, CreateSubtaskRequest, CreateTaskRequest, MoveTaskRequest,
+        PromoteChecklistItemRequest, PromotionDto, ReferenceDto, ReferenceOriginDto,
+        TaskAttachmentDto, TaskBacklinkDto, TaskDto, TaskSummaryDto, UnifiedReferenceDto,
+        UpdateChecklistItemRequest, UpdateCommentRequest, UpdateTaskRequest,
+        WorkspaceTaskQueryParams,
     },
-    dtos::documents::ActorDto,
+    dtos::documents::{
+        ActorDto, CommentAttachmentDto, CommentBacklinkParentDto, CommentBacklinkSourceDto,
+    },
     pagination::{Cursor, Page, SearchCursor, SortKey},
 };
 use atlas_domain::{
@@ -28,7 +32,7 @@ use atlas_domain::{
         PositionBetween, Priority, Task, TaskActivity, TaskAssignee, TaskChecklistItem, TaskPatch,
         TaskReference,
     },
-    entities::comments::CommentOwner,
+    entities::comments::{CommentLinkTarget, CommentOwner},
     entities::documents::{
         AttachmentOwner, NewAttachment, RankedTaskDescriptionLink, rank_task_description_links,
     },
@@ -45,6 +49,7 @@ use atlas_domain::{
     },
     ports::{
         boards_tasks::{WorkspaceActivityFilters, WorkspaceActivityScope},
+        comments::{CommentLinkRepo, CommentRepo},
         documents::DocumentLinkRepo,
     },
 };
@@ -53,18 +58,25 @@ use crate::{
     authz::{
         Authorized, BoardRes, EditorMin, MinRole, TaskRes, TasksCreate, TasksDelete, TasksRead,
         TasksUpdate, ViewerMin, WorkspaceMember, authorize_board_destination,
+        batch_authorization::{
+            BatchAuthorizationService, PgBatchAuthorizationSource, ProjectionSubject,
+        },
         enforce_api_key_scope,
     },
     error::ApiError,
+    persistence::entities::boards_tasks::task,
     persistence::repos::{
-        ApiKeyRepo, AttachmentRepo, DocumentRepo, MembershipRepo, PgApiKeyRepo, PgAttachmentRepo,
-        PgBoardRepo, PgDocumentLinkRepo, PgDocumentRepo, PgMembershipRepo, PgPermissionGrantRepo,
-        PgProjectRepo, PgPropertyDefinitionRepo, PgTaskActivityRepo, PgTaskAssigneeRepo,
-        PgTaskChecklistRepo, PgTaskReferenceRepo, PgTaskRepo, PgUserRepo, ProjectRepo,
-        PropertyDefinitionRepo, TaskActivityRepo, TaskAssigneeRepo, TaskChecklistRepo,
-        TaskReferenceRepo, TaskRepo, UserRepo,
+        ApiKeyRepo, AttachmentRepo, DocumentRepo, MembershipRepo, PgApiKeyRepo,
+        PgAttachmentLifecycle, PgAttachmentRepo, PgBoardRepo, PgCommentLinkRepo, PgCommentRepo,
+        PgDocumentLinkRepo, PgDocumentRepo, PgMembershipRepo, PgPermissionGrantRepo, PgProjectRepo,
+        PgPropertyDefinitionRepo, PgTaskActivityRepo, PgTaskAssigneeRepo, PgTaskChecklistRepo,
+        PgTaskReferenceRepo, PgTaskRepo, PgUserRepo, ProjectRepo, PropertyDefinitionRepo,
+        TaskActivityRepo, TaskAssigneeRepo, TaskChecklistRepo, TaskReferenceRepo, TaskRepo,
+        UserRepo,
     },
-    routes::comments::{comment_to_dto, enrich_comment_entries},
+    routes::comments::{
+        comment_to_dto, decode_feed_cursor, enrich_comment_entries, project_comment_feed,
+    },
     routes::documents::content_disposition_attachment,
     routes::validation::{
         validate_comment_body, validate_custom_entry_count, validate_custom_properties,
@@ -81,6 +93,7 @@ use crate::{
 pub(crate) struct PaginationQuery {
     cursor: Option<String>,
     limit: Option<u32>,
+    feed: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -127,6 +140,16 @@ pub(crate) struct CommentPath {
     #[allow(dead_code)]
     readable_id: String,
     comment_id: uuid::Uuid,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct CommentAttachmentPath {
+    #[allow(dead_code)]
+    ws: String,
+    #[allow(dead_code)]
+    readable_id: String,
+    comment_id: uuid::Uuid,
+    attachment_id: uuid::Uuid,
 }
 
 // ---------------------------------------------------------------------------
@@ -1735,34 +1758,24 @@ pub(crate) async fn upload_attachment(
         state.upload_allowed_extensions.as_deref(),
     )?;
 
-    let sha256 = state
-        .attachments
-        .put(&data)
-        .await
-        .map_err(|e| ApiError::Internal {
-            message: e.to_string(),
-        })?;
-
     let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
-
-    let attachment_repo = PgAttachmentRepo {
-        conn: (*state.db).clone(),
-    };
-
-    let attachment = attachment_repo
-        .record(
-            &ctx,
-            NewAttachment {
-                document_id: None,
-                task_id: Some(auth.resource.0.id),
-                file_name,
-                content_type,
-                size_bytes: data.len() as i64,
-                sha256,
-            },
-        )
-        .await
-        .map_err(ApiError::Domain)?;
+    let attachment = PgAttachmentLifecycle::store_and_record(
+        state.db.as_ref(),
+        &ctx,
+        NewAttachment {
+            document_id: None,
+            task_id: Some(auth.resource.0.id),
+            comment_id: None,
+            file_name,
+            content_type,
+            size_bytes: data.len() as i64,
+            sha256: String::new(),
+        },
+        &data,
+        state.attachments.as_ref(),
+    )
+    .await
+    .map_err(ApiError::Domain)?;
 
     Ok((StatusCode::CREATED, Json(attachment_to_dto(attachment))))
 }
@@ -1937,6 +1950,268 @@ pub(crate) async fn delete_attachment(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments",
+    operation_id = "upload_task_comment_attachment",
+    tag = "tasks",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+        ("readable_id" = String, Path, description = "Task readable ID"),
+        ("comment_id" = String, Path, description = "Comment UUID"),
+    ),
+    request_body(content = String, content_type = "multipart/form-data"),
+    responses((status = 201, body = CommentAttachmentDto), (status = 404), (status = 413), (status = 422))
+)]
+pub(crate) async fn upload_comment_attachment(
+    auth: Authorized<TaskRes, ViewerMin, TasksUpdate>,
+    Path(path): Path<CommentPath>,
+    State(state): State<AppState>,
+    mut multipart: Multipart,
+) -> Result<impl IntoResponse, ApiError> {
+    let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
+    let owner = CommentOwner::Task(auth.resource.0.id);
+    let comment = PgCommentRepo::new((*state.db).clone())
+        .get_for_owner(&ctx, owner, CommentId(path.comment_id))
+        .await
+        .map_err(ApiError::Domain)?;
+    let can_moderate = matches!(
+        auth.membership,
+        Some(MemberRole::Owner) | Some(MemberRole::Admin)
+    );
+    if comment.created_by != ctx.actor && !can_moderate {
+        return Err(ApiError::Domain(atlas_domain::DomainError::Forbidden {
+            message: "only the comment's author or a workspace admin/owner may manage attachments"
+                .into(),
+        }));
+    }
+
+    let max = state.max_attachment_bytes;
+    let mut captured: Option<(String, String, Vec<u8>)> = None;
+    while let Some(mut field) =
+        multipart
+            .next_field()
+            .await
+            .map_err(|e| ApiError::InvalidInput {
+                message: format!("invalid multipart body: {e}"),
+            })?
+    {
+        if field.name() != Some("file") {
+            continue;
+        }
+        let file_name = field
+            .file_name()
+            .map(ToString::to_string)
+            .unwrap_or_default();
+        let content_type = field
+            .content_type()
+            .map(ToString::to_string)
+            .unwrap_or_else(|| "application/octet-stream".to_string());
+        validate_name("file_name", &file_name)?;
+        let mut data = Vec::new();
+        while let Some(chunk) = field.chunk().await.map_err(|e| ApiError::InvalidInput {
+            message: format!("error reading upload: {e}"),
+        })? {
+            if data.len() as u64 + chunk.len() as u64 > max {
+                return Err(ApiError::PayloadTooLarge {
+                    message: format!("attachment exceeds maximum size of {max} bytes"),
+                });
+            }
+            data.extend_from_slice(&chunk);
+        }
+        captured = Some((file_name, content_type, data));
+        break;
+    }
+    let (file_name, content_type, data) = captured.ok_or_else(|| ApiError::InvalidInput {
+        message: "multipart form must contain a 'file' part".into(),
+    })?;
+    validate_upload(
+        &file_name,
+        &data,
+        state.upload_allowed_extensions.as_deref(),
+    )?;
+    let attachment = PgAttachmentLifecycle::store_and_record(
+        state.db.as_ref(),
+        &ctx,
+        NewAttachment {
+            document_id: None,
+            task_id: None,
+            comment_id: Some(comment.id),
+            file_name,
+            content_type,
+            size_bytes: data.len() as i64,
+            sha256: String::new(),
+        },
+        &data,
+        state.attachments.as_ref(),
+    )
+    .await
+    .map_err(ApiError::Domain)?;
+    Ok((
+        StatusCode::CREATED,
+        Json(comment_attachment_to_dto(attachment)),
+    ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments",
+    operation_id = "list_task_comment_attachments",
+    tag = "tasks",
+    security(("bearer_auth" = [])),
+    params(("ws" = String, Path), ("readable_id" = String, Path), ("comment_id" = String, Path)),
+    responses((status = 200, body = Vec<CommentAttachmentDto>), (status = 404))
+)]
+pub(crate) async fn list_comment_attachments(
+    auth: Authorized<TaskRes, ViewerMin, TasksRead>,
+    Path(path): Path<CommentPath>,
+    State(state): State<AppState>,
+) -> Result<Json<Vec<CommentAttachmentDto>>, ApiError> {
+    let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
+    let comment_id = CommentId(path.comment_id);
+    PgCommentRepo::new((*state.db).clone())
+        .get_for_owner(&ctx, CommentOwner::Task(auth.resource.0.id), comment_id)
+        .await
+        .map_err(ApiError::Domain)?;
+    let items = PgAttachmentRepo {
+        conn: (*state.db).clone(),
+    }
+    .list_for_owner(&ctx, AttachmentOwner::Comment(comment_id))
+    .await
+    .map_err(ApiError::Domain)?;
+    Ok(Json(
+        items.into_iter().map(comment_attachment_to_dto).collect(),
+    ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}/content",
+    operation_id = "download_task_comment_attachment",
+    tag = "tasks",
+    security(("bearer_auth" = [])),
+    params(("ws" = String, Path), ("readable_id" = String, Path), ("comment_id" = String, Path), ("attachment_id" = String, Path)),
+    responses((status = 200, description = "Binary attachment content"), (status = 404))
+)]
+pub(crate) async fn download_comment_attachment(
+    auth: Authorized<TaskRes, ViewerMin, TasksRead>,
+    Path(path): Path<CommentAttachmentPath>,
+    State(state): State<AppState>,
+) -> Result<Response, ApiError> {
+    let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
+    let comment_id = CommentId(path.comment_id);
+    PgCommentRepo::new((*state.db).clone())
+        .get_for_owner(&ctx, CommentOwner::Task(auth.resource.0.id), comment_id)
+        .await
+        .map_err(ApiError::Domain)?;
+    let attachment = PgAttachmentRepo {
+        conn: (*state.db).clone(),
+    }
+    .find(&ctx, AttachmentId(path.attachment_id))
+    .await
+    .map_err(ApiError::Domain)?
+    .filter(|attachment| attachment.comment_id == Some(comment_id))
+    .ok_or(ApiError::NotFound)?;
+    comment_attachment_response(&state, attachment).await
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}",
+    operation_id = "delete_task_comment_attachment",
+    tag = "tasks",
+    security(("bearer_auth" = [])),
+    params(("ws" = String, Path), ("readable_id" = String, Path), ("comment_id" = String, Path), ("attachment_id" = String, Path)),
+    responses((status = 204), (status = 404))
+)]
+pub(crate) async fn delete_comment_attachment(
+    auth: Authorized<TaskRes, ViewerMin, TasksUpdate>,
+    Path(path): Path<CommentAttachmentPath>,
+    State(state): State<AppState>,
+) -> Result<StatusCode, ApiError> {
+    let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
+    let comment_id = CommentId(path.comment_id);
+    let comment = PgCommentRepo::new((*state.db).clone())
+        .get_for_owner(&ctx, CommentOwner::Task(auth.resource.0.id), comment_id)
+        .await
+        .map_err(ApiError::Domain)?;
+    let can_moderate = matches!(
+        auth.membership,
+        Some(MemberRole::Owner) | Some(MemberRole::Admin)
+    );
+    if comment.created_by != ctx.actor && !can_moderate {
+        return Err(ApiError::Domain(atlas_domain::DomainError::Forbidden {
+            message: "only the comment's author or a workspace admin/owner may manage attachments"
+                .into(),
+        }));
+    }
+    let attachment_id = AttachmentId(path.attachment_id);
+    PgAttachmentLifecycle::delete_comment_attachment(
+        state.db.as_ref(),
+        &ctx,
+        comment_id,
+        attachment_id,
+        state.attachments.as_ref(),
+    )
+    .await
+    .map_err(ApiError::Domain)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+fn comment_attachment_to_dto(
+    attachment: atlas_domain::entities::documents::Attachment,
+) -> CommentAttachmentDto {
+    CommentAttachmentDto {
+        id: attachment.id.0,
+        comment_id: attachment
+            .comment_id
+            .map(|id| id.0)
+            .unwrap_or_else(uuid::Uuid::nil),
+        file_name: attachment.file_name,
+        content_type: attachment.content_type,
+        size_bytes: attachment.size_bytes,
+        sha256: attachment.sha256,
+        actor: attachment
+            .created_by_user_id
+            .map(|id| actor_to_dto(&Actor::User(id)))
+            .or_else(|| {
+                attachment
+                    .created_by_api_key_id
+                    .map(|id| actor_to_dto(&Actor::ApiKey(id)))
+            }),
+        created_at: attachment.created_at,
+    }
+}
+
+async fn comment_attachment_response(
+    state: &AppState,
+    attachment: atlas_domain::entities::documents::Attachment,
+) -> Result<Response, ApiError> {
+    let bytes = state
+        .attachments
+        .get(&attachment.sha256)
+        .await
+        .map_err(|error| match error {
+            atlas_domain::DomainError::NotFound { .. } => ApiError::NotFound,
+            other => ApiError::Internal {
+                message: other.to_string(),
+            },
+        })?;
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, attachment.content_type)
+        .header(
+            header::CONTENT_DISPOSITION,
+            content_disposition_attachment(&attachment.file_name),
+        )
+        .header("x-content-type-options", "nosniff")
+        .body(Body::from(bytes))
+        .map_err(|error| ApiError::Internal {
+            message: error.to_string(),
+        })
+}
+
 // ---------------------------------------------------------------------------
 // GET /api/workspaces/{ws}/tasks/{readable_id}/backlinks
 // ---------------------------------------------------------------------------
@@ -1969,7 +2244,6 @@ pub(crate) async fn list_backlinks(
     let actor = principal_to_actor(&auth.principal);
     let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
     let ref_repo = PgTaskReferenceRepo::new((*state.db).clone());
-    let task_repo = PgTaskRepo::new((*state.db).clone());
 
     let mut inbound = ref_repo
         .list_inbound(&ctx, auth.resource.0.id)
@@ -1994,20 +2268,79 @@ pub(crate) async fn list_backlinks(
         None
     };
 
+    let source_ids = inbound
+        .iter()
+        .map(|reference| reference.source_task_id.0)
+        .collect::<Vec<_>>();
+    let sources = task::Entity::find()
+        .filter(task::Column::WorkspaceId.eq(ctx.workspace_id.0))
+        .filter(task::Column::DeletedAt.is_null())
+        .filter(task::Column::Id.is_in(source_ids))
+        .all(&*state.db)
+        .await
+        .map_err(|error| ApiError::Internal {
+            message: error.to_string(),
+        })?
+        .into_iter()
+        .map(|source| (source.id, source))
+        .collect::<std::collections::HashMap<_, _>>();
+
     let mut dtos = Vec::with_capacity(inbound.len());
     for r in inbound {
-        let source_task = task_repo
-            .find(&ctx, r.source_task_id)
-            .await
-            .map_err(ApiError::Domain)?;
-        if let Some(t) = source_task {
+        if let Some(t) = sources.get(&r.source_task_id.0) {
             dtos.push(TaskBacklinkDto {
-                source_task_id: t.id.0,
-                source_readable_id: t.readable_id,
-                source_title: t.title,
+                source_task_id: t.id,
+                source_readable_id: t.readable_id.clone(),
+                source_title: t.title.clone(),
                 kind: r.kind.as_str().to_string(),
+                comment_source: None,
             });
         }
+    }
+
+    let comment_links = PgCommentLinkRepo::new((*state.db).clone())
+        .backlinks_for_target(&ctx, CommentLinkTarget::Task(auth.resource.0.id))
+        .await
+        .map_err(ApiError::Domain)?;
+    let subjects = comment_links
+        .iter()
+        .map(|link| ProjectionSubject::SourceComment(link.comment_id.0))
+        .collect::<Vec<_>>();
+    let decisions = if subjects.is_empty() {
+        Vec::new()
+    } else {
+        BatchAuthorizationService::new(PgBatchAuthorizationSource::new((*state.db).clone()))
+            .authorize(auth.projection_context(), &subjects)
+            .await
+            .map_err(ApiError::Domain)?
+    };
+    for (link, allowed) in comment_links.into_iter().zip(decisions) {
+        if !allowed {
+            continue;
+        }
+        let parent = match link.parent {
+            CommentOwner::Task(id) => CommentBacklinkParentDto::Task {
+                id: id.0,
+                readable_id: link.parent_readable_id.unwrap_or_default(),
+                title: link.parent_title,
+            },
+            CommentOwner::Document(id) => CommentBacklinkParentDto::Document {
+                id: id.0,
+                slug: link.parent_slug,
+                title: link.parent_title,
+            },
+        };
+        dtos.push(TaskBacklinkDto {
+            source_task_id: link.comment_id.0,
+            source_readable_id: String::new(),
+            source_title: String::new(),
+            kind: "comment".into(),
+            comment_source: Some(CommentBacklinkSourceDto {
+                kind: "comment".into(),
+                comment_id: link.comment_id.0,
+                parent,
+            }),
+        });
     }
 
     Ok(Json(Page::new(dtos, next_cursor, has_more)))
@@ -2500,9 +2833,10 @@ pub(crate) async fn list_activity(
         ("readable_id" = String, Path, description = "Task readable ID"),
         ("cursor" = Option<String>, Query, description = "Pagination cursor"),
         ("limit" = Option<u32>, Query, description = "Page size (max 200)"),
+        ("feed" = Option<String>, Query, description = "Set to `full` for authorized links and retained events"),
     ),
     responses(
-        (status = 200, description = "Task comments, oldest first", body = Page<CommentDto>),
+        (status = 200, description = "Task comments, oldest first. `feed=full` returns authorized links and retained events.", body = CommentListResponseDto),
         (status = 401, description = "Unauthenticated"),
         (status = 403, description = "Insufficient permissions"),
         (status = 404, description = "Task not found"),
@@ -2512,18 +2846,36 @@ pub(crate) async fn list_comments(
     auth: Authorized<TaskRes, ViewerMin, TasksRead>,
     State(state): State<AppState>,
     Query(q): Query<PaginationQuery>,
-) -> Result<Json<Page<CommentDto>>, ApiError> {
+) -> Result<Response, ApiError> {
     let limit = q.limit.unwrap_or(50).clamp(1, 200) as u64;
     let actor = principal_to_actor(&auth.principal);
     let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
+    let task_id = auth.resource.0.id;
+
+    if q.feed.as_deref() == Some("full") {
+        let after = decode_feed_cursor(q.cursor.as_deref())?;
+        let (entries, next_cursor, has_more) = project_comment_feed(
+            &state,
+            &ctx,
+            CommentOwner::Task(task_id),
+            auth.projection_context(),
+            after,
+            limit,
+        )
+        .await?;
+        return Ok(Json(Page {
+            items: entries,
+            next_cursor,
+            has_more,
+        })
+        .into_response());
+    }
 
     let after_id = q
         .cursor
         .as_deref()
         .and_then(Cursor::decode)
         .map(|c| CommentId(c.0));
-
-    let task_id = auth.resource.0.id;
 
     let mut entries = state
         .task_service()
@@ -2544,7 +2896,7 @@ pub(crate) async fn list_comments(
 
     let dtos = enrich_comment_entries(&state, CommentOwner::Task(task_id), entries).await?;
 
-    Ok(Json(Page::new(dtos, next_cursor, has_more)))
+    Ok(Json(Page::new(dtos, next_cursor, has_more)).into_response())
 }
 
 // ---------------------------------------------------------------------------

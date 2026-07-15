@@ -22,6 +22,7 @@ use atlas_server::persistence::repos::{
     ApiKeyRepo, MembershipRepo, NewApiKey, NewUser, PermissionGrantRepo, PgPermissionGrantRepo,
     UserRepo,
 };
+use sea_orm::ConnectionTrait;
 use support::{TestDb, TestServer, login_user_with_workspace};
 
 // ---------------------------------------------------------------------------
@@ -272,6 +273,54 @@ async fn granted_api_key_accesses_all_workspace_endpoints_consistently() {
         )
         .await
         .expect("granted key: update_task (write within editor cap) must succeed");
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn granted_api_key_is_denied_after_its_creator_is_disabled() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner, ws, owner_user) =
+        login_user_with_workspace(&server, &db, "disabled-key-creator").await;
+    let (key_id, _key_secret) =
+        create_ungrant_key(&db, ws.id, owner_user.id, "disabled-creator-key").await;
+
+    owner
+        .create_workspace_grant(
+            &ws.slug,
+            CreateGrantRequest {
+                principal: GrantPrincipal {
+                    r#type: "api_key".to_string(),
+                    id: key_id,
+                },
+                role: "editor".to_string(),
+            },
+        )
+        .await
+        .expect("grant workspace editor to key");
+
+    db.conn()
+        .execute_unprepared(&format!(
+            "UPDATE users SET disabled_at = now() WHERE id = '{}'",
+            owner_user.id.0
+        ))
+        .await
+        .expect("disable key creator");
+
+    let may_enter = atlas_server::authz::authorized::api_key_can_access_workspace(
+        db.conn(),
+        atlas_domain::ids::ApiKeyId(key_id),
+        &ws,
+    )
+    .await
+    .expect("workspace entry check");
+
+    assert!(
+        !may_enter,
+        "a disabled key creator must deny workspace entry even with a direct key grant"
+    );
 
     db.teardown().await;
 }

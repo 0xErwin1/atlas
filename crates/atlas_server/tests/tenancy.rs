@@ -546,6 +546,7 @@ async fn attachment_repo_workspace_isolation() {
             NewAttachment {
                 document_id: Some(doc_b.id),
                 task_id: None,
+                comment_id: None,
                 file_name: "photo.png".into(),
                 content_type: "image/png".into(),
                 size_bytes: 1024,

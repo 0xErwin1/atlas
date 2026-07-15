@@ -1,5 +1,6 @@
 use atlas_domain::entities::documents::{
-    Attachment, Document, DocumentLink, DocumentRevision, DocumentSummary, RevisionMeta,
+    Attachment, AttachmentWriteIntent, Document, DocumentLink, DocumentRevision, DocumentSummary,
+    RevisionMeta,
 };
 use atlas_domain::ids::{
     ApiKeyId, AttachmentId, DocumentId, FolderId, ProjectId, RevisionId, TaskId, UserId,
@@ -96,6 +97,7 @@ pub mod attachment {
         pub workspace_id: Uuid,
         pub document_id: Option<Uuid>,
         pub task_id: Option<Uuid>,
+        pub comment_id: Option<Uuid>,
         pub file_name: String,
         pub content_type: String,
         pub size_bytes: i64,
@@ -110,6 +112,21 @@ pub mod attachment {
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
     pub enum Relation {}
 
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
+pub mod attachment_write_intent {
+    use super::*;
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+    #[sea_orm(table_name = "attachment_write_intents")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        pub digest: String,
+        pub created_at: DateTime<Utc>,
+    }
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
     impl ActiveModelBehavior for ActiveModel {}
 }
 
@@ -203,6 +220,7 @@ pub fn attachment_from(m: attachment::Model) -> Attachment {
         workspace_id: WorkspaceId(m.workspace_id),
         document_id: m.document_id.map(DocumentId),
         task_id: m.task_id.map(TaskId),
+        comment_id: m.comment_id.map(atlas_domain::ids::CommentId),
         file_name: m.file_name,
         content_type: m.content_type,
         size_bytes: m.size_bytes,
@@ -212,6 +230,14 @@ pub fn attachment_from(m: attachment::Model) -> Attachment {
         created_at: m.created_at,
         updated_at: m.updated_at,
         deleted_at: m.deleted_at,
+    }
+}
+
+pub fn attachment_write_intent_from(m: attachment_write_intent::Model) -> AttachmentWriteIntent {
+    AttachmentWriteIntent {
+        id: m.id,
+        digest: m.digest,
+        created_at: m.created_at,
     }
 }
 

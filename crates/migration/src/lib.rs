@@ -39,6 +39,7 @@ pub mod m20260702_000036_events_outbox_notify;
 pub mod m20260702_000037_prune_description_edit_activity;
 pub mod m20260705_000038_apikey_scopes;
 pub mod m20260708_000039_search_embeddings;
+pub mod m20260713_000040_comment_freedom;
 
 use sea_orm_migration::prelude::*;
 
@@ -87,6 +88,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260702_000037_prune_description_edit_activity::Migration),
             Box::new(m20260705_000038_apikey_scopes::Migration),
             Box::new(m20260708_000039_search_embeddings::Migration),
+            Box::new(m20260713_000040_comment_freedom::Migration),
         ]
     }
 }

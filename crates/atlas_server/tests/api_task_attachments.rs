@@ -11,6 +11,7 @@ use atlas_api::dtos::{
     CreateProjectRequest,
     boards_tasks::{CreateBoardRequest, CreateColumnRequest, CreateTaskRequest},
 };
+use sea_orm::{ConnectionTrait, Statement};
 
 fn project_req(slug: &str, prefix: &str) -> CreateProjectRequest {
     CreateProjectRequest {
@@ -93,6 +94,22 @@ async fn task_attachment_upload_list_download_delete_roundtrip() {
     assert_eq!(uploaded.file_name, "notes.txt");
     assert_eq!(uploaded.content_type, "text/plain");
     assert_eq!(uploaded.size_bytes, payload.len() as i64);
+
+    let intent_count: i64 = db
+        .conn()
+        .query_one_raw(Statement::from_string(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT COUNT(*) AS count FROM attachment_write_intents",
+        ))
+        .await
+        .expect("query write intents")
+        .expect("write intent count row")
+        .try_get("", "count")
+        .expect("read write intent count");
+    assert_eq!(
+        intent_count, 0,
+        "multipart upload must atomically finalize its attachment row and remove the intent"
+    );
 
     let listed = client
         .list_task_attachments(&ws.slug, &task.readable_id)

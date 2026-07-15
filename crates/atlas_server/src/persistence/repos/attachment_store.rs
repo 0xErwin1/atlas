@@ -128,6 +128,18 @@ impl AttachmentStore for DiskAttachmentStore {
         let path = self.object_path(digest)?;
         Ok(path.exists())
     }
+
+    async fn delete(&self, digest: &str) -> Result<(), DomainError> {
+        let path = self.object_path(digest)?;
+
+        match tokio::fs::remove_file(path).await {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(DomainError::Internal {
+                message: format!("delete attachment {digest}: {e}"),
+            }),
+        }
+    }
 }
 
 fn hex_sha256(data: &[u8]) -> String {

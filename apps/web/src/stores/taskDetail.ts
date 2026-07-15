@@ -24,6 +24,14 @@ export type TaskDto = components['schemas']['TaskDto'];
 export type TaskAttachmentDto = components['schemas']['TaskAttachmentDto'];
 export type CommentDto = components['schemas']['CommentDto'];
 
+type CommentListResponse = components['schemas']['CommentListResponseDto'];
+
+interface CommentPage {
+  has_more: boolean;
+  items: CommentDto[];
+  next_cursor?: string | null;
+}
+
 export interface AddAssigneeInput {
   assignee_id: string;
   assignee_type: string;
@@ -59,10 +67,35 @@ interface DetailOperation {
   generation: number;
 }
 
-interface CommentPage {
-  items: CommentDto[];
-  has_more?: boolean;
-  next_cursor?: string | null;
+function legacyCommentItems(data: CommentListResponse): CommentDto[] | null {
+  const legacyItems: CommentDto[] = [];
+
+  for (const item of data.items) {
+    if ('type' in item) return null;
+    legacyItems.push(item);
+  }
+
+  return legacyItems;
+}
+
+async function getLegacyTaskCommentPage(
+  ws: string,
+  readableId: string,
+  cursor?: string,
+): Promise<{ data?: CommentPage; error?: unknown }> {
+  const { data, error } = await wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/comments', {
+    params: {
+      path: { ws, readable_id: readableId },
+      ...(cursor !== undefined ? { query: { cursor } } : {}),
+    },
+  });
+
+  if (error !== undefined || data === undefined) return { error };
+
+  const items = legacyCommentItems(data);
+  if (items === null) return { error: new Error('Received an unsupported full comment feed') };
+
+  return { data: { items, next_cursor: data.next_cursor, has_more: data.has_more } };
 }
 
 const collectionNames: CollectionName[] = [
@@ -83,15 +116,16 @@ const pagePayloadSchema = z.object({
   next_cursor: z.string().nullable().optional(),
 });
 const commentPagePayloadSchema: z.ZodType<CommentPage> = z.object({
-  has_more: z.boolean().optional(),
-  items: z.array(z.custom<CommentDto>()),
+  has_more: z.boolean(),
+  items: z.array(
+    z.custom<CommentDto>((value) => typeof value === 'object' && value !== null && !('type' in value)),
+  ),
   next_cursor: z.string().nullable().optional(),
 });
 
 function collectionPayloadSchema(name: CollectionName): z.ZodType<unknown> {
-  return name === 'backlinks' || name === 'activity' || name === 'comments'
-    ? pagePayloadSchema
-    : listPayloadSchema;
+  if (name === 'comments') return commentPagePayloadSchema;
+  return name === 'backlinks' || name === 'activity' ? pagePayloadSchema : listPayloadSchema;
 }
 
 function detailLoadError(cause: unknown): Error & { status?: number } {
@@ -160,6 +194,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
   const activeCollectionCacheKeys = new Set<string>();
   let activeWorkspaceId: string | null = null;
   let activeTaskUuid: string | null = null;
+  let deniedTarget: DetailTarget | null = null;
 
   watch(resourceCacheEpoch, clear, { flush: 'sync' });
 
@@ -205,6 +240,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
   function isOperationCurrent(operation: DetailOperation): boolean {
     return (
       operation.generation === targetGeneration &&
+      (deniedTarget === null || !sameTarget(deniedTarget, operation.target)) &&
       (activeTarget.value === null || sameTarget(activeTarget.value, operation.target))
     );
   }
@@ -224,6 +260,9 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     taskUuid: string | undefined,
   ): Promise<void> {
     loadSequence += 1;
+    targetGeneration += 1;
+    deniedTarget = target;
+    deactivateCollectionCaches();
     clearCollections();
     loading.value = false;
     if (workspaceId !== undefined) {
@@ -351,6 +390,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
 
     if (targetChanged) targetGeneration += 1;
     deactivateCollectionCaches();
+    deniedTarget = null;
     activeTarget.value = target;
     activeWorkspaceId = workspaceId ?? null;
     activeTaskUuid = taskUuid ?? null;
@@ -445,7 +485,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
       ),
       settleCollection(
         'comments',
-        () => wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/comments', { params: { path } }),
+        () => getLegacyTaskCommentPage(ws, readableId),
         sequence,
         target,
         (data) => {
@@ -490,15 +530,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     };
 
     const load = async (): Promise<CommentPage> => {
-      const { data, error: apiError } = await wrappedClient.GET(
-        '/api/workspaces/{ws}/tasks/{readable_id}/comments',
-        {
-          params: {
-            path: { ws, readable_id: readableId },
-            query: { cursor },
-          },
-        },
-      );
+      const { data, error: apiError } = await getLegacyTaskCommentPage(ws, readableId, cursor);
       if (apiError !== undefined || data === undefined) {
         throw detailLoadError(apiError);
       }
@@ -554,10 +586,12 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
       collectionStatus.value = { ...collectionStatus.value, comments: 'error' };
       const failure = detailLoadError(cause);
       collectionErrors.value = { ...collectionErrors.value, comments: failure.message };
-      if ((failure.status === 403 || failure.status === 404) && activeWorkspaceId !== null) {
-        clearCollections();
-        await invalidateTaskCache(activeWorkspaceId, readableId, undefined, activeTaskUuid ?? undefined);
-        await useTasksStore().retractTask(readableId, activeTaskUuid ?? undefined);
+      if (failure.status === 403 || failure.status === 404) {
+        await retractDeniedDetail(
+          operation.target,
+          activeWorkspaceId ?? undefined,
+          activeTaskUuid ?? undefined,
+        );
       }
     }
   }
@@ -1197,6 +1231,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     activeTarget.value = null;
     activeWorkspaceId = null;
     activeTaskUuid = null;
+    deniedTarget = null;
     deactivateCollectionCaches();
     clearCollections();
     collectionStatus.value = initialCollectionStatus('idle');

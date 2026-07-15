@@ -9,12 +9,12 @@ use atlas_api::{
     dtos::{
         boards_tasks::{
             ActivityEntryDto, AssigneeDto, BoardSummaryDto, ChecklistItemDto, ColumnDto,
-            CommentDto, ReferenceDto, TaskAttachmentDto, TaskBacklinkDto, TaskDto, TaskSummaryDto,
-            UnifiedReferenceDto,
+            CommentDto, CommentFeedEntryDto, CommentLinkTargetDto, ReferenceDto, TaskAttachmentDto,
+            TaskBacklinkDto, TaskDto, TaskSummaryDto, UnifiedReferenceDto,
         },
         documents::{
-            ActorDto, AttachmentDto, BacklinkDto, DocumentDto, DocumentSummaryDto,
-            RevisionContentDto, RevisionMetaDto,
+            ActorDto, AttachmentDto, BacklinkDto, CommentAttachmentDto, DocumentDto,
+            DocumentSummaryDto, RevisionContentDto, RevisionMetaDto,
         },
         folders::FolderDto,
         saved_searches::SavedSearchDto,
@@ -575,11 +575,17 @@ pub(crate) fn project_status_template(t: StatusTemplateDto) -> Value {
 /// `source_task_id` (UUID) is dropped; the agent uses `source_readable_id` to
 /// navigate to the source task.
 pub(crate) fn project_task_backlink(b: TaskBacklinkDto) -> Value {
-    json!({
-        "source_readable_id": b.source_readable_id,
-        "source_title": b.source_title,
-        "kind": b.kind,
-    })
+    let mut map = serde_json::Map::new();
+    map.insert("source_readable_id".into(), json!(b.source_readable_id));
+    map.insert("source_title".into(), json!(b.source_title));
+    map.insert("kind".into(), json!(b.kind));
+    if let Some(source) = b.comment_source {
+        map.insert(
+            "comment_source".into(),
+            project_comment_backlink_source(source),
+        );
+    }
+    Value::Object(map)
 }
 
 // ---------------------------------------------------------------------------
@@ -599,8 +605,36 @@ pub(crate) fn project_backlink(b: BacklinkDto) -> Value {
     if let Some(slug) = b.source_slug {
         map.insert("source_slug".into(), json!(slug));
     }
+    if let Some(source) = b.comment_source {
+        map.insert(
+            "comment_source".into(),
+            project_comment_backlink_source(source),
+        );
+    }
 
     Value::Object(map)
+}
+
+fn project_comment_backlink_source(
+    source: atlas_api::dtos::documents::CommentBacklinkSourceDto,
+) -> Value {
+    use atlas_api::dtos::documents::CommentBacklinkParentDto;
+
+    let parent = match source.parent {
+        CommentBacklinkParentDto::Task {
+            readable_id, title, ..
+        } => json!({"type": "task", "readable_id": readable_id, "title": title}),
+        CommentBacklinkParentDto::Document { slug, title, .. } => {
+            let mut parent = serde_json::Map::new();
+            parent.insert("type".into(), json!("document"));
+            parent.insert("title".into(), json!(title));
+            if let Some(slug) = slug {
+                parent.insert("slug".into(), json!(slug));
+            }
+            Value::Object(parent)
+        }
+    };
+    json!({"type": source.kind, "comment_id": source.comment_id, "parent": parent})
 }
 
 // ---------------------------------------------------------------------------
@@ -943,6 +977,23 @@ pub(crate) fn project_task_attachment(att: TaskAttachmentDto) -> Value {
     })
 }
 
+/// Projects comment-owned attachment metadata without leaking its SHA-256 or
+/// owner identifiers, which are already fixed by the tool path.
+pub(crate) fn project_comment_attachment(att: CommentAttachmentDto) -> Value {
+    let mut map = serde_json::Map::new();
+    map.insert("id".into(), json!(att.id));
+    map.insert("file_name".into(), json!(att.file_name));
+    map.insert("content_type".into(), json!(att.content_type));
+    map.insert("size_bytes".into(), json!(att.size_bytes));
+
+    if let Some(actor) = att.actor {
+        map.insert("actor".into(), project_actor(actor));
+    }
+
+    map.insert("created_at".into(), json!(att.created_at));
+    Value::Object(map)
+}
+
 // ---------------------------------------------------------------------------
 // Comment projection (list_comments rows)
 // ---------------------------------------------------------------------------
@@ -960,6 +1011,53 @@ pub(crate) fn project_comment(c: CommentDto) -> Value {
         "created_at": c.created_at,
         "updated_at": c.updated_at,
     })
+}
+
+fn project_comment_link_target(target: CommentLinkTargetDto) -> Value {
+    match target {
+        CommentLinkTargetDto::Available { r#type, id } => {
+            json!({"status": "available", "type": r#type, "id": id})
+        }
+        CommentLinkTargetDto::Unavailable { label } => {
+            json!({"status": "unavailable", "label": label})
+        }
+    }
+}
+
+/// Projects an authorized full comment-feed entry into an MCP-friendly shape.
+pub(crate) fn project_comment_feed_entry(entry: CommentFeedEntryDto) -> Value {
+    match entry {
+        CommentFeedEntryDto::Comment { comment, links } => json!({
+            "type": "comment",
+            "comment": project_comment(comment),
+            "links": links
+                .into_iter()
+                .map(|link| json!({"target": project_comment_link_target(link.target)}))
+                .collect::<Vec<_>>(),
+        }),
+        CommentFeedEntryDto::Event {
+            id,
+            kind,
+            comment_id,
+            target,
+            actor,
+            created_at,
+        } => {
+            let mut map = serde_json::Map::new();
+            map.insert("type".into(), json!("event"));
+            map.insert("id".into(), json!(id));
+            map.insert("kind".into(), json!(kind));
+            map.insert("comment_id".into(), json!(comment_id));
+            if let Some(target) = target {
+                map.insert("target".into(), project_comment_link_target(target));
+            }
+            if let Some(actor) = actor {
+                map.insert("actor".into(), project_actor(actor));
+            }
+            map.insert("created_at".into(), json!(created_at));
+            Value::Object(map)
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2137,6 +2235,7 @@ mod tests {
             source_readable_id: "ATL-7".into(),
             source_title: "Blocker task".into(),
             kind: kind.into(),
+            comment_source: None,
         }
     }
 
@@ -2174,6 +2273,7 @@ mod tests {
             source_slug: slug.map(String::from),
             source_title: "Source Doc".into(),
             display_title: "Custom Link Text".into(),
+            comment_source: None,
         }
     }
 

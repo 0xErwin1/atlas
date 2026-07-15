@@ -1,5 +1,7 @@
 use crate::actor::Actor;
-use crate::ids::{CommentId, DocumentId, TaskId, WorkspaceId};
+use crate::ids::{
+    AttachmentId, CommentId, CommentLinkEventId, CommentLinkId, DocumentId, TaskId, WorkspaceId,
+};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -25,8 +27,91 @@ pub struct NewComment {
 /// The owning parent of a comment (polymorphic: task or document).
 ///
 /// Mirrors `AttachmentOwner` (entities/documents.rs).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CommentOwner {
     Task(TaskId),
     Document(DocumentId),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum CommentLinkTarget {
+    Document(DocumentId),
+    Task(TaskId),
+    Attachment(AttachmentId),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CommentLink {
+    pub id: CommentLinkId,
+    pub workspace_id: WorkspaceId,
+    pub comment_id: CommentId,
+    pub target: CommentLinkTarget,
+    pub created_at: DateTime<Utc>,
+}
+
+/// A live derived comment link together with its live owning parent.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CommentBacklink {
+    pub id: CommentLinkId,
+    pub workspace_id: WorkspaceId,
+    pub comment_id: CommentId,
+    pub parent: CommentOwner,
+    pub parent_readable_id: Option<String>,
+    pub parent_slug: Option<String>,
+    pub parent_title: String,
+    pub target: CommentLinkTarget,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CommentLinkEventKind {
+    LinkAdded,
+    LinkRemoved,
+    CommentDeleted,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CommentLinkEvent {
+    pub id: CommentLinkEventId,
+    pub workspace_id: WorkspaceId,
+    pub parent: CommentOwner,
+    pub comment_id: CommentId,
+    pub kind: CommentLinkEventKind,
+    pub target: Option<CommentLinkTarget>,
+    pub actor: Actor,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub enum CommentFeedEntry {
+    Comment(Comment),
+    Event(CommentLinkEvent),
+}
+
+impl CommentFeedEntry {
+    pub fn cursor(&self) -> CommentFeedCursor {
+        match self {
+            Self::Comment(comment) => CommentFeedCursor {
+                created_at: comment.created_at,
+                id: comment.id.0,
+            },
+            Self::Event(event) => CommentFeedCursor {
+                created_at: event.created_at,
+                id: event.id.0,
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct CommentFeedCursor {
+    pub created_at: DateTime<Utc>,
+    pub id: uuid::Uuid,
+}
+
+/// One oldest-first page from a comment parent feed.
+#[derive(Debug, Clone)]
+pub struct CommentFeedPage {
+    pub entries: Vec<CommentFeedEntry>,
+    pub has_more: bool,
 }
