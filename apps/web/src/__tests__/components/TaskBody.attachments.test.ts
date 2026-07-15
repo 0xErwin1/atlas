@@ -82,4 +82,29 @@ describe('TaskBody attachment picker', () => {
     expect(uploadAttachment).toHaveBeenCalledTimes(4);
     expect(uploadAttachment).toHaveBeenLastCalledWith('ws', 'ATL-1', files[0]);
   });
+
+  it('retries detail collections with the authoritative task UUID', async () => {
+    const detail = useTaskDetailStore();
+    const tags = useTagsStore();
+    const loadAll = vi.spyOn(detail, 'loadAll').mockResolvedValue();
+    vi.spyOn(tags, 'load').mockResolvedValue();
+    detail.collectionStatus = { ...detail.collectionStatus, assignees: 'error' };
+    detail.collectionErrors = { ...detail.collectionErrors, assignees: 'Assignees unavailable' };
+
+    const wrapper = shallowMount(TaskBody, {
+      props: { task, ws: 'ws' },
+      global: {
+        stubs: {
+          ErrorState: {
+            emits: ['retry'],
+            template: '<button type="button" @click="$emit(\'retry\')">Retry</button>',
+          },
+        },
+      },
+    });
+
+    await wrapper.get('button').trigger('click');
+
+    expect(loadAll).toHaveBeenCalledWith('ws', 'ATL-1', undefined, 'task-1');
+  });
 });

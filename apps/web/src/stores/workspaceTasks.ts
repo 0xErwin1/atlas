@@ -1,7 +1,15 @@
 import { defineStore } from 'pinia';
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
+import { z } from 'zod';
 import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
+import {
+  getResourceCachePrincipal,
+  invalidateWorkspaceTaskQueryCache,
+  resourceCache,
+  resourceCacheEpoch,
+} from '@/cache/cacheRuntime';
+import { buildCacheKey, CACHE_CADENCE } from '@/cache/resourceCache';
 import { errorHint } from '@/lib/apiError';
 
 export type TaskSummaryDto = components['schemas']['TaskSummaryDto'];
@@ -15,6 +23,65 @@ export interface WorkspaceTaskParams {
   label?: string | string[];
   board_id?: string;
   sort?: string;
+  cursor?: string;
+}
+
+type WorkspaceTaskPage = {
+  items: TaskSummaryDto[];
+  has_more: boolean;
+  next_cursor: string | null;
+};
+
+type WorkspaceTaskLoadError = Error & { hint: string; status?: number };
+
+function taskLoadError(cause: unknown): WorkspaceTaskLoadError {
+  const error = new Error(errorHint(cause, 'Failed to load tasks')) as WorkspaceTaskLoadError;
+  error.hint = error.message;
+  error.status = (cause as { status?: number } | undefined)?.status;
+  return error;
+}
+
+function taskErrorHint(cause: unknown): string {
+  return cause instanceof Error && 'hint' in cause && typeof cause.hint === 'string'
+    ? cause.hint
+    : errorHint(cause, 'Failed to load tasks');
+}
+
+function workspaceTaskPageSchema(params: WorkspaceTaskParams): z.ZodType<WorkspaceTaskPage> {
+  return z
+    .object({
+      items: z.array(
+        z
+          .object({
+            board_id: z.string().min(1),
+            board_name: z.string(),
+            column_id: z.string().min(1),
+            column_name: z.string(),
+            id: z.string().min(1),
+            priority: z.string().nullable(),
+            readable_id: z.string(),
+            subtask_count: z.number(),
+            title: z.string(),
+            updated_at: z.string(),
+          })
+          .passthrough(),
+      ),
+      has_more: z.boolean(),
+      next_cursor: z.string().nullable(),
+    })
+    .superRefine((page, context) => {
+      if (params.board_id === undefined) return;
+
+      for (const [index, task] of page.items.entries()) {
+        if (task.board_id !== params.board_id) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['items', index, 'board_id'],
+            message: 'Board mismatch',
+          });
+        }
+      }
+    });
 }
 
 /**
@@ -43,8 +110,24 @@ export function paramsForView(viewId: string, customFilters?: TaskViewFiltersDto
   return params;
 }
 
-function paramsKey(ws: string, params: WorkspaceTaskParams): string {
-  return JSON.stringify({ ws, ...params });
+function queryParams(params: WorkspaceTaskParams): Record<string, unknown> {
+  return { ...params, limit: 200 };
+}
+
+function paramsKey(principal: string, workspaceId: string, params: WorkspaceTaskParams): string {
+  const query = queryParams(params);
+  const normalized = Object.fromEntries(
+    Object.entries(query)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, value]) => [
+        key,
+        Array.isArray(value) && (key === 'column_id' || key === 'label' || key === 'priority')
+          ? [...value].sort()
+          : value,
+      ]),
+  );
+
+  return JSON.stringify({ principal, workspaceId, ...normalized });
 }
 
 /**
@@ -59,56 +142,229 @@ export const useWorkspaceTasksStore = defineStore('workspaceTasks', () => {
   const error = ref<string | null>(null);
   const hasMore = ref(false);
   const nextCursor = ref<string | null>(null);
+  const hasData = ref(false);
 
   let loadedKey: string | null = null;
   let activeLoadRequest: object | null = null;
+  let activeTaskCacheKey: string | null = null;
+  let currentQuery: {
+    ws: string;
+    params: WorkspaceTaskParams;
+    workspaceId: string | undefined;
+  } | null = null;
+  const loadedPages = new Map<string, WorkspaceTaskPage>();
 
-  async function load(ws: string, params: WorkspaceTaskParams, force = false): Promise<boolean> {
-    const key = paramsKey(ws, params);
+  function reset(): void {
+    activeLoadRequest = null;
+    if (activeTaskCacheKey !== null) resourceCache.deactivate(activeTaskCacheKey);
+    activeTaskCacheKey = null;
+    currentQuery = null;
+    loadedKey = null;
+    loadedPages.clear();
+    tasks.value = [];
+    hasMore.value = false;
+    nextCursor.value = null;
+    hasData.value = false;
+    loading.value = false;
+    error.value = null;
+  }
 
-    if (!force && loadedKey === key) {
+  watch(resourceCacheEpoch, reset, { flush: 'sync' });
+
+  function publishPage(page: WorkspaceTaskPage, key: string, request: object): void {
+    if (activeLoadRequest !== request) return;
+
+    tasks.value = page.items;
+    hasMore.value = page.has_more;
+    nextCursor.value = page.next_cursor;
+    loadedKey = key;
+    loadedPages.set(key, page);
+    hasData.value = true;
+    loading.value = false;
+  }
+
+  function retractDeniedPage(key: string | null, cacheKey: string): void {
+    if (activeTaskCacheKey === cacheKey) activeTaskCacheKey = null;
+    resourceCache.deactivate(cacheKey);
+    if (key !== null) loadedPages.delete(key);
+    loadedKey = null;
+    tasks.value = [];
+    hasMore.value = false;
+    nextCursor.value = null;
+    hasData.value = false;
+  }
+
+  async function load(
+    ws: string,
+    params: WorkspaceTaskParams,
+    force = false,
+    workspaceId?: string,
+  ): Promise<boolean> {
+    currentQuery = { ws, params: { ...params }, workspaceId };
+    const principal = getResourceCachePrincipal();
+    const key =
+      principal === undefined || workspaceId === undefined ? null : paramsKey(principal, workspaceId, params);
+
+    if (!force && key !== null && loadedKey === key) {
       activeLoadRequest = null;
       loading.value = false;
       error.value = null;
       return true;
     }
 
+    const remembered = !force && key !== null ? loadedPages.get(key) : undefined;
+    if (remembered !== undefined) {
+      activeLoadRequest = null;
+      activeTaskCacheKey = null;
+      tasks.value = remembered.items;
+      hasMore.value = remembered.has_more;
+      nextCursor.value = remembered.next_cursor;
+      loadedKey = key;
+      hasData.value = true;
+      loading.value = false;
+      error.value = null;
+      return true;
+    }
+
+    if (activeTaskCacheKey !== null) resourceCache.deactivate(activeTaskCacheKey);
+    activeTaskCacheKey = null;
+
     const request = {};
+    const epoch = resourceCacheEpoch.value;
     activeLoadRequest = request;
     loading.value = true;
     error.value = null;
+    loadedKey = null;
+    hasData.value = false;
+    tasks.value = [];
+    hasMore.value = false;
+    nextCursor.value = null;
 
-    try {
+    const requestParams = queryParams(params);
+    const cacheKey =
+      workspaceId === undefined
+        ? null
+        : buildCacheKey({
+            principal,
+            workspaceId,
+            resourceKind: 'task-list',
+            resourceId: 'workspace-tasks',
+            query: requestParams,
+            setValuedQueryKeys: ['column_id', 'label', 'priority'],
+          });
+
+    const fetchPage = async (): Promise<WorkspaceTaskPage> => {
       const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/tasks', {
         params: {
           path: { ws },
-          query: { ...params, limit: 200 } as Record<string, unknown>,
+          query: requestParams,
         },
       });
 
-      if (activeLoadRequest !== request) return false;
+      if (apiError !== undefined || data === undefined) {
+        throw taskLoadError(apiError);
+      }
+
+      return { items: data.items, has_more: data.has_more, next_cursor: data.next_cursor ?? null };
+    };
+
+    const isCurrent = () => activeLoadRequest === request && resourceCacheEpoch.value === epoch;
+
+    if (cacheKey !== null && resourceCache.isAvailable()) {
+      const cacheRequest = {
+        key: cacheKey,
+        payloadSchema: workspaceTaskPageSchema(params),
+        tags: ['workspace-tasks', `workspace:${workspaceId}`],
+        deriveTags: (page: WorkspaceTaskPage) =>
+          page.items.flatMap((task) => [`task:${task.readable_id}`, `task-uuid:${task.id}`]),
+        freshForMs: CACHE_CADENCE.catalog.freshForMs,
+        activeForMs: CACHE_CADENCE.catalog.activeForMs,
+        retentionForMs: 24 * 60 * 60 * 1000,
+        load: fetchPage,
+        publish: (page: WorkspaceTaskPage) => {
+          if (key !== null) publishPage(page, key, request);
+        },
+        isCurrent,
+      };
+
+      activeTaskCacheKey = cacheKey;
+      await resourceCache.hydrate(cacheRequest);
+      resourceCache.activate(cacheRequest);
+
+      let fallbackRequired = false;
+      try {
+        const revalidation = await resourceCache.revalidate(cacheRequest);
+        fallbackRequired = revalidation?.published === false;
+      } catch (cause) {
+        if (!isCurrent()) return false;
+
+        const failure = taskLoadError(cause);
+        if (failure.status === 403 || failure.status === 404) {
+          retractDeniedPage(key, cacheKey);
+          if (workspaceId !== undefined) await invalidateWorkspaceTaskQueryCache(workspaceId);
+        }
+        error.value = failure.hint;
+      }
+
+      if ((fallbackRequired || !resourceCache.isAvailable()) && isCurrent()) {
+        try {
+          const page = await fetchPage();
+          if (key !== null) publishPage(page, key, request);
+        } catch (cause) {
+          error.value = taskErrorHint(cause);
+        }
+      }
+
+      if (!isCurrent()) return false;
 
       activeLoadRequest = null;
       loading.value = false;
-      if (apiError !== undefined || data === undefined) {
-        error.value = errorHint(apiError, 'Failed to load tasks');
-        return true;
-      }
+      return true;
+    }
 
-      tasks.value = data.items;
-      hasMore.value = data.has_more;
-      nextCursor.value = data.next_cursor ?? null;
-      loadedKey = key;
+    try {
+      const page = await fetchPage();
+
+      if (!isCurrent()) return false;
+
+      if (key !== null) publishPage(page, key, request);
+      else {
+        tasks.value = page.items;
+        hasMore.value = page.has_more;
+        nextCursor.value = page.next_cursor;
+        hasData.value = true;
+        loading.value = false;
+      }
+      activeLoadRequest = null;
       return true;
     } catch (cause) {
       if (activeLoadRequest !== request) return false;
 
       activeLoadRequest = null;
       loading.value = false;
-      error.value = errorHint(cause, 'Failed to load tasks');
+      error.value = taskErrorHint(cause);
       return true;
     }
   }
 
-  return { tasks, loading, error, hasMore, nextCursor, load };
+  async function invalidateCachedQueries(workspaceId: string): Promise<boolean> {
+    return invalidateWorkspaceTaskQueryCache(workspaceId);
+  }
+
+  async function refreshCurrent(): Promise<boolean> {
+    if (currentQuery === null) return true;
+    return load(currentQuery.ws, currentQuery.params, true, currentQuery.workspaceId);
+  }
+
+  return {
+    tasks,
+    loading,
+    error,
+    hasMore,
+    nextCursor,
+    hasData,
+    load,
+    invalidateCachedQueries,
+    refreshCurrent,
+  };
 });

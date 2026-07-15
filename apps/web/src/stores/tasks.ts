@@ -1,18 +1,65 @@
 import { defineStore } from 'pinia';
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
+import { z } from 'zod';
 import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
+import {
+  getResourceCachePrincipal,
+  invalidateTaskCache,
+  resourceCache,
+  resourceCacheEpoch,
+} from '@/cache/cacheRuntime';
+import { buildCacheKey, CACHE_CADENCE } from '@/cache/resourceCache';
 import { errorHint } from '@/lib/apiError';
 
 export type TaskDto = components['schemas']['TaskDto'];
 
 interface TaskTarget {
+  principal: string | undefined;
   readableId: string;
   ws: string;
+  workspaceId: string | undefined;
+}
+
+type TaskLoadError = Error & { status?: number; hint: string };
+
+function matchesTaskTarget(task: TaskDto, readableId: string, workspaceId?: string): boolean {
+  return task.readable_id === readableId && (workspaceId === undefined || task.workspace_id === workspaceId);
+}
+
+function taskSchema(readableId: string, workspaceId?: string): z.ZodType<TaskDto> {
+  return z.custom<TaskDto>((value): value is TaskDto => {
+    if (typeof value !== 'object' || value === null) return false;
+
+    const task = value as Record<string, unknown>;
+    return (
+      typeof task.id === 'string' &&
+      typeof task.readable_id === 'string' &&
+      typeof task.workspace_id === 'string' &&
+      typeof task.board_id === 'string' &&
+      typeof task.title === 'string' &&
+      task.readable_id === readableId &&
+      (workspaceId === undefined || task.workspace_id === workspaceId)
+    );
+  });
+}
+
+function taskLoadError(cause: unknown): TaskLoadError {
+  const problem = cause as { status?: number } | undefined;
+  const error = new Error(errorHint(cause, 'Failed to load task')) as TaskLoadError;
+  error.hint = error.message;
+  error.status = problem?.status;
+  return error;
 }
 
 function matchesTarget(left: TaskTarget | null, right: TaskTarget): boolean {
-  return left?.ws === right.ws && left.readableId === right.readableId;
+  return (
+    left !== null &&
+    left.principal === right.principal &&
+    left.ws === right.ws &&
+    left.workspaceId === right.workspaceId &&
+    left.readableId === right.readableId
+  );
 }
 
 /**
@@ -30,13 +77,21 @@ export const useTasksStore = defineStore('tasks', () => {
   const errorStatus = ref<number | null>(null);
   let loadSeq = 0;
   let activeTarget: TaskTarget | null = null;
+  let activeCacheKey: string | null = null;
+  let activeWorkspaceId: string | null = null;
 
-  async function loadTask(ws: string, readableId: string): Promise<void> {
+  watch(resourceCacheEpoch, clear, { flush: 'sync' });
+
+  async function loadTask(ws: string, readableId: string, workspaceId?: string): Promise<void> {
     const seq = ++loadSeq;
-    const target = { ws, readableId };
+    const target = { principal: getResourceCachePrincipal(), ws, workspaceId, readableId };
+    const epoch = resourceCacheEpoch.value;
     const targetChanged = !matchesTarget(activeTarget, target);
 
+    if (activeCacheKey !== null) resourceCache.deactivate(activeCacheKey);
+    activeCacheKey = null;
     activeTarget = target;
+    activeWorkspaceId = workspaceId ?? null;
     loading.value = true;
     error.value = null;
     errorStatus.value = null;
@@ -45,30 +100,101 @@ export const useTasksStore = defineStore('tasks', () => {
       openTask.value = null;
     }
 
-    try {
+    const load = async (): Promise<TaskDto> => {
       const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}', {
         params: { path: { ws, readable_id: readableId } },
       });
 
-      if (seq !== loadSeq || !matchesTarget(activeTarget, target)) return;
-
-      loading.value = false;
-
       if (apiError !== undefined || data === undefined) {
-        openTask.value = null;
-        error.value = errorHint(apiError, 'Failed to load task');
-        errorStatus.value = (apiError as { status?: number } | undefined)?.status ?? null;
-        return;
+        throw taskLoadError(apiError);
       }
 
-      openTask.value = data;
-    } catch {
-      if (seq !== loadSeq || !matchesTarget(activeTarget, target)) return;
+      if (!matchesTaskTarget(data, readableId, workspaceId)) {
+        throw taskLoadError(new Error('Invalid task payload'));
+      }
 
-      openTask.value = null;
+      return data;
+    };
+
+    const isCurrent = () =>
+      seq === loadSeq && resourceCacheEpoch.value === epoch && matchesTarget(activeTarget, target);
+    const publish = (task: TaskDto): void => {
+      if (!isCurrent()) return;
+      openTask.value = task;
       loading.value = false;
-      error.value = 'Failed to load task';
-      errorStatus.value = null;
+    };
+
+    const cacheKey =
+      workspaceId === undefined
+        ? null
+        : buildCacheKey({
+            principal: getResourceCachePrincipal(),
+            workspaceId,
+            resourceKind: 'task-detail',
+            resourceId: readableId,
+          });
+
+    if (cacheKey !== null && resourceCache.isAvailable()) {
+      const request = {
+        key: cacheKey,
+        payloadSchema: taskSchema(readableId, workspaceId),
+        tags: [`workspace:${workspaceId}`],
+        deriveTags: (task: TaskDto) => [
+          `task:${task.readable_id}`,
+          `task-uuid:${task.id}`,
+          `board:${task.board_id}`,
+        ],
+        freshForMs: CACHE_CADENCE.primary.freshForMs,
+        activeForMs: CACHE_CADENCE.primary.activeForMs,
+        retentionForMs: 24 * 60 * 60 * 1000,
+        load,
+        publish,
+        isCurrent,
+      };
+
+      activeCacheKey = cacheKey;
+      await resourceCache.hydrate(request);
+      resourceCache.activate(request);
+
+      let fallbackRequired = false;
+      try {
+        const revalidation = await resourceCache.revalidate(request);
+        fallbackRequired = revalidation?.published === false;
+      } catch (cause) {
+        if (!isCurrent()) return;
+
+        const failure = taskLoadError(cause);
+        error.value = failure.hint;
+        errorStatus.value = failure.status ?? null;
+        if (failure.status === 403 || failure.status === 404) {
+          openTask.value = null;
+          if (workspaceId !== undefined) await invalidateTaskCache(workspaceId, readableId);
+        }
+      }
+
+      if ((fallbackRequired || !resourceCache.isAvailable()) && isCurrent()) {
+        try {
+          publish(await load());
+        } catch (cause) {
+          const failure = taskLoadError(cause);
+          error.value = failure.hint;
+          errorStatus.value = failure.status ?? null;
+        }
+      }
+
+      if (isCurrent()) loading.value = false;
+      return;
+    }
+
+    try {
+      publish(await load());
+    } catch (cause) {
+      if (!isCurrent()) return;
+
+      loading.value = false;
+      const failure = taskLoadError(cause);
+      error.value = failure.hint;
+      errorStatus.value = failure.status ?? null;
     }
   }
 
@@ -93,6 +219,9 @@ export const useTasksStore = defineStore('tasks', () => {
       return false;
     }
 
+    if (activeWorkspaceId !== null) {
+      await invalidateTaskCache(activeWorkspaceId, readableId, data.board_id);
+    }
     if (openTask.value?.readable_id === readableId && openTask.value.description !== description) {
       return true;
     }
@@ -112,13 +241,34 @@ export const useTasksStore = defineStore('tasks', () => {
     openTask.value = { ...openTask.value, ...patch };
   }
 
+  async function retractTask(readableId: string, taskUuid?: string): Promise<void> {
+    if (openTask.value?.readable_id === readableId) openTask.value = null;
+    if (activeWorkspaceId !== null) {
+      if (taskUuid === undefined) await invalidateTaskCache(activeWorkspaceId, readableId);
+      else await invalidateTaskCache(activeWorkspaceId, readableId, undefined, taskUuid);
+    }
+  }
+
   function clear(): void {
     openTask.value = null;
     loading.value = false;
     error.value = null;
     errorStatus.value = null;
     activeTarget = null;
+    if (activeCacheKey !== null) resourceCache.deactivate(activeCacheKey);
+    activeCacheKey = null;
+    activeWorkspaceId = null;
   }
 
-  return { openTask, loading, error, errorStatus, loadTask, updateDescription, patchOpenTask, clear };
+  return {
+    openTask,
+    loading,
+    error,
+    errorStatus,
+    loadTask,
+    updateDescription,
+    patchOpenTask,
+    retractTask,
+    clear,
+  };
 });

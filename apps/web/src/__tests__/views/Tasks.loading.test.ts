@@ -300,7 +300,7 @@ describe('Tasks board loading', () => {
     await flushPromises();
 
     expect(useTaskViewsStore().items).toHaveLength(1);
-    expect(workspaceTasks.load).toHaveBeenCalledWith('ws', { priority: ['high'] });
+    expect(workspaceTasks.load).toHaveBeenCalledWith('ws', { priority: ['high'] }, false, undefined);
   });
 
   it('resyncs a saved view only after its metadata settles, without reloading the board', async () => {
@@ -347,7 +347,7 @@ describe('Tasks board loading', () => {
     await flushPromises();
 
     expect(workspaceTasks.load).toHaveBeenCalledOnce();
-    expect(workspaceTasks.load).toHaveBeenCalledWith('ws', { priority: ['high'] });
+    expect(workspaceTasks.load).toHaveBeenCalledWith('ws', { priority: ['high'] }, true, undefined);
     expect(boards.loadBoardContents).not.toHaveBeenCalled();
   });
 

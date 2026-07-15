@@ -1,4 +1,5 @@
 import { wrappedClient } from '@/api/wrapper';
+import { invalidateLiveResourceCache, resourceCacheEpoch } from '@/cache/cacheRuntime';
 import { EVENT_TYPES, LIVE_ONLY_EVENT_TYPES, type LiveEnvelope } from '@/lib/eventTypes';
 
 const FOREGROUND_DEBOUNCE_MS = 300;
@@ -37,6 +38,7 @@ type Subscriber = WorkspaceLiveUpdateHandlers;
 
 interface Lifetime {
   readonly generation: number;
+  readonly cacheEpoch: number;
   readonly workspaceSlug: string;
   source: EventSource;
   sourceToken: symbol;
@@ -69,6 +71,7 @@ export function createWorkspaceLiveUpdatesBroker(): WorkspaceLiveUpdatesBroker {
     return (
       lifetime === candidate &&
       lifetime.generation === candidate.generation &&
+      candidate.cacheEpoch === resourceCacheEpoch.value &&
       (sourceToken === undefined || candidate.sourceToken === sourceToken) &&
       (recoveryAttempt === undefined || candidate.recoveryAttempt === recoveryAttempt)
     );
@@ -91,6 +94,17 @@ export function createWorkspaceLiveUpdatesBroker(): WorkspaceLiveUpdatesBroker {
     }
   }
 
+  function beginLiveCacheInvalidation(candidate: Lifetime, envelope?: LiveEnvelope): void {
+    void invalidateLiveResourceCache(envelope, candidate.workspaceSlug).catch((error: unknown) => {
+      console.error('workspaceLiveUpdates: cache invalidation failed', error);
+    });
+  }
+
+  function dispatchResync(candidate: Lifetime): void {
+    beginLiveCacheInvalidation(candidate);
+    dispatch(candidate, (subscriber) => subscriber.onResync());
+  }
+
   function removeForegroundListeners(candidate: Lifetime): void {
     if (!candidate.listenersInstalled) return;
 
@@ -109,7 +123,7 @@ export function createWorkspaceLiveUpdatesBroker(): WorkspaceLiveUpdatesBroker {
   }
 
   function close(candidate: Lifetime): void {
-    if (!isCurrent(candidate)) return;
+    if (lifetime !== candidate || lifetime.generation !== candidate.generation) return;
 
     if (candidate.idleTimer !== null) clearTimeout(candidate.idleTimer);
     candidate.idleTimer = null;
@@ -154,6 +168,7 @@ export function createWorkspaceLiveUpdatesBroker(): WorkspaceLiveUpdatesBroker {
   function exhaustRecovery(candidate: Lifetime, sourceToken: symbol): void {
     const recoveryAttempt = Symbol('recovery-attempt');
     candidate.recoveryAttempt = recoveryAttempt;
+    beginLiveCacheInvalidation(candidate);
     dispatch(candidate, (subscriber) => subscriber.onReconnectFailed?.());
     probeAuthorization(candidate, sourceToken, recoveryAttempt);
   }
@@ -228,7 +243,7 @@ export function createWorkspaceLiveUpdatesBroker(): WorkspaceLiveUpdatesBroker {
         candidate.firstOpen = false;
         return;
       }
-      if (isReconnect) dispatch(candidate, (subscriber) => subscriber.onResync());
+      if (isReconnect) dispatchResync(candidate);
     };
 
     source.onerror = () => {
@@ -250,7 +265,7 @@ export function createWorkspaceLiveUpdatesBroker(): WorkspaceLiveUpdatesBroker {
     }
     source.addEventListener('resync', () => {
       if (!isCurrent(candidate, sourceToken)) return;
-      dispatch(candidate, (subscriber) => subscriber.onResync());
+      dispatchResync(candidate);
     });
 
     installForegroundListeners(candidate);
@@ -262,6 +277,7 @@ export function createWorkspaceLiveUpdatesBroker(): WorkspaceLiveUpdatesBroker {
     const placeholder = new EventSource(`/api/workspaces/${workspaceSlug}/events`);
     const candidate: Lifetime = {
       generation: ++generation,
+      cacheEpoch: resourceCacheEpoch.value,
       workspaceSlug,
       source: placeholder,
       sourceToken: Symbol('source'),
@@ -306,7 +322,7 @@ export function createWorkspaceLiveUpdatesBroker(): WorkspaceLiveUpdatesBroker {
     }
     source.addEventListener('resync', () => {
       if (!isCurrent(candidate, sourceToken)) return;
-      dispatch(candidate, (subscriber) => subscriber.onResync());
+      dispatchResync(candidate);
     });
     installForegroundListeners(candidate);
     return candidate;
@@ -320,6 +336,7 @@ export function createWorkspaceLiveUpdatesBroker(): WorkspaceLiveUpdatesBroker {
       parsed = JSON.parse(event.data);
     } catch (error) {
       console.debug('workspaceLiveUpdates: ignoring unparseable event', error);
+      dispatchResync(candidate);
       return;
     }
 
@@ -329,10 +346,12 @@ export function createWorkspaceLiveUpdatesBroker(): WorkspaceLiveUpdatesBroker {
       typeof (parsed as LiveEnvelope).event_type !== 'string'
     ) {
       console.debug('workspaceLiveUpdates: ignoring event without an event_type');
+      dispatchResync(candidate);
       return;
     }
 
     const envelope = parsed as LiveEnvelope;
+    beginLiveCacheInvalidation(candidate, envelope);
     dispatch(candidate, (subscriber) =>
       subscriber.onEvent({ type: envelope.event_type, data: envelope.data, envelope }),
     );
@@ -344,7 +363,12 @@ export function createWorkspaceLiveUpdatesBroker(): WorkspaceLiveUpdatesBroker {
   ): WorkspaceLiveUpdateSubscription {
     if (workspaceSlug === '') return { release: () => {} };
 
-    if (lifetime !== null && lifetime.workspaceSlug !== workspaceSlug) close(lifetime);
+    if (
+      lifetime !== null &&
+      (lifetime.workspaceSlug !== workspaceSlug || lifetime.cacheEpoch !== resourceCacheEpoch.value)
+    ) {
+      close(lifetime);
+    }
 
     const candidate = lifetime ?? createLifetime(workspaceSlug);
     if (candidate === null) return { release: () => {} };

@@ -5,6 +5,7 @@ import {
   blockAndPurgeResourceCache,
   configureResourceCacheForTest,
   hardRefreshResourceCache,
+  invalidateLiveResourceCache,
   purgeResourceCache,
   runHardRefresh,
   setResourceCachePrincipal,
@@ -40,6 +41,96 @@ describe('ResourceCache runtime', () => {
     expect(CACHE_CADENCE.catalog).toEqual({ freshForMs: 30_000, activeForMs: 60_000 });
     expect(CACHE_CADENCE.primary).toEqual({ freshForMs: 120_000, activeForMs: 300_000 });
     expect(CACHE_CADENCE.secondary).toEqual({ freshForMs: 60_000, activeForMs: 120_000 });
+  });
+
+  it('uses a learned broker alias to purge only that workspace for malformed recovery', async () => {
+    const principal = 'user:019ef171-bbcf-7b90-9be6-5dbb382afd08';
+    const workspaceId = '019ef171-bbcf-7b90-9be6-5dbb382afd08';
+    const purgeWorkspace = vi.fn().mockResolvedValue(true);
+    const purge = vi.fn().mockResolvedValue(true);
+    configureResourceCacheForTest({ allow: vi.fn(), block: vi.fn(), purgeWorkspace, purge });
+    setResourceCachePrincipal(principal);
+
+    await invalidateLiveResourceCache(
+      {
+        id: 'event-1',
+        event_type: 'unknown.event',
+        version: 1,
+        source: 'test',
+        workspace_id: workspaceId,
+        occurred_at: '2026-01-01T00:00:00Z',
+        actor: { type: 'user', id: 'user-1' },
+        data: {},
+      },
+      'acme',
+    );
+    await invalidateLiveResourceCache(undefined, 'acme');
+
+    expect(purgeWorkspace).toHaveBeenCalledWith(workspaceId, principal);
+    expect(purge).not.toHaveBeenCalled();
+  });
+
+  it('requires the current principal to re-register a same-slug broker alias before recovery', async () => {
+    const principalA = 'user:019ef171-bbcf-7b90-9be6-5dbb382afd08';
+    const principalB = 'user:019ef171-bbcf-7b90-9be6-5dbb382afd09';
+    const workspaceA = '019ef171-bbcf-7b90-9be6-5dbb382afd08';
+    const workspaceB = '019ef171-bbcf-7b90-9be6-5dbb382afd09';
+    const purgeWorkspace = vi.fn().mockResolvedValue(true);
+    const purge = vi.fn().mockResolvedValue(true);
+    configureResourceCacheForTest({ allow: vi.fn(), block: vi.fn(), purgeWorkspace, purge });
+    setResourceCachePrincipal(principalA);
+
+    await invalidateLiveResourceCache(
+      {
+        id: 'event-a',
+        event_type: 'unknown.event',
+        version: 1,
+        source: 'test',
+        workspace_id: workspaceA,
+        occurred_at: '2026-01-01T00:00:00Z',
+        actor: { type: 'user', id: 'user-a' },
+        data: {},
+      },
+      'acme',
+    );
+    purgeWorkspace.mockClear();
+    purge.mockClear();
+
+    setResourceCachePrincipal(principalB);
+
+    await expect(invalidateLiveResourceCache(undefined, 'acme')).resolves.toBe(false);
+    expect(purgeWorkspace).not.toHaveBeenCalled();
+    expect(purge).not.toHaveBeenCalled();
+
+    await invalidateLiveResourceCache(
+      {
+        id: 'event-b',
+        event_type: 'unknown.event',
+        version: 1,
+        source: 'test',
+        workspace_id: workspaceB,
+        occurred_at: '2026-01-01T00:00:00Z',
+        actor: { type: 'user', id: 'user-b' },
+        data: {},
+      },
+      'acme',
+    );
+    await expect(invalidateLiveResourceCache(undefined, 'acme')).resolves.toBe(true);
+
+    expect(purgeWorkspace).toHaveBeenLastCalledWith(workspaceB, principalB);
+    expect(purgeWorkspace).not.toHaveBeenCalledWith(workspaceA, principalB);
+  });
+
+  it('fails closed for an unknown broker alias without deleting another workspace or principal', async () => {
+    const purgeWorkspace = vi.fn().mockResolvedValue(true);
+    const purge = vi.fn().mockResolvedValue(true);
+    configureResourceCacheForTest({ allow: vi.fn(), block: vi.fn(), purgeWorkspace, purge });
+    setResourceCachePrincipal('user:019ef171-bbcf-7b90-9be6-5dbb382afd09');
+
+    await expect(invalidateLiveResourceCache(undefined, 'unknown')).resolves.toBe(false);
+
+    expect(purgeWorkspace).not.toHaveBeenCalled();
+    expect(purge).not.toHaveBeenCalled();
   });
 
   it('keeps a failed global purge closed for the same principal while allowing a different principal namespace', async () => {
@@ -375,7 +466,11 @@ describe('ResourceCache runtime', () => {
     expect(store.putMany).not.toHaveBeenCalled();
 
     resolveDelete?.(true);
-    await expect(Promise.all([hydration, revalidation, purge])).resolves.toEqual([null, undefined, true]);
+    await expect(Promise.all([hydration, revalidation, purge])).resolves.toEqual([
+      null,
+      { published: false },
+      true,
+    ]);
 
     await expect(
       cache.hydrate({ key, payloadSchema, publish: vi.fn(), isCurrent: () => true }),
@@ -1067,13 +1162,93 @@ describe('ResourceCache runtime', () => {
     cache.allow();
 
     await expect(cache.hydrate(request)).resolves.toBeNull();
-    await expect(cache.revalidate(request)).resolves.toBeUndefined();
+    await expect(cache.revalidate(request)).resolves.toEqual({ published: true });
 
     expect(request.load).toHaveBeenCalledOnce();
     expect(publish).toHaveBeenCalledWith({ title: 'Online' });
   });
 
-  it('keeps unrelated active requests scheduled after an exact tag purge', async () => {
+  it('stable-merges validated payload-derived tags before persisting and activating a request', async () => {
+    const principal = 'user:019ef171-bbcf-7b90-9be6-5dbb382afd08';
+    const workspaceId = '019ef171-bbcf-7b90-9be6-5dbb382afd08';
+    const store = {
+      get: vi.fn(),
+      putMany: vi.fn().mockResolvedValue(true),
+      deleteMany: vi.fn().mockResolvedValue(true),
+      deleteScope: vi.fn().mockResolvedValue(true),
+      clear: vi.fn().mockResolvedValue(true),
+    };
+    const cache = new ResourceCache({ store });
+    const key = `v1|p=${principal}|w=${workspaceId}|k=task-list|r=workspace-tasks|q={}`;
+    const request = {
+      key,
+      payloadSchema: z.object({ items: z.array(z.object({ id: z.string(), readable_id: z.string() })) }),
+      tags: [`workspace:${workspaceId}`, 'workspace-tasks'],
+      deriveTags: (payload: { items: Array<{ id: string; readable_id: string }> }) =>
+        payload.items.flatMap((task) => [
+          `task:${task.readable_id}`,
+          `task-uuid:${task.id}`,
+          'workspace-tasks',
+        ]),
+      freshForMs: 30_000,
+      retentionForMs: 60_000,
+      load: vi.fn().mockResolvedValue({
+        items: [{ id: '019ef171-bbcf-7b90-9be6-5dbb382afd09', readable_id: 'ATL-9' }],
+      }),
+      publish: vi.fn(),
+      isCurrent: () => true,
+    };
+
+    cache.allow();
+    await cache.revalidate(request);
+    cache.activate(request);
+
+    expect(store.putMany).toHaveBeenCalledWith([
+      expect.objectContaining({
+        tags: [
+          `workspace:${workspaceId}`,
+          'workspace-tasks',
+          'task:ATL-9',
+          'task-uuid:019ef171-bbcf-7b90-9be6-5dbb382afd09',
+        ],
+      }),
+    ]);
+
+    await expect(
+      cache.purgeTags(['task-uuid:019ef171-bbcf-7b90-9be6-5dbb382afd09'], principal, workspaceId),
+    ).resolves.toBe(true);
+    expect(store.deleteMany).toHaveBeenCalledWith([key]);
+  });
+
+  it('rejects an invalid derived tag without persisting or publishing a new payload', async () => {
+    const store = {
+      get: vi.fn(),
+      putMany: vi.fn().mockResolvedValue(true),
+      deleteMany: vi.fn().mockResolvedValue(true),
+      clear: vi.fn().mockResolvedValue(true),
+    };
+    const cache = new ResourceCache({ store });
+    const publish = vi.fn();
+
+    await expect(
+      cache.revalidate({
+        key: 'invalid-tag-key',
+        payloadSchema,
+        tags: ['workspace:workspace-a'],
+        deriveTags: () => ['task-uuid:contains whitespace'],
+        freshForMs: 30_000,
+        retentionForMs: 60_000,
+        load: vi.fn().mockResolvedValue({ title: 'Online' }),
+        publish,
+        isCurrent: () => true,
+      }),
+    ).rejects.toThrow('Cache tags are invalid.');
+
+    expect(store.putMany).not.toHaveBeenCalled();
+    expect(publish).not.toHaveBeenCalled();
+  });
+
+  it('keeps current active requests scheduled after an exact tag purge', async () => {
     let now = 0;
     const scheduled: Array<{ delay: number; callback: () => void }> = [];
     const principal = 'user:019ef171-bbcf-7b90-9be6-5dbb382afd08';
@@ -1141,7 +1316,113 @@ describe('ResourceCache runtime', () => {
     scheduled.at(-1)?.callback();
     await vi.waitFor(() => expect(bodyLoad).toHaveBeenCalledOnce());
     await vi.waitFor(() => expect(backlinksLoad).toHaveBeenCalledOnce());
-    expect(catalogLoad).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(catalogLoad).toHaveBeenCalledOnce());
+  });
+
+  it('settles an exact tag purge without waiting for unrelated inflight work and fences matching late writes', async () => {
+    let resolveMatchingLoad: ((payload: { title: string }) => void) | undefined;
+    const principal = 'user:019ef171-bbcf-7b90-9be6-5dbb382afd08';
+    const workspaceId = '019ef171-bbcf-7b90-9be6-5dbb382afd08';
+    const matchingKey = `v1|p=${principal}|w=${workspaceId}|k=note-body|r=matching|q={}`;
+    const store = {
+      get: vi.fn(),
+      putMany: vi.fn().mockResolvedValue(true),
+      deleteMany: vi.fn().mockResolvedValue(true),
+      deleteScope: vi.fn().mockResolvedValue(true),
+      clear: vi.fn().mockResolvedValue(true),
+    };
+    const cache = new ResourceCache({ store });
+    const matchingPublish = vi.fn();
+
+    cache.allow();
+    void cache.revalidate({
+      key: `v1|p=${principal}|w=${workspaceId}|k=note-body|r=unrelated|q={}`,
+      payloadSchema,
+      tags: ['document:unrelated'],
+      freshForMs: 30_000,
+      retentionForMs: 60_000,
+      load: () => new Promise(() => undefined),
+      publish: vi.fn(),
+      isCurrent: () => true,
+    });
+    const matching = cache.revalidate({
+      key: matchingKey,
+      payloadSchema,
+      tags: ['document:matching'],
+      freshForMs: 30_000,
+      retentionForMs: 60_000,
+      load: () =>
+        new Promise((resolve) => {
+          resolveMatchingLoad = resolve;
+        }),
+      publish: matchingPublish,
+      isCurrent: () => true,
+    });
+
+    await expect(cache.purgeTags(['document:matching'], principal, workspaceId)).resolves.toBe(true);
+
+    resolveMatchingLoad?.({ title: 'Late matching response' });
+    await matching;
+
+    expect(store.deleteScope).toHaveBeenCalledWith({
+      principal,
+      workspaceId,
+      tagsAny: ['document:matching'],
+    });
+    expect(store.putMany).not.toHaveBeenCalled();
+    expect(matchingPublish).not.toHaveBeenCalled();
+  });
+
+  it('reactivates a current matching request after an exact tag purge without reviving a deactivated target', async () => {
+    let now = 0;
+    const scheduled: Array<{ delay: number; callback: () => void }> = [];
+    const principal = 'user:019ef171-bbcf-7b90-9be6-5dbb382afd08';
+    const workspaceId = '019ef171-bbcf-7b90-9be6-5dbb382afd08';
+    const store = {
+      get: vi.fn(),
+      putMany: vi.fn().mockResolvedValue(true),
+      deleteMany: vi.fn().mockResolvedValue(true),
+      deleteScope: vi.fn().mockResolvedValue(true),
+      clear: vi.fn().mockResolvedValue(true),
+    };
+    const cache = new ResourceCache({
+      store,
+      clock: { now: () => now },
+      timer: {
+        clear: vi.fn(),
+        schedule: (delay, callback) => {
+          scheduled.push({ delay, callback });
+          return scheduled.length;
+        },
+      },
+    });
+    const currentLoad = vi.fn().mockResolvedValue({ title: 'Current' });
+    const formerLoad = vi.fn().mockResolvedValue({ title: 'Former' });
+    const request = (key: string, load: () => Promise<{ title: string }>) => ({
+      key,
+      payloadSchema,
+      tags: ['document:matching'],
+      freshForMs: 10,
+      activeForMs: 10,
+      retentionForMs: 60_000,
+      load,
+      publish: vi.fn(),
+      isCurrent: () => true,
+    });
+
+    cache.allow();
+    const current = request(`v1|p=${principal}|w=${workspaceId}|k=note-body|r=current|q={}`, currentLoad);
+    const former = request(`v1|p=${principal}|w=${workspaceId}|k=note-body|r=former|q={}`, formerLoad);
+    cache.activate(current);
+    cache.activate(former);
+    cache.deactivate(former.key);
+
+    await expect(cache.purgeTags(['document:matching'], principal, workspaceId)).resolves.toBe(true);
+
+    now = 10;
+    scheduled.at(-1)?.callback();
+    await vi.waitFor(() => expect(currentLoad).toHaveBeenCalledOnce());
+    expect(formerLoad).not.toHaveBeenCalled();
   });
 
   it('does not hydrate after the authorization lease expires', async () => {

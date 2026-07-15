@@ -1,8 +1,17 @@
 import { defineStore } from 'pinia';
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
+import { z } from 'zod';
 import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
+import {
+  getResourceCachePrincipal,
+  invalidateTaskCache,
+  resourceCache,
+  resourceCacheEpoch,
+} from '@/cache/cacheRuntime';
+import { buildCacheKey, CACHE_CADENCE } from '@/cache/resourceCache';
 import { errorHint } from '@/lib/apiError';
+import { useTasksStore } from '@/stores/tasks';
 
 export type AssigneeDto = components['schemas']['AssigneeDto'];
 export type ReferenceDto = components['schemas']['UnifiedReferenceDto'];
@@ -39,13 +48,21 @@ type CollectionName =
 type CollectionStatus = 'idle' | 'pending' | 'ready' | 'error';
 
 interface DetailTarget {
+  principal: string | undefined;
   ws: string;
   readableId: string;
+  workspaceId: string | undefined;
 }
 
 interface DetailOperation {
   target: DetailTarget;
   generation: number;
+}
+
+interface CommentPage {
+  items: CommentDto[];
+  has_more?: boolean;
+  next_cursor?: string | null;
 }
 
 const collectionNames: CollectionName[] = [
@@ -58,6 +75,34 @@ const collectionNames: CollectionName[] = [
   'attachments',
   'comments',
 ];
+
+const listPayloadSchema = z.array(z.object({}).passthrough());
+const pagePayloadSchema = z.object({
+  has_more: z.boolean().optional(),
+  items: listPayloadSchema,
+  next_cursor: z.string().nullable().optional(),
+});
+const commentPagePayloadSchema: z.ZodType<CommentPage> = z.object({
+  has_more: z.boolean().optional(),
+  items: z.array(z.custom<CommentDto>()),
+  next_cursor: z.string().nullable().optional(),
+});
+
+function collectionPayloadSchema(name: CollectionName): z.ZodType<unknown> {
+  return name === 'backlinks' || name === 'activity' || name === 'comments'
+    ? pagePayloadSchema
+    : listPayloadSchema;
+}
+
+function detailLoadError(cause: unknown): Error & { status?: number } {
+  if (cause instanceof Error && cause.name === 'TaskDetailLoadError')
+    return cause as Error & { status?: number };
+
+  const error = new Error(errorHint(cause, 'Failed to load task detail')) as Error & { status?: number };
+  error.name = 'TaskDetailLoadError';
+  error.status = (cause as { status?: number } | undefined)?.status;
+  return error;
+}
 
 function initialCollectionStatus(status: CollectionStatus): Record<CollectionName, CollectionStatus> {
   return Object.fromEntries(collectionNames.map((name) => [name, status])) as Record<
@@ -78,7 +123,13 @@ function initialCollectionLoaded(): Record<CollectionName, boolean> {
 }
 
 function sameTarget(left: DetailTarget | null, right: DetailTarget): boolean {
-  return left?.ws === right.ws && left.readableId === right.readableId;
+  return (
+    left !== null &&
+    left.principal === right.principal &&
+    left.ws === right.ws &&
+    left.workspaceId === right.workspaceId &&
+    left.readableId === right.readableId
+  );
 }
 
 /**
@@ -106,6 +157,11 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
   const activeTarget = ref<DetailTarget | null>(null);
   let loadSequence = 0;
   let targetGeneration = 0;
+  const activeCollectionCacheKeys = new Set<string>();
+  let activeWorkspaceId: string | null = null;
+  let activeTaskUuid: string | null = null;
+
+  watch(resourceCacheEpoch, clear, { flush: 'sync' });
 
   function clearCollections(): void {
     assignees.value = [];
@@ -125,12 +181,25 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     collectionErrors.value = initialCollectionErrors();
   }
 
+  function deactivateCollectionCaches(): void {
+    for (const key of activeCollectionCacheKeys) resourceCache.deactivate(key);
+    activeCollectionCacheKeys.clear();
+  }
+
   function isCurrent(sequence: number, target: DetailTarget): boolean {
     return loadSequence === sequence && sameTarget(activeTarget.value, target);
   }
 
   function beginOperation(ws: string, readableId: string): DetailOperation {
-    return { target: { ws, readableId }, generation: targetGeneration };
+    return {
+      target: {
+        principal: getResourceCachePrincipal(),
+        ws,
+        readableId,
+        workspaceId: activeWorkspaceId ?? undefined,
+      },
+      generation: targetGeneration,
+    };
   }
 
   function isOperationCurrent(operation: DetailOperation): boolean {
@@ -144,47 +213,147 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     if (isOperationCurrent(operation)) error.value = message;
   }
 
+  async function invalidateCurrentTaskCache(readableId: string, taskUuid?: string): Promise<void> {
+    if (activeWorkspaceId !== null)
+      await invalidateTaskCache(activeWorkspaceId, readableId, undefined, taskUuid);
+  }
+
+  async function retractDeniedDetail(
+    target: DetailTarget,
+    workspaceId: string | undefined,
+    taskUuid: string | undefined,
+  ): Promise<void> {
+    loadSequence += 1;
+    clearCollections();
+    loading.value = false;
+    if (workspaceId !== undefined) {
+      await invalidateTaskCache(workspaceId, target.readableId, undefined, taskUuid);
+    }
+    await useTasksStore().retractTask(target.readableId, taskUuid);
+  }
+
   async function settleCollection<T>(
     name: CollectionName,
-    request: Promise<{ data?: T; error?: unknown }>,
+    request: () => Promise<{ data?: T; error?: unknown }>,
     sequence: number,
     target: DetailTarget,
     apply: (data: T) => void,
+    workspaceId?: string,
+    taskUuid?: string,
   ): Promise<void> {
-    try {
-      const { data, error: apiError } = await request;
+    const publish = (data: T): void => {
       if (!isCurrent(sequence, target)) return;
-
-      if (apiError !== undefined || data === undefined) {
-        collectionStatus.value = { ...collectionStatus.value, [name]: 'error' };
-        collectionErrors.value = {
-          ...collectionErrors.value,
-          [name]: errorHint(apiError, 'Failed to load task detail'),
-        };
-        return;
-      }
-
       apply(data);
       collectionStatus.value = { ...collectionStatus.value, [name]: 'ready' };
       collectionLoaded.value = { ...collectionLoaded.value, [name]: true };
-    } catch {
+    };
+
+    const resolve = async (pending: Promise<{ data?: T; error?: unknown }>): Promise<T> => {
+      const { data, error: apiError } = await pending;
+      if (apiError !== undefined || data === undefined) throw detailLoadError(apiError);
+      return data;
+    };
+
+    const cacheKey =
+      workspaceId === undefined || taskUuid === undefined
+        ? null
+        : buildCacheKey({
+            principal: getResourceCachePrincipal(),
+            workspaceId,
+            resourceKind: 'task-secondary',
+            resourceId: `${target.readableId}:${name}:initial`,
+          });
+
+    if (cacheKey !== null && resourceCache.isAvailable()) {
+      const cacheRequest = {
+        key: cacheKey,
+        payloadSchema: collectionPayloadSchema(name) as z.ZodType<T>,
+        tags: [
+          `task:${target.readableId}`,
+          `task-uuid:${taskUuid}`,
+          `task-secondary:${target.readableId}:${name}`,
+        ],
+        freshForMs: CACHE_CADENCE.secondary.freshForMs,
+        activeForMs: CACHE_CADENCE.secondary.activeForMs,
+        retentionForMs: 24 * 60 * 60 * 1000,
+        load: () => resolve(request()),
+        publish,
+        isCurrent: () => isCurrent(sequence, target),
+      };
+
+      activeCollectionCacheKeys.add(cacheKey);
+      await resourceCache.hydrate(cacheRequest);
+      resourceCache.activate(cacheRequest);
+
+      let fallbackRequired = false;
+      try {
+        const revalidation = await resourceCache.revalidate(cacheRequest);
+        fallbackRequired = revalidation?.published === false;
+      } catch (cause) {
+        if (!isCurrent(sequence, target)) return;
+
+        const failure = detailLoadError(cause);
+        collectionStatus.value = { ...collectionStatus.value, [name]: 'error' };
+        collectionErrors.value = { ...collectionErrors.value, [name]: failure.message };
+        if (failure.status === 403 || failure.status === 404) {
+          await retractDeniedDetail(target, workspaceId, taskUuid);
+        }
+      }
+
+      if ((fallbackRequired || !resourceCache.isAvailable()) && isCurrent(sequence, target)) {
+        try {
+          publish(await resolve(request()));
+        } catch (cause) {
+          const failure = detailLoadError(cause);
+          collectionStatus.value = { ...collectionStatus.value, [name]: 'error' };
+          collectionErrors.value = { ...collectionErrors.value, [name]: failure.message };
+          if (failure.status === 403 || failure.status === 404) {
+            await retractDeniedDetail(target, workspaceId, taskUuid);
+          }
+        }
+      }
+      return;
+    }
+
+    const pending = request();
+    try {
+      const { data, error: apiError } = await pending;
+      if (!isCurrent(sequence, target)) return;
+      if (apiError !== undefined || data === undefined) throw detailLoadError(apiError);
+      publish(data);
+    } catch (cause) {
       if (!isCurrent(sequence, target)) return;
 
       collectionStatus.value = { ...collectionStatus.value, [name]: 'error' };
       collectionErrors.value = {
         ...collectionErrors.value,
-        [name]: 'Failed to load task detail',
+        [name]:
+          cause instanceof Error && cause.name === 'TaskDetailLoadError'
+            ? cause.message
+            : 'Failed to load task detail',
       };
+      const failure = detailLoadError(cause);
+      if (failure.status === 403 || failure.status === 404) {
+        await retractDeniedDetail(target, workspaceId, taskUuid);
+      }
     }
   }
 
-  async function loadAll(ws: string, readableId: string): Promise<void> {
-    const target = { ws, readableId };
+  async function loadAll(
+    ws: string,
+    readableId: string,
+    workspaceId?: string,
+    taskUuid?: string,
+  ): Promise<void> {
+    const target = { principal: getResourceCachePrincipal(), ws, readableId, workspaceId };
     const targetChanged = !sameTarget(activeTarget.value, target);
     const sequence = ++loadSequence;
 
     if (targetChanged) targetGeneration += 1;
+    deactivateCollectionCaches();
     activeTarget.value = target;
+    activeWorkspaceId = workspaceId ?? null;
+    activeTaskUuid = taskUuid ?? null;
     if (targetChanged) {
       clearCollections();
       collectionLoaded.value = initialCollectionLoaded();
@@ -199,70 +368,84 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     await Promise.all([
       settleCollection(
         'assignees',
-        wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/assignees', { params: { path } }),
+        () => wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/assignees', { params: { path } }),
         sequence,
         target,
         (data) => {
           assignees.value = data;
         },
+        workspaceId,
+        taskUuid,
       ),
       settleCollection(
         'references',
-        wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/references', { params: { path } }),
+        () => wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/references', { params: { path } }),
         sequence,
         target,
         (data) => {
           references.value = data;
         },
+        workspaceId,
+        taskUuid,
       ),
       settleCollection(
         'backlinks',
-        wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/backlinks', { params: { path } }),
+        () => wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/backlinks', { params: { path } }),
         sequence,
         target,
         (data) => {
           backlinks.value = data.items;
         },
+        workspaceId,
+        taskUuid,
       ),
       settleCollection(
         'subtasks',
-        wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/subtasks', { params: { path } }),
+        () => wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/subtasks', { params: { path } }),
         sequence,
         target,
         (data) => {
           subtasks.value = data;
         },
+        workspaceId,
+        taskUuid,
       ),
       settleCollection(
         'checklist',
-        wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/checklist', { params: { path } }),
+        () => wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/checklist', { params: { path } }),
         sequence,
         target,
         (data) => {
           checklist.value = data;
         },
+        workspaceId,
+        taskUuid,
       ),
       settleCollection(
         'activity',
-        wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/activity', { params: { path } }),
+        () => wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/activity', { params: { path } }),
         sequence,
         target,
         (data) => {
           activity.value = data.items;
         },
+        workspaceId,
+        taskUuid,
       ),
       settleCollection(
         'attachments',
-        wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/attachments', { params: { path } }),
+        () => wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/attachments', { params: { path } }),
         sequence,
         target,
         (data) => {
           attachments.value = data;
         },
+        workspaceId,
+        taskUuid,
       ),
       settleCollection(
         'comments',
-        wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/comments', { params: { path } }),
+        () => wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/comments', { params: { path } }),
         sequence,
         target,
         (data) => {
@@ -270,6 +453,8 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
           commentsCursor.value = data.next_cursor ?? null;
           commentsHasMore.value = data.has_more;
         },
+        workspaceId,
+        taskUuid,
       ),
     ]);
 
@@ -293,7 +478,18 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     collectionStatus.value = { ...collectionStatus.value, comments: 'pending' };
     collectionErrors.value = { ...collectionErrors.value, comments: null };
 
-    try {
+    const publish = (data: CommentPage): void => {
+      if (!isOperationCurrent(operation)) return;
+
+      const existing = new Set(comments.value.map((item) => item.id));
+      comments.value = [...comments.value, ...data.items.filter((item) => !existing.has(item.id))];
+      commentsCursor.value = data.next_cursor ?? null;
+      commentsHasMore.value = data.has_more ?? false;
+      collectionStatus.value = { ...collectionStatus.value, comments: 'ready' };
+      collectionLoaded.value = { ...collectionLoaded.value, comments: true };
+    };
+
+    const load = async (): Promise<CommentPage> => {
       const { data, error: apiError } = await wrappedClient.GET(
         '/api/workspaces/{ws}/tasks/{readable_id}/comments',
         {
@@ -303,26 +499,66 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
           },
         },
       );
-      if (!isOperationCurrent(operation)) return;
-
       if (apiError !== undefined || data === undefined) {
-        collectionStatus.value = { ...collectionStatus.value, comments: 'error' };
-        collectionErrors.value = {
-          ...collectionErrors.value,
-          comments: errorHint(apiError, 'Failed to load comments'),
+        throw detailLoadError(apiError);
+      }
+
+      return data;
+    };
+
+    const cacheKey =
+      activeWorkspaceId === null || activeTaskUuid === null
+        ? null
+        : buildCacheKey({
+            principal: getResourceCachePrincipal(),
+            workspaceId: activeWorkspaceId,
+            resourceKind: 'task-secondary',
+            resourceId: `${readableId}:comments:${cursor}`,
+          });
+
+    try {
+      if (cacheKey !== null && resourceCache.isAvailable()) {
+        const request = {
+          key: cacheKey,
+          payloadSchema: commentPagePayloadSchema,
+          tags: [
+            `task:${readableId}`,
+            `task-uuid:${activeTaskUuid}`,
+            `task-secondary:${readableId}:comments`,
+          ],
+          freshForMs: CACHE_CADENCE.secondary.freshForMs,
+          activeForMs: CACHE_CADENCE.secondary.activeForMs,
+          retentionForMs: 24 * 60 * 60 * 1000,
+          load,
+          publish,
+          isCurrent: () => isOperationCurrent(operation),
         };
+
+        activeCollectionCacheKeys.add(cacheKey);
+        await resourceCache.hydrate(request);
+        resourceCache.activate(request);
+        const revalidation = await resourceCache.revalidate(request);
+        if (
+          (revalidation?.published === false || !resourceCache.isAvailable()) &&
+          isOperationCurrent(operation)
+        ) {
+          publish(await load());
+        }
         return;
       }
 
-      comments.value = [...comments.value, ...data.items];
-      commentsCursor.value = data.next_cursor ?? null;
-      commentsHasMore.value = data.has_more;
-      collectionStatus.value = { ...collectionStatus.value, comments: 'ready' };
-    } catch {
+      publish(await load());
+    } catch (cause) {
       if (!isOperationCurrent(operation)) return;
 
       collectionStatus.value = { ...collectionStatus.value, comments: 'error' };
-      collectionErrors.value = { ...collectionErrors.value, comments: 'Failed to load comments' };
+      const failure = detailLoadError(cause);
+      collectionErrors.value = { ...collectionErrors.value, comments: failure.message };
+      if ((failure.status === 403 || failure.status === 404) && activeWorkspaceId !== null) {
+        clearCollections();
+        await invalidateTaskCache(activeWorkspaceId, readableId, undefined, activeTaskUuid ?? undefined);
+        await useTasksStore().retractTask(readableId, activeTaskUuid ?? undefined);
+      }
     }
   }
 
@@ -351,6 +587,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     if (isOperationCurrent(operation) && !commentsHasMore.value) {
       comments.value = [...comments.value, data];
     }
+    await invalidateCurrentTaskCache(readableId);
     return isOperationCurrent(operation);
   }
 
@@ -374,6 +611,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
       return false;
     }
 
+    await invalidateCurrentTaskCache(readableId);
     return isOperationCurrent(operation);
   }
 
@@ -414,6 +652,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
       comments.value = updated;
     }
 
+    await invalidateCurrentTaskCache(readableId);
     return isOperationCurrent(operation);
   }
 
@@ -442,6 +681,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
 
     if (!isOperationCurrent(operation)) return false;
     assignees.value = [...assignees.value, data];
+    await invalidateCurrentTaskCache(readableId);
     return isOperationCurrent(operation);
   }
 
@@ -472,6 +712,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
       return false;
     }
 
+    await invalidateCurrentTaskCache(readableId);
     return isOperationCurrent(operation);
   }
 
@@ -553,6 +794,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     if (!isOperationCurrent(operation)) return false;
     const reconciled = [...checklist.value];
     reconciled[idx] = data;
+    await invalidateCurrentTaskCache(readableId);
     checklist.value = reconciled;
     void reloadActivity(ws, readableId);
     return true;
@@ -605,6 +847,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     if (!isOperationCurrent(operation)) return false;
     const reconciled = [...checklist.value];
     reconciled[idx] = data;
+    await invalidateCurrentTaskCache(readableId);
     checklist.value = reconciled;
     void reloadActivity(ws, readableId);
     return true;
@@ -643,6 +886,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
       checklist.value = updated;
     }
 
+    await invalidateCurrentTaskCache(readableId);
     void reloadActivity(ws, readableId);
     return { ok: true, readableId: data.task.readable_id };
   }
@@ -664,6 +908,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
 
     if (!isOperationCurrent(operation)) return false;
     checklist.value = [...checklist.value, data];
+    await invalidateCurrentTaskCache(readableId);
     void reloadActivity(ws, readableId);
     return true;
   }
@@ -685,6 +930,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
 
     if (!isOperationCurrent(operation)) return false;
     checklist.value = checklist.value.filter((i) => i.id !== itemId);
+    await invalidateCurrentTaskCache(readableId);
     void reloadActivity(ws, readableId);
     return true;
   }
@@ -723,6 +969,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
         updated_at: data.updated_at,
       },
     ];
+    await invalidateCurrentTaskCache(readableId);
     return true;
   }
 
@@ -766,6 +1013,10 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
       return false;
     }
 
+    await Promise.all([
+      invalidateCurrentTaskCache(subtaskReadableId, previous?.id),
+      invalidateCurrentTaskCache(target?.readableId ?? subtaskReadableId, activeTaskUuid ?? undefined),
+    ]);
     return isOperationCurrent(operation);
   }
 
@@ -775,6 +1026,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     const operation = beginOperation(ws, target?.readableId ?? subtaskReadableId);
     if (!isOperationCurrent(operation)) return false;
     error.value = null;
+    const child = subtasks.value.find((subtask) => subtask.readable_id === subtaskReadableId);
 
     const { error: apiError } = await wrappedClient.POST('/api/workspaces/{ws}/tasks/{readable_id}/promote', {
       params: { path: { ws, readable_id: subtaskReadableId } },
@@ -787,6 +1039,10 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
 
     if (!isOperationCurrent(operation)) return false;
     subtasks.value = subtasks.value.filter((s) => s.readable_id !== subtaskReadableId);
+    await Promise.all([
+      invalidateCurrentTaskCache(subtaskReadableId, child?.id),
+      invalidateCurrentTaskCache(target?.readableId ?? subtaskReadableId, activeTaskUuid ?? undefined),
+    ]);
     return true;
   }
 
@@ -825,6 +1081,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
       target_resolved: data.target_resolved,
     };
     references.value = [...references.value, reference];
+    await invalidateCurrentTaskCache(readableId);
     return true;
   }
 
@@ -875,6 +1132,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     if (!isOperationCurrent(operation)) return false;
     if (reloadError === undefined && data !== undefined) references.value = data;
 
+    await invalidateCurrentTaskCache(readableId);
     return true;
   }
 
@@ -905,6 +1163,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
 
     if (!isOperationCurrent(operation)) return false;
     attachments.value = [...attachments.value, data];
+    await invalidateCurrentTaskCache(readableId);
     return true;
   }
 
@@ -928,6 +1187,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
       return false;
     }
 
+    await invalidateCurrentTaskCache(readableId);
     return isOperationCurrent(operation);
   }
 
@@ -935,6 +1195,9 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     loadSequence += 1;
     targetGeneration += 1;
     activeTarget.value = null;
+    activeWorkspaceId = null;
+    activeTaskUuid = null;
+    deactivateCollectionCaches();
     clearCollections();
     collectionStatus.value = initialCollectionStatus('idle');
     collectionErrors.value = initialCollectionErrors();

@@ -31,8 +31,8 @@ export function useOpenTaskLive(ws: Ref<string>): {
       return 'deleted';
     }
 
-    void tasks.loadTask(ws.value, open.readable_id);
-    void detail.loadAll(ws.value, open.readable_id);
+    void tasks.loadTask(ws.value, open.readable_id, open.workspace_id);
+    void detail.loadAll(ws.value, open.readable_id, open.workspace_id, open.id);
     return 'refreshed';
   }
 
