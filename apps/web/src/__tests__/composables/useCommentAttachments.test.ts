@@ -152,6 +152,71 @@ describe('useCommentAttachments', () => {
     ]);
   });
 
+  it('lets a same-comment download complete without invalidating an in-flight upload', async () => {
+    let resolveUpload: (value: unknown) => void = () => {};
+    GET.mockResolvedValueOnce({ data: [attachment('existing', 'existing.txt')] }).mockResolvedValueOnce({
+      data: new Blob(['download']),
+    });
+    POST.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveUpload = resolve;
+      }),
+    );
+    const currentTarget = ref({ kind: 'task' as const, ws: 'acme', readableId: 'ATL-1' });
+    const attachments = useCommentAttachments(currentTarget, entries);
+    await vi.waitFor(() => expect(attachments.items.value['comment-1']).toHaveLength(1));
+
+    const upload = attachments.upload('comment-1', new File(['new'], 'new.txt'));
+    expect(await attachments.download('comment-1', 'existing')).toBeInstanceOf(Blob);
+    resolveUpload({ data: attachment('new', 'new.txt') });
+
+    expect(await upload).toEqual(expect.objectContaining({ id: 'new' }));
+    expect(attachments.items.value['comment-1']?.map((item) => item.id)).toEqual(['existing', 'new']);
+  });
+
+  it('lets a same-comment reload complete without invalidating an in-flight upload', async () => {
+    let resolveUpload: (value: unknown) => void = () => {};
+    GET.mockResolvedValueOnce({ data: [attachment('existing', 'existing.txt')] }).mockResolvedValueOnce({
+      data: [attachment('existing', 'existing.txt')],
+    });
+    POST.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveUpload = resolve;
+      }),
+    );
+    const currentTarget = ref({ kind: 'task' as const, ws: 'acme', readableId: 'ATL-1' });
+    const attachments = useCommentAttachments(currentTarget, entries);
+    await vi.waitFor(() => expect(attachments.items.value['comment-1']).toHaveLength(1));
+
+    const upload = attachments.upload('comment-1', new File(['new'], 'new.txt'));
+    await attachments.reload('comment-1');
+    resolveUpload({ data: attachment('new', 'new.txt') });
+
+    expect(await upload).toEqual(expect.objectContaining({ id: 'new' }));
+    expect(attachments.items.value['comment-1']?.map((item) => item.id)).toEqual(['existing', 'new']);
+  });
+
+  it('lets a same-comment delete complete without invalidating an in-flight upload', async () => {
+    let resolveUpload: (value: unknown) => void = () => {};
+    GET.mockResolvedValueOnce({ data: [attachment('existing', 'existing.txt')] });
+    POST.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveUpload = resolve;
+      }),
+    );
+    DELETE.mockResolvedValueOnce({});
+    const currentTarget = ref({ kind: 'task' as const, ws: 'acme', readableId: 'ATL-1' });
+    const attachments = useCommentAttachments(currentTarget, entries);
+    await vi.waitFor(() => expect(attachments.items.value['comment-1']).toHaveLength(1));
+
+    const upload = attachments.upload('comment-1', new File(['new'], 'new.txt'));
+    expect(await attachments.delete('comment-1', 'existing')).toBe(true);
+    resolveUpload({ data: attachment('new', 'new.txt') });
+
+    expect(await upload).toEqual(expect.objectContaining({ id: 'new' }));
+    expect(attachments.items.value['comment-1']?.map((item) => item.id)).toEqual(['new']);
+  });
+
   it('retains rows and exposes actionable errors when upload, download, and delete fail', async () => {
     GET.mockResolvedValueOnce({ data: [attachment('existing', 'existing.txt')] });
     POST.mockResolvedValueOnce({ error: { hint: 'Upload denied' } });
