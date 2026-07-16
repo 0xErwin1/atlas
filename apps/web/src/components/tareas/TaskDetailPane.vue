@@ -175,7 +175,7 @@ function onChangeMode(mode: TaskViewMode): void {
 }
 
 .atl-tv-modal {
-  width: min(1280px, 94vw);
+  width: min(1440px, 96vw);
   height: min(90vh, 900px);
   display: flex;
   flex-direction: column;
@@ -193,7 +193,8 @@ function onChangeMode(mode: TaskViewMode): void {
 }
 
 .atl-tv-modal-rail {
-  flex: 0 0 340px;
+  flex: 0 1 clamp(280px, 28vw, 400px);
+  min-width: 0;
   display: flex;
   flex-direction: column;
   min-height: 0;
