@@ -6,12 +6,13 @@ import Avatar from '@/components/ui/Avatar.vue';
 import Btn from '@/components/ui/Btn.vue';
 import FormField from '@/components/ui/FormField.vue';
 import Icon from '@/components/ui/Icon.vue';
+import SegmentedControl, { type SegmentedOption } from '@/components/ui/SegmentedControl.vue';
 import { useProblem } from '@/composables/useProblem';
 import { initials as nameInitials } from '@/lib/format';
 import { validateForm } from '@/lib/validation';
 import { getPlatformTransport } from '@/platform/transport';
 import { type Problem, useAuthStore } from '@/stores/auth';
-import { useUiStore } from '@/stores/ui';
+import { type Theme, useUiStore } from '@/stores/ui';
 
 const auth = useAuthStore();
 const ui = useUiStore();
@@ -125,6 +126,17 @@ async function updatePassword(): Promise<void> {
   }
 }
 
+// ── Appearance ─────────────────────────────────────────────────────
+const THEME_OPTIONS: (SegmentedOption & { value: Theme })[] = [
+  { value: 'dark', label: 'Dark', icon: 'moon' },
+  { value: 'light', label: 'Light', icon: 'sun' },
+];
+
+function selectTheme(value: string): void {
+  const option = THEME_OPTIONS.find((candidate) => candidate.value === value);
+  if (option !== undefined) ui.setTheme(option.value);
+}
+
 // ── Sign out ───────────────────────────────────────────────────────
 async function signOut(): Promise<void> {
   await auth.logout();
@@ -219,24 +231,11 @@ async function signOut(): Promise<void> {
 
     <div class="atl-sec-title">Appearance</div>
     <div class="flex items-center" style="gap: 14px;">
-      <div class="atl-seg">
-        <button
-          type="button"
-          class="atl-seg-opt"
-          :class="{ on: ui.theme === 'dark' }"
-          @click="ui.setTheme('dark')"
-        >
-          <Icon name="moon" :size="13" />Dark
-        </button>
-        <button
-          type="button"
-          class="atl-seg-opt"
-          :class="{ on: ui.theme === 'light' }"
-          @click="ui.setTheme('light')"
-        >
-          <Icon name="sun" :size="13" />Light
-        </button>
-      </div>
+      <SegmentedControl
+        :model-value="ui.theme"
+        :options="THEME_OPTIONS"
+        @update:model-value="selectTheme"
+      />
       <span style="font-size: 12px; color: var(--c-muted);">Ayu Dark · default</span>
     </div>
 
@@ -306,37 +305,6 @@ async function signOut(): Promise<void> {
   height: 1px;
   background: var(--c-border);
   margin: 22px 0;
-}
-
-.atl-seg {
-  display: inline-flex;
-  background: var(--c-input);
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-lg);
-  padding: 2px;
-  gap: 2px;
-}
-
-.atl-seg-opt {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 26px;
-  padding: 0 13px;
-  border: none;
-  border-radius: var(--r-sm);
-  background: transparent;
-  cursor: pointer;
-  font-size: 12.5px;
-  font-weight: var(--fw-medium);
-  color: var(--c-muted);
-}
-
-.atl-seg-opt.on {
-  font-weight: var(--fw-semibold);
-  color: var(--c-foreground);
-  background: var(--c-selection);
-  box-shadow: inset 0 0 0 1px var(--c-border);
 }
 
 .atl-signout {
