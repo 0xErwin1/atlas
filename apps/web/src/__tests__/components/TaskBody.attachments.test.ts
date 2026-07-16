@@ -27,6 +27,19 @@ describe('TaskBody attachment picker', () => {
     setActivePinia(createPinia());
   });
 
+  it('keeps the attachments heading visible when the ready collection is empty', () => {
+    const detail = useTaskDetailStore();
+    const tags = useTagsStore();
+    vi.spyOn(tags, 'load').mockResolvedValue();
+    detail._setForTest({ attachments: [] });
+    detail.collectionStatus = { ...detail.collectionStatus, attachments: 'ready' };
+    detail.collectionLoaded = { ...detail.collectionLoaded, attachments: true };
+
+    const wrapper = shallowMount(TaskBody, { props: { task, ws: 'ws' } });
+
+    expect(wrapper.findAll('.atl-tv-section-label').map((label) => label.text())).toContain('Attachments');
+  });
+
   it('selects and uploads multiple files sequentially while preserving batch feedback', async () => {
     const detail = useTaskDetailStore();
     const tags = useTagsStore();
