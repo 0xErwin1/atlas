@@ -5,6 +5,7 @@ apps/web/coverage/
 .env
 .env.*
 !.env.example
+.devenv/
 .direnv/
 *.swp
 .idea/
