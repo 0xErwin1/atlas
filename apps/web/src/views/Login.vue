@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { z } from 'zod';
 import type { AtlasProblem } from '@/api/problem';
@@ -9,22 +9,27 @@ import Icon from '@/components/ui/Icon.vue';
 import Kbd from '@/components/ui/Kbd.vue';
 import { useProblem } from '@/composables/useProblem';
 import { validateForm } from '@/lib/validation';
+import { getPlatformTransport } from '@/platform/transport';
 import { useAuthStore } from '@/stores/auth';
 
 const loginSchema = z.object({
+  origin: z.string().trim().min(1, 'Server URL is required'),
   username: z.string().trim().min(1, 'Username is required'),
   password: z.string().min(1, 'Password is required'),
 });
 
 const router = useRouter();
 const auth = useAuthStore();
+const transport = getPlatformTransport();
 
+const origin = ref('https://atlas.iperez.dev');
 const username = ref('');
 const password = ref('');
 const loading = ref(false);
 const errorProblem = ref<AtlasProblem | null>(null);
 
-const fieldErrors = reactive<{ username: string | null; password: string | null }>({
+const fieldErrors = reactive<{ origin: string | null; username: string | null; password: string | null }>({
+  origin: null,
   username: null,
   password: null,
 });
@@ -41,14 +46,24 @@ function onUsername(value: string) {
   fieldErrors.username = null;
 }
 
+function onOrigin(value: string) {
+  origin.value = value;
+  fieldErrors.origin = null;
+}
+
 function onPassword(value: string) {
   password.value = value;
   fieldErrors.password = null;
 }
 
 function validate(): boolean {
-  const result = validateForm(loginSchema, { username: username.value, password: password.value });
+  const result = validateForm(loginSchema, {
+    origin: origin.value,
+    username: username.value,
+    password: password.value,
+  });
 
+  fieldErrors.origin = result.ok ? null : (result.errors.origin ?? null);
   fieldErrors.username = result.ok ? null : (result.errors.username ?? null);
   fieldErrors.password = result.ok ? null : (result.errors.password ?? null);
 
@@ -64,6 +79,16 @@ async function handleLogin() {
   loading.value = true;
 
   try {
+    if (transport.isDesktop) {
+      const selected = await transport.setOrigin(origin.value);
+      if (selected.error || selected.data === undefined) {
+        fieldErrors.origin =
+          typeof selected.error === 'string' ? selected.error : 'Unable to save the Atlas server URL';
+        return;
+      }
+      origin.value = selected.data.origin;
+    }
+
     const result = await auth.login({ username: username.value, password: password.value });
 
     if (result.ok) {
@@ -80,6 +105,13 @@ async function handleLogin() {
   }
 }
 
+onMounted(async () => {
+  if (!transport.isDesktop) return;
+
+  const selected = await transport.getOrigin();
+  if (selected.data !== undefined) origin.value = selected.data.origin;
+});
+
 const errorDisplay = computed(() => {
   if (!errorProblem.value) return null;
   return useProblem(errorProblem.value);
@@ -87,20 +119,8 @@ const errorDisplay = computed(() => {
 </script>
 
 <template>
-  <div
-    class="flex items-center justify-center"
-    style="min-height: 100vh; background-color: var(--c-background);"
-  >
-    <div
-      style="
-        width: 340px;
-        padding: 26px 26px 22px;
-        border-radius: var(--r-lg);
-        background-color: var(--c-panel);
-        border: 1px solid var(--c-border);
-        box-shadow: var(--shadow-lg);
-      "
-    >
+  <div class="login-page">
+    <div class="login-card">
       <div class="flex items-center" style="gap: 9px; margin-bottom: 18px;">
         <Icon name="atlas-glyph" :size="24" style="color: var(--c-primary);" />
         <span style="font-size: 19px; font-weight: 700; color: var(--c-foreground); font-family: var(--font-ui);">
@@ -144,6 +164,20 @@ const errorDisplay = computed(() => {
       </div>
 
       <form novalidate @submit.prevent="handleLogin">
+        <div v-if="transport.isDesktop" style="margin-bottom: 12px;">
+          <FormField
+            id="server-origin"
+            label="Atlas server"
+            type="text"
+            :model-value="origin"
+            autocomplete="url"
+            placeholder="https://atlas.iperez.dev"
+            mono
+            :error="fieldErrors.origin"
+            @update:model-value="onOrigin"
+          />
+        </div>
+
         <div style="margin-bottom: 12px;">
           <FormField
             id="username"
@@ -194,3 +228,34 @@ const errorDisplay = computed(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.login-page {
+  display: flex;
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+  background-color: var(--c-background);
+}
+
+.login-card {
+  width: 100%;
+  min-width: 280px;
+  max-width: 340px;
+  flex-shrink: 0;
+  margin: auto;
+  padding: 26px 26px 22px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-lg);
+  background-color: var(--c-panel);
+  box-shadow: var(--shadow-lg);
+}
+
+@media (max-width: 311px) {
+  .login-card {
+    min-width: 0;
+  }
+}
+</style>

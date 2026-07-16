@@ -1,11 +1,25 @@
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const { platformTransport } = vi.hoisted(() => ({
+  platformTransport: {
+    login: vi.fn(),
+    me: vi.fn(),
+    resume: vi.fn(),
+    logout: vi.fn(),
+    createWorkspaceEventSource: vi.fn(),
+  },
+}));
+
 vi.mock('@/api/wrapper', () => ({
   wrappedClient: {
     GET: vi.fn(),
     POST: vi.fn(),
   },
+}));
+
+vi.mock('@/platform/transport', () => ({
+  getPlatformTransport: () => platformTransport,
 }));
 
 vi.mock('@/lib/workspaceLiveUpdates', () => ({
@@ -78,10 +92,61 @@ describe('useAuthStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
+    platformTransport.login.mockImplementation((credentials: { username: string; password: string }) =>
+      wrappedClient.POST('/api/auth/login', { body: credentials }),
+    );
+    platformTransport.me.mockImplementation(() => wrappedClient.GET('/api/auth/me', {}));
+    platformTransport.resume.mockImplementation(() => platformTransport.me());
+    platformTransport.logout.mockImplementation(() => wrappedClient.POST('/api/auth/logout', {}));
+  });
+
+  it('uses the platform transport seam for login, identity, and logout without changing failures', async () => {
+    platformTransport.login.mockResolvedValueOnce({ data: {}, error: undefined });
+    platformTransport.me.mockReturnValueOnce(meOk('desktop-user'));
+    platformTransport.logout.mockResolvedValueOnce({ data: {}, error: undefined });
+
+    const store = useAuthStore();
+    const result = await store.login({ username: 'desktop-user', password: 'pass' });
+    await store.logout();
+
+    expect(result).toEqual({ ok: true });
+    expect(platformTransport.login).toHaveBeenCalledExactlyOnceWith({
+      username: 'desktop-user',
+      password: 'pass',
+    });
+    expect(platformTransport.me).toHaveBeenCalledOnce();
+    expect(platformTransport.logout).toHaveBeenCalledOnce();
+    expect(store.isAuthenticated).toBe(false);
   });
 
   it('starts unauthenticated with null user', () => {
     const store = useAuthStore();
+    expect(store.isAuthenticated).toBe(false);
+    expect(store.user).toBeNull();
+  });
+
+  it('initializes desktop authentication through the typed resume handshake before hydrating identity', async () => {
+    platformTransport.resume.mockReturnValueOnce(meOk('resumed-user'));
+    const store = useAuthStore();
+
+    await store.initialize();
+
+    expect(platformTransport.resume).toHaveBeenCalledOnce();
+    expect(platformTransport.me).not.toHaveBeenCalled();
+    expect(store.isAuthenticated).toBe(true);
+    expect(store.user?.username).toBe('resumed-user');
+  });
+
+  it('keeps startup unauthenticated when the typed resume handshake reports credential loss', async () => {
+    platformTransport.resume.mockResolvedValueOnce({
+      data: undefined,
+      error: { type: 'urn:atlas:error:auth-failed', title: 'Unauthorized', status: 401 },
+    });
+    const store = useAuthStore();
+
+    await store.initialize();
+
+    expect(platformTransport.resume).toHaveBeenCalledOnce();
     expect(store.isAuthenticated).toBe(false);
     expect(store.user).toBeNull();
   });
@@ -119,6 +184,38 @@ describe('useAuthStore', () => {
 
     expect(disposeWorkspaceLiveUpdates).toHaveBeenCalledOnce();
     expect(store.isAuthenticated).toBe(false);
+  });
+
+  it('consumes a desktop scoped auth-loss action by clearing the active Vue session', () => {
+    const store = useAuthStore();
+    store.user = { username: 'alice' } as MeResponse;
+    store.isAuthenticated = true;
+
+    window.dispatchEvent(
+      new CustomEvent('atlas:session-action', {
+        detail: { origin: 'https://atlas.iperez.dev', identity: 'user-1', cancel_transport: true },
+      }),
+    );
+
+    expect(store.isAuthenticated).toBe(false);
+    expect(store.user).toBeNull();
+    expect(blockAndPurgeResourceCache).toHaveBeenCalledOnce();
+  });
+
+  it('consumes an origin-scoped desktop auth-loss action when the keyring identity is unavailable', () => {
+    const store = useAuthStore();
+    store.user = { username: 'alice' } as MeResponse;
+    store.isAuthenticated = true;
+
+    window.dispatchEvent(
+      new CustomEvent('atlas:session-action', {
+        detail: { origin: 'https://atlas.iperez.dev', identity: null, cancel_transport: true },
+      }),
+    );
+
+    expect(store.isAuthenticated).toBe(false);
+    expect(store.user).toBeNull();
+    expect(blockAndPurgeResourceCache).toHaveBeenCalledOnce();
   });
 
   it('fetchMe 200 hydrates user and sets isAuthenticated true (REQ-W8)', async () => {

@@ -9,6 +9,17 @@ vi.mock('@/cache/cacheRuntime', () => ({ invalidateLiveResourceCache, resourceCa
 
 import { wrappedClient } from '@/api/wrapper';
 import { createWorkspaceLiveUpdatesBroker, type WorkspaceLiveUpdate } from '@/lib/workspaceLiveUpdates';
+import {
+  createDesktopGateLiveUpdateObserver,
+  createDesktopPlatformTransport,
+  type DesktopBridge,
+  getDesktopGateLiveUpdateObserver,
+} from '@/platform/desktop';
+import {
+  type PlatformTransport,
+  resetPlatformTransportForTest,
+  setPlatformTransport,
+} from '@/platform/transport';
 
 type WorkspaceProbeResponse = Awaited<ReturnType<typeof wrappedClient.GET>>;
 
@@ -98,11 +109,27 @@ function handlers(
   };
 }
 
+function platformTransport(
+  createWorkspaceEventSource: PlatformTransport['createWorkspaceEventSource'],
+): PlatformTransport {
+  return {
+    isDesktop: true,
+    login: async () => ({}),
+    me: async () => ({}),
+    resume: async () => ({}),
+    logout: async () => ({}),
+    getOrigin: async () => ({ data: { origin: 'https://atlas.test' } }),
+    setOrigin: async (origin) => ({ data: { origin } }),
+    createWorkspaceEventSource,
+  };
+}
+
 describe('workspace live updates broker', () => {
   beforeEach(() => {
     FakeEventSource.instances = [];
     invalidateLiveResourceCache.mockClear();
     resourceCacheEpoch.value = 0;
+    resetPlatformTransportForTest();
     vi.useFakeTimers();
     vi.stubGlobal('EventSource', FakeEventSource);
   });
@@ -136,6 +163,185 @@ describe('workspace live updates broker', () => {
     firstSubscription.release();
     secondSubscription.release();
     vi.advanceTimersByTime(30_000);
+  });
+
+  it('opens realtime through the selected platform source factory', () => {
+    const createWorkspaceEventSource = vi.fn(
+      (workspaceSlug: string) => new FakeEventSource(`desktop://${workspaceSlug}`),
+    );
+    setPlatformTransport(platformTransport(createWorkspaceEventSource));
+    const broker = createWorkspaceLiveUpdatesBroker();
+    const subscription = broker.acquire('acme', handlers());
+
+    expect(createWorkspaceEventSource).toHaveBeenCalledExactlyOnceWith('acme');
+    expect(FakeEventSource.instances[0]?.url).toBe('desktop://acme');
+
+    subscription.release();
+    vi.advanceTimersByTime(30_000);
+  });
+
+  it('uses the browser EventSource when acquired before main selects a transport', () => {
+    const broker = createWorkspaceLiveUpdatesBroker();
+    const subscription = broker.acquire('acme', handlers());
+
+    expect(FakeEventSource.instances).toHaveLength(1);
+    expect(FakeEventSource.instances[0]?.url).toBe('/api/workspaces/acme/events');
+
+    subscription.release();
+    vi.advanceTimersByTime(30_000);
+  });
+
+  it('dispatches one normalized desktop event through the existing broker exactly once', async () => {
+    let receive: ((event: { payload: unknown }) => void) | undefined;
+    const bridge: DesktopBridge = {
+      invoke: vi.fn().mockResolvedValue(undefined),
+      listen: async (eventName, handler) => {
+        if (eventName === 'atlas://workspace-event') {
+          receive = handler as (event: { payload: unknown }) => void;
+        }
+        return () => {};
+      },
+    };
+    setPlatformTransport(createDesktopPlatformTransport(bridge));
+    const broker = createWorkspaceLiveUpdatesBroker();
+    const subscriber = handlers();
+    const subscription = broker.acquire('acme', subscriber);
+
+    await Promise.resolve();
+    const envelope = JSON.parse(event('task.created', { task_id: 'task-1' }));
+    receive?.({ payload: envelope });
+
+    expect(invalidateLiveResourceCache).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ event_type: 'task.created' }),
+      'acme',
+    );
+    expect(subscriber.onEvent).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ type: 'task.created', data: { task_id: 'task-1' } }),
+    );
+    subscription.release();
+    vi.advanceTimersByTime(30_000);
+  });
+
+  it('observes one non-sensitive desktop event after the broker consumes it', async () => {
+    let receive: ((event: { payload: unknown }) => void) | undefined;
+    const bridge: DesktopBridge = {
+      invoke: vi.fn().mockResolvedValue(undefined),
+      listen: async (eventName, handler) => {
+        if (eventName === 'atlas://workspace-event') {
+          receive = handler as (event: { payload: unknown }) => void;
+        }
+        return () => {};
+      },
+    };
+    const observer = createDesktopGateLiveUpdateObserver(true);
+    const observed = vi.fn();
+    observer.subscribe(observed);
+    setPlatformTransport(createDesktopPlatformTransport(bridge));
+    const broker = createWorkspaceLiveUpdatesBroker({ desktopGateObserver: observer });
+    const subscription = broker.acquire('acme', handlers());
+
+    await Promise.resolve();
+    receive?.({ payload: JSON.parse(event('task.created', { task_id: 'task-1', token: 'secret' })) });
+
+    expect(observer.snapshot()).toEqual({
+      count: 1,
+      eventType: 'task.created',
+      status: 'event',
+      workspaceSlug: 'acme',
+    });
+    expect(observed).toHaveBeenCalledExactlyOnceWith({
+      count: 1,
+      eventType: 'task.created',
+      status: 'event',
+      workspaceSlug: 'acme',
+    });
+    subscription.release();
+    vi.advanceTimersByTime(30_000);
+  });
+
+  it('observes reconnect and resync status without incrementing the event count', async () => {
+    let receiveClosed: ((event: { payload: unknown }) => void) | undefined;
+    const bridge: DesktopBridge = {
+      invoke: vi.fn().mockResolvedValue(undefined),
+      listen: async (eventName, handler) => {
+        if (eventName === 'atlas://workspace-closed') {
+          receiveClosed = handler as (event: { payload: unknown }) => void;
+        }
+        return () => {};
+      },
+    };
+    const observer = createDesktopGateLiveUpdateObserver(true);
+    const observed = vi.fn();
+    observer.subscribe(observed);
+    setPlatformTransport(createDesktopPlatformTransport(bridge));
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const broker = createWorkspaceLiveUpdatesBroker({ desktopGateObserver: observer });
+    const subscription = broker.acquire('acme', handlers());
+
+    await Promise.resolve();
+    receiveClosed?.({ payload: { workspace_slug: 'acme' } });
+    vi.advanceTimersByTime(500);
+    await Promise.resolve();
+
+    expect(observer.snapshot()).toEqual({ count: 0, status: 'resync' });
+    expect(observed).toHaveBeenNthCalledWith(1, { count: 0, status: 'reconnecting' });
+    expect(observed).toHaveBeenNthCalledWith(2, { count: 0, status: 'reconnected' });
+    expect(observed).toHaveBeenNthCalledWith(3, { count: 0, status: 'resync' });
+    subscription.release();
+    vi.advanceTimersByTime(30_000);
+  });
+
+  it('does not expose a gate observer when the desktop gate build flag is absent', () => {
+    expect(getDesktopGateLiveUpdateObserver()).toBeNull();
+  });
+
+  it('reconnects when the Rust desktop transport reports a late stream closure', async () => {
+    let receiveClosed: ((event: { payload: unknown }) => void) | undefined;
+    const bridge: DesktopBridge = {
+      invoke: vi.fn().mockResolvedValue(undefined),
+      listen: async (eventName, handler) => {
+        if (eventName === 'atlas://workspace-closed') {
+          receiveClosed = handler as (event: { payload: unknown }) => void;
+        }
+        return () => {};
+      },
+    };
+    setPlatformTransport(createDesktopPlatformTransport(bridge));
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const broker = createWorkspaceLiveUpdatesBroker();
+    const subscription = broker.acquire('acme', handlers());
+
+    await Promise.resolve();
+    receiveClosed?.({ payload: { workspace_slug: 'acme' } });
+    vi.advanceTimersByTime(30_000);
+
+    expect(bridge.invoke).toHaveBeenCalledWith('desktop_workspace_events_subscribe', {
+      workspaceSlug: 'acme',
+    });
+    subscription.release();
+    vi.advanceTimersByTime(30_000);
+  });
+
+  it('delivers a Rust server-resync signal once through the desktop source', async () => {
+    let receiveResync: ((event: { payload: unknown }) => void) | undefined;
+    const bridge: DesktopBridge = {
+      invoke: vi.fn().mockResolvedValue(undefined),
+      listen: async (eventName, handler) => {
+        if (eventName === 'atlas://workspace-resync') {
+          receiveResync = handler as (event: { payload: unknown }) => void;
+        }
+        return () => {};
+      },
+    };
+    const source = createDesktopPlatformTransport(bridge).createWorkspaceEventSource('acme');
+    const onResync = vi.fn();
+    source.addEventListener('resync', onResync);
+
+    await Promise.resolve();
+    receiveResync?.({ payload: { workspace_slug: 'acme' } });
+
+    expect(onResync).toHaveBeenCalledExactlyOnceWith(expect.any(Event));
+    source.close();
   });
 
   it('starts cache invalidation before dispatching a valid task event to subscribers', () => {

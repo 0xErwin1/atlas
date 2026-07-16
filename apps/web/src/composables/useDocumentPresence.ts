@@ -1,6 +1,7 @@
 import { onScopeDispose, type Ref, reactive, ref, watch } from 'vue';
 import { wrappedClient } from '@/api';
 import { eventString, type LiveEnvelope } from '@/lib/eventTypes';
+import { getPlatformTransport } from '@/platform/transport';
 import type { ActorDto } from '@/stores/boards';
 
 const PRESENCE_PATH = '/api/workspaces/{ws}/documents/{slug}/presence' as const;
@@ -75,6 +76,11 @@ export function useDocumentPresence(ws: Ref<string>, slug: Ref<string | null>): 
     if (activeWs === null || activeSlug === null) return;
 
     try {
+      if (getPlatformTransport().isDesktop) {
+        void leave(activeWs, activeSlug);
+        return;
+      }
+
       void fetch(`/api/workspaces/${activeWs}/documents/${activeSlug}/presence`, {
         method: 'DELETE',
         keepalive: true,

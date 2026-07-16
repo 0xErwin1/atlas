@@ -1,9 +1,14 @@
+import { invoke } from '@tauri-apps/api/core';
 import { createPinia } from 'pinia';
 import { createApp } from 'vue';
 import App from './App.vue';
 import { setCacheInvalidationHandler, setRequestOutcomeHandler, setUnauthorizedHandler } from './api/wrapper';
 import { blockResourceCacheForUnknownAlias, invalidateResourceCache } from './cache/cacheRuntime';
 import { disposeWorkspaceLiveUpdates } from './lib/workspaceLiveUpdates';
+import { createBrowserPlatformTransport } from './platform/browser';
+import { createDesktopPlatformTransport } from './platform/desktop';
+import { createDesktopFetch, setPlatformFetch } from './platform/fetch';
+import { type PlatformTransport, setPlatformTransport } from './platform/transport';
 import { router } from './router/index';
 import { useAuthStore } from './stores/auth';
 import { useResourceStatusStore } from './stores/resourceStatus';
@@ -14,6 +19,24 @@ const app = createApp(App);
 export const appPinia = createPinia();
 let removePagehideListener: (() => void) | null = null;
 let removeTransportListeners: (() => void) | null = null;
+
+export function bootstrapPlatformTransport<T>(factories: {
+  isDesktop: () => boolean;
+  browser: () => T;
+  desktop: () => T;
+}): T {
+  return factories.isDesktop() ? factories.desktop() : factories.browser();
+}
+
+const isDesktop = '__TAURI_INTERNALS__' in window;
+setPlatformTransport(
+  bootstrapPlatformTransport<PlatformTransport>({
+    isDesktop: () => isDesktop,
+    browser: createBrowserPlatformTransport,
+    desktop: createDesktopPlatformTransport,
+  }),
+);
+if (isDesktop) setPlatformFetch(createDesktopFetch(invoke));
 
 export function registerWorkspaceLiveUpdatesPagehide(): () => void {
   if (removePagehideListener !== null) return removePagehideListener;
@@ -100,4 +123,17 @@ export function installTransportStatus(): () => void {
 
 registerWorkspaceLiveUpdatesPagehide();
 installTransportStatus();
-app.mount('#app');
+
+export async function mountAfterAuthenticationInitialization(
+  initialize = () => useAuthStore(appPinia).initialize(),
+  mount = () => app.mount('#app'),
+): Promise<void> {
+  try {
+    await initialize();
+  } catch {
+    // Initialization failures leave the auth store unauthenticated; mount the login-capable shell.
+  }
+  mount();
+}
+
+void mountAfterAuthenticationInitialization();

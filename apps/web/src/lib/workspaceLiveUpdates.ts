@@ -1,6 +1,7 @@
 import { wrappedClient } from '@/api/wrapper';
 import { invalidateLiveResourceCache, resourceCacheEpoch } from '@/cache/cacheRuntime';
 import { EVENT_TYPES, LIVE_ONLY_EVENT_TYPES, type LiveEnvelope } from '@/lib/eventTypes';
+import { getPlatformTransport, type WorkspaceEventSource } from '@/platform/transport';
 
 const FOREGROUND_DEBOUNCE_MS = 300;
 const IDLE_TIMEOUT_MS = 30_000;
@@ -33,14 +34,40 @@ export interface WorkspaceLiveUpdatesBroker {
   dispose: () => void;
 }
 
+type DesktopGateLiveUpdateStatus = 'event' | 'reconnect-failed' | 'reconnected' | 'reconnecting' | 'resync';
+
+interface DesktopGateLiveUpdateObserver {
+  recordEvent: (eventType: string, workspaceSlug: string) => void;
+  recordStatus: (status: Exclude<DesktopGateLiveUpdateStatus, 'event'>) => void;
+}
+
+export interface WorkspaceLiveUpdatesBrokerOptions {
+  desktopGateObserver?: DesktopGateLiveUpdateObserver | null;
+}
+
+const DESKTOP_GATE_OBSERVER_KEY = Symbol.for('atlas.desktop.gate.live-updates');
+const desktopGateObserverRegistry = globalThis as {
+  [key: symbol]: DesktopGateLiveUpdateObserver | undefined;
+};
+
 type SubscriberId = number;
 type Subscriber = WorkspaceLiveUpdateHandlers;
+
+function getDesktopGateLiveUpdateObserver(): DesktopGateLiveUpdateObserver | null {
+  return desktopGateObserverRegistry[DESKTOP_GATE_OBSERVER_KEY] ?? null;
+}
+
+function isDesktopWorkspaceEventSource(source: WorkspaceEventSource): boolean {
+  return (
+    (source as WorkspaceEventSource & { atlasDesktopEventSource?: boolean }).atlasDesktopEventSource === true
+  );
+}
 
 interface Lifetime {
   readonly generation: number;
   readonly cacheEpoch: number;
   readonly workspaceSlug: string;
-  source: EventSource;
+  source: WorkspaceEventSource;
   sourceToken: symbol;
   readonly subscribers: Map<SubscriberId, Subscriber>;
   idleTimer: ReturnType<typeof setTimeout> | null;
@@ -61,11 +88,14 @@ function computeBackoffDelayMs(attempt: number): number {
   return capped / 2 + Math.random() * (capped / 2);
 }
 
-export function createWorkspaceLiveUpdatesBroker(): WorkspaceLiveUpdatesBroker {
+export function createWorkspaceLiveUpdatesBroker(
+  options: WorkspaceLiveUpdatesBrokerOptions = {},
+): WorkspaceLiveUpdatesBroker {
   let lifetime: Lifetime | null = null;
   let generation = 0;
   let nextSubscriberId = 0;
   let authorizationInvalidator: (() => void) | null = null;
+  const desktopGateObserver = options.desktopGateObserver ?? getDesktopGateLiveUpdateObserver();
 
   function isCurrent(candidate: Lifetime, sourceToken?: symbol, recoveryAttempt?: symbol): boolean {
     return (
@@ -102,7 +132,16 @@ export function createWorkspaceLiveUpdatesBroker(): WorkspaceLiveUpdatesBroker {
 
   function dispatchResync(candidate: Lifetime): void {
     beginLiveCacheInvalidation(candidate);
+    observeDesktopGateStatus(candidate, 'resync');
     dispatch(candidate, (subscriber) => subscriber.onResync());
+  }
+
+  function observeDesktopGateStatus(
+    candidate: Lifetime,
+    status: Exclude<DesktopGateLiveUpdateStatus, 'event'>,
+  ): void {
+    if (desktopGateObserver === null || !isDesktopWorkspaceEventSource(candidate.source)) return;
+    desktopGateObserver.recordStatus(status);
   }
 
   function removeForegroundListeners(candidate: Lifetime): void {
@@ -169,6 +208,7 @@ export function createWorkspaceLiveUpdatesBroker(): WorkspaceLiveUpdatesBroker {
     const recoveryAttempt = Symbol('recovery-attempt');
     candidate.recoveryAttempt = recoveryAttempt;
     beginLiveCacheInvalidation(candidate);
+    observeDesktopGateStatus(candidate, 'reconnect-failed');
     dispatch(candidate, (subscriber) => subscriber.onReconnectFailed?.());
     probeAuthorization(candidate, sourceToken, recoveryAttempt);
   }
@@ -185,6 +225,7 @@ export function createWorkspaceLiveUpdatesBroker(): WorkspaceLiveUpdatesBroker {
     const delay = computeBackoffDelayMs(candidate.reconnectAttempts);
     candidate.reconnectAttempts += 1;
     candidate.recoveryAttempt = recoveryAttempt;
+    observeDesktopGateStatus(candidate, 'reconnecting');
     candidate.reconnectTimer = setTimeout(() => {
       candidate.reconnectTimer = null;
       if (!isCurrent(candidate, sourceToken, recoveryAttempt)) return;
@@ -228,7 +269,7 @@ export function createWorkspaceLiveUpdatesBroker(): WorkspaceLiveUpdatesBroker {
 
     candidate.source.close();
     const sourceToken = Symbol('source');
-    const source = new EventSource(`/api/workspaces/${candidate.workspaceSlug}/events`);
+    const source = getPlatformTransport().createWorkspaceEventSource(candidate.workspaceSlug);
     candidate.source = source;
     candidate.sourceToken = sourceToken;
     candidate.recoveryAttempt = null;
@@ -243,7 +284,10 @@ export function createWorkspaceLiveUpdatesBroker(): WorkspaceLiveUpdatesBroker {
         candidate.firstOpen = false;
         return;
       }
-      if (isReconnect) dispatchResync(candidate);
+      if (isReconnect) {
+        observeDesktopGateStatus(candidate, 'reconnected');
+        dispatchResync(candidate);
+      }
     };
 
     source.onerror = () => {
@@ -274,7 +318,7 @@ export function createWorkspaceLiveUpdatesBroker(): WorkspaceLiveUpdatesBroker {
   function createLifetime(workspaceSlug: string): Lifetime | null {
     if (typeof EventSource === 'undefined') return null;
 
-    const placeholder = new EventSource(`/api/workspaces/${workspaceSlug}/events`);
+    const placeholder = getPlatformTransport().createWorkspaceEventSource(workspaceSlug);
     const candidate: Lifetime = {
       generation: ++generation,
       cacheEpoch: resourceCacheEpoch.value,
@@ -352,6 +396,9 @@ export function createWorkspaceLiveUpdatesBroker(): WorkspaceLiveUpdatesBroker {
 
     const envelope = parsed as LiveEnvelope;
     beginLiveCacheInvalidation(candidate, envelope);
+    if (desktopGateObserver !== null && isDesktopWorkspaceEventSource(candidate.source)) {
+      desktopGateObserver.recordEvent(envelope.event_type, candidate.workspaceSlug);
+    }
     dispatch(candidate, (subscriber) =>
       subscriber.onEvent({ type: envelope.event_type, data: envelope.data, envelope }),
     );

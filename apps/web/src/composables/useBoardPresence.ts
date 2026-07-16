@@ -1,6 +1,7 @@
 import { onScopeDispose, type Ref, reactive, ref, watch } from 'vue';
 import { wrappedClient } from '@/api';
 import { eventString, type LiveEnvelope } from '@/lib/eventTypes';
+import { getPlatformTransport } from '@/platform/transport';
 import type { ActorDto } from '@/stores/boards';
 
 const PRESENCE_PATH = '/api/workspaces/{ws}/boards/{board_id}/presence' as const;
@@ -64,6 +65,11 @@ export function useBoardPresence(ws: Ref<string>, boardId: Ref<string | null>): 
     if (activeWs === null || activeBoard === null) return;
 
     try {
+      if (getPlatformTransport().isDesktop) {
+        void leave(activeWs, activeBoard);
+        return;
+      }
+
       void fetch(`/api/workspaces/${activeWs}/boards/${activeBoard}/presence`, {
         method: 'DELETE',
         keepalive: true,

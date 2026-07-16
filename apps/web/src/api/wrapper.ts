@@ -1,4 +1,5 @@
 import createClient, { type Middleware } from 'openapi-fetch';
+import { fetchThroughPlatform } from '@/platform/fetch';
 import type { paths } from './types.d.ts';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'TRACE']);
@@ -105,7 +106,7 @@ function singularResourceType(resourceType: string): string {
 export const wrappedClient = createClient<paths>({
   baseUrl: globalThis.location?.origin ?? '',
   credentials: 'include',
-  fetch: (req) => globalThis.fetch(req),
+  fetch: fetchThroughPlatform,
 });
 
 wrappedClient.use(csrfMiddlewareForTest);

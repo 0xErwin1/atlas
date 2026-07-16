@@ -12,6 +12,7 @@ import {
   disposeWorkspaceLiveUpdates,
   setWorkspaceLiveUpdatesAuthorizationInvalidator,
 } from '@/lib/workspaceLiveUpdates';
+import { getPlatformTransport } from '@/platform/transport';
 import { useWorkspaceStore } from '@/stores/workspace';
 
 export type MeResponse = components['schemas']['MeResponse'];
@@ -40,6 +41,20 @@ const UNREACHABLE_PROBLEM: NonNullable<LoginResult['problem']> = {
   status: 0,
   hint: 'The Atlas server is not responding. Check it is running and try again.',
 };
+
+let desktopSessionActionInvalidator: (() => void) | null = null;
+let desktopSessionActionListenerInstalled = false;
+
+function installDesktopSessionActionListener(invalidate: () => void): void {
+  desktopSessionActionInvalidator = invalidate;
+
+  if (desktopSessionActionListenerInstalled || typeof window === 'undefined') return;
+
+  window.addEventListener('atlas:session-action', () => {
+    desktopSessionActionInvalidator?.();
+  });
+  desktopSessionActionListenerInstalled = true;
+}
 
 function cachePrincipal(data: MeResponse): string | undefined {
   const principalId = data.principal_type === 'api_key' ? data.agent?.id : data.id;
@@ -76,17 +91,45 @@ export const useAuthStore = defineStore('auth', () => {
     return purge;
   }
 
+  async function clearAuthenticationIfPresent(): Promise<void> {
+    if (user.value !== null || isAuthenticated.value) await clearUser();
+  }
+
   setWorkspaceLiveUpdatesAuthorizationInvalidator(clearUser);
+  installDesktopSessionActionListener(() => {
+    void clearUser();
+  });
 
   async function fetchMe(): Promise<void> {
+    await fetchIdentity(() => getPlatformTransport().me());
+  }
+
+  async function initialize(): Promise<void> {
+    await fetchIdentity(() => getPlatformTransport().resume());
+  }
+
+  async function fetchIdentity(
+    load: () => ReturnType<ReturnType<typeof getPlatformTransport>['me']>,
+  ): Promise<void> {
     const requestGeneration = ++fetchGeneration;
     const requestSessionGeneration = sessionGeneration.value;
-    const { data, error } = await wrappedClient.GET('/api/auth/me', {});
+    let response: Awaited<ReturnType<ReturnType<typeof getPlatformTransport>['me']>>;
+
+    try {
+      response = await load();
+    } catch {
+      if (requestGeneration === fetchGeneration && requestSessionGeneration === sessionGeneration.value) {
+        await clearAuthenticationIfPresent();
+      }
+      return;
+    }
+
+    const { data, error } = response;
 
     if (requestGeneration !== fetchGeneration || requestSessionGeneration !== sessionGeneration.value) return;
 
     if (error || !data) {
-      await clearUser();
+      await clearAuthenticationIfPresent();
       return;
     }
 
@@ -107,9 +150,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function login(credentials: { username: string; password: string }): Promise<LoginResult> {
     try {
-      const { data, error } = await wrappedClient.POST('/api/auth/login', {
-        body: credentials,
-      });
+      const { data, error } = await getPlatformTransport().login(credentials);
 
       if (error || !data) {
         return { ok: false, problem: (error as LoginResult['problem']) ?? UNREACHABLE_PROBLEM };
@@ -129,7 +170,7 @@ export const useAuthStore = defineStore('auth', () => {
     if (!purged) return;
 
     try {
-      await wrappedClient.POST('/api/auth/logout', {});
+      await getPlatformTransport().logout();
     } catch {
       // failure is intentional: always clear local state regardless of server response
     }
@@ -168,6 +209,7 @@ export const useAuthStore = defineStore('auth', () => {
     sessionGeneration: readonly(sessionGeneration),
     clearUser,
     fetchMe,
+    initialize,
     login,
     logout,
     updateProfile,

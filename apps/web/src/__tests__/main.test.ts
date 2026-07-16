@@ -1,7 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { ComponentPublicInstance } from 'vue';
 
 const { disposeWorkspaceLiveUpdates } = vi.hoisted(() => ({
   disposeWorkspaceLiveUpdates: vi.fn(),
+}));
+
+const { tauriInvoke, tauriListen } = vi.hoisted(() => ({
+  tauriInvoke: vi.fn(),
+  tauriListen: vi.fn(),
 }));
 
 vi.mock('@/lib/workspaceLiveUpdates', () => ({
@@ -17,6 +23,8 @@ vi.mock('pinia', async (importOriginal) => {
   return { ...module, createPinia: module.createPinia };
 });
 vi.mock('@/router/index', () => ({ router: {} }));
+vi.mock('@tauri-apps/api/core', () => ({ invoke: tauriInvoke }));
+vi.mock('@tauri-apps/api/event', () => ({ listen: tauriListen }));
 
 import { wrappedClient } from '@/api/wrapper';
 import {
@@ -25,13 +33,23 @@ import {
   setResourceCachePrincipal,
 } from '@/cache/cacheRuntime';
 import { ResourceCache } from '@/cache/resourceCache';
-import { appPinia, installTransportStatus, registerWorkspaceLiveUpdatesPagehide } from '@/main';
+import {
+  appPinia,
+  bootstrapPlatformTransport,
+  installTransportStatus,
+  mountAfterAuthenticationInitialization,
+  registerWorkspaceLiveUpdatesPagehide,
+} from '@/main';
+import { createBrowserPlatformTransport } from '@/platform/browser';
+import { createDesktopPlatformTransport, type DesktopBridge } from '@/platform/desktop';
 import { useResourceStatusStore } from '@/stores/resourceStatus';
 import { useWorkspaceStore } from '@/stores/workspace';
 
 describe('workspace live update page lifecycle', () => {
   afterEach(() => {
     disposeWorkspaceLiveUpdates.mockClear();
+    tauriInvoke.mockReset();
+    tauriListen.mockReset();
   });
 
   it('disposes on a non-persisted pagehide and registers the listener only once', () => {
@@ -51,6 +69,188 @@ describe('workspace live update page lifecycle', () => {
 
     expect(disposeWorkspaceLiveUpdates).not.toHaveBeenCalled();
     cleanup();
+  });
+});
+
+describe('platform transport bootstrap', () => {
+  it('mounts only after desktop resume has resolved the authenticated identity', async () => {
+    let resolveResume: (() => void) | undefined;
+    const resume = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveResume = resolve;
+        }),
+    );
+    const mount = vi.fn();
+
+    const initialization = mountAfterAuthenticationInitialization(resume, mount);
+
+    expect(resume).toHaveBeenCalledOnce();
+    expect(mount).not.toHaveBeenCalled();
+
+    resolveResume?.();
+    await initialization;
+
+    expect(mount).toHaveBeenCalledOnce();
+  });
+
+  it('mounts only after credential-loss initialization resolves to an unauthenticated state', async () => {
+    let resolveInitialization: (() => void) | undefined;
+    let authenticated = true;
+    const initialize = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveInitialization = () => {
+            authenticated = false;
+            resolve();
+          };
+        }),
+    );
+    const mount = vi.fn<() => ComponentPublicInstance>(() => {
+      expect(authenticated).toBe(false);
+      return {} as ComponentPublicInstance;
+    });
+
+    const initialization = mountAfterAuthenticationInitialization(initialize, mount);
+
+    expect(mount).not.toHaveBeenCalled();
+    resolveInitialization?.();
+    await initialization;
+
+    expect(mount).toHaveBeenCalledOnce();
+  });
+
+  it('mounts the unauthenticated application after rejected initialization', async () => {
+    const mount = vi.fn();
+
+    await mountAfterAuthenticationInitialization(
+      () => Promise.reject(new Error('credential storage unavailable')),
+      mount,
+    );
+
+    expect(mount).toHaveBeenCalledOnce();
+  });
+
+  it('selects browser transport without changing wrapped-client cookie, CSRF, or EventSource behavior', async () => {
+    const transport = createBrowserPlatformTransport();
+    const fetch = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    const EventSource = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+    vi.stubGlobal('EventSource', EventSource);
+
+    await transport.login({ username: 'alice', password: 'pass' });
+    await transport.me();
+    await transport.resume();
+    await transport.logout();
+    transport.createWorkspaceEventSource('acme');
+
+    const requests = fetch.mock.calls.map(([request]) => request as Request);
+    expect(requests.map((request) => new URL(request.url).pathname)).toEqual([
+      '/api/auth/login',
+      '/api/auth/me',
+      '/api/auth/me',
+      '/api/auth/logout',
+    ]);
+    for (const request of requests) {
+      expect(request.credentials).toBe('include');
+    }
+    expect(requests[0]?.headers.get('X-Atlas-CSRF')).toBe('1');
+    expect(EventSource).toHaveBeenCalledExactlyOnceWith('/api/workspaces/acme/events');
+    vi.unstubAllGlobals();
+  });
+
+  it('uses the official Tauri API modules when the global bridge is disabled', async () => {
+    tauriInvoke.mockResolvedValue({ data: {}, error: undefined });
+    tauriListen.mockResolvedValue(() => {});
+    vi.stubGlobal('__TAURI__', undefined);
+
+    const transport = createDesktopPlatformTransport();
+    const source = transport.createWorkspaceEventSource('acme');
+
+    await transport.login({ username: 'alice', password: 'pass' });
+    await transport.me();
+    await transport.resume();
+    await transport.logout();
+
+    expect(tauriInvoke).toHaveBeenNthCalledWith(1, 'desktop_workspace_events_subscribe', {
+      workspaceSlug: 'acme',
+    });
+    expect(tauriInvoke).toHaveBeenNthCalledWith(2, 'desktop_auth_login', {
+      credentials: {
+        username: 'alice',
+        password: 'pass',
+      },
+    });
+    expect(tauriInvoke).toHaveBeenNthCalledWith(3, 'desktop_auth_me');
+    expect(tauriInvoke).toHaveBeenNthCalledWith(4, 'desktop_auth_resume');
+    expect(tauriInvoke).toHaveBeenNthCalledWith(5, 'desktop_auth_logout');
+    expect(tauriListen).toHaveBeenNthCalledWith(1, 'atlas://session-action', expect.any(Function));
+    expect(tauriListen).toHaveBeenNthCalledWith(2, 'atlas://workspace-event', expect.any(Function));
+    expect(tauriListen).toHaveBeenNthCalledWith(3, 'atlas://workspace-closed', expect.any(Function));
+    expect(source.readyState).toBe(1);
+    vi.unstubAllGlobals();
+  });
+
+  it('preserves desktop command failures from the official bridge', async () => {
+    tauriInvoke.mockRejectedValue(new Error('desktop unavailable'));
+    tauriListen.mockResolvedValue(() => {});
+
+    const transport = createDesktopPlatformTransport();
+
+    await expect(transport.login({ username: 'alice', password: 'pass' })).rejects.toThrow(
+      'desktop unavailable',
+    );
+  });
+
+  it('dispatches desktop commands and normalized realtime events without exposing a token', async () => {
+    const invoke = vi.fn().mockResolvedValue({ data: { username: 'alice' }, error: undefined });
+    let receive: ((event: { payload: unknown }) => void) | undefined;
+    const listen: DesktopBridge['listen'] = async (eventName, handler) => {
+      if (eventName === 'atlas://workspace-event') {
+        receive = handler as (event: { payload: unknown }) => void;
+      }
+      return () => {};
+    };
+    const transport = createDesktopPlatformTransport({ invoke, listen });
+    const source = transport.createWorkspaceEventSource('acme');
+    const onTaskCreated = vi.fn();
+    source.addEventListener('task.created', onTaskCreated);
+
+    await transport.me();
+    receive?.({ payload: { event_type: 'task.created', data: { task_id: 'task-1' } } });
+    await Promise.resolve();
+
+    expect(invoke).toHaveBeenCalledWith('desktop_auth_me');
+    expect(onTaskCreated).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        data: JSON.stringify({ event_type: 'task.created', data: { task_id: 'task-1' } }),
+      }),
+    );
+    expect(JSON.stringify(invoke.mock.calls)).not.toContain('token');
+  });
+
+  it('cancels the Rust workspace transport when a desktop source closes', async () => {
+    const invoke = vi.fn().mockResolvedValue(undefined);
+    const transport = createDesktopPlatformTransport({
+      invoke,
+      listen: async () => () => {},
+    });
+    const source = transport.createWorkspaceEventSource('acme');
+
+    source.close();
+    await Promise.resolve();
+
+    expect(invoke).toHaveBeenCalledWith('desktop_workspace_events_stop', { workspaceSlug: 'acme' });
+  });
+
+  it('chooses the adapter once at bootstrap rather than in components', () => {
+    const transport = bootstrapPlatformTransport({
+      isDesktop: () => true,
+      browser: () => ({ kind: 'browser' }),
+      desktop: () => ({ kind: 'desktop' }),
+    });
+
+    expect(transport).toEqual({ kind: 'desktop' });
   });
 });
 

@@ -9,18 +9,46 @@ import Icon from '@/components/ui/Icon.vue';
 import { useProblem } from '@/composables/useProblem';
 import { initials as nameInitials } from '@/lib/format';
 import { validateForm } from '@/lib/validation';
+import { getPlatformTransport } from '@/platform/transport';
 import { type Problem, useAuthStore } from '@/stores/auth';
 import { useUiStore } from '@/stores/ui';
 
 const auth = useAuthStore();
 const ui = useUiStore();
 const router = useRouter();
+const transport = getPlatformTransport();
 
 const displayName = computed(() => auth.user?.display_name ?? auth.user?.username ?? 'Account');
 const username = computed(() => auth.user?.username ?? '');
 const isRoot = computed(() => auth.user?.is_root === true);
 
 const initials = computed(() => nameInitials(auth.user?.display_name ?? auth.user?.username));
+const serverOrigin = ref('https://atlas.iperez.dev');
+const serverOriginError = ref<string | null>(null);
+const serverOriginSaving = ref(false);
+
+if (transport.isDesktop) {
+  void transport.getOrigin().then(({ data }) => {
+    if (data !== undefined) serverOrigin.value = data.origin;
+  });
+}
+
+async function updateServerOrigin(): Promise<void> {
+  serverOriginError.value = null;
+  serverOriginSaving.value = true;
+  const result = await transport.setOrigin(serverOrigin.value);
+  serverOriginSaving.value = false;
+
+  if (result.error || result.data === undefined) {
+    serverOriginError.value =
+      typeof result.error === 'string' ? result.error : 'Unable to save the Atlas server URL';
+    return;
+  }
+
+  serverOrigin.value = result.data.origin;
+  await auth.clearUser();
+  await router.push({ name: 'login' });
+}
 
 function problemText(problem: Problem): string {
   const p = useProblem(problem);
@@ -121,6 +149,26 @@ async function signOut(): Promise<void> {
         </div>
       </div>
     </div>
+
+    <template v-if="transport.isDesktop">
+      <div class="atl-sec-title">Atlas server</div>
+      <div class="flex" style="align-items: flex-start; gap: 10px; max-width: 430px; margin-bottom: 22px;">
+        <div style="flex: 1; min-width: 0;">
+          <FormField
+            label="Server URL"
+            type="text"
+            :model-value="serverOrigin"
+            placeholder="https://atlas.iperez.dev"
+            mono
+            :error="serverOriginError"
+            @update:model-value="(value) => { serverOrigin = value; serverOriginError = null; }"
+          />
+        </div>
+        <Btn variant="secondary" :disabled="serverOriginSaving" @click="updateServerOrigin">
+          Change
+        </Btn>
+      </div>
+    </template>
 
     <div class="atl-sec-title">Email</div>
     <div class="flex" style="align-items: flex-start; gap: 10px; max-width: 430px; margin-bottom: 22px;">
