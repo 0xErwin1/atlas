@@ -78,6 +78,52 @@ impl DesktopConfiguration {
     }
 }
 
+/// Machine-local desktop preferences, distinct from `DesktopConfiguration`. Stored in
+/// `preferences.json`, a sibling of `desktop.json`, and never synced with the server.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct DesktopPreferences {
+    window_decorations: bool,
+}
+
+impl DesktopPreferences {
+    const DECORATIONS_ON: Self = Self {
+        window_decorations: true,
+    };
+
+    /// Resolves stored preference bytes to the effective value, falling back to the safe
+    /// default whenever storage is absent or does not parse.
+    pub fn resolve(stored: Option<&str>) -> Self {
+        stored
+            .and_then(|contents| serde_json::from_str::<Self>(contents).ok())
+            .unwrap_or(Self::DECORATIONS_ON)
+    }
+
+    pub fn with_window_decorations(window_decorations: bool) -> Self {
+        Self { window_decorations }
+    }
+
+    pub fn window_decorations(&self) -> bool {
+        self.window_decorations
+    }
+
+    pub fn load(directory: &Path) -> Self {
+        let stored = fs::read_to_string(directory.join("preferences.json")).ok();
+        Self::resolve(stored.as_deref())
+    }
+
+    pub fn save(&self, directory: &Path) -> Result<(), DesktopError> {
+        fs::create_dir_all(directory).map_err(|_| DesktopError::ConfigurationUnavailable)?;
+        let preferences =
+            serde_json::to_string(self).map_err(|_| DesktopError::ConfigurationUnavailable)?;
+
+        fs::write(
+            directory.join("preferences.json"),
+            format!("{preferences}\n"),
+        )
+        .map_err(|_| DesktopError::ConfigurationUnavailable)
+    }
+}
+
 impl SessionScope {
     pub fn new(origin: &str, identity: &str) -> Result<Self, DesktopError> {
         let origin = canonical_origin(origin)?;
@@ -950,6 +996,44 @@ fn hex_value(byte: u8) -> Result<u8, DesktopError> {
         b'a'..=b'f' => Ok(byte - b'a' + 10),
         b'A'..=b'F' => Ok(byte - b'A' + 10),
         _ => Err(DesktopError::InvalidApiPath),
+    }
+}
+
+#[cfg(test)]
+mod desktop_preferences_tests {
+    use super::*;
+
+    #[test]
+    fn resolves_to_on_when_no_preference_is_stored() {
+        assert_eq!(
+            DesktopPreferences::resolve(None),
+            DesktopPreferences::DECORATIONS_ON
+        );
+    }
+
+    #[test]
+    fn resolves_to_on_when_the_stored_preference_does_not_parse() {
+        for stored in [
+            "not json",
+            "{\"window_decorations\": \"nope\"}",
+            "{}",
+            "null",
+            "",
+        ] {
+            assert_eq!(
+                DesktopPreferences::resolve(Some(stored)),
+                DesktopPreferences::DECORATIONS_ON,
+                "{stored:?} must resolve to the safe default"
+            );
+        }
+    }
+
+    #[test]
+    fn honors_a_stored_off_preference() {
+        assert_eq!(
+            DesktopPreferences::resolve(Some("{\"window_decorations\":false}")),
+            DesktopPreferences::with_window_decorations(false)
+        );
     }
 }
 

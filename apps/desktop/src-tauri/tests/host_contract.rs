@@ -1,10 +1,10 @@
 #![allow(clippy::expect_used)]
 
 use atlas_desktop::{
-    DesktopApiRequest, DesktopConfiguration, DesktopSession, InMemorySecretStore, Lifecycle,
-    LifecycleAction, SecretStore, SessionScope, SessionState, StreamFrame, StreamTermination,
-    TransportKind, WorkspaceEvent, build_authenticated_api_request, build_authenticated_request,
-    classify_workspace_stream_terminal, process_workspace_sse_chunk,
+    DesktopApiRequest, DesktopConfiguration, DesktopPreferences, DesktopSession,
+    InMemorySecretStore, Lifecycle, LifecycleAction, SecretStore, SessionScope, SessionState,
+    StreamFrame, StreamTermination, TransportKind, WorkspaceEvent, build_authenticated_api_request,
+    build_authenticated_request, classify_workspace_stream_terminal, process_workspace_sse_chunk,
 };
 use std::{
     fs,
@@ -285,6 +285,41 @@ fn persists_only_the_normalized_user_selected_origin_in_desktop_configuration() 
     assert!(!persisted.contains("bearer"));
 
     fs::remove_dir_all(directory).expect("temporary configuration is removed");
+}
+
+#[test]
+fn desktop_preferences_round_trip_persists_the_saved_value_as_exact_bytes() {
+    let directory = std::env::temp_dir().join(format!(
+        "atlas-desktop-preferences-contract-{}",
+        std::process::id()
+    ));
+    let preferences = DesktopPreferences::with_window_decorations(true);
+
+    preferences
+        .save(&directory)
+        .expect("preferences are persisted");
+
+    let preferences_file = directory.join("preferences.json");
+    let persisted = fs::read_to_string(&preferences_file).expect("preferences are readable");
+    let loaded = DesktopPreferences::load(&directory);
+
+    assert_eq!(persisted, "{\"window_decorations\":true}\n");
+    assert_eq!(loaded, preferences);
+    assert!(!persisted.contains("bearer"));
+
+    fs::remove_dir_all(directory).expect("temporary preferences are removed");
+}
+
+#[test]
+fn desktop_preferences_resolve_to_on_when_no_file_is_stored() {
+    let directory = std::env::temp_dir().join(format!(
+        "atlas-desktop-preferences-missing-{}",
+        std::process::id()
+    ));
+
+    let loaded = DesktopPreferences::load(&directory);
+
+    assert_eq!(loaded, DesktopPreferences::with_window_decorations(true));
 }
 
 #[test]

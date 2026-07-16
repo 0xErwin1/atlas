@@ -1,8 +1,9 @@
 use atlas_desktop::{
-    DesktopApiRequest, DesktopConfiguration, DesktopError, DesktopSession, LifecycleAction,
-    ReqwestTransportFactory, SecretServiceStore, SessionScope, StreamFrame, StreamTermination,
-    TransportFactory, TransportKind, classify_workspace_stream_terminal, clear_active_identity,
-    load_active_identity, process_workspace_sse_chunk, store_active_identity,
+    DesktopApiRequest, DesktopConfiguration, DesktopError, DesktopPreferences, DesktopSession,
+    LifecycleAction, ReqwestTransportFactory, SecretServiceStore, SessionScope, StreamFrame,
+    StreamTermination, TransportFactory, TransportKind, classify_workspace_stream_terminal,
+    clear_active_identity, load_active_identity, process_workspace_sse_chunk,
+    store_active_identity,
 };
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -13,7 +14,7 @@ use std::{
     process,
     sync::{Arc, Mutex},
 };
-use tauri::{Emitter, Runtime, State};
+use tauri::{Emitter, Manager, Runtime, State};
 
 struct DesktopState {
     origin: Mutex<String>,
@@ -24,6 +25,7 @@ struct DesktopState {
 }
 
 const DEFAULT_DESKTOP_ORIGIN: &str = "https://atlas.iperez.dev";
+const MAIN_WINDOW_LABEL: &str = "main";
 
 #[derive(Serialize)]
 struct IpcSessionStatus {
@@ -444,6 +446,32 @@ fn desktop_set_origin<R: Runtime>(
 }
 
 #[tauri::command]
+fn desktop_get_window_decorations(state: State<'_, DesktopState>) -> IpcResult<DesktopPreferences> {
+    IpcResult::data(DesktopPreferences::load(&state.configuration_directory))
+}
+
+#[tauri::command]
+fn desktop_set_window_decorations<R: Runtime>(
+    decorations: bool,
+    state: State<'_, DesktopState>,
+    app: tauri::AppHandle<R>,
+) -> IpcResult<DesktopPreferences> {
+    let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) else {
+        return IpcResult::error("desktop window is unavailable");
+    };
+    if window.set_decorations(decorations).is_err() {
+        return IpcResult::error("desktop window decorations are unavailable");
+    }
+
+    let preferences = DesktopPreferences::with_window_decorations(decorations);
+    if preferences.save(&state.configuration_directory).is_err() {
+        return IpcResult::error("desktop configuration is unavailable");
+    }
+
+    IpcResult::data(preferences)
+}
+
+#[tauri::command]
 fn desktop_auth_login<R: Runtime>(
     credentials: LoginCredentials,
     state: State<'_, DesktopState>,
@@ -794,6 +822,7 @@ pub(crate) fn run_with_client(client: reqwest::Client) {
         Ok(origin) => origin,
         Err(_) => process::exit(2),
     };
+    let preferences_directory = configuration_directory.clone();
 
     tauri::Builder::default()
         .manage(DesktopState {
@@ -803,10 +832,21 @@ pub(crate) fn run_with_client(client: reqwest::Client) {
             session: Arc::new(Mutex::new(DesktopSession::new(SecretServiceStore))),
             transports: Arc::new(Mutex::new(HashMap::new())),
         })
+        .setup(move |app| {
+            let window = app
+                .get_webview_window(MAIN_WINDOW_LABEL)
+                .ok_or("the main window is unavailable")?;
+            let preferences = DesktopPreferences::load(&preferences_directory);
+
+            window.set_decorations(preferences.window_decorations())?;
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             desktop_session_status,
             desktop_get_origin,
             desktop_set_origin,
+            desktop_get_window_decorations,
+            desktop_set_window_decorations,
             desktop_auth_login,
             desktop_auth_resume,
             desktop_auth_me,
@@ -904,13 +944,24 @@ mod command_tests {
     };
 
     fn test_state() -> DesktopState {
+        test_state_with_directory(std::env::temp_dir())
+    }
+
+    fn test_state_with_directory(configuration_directory: PathBuf) -> DesktopState {
         DesktopState {
             origin: Mutex::new("https://atlas.example.test".to_owned()),
-            configuration_directory: std::env::temp_dir(),
+            configuration_directory,
             client: reqwest::Client::new(),
             session: Arc::new(Mutex::new(DesktopSession::new(SecretServiceStore))),
             transports: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+
+    fn preferences_test_directory(label: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "atlas-desktop-preferences-command-{label}-{}",
+            std::process::id()
+        ))
     }
 
     #[test]
@@ -969,6 +1020,99 @@ mod command_tests {
             .expect("the command response is JSON");
 
         assert_eq!(response["error"], "desktop session is unavailable");
+    }
+
+    #[test]
+    fn desktop_get_window_decorations_resolves_the_safe_default_when_unset() {
+        let directory = preferences_test_directory("get-default");
+        let app = mock_builder()
+            .manage(test_state_with_directory(directory.clone()))
+            .invoke_handler(tauri::generate_handler![desktop_get_window_decorations])
+            .build(mock_context(noop_assets()))
+            .expect("the command test app builds");
+        let webview = WebviewWindowBuilder::new(&app, MAIN_WINDOW_LABEL, Default::default())
+            .build()
+            .expect("the command test webview builds");
+        let request = InvokeRequest {
+            cmd: "desktop_get_window_decorations".into(),
+            callback: CallbackFn(0),
+            error: CallbackFn(1),
+            url: "tauri://localhost".parse().expect("valid test URL"),
+            body: tauri::ipc::InvokeBody::Json(serde_json::json!({})),
+            headers: Default::default(),
+            invoke_key: INVOKE_KEY.to_owned(),
+        };
+
+        let response = get_ipc_response(&webview, request)
+            .expect("the command must deserialize and invoke through Tauri IPC")
+            .deserialize::<serde_json::Value>()
+            .expect("the command response is JSON");
+
+        assert_eq!(response["data"]["window_decorations"], true);
+    }
+
+    #[test]
+    fn desktop_set_window_decorations_persists_and_returns_the_updated_preference() {
+        let directory = preferences_test_directory("set-persists");
+        let app = mock_builder()
+            .manage(test_state_with_directory(directory.clone()))
+            .invoke_handler(tauri::generate_handler![desktop_set_window_decorations])
+            .build(mock_context(noop_assets()))
+            .expect("the command test app builds");
+        let webview = WebviewWindowBuilder::new(&app, MAIN_WINDOW_LABEL, Default::default())
+            .build()
+            .expect("the command test webview builds");
+        let request = InvokeRequest {
+            cmd: "desktop_set_window_decorations".into(),
+            callback: CallbackFn(0),
+            error: CallbackFn(1),
+            url: "tauri://localhost".parse().expect("valid test URL"),
+            body: tauri::ipc::InvokeBody::Json(serde_json::json!({ "decorations": false })),
+            headers: Default::default(),
+            invoke_key: INVOKE_KEY.to_owned(),
+        };
+
+        let response = get_ipc_response(&webview, request)
+            .expect("the command must deserialize and invoke through Tauri IPC")
+            .deserialize::<serde_json::Value>()
+            .expect("the command response is JSON");
+
+        assert_eq!(response["data"]["window_decorations"], false);
+        let persisted = std::fs::read_to_string(directory.join("preferences.json"))
+            .expect("preferences are persisted");
+        assert_eq!(persisted, "{\"window_decorations\":false}\n");
+
+        std::fs::remove_dir_all(&directory).expect("temporary preferences are removed");
+    }
+
+    #[test]
+    fn desktop_set_window_decorations_fails_closed_when_the_main_window_is_missing() {
+        let directory = preferences_test_directory("set-missing-window");
+        let app = mock_builder()
+            .manage(test_state_with_directory(directory.clone()))
+            .invoke_handler(tauri::generate_handler![desktop_set_window_decorations])
+            .build(mock_context(noop_assets()))
+            .expect("the command test app builds");
+        let webview = WebviewWindowBuilder::new(&app, "not-main", Default::default())
+            .build()
+            .expect("the command test webview builds");
+        let request = InvokeRequest {
+            cmd: "desktop_set_window_decorations".into(),
+            callback: CallbackFn(0),
+            error: CallbackFn(1),
+            url: "tauri://localhost".parse().expect("valid test URL"),
+            body: tauri::ipc::InvokeBody::Json(serde_json::json!({ "decorations": false })),
+            headers: Default::default(),
+            invoke_key: INVOKE_KEY.to_owned(),
+        };
+
+        let response = get_ipc_response(&webview, request)
+            .expect("the command must deserialize and invoke through Tauri IPC")
+            .deserialize::<serde_json::Value>()
+            .expect("the command response is JSON");
+
+        assert_eq!(response["error"], "desktop window is unavailable");
+        assert!(!directory.join("preferences.json").exists());
     }
 
     #[tokio::test]
