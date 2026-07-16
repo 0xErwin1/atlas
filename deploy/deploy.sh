@@ -6,11 +6,7 @@ set -euo pipefail
 TAG="${ATLAS_DEPLOY_TAG:-latest}"
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 
-echo "==> Building atlas-server:${TAG}"
-podman build -t "atlas-server:${TAG}" -f "${REPO_ROOT}/deploy/Containerfile.server" "${REPO_ROOT}"
-
-echo "==> Building atlas-web:${TAG}"
-podman build -t "atlas-web:${TAG}" -f "${REPO_ROOT}/deploy/Containerfile.web" "${REPO_ROOT}"
+TAG="${TAG}" "${REPO_ROOT}/deploy/build-images.sh"
 
 echo "==> Transferring images to ${ATLAS_DEPLOY_HOST}"
 # Ship each image in its own save|load. `podman save img1 img2` (without
