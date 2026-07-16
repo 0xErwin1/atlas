@@ -54,8 +54,7 @@ async function updateServerOrigin(): Promise<void> {
   }
 
   if (result.error || result.data === undefined) {
-    serverOriginError.value =
-      typeof result.error === 'string' ? result.error : SERVER_ORIGIN_FALLBACK_ERROR;
+    serverOriginError.value = typeof result.error === 'string' ? result.error : SERVER_ORIGIN_FALLBACK_ERROR;
     return;
   }
 
