@@ -8,6 +8,7 @@ members = [
     "crates/atlas_mcp",
     "crates/migration",
     "crates/atlas_test_db",
+    "crates/atlas_test_harness",
     "apps/desktop/src-tauri",
 ]
 default-members = [
@@ -103,6 +104,12 @@ anyhow             = "1"
 async-trait        = "0.1"
 schemars           = "0.8"
 futures            = "0.3"
+
+# Test harness only (crates/atlas_test_harness). Pulls in ~210 extra
+# transitive crates (bollard, hyper, tonic, rustls), so it stays a normal
+# dependency of that one crate rather than a dev-dependency anywhere else.
+testcontainers         = "0.27.3"
+testcontainers-modules = { version = "0.15.0", features = ["postgres"] }
 
 [workspace.lints.rust]
 unsafe_code     = "forbid"
