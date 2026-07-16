@@ -13,7 +13,8 @@
       {
         "title": "Atlas",
         "width": 1200,
-        "height": 800
+        "height": 800,
+        "decorations": false
       }
     ]
   },
