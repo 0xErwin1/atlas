@@ -152,10 +152,9 @@ async function signOut(): Promise<void> {
 
     <template v-if="transport.isDesktop">
       <div class="atl-sec-title">Atlas server</div>
-      <div class="flex" style="align-items: flex-start; gap: 10px; max-width: 430px; margin-bottom: 22px;">
+      <div class="atl-inline-field">
         <div style="flex: 1; min-width: 0;">
           <FormField
-            label="Server URL"
             type="text"
             :model-value="serverOrigin"
             placeholder="https://atlas.iperez.dev"
@@ -171,7 +170,7 @@ async function signOut(): Promise<void> {
     </template>
 
     <div class="atl-sec-title">Email</div>
-    <div class="flex" style="align-items: flex-start; gap: 10px; max-width: 430px; margin-bottom: 22px;">
+    <div class="atl-inline-field">
       <div style="flex: 1; min-width: 0;">
         <FormField
           :model-value="email"
@@ -182,7 +181,7 @@ async function signOut(): Promise<void> {
           @update:model-value="(v) => { email = v; emailError = null; }"
         />
       </div>
-      <Btn variant="secondary" :disabled="emailSaving" style="margin-top: 0;" @click="updateEmail">
+      <Btn variant="secondary" :disabled="emailSaving" @click="updateEmail">
         Update
       </Btn>
     </div>
@@ -250,6 +249,21 @@ async function signOut(): Promise<void> {
 </template>
 
 <style scoped>
+.atl-inline-field {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 430px;
+  margin-bottom: 22px;
+}
+
+/* The action sits beside an unlabelled field, so matching the input height keeps
+   the row reading as a single control. Restricted to the direct child so the
+   controls rendered inside the field itself are left alone. */
+.atl-inline-field > :deep(button) {
+  height: var(--h-input);
+}
+
 .atl-id-card {
   display: flex;
   align-items: center;
