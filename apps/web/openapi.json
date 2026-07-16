@@ -6517,6 +6517,162 @@
         ]
       }
     },
+    "/api/workspaces/{ws}/semantic-search": {
+      "get": {
+        "tags": [
+          "search"
+        ],
+        "operationId": "semantic_search",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Semantic search query (required).",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "description": "Comma-separated kinds: document/note, task, all.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Opaque semantic-search cursor.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size, default 50, clamped to [1,200]",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Semantic search results page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Paginated response envelope.",
+                  "required": [
+                    "items",
+                    "has_more"
+                  ],
+                  "properties": {
+                    "has_more": {
+                      "type": "boolean"
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "kind",
+                          "title",
+                          "similarity",
+                          "source",
+                          "excerpt"
+                        ],
+                        "properties": {
+                          "column_name": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "excerpt": {
+                            "type": "string"
+                          },
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "kind": {
+                            "$ref": "#/components/schemas/SemanticSearchKindDto"
+                          },
+                          "project_slug": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "readable_id": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "similarity": {
+                            "type": "number",
+                            "format": "float"
+                          },
+                          "source": {
+                            "$ref": "#/components/schemas/SemanticSearchSourceDto"
+                          },
+                          "title": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "next_cursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "404": {
+            "description": "Workspace not found or principal has no access"
+          },
+          "422": {
+            "description": "Invalid input: absent q or malformed cursor"
+          },
+          "503": {
+            "description": "Semantic search is disabled or embedding provider is unavailable"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/api/workspaces/{ws}/status-templates": {
       "get": {
         "tags": [
@@ -13193,6 +13349,76 @@
         "enum": [
           "document",
           "task"
+        ]
+      },
+      "SemanticSearchHitDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "similarity",
+          "source",
+          "excerpt"
+        ],
+        "properties": {
+          "column_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "excerpt": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/SemanticSearchKindDto"
+          },
+          "project_slug": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "readable_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "similarity": {
+            "type": "number",
+            "format": "float"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SemanticSearchSourceDto"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "SemanticSearchKindDto": {
+        "type": "string",
+        "enum": [
+          "document",
+          "task"
+        ]
+      },
+      "SemanticSearchSourceDto": {
+        "type": "string",
+        "enum": [
+          "title",
+          "content",
+          "comment",
+          "attachment_name",
+          "checklist",
+          "subtask",
+          "aggregate"
         ]
       },
       "ServerMetaDto": {
