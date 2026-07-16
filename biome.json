@@ -29,7 +29,8 @@
       "!**/*.d.ts",
       "!**/node_modules",
       "!**/target",
-      "!apps/web/openapi.json"
+      "!apps/web/openapi.json",
+      "!apps/desktop/src-tauri/gen/schemas"
     ]
   },
   "overrides": [

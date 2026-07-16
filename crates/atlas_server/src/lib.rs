@@ -25,6 +25,100 @@ pub mod services;
 pub mod state;
 pub mod webhook_url;
 
+/// Test-only server assembly for the desktop integration gate.
+#[cfg(feature = "desktop-gate-support")]
+pub mod desktop_gate_support {
+    use crate::persistence::repos::{
+        MembershipRepo, NewUser, NewWorkspace, PgMembershipRepo, PgSessionRepo, PgUserRepo,
+        PgWorkspaceRepo, SessionRepo, UserRepo, WorkspaceRepo,
+    };
+    use atlas_domain::{
+        Actor, WorkspaceCtx,
+        entities::identity::MemberRole,
+        ids::{UserId, WorkspaceId},
+    };
+    use sea_orm::{ConnectionTrait, DatabaseConnection};
+
+    pub use crate::app;
+    pub use crate::state::AppState;
+
+    /// Builds the deterministic server state used by the desktop gate.
+    pub async fn app_state(db: DatabaseConnection) -> Result<AppState, anyhow::Error> {
+        AppState::for_test(db).await
+    }
+
+    /// Identity material generated only for the in-process desktop gate server.
+    pub struct EphemeralIdentity {
+        user_id: UserId,
+        pub username: String,
+        pub password: String,
+        pub workspace_slug: String,
+        pub workspace_id: uuid::Uuid,
+    }
+
+    /// Creates an activated workspace owner with credentials confined to the caller.
+    pub async fn seed_ephemeral_identity(
+        db: &DatabaseConnection,
+    ) -> Result<EphemeralIdentity, anyhow::Error> {
+        let suffix = uuid::Uuid::now_v7().as_simple().to_string();
+        let username = format!("gate-{suffix}");
+        let password = format!("Gate{suffix}Aa!");
+        let password_hash = crate::auth::password::hash(password.clone())
+            .await
+            .map_err(|_| anyhow::anyhow!("gate identity password setup failed"))?;
+
+        let user = PgUserRepo { conn: db.clone() }
+            .create(NewUser {
+                username: username.clone(),
+                display_name: username.clone(),
+                email: None,
+                password_hash: Some(password_hash),
+                is_root: false,
+                is_system_admin: false,
+            })
+            .await?;
+
+        db.execute_unprepared(&format!(
+            "UPDATE users SET activated_at = now() WHERE id = '{}'",
+            user.id.0
+        ))
+        .await?;
+
+        let workspace_slug = format!("ws-{suffix}");
+        let workspace = PgWorkspaceRepo { conn: db.clone() }
+            .create(NewWorkspace {
+                id: WorkspaceId::new(),
+                name: format!("Workspace {suffix}"),
+                slug: workspace_slug.clone(),
+            })
+            .await?;
+        let ctx = WorkspaceCtx::new(workspace.id, Actor::User(user.id));
+
+        PgMembershipRepo { conn: db.clone() }
+            .add(&ctx, user.id, MemberRole::Owner)
+            .await?;
+
+        Ok(EphemeralIdentity {
+            user_id: user.id,
+            username,
+            password,
+            workspace_slug,
+            workspace_id: workspace.id.0,
+        })
+    }
+
+    /// Revokes only the generated gate user's active sessions through the test-only server seam.
+    pub async fn revoke_ephemeral_sessions(
+        db: &DatabaseConnection,
+        identity: &EphemeralIdentity,
+    ) -> Result<(), anyhow::Error> {
+        PgSessionRepo { conn: db.clone() }
+            .revoke_all_for_user(identity.user_id)
+            .await?;
+        Ok(())
+    }
+}
+
 use crate::state::AppState;
 
 /// Builds the full application router with all routes and the middleware stack.

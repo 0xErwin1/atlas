@@ -1,0 +1,24 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Atlas Desktop",
+  "version": "0.0.0",
+  "identifier": "me.feuer.atlas.desktop",
+  "build": {
+    "beforeDevCommand": "pnpm --dir ../web dev --host 127.0.0.1",
+    "devUrl": "http://127.0.0.1:5173",
+    "frontendDist": "../../web/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Atlas",
+        "width": 1200,
+        "height": 800
+      }
+    ]
+  },
+  "bundle": {
+    "active": false,
+    "icon": []
+  }
+}

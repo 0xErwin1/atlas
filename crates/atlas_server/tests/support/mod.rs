@@ -13,16 +13,12 @@ use atlas_server::{
     },
     state::AppState,
 };
-use migration::Migrator;
-use sea_orm::{ConnectOptions, ConnectionTrait, Database, DatabaseConnection, DbErr};
-use sea_orm_migration::prelude::MigratorTrait;
+use atlas_test_db::TestDb as DatabaseFixture;
+use sea_orm::{ConnectionTrait, DatabaseConnection, DbErr};
 use tokio::task::AbortHandle;
-use uuid::Uuid;
 
 pub(crate) struct TestDb {
-    conn: DatabaseConnection,
-    db_name: String,
-    admin_url: String,
+    fixture: DatabaseFixture,
 }
 
 impl TestDb {
@@ -36,116 +32,89 @@ impl TestDb {
     /// assert a later migration's back-fill behavior against a row shaped like
     /// it existed before that migration ran.
     pub(crate) async fn create_with_migration_steps(steps: Option<u32>) -> Result<Self, DbErr> {
-        let database_url = std::env::var("DATABASE_URL")
-            .unwrap_or_else(|_| "postgres://atlas:atlas@localhost:5432/atlas_dev".to_string());
+        let fixture = DatabaseFixture::create_with_migration_steps(steps).await?;
 
-        let admin_url = admin_url_from(&database_url);
-        let db_name = format!("atlas_test_{}", Uuid::now_v7().as_simple());
-
-        let admin = Database::connect(admin_opts(&admin_url)).await?;
-        admin
-            .execute_unprepared(&format!("CREATE DATABASE \"{db_name}\""))
-            .await?;
-        drop(admin);
-
-        let test_url = replace_db_name(&database_url, &db_name);
-        let opts = ConnectOptions::new(test_url);
-        let conn = Database::connect(opts).await?;
-
-        Migrator::up(&conn, steps).await?;
-
-        Ok(Self {
-            conn,
-            db_name,
-            admin_url,
-        })
+        Ok(Self { fixture })
     }
 
     /// Applies any migrations still pending against this database.
     pub(crate) async fn run_remaining_migrations(&self) -> Result<(), DbErr> {
-        Migrator::up(&self.conn, None).await
+        self.fixture.run_remaining_migrations().await
     }
 
     pub(crate) fn conn(&self) -> &DatabaseConnection {
-        &self.conn
+        self.fixture.conn()
     }
 
     pub(crate) fn user_repo(&self) -> PgUserRepo {
         PgUserRepo {
-            conn: self.conn.clone(),
+            conn: self.conn().clone(),
         }
     }
 
     pub(crate) fn workspace_repo(&self) -> PgWorkspaceRepo {
         PgWorkspaceRepo {
-            conn: self.conn.clone(),
+            conn: self.conn().clone(),
         }
     }
 
     pub(crate) fn session_repo(&self) -> PgSessionRepo {
         PgSessionRepo {
-            conn: self.conn.clone(),
+            conn: self.conn().clone(),
         }
     }
 
     pub(crate) fn api_key_repo(&self) -> PgApiKeyRepo {
         PgApiKeyRepo {
-            conn: self.conn.clone(),
+            conn: self.conn().clone(),
         }
     }
 
     pub(crate) fn activation_token_repo(&self) -> PgActivationTokenRepo {
         PgActivationTokenRepo {
-            conn: self.conn.clone(),
+            conn: self.conn().clone(),
         }
     }
 
     pub(crate) fn membership_repo(&self) -> PgMembershipRepo {
         PgMembershipRepo {
-            conn: self.conn.clone(),
+            conn: self.conn().clone(),
         }
     }
 
     pub(crate) fn project_repo(&self) -> PgProjectRepo {
         PgProjectRepo {
-            conn: self.conn.clone(),
+            conn: self.conn().clone(),
         }
     }
 
     pub(crate) fn folder_repo(&self) -> PgFolderRepo {
         PgFolderRepo {
-            conn: self.conn.clone(),
+            conn: self.conn().clone(),
         }
     }
 
     pub(crate) fn doc_repo(&self) -> PgDocumentRepo {
-        PgDocumentRepo::new(self.conn.clone(), 25)
+        PgDocumentRepo::new(self.conn().clone(), 25)
     }
 
     pub(crate) fn property_definition_repo(&self) -> PgPropertyDefinitionRepo {
         PgPropertyDefinitionRepo {
-            conn: self.conn.clone(),
+            conn: self.conn().clone(),
         }
     }
 
     pub(crate) fn board_repo(&self) -> PgBoardRepo {
-        PgBoardRepo::new(self.conn.clone())
+        PgBoardRepo::new(self.conn().clone())
     }
 
     pub(crate) fn task_repo(&self) -> PgTaskRepo {
-        PgTaskRepo::new(self.conn.clone())
+        PgTaskRepo::new(self.conn().clone())
     }
 
     pub(crate) async fn teardown(self) {
-        drop(self.conn);
-
-        if let Ok(admin) = Database::connect(admin_opts(&self.admin_url)).await {
-            let _ = admin
-                .execute_unprepared(&format!(
-                    "DROP DATABASE IF EXISTS \"{}\" WITH (FORCE)",
-                    self.db_name
-                ))
-                .await;
+        if let Err(error) = self.fixture.teardown().await {
+            tracing::warn!(%error, "test database teardown failed");
         }
     }
 }
@@ -432,34 +401,4 @@ pub(crate) async fn expire_all_sessions(db: &TestDb) {
         .execute_unprepared("UPDATE sessions SET expires_at = now() - interval '1 second'")
         .await
         .expect("expire sessions");
-}
-
-/// Connection options for an admin connection that only runs a single
-/// CREATE/DROP DATABASE statement. Caps the pool to one connection so that many
-/// parallel tests do not each open a default-sized admin pool against the shared
-/// server.
-fn admin_opts(url: &str) -> ConnectOptions {
-    let mut opts = ConnectOptions::new(url.to_owned());
-    opts.max_connections(1).min_connections(0);
-    opts
-}
-
-fn admin_url_from(url: &str) -> String {
-    replace_db_name(url, "postgres")
-}
-
-fn replace_db_name(url: &str, new_db: &str) -> String {
-    if let Some(slash_pos) = url.rfind('/') {
-        let base = &url[..=slash_pos];
-        let rest = &url[slash_pos + 1..];
-        let db_only = rest.split('?').next().unwrap_or(rest);
-        let query = if rest.contains('?') {
-            &rest[db_only.len()..]
-        } else {
-            ""
-        };
-        format!("{base}{new_db}{query}")
-    } else {
-        url.to_owned()
-    }
 }

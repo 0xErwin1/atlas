@@ -7,6 +7,8 @@ members = [
     "crates/atlas_cli",
     "crates/atlas_mcp",
     "crates/migration",
+    "crates/atlas_test_db",
+    "apps/desktop/src-tauri",
 ]
 default-members = [
     "crates/atlas_domain",
@@ -72,7 +74,7 @@ base64            = "0.22"
 time              = "0.3"
 
 # Client layer
-reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "stream"] }
 
 # Cryptography
 hmac    = { version = "0.12", features = ["std"] }
@@ -83,7 +85,8 @@ clap = { version = "4", features = ["derive", "env"] }
 clap_complete = "4"
 toml = "0.8"
 comfy-table = "7"
-keyring = { version = "3", default-features = false, features = ["linux-native"] }
+keyring = { version = "3", default-features = false, features = ["sync-secret-service", "crypto-rust"] }
+zeroize = "1"
 
 # MCP — pinned exact version confirmed at scaffold time
 rmcp = { version = "=1.7.0", features = ["server", "transport-io", "macros", "transport-streamable-http-server"] }

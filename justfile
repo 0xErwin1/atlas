@@ -76,6 +76,40 @@ build-web: gen-types
 lint-web:
     pnpm exec biome ci .
 
+desktop-dev:
+    cd apps/desktop/src-tauri && cargo tauri dev
+
+desktop-gate-red:
+    bash apps/desktop/tests/test_linux_gate_harness.sh
+
+desktop-gate:
+    bash apps/desktop/tests/linux_gate.sh --evidence "${ATLAS_DESKTOP_GATE_EVIDENCE_PATH:-/tmp/atlas-desktop-gate-evidence.json}"
+
+desktop-gate-asset-audit:
+    bash apps/desktop/tests/linux_gate.sh --asset-audit
+
+desktop-gate-tooling:
+    bash apps/desktop/gate/test_tauri_driver_tooling.sh
+
+desktop-gate-release-audit:
+    bash apps/desktop/gate/audit_release_exclusion.sh
+
+desktop-gate-launch:
+    bash apps/desktop/gate/run_webdriver_launch.sh
+
+desktop-gate-controller-test:
+    VITE_ATLAS_DESKTOP_GATE=1 pnpm --filter @atlas/web build
+    cargo build -p atlas_desktop --features desktop-gate --bin atlas-desktop-gate
+    cargo nextest run -p atlas_desktop --features desktop-gate --test gate_controller
+
+desktop-gate-webdriver-test:
+    VITE_ATLAS_DESKTOP_GATE=1 pnpm --filter @atlas/web build
+    cargo build -p atlas_desktop --features desktop-gate --bin atlas-desktop-gate
+    cargo nextest run -p atlas_desktop --features desktop-gate --test gate_controller controller_drives_the_packaged_vue_webdriver_login_and_restart_flow
+
+desktop-host-test:
+    bash apps/desktop/tests/test_desktop_host.sh
+
 fmt-web:
     pnpm exec biome format --write .
 

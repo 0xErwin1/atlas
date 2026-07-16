@@ -61,6 +61,7 @@ chrono.workspace = true
 futures.workspace = true
 
 [dev-dependencies]
+atlas_test_db = { path = "../atlas_test_db" }
 atlas_client.workspace = true
 tempfile.workspace = true
 reqwest = { workspace = true }
@@ -72,6 +73,9 @@ sea-orm-migration.workspace = true
 migration.workspace = true
 uuid.workspace = true
 futures.workspace = true
+
+[features]
+desktop-gate-support = []
 
 [lints]
 workspace = true

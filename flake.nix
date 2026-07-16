@@ -20,6 +20,23 @@
         rustToolchain = pkgs.rust-bin.stable."1.96.0".default.override {
           extensions = [ "rustfmt" "clippy" "rust-analyzer" "rust-src" ];
         };
+        tauriDriver = pkgs.rustPlatform.buildRustPackage {
+          pname = "tauri-driver";
+          version = "2.0.6";
+
+          src = pkgs.fetchCrate {
+            pname = "tauri-driver";
+            version = "2.0.6";
+            hash = "sha256-fTCkEs4NLBW0khaHL4jpVNkrbQg22YPsRMjfJNqnCWA=";
+          };
+
+          cargoHash = "sha256-MThAcU+U8PyBGauh3dy7ZRvRX9INmOEeghIlQEGLAPs=";
+        };
+        atlasDbusRunSession = pkgs.writeShellScriptBin "atlas-dbus-run-session" ''
+          umask 077
+          exec ${pkgs.dbus}/bin/dbus-run-session \
+            --config-file=${pkgs.dbus}/share/dbus-1/session.conf "$@" 2>/dev/null
+        '';
       in {
         devShells.default = pkgs.mkShell {
           packages = [
@@ -35,7 +52,19 @@
             pkgs.podman-compose
             pkgs.process-compose
             pkgs.curl
+            pkgs.openssl
             pkgs.actionlint
+            pkgs.cargo-tauri
+            pkgs.glib-networking
+            pkgs.libsecret
+            pkgs.pkg-config
+          ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
+            tauriDriver
+            atlasDbusRunSession
+            pkgs.dbus
+            pkgs.gnome-keyring
+            pkgs.webkitgtk_4_1
+            pkgs.xorg-server
           ];
           shellHook = ''
             echo "Atlas dev shell (Rust 1.96, pnpm, just, podman, sea-orm-cli)"

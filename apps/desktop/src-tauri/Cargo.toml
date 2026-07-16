@@ -1,0 +1,70 @@
+[package]
+name = "atlas_desktop"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+default-run = "atlas_desktop"
+
+[features]
+desktop-gate = [
+    "dep:atlas_server",
+    "dep:atlas_test_db",
+    "dep:axum",
+    "dep:axum-server",
+    "dep:rcgen",
+    "dep:rustls",
+    "dep:tokio-util",
+    "dep:rand",
+    "dep:tempfile",
+    "dep:zeroize",
+]
+
+[[bin]]
+name = "atlas-desktop-gate"
+path = "src/bin/atlas-desktop-gate.rs"
+required-features = ["desktop-gate"]
+
+[[bin]]
+name = "atlas-desktop-gate-controller"
+path = "src/bin/atlas-desktop-gate-controller.rs"
+required-features = ["desktop-gate"]
+
+[[bin]]
+name = "atlas-desktop-secret-service-gate"
+path = "src/bin/atlas-desktop-secret-service-gate.rs"
+required-features = ["desktop-gate"]
+
+[dependencies]
+atlas_server = { path = "../../../crates/atlas_server", features = ["desktop-gate-support"], optional = true }
+atlas_test_db = { path = "../../../crates/atlas_test_db", optional = true }
+axum = { version = "0.8", optional = true }
+axum-server = { version = "0.7", features = ["tls-rustls"], optional = true }
+futures.workspace = true
+keyring.workspace = true
+reqwest.workspace = true
+rcgen = { version = "0.14", optional = true }
+rand = { workspace = true, optional = true }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"], optional = true }
+serde.workspace = true
+serde_json.workspace = true
+tauri = { version = "2", features = [] }
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util = { version = "0.7", optional = true }
+tempfile = { workspace = true, optional = true }
+zeroize = { workspace = true, optional = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
+
+[build-dependencies]
+pkg-config = "0.3"
+tauri-build = { version = "2", features = [] }
+
+[dev-dependencies]
+tauri = { version = "2", features = ["test"] }
+
+[lints]
+workspace = true
