@@ -630,14 +630,7 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
       <CustomFieldsSection :ws="ws" :task="task" />
     </div>
 
-    <div
-      v-if="
-        detail.collectionStatus.attachments === 'pending' ||
-        detail.collectionStatus.attachments === 'error' ||
-        detail.attachments.length
-      "
-      style="margin-top: 22px;"
-    >
+    <div style="margin-top: 22px;">
       <div class="atl-tv-section-label">Attachments</div>
       <LoadingState
         v-if="

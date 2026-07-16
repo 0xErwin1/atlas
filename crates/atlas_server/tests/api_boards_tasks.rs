@@ -5217,7 +5217,7 @@ async fn assign_non_member_principal_returns_404() {
 // Free-text field cap tests (Fix 3)
 // ---------------------------------------------------------------------------
 
-/// Verifies that a task title longer than 200 characters is rejected with 422.
+/// Verifies that a task title longer than 200 bytes is rejected with 422.
 #[tokio::test]
 async fn create_task_with_title_over_200_chars_returns_422() {
     let db = support::TestDb::create().await.expect("TestDb::create");
@@ -5404,7 +5404,7 @@ async fn create_task_with_too_many_labels_returns_422() {
     db.teardown().await;
 }
 
-/// Verifies that a document title longer than 200 characters is rejected with 422.
+/// Verifies that a document title longer than 200 bytes is rejected with 422.
 #[tokio::test]
 async fn create_document_with_title_over_200_chars_returns_422() {
     let db = support::TestDb::create().await.expect("TestDb::create");

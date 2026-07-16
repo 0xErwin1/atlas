@@ -12,3 +12,5 @@ pub mod status_templates;
 pub mod tags;
 pub mod task_views;
 pub mod workspace_core;
+
+pub use comments::CommentAttachmentDraftRepo;

@@ -3,7 +3,7 @@ import { ref } from 'vue';
 import { z } from 'zod';
 import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
-import { getResourceCachePrincipal, resourceCache } from '@/cache/cacheRuntime';
+import { getResourceCachePrincipal, hydrateAndRevalidateResource, resourceCache } from '@/cache/cacheRuntime';
 import { buildCacheKey, CACHE_CADENCE } from '@/cache/resourceCache';
 import { errorHint } from '@/lib/apiError';
 import { attachmentFileName } from '@/lib/fileTransfer';
@@ -15,10 +15,23 @@ export type CommentDto = components['schemas']['CommentDto'];
 export type AttachmentDto = components['schemas']['AttachmentDto'];
 export type SecondaryLoadStatus = 'idle' | 'pending' | 'ready' | 'error';
 
+type CommentListResponse = components['schemas']['CommentListResponseDto'];
+
 type SecondaryTarget = {
   workspaceSlug: string;
   slug: string;
 };
+
+function legacyCommentItems(data: CommentListResponse): CommentDto[] | null {
+  const legacyItems: CommentDto[] = [];
+
+  for (const item of data.items) {
+    if ('type' in item) return null;
+    legacyItems.push(item);
+  }
+
+  return legacyItems;
+}
 
 type BacklinksCacheOptions = {
   workspaceId: string;
@@ -28,7 +41,7 @@ const backlinksSchema: z.ZodType<BacklinkSummary[]> = z.array(
   z
     .object({
       source_document_id: z.string(),
-      source_slug: z.string(),
+      source_slug: z.string().nullable().optional(),
       source_title: z.string().nullable().optional(),
       display_title: z.string().nullable().optional(),
     })
@@ -65,6 +78,7 @@ export const useDocumentsStore = defineStore('documents', () => {
   let backlinksLoadSeq = 0;
   let commentsLoadSeq = 0;
   let commentsTargetEpoch = 0;
+  let activeBacklinksCacheKey: string | null = null;
 
   function summariesFor(projectSlug: string): DocumentSummary[] {
     return summariesByProject.value[projectSlug] ?? [];
@@ -102,7 +116,15 @@ export const useDocumentsStore = defineStore('documents', () => {
     return generation === commentsTargetEpoch && isSecondaryTarget(target.workspaceSlug, target.slug);
   }
 
+  function deactivateBacklinksCache(): void {
+    if (activeBacklinksCacheKey === null) return;
+
+    resourceCache.deactivate(activeBacklinksCacheKey);
+    activeBacklinksCacheKey = null;
+  }
+
   function clearSecondaryState(): void {
+    deactivateBacklinksCache();
     backlinksLoadSeq += 1;
     commentsLoadSeq += 1;
     commentsTargetEpoch += 1;
@@ -182,6 +204,7 @@ export const useDocumentsStore = defineStore('documents', () => {
 
   async function loadBacklinks(ws: string, slug: string, cache?: BacklinksCacheOptions): Promise<void> {
     resetSecondaryTarget(ws, slug);
+    deactivateBacklinksCache();
     const seq = ++backlinksLoadSeq;
     backlinksStatus.value = 'pending';
     backlinksError.value = null;
@@ -199,7 +222,13 @@ export const useDocumentsStore = defineStore('documents', () => {
         }),
       );
 
-      if (apiError !== undefined) throw new Error(errorHint(apiError, 'Failed to load backlinks'));
+      if (apiError !== undefined) {
+        const failure = new Error(errorHint(apiError, 'Failed to load backlinks')) as Error & {
+          status?: number;
+        };
+        failure.status = (apiError as { status?: number }).status;
+        throw failure;
+      }
       return items;
     };
     const key =
@@ -230,12 +259,22 @@ export const useDocumentsStore = defineStore('documents', () => {
         publish,
         isCurrent: () => seq === backlinksLoadSeq && isSecondaryTarget(ws, slug),
       };
-      await resourceCache.hydrate(request);
-      resourceCache.activate(request);
-      await resourceCache.revalidate(request);
+      activeBacklinksCacheKey = key;
+      await hydrateAndRevalidateResource(request).completion;
     } catch (error) {
       if (seq !== backlinksLoadSeq || !isSecondaryTarget(ws, slug)) return;
 
+      const status = (error as { status?: number } | null)?.status;
+      if (status === 403 || status === 404) {
+        backlinks.value = [];
+        if (cache !== undefined) {
+          await resourceCache.purgeTags(
+            [`document:${slug}`, 'secondary:backlinks'],
+            getResourceCachePrincipal(),
+            cache.workspaceId,
+          );
+        }
+      }
       backlinksStatus.value = 'error';
       backlinksError.value = error instanceof Error ? error.message : 'Failed to load backlinks';
     }
@@ -267,7 +306,17 @@ export const useDocumentsStore = defineStore('documents', () => {
       return;
     }
 
-    comments.value = data.items;
+    const legacyItems = legacyCommentItems(data);
+    if (legacyItems === null) {
+      comments.value = [];
+      commentsCursor.value = null;
+      commentsHasMore.value = false;
+      commentsStatus.value = 'error';
+      commentsError.value = 'Received an unsupported full comment feed';
+      return;
+    }
+
+    comments.value = legacyItems;
     commentsCursor.value = data.next_cursor ?? null;
     commentsHasMore.value = data.has_more;
     commentsStatus.value = 'ready';
@@ -297,13 +346,20 @@ export const useDocumentsStore = defineStore('documents', () => {
       return;
     }
 
-    comments.value = [...comments.value, ...data.items];
+    const legacyItems = legacyCommentItems(data);
+    if (legacyItems === null) {
+      commentsStatus.value = 'error';
+      commentsError.value = 'Received an unsupported full comment feed';
+      return;
+    }
+
+    comments.value = [...comments.value, ...legacyItems];
     commentsCursor.value = data.next_cursor ?? null;
     commentsHasMore.value = data.has_more;
     commentsStatus.value = 'ready';
   }
 
-  async function addComment(ws: string, slug: string, body: string): Promise<boolean> {
+  async function addComment(ws: string, slug: string, body: string, draftId?: string): Promise<boolean> {
     const target = { workspaceSlug: ws, slug };
     const generation = commentsTargetEpoch;
     if (!isCurrentCommentsTarget(target, generation)) return false;
@@ -312,7 +368,10 @@ export const useDocumentsStore = defineStore('documents', () => {
 
     const { data, error: apiError } = await wrappedClient.POST(
       '/api/workspaces/{ws}/documents/{slug}/comments',
-      { params: { path: { ws, slug } }, body: { body } },
+      {
+        params: { path: { ws, slug } },
+        body: draftId === undefined ? { body } : { body, draft_id: draftId },
+      },
     );
 
     if (apiError !== undefined || data === undefined) {

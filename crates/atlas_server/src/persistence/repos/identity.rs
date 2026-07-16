@@ -1189,6 +1189,18 @@ impl MembershipRepo for PgMembershipRepo {
     }
 
     async fn remove(&self, ctx: &WorkspaceCtx, user_id: UserId) -> Result<(), DomainError> {
+        let retained_draft = crate::persistence::entities::comments::comment_attachment_draft::Entity::find()
+            .filter(crate::persistence::entities::comments::comment_attachment_draft::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(crate::persistence::entities::comments::comment_attachment_draft::Column::CreatedByUserId.eq(user_id.0))
+            .one(&self.conn)
+            .await
+            .map_err(db_err)?;
+        if retained_draft.is_some() {
+            return Err(DomainError::CommentDraftConflict {
+                reason: "user has retained comment draft state".into(),
+            });
+        }
+
         membership::Entity::delete_many()
             .filter(membership::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(membership::Column::UserId.eq(user_id.0))

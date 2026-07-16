@@ -18,6 +18,7 @@ import {
 } from '@/lib/wikilink';
 import { useUiStore } from '@/stores/ui';
 import { atlasHighlight } from './highlight';
+import { type ImageUploadResult, imageUploadInsertion } from './imageUpload';
 import { livePreview } from './livePreviewExtension';
 import { atlasMarkdownTheme } from './theme';
 
@@ -55,9 +56,10 @@ const props = withDefaults(
     embeddedControls?: boolean;
     /** Optional image upload hook. When provided, pasting or dropping image files
      * uploads each via this callback and inserts `![name](url)` at the caret/drop
-     * point. Returns the image URL, or null on failure (the host surfaces the
-     * error). Hosts that omit it (task description) leave paste/drop untouched. */
-    uploadImage?: (file: File) => Promise<string | null>;
+     * point. Legacy callers may return a URL string; structured results may also
+     * provide canonical Markdown. Null leaves the document unchanged. Hosts that
+     * omit it (task description) leave paste/drop untouched. */
+    uploadImage?: (file: File) => Promise<ImageUploadResult>;
     /** Keep the caret in view by scrolling the host container while typing. On for
      * long-form surfaces (note body, task description); off for compact fixed
      * editors (the comment composer/edit box) that never outgrow their host. */
@@ -114,6 +116,7 @@ const editStateCompartment = new Compartment();
 // `body` prop change (must replace the doc) from an echo of our own edit (must
 // be ignored, to avoid resetting the cursor).
 let lastEmitted: string | null = null;
+let imageUploadGeneration = 0;
 
 function currentMarkdown(): string {
   return view === null ? props.body : view.state.doc.toString();
@@ -363,21 +366,36 @@ function handleImageFiles(files: File[], pos: number | null): boolean {
   const images = files.filter(isImageFile);
   if (images.length === 0) return false;
 
-  void uploadAndInsertImages(images, pos);
+  void uploadAndInsertImages(images, pos, imageUploadGeneration);
   return true;
 }
 
-async function uploadAndInsertImages(images: File[], pos: number | null): Promise<void> {
+async function uploadAndInsertImages(images: File[], pos: number | null, generation: number): Promise<void> {
   const upload = props.uploadImage;
   if (upload === undefined || view === null) return;
 
   let at = pos ?? view.state.selection.main.head;
 
   for (const file of images) {
-    const url = await upload(file);
-    if (url === null || view === null) continue;
+    let result: ImageUploadResult;
+    try {
+      result = await upload(file);
+    } catch {
+      continue;
+    }
 
-    const insert = imageSnippet(view.state, at, imageAlt(file), url);
+    if (
+      result === null ||
+      view === null ||
+      generation !== imageUploadGeneration ||
+      upload !== props.uploadImage ||
+      !effectiveEditable()
+    )
+      continue;
+
+    const insert = imageUploadInsertion(result, file.name, at === view.state.doc.lineAt(at).from);
+    if (insert === null) continue;
+
     view.dispatch({
       changes: { from: at, to: at, insert },
       selection: { anchor: at + insert.length },
@@ -386,24 +404,6 @@ async function uploadAndInsertImages(images: File[], pos: number | null): Promis
   }
 
   view?.focus();
-}
-
-/** A Markdown image on its own line — a leading newline is added only when the
- * insertion point is mid-line — so the live-preview block widget renders it. */
-function imageSnippet(state: EditorState, at: number, alt: string, url: string): string {
-  const atLineStart = at === state.doc.lineAt(at).from;
-  return `${atLineStart ? '' : '\n'}![${alt}](${url})\n`;
-}
-
-/** Alt text from the file name (extension stripped), with characters that would
- * break the `![...]` syntax removed. */
-function imageAlt(file: File): string {
-  return file.name
-    .replace(/\.[^.]+$/, '')
-    .replaceAll(']', '')
-    .replaceAll('\n', ' ')
-    .replaceAll('\r', ' ')
-    .trim();
 }
 
 defineExpose({ currentMarkdown, insertWikilink, focus });
@@ -427,6 +427,7 @@ watch(
     if (body === lastEmitted) return;
     if (body === view.state.doc.toString()) return;
 
+    imageUploadGeneration += 1;
     const nextSelection = restoreSelection(snapshotSelection(view.state.selection), body.length);
     view.dispatch({
       changes: { from: 0, to: view.state.doc.length, insert: body },
@@ -435,6 +436,13 @@ watch(
     lastEmitted = body;
 
     if (props.autofocus && effectiveEditable()) view.focus();
+  },
+);
+
+watch(
+  () => props.uploadImage,
+  () => {
+    imageUploadGeneration += 1;
   },
 );
 
@@ -449,6 +457,7 @@ watch(
 );
 
 onBeforeUnmount(() => {
+  imageUploadGeneration += 1;
   view?.destroy();
   view = null;
 });

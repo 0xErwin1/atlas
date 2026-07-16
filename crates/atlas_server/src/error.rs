@@ -223,6 +223,24 @@ fn domain_error_response(err: DomainError) -> Response {
                 .with_hint("An item with this name already exists here — choose a different name.")
                 .with_detail(message),
         ),
+        DomainError::CommentDraftConflict { reason } => (
+            StatusCode::CONFLICT,
+            ProblemDetails::new(
+                "urn:atlas:error:comment-draft-conflict",
+                "Comment Draft Conflict",
+                409,
+            )
+            .with_detail(reason),
+        ),
+        DomainError::CommentDraftGone { reason } => (
+            StatusCode::GONE,
+            ProblemDetails::new(
+                "urn:atlas:error:comment-draft-gone",
+                "Comment Draft Gone",
+                410,
+            )
+            .with_detail(reason),
+        ),
         DomainError::Internal { message } => {
             tracing::error!(error = %message, "domain internal error");
             (

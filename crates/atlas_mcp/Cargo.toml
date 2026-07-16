@@ -31,5 +31,8 @@ http.workspace = true
 reqwest.workspace = true
 tower.workspace = true
 
+[dev-dependencies]
+rmcp = { workspace = true, features = ["client"] }
+
 [lints]
 workspace = true

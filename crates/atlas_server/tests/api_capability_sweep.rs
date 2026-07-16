@@ -66,6 +66,10 @@ struct Fixtures {
     document_ref: String,
     folder_id: uuid::Uuid,
     doc_attachment_id: uuid::Uuid,
+    task_comment_id: uuid::Uuid,
+    task_comment_attachment_id: uuid::Uuid,
+    document_comment_id: uuid::Uuid,
+    document_comment_attachment_id: uuid::Uuid,
     webhook_id: uuid::Uuid,
 }
 
@@ -155,6 +159,48 @@ async fn seed_fixtures(
         .await
         .expect("upload document attachment");
 
+    let task_comment = owner
+        .add_comment(
+            ws_slug,
+            &task.readable_id,
+            CreateCommentRequest::published("Sweep task comment"),
+        )
+        .await
+        .expect("create task comment");
+
+    let task_comment_attachment = owner
+        .upload_task_comment_attachment(
+            ws_slug,
+            &task.readable_id,
+            task_comment.id,
+            "sweep-task-comment.txt",
+            "text/plain",
+            b"hello".to_vec(),
+        )
+        .await
+        .expect("upload task comment attachment");
+
+    let document_comment = owner
+        .add_document_comment(
+            ws_slug,
+            &document.id.to_string(),
+            CreateCommentRequest::published("Sweep document comment"),
+        )
+        .await
+        .expect("create document comment");
+
+    let document_comment_attachment = owner
+        .upload_document_comment_attachment(
+            ws_slug,
+            &document.id.to_string(),
+            document_comment.id,
+            "sweep-document-comment.txt",
+            "text/plain",
+            b"hello".to_vec(),
+        )
+        .await
+        .expect("upload document comment attachment");
+
     let folder = owner
         .create_folder(
             ws_slug,
@@ -198,6 +244,10 @@ async fn seed_fixtures(
         document_ref: document.id.to_string(),
         folder_id: folder.id,
         doc_attachment_id: attachment.id,
+        task_comment_id: task_comment.id,
+        task_comment_attachment_id: task_comment_attachment.id,
+        document_comment_id: document_comment.id,
+        document_comment_attachment_id: document_comment_attachment.id,
         webhook_id: webhook.id,
     }
 }
@@ -271,6 +321,13 @@ enum Case {
     AddTaskComment,
     UpdateTaskComment,
     DeleteTaskComment,
+    CreateTaskCommentDraft,
+    CancelTaskCommentDraft,
+    UploadTaskCommentDraftAttachment,
+    UploadTaskCommentAttachment,
+    ListTaskCommentAttachments,
+    DownloadTaskCommentAttachment,
+    DeleteTaskCommentAttachment,
     // ---- docs (22) ----
     CreateDocument,
     ListDocuments,
@@ -292,6 +349,13 @@ enum Case {
     AddDocComment,
     UpdateDocComment,
     DeleteDocComment,
+    CreateDocumentCommentDraft,
+    CancelDocumentCommentDraft,
+    UploadDocumentCommentAttachment,
+    UploadDocumentCommentDraftAttachment,
+    ListDocumentCommentAttachments,
+    DownloadDocumentCommentAttachment,
+    DeleteDocumentCommentAttachment,
     DocumentHeartbeat,
     DocumentLeave,
     // ---- boards (12) ----
@@ -392,6 +456,13 @@ impl Case {
         Case::AddTaskComment,
         Case::UpdateTaskComment,
         Case::DeleteTaskComment,
+        Case::CreateTaskCommentDraft,
+        Case::CancelTaskCommentDraft,
+        Case::UploadTaskCommentDraftAttachment,
+        Case::UploadTaskCommentAttachment,
+        Case::ListTaskCommentAttachments,
+        Case::DownloadTaskCommentAttachment,
+        Case::DeleteTaskCommentAttachment,
         Case::CreateDocument,
         Case::ListDocuments,
         Case::GetDocument,
@@ -412,6 +483,13 @@ impl Case {
         Case::AddDocComment,
         Case::UpdateDocComment,
         Case::DeleteDocComment,
+        Case::CreateDocumentCommentDraft,
+        Case::CancelDocumentCommentDraft,
+        Case::UploadDocumentCommentAttachment,
+        Case::UploadDocumentCommentDraftAttachment,
+        Case::ListDocumentCommentAttachments,
+        Case::DownloadDocumentCommentAttachment,
+        Case::DeleteDocumentCommentAttachment,
         Case::DocumentHeartbeat,
         Case::DocumentLeave,
         Case::CreateBoard,
@@ -506,6 +584,13 @@ impl Case {
             Case::AddTaskComment => ("POST", "tasks:update"),
             Case::UpdateTaskComment => ("PATCH", "tasks:update"),
             Case::DeleteTaskComment => ("DELETE", "tasks:update"),
+            Case::CreateTaskCommentDraft => ("POST", "tasks:update"),
+            Case::CancelTaskCommentDraft => ("DELETE", "tasks:update"),
+            Case::UploadTaskCommentDraftAttachment => ("POST", "tasks:update"),
+            Case::UploadTaskCommentAttachment => ("POST", "tasks:update"),
+            Case::ListTaskCommentAttachments => ("GET", "tasks:read"),
+            Case::DownloadTaskCommentAttachment => ("GET", "tasks:read"),
+            Case::DeleteTaskCommentAttachment => ("DELETE", "tasks:update"),
 
             Case::CreateDocument => ("POST", "docs:create"),
             Case::ListDocuments => ("GET", "docs:read"),
@@ -527,6 +612,13 @@ impl Case {
             Case::AddDocComment => ("POST", "docs:update"),
             Case::UpdateDocComment => ("PATCH", "docs:update"),
             Case::DeleteDocComment => ("DELETE", "docs:update"),
+            Case::CreateDocumentCommentDraft => ("POST", "docs:update"),
+            Case::CancelDocumentCommentDraft => ("DELETE", "docs:update"),
+            Case::UploadDocumentCommentAttachment => ("POST", "docs:update"),
+            Case::UploadDocumentCommentDraftAttachment => ("POST", "docs:update"),
+            Case::ListDocumentCommentAttachments => ("GET", "docs:read"),
+            Case::DownloadDocumentCommentAttachment => ("GET", "docs:read"),
+            Case::DeleteDocumentCommentAttachment => ("DELETE", "docs:update"),
             Case::DocumentHeartbeat => ("POST", "docs:read"),
             Case::DocumentLeave => ("DELETE", "docs:read"),
 
@@ -786,7 +878,7 @@ async fn invoke(
             .add_comment(
                 ws,
                 &fx.task_readable_id,
-                CreateCommentRequest { body: "x".into() },
+                CreateCommentRequest::published("x"),
             )
             .await
             .map(|_| ()),
@@ -800,6 +892,79 @@ async fn invoke(
             .await
             .map(|_| ()),
         Case::DeleteTaskComment => client.delete_comment(ws, &fx.task_readable_id, nil).await,
+        Case::CreateTaskCommentDraft => {
+            raw_call(
+                http,
+                base_url,
+                token,
+                "POST",
+                &format!(
+                    "/api/workspaces/{ws}/tasks/{}/comment-drafts",
+                    fx.task_readable_id
+                ),
+            )
+            .await
+        }
+        Case::CancelTaskCommentDraft => {
+            raw_call(
+                http,
+                base_url,
+                token,
+                "DELETE",
+                &format!(
+                    "/api/workspaces/{ws}/tasks/{}/comment-drafts/{nil}",
+                    fx.task_readable_id
+                ),
+            )
+            .await
+        }
+        Case::UploadTaskCommentDraftAttachment => {
+            raw_call(
+                http,
+                base_url,
+                token,
+                "POST",
+                &format!(
+                    "/api/workspaces/{ws}/tasks/{}/comment-drafts/{nil}/attachments",
+                    fx.task_readable_id
+                ),
+            )
+            .await
+        }
+        Case::UploadTaskCommentAttachment => client
+            .upload_task_comment_attachment(
+                ws,
+                &fx.task_readable_id,
+                fx.task_comment_id,
+                "f.txt",
+                "text/plain",
+                vec![1, 2, 3],
+            )
+            .await
+            .map(|_| ()),
+        Case::ListTaskCommentAttachments => client
+            .list_task_comment_attachments(ws, &fx.task_readable_id, fx.task_comment_id)
+            .await
+            .map(|_| ()),
+        Case::DownloadTaskCommentAttachment => client
+            .download_task_comment_attachment(
+                ws,
+                &fx.task_readable_id,
+                fx.task_comment_id,
+                fx.task_comment_attachment_id,
+            )
+            .await
+            .map(|_| ()),
+        Case::DeleteTaskCommentAttachment => {
+            client
+                .delete_task_comment_attachment(
+                    ws,
+                    &fx.task_readable_id,
+                    fx.task_comment_id,
+                    fx.task_comment_attachment_id,
+                )
+                .await
+        }
 
         Case::CreateDocument => client
             .create_document(
@@ -876,11 +1041,7 @@ async fn invoke(
             .await
             .map(|_| ()),
         Case::AddDocComment => client
-            .add_document_comment(
-                ws,
-                &fx.document_ref,
-                CreateCommentRequest { body: "x".into() },
-            )
+            .add_document_comment(ws, &fx.document_ref, CreateCommentRequest::published("x"))
             .await
             .map(|_| ()),
         Case::UpdateDocComment => client
@@ -895,6 +1056,79 @@ async fn invoke(
         Case::DeleteDocComment => {
             client
                 .delete_document_comment(ws, &fx.document_ref, nil)
+                .await
+        }
+        Case::CreateDocumentCommentDraft => {
+            raw_call(
+                http,
+                base_url,
+                token,
+                "POST",
+                &format!(
+                    "/api/workspaces/{ws}/documents/{}/comment-drafts",
+                    fx.document_ref
+                ),
+            )
+            .await
+        }
+        Case::CancelDocumentCommentDraft => {
+            raw_call(
+                http,
+                base_url,
+                token,
+                "DELETE",
+                &format!(
+                    "/api/workspaces/{ws}/documents/{}/comment-drafts/{nil}",
+                    fx.document_ref
+                ),
+            )
+            .await
+        }
+        Case::UploadDocumentCommentAttachment => client
+            .upload_document_comment_attachment(
+                ws,
+                &fx.document_ref,
+                fx.document_comment_id,
+                "f.txt",
+                "text/plain",
+                vec![1, 2, 3],
+            )
+            .await
+            .map(|_| ()),
+        Case::UploadDocumentCommentDraftAttachment => {
+            raw_call(
+                http,
+                base_url,
+                token,
+                "POST",
+                &format!(
+                    "/api/workspaces/{ws}/documents/{}/comment-drafts/{nil}/attachments",
+                    fx.document_ref
+                ),
+            )
+            .await
+        }
+        Case::ListDocumentCommentAttachments => client
+            .list_document_comment_attachments(ws, &fx.document_ref, fx.document_comment_id)
+            .await
+            .map(|_| ()),
+        Case::DownloadDocumentCommentAttachment => client
+            .download_document_comment_attachment(
+                ws,
+                &fx.document_ref,
+                fx.document_comment_id,
+                fx.document_comment_attachment_id,
+            )
+            .await
+            .map(|_| ()),
+        Case::DeleteDocumentCommentAttachment => {
+            client
+                .delete_document_comment_attachment(
+                    ws,
+                    &fx.document_ref,
+                    fx.document_comment_id,
+                    fx.document_comment_attachment_id,
+                )
                 .await
         }
         Case::DocumentHeartbeat => {

@@ -5,6 +5,29 @@
 /// false positive cannot overflow the unique index on `document_links`.
 const MAX_WIKILINK_TARGET_LEN: usize = 512;
 
+/// A syntactically valid comment-link input that still needs workspace-scoped
+/// classification before it becomes a derived link.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CommentLinkCandidate {
+    Uuid(uuid::Uuid),
+    AttachmentUrl(CommentAttachmentUrl),
+}
+
+/// Canonical root-relative attachment location carried without resolving it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommentAttachmentUrl {
+    pub workspace_slug: String,
+    pub owner: CommentAttachmentUrlOwner,
+    pub comment_id: uuid::Uuid,
+    pub attachment_id: uuid::Uuid,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CommentAttachmentUrlOwner {
+    Task { readable_id: String },
+    Document { slug: String },
+}
+
 /// Parses `[[Target]]` wikilinks from markdown content.
 ///
 /// Returns de-duplicated target strings in order of first appearance.
@@ -55,9 +78,161 @@ pub fn parse_wikilink_target(raw: &str) -> (Option<uuid::Uuid>, String) {
     (None, raw.trim().to_string())
 }
 
+/// Extracts current-compatible comment-link inputs without mutating Markdown.
+///
+/// UUID-bound wikilinks are retained as UUID candidates. Attachment URLs must
+/// be canonical root-relative Atlas routes; resolving their workspace, parent,
+/// comment, and ownership chain is intentionally deferred to persistence.
+pub fn parse_comment_link_candidates(content: &str) -> Vec<CommentLinkCandidate> {
+    let mut candidates = parse_wikilinks(content)
+        .into_iter()
+        .filter_map(|raw| parse_wikilink_target(&raw).0)
+        .map(CommentLinkCandidate::Uuid)
+        .collect::<Vec<_>>();
+
+    for url in markdown_urls(content) {
+        let Some(attachment) = parse_comment_attachment_url(url) else {
+            continue;
+        };
+
+        let candidate = CommentLinkCandidate::AttachmentUrl(attachment);
+        if !candidates.contains(&candidate) {
+            candidates.push(candidate);
+        }
+    }
+
+    candidates
+}
+
+fn markdown_urls(content: &str) -> impl Iterator<Item = &str> {
+    content
+        .split("](")
+        .skip(1)
+        .filter_map(|remainder| remainder.split_once(')').map(|(url, _)| url))
+}
+
+fn parse_comment_attachment_url(url: &str) -> Option<CommentAttachmentUrl> {
+    if !url.starts_with('/') || url.contains(['?', '#', '%']) {
+        return None;
+    }
+
+    let segments = url.split('/').collect::<Vec<_>>();
+    if segments
+        .iter()
+        .skip(1)
+        .any(|segment| segment.is_empty() || *segment == "." || *segment == "..")
+    {
+        return None;
+    }
+
+    let [
+        "",
+        "api",
+        "workspaces",
+        workspace_slug,
+        parent_kind,
+        parent_value,
+        "comments",
+        comment_id,
+        "attachments",
+        attachment_id,
+        suffix @ ..,
+    ] = segments.as_slice()
+    else {
+        return None;
+    };
+
+    if !is_canonical_segment(workspace_slug) {
+        return None;
+    }
+
+    let owner = match (*parent_kind, *parent_value, suffix) {
+        ("tasks", readable_id, ["content"]) if is_canonical_segment(readable_id) => {
+            CommentAttachmentUrlOwner::Task {
+                readable_id: readable_id.to_string(),
+            }
+        }
+        ("documents", slug, []) if is_canonical_segment(slug) => {
+            CommentAttachmentUrlOwner::Document {
+                slug: slug.to_string(),
+            }
+        }
+        _ => return None,
+    };
+
+    let comment_id = parse_canonical_uuid(comment_id)?;
+    let attachment_id = parse_canonical_uuid(attachment_id)?;
+
+    Some(CommentAttachmentUrl {
+        workspace_slug: (*workspace_slug).to_string(),
+        owner,
+        comment_id,
+        attachment_id,
+    })
+}
+
+fn is_canonical_segment(value: &str) -> bool {
+    !value.is_empty() && !value.contains(['?', '#', '%', '/'])
+}
+
+fn parse_canonical_uuid(value: &str) -> Option<uuid::Uuid> {
+    let id = uuid::Uuid::parse_str(value).ok()?;
+    (id.to_string() == value).then_some(id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn comment_candidates_keep_uuid_wikilinks_verbatim_and_deduplicate_attachment_urls() {
+        let document_id = uuid::Uuid::now_v7();
+        let attachment_id = uuid::Uuid::now_v7();
+        let comment_id = uuid::Uuid::now_v7();
+        let content = format!(
+            "[[{document_id}|Renamed later]] [file](/api/workspaces/acme/tasks/ATL-42/comments/{comment_id}/attachments/{attachment_id}/content) [same](/api/workspaces/acme/tasks/ATL-42/comments/{comment_id}/attachments/{attachment_id}/content)"
+        );
+
+        assert_eq!(
+            parse_comment_link_candidates(&content),
+            vec![
+                CommentLinkCandidate::Uuid(document_id),
+                CommentLinkCandidate::AttachmentUrl(CommentAttachmentUrl {
+                    workspace_slug: "acme".into(),
+                    owner: CommentAttachmentUrlOwner::Task {
+                        readable_id: "ATL-42".into(),
+                    },
+                    comment_id,
+                    attachment_id,
+                }),
+            ]
+        );
+    }
+
+    #[test]
+    fn comment_candidates_reject_noncanonical_attachment_urls() {
+        let attachment_id = uuid::Uuid::now_v7();
+        let comment_id = uuid::Uuid::now_v7();
+        let valid_document = format!(
+            "/api/workspaces/acme/documents/roadmap/comments/{comment_id}/attachments/{attachment_id}"
+        );
+        let uppercase = attachment_id.to_string().to_uppercase();
+        let invalid = format!(
+            "[query]({valid_document}?download=1) [absolute](https://atlas.test{valid_document}) [uppercase](/api/workspaces/acme/tasks/ATL-42/comments/{comment_id}/attachments/{uppercase}/content)"
+        );
+
+        assert_eq!(
+            parse_comment_link_candidates(&format!("[valid]({valid_document}) {invalid}")),
+            vec![CommentLinkCandidate::AttachmentUrl(CommentAttachmentUrl {
+                workspace_slug: "acme".into(),
+                owner: CommentAttachmentUrlOwner::Document {
+                    slug: "roadmap".into(),
+                },
+                comment_id,
+                attachment_id,
+            })]
+        );
+    }
 
     #[test]
     fn empty_content_returns_empty() {

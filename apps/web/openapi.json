@@ -2764,6 +2764,9 @@
           },
           "404": {
             "description": "Document not found"
+          },
+          "409": {
+            "description": "Document has retained comment draft state"
           }
         },
         "security": [
@@ -3061,6 +3064,242 @@
         ]
       }
     },
+    "/api/workspaces/{ws}/documents/{slug}/comment-drafts": {
+      "post": {
+        "tags": [
+          "documents"
+        ],
+        "operationId": "create_document_comment_draft",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-create-token",
+            "in": "header",
+            "description": "UUID replay token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentDraftDto"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentDraftDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": ""
+          },
+          "409": {
+            "description": ""
+          },
+          "410": {
+            "description": ""
+          },
+          "422": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/api/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}": {
+      "delete": {
+        "tags": [
+          "documents"
+        ],
+        "operationId": "cancel_document_comment_draft",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "draft_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "description": ""
+          },
+          "409": {
+            "description": ""
+          },
+          "410": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/api/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}/attachments": {
+      "post": {
+        "tags": [
+          "documents"
+        ],
+        "operationId": "upload_document_comment_draft_attachment",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "draft_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-file-name",
+            "in": "header",
+            "description": "Original attachment file name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-upload-token",
+            "in": "header",
+            "description": "UUID replay token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "int32",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentAttachmentDto"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentAttachmentDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": ""
+          },
+          "409": {
+            "description": ""
+          },
+          "410": {
+            "description": ""
+          },
+          "413": {
+            "description": ""
+          },
+          "422": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/api/workspaces/{ws}/documents/{slug}/comments": {
       "get": {
         "tags": [
@@ -3105,15 +3344,24 @@
               "format": "int32",
               "minimum": 0
             }
+          },
+          {
+            "name": "feed",
+            "in": "query",
+            "description": "Set to `full` for authorized links and retained events",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "Comment page",
+            "description": "Comment page. `feed=full` returns authorized links and retained events.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Page_CommentDto"
+                  "$ref": "#/components/schemas/CommentListResponseDto"
                 }
               }
             }
@@ -3170,6 +3418,16 @@
           "required": true
         },
         "responses": {
+          "200": {
+            "description": "Draft comment finalization replay",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentDto"
+                }
+              }
+            }
+          },
           "201": {
             "description": "Comment created",
             "content": {
@@ -3188,6 +3446,12 @@
           },
           "404": {
             "description": "Document not found"
+          },
+          "409": {
+            "description": "Draft finalization conflict"
+          },
+          "410": {
+            "description": "Draft is terminal"
           },
           "422": {
             "description": "Comment body is blank or exceeds the maximum length"
@@ -3321,6 +3585,285 @@
           },
           "422": {
             "description": "Comment body is blank or exceeds the maximum length"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments": {
+      "get": {
+        "tags": [
+          "documents"
+        ],
+        "operationId": "list_document_comment_attachments",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CommentAttachmentDto"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": ""
+          },
+          "410": {
+            "description": "Draft attachment is terminal"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "documents"
+        ],
+        "operationId": "upload_document_comment_attachment",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-file-name",
+            "in": "header",
+            "description": "Original attachment file name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "int32",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentAttachmentDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": ""
+          },
+          "413": {
+            "description": ""
+          },
+          "422": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}": {
+      "get": {
+        "tags": [
+          "documents"
+        ],
+        "operationId": "download_document_comment_attachment",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "attachment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Binary attachment content",
+            "headers": {
+              "Content-Disposition": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "RFC 5987 attachment filename"
+              },
+              "Content-Type": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Stored attachment media type"
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Always nosniff"
+              }
+            },
+            "content": {
+              "application/octet-stream": {}
+            }
+          },
+          "404": {
+            "description": ""
+          },
+          "410": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "documents"
+        ],
+        "operationId": "delete_document_comment_attachment",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "attachment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "description": ""
+          },
+          "410": {
+            "description": "Draft attachment is terminal"
           }
         },
         "security": [
@@ -8142,6 +8685,81 @@
             "bearer_auth": []
           }
         ]
+      },
+      "patch": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Renames task attachment metadata without changing the stored object.",
+        "operationId": "rename_task_attachment",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "readable_id",
+            "in": "path",
+            "description": "Task readable ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "attachment_id",
+            "in": "path",
+            "description": "Attachment UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenameTaskAttachmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Attachment renamed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskAttachmentDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          },
+          "404": {
+            "description": "Task or attachment not found"
+          },
+          "422": {
+            "description": "Invalid file name"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
       }
     },
     "/api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}/content": {
@@ -8601,6 +9219,228 @@
         ]
       }
     },
+    "/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts": {
+      "post": {
+        "tags": [
+          "tasks"
+        ],
+        "operationId": "create_task_comment_draft",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "readable_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-create-token",
+            "in": "header",
+            "description": "UUID replay token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentDraftDto"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentDraftDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": ""
+          },
+          "409": {
+            "description": ""
+          },
+          "410": {
+            "description": ""
+          },
+          "422": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}": {
+      "delete": {
+        "tags": [
+          "tasks"
+        ],
+        "operationId": "cancel_task_comment_draft",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "readable_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "draft_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "description": ""
+          },
+          "409": {
+            "description": ""
+          },
+          "410": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}/attachments": {
+      "post": {
+        "tags": [
+          "tasks"
+        ],
+        "operationId": "upload_task_comment_draft_attachment",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "readable_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "draft_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-upload-token",
+            "in": "header",
+            "description": "UUID replay token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentAttachmentDto"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentAttachmentDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": ""
+          },
+          "409": {
+            "description": ""
+          },
+          "410": {
+            "description": ""
+          },
+          "413": {
+            "description": ""
+          },
+          "422": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/api/workspaces/{ws}/tasks/{readable_id}/comments": {
       "get": {
         "tags": [
@@ -8645,15 +9485,24 @@
               "format": "int32",
               "minimum": 0
             }
+          },
+          {
+            "name": "feed",
+            "in": "query",
+            "description": "Set to `full` for authorized links and retained events",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "Task comments, oldest first",
+            "description": "Task comments, oldest first. `feed=full` returns authorized links and retained events.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Page_CommentDto"
+                  "$ref": "#/components/schemas/CommentListResponseDto"
                 }
               }
             }
@@ -8678,7 +9527,7 @@
         "tags": [
           "tasks"
         ],
-        "operationId": "create_comment",
+        "operationId": "create_task_comment",
         "parameters": [
           {
             "name": "ws",
@@ -8710,6 +9559,16 @@
           "required": true
         },
         "responses": {
+          "200": {
+            "description": "Draft comment finalization replay",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentDto"
+                }
+              }
+            }
+          },
           "201": {
             "description": "Comment created",
             "content": {
@@ -8728,6 +9587,12 @@
           },
           "404": {
             "description": "Task not found"
+          },
+          "409": {
+            "description": "Draft finalization conflict"
+          },
+          "410": {
+            "description": "Draft is terminal"
           },
           "422": {
             "description": "Comment body is blank or exceeds the maximum length"
@@ -8861,6 +9726,276 @@
           },
           "422": {
             "description": "Comment body is blank or exceeds the maximum length"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "operationId": "list_task_comment_attachments",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "readable_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CommentAttachmentDto"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": ""
+          },
+          "410": {
+            "description": "Draft attachment is terminal"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "tasks"
+        ],
+        "operationId": "upload_task_comment_attachment",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "readable_id",
+            "in": "path",
+            "description": "Task readable ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "comment_id",
+            "in": "path",
+            "description": "Comment UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentAttachmentDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": ""
+          },
+          "413": {
+            "description": ""
+          },
+          "422": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}": {
+      "delete": {
+        "tags": [
+          "tasks"
+        ],
+        "operationId": "delete_task_comment_attachment",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "readable_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "attachment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "description": ""
+          },
+          "410": {
+            "description": "Draft attachment is terminal"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}/content": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "operationId": "download_task_comment_attachment",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "readable_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "attachment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Binary attachment content",
+            "headers": {
+              "Content-Disposition": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "RFC 5987 attachment filename"
+              },
+              "Content-Type": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Stored attachment media type"
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Always nosniff"
+              }
+            },
+            "content": {
+              "application/octet-stream": {}
+            }
+          },
+          "404": {
+            "description": ""
+          },
+          "410": {
+            "description": ""
           }
         },
         "security": [
@@ -10310,6 +11445,16 @@
           "display_title"
         ],
         "properties": {
+          "comment_source": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CommentBacklinkSourceDto"
+              }
+            ]
+          },
           "display_title": {
             "type": "string"
           },
@@ -10523,6 +11668,168 @@
           }
         }
       },
+      "CommentAttachmentDto": {
+        "type": "object",
+        "description": "Metadata for a file owned by a task or document comment.",
+        "required": [
+          "id",
+          "comment_id",
+          "file_name",
+          "content_type",
+          "size_bytes",
+          "sha256",
+          "created_at"
+        ],
+        "properties": {
+          "actor": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ActorDto"
+              }
+            ]
+          },
+          "comment_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "file_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "markdown": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "CommentBacklinkParentDto": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "readable_id",
+              "title",
+              "type"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "readable_id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "task"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "title",
+              "type"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "slug": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "document"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "The authorized parent that owns a comment backlink."
+      },
+      "CommentBacklinkSourceDto": {
+        "type": "object",
+        "description": "Authorized navigation metadata for a comment that links to a resource.",
+        "required": [
+          "type",
+          "comment_id",
+          "parent"
+        ],
+        "properties": {
+          "comment_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "parent": {
+            "$ref": "#/components/schemas/CommentBacklinkParentDto"
+          },
+          "type": {
+            "type": "string"
+          }
+        }
+      },
+      "CommentDraftDto": {
+        "type": "object",
+        "description": "A private, reserved comment identity used to attach files before publication.",
+        "required": [
+          "id",
+          "expires_at"
+        ],
+        "properties": {
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
       "CommentDto": {
         "type": "object",
         "description": "A single markdown comment on a task or a document.\n\nComments are polymorphic: exactly one of `task_id` / `document_id` is present,\nidentifying the owner the comment was loaded from.",
@@ -10567,6 +11874,75 @@
             "format": "date-time"
           }
         }
+      },
+      "CommentLinkProjectionDto": {
+        "type": "object",
+        "description": "A derived comment link projected for the requesting viewer.",
+        "required": [
+          "target"
+        ],
+        "properties": {
+          "target": {
+            "$ref": "#/components/schemas/CommentLinkTargetDto"
+          }
+        }
+      },
+      "CommentLinkTargetDto": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "type",
+              "id",
+              "status"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "available"
+                ]
+              },
+              "type": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "label",
+              "status"
+            ],
+            "properties": {
+              "label": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "unavailable"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "A viewer-authorized navigation target derived from a comment link."
+      },
+      "CommentListResponseDto": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/Page_CommentDto"
+          },
+          {
+            "$ref": "#/components/schemas/Page_CommentFeedEntryDto"
+          }
+        ],
+        "description": "The compatible default comment page or the opt-in full comment feed page."
       },
       "ConflictProblemDto": {
         "type": "object",
@@ -10769,6 +12145,13 @@
         "properties": {
           "body": {
             "type": "string"
+          },
+          "draft_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
           }
         }
       },
@@ -12104,6 +13487,16 @@
                 "display_title"
               ],
               "properties": {
+                "comment_source": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/components/schemas/CommentBacklinkSourceDto"
+                    }
+                  ]
+                },
                 "display_title": {
                   "type": "string"
                 },
@@ -12237,6 +13630,111 @@
                   "format": "date-time"
                 }
               }
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "Page_CommentFeedEntryDto": {
+        "type": "object",
+        "description": "Paginated response envelope.",
+        "required": [
+          "items",
+          "has_more"
+        ],
+        "properties": {
+          "has_more": {
+            "type": "boolean"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "comment",
+                    "links",
+                    "type"
+                  ],
+                  "properties": {
+                    "comment": {
+                      "$ref": "#/components/schemas/CommentDto"
+                    },
+                    "links": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CommentLinkProjectionDto"
+                      }
+                    },
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "comment"
+                      ]
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "kind",
+                    "comment_id",
+                    "created_at",
+                    "type"
+                  ],
+                  "properties": {
+                    "actor": {
+                      "oneOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "$ref": "#/components/schemas/ActorDto"
+                        }
+                      ]
+                    },
+                    "comment_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "created_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "target": {
+                      "oneOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "$ref": "#/components/schemas/CommentLinkTargetDto"
+                        }
+                      ]
+                    },
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "event"
+                      ]
+                    }
+                  }
+                }
+              ],
+              "description": "One full comment-feed entry, including retained lifecycle events."
             }
           },
           "next_cursor": {
@@ -12520,6 +14018,16 @@
                 "kind"
               ],
               "properties": {
+                "comment_source": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/components/schemas/CommentBacklinkSourceDto"
+                    }
+                  ]
+                },
                 "kind": {
                   "type": "string",
                   "description": "\"relates\" | \"blocks\" | \"parent\" | \"spec\" | \"docs\""
@@ -13162,6 +14670,18 @@
           }
         }
       },
+      "RenameTaskAttachmentRequest": {
+        "type": "object",
+        "description": "Renames a task attachment without changing its stored content.",
+        "required": [
+          "file_name"
+        ],
+        "properties": {
+          "file_name": {
+            "type": "string"
+          }
+        }
+      },
       "ResetPasswordRequest": {
         "type": "object",
         "description": "Request body for `POST /api/users/{user_id}/reset-password`.",
@@ -13434,6 +14954,14 @@
               "null"
             ]
           },
+          "max_attachment_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
           "url": {
             "type": [
               "string",
@@ -13583,6 +15111,16 @@
           "kind"
         ],
         "properties": {
+          "comment_source": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CommentBacklinkSourceDto"
+              }
+            ]
+          },
           "kind": {
             "type": "string",
             "description": "\"relates\" | \"blocks\" | \"parent\" | \"spec\" | \"docs\""

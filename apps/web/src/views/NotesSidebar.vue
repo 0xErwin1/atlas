@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { wrappedClient } from '@/api/wrapper';
 import {
   getResourceCachePrincipal,
+  hydrateAndRevalidateResource,
   resourceCache,
   resourceCacheEpoch,
   resourceCacheIsPurging,
@@ -284,11 +285,12 @@ async function loadTree(): Promise<void> {
   const statusKey = `note-tree:${wsSlug}:${project.slug}`;
   const onlineHint = typeof navigator === 'undefined' || navigator.onLine;
   resourceStatus.beginRequest(statusKey, onlineHint);
-  const hydrated = await resourceCache.hydrate(request);
-  if (hydrated !== null && isCurrent()) resourceStatus.setRefreshing(statusKey);
-  resourceCache.activate(request);
+  const operation = hydrateAndRevalidateResource(request);
+  void operation.hydration.then((hydrated) => {
+    if (hydrated !== null && isCurrent()) resourceStatus.setRefreshing(statusKey);
+  });
   try {
-    await resourceCache.revalidate(request);
+    await operation.completion;
   } catch (error) {
     if (isCurrent()) {
       const status = (error as { status?: number } | undefined)?.status;

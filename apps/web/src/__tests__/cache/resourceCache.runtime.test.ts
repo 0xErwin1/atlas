@@ -5,6 +5,7 @@ import {
   blockAndPurgeResourceCache,
   configureResourceCacheForTest,
   hardRefreshResourceCache,
+  hydrateAndRevalidateResource,
   invalidateLiveResourceCache,
   purgeResourceCache,
   runHardRefresh,
@@ -263,6 +264,267 @@ describe('ResourceCache runtime', () => {
     expect(publish).toHaveBeenNthCalledWith(1, { title: 'Cached' });
   });
 
+  it('starts revalidation during hydration and prevents a late cache result from replacing fresh data', async () => {
+    let resolveGet: ((entry: CacheEnvelope<{ title: string }> | null) => void) | undefined;
+    let resolveLoad: ((payload: { title: string }) => void) | undefined;
+    const store: ResourceCacheStore = {
+      get: vi.fn(
+        <T>(_key: string, schema: z.ZodType<T>) =>
+          new Promise<CacheEnvelope<T> | null>((resolve) => {
+            resolveGet = (entry) => {
+              resolve(entry === null ? null : { ...entry, payload: schema.parse(entry.payload) });
+            };
+          }),
+      ) as ResourceCacheStore['get'],
+      putMany: vi.fn().mockResolvedValue(true),
+      deleteMany: vi.fn().mockResolvedValue(true),
+      clear: vi.fn().mockResolvedValue(true),
+    };
+    const cache = new ResourceCache({ store });
+    const publish = vi.fn();
+    const load = vi.fn(
+      () =>
+        new Promise<{ title: string }>((resolve) => {
+          resolveLoad = resolve;
+        }),
+    );
+    const request = {
+      key: 'key-a',
+      payloadSchema,
+      tags: ['workspace:workspace-a'],
+      freshForMs: 30_000,
+      retentionForMs: 60_000,
+      load,
+      publish,
+      isCurrent: () => true,
+    };
+
+    cache.allow();
+    const { hydration, revalidation } = cache.hydrateAndRevalidate(request);
+
+    expect(load).toHaveBeenCalledOnce();
+
+    resolveLoad?.({ title: 'Fresh' });
+    await revalidation;
+    resolveGet?.(createEntry('key-a', 'Cached', Date.now()));
+    await hydration;
+
+    expect(publish).toHaveBeenCalledOnce();
+    expect(publish).toHaveBeenCalledWith({ title: 'Fresh' });
+  });
+
+  it('keeps cached-first publication when hydration wins the revalidation race', async () => {
+    let resolveLoad: ((payload: { title: string }) => void) | undefined;
+    const store = {
+      get: vi.fn().mockResolvedValue(createEntry('key-a', 'Cached', Date.now())),
+      putMany: vi.fn().mockResolvedValue(true),
+      deleteMany: vi.fn().mockResolvedValue(true),
+      clear: vi.fn().mockResolvedValue(true),
+    };
+    const cache = new ResourceCache({ store });
+    const publish = vi.fn();
+    const request = {
+      key: 'key-a',
+      payloadSchema,
+      tags: ['workspace:workspace-a'],
+      freshForMs: 30_000,
+      retentionForMs: 60_000,
+      load: () =>
+        new Promise<{ title: string }>((resolve) => {
+          resolveLoad = resolve;
+        }),
+      publish,
+      isCurrent: () => true,
+    };
+
+    cache.allow();
+    const { hydration, revalidation } = cache.hydrateAndRevalidate(request);
+    await hydration;
+    resolveLoad?.({ title: 'Fresh' });
+    await revalidation;
+
+    expect(publish).toHaveBeenNthCalledWith(1, { title: 'Cached' });
+    expect(publish).toHaveBeenNthCalledWith(2, { title: 'Fresh' });
+  });
+
+  it('settles authoritative success without waiting for hung hydration', async () => {
+    const store: ResourceCacheStore = {
+      get: vi.fn(() => new Promise(() => undefined)) as ResourceCacheStore['get'],
+      putMany: vi.fn().mockResolvedValue(true),
+      deleteMany: vi.fn().mockResolvedValue(true),
+      clear: vi.fn().mockResolvedValue(true),
+    };
+    const cache = new ResourceCache({ store });
+    const publish = vi.fn();
+    const request = {
+      key: 'key-a',
+      payloadSchema,
+      tags: ['workspace:workspace-a'],
+      freshForMs: 30_000,
+      retentionForMs: 60_000,
+      load: vi.fn().mockResolvedValue({ title: 'Fresh' }),
+      publish,
+      isCurrent: () => true,
+    };
+
+    cache.allow();
+    const operation = cache.hydrateAndRevalidate(request);
+
+    await expect(operation.completion).resolves.toMatchObject({
+      payload: { title: 'Fresh' },
+      published: true,
+    });
+    expect(publish).toHaveBeenCalledOnce();
+  });
+
+  it('settles authoritative denial and suppresses cache data that hydrates later', async () => {
+    let resolveGet: ((entry: CacheEnvelope<{ title: string }>) => void) | undefined;
+    const store: ResourceCacheStore = {
+      get: vi.fn(
+        <T>(_key: string, schema: z.ZodType<T>) =>
+          new Promise<CacheEnvelope<T> | null>((resolve) => {
+            resolveGet = (entry) => resolve({ ...entry, payload: schema.parse(entry.payload) });
+          }),
+      ) as ResourceCacheStore['get'],
+      putMany: vi.fn().mockResolvedValue(true),
+      deleteMany: vi.fn().mockResolvedValue(true),
+      clear: vi.fn().mockResolvedValue(true),
+    };
+    const cache = new ResourceCache({ store });
+    const publish = vi.fn();
+    const denial = Object.assign(new Error('Denied'), { status: 403 });
+    const request = {
+      key: 'key-a',
+      payloadSchema,
+      tags: ['workspace:workspace-a'],
+      freshForMs: 30_000,
+      retentionForMs: 60_000,
+      load: vi.fn().mockRejectedValue(denial),
+      publish,
+      isCurrent: () => true,
+    };
+
+    cache.allow();
+    const operation = cache.hydrateAndRevalidate(request);
+    await expect(operation.completion).rejects.toBe(denial);
+
+    resolveGet?.(createEntry('key-a', 'Cached', Date.now()));
+    await operation.hydration;
+
+    expect(publish).not.toHaveBeenCalled();
+  });
+
+  it('does not activate a request that stops being current before authoritative completion', async () => {
+    let current = true;
+    let resolveLoad: ((payload: { title: string }) => void) | undefined;
+    const store = {
+      get: vi.fn().mockResolvedValue(null),
+      putMany: vi.fn().mockResolvedValue(true),
+      deleteMany: vi.fn().mockResolvedValue(true),
+      clear: vi.fn().mockResolvedValue(true),
+    };
+    const cache = new ResourceCache({ store });
+    const activate = vi.spyOn(cache, 'activate');
+    const request = {
+      key: 'key-a',
+      payloadSchema,
+      tags: ['workspace:workspace-a'],
+      freshForMs: 30_000,
+      retentionForMs: 60_000,
+      load: () =>
+        new Promise<{ title: string }>((resolve) => {
+          resolveLoad = resolve;
+        }),
+      publish: vi.fn(),
+      isCurrent: () => current,
+    };
+
+    cache.allow();
+    const operation = cache.hydrateAndRevalidate(request);
+    current = false;
+    resolveLoad?.({ title: 'Fresh' });
+    await operation.completion;
+
+    expect(activate).not.toHaveBeenCalled();
+  });
+
+  it('does not persist or activate an old-principal request after the runtime epoch changes', async () => {
+    let resolveLoad: ((payload: { title: string }) => void) | undefined;
+    const oldPrincipal = 'user:019ef171-bbcf-7b90-9be6-5dbb382afd08';
+    const nextPrincipal = 'user:019ef171-bbcf-7b90-9be6-5dbb382afd09';
+    const workspaceId = '019ef171-bbcf-7b90-9be6-5dbb382afd08';
+    const store = {
+      get: vi.fn().mockResolvedValue(null),
+      putMany: vi.fn().mockResolvedValue(true),
+      deleteMany: vi.fn().mockResolvedValue(true),
+      clear: vi.fn().mockResolvedValue(true),
+    };
+    const cache = new ResourceCache({ store });
+    const activate = vi.spyOn(cache, 'activate');
+    configureResourceCacheForTest(cache);
+    setResourceCachePrincipal(oldPrincipal);
+    allowResourceCache();
+    const request = {
+      key: `v1|p=${oldPrincipal}|w=${workspaceId}|k=note-body|r=note-a|q={}`,
+      payloadSchema,
+      tags: ['document:note-a'],
+      freshForMs: 30_000,
+      retentionForMs: 60_000,
+      load: () =>
+        new Promise<{ title: string }>((resolve) => {
+          resolveLoad = resolve;
+        }),
+      publish: vi.fn(),
+      isCurrent: () => true,
+    };
+
+    const operation = hydrateAndRevalidateResource(request);
+    setResourceCachePrincipal(nextPrincipal);
+    allowResourceCache();
+    resolveLoad?.({ title: 'Late' });
+    await expect(operation.completion).resolves.toMatchObject({ published: false });
+
+    expect(store.putMany).not.toHaveBeenCalled();
+    expect(activate).not.toHaveBeenCalled();
+    expect(request.publish).not.toHaveBeenCalled();
+  });
+
+  it('purges without waiting for hung HTTP and fences its late response', async () => {
+    let resolveLoad: ((payload: { title: string }) => void) | undefined;
+    const store = {
+      get: vi.fn().mockResolvedValue(null),
+      putMany: vi.fn().mockResolvedValue(true),
+      deleteMany: vi.fn().mockResolvedValue(true),
+      clear: vi.fn().mockResolvedValue(true),
+    };
+    const cache = new ResourceCache({ store });
+    const publish = vi.fn();
+    const request = {
+      key: 'key-a',
+      payloadSchema,
+      tags: ['workspace:workspace-a'],
+      freshForMs: 30_000,
+      retentionForMs: 60_000,
+      load: () =>
+        new Promise<{ title: string }>((resolve) => {
+          resolveLoad = resolve;
+        }),
+      publish,
+      isCurrent: () => true,
+    };
+
+    cache.allow();
+    const operation = cache.hydrateAndRevalidate(request);
+    const purge = cache.purge();
+
+    await vi.waitFor(() => expect(store.clear).toHaveBeenCalledOnce());
+    await expect(purge).resolves.toBe(true);
+
+    resolveLoad?.({ title: 'Late' });
+    await expect(operation.completion).resolves.toMatchObject({ published: false });
+    expect(publish).not.toHaveBeenCalled();
+  });
+
   it('purges only the requested workspace and prevents stale work from restoring it', async () => {
     let resolveLoad: ((payload: { title: string }) => void) | undefined;
     const store = {
@@ -449,6 +711,46 @@ describe('ResourceCache runtime', () => {
       workspaceId,
       tagsAny: ['document:note-a'],
     });
+    expect(publish).not.toHaveBeenCalled();
+  });
+
+  it('does not publish a failed-persistence payload after its scoped purge completes', async () => {
+    let resolvePut: ((result: boolean) => void) | undefined;
+    const principal = 'user:019ef171-bbcf-7b90-9be6-5dbb382afd08';
+    const workspaceId = '019ef171-bbcf-7b90-9be6-5dbb382afd08';
+    const key = `v1|p=${principal}|w=${workspaceId}|k=note-body|r=note-a|q={}`;
+    const store = {
+      get: vi.fn().mockResolvedValue(null),
+      putMany: vi.fn(
+        () =>
+          new Promise<boolean>((resolve) => {
+            resolvePut = resolve;
+          }),
+      ),
+      deleteMany: vi.fn().mockResolvedValue(true),
+      deleteScope: vi.fn().mockResolvedValue(true),
+      clear: vi.fn().mockResolvedValue(true),
+    };
+    const cache = new ResourceCache({ store });
+    const publish = vi.fn();
+
+    cache.allow();
+    const operation = cache.hydrateAndRevalidate({
+      key,
+      payloadSchema,
+      tags: [`workspace:${workspaceId}`, 'document:note-a'],
+      freshForMs: 30_000,
+      retentionForMs: 60_000,
+      load: vi.fn().mockResolvedValue({ title: 'Pre-purge' }),
+      publish,
+      isCurrent: () => true,
+    });
+
+    await vi.waitFor(() => expect(store.putMany).toHaveBeenCalledOnce());
+    await expect(cache.purgeTags(['document:note-a'], principal, workspaceId)).resolves.toBe(true);
+    resolvePut?.(false);
+
+    await expect(operation.completion).resolves.toEqual({ published: false });
     expect(publish).not.toHaveBeenCalled();
   });
 
@@ -776,7 +1078,7 @@ describe('ResourceCache runtime', () => {
     expect(load).not.toHaveBeenCalled();
   });
 
-  it('hydrates an exact cold entry under a valid lease then publishes only the current revalidation result', async () => {
+  it('hydrates an exact cold entry but neither persists nor publishes a non-current revalidation', async () => {
     const now = 1_000;
     const store = {
       get: vi.fn().mockResolvedValue(createEntry('key-a', 'Cached', now)),
@@ -810,7 +1112,7 @@ describe('ResourceCache runtime', () => {
     expect(publish).toHaveBeenCalledOnce();
     expect(publish).toHaveBeenCalledWith({ title: 'Cached' });
     expect(store.get).toHaveBeenCalledWith('key-a', payloadSchema);
-    expect(store.putMany).toHaveBeenCalledOnce();
+    expect(store.putMany).not.toHaveBeenCalled();
   });
 
   it('uses bounded jittered retry-not-before times without letting freshness schedule earlier retries', async () => {
@@ -1186,6 +1488,54 @@ describe('ResourceCache runtime', () => {
     expect(store.putMany).not.toHaveBeenCalled();
   });
 
+  it('publishes a deduplicated revalidation through the latest same-key request', async () => {
+    let resolveLoad: ((payload: { title: string }) => void) | undefined;
+    const store = {
+      get: vi.fn().mockResolvedValue(null),
+      putMany: vi.fn().mockResolvedValue(true),
+      deleteMany: vi.fn().mockResolvedValue(true),
+      clear: vi.fn().mockResolvedValue(true),
+    };
+    const cache = new ResourceCache({ store });
+    const load = vi.fn(
+      () =>
+        new Promise<{ title: string }>((resolve) => {
+          resolveLoad = resolve;
+        }),
+    );
+    const firstPublish = vi.fn();
+    const latestPublish = vi.fn();
+    const request = {
+      key: 'key-a',
+      payloadSchema,
+      tags: ['workspace:workspace-a'],
+      freshForMs: 30_000,
+      retentionForMs: 60_000,
+      load,
+    };
+
+    cache.allow();
+    const first = cache.revalidate({
+      ...request,
+      publish: firstPublish,
+      isCurrent: () => false,
+    });
+    const latest = cache.revalidate({
+      ...request,
+      publish: latestPublish,
+      isCurrent: () => true,
+    });
+    resolveLoad?.({ title: 'Fresh' });
+
+    await expect(Promise.all([first, latest])).resolves.toEqual([
+      expect.objectContaining({ published: true }),
+      expect.objectContaining({ published: true }),
+    ]);
+    expect(load).toHaveBeenCalledOnce();
+    expect(firstPublish).not.toHaveBeenCalled();
+    expect(latestPublish).toHaveBeenCalledOnce();
+  });
+
   it('falls back to the network when durable cache access is unavailable', async () => {
     const store = {
       get: vi.fn().mockRejectedValue(new Error('IndexedDB unavailable')),
@@ -1209,7 +1559,7 @@ describe('ResourceCache runtime', () => {
     cache.allow();
 
     await expect(cache.hydrate(request)).resolves.toBeNull();
-    await expect(cache.revalidate(request)).resolves.toEqual({ published: true });
+    await expect(cache.revalidate(request)).resolves.toMatchObject({ published: true });
 
     expect(request.load).toHaveBeenCalledOnce();
     expect(publish).toHaveBeenCalledWith({ title: 'Online' });
@@ -1237,7 +1587,7 @@ describe('ResourceCache runtime', () => {
 
     cache.allow();
 
-    await expect(cache.revalidate(request)).resolves.toEqual({ published: false });
+    await expect(cache.revalidate(request)).resolves.toMatchObject({ published: false });
     await expect(cache.hydrate(request)).resolves.toBeNull();
 
     expect(store.putMany).toHaveBeenCalledOnce();

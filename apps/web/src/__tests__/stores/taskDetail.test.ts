@@ -22,18 +22,24 @@ vi.mock('@/api/wrapper', () => ({
   wrappedClient: { GET, POST, DELETE, PATCH },
 }));
 
-vi.mock('@/cache/cacheRuntime', () => ({
-  getResourceCachePrincipal: () => 'user:018f0000-0000-7000-8000-000000000001',
-  resourceCacheEpoch: { __v_isRef: true, value: 0 },
-  invalidateTaskCache: cachePurgeTags,
-  resourceCache: {
+vi.mock('@/cache/cacheRuntime', async () => {
+  const { startHydrationAndRevalidation } = await import('@/cache/resourceCache');
+  const resourceCache = {
     isAvailable: cacheIsAvailable,
     hydrate: cacheHydrate,
     revalidate: cacheRevalidate,
     activate: cacheActivate,
     deactivate: cacheDeactivate,
-  },
-}));
+  };
+
+  return {
+    getResourceCachePrincipal: () => 'user:018f0000-0000-7000-8000-000000000001',
+    hydrateAndRevalidateResource: (request: never) => startHydrationAndRevalidation(resourceCache, request),
+    resourceCacheEpoch: { __v_isRef: true, value: 0 },
+    invalidateTaskCache: cachePurgeTags,
+    resourceCache,
+  };
+});
 
 import { type ReferenceDto, useTaskDetailStore } from '@/stores/taskDetail';
 import { useTasksStore } from '@/stores/tasks';
@@ -273,6 +279,69 @@ describe('useTaskDetailStore', () => {
     expect(store.commentsCursor).toBe('cm1');
   });
 
+  it('preserves the authorized comment backlink source projection', async () => {
+    GET.mockImplementation((path: string) => {
+      if (path.endsWith('/backlinks')) {
+        return Promise.resolve({
+          data: {
+            items: [
+              {
+                source_task_id: 'source-task',
+                source_readable_id: 'ATL-2',
+                source_title: 'Source',
+                kind: 'comment',
+                comment_source: {
+                  type: 'comment',
+                  comment_id: 'comment-1',
+                  parent: { type: 'document', id: 'document-1', slug: 'source-note', title: 'Source note' },
+                },
+              },
+            ],
+            has_more: false,
+          },
+          error: undefined,
+        });
+      }
+
+      return Promise.resolve(collectionResponse(collectionIndex(path), 'default'));
+    });
+
+    const store = useTaskDetailStore();
+    await store.loadAll('ws', 'ATL-1');
+
+    expect(store.backlinks[0]?.comment_source).toMatchObject({
+      comment_id: 'comment-1',
+      parent: { type: 'document', slug: 'source-note' },
+    });
+  });
+
+  it('uses the default task comment page and fails closed for a full feed response', async () => {
+    GET.mockImplementation((path: string) => {
+      const index = collectionIndex(path);
+      if (index !== 7) return Promise.resolve(collectionResponse(index, 'default'));
+      return Promise.resolve({
+        data: {
+          items: [{ type: 'comment', comment: comment('cm-full', 'Unexpected full feed', 'user', 'Jordan') }],
+          has_more: false,
+          next_cursor: null,
+        },
+        error: undefined,
+      });
+    });
+
+    const store = useTaskDetailStore();
+    await store.loadAll('ws', 'ATL-1');
+
+    const commentCall = GET.mock.calls.find(([path]) => path.endsWith('/comments'));
+    expect(commentCall).toEqual([
+      '/api/workspaces/{ws}/tasks/{readable_id}/comments',
+      { params: { path: { ws: 'ws', readable_id: 'ATL-1' } } },
+    ]);
+    expect(store.comments).toEqual([]);
+    expect(store.collectionStatus.comments).toBe('error');
+    expect(store.collectionErrors.comments).not.toBeNull();
+  });
+
   it('hydrates each current task collection independently before failed refreshes retain cached data', async () => {
     cacheHydrate.mockImplementation(async (request) => {
       if (request.key.includes('assignees')) {
@@ -394,6 +463,116 @@ describe('useTaskDetailStore', () => {
       undefined,
       '018f0000-0000-7000-8000-000000000003',
     );
+  });
+
+  it.each([
+    403, 404,
+  ])('invalidates in-flight and subsequent mutations after an initial %i denial', async (status) => {
+    cacheIsAvailable.mockReturnValue(false);
+    const denial = deferred<{ data: undefined; error: { status: number; hint: string } }>();
+    const mutation = deferred<{ data: ReturnType<typeof assignee>; error: undefined }>();
+    GET.mockImplementation((path: string) =>
+      path.endsWith('/references')
+        ? denial.promise
+        : Promise.resolve(collectionResponse(collectionIndex(path), 'Visible')),
+    );
+    POST.mockReturnValueOnce(mutation.promise);
+
+    const store = useTaskDetailStore();
+    const load = store.loadAll(
+      'ws',
+      'ATL-1',
+      '018f0000-0000-7000-8000-000000000002',
+      '018f0000-0000-7000-8000-000000000003',
+    );
+    const add = store.addAssignee('ws', 'ATL-1', {
+      assignee_id: 'late-user',
+      assignee_type: 'user',
+    });
+
+    denial.resolve({ data: undefined, error: { status, hint: 'Denied' } });
+    await load;
+    mutation.resolve({ data: assignee('late-user', 'user', 'Late user'), error: undefined });
+
+    expect(await add).toBe(false);
+    expect(store.assignees).toEqual([]);
+    expect(
+      await store.addAssignee('ws', 'ATL-1', {
+        assignee_id: 'blocked-user',
+        assignee_type: 'user',
+      }),
+    ).toBe(false);
+    expect(POST).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows a legitimate reload and mutation after a denial retraction', async () => {
+    cacheIsAvailable.mockReturnValue(false);
+    let denyReferences = true;
+    GET.mockImplementation((path: string) => {
+      if (denyReferences && path.endsWith('/references')) {
+        return Promise.resolve({ data: undefined, error: { status: 403, hint: 'Denied' } });
+      }
+      return Promise.resolve(collectionResponse(collectionIndex(path), 'Reloaded'));
+    });
+
+    const store = useTaskDetailStore();
+    await store.loadAll(
+      'ws',
+      'ATL-1',
+      '018f0000-0000-7000-8000-000000000002',
+      '018f0000-0000-7000-8000-000000000003',
+    );
+    denyReferences = false;
+    await store.loadAll(
+      'ws',
+      'ATL-1',
+      '018f0000-0000-7000-8000-000000000002',
+      '018f0000-0000-7000-8000-000000000003',
+    );
+    POST.mockResolvedValueOnce({ data: assignee('new-user', 'user', 'New user'), error: undefined });
+
+    expect(
+      await store.addAssignee('ws', 'ATL-1', {
+        assignee_id: 'new-user',
+        assignee_type: 'user',
+      }),
+    ).toBe(true);
+    expect(store.assignees.some((item) => item.assignee.id === 'new-user')).toBe(true);
+  });
+
+  it.each([403, 404])('invalidates mutation currency when comment pagination receives %i', async (status) => {
+    cacheIsAvailable.mockReturnValue(false);
+    GET.mockImplementation((path: string) =>
+      Promise.resolve(collectionResponse(collectionIndex(path), 'Initial')),
+    );
+    const store = useTaskDetailStore();
+    await store.loadAll(
+      'ws',
+      'ATL-1',
+      '018f0000-0000-7000-8000-000000000002',
+      '018f0000-0000-7000-8000-000000000003',
+    );
+    store._setForTest({
+      comments: [comment('cm1', 'Original', 'user', 'Jordan')],
+      commentsCursor: 'next-page',
+      commentsHasMore: true,
+    });
+    const mutation = deferred<{ data: ReturnType<typeof comment>; error: undefined }>();
+    PATCH.mockReturnValueOnce(mutation.promise);
+    GET.mockImplementation((path: string) =>
+      path.endsWith('/comments')
+        ? Promise.resolve({ data: undefined, error: { status, hint: 'Denied' } })
+        : Promise.resolve(collectionResponse(collectionIndex(path), 'Initial')),
+    );
+
+    const edit = store.editComment('ws', 'ATL-1', 'cm1', 'Late edit');
+    await store.loadMoreComments('ws', 'ATL-1');
+    mutation.resolve({ data: comment('cm1', 'Late edit', 'user', 'Jordan'), error: undefined });
+
+    expect(await edit).toBe(false);
+    expect(store.comments).toEqual([]);
+    expect(await store.addComment('ws', 'ATL-1', 'Blocked comment')).toBe(false);
+    expect(POST).not.toHaveBeenCalled();
   });
 
   it('keeps detail collections online-only when the authoritative task UUID is unavailable', async () => {

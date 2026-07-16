@@ -229,6 +229,37 @@ describe('useDocumentsStore', () => {
     expect(store.backlinks[0]?.source_slug).toBe('source');
   });
 
+  it('preserves the authorized comment backlink source projection', async () => {
+    GET.mockResolvedValue({
+      data: {
+        items: [
+          {
+            display_title: 'Comment on roadmap',
+            source_document_id: 'source',
+            source_slug: null,
+            source_title: 'Source',
+            comment_source: {
+              type: 'comment',
+              comment_id: 'comment-1',
+              parent: { type: 'task', id: 'task-1', readable_id: 'ATL-1', title: 'Roadmap' },
+            },
+          },
+        ],
+        has_more: false,
+      },
+    });
+
+    const store = useDocumentsStore();
+    await store.loadBacklinks('ws', 'target', { workspaceId: WORKSPACE_ID });
+
+    expect(store.backlinksStatus).toBe('ready');
+    expect(store.backlinks[0]?.source_slug).toBeNull();
+    expect(store.backlinks[0]?.comment_source).toMatchObject({
+      comment_id: 'comment-1',
+      parent: { type: 'task', readable_id: 'ATL-1' },
+    });
+  });
+
   it('retains cached backlinks when a refresh fails', async () => {
     GET.mockResolvedValueOnce({
       data: {
@@ -318,6 +349,173 @@ describe('useDocumentsStore', () => {
     expect(store.backlinksStatus).toBe('ready');
   });
 
+  it('deactivates cached backlink callbacks when switching documents and clearing the target', async () => {
+    GET.mockResolvedValue({ data: { items: [], has_more: false } });
+    const cache = new ResourceCache({ store: cacheStore(new Map()) });
+    const activate = vi.spyOn(cache, 'activate');
+    const deactivate = vi.spyOn(cache, 'deactivate');
+    configureResourceCacheForTest(cache);
+    allowResourceCache();
+    const firstKey = buildCacheKey({
+      principal: PRINCIPAL,
+      workspaceId: WORKSPACE_ID,
+      resourceKind: 'note-secondary',
+      resourceId: 'first',
+      query: { type: 'backlinks' },
+    });
+    const secondKey = buildCacheKey({
+      principal: PRINCIPAL,
+      workspaceId: WORKSPACE_ID,
+      resourceKind: 'note-secondary',
+      resourceId: 'second',
+      query: { type: 'backlinks' },
+    });
+    if (firstKey === null || secondKey === null) throw new Error('Expected canonical backlinks cache keys');
+
+    const store = useDocumentsStore();
+    await store.loadBacklinks('ws', 'first', { workspaceId: WORKSPACE_ID });
+    await store.loadBacklinks('ws', 'second', { workspaceId: WORKSPACE_ID });
+    store.clearSecondaryTarget();
+
+    expect(activate).toHaveBeenCalledTimes(2);
+    expect(deactivate).toHaveBeenCalledWith(firstKey);
+    expect(deactivate).toHaveBeenCalledWith(secondKey);
+  });
+
+  it('deactivates cached backlink callbacks when the workspace changes for the same slug', async () => {
+    GET.mockResolvedValue({ data: { items: [], has_more: false } });
+    const cache = new ResourceCache({ store: cacheStore(new Map()) });
+    const deactivate = vi.spyOn(cache, 'deactivate');
+    configureResourceCacheForTest(cache);
+    allowResourceCache();
+    const firstWorkspaceId = '019ef171-bbcf-7b90-9be6-5dbb382afd09';
+    const firstKey = buildCacheKey({
+      principal: PRINCIPAL,
+      workspaceId: firstWorkspaceId,
+      resourceKind: 'note-secondary',
+      resourceId: 'shared',
+      query: { type: 'backlinks' },
+    });
+    if (firstKey === null) throw new Error('Expected a canonical backlinks cache key');
+
+    const store = useDocumentsStore();
+    await store.loadBacklinks('workspace-a', 'shared', { workspaceId: firstWorkspaceId });
+    await store.loadBacklinks('workspace-b', 'shared', { workspaceId: WORKSPACE_ID });
+
+    expect(deactivate).toHaveBeenCalledWith(firstKey);
+  });
+
+  it('settles a denied backlinks refresh before slow hydration and never exposes the cached backlinks', async () => {
+    const key = buildCacheKey({
+      principal: PRINCIPAL,
+      workspaceId: WORKSPACE_ID,
+      resourceKind: 'note-secondary',
+      resourceId: 'target',
+      query: { type: 'backlinks' },
+    });
+    if (key === null) throw new Error('Expected a canonical backlinks cache key');
+
+    let resolveGet: ((entry: CacheEnvelope<unknown>) => void) | undefined;
+    const store: ResourceCacheStore = {
+      get: vi.fn(
+        <T>(_key: string, schema: ZodType<T>) =>
+          new Promise<CacheEnvelope<T> | null>((resolve) => {
+            resolveGet = (entry) => resolve({ ...entry, payload: schema.parse(entry.payload) });
+          }),
+      ) as ResourceCacheStore['get'],
+      putMany: vi.fn().mockResolvedValue(true),
+      deleteMany: vi.fn().mockResolvedValue(true),
+      clear: vi.fn().mockResolvedValue(true),
+    };
+    configureResourceCacheForTest(new ResourceCache({ store }));
+    allowResourceCache();
+    GET.mockResolvedValue({ error: { status: 403, hint: 'Denied' } });
+    const documents = useDocumentsStore();
+
+    const load = documents.loadBacklinks('ws', 'target', { workspaceId: WORKSPACE_ID });
+    await vi.waitFor(() => expect(documents.backlinksStatus).toBe('error'));
+    await load;
+
+    expect(documents.backlinks).toEqual([]);
+    resolveGet?.({
+      schema: 1,
+      key,
+      payloadVersion: 1,
+      storedAt: Date.now(),
+      validatedAt: Date.now(),
+      lastAccessedAt: Date.now(),
+      retentionExpiresAt: Date.now() + 60_000,
+      bytes: 128,
+      stale: false,
+      tags: ['document:target', 'secondary:backlinks'],
+      payload: [
+        {
+          display_title: 'Denied cached source',
+          source_document_id: 'denied-source',
+          source_slug: 'denied-source',
+          source_title: 'Denied cached source',
+        },
+      ],
+    });
+    await Promise.resolve();
+
+    expect(documents.backlinks).toEqual([]);
+  });
+
+  it.each([
+    403, 404,
+  ])('retracts cache-first backlinks after an authoritative %i and evicts the denied cache', async (status) => {
+    const key = buildCacheKey({
+      principal: PRINCIPAL,
+      workspaceId: WORKSPACE_ID,
+      resourceKind: 'note-secondary',
+      resourceId: 'target',
+      query: { type: 'backlinks' },
+    });
+    if (key === null) throw new Error('Expected a canonical backlinks cache key');
+
+    const now = Date.now();
+    const entries = new Map<string, CacheEnvelope<unknown>>([
+      [
+        key,
+        {
+          schema: 1,
+          key,
+          payloadVersion: 1,
+          storedAt: now,
+          validatedAt: now,
+          lastAccessedAt: now,
+          retentionExpiresAt: now + 60_000,
+          bytes: 128,
+          stale: false,
+          tags: ['document:target', 'secondary:backlinks'],
+          payload: [
+            {
+              display_title: 'Denied cached source',
+              source_document_id: 'denied-source',
+              source_slug: 'denied-source',
+              source_title: 'Denied cached source',
+            },
+          ],
+        },
+      ],
+    ]);
+    const cache = new ResourceCache({ store: cacheStore(entries) });
+    configureResourceCacheForTest(cache);
+    allowResourceCache();
+    GET.mockResolvedValue({ error: { status, hint: 'Denied' } });
+    const documents = useDocumentsStore();
+
+    await documents.loadBacklinks('ws', 'target', { workspaceId: WORKSPACE_ID });
+
+    expect(documents.backlinks).toEqual([]);
+    expect(documents.backlinksStatus).toBe('error');
+    expect(entries).toEqual(new Map());
+
+    await documents.loadBacklinks('ws', 'target', { workspaceId: WORKSPACE_ID });
+    expect(documents.backlinks).toEqual([]);
+  });
+
   it('loadBacklinks clears the list on error (never crashes)', async () => {
     GET.mockResolvedValue({ error: { status: 404 } });
 
@@ -325,6 +523,26 @@ describe('useDocumentsStore', () => {
     await store.loadBacklinks('ws', 'missing');
 
     expect(store.backlinks).toHaveLength(0);
+  });
+
+  it('loads the default document comment page without a feed selector and rejects a full feed', async () => {
+    GET.mockResolvedValueOnce({
+      data: {
+        items: [{ type: 'comment', comment: comment('comment-1', 'Unexpected full feed') }],
+        next_cursor: null,
+        has_more: false,
+      },
+    });
+
+    const store = useDocumentsStore();
+    await store.loadComments('ws', 'note');
+
+    expect(GET).toHaveBeenCalledWith('/api/workspaces/{ws}/documents/{slug}/comments', {
+      params: { path: { ws: 'ws', slug: 'note' } },
+    });
+    expect(store.comments).toEqual([]);
+    expect(store.commentsStatus).toBe('error');
+    expect(store.commentsError).toBe('Received an unsupported full comment feed');
   });
 
   it('resets note secondary state when the workspace changes for the same slug', async () => {

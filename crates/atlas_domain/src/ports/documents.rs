@@ -1,8 +1,9 @@
 use crate::{
     DomainError, WorkspaceCtx,
     entities::documents::{
-        Attachment, AttachmentOwner, Document, DocumentLink, DocumentSummary, ExtractedLink,
-        NewAttachment, NewDocument, RevisionMeta, TaskDescriptionLinks,
+        Attachment, AttachmentOwner, AttachmentWriteIntent, Document, DocumentLink,
+        DocumentSummary, ExtractedLink, NewAttachment, NewDocument, RevisionMeta,
+        TaskDescriptionLinks,
     },
     ids::{AttachmentId, DocumentId, FolderId, ProjectId, RevisionId, TaskId},
     permissions::Principal,
@@ -156,4 +157,14 @@ pub trait AttachmentRepo: Send + Sync {
     ) -> Result<Vec<Attachment>, DomainError>;
 
     async fn soft_delete(&self, ctx: &WorkspaceCtx, id: AttachmentId) -> Result<(), DomainError>;
+}
+
+#[async_trait]
+pub trait AttachmentWriteIntentRepo: Send + Sync {
+    async fn create(&self, digest: String) -> Result<AttachmentWriteIntent, DomainError>;
+    async fn remove(&self, digest: &str) -> Result<(), DomainError>;
+    async fn list_stale(
+        &self,
+        older_than: chrono::DateTime<chrono::Utc>,
+    ) -> Result<Vec<AttachmentWriteIntent>, DomainError>;
 }

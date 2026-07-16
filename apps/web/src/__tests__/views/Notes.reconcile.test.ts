@@ -607,7 +607,17 @@ describe('Notes.vue open-note reconcile wiring', () => {
 
   it('does not start a replacement GET while logout cache purge is underway', async () => {
     const purge = deferred<boolean>();
-    configureResourceCacheForTest({ purge: () => purge.promise });
+    const cache = new ResourceCache({
+      store: {
+        get: async () => null,
+        putMany: async () => true,
+        deleteMany: async () => true,
+        clear: async () => true,
+      },
+    });
+    cache.allow();
+    vi.spyOn(cache, 'purge').mockReturnValue(purge.promise);
+    configureResourceCacheForTest(cache);
     setResourceCachePrincipal('user:019ef171-bbcf-7b90-9be6-5dbb382afd08');
     const wrapper = mountNotes();
     await settle();

@@ -54,3 +54,27 @@ pub(crate) fn account_status(
         "active"
     }
 }
+
+pub(crate) fn comment_attachment_markdown(
+    file_name: &str,
+    content_type: &str,
+    url: &str,
+) -> String {
+    let label = if content_type.starts_with("image/") {
+        file_name
+            .rsplit_once('.')
+            .map_or(file_name, |(stem, _)| stem)
+    } else {
+        file_name
+    }
+    .replace(']', "")
+    .replace(['\r', '\n'], " ")
+    .trim()
+    .to_string();
+
+    if content_type.starts_with("image/") {
+        format!("![{label}]({url})")
+    } else {
+        format!("[{label}]({url})")
+    }
+}

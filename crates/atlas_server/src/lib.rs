@@ -445,7 +445,35 @@ pub fn app(state: AppState) -> Router {
         )
         .route(
             "/api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}",
-            axum::routing::delete(routes::tasks::delete_attachment),
+            axum::routing::patch(routes::tasks::rename_attachment)
+                .delete(routes::tasks::delete_attachment),
+        )
+        .route(
+            "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments",
+            axum::routing::post(routes::tasks::upload_comment_attachment)
+                .get(routes::tasks::list_comment_attachments)
+                .layer(axum::extract::DefaultBodyLimit::max(attachment_body_limit)),
+        )
+        .route(
+            "/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts",
+            axum::routing::post(routes::tasks::create_comment_draft),
+        )
+        .route(
+            "/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}",
+            axum::routing::delete(routes::tasks::cancel_comment_draft),
+        )
+        .route(
+            "/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}/attachments",
+            axum::routing::post(routes::tasks::upload_comment_draft_attachment)
+                .layer(axum::extract::DefaultBodyLimit::max(attachment_body_limit)),
+        )
+        .route(
+            "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}/content",
+            get(routes::tasks::download_comment_attachment),
+        )
+        .route(
+            "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}",
+            axum::routing::delete(routes::tasks::delete_comment_attachment),
         )
         .route(
             "/api/workspaces/{ws}/tasks/{readable_id}/backlinks",
@@ -536,6 +564,30 @@ pub fn app(state: AppState) -> Router {
             "/api/workspaces/{ws}/attachments/{attachment_id}",
             get(routes::documents::download_attachment)
                 .delete(routes::documents::delete_attachment),
+        )
+        .route(
+            "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments",
+            axum::routing::post(routes::documents::upload_comment_attachment)
+                .get(routes::documents::list_comment_attachments)
+                .layer(axum::extract::DefaultBodyLimit::max(attachment_body_limit)),
+        )
+        .route(
+            "/api/workspaces/{ws}/documents/{slug}/comment-drafts",
+            axum::routing::post(routes::documents::create_comment_draft),
+        )
+        .route(
+            "/api/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}",
+            axum::routing::delete(routes::documents::cancel_comment_draft),
+        )
+        .route(
+            "/api/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}/attachments",
+            axum::routing::post(routes::documents::upload_comment_draft_attachment)
+                .layer(axum::extract::DefaultBodyLimit::max(attachment_body_limit)),
+        )
+        .route(
+            "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}",
+            get(routes::documents::download_comment_attachment)
+                .delete(routes::documents::delete_comment_attachment),
         )
         .route(
             "/api/workspaces/{ws}/documents/{slug}/move",

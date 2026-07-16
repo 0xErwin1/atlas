@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "openapi")]
 use utoipa::ToSchema;
 
-use super::documents::ActorDto;
+use super::documents::{ActorDto, CommentBacklinkSourceDto};
 
 // ---------------------------------------------------------------------------
 // Board DTOs
@@ -167,6 +167,13 @@ pub struct TaskAttachmentDto {
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
+/// Renames a task attachment without changing its stored content.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct RenameTaskAttachmentRequest {
+    pub file_name: String,
+}
+
 // ---------------------------------------------------------------------------
 // Reference DTOs
 // ---------------------------------------------------------------------------
@@ -271,6 +278,8 @@ pub struct TaskBacklinkDto {
     pub source_title: String,
     /// "relates" | "blocks" | "parent" | "spec" | "docs"
     pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comment_source: Option<CommentBacklinkSourceDto>,
 }
 
 // ---------------------------------------------------------------------------
@@ -349,11 +358,83 @@ pub struct CommentDto {
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
+/// A viewer-authorized navigation target derived from a comment link.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum CommentLinkTargetDto {
+    Available { r#type: String, id: uuid::Uuid },
+    Unavailable { label: String },
+}
+
+/// A derived comment link projected for the requesting viewer.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct CommentLinkProjectionDto {
+    pub target: CommentLinkTargetDto,
+}
+
+/// One full comment-feed entry, including retained lifecycle events.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum CommentFeedEntryDto {
+    Comment {
+        comment: CommentDto,
+        links: Vec<CommentLinkProjectionDto>,
+    },
+    Event {
+        id: uuid::Uuid,
+        kind: String,
+        comment_id: uuid::Uuid,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        target: Option<CommentLinkTargetDto>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        actor: Option<ActorDto>,
+        created_at: chrono::DateTime<chrono::Utc>,
+    },
+}
+
+/// The compatible default comment page or the opt-in full comment feed page.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+#[serde(untagged)]
+pub enum CommentListResponseDto {
+    Default(crate::pagination::Page<CommentDto>),
+    Full(crate::pagination::Page<CommentFeedEntryDto>),
+}
+
 /// Request body for `POST .../comments`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct CreateCommentRequest {
     pub body: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub draft_id: Option<uuid::Uuid>,
+}
+
+impl CreateCommentRequest {
+    pub fn published(body: impl Into<String>) -> Self {
+        Self {
+            body: body.into(),
+            draft_id: None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod create_comment_request_tests {
+    use super::CreateCommentRequest;
+
+    #[test]
+    fn published_omits_draft_id_from_legacy_request_json() {
+        let request = CreateCommentRequest::published("published body");
+
+        assert_eq!(
+            serde_json::to_value(request).expect("serialize published comment request"),
+            serde_json::json!({ "body": "published body" })
+        );
+    }
 }
 
 /// Request body for `PATCH .../comments/{comment_id}`.

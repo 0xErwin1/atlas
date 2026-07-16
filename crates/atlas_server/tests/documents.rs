@@ -150,6 +150,7 @@ async fn api_key_actor_attachment_record_sets_created_by_api_key_id() {
             NewAttachment {
                 document_id: Some(doc.id),
                 task_id: None,
+                comment_id: None,
                 file_name: "file.txt".into(),
                 content_type: "text/plain".into(),
                 size_bytes: 4,

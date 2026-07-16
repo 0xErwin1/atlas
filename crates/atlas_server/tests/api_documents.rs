@@ -7,6 +7,8 @@
 
 mod support;
 
+use sea_orm::{ConnectionTrait, Statement};
+
 use atlas_api::dtos::{
     ApiKeyScope, CreateUserApiKeyRequest,
     documents::{
@@ -1115,6 +1117,22 @@ async fn attach_image_and_download_roundtrip() {
     assert_eq!(att.file_name, "image.png");
     assert_eq!(att.content_type, "image/png");
     assert_eq!(att.size_bytes, payload.len() as i64);
+
+    let intent_count: i64 = db
+        .conn()
+        .query_one_raw(Statement::from_string(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT COUNT(*) AS count FROM attachment_write_intents",
+        ))
+        .await
+        .expect("query write intents")
+        .expect("write intent count row")
+        .try_get("", "count")
+        .expect("read write intent count");
+    assert_eq!(
+        intent_count, 0,
+        "raw upload must atomically finalize its attachment row and remove the intent"
+    );
 
     let downloaded = client
         .download_attachment(&ws.slug, att.id)

@@ -30,6 +30,12 @@ pub enum DomainError {
     #[error("forbidden: {message}")]
     Forbidden { message: String },
 
+    #[error("comment draft conflict: {reason}")]
+    CommentDraftConflict { reason: String },
+
+    #[error("comment draft is gone: {reason}")]
+    CommentDraftGone { reason: String },
+
     /// Fractional position space in column `column_id` is exhausted: no midpoint
     /// can be computed between the two anchors. The adapter must rebalance the
     /// column's keys and retry, or surface a 409 to the caller.
