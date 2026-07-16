@@ -6,6 +6,7 @@ import AccountPanel from '@/components/settings/AccountPanel.vue';
 import ActivityPanel from '@/components/settings/ActivityPanel.vue';
 import AdminWorkspacesPanel from '@/components/settings/AdminWorkspacesPanel.vue';
 import ApiKeysPanel from '@/components/settings/ApiKeysPanel.vue';
+import AppSettingsPanel from '@/components/settings/AppSettingsPanel.vue';
 import GroupsPanel from '@/components/settings/GroupsPanel.vue';
 import MembersPanel from '@/components/settings/MembersPanel.vue';
 import PlatformAuditPanel from '@/components/settings/PlatformAuditPanel.vue';
@@ -18,6 +19,7 @@ import WebhooksPanel from '@/components/settings/WebhooksPanel.vue';
 import WorkspaceAuditPanel from '@/components/settings/WorkspaceAuditPanel.vue';
 import WorkspaceGeneralPanel from '@/components/settings/WorkspaceGeneralPanel.vue';
 import Icon from '@/components/ui/Icon.vue';
+import { getPlatformTransport } from '@/platform/transport';
 import { useAuthStore } from '@/stores/auth';
 import { useWorkspaceStore } from '@/stores/workspace';
 import AppShell from '@/views/AppShell.vue';
@@ -41,7 +43,8 @@ export type SettingsSection =
   | 'workspaces'
   | 'webhooks'
   | 'platform-audit'
-  | 'about';
+  | 'about'
+  | 'app';
 
 const DEFAULT_SECTION: SettingsSection = 'account';
 
@@ -49,6 +52,7 @@ const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
 const wsStore = useWorkspaceStore();
+const transport = getPlatformTransport();
 
 interface NavEntry {
   section: SettingsSection;
@@ -126,6 +130,13 @@ const navGroups = computed<NavGroup[]>(() => {
         { section: 'platform-audit', icon: 'shield-alert', label: 'Platform audit', rootOnly: true },
         { section: 'about', icon: 'info', label: 'About', rootOnly: true },
       ],
+    });
+  }
+
+  if (transport.isDesktop) {
+    groups.push({
+      label: 'Desktop',
+      entries: [{ section: 'app', icon: 'app-window', label: 'App settings' }],
     });
   }
 
@@ -218,6 +229,7 @@ watch(
       <PlatformAuditPanel v-else-if="activeSection === 'platform-audit'" />
       <WebhooksPanel v-else-if="activeSection === 'webhooks'" />
       <AboutPanel v-else-if="activeSection === 'about'" />
+      <AppSettingsPanel v-else-if="activeSection === 'app'" />
     </div>
   </AppShell>
 </template>

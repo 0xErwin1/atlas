@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type {
   DesktopConfiguration,
+  DesktopPreferences,
   MeResponse,
   PlatformResult,
   PlatformTransport,
@@ -262,6 +263,14 @@ export function createDesktopPlatformTransport(bridge: DesktopBridge = desktopBr
     },
     setOrigin(origin) {
       return bridge.invoke<PlatformResult<DesktopConfiguration>>('desktop_set_origin', { origin });
+    },
+    getWindowDecorations() {
+      return bridge.invoke<PlatformResult<DesktopPreferences>>('desktop_get_window_decorations');
+    },
+    setWindowDecorations(decorations) {
+      return bridge.invoke<PlatformResult<DesktopPreferences>>('desktop_set_window_decorations', {
+        decorations,
+      });
     },
     createWorkspaceEventSource(workspaceSlug) {
       return new DesktopWorkspaceEventSource(bridge, workspaceSlug);

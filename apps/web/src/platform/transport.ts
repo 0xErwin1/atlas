@@ -7,6 +7,10 @@ export interface DesktopConfiguration {
   origin: string;
 }
 
+export interface DesktopPreferences {
+  window_decorations: boolean;
+}
+
 export interface PlatformResult<T> {
   data?: T;
   error?: unknown;
@@ -29,6 +33,8 @@ export interface PlatformTransport {
   logout: () => Promise<PlatformResult<unknown>>;
   getOrigin: () => Promise<PlatformResult<DesktopConfiguration>>;
   setOrigin: (origin: string) => Promise<PlatformResult<DesktopConfiguration>>;
+  getWindowDecorations: () => Promise<PlatformResult<DesktopPreferences>>;
+  setWindowDecorations: (decorations: boolean) => Promise<PlatformResult<DesktopPreferences>>;
   createWorkspaceEventSource: (workspaceSlug: string) => WorkspaceEventSource;
 }
 

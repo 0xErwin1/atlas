@@ -22,6 +22,12 @@ export function createBrowserPlatformTransport(): PlatformTransport {
     setOrigin() {
       return Promise.resolve({ error: 'Server selection is available in Atlas Desktop' });
     },
+    getWindowDecorations() {
+      return Promise.resolve({ error: 'Window decorations are available in Atlas Desktop' });
+    },
+    setWindowDecorations() {
+      return Promise.resolve({ error: 'Window decorations are available in Atlas Desktop' });
+    },
     createWorkspaceEventSource(workspaceSlug) {
       return new EventSource(`/api/workspaces/${workspaceSlug}/events`);
     },

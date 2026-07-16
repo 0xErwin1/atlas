@@ -31,6 +31,8 @@ function desktopTransport(): PlatformTransport {
     logout: vi.fn(),
     getOrigin: vi.fn(),
     setOrigin: vi.fn(),
+    getWindowDecorations: vi.fn(),
+    setWindowDecorations: vi.fn(),
     createWorkspaceEventSource: vi.fn(() => new FakeEventSource('desktop://events')),
   };
 }
