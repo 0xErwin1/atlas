@@ -3600,7 +3600,7 @@ response — do NOT create those columns again; only add columns for statuses th
     ) -> Result<String, String> {
         let client = self.resolve_client(&ctx)?;
 
-        let body = CreateCommentRequest { body: params.body };
+        let body = CreateCommentRequest::published(params.body);
 
         let comment = client
             .add_comment(&params.workspace, &params.readable_id, body)
@@ -3822,7 +3822,7 @@ response — do NOT create those columns again; only add columns for statuses th
     ) -> Result<String, String> {
         let client = self.resolve_client(&ctx)?;
 
-        let body = CreateCommentRequest { body: params.body };
+        let body = CreateCommentRequest::published(params.body);
 
         let comment = client
             .add_document_comment(&params.workspace, &params.slug, body)

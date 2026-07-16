@@ -66,6 +66,13 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
     },
     RouteEntry {
         method: "POST",
+        path_template: "/api/workspaces/{ws}/documents/nonexistent-slug/comment-drafts",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/api/workspaces/{ws}/documents/{slug}/comment-drafts"),
+        capability: Some("docs:update"),
+    },
+    RouteEntry {
+        method: "POST",
         path_template: "/api/auth/login",
         kind: RouteKind::Public,
         openapi_path: Some("/api/auth/login"),
@@ -252,6 +259,29 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         capability: None,
     },
     // ---- Top-level API key routes (user-owned, workspace-independent; human-only) ----
+    RouteEntry {
+        method: "POST",
+        path_template: "/api/workspaces/{ws}/tasks/ATL-0/comment-drafts",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts"),
+        capability: Some("tasks:update"),
+    },
+    RouteEntry {
+        method: "DELETE",
+        path_template: "/api/workspaces/{ws}/tasks/ATL-0/comment-drafts/00000000-0000-0000-0000-000000000001",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}"),
+        capability: Some("tasks:update"),
+    },
+    RouteEntry {
+        method: "POST",
+        path_template: "/api/workspaces/{ws}/tasks/ATL-0/comment-drafts/00000000-0000-0000-0000-000000000001/attachments",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some(
+            "/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}/attachments",
+        ),
+        capability: Some("tasks:update"),
+    },
     RouteEntry {
         method: "POST",
         path_template: "/api/api-keys",
@@ -555,6 +585,22 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         openapi_path: Some(
             "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments",
         ),
+        capability: Some("docs:update"),
+    },
+    RouteEntry {
+        method: "POST",
+        path_template: "/api/workspaces/{ws}/documents/nonexistent-slug/comment-drafts/00000000-0000-0000-0000-000000000001/attachments",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some(
+            "/api/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}/attachments",
+        ),
+        capability: Some("docs:update"),
+    },
+    RouteEntry {
+        method: "DELETE",
+        path_template: "/api/workspaces/{ws}/documents/nonexistent-slug/comment-drafts/00000000-0000-0000-0000-000000000001",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/api/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}"),
         capability: Some("docs:update"),
     },
     RouteEntry {

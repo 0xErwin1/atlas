@@ -119,9 +119,7 @@ async fn create_list_delete_document_comment_roundtrip() {
         .add_document_comment(
             &ws.slug,
             &slug,
-            CreateCommentRequest {
-                body: "First document comment".to_string(),
-            },
+            CreateCommentRequest::published("First document comment"),
         )
         .await
         .expect("create document comment");
@@ -202,9 +200,7 @@ async fn list_document_comments_oldest_first_cursor_walk() {
             .add_document_comment(
                 &ws.slug,
                 &slug,
-                CreateCommentRequest {
-                    body: format!("Comment {i}"),
-                },
+                CreateCommentRequest::published(format!("Comment {i}")),
             )
             .await
             .expect("create comment");
@@ -250,13 +246,7 @@ async fn create_document_comment_rejects_invalid_body() {
 
     for blank in ["", "   ", "\n\t "] {
         let result = client
-            .add_document_comment(
-                &ws.slug,
-                &slug,
-                CreateCommentRequest {
-                    body: blank.to_string(),
-                },
-            )
+            .add_document_comment(&ws.slug, &slug, CreateCommentRequest::published(blank))
             .await;
         assert!(
             matches!(result, Err(ClientError::Api(ref p)) if p.status == 422),
@@ -268,9 +258,7 @@ async fn create_document_comment_rejects_invalid_body() {
         .add_document_comment(
             &ws.slug,
             &slug,
-            CreateCommentRequest {
-                body: "a".repeat(10_001),
-            },
+            CreateCommentRequest::published("a".repeat(10_001)),
         )
         .await;
     assert!(
@@ -292,9 +280,7 @@ async fn document_comment_document_not_found_404() {
         .add_document_comment(
             &ws.slug,
             "nonexistent-doc",
-            CreateCommentRequest {
-                body: "orphan".to_string(),
-            },
+            CreateCommentRequest::published("orphan"),
         )
         .await;
     assert!(
@@ -365,9 +351,7 @@ async fn viewer_cannot_create_document_comment() {
         .add_document_comment(
             &ws.slug,
             &slug,
-            CreateCommentRequest {
-                body: "not allowed".to_string(),
-            },
+            CreateCommentRequest::published("not allowed"),
         )
         .await;
     assert!(
@@ -387,13 +371,7 @@ async fn author_edits_own_document_comment() {
     let (slug, _) = seed_document(&owner, &ws.slug, "doc-comment-edit-proj", "DED").await;
 
     let created = owner
-        .add_document_comment(
-            &ws.slug,
-            &slug,
-            CreateCommentRequest {
-                body: "original".to_string(),
-            },
-        )
+        .add_document_comment(&ws.slug, &slug, CreateCommentRequest::published("original"))
         .await
         .expect("create comment");
 
@@ -437,9 +415,7 @@ async fn admin_deletes_but_cannot_edit_another_members_document_comment() {
         .add_document_comment(
             &ws.slug,
             &slug,
-            CreateCommentRequest {
-                body: "member words".to_string(),
-            },
+            CreateCommentRequest::published("member words"),
         )
         .await
         .expect("create comment");
@@ -496,9 +472,7 @@ async fn cross_workspace_document_comment_is_404() {
         .add_document_comment(
             &ws_a.slug,
             &slug,
-            CreateCommentRequest {
-                body: "workspace A".to_string(),
-            },
+            CreateCommentRequest::published("workspace A"),
         )
         .await
         .expect("create comment");

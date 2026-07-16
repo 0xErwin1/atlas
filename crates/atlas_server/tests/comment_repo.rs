@@ -8,6 +8,7 @@
 mod support;
 
 use async_trait::async_trait;
+use atlas_domain::ids::CommentDraftId;
 use atlas_domain::ports::comments::CommentLinkRepo;
 use atlas_domain::{
     Actor, AttachmentStore, DomainError,
@@ -17,6 +18,7 @@ use atlas_domain::{
     entities::workspace_core::NewProject,
     permissions::{Visibility, VisibilityRole},
 };
+use atlas_server::persistence::entities::comments::comment_attachment_draft;
 use atlas_server::persistence::repos::{
     AttachmentWriteIntentRepo, BoardRepo, CommentRepo, DiskAttachmentStore, PgAttachmentLifecycle,
     PgAttachmentWriteIntentRepo, PgBoardRepo, PgCommentLinkRepo, PgCommentRepo, PgProjectRepo,
@@ -24,7 +26,7 @@ use atlas_server::persistence::repos::{
 };
 use atlas_server::services::CommentService;
 use chrono::{Duration, Utc};
-use sea_orm::{ConnectionTrait, Statement};
+use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter, Statement};
 use sha2::Digest;
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -114,6 +116,33 @@ async fn seed_task(
         )
         .await
         .expect("seed task")
+}
+
+async fn seed_draft(
+    db: &support::TestDb,
+    workspace_id: uuid::Uuid,
+    task_id: uuid::Uuid,
+    user_id: uuid::Uuid,
+    state: &str,
+    expires_at: &str,
+    terminal_at: Option<&str>,
+) -> CommentDraftId {
+    let id = uuid::Uuid::now_v7();
+    let terminal_at = terminal_at
+        .map(|value| format!("'{value}'::timestamptz"))
+        .unwrap_or_else(|| "NULL".into());
+
+    db.conn()
+        .execute_unprepared(&format!(
+            "INSERT INTO comment_attachment_drafts \
+             (id, workspace_id, task_id, created_by_user_id, create_token, create_digest, state, expires_at, terminal_at) \
+             VALUES ('{id}', '{workspace_id}', '{task_id}', '{user_id}', '{id}', '\\x{}', '{state}', '{expires_at}'::timestamptz, {terminal_at})",
+            "01".repeat(32),
+        ))
+        .await
+        .expect("seed comment attachment draft");
+
+    CommentDraftId(id)
 }
 
 #[tokio::test]
@@ -483,9 +512,10 @@ async fn comment_freedom_migration_defines_required_constraints_and_indexes() {
     );
     assert!(
         constraints.iter().any(|definition| {
-            definition.contains("CHECK ((num_nonnulls(document_id, task_id, comment_id) = 1))")
+            definition
+                .contains("CHECK ((num_nonnulls(document_id, task_id, comment_id, draft_id) = 1))")
         }),
-        "attachments must require exactly one document, task, or comment owner"
+        "attachments must require exactly one document, task, comment, or draft owner"
     );
 
     let cascade_references = db
@@ -1016,6 +1046,813 @@ async fn reconciler_runs_immediately_and_periodically_despite_failures() {
 }
 
 #[tokio::test]
+async fn draft_reconciliation_expires_at_most_one_hundred_and_prunes_only_safe_terminals() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (workspace, user) = support::seed_workspace(&db, "draft-reconcile-bounds").await;
+    let ctx = support::ctx(&workspace, &user);
+    let (project, board, column) =
+        seed_project_board_column(&db, &ctx, "draft-reconcile-bounds", "DR").await;
+    let task = seed_task(&db, &ctx, project.id, board.id, column.id, "Task").await;
+    let tempdir = TempDir::new().expect("tempdir");
+    let store = DiskAttachmentStore::new(tempdir.path())
+        .await
+        .expect("attachment store");
+
+    for _ in 0..101 {
+        seed_draft(
+            &db,
+            workspace.id.0,
+            task.id.0,
+            user.id.0,
+            "active",
+            "2000-01-01T00:00:00Z",
+            None,
+        )
+        .await;
+    }
+    let prunable = seed_draft(
+        &db,
+        workspace.id.0,
+        task.id.0,
+        user.id.0,
+        "cancelled",
+        "2000-01-01T00:00:00Z",
+        Some("2000-01-01T00:00:00Z"),
+    )
+    .await;
+    let retained = seed_draft(
+        &db,
+        workspace.id.0,
+        task.id.0,
+        user.id.0,
+        "expired",
+        "2000-01-01T00:00:00Z",
+        Some("2000-01-01T00:00:00Z"),
+    )
+    .await;
+    let retained_attachment = uuid::Uuid::now_v7();
+    db.conn()
+        .execute_unprepared(&format!(
+            "INSERT INTO attachments \
+             (id, workspace_id, draft_id, file_name, content_type, size_bytes, sha256, created_by_user_id, deleted_at) \
+             VALUES ('{retained_attachment}', '{}', '{}', 'retained.pdf', 'application/pdf', 1, 'retained-draft-intent', '{}', now())",
+            workspace.id.0, retained.0, user.id.0,
+        ))
+        .await
+        .expect("seed retained draft attachment tombstone");
+    db.conn()
+        .execute_unprepared(&format!(
+            "INSERT INTO comment_attachment_draft_uploads \
+             (draft_id, upload_token, original_attachment_id, request_digest, payload_digest, file_name, content_type, size_bytes, deleted_at) \
+             VALUES ('{}', 'retained-upload', '{retained_attachment}', '\\x{}', '\\x{}', 'retained.pdf', 'application/pdf', 1, now())",
+            retained.0,
+            "01".repeat(32),
+            "02".repeat(32),
+        ))
+        .await
+        .expect("seed retained upload tombstone");
+    db.conn()
+        .execute_unprepared(&format!(
+            "INSERT INTO attachment_write_intents (id, digest, created_at) VALUES ('{}', 'retained-draft-intent', now())",
+            uuid::Uuid::now_v7(),
+        ))
+        .await
+        .expect("seed retained cleanup intent");
+
+    let report = PgAttachmentLifecycle::reconcile_drafts(&db.conn().clone(), &store)
+        .await
+        .expect("reconcile draft retention");
+
+    let active = comment_attachment_draft::Entity::find()
+        .filter(comment_attachment_draft::Column::State.eq("active"))
+        .count(db.conn())
+        .await
+        .expect("count active drafts");
+    let prunable_exists = comment_attachment_draft::Entity::find_by_id(prunable.0)
+        .one(db.conn())
+        .await
+        .expect("lookup prunable draft")
+        .is_some();
+    let retained_exists = comment_attachment_draft::Entity::find_by_id(retained.0)
+        .one(db.conn())
+        .await
+        .expect("lookup retained draft")
+        .is_some();
+
+    assert_eq!(report.claimed_expiries, 100);
+    assert_eq!(report.pruned, 1);
+    assert_eq!(
+        active, 1,
+        "the expiry claim must be bounded at one hundred rows"
+    );
+    assert!(
+        !prunable_exists,
+        "drained terminal drafts must be pruned after seven days"
+    );
+    assert!(
+        retained_exists,
+        "terminal drafts with relevant cleanup intents must be retained"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn draft_expiry_keeps_cleanup_intent_after_failure_and_stale_retry_drains_it() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (workspace, user) = support::seed_workspace(&db, "draft-expiry-cleanup-retry").await;
+    let ctx = support::ctx(&workspace, &user);
+    let (project, board, column) =
+        seed_project_board_column(&db, &ctx, "draft-expiry-cleanup-retry", "ER").await;
+    let task = seed_task(&db, &ctx, project.id, board.id, column.id, "Task").await;
+    let draft = seed_draft(
+        &db,
+        workspace.id.0,
+        task.id.0,
+        user.id.0,
+        "active",
+        "2000-01-01T00:00:00Z",
+        None,
+    )
+    .await;
+    let data = b"expired draft cleanup retry";
+    let digest = format!("{:x}", sha2::Sha256::digest(data));
+    let attachment_id = uuid::Uuid::now_v7();
+    db.conn()
+        .execute_unprepared(&format!(
+            "INSERT INTO attachments \
+             (id, workspace_id, draft_id, file_name, content_type, size_bytes, sha256, created_by_user_id) \
+             VALUES ('{attachment_id}', '{}', '{}', 'retry.txt', 'text/plain', {}, '{digest}', '{}'); \
+             INSERT INTO comment_attachment_draft_uploads \
+             (draft_id, upload_token, original_attachment_id, attachment_id, request_digest, payload_digest, file_name, content_type, size_bytes) \
+             VALUES ('{}', 'expiry-retry', '{attachment_id}', '{attachment_id}', '\\x{}', '\\x{}', 'retry.txt', 'text/plain', {})",
+            workspace.id.0,
+            draft.0,
+            data.len(),
+            user.id.0,
+            draft.0,
+            "01".repeat(32),
+            "02".repeat(32),
+            data.len(),
+        ))
+        .await
+        .expect("seed expired draft attachment and upload");
+    let store = FailOnceDeleteStore::new();
+    store.put(data).await.expect("seed object");
+
+    let first = PgAttachmentLifecycle::reconcile_drafts(&db.conn().clone(), &store)
+        .await
+        .expect("expire draft despite cleanup failure");
+    assert_eq!(first.claimed_expiries, 1);
+    assert_eq!(first.cleanup_failed, 1);
+    assert!(
+        store
+            .exists(&digest)
+            .await
+            .expect("object remains for retry")
+    );
+    assert_eq!(
+        PgAttachmentWriteIntentRepo {
+            conn: db.conn().clone(),
+        }
+        .list_stale(Utc::now() + Duration::seconds(1))
+        .await
+        .expect("list retained cleanup intent")
+        .len(),
+        1
+    );
+
+    PgAttachmentLifecycle::reconcile_stale(
+        &db.conn().clone(),
+        &store,
+        Utc::now() + Duration::seconds(1),
+    )
+    .await
+    .expect("retry stale cleanup intent");
+    assert!(
+        !store
+            .exists(&digest)
+            .await
+            .expect("object removed on retry")
+    );
+    assert!(
+        PgAttachmentWriteIntentRepo {
+            conn: db.conn().clone(),
+        }
+        .list_stale(Utc::now() + Duration::seconds(1))
+        .await
+        .expect("list drained cleanup intents")
+        .is_empty()
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn terminal_pruning_honors_the_seven_day_boundary_and_live_attachment_guard() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (workspace, user) = support::seed_workspace(&db, "draft-prune-boundary").await;
+    let ctx = support::ctx(&workspace, &user);
+    let (project, board, column) =
+        seed_project_board_column(&db, &ctx, "draft-prune-boundary", "PB").await;
+    let task = seed_task(&db, &ctx, project.id, board.id, column.id, "Task").await;
+    let not_yet_due = seed_draft(
+        &db,
+        workspace.id.0,
+        task.id.0,
+        user.id.0,
+        "cancelled",
+        "2000-01-01T00:00:00Z",
+        Some("2999-01-01T00:00:00Z"),
+    )
+    .await;
+    let guarded = seed_draft(
+        &db,
+        workspace.id.0,
+        task.id.0,
+        user.id.0,
+        "expired",
+        "2000-01-01T00:00:00Z",
+        Some("2000-01-01T00:00:00Z"),
+    )
+    .await;
+    let attachment_id = uuid::Uuid::now_v7();
+    db.conn()
+        .execute_unprepared(&format!(
+            "INSERT INTO attachments \
+             (id, workspace_id, draft_id, file_name, content_type, size_bytes, sha256, created_by_user_id) \
+             VALUES ('{attachment_id}', '{}', '{}', 'live.txt', 'text/plain', 1, 'live-prune-guard', '{}')",
+            workspace.id.0, guarded.0, user.id.0,
+        ))
+        .await
+        .expect("seed live guarded attachment");
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let store = DiskAttachmentStore::new(tempdir.path())
+        .await
+        .expect("attachment store");
+    let report = PgAttachmentLifecycle::reconcile_drafts(&db.conn().clone(), &store)
+        .await
+        .expect("reconcile terminal drafts");
+
+    assert_eq!(report.pruned, 0);
+    assert!(
+        comment_attachment_draft::Entity::find_by_id(not_yet_due.0)
+            .one(db.conn())
+            .await
+            .expect("load not-yet-due draft")
+            .is_some(),
+        "terminal replay metadata must remain before the seven-day boundary"
+    );
+    assert!(
+        comment_attachment_draft::Entity::find_by_id(guarded.0)
+            .one(db.conn())
+            .await
+            .expect("load guarded draft")
+            .is_some(),
+        "a terminal draft with a live attachment must not prune"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn reconciler_shutdown_before_start_claims_no_expired_drafts() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (workspace, user) = support::seed_workspace(&db, "draft-reconciler-shutdown").await;
+    let ctx = support::ctx(&workspace, &user);
+    let (project, board, column) =
+        seed_project_board_column(&db, &ctx, "draft-reconciler-shutdown", "RS").await;
+    let task = seed_task(&db, &ctx, project.id, board.id, column.id, "Task").await;
+    let draft = seed_draft(
+        &db,
+        workspace.id.0,
+        task.id.0,
+        user.id.0,
+        "active",
+        "2000-01-01T00:00:00Z",
+        None,
+    )
+    .await;
+    let tempdir = TempDir::new().expect("tempdir");
+    let store = Arc::new(
+        DiskAttachmentStore::new(tempdir.path())
+            .await
+            .expect("attachment store"),
+    );
+    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(true);
+    drop(shutdown_tx);
+
+    PgAttachmentLifecycle::run_reconciler_with_timing(
+        db.conn().clone(),
+        store,
+        shutdown_rx,
+        std::time::Duration::from_millis(1),
+        Duration::zero(),
+    )
+    .await;
+
+    let retained = comment_attachment_draft::Entity::find_by_id(draft.0)
+        .one(db.conn())
+        .await
+        .expect("load unclaimed draft")
+        .expect("draft remains");
+    assert_eq!(retained.state, "active");
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn reconciler_starts_with_draft_expiry_and_isolates_cleanup_failures_per_item() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (workspace, user) = support::seed_workspace(&db, "draft-reconciler-isolation").await;
+    let ctx = support::ctx(&workspace, &user);
+    let (project, board, column) =
+        seed_project_board_column(&db, &ctx, "draft-reconciler-isolation", "RI").await;
+    let task = seed_task(&db, &ctx, project.id, board.id, column.id, "Task").await;
+    let first = seed_draft(
+        &db,
+        workspace.id.0,
+        task.id.0,
+        user.id.0,
+        "active",
+        "2000-01-01T00:00:00Z",
+        None,
+    )
+    .await;
+    let second = seed_draft(
+        &db,
+        workspace.id.0,
+        task.id.0,
+        user.id.0,
+        "active",
+        "2000-01-01T00:00:00Z",
+        None,
+    )
+    .await;
+    let failing_data = b"draft cleanup fails";
+    let succeeding_data = b"draft cleanup succeeds";
+    let failing_digest = format!("{:x}", sha2::Sha256::digest(failing_data));
+    let succeeding_digest = format!("{:x}", sha2::Sha256::digest(succeeding_data));
+    let store = SelectiveFailDeleteStore::new(failing_digest.clone());
+    store.put(failing_data).await.expect("seed failing object");
+    store
+        .put(succeeding_data)
+        .await
+        .expect("seed succeeding object");
+
+    for (draft, digest, token) in [
+        (first, failing_digest.as_str(), "failing-expiry"),
+        (second, succeeding_digest.as_str(), "succeeding-expiry"),
+    ] {
+        let attachment_id = uuid::Uuid::now_v7();
+        db.conn()
+            .execute_unprepared(&format!(
+                "INSERT INTO attachments \
+                 (id, workspace_id, draft_id, file_name, content_type, size_bytes, sha256, created_by_user_id) \
+                 VALUES ('{attachment_id}', '{}', '{}', '{token}.txt', 'text/plain', 1, '{digest}', '{}'); \
+                 INSERT INTO comment_attachment_draft_uploads \
+                 (draft_id, upload_token, original_attachment_id, attachment_id, request_digest, payload_digest, file_name, content_type, size_bytes) \
+                 VALUES ('{}', '{token}', '{attachment_id}', '{attachment_id}', '\\x{}', '\\x{}', '{token}.txt', 'text/plain', 1)",
+                workspace.id.0,
+                draft.0,
+                user.id.0,
+                draft.0,
+                "01".repeat(32),
+                "02".repeat(32),
+            ))
+            .await
+            .expect("seed expired draft attachment");
+    }
+
+    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+    let reconciler = tokio::spawn(PgAttachmentLifecycle::run_reconciler_with_timing(
+        db.conn().clone(),
+        Arc::new(store.clone()),
+        shutdown_rx,
+        std::time::Duration::from_secs(60),
+        Duration::zero(),
+    ));
+    timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let expired = comment_attachment_draft::Entity::find()
+                .filter(comment_attachment_draft::Column::State.eq("expired"))
+                .count(db.conn())
+                .await
+                .expect("count immediately expired drafts");
+            if expired == 2 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("immediate reconciler tick expires both drafts");
+    shutdown_tx.send(true).expect("signal shutdown");
+    reconciler.await.expect("reconciler task");
+
+    assert!(
+        store
+            .exists(&failing_digest)
+            .await
+            .expect("failing object existence"),
+        "a failed item remains retryable"
+    );
+    assert!(
+        !store
+            .exists(&succeeding_digest)
+            .await
+            .expect("succeeding object existence"),
+        "an independent cleanup failure must not block the later item"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn draft_cancellation_cannot_cross_workspace_boundaries() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (workspace, user) = support::seed_workspace(&db, "draft-cancel-owner").await;
+    let owner_ctx = support::ctx(&workspace, &user);
+    let (project, board, column) =
+        seed_project_board_column(&db, &owner_ctx, "draft-cancel-owner", "CO").await;
+    let task = seed_task(&db, &owner_ctx, project.id, board.id, column.id, "Task").await;
+    let draft = seed_draft(
+        &db,
+        workspace.id.0,
+        task.id.0,
+        user.id.0,
+        "active",
+        "2999-01-01T00:00:00Z",
+        None,
+    )
+    .await;
+    let (other_workspace, other_user) = support::seed_workspace(&db, "draft-cancel-other").await;
+    let other_ctx = support::ctx(&other_workspace, &other_user);
+    let tempdir = TempDir::new().expect("tempdir");
+    let store = DiskAttachmentStore::new(tempdir.path())
+        .await
+        .expect("attachment store");
+
+    let result =
+        PgAttachmentLifecycle::cancel_draft(&db.conn().clone(), &other_ctx, draft, &store).await;
+    assert!(matches!(result, Err(DomainError::NotFound { .. })));
+    assert_eq!(
+        comment_attachment_draft::Entity::find_by_id(draft.0)
+            .one(db.conn())
+            .await
+            .expect("load owner draft")
+            .expect("draft remains")
+            .state,
+        "active"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn finalized_origin_individual_delete_rolls_back_its_tombstone_on_database_failure() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (workspace, user) = support::seed_workspace(&db, "finalized-attachment-rollback").await;
+    let ctx = support::ctx(&workspace, &user);
+    let (project, board, column) =
+        seed_project_board_column(&db, &ctx, "finalized-attachment-rollback", "FR").await;
+    let task = seed_task(&db, &ctx, project.id, board.id, column.id, "Task").await;
+    let comment = PgCommentRepo::new(db.conn().clone())
+        .create(
+            &ctx,
+            NewComment {
+                owner: CommentOwner::Task(task.id),
+                body: "finalized draft comment".into(),
+            },
+        )
+        .await
+        .expect("create comment");
+    let draft = seed_draft(
+        &db,
+        workspace.id.0,
+        task.id.0,
+        user.id.0,
+        "finalized",
+        "2999-01-01T00:00:00Z",
+        None,
+    )
+    .await;
+    let attachment_id = uuid::Uuid::now_v7();
+    db.conn()
+        .execute_unprepared(&format!(
+            "UPDATE comment_attachment_drafts SET finalized_comment_id = '{}' WHERE id = '{}'; \
+             INSERT INTO attachments (id, workspace_id, comment_id, file_name, content_type, size_bytes, sha256, created_by_user_id) \
+             VALUES ('{attachment_id}', '{}', '{}', 'rollback.txt', 'text/plain', 1, 'rollback-digest', '{}'); \
+             INSERT INTO comment_attachment_draft_uploads \
+             (draft_id, upload_token, original_attachment_id, attachment_id, request_digest, payload_digest, file_name, content_type, size_bytes) \
+             VALUES ('{}', 'rollback-upload', '{attachment_id}', '{attachment_id}', '\\x{}', '\\x{}', 'rollback.txt', 'text/plain', 1); \
+             CREATE FUNCTION fail_finalized_attachment_delete() RETURNS trigger AS $$ \
+             BEGIN RAISE EXCEPTION 'injected finalized attachment failure'; END; $$ LANGUAGE plpgsql; \
+             CREATE TRIGGER fail_finalized_attachment_delete BEFORE UPDATE OF deleted_at ON attachments \
+             FOR EACH ROW WHEN (NEW.deleted_at IS NOT NULL) EXECUTE FUNCTION fail_finalized_attachment_delete()",
+            comment.id.0,
+            draft.0,
+            workspace.id.0,
+            comment.id.0,
+            user.id.0,
+            draft.0,
+            "01".repeat(32),
+            "02".repeat(32),
+        ))
+        .await
+        .expect("seed finalized origin with failing trigger");
+    let tempdir = TempDir::new().expect("tempdir");
+    let store = DiskAttachmentStore::new(tempdir.path())
+        .await
+        .expect("attachment store");
+
+    let result = PgAttachmentLifecycle::delete_comment_attachment(
+        &db.conn().clone(),
+        &ctx,
+        comment.id,
+        atlas_domain::AttachmentId(attachment_id),
+        &store,
+    )
+    .await;
+    assert!(matches!(result, Err(DomainError::Internal { .. })));
+    let upload = db
+        .conn()
+        .query_one_raw(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT attachment_id, deleted_at FROM comment_attachment_draft_uploads WHERE draft_id = $1",
+            [draft.0.into()],
+        ))
+        .await
+        .expect("load upload after rollback")
+        .expect("upload row");
+    assert_eq!(
+        upload
+            .try_get::<Option<uuid::Uuid>>("", "attachment_id")
+            .expect("read live attachment"),
+        Some(attachment_id)
+    );
+    assert!(
+        upload
+            .try_get::<Option<chrono::DateTime<Utc>>>("", "deleted_at")
+            .expect("read upload tombstone")
+            .is_none()
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn deleting_a_finalized_comment_tombstones_its_origin_attachment_and_retains_replay_data() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (workspace, user) = support::seed_workspace(&db, "finalized-comment-delete").await;
+    let ctx = support::ctx(&workspace, &user);
+    let (project, board, column) =
+        seed_project_board_column(&db, &ctx, "finalized-comment-delete", "FD").await;
+    let task = seed_task(&db, &ctx, project.id, board.id, column.id, "Task").await;
+    let comment = PgCommentRepo::new(db.conn().clone())
+        .create(
+            &ctx,
+            NewComment {
+                owner: CommentOwner::Task(task.id),
+                body: "finalized draft comment".into(),
+            },
+        )
+        .await
+        .expect("create comment");
+    let draft_id = seed_draft(
+        &db,
+        workspace.id.0,
+        task.id.0,
+        user.id.0,
+        "finalized",
+        "2999-01-01T00:00:00Z",
+        None,
+    )
+    .await;
+    let attachment_id = uuid::Uuid::now_v7();
+    let digest = format!("{:x}", sha2::Sha256::digest(b"finalized attachment"));
+
+    db.conn()
+        .execute_unprepared(&format!(
+            "UPDATE comment_attachment_drafts SET finalized_comment_id = '{}', final_body_digest = '\\x{}', final_request_digest = '\\x{}' WHERE id = '{}'; \
+             INSERT INTO attachments (id, workspace_id, comment_id, file_name, content_type, size_bytes, sha256, created_by_user_id) \
+             VALUES ('{attachment_id}', '{}', '{}', 'finalized.txt', 'text/plain', 1, '{digest}', '{}'); \
+             INSERT INTO comment_attachment_draft_uploads (draft_id, upload_token, original_attachment_id, attachment_id, request_digest, payload_digest, file_name, content_type, size_bytes) \
+             VALUES ('{}', 'finalized-upload', '{attachment_id}', '{attachment_id}', '\\x{}', '\\x{}', 'finalized.txt', 'text/plain', 1)",
+            comment.id.0,
+            "01".repeat(32),
+            "02".repeat(32),
+            draft_id.0,
+            workspace.id.0,
+            comment.id.0,
+            user.id.0,
+            draft_id.0,
+            "03".repeat(32),
+            "04".repeat(32),
+        ))
+        .await
+        .expect("seed finalized origin attachment");
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let store = Arc::new(
+        DiskAttachmentStore::new(tempdir.path())
+            .await
+            .expect("attachment store"),
+    );
+    store
+        .put(b"finalized attachment")
+        .await
+        .expect("seed attachment object");
+    CommentService::with_attachment_store(db.conn().clone(), store.clone())
+        .remove(&ctx, CommentOwner::Task(task.id), comment.id, false)
+        .await
+        .expect("delete finalized comment");
+
+    let draft = comment_attachment_draft::Entity::find_by_id(draft_id.0)
+        .one(db.conn())
+        .await
+        .expect("load retained draft")
+        .expect("draft retained for replay");
+    let upload = db
+        .conn()
+        .query_one_raw(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT attachment_id, deleted_at FROM comment_attachment_draft_uploads WHERE draft_id = $1",
+            [draft_id.0.into()],
+        ))
+        .await
+        .expect("load upload")
+        .expect("upload row");
+    let attachment_deleted: bool = db
+        .conn()
+        .query_one_raw(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT deleted_at IS NOT NULL AS deleted FROM attachments WHERE id = $1",
+            [attachment_id.into()],
+        ))
+        .await
+        .expect("load attachment")
+        .expect("attachment row")
+        .try_get("", "deleted")
+        .expect("read attachment tombstone");
+
+    assert_eq!(draft.state, "deleted_finalized");
+    assert!(
+        draft.terminal_at.is_some(),
+        "terminal retention starts on deletion"
+    );
+    assert_eq!(draft.finalized_comment_id, Some(comment.id.0));
+    assert_eq!(draft.final_body_digest, Some(vec![1; 32]));
+    assert_eq!(draft.final_request_digest, Some(vec![2; 32]));
+    assert_eq!(
+        upload
+            .try_get::<Option<uuid::Uuid>>("", "attachment_id")
+            .expect("read live attachment"),
+        None,
+    );
+    assert!(
+        upload
+            .try_get::<Option<chrono::DateTime<Utc>>>("", "deleted_at")
+            .expect("read upload tombstone")
+            .is_some(),
+    );
+    assert!(
+        attachment_deleted,
+        "the finalized-origin attachment is soft deleted"
+    );
+    assert!(
+        !store.exists(&digest).await.expect("object existence"),
+        "post-commit cleanup purges the finalized-origin object"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn terminal_pruning_hard_deletes_finalized_origin_attachment_rows_before_removing_the_ledger()
+{
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (workspace, user) = support::seed_workspace(&db, "finalized-origin-prune").await;
+    let ctx = support::ctx(&workspace, &user);
+    let (project, board, column) =
+        seed_project_board_column(&db, &ctx, "finalized-origin-prune", "FP").await;
+    let task = seed_task(&db, &ctx, project.id, board.id, column.id, "Task").await;
+    let comment = PgCommentRepo::new(db.conn().clone())
+        .create(
+            &ctx,
+            NewComment {
+                owner: CommentOwner::Task(task.id),
+                body: "deleted finalized comment".into(),
+            },
+        )
+        .await
+        .expect("create comment");
+    let draft = seed_draft(
+        &db,
+        workspace.id.0,
+        task.id.0,
+        user.id.0,
+        "deleted_finalized",
+        "2000-01-01T00:00:00Z",
+        Some("2000-01-01T00:00:00Z"),
+    )
+    .await;
+    let attachment_id = uuid::Uuid::now_v7();
+    db.conn()
+        .execute_unprepared(&format!(
+            "UPDATE comment_attachment_drafts SET finalized_comment_id = '{}' WHERE id = '{}'; \
+             INSERT INTO attachments (id, workspace_id, comment_id, file_name, content_type, size_bytes, sha256, created_by_user_id, deleted_at) \
+             VALUES ('{attachment_id}', '{}', '{}', 'retained.txt', 'text/plain', 1, 'finalized-origin-prune', '{}', now()); \
+             INSERT INTO comment_attachment_draft_uploads \
+             (draft_id, upload_token, original_attachment_id, request_digest, payload_digest, file_name, content_type, size_bytes, deleted_at) \
+             VALUES ('{}', 'finalized-prune', '{attachment_id}', '\\x{}', '\\x{}', 'retained.txt', 'text/plain', 1, now())",
+            comment.id.0,
+            draft.0,
+            workspace.id.0,
+            comment.id.0,
+            user.id.0,
+            draft.0,
+            "01".repeat(32),
+            "02".repeat(32),
+        ))
+        .await
+        .expect("seed retained finalized-origin attachment");
+    let tempdir = TempDir::new().expect("tempdir");
+    let store = DiskAttachmentStore::new(tempdir.path())
+        .await
+        .expect("attachment store");
+
+    let report = PgAttachmentLifecycle::reconcile_drafts(&db.conn().clone(), &store)
+        .await
+        .expect("prune deleted finalized draft");
+    let attachment_exists = db
+        .conn()
+        .query_one_raw(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT id FROM attachments WHERE id = $1",
+            [attachment_id.into()],
+        ))
+        .await
+        .expect("lookup finalized-origin attachment")
+        .is_some();
+
+    assert_eq!(report.pruned, 1);
+    assert!(
+        !attachment_exists,
+        "terminal pruning must hard-delete the finalized-origin metadata row before its ledger is removed"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn reconciler_shutdown_cancels_an_active_stale_intent_sweep_without_dropping_its_retry_intent()
+ {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let store = Arc::new(BlockingDeleteStore::new());
+    let digest = "shutdown-active-intent".to_string();
+    PgAttachmentWriteIntentRepo {
+        conn: db.conn().clone(),
+    }
+    .create(digest.clone())
+    .await
+    .expect("seed stale intent");
+    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+    let reconciler_store: Arc<dyn AttachmentStore> = store.clone();
+    let reconciler = tokio::spawn(PgAttachmentLifecycle::run_reconciler_with_timing(
+        db.conn().clone(),
+        reconciler_store,
+        shutdown_rx,
+        std::time::Duration::from_secs(60),
+        Duration::zero(),
+    ));
+
+    store.delete_started.notified().await;
+    shutdown_tx.send(true).expect("signal shutdown");
+    timeout(std::time::Duration::from_millis(250), reconciler)
+        .await
+        .expect("shutdown must not wait for a blocked stale-intent sweep")
+        .expect("reconciler task");
+
+    assert_eq!(
+        PgAttachmentWriteIntentRepo {
+            conn: db.conn().clone(),
+        }
+        .list_stale(Utc::now() + Duration::seconds(1))
+        .await
+        .expect("list retained intent")
+        .into_iter()
+        .map(|intent| intent.digest)
+        .collect::<Vec<_>>(),
+        vec![digest],
+        "cancelling in-flight cleanup must leave the durable retry intent intact"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
 async fn upload_commits_write_intent_before_object_put() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let (ws, user) = support::seed_workspace(&db, "intent-before-put-user").await;
@@ -1536,6 +2373,45 @@ struct AlwaysFailDeleteStore {
     inner: MemoryDeleteStore,
     delete_attempts: Arc<std::sync::atomic::AtomicUsize>,
     delete_attempted: Arc<Notify>,
+}
+
+#[derive(Clone)]
+struct BlockingDeleteStore {
+    delete_started: Arc<Notify>,
+    allow_delete: Arc<Notify>,
+}
+
+impl BlockingDeleteStore {
+    fn new() -> Self {
+        Self {
+            delete_started: Arc::new(Notify::new()),
+            allow_delete: Arc::new(Notify::new()),
+        }
+    }
+}
+
+#[async_trait]
+impl AttachmentStore for BlockingDeleteStore {
+    async fn put(&self, data: &[u8]) -> Result<String, DomainError> {
+        Ok(format!("{:x}", sha2::Sha256::digest(data)))
+    }
+
+    async fn get(&self, _digest: &str) -> Result<bytes::Bytes, DomainError> {
+        Err(DomainError::NotFound {
+            entity: "attachment",
+            id: uuid::Uuid::nil(),
+        })
+    }
+
+    async fn exists(&self, _digest: &str) -> Result<bool, DomainError> {
+        Ok(false)
+    }
+
+    async fn delete(&self, _digest: &str) -> Result<(), DomainError> {
+        self.delete_started.notify_waiters();
+        self.allow_delete.notified().await;
+        Ok(())
+    }
 }
 
 impl AlwaysFailDeleteStore {

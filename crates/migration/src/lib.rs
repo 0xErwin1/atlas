@@ -40,6 +40,7 @@ pub mod m20260702_000037_prune_description_edit_activity;
 pub mod m20260705_000038_apikey_scopes;
 pub mod m20260708_000039_search_embeddings;
 pub mod m20260713_000040_comment_freedom;
+pub mod m20260715_000041_comment_attachment_drafts;
 
 use sea_orm_migration::prelude::*;
 
@@ -89,6 +90,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260705_000038_apikey_scopes::Migration),
             Box::new(m20260708_000039_search_embeddings::Migration),
             Box::new(m20260713_000040_comment_freedom::Migration),
+            Box::new(m20260715_000041_comment_attachment_drafts::Migration),
         ]
     }
 }
@@ -100,5 +102,19 @@ mod tests {
     #[test]
     fn migrations_list_is_not_empty() {
         assert!(!Migrator::migrations().is_empty());
+    }
+
+    #[test]
+    fn comment_attachment_drafts_migration_is_registered_after_comment_freedom() {
+        let migrations = Migrator::migrations();
+        let names: Vec<_> = migrations
+            .iter()
+            .map(|migration| migration.name())
+            .collect();
+
+        assert_eq!(
+            names.last(),
+            Some(&"m20260715_000041_comment_attachment_drafts")
+        );
     }
 }

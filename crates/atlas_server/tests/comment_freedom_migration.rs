@@ -10,6 +10,7 @@ use sea_orm_migration::prelude::MigratorTrait;
 use support::TestDb;
 
 const COMMENT_FREEDOM_MIGRATION_STEPS: u32 = 39;
+const COMMENT_ATTACHMENT_DRAFT_MIGRATION_STEPS: u32 = 40;
 
 async fn seed_live_comment_owned_records(
     conn: &sea_orm::DatabaseConnection,
@@ -106,7 +107,7 @@ async fn comment_freedom_down_rejects_live_comment_attachment_without_destructiv
         .await
         .expect("seed parent document before migration");
 
-    db.run_remaining_migrations()
+    Migrator::up(db.conn(), Some(1))
         .await
         .expect("apply comment freedom migration");
 
@@ -178,7 +179,7 @@ async fn comment_freedom_down_restores_legacy_attachment_xor_when_schema_is_empt
         .await
         .expect("create database before comment freedom migration");
 
-    db.run_remaining_migrations()
+    Migrator::up(db.conn(), Some(1))
         .await
         .expect("apply comment freedom migration");
     Migrator::down(db.conn(), Some(1))
@@ -249,7 +250,7 @@ async fn comment_freedom_down_rejects_live_attachment_write_intent() {
         .await
         .expect("create database before comment freedom migration");
 
-    db.run_remaining_migrations()
+    Migrator::up(db.conn(), Some(1))
         .await
         .expect("apply comment freedom migration");
     db.conn()
@@ -268,6 +269,112 @@ async fn comment_freedom_down_rejects_live_attachment_write_intent() {
         error.to_string().contains("attachment write intents"),
         "rollback must report its live attachment write intent precondition: {error}"
     );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn comment_attachment_drafts_down_preserves_live_draft_ledger_and_digest_cleanup_intent() {
+    let db = TestDb::create_with_migration_steps(Some(COMMENT_ATTACHMENT_DRAFT_MIGRATION_STEPS))
+        .await
+        .expect("create database before comment attachment drafts migration");
+    let (workspace, user) = support::seed_workspace(&db, "comment-draft-down-blocked").await;
+    let ctx = support::ctx(&workspace, &user);
+    let document = PgDocumentRepo::new(db.conn().clone(), 10)
+        .create(
+            &ctx,
+            NewDocument {
+                title: "Draft attachment parent".into(),
+                slug: None,
+                content: String::new(),
+                folder_id: None,
+                project_id: None,
+                frontmatter: None,
+            },
+        )
+        .await
+        .expect("seed parent document before migration");
+
+    Migrator::up(db.conn(), Some(1))
+        .await
+        .expect("apply comment attachment drafts migration");
+
+    let draft_id = uuid::Uuid::now_v7();
+    let attachment_id = uuid::Uuid::now_v7();
+    let digest = "draft-cleanup-digest";
+    db.conn()
+        .execute_unprepared(&format!(
+            "INSERT INTO comment_attachment_drafts \
+             (id, workspace_id, document_id, created_by_user_id, create_token, create_digest, state, expires_at) \
+             VALUES ('{draft_id}', '{}', '{}', '{}', 'create-token', '\\x{}', 'active', now() + interval '1 day'); \
+             INSERT INTO attachments \
+             (id, workspace_id, draft_id, file_name, content_type, size_bytes, sha256, created_by_user_id) \
+             VALUES ('{attachment_id}', '{}', '{draft_id}', 'draft.txt', 'text/plain', 1, '{digest}', '{}'); \
+             INSERT INTO comment_attachment_draft_uploads \
+             (draft_id, upload_token, original_attachment_id, attachment_id, request_digest, payload_digest, file_name, content_type, size_bytes) \
+             VALUES ('{draft_id}', 'upload-token', '{attachment_id}', '{attachment_id}', '\\x{}', '\\x{}', 'draft.txt', 'text/plain', 1); \
+             INSERT INTO attachment_write_intents (id, digest, created_at) \
+             VALUES ('{}', '{digest}', now())",
+            workspace.id.0,
+            document.id.0,
+            user.id.0,
+            "01".repeat(32),
+            workspace.id.0,
+            user.id.0,
+            "02".repeat(32),
+            "03".repeat(32),
+            uuid::Uuid::now_v7(),
+        ))
+        .await
+        .expect("seed live draft attachment, replay ledger, and digest cleanup intent");
+
+    let error = Migrator::down(db.conn(), Some(1))
+        .await
+        .expect_err("rollback must fail closed while a draft attachment lifecycle remains");
+    assert!(
+        error
+            .to_string()
+            .contains("cannot roll back comment attachment drafts"),
+        "rollback must report the migration-41 lifecycle guard: {error}"
+    );
+
+    let retained = db
+        .conn()
+        .query_one_raw(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT \
+                (SELECT count(*)::bigint FROM comment_attachment_drafts WHERE id = $1) AS drafts, \
+                (SELECT count(*)::bigint FROM attachments WHERE id = $2 AND draft_id = $1) AS attachments, \
+                (SELECT count(*)::bigint FROM comment_attachment_draft_uploads WHERE draft_id = $1 AND original_attachment_id = $2 AND attachment_id = $2) AS uploads, \
+                (SELECT count(*)::bigint FROM attachment_write_intents WHERE digest = $3) AS intents",
+            [draft_id.into(), attachment_id.into(), digest.into()],
+        ))
+        .await
+        .expect("query retained draft lifecycle")
+        .expect("retained draft lifecycle row");
+
+    for column in ["drafts", "attachments", "uploads", "intents"] {
+        assert_eq!(
+            retained
+                .try_get::<i64>("", column)
+                .expect("retained lifecycle count"),
+            1,
+            "failed rollback must preserve the {column} row"
+        );
+    }
+
+    db.conn()
+        .execute_unprepared(&format!(
+            "DELETE FROM comment_attachment_draft_uploads WHERE draft_id = '{draft_id}'; \
+             DELETE FROM attachments WHERE id = '{attachment_id}'; \
+             DELETE FROM comment_attachment_drafts WHERE id = '{draft_id}'"
+        ))
+        .await
+        .expect("drain migration-41 state");
+
+    Migrator::down(db.conn(), Some(1))
+        .await
+        .expect("rollback must succeed after draft lifecycle rows are drained");
 
     db.teardown().await;
 }

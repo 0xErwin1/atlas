@@ -9,7 +9,9 @@ use crate::crypto::WebhookCrypto;
 use crate::embeddings::{DeterministicEmbeddingProvider, OpenAiCompatibleEmbeddingProvider};
 use crate::live::{DEFAULT_HUB_CAPACITY, LiveEventHub};
 use crate::middleware::rate_limit::PrincipalRateLimiter;
-use crate::persistence::repos::{DiskAttachmentStore, S3AttachmentStore, S3Config};
+use crate::persistence::repos::{
+    DiskAttachmentStore, PgCommentAttachmentDraftRepo, S3AttachmentStore, S3Config,
+};
 use crate::presence::PresenceRegistry;
 use crate::services::{CommentService, DocumentService, TaskService};
 
@@ -176,6 +178,10 @@ impl AppState {
             self.anchor_interval,
             self.comment_service(),
         )
+    }
+
+    pub fn comment_attachment_draft_repo(&self) -> PgCommentAttachmentDraftRepo {
+        PgCommentAttachmentDraftRepo::new((*self.db).clone())
     }
 
     fn comment_service(&self) -> CommentService {

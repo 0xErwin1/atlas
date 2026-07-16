@@ -402,6 +402,32 @@ pub enum CommentListResponseDto {
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct CreateCommentRequest {
     pub body: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub draft_id: Option<uuid::Uuid>,
+}
+
+impl CreateCommentRequest {
+    pub fn published(body: impl Into<String>) -> Self {
+        Self {
+            body: body.into(),
+            draft_id: None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod create_comment_request_tests {
+    use super::CreateCommentRequest;
+
+    #[test]
+    fn published_omits_draft_id_from_legacy_request_json() {
+        let request = CreateCommentRequest::published("published body");
+
+        assert_eq!(
+            serde_json::to_value(request).expect("serialize published comment request"),
+            serde_json::json!({ "body": "published body" })
+        );
+    }
 }
 
 /// Request body for `PATCH .../comments/{comment_id}`.

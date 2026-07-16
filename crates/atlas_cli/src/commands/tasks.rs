@@ -1351,7 +1351,7 @@ async fn run_comments_list(ctx: &Ctx, args: CommentsListArgs) -> Result<(), CliE
 
 async fn run_comments_add(ctx: &Ctx, args: CommentsAddArgs) -> Result<(), CliError> {
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
-    let body = CreateCommentRequest { body: args.body };
+    let body = CreateCommentRequest::published(args.body);
     let comment = ctx.client.add_comment(ws, &args.readable_id, body).await?;
     let proj = CommentProjection::from(comment);
     output::emit(ctx.output, &proj)

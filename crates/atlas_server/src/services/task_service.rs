@@ -10,8 +10,8 @@ use atlas_domain::{
         DomainEvent, TaskCreatedPayload, TaskDeletedPayload, TaskMovedPayload, TaskUpdatedPayload,
     },
     ids::{
-        BoardId, ChecklistItemId, ColumnId, CommentId, DocumentId, ProjectId, TaskActivityId,
-        TaskId, TaskReferenceId,
+        BoardId, ChecklistItemId, ColumnId, CommentDraftId, CommentId, DocumentId, ProjectId,
+        TaskActivityId, TaskId, TaskReferenceId,
     },
 };
 use chrono::Utc;
@@ -27,6 +27,7 @@ use sea_orm::ConnectionTrait;
 use crate::persistence::entities::boards_tasks::{
     board, board_column, task, task_checklist_item, task_checklist_item_from,
 };
+use crate::persistence::entities::comments::comment_attachment_draft;
 use crate::persistence::repos::{
     CommentRepo as _, PgCommentRepo, PgDocumentLinkRepo, PgOutboxRepo, PgTaskActivityRepo,
     PgTaskAssigneeRepo, PgTaskChecklistRepo, PgTaskReferenceRepo, PgTaskRepo,
@@ -408,6 +409,18 @@ impl TaskService {
 
         let task_project_id = ProjectId(row.project_id);
         let task_board_id = BoardId(row.board_id);
+
+        let retained_draft = comment_attachment_draft::Entity::find()
+            .filter(comment_attachment_draft::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(comment_attachment_draft::Column::TaskId.eq(id.0))
+            .one(&txn)
+            .await
+            .map_err(db_err)?;
+        if retained_draft.is_some() {
+            return Err(DomainError::CommentDraftConflict {
+                reason: "task has retained comment draft state".into(),
+            });
+        }
 
         PgTaskRepo::soft_delete_in(&txn, ctx, id).await?;
 
@@ -861,6 +874,18 @@ impl TaskService {
     ) -> Result<Comment, DomainError> {
         self.comments
             .create(ctx, CommentOwner::Task(task_id), body)
+            .await
+    }
+
+    pub async fn finalize_comment_draft(
+        &self,
+        ctx: &WorkspaceCtx,
+        task_id: TaskId,
+        draft_id: CommentDraftId,
+        body: String,
+    ) -> Result<crate::services::comment_service::FinalizeCommentResult, DomainError> {
+        self.comments
+            .finalize_draft(ctx, CommentOwner::Task(task_id), draft_id, body)
             .await
     }
 

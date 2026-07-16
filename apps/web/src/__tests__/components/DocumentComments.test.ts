@@ -9,6 +9,12 @@ import { useAuthStore } from '@/stores/auth';
 import { type CommentDto, useDocumentsStore } from '@/stores/documents';
 import { useWorkspaceStore } from '@/stores/workspace';
 
+const { draftDelete, draftPost } = vi.hoisted(() => ({ draftDelete: vi.fn(), draftPost: vi.fn() }));
+
+vi.mock('@/api/wrapper', () => ({
+  wrappedClient: { DELETE: draftDelete, POST: draftPost },
+}));
+
 const commentFeed = {
   entries: ref<unknown[]>([]),
   hasMore: ref(false),
@@ -120,14 +126,6 @@ function droppedImage(file: File): DataTransfer {
   return { files: [file], items: [], getData: () => '' } as unknown as DataTransfer;
 }
 
-function textClipboard(text: string): DataTransfer {
-  return {
-    files: [],
-    items: [],
-    getData: (type: string) => (type === 'text/plain' ? text : ''),
-  } as unknown as DataTransfer;
-}
-
 function deferred<T>() {
   let resolve: (value: T) => void;
   const promise = new Promise<T>((resolvePromise) => {
@@ -173,6 +171,8 @@ beforeEach(() => {
   commentFeed.error.value = null;
   commentAttachments.items.value = {};
   commentAttachments.error.value = {};
+  draftDelete.mockReset();
+  draftPost.mockReset();
   vi.clearAllMocks();
 });
 
@@ -337,25 +337,49 @@ describe('DocumentComments (ATL-37)', () => {
     expect(wrapper.getComponent(CommentCard).props('uploadImage')).toBeUndefined();
   });
 
-  it('keeps the real document composer text-only for image drop while preserving ordinary text paste', async () => {
+  it('creates one document draft and uploads an image dropped into the real composer without publishing', async () => {
     const store = setup([]);
     const addComment = vi.spyOn(store, 'addComment').mockResolvedValue(true);
+    draftPost.mockImplementation((path: string) => {
+      if (path.endsWith('/comment-drafts')) {
+        return Promise.resolve({ data: { id: 'document-draft', expires_at: '2026-07-17T00:00:00Z' } });
+      }
+
+      return Promise.resolve({
+        data: { id: 'document-image', url: '/document-image', markdown: '![diagram](/document-image)' },
+      });
+    });
     const wrapper = mountPanelWithRealEditors();
     const content = wrapper.get('[data-comment-composer] .cm-content');
     enableCodeMirrorDropCoordinates();
-    const ordinaryPaste = new Event('paste', { bubbles: true, cancelable: true });
-    Object.defineProperty(ordinaryPaste, 'clipboardData', { value: textClipboard('ordinary **Markdown**') });
 
-    content.element.dispatchEvent(ordinaryPaste);
+    const image = new File(['image'], 'diagram.png', { type: 'image/png' });
     await content.trigger('drop', {
       clientX: 0,
       clientY: 0,
-      dataTransfer: droppedImage(new File(['image'], 'diagram.png', { type: 'image/png' })),
+      dataTransfer: droppedImage(image),
     });
     await flushPromises();
 
-    expect(ordinaryPaste.defaultPrevented).toBe(true);
-    expect(content.text()).toBe('ordinary **Markdown**');
+    expect(draftPost).toHaveBeenCalledTimes(2);
+    expect(draftPost).toHaveBeenNthCalledWith(
+      1,
+      '/api/workspaces/{ws}/documents/{slug}/comment-drafts',
+      expect.objectContaining({ params: expect.objectContaining({ path: { ws: 'acme', slug: 'my-doc' } }) }),
+    );
+    expect(draftPost).toHaveBeenNthCalledWith(
+      2,
+      '/api/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}/attachments',
+      expect.objectContaining({
+        body: [105, 109, 97, 103, 101],
+        headers: { 'Content-Type': 'image/png' },
+        params: expect.objectContaining({
+          path: { ws: 'acme', slug: 'my-doc', draft_id: 'document-draft' },
+          header: expect.objectContaining({ 'x-file-name': 'diagram.png' }),
+        }),
+      }),
+    );
+    expect(wrapper.get('[data-comment-composer]').text()).toContain('Uploaded');
     expect(commentAttachments.upload).not.toHaveBeenCalled();
     expect(addComment).not.toHaveBeenCalled();
   });

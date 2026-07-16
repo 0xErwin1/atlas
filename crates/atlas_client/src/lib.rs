@@ -22,7 +22,7 @@ use atlas_api::{
             UpdateTaskRequest, WorkspaceTaskQueryParams,
         },
         documents::{
-            AttachmentDto, BacklinkDto, CommentAttachmentDto, ConflictProblemDto,
+            AttachmentDto, BacklinkDto, CommentAttachmentDto, CommentDraftDto, ConflictProblemDto,
             CopyDocumentRequest, CreateDocumentRequest, DocumentDto, DocumentSummaryDto,
             FrontmatterDto, MoveDocumentRequest, RevisionContentDto, RevisionMetaDto,
             UpdateContentRequest, UpdateDocumentRequest,
@@ -2539,6 +2539,82 @@ impl AtlasClient {
             .await
     }
 
+    /// `POST /api/workspaces/{ws}/tasks/{readable_id}/comment-drafts`
+    pub async fn create_task_comment_draft(
+        &self,
+        ws: &str,
+        readable_id: &str,
+        create_token: uuid::Uuid,
+    ) -> Result<CommentDraftDto, ClientError> {
+        let response = self
+            .post(&format!(
+                "/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts"
+            ))
+            .header("x-atlas-csrf", "1")
+            .header("x-create-token", create_token.to_string())
+            .send()
+            .await?;
+        self.decode_response(response, "create_task_comment_draft")
+            .await
+    }
+
+    /// `POST /api/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}/attachments`
+    #[allow(clippy::too_many_arguments)]
+    pub async fn upload_task_draft_attachment(
+        &self,
+        ws: &str,
+        readable_id: &str,
+        draft_id: uuid::Uuid,
+        upload_token: uuid::Uuid,
+        file_name: &str,
+        content_type: &str,
+        data: Vec<u8>,
+    ) -> Result<CommentAttachmentDto, ClientError> {
+        let boundary = format!("atlasboundary{}", uuid::Uuid::now_v7().as_simple());
+        let mut body = Vec::new();
+        body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+        body.extend_from_slice(
+            format!("Content-Disposition: form-data; name=\"file\"; filename=\"{file_name}\"\r\n")
+                .as_bytes(),
+        );
+        body.extend_from_slice(format!("Content-Type: {content_type}\r\n\r\n").as_bytes());
+        body.extend_from_slice(&data);
+        body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+
+        let response = self
+            .post(&format!(
+                "/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}/attachments"
+            ))
+            .header("x-atlas-csrf", "1")
+            .header("x-upload-token", upload_token.to_string())
+            .header(
+                "content-type",
+                format!("multipart/form-data; boundary={boundary}"),
+            )
+            .body(body)
+            .send()
+            .await?;
+        self.decode_response(response, "upload_task_draft_attachment")
+            .await
+    }
+
+    /// `DELETE /api/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}`
+    pub async fn cancel_task_comment_draft(
+        &self,
+        ws: &str,
+        readable_id: &str,
+        draft_id: uuid::Uuid,
+    ) -> Result<(), ClientError> {
+        let response = self
+            .delete(&format!(
+                "/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}"
+            ))
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        decode_empty_response(response).await
+    }
+
     /// `GET /api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments`
     pub async fn list_task_comment_attachments(
         &self,
@@ -2710,6 +2786,69 @@ impl AtlasClient {
             .await?;
         self.decode_response(response, "upload_document_comment_attachment")
             .await
+    }
+
+    /// `POST /api/workspaces/{ws}/documents/{slug}/comment-drafts`
+    pub async fn create_document_comment_draft(
+        &self,
+        ws: &str,
+        slug: &str,
+        create_token: uuid::Uuid,
+    ) -> Result<CommentDraftDto, ClientError> {
+        let response = self
+            .post(&format!(
+                "/api/workspaces/{ws}/documents/{slug}/comment-drafts"
+            ))
+            .header("x-atlas-csrf", "1")
+            .header("x-create-token", create_token.to_string())
+            .send()
+            .await?;
+        self.decode_response(response, "create_document_comment_draft")
+            .await
+    }
+
+    /// `POST /api/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}/attachments`
+    #[allow(clippy::too_many_arguments)]
+    pub async fn upload_document_draft_attachment(
+        &self,
+        ws: &str,
+        slug: &str,
+        draft_id: uuid::Uuid,
+        upload_token: uuid::Uuid,
+        file_name: &str,
+        content_type: &str,
+        data: Vec<u8>,
+    ) -> Result<CommentAttachmentDto, ClientError> {
+        let response = self
+            .post(&format!(
+                "/api/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}/attachments"
+            ))
+            .header("x-atlas-csrf", "1")
+            .header("x-upload-token", upload_token.to_string())
+            .header("x-file-name", file_name)
+            .header("content-type", content_type)
+            .body(data)
+            .send()
+            .await?;
+        self.decode_response(response, "upload_document_draft_attachment")
+            .await
+    }
+
+    /// `DELETE /api/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}`
+    pub async fn cancel_document_comment_draft(
+        &self,
+        ws: &str,
+        slug: &str,
+        draft_id: uuid::Uuid,
+    ) -> Result<(), ClientError> {
+        let response = self
+            .delete(&format!(
+                "/api/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}"
+            ))
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        decode_empty_response(response).await
     }
 
     /// `GET /api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments`
@@ -3544,6 +3683,30 @@ mod tests {
         result
     }
 
+    async fn assert_comment_attachment_request_with_headers<T>(
+        requests: std::sync::mpsc::Receiver<String>,
+        expected_prefix: &str,
+        expected_headers: &[&str],
+        request: impl std::future::Future<Output = Result<T, ClientError>>,
+    ) -> T {
+        let result = request.await.expect("client lifecycle request succeeds");
+        let raw = requests.recv().expect("mock server received request");
+
+        assert!(
+            raw.starts_with(expected_prefix),
+            "expected `{expected_prefix}`, received `{raw}`"
+        );
+
+        for expected_header in expected_headers {
+            assert!(
+                raw.contains(expected_header),
+                "expected request to contain `{expected_header}`, received `{raw}`"
+            );
+        }
+
+        result
+    }
+
     #[tokio::test]
     async fn server_meta_preserves_optional_limit_and_decode_context() {
         let absent = AtlasClient::new(serve_once(
@@ -3684,6 +3847,94 @@ mod tests {
             requests,
             "DELETE /api/workspaces/ws/documents/note/comments/00000000-0000-0000-0000-000000000001/attachments/00000000-0000-0000-0000-000000000002 ",
             client.delete_document_comment_attachment("ws", "note", COMMENT_ID, ATTACHMENT_ID),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn comment_draft_methods_use_frozen_routes_tokens_and_transports() {
+        const DRAFT_ID: uuid::Uuid = uuid::uuid!("00000000-0000-0000-0000-000000000001");
+        const CREATE_TOKEN: uuid::Uuid = uuid::uuid!("00000000-0000-0000-0000-000000000002");
+        const UPLOAD_TOKEN: uuid::Uuid = uuid::uuid!("00000000-0000-0000-0000-000000000003");
+        const DRAFT: &str =
+            r#"{"id":"00000000-0000-0000-0000-000000000001","expires_at":"2026-01-02T00:00:00Z"}"#;
+        const ATTACHMENT: &str = r#"{"id":"00000000-0000-0000-0000-000000000004","comment_id":"00000000-0000-0000-0000-000000000001","file_name":"note.txt","content_type":"text/plain","size_bytes":2,"sha256":"digest","actor":null,"created_at":"2026-01-01T00:00:00Z","url":"/attachment","markdown":"[note.txt](/attachment)"}"#;
+
+        let (base_url, requests) = serve_once_observing("201 Created", DRAFT);
+        let client = AtlasClient::new(base_url);
+        let task_draft = assert_comment_attachment_request_with_headers(
+            requests,
+            "POST /api/workspaces/ws/tasks/ATL-1/comment-drafts ",
+            &["x-create-token: 00000000-0000-0000-0000-000000000002"],
+            client.create_task_comment_draft("ws", "ATL-1", CREATE_TOKEN),
+        )
+        .await;
+        assert_eq!(task_draft.id, DRAFT_ID);
+
+        let (base_url, requests) = serve_once_observing("200 OK", DRAFT);
+        let client = AtlasClient::new(base_url);
+        let document_draft = assert_comment_attachment_request_with_headers(
+            requests,
+            "POST /api/workspaces/ws/documents/note/comment-drafts ",
+            &["x-create-token: 00000000-0000-0000-0000-000000000002"],
+            client.create_document_comment_draft("ws", "note", CREATE_TOKEN),
+        )
+        .await;
+        assert_eq!(
+            document_draft.expires_at.to_rfc3339(),
+            "2026-01-02T00:00:00+00:00"
+        );
+
+        let (base_url, requests) = serve_once_observing("201 Created", ATTACHMENT);
+        let client = AtlasClient::new(base_url);
+        let attachment = assert_comment_attachment_request_with_headers(
+            requests,
+            "POST /api/workspaces/ws/tasks/ATL-1/comment-drafts/00000000-0000-0000-0000-000000000001/attachments ",
+            &[
+                "x-upload-token: 00000000-0000-0000-0000-000000000003",
+                "multipart/form-data; boundary=atlasboundary",
+            ],
+            client.upload_task_draft_attachment(
+                "ws", "ATL-1", DRAFT_ID, UPLOAD_TOKEN, "note.txt", "text/plain", b"ok".to_vec(),
+            ),
+        )
+        .await;
+        assert_eq!(
+            attachment.markdown.as_deref(),
+            Some("[note.txt](/attachment)")
+        );
+
+        let (base_url, requests) = serve_once_observing("200 OK", ATTACHMENT);
+        let client = AtlasClient::new(base_url);
+        assert_comment_attachment_request_with_headers(
+            requests,
+            "POST /api/workspaces/ws/documents/note/comment-drafts/00000000-0000-0000-0000-000000000001/attachments ",
+            &[
+                "x-upload-token: 00000000-0000-0000-0000-000000000003",
+                "x-file-name: note.txt",
+                "content-type: text/plain",
+            ],
+            client.upload_document_draft_attachment(
+                "ws", "note", DRAFT_ID, UPLOAD_TOKEN, "note.txt", "text/plain", b"ok".to_vec(),
+            ),
+        )
+        .await;
+
+        let (base_url, requests) = serve_once_observing("204 No Content", "");
+        let client = AtlasClient::new(base_url);
+        assert_comment_attachment_request(
+            requests,
+            "DELETE /api/workspaces/ws/tasks/ATL-1/comment-drafts/00000000-0000-0000-0000-000000000001 ",
+            client.cancel_task_comment_draft("ws", "ATL-1", DRAFT_ID),
+        )
+        .await;
+
+        let (base_url, requests) = serve_once_observing("204 No Content", "");
+        let client = AtlasClient::new(base_url);
+        assert_comment_attachment_request(
+            requests,
+            "DELETE /api/workspaces/ws/documents/note/comment-drafts/00000000-0000-0000-0000-000000000001 ",
+            client.cancel_document_comment_draft("ws", "note", DRAFT_ID),
         )
         .await;
     }

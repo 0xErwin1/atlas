@@ -247,6 +247,18 @@ pub struct CommentAttachmentDto {
     pub sha256: String,
     pub actor: Option<ActorDto>,
     pub created_at: chrono::DateTime<chrono::Utc>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub markdown: Option<String>,
+}
+
+/// A private, reserved comment identity used to attach files before publication.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct CommentDraftDto {
+    pub id: uuid::Uuid,
+    pub expires_at: chrono::DateTime<chrono::Utc>,
 }
 
 /// RFC 9457 problem+json extension for CAS revision conflicts (status 409).

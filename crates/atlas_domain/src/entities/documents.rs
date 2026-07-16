@@ -1,6 +1,6 @@
 use crate::ids::{
-    ApiKeyId, AttachmentId, CommentId, DocumentId, FolderId, ProjectId, RevisionId, UserId,
-    WorkspaceId,
+    ApiKeyId, AttachmentId, CommentDraftId, CommentId, DocumentId, FolderId, ProjectId, RevisionId,
+    UserId, WorkspaceId,
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -197,6 +197,7 @@ pub struct Attachment {
     pub document_id: Option<DocumentId>,
     pub task_id: Option<crate::ids::TaskId>,
     pub comment_id: Option<CommentId>,
+    pub draft_id: Option<CommentDraftId>,
     pub file_name: String,
     pub content_type: String,
     pub size_bytes: i64,
@@ -224,6 +225,7 @@ pub enum AttachmentOwner {
     Document(DocumentId),
     Task(crate::ids::TaskId),
     Comment(CommentId),
+    Draft(CommentDraftId),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

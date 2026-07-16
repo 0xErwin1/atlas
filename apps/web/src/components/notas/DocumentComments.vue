@@ -75,8 +75,11 @@ function canDelete(comment: CommentDto): boolean {
   return currentActorId.value !== null && comment.author.id === currentActorId.value;
 }
 
-async function onSubmit(body: string): Promise<boolean> {
-  const ok = await documents.addComment(props.ws, props.slug, body);
+async function onSubmit(body: string, draftId?: string): Promise<boolean> {
+  const ok =
+    draftId === undefined
+      ? await documents.addComment(props.ws, props.slug, body)
+      : await documents.addComment(props.ws, props.slug, body, draftId);
   if (!ok && documents.error) ui.showBanner(documents.error, 'error');
   if (ok) await commentFeed.load(commentTarget.value);
   return ok;
@@ -183,7 +186,7 @@ watch(
       </button>
     </div>
 
-    <CommentComposer v-if="commentStatus !== 'error'" :on-submit="onSubmit" />
+    <CommentComposer v-if="commentStatus !== 'error'" :target="commentTarget" :on-submit="onSubmit" />
   </section>
 </template>
 

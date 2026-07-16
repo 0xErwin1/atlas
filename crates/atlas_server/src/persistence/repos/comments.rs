@@ -30,12 +30,21 @@ impl PgCommentRepo {
         ctx: &WorkspaceCtx,
         new: NewComment,
     ) -> Result<Comment, DomainError> {
+        Self::create_with_id_in(conn, ctx, new, CommentId::new()).await
+    }
+
+    pub async fn create_with_id_in(
+        conn: &impl ConnectionTrait,
+        ctx: &WorkspaceCtx,
+        new: NewComment,
+        id: CommentId,
+    ) -> Result<Comment, DomainError> {
         let (task_id, document_id) = owner_columns(new.owner);
         let (created_by_user_id, created_by_api_key_id) = actor_columns(&ctx.actor);
         let now = Utc::now();
 
         let model = comment::ActiveModel {
-            id: Set(CommentId::new().0),
+            id: Set(id.0),
             workspace_id: Set(ctx.workspace_id.0),
             task_id: Set(task_id),
             document_id: Set(document_id),

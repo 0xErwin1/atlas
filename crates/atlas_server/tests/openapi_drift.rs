@@ -52,6 +52,7 @@ const EXPECTED_SCHEMAS: &[&str] = &[
     "CommentBacklinkParentDto",
     "AttachmentDto",
     "CommentAttachmentDto",
+    "CommentDraftDto",
     "ActorDto",
     "ConflictProblemDto",
     "BoardDto",
@@ -234,6 +235,142 @@ fn openapi_document_has_correct_info() {
 
     assert_eq!(doc.info.title, "Atlas API");
     assert!(!doc.info.version.is_empty(), "version must not be empty");
+}
+
+#[test]
+fn comment_draft_attachment_operations_document_routes_statuses_and_binary_headers() {
+    let document = serde_json::to_value(openapi()).expect("serialize OpenAPI document");
+
+    for (parent_path, attachment_path) in [
+        (
+            "/api/workspaces/{ws}/tasks/{readable_id}",
+            "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}/content",
+        ),
+        (
+            "/api/workspaces/{ws}/documents/{slug}",
+            "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}",
+        ),
+    ] {
+        let draft_path = format!("{parent_path}/comment-drafts");
+        let upload_path = format!("{draft_path}/{{draft_id}}/attachments");
+        let cancel_path = format!("{draft_path}/{{draft_id}}");
+
+        assert_operation_statuses(
+            &document,
+            &draft_path,
+            "post",
+            &[200, 201, 404, 409, 410, 422],
+        );
+        assert_operation_statuses(
+            &document,
+            &upload_path,
+            "post",
+            &[200, 201, 404, 409, 410, 413, 422],
+        );
+        assert_operation_statuses(&document, &cancel_path, "delete", &[204, 404, 409, 410]);
+        assert_operation_statuses(
+            &document,
+            &format!("{parent_path}/comments"),
+            "post",
+            &[200, 201, 404, 409, 410, 422],
+        );
+        assert_operation_statuses(
+            &document,
+            &format!("{parent_path}/comments/{{comment_id}}/attachments"),
+            "get",
+            &[200, 404, 410],
+        );
+        assert_operation_statuses(
+            &document,
+            &format!("{parent_path}/comments/{{comment_id}}/attachments/{{attachment_id}}"),
+            "delete",
+            &[204, 404, 410],
+        );
+        assert_operation_statuses(&document, attachment_path, "get", &[200, 404, 410]);
+
+        assert_header_parameter(operation(&document, &draft_path, "post"), "x-create-token");
+        assert_header_parameter(operation(&document, &upload_path, "post"), "x-upload-token");
+
+        let create = operation(&document, &format!("{parent_path}/comments"), "post");
+        assert!(
+            create
+                .pointer("/requestBody/content/application~1json/schema/$ref")
+                .is_some_and(|schema| schema == "#/components/schemas/CreateCommentRequest"),
+            "{parent_path} comment creation must use the shared CreateCommentRequest schema"
+        );
+
+        let get = operation(&document, attachment_path, "get");
+        for header in [
+            "Content-Type",
+            "Content-Disposition",
+            "X-Content-Type-Options",
+        ] {
+            assert!(
+                get.pointer(&format!("/responses/200/headers/{header}"))
+                    .is_some(),
+                "{attachment_path} must document its {header} response header"
+            );
+        }
+    }
+
+    assert_eq!(
+        document.pointer("/components/schemas/CommentDraftDto/type"),
+        Some(&Value::String("object".into()))
+    );
+
+    for property in ["id", "expires_at"] {
+        assert!(
+            document
+                .pointer(&format!(
+                    "/components/schemas/CommentDraftDto/properties/{property}"
+                ))
+                .is_some(),
+            "CommentDraftDto must expose {property}"
+        );
+    }
+
+    for property in ["url", "markdown"] {
+        assert!(
+            document
+                .pointer(&format!(
+                    "/components/schemas/CommentAttachmentDto/properties/{property}"
+                ))
+                .is_some(),
+            "CommentAttachmentDto must expose {property}"
+        );
+    }
+
+    assert!(
+        document
+            .pointer("/components/schemas/CreateCommentRequest/properties/draft_id")
+            .is_some(),
+        "comment creation must expose the additive draft_id"
+    );
+}
+
+fn assert_header_parameter(operation: &Value, name: &str) {
+    assert!(
+        operation
+            .pointer("/parameters")
+            .and_then(Value::as_array)
+            .is_some_and(|parameters| parameters.iter().any(|parameter| {
+                parameter.get("name") == Some(&Value::String(name.into()))
+                    && parameter.get("in") == Some(&Value::String("header".into()))
+                    && parameter.get("required") == Some(&Value::Bool(true))
+            })),
+        "operation must require the {name} header"
+    );
+}
+
+fn assert_operation_statuses(document: &Value, path: &str, method: &str, statuses: &[u16]) {
+    let operation = operation(document, path, method);
+
+    for status in statuses {
+        assert!(
+            operation.pointer(&format!("/responses/{status}")).is_some(),
+            "{method} {path} must document status {status}"
+        );
+    }
 }
 
 #[test]

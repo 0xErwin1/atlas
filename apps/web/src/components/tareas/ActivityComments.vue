@@ -233,8 +233,11 @@ function canDelete(comment: CommentDto): boolean {
   return currentActorId.value !== null && comment.author.id === currentActorId.value;
 }
 
-async function onSubmit(body: string): Promise<boolean> {
-  const ok = await detail.addComment(props.ws, props.readableId, body);
+async function onSubmit(body: string, draftId?: string): Promise<boolean> {
+  const ok =
+    draftId === undefined
+      ? await detail.addComment(props.ws, props.readableId, body)
+      : await detail.addComment(props.ws, props.readableId, body, draftId);
   if (!ok && detail.error) ui.showBanner(detail.error, 'error');
   // Follow the user's own comment down to the bottom of the thread.
   if (ok) {
@@ -373,7 +376,7 @@ watch(
     </div>
 
     <div class="atl-ac-composer">
-      <CommentComposer :on-submit="onSubmit" />
+      <CommentComposer :target="commentTarget" :on-submit="onSubmit" />
     </div>
   </section>
 </template>

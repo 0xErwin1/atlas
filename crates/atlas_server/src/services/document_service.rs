@@ -6,11 +6,11 @@ use atlas_domain::{
         DocumentCreatedPayload, DocumentDeletedPayload, DocumentMovedPayload,
         DocumentUpdatedPayload, DomainEvent,
     },
-    ids::{CommentId, DocumentId, FolderId, ProjectId, RevisionId},
+    ids::{CommentDraftId, CommentId, DocumentId, FolderId, ProjectId, RevisionId},
 };
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, TransactionTrait};
 
-use crate::persistence::entities::documents::document;
+use crate::persistence::entities::{comments::comment_attachment_draft, documents::document};
 use crate::persistence::repos::{
     CommentRepo, PgCommentRepo, PgOutboxRepo, doc_create_in, doc_move_to_in, doc_rename_in,
     doc_soft_delete_in, doc_update_content_in,
@@ -180,6 +180,18 @@ impl DocumentService {
 
         let pre_project_id = pre.project_id.map(ProjectId);
 
+        let retained_draft = comment_attachment_draft::Entity::find()
+            .filter(comment_attachment_draft::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(comment_attachment_draft::Column::DocumentId.eq(id.0))
+            .one(&txn)
+            .await
+            .map_err(db_err)?;
+        if retained_draft.is_some() {
+            return Err(DomainError::CommentDraftConflict {
+                reason: "document has retained comment draft state".into(),
+            });
+        }
+
         doc_soft_delete_in(&txn, ctx, id).await?;
 
         let event = DomainEvent::DocumentDeleted(DocumentDeletedPayload { document_id: id });
@@ -201,6 +213,18 @@ impl DocumentService {
     ) -> Result<Comment, DomainError> {
         self.comments
             .create(ctx, CommentOwner::Document(document_id), body)
+            .await
+    }
+
+    pub async fn finalize_comment_draft(
+        &self,
+        ctx: &WorkspaceCtx,
+        document_id: DocumentId,
+        draft_id: CommentDraftId,
+        body: String,
+    ) -> Result<crate::services::comment_service::FinalizeCommentResult, DomainError> {
+        self.comments
+            .finalize_draft(ctx, CommentOwner::Document(document_id), draft_id, body)
             .await
     }
 

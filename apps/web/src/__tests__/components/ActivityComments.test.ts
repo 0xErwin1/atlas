@@ -14,6 +14,12 @@ import {
 } from '@/stores/taskDetail';
 import { useWorkspaceStore } from '@/stores/workspace';
 
+const { draftDelete, draftPost } = vi.hoisted(() => ({ draftDelete: vi.fn(), draftPost: vi.fn() }));
+
+vi.mock('@/api/wrapper', () => ({
+  wrappedClient: { DELETE: draftDelete, POST: draftPost },
+}));
+
 const commentFeed = {
   entries: ref<unknown[]>([]),
   hasMore: ref(false),
@@ -142,14 +148,6 @@ function imageClipboard(file: File): DataTransfer {
   } as unknown as DataTransfer;
 }
 
-function textClipboard(text: string): DataTransfer {
-  return {
-    files: [],
-    items: [],
-    getData: (type: string) => (type === 'text/plain' ? text : ''),
-  } as unknown as DataTransfer;
-}
-
 function deferred<T>() {
   let resolve: (value: T) => void;
   const promise = new Promise<T>((resolvePromise) => {
@@ -195,6 +193,8 @@ beforeEach(() => {
   commentFeed.error.value = null;
   commentAttachments.items.value = {};
   commentAttachments.error.value = {};
+  draftDelete.mockReset();
+  draftPost.mockReset();
   vi.clearAllMocks();
 });
 
@@ -469,23 +469,49 @@ describe('ActivityComments feed (ATL-19)', () => {
     expect(wrapper.getComponent(CommentCard).props('uploadImage')).toBeUndefined();
   });
 
-  it('keeps the real task composer text-only for image paste while preserving ordinary text paste', async () => {
+  it('creates one task draft and uploads an image pasted into the real composer without publishing', async () => {
     const detail = useTaskDetailStore();
     detail._setForTest({ comments: [] });
     const addComment = vi.spyOn(detail, 'addComment').mockResolvedValue(true);
+    draftPost.mockImplementation((path: string, options?: { bodySerializer?: () => FormData }) => {
+      if (path.endsWith('/comment-drafts')) {
+        return Promise.resolve({ data: { id: 'task-draft', expires_at: '2026-07-17T00:00:00Z' } });
+      }
+
+      const file = options?.bodySerializer?.().get('file') as File;
+      return Promise.resolve({
+        data: { id: 'task-image', url: '/task-image', markdown: `![${file.name}](/task-image)` },
+      });
+    });
     const image = new File(['image'], 'diagram.png', { type: 'image/png' });
     const wrapper = mountFeedWithRealEditors();
     const content = wrapper.get('[data-comment-composer] .cm-content');
     enableCodeMirrorCoordinates();
-    const ordinaryPaste = new Event('paste', { bubbles: true, cancelable: true });
-    Object.defineProperty(ordinaryPaste, 'clipboardData', { value: textClipboard('ordinary **Markdown**') });
 
-    content.element.dispatchEvent(ordinaryPaste);
     await content.trigger('paste', { clipboardData: imageClipboard(image) });
     await flushPromises();
 
-    expect(ordinaryPaste.defaultPrevented).toBe(true);
-    expect(content.text()).toBe('ordinary **Markdown**');
+    expect(draftPost).toHaveBeenCalledTimes(2);
+    expect(draftPost).toHaveBeenNthCalledWith(
+      1,
+      '/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts',
+      expect.objectContaining({
+        params: expect.objectContaining({ path: { ws: 'acme', readable_id: 'ATL-1' } }),
+      }),
+    );
+    expect(draftPost).toHaveBeenNthCalledWith(
+      2,
+      '/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}/attachments',
+      expect.objectContaining({
+        params: expect.objectContaining({
+          path: { ws: 'acme', readable_id: 'ATL-1', draft_id: 'task-draft' },
+        }),
+      }),
+    );
+    expect(
+      (draftPost.mock.calls[1]?.[1] as { bodySerializer: () => FormData }).bodySerializer().get('file'),
+    ).toBe(image);
+    expect(wrapper.get('[data-comment-composer]').text()).toContain('Uploaded');
     expect(commentAttachments.upload).not.toHaveBeenCalled();
     expect(addComment).not.toHaveBeenCalled();
   });

@@ -360,6 +360,19 @@ pub fn app(state: AppState) -> Router {
                 .layer(axum::extract::DefaultBodyLimit::max(attachment_body_limit)),
         )
         .route(
+            "/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts",
+            axum::routing::post(routes::tasks::create_comment_draft),
+        )
+        .route(
+            "/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}",
+            axum::routing::delete(routes::tasks::cancel_comment_draft),
+        )
+        .route(
+            "/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}/attachments",
+            axum::routing::post(routes::tasks::upload_comment_draft_attachment)
+                .layer(axum::extract::DefaultBodyLimit::max(attachment_body_limit)),
+        )
+        .route(
             "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}/content",
             get(routes::tasks::download_comment_attachment),
         )
@@ -461,6 +474,19 @@ pub fn app(state: AppState) -> Router {
             "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments",
             axum::routing::post(routes::documents::upload_comment_attachment)
                 .get(routes::documents::list_comment_attachments)
+                .layer(axum::extract::DefaultBodyLimit::max(attachment_body_limit)),
+        )
+        .route(
+            "/api/workspaces/{ws}/documents/{slug}/comment-drafts",
+            axum::routing::post(routes::documents::create_comment_draft),
+        )
+        .route(
+            "/api/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}",
+            axum::routing::delete(routes::documents::cancel_comment_draft),
+        )
+        .route(
+            "/api/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}/attachments",
+            axum::routing::post(routes::documents::upload_comment_draft_attachment)
                 .layer(axum::extract::DefaultBodyLimit::max(attachment_body_limit)),
         )
         .route(

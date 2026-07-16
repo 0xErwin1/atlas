@@ -158,6 +158,7 @@ async fn create_list_delete_comment_roundtrip() {
             &readable_id,
             CreateCommentRequest {
                 body: "First comment".to_string(),
+                draft_id: None,
             },
         )
         .await
@@ -219,6 +220,7 @@ async fn task_backlinks_expose_only_authorized_comment_parent_navigation() {
             &source_readable_id,
             CreateCommentRequest {
                 body: "linked comment".into(),
+                draft_id: None,
             },
         )
         .await
@@ -273,6 +275,7 @@ async fn task_backlinks_omit_comment_sources_with_deleted_parents() {
             &source_readable_id,
             CreateCommentRequest {
                 body: "linked comment".into(),
+                draft_id: None,
             },
         )
         .await
@@ -344,6 +347,7 @@ async fn document_backlinks_omit_comment_sources_with_deleted_parents() {
             &source_slug,
             CreateCommentRequest {
                 body: "linked comment".into(),
+                draft_id: None,
             },
         )
         .await
@@ -421,6 +425,7 @@ async fn document_backlinks_batch_authorize_many_comment_sources() {
                 &source_slug,
                 CreateCommentRequest {
                     body: format!("private document source {index}"),
+                    draft_id: None,
                 },
             )
             .await
@@ -513,6 +518,7 @@ async fn task_backlinks_batch_authorize_many_comment_sources_without_source_leak
                 &source_readable_id,
                 CreateCommentRequest {
                     body: format!("private source {index}"),
+                    draft_id: None,
                 },
             )
             .await
@@ -605,6 +611,7 @@ async fn task_backlinks_omit_deleted_and_cross_workspace_comment_sources() {
             &source_readable_id,
             CreateCommentRequest {
                 body: "deleted source comment".into(),
+                draft_id: None,
             },
         )
         .await
@@ -625,6 +632,7 @@ async fn task_backlinks_omit_deleted_and_cross_workspace_comment_sources() {
             &other_readable_id,
             CreateCommentRequest {
                 body: "cross workspace source comment".into(),
+                draft_id: None,
             },
         )
         .await
@@ -694,6 +702,7 @@ async fn document_backlinks_expose_comment_source_without_attachment_links() {
             &source_readable_id,
             CreateCommentRequest {
                 body: "linked comment".into(),
+                draft_id: None,
             },
         )
         .await
@@ -806,6 +815,7 @@ async fn create_comment_as_api_key_reports_api_key_author() {
             &readable_id,
             CreateCommentRequest {
                 body: "Automated comment".to_string(),
+                draft_id: None,
             },
         )
         .await
@@ -861,6 +871,7 @@ async fn list_comments_oldest_first_with_cursor_walk_has_no_gaps_or_duplicates()
                 &readable_id,
                 CreateCommentRequest {
                     body: format!("Comment {i}"),
+                    draft_id: None,
                 },
             )
             .await
@@ -910,6 +921,7 @@ async fn full_feed_is_opt_in_and_default_comment_page_is_unchanged() {
             &readable_id,
             CreateCommentRequest {
                 body: "Comment with no links".to_string(),
+                draft_id: None,
             },
         )
         .await
@@ -971,6 +983,7 @@ async fn full_feeds_redact_deleted_targets_for_human_and_api_key_viewers() {
             &task_id,
             CreateCommentRequest {
                 body: "task source".into(),
+                draft_id: None,
             },
         )
         .await
@@ -981,6 +994,7 @@ async fn full_feeds_redact_deleted_targets_for_human_and_api_key_viewers() {
             &document_slug,
             CreateCommentRequest {
                 body: "document source".into(),
+                draft_id: None,
             },
         )
         .await
@@ -1036,6 +1050,7 @@ async fn full_feeds_redact_deleted_targets_for_human_and_api_key_viewers() {
             &target_task.readable_id,
             CreateCommentRequest {
                 body: "attachment owner".into(),
+                draft_id: None,
             },
         )
         .await
@@ -1203,6 +1218,7 @@ async fn full_feeds_retain_deleted_comment_events_without_deleted_comment_data_o
             &task_id,
             CreateCommentRequest {
                 body: "task comment that must disappear".into(),
+                draft_id: None,
             },
         )
         .await
@@ -1213,6 +1229,7 @@ async fn full_feeds_retain_deleted_comment_events_without_deleted_comment_data_o
             &document_slug,
             CreateCommentRequest {
                 body: "document comment that must disappear".into(),
+                draft_id: None,
             },
         )
         .await
@@ -1396,6 +1413,7 @@ async fn full_feeds_recheck_target_access_after_the_link_is_written() {
             &task_id,
             CreateCommentRequest {
                 body: "task".into(),
+                draft_id: None,
             },
         )
         .await
@@ -1406,6 +1424,7 @@ async fn full_feeds_recheck_target_access_after_the_link_is_written() {
             &source_slug,
             CreateCommentRequest {
                 body: "document".into(),
+                draft_id: None,
             },
         )
         .await
@@ -1508,6 +1527,7 @@ async fn full_feeds_paginate_merged_comment_and_event_boundaries_without_gaps_or
                 &task_id,
                 CreateCommentRequest {
                     body: "task one".into(),
+                    draft_id: None,
                 },
             )
             .await
@@ -1518,6 +1538,7 @@ async fn full_feeds_paginate_merged_comment_and_event_boundaries_without_gaps_or
                 &task_id,
                 CreateCommentRequest {
                     body: "task two".into(),
+                    draft_id: None,
                 },
             )
             .await
@@ -1530,6 +1551,7 @@ async fn full_feeds_paginate_merged_comment_and_event_boundaries_without_gaps_or
                 &document_slug,
                 CreateCommentRequest {
                     body: "document one".into(),
+                    draft_id: None,
                 },
             )
             .await
@@ -1540,6 +1562,7 @@ async fn full_feeds_paginate_merged_comment_and_event_boundaries_without_gaps_or
                 &document_slug,
                 CreateCommentRequest {
                     body: "document two".into(),
+                    draft_id: None,
                 },
             )
             .await
@@ -1726,6 +1749,7 @@ async fn create_comment_rejects_blank_body() {
                 &readable_id,
                 CreateCommentRequest {
                     body: blank.to_string(),
+                    draft_id: None,
                 },
             )
             .await;
@@ -1765,6 +1789,7 @@ async fn create_comment_rejects_body_over_max_length() {
             &readable_id,
             CreateCommentRequest {
                 body: oversize_body,
+                draft_id: None,
             },
         )
         .await;
@@ -1779,7 +1804,10 @@ async fn create_comment_rejects_body_over_max_length() {
         .add_comment(
             &ws.slug,
             &readable_id,
-            CreateCommentRequest { body: at_max_body },
+            CreateCommentRequest {
+                body: at_max_body,
+                draft_id: None,
+            },
         )
         .await
         .expect("body at exactly the max length must be accepted");
@@ -1804,6 +1832,7 @@ async fn create_comment_task_not_found_returns_404() {
             "NOPE-1",
             CreateCommentRequest {
                 body: "orphan comment".to_string(),
+                draft_id: None,
             },
         )
         .await;
@@ -1868,6 +1897,7 @@ async fn cross_workspace_comment_access_is_404() {
             &readable_id,
             CreateCommentRequest {
                 body: "workspace A comment".to_string(),
+                draft_id: None,
             },
         )
         .await
@@ -1887,6 +1917,7 @@ async fn cross_workspace_comment_access_is_404() {
             &readable_id,
             CreateCommentRequest {
                 body: "trespassing".to_string(),
+                draft_id: None,
             },
         )
         .await;
@@ -1987,6 +2018,7 @@ async fn viewer_cannot_create_comment() {
             &task.readable_id,
             CreateCommentRequest {
                 body: "not allowed".to_string(),
+                draft_id: None,
             },
         )
         .await;
@@ -2014,6 +2046,7 @@ async fn author_deletes_own_comment() {
             &readable_id,
             CreateCommentRequest {
                 body: "mine".to_string(),
+                draft_id: None,
             },
         )
         .await
@@ -2042,6 +2075,7 @@ async fn non_author_non_admin_delete_is_forbidden() {
             &readable_id,
             CreateCommentRequest {
                 body: "owner's comment".to_string(),
+                draft_id: None,
             },
         )
         .await
@@ -2102,6 +2136,7 @@ async fn admin_can_delete_another_members_comment() {
             &readable_id,
             CreateCommentRequest {
                 body: "member's comment".to_string(),
+                draft_id: None,
             },
         )
         .await
@@ -2166,6 +2201,7 @@ async fn list_comments_preserves_global_api_key_author_name() {
             &readable_id,
             CreateCommentRequest {
                 body: "Posted while granted".to_string(),
+                draft_id: None,
             },
         )
         .await
@@ -2226,6 +2262,7 @@ async fn author_edits_own_comment() {
             &readable_id,
             CreateCommentRequest {
                 body: "original".to_string(),
+                draft_id: None,
             },
         )
         .await
@@ -2285,6 +2322,7 @@ async fn admin_cannot_edit_another_members_comment() {
             &readable_id,
             CreateCommentRequest {
                 body: "member's words".to_string(),
+                draft_id: None,
             },
         )
         .await
@@ -2350,6 +2388,7 @@ async fn non_member_cannot_edit_comment_404() {
             &readable_id,
             CreateCommentRequest {
                 body: "workspace A comment".to_string(),
+                draft_id: None,
             },
         )
         .await
@@ -2388,6 +2427,7 @@ async fn edit_comment_rejects_invalid_body() {
             &readable_id,
             CreateCommentRequest {
                 body: "original".to_string(),
+                draft_id: None,
             },
         )
         .await
@@ -2494,6 +2534,7 @@ async fn viewer_author_can_edit_own_comment_but_not_a_different_viewer() {
             &readable_id,
             CreateCommentRequest {
                 body: "posted while editor".to_string(),
+                draft_id: None,
             },
         )
         .await

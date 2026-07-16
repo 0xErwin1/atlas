@@ -571,14 +571,22 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     }
   }
 
-  async function addComment(ws: string, readableId: string, body: string): Promise<boolean> {
+  async function addComment(
+    ws: string,
+    readableId: string,
+    body: string,
+    draftId?: string,
+  ): Promise<boolean> {
     const operation = beginOperation(ws, readableId);
     if (!isOperationCurrent(operation)) return false;
     error.value = null;
 
     const { data, error: apiError } = await wrappedClient.POST(
       '/api/workspaces/{ws}/tasks/{readable_id}/comments',
-      { params: { path: { ws, readable_id: readableId } }, body: { body } },
+      {
+        params: { path: { ws, readable_id: readableId } },
+        body: draftId === undefined ? { body } : { body, draft_id: draftId },
+      },
     );
 
     if (apiError !== undefined || data === undefined) {

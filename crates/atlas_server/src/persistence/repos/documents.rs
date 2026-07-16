@@ -1,19 +1,23 @@
 use async_trait::async_trait;
 use atlas_domain::{
     Actor, AttachmentStore, DomainError, RevisionConflict, WorkspaceCtx,
+    entities::comments::{CommentOwner, NewCommentAttachmentDraftUpload},
     entities::documents::{
         Attachment, AttachmentOwner, AttachmentWriteIntent, Document, DocumentLink,
         DocumentSummary, ExtractedLink, NewAttachment, NewDocument, RevisionMeta,
         TaskDescriptionLinks,
     },
-    ids::{AttachmentId, DocumentId, FolderId, ProjectId, RevisionId, TaskId, WorkspaceId},
+    ids::{
+        AttachmentId, CommentDraftId, DocumentId, FolderId, ProjectId, RevisionId, TaskId,
+        WorkspaceId,
+    },
     permissions::Principal,
     revision::{create_revision_patch, is_anchor_seq, reconstruct},
 };
 use chrono::{DateTime, Utc};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection,
-    EntityTrait, IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, Statement,
+    EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Statement,
     TransactionTrait,
 };
 use serde_json::json;
@@ -21,9 +25,15 @@ use sha2::{Digest, Sha256};
 use sqlx::{Postgres, pool::PoolConnection};
 use uuid::Uuid;
 
+use crate::persistence::entities::comments::{
+    comment_attachment_draft, comment_attachment_draft_upload,
+};
 use crate::persistence::entities::documents::{
     attachment, attachment_from, attachment_write_intent, attachment_write_intent_from, document,
     document_from, document_link, document_link_from, document_revision, revision_meta_from,
+};
+use crate::persistence::repos::comment_attachment_drafts::{
+    lock_active_draft_for_upload, record_upload_or_replay_in,
 };
 
 pub use atlas_domain::ports::documents::{
@@ -538,6 +548,18 @@ pub async fn rename_in(
             id: id.0,
         })?;
 
+    let retained_draft = comment_attachment_draft::Entity::find()
+        .filter(comment_attachment_draft::Column::WorkspaceId.eq(ctx.workspace_id.0))
+        .filter(comment_attachment_draft::Column::DocumentId.eq(id.0))
+        .one(conn)
+        .await
+        .map_err(db_err)?;
+    if retained_draft.is_some() {
+        return Err(DomainError::CommentDraftConflict {
+            reason: "document has retained comment draft state".into(),
+        });
+    }
+
     let mut active = row.into_active_model();
     active.title = Set(new_title.clone());
     active.updated_at = Set(Utc::now());
@@ -1007,6 +1029,7 @@ impl AttachmentRepo for PgAttachmentRepo {
             document_id: Set(new.document_id.map(|id| id.0)),
             task_id: Set(new.task_id.map(|id| id.0)),
             comment_id: Set(new.comment_id.map(|id| id.0)),
+            draft_id: Set(None),
             file_name: Set(new.file_name),
             content_type: Set(new.content_type),
             size_bytes: Set(new.size_bytes),
@@ -1063,6 +1086,11 @@ impl AttachmentRepo for PgAttachmentRepo {
                 .all(&self.conn)
                 .await
                 .map_err(db_err)?,
+            AttachmentOwner::Draft(draft_id) => q
+                .filter(attachment::Column::DraftId.eq(draft_id.0))
+                .all(&self.conn)
+                .await
+                .map_err(db_err)?,
         };
 
         Ok(rows.into_iter().map(attachment_from).collect())
@@ -1094,7 +1122,283 @@ pub struct PgAttachmentWriteIntentRepo {
 
 pub struct PgAttachmentLifecycle;
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct DraftReconciliationReport {
+    pub claimed_expiries: u64,
+    pub failed_expiries: u64,
+    pub pruned: u64,
+    pub failed_prunes: u64,
+    pub cleanup_failed: u64,
+    pub expired_backlog: u64,
+    pub terminal_backlog: u64,
+}
+
 impl PgAttachmentLifecycle {
+    pub async fn list_active_draft_attachments(
+        conn: &DatabaseConnection,
+        ctx: &WorkspaceCtx,
+        owner: CommentOwner,
+        draft_id: CommentDraftId,
+    ) -> Result<Vec<Attachment>, DomainError> {
+        let txn = conn.begin().await.map_err(db_err)?;
+        lock_active_draft_for_upload(&txn, ctx, owner, draft_id).await?;
+
+        let rows = attachment::Entity::find()
+            .filter(attachment::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(attachment::Column::DraftId.eq(draft_id.0))
+            .filter(attachment::Column::DeletedAt.is_null())
+            .all(&txn)
+            .await
+            .map_err(db_err)?;
+
+        txn.commit().await.map_err(db_err)?;
+        Ok(rows.into_iter().map(attachment_from).collect())
+    }
+
+    pub async fn find_active_draft_attachment(
+        conn: &DatabaseConnection,
+        ctx: &WorkspaceCtx,
+        owner: CommentOwner,
+        draft_id: CommentDraftId,
+        attachment_id: AttachmentId,
+    ) -> Result<Attachment, DomainError> {
+        let txn = conn.begin().await.map_err(db_err)?;
+        lock_active_draft_for_upload(&txn, ctx, owner, draft_id).await?;
+
+        let attachment = attachment::Entity::find_by_id(attachment_id.0)
+            .filter(attachment::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(attachment::Column::DraftId.eq(draft_id.0))
+            .filter(attachment::Column::DeletedAt.is_null())
+            .one(&txn)
+            .await
+            .map_err(db_err)?;
+
+        let Some(attachment) = attachment else {
+            let tombstoned = comment_attachment_draft_upload::Entity::find()
+                .filter(comment_attachment_draft_upload::Column::DraftId.eq(draft_id.0))
+                .filter(
+                    comment_attachment_draft_upload::Column::OriginalAttachmentId
+                        .eq(attachment_id.0),
+                )
+                .one(&txn)
+                .await
+                .map_err(db_err)?
+                .is_some();
+
+            return Err(if tombstoned {
+                DomainError::CommentDraftGone {
+                    reason: "draft attachment was deleted".into(),
+                }
+            } else {
+                DomainError::NotFound {
+                    entity: "draft attachment",
+                    id: attachment_id.0,
+                }
+            });
+        };
+
+        txn.commit().await.map_err(db_err)?;
+        Ok(attachment_from(attachment))
+    }
+
+    pub async fn is_tombstoned_draft_attachment(
+        conn: &DatabaseConnection,
+        draft_id: CommentDraftId,
+        attachment_id: AttachmentId,
+    ) -> Result<bool, DomainError> {
+        comment_attachment_draft_upload::Entity::find()
+            .filter(comment_attachment_draft_upload::Column::DraftId.eq(draft_id.0))
+            .filter(
+                comment_attachment_draft_upload::Column::OriginalAttachmentId.eq(attachment_id.0),
+            )
+            .filter(comment_attachment_draft_upload::Column::DeletedAt.is_not_null())
+            .one(conn)
+            .await
+            .map(|upload| upload.is_some())
+            .map_err(db_err)
+    }
+
+    pub async fn cancel_draft(
+        conn: &DatabaseConnection,
+        ctx: &WorkspaceCtx,
+        draft_id: CommentDraftId,
+        store: &dyn AttachmentStore,
+    ) -> Result<(), DomainError> {
+        let txn = conn.begin().await.map_err(db_err)?;
+        let draft = crate::persistence::entities::comments::comment_attachment_draft::Entity::find_by_id(draft_id.0)
+            .filter(crate::persistence::entities::comments::comment_attachment_draft::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .lock_exclusive()
+            .one(&txn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound { entity: "comment attachment draft", id: draft_id.0 })?;
+
+        match draft.state.as_str() {
+            "active" => {}
+            "finalized" => {
+                return Err(DomainError::CommentDraftConflict {
+                    reason: "draft was finalized".into(),
+                });
+            }
+            _ => {
+                return Err(DomainError::CommentDraftGone {
+                    reason: "draft is no longer active".into(),
+                });
+            }
+        }
+
+        let attachments = attachment::Entity::find()
+            .filter(attachment::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(attachment::Column::DraftId.eq(draft_id.0))
+            .filter(attachment::Column::DeletedAt.is_null())
+            .all(&txn)
+            .await
+            .map_err(db_err)?;
+        let digests = attachments
+            .iter()
+            .map(|attachment| attachment.sha256.clone())
+            .collect::<std::collections::BTreeSet<_>>();
+
+        for digest in &digests {
+            txn.execute_raw(Statement::from_sql_and_values(
+                sea_orm::DatabaseBackend::Postgres,
+                "INSERT INTO attachment_write_intents (id, digest, created_at) VALUES ($1, $2, now()) ON CONFLICT (digest) DO NOTHING",
+                [Uuid::now_v7().into(), digest.clone().into()],
+            )).await.map_err(db_err)?;
+        }
+
+        comment_attachment_draft_upload::Entity::update_many()
+            .col_expr(
+                comment_attachment_draft_upload::Column::AttachmentId,
+                sea_orm::sea_query::Expr::value(None::<Uuid>),
+            )
+            .col_expr(
+                comment_attachment_draft_upload::Column::DeletedAt,
+                sea_orm::sea_query::Expr::current_timestamp(),
+            )
+            .col_expr(
+                comment_attachment_draft_upload::Column::UpdatedAt,
+                sea_orm::sea_query::Expr::current_timestamp(),
+            )
+            .filter(comment_attachment_draft_upload::Column::DraftId.eq(draft_id.0))
+            .filter(comment_attachment_draft_upload::Column::DeletedAt.is_null())
+            .exec(&txn)
+            .await
+            .map_err(db_err)?;
+
+        attachment::Entity::update_many()
+            .col_expr(
+                attachment::Column::DeletedAt,
+                sea_orm::sea_query::Expr::current_timestamp(),
+            )
+            .col_expr(
+                attachment::Column::UpdatedAt,
+                sea_orm::sea_query::Expr::current_timestamp(),
+            )
+            .filter(attachment::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(attachment::Column::DraftId.eq(draft_id.0))
+            .filter(attachment::Column::DeletedAt.is_null())
+            .exec(&txn)
+            .await
+            .map_err(db_err)?;
+
+        let mut draft = draft.into_active_model();
+        draft.state = Set("cancelled".into());
+        draft.terminal_at = Set(Some(Utc::now()));
+        draft.updated_at = Set(Utc::now());
+        draft.update(&txn).await.map_err(db_err)?;
+        txn.commit().await.map_err(db_err)?;
+
+        for digest in digests {
+            if let Err(error) = Self::finish_purge_digest(conn, store, &digest).await {
+                tracing::warn!(%error, %digest, "cancelled draft attachment cleanup will be retried");
+            }
+        }
+        Ok(())
+    }
+
+    pub async fn delete_draft_attachment(
+        conn: &DatabaseConnection,
+        ctx: &WorkspaceCtx,
+        owner: CommentOwner,
+        draft_id: CommentDraftId,
+        attachment_id: AttachmentId,
+        store: &dyn AttachmentStore,
+    ) -> Result<(), DomainError> {
+        let txn = conn.begin().await.map_err(db_err)?;
+        lock_active_draft_for_upload(&txn, ctx, owner, draft_id).await?;
+        let attachment = attachment::Entity::find_by_id(attachment_id.0)
+            .filter(attachment::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(attachment::Column::DraftId.eq(draft_id.0))
+            .filter(attachment::Column::DeletedAt.is_null())
+            .one(&txn)
+            .await
+            .map_err(db_err)?;
+
+        let Some(attachment) = attachment else {
+            let tombstoned = comment_attachment_draft_upload::Entity::find()
+                .filter(comment_attachment_draft_upload::Column::DraftId.eq(draft_id.0))
+                .filter(
+                    comment_attachment_draft_upload::Column::OriginalAttachmentId
+                        .eq(attachment_id.0),
+                )
+                .one(&txn)
+                .await
+                .map_err(db_err)?
+                .is_some();
+
+            return Err(if tombstoned {
+                DomainError::CommentDraftGone {
+                    reason: "draft attachment was deleted".into(),
+                }
+            } else {
+                DomainError::NotFound {
+                    entity: "draft attachment",
+                    id: attachment_id.0,
+                }
+            });
+        };
+
+        txn.execute_raw(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "INSERT INTO attachment_write_intents (id, digest, created_at) VALUES ($1, $2, now()) ON CONFLICT (digest) DO NOTHING",
+            [Uuid::now_v7().into(), attachment.sha256.clone().into()],
+        ))
+        .await
+        .map_err(db_err)?;
+
+        let upload = comment_attachment_draft_upload::Entity::find()
+            .filter(comment_attachment_draft_upload::Column::DraftId.eq(draft_id.0))
+            .filter(
+                comment_attachment_draft_upload::Column::OriginalAttachmentId.eq(attachment_id.0),
+            )
+            .one(&txn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "draft attachment upload",
+                id: attachment_id.0,
+            })?;
+        let mut upload = upload.into_active_model();
+        upload.attachment_id = Set(None);
+        upload.deleted_at = Set(Some(Utc::now()));
+        upload.updated_at = Set(Utc::now());
+        upload.update(&txn).await.map_err(db_err)?;
+
+        let digest = attachment.sha256.clone();
+        let mut attachment = attachment.into_active_model();
+        attachment.deleted_at = Set(Some(Utc::now()));
+        attachment.updated_at = Set(Utc::now());
+        attachment.update(&txn).await.map_err(db_err)?;
+        txn.commit().await.map_err(db_err)?;
+
+        if let Err(error) = Self::finish_purge_digest(conn, store, &digest).await {
+            tracing::warn!(%error, digest = %digest, "draft attachment cleanup will be retried");
+        }
+
+        Ok(())
+    }
+
     pub async fn delete_comment_attachment(
         conn: &DatabaseConnection,
         ctx: &WorkspaceCtx,
@@ -1122,14 +1426,34 @@ impl PgAttachmentLifecycle {
         ))
         .await
         .map_err(db_err)?;
-        attachment::Entity::delete_by_id(attachment.id)
-            .exec(&txn)
+        let digest = attachment.sha256.clone();
+        let upload = comment_attachment_draft_upload::Entity::find()
+            .filter(comment_attachment_draft_upload::Column::OriginalAttachmentId.eq(attachment.id))
+            .one(&txn)
             .await
             .map_err(db_err)?;
+
+        if let Some(upload) = upload {
+            let mut upload = upload.into_active_model();
+            upload.attachment_id = Set(None);
+            upload.deleted_at = Set(Some(Utc::now()));
+            upload.updated_at = Set(Utc::now());
+            upload.update(&txn).await.map_err(db_err)?;
+
+            let mut attachment = attachment.into_active_model();
+            attachment.deleted_at = Set(Some(Utc::now()));
+            attachment.updated_at = Set(Utc::now());
+            attachment.update(&txn).await.map_err(db_err)?;
+        } else {
+            attachment::Entity::delete_by_id(attachment.id)
+                .exec(&txn)
+                .await
+                .map_err(db_err)?;
+        }
         txn.commit().await.map_err(db_err)?;
 
-        if let Err(error) = Self::finish_purge_digest(conn, store, &attachment.sha256).await {
-            tracing::warn!(%error, digest = %attachment.sha256, "comment attachment cleanup will be retried");
+        if let Err(error) = Self::finish_purge_digest(conn, store, &digest).await {
+            tracing::warn!(%error, %digest, "comment attachment cleanup will be retried");
         }
 
         Ok(())
@@ -1202,19 +1526,213 @@ impl PgAttachmentLifecycle {
         stale_after: chrono::Duration,
     ) {
         let mut interval = tokio::time::interval(interval_period);
+
+        if *shutdown.borrow() {
+            return;
+        }
+
         loop {
             tokio::select! {
-                _ = interval.tick() => {
-                    let older_than = Utc::now() - stale_after;
-                    if let Err(error) = Self::reconcile_stale(&conn, store.as_ref(), older_than).await {
-                        tracing::warn!(%error, "attachment intent reconciliation failed");
-                    }
-                }
+                biased;
                 changed = shutdown.changed() => {
                     if changed.is_err() || *shutdown.borrow() { return; }
                 }
+                _ = interval.tick() => {
+                    let started_at = std::time::Instant::now();
+                    let draft_report = match Self::reconcile_drafts(&conn, store.as_ref()).await {
+                        Ok(report) => report,
+                        Err(error) => {
+                            tracing::warn!(%error, "comment draft retention reconciliation failed");
+                            DraftReconciliationReport::default()
+                        }
+                    };
+                    let older_than = Utc::now() - stale_after;
+                    tokio::select! {
+                        biased;
+                        changed = shutdown.changed() => {
+                            if changed.is_err() || *shutdown.borrow() { return; }
+                        }
+                        result = Self::reconcile_stale(&conn, store.as_ref(), older_than) => {
+                            if let Err(error) = result {
+                                tracing::warn!(%error, "attachment intent reconciliation failed");
+                            }
+                        }
+                    }
+                    tracing::info!(
+                        claimed = draft_report.claimed_expiries,
+                        failed = draft_report.failed_expiries,
+                        pruned = draft_report.pruned,
+                        prune_failed = draft_report.failed_prunes,
+                        cleanup_failed = draft_report.cleanup_failed,
+                        expired_backlog = draft_report.expired_backlog,
+                        terminal_backlog = draft_report.terminal_backlog,
+                        duration_ms = started_at.elapsed().as_millis(),
+                        "attachment lifecycle reconciliation completed"
+                    );
+                }
             }
         }
+    }
+
+    pub async fn reconcile_drafts(
+        conn: &DatabaseConnection,
+        store: &dyn AttachmentStore,
+    ) -> Result<DraftReconciliationReport, DomainError> {
+        const BATCH_SIZE: u64 = 100;
+        let started_at = std::time::Instant::now();
+        let expiry_ids = due_draft_ids(conn, BATCH_SIZE).await?;
+        let prune_ids = prunable_draft_ids(conn, BATCH_SIZE).await?;
+        let mut report = DraftReconciliationReport {
+            expired_backlog: count_due_drafts(conn).await?,
+            terminal_backlog: count_prunable_drafts(conn).await?,
+            ..DraftReconciliationReport::default()
+        };
+
+        for draft_id in expiry_ids {
+            match Self::expire_draft(conn, CommentDraftId(draft_id), store).await {
+                Ok(Some(cleanup_failed)) => {
+                    report.claimed_expiries += 1;
+                    report.cleanup_failed += u64::from(cleanup_failed);
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    report.failed_expiries += 1;
+                    tracing::warn!(%error, %draft_id, "comment draft expiry failed");
+                }
+            }
+        }
+
+        for draft_id in prune_ids {
+            match prune_draft(conn, CommentDraftId(draft_id)).await {
+                Ok(true) => report.pruned += 1,
+                Ok(false) => {}
+                Err(error) => {
+                    report.failed_prunes += 1;
+                    tracing::warn!(%error, %draft_id, "comment draft terminal prune failed");
+                }
+            }
+        }
+
+        tracing::info!(
+            claimed = report.claimed_expiries,
+            failed = report.failed_expiries,
+            pruned = report.pruned,
+            prune_failed = report.failed_prunes,
+            cleanup_failed = report.cleanup_failed,
+            expired_backlog = report.expired_backlog,
+            terminal_backlog = report.terminal_backlog,
+            duration_ms = started_at.elapsed().as_millis(),
+            "comment draft retention reconciliation completed"
+        );
+
+        Ok(report)
+    }
+
+    async fn expire_draft(
+        conn: &DatabaseConnection,
+        draft_id: CommentDraftId,
+        store: &dyn AttachmentStore,
+    ) -> Result<Option<bool>, DomainError> {
+        let txn = conn.begin().await.map_err(db_err)?;
+        let claimed = comment_attachment_draft::Entity::find_by_id(draft_id.0)
+            .filter(comment_attachment_draft::Column::State.eq("active"))
+            .filter(comment_attachment_draft::Column::ExpiresAt.lte(Utc::now()))
+            .lock_with_behavior(
+                sea_orm::sea_query::LockType::Update,
+                sea_orm::sea_query::LockBehavior::SkipLocked,
+            )
+            .one(&txn)
+            .await
+            .map_err(db_err)?
+            .is_some();
+
+        if !claimed {
+            txn.commit().await.map_err(db_err)?;
+            return Ok(None);
+        }
+
+        let attachments = attachment::Entity::find()
+            .filter(attachment::Column::DraftId.eq(draft_id.0))
+            .filter(attachment::Column::DeletedAt.is_null())
+            .all(&txn)
+            .await
+            .map_err(db_err)?;
+        let digests = attachments
+            .iter()
+            .map(|attachment| attachment.sha256.clone())
+            .collect::<std::collections::BTreeSet<_>>();
+
+        for digest in &digests {
+            txn.execute_raw(Statement::from_sql_and_values(
+                sea_orm::DatabaseBackend::Postgres,
+                "INSERT INTO attachment_write_intents (id, digest, created_at) \
+                 VALUES ($1, $2, now()) ON CONFLICT (digest) DO NOTHING",
+                [Uuid::now_v7().into(), digest.clone().into()],
+            ))
+            .await
+            .map_err(db_err)?;
+        }
+
+        comment_attachment_draft_upload::Entity::update_many()
+            .col_expr(
+                comment_attachment_draft_upload::Column::AttachmentId,
+                sea_orm::sea_query::Expr::value(None::<Uuid>),
+            )
+            .col_expr(
+                comment_attachment_draft_upload::Column::DeletedAt,
+                sea_orm::sea_query::Expr::current_timestamp(),
+            )
+            .col_expr(
+                comment_attachment_draft_upload::Column::UpdatedAt,
+                sea_orm::sea_query::Expr::current_timestamp(),
+            )
+            .filter(comment_attachment_draft_upload::Column::DraftId.eq(draft_id.0))
+            .filter(comment_attachment_draft_upload::Column::DeletedAt.is_null())
+            .exec(&txn)
+            .await
+            .map_err(db_err)?;
+        attachment::Entity::update_many()
+            .col_expr(
+                attachment::Column::DeletedAt,
+                sea_orm::sea_query::Expr::current_timestamp(),
+            )
+            .col_expr(
+                attachment::Column::UpdatedAt,
+                sea_orm::sea_query::Expr::current_timestamp(),
+            )
+            .filter(attachment::Column::DraftId.eq(draft_id.0))
+            .filter(attachment::Column::DeletedAt.is_null())
+            .exec(&txn)
+            .await
+            .map_err(db_err)?;
+        comment_attachment_draft::Entity::update_many()
+            .col_expr(
+                comment_attachment_draft::Column::State,
+                sea_orm::sea_query::Expr::value("expired"),
+            )
+            .col_expr(
+                comment_attachment_draft::Column::TerminalAt,
+                sea_orm::sea_query::Expr::current_timestamp(),
+            )
+            .col_expr(
+                comment_attachment_draft::Column::UpdatedAt,
+                sea_orm::sea_query::Expr::current_timestamp(),
+            )
+            .filter(comment_attachment_draft::Column::Id.eq(draft_id.0))
+            .exec(&txn)
+            .await
+            .map_err(db_err)?;
+        txn.commit().await.map_err(db_err)?;
+
+        let mut cleanup_failed = false;
+        for digest in digests {
+            if let Err(error) = Self::finish_purge_digest(conn, store, &digest).await {
+                cleanup_failed = true;
+                tracing::warn!(%error, %digest, "expired draft attachment cleanup will be retried");
+            }
+        }
+
+        Ok(Some(cleanup_failed))
     }
 
     pub async fn store_and_record(
@@ -1261,6 +1779,104 @@ impl PgAttachmentLifecycle {
         Ok(attachment)
     }
 
+    pub async fn store_and_record_draft(
+        conn: &DatabaseConnection,
+        ctx: &WorkspaceCtx,
+        owner: CommentOwner,
+        draft_id: atlas_domain::ids::CommentDraftId,
+        upload: NewCommentAttachmentDraftUpload,
+        data: &[u8],
+        store: &dyn AttachmentStore,
+    ) -> Result<(Attachment, bool), DomainError> {
+        let digest = hex_digest(data);
+        let lock = DigestSessionLock::acquire(conn, &digest).await?;
+        let result = async {
+            PgAttachmentWriteIntentRepo { conn: conn.clone() }
+                .create_if_absent(digest.clone())
+                .await?;
+
+            let txn = conn.begin().await.map_err(db_err)?;
+            lock_active_draft_for_upload(&txn, ctx, owner, draft_id).await?;
+
+            let stored = bounded_store_put(store, data).await?;
+            if stored != digest {
+                return Err(DomainError::Internal {
+                    message: "attachment store returned an unexpected digest".into(),
+                });
+            }
+
+            let (by_user, by_key) = actor_fields(&ctx.actor);
+            let row = attachment::ActiveModel {
+                id: Set(AttachmentId::new().0),
+                workspace_id: Set(ctx.workspace_id.0),
+                document_id: Set(None),
+                task_id: Set(None),
+                comment_id: Set(None),
+                draft_id: Set(Some(draft_id.0)),
+                file_name: Set(upload.metadata.file_name.clone()),
+                content_type: Set(upload.metadata.content_type.clone()),
+                size_bytes: Set(data.len() as i64),
+                sha256: Set(digest.clone()),
+                created_by_user_id: Set(by_user),
+                created_by_api_key_id: Set(by_key),
+                created_at: Set(Utc::now()),
+                updated_at: Set(Utc::now()),
+                deleted_at: Set(None),
+            }
+            .insert(&txn)
+            .await
+            .map(attachment_from)
+            .map_err(db_err)?;
+
+            let recorded = record_upload_or_replay_in(
+                &txn,
+                ctx,
+                owner,
+                draft_id,
+                NewCommentAttachmentDraftUpload {
+                    attachment_id: Some(row.id),
+                    upload_token: upload.upload_token,
+                    request_digest: upload.request_digest,
+                    payload_digest: upload.payload_digest,
+                    metadata: upload.metadata,
+                    size_bytes: upload.size_bytes,
+                },
+            )
+            .await?;
+
+            let attachment_id = recorded
+                .attachment_id
+                .ok_or_else(|| DomainError::Internal {
+                    message: "active draft upload has no attachment identity".into(),
+                })?;
+            let replayed = attachment_id != row.id;
+            let attachment = attachment::Entity::find_by_id(attachment_id.0)
+                .filter(attachment::Column::WorkspaceId.eq(ctx.workspace_id.0))
+                .one(&txn)
+                .await
+                .map_err(db_err)?
+                .map(attachment_from)
+                .ok_or(DomainError::NotFound {
+                    entity: "draft attachment",
+                    id: attachment_id.0,
+                })?;
+
+            attachment_write_intent::Entity::delete_many()
+                .filter(attachment_write_intent::Column::Digest.eq(&attachment.sha256))
+                .exec(&txn)
+                .await
+                .map_err(db_err)?;
+            txn.commit().await.map_err(db_err)?;
+            Ok((attachment, replayed))
+        }
+        .await;
+        let unlock = lock.release().await;
+        let attachment = result?;
+        unlock?;
+
+        Ok(attachment)
+    }
+
     pub async fn reconcile_stale(
         conn: &DatabaseConnection,
         store: &dyn AttachmentStore,
@@ -1301,6 +1917,162 @@ impl PgAttachmentLifecycle {
 
         Self::finish_purge_digest(conn, store, &current.digest).await
     }
+}
+
+async fn due_draft_ids(conn: &DatabaseConnection, limit: u64) -> Result<Vec<Uuid>, DomainError> {
+    comment_attachment_draft::Entity::find()
+        .filter(comment_attachment_draft::Column::State.eq("active"))
+        .filter(comment_attachment_draft::Column::ExpiresAt.lte(Utc::now()))
+        .order_by_asc(comment_attachment_draft::Column::ExpiresAt)
+        .order_by_asc(comment_attachment_draft::Column::Id)
+        .limit(limit)
+        .all(conn)
+        .await
+        .map(|drafts| drafts.into_iter().map(|draft| draft.id).collect())
+        .map_err(db_err)
+}
+
+async fn prunable_draft_ids(
+    conn: &DatabaseConnection,
+    limit: u64,
+) -> Result<Vec<Uuid>, DomainError> {
+    terminal_draft_query()
+        .order_by_asc(comment_attachment_draft::Column::TerminalAt)
+        .order_by_asc(comment_attachment_draft::Column::Id)
+        .limit(limit)
+        .all(conn)
+        .await
+        .map(|drafts| drafts.into_iter().map(|draft| draft.id).collect())
+        .map_err(db_err)
+}
+
+async fn count_due_drafts(conn: &DatabaseConnection) -> Result<u64, DomainError> {
+    comment_attachment_draft::Entity::find()
+        .filter(comment_attachment_draft::Column::State.eq("active"))
+        .filter(comment_attachment_draft::Column::ExpiresAt.lte(Utc::now()))
+        .count(conn)
+        .await
+        .map_err(db_err)
+}
+
+async fn count_prunable_drafts(conn: &DatabaseConnection) -> Result<u64, DomainError> {
+    terminal_draft_query().count(conn).await.map_err(db_err)
+}
+
+async fn prune_draft(
+    conn: &DatabaseConnection,
+    draft_id: CommentDraftId,
+) -> Result<bool, DomainError> {
+    let txn = conn.begin().await.map_err(db_err)?;
+    let claimed = terminal_draft_query()
+        .filter(comment_attachment_draft::Column::Id.eq(draft_id.0))
+        .lock_with_behavior(
+            sea_orm::sea_query::LockType::Update,
+            sea_orm::sea_query::LockBehavior::SkipLocked,
+        )
+        .one(&txn)
+        .await
+        .map_err(db_err)?
+        .is_some();
+
+    if !claimed {
+        txn.commit().await.map_err(db_err)?;
+        return Ok(false);
+    }
+
+    let attachments = attachment::Entity::find()
+        .filter(attachment::Column::DraftId.eq(draft_id.0))
+        .all(&txn)
+        .await
+        .map_err(db_err)?;
+    if attachments
+        .iter()
+        .any(|attachment| attachment.deleted_at.is_none())
+    {
+        txn.commit().await.map_err(db_err)?;
+        return Ok(false);
+    }
+    for attachment in &attachments {
+        if attachment_write_intent::Entity::find()
+            .filter(attachment_write_intent::Column::Digest.eq(&attachment.sha256))
+            .one(&txn)
+            .await
+            .map_err(db_err)?
+            .is_some()
+        {
+            txn.commit().await.map_err(db_err)?;
+            return Ok(false);
+        }
+    }
+    let uploads = comment_attachment_draft_upload::Entity::find()
+        .filter(comment_attachment_draft_upload::Column::DraftId.eq(draft_id.0))
+        .all(&txn)
+        .await
+        .map_err(db_err)?;
+    let original_attachment_ids = uploads
+        .iter()
+        .map(|upload| upload.original_attachment_id)
+        .collect::<Vec<_>>();
+    for upload in uploads {
+        let attachment = attachment::Entity::find_by_id(upload.original_attachment_id)
+            .one(&txn)
+            .await
+            .map_err(db_err)?;
+        let Some(attachment) = attachment else {
+            continue;
+        };
+        if attachment.deleted_at.is_none()
+            || attachment_write_intent::Entity::find()
+                .filter(attachment_write_intent::Column::Digest.eq(&attachment.sha256))
+                .one(&txn)
+                .await
+                .map_err(db_err)?
+                .is_some()
+        {
+            txn.commit().await.map_err(db_err)?;
+            return Ok(false);
+        }
+    }
+
+    comment_attachment_draft_upload::Entity::delete_many()
+        .filter(comment_attachment_draft_upload::Column::DraftId.eq(draft_id.0))
+        .exec(&txn)
+        .await
+        .map_err(db_err)?;
+    attachment::Entity::delete_many()
+        .filter(attachment::Column::DraftId.eq(draft_id.0))
+        .filter(attachment::Column::DeletedAt.is_not_null())
+        .exec(&txn)
+        .await
+        .map_err(db_err)?;
+    if !original_attachment_ids.is_empty() {
+        attachment::Entity::delete_many()
+            .filter(attachment::Column::Id.is_in(original_attachment_ids))
+            .filter(attachment::Column::DeletedAt.is_not_null())
+            .exec(&txn)
+            .await
+            .map_err(db_err)?;
+    }
+    comment_attachment_draft::Entity::delete_by_id(draft_id.0)
+        .exec(&txn)
+        .await
+        .map_err(db_err)?;
+    txn.commit().await.map_err(db_err)?;
+
+    Ok(true)
+}
+
+fn terminal_draft_query() -> sea_orm::Select<comment_attachment_draft::Entity> {
+    comment_attachment_draft::Entity::find()
+        .filter(comment_attachment_draft::Column::State.is_in([
+            "cancelled",
+            "expired",
+            "deleted_finalized",
+        ]))
+        .filter(
+            comment_attachment_draft::Column::TerminalAt
+                .lte(Utc::now() - chrono::Duration::days(7)),
+        )
 }
 
 async fn bounded_store_put(
@@ -1396,6 +2168,7 @@ impl PgAttachmentRepo {
             document_id: Set(new.document_id.map(|id| id.0)),
             task_id: Set(new.task_id.map(|id| id.0)),
             comment_id: Set(new.comment_id.map(|id| id.0)),
+            draft_id: Set(None),
             file_name: Set(new.file_name),
             content_type: Set(new.content_type),
             size_bytes: Set(new.size_bytes),

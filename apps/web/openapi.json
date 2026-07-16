@@ -2764,6 +2764,9 @@
           },
           "404": {
             "description": "Document not found"
+          },
+          "409": {
+            "description": "Document has retained comment draft state"
           }
         },
         "security": [
@@ -3061,6 +3064,242 @@
         ]
       }
     },
+    "/api/workspaces/{ws}/documents/{slug}/comment-drafts": {
+      "post": {
+        "tags": [
+          "documents"
+        ],
+        "operationId": "create_document_comment_draft",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-create-token",
+            "in": "header",
+            "description": "UUID replay token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentDraftDto"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentDraftDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": ""
+          },
+          "409": {
+            "description": ""
+          },
+          "410": {
+            "description": ""
+          },
+          "422": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/api/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}": {
+      "delete": {
+        "tags": [
+          "documents"
+        ],
+        "operationId": "cancel_document_comment_draft",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "draft_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "description": ""
+          },
+          "409": {
+            "description": ""
+          },
+          "410": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/api/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}/attachments": {
+      "post": {
+        "tags": [
+          "documents"
+        ],
+        "operationId": "upload_document_comment_draft_attachment",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "draft_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-file-name",
+            "in": "header",
+            "description": "Original attachment file name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-upload-token",
+            "in": "header",
+            "description": "UUID replay token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "int32",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentAttachmentDto"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentAttachmentDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": ""
+          },
+          "409": {
+            "description": ""
+          },
+          "410": {
+            "description": ""
+          },
+          "413": {
+            "description": ""
+          },
+          "422": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/api/workspaces/{ws}/documents/{slug}/comments": {
       "get": {
         "tags": [
@@ -3179,6 +3418,16 @@
           "required": true
         },
         "responses": {
+          "200": {
+            "description": "Draft comment finalization replay",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentDto"
+                }
+              }
+            }
+          },
           "201": {
             "description": "Comment created",
             "content": {
@@ -3197,6 +3446,12 @@
           },
           "404": {
             "description": "Document not found"
+          },
+          "409": {
+            "description": "Draft finalization conflict"
+          },
+          "410": {
+            "description": "Draft is terminal"
           },
           "422": {
             "description": "Comment body is blank or exceeds the maximum length"
@@ -3387,6 +3642,9 @@
           },
           "404": {
             "description": ""
+          },
+          "410": {
+            "description": "Draft attachment is terminal"
           }
         },
         "security": [
@@ -3520,9 +3778,35 @@
         ],
         "responses": {
           "200": {
-            "description": "Binary attachment content"
+            "description": "Binary attachment content",
+            "headers": {
+              "Content-Disposition": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "RFC 5987 attachment filename"
+              },
+              "Content-Type": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Stored attachment media type"
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Always nosniff"
+              }
+            },
+            "content": {
+              "application/octet-stream": {}
+            }
           },
           "404": {
+            "description": ""
+          },
+          "410": {
             "description": ""
           }
         },
@@ -3577,6 +3861,9 @@
           },
           "404": {
             "description": ""
+          },
+          "410": {
+            "description": "Draft attachment is terminal"
           }
         },
         "security": [
@@ -8857,6 +9144,228 @@
         ]
       }
     },
+    "/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts": {
+      "post": {
+        "tags": [
+          "tasks"
+        ],
+        "operationId": "create_task_comment_draft",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "readable_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-create-token",
+            "in": "header",
+            "description": "UUID replay token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentDraftDto"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentDraftDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": ""
+          },
+          "409": {
+            "description": ""
+          },
+          "410": {
+            "description": ""
+          },
+          "422": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}": {
+      "delete": {
+        "tags": [
+          "tasks"
+        ],
+        "operationId": "cancel_task_comment_draft",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "readable_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "draft_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "description": ""
+          },
+          "409": {
+            "description": ""
+          },
+          "410": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}/attachments": {
+      "post": {
+        "tags": [
+          "tasks"
+        ],
+        "operationId": "upload_task_comment_draft_attachment",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "readable_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "draft_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-upload-token",
+            "in": "header",
+            "description": "UUID replay token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentAttachmentDto"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentAttachmentDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": ""
+          },
+          "409": {
+            "description": ""
+          },
+          "410": {
+            "description": ""
+          },
+          "413": {
+            "description": ""
+          },
+          "422": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/api/workspaces/{ws}/tasks/{readable_id}/comments": {
       "get": {
         "tags": [
@@ -8943,7 +9452,7 @@
         "tags": [
           "tasks"
         ],
-        "operationId": "create_comment",
+        "operationId": "create_task_comment",
         "parameters": [
           {
             "name": "ws",
@@ -8975,6 +9484,16 @@
           "required": true
         },
         "responses": {
+          "200": {
+            "description": "Draft comment finalization replay",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentDto"
+                }
+              }
+            }
+          },
           "201": {
             "description": "Comment created",
             "content": {
@@ -8993,6 +9512,12 @@
           },
           "404": {
             "description": "Task not found"
+          },
+          "409": {
+            "description": "Draft finalization conflict"
+          },
+          "410": {
+            "description": "Draft is terminal"
           },
           "422": {
             "description": "Comment body is blank or exceeds the maximum length"
@@ -9183,6 +9708,9 @@
           },
           "404": {
             "description": ""
+          },
+          "410": {
+            "description": "Draft attachment is terminal"
           }
         },
         "security": [
@@ -9309,6 +9837,9 @@
           },
           "404": {
             "description": ""
+          },
+          "410": {
+            "description": "Draft attachment is terminal"
           }
         },
         "security": [
@@ -9360,9 +9891,35 @@
         ],
         "responses": {
           "200": {
-            "description": "Binary attachment content"
+            "description": "Binary attachment content",
+            "headers": {
+              "Content-Disposition": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "RFC 5987 attachment filename"
+              },
+              "Content-Type": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Stored attachment media type"
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Always nosniff"
+              }
+            },
+            "content": {
+              "application/octet-stream": {}
+            }
           },
           "404": {
+            "description": ""
+          },
+          "410": {
             "description": ""
           }
         },
@@ -11077,12 +11634,24 @@
             "type": "string",
             "format": "uuid"
           },
+          "markdown": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "sha256": {
             "type": "string"
           },
           "size_bytes": {
             "type": "integer",
             "format": "int64"
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -11165,6 +11734,24 @@
           },
           "type": {
             "type": "string"
+          }
+        }
+      },
+      "CommentDraftDto": {
+        "type": "object",
+        "description": "A private, reserved comment identity used to attach files before publication.",
+        "required": [
+          "id",
+          "expires_at"
+        ],
+        "properties": {
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
           }
         }
       },
@@ -11483,6 +12070,13 @@
         "properties": {
           "body": {
             "type": "string"
+          },
+          "draft_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
           }
         }
       },

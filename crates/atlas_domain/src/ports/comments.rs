@@ -1,10 +1,11 @@
 use crate::{
     DomainError, WorkspaceCtx,
     entities::comments::{
-        Comment, CommentBacklink, CommentFeedCursor, CommentFeedPage, CommentLink,
-        CommentLinkTarget, CommentOwner, NewComment,
+        Comment, CommentAttachmentDraft, CommentAttachmentDraftUpload, CommentBacklink,
+        CommentFeedCursor, CommentFeedPage, CommentLink, CommentLinkTarget, CommentOwner,
+        NewComment, NewCommentAttachmentDraft, NewCommentAttachmentDraftUpload,
     },
-    ids::CommentId,
+    ids::{CommentDraftId, CommentId},
     wikilink::CommentLinkCandidate,
 };
 use async_trait::async_trait;
@@ -44,6 +45,46 @@ pub trait CommentRepo: Send + Sync {
         owner: CommentOwner,
         id: CommentId,
     ) -> Result<(), DomainError>;
+}
+
+#[async_trait]
+pub trait CommentAttachmentDraftRepo: Send + Sync {
+    async fn create_or_replay(
+        &self,
+        ctx: &WorkspaceCtx,
+        new: NewCommentAttachmentDraft,
+    ) -> Result<CommentAttachmentDraft, DomainError>;
+
+    async fn get_for_owner_and_creator(
+        &self,
+        ctx: &WorkspaceCtx,
+        owner: CommentOwner,
+        id: CommentDraftId,
+    ) -> Result<Option<CommentAttachmentDraft>, DomainError>;
+
+    async fn record_upload_or_replay(
+        &self,
+        ctx: &WorkspaceCtx,
+        owner: CommentOwner,
+        draft_id: CommentDraftId,
+        new: NewCommentAttachmentDraftUpload,
+    ) -> Result<CommentAttachmentDraftUpload, DomainError>;
+
+    async fn tombstone_upload(
+        &self,
+        ctx: &WorkspaceCtx,
+        owner: CommentOwner,
+        draft_id: CommentDraftId,
+        upload_token: &str,
+    ) -> Result<(), DomainError>;
+
+    async fn get_upload_for_original_attachment_id(
+        &self,
+        ctx: &WorkspaceCtx,
+        owner: CommentOwner,
+        draft_id: CommentDraftId,
+        original_attachment_id: crate::ids::AttachmentId,
+    ) -> Result<Option<CommentAttachmentDraftUpload>, DomainError>;
 }
 
 #[async_trait]

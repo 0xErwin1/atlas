@@ -4,11 +4,12 @@ use axum::{
     Json,
     body::Body,
     extract::{Multipart, Path, Query, State},
-    http::{StatusCode, header},
+    http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Response},
 };
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use serde::Deserialize;
+use sha2::Digest;
 
 use atlas_api::{
     dtos::boards_tasks::{
@@ -22,17 +23,21 @@ use atlas_api::{
     },
     dtos::documents::{
         ActorDto, CommentAttachmentDto, CommentBacklinkParentDto, CommentBacklinkSourceDto,
+        CommentDraftDto,
     },
     pagination::{Cursor, Page, SearchCursor, SortKey},
 };
 use atlas_domain::{
-    Actor, WorkspaceCtx,
+    Actor, DomainError, WorkspaceCtx,
     entities::boards_tasks::{
         AssigneeRef, Board, BoardColumn, NewTask, NewTaskChecklistItem, NewTaskReference,
         PositionBetween, Priority, Task, TaskActivity, TaskAssignee, TaskChecklistItem, TaskPatch,
         TaskReference,
     },
-    entities::comments::{CommentLinkTarget, CommentOwner},
+    entities::comments::{
+        CommentDraftMetadata, CommentLinkTarget, CommentOwner, NewCommentAttachmentDraftUpload,
+        comment_draft_upload_digest_input,
+    },
     entities::documents::{
         AttachmentOwner, NewAttachment, RankedTaskDescriptionLink, rank_task_description_links,
     },
@@ -40,8 +45,8 @@ use atlas_domain::{
     entities::task_views::{ActorTypeFilter, AssigneeFilter, TaskSort, TaskViewFilters},
     entities::workspace_core::{AppliesTo, PropertyDefinition},
     ids::{
-        ApiKeyId, AttachmentId, BoardId, ChecklistItemId, ColumnId, CommentId, DocumentId,
-        TaskActivityId, TaskId, TaskReferenceId, UserId,
+        ApiKeyId, AttachmentId, BoardId, ChecklistItemId, ColumnId, CommentDraftId, CommentId,
+        DocumentId, TaskActivityId, TaskId, TaskReferenceId, UserId,
     },
     permissions::{
         Capability, CapabilityAction, CapabilityFamily, ChainSegment, Principal, ResolutionInput,
@@ -49,7 +54,7 @@ use atlas_domain::{
     },
     ports::{
         boards_tasks::{WorkspaceActivityFilters, WorkspaceActivityScope},
-        comments::{CommentLinkRepo, CommentRepo},
+        comments::{CommentAttachmentDraftRepo, CommentLinkRepo, CommentRepo},
         documents::DocumentLinkRepo,
     },
 };
@@ -74,6 +79,7 @@ use crate::{
         TaskActivityRepo, TaskAssigneeRepo, TaskChecklistRepo, TaskReferenceRepo, TaskRepo,
         UserRepo,
     },
+    routes::comment_attachment_markdown,
     routes::comments::{
         comment_to_dto, decode_feed_cursor, enrich_comment_entries, project_comment_feed,
     },
@@ -82,6 +88,7 @@ use crate::{
         validate_comment_body, validate_custom_entry_count, validate_custom_properties,
         validate_description, validate_labels, validate_name, validate_upload,
     },
+    services::CommentDraftService,
     state::AppState,
 };
 
@@ -139,6 +146,7 @@ pub(crate) struct CommentPath {
     ws: String,
     #[allow(dead_code)]
     readable_id: String,
+    #[serde(alias = "draft_id")]
     comment_id: uuid::Uuid,
 }
 
@@ -150,6 +158,120 @@ pub(crate) struct CommentAttachmentPath {
     readable_id: String,
     comment_id: uuid::Uuid,
     attachment_id: uuid::Uuid,
+}
+
+fn comment_draft_to_dto(
+    draft: atlas_domain::entities::comments::CommentAttachmentDraft,
+) -> CommentDraftDto {
+    CommentDraftDto {
+        id: draft.id.0,
+        expires_at: draft.expires_at,
+    }
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts",
+    operation_id = "create_task_comment_draft",
+    tag = "tasks",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path),
+        ("readable_id" = String, Path),
+        ("x-create-token" = String, Header, description = "UUID replay token"),
+    ),
+    responses(
+        (status = 201, body = CommentDraftDto),
+        (status = 200, body = CommentDraftDto),
+        (status = 404),
+        (status = 409),
+        (status = 410),
+        (status = 422),
+    )
+)]
+pub(crate) async fn create_comment_draft(
+    auth: Authorized<TaskRes, EditorMin, TasksUpdate>,
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<(StatusCode, Json<CommentDraftDto>), ApiError> {
+    let create_token = headers
+        .get("x-create-token")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<uuid::Uuid>().ok())
+        .ok_or_else(|| ApiError::InvalidInput {
+            message: "x-create-token must be a UUID".into(),
+        })?
+        .to_string();
+    let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
+    let service =
+        CommentDraftService::new(std::sync::Arc::new(state.comment_attachment_draft_repo()));
+    let result = service
+        .create_or_replay(
+            &ctx,
+            CommentOwner::Task(auth.resource.0.id),
+            create_token,
+            chrono::Utc::now() + chrono::Duration::hours(24),
+        )
+        .await
+        .map_err(ApiError::Domain)?;
+
+    let status = if result.replayed {
+        StatusCode::OK
+    } else {
+        StatusCode::CREATED
+    };
+
+    Ok((status, Json(comment_draft_to_dto(result.draft))))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}",
+    operation_id = "cancel_task_comment_draft",
+    tag = "tasks",
+    security(("bearer_auth" = [])),
+    params(("ws" = String, Path), ("readable_id" = String, Path), ("draft_id" = String, Path)),
+    responses((status = 204), (status = 404), (status = 409), (status = 410))
+)]
+pub(crate) async fn cancel_comment_draft(
+    auth: Authorized<TaskRes, EditorMin, TasksUpdate>,
+    Path(path): Path<CommentPath>,
+    State(state): State<AppState>,
+) -> Result<StatusCode, ApiError> {
+    let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
+    let draft_id = CommentDraftId(path.comment_id);
+    let draft = state
+        .comment_attachment_draft_repo()
+        .get_for_owner_and_creator(&ctx, CommentOwner::Task(auth.resource.0.id), draft_id)
+        .await
+        .map_err(ApiError::Domain)?
+        .ok_or(ApiError::NotFound)?;
+
+    if draft.state == atlas_domain::entities::comments::CommentAttachmentDraftState::Finalized {
+        return Err(ApiError::Domain(
+            atlas_domain::DomainError::CommentDraftConflict {
+                reason: "draft is already finalized".into(),
+            },
+        ));
+    }
+
+    if draft.state != atlas_domain::entities::comments::CommentAttachmentDraftState::Active {
+        return Err(ApiError::Domain(
+            atlas_domain::DomainError::CommentDraftGone {
+                reason: "draft is no longer active".into(),
+            },
+        ));
+    }
+
+    PgAttachmentLifecycle::cancel_draft(
+        state.db.as_ref(),
+        &ctx,
+        draft_id,
+        state.attachments.as_ref(),
+    )
+    .await
+    .map_err(ApiError::Domain)?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 // ---------------------------------------------------------------------------
@@ -1968,19 +2090,58 @@ pub(crate) async fn upload_comment_attachment(
     auth: Authorized<TaskRes, ViewerMin, TasksUpdate>,
     Path(path): Path<CommentPath>,
     State(state): State<AppState>,
+    headers: HeaderMap,
+    multipart: Multipart,
+) -> Result<impl IntoResponse, ApiError> {
+    upload_comment_attachment_for_path(auth, path, state, headers, multipart, false).await
+}
+
+async fn upload_comment_attachment_for_path(
+    auth: Authorized<TaskRes, ViewerMin, TasksUpdate>,
+    path: CommentPath,
+    state: AppState,
+    headers: HeaderMap,
     mut multipart: Multipart,
+    force_draft: bool,
 ) -> Result<impl IntoResponse, ApiError> {
     let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
     let owner = CommentOwner::Task(auth.resource.0.id);
-    let comment = PgCommentRepo::new((*state.db).clone())
-        .get_for_owner(&ctx, owner, CommentId(path.comment_id))
-        .await
-        .map_err(ApiError::Domain)?;
+    let draft_id = CommentDraftId(path.comment_id);
+    let comment = if force_draft {
+        None
+    } else {
+        match PgCommentRepo::new((*state.db).clone())
+            .get_for_owner(&ctx, owner, CommentId(path.comment_id))
+            .await
+        {
+            Ok(comment) => Some(comment),
+            Err(DomainError::NotFound { .. }) => None,
+            Err(error) => return Err(ApiError::Domain(error)),
+        }
+    };
+    let draft = if comment.is_none() {
+        let draft = state
+            .comment_attachment_draft_repo()
+            .get_for_owner_and_creator(&ctx, owner, draft_id)
+            .await
+            .map_err(ApiError::Domain)?;
+
+        if force_draft {
+            Some(draft.ok_or(ApiError::NotFound)?)
+        } else {
+            draft
+        }
+    } else {
+        None
+    };
     let can_moderate = matches!(
         auth.membership,
         Some(MemberRole::Owner) | Some(MemberRole::Admin)
     );
-    if comment.created_by != ctx.actor && !can_moderate {
+    if let Some(comment) = &comment
+        && comment.created_by != ctx.actor
+        && !can_moderate
+    {
         return Err(ApiError::Domain(atlas_domain::DomainError::Forbidden {
             message: "only the comment's author or a workspace admin/owner may manage attachments"
                 .into(),
@@ -2031,13 +2192,95 @@ pub(crate) async fn upload_comment_attachment(
         &data,
         state.upload_allowed_extensions.as_deref(),
     )?;
+    if let Some(draft) = draft {
+        if draft.state == atlas_domain::entities::comments::CommentAttachmentDraftState::Finalized {
+            return Err(ApiError::Domain(
+                atlas_domain::DomainError::CommentDraftConflict {
+                    reason: "draft is already finalized".into(),
+                },
+            ));
+        }
+
+        if draft.state != atlas_domain::entities::comments::CommentAttachmentDraftState::Active {
+            return Err(ApiError::Domain(
+                atlas_domain::DomainError::CommentDraftGone {
+                    reason: "draft is no longer active".into(),
+                },
+            ));
+        }
+        let upload_token = headers
+            .get("x-upload-token")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.parse::<uuid::Uuid>().ok())
+            .ok_or_else(|| ApiError::InvalidInput {
+                message: "x-upload-token must be a UUID".into(),
+            })?
+            .to_string();
+        let metadata =
+            CommentDraftMetadata::normalize(&file_name, &content_type).map_err(ApiError::Domain)?;
+        let payload_digest = sha2::Sha256::digest(&data).to_vec();
+        let request_digest = sha2::Sha256::digest(comment_draft_upload_digest_input(
+            draft.id.0,
+            &upload_token,
+            &metadata.file_name,
+            &metadata.content_type,
+            data.len() as i64,
+            &payload_digest,
+        ))
+        .to_vec();
+        let (attachment, replayed) = PgAttachmentLifecycle::store_and_record_draft(
+            state.db.as_ref(),
+            &ctx,
+            owner,
+            draft.id,
+            NewCommentAttachmentDraftUpload {
+                attachment_id: None,
+                upload_token,
+                request_digest,
+                payload_digest,
+                metadata,
+                size_bytes: data.len() as i64,
+            },
+            &data,
+            state.attachments.as_ref(),
+        )
+        .await
+        .map_err(ApiError::Domain)?;
+        let url = format!(
+            "/api/workspaces/{}/tasks/{}/comments/{}/attachments/{attachment_id}/content",
+            auth.workspace.slug,
+            auth.resource.0.readable_id,
+            draft.id.0,
+            attachment_id = attachment.id.0,
+        );
+        let mut dto = comment_attachment_to_dto(attachment);
+        dto.comment_id = draft.id.0;
+        dto.url = Some(url.clone());
+        dto.markdown = Some(comment_attachment_markdown(
+            &dto.file_name,
+            &dto.content_type,
+            &url,
+        ));
+        let status = if replayed {
+            StatusCode::OK
+        } else {
+            StatusCode::CREATED
+        };
+        return Ok((status, Json(dto)));
+    }
+
+    let comment_id = comment
+        .map(|comment| comment.id)
+        .ok_or_else(|| ApiError::Internal {
+            message: "published comment was not resolved".into(),
+        })?;
     let attachment = PgAttachmentLifecycle::store_and_record(
         state.db.as_ref(),
         &ctx,
         NewAttachment {
             document_id: None,
             task_id: None,
-            comment_id: Some(comment.id),
+            comment_id: Some(comment_id),
             file_name,
             content_type,
             size_bytes: data.len() as i64,
@@ -2055,13 +2298,50 @@ pub(crate) async fn upload_comment_attachment(
 }
 
 #[utoipa::path(
+    post,
+    path = "/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}/attachments",
+    operation_id = "upload_task_comment_draft_attachment",
+    tag = "tasks",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path),
+        ("readable_id" = String, Path),
+        ("draft_id" = String, Path),
+        ("x-upload-token" = String, Header, description = "UUID replay token"),
+    ),
+    request_body(content = String, content_type = "multipart/form-data"),
+    responses(
+        (status = 201, body = CommentAttachmentDto),
+        (status = 200, body = CommentAttachmentDto),
+        (status = 404),
+        (status = 409),
+        (status = 410),
+        (status = 413),
+        (status = 422),
+    )
+)]
+pub(crate) async fn upload_comment_draft_attachment(
+    auth: Authorized<TaskRes, ViewerMin, TasksUpdate>,
+    path: Path<CommentPath>,
+    state: State<AppState>,
+    headers: HeaderMap,
+    multipart: Multipart,
+) -> Result<impl IntoResponse, ApiError> {
+    upload_comment_attachment_for_path(auth, path.0, state.0, headers, multipart, true).await
+}
+
+#[utoipa::path(
     get,
     path = "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments",
     operation_id = "list_task_comment_attachments",
     tag = "tasks",
     security(("bearer_auth" = [])),
     params(("ws" = String, Path), ("readable_id" = String, Path), ("comment_id" = String, Path)),
-    responses((status = 200, body = Vec<CommentAttachmentDto>), (status = 404))
+    responses(
+        (status = 200, body = Vec<CommentAttachmentDto>),
+        (status = 404),
+        (status = 410, description = "Draft attachment is terminal"),
+    )
 )]
 pub(crate) async fn list_comment_attachments(
     auth: Authorized<TaskRes, ViewerMin, TasksRead>,
@@ -2070,6 +2350,55 @@ pub(crate) async fn list_comment_attachments(
 ) -> Result<Json<Vec<CommentAttachmentDto>>, ApiError> {
     let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
     let comment_id = CommentId(path.comment_id);
+    let draft_id = CommentDraftId(path.comment_id);
+    let draft_repo = state.comment_attachment_draft_repo();
+
+    if let Some(draft) = draft_repo
+        .get_for_owner_and_creator(&ctx, CommentOwner::Task(auth.resource.0.id), draft_id)
+        .await
+        .map_err(ApiError::Domain)?
+    {
+        if draft.state != atlas_domain::entities::comments::CommentAttachmentDraftState::Active
+            && draft.state
+                != atlas_domain::entities::comments::CommentAttachmentDraftState::Finalized
+        {
+            return Err(ApiError::Domain(
+                atlas_domain::DomainError::CommentDraftGone {
+                    reason: "draft is no longer active".into(),
+                },
+            ));
+        }
+
+        if draft.state == atlas_domain::entities::comments::CommentAttachmentDraftState::Finalized {
+            // Fall through to the published comment owner below.
+        } else {
+            let items = PgAttachmentLifecycle::list_active_draft_attachments(
+                state.db.as_ref(),
+                &ctx,
+                CommentOwner::Task(auth.resource.0.id),
+                draft_id,
+            )
+            .await
+            .map_err(ApiError::Domain)?;
+
+            return Ok(Json(
+                items
+                    .into_iter()
+                    .map(|attachment| {
+                        let url = format!(
+                            "/api/workspaces/{}/tasks/{}/comments/{}/attachments/{}/content",
+                            auth.workspace.slug,
+                            auth.resource.0.readable_id,
+                            draft_id.0,
+                            attachment.id.0,
+                        );
+                        comment_attachment_to_dto_with_url(attachment, draft_id.0, url)
+                    })
+                    .collect(),
+            ));
+        }
+    }
+
     PgCommentRepo::new((*state.db).clone())
         .get_for_owner(&ctx, CommentOwner::Task(auth.resource.0.id), comment_id)
         .await
@@ -2081,7 +2410,16 @@ pub(crate) async fn list_comment_attachments(
     .await
     .map_err(ApiError::Domain)?;
     Ok(Json(
-        items.into_iter().map(comment_attachment_to_dto).collect(),
+        items
+            .into_iter()
+            .map(|attachment| {
+                let url = format!(
+                    "/api/workspaces/{}/tasks/{}/comments/{}/attachments/{}/content",
+                    auth.workspace.slug, auth.resource.0.readable_id, comment_id.0, attachment.id.0,
+                );
+                comment_attachment_to_dto_with_url(attachment, comment_id.0, url)
+            })
+            .collect(),
     ))
 }
 
@@ -2092,7 +2430,15 @@ pub(crate) async fn list_comment_attachments(
     tag = "tasks",
     security(("bearer_auth" = [])),
     params(("ws" = String, Path), ("readable_id" = String, Path), ("comment_id" = String, Path), ("attachment_id" = String, Path)),
-    responses((status = 200, description = "Binary attachment content"), (status = 404))
+    responses(
+        (status = 200, description = "Binary attachment content", content_type = "application/octet-stream", headers(
+            ("Content-Type" = String, description = "Stored attachment media type"),
+            ("Content-Disposition" = String, description = "RFC 5987 attachment filename"),
+            ("X-Content-Type-Options" = String, description = "Always nosniff"),
+        )),
+        (status = 404),
+        (status = 410),
+    )
 )]
 pub(crate) async fn download_comment_attachment(
     auth: Authorized<TaskRes, ViewerMin, TasksRead>,
@@ -2101,10 +2447,60 @@ pub(crate) async fn download_comment_attachment(
 ) -> Result<Response, ApiError> {
     let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
     let comment_id = CommentId(path.comment_id);
+    let draft_id = CommentDraftId(path.comment_id);
+    let draft_repo = state.comment_attachment_draft_repo();
+
+    if let Some(draft) = draft_repo
+        .get_for_owner_and_creator(&ctx, CommentOwner::Task(auth.resource.0.id), draft_id)
+        .await
+        .map_err(ApiError::Domain)?
+    {
+        if draft.state != atlas_domain::entities::comments::CommentAttachmentDraftState::Active
+            && draft.state
+                != atlas_domain::entities::comments::CommentAttachmentDraftState::Finalized
+        {
+            return Err(ApiError::Domain(
+                atlas_domain::DomainError::CommentDraftGone {
+                    reason: "draft is no longer active".into(),
+                },
+            ));
+        }
+
+        if draft.state == atlas_domain::entities::comments::CommentAttachmentDraftState::Finalized {
+            // Fall through to the published comment owner below.
+        } else {
+            let attachment = PgAttachmentLifecycle::find_active_draft_attachment(
+                state.db.as_ref(),
+                &ctx,
+                CommentOwner::Task(auth.resource.0.id),
+                draft_id,
+                AttachmentId(path.attachment_id),
+            )
+            .await
+            .map_err(ApiError::Domain)?;
+
+            return comment_attachment_response(&state, attachment).await;
+        }
+    }
+
     PgCommentRepo::new((*state.db).clone())
         .get_for_owner(&ctx, CommentOwner::Task(auth.resource.0.id), comment_id)
         .await
         .map_err(ApiError::Domain)?;
+    if PgAttachmentLifecycle::is_tombstoned_draft_attachment(
+        state.db.as_ref(),
+        draft_id,
+        AttachmentId(path.attachment_id),
+    )
+    .await
+    .map_err(ApiError::Domain)?
+    {
+        return Err(ApiError::Domain(
+            atlas_domain::DomainError::CommentDraftGone {
+                reason: "draft attachment was deleted".into(),
+            },
+        ));
+    }
     let attachment = PgAttachmentRepo {
         conn: (*state.db).clone(),
     }
@@ -2123,7 +2519,11 @@ pub(crate) async fn download_comment_attachment(
     tag = "tasks",
     security(("bearer_auth" = [])),
     params(("ws" = String, Path), ("readable_id" = String, Path), ("comment_id" = String, Path), ("attachment_id" = String, Path)),
-    responses((status = 204), (status = 404))
+    responses(
+        (status = 204),
+        (status = 404),
+        (status = 410, description = "Draft attachment is terminal"),
+    )
 )]
 pub(crate) async fn delete_comment_attachment(
     auth: Authorized<TaskRes, ViewerMin, TasksUpdate>,
@@ -2132,6 +2532,43 @@ pub(crate) async fn delete_comment_attachment(
 ) -> Result<StatusCode, ApiError> {
     let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
     let comment_id = CommentId(path.comment_id);
+    let draft_id = CommentDraftId(path.comment_id);
+    let draft_repo = state.comment_attachment_draft_repo();
+
+    if let Some(draft) = draft_repo
+        .get_for_owner_and_creator(&ctx, CommentOwner::Task(auth.resource.0.id), draft_id)
+        .await
+        .map_err(ApiError::Domain)?
+    {
+        if draft.state != atlas_domain::entities::comments::CommentAttachmentDraftState::Active
+            && draft.state
+                != atlas_domain::entities::comments::CommentAttachmentDraftState::Finalized
+        {
+            return Err(ApiError::Domain(
+                atlas_domain::DomainError::CommentDraftGone {
+                    reason: "draft is no longer active".into(),
+                },
+            ));
+        }
+
+        if draft.state == atlas_domain::entities::comments::CommentAttachmentDraftState::Finalized {
+            // Fall through to the published comment owner below.
+        } else {
+            PgAttachmentLifecycle::delete_draft_attachment(
+                state.db.as_ref(),
+                &ctx,
+                CommentOwner::Task(auth.resource.0.id),
+                draft_id,
+                AttachmentId(path.attachment_id),
+                state.attachments.as_ref(),
+            )
+            .await
+            .map_err(ApiError::Domain)?;
+
+            return Ok(StatusCode::NO_CONTENT);
+        }
+    }
+
     let comment = PgCommentRepo::new((*state.db).clone())
         .get_for_owner(&ctx, CommentOwner::Task(auth.resource.0.id), comment_id)
         .await
@@ -2147,6 +2584,20 @@ pub(crate) async fn delete_comment_attachment(
         }));
     }
     let attachment_id = AttachmentId(path.attachment_id);
+    if PgAttachmentLifecycle::is_tombstoned_draft_attachment(
+        state.db.as_ref(),
+        draft_id,
+        attachment_id,
+    )
+    .await
+    .map_err(ApiError::Domain)?
+    {
+        return Err(ApiError::Domain(
+            atlas_domain::DomainError::CommentDraftGone {
+                reason: "draft attachment was deleted".into(),
+            },
+        ));
+    }
     PgAttachmentLifecycle::delete_comment_attachment(
         state.db.as_ref(),
         &ctx,
@@ -2162,12 +2613,21 @@ pub(crate) async fn delete_comment_attachment(
 fn comment_attachment_to_dto(
     attachment: atlas_domain::entities::documents::Attachment,
 ) -> CommentAttachmentDto {
+    let comment_id = attachment
+        .comment_id
+        .map(|id| id.0)
+        .unwrap_or_else(uuid::Uuid::nil);
+
+    comment_attachment_to_dto_with_comment_id(attachment, comment_id)
+}
+
+fn comment_attachment_to_dto_with_comment_id(
+    attachment: atlas_domain::entities::documents::Attachment,
+    comment_id: uuid::Uuid,
+) -> CommentAttachmentDto {
     CommentAttachmentDto {
         id: attachment.id.0,
-        comment_id: attachment
-            .comment_id
-            .map(|id| id.0)
-            .unwrap_or_else(uuid::Uuid::nil),
+        comment_id,
         file_name: attachment.file_name,
         content_type: attachment.content_type,
         size_bytes: attachment.size_bytes,
@@ -2181,7 +2641,24 @@ fn comment_attachment_to_dto(
                     .map(|id| actor_to_dto(&Actor::ApiKey(id)))
             }),
         created_at: attachment.created_at,
+        url: None,
+        markdown: None,
     }
+}
+
+fn comment_attachment_to_dto_with_url(
+    attachment: atlas_domain::entities::documents::Attachment,
+    comment_id: uuid::Uuid,
+    url: String,
+) -> CommentAttachmentDto {
+    let mut dto = comment_attachment_to_dto_with_comment_id(attachment, comment_id);
+    dto.markdown = Some(comment_attachment_markdown(
+        &dto.file_name,
+        &dto.content_type,
+        &url,
+    ));
+    dto.url = Some(url);
+    dto
 }
 
 async fn comment_attachment_response(
@@ -2906,6 +3383,7 @@ pub(crate) async fn list_comments(
 #[utoipa::path(
     post,
     path = "/api/workspaces/{ws}/tasks/{readable_id}/comments",
+    operation_id = "create_task_comment",
     tag = "tasks",
     security(("bearer_auth" = [])),
     params(
@@ -2915,9 +3393,12 @@ pub(crate) async fn list_comments(
     request_body = CreateCommentRequest,
     responses(
         (status = 201, description = "Comment created", body = CommentDto),
+        (status = 200, description = "Draft comment finalization replay", body = CommentDto),
         (status = 401, description = "Unauthenticated"),
         (status = 403, description = "Insufficient permissions"),
         (status = 404, description = "Task not found"),
+        (status = 409, description = "Draft finalization conflict"),
+        (status = 410, description = "Draft is terminal"),
         (status = 422, description = "Comment body is blank or exceeds the maximum length"),
     )
 )]
@@ -2933,14 +3414,33 @@ pub(crate) async fn create_comment(
 
     let task_id = auth.resource.0.id;
 
-    let comment = state
-        .task_service()
-        .add_comment(&ctx, task_id, body.body)
-        .await
-        .map_err(ApiError::Domain)?;
+    let (comment, status) = if let Some(draft_id) = body.draft_id {
+        let result = state
+            .task_service()
+            .finalize_comment_draft(&ctx, task_id, CommentDraftId(draft_id), body.body)
+            .await
+            .map_err(ApiError::Domain)?;
+        (
+            result.comment,
+            if result.replayed {
+                StatusCode::OK
+            } else {
+                StatusCode::CREATED
+            },
+        )
+    } else {
+        (
+            state
+                .task_service()
+                .add_comment(&ctx, task_id, body.body)
+                .await
+                .map_err(ApiError::Domain)?,
+            StatusCode::CREATED,
+        )
+    };
 
     let dto = comment_to_dto(&state, &ctx, CommentOwner::Task(task_id), comment).await;
-    Ok((StatusCode::CREATED, Json(dto)))
+    Ok((status, Json(dto)))
 }
 
 // ---------------------------------------------------------------------------

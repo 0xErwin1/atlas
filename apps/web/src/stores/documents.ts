@@ -359,7 +359,7 @@ export const useDocumentsStore = defineStore('documents', () => {
     commentsStatus.value = 'ready';
   }
 
-  async function addComment(ws: string, slug: string, body: string): Promise<boolean> {
+  async function addComment(ws: string, slug: string, body: string, draftId?: string): Promise<boolean> {
     const target = { workspaceSlug: ws, slug };
     const generation = commentsTargetEpoch;
     if (!isCurrentCommentsTarget(target, generation)) return false;
@@ -368,7 +368,10 @@ export const useDocumentsStore = defineStore('documents', () => {
 
     const { data, error: apiError } = await wrappedClient.POST(
       '/api/workspaces/{ws}/documents/{slug}/comments',
-      { params: { path: { ws, slug } }, body: { body } },
+      {
+        params: { path: { ws, slug } },
+        body: draftId === undefined ? { body } : { body, draft_id: draftId },
+      },
     );
 
     if (apiError !== undefined || data === undefined) {
