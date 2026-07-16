@@ -88,9 +88,17 @@
               pkgs.xorg-server
             ];
 
-            dotenv.enable = true;
-
+            # devenv's dotenv module reads .env during evaluation, through the
+            # flake source — which holds only git-tracked files. .env is ignored,
+            # so it never reaches the Nix store and the module silently loads
+            # nothing. Sourcing at shell entry reads the real working directory
+            # instead, which is the only point where .env is visible.
             enterShell = ''
+              if [ -f "$DEVENV_ROOT/.env" ]; then
+                set -a
+                . "$DEVENV_ROOT/.env"
+                set +a
+              fi
               echo "Atlas dev shell (Rust 1.96, pnpm, devenv, podman)"
             '';
 
@@ -107,7 +115,10 @@
                 cargo clippy --workspace --all-targets -- -D warnings
               '';
 
-              fmt.exec = ''
+              # Named `format`, not `fmt`: nixpkgs' stdenv sits ahead of devenv's
+              # scripts on PATH, so a script called `fmt` resolves to coreutils'
+              # and is unreachable under its own name.
+              format.exec = ''
                 set -euo pipefail
                 cd "$DEVENV_ROOT"
                 cargo fmt --all
