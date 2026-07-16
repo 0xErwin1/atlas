@@ -1,4 +1,5 @@
 export DATABASE_URL := env_var_or_default("DATABASE_URL", "postgres://atlas:atlas@localhost:5432/atlas_dev")
+export ATLAS_TEST_DATABASE_URL := env_var_or_default("ATLAS_TEST_DATABASE_URL", "postgres://atlas:atlas@localhost:5432/atlas_dev")
 
 default:
     @just --list
@@ -48,12 +49,12 @@ db-reset:
 db-clean-tests:
     #!/usr/bin/env bash
     set -e
-    psql "$DATABASE_URL" -tc "SELECT datname FROM pg_database WHERE datname LIKE 'atlas_test_%'" \
+    psql "$ATLAS_TEST_DATABASE_URL" -tc "SELECT datname FROM pg_database WHERE datname LIKE 'atlas_test_%'" \
         | while IFS= read -r db; do
             db=$(echo "$db" | tr -d '[:space:]')
             if [ -n "$db" ]; then
                 echo "Dropping test database: $db"
-                psql "$DATABASE_URL" -c "DROP DATABASE IF EXISTS \"$db\" WITH (FORCE)"
+                psql "$ATLAS_TEST_DATABASE_URL" -c "DROP DATABASE IF EXISTS \"$db\" WITH (FORCE)"
             fi
         done
 

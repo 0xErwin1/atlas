@@ -3,7 +3,81 @@
 use migration::Migrator;
 use sea_orm::{ConnectOptions, ConnectionTrait, Database, DatabaseConnection, DbErr};
 use sea_orm_migration::prelude::MigratorTrait;
+use std::net::IpAddr;
+use url::{Host, Url};
 use uuid::Uuid;
+
+const FIXTURE_URL_VAR: &str = "ATLAS_TEST_DATABASE_URL";
+const ALLOW_REMOTE_VAR: &str = "ATLAS_TEST_ALLOW_REMOTE_DB";
+
+/// Resolves the database the fixtures may create and force-drop.
+///
+/// Deliberately ignores `DATABASE_URL`: the fixtures issue `CREATE DATABASE` and
+/// `DROP DATABASE ... WITH (FORCE)`, so pointing them at the variable that also
+/// names a deployment's live database is a footgun. There is no default, because
+/// a default makes "wrong database" indistinguishable from "no database".
+///
+/// Panics rather than returning an error: every caller is a test fixture that
+/// cannot proceed without a database, and an actionable message beats a failure
+/// surfacing later as a connection error.
+pub fn fixture_database_url() -> String {
+    let raw = std::env::var(FIXTURE_URL_VAR).ok();
+    let allow_remote = std::env::var(ALLOW_REMOTE_VAR).ok().as_deref() == Some("1");
+
+    #[allow(
+        clippy::panic,
+        reason = "fixture setup cannot continue without a vetted database"
+    )]
+    match validate_fixture_url(raw.as_deref(), allow_remote) {
+        Ok(url) => url,
+        Err(message) => panic!("{message}"),
+    }
+}
+
+/// Accepts a fixture URL only when its host is loopback, or when the caller has
+/// deliberately opted into a remote target.
+///
+/// Parses with `url` rather than the string slicing used elsewhere in this crate:
+/// userinfo may contain `@` and `/`, so a hand-rolled search for the host can
+/// misread a remote host as loopback. A guard that misparses fails open, so every
+/// ambiguous input — unset, unparseable, or host-less — is rejected instead.
+fn validate_fixture_url(raw: Option<&str>, allow_remote: bool) -> Result<String, String> {
+    let raw = raw.ok_or_else(|| {
+        format!(
+            "{FIXTURE_URL_VAR} is required: point it at a disposable Postgres, \
+             never at a live database"
+        )
+    })?;
+
+    let parsed = Url::parse(raw)
+        .map_err(|error| format!("{FIXTURE_URL_VAR} is not a valid URL: {error}"))?;
+
+    let host = parsed
+        .host()
+        .ok_or_else(|| format!("{FIXTURE_URL_VAR} must specify a host"))?;
+
+    if allow_remote || is_loopback(&host) {
+        return Ok(raw.to_owned());
+    }
+
+    Err(format!(
+        "{FIXTURE_URL_VAR} host `{host}` is not loopback; the fixtures create and force-drop \
+         databases. Set {ALLOW_REMOTE_VAR}=1 only if this target is disposable."
+    ))
+}
+
+fn is_loopback(host: &Host<&str>) -> bool {
+    match host {
+        Host::Ipv4(address) => address.is_loopback(),
+        Host::Ipv6(address) => address.is_loopback(),
+        Host::Domain(domain) => {
+            *domain == "localhost"
+                || domain
+                    .parse::<IpAddr>()
+                    .is_ok_and(|address| address.is_loopback())
+        }
+    }
+}
 
 /// A migrated database with a generated name and best-effort forced teardown.
 pub struct TestDb {
@@ -29,8 +103,7 @@ impl TestDb {
 
     /// Creates a fresh database and applies only the requested migration prefix.
     pub async fn create_with_migration_steps(steps: Option<u32>) -> Result<Self, DbErr> {
-        let database_url = std::env::var("DATABASE_URL")
-            .unwrap_or_else(|_| "postgres://atlas:atlas@localhost:5432/atlas_dev".to_string());
+        let database_url = fixture_database_url();
 
         let db_name = format!("atlas_test_{}", Uuid::now_v7().as_simple());
 
@@ -185,6 +258,111 @@ fn replace_db_name(url: &str, new_db: &str) -> String {
 }
 
 #[cfg(test)]
+mod fixture_url_tests {
+    use super::*;
+
+    const REMOTE_URL: &str = "postgres://atlas:atlas@203.0.113.6:5432/atlas";
+
+    fn assert_rejected(raw: Option<&str>, allow_remote: bool) {
+        assert!(
+            validate_fixture_url(raw, allow_remote).is_err(),
+            "expected {raw:?} to be rejected"
+        );
+    }
+
+    fn assert_accepted(raw: &str) {
+        assert_eq!(validate_fixture_url(Some(raw), false), Ok(raw.to_owned()));
+    }
+
+    #[test]
+    fn an_unset_variable_is_rejected() {
+        assert_rejected(None, false);
+    }
+
+    #[test]
+    fn an_unset_variable_is_rejected_even_when_remote_is_allowed() {
+        assert_rejected(None, true);
+    }
+
+    #[test]
+    fn the_production_host_is_rejected() {
+        let result = validate_fixture_url(Some(REMOTE_URL), false);
+
+        assert!(
+            matches!(&result, Err(message) if message.contains("203.0.113.6")),
+            "expected the rejected host in the error, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn localhost_is_accepted() {
+        assert_accepted("postgres://atlas:atlas@localhost:5432/atlas_dev");
+    }
+
+    #[test]
+    fn the_loopback_address_is_accepted() {
+        assert_accepted("postgres://atlas:atlas@127.0.0.1:5432/atlas_dev");
+    }
+
+    #[test]
+    fn any_loopback_range_address_is_accepted() {
+        assert_accepted("postgres://atlas:atlas@127.0.0.53:5432/atlas_dev");
+    }
+
+    #[test]
+    fn the_ipv6_loopback_address_is_accepted() {
+        assert_accepted("postgres://atlas:atlas@[::1]:5432/atlas_dev");
+    }
+
+    #[test]
+    fn a_remote_host_is_accepted_when_explicitly_allowed() {
+        assert_eq!(
+            validate_fixture_url(Some(REMOTE_URL), true),
+            Ok(REMOTE_URL.to_owned())
+        );
+    }
+
+    #[test]
+    fn unparseable_input_is_rejected() {
+        assert_rejected(Some("not a url at all"), false);
+        assert_rejected(Some(""), false);
+    }
+
+    #[test]
+    fn unparseable_input_is_rejected_even_when_remote_is_allowed() {
+        assert_rejected(Some("not a url at all"), true);
+    }
+
+    #[test]
+    fn a_url_without_a_host_is_rejected() {
+        assert_rejected(Some("postgres:///var/run/postgresql/atlas_dev"), false);
+    }
+
+    #[test]
+    fn userinfo_containing_an_at_sign_does_not_hide_a_remote_host() {
+        assert_rejected(Some("postgres://atlas:p@ss@203.0.113.6:5432/atlas"), false);
+    }
+
+    #[test]
+    fn userinfo_containing_a_slash_does_not_hide_a_remote_host() {
+        assert_rejected(Some("postgres://atlas:pa%2Fss@203.0.113.6:5432/atlas"), false);
+    }
+
+    #[test]
+    fn a_loopback_literal_in_userinfo_does_not_allow_a_remote_host() {
+        assert_rejected(
+            Some("postgres://atlas:localhost@203.0.113.6:5432/atlas"),
+            false,
+        );
+    }
+
+    #[test]
+    fn a_remote_literal_in_userinfo_does_not_reject_a_loopback_host() {
+        assert_accepted("postgres://203.0.113.6:secret@127.0.0.1:5432/atlas_dev");
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use sea_orm::{DatabaseBackend, Statement};
@@ -289,8 +467,7 @@ mod tests {
     }
 
     fn test_database_url() -> String {
-        std::env::var("DATABASE_URL")
-            .unwrap_or_else(|_| "postgres://atlas:atlas@localhost:5432/atlas_dev".to_owned())
+        fixture_database_url()
     }
 
     fn test_database_name() -> String {

@@ -728,6 +728,7 @@ dependencies = [
  "sea-orm",
  "sea-orm-migration",
  "tokio",
+ "url",
  "uuid",
 ]
 

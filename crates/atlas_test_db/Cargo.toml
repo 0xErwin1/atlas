@@ -10,6 +10,7 @@ repository.workspace = true
 migration.workspace = true
 sea-orm.workspace = true
 sea-orm-migration.workspace = true
+url.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]

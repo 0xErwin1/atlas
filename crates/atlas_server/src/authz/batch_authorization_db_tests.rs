@@ -639,8 +639,7 @@ struct BatchAuthorizationDb {
 
 impl BatchAuthorizationDb {
     async fn create() -> Self {
-        let database_url = std::env::var("DATABASE_URL")
-            .unwrap_or_else(|_| "postgres://atlas:atlas@localhost:5432/atlas_dev".to_string());
+        let database_url = atlas_test_db::fixture_database_url();
         let admin_url = replace_database_name(&database_url, "postgres");
         let name = format!("atlas_batch_authz_{}", Uuid::now_v7().as_simple());
         let admin = Database::connect(&admin_url)

@@ -24,7 +24,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      DATABASE_URL: postgres://atlas:atlas@localhost:5432/atlas_dev
+      ATLAS_TEST_DATABASE_URL: postgres://atlas:atlas@localhost:5432/atlas_dev
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
