@@ -27,9 +27,16 @@ const saving = ref(false);
 
 const selected = computed(() => (decorations.value ? DECORATIONS_ON : DECORATIONS_OFF));
 
-void transport.getWindowDecorations().then((result) => {
-  if (result.data !== undefined) decorations.value = result.data.window_decorations;
-});
+const FALLBACK_ERROR = 'Unable to change the window decorations';
+
+void transport
+  .getWindowDecorations()
+  .then((result) => {
+    if (result.data !== undefined) decorations.value = result.data.window_decorations;
+  })
+  .catch(() => {
+    decorations.value = true;
+  });
 
 async function selectDecorations(value: string): Promise<void> {
   const next = value === DECORATIONS_ON;
@@ -37,15 +44,21 @@ async function selectDecorations(value: string): Promise<void> {
 
   error.value = null;
   saving.value = true;
-  const result = await transport.setWindowDecorations(next);
-  saving.value = false;
 
-  if (result.data === undefined) {
-    error.value = 'Unable to change the window decorations';
-    return;
+  try {
+    const result = await transport.setWindowDecorations(next);
+
+    if (result.error || result.data === undefined) {
+      error.value = typeof result.error === 'string' ? result.error : FALLBACK_ERROR;
+      return;
+    }
+
+    decorations.value = result.data.window_decorations;
+  } catch {
+    error.value = FALLBACK_ERROR;
+  } finally {
+    saving.value = false;
   }
-
-  decorations.value = result.data.window_decorations;
 }
 </script>
 

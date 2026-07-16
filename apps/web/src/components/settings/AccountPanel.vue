@@ -28,21 +28,34 @@ const serverOrigin = ref('https://atlas.iperez.dev');
 const serverOriginError = ref<string | null>(null);
 const serverOriginSaving = ref(false);
 
+const SERVER_ORIGIN_FALLBACK_ERROR = 'Unable to save the Atlas server URL';
+
 if (transport.isDesktop) {
-  void transport.getOrigin().then(({ data }) => {
-    if (data !== undefined) serverOrigin.value = data.origin;
-  });
+  void transport
+    .getOrigin()
+    .then(({ data }) => {
+      if (data !== undefined) serverOrigin.value = data.origin;
+    })
+    .catch(() => {
+      serverOriginError.value = 'Unable to read the Atlas server URL';
+    });
 }
 
 async function updateServerOrigin(): Promise<void> {
   serverOriginError.value = null;
   serverOriginSaving.value = true;
-  const result = await transport.setOrigin(serverOrigin.value);
+
+  const result = await transport.setOrigin(serverOrigin.value).catch(() => null);
   serverOriginSaving.value = false;
+
+  if (result === null) {
+    serverOriginError.value = SERVER_ORIGIN_FALLBACK_ERROR;
+    return;
+  }
 
   if (result.error || result.data === undefined) {
     serverOriginError.value =
-      typeof result.error === 'string' ? result.error : 'Unable to save the Atlas server URL';
+      typeof result.error === 'string' ? result.error : SERVER_ORIGIN_FALLBACK_ERROR;
     return;
   }
 

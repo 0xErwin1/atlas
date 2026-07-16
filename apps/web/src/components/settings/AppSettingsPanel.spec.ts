@@ -71,7 +71,7 @@ describe('AppSettingsPanel', () => {
     expect(activeOptionLabel(wrapper)).toBe('On');
   });
 
-  it('keeps the previous value and surfaces a message when the transport fails', async () => {
+  it('keeps the previous value and surfaces the message the host reported', async () => {
     setWindowDecorations.mockResolvedValue({ error: 'desktop window is unavailable' });
 
     const wrapper = await mountPanel();
@@ -79,7 +79,7 @@ describe('AppSettingsPanel', () => {
     await flushPromises();
 
     expect(activeOptionLabel(wrapper)).toBe('On');
-    expect(wrapper.text()).toContain('Unable to change the window decorations');
+    expect(wrapper.text()).toContain('desktop window is unavailable');
   });
 
   it('falls back to decorations on when the stored preference cannot be read', async () => {
@@ -88,5 +88,31 @@ describe('AppSettingsPanel', () => {
     const wrapper = await mountPanel();
 
     expect(activeOptionLabel(wrapper)).toBe('On');
+  });
+
+  it('recovers when the bridge itself rejects instead of returning a result', async () => {
+    setWindowDecorations.mockRejectedValue(new Error('ipc channel closed'));
+
+    const wrapper = await mountPanel();
+    await wrapper.findAll('button.atl-seg-opt')[1]?.trigger('click');
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Unable to change the window decorations');
+
+    setWindowDecorations.mockResolvedValue({ data: { window_decorations: false } });
+    await wrapper.findAll('button.atl-seg-opt')[1]?.trigger('click');
+    await flushPromises();
+
+    expect(activeOptionLabel(wrapper)).toBe('Off');
+  });
+
+  it('stays usable when reading the stored preference rejects', async () => {
+    getWindowDecorations.mockRejectedValue(new Error('ipc channel closed'));
+
+    const wrapper = await mountPanel();
+    await wrapper.findAll('button.atl-seg-opt')[1]?.trigger('click');
+    await flushPromises();
+
+    expect(activeOptionLabel(wrapper)).toBe('Off');
   });
 });
