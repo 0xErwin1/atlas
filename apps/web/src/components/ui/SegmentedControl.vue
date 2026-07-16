@@ -35,9 +35,11 @@ defineEmits<{
 <style scoped>
 /* The global `.atl-seg` in theme/base.css is the editor-toolbar variant; these
    scoped rules deliberately re-specify it for the settings variant and pair it
-   with `.atl-seg-opt`, which exists nowhere else. */
+   with `.atl-seg-opt`, which exists nowhere else. Every property this variant
+   needs is declared here so the component never inherits from that global rule. */
 .atl-seg {
   display: inline-flex;
+  align-items: center;
   background: var(--c-input);
   border: 1px solid var(--c-border);
   border-radius: var(--r-lg);
