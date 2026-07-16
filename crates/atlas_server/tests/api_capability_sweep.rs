@@ -36,8 +36,8 @@ use atlas_api::{
             AddAssigneeRequest, CreateBoardRequest, CreateChecklistItemRequest,
             CreateColumnRequest, CreateCommentRequest, CreateReferenceRequest,
             CreateSubtaskRequest, CreateTaskRequest, MoveTaskRequest, PromoteChecklistItemRequest,
-            UpdateBoardRequest, UpdateChecklistItemRequest, UpdateColumnRequest,
-            UpdateCommentRequest, UpdateTaskRequest, WorkspaceTaskQueryParams,
+            RenameTaskAttachmentRequest, UpdateBoardRequest, UpdateChecklistItemRequest,
+            UpdateColumnRequest, UpdateCommentRequest, UpdateTaskRequest, WorkspaceTaskQueryParams,
         },
         documents::{
             CreateDocumentRequest, MoveDocumentRequest, UpdateContentRequest, UpdateDocumentRequest,
@@ -306,6 +306,7 @@ enum Case {
     UploadTaskAttachment,
     ListTaskAttachments,
     DownloadTaskAttachment,
+    RenameTaskAttachment,
     DeleteTaskAttachment,
     ListTaskBacklinks,
     ListChecklist,
@@ -441,6 +442,7 @@ impl Case {
         Case::UploadTaskAttachment,
         Case::ListTaskAttachments,
         Case::DownloadTaskAttachment,
+        Case::RenameTaskAttachment,
         Case::DeleteTaskAttachment,
         Case::ListTaskBacklinks,
         Case::ListChecklist,
@@ -569,6 +571,7 @@ impl Case {
             Case::UploadTaskAttachment => ("POST", "tasks:update"),
             Case::ListTaskAttachments => ("GET", "tasks:read"),
             Case::DownloadTaskAttachment => ("GET", "tasks:read"),
+            Case::RenameTaskAttachment => ("PATCH", "tasks:update"),
             Case::DeleteTaskAttachment => ("DELETE", "tasks:update"),
             Case::ListTaskBacklinks => ("GET", "tasks:read"),
             Case::ListChecklist => ("GET", "tasks:read"),
@@ -797,6 +800,17 @@ async fn invoke(
             .map(|_| ()),
         Case::DownloadTaskAttachment => client
             .download_task_attachment(ws, &fx.task_readable_id, nil)
+            .await
+            .map(|_| ()),
+        Case::RenameTaskAttachment => client
+            .rename_task_attachment(
+                ws,
+                &fx.task_readable_id,
+                nil,
+                RenameTaskAttachmentRequest {
+                    file_name: "renamed.txt".to_string(),
+                },
+            )
             .await
             .map(|_| ()),
         Case::DeleteTaskAttachment => {
