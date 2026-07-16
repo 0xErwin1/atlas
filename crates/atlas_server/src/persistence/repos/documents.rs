@@ -1015,6 +1015,58 @@ pub struct PgAttachmentRepo {
     pub conn: DatabaseConnection,
 }
 
+impl PgAttachmentRepo {
+    /// Renames an attachment only when it belongs to the supplied workspace and owner.
+    ///
+    /// Owner mismatches are concealed as not-found, matching attachment read/delete
+    /// behavior at the API boundary. Only metadata timestamps and the normalized file
+    /// name are updated; the content-addressed object key remains unchanged.
+    pub async fn rename_for_owner(
+        &self,
+        ctx: &WorkspaceCtx,
+        id: AttachmentId,
+        owner: AttachmentOwner,
+        file_name: String,
+    ) -> Result<Attachment, DomainError> {
+        let query = attachment::Entity::find_by_id(id.0)
+            .filter(attachment::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(attachment::Column::DeletedAt.is_null());
+
+        let query = match owner {
+            AttachmentOwner::Document(document_id) => {
+                query.filter(attachment::Column::DocumentId.eq(document_id.0))
+            }
+            AttachmentOwner::Task(task_id) => {
+                query.filter(attachment::Column::TaskId.eq(task_id.0))
+            }
+            AttachmentOwner::Comment(comment_id) => {
+                query.filter(attachment::Column::CommentId.eq(comment_id.0))
+            }
+            AttachmentOwner::Draft(draft_id) => {
+                query.filter(attachment::Column::DraftId.eq(draft_id.0))
+            }
+        };
+
+        let row = query
+            .one(&self.conn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "attachment",
+                id: id.0,
+            })?;
+
+        let mut active = row.into_active_model();
+        active.file_name = Set(file_name);
+        active.updated_at = Set(Utc::now());
+        active
+            .update(&self.conn)
+            .await
+            .map(attachment_from)
+            .map_err(db_err)
+    }
+}
+
 #[async_trait]
 impl AttachmentRepo for PgAttachmentRepo {
     async fn record(

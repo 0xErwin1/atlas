@@ -167,6 +167,13 @@ pub struct TaskAttachmentDto {
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
+/// Renames a task attachment without changing its stored content.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct RenameTaskAttachmentRequest {
+    pub file_name: String,
+}
+
 // ---------------------------------------------------------------------------
 // Reference DTOs
 // ---------------------------------------------------------------------------

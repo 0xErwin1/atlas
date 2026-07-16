@@ -76,6 +76,7 @@ const EXPECTED_SCHEMAS: &[&str] = &[
     "ReferenceOriginDto",
     "UnifiedReferenceDto",
     "TaskAttachmentDto",
+    "RenameTaskAttachmentRequest",
     "TaskBacklinkDto",
     "CreateReferenceRequest",
     "ChecklistItemDto",
@@ -235,6 +236,27 @@ fn openapi_document_has_correct_info() {
 
     assert_eq!(doc.info.title, "Atlas API");
     assert!(!doc.info.version.is_empty(), "version must not be empty");
+}
+
+#[test]
+fn task_attachment_rename_operation_documents_typed_contract() {
+    let document = serde_json::to_value(openapi()).expect("serialize OpenAPI document");
+    let path = "/api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}";
+
+    assert_operation_statuses(&document, path, "patch", &[200, 401, 403, 404, 422]);
+    let patch = operation(&document, path, "patch");
+    assert_eq!(
+        patch.pointer("/requestBody/content/application~1json/schema/$ref"),
+        Some(&Value::String(
+            "#/components/schemas/RenameTaskAttachmentRequest".to_string()
+        ))
+    );
+    assert_eq!(
+        patch.pointer("/responses/200/content/application~1json/schema/$ref"),
+        Some(&Value::String(
+            "#/components/schemas/TaskAttachmentDto".to_string()
+        ))
+    );
 }
 
 #[test]

@@ -16,10 +16,10 @@ use atlas_api::{
             ChecklistItemDto, ColumnDto, CommentDto, CommentFeedEntryDto, CreateBoardRequest,
             CreateChecklistItemRequest, CreateColumnRequest, CreateCommentRequest,
             CreateReferenceRequest, CreateSubtaskRequest, CreateTaskRequest, MoveTaskRequest,
-            PromoteChecklistItemRequest, PromotionDto, ReferenceDto, TaskAttachmentDto,
-            TaskBacklinkDto, TaskDto, TaskSummaryDto, UnifiedReferenceDto, UpdateBoardRequest,
-            UpdateChecklistItemRequest, UpdateColumnRequest, UpdateCommentRequest,
-            UpdateTaskRequest, WorkspaceTaskQueryParams,
+            PromoteChecklistItemRequest, PromotionDto, ReferenceDto, RenameTaskAttachmentRequest,
+            TaskAttachmentDto, TaskBacklinkDto, TaskDto, TaskSummaryDto, UnifiedReferenceDto,
+            UpdateBoardRequest, UpdateChecklistItemRequest, UpdateColumnRequest,
+            UpdateCommentRequest, UpdateTaskRequest, WorkspaceTaskQueryParams,
         },
         documents::{
             AttachmentDto, BacklinkDto, CommentAttachmentDto, CommentDraftDto, ConflictProblemDto,
@@ -1414,6 +1414,26 @@ impl AtlasClient {
 
         let bytes = response.bytes().await?;
         Ok((bytes.to_vec(), content_type))
+    }
+
+    /// `PATCH /api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}`
+    pub async fn rename_task_attachment(
+        &self,
+        ws: &str,
+        readable_id: &str,
+        attachment_id: uuid::Uuid,
+        body: RenameTaskAttachmentRequest,
+    ) -> Result<TaskAttachmentDto, ClientError> {
+        let response = self
+            .patch(&format!(
+                "/api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}"
+            ))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "rename_task_attachment")
+            .await
     }
 
     /// `DELETE /api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}`

@@ -13,7 +13,7 @@ pub(crate) const MAX_QUERY_LEN: usize = 2_000;
 
 /// Validates a short name/title field.
 ///
-/// Trims the value; rejects blank strings and strings longer than 200 characters.
+/// Trims the value; rejects blank strings and strings longer than 200 UTF-8 bytes.
 pub(crate) fn validate_name(field: &str, value: &str) -> Result<(), ApiError> {
     let trimmed = value.trim();
 
@@ -25,7 +25,7 @@ pub(crate) fn validate_name(field: &str, value: &str) -> Result<(), ApiError> {
 
     if trimmed.len() > MAX_NAME_LEN {
         return Err(ApiError::InvalidInput {
-            message: format!("{field} must be at most {MAX_NAME_LEN} characters"),
+            message: format!("{field} must be at most {MAX_NAME_LEN} bytes"),
         });
     }
 
@@ -45,21 +45,12 @@ const BLOCKED_EXTENSIONS: &[&str] = &[
     "app", "apk", "deb", "rpm", "wasm", "dmg", "pkg",
 ];
 
-/// Enforces the upload content policy for attachment bytes.
+/// Enforces the extension portion of the attachment upload policy.
 ///
-/// Rejects executables and scripts by two independent signals: a hard-floor
-/// blocklist of dangerous file extensions and magic-byte inspection of the actual
-/// content. Only images, documents/e-books, and plain text (including files with
-/// no known binary signature that decode as valid UTF-8) are accepted.
-///
-/// When `allowed_extensions` is `Some`, an additional positive gate is ANDed with
-/// the content check: the upload's declared extension must appear in that
-/// (non-empty) allow-list, otherwise the upload is rejected regardless of its
-/// bytes. When `None`, no positive gate is applied. The size limit is enforced
-/// elsewhere and is intentionally untouched here.
-pub(crate) fn validate_upload(
+/// This is kept separate from byte/content validation so metadata-only operations,
+/// such as rename, cannot bypass the built-in blocklist or configured allow-list.
+pub(crate) fn validate_upload_extension(
     file_name: &str,
-    data: &[u8],
     allowed_extensions: Option<&std::collections::HashSet<String>>,
 ) -> Result<(), ApiError> {
     let extension = file_name
@@ -89,6 +80,28 @@ pub(crate) fn validate_upload(
             }
         }
     }
+
+    Ok(())
+}
+
+/// Enforces the upload content policy for attachment bytes.
+///
+/// Rejects executables and scripts by two independent signals: a hard-floor
+/// blocklist of dangerous file extensions and magic-byte inspection of the actual
+/// content. Only images, documents/e-books, and plain text (including files with
+/// no known binary signature that decode as valid UTF-8) are accepted.
+///
+/// When `allowed_extensions` is `Some`, an additional positive gate is ANDed with
+/// the content check: the upload's declared extension must appear in that
+/// (non-empty) allow-list, otherwise the upload is rejected regardless of its
+/// bytes. When `None`, no positive gate is applied. The size limit is enforced
+/// elsewhere and is intentionally untouched here.
+pub(crate) fn validate_upload(
+    file_name: &str,
+    data: &[u8],
+    allowed_extensions: Option<&std::collections::HashSet<String>>,
+) -> Result<(), ApiError> {
+    validate_upload_extension(file_name, allowed_extensions)?;
 
     match infer::get(data) {
         Some(kind) => {

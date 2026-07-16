@@ -351,7 +351,8 @@ pub fn app(state: AppState) -> Router {
         )
         .route(
             "/api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}",
-            axum::routing::delete(routes::tasks::delete_attachment),
+            axum::routing::patch(routes::tasks::rename_attachment)
+                .delete(routes::tasks::delete_attachment),
         )
         .route(
             "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments",

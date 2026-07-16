@@ -840,6 +840,13 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         capability: Some("tasks:read"),
     },
     RouteEntry {
+        method: "PATCH",
+        path_template: "/api/workspaces/{ws}/tasks/ATL-0/attachments/00000000-0000-0000-0000-000000000001",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}"),
+        capability: Some("tasks:update"),
+    },
+    RouteEntry {
         method: "DELETE",
         path_template: "/api/workspaces/{ws}/tasks/ATL-0/attachments/00000000-0000-0000-0000-000000000001",
         kind: RouteKind::WorkspaceMember,

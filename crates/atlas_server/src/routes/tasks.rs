@@ -17,8 +17,8 @@ use atlas_api::{
         CommentListResponseDto, CreateChecklistItemRequest, CreateCommentRequest,
         CreateReferenceRequest, CreateSubtaskRequest, CreateTaskRequest, MoveTaskRequest,
         PromoteChecklistItemRequest, PromotionDto, ReferenceDto, ReferenceOriginDto,
-        TaskAttachmentDto, TaskBacklinkDto, TaskDto, TaskSummaryDto, UnifiedReferenceDto,
-        UpdateChecklistItemRequest, UpdateCommentRequest, UpdateTaskRequest,
+        RenameTaskAttachmentRequest, TaskAttachmentDto, TaskBacklinkDto, TaskDto, TaskSummaryDto,
+        UnifiedReferenceDto, UpdateChecklistItemRequest, UpdateCommentRequest, UpdateTaskRequest,
         WorkspaceTaskQueryParams,
     },
     dtos::documents::{
@@ -87,6 +87,7 @@ use crate::{
     routes::validation::{
         validate_comment_body, validate_custom_entry_count, validate_custom_properties,
         validate_description, validate_labels, validate_name, validate_upload,
+        validate_upload_extension,
     },
     services::CommentDraftService,
     state::AppState,
@@ -2015,6 +2016,60 @@ pub(crate) async fn download_attachment(
         })?;
 
     Ok(response)
+}
+
+// ---------------------------------------------------------------------------
+// PATCH /api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}
+// ---------------------------------------------------------------------------
+
+#[utoipa::path(
+    patch,
+    path = "/api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}",
+    operation_id = "rename_task_attachment",
+    tag = "tasks",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+        ("readable_id" = String, Path, description = "Task readable ID"),
+        ("attachment_id" = String, Path, description = "Attachment UUID"),
+    ),
+    request_body = RenameTaskAttachmentRequest,
+    responses(
+        (status = 200, description = "Attachment renamed", body = TaskAttachmentDto),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Insufficient permissions"),
+        (status = 404, description = "Task or attachment not found"),
+        (status = 422, description = "Invalid file name"),
+    )
+)]
+/// Renames task attachment metadata without changing the stored object.
+pub(crate) async fn rename_attachment(
+    auth: Authorized<TaskRes, EditorMin, TasksUpdate>,
+    Path(p): Path<TaskAttachmentPath>,
+    State(state): State<AppState>,
+    Json(body): Json<RenameTaskAttachmentRequest>,
+) -> Result<Json<TaskAttachmentDto>, ApiError> {
+    validate_name("file_name", &body.file_name)?;
+    let file_name = body.file_name.trim().to_owned();
+    validate_upload_extension(&file_name, state.upload_allowed_extensions.as_deref())?;
+    let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
+
+    let attachment = PgAttachmentRepo {
+        conn: (*state.db).clone(),
+    }
+    .rename_for_owner(
+        &ctx,
+        AttachmentId(p.attachment_id),
+        AttachmentOwner::Task(auth.resource.0.id),
+        file_name,
+    )
+    .await
+    .map_err(|error| match error {
+        atlas_domain::DomainError::NotFound { .. } => ApiError::NotFound,
+        other => ApiError::Domain(other),
+    })?;
+
+    Ok(Json(attachment_to_dto(attachment)))
 }
 
 // ---------------------------------------------------------------------------

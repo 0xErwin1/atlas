@@ -1184,6 +1184,48 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     return true;
   }
 
+  async function renameAttachment(
+    ws: string,
+    readableId: string,
+    attachmentId: string,
+    fileName: string,
+  ): Promise<boolean> {
+    const operation = beginOperation(ws, readableId);
+    if (!isOperationCurrent(operation)) return false;
+    error.value = null;
+
+    const trimmedFileName = fileName.trim();
+    if (trimmedFileName === '') return false;
+
+    let data: TaskAttachmentDto | undefined;
+    let apiError: unknown;
+    try {
+      const response = await wrappedClient.PATCH(
+        '/api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}',
+        {
+          params: { path: { ws, readable_id: readableId, attachment_id: attachmentId } },
+          body: { file_name: trimmedFileName },
+        },
+      );
+      data = response.data;
+      apiError = response.error;
+    } catch (transportError) {
+      publishOperationError(operation, errorHint(transportError, 'Failed to rename attachment'));
+      return false;
+    }
+
+    if (apiError !== undefined || data === undefined) {
+      publishOperationError(operation, errorHint(apiError, 'Failed to rename attachment'));
+      return false;
+    }
+
+    if (!isOperationCurrent(operation)) return false;
+    const index = attachments.value.findIndex((attachment) => attachment.id === attachmentId);
+    if (index !== -1) attachments.value.splice(index, 1, data);
+    await invalidateCurrentTaskCache(readableId);
+    return true;
+  }
+
   async function removeAttachment(ws: string, readableId: string, attachmentId: string): Promise<boolean> {
     const operation = beginOperation(ws, readableId);
     if (!isOperationCurrent(operation)) return false;
@@ -1278,6 +1320,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     addReference,
     removeReference,
     uploadAttachment,
+    renameAttachment,
     removeAttachment,
     loadMoreComments,
     addComment,
