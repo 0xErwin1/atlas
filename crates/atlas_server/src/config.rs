@@ -229,7 +229,7 @@ impl ServerConfig {
         let database_url =
             std::env::var("DATABASE_URL").map_err(|_| "DATABASE_URL is required".to_string())?;
 
-        let root_password = std::env::var("ATLAS_ROOT_PASSWORD").ok();
+        let root_password = env_var_nonempty("ATLAS_ROOT_PASSWORD");
 
         let anchor_interval = std::env::var("ATLAS_ANCHOR_INTERVAL")
             .ok()
@@ -383,9 +383,25 @@ fn read_env_bool(var: &str, default: bool) -> bool {
 }
 
 fn read_bool(value: Option<String>, default: bool) -> bool {
-    value
-        .map(|s| matches!(s.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
-        .unwrap_or(default)
+    match nonempty(value) {
+        Some(s) => matches!(s.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"),
+        None => default,
+    }
+}
+
+/// Collapses a present-but-empty value to `None`.
+///
+/// A variable that is defined but empty carries no configuration intent, so it
+/// must behave exactly like an absent one; `std::env::var` returns `Ok("")` for
+/// such values, which would otherwise bypass the caller's default.
+fn nonempty(value: Option<String>) -> Option<String> {
+    value.filter(|v| !v.is_empty())
+}
+
+/// Reads an environment variable, treating a present-but-empty value as absent
+/// so the caller's default applies instead of a blank string.
+pub(crate) fn env_var_nonempty(key: &str) -> Option<String> {
+    nonempty(std::env::var(key).ok())
 }
 
 #[cfg(test)]
@@ -458,5 +474,26 @@ mod tests {
         assert_eq!(cfg.max_concurrent, 16);
         assert_eq!(cfg.batch_size, 32);
         assert_eq!(cfg.lease_secs, 30);
+    }
+
+    #[test]
+    fn read_bool_treats_empty_as_absent() {
+        assert!(read_bool(Some(String::new()), true));
+        assert!(!read_bool(Some(String::new()), false));
+    }
+
+    #[test]
+    fn read_bool_honors_truthy_and_falsy_tokens() {
+        assert!(read_bool(Some("true".to_string()), false));
+        assert!(!read_bool(Some("false".to_string()), true));
+        assert!(read_bool(None, true));
+        assert!(!read_bool(None, false));
+    }
+
+    #[test]
+    fn nonempty_treats_empty_as_absent() {
+        assert_eq!(nonempty(Some(String::new())), None);
+        assert_eq!(nonempty(Some("x".to_string())), Some("x".to_string()));
+        assert_eq!(nonempty(None), None);
     }
 }
