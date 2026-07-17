@@ -66,11 +66,9 @@
               pkgs.mold
               pkgs.cargo-nextest
               pkgs.cargo-watch
-              pkgs.just
               pkgs.nodejs_22
               pkgs.pnpm
               pkgs.podman
-              pkgs.podman-compose
               pkgs.curl
               pkgs.openssl
               pkgs.actionlint
