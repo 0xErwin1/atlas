@@ -58,8 +58,23 @@
 
           desktopGateSubcommands =
             "red|full|asset-audit|tooling|release-audit|launch|controller-test|webdriver-test|host-test";
+
+          rustPlatformPinned = pkgs.makeRustPlatform {
+            cargo = rustToolchain;
+            rustc = rustToolchain;
+          };
+
+          webDist = pkgs.callPackage ./nix/frontend.nix { src = ./.; };
         in
         {
+          packages = pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
+            atlas-desktop = pkgs.callPackage ./nix/atlas-desktop.nix {
+              inherit webDist;
+              rustPlatform = rustPlatformPinned;
+              src = ./.;
+            };
+          };
+
           devenv.shells.default = {
             packages = [
               rustToolchain
@@ -263,6 +278,14 @@
           };
 
           formatter = pkgs.nixpkgs-fmt;
+        };
+
+      flake.homeManagerModules.atlas-desktop =
+        { pkgs, lib, ... }:
+        {
+          imports = [ ./nix/home-manager.nix ];
+          config.programs.atlas-desktop.package =
+            lib.mkDefault inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.atlas-desktop;
         };
     };
 }
