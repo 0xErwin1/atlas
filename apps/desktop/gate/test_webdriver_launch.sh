@@ -3,16 +3,17 @@ set -euo pipefail
 
 root=$(git rev-parse --show-toplevel)
 controller="$root/apps/desktop/gate/run_webdriver_launch.sh"
-justfile="$root/justfile"
+flake="$root/flake.nix"
 
-python3 - "$controller" "$justfile" <<'PY'
+python3 - "$controller" "$flake" <<'PY'
 import pathlib
 import sys
 
 controller = pathlib.Path(sys.argv[1])
-justfile = pathlib.Path(sys.argv[2]).read_text()
+flake = pathlib.Path(sys.argv[2]).read_text()
 assert controller.is_file()
-assert 'desktop-gate-launch:' in justfile
+assert 'desktop-gate.exec' in flake
+assert 'launch)' in flake
 
 source = controller.read_text()
 for required in (
