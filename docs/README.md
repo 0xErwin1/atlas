@@ -49,6 +49,6 @@ When behavior changes:
 
 1. Update the source and tests.
 2. Update route annotations, schemas, and `ROUTE_REGISTRY` for REST changes.
-3. Regenerate web types after contract changes (`just gen-types`).
+3. Regenerate web types after contract changes (`gen-types`).
 4. Update the relevant page in this docs portal.
 5. Record intentional caveats in [limitations.md](limitations.md) instead of leaving them implicit.

@@ -130,10 +130,8 @@ Useful component areas:
 
 | File | Purpose |
 |---|---|
-| `justfile` | local task recipes |
+| `flake.nix` | devenv dev shell + command surface |
 | `.env.example` | documented env vars |
-| `compose.yaml` | local Postgres container |
-| `process-compose.yaml` | full local stack orchestration |
 
 ## When you change a public contract
 
@@ -141,5 +139,5 @@ Useful component areas:
 2. update `ROUTE_REGISTRY`
 3. update `routes/openapi.rs` tags/schemas when needed
 4. update `atlas_client` if the typed client should expose the route
-5. regenerate web types with `just gen-types`
+5. regenerate web types with `gen-types`
 6. update the relevant page in `docs/`

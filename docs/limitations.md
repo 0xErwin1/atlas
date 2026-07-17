@@ -61,7 +61,7 @@ This page records caveats backed by the current code, tests, or authoritative re
 
 - the Share dialog's general-access section is still read-only
 - the “Ask AI” dialog builds a copyable prompt only; Atlas does not execute an LLM request from that dialog
-- the web app depends on generated OpenAPI types; after backend contract changes, `just gen-types` is required
+- the web app depends on generated OpenAPI types; after backend contract changes, `gen-types` is required
 
 ## CLI specifics
 

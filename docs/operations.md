@@ -1,50 +1,39 @@
 # Operations and setup
 
-This page covers the practical setup and runtime knobs visible from `justfile`, `.env.example`, and server startup code.
+This page covers the practical setup and runtime knobs visible from `flake.nix`, `.env.example`, and server startup code.
 
 ## Local development flow
 
-Recommended path from the root docs:
+Atlas is not run locally — it is deployed as containers, with its runtime configuration injected at deploy time. The dev shell is for building, linting, and testing:
 
 ```sh
 direnv allow
-just db-up
-just dev
+tests
 ```
 
-In another terminal:
+Postgres for tests is managed automatically: `tests` starts an ephemeral `pgvector/pgvector:pg17` container per run via `atlas_test_harness` and tears it down when the run finishes. There is no manual DB lifecycle command.
 
-```sh
-just dev-web
-```
+Prerequisites for the test container harness:
 
-The repo assumes:
+- rootless Podman with `podman.socket` enabled: `systemctl --user enable --now podman.socket`
+- subuid/subgid ranges configured for your user (`/etc/subuid`, `/etc/subgid`)
 
-- the Nix dev shell for pinned Rust/pnpm tooling
-- Podman for local Postgres
-- PostgreSQL 17
+The dev shell auto-exports `DOCKER_HOST` for the standard rootless Podman socket path when one isn't already set.
 
-## Useful `just` targets
+## Useful commands
 
 | Command | Purpose |
 |---|---|
-| `just db-up` | start local Postgres |
-| `just db-down` | stop local Postgres |
-| `just db-wait` | wait for Postgres readiness |
-| `just migrate` | apply migrations |
-| `just db-reset` | run migration fresh |
-| `just db-clean-tests` | drop leftover test DBs |
-| `just seed-dev` | run the dev seeder binary |
-| `just dev` | run `atlas_server` |
-| `just gen-types` | dump OpenAPI and regenerate web types |
-| `just dev-web` | regenerate types, then run the Vite app |
-| `just build-web` | regenerate types, then build the web app |
-| `just check` / `just test` / `just clippy` / `just build` | core Rust verification |
-| `just lint-web` / `just fmt-web` | frontend formatting/linting |
-| `just verify` | full local gate |
-| `just up` | process-compose full stack: Postgres + seed + API + web |
-
-`just up` exports a default `ATLAS_ROOT_PASSWORD=rootdev` if none is set and documents the default login as `root` / `$ATLAS_ROOT_PASSWORD`.
+| `check` | `cargo check --workspace` |
+| `tests` | ephemeral Postgres container, then nextest + doctests |
+| `clippy` | `cargo clippy --workspace --all-targets -- -D warnings` |
+| `build` | `cargo build --workspace` |
+| `gen-types` | dump OpenAPI and regenerate web types |
+| `build-web` | regenerate types, then build the web app |
+| `lint-web` | Biome CI check |
+| `format` | `cargo fmt --all` + Biome format, repo-wide |
+| `fmt-check` | `cargo fmt --all -- --check` |
+| `verify` | full local gate: fmt-check, clippy, tests, build, lint-web, build-web |
 
 ## Required and common environment variables
 
@@ -169,7 +158,7 @@ Backed by `crates/atlas_server/src/main.rs` and `state.rs`, startup:
 The web app uses generated types. The supported generation path is:
 
 ```sh
-just gen-types
+gen-types
 ```
 
 That runs `cargo run -p atlas_server --bin dump_openapi > apps/web/openapi.json` and then `openapi-typescript` into `apps/web/src/api/types.d.ts`.
