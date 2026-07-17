@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use atlas_domain::{AttachmentStore, semantic_search::EmbeddingProvider};
 
-use crate::config::{DispatcherConfig, EmbeddingProviderKind, ServerConfig};
+use crate::config::{DispatcherConfig, EmbeddingProviderKind, ServerConfig, env_var_nonempty};
 use crate::crypto::WebhookCrypto;
 use crate::embeddings::{DeterministicEmbeddingProvider, OpenAiCompatibleEmbeddingProvider};
 use crate::live::{DEFAULT_HUB_CAPACITY, LiveEventHub};
@@ -96,7 +96,7 @@ impl AppState {
     pub async fn for_test(db: DatabaseConnection) -> Result<Self, anyhow::Error> {
         let anchor_interval = read_env_u32("ATLAS_ANCHOR_INTERVAL", 50).max(2);
 
-        let attachment_root = std::env::var("ATLAS_ATTACHMENT_ROOT").unwrap_or_else(|_| {
+        let attachment_root = env_var_nonempty("ATLAS_ATTACHMENT_ROOT").unwrap_or_else(|| {
             std::env::temp_dir()
                 .join("atlas-test-attachments")
                 .to_string_lossy()
@@ -215,12 +215,13 @@ fn build_embedding_provider(
 }
 
 async fn build_attachment_store() -> Result<Arc<dyn AttachmentStore>, anyhow::Error> {
-    let backend = std::env::var("ATLAS_ATTACHMENT_BACKEND").unwrap_or_else(|_| "disk".to_string());
+    let backend =
+        env_var_nonempty("ATLAS_ATTACHMENT_BACKEND").unwrap_or_else(|| "disk".to_string());
 
     match backend.as_str() {
         "disk" => {
-            let attachment_root = std::env::var("ATLAS_ATTACHMENT_ROOT")
-                .unwrap_or_else(|_| "./data/attachments".to_string());
+            let attachment_root = env_var_nonempty("ATLAS_ATTACHMENT_ROOT")
+                .unwrap_or_else(|| "./data/attachments".to_string());
 
             let store = DiskAttachmentStore::new(&attachment_root)
                 .await
@@ -238,7 +239,7 @@ async fn build_attachment_store() -> Result<Arc<dyn AttachmentStore>, anyhow::Er
                 endpoint: require_env("ATLAS_S3_ENDPOINT")?,
                 access_key_id: require_env("ATLAS_S3_ACCESS_KEY_ID")?,
                 secret_access_key: require_env("ATLAS_S3_SECRET_ACCESS_KEY")?,
-                region: std::env::var("ATLAS_S3_REGION").unwrap_or_else(|_| "auto".to_string()),
+                region: env_var_nonempty("ATLAS_S3_REGION").unwrap_or_else(|| "auto".to_string()),
             };
 
             let store = S3AttachmentStore::new(config)

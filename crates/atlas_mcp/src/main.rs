@@ -43,8 +43,10 @@ async fn main() -> anyhow::Result<()> {
 
     let cli = Cli::parse();
 
-    let base_url =
-        std::env::var("ATLAS_BASE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
+    let base_url = std::env::var("ATLAS_BASE_URL")
+        .ok()
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| "http://localhost:8080".to_string());
 
     match cli.transport {
         Transport::Stdio => run_stdio(base_url).await,
