@@ -1,0 +1,34 @@
+name: Desktop
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: cachix/install-nix-action@v30
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      # Building from source at this ref. Nix needs no GitHub Release — a tag is
+      # only a convenience for pinning. To reuse this output locally instead of
+      # rebuilding, push it to a binary cache (see the commented Cachix step) and
+      # add that cache as a substituter on the consuming machine.
+      - run: nix build .#atlas-desktop -L
+
+      # To serve the CI-built closure to your own machines, create a Cachix cache,
+      # set the CACHIX_AUTH_TOKEN repository secret, and enable the two steps below
+      # (replace <cache-name>). Then `cachix use <cache-name>` locally and the next
+      # `nix build .#atlas-desktop` substitutes the prebuilt result.
+      #
+      # - uses: cachix/cachix-action@v15
+      #   with:
+      #     name: <cache-name>
+      #     authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      # - run: nix build .#atlas-desktop -L
