@@ -71,7 +71,6 @@
               pkgs.pnpm
               pkgs.podman
               pkgs.podman-compose
-              pkgs.process-compose
               pkgs.curl
               pkgs.openssl
               pkgs.actionlint
