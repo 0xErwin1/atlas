@@ -100,14 +100,14 @@ The browser UI is a Vue 3 SPA (Vite, Pinia, vue-router, Tailwind v4, Biome) — 
 
 | Concern | Approach |
 |---------|----------|
-| API client | A typed `openapi-fetch` client over types generated from the served OpenAPI (`just gen-types` → `src/api/types.d.ts`), wrapped thinly for the HttpOnly session cookie + CSRF header and RFC 9457 error `hint` surfacing. |
+| API client | A typed `openapi-fetch` client over types generated from the served OpenAPI (`gen-types` → `src/api/types.d.ts`), wrapped thinly for the HttpOnly session cookie + CSRF header and RFC 9457 error `hint` surfacing. |
 | Shell | App rail + collapsible contextual sidebar + main area + toggleable inspector dock; Ayu-dark tokens with a dark/light theme toggle. |
 | Notes | CodeMirror 6 "live preview" markdown editor (markdown is the source of truth), `[[wikilink]]` autocomplete + id-bound links that render the target's current title, backlinks panel, CAS-409 three-way merge view. |
 | Tasks | Kanban with optimistic drag-and-drop (rollback on conflict), Linear-style peek + full task detail, inline editing. Sub-tasks render inline (status, assignees, estimate), open as full tasks of their own, and can be promoted onto the board. |
 | Cross-cutting | Command palette + global search (Cmd/Ctrl+K), per-resource Share dialog, Settings modal (account, agent API keys, root user management, about), consistent empty/loading/error states. Forms validate with **zod** through a shared `FormField`; the API's `hint` is shown, never a stack. |
 | Shared design system | Reuse-never-duplicate primitives: UI in `src/components/ui` (`Dropdown`, `Popover`, `ConfirmDialog`, `FormField`) and `src/components/settings` (`SettingsTable`, `ExpandableRow`, `PanelHeader`, `RowAction`), plus `EmptyState` (full + `compact`). Cross-cutting logic lives in `src/lib` (`errorHint`, `initials`/`formatDate`, workspace/grant role helpers) and `src/composables` (`useLoadingMap`). See `CODE_STYLE.md` → TypeScript / Vue → Patterns. |
 
-State lives in per-domain Pinia stores; `vue-router` owns navigation. Strict TDD applies here too (Vitest + vue-tsc + Biome, all in `just verify`).
+State lives in per-domain Pinia stores; `vue-router` owns navigation. Strict TDD applies here too (Vitest + vue-tsc + Biome, all in `verify`).
 
 ## Cross-cutting conventions
 
@@ -121,4 +121,4 @@ State lives in per-domain Pinia stores; `vue-router` owns navigation. Strict TDD
 
 ## Next step
 
-The API now spans identity, workspaces, notes (documents/folders), tasks (boards/tasks), search, and sharing; the web SPA (E07) consumes all of it. When a new subsystem lands (e.g. MCP tools in E08, realtime collaboration in E14), extend the matching `routes/` module, add its `ROUTE_REGISTRY` entries, regenerate the web client (`just gen-types`), and update the relevant table here.
+The API now spans identity, workspaces, notes (documents/folders), tasks (boards/tasks), search, and sharing; the web SPA (E07) consumes all of it. When a new subsystem lands (e.g. MCP tools in E08, realtime collaboration in E14), extend the matching `routes/` module, add its `ROUTE_REGISTRY` entries, regenerate the web client (`gen-types`), and update the relevant table here.

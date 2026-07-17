@@ -15,13 +15,13 @@ Ignacio Perez <ignacio@feuer.me>
 Run the local gate before committing:
 
 ```sh
-just check && just test
+check && tests
 ```
 
 For a full pre-commit sweep:
 
 ```sh
-just verify
+verify
 ```
 
 ## Commit message format

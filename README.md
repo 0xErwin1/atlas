@@ -9,16 +9,11 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the crate map, request lifecycle, dat
 ## Quick start
 
 ```sh
-direnv allow          # activate the Nix devshell (Rust 1.96, pnpm, just, podman)
-just db-up            # start Postgres 17 via podman compose
-just dev              # run atlas_server on :8080
+direnv allow          # activate the dev shell (Rust 1.96, pnpm, devenv, podman)
+tests                  # run the workspace test suite; Postgres starts automatically
 ```
 
-In a separate terminal:
-
-```sh
-just dev-web          # run Vite dev server on :5173
-```
+Atlas is not run locally — it is deployed as containers with its runtime configuration injected at deploy time. The dev shell is for building, linting, and testing; see [Useful commands](#useful-commands) below.
 
 ## Repo map
 
@@ -36,22 +31,20 @@ atlas/
 │   └── web/            # Vue 3 + Vite + Pinia + Tailwind v4 frontend
 ├── packages/           # reserved for shared TS packages
 ├── .github/workflows/  # style, tests, web CI
-├── justfile            # all local task recipes
-├── compose.yaml        # Postgres 17 via podman
-├── flake.nix           # Nix devshell
+├── flake.nix           # devenv dev shell + command surface
 └── biome.json          # TypeScript/JSON formatter and linter
 ```
 
-## Useful recipes
+## Useful commands
 
-| Recipe | What it does |
-|--------|-------------|
-| `just check` | `cargo check --workspace` |
-| `just test` | nextest + doctests |
-| `just clippy` | clippy -D warnings |
-| `just build-web` | vue-tsc + vite build |
-| `just lint-web` | biome ci |
-| `just verify` | full local gate (fmt-check + clippy + test + build + lint-web) |
+| Command | What it does |
+|---------|-------------|
+| `check` | `cargo check --workspace` |
+| `tests` | starts an ephemeral Postgres container, then nextest + doctests |
+| `clippy` | clippy -D warnings |
+| `build-web` | vue-tsc + vite build |
+| `lint-web` | biome ci |
+| `verify` | full local gate (fmt-check + clippy + tests + build + lint-web + build-web) |
 
 ## Documentation
 

@@ -14,34 +14,25 @@ Entry point and single source of truth for AI coding agents (Claude Code, Cursor
 
 ## Environment (read first)
 
-This is a NixOS host with **no system Rust toolchain**. Every cargo/just/rust command MUST run inside the dev shell:
+This is a NixOS host with **no system Rust toolchain**. `direnv` loads the dev shell automatically on `cd` (via `.envrc` → `flake.nix`); every cargo/rust command MUST run inside it. `nix develop` still works as a manual entrypoint if direnv is unavailable.
 
-```bash
-nix develop --command <cmd>      # one-off
-nix develop                      # interactive shell (direnv loads it via .envrc)
-```
-
-The dev shell provides the pinned Rust 1.96 toolchain, `pnpm`, `just`, `podman`, `sea-orm-cli`, `cargo-nextest`, `mold`, and `actionlint`. Containers use **podman, not docker**.
+The dev shell provides the pinned Rust 1.96 toolchain, `pnpm`, `podman`, `cargo-nextest`, `mold`, `cargo-tauri`, and `actionlint`. Containers use **podman, not docker**.
 
 ## Commands
 
-Run everything through `just` (the canonical command surface) inside the dev shell:
+Run everything as a bare command (a devenv `script`) inside the dev shell — there is no `just` prefix:
 
 | Task | Command |
 |------|---------|
-| Type-check | `just check` |
-| Lint (fails the build) | `just clippy` — `cargo clippy --workspace --all-targets -- -D warnings` |
-| Format / check format | `just fmt` / `just fmt-check` |
-| Tests | `just test` — starts Postgres wait, runs `cargo nextest run --workspace` + doctests |
-| Build | `just build` |
-| Full gate (matches CI) | `just verify` — backend and frontend compile, lint, format checks, and tests |
-| Start dev Postgres | `just db-up` (podman compose, `postgres:17`) |
-| Reset schema | `just db-reset` / apply migrations `just migrate` |
-| Seed dev data | `just seed-dev` |
-| Run the server | `just dev` |
-| Web dev / build / lint | `just dev-web` / `just build-web` / `just lint-web` (Biome) |
+| Type-check | `check` |
+| Lint (fails the build) | `clippy` — `cargo clippy --workspace --all-targets -- -D warnings` |
+| Format / check format | `format` / `fmt-check` |
+| Tests | `tests` — spins up an ephemeral Postgres container, then runs `cargo nextest run --workspace` + doctests |
+| Build | `build` |
+| Full gate (matches CI) | `verify` — backend and frontend compile, lint, format checks, and tests |
+| Web build / lint | `build-web` / `lint-web` (Biome) |
 
-Integration tests need Postgres running (`just db-up`); the harness creates and drops one database per test.
+Atlas is not run locally: it is deployed as containers, with its runtime configuration injected at deploy time. `tests` manages its own Postgres via `atlas_test_harness` (an ephemeral `pgvector/pgvector:pg17` container per run, started and torn down automatically); there is no manual DB lifecycle command to run first.
 
 ## Workspace layout
 
@@ -63,15 +54,15 @@ Persistence pattern: SeaORM entities live in `atlas_server/src/persistence/entit
 
 A Vue 3 SPA (Vite, Pinia per-domain stores, vue-router, Tailwind v4) — one of the three API consumers. It only speaks the REST contract; it never touches the DB.
 
-- **Generated API client.** A typed `openapi-fetch` client over `src/api/types.d.ts`, generated from the served OpenAPI by `just gen-types`. After ANY backend contract change, regenerate it; never hand-edit `types.d.ts`. A thin wrapper adds the session cookie + CSRF header and surfaces the RFC 9457 `hint`.
+- **Generated API client.** A typed `openapi-fetch` client over `src/api/types.d.ts`, generated from the served OpenAPI by `gen-types`. After ANY backend contract change, regenerate it; never hand-edit `types.d.ts`. A thin wrapper adds the session cookie + CSRF header and surfaces the RFC 9457 `hint`.
 - **Forms.** Validate with **zod** through the shared `FormField` (`src/components/ui/FormField.vue`) + `validateForm` (`src/lib/validation.ts`); show the API `hint`, never a stack. No native browser validation bubbles.
 - **Editor.** Shared CodeMirror 6 "live preview" `MarkdownEditor` — markdown is the source of truth. Wikilinks are id-bound `[[<uuid>|Title]]` (rename-stable; legacy `[[Title]]` resolves by slug) and render the target's current title.
 - **Shared components — reuse, never duplicate (non-negotiable).** Use the design-system primitives instead of re-implementing dropdowns, menus, toggles, confirmations, rows, headers, or empty states per panel: `Dropdown` (single-select), `Popover` (anchored surface), `ConfirmDialog`, `FormField` + `validateForm`, `SettingsTable`, `ExpandableRow` (collapsed-summary + inline manage panel), `PanelHeader` (title + subtitle + actions), `RowAction` (compact row button), `EmptyState` (full + `compact`). Shared **logic** is reused the same way, never re-inlined: `errorHint` (`lib/apiError`), `initials`/`formatDate` (`lib/format`), workspace/grant role helpers (`lib/workspaceRoles`, `lib/grantRoles`), `useLoadingMap` (`composables/`). The moment a visual/behavioral pattern recurs, extract one component or helper and have every call site use it; duplicated markup/CSS/logic across components is a defect to remove, not extend. Full rule in `CODE_STYLE.md` → TypeScript / Vue → Patterns.
-- **Tooling.** Biome (not eslint/prettier), Vitest, vue-tsc — all in `just verify`. Match existing component/store patterns; same English-only, comment-sparing conventions as the Rust side (see `CODE_STYLE.md`).
+- **Tooling.** Biome (not eslint/prettier), Vitest, vue-tsc — all in `verify`. Match existing component/store patterns; same English-only, comment-sparing conventions as the Rust side (see `CODE_STYLE.md`).
 
 ## Conventions
 
-- **Merge gate.** Merging to `main` is forbidden unless `nix develop --command just verify` passes. This gate compiles, lints, and checks formatting for both the backend and frontend, and runs the test suite.
+- **Merge gate.** Merging to `main` is forbidden unless `verify` passes in the dev shell. This gate compiles, lints, and checks formatting for both the backend and frontend, and runs the test suite.
 - **Strict TDD.** Write the failing test first, see it red, then implement to green. Tests run with `cargo nextest`; doctests run separately.
 - **No panics.** Lints deny `unwrap_used`, `expect_used`, `panic`, `unwrap_in_result`, `dbg_macro`; `unsafe_code` is forbidden. Propagate with `?`; return `Result`. `todo!`/`unimplemented!` warn — never ship them.
 - **No silently discarded errors.** Never use `let _ =` on a fallible expression. Propagate with `?`, branch explicitly with `match`/`if let`, log it, or surface it to the user — but never swallow a `Result`/`Option` error.

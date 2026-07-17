@@ -99,8 +99,8 @@ Key settings:
 Run locally:
 
 ```sh
-just lint-web    # check
-just fmt-web     # auto-fix
+lint-web    # check
+format      # auto-fix (cargo fmt + biome format --write, repo-wide)
 ```
 
 No ESLint or Prettier — Biome replaces both.
@@ -122,7 +122,7 @@ No ESLint or Prettier — Biome replaces both.
   Shared **logic** helpers are reused the same way, never re-inlined: API error message → `errorHint` (`src/lib/apiError.ts`); avatar initials / short dates → `initials` / `formatDate` (`src/lib/format.ts`); workspace-membership and grant role labels/options → `src/lib/workspaceRoles.ts` / `src/lib/grantRoles.ts`; per-item async state → `useLoadingMap` (`src/composables/useLoadingMap.ts`).
 
   The moment a visual or behavioral pattern appears a *second* time, extract one component (or helper) and have every call site use it. Duplicated markup, CSS, or logic across components is a defect to remove, not to extend — this includes "same thing styled by copy-pasted classes". When you reach for a `<select>`, a hand-built menu, a custom toggle, a re-styled row, a hand-rolled empty/header block, or a copy-pasted `hint ?? fallback` / `initials` snippet, stop and use (or extract) the shared component or helper instead.
-- **Generated API client.** `apps/web/src/api/types.d.ts` is generated from the served OpenAPI by `just gen-types`. Never hand-edit it; regenerate after a backend contract change.
+- **Generated API client.** `apps/web/src/api/types.d.ts` is generated from the served OpenAPI by `gen-types`. Never hand-edit it; regenerate after a backend contract change.
 - **Form validation.** Validate with [zod](https://zod.dev/) through the shared `FormField` (`src/components/ui/FormField.vue`) and `validateForm` (`src/lib/validation.ts`). Show the API problem `hint` on failure; do not rely on native browser validation bubbles.
 - **Comments.** Same rule as Rust: default to none; explain only a non-obvious *why*.
 
@@ -130,15 +130,15 @@ No ESLint or Prettier — Biome replaces both.
 
 - **Strict TDD.** Write the failing test first, see it red, then implement to green.
 - Rust unit tests live beside the implementation in `#[cfg(test)] mod tests` blocks; run with `cargo nextest`. Doctests run separately.
-- Integration tests need Postgres running (`just db-up`); the harness creates and drops one database per test. Cross-tenant isolation is covered by integration tests — preserve it.
+- Integration tests need Postgres; `tests` starts an ephemeral container automatically and the harness creates and drops one database per test. Cross-tenant isolation is covered by integration tests — preserve it.
 - Web tests use Vitest and `vue-tsc`.
 
 | Change type | Expected verification |
 |-------------|----------------------|
 | Backend behavior (domain, services, repos, routes) | `cargo nextest` tests in the affected crate |
-| Backend API/contract change | regenerate `types.d.ts` (`just gen-types`); the OpenAPI zero-drift test must stay green |
+| Backend API/contract change | regenerate `types.d.ts` (`gen-types`); the OpenAPI zero-drift test must stay green |
 | Frontend logic, forms, or composables | Vitest tests under `apps/web/src` |
-| Anything before pushing | `just verify` (fmt-check + clippy + test + build + web lint) green |
+| Anything before pushing | `verify` (fmt-check + clippy + tests + build + web lint + web build) green |
 
 ## Documentation conventions
 
