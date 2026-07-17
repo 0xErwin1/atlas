@@ -88,17 +88,24 @@
               pkgs.xorg-server
             ];
 
-            # devenv's dotenv module reads .env during evaluation, through the
-            # flake source — which holds only git-tracked files. .env is ignored,
-            # so it never reaches the Nix store and the module silently loads
-            # nothing. Sourcing at shell entry reads the real working directory
-            # instead, which is the only point where .env is visible.
+            # .env is deliberately NOT loaded here, and `dotenv.enable` must not
+            # be turned on. The shell's only consumers are tests, and tests must
+            # not inherit ambient server configuration: fixtures CREATE and
+            # force-DROP databases against whatever connection string they are
+            # handed, and several assert on a setting being absent (see
+            # crates/atlas_server/tests/api_health.rs). Under edition 2024 with
+            # unsafe_code = forbid, a test cannot unset a variable to defend
+            # itself, so the only safe point of control is to never set it. The
+            # deployed server takes its environment from the deployment.
             enterShell = ''
-              if [ -f "$DEVENV_ROOT/.env" ]; then
-                set -a
-                . "$DEVENV_ROOT/.env"
-                set +a
+              # testcontainers only auto-detects rootless *Docker* socket paths,
+              # none of which match podman's, so it needs DOCKER_HOST spelled out.
+              # An existing value wins: it is the escape hatch for a remote or
+              # non-podman runtime.
+              if [ -z "''${DOCKER_HOST:-}" ] && [ -S "/run/user/$(id -u)/podman/podman.sock" ]; then
+                export DOCKER_HOST="unix:///run/user/$(id -u)/podman/podman.sock"
               fi
+
               echo "Atlas dev shell (Rust 1.96, pnpm, devenv, podman)"
             '';
 
