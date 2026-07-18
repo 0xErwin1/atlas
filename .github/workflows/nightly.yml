@@ -9,8 +9,21 @@ permissions:
   contents: read
   packages: write
 
+concurrency:
+  group: nightly
+  cancel-in-progress: true
+
 jobs:
+  # Quality gates. Nothing publishes unless all three pass on this commit.
+  style:
+    uses: ./.github/workflows/style.yml
+  tests:
+    uses: ./.github/workflows/tests.yml
+  web:
+    uses: ./.github/workflows/web.yml
+
   backend-image:
+    needs: [style, tests, web]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -29,6 +42,7 @@ jobs:
             ghcr.io/0xerwin1/atlas-server:${{ github.sha }}
 
   frontend-image:
+    needs: [style, tests, web]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -47,6 +61,7 @@ jobs:
             ghcr.io/0xerwin1/atlas-web:${{ github.sha }}
 
   desktop-appimage:
+    needs: [style, tests, web]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
