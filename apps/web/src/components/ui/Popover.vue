@@ -120,7 +120,7 @@ const PLACEMENT: Record<Placement, Record<string, string>> = {
     <Teleport v-if="teleport" to="body">
       <template v-if="open">
         <div
-          class="atl-popover-backdrop"
+          class="atl-popover-backdrop fixed"
           aria-hidden="true"
           @click="close"
           @contextmenu.prevent="close"
@@ -161,9 +161,19 @@ const PLACEMENT: Record<Placement, Record<string, string>> = {
   min-width: 100%;
 }
 
+/*
+ * The teleported surface renders into <body> as a sibling of hand-rolled dialog
+ * overlays (modals/confirm/prompt use the 300-320 band, all teleported to body).
+ * It must out-rank that band so a menu opened from inside a dialog is not painted
+ * behind it; the backdrop sits just under the panel to keep click-outside working.
+ */
+.atl-popover-backdrop.fixed {
+  z-index: 399;
+}
+
 .atl-popover-panel.fixed {
   position: fixed;
-  z-index: 60;
+  z-index: 400;
   min-width: 0;
 }
 
