@@ -345,7 +345,10 @@ mod fixture_url_tests {
 
     #[test]
     fn userinfo_containing_a_slash_does_not_hide_a_remote_host() {
-        assert_rejected(Some("postgres://atlas:pa%2Fss@203.0.113.6:5432/atlas"), false);
+        assert_rejected(
+            Some("postgres://atlas:pa%2Fss@203.0.113.6:5432/atlas"),
+            false,
+        );
     }
 
     #[test]
