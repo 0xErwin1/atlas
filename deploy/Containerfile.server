@@ -12,7 +12,10 @@ RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS builder
 COPY --from=planner /app/recipe.json recipe.json
-RUN cargo chef cook --release --recipe-path recipe.json
+# Scope the dependency cook to the shipping crates. An unscoped cook compiles
+# the whole workspace, including the desktop crate's GTK/WebKit/dbus system
+# dependencies, which this image neither needs nor has the libraries for.
+RUN cargo chef cook --release --recipe-path recipe.json -p atlas_server -p atlas_mcp
 COPY . .
 RUN cargo build --release -p atlas_server -p atlas_mcp \
  && strip target/release/atlas_server target/release/atlas_mcp
