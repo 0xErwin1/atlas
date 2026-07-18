@@ -76,7 +76,7 @@ rustPlatform.buildRustPackage {
   '';
 
   postInstall = ''
-    install -Dm644 apps/web/public/favicon.svg \
+    install -Dm644 apps/desktop/src-tauri/icons/atlas-icon.svg \
       "$out/share/icons/hicolor/scalable/apps/atlas-desktop.svg"
   '';
 }
