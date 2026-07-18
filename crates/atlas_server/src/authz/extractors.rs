@@ -437,6 +437,11 @@ pub struct WorkspaceOwnerOrAdmin {
     pub workspace: Workspace,
     pub caller_user_id: UserId,
     pub caller_class: CallerClass,
+    /// Whether the caller is the root user. `CallerClass::BreakGlass` covers both
+    /// root and system-admins, so this is the only way to distinguish the two;
+    /// member-management routes use it to protect the root user from a non-root
+    /// caller. A workspace-role caller (`Owner`/`Admin`) is never root.
+    pub caller_is_root: bool,
 }
 
 impl FromRequestParts<AppState> for WorkspaceOwnerOrAdmin {
@@ -498,6 +503,7 @@ impl FromRequestParts<AppState> for WorkspaceOwnerOrAdmin {
                 workspace,
                 caller_user_id: user_id,
                 caller_class: CallerClass::BreakGlass,
+                caller_is_root: user.is_root,
             });
         }
 
@@ -527,6 +533,7 @@ impl FromRequestParts<AppState> for WorkspaceOwnerOrAdmin {
             workspace,
             caller_user_id: user_id,
             caller_class,
+            caller_is_root: false,
         })
     }
 }

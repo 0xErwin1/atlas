@@ -1517,3 +1517,147 @@ async fn assignable_users_excludes_members_and_disabled() {
 
     db.teardown().await;
 }
+
+// ── ROOT-TARGET PROTECTION ───────────────────────────────────────────────────
+//
+// A non-root break-glass caller (system-admin) satisfies `WorkspaceOwnerOrAdmin`
+// as `CallerClass::BreakGlass`, so without the root-target guard it could add,
+// re-role, or remove the ROOT user's membership. These tests pin the guard:
+// a non-root caller is blocked on a ROOT target (403), while the root caller is
+// not (no regression). The guard is scoped strictly to a root target.
+
+/// Creates an activated ROOT user (not a member of any workspace).
+async fn create_root_user(db: &TestDb, username: &str) -> atlas_domain::entities::identity::User {
+    let user = db
+        .user_repo()
+        .create(NewUser {
+            username: username.to_string(),
+            display_name: username.to_string(),
+            email: None,
+            password_hash: Some("$argon2id$v=19$m=19456,t=2,p=1$test$hash".into()),
+            is_root: true,
+            is_system_admin: false,
+        })
+        .await
+        .expect("create root user");
+
+    support::activate_user_in_db(db, user.id.0).await;
+    user
+}
+
+/// Creates an activated ROOT user and adds it to the workspace at `role`.
+async fn add_root_member(
+    db: &TestDb,
+    ws_id: atlas_domain::ids::WorkspaceId,
+    username: &str,
+    role: MemberRole,
+) -> atlas_domain::entities::identity::User {
+    let user = create_root_user(db, username).await;
+
+    let ctx = WorkspaceCtx::new(ws_id, Actor::User(user.id));
+    db.membership_repo()
+        .add(&ctx, user.id, role)
+        .await
+        .expect("add root membership");
+
+    user
+}
+
+// ── R1: PATCH — non-root sysadmin on root target → 403 ──────────────────────
+
+#[tokio::test]
+async fn patch_sysadmin_on_root_target_returns_403() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (_owner, ws, _owner_user) =
+        login_user_with_workspace(&server, &db, "root-prot-patch-ws").await;
+
+    let root_target =
+        add_root_member(&db, ws.id, "root-prot-patch-target", MemberRole::Member).await;
+
+    let sysadmin_client =
+        login_break_glass_user(&server, &db, "root-prot-patch-sysadmin", false, true).await;
+
+    let result = sysadmin_client
+        .update_member_role(&ws.slug, root_target.id.0, "admin")
+        .await;
+
+    assert_forbidden(result, "sysadmin PATCH on root target");
+
+    db.teardown().await;
+}
+
+// ── R2: DELETE — non-root sysadmin on root target → 403 ─────────────────────
+
+#[tokio::test]
+async fn delete_sysadmin_on_root_target_returns_403() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (_owner, ws, _owner_user) =
+        login_user_with_workspace(&server, &db, "root-prot-del-ws").await;
+
+    let root_target = add_root_member(&db, ws.id, "root-prot-del-target", MemberRole::Member).await;
+
+    let sysadmin_client =
+        login_break_glass_user(&server, &db, "root-prot-del-sysadmin", false, true).await;
+
+    let result = sysadmin_client
+        .remove_member(&ws.slug, root_target.id.0)
+        .await;
+
+    assert_forbidden(result, "sysadmin DELETE on root target");
+
+    db.teardown().await;
+}
+
+// ── R3: ADD — non-root sysadmin adds a root user → 403 ──────────────────────
+
+#[tokio::test]
+async fn add_member_sysadmin_on_root_target_returns_403() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (_owner, ws, _owner_user) =
+        login_user_with_workspace(&server, &db, "root-prot-add-ws").await;
+
+    let root_target = create_root_user(&db, "root-prot-add-target").await;
+
+    let sysadmin_client =
+        login_break_glass_user(&server, &db, "root-prot-add-sysadmin", false, true).await;
+
+    let result = sysadmin_client
+        .add_member(&ws.slug, root_target.id.0, "member")
+        .await;
+
+    assert_forbidden(result, "sysadmin ADD of a root target");
+
+    db.teardown().await;
+}
+
+// ── R4: PATCH — root caller on root target → PASS (no regression) ───────────
+
+#[tokio::test]
+async fn patch_root_caller_on_root_target_passes() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (_owner, ws, _owner_user) =
+        login_user_with_workspace(&server, &db, "root-prot-ok-ws").await;
+
+    let root_target = add_root_member(&db, ws.id, "root-prot-ok-target", MemberRole::Member).await;
+
+    let root_client = login_break_glass_user(&server, &db, "root-prot-ok-root", true, false).await;
+
+    let result = root_client
+        .update_member_role(&ws.slug, root_target.id.0, "admin")
+        .await;
+
+    assert!(
+        result.is_ok(),
+        "root caller must be able to manage a root target, got: {result:?}"
+    );
+
+    db.teardown().await;
+}

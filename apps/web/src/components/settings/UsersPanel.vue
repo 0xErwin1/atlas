@@ -50,6 +50,14 @@ function isSelf(u: UserDto): boolean {
   return auth.user?.id != null && u.id === auth.user.id;
 }
 
+// Mirrors server-side member-management guards: you cannot manage yourself, and
+// a non-root caller cannot manage the root user.
+function canManage(u: UserDto): boolean {
+  if (isSelf(u)) return false;
+  if (!currentUserIsRoot.value && u.is_root) return false;
+  return true;
+}
+
 // Mirrors server-side disable guards.
 function canDisable(u: UserDto): boolean {
   if (isSelf(u)) return false;
@@ -527,7 +535,7 @@ async function confirmDisable(): Promise<void> {
           v-for="u in usersStore.users"
           :key="u.id"
           :expanded="expandedUserId === u.id"
-          :expandable="!isSelf(u)"
+          :expandable="canManage(u)"
           :style="{ height: '46px', opacity: u.disabled_at ? 0.72 : 1, '--erow-actions-basis': '220px' }"
           data-user-row
           @toggle="toggleManage(u)"
@@ -626,7 +634,7 @@ async function confirmDisable(): Promise<void> {
                     Regenerate activation link
                   </button>
                   <button
-                    v-else
+                    v-else-if="canManage(u)"
                     type="button"
                     class="atl-manage-btn"
                     data-action="reset-password"
@@ -645,7 +653,7 @@ async function confirmDisable(): Promise<void> {
                   Loading access&hellip;
                 </div>
                 <WorkspaceAccessEditor
-                  v-else
+                  v-else-if="canManage(u)"
                   :workspaces="wsStore.adminWorkspaces"
                   :roles="usersStore.memberships[u.id] ?? {}"
                   :options="wsAccessOptions"

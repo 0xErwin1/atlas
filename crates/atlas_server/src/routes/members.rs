@@ -158,6 +158,9 @@ pub(crate) async fn add_member(
     let user_repo = PgUserRepo {
         conn: (*state.db).clone(),
     };
+
+    check_root_target_protection(&user_repo, caller.caller_is_root, target_user_id).await?;
+
     let target_user = user_repo
         .find_by_id(target_user_id)
         .await
@@ -349,6 +352,7 @@ pub(crate) async fn update_member_role(
 
     let conn = (*state.db).clone();
     let membership_repo = PgMembershipRepo { conn: conn.clone() };
+    let user_repo = PgUserRepo { conn: conn.clone() };
 
     let ctx =
         atlas_domain::WorkspaceCtx::new(caller.workspace.id, Actor::User(caller.caller_user_id));
@@ -361,6 +365,8 @@ pub(crate) async fn update_member_role(
         })?
         .ok_or(ApiError::NotFound)?;
 
+    check_root_target_protection(&user_repo, caller.caller_is_root, target_user_id).await?;
+
     let target_role = &target_membership.role;
 
     check_patch_permission(caller.caller_class, target_role, &new_role)?;
@@ -369,9 +375,6 @@ pub(crate) async fn update_member_role(
         check_last_owner_lockout(&membership_repo, &ctx, target_user_id).await?;
     }
 
-    let user_repo = PgUserRepo {
-        conn: (*state.db).clone(),
-    };
     let user = user_repo
         .find_by_id(target_user_id)
         .await
@@ -462,7 +465,8 @@ pub(crate) async fn remove_member(
     let target_user_id = atlas_domain::ids::UserId(target_user_uuid);
 
     let conn = (*state.db).clone();
-    let membership_repo = PgMembershipRepo { conn };
+    let membership_repo = PgMembershipRepo { conn: conn.clone() };
+    let user_repo = PgUserRepo { conn };
 
     let ctx =
         atlas_domain::WorkspaceCtx::new(caller.workspace.id, Actor::User(caller.caller_user_id));
@@ -474,6 +478,8 @@ pub(crate) async fn remove_member(
             message: e.to_string(),
         })?
         .ok_or(ApiError::NotFound)?;
+
+    check_root_target_protection(&user_repo, caller.caller_is_root, target_user_id).await?;
 
     let target_role = &target_membership.role;
 
@@ -573,6 +579,39 @@ fn check_delete_permission(
             message: "Admins cannot modify an owner's membership".into(),
         });
     }
+    Ok(())
+}
+
+/// Blocks a non-root caller from managing the root user's membership.
+///
+/// `WorkspaceOwnerOrAdmin` resolves a system-admin as `CallerClass::BreakGlass`,
+/// so without this guard a non-root system-admin could add, re-role, or remove
+/// the root user's per-workspace membership. Only root may manage the root user.
+/// The guard is scoped strictly to a root target — system-admin targets stay
+/// manageable — mirroring the root-target guard in `disable_user`/`reset_password`.
+async fn check_root_target_protection(
+    user_repo: &PgUserRepo,
+    caller_is_root: bool,
+    target_user_id: atlas_domain::ids::UserId,
+) -> Result<(), ApiError> {
+    if caller_is_root {
+        return Ok(());
+    }
+
+    let target = user_repo
+        .find_by_id(target_user_id)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?
+        .ok_or(ApiError::NotFound)?;
+
+    if target.is_root {
+        return Err(ApiError::Forbidden {
+            message: "Only root can manage the root user".into(),
+        });
+    }
+
     Ok(())
 }
 

@@ -168,6 +168,25 @@ describe('UsersPanel — manage panel', () => {
     expect(wrapper.find('[data-action="toggle-sysadmin"]').exists()).toBe(false);
   });
 
+  it('hides the manage button for a root target from a non-root caller', async () => {
+    setup({ root: false, users: [user({ is_root: true })] });
+
+    const wrapper = mountPanel();
+    await flushPromises();
+
+    expect(wrapper.find('[data-action="manage"]').exists()).toBe(false);
+  });
+
+  it('lets a non-root caller manage a non-root user', async () => {
+    setup({ root: false, users: [user()] });
+
+    const wrapper = mountPanel();
+    await expandFirst(wrapper);
+
+    expect(wrapper.find('[data-manage-panel]').exists()).toBe(true);
+    expect(wrapper.find('[data-action="reset-password"]').exists()).toBe(true);
+  });
+
   it('reset password is a labeled button that opens a confirm', async () => {
     setup();
 
