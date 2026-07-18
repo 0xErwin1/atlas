@@ -647,10 +647,17 @@ fn desktop_auth_logout(
     };
     let outcome = match state.session.lock() {
         Ok(mut session) => session.logout_with(&scope, |request| {
-            match tauri::async_runtime::block_on(state.client.clone().execute(request)) {
-                Ok(response) if response.status().is_success() => Ok(()),
-                Ok(_) => Err(DesktopError::SessionInvalid),
-                Err(_) => Err(DesktopError::TransportUnavailable),
+            // The request carries a per-request timeout, which arms a Tokio timer at
+            // execution. A sync command runs on the GTK main thread with no ambient
+            // runtime, so the timed request must execute on Tauri's async runtime
+            // (via spawn) rather than the calling thread, or arming the timer aborts.
+            let client = state.client.clone();
+            let execution =
+                tauri::async_runtime::spawn(async move { client.execute(request).await });
+            match tauri::async_runtime::block_on(execution) {
+                Ok(Ok(response)) if response.status().is_success() => Ok(()),
+                Ok(Ok(_)) => Err(DesktopError::SessionInvalid),
+                Ok(Err(_)) | Err(_) => Err(DesktopError::TransportUnavailable),
             }
         }),
         Err(_) => return IpcResult::error("desktop session state is unavailable"),
