@@ -1,6 +1,7 @@
 {
   "name": "atlas",
   "private": true,
+  "license": "Apache-2.0",
   "scripts": {
     "lint": "biome ci .",
     "format": "biome format --write .",

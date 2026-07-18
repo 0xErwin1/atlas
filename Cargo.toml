@@ -26,6 +26,7 @@ edition = "2024"
 rust-version = "1.96"
 authors = ["Ignacio Perez <ignacio@feuer.me>"]
 repository = "https://github.com/0xErwin1/atlas"
+license = "Apache-2.0"
 
 [workspace.dependencies]
 # Internal crates (path deps)

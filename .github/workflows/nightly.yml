@@ -132,7 +132,7 @@ jobs:
           # Rolling nightly channel pointer — auto-generated on the \`nightly\` ref
           # by .github/workflows/nightly.yml. The hash matches the AppImage in the
           # current rolling nightly release. Consume via the \`nightly\` ref:
-          #   nix run 'git+ssh://git@github.com/${{ github.repository }}?ref=nightly#atlas-desktop-nightly'
+          #   nix run github:${{ github.repository }}/nightly#atlas-desktop-nightly
           {
             url = "https://github.com/${{ github.repository }}/releases/download/nightly/${name}";
             hash = "${hash}";

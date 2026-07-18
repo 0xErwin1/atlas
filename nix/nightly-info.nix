@@ -5,10 +5,9 @@
 # only builds when consumed through the `nightly` ref, where CI has written the
 # real AppImage hash:
 #
-#   nix run 'git+ssh://git@github.com/0xErwin1/atlas?ref=nightly#atlas-desktop-nightly'
+#   nix run github:0xErwin1/atlas/nightly#atlas-desktop-nightly
 #
-# The repository is private: the git+ssh source uses your SSH key, but the AppImage
-# asset download still needs a GitHub token (see nix/README-nightly.md).
+# See nix/README-nightly.md.
 {
   url = "https://github.com/0xErwin1/atlas/releases/download/nightly/Atlas.Desktop_0.0.0_amd64.AppImage";
   hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
