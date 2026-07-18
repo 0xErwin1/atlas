@@ -65,6 +65,33 @@
           };
 
           webDist = pkgs.callPackage ./nix/frontend.nix { src = ./.; };
+
+          # Installs the CI-built AppImage from the rolling nightly release
+          # without compiling. The hash is pinned on the `nightly` git ref, so
+          # this only builds when consumed through that ref (see nix/nightly-info.nix).
+          atlasDesktopNightly =
+            let
+              info = import ./nix/nightly-info.nix;
+              desktopItem = pkgs.makeDesktopItem {
+                name = "atlas-desktop";
+                desktopName = "Atlas Desktop";
+                exec = "atlas-desktop";
+                icon = "atlas-desktop";
+                categories = [ "Office" "Utility" ];
+                startupWMClass = "me.feuer.atlas.desktop";
+              };
+            in
+            pkgs.appimageTools.wrapType2 {
+              pname = "atlas-desktop";
+              version = "nightly";
+              src = pkgs.fetchurl { inherit (info) url hash; };
+              extraInstallCommands = ''
+                install -Dm444 ${desktopItem}/share/applications/atlas-desktop.desktop \
+                  -t "$out/share/applications"
+                install -Dm644 ${./apps/desktop/src-tauri/icons/atlas-icon.svg} \
+                  "$out/share/icons/hicolor/scalable/apps/atlas-desktop.svg"
+              '';
+            };
         in
         {
           packages = pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
@@ -73,6 +100,7 @@
               rustPlatform = rustPlatformPinned;
               src = ./.;
             };
+            atlas-desktop-nightly = atlasDesktopNightly;
           };
 
           devenv.shells.default = {

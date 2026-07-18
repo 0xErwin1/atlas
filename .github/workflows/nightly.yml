@@ -103,3 +103,45 @@ jobs:
           releaseName: Nightly
           prerelease: true
           args: --bundles appimage
+
+  # Pin the published AppImage's hash onto the `nightly` git ref so
+  # `atlas-desktop-nightly` installs the prebuilt binary without compiling.
+  pin-nightly:
+    needs: [backend-image, frontend-image, desktop-appimage]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Download the published AppImage
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download nightly --pattern '*.AppImage' --dir dist
+      - name: Pin nightly-info.nix and move the nightly ref
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          appimage=$(find dist -name '*.AppImage' | head -1)
+          name=$(basename "$appimage")
+          hash="sha256-$(openssl dgst -sha256 -binary "$appimage" | base64 -w0)"
+
+          cat > nix/nightly-info.nix <<EOF
+          # Rolling nightly channel pointer — auto-generated on the \`nightly\` ref
+          # by .github/workflows/nightly.yml. The hash matches the AppImage in the
+          # current rolling nightly release. Consume via the \`nightly\` ref:
+          #   nix run 'git+ssh://git@github.com/${{ github.repository }}?ref=nightly#atlas-desktop-nightly'
+          {
+            url = "https://github.com/${{ github.repository }}/releases/download/nightly/${name}";
+            hash = "${hash}";
+          }
+          EOF
+
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add nix/nightly-info.nix
+          git commit -m "chore(nightly): pin AppImage hash for $(git rev-parse --short HEAD)"
+          git tag -f nightly
+          git push origin --force nightly
