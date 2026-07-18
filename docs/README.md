@@ -1,6 +1,6 @@
 # Atlas documentation
 
-Atlas is a multi-workspace knowledge and task platform with one shared REST API and three first-class clients: the web app, the CLI, and the MCP server.
+Atlas is a multi-workspace knowledge and task platform with one shared REST API and four first-class clients: the web app, a Tauri desktop app wrapping it, the CLI, and the MCP server.
 
 Use this portal as the reader-friendly entry point. Keep these root docs authoritative when they overlap:
 
@@ -42,6 +42,7 @@ The REST API is the shared contract. The web app, `atlas_client`, `atlas_cli`, a
 | CLI | `clap`-based command line in `atlas_cli` | [cli.md](cli.md) |
 | MCP | `rmcp` server in `atlas_mcp` | [mcp.md](mcp.md) |
 | Web app | Vue 3 SPA in `apps/web` | [product.md](product.md) |
+| Desktop app | Tauri client in `apps/desktop` wrapping the web UI | [nix/README-nightly.md](../nix/README-nightly.md) |
 
 ## Maintenance checklist
 

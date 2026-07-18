@@ -28,10 +28,13 @@ atlas/
 │   ├── atlas_mcp/      # Model Context Protocol server (rmcp)
 │   └── migration/      # sea-orm-migration tool (run: cargo run -p migration -- up)
 ├── apps/
-│   └── web/            # Vue 3 + Vite + Pinia + Tailwind v4 frontend
+│   ├── web/            # Vue 3 + Vite + Pinia + Tailwind v4 frontend
+│   └── desktop/        # Tauri desktop app wrapping the web UI
 ├── packages/           # reserved for shared TS packages
-├── .github/workflows/  # style, tests, web CI
-├── flake.nix           # devenv dev shell + command surface
+├── nix/                # desktop package + nightly install (see nix/README-nightly.md)
+├── deploy/             # container images and VPN deploy script
+├── .github/workflows/  # style, tests, web, desktop, and nightly CI
+├── flake.nix           # devenv dev shell, command surface, and Nix packages
 └── biome.json          # TypeScript/JSON formatter and linter
 ```
 
@@ -46,6 +49,16 @@ atlas/
 | `lint-web` | biome ci |
 | `verify` | full local gate (fmt-check + clippy + tests + build + lint-web + build-web) |
 
+## Desktop app
+
+Atlas ships a Tauri desktop client (`apps/desktop`) that wraps the web UI. CI publishes a prebuilt AppImage to a rolling `nightly` release on every push to `main`, so you can install it without compiling:
+
+```sh
+nix run github:0xErwin1/atlas/nightly#atlas-desktop-nightly
+```
+
+See [nix/README-nightly.md](nix/README-nightly.md) for home-manager installation. To build from source instead, run `nix build .#atlas-desktop`.
+
 ## Documentation
 
 - [Documentation portal](docs/README.md) — product, web, REST API, CLI, MCP, operations, limitations, and contributor map.
@@ -54,3 +67,7 @@ atlas/
 - [CONTRIBUTING.md](CONTRIBUTING.md) — contribution workflow.
 
 See [AGENTS.md](AGENTS.md) for agent guidance and commit conventions, and [CODE_STYLE.md](CODE_STYLE.md) for coding conventions and lint policy.
+
+## License
+
+Licensed under the [Apache License 2.0](LICENSE).
