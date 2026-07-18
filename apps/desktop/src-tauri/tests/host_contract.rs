@@ -653,6 +653,37 @@ fn failed_remote_logout_still_removes_only_the_affected_session_and_requests_a_s
 }
 
 #[test]
+fn remote_logout_request_is_bounded_and_removes_the_session_on_success() {
+    let scope = SessionScope::new(ORIGIN, "user-1").expect("valid scope");
+    let store = InMemorySecretStore::with_session(scope.clone(), BEARER);
+    let mut session = DesktopSession::new(store);
+
+    let mut observed_timeout = None;
+    let outcome = session.logout_with(&scope, |request| {
+        observed_timeout = request.timeout().copied();
+        Ok(())
+    });
+
+    assert_eq!(
+        observed_timeout,
+        Some(atlas_desktop::LOGOUT_REMOTE_TIMEOUT),
+        "the remote logout must be bounded so a slow server cannot hang teardown"
+    );
+    assert_eq!(outcome.remote_result, Ok(()));
+    assert_eq!(
+        outcome.action,
+        Some(LifecycleAction::CancelTransportAndPurgeScopedCache(
+            scope.clone()
+        ))
+    );
+    assert!(
+        session
+            .authenticated_request(&scope, "/api/auth/me", TransportKind::Rest)
+            .is_err()
+    );
+}
+
+#[test]
 fn restart_returns_the_stored_bearer_for_revalidation() {
     let scope = SessionScope::new(ORIGIN, "user-1").expect("valid scope");
     let store = InMemorySecretStore::with_session(scope.clone(), BEARER);

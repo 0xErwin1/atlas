@@ -166,8 +166,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function logout(): Promise<void> {
-    const purged = await clearUser();
-    if (!purged) return;
+    await clearUser();
 
     try {
       await getPlatformTransport().logout();

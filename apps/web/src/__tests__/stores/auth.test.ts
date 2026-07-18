@@ -393,14 +393,14 @@ describe('useAuthStore', () => {
     await logout;
   });
 
-  it('does not send the logout request when the global cache purge fails', async () => {
+  it('still revokes the session through the transport when the global cache purge fails', async () => {
     mockGet.mockReturnValueOnce(meOk('alice'));
     vi.mocked(blockAndPurgeResourceCache).mockResolvedValueOnce(false);
     await useAuthStore().fetchMe();
 
     await useAuthStore().logout();
 
-    expect(mockPost).not.toHaveBeenCalled();
+    expect(platformTransport.logout).toHaveBeenCalledOnce();
     expect(useAuthStore().isAuthenticated).toBe(false);
   });
 

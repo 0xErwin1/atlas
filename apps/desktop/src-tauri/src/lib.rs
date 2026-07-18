@@ -9,6 +9,7 @@ use std::{
     net::{IpAddr, Ipv6Addr},
     path::Path,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 use thiserror::Error;
 
@@ -701,6 +702,16 @@ pub struct DesktopSession<S> {
     cancelled_scopes: HashSet<String>,
 }
 
+/// Upper bound on the remote logout revocation. A slow or unresponsive server
+/// must never stall local credential teardown or the login redirect, so the
+/// request is bounded and its failure is treated as best-effort.
+pub const LOGOUT_REMOTE_TIMEOUT: Duration = Duration::from_secs(5);
+
+fn with_logout_remote_timeout(mut request: Request) -> Request {
+    *request.timeout_mut() = Some(LOGOUT_REMOTE_TIMEOUT);
+    request
+}
+
 /// Records the remote revocation result while guaranteeing local credential removal.
 pub struct LogoutOutcome {
     pub remote_result: Result<(), DesktopError>,
@@ -797,6 +808,7 @@ impl<S: SecretStore> DesktopSession<S> {
                 "/api/auth/logout",
                 TransportKind::Rest,
             )
+            .map(with_logout_remote_timeout)
             .and_then(execute);
         let action = self.revoke(scope);
 
