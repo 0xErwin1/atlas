@@ -7,8 +7,9 @@ import { blockResourceCacheForUnknownAlias, invalidateResourceCache } from './ca
 import { disposeWorkspaceLiveUpdates } from './lib/workspaceLiveUpdates';
 import { createBrowserPlatformTransport } from './platform/browser';
 import { createDesktopPlatformTransport } from './platform/desktop';
+import { installDesktopZoom } from './platform/desktopZoom';
 import { createDesktopFetch, setPlatformFetch } from './platform/fetch';
-import { type PlatformTransport, setPlatformTransport } from './platform/transport';
+import { getPlatformTransport, type PlatformTransport, setPlatformTransport } from './platform/transport';
 import { router } from './router/index';
 import { useAuthStore } from './stores/auth';
 import { useResourceStatusStore } from './stores/resourceStatus';
@@ -123,6 +124,7 @@ export function installTransportStatus(): () => void {
 
 registerWorkspaceLiveUpdatesPagehide();
 installTransportStatus();
+if (isDesktop) installDesktopZoom(getPlatformTransport());
 
 export async function mountAfterAuthenticationInitialization(
   initialize = () => useAuthStore(appPinia).initialize(),

@@ -303,7 +303,10 @@ fn desktop_preferences_round_trip_persists_the_saved_value_as_exact_bytes() {
     let persisted = fs::read_to_string(&preferences_file).expect("preferences are readable");
     let loaded = DesktopPreferences::load(&directory);
 
-    assert_eq!(persisted, "{\"window_decorations\":true}\n");
+    assert_eq!(
+        persisted,
+        "{\"window_decorations\":true,\"zoom_factor\":1.0}\n"
+    );
     assert_eq!(loaded, preferences);
     assert!(!persisted.contains("bearer"));
 

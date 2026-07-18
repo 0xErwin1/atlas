@@ -28,6 +28,12 @@ export function createBrowserPlatformTransport(): PlatformTransport {
     setWindowDecorations() {
       return Promise.resolve({ error: 'Window decorations are available in Atlas Desktop' });
     },
+    getZoom() {
+      return Promise.resolve({ error: 'Zoom is available in Atlas Desktop' });
+    },
+    setZoom() {
+      return Promise.resolve({ error: 'Zoom is available in Atlas Desktop' });
+    },
     createWorkspaceEventSource(workspaceSlug) {
       return new EventSource(`/api/workspaces/${workspaceSlug}/events`);
     },

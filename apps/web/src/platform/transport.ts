@@ -9,7 +9,13 @@ export interface DesktopConfiguration {
 
 export interface DesktopPreferences {
   window_decorations: boolean;
+  zoom_factor: number;
 }
+
+export const DEFAULT_ZOOM_FACTOR = 1.0;
+export const MIN_ZOOM_FACTOR = 0.5;
+export const MAX_ZOOM_FACTOR = 3.0;
+export const ZOOM_FACTOR_STEP = 0.1;
 
 export interface PlatformResult<T> {
   data?: T;
@@ -35,6 +41,8 @@ export interface PlatformTransport {
   setOrigin: (origin: string) => Promise<PlatformResult<DesktopConfiguration>>;
   getWindowDecorations: () => Promise<PlatformResult<DesktopPreferences>>;
   setWindowDecorations: (decorations: boolean) => Promise<PlatformResult<DesktopPreferences>>;
+  getZoom: () => Promise<PlatformResult<DesktopPreferences>>;
+  setZoom: (zoomFactor: number) => Promise<PlatformResult<DesktopPreferences>>;
   createWorkspaceEventSource: (workspaceSlug: string) => WorkspaceEventSource;
 }
 

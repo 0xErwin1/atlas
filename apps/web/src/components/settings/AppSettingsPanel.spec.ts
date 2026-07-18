@@ -1,16 +1,24 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getWindowDecorations, setWindowDecorations } = vi.hoisted(() => ({
+const { getWindowDecorations, setWindowDecorations, getZoom, setZoom } = vi.hoisted(() => ({
   getWindowDecorations: vi.fn(),
   setWindowDecorations: vi.fn(),
+  getZoom: vi.fn(),
+  setZoom: vi.fn(),
 }));
 
 vi.mock('@/platform/transport', () => ({
+  DEFAULT_ZOOM_FACTOR: 1,
+  MIN_ZOOM_FACTOR: 0.5,
+  MAX_ZOOM_FACTOR: 3,
+  ZOOM_FACTOR_STEP: 0.1,
   getPlatformTransport: () => ({
     isDesktop: true,
     getWindowDecorations,
     setWindowDecorations,
+    getZoom,
+    setZoom,
   }),
 }));
 
@@ -30,8 +38,12 @@ describe('AppSettingsPanel', () => {
   beforeEach(() => {
     getWindowDecorations.mockReset();
     setWindowDecorations.mockReset();
+    getZoom.mockReset();
+    setZoom.mockReset();
     getWindowDecorations.mockResolvedValue({ data: { window_decorations: true } });
     setWindowDecorations.mockResolvedValue({ data: { window_decorations: false } });
+    getZoom.mockResolvedValue({ data: { window_decorations: true, zoom_factor: 1 } });
+    setZoom.mockResolvedValue({ data: { window_decorations: true, zoom_factor: 1.1 } });
   });
 
   it('reads the stored preference on mount and marks the matching option active', async () => {
@@ -114,5 +126,35 @@ describe('AppSettingsPanel', () => {
     await flushPromises();
 
     expect(activeOptionLabel(wrapper)).toBe('Off');
+  });
+
+  it('reflects the stored zoom factor on mount', async () => {
+    getZoom.mockResolvedValue({ data: { window_decorations: true, zoom_factor: 1.5 } });
+
+    const wrapper = await mountPanel();
+
+    expect(getZoom).toHaveBeenCalledTimes(1);
+    expect(wrapper.find('.atl-zoom-value').text()).toBe('150%');
+  });
+
+  it('zooms in by one step and syncs to the value the host reports', async () => {
+    const wrapper = await mountPanel();
+
+    await wrapper.find('button[aria-label="Zoom in"]').trigger('click');
+    await flushPromises();
+
+    expect(setZoom).toHaveBeenCalledWith(expect.closeTo(1.1, 5));
+    expect(wrapper.find('.atl-zoom-value').text()).toBe('110%');
+  });
+
+  it('keeps the previous zoom and surfaces the message the host reported', async () => {
+    setZoom.mockResolvedValue({ error: 'desktop window zoom is unavailable' });
+
+    const wrapper = await mountPanel();
+    await wrapper.find('button[aria-label="Zoom in"]').trigger('click');
+    await flushPromises();
+
+    expect(wrapper.find('.atl-zoom-value').text()).toBe('100%');
+    expect(wrapper.text()).toContain('desktop window zoom is unavailable');
   });
 });

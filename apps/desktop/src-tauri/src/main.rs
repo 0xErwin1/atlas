@@ -463,7 +463,36 @@ fn desktop_set_window_decorations<R: Runtime>(
         return IpcResult::error("desktop window decorations are unavailable");
     }
 
-    let preferences = DesktopPreferences::with_window_decorations(decorations);
+    let preferences = DesktopPreferences::load(&state.configuration_directory)
+        .set_window_decorations_value(decorations);
+    if preferences.save(&state.configuration_directory).is_err() {
+        return IpcResult::error("desktop configuration is unavailable");
+    }
+
+    IpcResult::data(preferences)
+}
+
+#[tauri::command]
+fn desktop_get_zoom(state: State<'_, DesktopState>) -> IpcResult<DesktopPreferences> {
+    IpcResult::data(DesktopPreferences::load(&state.configuration_directory))
+}
+
+#[tauri::command]
+fn desktop_set_zoom<R: Runtime>(
+    zoom_factor: f64,
+    state: State<'_, DesktopState>,
+    app: tauri::AppHandle<R>,
+) -> IpcResult<DesktopPreferences> {
+    let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) else {
+        return IpcResult::error("desktop window is unavailable");
+    };
+
+    let preferences =
+        DesktopPreferences::load(&state.configuration_directory).set_zoom_factor(zoom_factor);
+    if window.set_zoom(preferences.zoom_factor()).is_err() {
+        return IpcResult::error("desktop window zoom is unavailable");
+    }
+
     if preferences.save(&state.configuration_directory).is_err() {
         return IpcResult::error("desktop configuration is unavailable");
     }
@@ -839,6 +868,9 @@ pub(crate) fn run_with_client(client: reqwest::Client) {
             let preferences = DesktopPreferences::load(&preferences_directory);
 
             window.set_decorations(preferences.window_decorations())?;
+            match window.set_zoom(preferences.zoom_factor()) {
+                Ok(()) | Err(_) => {}
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -847,6 +879,8 @@ pub(crate) fn run_with_client(client: reqwest::Client) {
             desktop_set_origin,
             desktop_get_window_decorations,
             desktop_set_window_decorations,
+            desktop_get_zoom,
+            desktop_set_zoom,
             desktop_auth_login,
             desktop_auth_resume,
             desktop_auth_me,
@@ -1080,7 +1114,10 @@ mod command_tests {
         assert_eq!(response["data"]["window_decorations"], false);
         let persisted = std::fs::read_to_string(directory.join("preferences.json"))
             .expect("preferences are persisted");
-        assert_eq!(persisted, "{\"window_decorations\":false}\n");
+        assert_eq!(
+            persisted,
+            "{\"window_decorations\":false,\"zoom_factor\":1.0}\n"
+        );
 
         std::fs::remove_dir_all(&directory).expect("temporary preferences are removed");
     }
@@ -1102,6 +1139,133 @@ mod command_tests {
             error: CallbackFn(1),
             url: "tauri://localhost".parse().expect("valid test URL"),
             body: tauri::ipc::InvokeBody::Json(serde_json::json!({ "decorations": false })),
+            headers: Default::default(),
+            invoke_key: INVOKE_KEY.to_owned(),
+        };
+
+        let response = get_ipc_response(&webview, request)
+            .expect("the command must deserialize and invoke through Tauri IPC")
+            .deserialize::<serde_json::Value>()
+            .expect("the command response is JSON");
+
+        assert_eq!(response["error"], "desktop window is unavailable");
+        assert!(!directory.join("preferences.json").exists());
+    }
+
+    #[test]
+    fn desktop_get_zoom_resolves_the_default_zoom_when_unset() {
+        let directory = preferences_test_directory("get-zoom-default");
+        let app = mock_builder()
+            .manage(test_state_with_directory(directory.clone()))
+            .invoke_handler(tauri::generate_handler![desktop_get_zoom])
+            .build(mock_context(noop_assets()))
+            .expect("the command test app builds");
+        let webview = WebviewWindowBuilder::new(&app, MAIN_WINDOW_LABEL, Default::default())
+            .build()
+            .expect("the command test webview builds");
+        let request = InvokeRequest {
+            cmd: "desktop_get_zoom".into(),
+            callback: CallbackFn(0),
+            error: CallbackFn(1),
+            url: "tauri://localhost".parse().expect("valid test URL"),
+            body: tauri::ipc::InvokeBody::Json(serde_json::json!({})),
+            headers: Default::default(),
+            invoke_key: INVOKE_KEY.to_owned(),
+        };
+
+        let response = get_ipc_response(&webview, request)
+            .expect("the command must deserialize and invoke through Tauri IPC")
+            .deserialize::<serde_json::Value>()
+            .expect("the command response is JSON");
+
+        assert_eq!(response["data"]["zoom_factor"], 1.0);
+    }
+
+    #[test]
+    fn desktop_set_zoom_persists_and_returns_the_updated_zoom() {
+        let directory = preferences_test_directory("set-zoom-persists");
+        let app = mock_builder()
+            .manage(test_state_with_directory(directory.clone()))
+            .invoke_handler(tauri::generate_handler![desktop_set_zoom])
+            .build(mock_context(noop_assets()))
+            .expect("the command test app builds");
+        let webview = WebviewWindowBuilder::new(&app, MAIN_WINDOW_LABEL, Default::default())
+            .build()
+            .expect("the command test webview builds");
+        let request = InvokeRequest {
+            cmd: "desktop_set_zoom".into(),
+            callback: CallbackFn(0),
+            error: CallbackFn(1),
+            url: "tauri://localhost".parse().expect("valid test URL"),
+            body: tauri::ipc::InvokeBody::Json(serde_json::json!({ "zoomFactor": 1.5 })),
+            headers: Default::default(),
+            invoke_key: INVOKE_KEY.to_owned(),
+        };
+
+        let response = get_ipc_response(&webview, request)
+            .expect("the command must deserialize and invoke through Tauri IPC")
+            .deserialize::<serde_json::Value>()
+            .expect("the command response is JSON");
+
+        assert_eq!(response["data"]["zoom_factor"], 1.5);
+        let persisted = std::fs::read_to_string(directory.join("preferences.json"))
+            .expect("preferences are persisted");
+        assert_eq!(
+            persisted,
+            "{\"window_decorations\":true,\"zoom_factor\":1.5}\n"
+        );
+
+        std::fs::remove_dir_all(&directory).expect("temporary preferences are removed");
+    }
+
+    #[test]
+    fn desktop_set_zoom_clamps_an_out_of_range_request() {
+        let directory = preferences_test_directory("set-zoom-clamps");
+        let app = mock_builder()
+            .manage(test_state_with_directory(directory.clone()))
+            .invoke_handler(tauri::generate_handler![desktop_set_zoom])
+            .build(mock_context(noop_assets()))
+            .expect("the command test app builds");
+        let webview = WebviewWindowBuilder::new(&app, MAIN_WINDOW_LABEL, Default::default())
+            .build()
+            .expect("the command test webview builds");
+        let request = InvokeRequest {
+            cmd: "desktop_set_zoom".into(),
+            callback: CallbackFn(0),
+            error: CallbackFn(1),
+            url: "tauri://localhost".parse().expect("valid test URL"),
+            body: tauri::ipc::InvokeBody::Json(serde_json::json!({ "zoomFactor": 9.0 })),
+            headers: Default::default(),
+            invoke_key: INVOKE_KEY.to_owned(),
+        };
+
+        let response = get_ipc_response(&webview, request)
+            .expect("the command must deserialize and invoke through Tauri IPC")
+            .deserialize::<serde_json::Value>()
+            .expect("the command response is JSON");
+
+        assert_eq!(response["data"]["zoom_factor"], 3.0);
+
+        std::fs::remove_dir_all(&directory).expect("temporary preferences are removed");
+    }
+
+    #[test]
+    fn desktop_set_zoom_fails_closed_when_the_main_window_is_missing() {
+        let directory = preferences_test_directory("set-zoom-missing-window");
+        let app = mock_builder()
+            .manage(test_state_with_directory(directory.clone()))
+            .invoke_handler(tauri::generate_handler![desktop_set_zoom])
+            .build(mock_context(noop_assets()))
+            .expect("the command test app builds");
+        let webview = WebviewWindowBuilder::new(&app, "not-main", Default::default())
+            .build()
+            .expect("the command test webview builds");
+        let request = InvokeRequest {
+            cmd: "desktop_set_zoom".into(),
+            callback: CallbackFn(0),
+            error: CallbackFn(1),
+            url: "tauri://localhost".parse().expect("valid test URL"),
+            body: tauri::ipc::InvokeBody::Json(serde_json::json!({ "zoomFactor": 1.5 })),
             headers: Default::default(),
             invoke_key: INVOKE_KEY.to_owned(),
         };

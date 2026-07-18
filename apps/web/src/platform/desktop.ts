@@ -272,6 +272,12 @@ export function createDesktopPlatformTransport(bridge: DesktopBridge = desktopBr
         decorations,
       });
     },
+    getZoom() {
+      return bridge.invoke<PlatformResult<DesktopPreferences>>('desktop_get_zoom');
+    },
+    setZoom(zoomFactor) {
+      return bridge.invoke<PlatformResult<DesktopPreferences>>('desktop_set_zoom', { zoomFactor });
+    },
     createWorkspaceEventSource(workspaceSlug) {
       return new DesktopWorkspaceEventSource(bridge, workspaceSlug);
     },

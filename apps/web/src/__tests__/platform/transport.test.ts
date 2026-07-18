@@ -33,6 +33,8 @@ function desktopTransport(): PlatformTransport {
     setOrigin: vi.fn(),
     getWindowDecorations: vi.fn(),
     setWindowDecorations: vi.fn(),
+    getZoom: vi.fn(),
+    setZoom: vi.fn(),
     createWorkspaceEventSource: vi.fn(() => new FakeEventSource('desktop://events')),
   };
 }

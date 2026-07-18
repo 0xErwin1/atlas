@@ -78,32 +78,87 @@ impl DesktopConfiguration {
     }
 }
 
+const DEFAULT_ZOOM_FACTOR: f64 = 1.0;
+const MIN_ZOOM_FACTOR: f64 = 0.5;
+const MAX_ZOOM_FACTOR: f64 = 3.0;
+
+fn default_zoom_factor() -> f64 {
+    DEFAULT_ZOOM_FACTOR
+}
+
+/// Normalizes a stored or requested zoom factor into the supported range, mapping any
+/// non-finite value (NaN, infinities) back to the default rather than propagating it.
+///
+/// Rounds to two decimals so repeated additive stepping cannot accumulate binary
+/// floating-point noise (for example `1.2000000000000002`) into the persisted value.
+fn clamp_zoom(value: f64) -> f64 {
+    if value.is_finite() {
+        let clamped = value.clamp(MIN_ZOOM_FACTOR, MAX_ZOOM_FACTOR);
+        (clamped * 100.0).round() / 100.0
+    } else {
+        DEFAULT_ZOOM_FACTOR
+    }
+}
+
 /// Machine-local desktop preferences, distinct from `DesktopConfiguration`. Stored in
 /// `preferences.json`, a sibling of `desktop.json`, and never synced with the server.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 pub struct DesktopPreferences {
     window_decorations: bool,
+    #[serde(default = "default_zoom_factor")]
+    zoom_factor: f64,
 }
 
 impl DesktopPreferences {
     const DECORATIONS_ON: Self = Self {
         window_decorations: true,
+        zoom_factor: DEFAULT_ZOOM_FACTOR,
     };
 
     /// Resolves stored preference bytes to the effective value, falling back to the safe
-    /// default whenever storage is absent or does not parse.
+    /// default whenever storage is absent or does not parse. A stored zoom factor is
+    /// normalized into the supported range so a corrupted value cannot reach the webview.
     pub fn resolve(stored: Option<&str>) -> Self {
         stored
             .and_then(|contents| serde_json::from_str::<Self>(contents).ok())
+            .map(|preferences| Self {
+                window_decorations: preferences.window_decorations,
+                zoom_factor: clamp_zoom(preferences.zoom_factor),
+            })
             .unwrap_or(Self::DECORATIONS_ON)
     }
 
     pub fn with_window_decorations(window_decorations: bool) -> Self {
-        Self { window_decorations }
+        Self {
+            window_decorations,
+            zoom_factor: DEFAULT_ZOOM_FACTOR,
+        }
     }
 
     pub fn window_decorations(&self) -> bool {
         self.window_decorations
+    }
+
+    pub fn zoom_factor(&self) -> f64 {
+        self.zoom_factor
+    }
+
+    /// Returns a copy with the zoom factor clamped into range, preserving the window
+    /// decorations preference.
+    pub fn set_zoom_factor(self, zoom_factor: f64) -> Self {
+        Self {
+            window_decorations: self.window_decorations,
+            zoom_factor: clamp_zoom(zoom_factor),
+        }
+    }
+
+    /// Returns a copy with the window decorations preference replaced, preserving the
+    /// stored zoom factor.
+    pub fn set_window_decorations_value(self, window_decorations: bool) -> Self {
+        Self {
+            window_decorations,
+            zoom_factor: self.zoom_factor,
+        }
     }
 
     pub fn load(directory: &Path) -> Self {
@@ -1033,6 +1088,79 @@ mod desktop_preferences_tests {
         assert_eq!(
             DesktopPreferences::resolve(Some("{\"window_decorations\":false}")),
             DesktopPreferences::with_window_decorations(false)
+        );
+    }
+
+    #[test]
+    fn resolves_a_legacy_preference_without_a_zoom_factor_to_the_default_zoom() {
+        let resolved = DesktopPreferences::resolve(Some("{\"window_decorations\":false}"));
+
+        assert!(!resolved.window_decorations());
+        assert_eq!(resolved.zoom_factor(), DEFAULT_ZOOM_FACTOR);
+    }
+
+    #[test]
+    fn honors_a_stored_zoom_factor_within_range() {
+        let resolved =
+            DesktopPreferences::resolve(Some("{\"window_decorations\":true,\"zoom_factor\":1.5}"));
+
+        assert!(resolved.window_decorations());
+        assert_eq!(resolved.zoom_factor(), 1.5);
+    }
+
+    #[test]
+    fn clamps_an_out_of_range_or_non_finite_stored_zoom_factor() {
+        assert_eq!(
+            DesktopPreferences::resolve(Some("{\"window_decorations\":true,\"zoom_factor\":9.0}"))
+                .zoom_factor(),
+            MAX_ZOOM_FACTOR
+        );
+        assert_eq!(
+            DesktopPreferences::resolve(Some("{\"window_decorations\":true,\"zoom_factor\":0.1}"))
+                .zoom_factor(),
+            MIN_ZOOM_FACTOR
+        );
+        assert_eq!(
+            DesktopPreferences::resolve(Some("{\"window_decorations\":true,\"zoom_factor\":null}"))
+                .zoom_factor(),
+            DEFAULT_ZOOM_FACTOR
+        );
+    }
+
+    #[test]
+    fn builders_preserve_the_sibling_preference() {
+        let zoomed = DesktopPreferences::with_window_decorations(false).set_zoom_factor(1.5);
+        assert!(!zoomed.window_decorations());
+        assert_eq!(zoomed.zoom_factor(), 1.5);
+
+        let toggled = zoomed.set_window_decorations_value(true);
+        assert!(toggled.window_decorations());
+        assert_eq!(toggled.zoom_factor(), 1.5);
+    }
+
+    #[test]
+    fn set_zoom_factor_clamps_out_of_range_input() {
+        assert_eq!(
+            DesktopPreferences::with_window_decorations(true)
+                .set_zoom_factor(9.0)
+                .zoom_factor(),
+            MAX_ZOOM_FACTOR
+        );
+        assert_eq!(
+            DesktopPreferences::with_window_decorations(true)
+                .set_zoom_factor(f64::NAN)
+                .zoom_factor(),
+            DEFAULT_ZOOM_FACTOR
+        );
+    }
+
+    #[test]
+    fn set_zoom_factor_rounds_accumulated_floating_point_noise() {
+        assert_eq!(
+            DesktopPreferences::with_window_decorations(true)
+                .set_zoom_factor(1.2000000000000002)
+                .zoom_factor(),
+            1.2
         );
     }
 }

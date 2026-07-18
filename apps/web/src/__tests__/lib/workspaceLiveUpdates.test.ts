@@ -120,8 +120,12 @@ function platformTransport(
     logout: async () => ({}),
     getOrigin: async () => ({ data: { origin: 'https://atlas.test' } }),
     setOrigin: async (origin) => ({ data: { origin } }),
-    getWindowDecorations: async () => ({ data: { window_decorations: true } }),
-    setWindowDecorations: async (decorations) => ({ data: { window_decorations: decorations } }),
+    getWindowDecorations: async () => ({ data: { window_decorations: true, zoom_factor: 1 } }),
+    setWindowDecorations: async (decorations) => ({
+      data: { window_decorations: decorations, zoom_factor: 1 },
+    }),
+    getZoom: async () => ({ data: { window_decorations: true, zoom_factor: 1 } }),
+    setZoom: async (zoomFactor) => ({ data: { window_decorations: true, zoom_factor: zoomFactor } }),
     createWorkspaceEventSource,
   };
 }
