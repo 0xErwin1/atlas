@@ -368,3 +368,132 @@ describe('ApiKeysPanel — capability scope grid', () => {
     );
   });
 });
+
+describe('ApiKeysPanel — expires date picker', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function createdKey(): ApiKeyCreated {
+    return {
+      id: 'k9',
+      name: 'ci-bot',
+      type: 'agent',
+      created_at: '2024-01-01T00:00:00Z',
+      is_global: false,
+      scopes: [],
+      secret: 'sk_test',
+    } as ApiKeyCreated;
+  }
+
+  async function openNewForm(): Promise<VueWrapper> {
+    const wrapper = mount(ApiKeysPanel, { attachTo: document.body });
+    activeWrapper = wrapper;
+    await flushPromises();
+
+    const newBtn = wrapper.findAll('button').find((b) => b.text().includes('New key'));
+    if (newBtn === undefined) throw new Error('expected a New key button');
+    await newBtn.trigger('click');
+    await nextTick();
+
+    await wrapper.find('input[placeholder="ci-deploy"]').setValue('ci-bot');
+    return wrapper;
+  }
+
+  async function clickCreate(wrapper: VueWrapper): Promise<void> {
+    const createBtn = wrapper.findAll('button').find((b) => b.text().includes('Create key'));
+    if (createBtn === undefined) throw new Error('expected a Create key button');
+    await createBtn.trigger('click');
+    await flushPromises();
+  }
+
+  it('defaults to never expires and submits expires_at: null', async () => {
+    const store = setup([]);
+    const create = vi.spyOn(store, 'createKey').mockResolvedValue(createdKey());
+
+    const wrapper = await openNewForm();
+
+    expect(wrapper.find('.atl-dp-trigger').text()).toContain('Never expires');
+
+    await clickCreate(wrapper);
+
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ expires_at: null }));
+  });
+
+  it('submits the selected day as an ISO timestamp', async () => {
+    const store = setup([]);
+    const create = vi.spyOn(store, 'createKey').mockResolvedValue(createdKey());
+
+    const wrapper = await openNewForm();
+
+    await wrapper.find('.atl-dp-trigger').trigger('click');
+    await nextTick();
+
+    const day = Array.from(document.body.querySelectorAll<HTMLElement>('.atl-dp-day')).find(
+      (b) => b.textContent?.trim() === '15',
+    );
+    if (day === undefined) throw new Error('expected day 15 in the calendar');
+
+    day.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await nextTick();
+
+    const now = new Date();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const expected = `${now.getFullYear()}-${month}-15T00:00:00.000Z`;
+
+    await clickCreate(wrapper);
+
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ expires_at: expected }));
+  });
+
+  it('clearing a selected date returns to never expires (null)', async () => {
+    const store = setup([]);
+    const create = vi.spyOn(store, 'createKey').mockResolvedValue(createdKey());
+
+    const wrapper = await openNewForm();
+
+    await wrapper.find('.atl-dp-trigger').trigger('click');
+    await nextTick();
+
+    const day = Array.from(document.body.querySelectorAll<HTMLElement>('.atl-dp-day')).find(
+      (b) => b.textContent?.trim() === '15',
+    );
+    if (day === undefined) throw new Error('expected day 15 in the calendar');
+    day.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await nextTick();
+
+    expect(wrapper.find('.atl-dp-trigger').text()).not.toContain('Never expires');
+
+    await wrapper.find('.atl-dp-trigger').trigger('click');
+    await nextTick();
+
+    const clearBtn = document.body.querySelector<HTMLElement>('.atl-dp-clear');
+    if (clearBtn === null) throw new Error('expected a clear button');
+    clearBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await nextTick();
+
+    expect(wrapper.find('.atl-dp-trigger').text()).toContain('Never expires');
+
+    await clickCreate(wrapper);
+
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ expires_at: null }));
+  });
+
+  it('closes the calendar on an outside click (Popover backdrop)', async () => {
+    setup([]);
+
+    const wrapper = await openNewForm();
+
+    await wrapper.find('.atl-dp-trigger').trigger('click');
+    await nextTick();
+
+    expect(document.body.querySelector('.atl-dp-panel')).not.toBeNull();
+
+    const backdrop = document.body.querySelector<HTMLElement>('.atl-popover-backdrop');
+    if (backdrop === null) throw new Error('expected the popover backdrop');
+    backdrop.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await nextTick();
+
+    expect(document.body.querySelector('.atl-dp-panel')).toBeNull();
+  });
+});

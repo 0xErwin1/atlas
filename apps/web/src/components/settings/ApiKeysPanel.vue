@@ -10,6 +10,7 @@ import EmptyState from '@/components/states/EmptyState.vue';
 import AgentBadge from '@/components/ui/AgentBadge.vue';
 import Btn from '@/components/ui/Btn.vue';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
+import DatePicker from '@/components/ui/DatePicker.vue';
 import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
 import FormField from '@/components/ui/FormField.vue';
 import Icon from '@/components/ui/Icon.vue';
@@ -394,13 +395,11 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
           />
         </div>
 
-        <FormField
-          label="Expires (optional)"
-          type="date"
-          :model-value="form.expires"
-          helper="Leave empty for a key that never expires."
-          @update:model-value="(v) => { form.expires = v; }"
-        />
+        <div class="atl-field">
+          <label class="atl-field-label">Expires (optional)</label>
+          <DatePicker v-model="form.expires" placeholder="Never expires" clear-label="Never expires" />
+          <div class="atl-field-helper">Empty means the key never expires.</div>
+        </div>
 
         <div class="atl-field">
           <label class="atl-field-label">Capabilities</label>
@@ -649,6 +648,12 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
   text-transform: uppercase;
   color: var(--c-muted);
   margin-bottom: 5px;
+}
+
+.atl-field-helper {
+  font-size: 11.5px;
+  color: var(--c-muted);
+  margin-top: 5px;
 }
 
 .atl-key-name {
