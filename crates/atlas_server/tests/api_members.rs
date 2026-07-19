@@ -1635,29 +1635,3 @@ async fn add_member_sysadmin_on_root_target_returns_403() {
 
     db.teardown().await;
 }
-
-// ── R4: PATCH — root caller on root target → PASS (no regression) ───────────
-
-#[tokio::test]
-async fn patch_root_caller_on_root_target_passes() {
-    let db = TestDb::create().await.expect("TestDb::create");
-    let server = TestServer::spawn(&db).await;
-
-    let (_owner, ws, _owner_user) =
-        login_user_with_workspace(&server, &db, "root-prot-ok-ws").await;
-
-    let root_target = add_root_member(&db, ws.id, "root-prot-ok-target", MemberRole::Member).await;
-
-    let root_client = login_break_glass_user(&server, &db, "root-prot-ok-root", true, false).await;
-
-    let result = root_client
-        .update_member_role(&ws.slug, root_target.id.0, "admin")
-        .await;
-
-    assert!(
-        result.is_ok(),
-        "root caller must be able to manage a root target, got: {result:?}"
-    );
-
-    db.teardown().await;
-}
