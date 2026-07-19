@@ -13,6 +13,8 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
 import FormField from '@/components/ui/FormField.vue';
 import Icon from '@/components/ui/Icon.vue';
+import SecretReveal from '@/components/ui/SecretReveal.vue';
+import ToggleSwitch from '@/components/ui/ToggleSwitch.vue';
 import { useLoadingMap } from '@/composables/useLoadingMap';
 import { formatDate, initials as nameInitials } from '@/lib/format';
 import { validateForm } from '@/lib/validation';
@@ -62,6 +64,15 @@ function canManage(u: UserDto): boolean {
 function canDisable(u: UserDto): boolean {
   if (isSelf(u)) return false;
   if (u.is_root && u.disabled_at == null && activeRootCount.value <= 1) return false;
+  if (!currentUserIsRoot.value && (u.is_root || u.is_system_admin)) return false;
+  return true;
+}
+
+// Enable mirrors the disable protections that still apply when re-enabling:
+// no self-management, and a non-root caller cannot manage root or system-admin
+// targets. The last-active-root rule is disable-only.
+function canEnable(u: UserDto): boolean {
+  if (isSelf(u)) return false;
   if (!currentUserIsRoot.value && (u.is_root || u.is_system_admin)) return false;
   return true;
 }
@@ -152,24 +163,12 @@ async function submitNew(): Promise<void> {
 // ── Activation-link reveal (one-time) ──────────────────────────────
 const linkTarget = ref<UserDto | null>(null);
 const linkUrl = ref('');
-const linkCopied = ref(false);
 const regenerating = ref(false);
 
 function showLink(user: UserDto, path: string): void {
   linkTarget.value = user;
   linkUrl.value = activationUrl(path);
-  linkCopied.value = false;
   mode.value = 'link';
-}
-
-async function copyLink(): Promise<void> {
-  if (linkUrl.value === '') return;
-  try {
-    await navigator.clipboard.writeText(linkUrl.value);
-    linkCopied.value = true;
-  } catch {
-    ui.showBanner('Clipboard is not available', 'error');
-  }
 }
 
 async function doneLink(): Promise<void> {
@@ -397,29 +396,28 @@ async function confirmDisable(): Promise<void> {
           @update:model-value="(v) => { form.email = v; formErrors.email = null; }"
         />
 
-        <div class="atl-field">
-          <label class="atl-field-label">Workspace</label>
-          <Dropdown
-            data-new-workspace
-            :options="workspaceOptions"
-            :model-value="form.workspace"
-            placeholder="No workspaces available"
-            @change="(v) => { form.workspace = v; formErrors.workspace = null; }"
-          />
-          <div v-if="formErrors.workspace" class="atl-select-error">
-            <Icon name="triangle-alert" :size="12" />{{ formErrors.workspace }}
-          </div>
-        </div>
+        <FormField label="Workspace" :error="formErrors.workspace">
+          <template #control>
+            <Dropdown
+              data-new-workspace
+              :options="workspaceOptions"
+              :model-value="form.workspace"
+              placeholder="No workspaces available"
+              @change="(v) => { form.workspace = v; formErrors.workspace = null; }"
+            />
+          </template>
+        </FormField>
 
-        <div class="atl-field">
-          <label class="atl-field-label">Role</label>
-          <Dropdown
-            data-new-role
-            :options="ROLES"
-            :model-value="form.role"
-            @change="(v) => { form.role = v; }"
-          />
-        </div>
+        <FormField label="Role">
+          <template #control>
+            <Dropdown
+              data-new-role
+              :options="ROLES"
+              :model-value="form.role"
+              @change="(v) => { form.role = v; }"
+            />
+          </template>
+        </FormField>
       </div>
 
       <div class="flex" style="gap: 8px; margin-top: 20px;">
@@ -449,20 +447,10 @@ async function confirmDisable(): Promise<void> {
         </div>
       </div>
 
-      <div class="atl-secret-box">
-        <div class="atl-secret-warn">
-          <Icon name="triangle-alert" :size="14" style="flex: 0 0 auto;" />
-          Copy this now — it won't be shown again. Regenerating creates a new link and voids this one.
-        </div>
-        <div style="padding: 14px; background: var(--c-raised);">
-          <div class="flex items-center" style="gap: 8px;">
-            <div class="atl-secret-value">{{ linkUrl }}</div>
-            <button type="button" class="atl-copybtn" @click="copyLink">
-              <Icon :name="linkCopied ? 'check' : 'copy'" :size="14" />{{ linkCopied ? 'Copied' : 'Copy' }}
-            </button>
-          </div>
-        </div>
-      </div>
+      <SecretReveal
+        :value="linkUrl"
+        warning="Copy this now — it won't be shown again. Regenerating creates a new link and voids this one."
+      />
 
       <div class="flex" style="justify-content: flex-end; margin-top: 16px;">
         <Btn variant="secondary" @click="doneLink">Done</Btn>
@@ -567,20 +555,21 @@ async function confirmDisable(): Promise<void> {
           <template #actions>
             <span v-if="isSelf(u)" class="atl-you">you</span>
             <template v-else>
-              <RowAction v-if="u.disabled_at" @click="enable(u)">
-                Enable
-              </RowAction>
-              <button
+              <template v-if="u.disabled_at">
+                <RowAction v-if="canEnable(u)" data-action="enable" @click="enable(u)">
+                  Enable
+                </RowAction>
+              </template>
+              <RowAction
                 v-else
-                type="button"
-                class="atl-revoke"
+                tone="danger"
+                data-action="disable"
                 :disabled="!canDisable(u)"
                 :title="disableTitle(u)"
-                :style="{ opacity: canDisable(u) ? 1 : 0.4, cursor: canDisable(u) ? 'pointer' : 'not-allowed' }"
-                @click="canDisable(u) && (disableTarget = u)"
+                @click="disableTarget = u"
               >
                 Disable
-              </button>
+              </RowAction>
             </template>
           </template>
 
@@ -596,53 +585,37 @@ async function confirmDisable(): Promise<void> {
 
               <!-- System admin -->
               <div v-if="currentUserIsRoot && !u.is_root" class="atl-manage-block">
-                <div class="atl-global-toggle">
-                  <button
-                    type="button"
-                    role="switch"
-                    class="atl-switch"
-                    :class="{ 'atl-switch--on': u.is_system_admin }"
-                    :aria-checked="u.is_system_admin"
-                    aria-label="System admin"
-                    data-action="toggle-sysadmin"
-                    @click="sysAdminTarget = u"
-                  >
-                    <span class="atl-switch-knob" />
-                  </button>
-                  <div class="atl-global-copy">
-                    <div class="atl-global-label">System admin</div>
-                    <div class="atl-global-help">
-                      Full platform access — manage users, every workspace, and audit logs.
-                    </div>
-                  </div>
-                </div>
+                <ToggleSwitch
+                  :model-value="u.is_system_admin"
+                  label="System admin"
+                  aria-label="System admin"
+                  copy="Full platform access — manage users, every workspace, and audit logs."
+                  data-action="toggle-sysadmin"
+                  @update:model-value="sysAdminTarget = u"
+                />
               </div>
 
               <!-- Account actions -->
               <div class="atl-manage-block">
                 <div class="atl-manage-label">Account</div>
                 <div class="atl-manage-actions">
-                  <button
+                  <RowAction
                     v-if="isPending(u) && !u.disabled_at"
-                    type="button"
-                    class="atl-manage-btn"
                     data-action="regenerate-link"
                     :disabled="regenerating"
                     @click="regenerateLink(u)"
                   >
                     <Icon name="link" :size="13" />
                     Regenerate activation link
-                  </button>
-                  <button
+                  </RowAction>
+                  <RowAction
                     v-else-if="canManage(u)"
-                    type="button"
-                    class="atl-manage-btn"
                     data-action="reset-password"
                     @click="resetConfirmTarget = u"
                   >
                     <Icon name="key" :size="13" />
                     Reset password
-                  </button>
+                  </RowAction>
                 </div>
               </div>
 
@@ -796,99 +769,10 @@ async function confirmDisable(): Promise<void> {
   flex-wrap: wrap;
 }
 
-.atl-manage-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 11px;
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
-  background: transparent;
-  color: var(--c-foreground);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.atl-manage-btn:hover:enabled {
-  background: var(--c-raised);
-}
-
-.atl-manage-btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
 .atl-grants-loading {
   font-size: 12px;
   color: var(--c-muted);
   padding: 4px 0;
-}
-
-/* Toggle switch — identical markup/styling to ApiKeysPanel "Global agent". */
-.atl-global-toggle {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-}
-
-.atl-switch {
-  flex: 0 0 auto;
-  position: relative;
-  width: 34px;
-  height: 20px;
-  margin-top: 1px;
-  padding: 0;
-  border: 1px solid var(--c-border);
-  border-radius: 9999px;
-  background: var(--c-input);
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
-}
-
-.atl-switch--on {
-  background: var(--c-agent);
-  border-color: var(--c-agent);
-}
-
-.atl-switch:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.atl-switch-knob {
-  position: absolute;
-  top: 50%;
-  left: 2px;
-  width: 14px;
-  height: 14px;
-  border-radius: 9999px;
-  background: var(--c-foreground);
-  transform: translateY(-50%);
-  transition: left 0.15s;
-}
-
-.atl-switch--on .atl-switch-knob {
-  left: 17px;
-  background: var(--c-on-agent, #fff);
-}
-
-.atl-global-copy {
-  min-width: 0;
-}
-
-.atl-global-label {
-  font-size: 12.5px;
-  font-weight: var(--fw-semibold);
-  color: var(--c-foreground);
-}
-
-.atl-global-help {
-  font-size: 11.5px;
-  color: var(--c-muted);
-  line-height: 1.45;
-  margin-top: 2px;
-  max-width: 440px;
 }
 
 .atl-you {
@@ -899,21 +783,6 @@ async function confirmDisable(): Promise<void> {
   background: var(--c-raised);
   border-radius: var(--r-sm);
   padding: 2px 8px;
-}
-
-.atl-revoke {
-  height: 24px;
-  padding: 0 10px;
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
-  background: transparent;
-  color: var(--c-danger);
-  cursor: pointer;
-  font-size: 12px;
-}
-
-.atl-revoke:hover:enabled {
-  background: var(--c-raised);
 }
 
 .atl-users-note {
@@ -934,79 +803,5 @@ async function confirmDisable(): Promise<void> {
   border: 1px solid var(--c-border);
   border-radius: 4px;
   margin-bottom: 18px;
-}
-
-.atl-field {
-  display: flex;
-  flex-direction: column;
-}
-
-.atl-field-label {
-  display: block;
-  font-size: 10px;
-  font-weight: var(--fw-semibold);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--c-muted);
-  margin-bottom: 5px;
-}
-
-.atl-select-error {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11.5px;
-  color: var(--c-danger);
-  margin-top: 5px;
-}
-
-.atl-secret-box {
-  border: 1px solid rgba(255, 180, 84, 0.45);
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.atl-secret-warn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 12px;
-  background: rgba(255, 180, 84, 0.12);
-  border-bottom: 1px solid rgba(255, 180, 84, 0.45);
-  color: var(--c-primary);
-  font-size: 12.5px;
-  font-weight: var(--fw-semibold);
-}
-
-.atl-secret-value {
-  flex: 1;
-  min-width: 0;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  padding: 0 11px;
-  background: var(--c-background);
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-lg);
-  font-family: var(--font-mono);
-  font-size: 13px;
-  color: var(--c-foreground);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.atl-copybtn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 36px;
-  padding: 0 12px;
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
-  background: var(--c-raised);
-  color: var(--c-foreground);
-  cursor: pointer;
-  font-size: 12.5px;
 }
 </style>

@@ -203,6 +203,69 @@ describe('UsersPanel — manage panel', () => {
   });
 });
 
+describe('UsersPanel — enable gating', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    vi.clearAllMocks();
+  });
+
+  function disabledUser(over: Partial<UserDto> = {}): UserDto {
+    return user({ disabled_at: '2024-02-01T00:00:00Z', ...over });
+  }
+
+  it('shows Enable to root for a disabled user and calls setDisabled(id, false)', async () => {
+    const { usersStore } = setup({ users: [disabledUser()] });
+    const setDisabled = vi.spyOn(usersStore, 'setDisabled').mockResolvedValue(true);
+
+    const wrapper = mountPanel();
+    await flushPromises();
+
+    const enableBtn = wrapper.find('[data-action="enable"]');
+    expect(enableBtn.exists()).toBe(true);
+
+    await enableBtn.trigger('click');
+    await flushPromises();
+
+    expect(setDisabled).toHaveBeenCalledWith('u1', false);
+  });
+
+  it('shows Enable to a non-root caller for a plain disabled user', async () => {
+    setup({ root: false, users: [disabledUser()] });
+
+    const wrapper = mountPanel();
+    await flushPromises();
+
+    expect(wrapper.find('[data-action="enable"]').exists()).toBe(true);
+  });
+
+  it('hides Enable for a disabled root target from a non-root caller', async () => {
+    setup({ root: false, users: [disabledUser({ is_root: true })] });
+
+    const wrapper = mountPanel();
+    await flushPromises();
+
+    expect(wrapper.find('[data-action="enable"]').exists()).toBe(false);
+  });
+
+  it('hides Enable for a disabled system-admin target from a non-root caller', async () => {
+    setup({ root: false, users: [disabledUser({ is_system_admin: true })] });
+
+    const wrapper = mountPanel();
+    await flushPromises();
+
+    expect(wrapper.find('[data-action="enable"]').exists()).toBe(false);
+  });
+
+  it('shows Enable to root for a disabled system-admin target', async () => {
+    setup({ users: [disabledUser({ is_system_admin: true })] });
+
+    const wrapper = mountPanel();
+    await flushPromises();
+
+    expect(wrapper.find('[data-action="enable"]').exists()).toBe(true);
+  });
+});
+
 describe('UsersPanel — workspace access editor', () => {
   beforeEach(() => {
     setActivePinia(createPinia());

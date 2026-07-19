@@ -489,7 +489,7 @@ describe('ResourceCache runtime', () => {
     expect(request.publish).not.toHaveBeenCalled();
   });
 
-  it('purges without waiting for hung HTTP and fences its late response', async () => {
+  it('purges without waiting for hung HTTP and delivers its late response without re-persisting it', async () => {
     let resolveLoad: ((payload: { title: string }) => void) | undefined;
     const store = {
       get: vi.fn().mockResolvedValue(null),
@@ -521,8 +521,12 @@ describe('ResourceCache runtime', () => {
     await expect(purge).resolves.toBe(true);
 
     resolveLoad?.({ title: 'Late' });
-    await expect(operation.completion).resolves.toMatchObject({ published: false });
-    expect(publish).not.toHaveBeenCalled();
+    // The fetch succeeded over HTTP, so the still-current caller receives the
+    // payload instead of a payloadless "success" — but the fenced context is
+    // never re-persisted (no putMany into the purged scope).
+    await expect(operation.completion).resolves.toEqual({ published: true, payload: { title: 'Late' } });
+    expect(publish).toHaveBeenCalledWith({ title: 'Late' });
+    expect(store.putMany).not.toHaveBeenCalled();
   });
 
   it('purges only the requested workspace and prevents stale work from restoring it', async () => {
@@ -714,7 +718,7 @@ describe('ResourceCache runtime', () => {
     expect(publish).not.toHaveBeenCalled();
   });
 
-  it('does not publish a failed-persistence payload after its scoped purge completes', async () => {
+  it('returns a failed-persistence payload to a current caller after its scoped purge without re-caching it', async () => {
     let resolvePut: ((result: boolean) => void) | undefined;
     const principal = 'user:019ef171-bbcf-7b90-9be6-5dbb382afd08';
     const workspaceId = '019ef171-bbcf-7b90-9be6-5dbb382afd08';
@@ -750,8 +754,13 @@ describe('ResourceCache runtime', () => {
     await expect(cache.purgeTags(['document:note-a'], principal, workspaceId)).resolves.toBe(true);
     resolvePut?.(false);
 
-    await expect(operation.completion).resolves.toEqual({ published: false });
-    expect(publish).not.toHaveBeenCalled();
+    // Persistence failed and its scoped purge fenced the cache write, but the
+    // payload was fetched successfully, so the current caller still receives it.
+    await expect(operation.completion).resolves.toEqual({
+      published: true,
+      payload: { title: 'Pre-purge' },
+    });
+    expect(publish).toHaveBeenCalledWith({ title: 'Pre-purge' });
   });
 
   it('never hydrates or revalidates data that resolves after its scoped purge begins', async () => {
@@ -815,9 +824,12 @@ describe('ResourceCache runtime', () => {
     expect(store.putMany).not.toHaveBeenCalled();
 
     resolveDelete?.(true);
+    // Nothing is published or cached into the purged scope, but the fetched
+    // payload is still handed back on the revalidation result rather than
+    // discarded — a caller must never see a payloadless success.
     await expect(Promise.all([hydration, revalidation, purge])).resolves.toEqual([
       null,
-      { published: false },
+      { published: false, payload: { title: 'Fresh' } },
       true,
     ]);
 

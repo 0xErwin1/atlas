@@ -36,11 +36,86 @@ describe('useWorkspaceStore — ProjectSummary.task_prefix', () => {
     );
 
     const store = useWorkspaceStore();
+    store.setActiveWorkspace('ws1');
     await store.loadProjects('ws1');
 
     expect(store.projects).toHaveLength(1);
     expect(store.projects[0]?.task_prefix).toBe('ATL');
     expect(store.projects[0]?.visibility).toBe('workspace');
+  });
+});
+
+describe('useWorkspaceStore — loadProjects staleness and errors', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    vi.clearAllMocks();
+  });
+
+  it('clears the list locally for an empty slug without calling the API', async () => {
+    const store = useWorkspaceStore();
+    store.projects = [
+      { slug: 's', name: 'S', task_prefix: 'S', workspace_id: 'ws1', visibility: 'workspace' },
+    ];
+
+    await store.loadProjects('');
+
+    expect(GET).not.toHaveBeenCalled();
+    expect(store.projects).toEqual([]);
+    expect(store.projectsError).toBeNull();
+  });
+
+  it('does not let a late failure clobber a freshly loaded list', async () => {
+    let resolveStale: (value: { data: undefined; error: { hint: string } }) => void = () => {};
+    GET.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveStale = resolve;
+      }),
+    ).mockResolvedValueOnce(
+      makePageResult([
+        {
+          id: 'p2',
+          slug: 'fresh',
+          name: 'Fresh',
+          task_prefix: 'FR',
+          workspace_id: 'ws1',
+          visibility: 'workspace',
+          created_at: '',
+          updated_at: '',
+        },
+      ]),
+    );
+
+    const store = useWorkspaceStore();
+    store.setActiveWorkspace('ws1');
+
+    const stalePromise = store.loadProjects('ws1');
+    const freshPromise = store.loadProjects('ws1');
+    await freshPromise;
+
+    expect(store.projects).toHaveLength(1);
+    expect(store.projects[0]?.slug).toBe('fresh');
+
+    resolveStale({ data: undefined, error: { hint: 'boom' } });
+    await stalePromise;
+
+    expect(store.projects).toHaveLength(1);
+    expect(store.projects[0]?.slug).toBe('fresh');
+    expect(store.projectsError).toBeNull();
+  });
+
+  it('sets projectsError and clears the list when the load fails', async () => {
+    GET.mockResolvedValueOnce({ data: undefined, error: { hint: 'Service unavailable' } });
+
+    const store = useWorkspaceStore();
+    store.setActiveWorkspace('ws1');
+    store.projects = [
+      { slug: 's', name: 'S', task_prefix: 'S', workspace_id: 'ws1', visibility: 'workspace' },
+    ];
+
+    await store.loadProjects('ws1');
+
+    expect(store.projects).toEqual([]);
+    expect(store.projectsError).toBe('Service unavailable');
   });
 });
 
@@ -68,6 +143,7 @@ describe('useWorkspaceStore — updateProject', () => {
     );
 
     const store = useWorkspaceStore();
+    store.setActiveWorkspace('ws1');
     const ok = await store.updateProject('ws1', 'atlas', { name: 'Atlas Renamed', task_prefix: 'ATLX' });
 
     expect(ok).toBe(true);

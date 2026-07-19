@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import ErrorState from '@/components/states/ErrorState.vue';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import ContextMenu, { type MenuItem } from '@/components/ui/ContextMenu.vue';
 import Icon from '@/components/ui/Icon.vue';
@@ -487,12 +488,20 @@ watch(() => workspace.activeWorkspaceSlug, loadAll);
       />
     </div>
 
-    <p
-      v-if="workspace.projects.length === 0 && editActive === null"
-      style="padding: 8px; font-size: var(--fs-sm); color: var(--c-muted);"
-    >
-      No projects yet.
-    </p>
+    <template v-if="workspace.projects.length === 0 && editActive === null">
+      <ErrorState
+        v-if="workspace.projectsError !== null"
+        title="Couldn’t load projects"
+        :hint="workspace.projectsError"
+        @retry="loadAll"
+      />
+      <p
+        v-else
+        style="padding: 8px; font-size: var(--fs-sm); color: var(--c-muted);"
+      >
+        No projects yet.
+      </p>
+    </template>
 
     <ContextMenu
       :open="menuOpen"

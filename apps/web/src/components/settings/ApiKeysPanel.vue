@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { z } from 'zod';
 import ExpandableRow from '@/components/settings/ExpandableRow.vue';
 import PanelHeader from '@/components/settings/PanelHeader.vue';
+import RowAction from '@/components/settings/RowAction.vue';
 import ScopeGrid from '@/components/settings/ScopeGrid.vue';
 import SettingsTable from '@/components/settings/SettingsTable.vue';
 import WorkspaceAccessEditor, { type RoleOption } from '@/components/settings/WorkspaceAccessEditor.vue';
@@ -14,6 +15,9 @@ import DatePicker from '@/components/ui/DatePicker.vue';
 import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
 import FormField from '@/components/ui/FormField.vue';
 import Icon from '@/components/ui/Icon.vue';
+import SecretReveal from '@/components/ui/SecretReveal.vue';
+import ToggleSwitch from '@/components/ui/ToggleSwitch.vue';
+import { useCopyToClipboard } from '@/composables/useCopyToClipboard';
 import { useLoadingMap } from '@/composables/useLoadingMap';
 import { formatDate } from '@/lib/format';
 import { grantRoleOptions } from '@/lib/grantRoles';
@@ -31,6 +35,7 @@ import { useWorkspaceStore } from '@/stores/workspace';
 const keysStore = useApiKeysStore();
 const ui = useUiStore();
 const wsStore = useWorkspaceStore();
+const { copy } = useCopyToClipboard();
 
 type Mode = 'list' | 'new' | 'secret';
 const mode = ref<Mode>('list');
@@ -51,7 +56,6 @@ const formErrors = reactive<{ name: string | null }>({ name: null });
 const saving = ref(false);
 
 const created = ref<ApiKeyCreated | null>(null);
-const copied = ref(false);
 
 const revokeTarget = ref<{ id: string; name: string } | null>(null);
 
@@ -65,6 +69,15 @@ const nameSchema = z.object({ name: z.string().trim().min(1, 'Name is required')
 
 function typeLabel(t: string): string {
   return KEY_TYPES.find((k) => k.value === t)?.label ?? t.toUpperCase();
+}
+
+/**
+ * "Expires on day D" keeps the key valid through the end of that calendar day
+ * in the user's local timezone — the day the picker displays. The submitted
+ * instant is that local end-of-day, converted to UTC.
+ */
+function expiresAtIso(day: string): string {
+  return new Date(`${day}T23:59:59.999`).toISOString();
 }
 
 onMounted(() => {
@@ -94,7 +107,7 @@ async function submitNew(): Promise<void> {
     return;
   }
 
-  const expiresAt = form.expires === '' ? null : new Date(form.expires).toISOString();
+  const expiresAt = form.expires === '' ? null : expiresAtIso(form.expires);
 
   saving.value = true;
   const res = await keysStore.createKey({
@@ -112,18 +125,7 @@ async function submitNew(): Promise<void> {
   }
 
   created.value = res;
-  copied.value = false;
   mode.value = 'secret';
-}
-
-async function copySecret(): Promise<void> {
-  if (created.value === null) return;
-  try {
-    await navigator.clipboard.writeText(created.value.secret);
-    copied.value = true;
-  } catch {
-    ui.showBanner('Clipboard is not available', 'error');
-  }
 }
 
 async function doneSecret(): Promise<void> {
@@ -324,15 +326,12 @@ async function onToggleGlobal(key: ApiKeyDto): Promise<void> {
 }
 
 async function copyKeyId(id: string): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(id);
-    copiedKeyId.value = id;
-    setTimeout(() => {
-      if (copiedKeyId.value === id) copiedKeyId.value = null;
-    }, 1500);
-  } catch {
-    ui.showBanner('Clipboard is not available', 'error');
-  }
+  if (!(await copy(id))) return;
+
+  copiedKeyId.value = id;
+  setTimeout(() => {
+    if (copiedKeyId.value === id) copiedKeyId.value = null;
+  }, 1500);
 }
 
 function grantedByLabel(g: ApiKeyGrantDto): string | null {
@@ -347,24 +346,12 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
     <div v-if="mode === 'secret' && created">
       <PanelHeader title="API keys" subtitle="Let agents and scripts act on your behalf" />
 
-      <div class="atl-secret-box">
-        <div class="atl-secret-warn">
-          <Icon name="triangle-alert" :size="14" style="flex: 0 0 auto;" />
-          Copy this now — you won't be able to see it again.
-        </div>
-        <div style="padding: 14px; background: var(--c-raised);">
-          <div style="font-size: 12px; color: var(--c-muted); margin-bottom: 8px;">
-            Secret for key
-            <span style="font-family: var(--font-mono); color: var(--c-foreground);">"{{ created.name }}"</span>
-          </div>
-          <div class="flex items-center" style="gap: 8px;">
-            <div class="atl-secret-value">{{ created.secret }}</div>
-            <button type="button" class="atl-copybtn" @click="copySecret">
-              <Icon :name="copied ? 'check' : 'copy'" :size="14" />{{ copied ? 'Copied' : 'Copy' }}
-            </button>
-          </div>
-        </div>
-      </div>
+      <SecretReveal :value="created.secret" warning="Copy this now — you won't be able to see it again.">
+        <template #caption>
+          Secret for key
+          <span style="font-family: var(--font-mono); color: var(--c-foreground);">"{{ created.name }}"</span>
+        </template>
+      </SecretReveal>
 
       <div class="flex" style="justify-content: flex-end; margin-top: 16px;">
         <Btn variant="secondary" @click="doneSecret">Done</Btn>
@@ -385,29 +372,28 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
           @update:model-value="(v) => { form.name = v; formErrors.name = null; }"
         />
 
-        <div class="atl-field">
-          <label class="atl-field-label">Type</label>
-          <Dropdown
-            data-new-type
-            :options="keyTypeOptions"
-            :model-value="form.type"
-            @change="(v) => { form.type = v as KeyType; }"
-          />
-        </div>
+        <FormField label="Type">
+          <template #control>
+            <Dropdown
+              data-new-type
+              :options="keyTypeOptions"
+              :model-value="form.type"
+              @change="(v) => { form.type = v as KeyType; }"
+            />
+          </template>
+        </FormField>
 
-        <div class="atl-field">
-          <label class="atl-field-label">Expires (optional)</label>
-          <DatePicker v-model="form.expires" placeholder="Never expires" clear-label="Never expires" />
-          <div class="atl-field-helper">Empty means the key never expires.</div>
-        </div>
+        <FormField label="Expires (optional)" helper="Empty means the key never expires.">
+          <template #control>
+            <DatePicker v-model="form.expires" placeholder="Never expires" clear-label="Never expires" />
+          </template>
+        </FormField>
 
-        <div class="atl-field">
-          <label class="atl-field-label">Capabilities</label>
-          <ScopeGrid v-model="newScopes" />
-          <div class="atl-scope-help">
-            Leave everything unchecked for read-only access to every area.
-          </div>
-        </div>
+        <FormField label="Capabilities" helper="Leave everything unchecked for read-only access to every area.">
+          <template #control>
+            <ScopeGrid v-model="newScopes" />
+          </template>
+        </FormField>
       </div>
 
       <div class="flex" style="gap: 8px; margin-top: 20px;">
@@ -474,13 +460,9 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
           </template>
 
           <template #actions>
-            <button
-              type="button"
-              class="atl-revoke"
-              @click="revokeTarget = { id: k.id, name: k.name }"
-            >
+            <RowAction tone="danger" data-action="revoke" @click="revokeTarget = { id: k.id, name: k.name }">
               Revoke
-            </button>
+            </RowAction>
           </template>
 
           <template #panel>
@@ -510,27 +492,14 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
                 </span>
               </div>
 
-              <div class="atl-global-toggle">
-                <button
-                  type="button"
-                  role="switch"
-                  class="atl-switch"
-                  :class="{ 'atl-switch--on': k.is_global }"
-                  :aria-checked="k.is_global"
-                  :disabled="globalPending[k.id] === true"
-                  aria-label="Global agent"
-                  @click="onToggleGlobal(k)"
-                >
-                  <span class="atl-switch-knob" />
-                </button>
-                <div class="atl-global-copy">
-                  <div class="atl-global-label">Global agent</div>
-                  <div class="atl-global-help">
-                    Reaches every workspace you can reach, capped at editor. The agent never
-                    exceeds your own permissions.
-                  </div>
-                </div>
-              </div>
+              <ToggleSwitch
+                :model-value="k.is_global"
+                :disabled="globalPending[k.id] === true"
+                label="Global agent"
+                aria-label="Global agent"
+                copy="Reaches every workspace you can reach, capped at editor. The agent never exceeds your own permissions."
+                @update:model-value="onToggleGlobal(k)"
+              />
             </div>
 
             <div class="atl-manage-block" data-scopes-block>
@@ -597,13 +566,7 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
                       </span>
                     </div>
                     <span class="atl-grant-role">{{ g.role }}</span>
-                    <button
-                      type="button"
-                      class="atl-revoke atl-grant-revoke-btn"
-                      @click="revokeGrant(k.id, g.id)"
-                    >
-                      Revoke
-                    </button>
+                    <RowAction tone="danger" @click="revokeGrant(k.id, g.id)">Revoke</RowAction>
                   </div>
                 </div>
               </div>
@@ -635,27 +598,6 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
 </template>
 
 <style scoped>
-.atl-field {
-  display: flex;
-  flex-direction: column;
-}
-
-.atl-field-label {
-  display: block;
-  font-size: 10px;
-  font-weight: var(--fw-semibold);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--c-muted);
-  margin-bottom: 5px;
-}
-
-.atl-field-helper {
-  font-size: 11.5px;
-  color: var(--c-muted);
-  margin-top: 5px;
-}
-
 .atl-key-name {
   flex: 2;
   font-size: 13px;
@@ -670,21 +612,6 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
   flex: 1.4;
   font-size: 12px;
   color: var(--c-muted);
-}
-
-.atl-revoke {
-  height: 24px;
-  padding: 0 10px;
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
-  background: transparent;
-  color: var(--c-danger);
-  cursor: pointer;
-  font-size: 12px;
-}
-
-.atl-revoke:hover {
-  background: var(--c-raised);
 }
 
 .atl-key-overview {
@@ -775,81 +702,10 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
   padding: 2px 8px;
 }
 
-.atl-global-toggle {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-}
-
-.atl-switch {
-  flex: 0 0 auto;
-  position: relative;
-  width: 34px;
-  height: 20px;
-  margin-top: 1px;
-  padding: 0;
-  border: 1px solid var(--c-border);
-  border-radius: 9999px;
-  background: var(--c-input);
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
-}
-
-.atl-switch--on {
-  background: var(--c-agent);
-  border-color: var(--c-agent);
-}
-
-.atl-switch:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.atl-switch-knob {
-  position: absolute;
-  top: 50%;
-  left: 2px;
-  width: 14px;
-  height: 14px;
-  border-radius: 9999px;
-  background: var(--c-foreground);
-  transform: translateY(-50%);
-  transition: left 0.15s;
-}
-
-.atl-switch--on .atl-switch-knob {
-  left: 17px;
-  background: var(--c-on-agent, #fff);
-}
-
-.atl-global-copy {
-  min-width: 0;
-}
-
-.atl-global-label {
-  font-size: 12.5px;
-  font-weight: var(--fw-semibold);
-  color: var(--c-foreground);
-}
-
-.atl-global-help {
-  font-size: 11.5px;
-  color: var(--c-muted);
-  line-height: 1.45;
-  margin-top: 2px;
-  max-width: 440px;
-}
-
 .atl-grants-loading {
   font-size: 12px;
   color: var(--c-muted);
   padding: 6px 0;
-}
-
-.atl-scope-help {
-  font-size: 11.5px;
-  color: var(--c-muted);
-  margin-top: 6px;
 }
 
 .atl-manage-block {
@@ -930,13 +786,6 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
   border-radius: 3px;
 }
 
-.atl-grant-revoke-btn {
-  flex: 0 0 auto;
-  height: 22px;
-  padding: 0 8px;
-  font-size: 11px;
-}
-
 .atl-keys-helper {
   display: flex;
   align-items: center;
@@ -944,55 +793,5 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
   margin-top: 12px;
   font-size: 12px;
   color: var(--c-muted);
-}
-
-.atl-secret-box {
-  border: 1px solid rgba(255, 180, 84, 0.45);
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.atl-secret-warn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 12px;
-  background: rgba(255, 180, 84, 0.12);
-  border-bottom: 1px solid rgba(255, 180, 84, 0.45);
-  color: var(--c-primary);
-  font-size: 12.5px;
-  font-weight: var(--fw-semibold);
-}
-
-.atl-secret-value {
-  flex: 1;
-  min-width: 0;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  padding: 0 11px;
-  background: var(--c-background);
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-lg);
-  font-family: var(--font-mono);
-  font-size: 13px;
-  color: var(--c-foreground);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.atl-copybtn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 36px;
-  padding: 0 12px;
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
-  background: var(--c-raised);
-  color: var(--c-foreground);
-  cursor: pointer;
-  font-size: 12.5px;
 }
 </style>

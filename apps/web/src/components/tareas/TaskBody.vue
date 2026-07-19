@@ -13,6 +13,7 @@ import ReferenceList from '@/components/tareas/ReferenceList.vue';
 import SubtaskList from '@/components/tareas/SubtaskList.vue';
 import TaskDescription from '@/components/tareas/TaskDescription.vue';
 import Chip from '@/components/ui/Chip.vue';
+import DatePicker from '@/components/ui/DatePicker.vue';
 import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
 import Icon from '@/components/ui/Icon.vue';
 import Popover from '@/components/ui/Popover.vue';
@@ -521,11 +522,9 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
         <div class="atl-tv-field">
           <span class="atl-tv-label"><Icon name="calendar" :size="14" />Dates</span>
           <span class="atl-tv-value">
-            <input
-              type="date"
-              class="atl-tv-input"
-              :value="dueInputValue"
-              @change="onChangeDue(($event.target as HTMLInputElement).value)"
+            <DatePicker
+              :model-value="dueInputValue"
+              @update:model-value="(v: string) => onChangeDue(v)"
             />
           </span>
         </div>
@@ -964,19 +963,6 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
 
 .atl-tv-input:hover {
   border-color: var(--c-muted);
-}
-
-/* The native date picker's calendar glyph follows the theme via `color-scheme`
-   (set per theme in tokens.css); tint it muted and brighten it on hover/focus. */
-.atl-tv-input[type='date']::-webkit-calendar-picker-indicator {
-  opacity: 0.55;
-  cursor: pointer;
-  transition: opacity 0.12s ease;
-}
-
-.atl-tv-input[type='date']:hover::-webkit-calendar-picker-indicator,
-.atl-tv-input[type='date']:focus::-webkit-calendar-picker-indicator {
-  opacity: 0.9;
 }
 
 /* Numeric fields (estimate) carry no spin buttons — the value is typed, not nudged. */

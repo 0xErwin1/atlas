@@ -49,7 +49,7 @@ const selectedLabel = (): string => selectedOption()?.label ?? props.placeholder
 </script>
 
 <template>
-  <Popover placement="bottom-start" teleport>
+  <Popover placement="bottom-start" role="listbox" teleport>
     <template #trigger="{ open, toggle }">
       <button
         type="button"
@@ -96,7 +96,9 @@ const selectedLabel = (): string => selectedOption()?.label ?? props.placeholder
     </template>
 
     <template #default="{ close }">
-      <ul role="listbox" style="list-style: none; padding: 4px; min-width: 100%;">
+      <!-- The Popover panel is the listbox; the list markup is presentational
+           so the options are owned directly by it in the accessibility tree. -->
+      <ul role="presentation" style="list-style: none; padding: 4px; min-width: 100%;">
         <li
           v-for="opt in options"
           :key="opt.value"

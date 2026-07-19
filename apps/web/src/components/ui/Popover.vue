@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from 'vue';
+import { nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useOverlayEscape } from '@/composables/useOverlayEscape';
 
 /**
@@ -13,7 +13,9 @@ import { useOverlayEscape } from '@/composables/useOverlayEscape';
  * When `teleport` is set, the panel is rendered into `<body>` as a `position:
  * fixed` surface anchored to the trigger's bounding rect — this is required when
  * an ancestor has `overflow: auto/hidden` and would otherwise clip the panel
- * (e.g. inline editors inside a scrolling task list).
+ * (e.g. inline editors inside a scrolling task list). The teleported surface
+ * tracks the trigger while scrolling/resizing, moves focus into the panel on
+ * open, and restores it to the trigger on close.
  *
  * Slots:
  *  - `trigger` (scoped: { open, toggle, close }) — the control that opens it.
@@ -21,6 +23,8 @@ import { useOverlayEscape } from '@/composables/useOverlayEscape';
  */
 
 type Placement = 'bottom-start' | 'bottom-end' | 'top-start' | 'top-end' | 'right-end';
+
+type PanelRole = 'menu' | 'dialog' | 'listbox';
 
 const props = withDefaults(
   defineProps<{
@@ -37,13 +41,29 @@ const props = withDefaults(
      * existing consumer keeps the absolute-positioned behavior unchanged.
      */
     teleport?: boolean;
+    /**
+     * ARIA role of the panel itself, so consumers never nest a second role
+     * inside it: a date picker passes `dialog`, a select passes `listbox`.
+     */
+    role?: PanelRole;
+    /** Accessible name for the panel (e.g. required when `role` is `dialog`). */
+    ariaLabel?: string;
   }>(),
-  { placement: 'bottom-start', width: '', surface: true, block: false, teleport: false },
+  {
+    placement: 'bottom-start',
+    width: '',
+    surface: true,
+    block: false,
+    teleport: false,
+    role: 'menu',
+    ariaLabel: undefined,
+  },
 );
 
 const open = defineModel<boolean>('open', { default: false });
 
 const anchor = ref<HTMLElement | null>(null);
+const panel = ref<HTMLElement | null>(null);
 const fixedStyle = ref<Record<string, string>>({});
 
 function close(): void {
@@ -57,7 +77,11 @@ function toggle(): void {
 /**
  * Anchors the teleported panel to the trigger rect. Only the start/end edges of
  * the configured placement are honored for the fixed surface (top vs bottom,
- * left vs right); the panel is positioned just outside the trigger on that edge.
+ * left vs right). When the panel's measured size is available, a bottom
+ * placement that would overflow the viewport flips to the top (and vice versa,
+ * when the preferred top side doesn't fit) and the panel is clamped to the
+ * horizontal viewport edges; without a measurement it keeps the plain
+ * anchored-edge position.
  */
 function positionFixed(): void {
   const el = anchor.value;
@@ -65,25 +89,89 @@ function positionFixed(): void {
 
   const rect = el.getBoundingClientRect();
   const gap = 4;
-  const onTop = props.placement.startsWith('top');
-  const onEnd = props.placement.endsWith('end');
+  const panelWidth = panel.value?.offsetWidth ?? 0;
+  const panelHeight = panel.value?.offsetHeight ?? 0;
+
+  let onTop = props.placement.startsWith('top');
+  if (panelHeight > 0) {
+    const overflowsBelow = rect.bottom + gap + panelHeight > window.innerHeight;
+    const fitsAbove = rect.top - gap - panelHeight >= 0;
+    if (!onTop && overflowsBelow && fitsAbove) onTop = true;
+    else if (onTop && !fitsAbove && !overflowsBelow) onTop = false;
+  }
 
   const style: Record<string, string> = { position: 'fixed' };
 
   if (onTop) style.bottom = `${window.innerHeight - rect.top + gap}px`;
   else style.top = `${rect.bottom + gap}px`;
 
-  if (onEnd) style.right = `${window.innerWidth - rect.right}px`;
-  else style.left = `${rect.left}px`;
+  const onEnd = props.placement.endsWith('end');
+  if (panelWidth > 0) {
+    const preferredLeft = onEnd ? rect.right - panelWidth : rect.left;
+    const maxLeft = Math.max(window.innerWidth - panelWidth, 0);
+    style.left = `${Math.min(Math.max(preferredLeft, 0), maxLeft)}px`;
+  } else if (onEnd) {
+    style.right = `${window.innerWidth - rect.right}px`;
+  } else {
+    style.left = `${rect.left}px`;
+  }
 
   if (props.width !== '') style.width = props.width;
 
   fixedStyle.value = style;
 }
 
+function onViewportChange(): void {
+  positionFixed();
+}
+
+function attachViewportListeners(): void {
+  window.addEventListener('scroll', onViewportChange, { capture: true, passive: true });
+  window.addEventListener('resize', onViewportChange, { passive: true });
+}
+
+function detachViewportListeners(): void {
+  window.removeEventListener('scroll', onViewportChange, { capture: true });
+  window.removeEventListener('resize', onViewportChange);
+}
+
+let restoreFocusTo: HTMLElement | null = null;
+
+const FOCUSABLE =
+  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/**
+ * Moves focus into the teleported panel so Tab starts from the panel instead
+ * of walking the page under it; falls back to the panel itself (which carries
+ * `tabindex="-1"`) when it has no focusable content.
+ */
+function focusPanel(): void {
+  const el = panel.value;
+  if (el === null) return;
+
+  const target = el.querySelector<HTMLElement>(FOCUSABLE) ?? el;
+  target.focus();
+}
+
 watch(open, (isOpen) => {
-  if (isOpen && props.teleport) void nextTick(positionFixed);
+  if (!props.teleport) return;
+
+  if (isOpen) {
+    restoreFocusTo = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    attachViewportListeners();
+    void nextTick(() => {
+      positionFixed();
+      focusPanel();
+    });
+    return;
+  }
+
+  detachViewportListeners();
+  restoreFocusTo?.focus();
+  restoreFocusTo = null;
 });
+
+onBeforeUnmount(detachViewportListeners);
 
 useOverlayEscape(open, close);
 
@@ -110,7 +198,8 @@ const PLACEMENT: Record<Placement, Record<string, string>> = {
       <div
         class="atl-menu atl-popover-panel"
         :class="{ surface }"
-        role="menu"
+        :role="role"
+        :aria-label="ariaLabel"
         :style="{ ...PLACEMENT[placement], width: width || undefined }"
       >
         <slot :close="close" />
@@ -126,9 +215,12 @@ const PLACEMENT: Record<Placement, Record<string, string>> = {
           @contextmenu.prevent="close"
         />
         <div
+          ref="panel"
           class="atl-menu atl-popover-panel fixed"
           :class="{ surface }"
-          role="menu"
+          :role="role"
+          :aria-label="ariaLabel"
+          tabindex="-1"
           :style="fixedStyle"
         >
           <slot :close="close" />
@@ -175,6 +267,10 @@ const PLACEMENT: Record<Placement, Record<string, string>> = {
   position: fixed;
   z-index: 400;
   min-width: 0;
+}
+
+.atl-popover-panel.fixed:focus {
+  outline: none;
 }
 
 .atl-popover-panel.surface {

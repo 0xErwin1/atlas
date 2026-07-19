@@ -169,7 +169,9 @@ async function loadTree(): Promise<void> {
   const sequence = ++catalogSequence;
   const wsSlug = workspace.activeWorkspaceSlug;
   if (wsSlug === null) {
-    loadedWorkspaceSlug = undefined;
+    // Keep `loadedWorkspaceSlug` intact: a switch nulls the active slug only
+    // transiently, and resetting it here would disarm the workspace-change guard
+    // below on the next pass, so the real switch would skip its `nextTick` fence.
     catalogTarget.value = null;
     await workspace.loadProjects('');
     return;
@@ -583,6 +585,12 @@ defineExpose({ openNewPage });
       @cancel="pendingOp = null"
     />
   </div>
+  <ErrorState
+    v-else-if="workspace.projectsError !== null"
+    title="Couldn’t load projects"
+    :hint="workspace.projectsError"
+    @retry="loadTree"
+  />
   <p
     v-else
     style="padding: 8px; font-size: var(--fs-sm); color: var(--c-muted);"

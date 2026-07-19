@@ -298,12 +298,20 @@ export class ResourceCache {
     const revalidation = request
       .load()
       .then(async (payload) => {
-        if (this.isSuspended() || generation !== this.generation) return { published: false };
+        // The payload was successfully fetched over HTTP; parse it up front so the
+        // discard branches below can still hand it back to the awaiting caller.
+        // They only refuse to publish/persist into a stale context — never throw
+        // the fetched value away, which would leave the caller with a payloadless
+        // "success".
+        const parsedPayload = request.payloadSchema.parse(payload);
+
+        if (this.isSuspended() || generation !== this.generation) {
+          return { published: false, payload: parsedPayload };
+        }
 
         const publisher = this.inflightPublishers.get(request.key);
-        if (publisher?.isCurrent() !== true) return { published: false };
+        if (publisher?.isCurrent() !== true) return { published: false, payload: parsedPayload };
 
-        const parsedPayload = request.payloadSchema.parse(payload);
         const tags = mergeCacheTags(request.tags, request.deriveTags?.(parsedPayload) ?? []);
         if (!isCachePayloadAllowed(parsedPayload)) throw new Error('Cache payload contains excluded data.');
         const now = this.clock.now();
@@ -327,15 +335,6 @@ export class ResourceCache {
             if (!persisted) {
               this.hot.delete(entry.key);
 
-              const currentPublisher = this.inflightPublishers.get(request.key);
-              if (
-                this.isSuspended() ||
-                generation !== this.generation ||
-                currentPublisher?.isCurrent() !== true
-              ) {
-                return { published: false };
-              }
-
               return { published: false, payload: parsedPayload };
             }
           } catch {
@@ -350,7 +349,7 @@ export class ResourceCache {
           ) {
             this.hot.delete(entry.key);
             await this.store.deleteMany([entry.key]);
-            return { published: false };
+            return { published: false, payload: parsedPayload };
           }
         }
 
@@ -361,7 +360,7 @@ export class ResourceCache {
           return { published: true, payload: parsedPayload };
         }
 
-        return { published: false };
+        return { published: false, payload: parsedPayload };
       })
       .finally(() => {
         if (this.inflight.get(request.key) === revalidation) {

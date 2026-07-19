@@ -5,6 +5,9 @@ import {
   buildCacheKey,
   createCacheEnvelopeSchema,
   DEFAULT_CACHE_POLICY,
+  ResourceCache,
+  type ResourceCacheStore,
+  startHydrationAndRevalidation,
 } from '@/cache/resourceCache';
 
 const workspaceId = '018f8e6d-7c15-7c72-8a41-2f5295e0c0f1';
@@ -111,5 +114,45 @@ describe('resource cache contracts', () => {
         payload: { title: 'note', attachmentBytes: new Uint8Array([1, 2, 3]) },
       }).success,
     ).toBe(false);
+  });
+});
+
+describe('resource cache revalidation payload delivery', () => {
+  function noopStore(): ResourceCacheStore {
+    return {
+      get: async () => null,
+      putMany: async () => true,
+      deleteMany: async () => true,
+      clear: async () => true,
+    };
+  }
+
+  it('hands back the fetched payload when the generation is bumped mid-flight', async () => {
+    const cache = new ResourceCache({ store: noopStore(), policy: DEFAULT_CACHE_POLICY });
+    cache.allow();
+
+    const key = buildCacheKey({ principal, workspaceId, resourceKind: 'note-body', resourceId: 'note-a' });
+    if (key === null) throw new Error('expected a canonical cache key');
+
+    const request = {
+      key,
+      payloadSchema: z.object({ id: z.string() }),
+      tags: ['document:note-a'],
+      freshForMs: 1000,
+      activeForMs: 2000,
+      retentionForMs: 10_000,
+      // A purge/block landing while the fetch is in flight bumps the cache
+      // generation, so the revalidation resolves into a superseded context.
+      load: async () => {
+        cache.block();
+        return { id: 'doc-1' };
+      },
+      publish: () => {},
+      isCurrent: () => true,
+    };
+
+    const result = await startHydrationAndRevalidation(cache, request).completion;
+
+    expect(result.payload).toEqual({ id: 'doc-1' });
   });
 });

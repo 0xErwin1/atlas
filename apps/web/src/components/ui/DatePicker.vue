@@ -33,13 +33,13 @@ const props = withDefaults(
 const model = defineModel<string>({ default: '' });
 
 const WEEKDAYS = [
-  { short: 'S', long: 'Sunday' },
   { short: 'M', long: 'Monday' },
   { short: 'T', long: 'Tuesday' },
   { short: 'W', long: 'Wednesday' },
   { short: 'T', long: 'Thursday' },
   { short: 'F', long: 'Friday' },
   { short: 'S', long: 'Saturday' },
+  { short: 'S', long: 'Sunday' },
 ];
 
 const MONTHS = [
@@ -75,18 +75,24 @@ const selected = computed(() => {
   return { year, month: month - 1, day };
 });
 
-const hasValue = computed(() => model.value !== '');
+const hasValue = computed(() => selected.value !== null);
 
-// Local noon keeps the label on the correct calendar day in every timezone; a
-// bare `YYYY-MM-DD` parses as UTC midnight and can render as the previous day.
-const displayLabel = computed(() =>
-  model.value === '' ? props.placeholder : formatDate(`${model.value}T12:00:00`),
-);
+// Derived from `selected` so a malformed external value falls back to the
+// placeholder instead of rendering "Invalid Date". Local noon keeps the label
+// on the correct calendar day in every timezone; a bare `YYYY-MM-DD` parses as
+// UTC midnight and can render as the previous day.
+const displayLabel = computed(() => {
+  const value = selected.value;
+  if (value === null) return props.placeholder;
 
-const today = new Date();
+  return formatDate(`${toDateString(value.year, value.month, value.day)}T12:00:00`);
+});
 
-const viewYear = ref(selected.value?.year ?? today.getFullYear());
-const viewMonth = ref(selected.value?.month ?? today.getMonth());
+const today = ref(new Date());
+const pickerOpen = ref(false);
+
+const viewYear = ref(selected.value?.year ?? today.value.getFullYear());
+const viewMonth = ref(selected.value?.month ?? today.value.getMonth());
 
 watch(selected, (value) => {
   if (value !== null) {
@@ -95,15 +101,28 @@ watch(selected, (value) => {
   }
 });
 
+// A tab left open across midnight must still highlight the right day, so
+// "today" is re-read every time the panel opens rather than captured at setup.
+watch(pickerOpen, (isOpen) => {
+  if (!isOpen) return;
+
+  today.value = new Date();
+
+  if (selected.value === null) {
+    viewYear.value = today.value.getFullYear();
+    viewMonth.value = today.value.getMonth();
+  }
+});
+
 const monthLabel = computed(() => `${MONTHS[viewMonth.value]} ${viewYear.value}`);
 
 const cells = computed<(number | null)[]>(() => {
-  const firstWeekday = new Date(viewYear.value, viewMonth.value, 1).getDay();
+  const mondayOffset = (new Date(viewYear.value, viewMonth.value, 1).getDay() + 6) % 7;
   const daysInMonth = new Date(viewYear.value, viewMonth.value + 1, 0).getDate();
 
   const grid: (number | null)[] = [];
 
-  for (let i = 0; i < firstWeekday; i += 1) grid.push(null);
+  for (let i = 0; i < mondayOffset; i += 1) grid.push(null);
   for (let day = 1; day <= daysInMonth; day += 1) grid.push(day);
 
   return grid;
@@ -135,9 +154,8 @@ function isSelected(day: number): boolean {
 }
 
 function isToday(day: number): boolean {
-  return (
-    today.getFullYear() === viewYear.value && today.getMonth() === viewMonth.value && today.getDate() === day
-  );
+  const now = today.value;
+  return now.getFullYear() === viewYear.value && now.getMonth() === viewMonth.value && now.getDate() === day;
 }
 
 function dayLabel(day: number): string {
@@ -156,12 +174,21 @@ function clear(close: () => void): void {
 </script>
 
 <template>
-  <Popover placement="bottom-start" width="248px" block teleport>
+  <Popover
+    v-model:open="pickerOpen"
+    placement="bottom-start"
+    width="248px"
+    role="dialog"
+    aria-label="Choose a date"
+    block
+    teleport
+  >
     <template #trigger="{ open, toggle }">
       <button
         type="button"
         class="atl-dp-trigger"
         :class="{ 'atl-dp-placeholder': !hasValue }"
+        data-dp-trigger
         :disabled="disabled"
         aria-haspopup="dialog"
         :aria-expanded="open"
@@ -179,21 +206,23 @@ function clear(close: () => void): void {
     </template>
 
     <template #default="{ close }">
-      <div class="atl-dp-panel" role="dialog" aria-label="Choose a date">
+      <div class="atl-dp-panel" data-dp-panel>
         <div class="atl-dp-header">
           <button
             type="button"
             class="atl-dp-nav"
             aria-label="Previous month"
+            data-dp-prev
             @click="prevMonth"
           >
             <Icon name="chevron-left" :size="16" />
           </button>
-          <span class="atl-dp-month" aria-live="polite">{{ monthLabel }}</span>
+          <span class="atl-dp-month" aria-live="polite" data-dp-month>{{ monthLabel }}</span>
           <button
             type="button"
             class="atl-dp-nav"
             aria-label="Next month"
+            data-dp-next
             @click="nextMonth"
           >
             <Icon name="chevron-right" :size="16" />
@@ -206,9 +235,9 @@ function clear(close: () => void): void {
           </span>
         </div>
 
-        <div class="atl-dp-grid" role="grid">
+        <div class="atl-dp-grid" data-dp-grid>
           <template v-for="(day, i) in cells" :key="i">
-            <span v-if="day === null" class="atl-dp-empty" />
+            <span v-if="day === null" class="atl-dp-empty" data-dp-empty />
             <button
               v-else
               type="button"
@@ -217,9 +246,9 @@ function clear(close: () => void): void {
                 'atl-dp-day--selected': isSelected(day),
                 'atl-dp-day--today': isToday(day),
               }"
-              role="gridcell"
+              :data-dp-day="day"
               :aria-label="dayLabel(day)"
-              :aria-pressed="isSelected(day)"
+              :aria-current="isToday(day) ? 'date' : undefined"
               @click="pick(day, close)"
             >
               {{ day }}
@@ -227,7 +256,7 @@ function clear(close: () => void): void {
           </template>
         </div>
 
-        <button type="button" class="atl-dp-clear" @click="clear(close)">
+        <button type="button" class="atl-dp-clear" data-dp-clear @click="clear(close)">
           <Icon name="x" :size="13" />
           {{ clearLabel }}
         </button>

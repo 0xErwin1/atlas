@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue';
 import type { components } from '@/api/types.d.ts';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
+import DatePicker from '@/components/ui/DatePicker.vue';
 import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
 import Icon from '@/components/ui/Icon.vue';
 import MultiSelect, { type MultiSelectOption } from '@/components/ui/MultiSelect.vue';
@@ -225,12 +226,10 @@ async function doDelete(): Promise<void> {
             :checked="boolValue(def)"
             @change="setValue(def, ($event.target as HTMLInputElement).checked)"
           />
-          <input
+          <DatePicker
             v-else-if="def.kind === 'date'"
-            type="date"
-            class="atl-cf-input"
-            :value="dateValue(def)"
-            @change="onDateInput(def, ($event.target as HTMLInputElement).value)"
+            :model-value="dateValue(def)"
+            @update:model-value="(v: string) => onDateInput(def, v)"
           />
           <Dropdown
             v-else-if="def.kind === 'select'"

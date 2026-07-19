@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { nextTick, ref, useId, watch } from 'vue';
 import Btn from '@/components/ui/Btn.vue';
+import DatePicker from '@/components/ui/DatePicker.vue';
 import { useOverlayEscape } from '@/composables/useOverlayEscape';
 
 /**
@@ -117,7 +118,9 @@ useOverlayEscape(
           {{ title }}
         </h2>
 
+        <DatePicker v-if="inputType === 'date'" v-model="value" />
         <input
+          v-else
           ref="inputRef"
           v-model="value"
           :type="inputType"

@@ -5,7 +5,7 @@ import Icon from '@/components/ui/Icon.vue';
 const props = withDefaults(
   defineProps<{
     label?: string;
-    modelValue: string;
+    modelValue?: string;
     type?: 'text' | 'password' | 'email' | 'date';
     placeholder?: string;
     /** Inline validation message; when set the field renders in the error state. */
@@ -19,6 +19,7 @@ const props = withDefaults(
   }>(),
   {
     label: '',
+    modelValue: '',
     type: 'text',
     placeholder: '',
     error: null,
@@ -54,35 +55,39 @@ function onInput(event: Event) {
   <div class="atl-field">
     <label v-if="label" :for="id" class="atl-field-label">{{ label }}</label>
 
-    <div
-      class="atl-field-box"
-      :style="{ borderColor: error ? 'var(--c-danger)' : 'var(--c-border)' }"
-    >
-      <input
-        :id="id"
-        :value="modelValue"
-        :type="inputType"
-        :placeholder="placeholder"
-        :autocomplete="autocomplete"
-        :disabled="disabled"
-        class="atl-field-input"
-        :style="{ fontFamily: mono ? 'var(--font-mono)' : 'var(--font-ui)' }"
-        :aria-invalid="error ? 'true' : undefined"
-        @input="onInput"
-        @blur="emit('blur')"
-        @keydown="emit('keydown', $event)"
-      />
-      <button
-        v-if="isPassword"
-        type="button"
-        tabindex="-1"
-        class="atl-field-eye"
-        :aria-label="showPassword ? 'Hide password' : 'Show password'"
-        @click="showPassword = !showPassword"
+    <!-- `control` overrides the default text input with an arbitrary control
+         (Dropdown, DatePicker, …) inside the same label/helper/error shell. -->
+    <slot name="control">
+      <div
+        class="atl-field-box"
+        :style="{ borderColor: error ? 'var(--c-danger)' : 'var(--c-border)' }"
       >
-        <Icon :name="showPassword ? 'eye-off' : 'eye'" :size="14" />
-      </button>
-    </div>
+        <input
+          :id="id"
+          :value="modelValue"
+          :type="inputType"
+          :placeholder="placeholder"
+          :autocomplete="autocomplete"
+          :disabled="disabled"
+          class="atl-field-input"
+          :style="{ fontFamily: mono ? 'var(--font-mono)' : 'var(--font-ui)' }"
+          :aria-invalid="error ? 'true' : undefined"
+          @input="onInput"
+          @blur="emit('blur')"
+          @keydown="emit('keydown', $event)"
+        />
+        <button
+          v-if="isPassword"
+          type="button"
+          tabindex="-1"
+          class="atl-field-eye"
+          :aria-label="showPassword ? 'Hide password' : 'Show password'"
+          @click="showPassword = !showPassword"
+        >
+          <Icon :name="showPassword ? 'eye-off' : 'eye'" :size="14" />
+        </button>
+      </div>
+    </slot>
 
     <div v-if="error" class="atl-field-error">
       <Icon name="triangle-alert" :size="12" />

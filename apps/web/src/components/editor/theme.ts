@@ -38,7 +38,7 @@ export const atlasMarkdownTheme = EditorView.theme(
       borderLeftColor: 'var(--c-primary)',
     },
     '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
-      backgroundColor: 'var(--c-input)',
+      backgroundColor: 'var(--c-selection)',
     },
     '.cm-gutters': {
       display: 'none',

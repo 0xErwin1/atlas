@@ -83,6 +83,10 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   // not disabled). Populated on demand by the add-member dialog.
   const assignableUsers = ref<UserDto[]>([]);
   const error = ref<string | null>(null);
+  // Separate from `error` (which is shared by every workspace mutation and shown
+  // transiently as a banner) so the sidebars can tell "the project load failed"
+  // apart from "this workspace genuinely has no projects" without cross-talk.
+  const projectsError = ref<string | null>(null);
   const workspaceAliases = new Map<string, string>();
   const pendingCacheInvalidations = new Map<
     string,
@@ -94,6 +98,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   >();
   let membersLoadRequest: object | null = null;
   let workspaceLoadGeneration = 0;
+  let projectsLoadGeneration = 0;
 
   const auth = useAuthStore();
 
@@ -308,18 +313,37 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     return data.slug;
   }
 
+  /**
+   * Loads the active workspace's projects. An empty slug is a synchronous local
+   * clear (it never reaches the API, which would 404 on `/api/workspaces//projects`)
+   * — used while a switch briefly nulls the active workspace. A monotonic
+   * generation plus an active-workspace check mirror `loadMembers`' staleness
+   * guard, so a slow or failed response can never clobber a newer load's result.
+   */
   async function loadProjects(ws: string): Promise<void> {
-    const { items, error } = await collectPaged<ProjectDto>((cursor) =>
+    if (ws === '') {
+      projectsError.value = null;
+      projects.value = [];
+      return;
+    }
+
+    const generation = ++projectsLoadGeneration;
+
+    const { items, error: loadError } = await collectPaged<ProjectDto>((cursor) =>
       wrappedClient.GET('/api/workspaces/{ws}/projects', {
         params: { path: { ws }, query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) } },
       }),
     );
 
-    if (error !== undefined) {
+    if (generation !== projectsLoadGeneration || activeWorkspaceSlug.value !== ws) return;
+
+    if (loadError !== undefined) {
       projects.value = [];
+      projectsError.value = errorHint(loadError, 'Failed to load projects');
       return;
     }
 
+    projectsError.value = null;
     projects.value = items.map((p) => ({
       slug: p.slug,
       name: p.name,
@@ -667,6 +691,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     assignableUsers,
     myWorkspaceRole,
     error,
+    projectsError,
     setActiveWorkspace,
     clearWorkspaceAliases,
     queueCacheInvalidation,

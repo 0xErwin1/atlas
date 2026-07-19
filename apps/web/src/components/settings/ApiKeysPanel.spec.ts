@@ -413,23 +413,23 @@ describe('ApiKeysPanel — expires date picker', () => {
 
     const wrapper = await openNewForm();
 
-    expect(wrapper.find('.atl-dp-trigger').text()).toContain('Never expires');
+    expect(wrapper.find('[data-dp-trigger]').text()).toContain('Never expires');
 
     await clickCreate(wrapper);
 
     expect(create).toHaveBeenCalledWith(expect.objectContaining({ expires_at: null }));
   });
 
-  it('submits the selected day as an ISO timestamp', async () => {
+  it('submits the local end of the selected day as an ISO timestamp', async () => {
     const store = setup([]);
     const create = vi.spyOn(store, 'createKey').mockResolvedValue(createdKey());
 
     const wrapper = await openNewForm();
 
-    await wrapper.find('.atl-dp-trigger').trigger('click');
+    await wrapper.find('[data-dp-trigger]').trigger('click');
     await nextTick();
 
-    const day = Array.from(document.body.querySelectorAll<HTMLElement>('.atl-dp-day')).find(
+    const day = Array.from(document.body.querySelectorAll<HTMLElement>('[data-dp-day]')).find(
       (b) => b.textContent?.trim() === '15',
     );
     if (day === undefined) throw new Error('expected day 15 in the calendar');
@@ -437,9 +437,11 @@ describe('ApiKeysPanel — expires date picker', () => {
     day.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     await nextTick();
 
+    // "Expires on D" means valid through the end of day D in the local
+    // timezone; build the expectation via the Date parts constructor so it
+    // does not share the implementation's string-parsing path.
     const now = new Date();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const expected = `${now.getFullYear()}-${month}-15T00:00:00.000Z`;
+    const expected = new Date(now.getFullYear(), now.getMonth(), 15, 23, 59, 59, 999).toISOString();
 
     await clickCreate(wrapper);
 
@@ -452,27 +454,27 @@ describe('ApiKeysPanel — expires date picker', () => {
 
     const wrapper = await openNewForm();
 
-    await wrapper.find('.atl-dp-trigger').trigger('click');
+    await wrapper.find('[data-dp-trigger]').trigger('click');
     await nextTick();
 
-    const day = Array.from(document.body.querySelectorAll<HTMLElement>('.atl-dp-day')).find(
+    const day = Array.from(document.body.querySelectorAll<HTMLElement>('[data-dp-day]')).find(
       (b) => b.textContent?.trim() === '15',
     );
     if (day === undefined) throw new Error('expected day 15 in the calendar');
     day.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     await nextTick();
 
-    expect(wrapper.find('.atl-dp-trigger').text()).not.toContain('Never expires');
+    expect(wrapper.find('[data-dp-trigger]').text()).not.toContain('Never expires');
 
-    await wrapper.find('.atl-dp-trigger').trigger('click');
+    await wrapper.find('[data-dp-trigger]').trigger('click');
     await nextTick();
 
-    const clearBtn = document.body.querySelector<HTMLElement>('.atl-dp-clear');
+    const clearBtn = document.body.querySelector<HTMLElement>('[data-dp-clear]');
     if (clearBtn === null) throw new Error('expected a clear button');
     clearBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     await nextTick();
 
-    expect(wrapper.find('.atl-dp-trigger').text()).toContain('Never expires');
+    expect(wrapper.find('[data-dp-trigger]').text()).toContain('Never expires');
 
     await clickCreate(wrapper);
 
@@ -484,16 +486,16 @@ describe('ApiKeysPanel — expires date picker', () => {
 
     const wrapper = await openNewForm();
 
-    await wrapper.find('.atl-dp-trigger').trigger('click');
+    await wrapper.find('[data-dp-trigger]').trigger('click');
     await nextTick();
 
-    expect(document.body.querySelector('.atl-dp-panel')).not.toBeNull();
+    expect(document.body.querySelector('[data-dp-panel]')).not.toBeNull();
 
     const backdrop = document.body.querySelector<HTMLElement>('.atl-popover-backdrop');
     if (backdrop === null) throw new Error('expected the popover backdrop');
     backdrop.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     await nextTick();
 
-    expect(document.body.querySelector('.atl-dp-panel')).toBeNull();
+    expect(document.body.querySelector('[data-dp-panel]')).toBeNull();
   });
 });
