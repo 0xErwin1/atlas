@@ -7,11 +7,14 @@ export interface NoteTab {
 }
 
 const STORAGE_KEY = 'atlas:notes-tabs';
+const ACTIVE_STORAGE_KEY = 'atlas:notes-active-tab';
 
 /**
  * Open notes tabs, keyed by workspace slug and persisted to localStorage so the
  * set of open notes survives a reload (Obsidian/VS Code style). The active tab is
- * not stored here — it is derived from the current route by the Notes view.
+ * persisted per workspace in a sibling key so a cold start with no restored URL
+ * (the desktop webview boots at `/n` with no slug) can re-open the note that was
+ * active last, instead of falling back to an empty pane.
  */
 function loadTabs(): Record<string, NoteTab[]> {
   try {
@@ -23,8 +26,19 @@ function loadTabs(): Record<string, NoteTab[]> {
   return {};
 }
 
+function loadActive(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(ACTIVE_STORAGE_KEY);
+    if (raw) return JSON.parse(raw) as Record<string, string>;
+  } catch {
+    // ignore malformed storage
+  }
+  return {};
+}
+
 export const useNotesTabsStore = defineStore('notesTabs', () => {
   const byWorkspace = ref<Record<string, NoteTab[]>>(loadTabs());
+  const activeByWorkspace = ref<Record<string, string>>(loadActive());
 
   function persist(): void {
     try {
@@ -32,6 +46,45 @@ export const useNotesTabsStore = defineStore('notesTabs', () => {
     } catch {
       // ignore storage errors
     }
+  }
+
+  function persistActive(): void {
+    try {
+      localStorage.setItem(ACTIVE_STORAGE_KEY, JSON.stringify(activeByWorkspace.value));
+    } catch {
+      // ignore storage errors
+    }
+  }
+
+  /** The slug of the last active tab in `ws`, or null when none is recorded. */
+  function activeFor(ws: string): string | null {
+    return activeByWorkspace.value[ws] ?? null;
+  }
+
+  function setActive(ws: string, slug: string): void {
+    if (activeByWorkspace.value[ws] === slug) return;
+    activeByWorkspace.value[ws] = slug;
+    persistActive();
+  }
+
+  function clearActive(ws: string): void {
+    if (activeByWorkspace.value[ws] === undefined) return;
+    delete activeByWorkspace.value[ws];
+    persistActive();
+  }
+
+  /**
+   * Keeps the recorded active slug pointing at a still-open tab after a mutation:
+   * a no-op when it survives, otherwise moved to `fallback` (or cleared when
+   * `fallback` is null). Guarantees `activeFor` never references a closed tab.
+   */
+  function reconcileActive(ws: string, fallback: string | null): void {
+    const active = activeByWorkspace.value[ws];
+    if (active === undefined) return;
+    if ((byWorkspace.value[ws] ?? []).some((t) => t.slug === active)) return;
+
+    if (fallback === null) clearActive(ws);
+    else setActive(ws, fallback);
   }
 
   function tabs(ws: string): NoteTab[] {
@@ -74,6 +127,7 @@ export const useNotesTabsStore = defineStore('notesTabs', () => {
     const neighbour = list[idx + 1] ?? list[idx - 1] ?? null;
     byWorkspace.value[ws] = list.filter((t) => t.slug !== slug);
     persist();
+    reconcileActive(ws, neighbour?.slug ?? null);
 
     return neighbour?.slug ?? null;
   }
@@ -82,6 +136,7 @@ export const useNotesTabsStore = defineStore('notesTabs', () => {
   function closeAll(ws: string): null {
     byWorkspace.value[ws] = [];
     persist();
+    reconcileActive(ws, null);
     return null;
   }
 
@@ -91,6 +146,7 @@ export const useNotesTabsStore = defineStore('notesTabs', () => {
     if (keep === undefined) return null;
     byWorkspace.value[ws] = [keep];
     persist();
+    reconcileActive(ws, slug);
     return slug;
   }
 
@@ -101,8 +157,20 @@ export const useNotesTabsStore = defineStore('notesTabs', () => {
     if (idx === -1) return null;
     byWorkspace.value[ws] = list.slice(0, idx + 1);
     persist();
+    reconcileActive(ws, slug);
     return slug;
   }
 
-  return { byWorkspace, tabs, open, setTitle, close, closeAll, closeOthers, closeRight };
+  return {
+    byWorkspace,
+    tabs,
+    open,
+    setTitle,
+    close,
+    closeAll,
+    closeOthers,
+    closeRight,
+    activeFor,
+    setActive,
+  };
 });

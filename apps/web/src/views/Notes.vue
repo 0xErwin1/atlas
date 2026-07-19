@@ -539,6 +539,7 @@ async function loadDoc(target: NoteTarget | null, previousTarget: NoteTarget | n
   applyLoadedDocument(result, target.slug);
   resourceStatus.recordRequestSuccess(statusKey, true);
   tabsStore.open(target.workspaceSlug, target.slug, title.value);
+  tabsStore.setActive(target.workspaceSlug, target.slug);
 }
 
 function resetOpenNoteForCacheEpoch(preserveDirty: boolean): void {
@@ -704,6 +705,23 @@ onBeforeRouteLeave(async () => {
   await flushPendingSave();
 });
 
+/**
+ * The slug the pane should re-open on a cold start with no slug in the URL: the
+ * last active tab, else the first open tab. Guards against a stale pointer by
+ * returning only a slug that is still in the persisted tab list for `ws`.
+ */
+function restoreActiveSlug(workspaceSlug: string): string | null {
+  const candidate = tabsStore.activeFor(workspaceSlug) ?? tabsStore.tabs(workspaceSlug)[0]?.slug ?? null;
+  if (candidate === null) return null;
+
+  return tabsStore.tabs(workspaceSlug).some((t) => t.slug === candidate) ? candidate : null;
+}
+
+// Fires once, on the first watch run where the workspace is resolved. It gates
+// the boot restore so navigating back to the notes root later (mobile back,
+// closing the active tab) is never bounced back into a note.
+let bootRestoreHandled = false;
+
 watch(
   [slug, ws],
   ([nextSlug, nextWorkspace], [previousSlug, previousWorkspace]) => {
@@ -711,6 +729,18 @@ watch(
       typeof nextSlug !== 'string' || typeof nextWorkspace !== 'string' || nextWorkspace === ''
         ? null
         : { workspaceSlug: nextWorkspace, slug: nextSlug };
+
+    if (!bootRestoreHandled && typeof nextWorkspace === 'string' && nextWorkspace !== '') {
+      bootRestoreHandled = true;
+      if (target === null) {
+        const restored = restoreActiveSlug(nextWorkspace);
+        if (restored !== null) {
+          void router.replace({ name: 'notes', params: { slug: restored } });
+          return;
+        }
+      }
+    }
+
     const previousTarget =
       typeof previousSlug !== 'string' || typeof previousWorkspace !== 'string' || previousWorkspace === ''
         ? null
