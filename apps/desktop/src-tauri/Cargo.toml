@@ -52,6 +52,8 @@ serde_json.workspace = true
 tauri = { version = "2", features = [] }
 thiserror.workspace = true
 tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
 tokio-util = { version = "0.7", optional = true }
 tempfile = { workspace = true, optional = true }
 zeroize = { workspace = true, optional = true }

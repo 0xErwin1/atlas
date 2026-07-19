@@ -5,6 +5,26 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Atlas</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        background-color: #0a0e14;
+      }
+      :root[data-theme='light'] {
+        color-scheme: light;
+        background-color: #fcfcfc;
+      }
+    </style>
+    <script>
+      (function () {
+        try {
+          var theme = localStorage.getItem('atlas:theme');
+          if (theme === 'light' || theme === 'dark') {
+            document.documentElement.dataset.theme = theme;
+          }
+        } catch (error) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="app"></div>

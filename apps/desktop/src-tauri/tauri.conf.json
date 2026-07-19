@@ -14,9 +14,24 @@
         "title": "Atlas",
         "width": 1200,
         "height": 800,
-        "decorations": true
+        "decorations": true,
+        "backgroundColor": "#0A0E14"
       }
-    ]
+    ],
+    "security": {
+      "csp": {
+        "default-src": "'self'",
+        "script-src": "'self'",
+        "style-src": "'self' 'unsafe-inline'",
+        "img-src": "'self' https: blob: data:",
+        "font-src": "'self'",
+        "connect-src": "'self' ipc: http://ipc.localhost",
+        "object-src": "'none'",
+        "base-uri": "'none'",
+        "form-action": "'self'",
+        "frame-src": "'none'"
+      }
+    }
   },
   "bundle": {
     "active": false,

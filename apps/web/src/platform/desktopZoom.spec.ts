@@ -70,6 +70,32 @@ describe('installDesktopZoom', () => {
     expect(transport.setZoom).not.toHaveBeenCalled();
   });
 
+  it('applies a hotkey pressed before the initial sync relative to the fetched zoom', async () => {
+    let resolveGetZoom!: (result: { data: { window_decorations: boolean; zoom_factor: number } }) => void;
+    const getZoom = vi.fn(
+      () =>
+        new Promise<{ data: { window_decorations: boolean; zoom_factor: number } }>((resolve) => {
+          resolveGetZoom = resolve;
+        }),
+    );
+    const setZoom = vi.fn((zoomFactor: number) =>
+      Promise.resolve({ data: { window_decorations: true, zoom_factor: zoomFactor } }),
+    );
+    teardown = installDesktopZoom({ getZoom, setZoom });
+
+    const event = new KeyboardEvent('keydown', { cancelable: true, key: '=', ctrlKey: true });
+    window.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(setZoom).not.toHaveBeenCalled();
+
+    resolveGetZoom({ data: { window_decorations: true, zoom_factor: 1.5 } });
+    await flushPromises();
+
+    expect(setZoom).toHaveBeenCalledTimes(1);
+    expect(setZoom).toHaveBeenCalledWith(expect.closeTo(1.6, 5));
+  });
+
   it('stops handling keys after teardown', async () => {
     const transport = makeTransport(1);
     const cleanup = installDesktopZoom(transport);

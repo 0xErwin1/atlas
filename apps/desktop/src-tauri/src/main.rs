@@ -16,12 +16,17 @@ use std::{
 };
 use tauri::{Emitter, Manager, Runtime, State};
 
+/// Registry key for a running workspace stream: the session scope
+/// (`origin:identity`) plus the workspace slug, so a late stop for one
+/// workspace can never cancel a newer subscription for another.
+type TransportKey = (String, String);
+
 struct DesktopState {
     origin: Mutex<String>,
     configuration_directory: PathBuf,
     client: reqwest::Client,
     session: Arc<Mutex<DesktopSession<SecretServiceStore>>>,
-    transports: Arc<Mutex<HashMap<String, tauri::async_runtime::JoinHandle<()>>>>,
+    transports: Arc<Mutex<HashMap<TransportKey, tauri::async_runtime::JoinHandle<()>>>>,
 }
 
 const DEFAULT_DESKTOP_ORIGIN: &str = "https://atlas.iperez.dev";
@@ -107,15 +112,44 @@ impl<T> IpcResult<T> {
     }
 }
 
+fn scope_transport_key(scope: &SessionScope) -> String {
+    format!("{}:{}", scope.origin(), scope.identity())
+}
+
 fn cancel_transport(state: &DesktopState, scope: &SessionScope) -> Result<(), &'static str> {
+    let scope_key = scope_transport_key(scope);
+    let mut transports = state
+        .transports
+        .lock()
+        .map_err(|_| "desktop transport state is unavailable")?;
+    let existing = std::mem::take(&mut *transports);
+
+    for (key, handle) in existing {
+        if key.0 == scope_key {
+            handle.abort();
+        } else {
+            transports.insert(key, handle);
+        }
+    }
+
+    Ok(())
+}
+
+fn cancel_workspace_transport(
+    state: &DesktopState,
+    scope: &SessionScope,
+    workspace_slug: &str,
+) -> Result<(), &'static str> {
     let handle = state
         .transports
         .lock()
         .map_err(|_| "desktop transport state is unavailable")?
-        .remove(&format!("{}:{}", scope.origin(), scope.identity()));
+        .remove(&(scope_transport_key(scope), workspace_slug.to_owned()));
+
     if let Some(handle) = handle {
         handle.abort();
     }
+
     Ok(())
 }
 
@@ -128,7 +162,7 @@ fn cancel_transports_for_origin(state: &DesktopState) -> Result<(), &'static str
     let existing = std::mem::take(&mut *transports);
 
     for (key, handle) in existing {
-        if key.starts_with(&prefix) {
+        if key.0.starts_with(&prefix) {
             handle.abort();
         } else {
             transports.insert(key, handle);
@@ -445,9 +479,13 @@ fn desktop_set_origin<R: Runtime>(
     IpcResult::data(configuration)
 }
 
+fn stored_desktop_preferences(state: &DesktopState) -> IpcResult<DesktopPreferences> {
+    IpcResult::data(DesktopPreferences::load(&state.configuration_directory))
+}
+
 #[tauri::command]
 fn desktop_get_window_decorations(state: State<'_, DesktopState>) -> IpcResult<DesktopPreferences> {
-    IpcResult::data(DesktopPreferences::load(&state.configuration_directory))
+    stored_desktop_preferences(&state)
 }
 
 #[tauri::command]
@@ -474,7 +512,7 @@ fn desktop_set_window_decorations<R: Runtime>(
 
 #[tauri::command]
 fn desktop_get_zoom(state: State<'_, DesktopState>) -> IpcResult<DesktopPreferences> {
-    IpcResult::data(DesktopPreferences::load(&state.configuration_directory))
+    stored_desktop_preferences(&state)
 }
 
 #[tauri::command]
@@ -500,37 +538,42 @@ fn desktop_set_zoom<R: Runtime>(
     IpcResult::data(preferences)
 }
 
+/// Async so the three sequential network calls run on the Tauri async runtime
+/// instead of blocking the GTK main thread. The state is pulled from the app
+/// handle because an async command taking `State<'_, _>` would have to change
+/// its wire shape to a `Result`.
 #[tauri::command]
-fn desktop_auth_login<R: Runtime>(
+async fn desktop_auth_login<R: Runtime>(
     credentials: LoginCredentials,
-    state: State<'_, DesktopState>,
     app: tauri::AppHandle<R>,
 ) -> IpcResult<IpcEmpty> {
     if credentials.username.is_empty() || credentials.password.is_empty() {
         return IpcResult::error("desktop authentication failed");
     }
+    let Some(state) = app.try_state::<DesktopState>() else {
+        return IpcResult::error("desktop session state is unavailable");
+    };
     let origin = match current_origin(&state) {
         Ok(origin) => origin,
         Err(error) => return IpcResult::error(error),
     };
-    let response = match tauri::async_runtime::block_on(
-        state
-            .client
-            .clone()
-            .post(format!("{origin}/api/auth/login"))
-            .json(&serde_json::json!({"username": credentials.username, "password": credentials.password}))
-            .send(),
-    ) {
+    let response = match state
+        .client
+        .post(format!("{origin}/api/auth/login"))
+        .json(&serde_json::json!({"username": credentials.username, "password": credentials.password}))
+        .send()
+        .await
+    {
         Ok(response) => response,
         Err(_) => return IpcResult::error("desktop authentication failed"),
     };
     if !response.status().is_success() {
-        return match tauri::async_runtime::block_on(response.json::<serde_json::Value>()) {
+        return match response.json::<serde_json::Value>().await {
             Ok(problem) => IpcResult::error_value(problem),
             Err(_) => IpcResult::error("desktop authentication failed"),
         };
     }
-    let body: serde_json::Value = match tauri::async_runtime::block_on(response.json()) {
+    let body: serde_json::Value = match response.json().await {
         Ok(body) => body,
         Err(_) => return IpcResult::error("desktop authentication failed"),
     };
@@ -575,7 +618,7 @@ fn desktop_auth_login<R: Runtime>(
             return IpcResult::error("desktop session is unavailable");
         }
     };
-    match tauri::async_runtime::block_on(state.client.clone().execute(request)) {
+    match state.client.execute(request).await {
         Ok(response) if response.status().is_success() => IpcResult::data(IpcEmpty {}),
         _ => {
             if invalidate_scope(&state, &app, &scope).is_err() {
@@ -586,29 +629,53 @@ fn desktop_auth_login<R: Runtime>(
     }
 }
 
-fn resume_desktop_authentication<R: Runtime>(
-    state: State<'_, DesktopState>,
+async fn execute_identity_probe(
+    client: &reqwest::Client,
+    request: reqwest::Request,
+) -> Result<IpcIdentity, DesktopError> {
+    let response = client
+        .execute(request)
+        .await
+        .map_err(|_| DesktopError::TransportUnavailable)?;
+    if !response.status().is_success() {
+        return Err(DesktopError::SessionInvalid);
+    }
+
+    let body = response
+        .json()
+        .await
+        .map_err(|_| DesktopError::SessionInvalid)?;
+
+    parse_desktop_identity(body).map_err(|_| DesktopError::SessionInvalid)
+}
+
+/// Async so the identity probe runs on the Tauri async runtime instead of
+/// blocking the GTK main thread. The resume flow is split in two session
+/// calls so the lock is never held across the network await.
+async fn resume_desktop_authentication<R: Runtime>(
     app: tauri::AppHandle<R>,
 ) -> IpcResult<IpcIdentity> {
+    let Some(state) = app.try_state::<DesktopState>() else {
+        return IpcResult::error("desktop session state is unavailable");
+    };
     let scope = match scope_for_active_identity_or_fail_closed(&state, &app) {
         Ok(scope) => scope,
         Err(error) => return IpcResult::error(error),
     };
-    let result = match state.session.lock() {
-        Ok(mut session) => session.resume_with(&scope, |request| {
-            let response = tauri::async_runtime::block_on(state.client.clone().execute(request))
-                .map_err(|_| DesktopError::TransportUnavailable)?;
-            if !response.status().is_success() {
-                return Err(DesktopError::SessionInvalid);
-            }
-
-            tauri::async_runtime::block_on(response.json())
-                .map_err(|_| DesktopError::SessionInvalid)
-                .and_then(|body| {
-                    parse_desktop_identity(body).map_err(|_| DesktopError::SessionInvalid)
-                })
-        }),
+    let request = match state.session.lock() {
+        Ok(mut session) => session.begin_resume(&scope),
         Err(_) => return IpcResult::error("desktop session state is unavailable"),
+    };
+
+    let result = match request {
+        Ok(request) => {
+            let probed = execute_identity_probe(&state.client, request).await;
+            match state.session.lock() {
+                Ok(mut session) => session.complete_resume(&scope, probed),
+                Err(_) => return IpcResult::error("desktop session state is unavailable"),
+            }
+        }
+        Err(error) => Err(error),
     };
 
     match result {
@@ -621,25 +688,19 @@ fn resume_desktop_authentication<R: Runtime>(
 }
 
 #[tauri::command]
-fn desktop_auth_resume<R: Runtime>(
-    state: State<'_, DesktopState>,
-    app: tauri::AppHandle<R>,
-) -> IpcResult<IpcIdentity> {
-    resume_desktop_authentication(state, app)
+async fn desktop_auth_resume<R: Runtime>(app: tauri::AppHandle<R>) -> IpcResult<IpcIdentity> {
+    resume_desktop_authentication(app).await
 }
 
 #[tauri::command]
-fn desktop_auth_me<R: Runtime>(
-    state: State<'_, DesktopState>,
-    app: tauri::AppHandle<R>,
-) -> IpcResult<IpcIdentity> {
-    resume_desktop_authentication(state, app)
+async fn desktop_auth_me<R: Runtime>(app: tauri::AppHandle<R>) -> IpcResult<IpcIdentity> {
+    resume_desktop_authentication(app).await
 }
 
 #[tauri::command]
-fn desktop_auth_logout(
+fn desktop_auth_logout<R: Runtime>(
     state: State<'_, DesktopState>,
-    app: tauri::AppHandle,
+    app: tauri::AppHandle<R>,
 ) -> IpcResult<IpcEmpty> {
     let scope = match scope_for_active_identity_or_fail_closed(&state, &app) {
         Ok(scope) => scope,
@@ -741,7 +802,7 @@ fn desktop_workspace_events_stop(
         Ok(scope) => scope,
         Err(error) => return IpcResult::error(error),
     };
-    match cancel_transport(&state, &scope) {
+    match cancel_workspace_transport(&state, &scope, &workspace_slug) {
         Ok(()) => IpcResult::data(IpcEmpty {}),
         Err(error) => IpcResult::error(error),
     }
@@ -771,7 +832,7 @@ fn desktop_workspace_events_subscribe(
             return IpcResult::error("desktop session is unavailable");
         }
     };
-    let key = format!("{}:{}", scope.origin(), scope.identity());
+    let key = (scope_transport_key(&scope), workspace_slug.clone());
     let session = Arc::clone(&state.session);
     let client = state.client.clone();
     let app_handle = app.clone();
@@ -852,11 +913,17 @@ fn revoke_from_transport<R: Runtime>(
 pub(crate) fn run_with_client(client: reqwest::Client) {
     let configuration_directory = match desktop_configuration_directory() {
         Ok(directory) => directory,
-        Err(_) => process::exit(2),
+        Err(error) => {
+            tracing::error!(%error, "the desktop configuration directory could not be resolved");
+            process::exit(2);
+        }
     };
     let origin = match load_desktop_origin(&configuration_directory) {
         Ok(origin) => origin,
-        Err(_) => process::exit(2),
+        Err(error) => {
+            tracing::error!(%error, "the desktop origin configuration could not be loaded");
+            process::exit(2);
+        }
     };
     let preferences_directory = configuration_directory.clone();
 
@@ -875,8 +942,8 @@ pub(crate) fn run_with_client(client: reqwest::Client) {
             let preferences = DesktopPreferences::load(&preferences_directory);
 
             window.set_decorations(preferences.window_decorations())?;
-            match window.set_zoom(preferences.zoom_factor()) {
-                Ok(()) | Err(_) => {}
+            if let Err(error) = window.set_zoom(preferences.zoom_factor()) {
+                tracing::warn!(%error, "the persisted zoom factor could not be applied at startup");
             }
             Ok(())
         })
@@ -897,7 +964,10 @@ pub(crate) fn run_with_client(client: reqwest::Client) {
             desktop_workspace_events_stop
         ])
         .run(tauri::generate_context!())
-        .unwrap_or_else(|_| process::exit(1));
+        .unwrap_or_else(|error| {
+            tracing::error!(%error, "the desktop application host failed");
+            process::exit(1);
+        });
 }
 
 fn load_desktop_origin(directory: &std::path::Path) -> Result<String, DesktopError> {
@@ -962,12 +1032,23 @@ fn ensure_valid_screen_resolution() {
 
 #[allow(dead_code)]
 fn main() {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "info,atlas_desktop=debug".into()),
+        )
+        .with_target(true)
+        .init();
+
     #[cfg(target_os = "linux")]
     ensure_valid_screen_resolution();
 
     let client = match ReqwestTransportFactory::system().client() {
         Ok(client) => client,
-        Err(_) => process::exit(1),
+        Err(error) => {
+            tracing::error!(%error, "the desktop HTTP client could not be constructed");
+            process::exit(1);
+        }
     };
 
     run_with_client(client);
@@ -1293,8 +1374,8 @@ mod command_tests {
             SessionScope::new("https://atlas.example.test", "user-1").expect("matching scope");
         let other_scope =
             SessionScope::new("https://other.example.test", "user-2").expect("other scope");
-        let matching_key = format!("{}:{}", matching_scope.origin(), matching_scope.identity());
-        let other_key = format!("{}:{}", other_scope.origin(), other_scope.identity());
+        let matching_key = (scope_transport_key(&matching_scope), "ws-a".to_owned());
+        let other_key = (scope_transport_key(&other_scope), "ws-b".to_owned());
         let matching = tauri::async_runtime::spawn(std::future::pending::<()>());
         let other = tauri::async_runtime::spawn(std::future::pending::<()>());
         state
@@ -1326,6 +1407,181 @@ mod command_tests {
         let transports = state.transports.lock().expect("transport map available");
         assert!(!transports.contains_key(&matching_key));
         assert!(transports.contains_key(&other_key));
+    }
+
+    #[tokio::test]
+    async fn a_late_stop_for_a_previous_workspace_preserves_the_replacing_subscription() {
+        let state = test_state();
+        let scope = SessionScope::new("https://atlas.example.test", "user-1").expect("scope");
+        let previous_key = (scope_transport_key(&scope), "ws-previous".to_owned());
+        let replacing_key = (scope_transport_key(&scope), "ws-replacing".to_owned());
+        state
+            .transports
+            .lock()
+            .expect("transport map available")
+            .extend([
+                (
+                    previous_key.clone(),
+                    tauri::async_runtime::spawn(std::future::pending::<()>()),
+                ),
+                (
+                    replacing_key.clone(),
+                    tauri::async_runtime::spawn(std::future::pending::<()>()),
+                ),
+            ]);
+
+        cancel_workspace_transport(&state, &scope, "ws-previous").expect("stop cancels");
+
+        let transports = state.transports.lock().expect("transport map available");
+        assert!(!transports.contains_key(&previous_key));
+        assert!(transports.contains_key(&replacing_key));
+    }
+
+    #[tokio::test]
+    async fn cancelling_a_scope_removes_every_workspace_stream_it_owns() {
+        let state = test_state();
+        let scope = SessionScope::new("https://atlas.example.test", "user-1").expect("scope");
+        let other_scope =
+            SessionScope::new("https://atlas.example.test", "user-2").expect("other scope");
+        let first_key = (scope_transport_key(&scope), "ws-a".to_owned());
+        let second_key = (scope_transport_key(&scope), "ws-b".to_owned());
+        let other_key = (scope_transport_key(&other_scope), "ws-a".to_owned());
+        state
+            .transports
+            .lock()
+            .expect("transport map available")
+            .extend([
+                (
+                    first_key.clone(),
+                    tauri::async_runtime::spawn(std::future::pending::<()>()),
+                ),
+                (
+                    second_key.clone(),
+                    tauri::async_runtime::spawn(std::future::pending::<()>()),
+                ),
+                (
+                    other_key.clone(),
+                    tauri::async_runtime::spawn(std::future::pending::<()>()),
+                ),
+            ]);
+
+        cancel_transport(&state, &scope).expect("scope cancel");
+
+        let transports = state.transports.lock().expect("transport map available");
+        assert!(!transports.contains_key(&first_key));
+        assert!(!transports.contains_key(&second_key));
+        assert!(transports.contains_key(&other_key));
+    }
+
+    #[test]
+    fn desktop_auth_logout_fails_closed_through_the_command_boundary_without_a_session() {
+        let app = mock_builder()
+            .manage(test_state())
+            .invoke_handler(tauri::generate_handler![desktop_auth_logout])
+            .build(mock_context(noop_assets()))
+            .expect("the command test app builds");
+        let webview = WebviewWindowBuilder::new(&app, MAIN_WINDOW_LABEL, Default::default())
+            .build()
+            .expect("the command test webview builds");
+        let request = InvokeRequest {
+            cmd: "desktop_auth_logout".into(),
+            callback: CallbackFn(0),
+            error: CallbackFn(1),
+            url: "tauri://localhost".parse().expect("valid test URL"),
+            body: tauri::ipc::InvokeBody::Json(serde_json::json!({})),
+            headers: Default::default(),
+            invoke_key: INVOKE_KEY.to_owned(),
+        };
+
+        let response = get_ipc_response(&webview, request)
+            .expect("the logout command invokes through Tauri IPC")
+            .deserialize::<serde_json::Value>()
+            .expect("the command response is JSON");
+
+        assert_eq!(response["error"], "desktop session is unavailable");
+    }
+
+    #[test]
+    fn desktop_api_request_rejects_through_the_command_boundary_without_a_session() {
+        let app = mock_builder()
+            .manage(test_state())
+            .invoke_handler(tauri::generate_handler![desktop_api_request])
+            .build(mock_context(noop_assets()))
+            .expect("the command test app builds");
+        let webview = WebviewWindowBuilder::new(&app, MAIN_WINDOW_LABEL, Default::default())
+            .build()
+            .expect("the command test webview builds");
+        let request = InvokeRequest {
+            cmd: "desktop_api_request".into(),
+            callback: CallbackFn(0),
+            error: CallbackFn(1),
+            url: "tauri://localhost".parse().expect("valid test URL"),
+            body: tauri::ipc::InvokeBody::Json(serde_json::json!({
+                "request": {
+                    "method": "GET",
+                    "path": "/api/auth/me",
+                    "headers": [],
+                    "body": []
+                }
+            })),
+            headers: Default::default(),
+            invoke_key: INVOKE_KEY.to_owned(),
+        };
+
+        let rejection = get_ipc_response(&webview, request)
+            .expect_err("the API request command must fail closed without a session");
+
+        assert_eq!(
+            rejection,
+            serde_json::Value::String("desktop session is unavailable".to_owned())
+        );
+    }
+
+    #[tokio::test]
+    async fn an_unauthorized_api_response_invalidates_the_scope_and_emits_the_session_action() {
+        use tauri::Listener;
+
+        let app = mock_builder()
+            .manage(test_state())
+            .invoke_handler(tauri::generate_handler![desktop_api_request])
+            .build(mock_context(noop_assets()))
+            .expect("the command test app builds");
+        let state = app.state::<DesktopState>();
+        let scope = SessionScope::new("https://atlas.example.test", "user-1").expect("scope");
+        let key = (scope_transport_key(&scope), "ws-a".to_owned());
+        state
+            .transports
+            .lock()
+            .expect("transport map available")
+            .insert(
+                key.clone(),
+                tauri::async_runtime::spawn(std::future::pending::<()>()),
+            );
+        let received = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&received);
+        app.listen("atlas://session-action", move |event| {
+            sink.lock()
+                .expect("captured actions available")
+                .push(event.payload().to_owned());
+        });
+
+        invalidate_scope(&state, app.handle(), &scope)
+            .expect("the 401 branch invalidates the scope");
+
+        assert!(
+            !state
+                .transports
+                .lock()
+                .expect("transport map available")
+                .contains_key(&key)
+        );
+        let payloads = received.lock().expect("captured actions available");
+        assert_eq!(payloads.len(), 1);
+        let action: serde_json::Value =
+            serde_json::from_str(&payloads[0]).expect("the session action is JSON");
+        assert_eq!(action["origin"], "https://atlas.example.test");
+        assert_eq!(action["identity"], "user-1");
+        assert_eq!(action["cancel_transport"], true);
     }
 
     #[test]
@@ -1460,12 +1716,8 @@ mod command_tests {
             SessionScope::new("https://atlas.example.test", "user-1").expect("failed scope");
         let surviving_scope =
             SessionScope::new("https://other.example.test", "user-2").expect("surviving scope");
-        let failed_key = format!("{}:{}", failed_scope.origin(), failed_scope.identity());
-        let surviving_key = format!(
-            "{}:{}",
-            surviving_scope.origin(),
-            surviving_scope.identity()
-        );
+        let failed_key = (scope_transport_key(&failed_scope), "ws-a".to_owned());
+        let surviving_key = (scope_transport_key(&surviving_scope), "ws-b".to_owned());
         state
             .transports
             .lock()

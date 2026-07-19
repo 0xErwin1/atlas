@@ -1,1 +1,1 @@
-{}
+{"default":{"identifier":"default","description":"Grants the main window the core event permissions the Atlas SPA needs to receive Rust-to-webview session and workspace events.","local":true,"windows":["main"],"permissions":["core:event:default"]}}

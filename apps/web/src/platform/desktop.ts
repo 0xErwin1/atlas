@@ -148,11 +148,7 @@ class DesktopWorkspaceEventSource implements WorkspaceEventSource {
         this.readyState = OPEN;
         this.onopen?.(new Event('open'));
       })
-      .catch(() => {
-        if (this.readyState === CLOSED) return;
-        this.readyState = CLOSED;
-        this.onerror?.(new Event('error'));
-      });
+      .catch(() => this.fail());
 
     void bridge
       .listen<DesktopWorkspaceClosed>(DESKTOP_CLOSED_EVENT_NAME, (event) => {
@@ -196,6 +192,10 @@ class DesktopWorkspaceEventSource implements WorkspaceEventSource {
   close(): void {
     if (this.readyState === CLOSED) return;
     this.readyState = CLOSED;
+    this.detachAndStop();
+  }
+
+  private detachAndStop(): void {
     this.unlisten?.();
     this.unlisten = null;
     this.unlistenClosed?.();
@@ -222,6 +222,7 @@ class DesktopWorkspaceEventSource implements WorkspaceEventSource {
   private fail(): void {
     if (this.readyState === CLOSED) return;
     this.readyState = CLOSED;
+    this.detachAndStop();
     this.onerror?.(new Event('error'));
   }
 
@@ -240,9 +241,13 @@ function desktopBridge(): DesktopBridge {
 }
 
 export function createDesktopPlatformTransport(bridge: DesktopBridge = desktopBridge()): PlatformTransport {
-  void bridge.listen(DESKTOP_SESSION_ACTION_EVENT_NAME, (event) => {
-    window.dispatchEvent(new CustomEvent('atlas:session-action', { detail: event.payload }));
-  });
+  void bridge
+    .listen(DESKTOP_SESSION_ACTION_EVENT_NAME, (event) => {
+      window.dispatchEvent(new CustomEvent('atlas:session-action', { detail: event.payload }));
+    })
+    .catch((cause) => {
+      console.error('desktop: session action listener registration failed', cause);
+    });
 
   return {
     isDesktop: true,

@@ -23,6 +23,16 @@ pub trait TransportFactory {
     fn client(&self) -> Result<reqwest::Client, reqwest::Error>;
 }
 
+/// Bounds for the shared desktop HTTP client. A client-wide total timeout is
+/// deliberately absent: the same client carries the long-lived workspace SSE
+/// stream and attachment transfers through `desktop_api_request`, both of which
+/// a global deadline would kill mid-flight. The read timeout still detects a
+/// stalled connection — the server emits SSE keep-alives every 15 seconds —
+/// without capping how long an actively progressing transfer may run. Requests
+/// that need a hard total bound set one per request, as the logout flow does.
+pub const CLIENT_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+pub const CLIENT_READ_TIMEOUT: Duration = Duration::from_secs(60);
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ReqwestTransportFactory;
 
@@ -34,7 +44,10 @@ impl ReqwestTransportFactory {
 
 impl TransportFactory for ReqwestTransportFactory {
     fn client(&self) -> Result<reqwest::Client, reqwest::Error> {
-        reqwest::Client::builder().build()
+        reqwest::Client::builder()
+            .connect_timeout(CLIENT_CONNECT_TIMEOUT)
+            .read_timeout(CLIENT_READ_TIMEOUT)
+            .build()
     }
 }
 
@@ -730,7 +743,17 @@ impl<S: SecretStore> DesktopSession<S> {
     where
         F: FnOnce(Request) -> Result<T, DesktopError>,
     {
-        let result = self
+        let request = self.begin_resume(scope)?;
+
+        self.complete_resume(scope, execute(request))
+    }
+
+    /// First half of the resume flow: loads the stored bearer and builds the
+    /// identity probe request. Split from [`Self::complete_resume`] so the
+    /// network execution can run on an async runtime without holding the
+    /// session lock; a load or build failure expires the scope immediately.
+    pub fn begin_resume(&mut self, scope: &SessionScope) -> Result<Request, DesktopError> {
+        let request = self
             .lifecycle
             .store
             .load(scope)
@@ -743,9 +766,25 @@ impl<S: SecretStore> DesktopSession<S> {
                     &bearer,
                     TransportKind::Rest,
                 )
-            })
-            .and_then(execute);
+            });
 
+        match request {
+            Ok(request) => Ok(request),
+            Err(error) => {
+                self.expire(scope);
+                Err(error)
+            }
+        }
+    }
+
+    /// Second half of the resume flow: records the executed probe result. A
+    /// success reactivates the scope; any failure other than an unavailable
+    /// transport expires it.
+    pub fn complete_resume<T>(
+        &mut self,
+        scope: &SessionScope,
+        result: Result<T, DesktopError>,
+    ) -> Result<T, DesktopError> {
         match result {
             Ok(value) => {
                 self.lifecycle.transport_active = true;
