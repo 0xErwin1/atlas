@@ -234,6 +234,63 @@ describe('useBoardsStore', () => {
     expect(store.tasksByColumn('new-column').map((item) => item.id)).toEqual(['new-task']);
   });
 
+  it('background refresh keeps the mounted board and swaps atomically without a loading flip', async () => {
+    const boardResponse = deferred<{ data: BoardDto; error: undefined }>();
+    const columnsResponse = deferred<{ data: ColumnDto[]; error: undefined }>();
+    const tasksResponse = deferred<{
+      data: { items: TaskSummaryDto[]; has_more: false; next_cursor: null };
+      error: undefined;
+    }>();
+    GET.mockImplementation((path: string) => {
+      if (path.endsWith('/columns')) return columnsResponse.promise;
+      if (path.endsWith('/tasks')) return tasksResponse.promise;
+      return boardResponse.promise;
+    });
+
+    const store = useBoardsStore();
+    store.board = board('board-1');
+    store.columns = [col('old-column', 'a')];
+    store._setTasksForTest({ 'old-column': [task('old-task', 'ATL-1', 'old-column')] });
+
+    const refresh = store.loadBoardContents('ws', 'board-1', undefined, { background: true });
+
+    expect(store.loading).toBe(false);
+    expect(store.board?.id).toBe('board-1');
+    expect(store.tasksByColumn('old-column').map((item) => item.id)).toEqual(['old-task']);
+
+    boardResponse.resolve({ data: board('board-1'), error: undefined });
+    columnsResponse.resolve({ data: [col('new-column', 'b')], error: undefined });
+    tasksResponse.resolve({
+      data: { items: [task('new-task', 'ATL-2', 'new-column')], has_more: false, next_cursor: null },
+      error: undefined,
+    });
+    await refresh;
+
+    expect(store.loading).toBe(false);
+    expect(store.columns.map((column) => column.id)).toEqual(['new-column']);
+    expect(store.tasksByColumn('new-column').map((item) => item.id)).toEqual(['new-task']);
+  });
+
+  it('background refresh preserves the mounted board on a transient failure', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    GET.mockResolvedValue({ data: undefined, error: { status: 500, hint: 'server error' } });
+
+    const store = useBoardsStore();
+    store.board = board('board-1');
+    store.columns = [col('old-column', 'a')];
+    store._setTasksForTest({ 'old-column': [task('old-task', 'ATL-1', 'old-column')] });
+
+    await store.loadBoardContents('ws', 'board-1', undefined, { background: true });
+
+    expect(store.board?.id).toBe('board-1');
+    expect(store.tasksByColumn('old-column').map((item) => item.id)).toEqual(['old-task']);
+    expect(store.loading).toBe(false);
+    expect(store.loadError).toBeNull();
+    expect(warn).toHaveBeenCalledOnce();
+
+    warn.mockRestore();
+  });
+
   it('hydrates an exact board composite before an offline refresh and keeps it usable for active retry', async () => {
     const key = buildCacheKey({
       principal: PRINCIPAL,

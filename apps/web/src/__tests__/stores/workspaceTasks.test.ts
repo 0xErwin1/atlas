@@ -77,6 +77,63 @@ describe('useWorkspaceTasksStore', () => {
     allowResourceCache();
   });
 
+  it('background refresh keeps the mounted list and swaps atomically without a loading flip', async () => {
+    GET.mockResolvedValueOnce({
+      data: { items: [task('a')], has_more: false, next_cursor: null },
+      error: undefined,
+    });
+
+    const store = useWorkspaceTasksStore();
+    await store.load('ws', { assignee: 'me' });
+
+    expect(store.tasks.map((item) => item.id)).toEqual(['a']);
+    expect(store.hasData).toBe(true);
+
+    const pending = deferred<{
+      data: { items: TaskSummaryDto[]; has_more: false; next_cursor: null };
+      error: undefined;
+    }>();
+    GET.mockReturnValueOnce(pending.promise);
+
+    const refresh = store.load('ws', { assignee: 'me' }, true, undefined, { background: true });
+
+    expect(store.loading).toBe(false);
+    expect(store.tasks.map((item) => item.id)).toEqual(['a']);
+    expect(store.hasData).toBe(true);
+
+    pending.resolve({
+      data: { items: [task('b')], has_more: false, next_cursor: null },
+      error: undefined,
+    });
+    await refresh;
+
+    expect(store.loading).toBe(false);
+    expect(store.tasks.map((item) => item.id)).toEqual(['b']);
+  });
+
+  it('background refresh preserves the mounted list on a transient failure', async () => {
+    GET.mockResolvedValueOnce({
+      data: { items: [task('a')], has_more: false, next_cursor: null },
+      error: undefined,
+    });
+
+    const store = useWorkspaceTasksStore();
+    await store.load('ws', { assignee: 'me' });
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    GET.mockResolvedValueOnce({ data: undefined, error: { status: 500, hint: 'server error' } });
+
+    await store.load('ws', { assignee: 'me' }, true, undefined, { background: true });
+
+    expect(store.tasks.map((item) => item.id)).toEqual(['a']);
+    expect(store.hasData).toBe(true);
+    expect(store.loading).toBe(false);
+    expect(store.error).toBeNull();
+    expect(warn).toHaveBeenCalledOnce();
+
+    warn.mockRestore();
+  });
+
   it('hydrates only the exact normalized task query before an offline refresh', async () => {
     const key = buildCacheKey({
       principal: PRINCIPAL,

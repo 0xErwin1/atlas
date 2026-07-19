@@ -200,8 +200,16 @@ export const useWorkspaceTasksStore = defineStore('workspaceTasks', () => {
     params: WorkspaceTaskParams,
     force = false,
     workspaceId?: string,
+    options: { background?: boolean } = {},
   ): Promise<boolean> {
     currentQuery = { ws, params: { ...params }, workspaceId };
+
+    // A background refresh (live-stream resync) keeps the mounted list visible:
+    // it must not raise the loading flag nor clear `tasks`/`hasData`, and it
+    // swaps the fresh page in atomically through `publishPage`. Only a list that
+    // already holds data can refresh in the background; with none loaded this is
+    // an initial load and stays on the destructive path (spinner + error).
+    const backgroundRefresh = options.background === true && hasData.value === true;
     const principal = getResourceCachePrincipal();
     const key =
       principal === undefined || workspaceId === undefined ? null : paramsKey(principal, workspaceId, params);
@@ -283,13 +291,15 @@ export const useWorkspaceTasksStore = defineStore('workspaceTasks', () => {
     }
 
     activeLoadRequest = request;
-    loading.value = true;
-    error.value = null;
-    loadedKey = null;
-    hasData.value = false;
-    tasks.value = [];
-    hasMore.value = false;
-    nextCursor.value = null;
+    if (!backgroundRefresh) {
+      loading.value = true;
+      error.value = null;
+      loadedKey = null;
+      hasData.value = false;
+      tasks.value = [];
+      hasMore.value = false;
+      nextCursor.value = null;
+    }
 
     if (cacheRequest !== null && resourceCache.isAvailable()) {
       activeTaskCacheKey = cacheKey;
@@ -299,11 +309,18 @@ export const useWorkspaceTasksStore = defineStore('workspaceTasks', () => {
         if (!isCurrent()) return false;
 
         const failure = taskLoadError(cause);
-        if (failure.status === 403 || failure.status === 404) {
+        const denied = failure.status === 403 || failure.status === 404;
+
+        if (denied) {
           retractDeniedPage(key, cacheRequest.key);
           if (workspaceId !== undefined) await invalidateWorkspaceTaskQueryCache(workspaceId);
+          error.value = failure.hint;
+        } else if (backgroundRefresh) {
+          // A transient background-refresh failure leaves the mounted list intact.
+          console.warn('workspaceTasks: background refresh failed; keeping current tasks', failure);
+        } else {
+          error.value = failure.hint;
         }
-        error.value = failure.hint;
       }
 
       if (!isCurrent()) return false;
@@ -330,7 +347,11 @@ export const useWorkspaceTasksStore = defineStore('workspaceTasks', () => {
       if (activeLoadRequest !== request) return false;
 
       loading.value = false;
-      error.value = taskErrorHint(cause);
+      if (backgroundRefresh) {
+        console.warn('workspaceTasks: background refresh failed; keeping current tasks', cause);
+      } else {
+        error.value = taskErrorHint(cause);
+      }
       return true;
     }
   }

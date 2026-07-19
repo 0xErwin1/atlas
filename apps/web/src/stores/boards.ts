@@ -690,20 +690,34 @@ export const useBoardsStore = defineStore('boards', () => {
     useLabelColorsStore().recordTags(result.value.items.flatMap((task) => task.labels ?? []));
   }
 
-  async function loadBoardContents(ws: string, boardId: string, workspaceId?: string): Promise<boolean> {
+  async function loadBoardContents(
+    ws: string,
+    boardId: string,
+    workspaceId?: string,
+    options: { background?: boolean } = {},
+  ): Promise<boolean> {
+    // A background refresh (live-stream resync) keeps the mounted board visible:
+    // it must not raise the loading flag nor null the composite, and it swaps the
+    // fresh data in atomically through `publish`. Only a board that is already
+    // shown can refresh in the background; with none mounted this is an initial
+    // load and stays on the destructive path (spinner + error surfacing).
+    const backgroundRefresh = options.background === true && board.value !== null;
+
     deactivateActiveBoardCache();
     const operation: ActiveBoardLoad = { ws, boardId, refreshColumns: false };
     activeBoardLoad = operation;
     activeBoardRequest = null;
     activeColumnsRequest = null;
     activeTasksRequest = null;
-    invalidateTaskDetails();
 
-    loading.value = true;
-    loadError.value = null;
-    loadErrorStatus.value = null;
-    error.value = null;
-    clearBoardComposite();
+    if (!backgroundRefresh) {
+      invalidateTaskDetails();
+      loading.value = true;
+      loadError.value = null;
+      loadErrorStatus.value = null;
+      error.value = null;
+      clearBoardComposite();
+    }
 
     const cacheKey =
       workspaceId === undefined
@@ -800,11 +814,19 @@ export const useBoardsStore = defineStore('boards', () => {
       } catch (cause) {
         if (!isCurrent()) return false;
 
-        const error = cause as Error & { status?: number };
-        loadError.value = error.message;
-        loadErrorStatus.value = error.status ?? null;
-        if (error.status === 403 || error.status === 404) {
-          await retractDeniedBoard(boardId, workspaceId, cacheKey);
+        const failure = cause as Error & { status?: number };
+        const denied = failure.status === 403 || failure.status === 404;
+
+        // A background refresh that fails transiently must leave the mounted
+        // board untouched; only an authoritative 403/404 (board gone) retracts.
+        if (backgroundRefresh && !denied) {
+          console.warn('boards: background board refresh failed; keeping current board', failure);
+        } else {
+          loadError.value = failure.message;
+          loadErrorStatus.value = failure.status ?? null;
+          if (denied) {
+            await retractDeniedBoard(boardId, workspaceId, cacheKey);
+          }
         }
       }
 
@@ -818,11 +840,18 @@ export const useBoardsStore = defineStore('boards', () => {
       publish(await load());
     } catch (cause) {
       if (!isCurrent()) return false;
-      const error = cause as Error & { status?: number };
-      loadError.value = error.message;
-      loadErrorStatus.value = error.status ?? null;
-      if (error.status === 403 || error.status === 404) {
-        await retractDeniedBoard(boardId, workspaceId, cacheKey);
+
+      const failure = cause as Error & { status?: number };
+      const denied = failure.status === 403 || failure.status === 404;
+
+      if (backgroundRefresh && !denied) {
+        console.warn('boards: background board refresh failed; keeping current board', failure);
+      } else {
+        loadError.value = failure.message;
+        loadErrorStatus.value = failure.status ?? null;
+        if (denied) {
+          await retractDeniedBoard(boardId, workspaceId, cacheKey);
+        }
       }
     }
 

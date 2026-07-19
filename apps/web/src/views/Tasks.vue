@@ -240,7 +240,7 @@ function openTask(readableId: string): void {
   void router.push({ name: 'task-detail', params: { readableId } });
 }
 
-async function loadBoard(): Promise<void> {
+async function loadBoard(background = false): Promise<void> {
   const operation = ++boardLoadOperation;
   viewNotFound.value = false;
   if (ws.value === '') return;
@@ -260,9 +260,9 @@ async function loadBoard(): Promise<void> {
   const targetBoardId = boardId.value;
   const targetWorkspaceId = workspaceId.value;
   const [isCurrentLoad] = await Promise.all([
-    targetWorkspaceId === null
-      ? boards.loadBoardContents(targetWorkspace, targetBoardId)
-      : boards.loadBoardContents(targetWorkspace, targetBoardId, targetWorkspaceId),
+    boards.loadBoardContents(targetWorkspace, targetBoardId, targetWorkspaceId ?? undefined, {
+      background,
+    }),
     workspace.loadMembers(targetWorkspace),
   ]);
   if (
@@ -315,7 +315,7 @@ async function openFromQuery(): Promise<void> {
   await onSelect(open);
 }
 
-async function loadView(force = false): Promise<void> {
+async function loadView(force = false, background = false): Promise<void> {
   const operation = ++boardLoadOperation;
   viewNotFound.value = false;
 
@@ -354,6 +354,7 @@ async function loadView(force = false): Promise<void> {
     params,
     force,
     targetWorkspaceId ?? undefined,
+    { background },
   );
   if (
     !isCurrentLoad ||
@@ -366,11 +367,14 @@ async function loadView(force = false): Promise<void> {
   }
 }
 
-// Reloads whichever surface is active — the kanban board or a task view — used
-// to fully resynchronize after the live stream reconnects or on a board delete.
+// Resynchronizes whichever surface is active — the kanban board or a task view —
+// after the live stream reconnects or on a board delete. Runs as a background
+// refresh so the mounted board/list stays put (no spinner, no scroll reset) and
+// swaps to fresh data atomically on success; a transient failure keeps the
+// current data, while an authoritative 403/404 still retracts a gone board/view.
 function reloadActive(): void {
-  if (isView.value) void loadView(true);
-  else void loadBoard();
+  if (isView.value) void loadView(true, true);
+  else void loadBoard(true);
 }
 
 // The column a task currently sits in on the loaded board, by task UUID.
