@@ -26,6 +26,22 @@ pub enum ResolverError {
         board_ref: String,
         workspace: String,
     },
+    /// More than one board matched the supplied name fragment.
+    ///
+    /// `matches` lists the full names of every board that matched so the caller
+    /// can disambiguate by passing a more specific name or the board's UUID.
+    AmbiguousBoard {
+        board_ref: String,
+        matches: Vec<String>,
+    },
+    /// A status filter was supplied but matched no column in scope.
+    ///
+    /// `available` lists the full names of every column that was considered so
+    /// the caller can correct the status name.
+    NoMatchingColumns {
+        status: String,
+        available: Vec<String>,
+    },
     /// A resolved board_id string did not parse as a valid UUID.
     InvalidBoardUuid { board_id: String },
     /// An underlying Atlas client call failed; `context` names the operation.
@@ -44,6 +60,17 @@ impl fmt::Display for ResolverError {
             } => write!(
                 f,
                 "no board matching '{board_ref}' found in workspace '{workspace}'"
+            ),
+            Self::AmbiguousBoard { board_ref, matches } => write!(
+                f,
+                "board '{board_ref}' is ambiguous; matches: [{}]; \
+                 pass a more specific name or the board's UUID",
+                matches.join(", ")
+            ),
+            Self::NoMatchingColumns { status, available } => write!(
+                f,
+                "status '{status}' matched no columns; available columns: [{}]",
+                available.join(", ")
             ),
             Self::InvalidBoardUuid { board_id } => {
                 write!(f, "resolved board_id '{board_id}' is not a valid UUID")
@@ -199,11 +226,44 @@ pub fn validate_estimate_value(v: &serde_json::Value) -> Result<(), String> {
 // Async board/column resolvers
 // ---------------------------------------------------------------------------
 
+/// Selects exactly one board id from the boards that matched a name fragment.
+///
+/// Enforces the single-match semantics required by write/destructive callers:
+/// zero matches is `BoardNotFound`, more than one is `AmbiguousBoard` listing
+/// the candidate names. `matches` holds `(name, id)` for every board whose name
+/// contained the fragment. Mirrors `resolve_column_id_on_board`.
+// `ResolverError` is intentionally value-based (its async callers already return
+// it by value); the large `Err` only exists on the cold error path here.
+#[allow(clippy::result_large_err)]
+fn select_board_match(
+    board_ref: &str,
+    ws: &str,
+    matches: Vec<(String, String)>,
+) -> Result<String, ResolverError> {
+    match matches.len() {
+        0 => Err(ResolverError::BoardNotFound {
+            board_ref: board_ref.to_string(),
+            workspace: ws.to_string(),
+        }),
+        1 => Ok(matches
+            .into_iter()
+            .next()
+            .map(|(_, id)| id)
+            .unwrap_or_default()),
+        _ => Err(ResolverError::AmbiguousBoard {
+            board_ref: board_ref.to_string(),
+            matches: matches.into_iter().map(|(name, _)| name).collect(),
+        }),
+    }
+}
+
 /// Resolves a board reference (name fragment or UUID string) to a UUID string.
 ///
 /// When the input parses as a UUID it is returned directly without any network
-/// call. Otherwise walks all projects' boards to find the first
-/// case-insensitive partial name match.
+/// call. Otherwise walks all projects' boards and collects every case-insensitive
+/// partial name match. A single match resolves; zero matches is `BoardNotFound`
+/// and more than one is `AmbiguousBoard` (listing the candidate names) so an
+/// ambiguous name can never silently feed a destructive operation.
 pub async fn resolve_board_id(
     client: &AtlasClient,
     ws: &str,
@@ -214,6 +274,7 @@ pub async fn resolve_board_id(
     }
 
     let needle = board_ref.to_ascii_lowercase();
+    let mut matches: Vec<(String, String)> = Vec::new();
     let mut project_cursor: Option<String> = None;
 
     loop {
@@ -238,7 +299,7 @@ pub async fn resolve_board_id(
 
                 for board in &boards.items {
                     if board.name.to_ascii_lowercase().contains(&needle) {
-                        return Ok(board.id.to_string());
+                        matches.push((board.name.clone(), board.id.to_string()));
                     }
                 }
 
@@ -255,23 +316,19 @@ pub async fn resolve_board_id(
         }
     }
 
-    Err(ResolverError::BoardNotFound {
-        board_ref: board_ref.to_string(),
-        workspace: ws.to_string(),
-    })
+    select_board_match(board_ref, ws, matches)
 }
 
-/// Resolves a status/column name to matching column UUIDs.
+/// Collects the columns that a status filter should be matched against.
 ///
-/// When `board` is provided (name or UUID), resolves within that one board
-/// using a single `list_columns` call. Otherwise walks all projects and all
-/// their boards to collect matching columns across the workspace.
-pub async fn resolve_column_ids(
+/// When `board` is provided (name or UUID), returns that one board's columns via
+/// a single `list_columns` call. Otherwise walks all projects and all their
+/// boards, accumulating every column in the workspace.
+async fn collect_columns(
     client: &AtlasClient,
     ws: &str,
     board: Option<&str>,
-    status_name: &str,
-) -> Result<Vec<String>, ResolverError> {
+) -> Result<Vec<ColumnDto>, ResolverError> {
     if let Some(board_ref) = board {
         let board_id = resolve_board_id(client, ws, board_ref).await?;
         let board_uuid: uuid::Uuid =
@@ -288,7 +345,7 @@ pub async fn resolve_column_ids(
                     context: "list_columns failed".into(),
                     source: e,
                 })?;
-        return Ok(match_columns_by_name(status_name, &cols));
+        return Ok(cols);
     }
 
     let mut all_cols = Vec::new();
@@ -337,7 +394,57 @@ pub async fn resolve_column_ids(
         }
     }
 
-    Ok(match_columns_by_name(status_name, &all_cols))
+    Ok(all_cols)
+}
+
+/// Resolves a status/column name to matching column UUIDs.
+///
+/// Returns an empty vec when no column matches — callers that treat an empty set
+/// as "no filter" get lenient behavior. Write/read callers that must not silently
+/// drop a status filter should use `resolve_column_ids_required` instead.
+pub async fn resolve_column_ids(
+    client: &AtlasClient,
+    ws: &str,
+    board: Option<&str>,
+    status_name: &str,
+) -> Result<Vec<String>, ResolverError> {
+    let cols = collect_columns(client, ws, board).await?;
+    Ok(match_columns_by_name(status_name, &cols))
+}
+
+/// Resolves a status/column name to matching column UUIDs, erroring on no match.
+///
+/// Unlike `resolve_column_ids`, a status that matches zero columns is a
+/// `NoMatchingColumns` error listing the available column names, rather than an
+/// empty vec. This prevents a mistyped status from being interpreted downstream
+/// as "no filter" and silently returning the full, unfiltered result set.
+pub async fn resolve_column_ids_required(
+    client: &AtlasClient,
+    ws: &str,
+    board: Option<&str>,
+    status_name: &str,
+) -> Result<Vec<String>, ResolverError> {
+    let cols = collect_columns(client, ws, board).await?;
+    columns_for_status(status_name, &cols)
+}
+
+/// Matches a status name against a column set, erroring when nothing matches.
+///
+/// Pure counterpart of `resolve_column_ids_required`: separated so the
+/// no-match-lists-available-columns behavior is testable without a client.
+// See `select_board_match`: the large `Err` only occurs on the cold error path.
+#[allow(clippy::result_large_err)]
+fn columns_for_status(status_name: &str, cols: &[ColumnDto]) -> Result<Vec<String>, ResolverError> {
+    let ids = match_columns_by_name(status_name, cols);
+
+    if ids.is_empty() {
+        return Err(ResolverError::NoMatchingColumns {
+            status: status_name.to_string(),
+            available: cols.iter().map(|c| c.name.clone()).collect(),
+        });
+    }
+
+    Ok(ids)
 }
 
 // ---------------------------------------------------------------------------
@@ -351,6 +458,18 @@ mod tests {
 
     fn transport_error() -> ClientError {
         ClientError::Transport(reqwest::Client::new().get("not-a-url").build().unwrap_err())
+    }
+
+    fn column(name: &str) -> ColumnDto {
+        serde_json::from_value(serde_json::json!({
+            "id": uuid::Uuid::new_v4(),
+            "board_id": uuid::Uuid::new_v4(),
+            "name": name,
+            "position_key": "a0",
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z",
+        }))
+        .expect("valid ColumnDto json")
     }
 
     // -----------------------------------------------------------------------
@@ -367,6 +486,99 @@ mod tests {
             e.to_string(),
             "no board matching 'x' found in workspace 'ws'"
         );
+    }
+
+    #[test]
+    fn resolver_error_ambiguous_board_display_lists_candidates() {
+        let e = ResolverError::AmbiguousBoard {
+            board_ref: "sprint".into(),
+            matches: vec!["Sprint Board".into(), "Sprint Backlog".into()],
+        };
+        let msg = e.to_string();
+        assert!(msg.contains("'sprint' is ambiguous"), "got: {msg}");
+        assert!(msg.contains("Sprint Board"), "must list candidate: {msg}");
+        assert!(msg.contains("Sprint Backlog"), "must list candidate: {msg}");
+    }
+
+    #[test]
+    fn resolver_error_no_matching_columns_display_lists_available() {
+        let e = ResolverError::NoMatchingColumns {
+            status: "dne".into(),
+            available: vec!["To Do".into(), "Done".into()],
+        };
+        let msg = e.to_string();
+        assert!(msg.contains("'dne' matched no columns"), "got: {msg}");
+        assert!(msg.contains("To Do"), "must list available column: {msg}");
+        assert!(msg.contains("Done"), "must list available column: {msg}");
+    }
+
+    // -----------------------------------------------------------------------
+    // select_board_match: 0 / 1 / many matching boards
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn select_board_match_no_matches_is_board_not_found() {
+        let e = select_board_match("x", "ws", Vec::new()).unwrap_err();
+        assert!(matches!(e, ResolverError::BoardNotFound { .. }));
+    }
+
+    #[test]
+    fn select_board_match_single_match_resolves() {
+        let matches = vec![("Sprint Board".to_string(), "board-id-1".to_string())];
+        let id = select_board_match("sprint", "ws", matches).unwrap();
+        assert_eq!(id, "board-id-1");
+    }
+
+    #[test]
+    fn select_board_match_multiple_matches_is_ambiguous_with_candidates() {
+        let matches = vec![
+            ("Sprint Board".to_string(), "id-1".to_string()),
+            ("Sprint Backlog".to_string(), "id-2".to_string()),
+        ];
+        let e = select_board_match("sprint", "ws", matches).unwrap_err();
+
+        match e {
+            ResolverError::AmbiguousBoard { board_ref, matches } => {
+                assert_eq!(board_ref, "sprint");
+                assert_eq!(matches, vec!["Sprint Board", "Sprint Backlog"]);
+            }
+            other => panic!("expected AmbiguousBoard, got {other:?}"),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // columns_for_status: strict status matching (finding 2)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn columns_for_status_returns_matching_ids() {
+        let in_progress = column("In Progress");
+        let expected = in_progress.id.to_string();
+        let cols = vec![column("To Do"), in_progress, column("Done")];
+
+        let ids = columns_for_status("progress", &cols).unwrap();
+
+        assert_eq!(ids, vec![expected]);
+    }
+
+    #[test]
+    fn columns_for_status_no_match_errors_with_available_columns() {
+        let cols = vec![column("To Do"), column("Done")];
+        let e = columns_for_status("archived", &cols).unwrap_err();
+
+        match e {
+            ResolverError::NoMatchingColumns { status, available } => {
+                assert_eq!(status, "archived");
+                assert_eq!(available, vec!["To Do", "Done"]);
+            }
+            other => panic!("expected NoMatchingColumns, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn columns_for_status_empty_board_errors_with_empty_available() {
+        let e = columns_for_status("anything", &[]).unwrap_err();
+        assert!(matches!(e, ResolverError::NoMatchingColumns { .. }));
     }
 
     #[test]

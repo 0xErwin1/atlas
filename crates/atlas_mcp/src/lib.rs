@@ -50,19 +50,20 @@ where
 }
 
 use response::{
-    Detail, enrich_client_error, envelope_page, map_present_value, parse_atlas_doc_uri, parse_csv,
-    parse_detail, project_activity_entry, project_assignee, project_attachment,
-    project_audit_entry, project_backlink, project_board_summary, project_checklist_item,
-    project_column, project_comment, project_comment_attachment, project_comment_feed_entry,
-    project_document_compact, project_document_full, project_document_summary, project_folder,
-    project_principal, project_project, project_promotion, project_reference,
-    project_revision_content, project_revision_meta, project_saved_search, project_search_hit,
-    project_semantic_search_hit, project_status_template, project_tag, project_task_attachment,
-    project_task_backlink, project_task_compact, project_task_full, project_task_row,
-    project_task_view, project_webhook, project_webhook_created, project_webhook_delivery,
-    project_workspace, project_workspace_activity_entry, require_confirm,
-    resolve_column_id_on_board, validate_assignee_type, validate_estimate, validate_estimate_value,
-    validate_priority, validate_reference_kind, validate_single_target, wrap_vec,
+    Detail, enrich_client_error, envelope_page, map_present_string, map_present_uuid,
+    map_present_value, parse_atlas_doc_uri, parse_csv, parse_detail, project_activity_entry,
+    project_assignee, project_attachment, project_audit_entry, project_backlink,
+    project_board_summary, project_checklist_item, project_column, project_comment,
+    project_comment_attachment, project_comment_feed_entry, project_document_compact,
+    project_document_full, project_document_summary, project_folder, project_principal,
+    project_project, project_promotion, project_reference, project_revision_content,
+    project_revision_meta, project_saved_search, project_search_hit, project_semantic_search_hit,
+    project_status_template, project_tag, project_task_attachment, project_task_backlink,
+    project_task_compact, project_task_full, project_task_row, project_task_view, project_webhook,
+    project_webhook_created, project_webhook_delivery, project_workspace,
+    project_workspace_activity_entry, require_confirm, resolve_column_id_on_board,
+    validate_assignee_type, validate_estimate, validate_estimate_value, validate_priority,
+    validate_reference_kind, validate_single_target, wrap_vec,
 };
 
 const ATLAS_INSTRUCTIONS: &str = "\
@@ -265,28 +266,47 @@ pub fn parse_bearer_atlas_token(header_value: &str) -> Result<&str, String> {
     Ok(token)
 }
 
-/// Parses a required `webhook_id` tool parameter into a UUID.
-fn parse_webhook_id(raw: &str) -> Result<uuid::Uuid, String> {
-    raw.parse::<uuid::Uuid>()
-        .map_err(|_| format!("webhook_id '{raw}' is not a valid UUID"))
-}
-
-/// Parses an optional `scope_id` tool parameter into a UUID.
-///
-/// Absent (`None`) yields `Ok(None)`; a present value must be a valid UUID.
-fn parse_optional_webhook_scope_id(raw: Option<&str>) -> Result<Option<uuid::Uuid>, String> {
-    match raw {
-        None => Ok(None),
-        Some(s) => s
-            .parse::<uuid::Uuid>()
-            .map(Some)
-            .map_err(|_| format!("scope_id '{s}' is not a valid UUID")),
-    }
-}
-
-fn parse_comment_attachment_id(field: &str, raw: &str) -> Result<uuid::Uuid, String> {
+/// Parses a required UUID tool parameter, naming the field in the error.
+fn parse_uuid_param(field: &str, raw: &str) -> Result<uuid::Uuid, String> {
     raw.parse()
         .map_err(|_| format!("{field} '{raw}' is not a valid UUID"))
+}
+
+/// Parses an optional UUID tool parameter, naming the field in the error.
+///
+/// Absent (`None`) yields `Ok(None)`; a present value must be a valid UUID.
+fn parse_optional_uuid_param(field: &str, raw: Option<&str>) -> Result<Option<uuid::Uuid>, String> {
+    raw.map(|s| parse_uuid_param(field, s)).transpose()
+}
+
+/// Parses a required `webhook_id` tool parameter into a UUID.
+fn parse_webhook_id(raw: &str) -> Result<uuid::Uuid, String> {
+    parse_uuid_param("webhook_id", raw)
+}
+
+/// Resolves a board reference (name or UUID) to a validated board UUID.
+///
+/// Combines `helpers::resolve_board_id` (which errors on an ambiguous name) with
+/// the UUID parse the resolved id must satisfy, so write callers share one code
+/// path and one error string.
+async fn resolve_board_uuid(
+    client: &AtlasClient,
+    workspace: &str,
+    board_ref: &str,
+) -> Result<uuid::Uuid, String> {
+    let board_id_str = helpers::resolve_board_id(client, workspace, board_ref)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    parse_resolved_board_uuid(&board_id_str)
+}
+
+/// Parses a board id string that was already resolved (name lookup or a task's
+/// own `board_id`) into a UUID, with the shared "resolved board" error string.
+fn parse_resolved_board_uuid(board_id_str: &str) -> Result<uuid::Uuid, String> {
+    board_id_str
+        .parse()
+        .map_err(|_| format!("resolved board '{board_id_str}' is not a valid UUID"))
 }
 
 fn decode_comment_attachment_data(
@@ -1655,15 +1675,15 @@ pub struct UpdateWebhookParams {
     /// New scope discriminant. Omit to leave unchanged.
     #[serde(default)]
     pub scope_type: Option<String>,
-    /// New scope UUID. Omit to leave unchanged.
-    #[serde(default)]
-    pub scope_id: Option<String>,
+    /// New scope UUID. Omit to leave unchanged, pass JSON null to clear.
+    #[serde(default, deserialize_with = "present_value")]
+    pub scope_id: Option<serde_json::Value>,
     /// Enable or disable the subscription. Omit to leave unchanged.
     #[serde(default)]
     pub is_active: Option<bool>,
-    /// New label. Omit to leave unchanged.
-    #[serde(default)]
-    pub label: Option<String>,
+    /// New label. Omit to leave unchanged, pass JSON null to clear.
+    #[serde(default, deserialize_with = "present_value")]
+    pub label: Option<serde_json::Value>,
 }
 
 /// Parameters accepted by the `delete_webhook` tool.
@@ -1707,7 +1727,7 @@ impl AtlasMcp {
                 Some(limit),
             )
             .await
-            .map_err(|e| format!("search failed: {e}"))?;
+            .map_err(|e| enrich_client_error(e, "search"))?;
 
         let result = envelope_page(page, project_search_hit);
         serde_json::to_string(&result).map_err(|e| e.to_string())
@@ -1731,7 +1751,7 @@ impl AtlasMcp {
                 Some(limit),
             )
             .await
-            .map_err(|e| format!("semantic_search failed: {e}"))?;
+            .map_err(|e| enrich_client_error(e, "semantic_search"))?;
 
         let result = envelope_page(page, project_semantic_search_hit);
         serde_json::to_string(&result).map_err(|e| e.to_string())
@@ -1747,7 +1767,7 @@ impl AtlasMcp {
         let doc = client
             .get_document(&params.workspace, &params.slug)
             .await
-            .map_err(|e| format!("get_document '{}' failed: {e}", params.slug))?;
+            .map_err(|e| enrich_client_error(e, "get_document"))?;
 
         let result = match parse_detail(params.detail.as_deref()) {
             Detail::Compact => project_document_compact(doc),
@@ -1776,7 +1796,7 @@ impl AtlasMcp {
         let limit = params.limit.unwrap_or(20).clamp(1, 200);
 
         let column_ids = if let Some(status_name) = &params.status {
-            helpers::resolve_column_ids(
+            helpers::resolve_column_ids_required(
                 &client,
                 &params.workspace,
                 params.board.as_deref(),
@@ -1813,7 +1833,7 @@ impl AtlasMcp {
         let page = client
             .list_workspace_tasks(&params.workspace, &query)
             .await
-            .map_err(|e| format!("list_tasks failed: {e}"))?;
+            .map_err(|e| enrich_client_error(e, "list_tasks"))?;
 
         let result = envelope_page(page, project_task_row);
         serde_json::to_string(&result).map_err(|e| e.to_string())
@@ -1830,7 +1850,7 @@ impl AtlasMcp {
         let task = client
             .get_task(&params.workspace, &params.readable_id)
             .await
-            .map_err(|e| format!("get_task '{}' failed: {e}", params.readable_id))?;
+            .map_err(|e| enrich_client_error(e, "get_task"))?;
 
         let result = match parse_detail(params.detail.as_deref()) {
             Detail::Compact => project_task_compact(&task),
@@ -1839,19 +1859,19 @@ impl AtlasMcp {
                     .list_references(&params.workspace, &params.readable_id)
                     .await
                     .map(|v| v.into_iter().map(project_reference).collect::<Vec<_>>())
-                    .map_err(|e| format!("list_references failed: {e}"));
+                    .map_err(|e| enrich_client_error(e, "list_references"));
 
                 let subtasks = client
                     .list_subtasks(&params.workspace, &params.readable_id)
                     .await
                     .map(|v| v.into_iter().map(project_task_row).collect::<Vec<_>>())
-                    .map_err(|e| format!("list_subtasks failed: {e}"));
+                    .map_err(|e| enrich_client_error(e, "list_subtasks"));
 
                 let assignees = client
                     .list_assignees(&params.workspace, &params.readable_id)
                     .await
                     .map(|v| v.into_iter().map(project_assignee).collect::<Vec<_>>())
-                    .map_err(|e| format!("list_assignees failed: {e}"));
+                    .map_err(|e| enrich_client_error(e, "list_assignees"));
 
                 project_task_full(&task, refs, subtasks, assignees)
             }
@@ -1877,12 +1897,7 @@ impl AtlasMcp {
                 Some(limit),
             )
             .await
-            .map_err(|e| {
-                format!(
-                    "list_documents for project '{}' failed: {e}",
-                    params.project
-                )
-            })?;
+            .map_err(|e| enrich_client_error(e, "list_documents"))?;
 
         let result = envelope_page(page, project_document_summary);
         serde_json::to_string(&result).map_err(|e| e.to_string())
@@ -1905,7 +1920,7 @@ impl AtlasMcp {
                 Some(limit),
             )
             .await
-            .map_err(|e| format!("list_folders for project '{}' failed: {e}", params.project))?;
+            .map_err(|e| enrich_client_error(e, "list_folders"))?;
 
         let result = envelope_page(page, project_folder);
         serde_json::to_string(&result).map_err(|e| e.to_string())
@@ -1928,7 +1943,7 @@ impl AtlasMcp {
                 Some(limit),
             )
             .await
-            .map_err(|e| format!("list_boards for project '{}' failed: {e}", params.project))?;
+            .map_err(|e| enrich_client_error(e, "list_boards"))?;
 
         let result = envelope_page(page, project_board_summary);
         serde_json::to_string(&result).map_err(|e| e.to_string())
@@ -1942,18 +1957,12 @@ impl AtlasMcp {
     ) -> Result<String, String> {
         let client = self.resolve_client(&ctx)?;
 
-        let board_id_str = helpers::resolve_board_id(&client, &params.workspace, &params.board)
-            .await
-            .map_err(|e| e.to_string())?;
-
-        let board_uuid: uuid::Uuid = board_id_str
-            .parse()
-            .map_err(|_| format!("resolved board_id '{board_id_str}' is not a valid UUID"))?;
+        let board_uuid = resolve_board_uuid(&client, &params.workspace, &params.board).await?;
 
         let cols = client
             .list_columns(&params.workspace, board_uuid)
             .await
-            .map_err(|e| format!("list_columns for board '{}' failed: {e}", params.board))?;
+            .map_err(|e| enrich_client_error(e, "list_columns"))?;
 
         let result = wrap_vec(cols, project_column);
         serde_json::to_string(&result).map_err(|e| e.to_string())
@@ -1970,7 +1979,7 @@ impl AtlasMcp {
         let tags = client
             .list_tags(&params.workspace)
             .await
-            .map_err(|e| format!("list_tags for workspace '{}' failed: {e}", params.workspace))?;
+            .map_err(|e| enrich_client_error(e, "list_tags"))?;
 
         let result = wrap_vec(tags, project_tag);
         serde_json::to_string(&result).map_err(|e| e.to_string())
@@ -1989,12 +1998,7 @@ impl AtlasMcp {
         let labels = client
             .list_used_labels(&params.workspace)
             .await
-            .map_err(|e| {
-                format!(
-                    "list_used_labels for workspace '{}' failed: {e}",
-                    params.workspace
-                )
-            })?;
+            .map_err(|e| enrich_client_error(e, "list_used_labels"))?;
 
         let result = wrap_vec(labels, |s| json!(s));
         serde_json::to_string(&result).map_err(|e| e.to_string())
@@ -2013,12 +2017,7 @@ impl AtlasMcp {
         let members = client
             .list_workspace_members(&params.workspace)
             .await
-            .map_err(|e| {
-                format!(
-                    "list_members for workspace '{}' failed: {e}",
-                    params.workspace
-                )
-            })?;
+            .map_err(|e| enrich_client_error(e, "list_members"))?;
 
         let result = wrap_vec(members, project_principal);
         serde_json::to_string(&result).map_err(|e| e.to_string())
@@ -2035,7 +2034,7 @@ impl AtlasMcp {
         let workspaces = client
             .list_workspaces()
             .await
-            .map_err(|e| format!("list_workspaces failed: {e}"))?;
+            .map_err(|e| enrich_client_error(e, "list_workspaces"))?;
 
         let result = wrap_vec(workspaces, project_workspace);
         serde_json::to_string(&result).map_err(|e| e.to_string())
@@ -2054,7 +2053,7 @@ impl AtlasMcp {
         let me = client
             .me()
             .await
-            .map_err(|e| format!("get_agent_identity failed: {e}"))?;
+            .map_err(|e| enrich_client_error(e, "get_agent_identity"))?;
 
         let result = match me.agent {
             Some(agent) => json!({
@@ -2083,12 +2082,7 @@ impl AtlasMcp {
         let page = client
             .list_projects(&params.workspace, params.cursor.as_deref(), Some(limit))
             .await
-            .map_err(|e| {
-                format!(
-                    "list_projects for workspace '{}' failed: {e}",
-                    params.workspace
-                )
-            })?;
+            .map_err(|e| enrich_client_error(e, "list_projects"))?;
 
         let result = envelope_page(page, project_project);
         serde_json::to_string(&result).map_err(|e| e.to_string())
@@ -2105,12 +2099,7 @@ impl AtlasMcp {
         let searches = client
             .list_saved_searches(&params.workspace)
             .await
-            .map_err(|e| {
-                format!(
-                    "list_saved_searches for workspace '{}' failed: {e}",
-                    params.workspace
-                )
-            })?;
+            .map_err(|e| enrich_client_error(e, "list_saved_searches"))?;
 
         let result = wrap_vec(searches, project_saved_search);
         serde_json::to_string(&result).map_err(|e| e.to_string())
@@ -2127,12 +2116,7 @@ impl AtlasMcp {
         let views = client
             .list_task_views(&params.workspace)
             .await
-            .map_err(|e| {
-                format!(
-                    "list_task_views for workspace '{}' failed: {e}",
-                    params.workspace
-                )
-            })?;
+            .map_err(|e| enrich_client_error(e, "list_task_views"))?;
 
         let result = wrap_vec(views, project_task_view);
         serde_json::to_string(&result).map_err(|e| e.to_string())
@@ -2151,12 +2135,7 @@ impl AtlasMcp {
         let refs = client
             .list_references(&params.workspace, &params.readable_id)
             .await
-            .map_err(|e| {
-                format!(
-                    "get_task_references for '{}' failed: {e}",
-                    params.readable_id
-                )
-            })?;
+            .map_err(|e| enrich_client_error(e, "get_task_references"))?;
 
         let result = wrap_vec(refs, project_reference);
         serde_json::to_string(&result).map_err(|e| e.to_string())
@@ -2173,12 +2152,7 @@ impl AtlasMcp {
         let page = client
             .list_task_backlinks(&params.workspace, &params.readable_id)
             .await
-            .map_err(|e| {
-                format!(
-                    "get_task_backlinks for '{}' failed: {e}",
-                    params.readable_id
-                )
-            })?;
+            .map_err(|e| enrich_client_error(e, "get_task_backlinks"))?;
 
         let result = envelope_page(page, project_task_backlink);
         serde_json::to_string(&result).map_err(|e| e.to_string())
@@ -2203,7 +2177,7 @@ impl AtlasMcp {
                 Some(limit),
             )
             .await
-            .map_err(|e| format!("get_document_backlinks for '{}' failed: {e}", params.slug))?;
+            .map_err(|e| enrich_client_error(e, "get_document_backlinks"))?;
 
         let result = envelope_page(page, project_backlink);
         serde_json::to_string(&result).map_err(|e| e.to_string())
@@ -2220,7 +2194,7 @@ impl AtlasMcp {
         let items = client
             .list_checklist(&params.workspace, &params.readable_id)
             .await
-            .map_err(|e| format!("list_checklist for '{}' failed: {e}", params.readable_id))?;
+            .map_err(|e| enrich_client_error(e, "list_checklist"))?;
 
         let result = wrap_vec(items, project_checklist_item);
         serde_json::to_string(&result).map_err(|e| e.to_string())
@@ -2237,7 +2211,7 @@ impl AtlasMcp {
         let page = client
             .list_activity(&params.workspace, &params.readable_id)
             .await
-            .map_err(|e| format!("list_activity for '{}' failed: {e}", params.readable_id))?;
+            .map_err(|e| enrich_client_error(e, "list_activity"))?;
 
         let result = envelope_page(page, project_activity_entry);
         serde_json::to_string(&result).map_err(|e| e.to_string())
@@ -2260,7 +2234,7 @@ impl AtlasMcp {
                 Some(limit),
             )
             .await
-            .map_err(|e| format!("list_comments for '{}' failed: {e}", params.readable_id))?;
+            .map_err(|e| enrich_client_error(e, "list_comments"))?;
 
         let result = envelope_page(page, project_comment);
         serde_json::to_string(&result).map_err(|e| e.to_string())
@@ -2298,7 +2272,7 @@ impl AtlasMcp {
         ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
         let client = self.resolve_client(&ctx)?;
-        let comment_id = parse_comment_attachment_id("comment_id", &params.comment_id)?;
+        let comment_id = parse_uuid_param("comment_id", &params.comment_id)?;
         let max_attachment_bytes = require_comment_attachment_limit(
             client.server_meta().await,
             "upload_task_comment_attachment",
@@ -2325,7 +2299,7 @@ impl AtlasMcp {
         ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
         let client = self.resolve_client(&ctx)?;
-        let comment_id = parse_comment_attachment_id("comment_id", &params.comment_id)?;
+        let comment_id = parse_uuid_param("comment_id", &params.comment_id)?;
         let attachments = client
             .list_task_comment_attachments(&params.workspace, &params.readable_id, comment_id)
             .await
@@ -2342,8 +2316,8 @@ impl AtlasMcp {
     ) -> Result<String, String> {
         use base64::Engine as _;
         let client = self.resolve_client(&ctx)?;
-        let comment_id = parse_comment_attachment_id("comment_id", &params.comment_id)?;
-        let attachment_id = parse_comment_attachment_id(
+        let comment_id = parse_uuid_param("comment_id", &params.comment_id)?;
+        let attachment_id = parse_uuid_param(
             "attachment_id",
             params
                 .attachment_id
@@ -2363,15 +2337,18 @@ impl AtlasMcp {
             .map_err(|e| e.to_string())
     }
 
-    #[tool(description = "Delete a task comment attachment.")]
+    #[tool(
+        description = "Delete a task comment attachment. Plain delete, no confirm required \
+                       (consistent with delete_comment, which removes the whole comment)."
+    )]
     async fn delete_task_comment_attachment(
         &self,
         Parameters(params): Parameters<TaskCommentAttachmentParams>,
         ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
         let client = self.resolve_client(&ctx)?;
-        let comment_id = parse_comment_attachment_id("comment_id", &params.comment_id)?;
-        let attachment_id = parse_comment_attachment_id(
+        let comment_id = parse_uuid_param("comment_id", &params.comment_id)?;
+        let attachment_id = parse_uuid_param(
             "attachment_id",
             params
                 .attachment_id
@@ -2417,7 +2394,7 @@ impl AtlasMcp {
                     Some(limit),
                 )
                 .await
-                .map_err(|e| format!("list_workspace_activity failed: {e}"))?
+                .map_err(|e| enrich_client_error(e, "list_workspace_activity"))?
         } else {
             client
                 .list_workspace_activity(
@@ -2428,7 +2405,7 @@ impl AtlasMcp {
                     Some(limit),
                 )
                 .await
-                .map_err(|e| format!("list_workspace_activity failed: {e}"))?
+                .map_err(|e| enrich_client_error(e, "list_workspace_activity"))?
         };
 
         let result = envelope_page(page, project_workspace_activity_entry);
@@ -2452,7 +2429,7 @@ impl AtlasMcp {
                 Some(limit),
             )
             .await
-            .map_err(|e| format!("list_document_history for '{}' failed: {e}", params.slug))?;
+            .map_err(|e| enrich_client_error(e, "list_document_history"))?;
 
         let result = envelope_page(page, project_revision_meta);
         serde_json::to_string(&result).map_err(|e| e.to_string())
@@ -2471,12 +2448,7 @@ impl AtlasMcp {
         let rev = client
             .get_revision_content(&params.workspace, &params.slug, params.seq)
             .await
-            .map_err(|e| {
-                format!(
-                    "get_document_revision '{}' seq={} failed: {e}",
-                    params.slug, params.seq
-                )
-            })?;
+            .map_err(|e| enrich_client_error(e, "get_document_revision"))?;
 
         let result = project_revision_content(rev);
         serde_json::to_string(&result).map_err(|e| e.to_string())
@@ -2499,7 +2471,7 @@ impl AtlasMcp {
                 Some(limit),
             )
             .await
-            .map_err(|e| format!("list_attachments for '{}' failed: {e}", params.slug))?;
+            .map_err(|e| enrich_client_error(e, "list_attachments"))?;
 
         let result = envelope_page(page, project_attachment);
         serde_json::to_string(&result).map_err(|e| e.to_string())
@@ -2516,12 +2488,7 @@ impl AtlasMcp {
         let items = client
             .list_task_attachments(&params.workspace, &params.readable_id)
             .await
-            .map_err(|e| {
-                format!(
-                    "list_task_attachments for '{}' failed: {e}",
-                    params.readable_id
-                )
-            })?;
+            .map_err(|e| enrich_client_error(e, "list_task_attachments"))?;
 
         let result: Vec<_> = items.into_iter().map(project_task_attachment).collect();
         serde_json::to_string(&result).map_err(|e| e.to_string())
@@ -2539,22 +2506,12 @@ impl AtlasMcp {
     ) -> Result<Content, String> {
         let client = self.resolve_client(&ctx)?;
 
-        let attachment_id = params.attachment_id.parse::<uuid::Uuid>().map_err(|_| {
-            format!(
-                "attachment_id '{}' is not a valid UUID",
-                params.attachment_id
-            )
-        })?;
+        let attachment_id = parse_uuid_param("attachment_id", &params.attachment_id)?;
 
         let (bytes, content_type) = client
             .download_task_attachment(&params.workspace, &params.readable_id, attachment_id)
             .await
-            .map_err(|e| {
-                format!(
-                    "get_task_attachment for '{}' failed: {e}",
-                    params.readable_id
-                )
-            })?;
+            .map_err(|e| enrich_client_error(e, "get_task_attachment"))?;
 
         let mime = content_type.unwrap_or_else(|| "application/octet-stream".to_string());
         if !mime.starts_with("image/") {
@@ -2577,12 +2534,7 @@ impl AtlasMcp {
     ) -> Result<String, String> {
         let client = self.resolve_client(&ctx)?;
 
-        let board_id_str = helpers::resolve_board_id(&client, &params.workspace, &params.board)
-            .await
-            .map_err(|e| e.to_string())?;
-        let board_uuid: uuid::Uuid = board_id_str
-            .parse()
-            .map_err(|_| format!("resolved board '{board_id_str}' is not a valid UUID"))?;
+        let board_uuid = resolve_board_uuid(&client, &params.workspace, &params.board).await?;
 
         let cols = client
             .list_columns(&params.workspace, board_uuid)
@@ -2704,9 +2656,7 @@ impl AtlasMcp {
             }
         };
 
-        let board_uuid: uuid::Uuid = board_id_str
-            .parse()
-            .map_err(|_| format!("resolved board '{board_id_str}' is not a valid UUID"))?;
+        let board_uuid = parse_resolved_board_uuid(&board_id_str)?;
 
         let cols = client
             .list_columns(&params.workspace, board_uuid)
@@ -2810,14 +2760,7 @@ impl AtlasMcp {
     ) -> Result<String, String> {
         let client = self.resolve_client(&ctx)?;
 
-        let folder_id = params
-            .folder_id
-            .as_deref()
-            .map(|s| {
-                s.parse::<uuid::Uuid>()
-                    .map_err(|_| format!("folder_id '{s}' is not a valid UUID"))
-            })
-            .transpose()?;
+        let folder_id = parse_optional_uuid_param("folder_id", params.folder_id.as_deref())?;
 
         let body = CreateDocumentRequest {
             title: params.title,
@@ -2844,14 +2787,7 @@ impl AtlasMcp {
     ) -> Result<String, String> {
         let client = self.resolve_client(&ctx)?;
 
-        let folder_id = params
-            .folder_id
-            .as_deref()
-            .map(|s| {
-                s.parse::<uuid::Uuid>()
-                    .map_err(|_| format!("folder_id '{s}' is not a valid UUID"))
-            })
-            .transpose()?;
+        let folder_id = parse_optional_uuid_param("folder_id", params.folder_id.as_deref())?;
 
         let body = UpdateDocumentRequest {
             title: params.title,
@@ -2936,14 +2872,7 @@ impl AtlasMcp {
     ) -> Result<String, String> {
         let client = self.resolve_client(&ctx)?;
 
-        let folder_id = params
-            .folder_id
-            .as_deref()
-            .map(|s| {
-                s.parse::<uuid::Uuid>()
-                    .map_err(|_| format!("folder_id '{s}' is not a valid UUID"))
-            })
-            .transpose()?;
+        let folder_id = parse_optional_uuid_param("folder_id", params.folder_id.as_deref())?;
 
         let body = MoveDocumentRequest { folder_id };
 
@@ -2966,14 +2895,7 @@ impl AtlasMcp {
     ) -> Result<String, String> {
         let client = self.resolve_client(&ctx)?;
 
-        let folder_id = params
-            .folder_id
-            .as_deref()
-            .map(|s| {
-                s.parse::<uuid::Uuid>()
-                    .map_err(|_| format!("folder_id '{s}' is not a valid UUID"))
-            })
-            .transpose()?;
+        let folder_id = parse_optional_uuid_param("folder_id", params.folder_id.as_deref())?;
 
         let doc = client
             .copy_document(&params.workspace, &params.slug, folder_id)
@@ -2994,14 +2916,8 @@ impl AtlasMcp {
     ) -> Result<String, String> {
         let client = self.resolve_client(&ctx)?;
 
-        let parent_folder_id = params
-            .parent_folder_id
-            .as_deref()
-            .map(|s| {
-                s.parse::<uuid::Uuid>()
-                    .map_err(|_| format!("parent_folder_id '{s}' is not a valid UUID"))
-            })
-            .transpose()?;
+        let parent_folder_id =
+            parse_optional_uuid_param("parent_folder_id", params.parent_folder_id.as_deref())?;
 
         let body = CreateFolderRequest {
             name: params.name,
@@ -3057,14 +2973,8 @@ impl AtlasMcp {
             .parse::<uuid::Uuid>()
             .map_err(|_| format!("folder_id '{}' is not a valid UUID", params.folder_id))?;
 
-        let parent_folder_id = params
-            .parent_folder_id
-            .as_deref()
-            .map(|s| {
-                s.parse::<uuid::Uuid>()
-                    .map_err(|_| format!("parent_folder_id '{s}' is not a valid UUID"))
-            })
-            .transpose()?;
+        let parent_folder_id =
+            parse_optional_uuid_param("parent_folder_id", params.parent_folder_id.as_deref())?;
 
         let body = MoveFolderRequest { parent_folder_id };
 
@@ -3093,14 +3003,8 @@ impl AtlasMcp {
             .parse::<uuid::Uuid>()
             .map_err(|_| format!("folder_id '{}' is not a valid UUID", params.folder_id))?;
 
-        let parent_folder_id = params
-            .parent_folder_id
-            .as_deref()
-            .map(|s| {
-                s.parse::<uuid::Uuid>()
-                    .map_err(|_| format!("parent_folder_id '{s}' is not a valid UUID"))
-            })
-            .transpose()?;
+        let parent_folder_id =
+            parse_optional_uuid_param("parent_folder_id", params.parent_folder_id.as_deref())?;
 
         let folder = client
             .copy_folder(&params.workspace, folder_id, parent_folder_id)
@@ -3184,13 +3088,7 @@ response — do NOT create those columns again; only add columns for statuses th
     ) -> Result<String, String> {
         let client = self.resolve_client(&ctx)?;
 
-        let board_id_str = helpers::resolve_board_id(&client, &params.workspace, &params.board)
-            .await
-            .map_err(|e| e.to_string())?;
-
-        let board_uuid: uuid::Uuid = board_id_str
-            .parse()
-            .map_err(|_| format!("resolved board '{board_id_str}' is not a valid UUID"))?;
+        let board_uuid = resolve_board_uuid(&client, &params.workspace, &params.board).await?;
 
         let body = UpdateBoardRequest { name: params.name };
 
@@ -3220,13 +3118,7 @@ response — do NOT create those columns again; only add columns for statuses th
         let client = self.resolve_client(&ctx)?;
         require_confirm(params.confirm, "board", &params.board)?;
 
-        let board_id_str = helpers::resolve_board_id(&client, &params.workspace, &params.board)
-            .await
-            .map_err(|e| e.to_string())?;
-
-        let board_uuid: uuid::Uuid = board_id_str
-            .parse()
-            .map_err(|_| format!("resolved board '{board_id_str}' is not a valid UUID"))?;
+        let board_uuid = resolve_board_uuid(&client, &params.workspace, &params.board).await?;
 
         client
             .delete_board(&params.workspace, board_uuid)
@@ -3250,13 +3142,7 @@ response — do NOT create those columns again; only add columns for statuses th
     ) -> Result<String, String> {
         let client = self.resolve_client(&ctx)?;
 
-        let board_id_str = helpers::resolve_board_id(&client, &params.workspace, &params.board)
-            .await
-            .map_err(|e| e.to_string())?;
-
-        let board_uuid: uuid::Uuid = board_id_str
-            .parse()
-            .map_err(|_| format!("resolved board '{board_id_str}' is not a valid UUID"))?;
+        let board_uuid = resolve_board_uuid(&client, &params.workspace, &params.board).await?;
 
         let body = CreateColumnRequest {
             name: params.name,
@@ -3285,13 +3171,7 @@ response — do NOT create those columns again; only add columns for statuses th
     ) -> Result<String, String> {
         let client = self.resolve_client(&ctx)?;
 
-        let board_id_str = helpers::resolve_board_id(&client, &params.workspace, &params.board)
-            .await
-            .map_err(|e| e.to_string())?;
-
-        let board_uuid: uuid::Uuid = board_id_str
-            .parse()
-            .map_err(|_| format!("resolved board '{board_id_str}' is not a valid UUID"))?;
+        let board_uuid = resolve_board_uuid(&client, &params.workspace, &params.board).await?;
 
         let cols = client
             .list_columns(&params.workspace, board_uuid)
@@ -3330,13 +3210,7 @@ response — do NOT create those columns again; only add columns for statuses th
         let client = self.resolve_client(&ctx)?;
         require_confirm(params.confirm, "column", &params.column)?;
 
-        let board_id_str = helpers::resolve_board_id(&client, &params.workspace, &params.board)
-            .await
-            .map_err(|e| e.to_string())?;
-
-        let board_uuid: uuid::Uuid = board_id_str
-            .parse()
-            .map_err(|_| format!("resolved board '{board_id_str}' is not a valid UUID"))?;
+        let board_uuid = resolve_board_uuid(&client, &params.workspace, &params.board).await?;
 
         let cols = client
             .list_columns(&params.workspace, board_uuid)
@@ -3457,14 +3331,8 @@ response — do NOT create those columns again; only add columns for statuses th
         let client = self.resolve_client(&ctx)?;
         validate_reference_kind(&params.kind)?;
 
-        let target_doc_uuid: Option<uuid::Uuid> = params
-            .target_document_id
-            .as_deref()
-            .map(|s| {
-                s.parse()
-                    .map_err(|_| format!("target_document_id '{s}' is not a valid UUID"))
-            })
-            .transpose()?;
+        let target_doc_uuid =
+            parse_optional_uuid_param("target_document_id", params.target_document_id.as_deref())?;
 
         validate_single_target(
             params.target_task_readable_id.as_deref(),
@@ -3683,7 +3551,7 @@ response — do NOT create those columns again; only add columns for statuses th
                 Some(limit),
             )
             .await
-            .map_err(|e| format!("list_document_comments for '{}' failed: {e}", params.slug))?;
+            .map_err(|e| enrich_client_error(e, "list_document_comments"))?;
 
         let result = envelope_page(page, project_comment);
         serde_json::to_string(&result).map_err(|e| e.to_string())
@@ -3721,7 +3589,7 @@ response — do NOT create those columns again; only add columns for statuses th
         ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
         let client = self.resolve_client(&ctx)?;
-        let comment_id = parse_comment_attachment_id("comment_id", &params.comment_id)?;
+        let comment_id = parse_uuid_param("comment_id", &params.comment_id)?;
         let max_attachment_bytes = require_comment_attachment_limit(
             client.server_meta().await,
             "upload_document_comment_attachment",
@@ -3748,7 +3616,7 @@ response — do NOT create those columns again; only add columns for statuses th
         ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
         let client = self.resolve_client(&ctx)?;
-        let comment_id = parse_comment_attachment_id("comment_id", &params.comment_id)?;
+        let comment_id = parse_uuid_param("comment_id", &params.comment_id)?;
         let attachments = client
             .list_document_comment_attachments(&params.workspace, &params.slug, comment_id)
             .await
@@ -3765,8 +3633,8 @@ response — do NOT create those columns again; only add columns for statuses th
     ) -> Result<String, String> {
         use base64::Engine as _;
         let client = self.resolve_client(&ctx)?;
-        let comment_id = parse_comment_attachment_id("comment_id", &params.comment_id)?;
-        let attachment_id = parse_comment_attachment_id(
+        let comment_id = parse_uuid_param("comment_id", &params.comment_id)?;
+        let attachment_id = parse_uuid_param(
             "attachment_id",
             params
                 .attachment_id
@@ -3786,15 +3654,18 @@ response — do NOT create those columns again; only add columns for statuses th
             .map_err(|e| e.to_string())
     }
 
-    #[tool(description = "Delete a document comment attachment.")]
+    #[tool(
+        description = "Delete a document comment attachment. Plain delete, no confirm required \
+                       (consistent with delete_document_comment, which removes the whole comment)."
+    )]
     async fn delete_document_comment_attachment(
         &self,
         Parameters(params): Parameters<DocumentCommentAttachmentParams>,
         ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
         let client = self.resolve_client(&ctx)?;
-        let comment_id = parse_comment_attachment_id("comment_id", &params.comment_id)?;
-        let attachment_id = parse_comment_attachment_id(
+        let comment_id = parse_uuid_param("comment_id", &params.comment_id)?;
+        let attachment_id = parse_uuid_param(
             "attachment_id",
             params
                 .attachment_id
@@ -3904,13 +3775,7 @@ response — do NOT create those columns again; only add columns for statuses th
             .parse()
             .map_err(|_| format!("item_id '{}' is not a valid UUID", params.item_id))?;
 
-        let board_id_str = helpers::resolve_board_id(&client, &params.workspace, &params.board)
-            .await
-            .map_err(|e| e.to_string())?;
-
-        let board_uuid: uuid::Uuid = board_id_str
-            .parse()
-            .map_err(|_| format!("resolved board '{board_id_str}' is not a valid UUID"))?;
+        let board_uuid = resolve_board_uuid(&client, &params.workspace, &params.board).await?;
 
         let cols = client
             .list_columns(&params.workspace, board_uuid)
@@ -4497,7 +4362,7 @@ response — do NOT create those columns again; only add columns for statuses th
     ) -> Result<String, String> {
         let client = self.resolve_client(&ctx)?;
 
-        let scope_id = parse_optional_webhook_scope_id(params.scope_id.as_deref())?;
+        let scope_id = parse_optional_uuid_param("scope_id", params.scope_id.as_deref())?;
 
         let body = CreateWebhookRequest {
             target_url: params.target_url,
@@ -4529,10 +4394,8 @@ response — do NOT create those columns again; only add columns for statuses th
         let client = self.resolve_client(&ctx)?;
         let webhook_id = parse_webhook_id(&params.webhook_id)?;
 
-        let scope_id = match params.scope_id.as_deref() {
-            Some(_) => Some(parse_optional_webhook_scope_id(params.scope_id.as_deref())?),
-            None => None,
-        };
+        let scope_id = map_present_uuid("scope_id", params.scope_id.as_ref())?;
+        let label = map_present_string("label", params.label.as_ref())?;
 
         let body = UpdateWebhookRequest {
             target_url: params.target_url,
@@ -4540,7 +4403,7 @@ response — do NOT create those columns again; only add columns for statuses th
             scope_type: params.scope_type,
             scope_id,
             is_active: params.is_active,
-            label: params.label.map(Some),
+            label,
         };
 
         let webhook = client
@@ -5077,14 +4940,18 @@ mod tests {
     }
 
     #[test]
-    fn parse_optional_webhook_scope_id_handles_absent_and_present() {
-        assert!(parse_optional_webhook_scope_id(None).unwrap().is_none());
+    fn parse_optional_uuid_param_handles_absent_and_present() {
         assert!(
-            parse_optional_webhook_scope_id(Some(&uuid::Uuid::nil().to_string()))
+            parse_optional_uuid_param("scope_id", None)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            parse_optional_uuid_param("scope_id", Some(&uuid::Uuid::nil().to_string()))
                 .unwrap()
                 .is_some()
         );
-        assert!(parse_optional_webhook_scope_id(Some("bad")).is_err());
+        assert!(parse_optional_uuid_param("scope_id", Some("bad")).is_err());
     }
 
     #[test]

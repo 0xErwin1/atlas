@@ -845,6 +845,46 @@ pub(crate) fn map_present_value(
     }
 }
 
+/// Maps an MCP tri-state parameter to an `Option<Option<String>>` PATCH field.
+///
+/// Same tri-state contract as `map_present_value`, but targets a typed
+/// `Option<Option<String>>` request field: absent = leave unchanged, JSON `null`
+/// = clear, a JSON string = set. Any other JSON type is a caller error.
+pub(crate) fn map_present_string(
+    field_name: &str,
+    field: Option<&serde_json::Value>,
+) -> Result<Option<Option<String>>, String> {
+    match field {
+        None => Ok(None),
+        Some(Value::Null) => Ok(Some(None)),
+        Some(Value::String(s)) => Ok(Some(Some(s.clone()))),
+        Some(_) => Err(format!("{field_name} must be a string or null")),
+    }
+}
+
+/// Maps an MCP tri-state parameter to an `Option<Option<Uuid>>` PATCH field.
+///
+/// Same tri-state contract as `map_present_value`, but targets a typed
+/// `Option<Option<Uuid>>` request field: absent = leave unchanged, JSON `null`
+/// = clear, a JSON string = parse as a UUID and set. Any other JSON type, or a
+/// string that is not a valid UUID, is a caller error.
+pub(crate) fn map_present_uuid(
+    field_name: &str,
+    field: Option<&serde_json::Value>,
+) -> Result<Option<Option<uuid::Uuid>>, String> {
+    match field {
+        None => Ok(None),
+        Some(Value::Null) => Ok(Some(None)),
+        Some(Value::String(s)) => {
+            let id = s
+                .parse::<uuid::Uuid>()
+                .map_err(|_| format!("{field_name} '{s}' is not a valid UUID"))?;
+            Ok(Some(Some(id)))
+        }
+        Some(_) => Err(format!("{field_name} must be a UUID string or null")),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // MCP resource URI parsing
 // ---------------------------------------------------------------------------
@@ -2681,6 +2721,46 @@ mod tests {
         // Clearing a field never validates — the validator only fires for non-null.
         let result = map_present_value(Some(&Value::Null), Some(validate_priority)).unwrap();
         assert_eq!(result, Some(Value::Null));
+    }
+
+    #[test]
+    fn map_present_string_absent_null_and_value() {
+        assert_eq!(map_present_string("label", None).unwrap(), None);
+        assert_eq!(
+            map_present_string("label", Some(&Value::Null)).unwrap(),
+            Some(None)
+        );
+        assert_eq!(
+            map_present_string("label", Some(&json!("prod"))).unwrap(),
+            Some(Some("prod".to_string()))
+        );
+    }
+
+    #[test]
+    fn map_present_string_rejects_non_string() {
+        let err = map_present_string("label", Some(&json!(42))).unwrap_err();
+        assert!(err.contains("label"), "got: {err}");
+    }
+
+    #[test]
+    fn map_present_uuid_absent_null_and_value() {
+        let id = uuid::Uuid::nil();
+        assert_eq!(map_present_uuid("scope_id", None).unwrap(), None);
+        assert_eq!(
+            map_present_uuid("scope_id", Some(&Value::Null)).unwrap(),
+            Some(None)
+        );
+        assert_eq!(
+            map_present_uuid("scope_id", Some(&json!(id.to_string()))).unwrap(),
+            Some(Some(id))
+        );
+    }
+
+    #[test]
+    fn map_present_uuid_rejects_invalid_uuid_string() {
+        let err = map_present_uuid("scope_id", Some(&json!("nope"))).unwrap_err();
+        assert!(err.contains("scope_id"), "got: {err}");
+        assert!(err.contains("nope"), "got: {err}");
     }
 
     // -----------------------------------------------------------------------
