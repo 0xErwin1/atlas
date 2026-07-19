@@ -252,21 +252,16 @@ pub(crate) async fn delete_project_grant(
         conn: (*state.db).clone(),
     };
 
-    let existing = grant_repo
-        .list_for_resource(
+    let target_grant = grant_repo
+        .find_by_id(
             auth.workspace.id,
             &ResourceRef::Project(auth.resource.0.id),
-            None,
-            1000,
+            atlas_domain::entities::permissions::PermissionGrantId(grant_uuid),
         )
         .await
         .map_err(|e| ApiError::Internal {
             message: e.to_string(),
-        })?;
-
-    let target_grant = existing
-        .into_iter()
-        .find(|g| g.id.0 == grant_uuid)
+        })?
         .ok_or(ApiError::NotFound)?;
 
     authorize_share(&auth.principal, auth.effective, target_grant.role)
@@ -520,16 +515,16 @@ pub(crate) async fn delete_workspace_grant(
         conn: (*state.db).clone(),
     };
 
-    let existing = grant_repo
-        .list_for_resource(auth.workspace.id, &ResourceRef::Workspace, None, 1000)
+    let target_grant = grant_repo
+        .find_by_id(
+            auth.workspace.id,
+            &ResourceRef::Workspace,
+            atlas_domain::entities::permissions::PermissionGrantId(grant_uuid),
+        )
         .await
         .map_err(|e| ApiError::Internal {
             message: e.to_string(),
-        })?;
-
-    let target_grant = existing
-        .into_iter()
-        .find(|g| g.id.0 == grant_uuid)
+        })?
         .ok_or(ApiError::NotFound)?;
 
     authorize_share(&auth.principal, auth.effective, target_grant.role)

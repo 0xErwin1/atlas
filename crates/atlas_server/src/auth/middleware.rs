@@ -92,7 +92,10 @@ async fn resolve_api_key(state: &AppState, token_hash: &str) -> Result<Principal
             ApiError::Unauthorized
         })?;
 
-    repo.touch(key.id).await.ok();
+    // A failed touch must not fail authentication; the timestamp is best-effort.
+    if let Err(e) = repo.touch(key.id).await {
+        tracing::warn!(api_key_id = ?key.id, error = %e, "failed to touch api key last_used");
+    }
 
     Ok(Principal::ApiKey(key.id))
 }
@@ -134,14 +137,17 @@ async fn resolve_session(state: &AppState, token_hash: &str) -> Result<Principal
         return Err(ApiError::Unauthorized);
     }
 
-    session_repo
+    // A failed touch must not fail authentication; the sliding expiry is best-effort.
+    if let Err(e) = session_repo
         .touch(
             session.id,
             state.session_ttl_hours,
             state.session_max_ttl_hours,
         )
         .await
-        .ok();
+    {
+        tracing::warn!(user_id = ?session.user_id, error = %e, "failed to touch session expiry");
+    }
 
     Ok(Principal::User(session.user_id))
 }

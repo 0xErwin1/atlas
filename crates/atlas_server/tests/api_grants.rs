@@ -650,3 +650,97 @@ async fn agent_with_all_capabilities_and_editor_grant_cannot_create_project_gran
 
     db.teardown().await;
 }
+
+#[tokio::test]
+async fn delete_project_grant_unknown_id_returns_404() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner, ws, _) = login_user_with_workspace(&server, &db, "grant-owner-404").await;
+
+    owner
+        .create_project(
+            &ws.slug,
+            proj_req("Missing Grant Project", "missing-grant-proj"),
+        )
+        .await
+        .expect("create project");
+
+    let result = owner
+        .delete_project_grant(&ws.slug, "missing-grant-proj", uuid::Uuid::now_v7())
+        .await;
+
+    assert!(
+        matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
+        "deleting an unknown project grant id must return 404, got {result:?}"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn delete_workspace_grant_unknown_id_returns_404() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner, ws, _) = login_user_with_workspace(&server, &db, "ws-grant-owner-404").await;
+
+    let result = owner
+        .delete_workspace_grant(&ws.slug, uuid::Uuid::now_v7())
+        .await;
+
+    assert!(
+        matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
+        "deleting an unknown workspace grant id must return 404, got {result:?}"
+    );
+
+    db.teardown().await;
+}
+
+/// A project grant id must not be deletable through the workspace-grant path:
+/// the lookup is scoped to the resource, so the mismatch is a 404 and the
+/// grant survives.
+#[tokio::test]
+async fn delete_workspace_grant_rejects_project_grant_id() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner, ws, _) = login_user_with_workspace(&server, &db, "grant-owner-scope").await;
+
+    owner
+        .create_project(
+            &ws.slug,
+            proj_req("Scope Grant Project", "scope-grant-proj"),
+        )
+        .await
+        .expect("create project");
+
+    let (_, grantee) =
+        add_user_to_workspace(&db, &server, ws.id, "grantee-scope", MemberRole::Member).await;
+
+    let grant = owner
+        .create_project_grant(
+            &ws.slug,
+            "scope-grant-proj",
+            grant_req(grantee.id.0, "viewer"),
+        )
+        .await
+        .expect("create project grant");
+
+    let result = owner.delete_workspace_grant(&ws.slug, grant.id).await;
+    assert!(
+        matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
+        "a project grant id must 404 on the workspace delete path, got {result:?}"
+    );
+
+    let page = owner
+        .list_project_grants(&ws.slug, "scope-grant-proj", None, None)
+        .await
+        .expect("list project grants");
+    assert!(
+        page.items.iter().any(|g| g.id == grant.id),
+        "the project grant must survive the mismatched delete"
+    );
+
+    db.teardown().await;
+}

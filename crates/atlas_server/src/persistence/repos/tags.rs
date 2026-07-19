@@ -152,7 +152,9 @@ impl TagRepo for PgTagRepo {
             .await;
 
         if let Err(e) = update_result {
-            let _ = txn.rollback().await;
+            if let Err(rollback_err) = txn.rollback().await {
+                tracing::warn!(error = %rollback_err, "tag update: rollback failed");
+            }
             match e.sql_err() {
                 Some(SqlErr::UniqueConstraintViolation(_)) => {
                     return Err(DomainError::AlreadyExists {

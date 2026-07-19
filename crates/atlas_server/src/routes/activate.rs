@@ -4,10 +4,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use axum_extra::extract::{
-    CookieJar,
-    cookie::{Cookie, SameSite},
-};
+use axum_extra::extract::CookieJar;
 use chrono::Utc;
 use sea_orm::{ConnectionTrait, FromQueryResult, Statement, TransactionTrait};
 use uuid::Uuid;
@@ -29,23 +26,10 @@ use crate::{
     persistence::repos::{
         ActivationTokenRepo, PgActivationTokenRepo, PgSecurityAuditRepo, PgUserRepo, UserRepo,
     },
-    routes::auth::user_to_dto,
+    routes::auth::{build_session_cookie, user_to_dto},
+    routes::validation::validate_password_strength,
     state::AppState,
 };
-
-/// Validates the password meets minimum length before any DB work is done.
-///
-/// A min-length of 8 is the only rule applied here. It is checked before
-/// argon2 hashing so the token is not consumed when the password is too weak.
-pub(crate) fn validate_password_strength(pw: &str) -> Result<(), ApiError> {
-    if pw.chars().count() < 8 {
-        return Err(ApiError::InvalidInput {
-            message: "Password must be at least 8 characters long.".into(),
-        });
-    }
-
-    Ok(())
-}
 
 #[utoipa::path(
     get,
@@ -317,19 +301,4 @@ pub(crate) async fn post_activate(
         updated_jar,
         (StatusCode::OK, Json(response_body)).into_response(),
     ))
-}
-
-fn build_session_cookie(
-    token: String,
-    expires_at: chrono::DateTime<Utc>,
-    secure: bool,
-) -> Cookie<'static> {
-    let max_age_secs = (expires_at - Utc::now()).num_seconds().max(0);
-    Cookie::build(("atlas_session", token))
-        .path("/")
-        .http_only(true)
-        .same_site(SameSite::Lax)
-        .secure(secure)
-        .max_age(time::Duration::seconds(max_age_secs))
-        .build()
 }

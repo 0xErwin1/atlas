@@ -459,3 +459,65 @@ async fn me_response_includes_is_system_admin() {
 
     db.teardown().await;
 }
+
+/// A system-admin CANNOT enable a root user (target-protection).
+#[tokio::test]
+async fn system_admin_cannot_enable_root() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+
+    create_user_with_flags(&db, "sa-enr-admin", false, true).await;
+    let sysadmin = login_as(&server, "sa-enr-admin").await;
+
+    let root = create_user_with_flags(&db, "sa-enr-root", true, false).await;
+
+    let result = sysadmin.enable_user(root.id.0).await;
+    assert!(
+        matches!(result, Err(atlas_client::ClientError::Api(ref p)) if p.status == 403),
+        "system-admin should get 403 when enabling root, got {result:?}"
+    );
+
+    db.teardown().await;
+}
+
+/// A system-admin CANNOT enable another system-admin (target-protection).
+#[tokio::test]
+async fn system_admin_cannot_enable_peer_system_admin() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+
+    create_user_with_flags(&db, "sa-enpeer-admin", false, true).await;
+    let sysadmin = login_as(&server, "sa-enpeer-admin").await;
+
+    let peer = create_user_with_flags(&db, "sa-enpeer-peer", false, true).await;
+
+    let result = sysadmin.enable_user(peer.id.0).await;
+    assert!(
+        matches!(result, Err(atlas_client::ClientError::Api(ref p)) if p.status == 403),
+        "system-admin should get 403 when enabling peer system-admin, got {result:?}"
+    );
+
+    db.teardown().await;
+}
+
+/// Root CAN enable a disabled system-admin (root bypasses target-protection).
+#[tokio::test]
+async fn root_can_enable_system_admin() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+
+    let root = support::login_root_user(&server, &db).await;
+    let sysadmin = create_user_with_flags(&db, "sa-rooten-sa", false, true).await;
+
+    root.disable_user(sysadmin.id.0)
+        .await
+        .expect("root disables system-admin");
+
+    let result = root.enable_user(sysadmin.id.0).await;
+    assert!(
+        result.is_ok(),
+        "root should be able to enable a system-admin, got {result:?}"
+    );
+
+    db.teardown().await;
+}

@@ -159,15 +159,19 @@ pub(crate) async fn add_member(
         conn: (*state.db).clone(),
     };
 
-    check_root_target_protection(&user_repo, caller.caller_is_root, target_user_id).await?;
+    let preloaded_target =
+        check_root_target_protection(&user_repo, caller.caller_is_root, target_user_id).await?;
 
-    let target_user = user_repo
-        .find_by_id(target_user_id)
-        .await
-        .map_err(|e| ApiError::Internal {
-            message: e.to_string(),
-        })?
-        .ok_or(ApiError::NotFound)?;
+    let target_user = match preloaded_target {
+        Some(user) => user,
+        None => user_repo
+            .find_by_id(target_user_id)
+            .await
+            .map_err(|e| ApiError::Internal {
+                message: e.to_string(),
+            })?
+            .ok_or(ApiError::NotFound)?,
+    };
 
     if target_user.disabled_at.is_some() {
         return Err(ApiError::InvalidInput {
@@ -589,13 +593,17 @@ fn check_delete_permission(
 /// the root user's per-workspace membership. Only root may manage the root user.
 /// The guard is scoped strictly to a root target — system-admin targets stay
 /// manageable — mirroring the root-target guard in `disable_user`/`reset_password`.
+///
+/// Returns the target `User` when the guard had to load it (non-root caller),
+/// so callers that need the target can reuse the row instead of fetching it
+/// again. Root callers skip the lookup and get `None`.
 async fn check_root_target_protection(
     user_repo: &PgUserRepo,
     caller_is_root: bool,
     target_user_id: atlas_domain::ids::UserId,
-) -> Result<(), ApiError> {
+) -> Result<Option<atlas_domain::entities::identity::User>, ApiError> {
     if caller_is_root {
-        return Ok(());
+        return Ok(None);
     }
 
     let target = user_repo
@@ -612,7 +620,7 @@ async fn check_root_target_protection(
         });
     }
 
-    Ok(())
+    Ok(Some(target))
 }
 
 /// Checks the last-owner-lockout invariant.

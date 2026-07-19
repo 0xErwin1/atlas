@@ -48,6 +48,16 @@ pub trait PermissionGrantRepo: Send + Sync {
         limit: u64,
     ) -> Result<Vec<PermissionGrant>, DomainError>;
 
+    /// Find a grant by id, scoped to the workspace and the resource it was
+    /// issued for. Returns `None` when the grant does not exist, belongs to a
+    /// different workspace, or targets a different resource.
+    async fn find_by_id(
+        &self,
+        workspace_id: WorkspaceId,
+        resource: &ResourceRef,
+        grant_id: PermissionGrantId,
+    ) -> Result<Option<PermissionGrant>, DomainError>;
+
     /// List all grants that belong to a specific API key, across all workspaces.
     async fn list_for_api_key(
         &self,

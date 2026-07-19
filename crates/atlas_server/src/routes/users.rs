@@ -331,7 +331,7 @@ pub(crate) async fn disable_user(
     responses(
         (status = 204, description = "User enabled"),
         (status = 401, description = "Unauthenticated"),
-        (status = 403, description = "Not a root/admin user"),
+        (status = 403, description = "Not a root/admin user, or target is protected"),
     )
 )]
 pub(crate) async fn enable_user(
@@ -347,6 +347,29 @@ pub(crate) async fn enable_user(
         return Err(ApiError::Forbidden {
             message: "you cannot enable your own account; ask another admin".into(),
         });
+    }
+
+    // A non-root system-admin may not enable a root or another system-admin,
+    // mirroring the disable/reset-password target protection. Root bypasses
+    // this check and can enable any non-self target.
+    if !admin.user.is_root {
+        let user_repo = PgUserRepo {
+            conn: (*state.db).clone(),
+        };
+
+        let target = user_repo
+            .find_by_id(user_id)
+            .await
+            .map_err(|e| ApiError::Internal {
+                message: e.to_string(),
+            })?
+            .ok_or(ApiError::NotFound)?;
+
+        if target.is_root || target.is_system_admin {
+            return Err(ApiError::Forbidden {
+                message: "Cannot enable a root or system-admin user".into(),
+            });
+        }
     }
 
     let txn = (*state.db).begin().await.map_err(|e| ApiError::Internal {
@@ -393,6 +416,7 @@ pub(crate) async fn enable_user(
         (status = 204, description = "Password reset and all sessions revoked"),
         (status = 401, description = "Unauthenticated"),
         (status = 403, description = "Not a root/admin user, or target is protected"),
+        (status = 422, description = "New password too short"),
     )
 )]
 pub(crate) async fn reset_password(
@@ -404,6 +428,8 @@ pub(crate) async fn reset_password(
     let user_id = UserId(user_id);
 
     use crate::auth::password;
+
+    crate::routes::validation::validate_password_strength(&body.new_password)?;
 
     let new_hash = password::hash(body.new_password)
         .await
@@ -676,7 +702,9 @@ async fn create_pending_user_txn(
         .await;
 
     if let Err(err) = user_insert {
-        txn.rollback().await.ok();
+        if let Err(rollback_err) = txn.rollback().await {
+            tracing::warn!(error = %rollback_err, "create_pending_user: rollback failed");
+        }
 
         if is_unique_violation(&err) {
             return Err(ApiError::Domain(

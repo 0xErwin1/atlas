@@ -63,6 +63,26 @@ fn db_err(e: sea_orm::DbErr) -> DomainError {
     }
 }
 
+/// Narrows a grant query to one resource. A workspace-scope grant is the row
+/// with all four resource columns NULL, so `ResourceRef::Workspace` must filter
+/// on all of them, not just skip the filter.
+fn filter_by_resource(
+    query: sea_orm::Select<permission_grant::Entity>,
+    resource: &ResourceRef,
+) -> sea_orm::Select<permission_grant::Entity> {
+    match resource {
+        ResourceRef::Workspace => query
+            .filter(permission_grant::Column::ProjectId.is_null())
+            .filter(permission_grant::Column::FolderId.is_null())
+            .filter(permission_grant::Column::DocumentId.is_null())
+            .filter(permission_grant::Column::BoardId.is_null()),
+        ResourceRef::Project(pid) => query.filter(permission_grant::Column::ProjectId.eq(pid.0)),
+        ResourceRef::Folder(fid) => query.filter(permission_grant::Column::FolderId.eq(fid.0)),
+        ResourceRef::Document(did) => query.filter(permission_grant::Column::DocumentId.eq(did.0)),
+        ResourceRef::Board(bid) => query.filter(permission_grant::Column::BoardId.eq(bid.0)),
+    }
+}
+
 pub struct PgPermissionGrantRepo {
     pub conn: DatabaseConnection,
 }
@@ -461,24 +481,11 @@ impl PermissionGrantRepo for PgPermissionGrantRepo {
         after_id: Option<Uuid>,
         limit: u64,
     ) -> Result<Vec<PermissionGrant>, DomainError> {
-        let mut query = permission_grant::Entity::find()
-            .filter(permission_grant::Column::WorkspaceId.eq(workspace_id.0));
-
-        query = match resource {
-            ResourceRef::Workspace => query
-                .filter(permission_grant::Column::ProjectId.is_null())
-                .filter(permission_grant::Column::FolderId.is_null())
-                .filter(permission_grant::Column::DocumentId.is_null())
-                .filter(permission_grant::Column::BoardId.is_null()),
-            ResourceRef::Project(pid) => {
-                query.filter(permission_grant::Column::ProjectId.eq(pid.0))
-            }
-            ResourceRef::Folder(fid) => query.filter(permission_grant::Column::FolderId.eq(fid.0)),
-            ResourceRef::Document(did) => {
-                query.filter(permission_grant::Column::DocumentId.eq(did.0))
-            }
-            ResourceRef::Board(bid) => query.filter(permission_grant::Column::BoardId.eq(bid.0)),
-        };
+        let mut query = filter_by_resource(
+            permission_grant::Entity::find()
+                .filter(permission_grant::Column::WorkspaceId.eq(workspace_id.0)),
+            resource,
+        );
 
         if let Some(cursor) = after_id {
             query = query.filter(permission_grant::Column::Id.gt(cursor));
@@ -492,6 +499,25 @@ impl PermissionGrantRepo for PgPermissionGrantRepo {
             .map_err(db_err)?;
 
         rows.into_iter().map(grant_from).collect()
+    }
+
+    async fn find_by_id(
+        &self,
+        workspace_id: WorkspaceId,
+        resource: &ResourceRef,
+        grant_id: PermissionGrantId,
+    ) -> Result<Option<PermissionGrant>, DomainError> {
+        let row = filter_by_resource(
+            permission_grant::Entity::find()
+                .filter(permission_grant::Column::Id.eq(grant_id.0))
+                .filter(permission_grant::Column::WorkspaceId.eq(workspace_id.0)),
+            resource,
+        )
+        .one(&self.conn)
+        .await
+        .map_err(db_err)?;
+
+        row.map(grant_from).transpose()
     }
 
     async fn list_for_api_key(

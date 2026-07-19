@@ -528,3 +528,130 @@ async fn meta_requires_authentication() {
 
     db.teardown().await;
 }
+
+#[tokio::test]
+async fn change_password_rejects_short_new_password() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (client, _, _) = login_user_with_workspace(&server, &db, "settings-shortpw").await;
+
+    let err = client
+        .change_password(ChangePasswordRequest {
+            current_password: "TestPassword1!".to_string(),
+            new_password: "short".to_string(),
+        })
+        .await;
+    assert!(
+        matches!(err, Err(atlas_client::ClientError::Api(ref p)) if p.status == 422),
+        "expected 422 for a too-short new password, got {err:?}"
+    );
+
+    // Password unchanged: original still works.
+    let mut relogin = AtlasClient::new(server.base_url().to_string());
+    relogin
+        .login(LoginRequest {
+            username: "settings-shortpw".to_string(),
+            password: "TestPassword1!".to_string(),
+        })
+        .await
+        .expect("original password must still work after a rejected change");
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn reset_password_rejects_short_new_password() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let root = login_root_user(&server, &db).await;
+    let (victim, _, victim_user) = login_user_with_workspace(&server, &db, "reset-shortpw").await;
+
+    let err = root.reset_user_password(victim_user.id.0, "short").await;
+    assert!(
+        matches!(err, Err(atlas_client::ClientError::Api(ref p)) if p.status == 422),
+        "expected 422 for a too-short reset password, got {err:?}"
+    );
+
+    // The rejected reset must not revoke the victim's sessions.
+    victim
+        .me()
+        .await
+        .expect("victim session must survive a rejected reset");
+
+    // Password unchanged: original still works.
+    let mut relogin = AtlasClient::new(server.base_url().to_string());
+    relogin
+        .login(LoginRequest {
+            username: "reset-shortpw".to_string(),
+            password: "TestPassword1!".to_string(),
+        })
+        .await
+        .expect("original password must still work after a rejected reset");
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn update_me_rejects_blank_and_overlong_display_name() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (client, _, _) = login_user_with_workspace(&server, &db, "profile-badname").await;
+
+    let blank = client
+        .update_me(UpdateMeRequest {
+            email: None,
+            display_name: Some("   ".to_string()),
+        })
+        .await;
+    assert!(
+        matches!(blank, Err(atlas_client::ClientError::Api(ref p)) if p.status == 422),
+        "expected 422 for a blank display_name, got {blank:?}"
+    );
+
+    let overlong = client
+        .update_me(UpdateMeRequest {
+            email: None,
+            display_name: Some("x".repeat(201)),
+        })
+        .await;
+    assert!(
+        matches!(overlong, Err(atlas_client::ClientError::Api(ref p)) if p.status == 422),
+        "expected 422 for an overlong display_name, got {overlong:?}"
+    );
+
+    // Profile unchanged after the rejected updates.
+    let me: MeResponse = client.me().await.expect("me");
+    assert_eq!(me.display_name.as_deref(), Some("profile-badname"));
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn update_me_rejects_malformed_email() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (client, _, _) = login_user_with_workspace(&server, &db, "profile-bademail").await;
+
+    for bad in ["", "   ", "no-at-sign", "@no-local", "no-domain@", "a@b@c"] {
+        let err = client
+            .update_me(UpdateMeRequest {
+                email: Some(bad.to_string()),
+                display_name: None,
+            })
+            .await;
+        assert!(
+            matches!(err, Err(atlas_client::ClientError::Api(ref p)) if p.status == 422),
+            "expected 422 for email {bad:?}, got {err:?}"
+        );
+    }
+
+    // Email unchanged (None) after the rejected updates.
+    let me: MeResponse = client.me().await.expect("me");
+    assert_eq!(me.email, None);
+
+    db.teardown().await;
+}

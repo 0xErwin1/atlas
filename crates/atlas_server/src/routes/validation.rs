@@ -9,7 +9,57 @@ const MAX_COMMENT_LEN: usize = 10_000;
 const MAX_LABEL_LEN: usize = 64;
 const MAX_LABELS: usize = 50;
 const MAX_CUSTOM_ENTRIES: usize = 100;
+const MAX_EMAIL_LEN: usize = 254;
 pub(crate) const MAX_QUERY_LEN: usize = 2_000;
+
+/// Validates the password meets minimum length before any DB work is done.
+///
+/// A min-length of 8 is the only rule applied here. It is checked before
+/// argon2 hashing so no hashing cost is paid for a password that would be
+/// rejected anyway.
+pub(crate) fn validate_password_strength(pw: &str) -> Result<(), ApiError> {
+    if pw.chars().count() < 8 {
+        return Err(ApiError::InvalidInput {
+            message: "Password must be at least 8 characters long.".into(),
+        });
+    }
+
+    Ok(())
+}
+
+/// Validates an email address with a minimal, bounded format check.
+///
+/// Deliberately not full RFC 5322 validation: the only guarantees enforced are
+/// a non-blank value, a bounded length, and a single `@` separating non-empty
+/// local and domain parts.
+pub(crate) fn validate_email(field: &str, value: &str) -> Result<(), ApiError> {
+    if value.trim().is_empty() {
+        return Err(ApiError::InvalidInput {
+            message: format!("{field} must not be blank"),
+        });
+    }
+
+    if value.len() > MAX_EMAIL_LEN {
+        return Err(ApiError::InvalidInput {
+            message: format!("{field} must be at most {MAX_EMAIL_LEN} bytes"),
+        });
+    }
+
+    let format_ok = match value.split_once('@') {
+        Some((local, domain)) => !local.is_empty() && !domain.is_empty() && !domain.contains('@'),
+        None => false,
+    };
+
+    if !format_ok {
+        return Err(ApiError::InvalidInput {
+            message: format!(
+                "{field} must contain a single '@' with non-empty local and domain parts"
+            ),
+        });
+    }
+
+    Ok(())
+}
 
 /// Validates a short name/title field.
 ///
@@ -578,5 +628,41 @@ mod tests {
         let set = HashSet::from(["png".to_string(), "txt".to_string()]);
         let data = b"\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00";
         assert!(validate_upload("photo.png", data, Some(&set)).is_err());
+    }
+
+    #[test]
+    fn password_strength_rejects_short_and_empty() {
+        assert!(validate_password_strength("").is_err());
+        assert!(validate_password_strength("short").is_err());
+        assert!(validate_password_strength("1234567").is_err());
+    }
+
+    #[test]
+    fn password_strength_accepts_eight_or_more_chars() {
+        assert!(validate_password_strength("12345678").is_ok());
+        assert!(validate_password_strength("a much longer passphrase").is_ok());
+    }
+
+    #[test]
+    fn email_accepts_minimal_valid_forms() {
+        assert!(validate_email("email", "a@b").is_ok());
+        assert!(validate_email("email", "user.name+tag@example.com").is_ok());
+    }
+
+    #[test]
+    fn email_rejects_blank_and_malformed() {
+        assert!(validate_email("email", "").is_err());
+        assert!(validate_email("email", "   ").is_err());
+        assert!(validate_email("email", "no-at-sign").is_err());
+        assert!(validate_email("email", "@no-local").is_err());
+        assert!(validate_email("email", "no-domain@").is_err());
+        assert!(validate_email("email", "two@@ats").is_err());
+        assert!(validate_email("email", "a@b@c").is_err());
+    }
+
+    #[test]
+    fn email_rejects_overlong_value() {
+        let local = "a".repeat(250);
+        assert!(validate_email("email", &format!("{local}@example.com")).is_err());
     }
 }

@@ -28,6 +28,7 @@ use crate::{
         ApiKeyRepo, NewSession, PgApiKeyRepo, PgSessionRepo, PgUserRepo, SessionRepo, UserRepo,
     },
     routes::api_keys::canonical_scopes,
+    routes::validation::{validate_email, validate_name, validate_password_strength},
     state::AppState,
 };
 
@@ -76,11 +77,16 @@ pub(crate) async fn login(
     let maybe_user = user_repo
         .find_by_username(&body.username)
         .await
-        .map_err(|_| ApiError::Unauthorized)?;
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?;
 
     let Some(user) = maybe_user else {
-        // Run a dummy verify so both branches pay the same argon2 cost.
-        let _ = password::verify(body.password, DUMMY_HASH.clone()).await;
+        // Run a dummy verify so both branches pay the same argon2 cost. The
+        // result is irrelevant by design — only the elapsed time matters.
+        if let Err(e) = password::verify(body.password, DUMMY_HASH.clone()).await {
+            tracing::warn!(error = %e, "login: timing-equalization verify failed");
+        }
         return Err(ApiError::Unauthorized);
     };
 
@@ -272,6 +278,7 @@ pub(crate) async fn me(
         (status = 204, description = "Password changed"),
         (status = 401, description = "Unauthenticated or wrong current password"),
         (status = 403, description = "API keys cannot change a user password"),
+        (status = 422, description = "New password too short"),
     )
 )]
 pub(crate) async fn change_password(
@@ -286,6 +293,8 @@ pub(crate) async fn change_password(
             message: "API keys cannot change a user password".into(),
         });
     };
+
+    validate_password_strength(&body.new_password)?;
 
     let user_repo = PgUserRepo {
         conn: (*state.db).clone(),
@@ -365,6 +374,7 @@ pub(crate) async fn change_password(
         (status = 200, description = "Updated profile", body = UserDto),
         (status = 401, description = "Unauthenticated"),
         (status = 403, description = "API keys cannot update a user profile"),
+        (status = 422, description = "Invalid display_name or email"),
     )
 )]
 pub(crate) async fn update_me(
@@ -377,6 +387,14 @@ pub(crate) async fn update_me(
             message: "API keys cannot update a user profile".into(),
         });
     };
+
+    if let Some(display_name) = &body.display_name {
+        validate_name("display_name", display_name)?;
+    }
+
+    if let Some(email) = &body.email {
+        validate_email("email", email)?;
+    }
 
     let user_repo = PgUserRepo {
         conn: (*state.db).clone(),
@@ -407,7 +425,8 @@ pub(crate) fn user_to_dto(user: &atlas_domain::entities::identity::User) -> User
     }
 }
 
-fn build_session_cookie(
+/// Builds the `atlas_session` cookie shared by the login and activation flows.
+pub(crate) fn build_session_cookie(
     token: String,
     expires_at: chrono::DateTime<Utc>,
     secure: bool,

@@ -2196,9 +2196,11 @@ impl AttachmentWriteIntentRepo for PgAttachmentWriteIntentRepo {
 impl PgAttachmentWriteIntentRepo {
     async fn create_if_absent(&self, digest: String) -> Result<(), DomainError> {
         self.conn
-            .execute_unprepared(&format!(
-                "INSERT INTO attachment_write_intents (id, digest, created_at) VALUES ('{}', '{}', now()) ON CONFLICT (digest) DO NOTHING",
-                Uuid::now_v7(), digest
+            .execute_raw(Statement::from_sql_and_values(
+                sea_orm::DatabaseBackend::Postgres,
+                "INSERT INTO attachment_write_intents (id, digest, created_at) \
+                 VALUES ($1, $2, now()) ON CONFLICT (digest) DO NOTHING",
+                [Uuid::now_v7().into(), digest.into()],
             ))
             .await
             .map(|_| ())
