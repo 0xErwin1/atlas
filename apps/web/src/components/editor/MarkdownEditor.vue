@@ -17,6 +17,7 @@ import {
   type WikilinkTrigger,
 } from '@/lib/wikilink';
 import { useUiStore } from '@/stores/ui';
+import { cspNonceExtension } from './cspNonce';
 import { atlasHighlight } from './highlight';
 import { type ImageUploadResult, imageUploadInsertion } from './imageUpload';
 import { livePreview } from './livePreviewExtension';
@@ -268,6 +269,7 @@ function editStateExtension(editable: boolean) {
 
 function buildExtensions() {
   return [
+    cspNonceExtension(),
     history(),
     keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
     markdown({ base: markdownLanguage, extensions: [GFM], codeLanguages: languages }),
