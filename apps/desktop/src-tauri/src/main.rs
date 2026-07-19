@@ -13,6 +13,7 @@ use std::{
     path::PathBuf,
     process,
     sync::{Arc, Mutex},
+    time::{Duration, Instant},
 };
 use tauri::{Emitter, Manager, Runtime, State};
 
@@ -858,48 +859,16 @@ fn desktop_workspace_events_subscribe(
     let app_handle = app.clone();
     let scope_for_task = scope.clone();
     let handle = tauri::async_runtime::spawn(async move {
-        let response = client.execute(request).await;
-        let Ok(response) = response else {
-            if emit_workspace_closed(&app_handle, &workspace_slug).is_err() {
-                return;
-            }
-            return;
-        };
-        if !response.status().is_success() {
-            if classify_workspace_stream_terminal(Some(response.status().as_u16()))
-                == StreamTermination::AuthLoss
-                && revoke_from_transport(&session, &app_handle, &scope_for_task).is_err()
-            {
-                return;
-            }
-            if emit_workspace_closed(&app_handle, &workspace_slug).is_err() {
-                return;
-            }
-            return;
-        }
-        let mut stream = response.bytes_stream();
-        let mut pending = String::new();
-        while let Some(chunk) = stream.next().await {
-            let Ok(chunk) = chunk else {
-                if emit_workspace_closed(&app_handle, &workspace_slug).is_err() {
-                    return;
-                }
-                return;
-            };
-            if process_workspace_sse_chunk(&mut pending, &chunk, |frame| {
-                emit_workspace_frame(&app_handle, &workspace_slug, frame)
-            })
-            .is_err()
-            {
-                if emit_workspace_closed(&app_handle, &workspace_slug).is_err() {
-                    return;
-                }
-                return;
-            }
-        }
-        match emit_workspace_closed(&app_handle, &workspace_slug) {
-            Ok(()) | Err(_) => {}
-        }
+        run_workspace_stream(
+            client,
+            session,
+            app_handle,
+            scope_for_task,
+            workspace_slug,
+            path,
+            request,
+        )
+        .await;
     });
     match state.transports.lock() {
         Ok(mut transports) => {
@@ -913,6 +882,181 @@ fn desktop_workspace_events_subscribe(
             IpcResult::error("desktop transport state is unavailable")
         }
     }
+}
+
+/// Backoff floor for reconnecting a benignly-ended workspace SSE stream. A
+/// healthy stream that recycles reconnects this fast; the ceiling below caps a
+/// server that keeps ending the stream so the host never hammers it.
+const WORKSPACE_STREAM_RECONNECT_INITIAL: Duration = Duration::from_secs(1);
+
+/// Backoff ceiling for the workspace SSE reconnect loop.
+const WORKSPACE_STREAM_RECONNECT_MAX: Duration = Duration::from_secs(30);
+
+/// Minimum lifetime for a connection to count as healthy and reset the backoff.
+/// A connection that opens and ends sooner than this is treated as a failed
+/// attempt, so a server that accepts then immediately closes still backs off
+/// exponentially instead of reconnecting at the floor forever.
+const WORKSPACE_STREAM_HEALTHY_MIN: Duration = Duration::from_secs(10);
+
+/// The result of a single upstream SSE connection attempt.
+struct WorkspaceStreamAttempt {
+    /// How the attempt ended, and therefore how the loop must react.
+    termination: StreamTermination,
+    /// Whether the upstream connected and stayed up long enough to be healthy;
+    /// a healthy attempt resets the reconnect backoff to its floor.
+    healthy: bool,
+}
+
+/// Proxies a workspace SSE stream, transparently reconnecting on benign ends so
+/// the frontend source mirrors a native `EventSource` and never sees a close for
+/// a recoverable gap.
+///
+/// The loop terminates — emitting `atlas://workspace-closed` — only on a truly
+/// terminal condition (auth loss, another `4xx`, or a vanished session). Every
+/// other end (EOF, keep-alive recycle, read error, `5xx`) reconnects with bounded
+/// exponential backoff. An explicit unsubscribe / stop aborts the spawned task at
+/// its next await point (the `execute`/`sleep` calls), so no reconnect survives a
+/// teardown and the stream registry stays the single lifecycle authority.
+async fn run_workspace_stream<R: Runtime>(
+    client: reqwest::Client,
+    session: Arc<Mutex<DesktopSession<SecretServiceStore>>>,
+    app: tauri::AppHandle<R>,
+    scope: SessionScope,
+    workspace_slug: String,
+    path: String,
+    initial_request: reqwest::Request,
+) {
+    let mut next_request = Some(initial_request);
+    let mut backoff = WORKSPACE_STREAM_RECONNECT_INITIAL;
+    let mut is_reconnect = false;
+
+    loop {
+        let request = match next_request.take() {
+            Some(request) => request,
+            None => match build_workspace_stream_request(&session, &scope, &path) {
+                Some(request) => request,
+                None => {
+                    revoke_and_close(&session, &app, &scope, &workspace_slug);
+                    return;
+                }
+            },
+        };
+
+        let attempt =
+            run_workspace_stream_connection(&client, request, &app, &workspace_slug, is_reconnect)
+                .await;
+
+        match attempt.termination {
+            StreamTermination::Reconnect => {
+                if attempt.healthy {
+                    backoff = WORKSPACE_STREAM_RECONNECT_INITIAL;
+                }
+
+                tokio::time::sleep(backoff).await;
+
+                if !attempt.healthy {
+                    backoff = (backoff * 2).min(WORKSPACE_STREAM_RECONNECT_MAX);
+                }
+
+                is_reconnect = true;
+            }
+            StreamTermination::AuthLoss => {
+                revoke_and_close(&session, &app, &scope, &workspace_slug);
+                return;
+            }
+            StreamTermination::Terminal => {
+                let _ = emit_workspace_closed(&app, &workspace_slug);
+                return;
+            }
+        }
+    }
+}
+
+/// Runs one upstream SSE connection to completion, forwarding every live frame.
+///
+/// On a reconnect (`is_reconnect`) a single `atlas://workspace-resync` is emitted
+/// once the upstream is open, so the frontend performs an atomic catch-up for any
+/// events missed during the gap. This is the fallback for true transparent replay:
+/// the Atlas SSE server assigns no event `id:` and honors no `Last-Event-ID`
+/// header (its events come from an in-process broadcast with no replay log), so a
+/// native `EventSource`'s silent replay cannot be reproduced.
+async fn run_workspace_stream_connection<R: Runtime>(
+    client: &reqwest::Client,
+    request: reqwest::Request,
+    app: &tauri::AppHandle<R>,
+    workspace_slug: &str,
+    is_reconnect: bool,
+) -> WorkspaceStreamAttempt {
+    let Ok(response) = client.execute(request).await else {
+        return WorkspaceStreamAttempt {
+            termination: StreamTermination::Reconnect,
+            healthy: false,
+        };
+    };
+
+    if !response.status().is_success() {
+        return WorkspaceStreamAttempt {
+            termination: classify_workspace_stream_terminal(Some(response.status().as_u16())),
+            healthy: false,
+        };
+    }
+
+    if is_reconnect && emit_workspace_resync(app, workspace_slug).is_err() {
+        return WorkspaceStreamAttempt {
+            termination: StreamTermination::Terminal,
+            healthy: false,
+        };
+    }
+
+    let opened_at = Instant::now();
+    let mut stream = response.bytes_stream();
+    let mut pending = String::new();
+
+    while let Some(chunk) = stream.next().await {
+        let Ok(chunk) = chunk else {
+            break;
+        };
+
+        if process_workspace_sse_chunk(&mut pending, &chunk, |frame| {
+            emit_workspace_frame(app, workspace_slug, frame)
+        })
+        .is_err()
+        {
+            break;
+        }
+    }
+
+    WorkspaceStreamAttempt {
+        termination: StreamTermination::Reconnect,
+        healthy: opened_at.elapsed() >= WORKSPACE_STREAM_HEALTHY_MIN,
+    }
+}
+
+/// Rebuilds the authenticated upstream SSE request from the current session, so a
+/// reconnect picks up a rotated bearer. `None` means the stored session is gone,
+/// which the caller treats as terminal auth loss.
+fn build_workspace_stream_request(
+    session: &Arc<Mutex<DesktopSession<SecretServiceStore>>>,
+    scope: &SessionScope,
+    path: &str,
+) -> Option<reqwest::Request> {
+    session.lock().ok().and_then(|session| {
+        session
+            .authenticated_request(scope, path, TransportKind::Sse)
+            .ok()
+    })
+}
+
+/// Revokes the scoped session and closes the frontend source. Used for every
+/// terminal auth-loss path so it keeps surfacing exactly as before.
+fn revoke_and_close<R: Runtime>(
+    session: &Arc<Mutex<DesktopSession<SecretServiceStore>>>,
+    app: &tauri::AppHandle<R>,
+    scope: &SessionScope,
+    workspace_slug: &str,
+) {
+    let _ = revoke_from_transport(session, app, scope);
+    let _ = emit_workspace_closed(app, workspace_slug);
 }
 
 fn revoke_from_transport<R: Runtime>(

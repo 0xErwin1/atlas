@@ -531,6 +531,43 @@ fn stream_terminal_classification_preserves_auth_for_eof_and_transient_failures(
     );
 }
 
+#[test]
+fn stream_terminal_classification_marks_non_auth_4xx_as_terminal() {
+    // A 403 (forbidden), 404 (workspace gone), and 400 (bad request) are terminal
+    // but must not revoke the session — only a 401 is auth loss.
+    for code in [400, 403, 404] {
+        assert_eq!(
+            classify_workspace_stream_terminal(Some(code)),
+            StreamTermination::Terminal,
+            "{code} must classify as a non-auth terminal condition"
+        );
+    }
+    assert_eq!(
+        classify_workspace_stream_terminal(Some(401)),
+        StreamTermination::AuthLoss
+    );
+    assert_eq!(
+        classify_workspace_stream_terminal(Some(503)),
+        StreamTermination::Reconnect
+    );
+}
+
+#[test]
+fn production_sse_parser_ignores_keep_alive_comment_frames() {
+    // axum emits `:\n\n` on an idle stream. It carries no data and must be ignored,
+    // not treated as an invalid event that tears the stream down.
+    let mut pending = String::new();
+    let mut emitted = Vec::new();
+
+    process_workspace_sse_chunk(&mut pending, b":\n\n", |frame| {
+        emitted.push(frame);
+        Ok(())
+    })
+    .expect("a keep-alive comment frame is not a protocol error");
+
+    assert!(emitted.is_empty());
+}
+
 fn spawn_fixture(response: &'static str) -> u16 {
     let listener = TcpListener::bind("127.0.0.1:0").expect("fixture binds a local port");
     let port = listener.local_addr().expect("fixture address").port();

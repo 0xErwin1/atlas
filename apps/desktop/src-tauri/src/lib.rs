@@ -652,17 +652,36 @@ pub enum StreamFrame {
     Resync,
 }
 
+/// How a workspace SSE stream ended, and therefore how the host must react.
+///
+/// The two terminal variants surface `atlas://workspace-closed` to the frontend
+/// (which tears the source down); `Reconnect` is a benign end that the host
+/// recovers from in-process, mirroring a native `EventSource`'s transparent
+/// reconnect, so the frontend never sees a close.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StreamTermination {
+    /// A benign end — normal end-of-stream, keep-alive/idle recycle, network
+    /// read error, connection reset, or a transient server error (5xx). The host
+    /// reconnects the upstream instead of closing the frontend source.
     Reconnect,
+    /// Authentication was lost (a `401`). The scoped session is revoked and the
+    /// frontend source is closed — this must keep surfacing exactly as before.
     AuthLoss,
+    /// A non-auth terminal condition: any other `4xx` (forbidden, workspace gone,
+    /// bad request). The frontend source is closed, but the session is left intact
+    /// so access to other workspaces is not revoked.
+    Terminal,
 }
 
+/// Classifies a workspace SSE termination as the single source of truth for
+/// "is this terminal?". A `401` is auth loss; any other `4xx` is a non-auth
+/// terminal condition (forbidden, workspace gone); everything else — no status
+/// (end-of-stream / read error) or a `5xx` — is a benign reconnect.
 pub fn classify_workspace_stream_terminal(status: Option<u16>) -> StreamTermination {
-    if status == Some(401) {
-        StreamTermination::AuthLoss
-    } else {
-        StreamTermination::Reconnect
+    match status {
+        Some(401) => StreamTermination::AuthLoss,
+        Some(code) if (400..500).contains(&code) => StreamTermination::Terminal,
+        _ => StreamTermination::Reconnect,
     }
 }
 
@@ -690,7 +709,13 @@ where
             continue;
         }
 
-        let data = data.ok_or(DesktopError::InvalidSseEvent)?;
+        // An SSE comment / keep-alive frame (axum sends `:\n\n` on an idle stream)
+        // carries no `data:` field. Per the SSE spec a data-less event is never
+        // dispatched, so it is ignored rather than treated as a protocol error —
+        // otherwise every idle keep-alive would tear the stream down.
+        let Some(data) = data else {
+            continue;
+        };
         let envelope: serde_json::Value =
             serde_json::from_str(data).map_err(|_| DesktopError::InvalidSseEvent)?;
         let envelope_type = envelope
