@@ -52,7 +52,7 @@ async fn main() -> ExitCode {
     match commands::dispatch(&ctx, cli.command).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("{e}");
+            output::report_error(out, &e);
             ExitCode::from(e.exit_code())
         }
     }

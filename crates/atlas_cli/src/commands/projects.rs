@@ -10,14 +10,11 @@
 
 use clap::{Args, Parser, Subcommand};
 
+use crate::commands::common::{LIMIT_DEFAULT, LIMIT_MAX, LIMIT_MIN};
 use crate::ctx::Ctx;
 use crate::error::CliError;
 use crate::output;
 use crate::projections::ProjectProjection;
-
-const LIMIT_MIN: u32 = 1;
-const LIMIT_MAX: u32 = 200;
-const LIMIT_DEFAULT: u32 = 20;
 
 // ---------------------------------------------------------------------------
 // ProjectsArgs + ProjectsCmd
@@ -60,6 +57,10 @@ pub(crate) struct ProjectsListArgs {
     /// Maximum number of results (clamped to 1..=200; default 20).
     #[arg(long)]
     pub(crate) limit: Option<u32>,
+
+    /// Pagination cursor returned by a previous list.
+    #[arg(long)]
+    pub(crate) cursor: Option<String>,
 }
 
 async fn run_list(ctx: &Ctx, args: ProjectsListArgs) -> Result<(), CliError> {
@@ -70,7 +71,10 @@ async fn run_list(ctx: &Ctx, args: ProjectsListArgs) -> Result<(), CliError> {
         .unwrap_or(LIMIT_DEFAULT)
         .clamp(LIMIT_MIN, LIMIT_MAX);
 
-    let page = ctx.client.list_projects(ws, None, Some(limit)).await?;
+    let page = ctx
+        .client
+        .list_projects(ws, args.cursor.as_deref(), Some(limit))
+        .await?;
 
     let items: Vec<ProjectProjection> = page
         .items
@@ -138,6 +142,20 @@ mod tests {
         if let Commands::Projects(args) = cli.command {
             if let ProjectsCmd::List(list) = args.command {
                 assert_eq!(list.workspace.as_deref(), Some("my-ws"));
+            } else {
+                panic!("expected List");
+            }
+        } else {
+            panic!("expected Projects");
+        }
+    }
+
+    #[test]
+    fn projects_list_cursor_parses() {
+        let cli = Cli::try_parse_from(["atlas", "projects", "list", "--cursor", "abc"]).unwrap();
+        if let Commands::Projects(args) = cli.command {
+            if let ProjectsCmd::List(list) = args.command {
+                assert_eq!(list.cursor.as_deref(), Some("abc"));
             } else {
                 panic!("expected List");
             }

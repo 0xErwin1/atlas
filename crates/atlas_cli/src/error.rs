@@ -16,8 +16,37 @@ pub(crate) enum CliError {
 }
 
 impl CliError {
+    /// Maps the error to the CLI's documented exit-code scheme:
+    ///
+    /// - 1 — generic failure (API error, I/O, decode, resolution)
+    /// - 2 — usage error (clap parse errors also use 2)
+    /// - 3 — configuration error
+    /// - 4 — network/transport error
+    /// - 5 — document revision conflict
     pub(crate) fn exit_code(&self) -> u8 {
-        1
+        match self {
+            Self::Client(e) => match e.as_ref() {
+                ClientError::Transport(_) => 4,
+                ClientError::Conflict(_) => 5,
+                ClientError::Api(_) | ClientError::Decode { .. } => 1,
+            },
+            Self::Conflict(_) => 5,
+            Self::Resolver(_) | Self::Io(_) => 1,
+            Self::Validation(_) => 2,
+            Self::Config(_) => 3,
+        }
+    }
+
+    /// Returns the server-assigned request id when the error carries an RFC 9457
+    /// problem response, so machine consumers can correlate with server logs.
+    pub(crate) fn request_id(&self) -> Option<&str> {
+        match self {
+            Self::Client(e) => match e.as_ref() {
+                ClientError::Api(problem) => problem.request_id.as_deref(),
+                _ => None,
+            },
+            _ => None,
+        }
     }
 }
 
@@ -83,28 +112,60 @@ mod tests {
         ClientError::Transport(reqwest::Client::new().get("not-a-url").build().unwrap_err())
     }
 
-    #[test]
-    fn exit_code_is_always_1_for_config() {
-        let e = CliError::Config("bad toml".into());
-        assert_eq!(e.exit_code(), 1);
+    fn api_problem() -> atlas_api::problem::ProblemDetails {
+        atlas_api::problem::ProblemDetails::new("urn:atlas:error:invalid", "Invalid input", 422)
     }
 
     #[test]
-    fn exit_code_is_always_1_for_io() {
+    fn exit_code_is_3_for_config() {
+        let e = CliError::Config("bad toml".into());
+        assert_eq!(e.exit_code(), 3);
+    }
+
+    #[test]
+    fn exit_code_is_1_for_io() {
         let e = CliError::Io(io_error());
         assert_eq!(e.exit_code(), 1);
     }
 
     #[test]
-    fn exit_code_is_always_1_for_validation() {
+    fn exit_code_is_2_for_validation() {
         let e = CliError::Validation("bad priority".into());
+        assert_eq!(e.exit_code(), 2);
+    }
+
+    #[test]
+    fn exit_code_is_4_for_transport() {
+        let e = CliError::Client(Box::new(client_error()));
+        assert_eq!(e.exit_code(), 4);
+    }
+
+    #[test]
+    fn exit_code_is_1_for_api_error() {
+        let e = CliError::Client(Box::new(ClientError::Api(api_problem())));
         assert_eq!(e.exit_code(), 1);
     }
 
     #[test]
-    fn exit_code_is_always_1_for_client() {
-        let e = CliError::Client(Box::new(client_error()));
-        assert_eq!(e.exit_code(), 1);
+    fn exit_code_is_5_for_conflict() {
+        use atlas_api::dtos::documents::ConflictProblemDto;
+        let dto = ConflictProblemDto::new(uuid::Uuid::now_v7(), 3, "--- a\n+++ b\n".to_owned());
+        let e = CliError::Conflict(Box::new(dto));
+        assert_eq!(e.exit_code(), 5);
+    }
+
+    #[test]
+    fn request_id_returned_for_api_error() {
+        let mut problem = api_problem();
+        problem.request_id = Some("req-123".to_owned());
+        let e = CliError::Client(Box::new(ClientError::Api(problem)));
+        assert_eq!(e.request_id(), Some("req-123"));
+    }
+
+    #[test]
+    fn request_id_absent_for_non_api_errors() {
+        let e = CliError::Config("bad toml".into());
+        assert!(e.request_id().is_none());
     }
 
     #[test]
@@ -150,7 +211,7 @@ mod tests {
     }
 
     #[test]
-    fn exit_code_is_always_1_for_resolver() {
+    fn exit_code_is_1_for_resolver() {
         let e = CliError::Resolver(Box::new(ResolverError::BoardNotFound {
             board_ref: "x".into(),
             workspace: "ws".into(),

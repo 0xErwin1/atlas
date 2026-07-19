@@ -1,14 +1,11 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
 use crate::cli::SearchArgs;
+use crate::commands::common::{LIMIT_DEFAULT, LIMIT_MAX, LIMIT_MIN};
 use crate::ctx::Ctx;
 use crate::error::CliError;
 use crate::output;
 use crate::projections::SearchHitProjection;
-
-const LIMIT_MIN: u32 = 1;
-const LIMIT_MAX: u32 = 200;
-const LIMIT_DEFAULT: u32 = 20;
 
 /// Executes the `search` command.
 ///
@@ -34,7 +31,7 @@ pub(crate) async fn run(ctx: &Ctx, args: SearchArgs) -> Result<(), CliError> {
             &args.query,
             type_filter.as_deref(),
             Some(&args.sort),
-            None,
+            args.cursor.as_deref(),
             Some(limit),
         )
         .await?;

@@ -10,14 +10,11 @@
 
 use clap::{Args, Parser, Subcommand};
 
+use crate::commands::common::{LIMIT_DEFAULT, LIMIT_MAX, LIMIT_MIN};
 use crate::ctx::Ctx;
 use crate::error::CliError;
 use crate::output;
 use crate::projections::BoardProjection;
-
-const LIMIT_MIN: u32 = 1;
-const LIMIT_MAX: u32 = 200;
-const LIMIT_DEFAULT: u32 = 20;
 
 // ---------------------------------------------------------------------------
 // BoardsArgs + BoardsCmd
@@ -61,6 +58,10 @@ pub(crate) struct BoardsListArgs {
     /// Maximum number of results (clamped to 1..=200; default 20).
     #[arg(long)]
     pub(crate) limit: Option<u32>,
+
+    /// Pagination cursor returned by a previous list.
+    #[arg(long)]
+    pub(crate) cursor: Option<String>,
 }
 
 async fn run_list(ctx: &Ctx, args: BoardsListArgs) -> Result<(), CliError> {
@@ -73,7 +74,7 @@ async fn run_list(ctx: &Ctx, args: BoardsListArgs) -> Result<(), CliError> {
 
     let page = ctx
         .client
-        .list_boards(ws, &args.project, None, Some(limit))
+        .list_boards(ws, &args.project, args.cursor.as_deref(), Some(limit))
         .await?;
 
     let items: Vec<BoardProjection> = page.items.into_iter().map(BoardProjection::from).collect();
@@ -142,5 +143,24 @@ mod tests {
     fn boards_list_limit_clamp_zero_becomes_one() {
         let clamped = 0u32.clamp(LIMIT_MIN, LIMIT_MAX);
         assert_eq!(clamped, 1);
+    }
+
+    #[test]
+    fn boards_list_cursor_parses() {
+        let cli = Cli::try_parse_from([
+            "atlas",
+            "boards",
+            "list",
+            "--project",
+            "atlas",
+            "--cursor",
+            "abc",
+        ])
+        .unwrap();
+        let Commands::Boards(args) = cli.command else {
+            panic!("expected Boards");
+        };
+        let BoardsCmd::List(list) = args.command;
+        assert_eq!(list.cursor.as_deref(), Some("abc"));
     }
 }

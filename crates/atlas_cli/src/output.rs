@@ -1,4 +1,12 @@
-#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
+#![cfg_attr(
+    test,
+    allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing
+    )
+)]
 
 use comfy_table::{Table, presets::UTF8_BORDERS_ONLY};
 use serde::Serialize;
@@ -29,6 +37,41 @@ pub(crate) fn print_json<T: Serialize>(v: &T) -> Result<(), CliError> {
         .map_err(|e| CliError::Io(std::io::Error::other(e)))?;
     println!();
     Ok(())
+}
+
+/// Machine-readable error shape emitted on stderr in Json mode.
+///
+/// Carries the RFC 9457 `request_id` when the failure came from the API so
+/// scripted consumers can correlate a failed invocation with server logs.
+#[derive(Debug, Serialize)]
+struct ErrorEnvelope<'a> {
+    error: String,
+    exit_code: u8,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    request_id: Option<&'a str>,
+}
+
+impl<'a> ErrorEnvelope<'a> {
+    fn from_error(error: &'a CliError) -> Self {
+        Self {
+            error: error.to_string(),
+            exit_code: error.exit_code(),
+            request_id: error.request_id(),
+        }
+    }
+}
+
+/// Reports a fatal error on stderr in the active output format.
+pub(crate) fn report_error(out: OutputFormat, error: &CliError) {
+    match out {
+        OutputFormat::Json => {
+            match serde_json::to_string_pretty(&ErrorEnvelope::from_error(error)) {
+                Ok(json) => eprintln!("{json}"),
+                Err(_) => eprintln!("{error}"),
+            }
+        }
+        OutputFormat::Human => eprintln!("{error}"),
+    }
 }
 
 /// Renders a table with column `headers` and dynamic `rows` to stdout.
@@ -125,5 +168,34 @@ mod tests {
     #[test]
     fn json_flag_false_tty_true_yields_human() {
         assert_eq!(resolve(false, true), OutputFormat::Human);
+    }
+
+    #[test]
+    fn error_envelope_includes_request_id_for_api_errors() {
+        let mut problem = atlas_api::problem::ProblemDetails::new(
+            "urn:atlas:error:invalid",
+            "Invalid input",
+            422,
+        );
+        problem.request_id = Some("req-42".to_owned());
+        let error = CliError::Client(Box::new(atlas_client::ClientError::Api(problem)));
+
+        let envelope = ErrorEnvelope::from_error(&error);
+        let value = serde_json::to_value(&envelope).unwrap();
+
+        assert_eq!(value["request_id"], "req-42");
+        assert_eq!(value["exit_code"], 1);
+        assert!(value["error"].as_str().unwrap().contains("Invalid input"));
+    }
+
+    #[test]
+    fn error_envelope_omits_request_id_when_absent() {
+        let error = CliError::Validation("bad flag".to_owned());
+
+        let envelope = ErrorEnvelope::from_error(&error);
+        let value = serde_json::to_value(&envelope).unwrap();
+
+        assert!(value.get("request_id").is_none());
+        assert_eq!(value["exit_code"], 2);
     }
 }

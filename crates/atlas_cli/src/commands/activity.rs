@@ -10,14 +10,11 @@
 
 use clap::{Args, Parser, Subcommand};
 
+use crate::commands::common::{LIMIT_DEFAULT, LIMIT_MAX, LIMIT_MIN};
 use crate::ctx::Ctx;
 use crate::error::CliError;
 use crate::output;
 use crate::projections::WorkspaceActivityProjection;
-
-const LIMIT_MIN: u32 = 1;
-const LIMIT_MAX: u32 = 200;
-const LIMIT_DEFAULT: u32 = 20;
 
 // ---------------------------------------------------------------------------
 // ActivityArgs (wrapper for nesting into Commands) + ActivityCmd
@@ -57,6 +54,10 @@ pub(crate) struct ActivityListArgs {
     /// Maximum number of activity entries to return (clamped to 1..=200; default 20).
     #[arg(long)]
     pub(crate) limit: Option<u32>,
+
+    /// Pagination cursor returned by a previous list.
+    #[arg(long)]
+    pub(crate) cursor: Option<String>,
 }
 
 async fn run_list(ctx: &Ctx, args: ActivityListArgs) -> Result<(), CliError> {
@@ -69,7 +70,7 @@ async fn run_list(ctx: &Ctx, args: ActivityListArgs) -> Result<(), CliError> {
 
     let page = ctx
         .client
-        .list_workspace_activity(ws, None, None, None, Some(limit))
+        .list_workspace_activity_with_cursor(ws, None, None, args.cursor.as_deref(), Some(limit))
         .await?;
 
     let projections: Vec<WorkspaceActivityProjection> = page
@@ -137,6 +138,26 @@ mod tests {
         if let crate::cli::Commands::Activity(args) = cli.command {
             let ActivityCmd::List(list_args) = args.command;
             assert_eq!(list_args.limit, Some(50));
+        } else {
+            panic!("expected Activity");
+        }
+    }
+
+    #[test]
+    fn activity_list_cursor_parses() {
+        let cli = Cli::try_parse_from([
+            "atlas",
+            "activity",
+            "list",
+            "--workspace",
+            "ws",
+            "--cursor",
+            "abc",
+        ])
+        .unwrap();
+        if let crate::cli::Commands::Activity(args) = cli.command {
+            let ActivityCmd::List(list_args) = args.command;
+            assert_eq!(list_args.cursor.as_deref(), Some("abc"));
         } else {
             panic!("expected Activity");
         }

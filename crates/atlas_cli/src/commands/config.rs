@@ -181,24 +181,33 @@ fn run_set_url(args: ConfigSetUrlArgs) -> Result<(), CliError> {
 // ---------------------------------------------------------------------------
 
 /// Reads exactly one line from `reader`, trims trailing whitespace, and returns
-/// it as the token string. Empty input (after trimming) is a Validation error.
+/// it as the secret value. Empty input (after trimming) is a Validation error
+/// naming `what` (e.g. "token", "password").
 ///
 /// The helper accepts any `BufRead` so callers can inject a controlled reader in
 /// tests without touching real stdin. In production, pass `stdin.lock()`.
-/// Reading from stdin rather than argv keeps the token out of shell history.
-pub(crate) fn read_token_from_reader<R: BufRead>(reader: &mut R) -> Result<String, CliError> {
+/// Reading from stdin rather than argv keeps the secret out of shell history.
+pub(crate) fn read_secret_from_reader<R: BufRead>(
+    reader: &mut R,
+    what: &str,
+) -> Result<String, CliError> {
     let mut line = String::new();
     reader.read_line(&mut line).map_err(CliError::Io)?;
 
-    let token = line.trim_end().to_owned();
+    let secret = line.trim_end().to_owned();
 
-    if token.is_empty() {
-        return Err(CliError::Validation(
-            "token must not be empty; pipe or type it into stdin".into(),
-        ));
+    if secret.is_empty() {
+        return Err(CliError::Validation(format!(
+            "{what} must not be empty; pipe or type it into stdin"
+        )));
     }
 
-    Ok(token)
+    Ok(secret)
+}
+
+/// Reads a session/API token from `reader` (see `read_secret_from_reader`).
+pub(crate) fn read_token_from_reader<R: BufRead>(reader: &mut R) -> Result<String, CliError> {
+    read_secret_from_reader(reader, "token")
 }
 
 fn run_set_token(args: ConfigSetTokenArgs) -> Result<(), CliError> {
@@ -399,6 +408,23 @@ mod tests {
         let mut reader = std::io::Cursor::new(b"first-line\nsecond-line\n");
         let token = read_token_from_reader(&mut reader).unwrap();
         assert_eq!(token, "first-line");
+    }
+
+    #[test]
+    fn read_secret_empty_input_names_the_secret_kind() {
+        let mut reader = std::io::Cursor::new(b"");
+        let err = read_secret_from_reader(&mut reader, "password").unwrap_err();
+        let CliError::Validation(msg) = err else {
+            panic!("expected Validation error");
+        };
+        assert!(msg.contains("password"), "error must name the secret kind");
+    }
+
+    #[test]
+    fn read_secret_returns_trimmed_value() {
+        let mut reader = std::io::Cursor::new(b"s3cr3t\n");
+        let secret = read_secret_from_reader(&mut reader, "password").unwrap();
+        assert_eq!(secret, "s3cr3t");
     }
 
     // -----------------------------------------------------------------------

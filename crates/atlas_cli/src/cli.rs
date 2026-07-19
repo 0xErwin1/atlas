@@ -26,9 +26,20 @@ use crate::commands::tasks::TasksArgs;
 use crate::commands::users::UsersArgs;
 use crate::commands::workspaces::WorkspacesArgs;
 
+/// Exit-code documentation shown in `atlas --help` (long form).
+///
+/// Must stay in sync with `CliError::exit_code`.
+const EXIT_CODES_HELP: &str = "Exit codes:
+  0  success
+  1  generic failure (API error, I/O, decode, resolution)
+  2  usage error (invalid arguments or failed validation)
+  3  configuration error
+  4  network/transport error
+  5  document revision conflict";
+
 /// Atlas CLI — personal knowledge base client.
 #[derive(Parser)]
-#[command(name = "atlas", about = "Atlas CLI")]
+#[command(name = "atlas", about = "Atlas CLI", after_long_help = EXIT_CODES_HELP)]
 pub(crate) struct Cli {
     /// Override the Atlas server URL.
     #[arg(long, global = true)]
@@ -127,6 +138,10 @@ pub(crate) struct SearchArgs {
     /// Maximum number of results (clamped to 1..=200).
     #[arg(long)]
     pub(crate) limit: Option<u32>,
+
+    /// Pagination cursor returned by a previous search.
+    #[arg(long)]
+    pub(crate) cursor: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -217,6 +232,25 @@ mod tests {
                 .unwrap();
         if let Commands::Search(args) = cli.command {
             assert_eq!(args.limit, Some(50));
+        } else {
+            panic!("expected Search");
+        }
+    }
+
+    #[test]
+    fn search_cursor_parses_as_option() {
+        let cli = Cli::try_parse_from([
+            "atlas",
+            "search",
+            "--workspace",
+            "ws",
+            "--cursor",
+            "abc",
+            "q",
+        ])
+        .unwrap();
+        if let Commands::Search(args) = cli.command {
+            assert_eq!(args.cursor.as_deref(), Some("abc"));
         } else {
             panic!("expected Search");
         }

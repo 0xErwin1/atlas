@@ -11,6 +11,7 @@
 use clap::{Args, Parser, Subcommand};
 use uuid::Uuid;
 
+use crate::commands::common::{LIMIT_MAX, LIMIT_MIN};
 use crate::ctx::Ctx;
 use crate::error::CliError;
 use crate::output;
@@ -70,12 +71,19 @@ pub(crate) struct ApiKeysListArgs {
     /// Maximum number of keys to return (clamped to 1..=200).
     #[arg(long)]
     pub(crate) limit: Option<u32>,
+
+    /// Pagination cursor returned by a previous list.
+    #[arg(long)]
+    pub(crate) cursor: Option<String>,
 }
 
 async fn run_list(ctx: &Ctx, args: ApiKeysListArgs) -> Result<(), CliError> {
-    let limit = args.limit.map(|l| l.clamp(1, 200));
+    let limit = args.limit.map(|l| l.clamp(LIMIT_MIN, LIMIT_MAX));
 
-    let page = ctx.client.list_user_api_keys(None, limit).await?;
+    let page = ctx
+        .client
+        .list_user_api_keys(args.cursor.as_deref(), limit)
+        .await?;
 
     let items: Vec<ApiKeyProjection> = page.items.into_iter().map(ApiKeyProjection::from).collect();
 
@@ -371,6 +379,18 @@ mod tests {
             panic!("expected List");
         };
         assert_eq!(list.limit, Some(50));
+    }
+
+    #[test]
+    fn api_keys_list_parses_with_cursor() {
+        let cli = Cli::try_parse_from(["atlas", "api-keys", "list", "--cursor", "abc"]).unwrap();
+        let Commands::ApiKeys(args) = cli.command else {
+            panic!("expected ApiKeys");
+        };
+        let ApiKeysCmd::List(list) = args.command else {
+            panic!("expected List");
+        };
+        assert_eq!(list.cursor.as_deref(), Some("abc"));
     }
 
     #[test]

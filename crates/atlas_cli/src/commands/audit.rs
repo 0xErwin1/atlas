@@ -10,14 +10,11 @@
 
 use clap::{Args, Parser, Subcommand};
 
+use crate::commands::common::{LIMIT_DEFAULT, LIMIT_MAX, LIMIT_MIN};
 use crate::ctx::Ctx;
 use crate::error::CliError;
 use crate::output;
 use crate::projections::AuditEntryProjection;
-
-const LIMIT_MIN: u32 = 1;
-const LIMIT_MAX: u32 = 200;
-const LIMIT_DEFAULT: u32 = 20;
 
 // ---------------------------------------------------------------------------
 // AuditArgs (top-level) + AuditCmd

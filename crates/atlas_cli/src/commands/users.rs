@@ -40,7 +40,7 @@ pub(crate) enum UsersCmd {
     Disable(UsersDisableArgs),
     /// Re-enable a disabled user account (admin).
     Enable(UsersEnableArgs),
-    /// Reset a user's password (admin; requires --confirm).
+    /// Reset a user's password, reading the new password from stdin (admin; requires --confirm).
     ResetPassword(UsersResetPasswordArgs),
     /// Regenerate the activation link for a pending user (admin).
     RegenerateLink(UsersRegenerateLinkArgs),
@@ -199,15 +199,14 @@ async fn run_enable(ctx: &Ctx, args: UsersEnableArgs) -> Result<(), CliError> {
 // ---------------------------------------------------------------------------
 
 /// Arguments for `atlas users reset-password`.
+///
+/// The new password is read from stdin (one line), never from argv, so it
+/// stays out of shell history and the process table.
 #[derive(Parser)]
 pub(crate) struct UsersResetPasswordArgs {
     /// UUID of the user whose password will be reset.
     #[arg(long)]
     pub(crate) user_id: Uuid,
-
-    /// The new password to set.
-    #[arg(long)]
-    pub(crate) new_password: String,
 
     /// Confirm the operation. Required — prevents accidental credential changes.
     #[arg(long)]
@@ -222,8 +221,12 @@ async fn run_reset_password(ctx: &Ctx, args: UsersResetPasswordArgs) -> Result<(
         ));
     }
 
+    let stdin = std::io::stdin();
+    let mut reader = stdin.lock();
+    let new_password = crate::commands::config::read_secret_from_reader(&mut reader, "password")?;
+
     ctx.client
-        .reset_user_password(args.user_id, args.new_password)
+        .reset_user_password(args.user_id, new_password)
         .await?;
 
     let proj = UserActionProjection {
@@ -427,8 +430,6 @@ mod tests {
             "reset-password",
             "--user-id",
             "00000000-0000-0000-0000-000000000001",
-            "--new-password",
-            "s3cr3t",
         ])
         .unwrap();
         let Commands::Users(args) = cli.command else {
@@ -441,10 +442,26 @@ mod tests {
     }
 
     #[test]
+    fn users_reset_password_rejects_new_password_flag() {
+        let result = Cli::try_parse_from([
+            "atlas",
+            "users",
+            "reset-password",
+            "--user-id",
+            "00000000-0000-0000-0000-000000000001",
+            "--new-password",
+            "s3cr3t",
+        ]);
+        assert!(
+            result.is_err(),
+            "--new-password was removed; the password is read from stdin"
+        );
+    }
+
+    #[test]
     fn users_reset_password_confirm_guard_fires_before_network() {
         let args = UsersResetPasswordArgs {
             user_id: Uuid::nil(),
-            new_password: "x".to_owned(),
             confirm: false,
         };
         assert!(

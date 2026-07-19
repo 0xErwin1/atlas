@@ -11,13 +11,11 @@
 use clap::{Args, Parser, Subcommand};
 use uuid::Uuid;
 
+use crate::commands::common::{LIMIT_MAX, LIMIT_MIN};
 use crate::ctx::Ctx;
 use crate::error::CliError;
 use crate::output;
 use crate::projections::{DeleteByIdProjection, GrantProjection};
-
-const LIMIT_MIN: u32 = 1;
-const LIMIT_MAX: u32 = 200;
 
 // ---------------------------------------------------------------------------
 // GrantsArgs (top-level) + GrantsCmd

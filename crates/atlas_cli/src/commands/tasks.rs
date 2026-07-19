@@ -19,6 +19,7 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use uuid::Uuid;
 
 use crate::commands::bulk;
+use crate::commands::common::{LIMIT_DEFAULT, LIMIT_MAX, LIMIT_MIN, read_upload_file};
 use crate::ctx::Ctx;
 use crate::error::CliError;
 use crate::output;
@@ -29,10 +30,6 @@ use crate::projections::{
     TaskRefProjection, TaskSummaryProjection,
 };
 use atlas_client::helpers;
-
-const LIMIT_MIN: u32 = 1;
-const LIMIT_MAX: u32 = 200;
-const LIMIT_DEFAULT: u32 = 20;
 
 // ---------------------------------------------------------------------------
 // Detail level
@@ -145,6 +142,10 @@ pub(crate) struct TasksListArgs {
     /// Maximum results to return (clamped to 1..=200; default 20).
     #[arg(long)]
     pub(crate) limit: Option<u32>,
+
+    /// Pagination cursor returned by a previous list.
+    #[arg(long)]
+    pub(crate) cursor: Option<String>,
 }
 
 async fn run_list(ctx: &Ctx, args: TasksListArgs) -> Result<(), CliError> {
@@ -180,7 +181,7 @@ async fn run_list(ctx: &Ctx, args: TasksListArgs) -> Result<(), CliError> {
         labels: args.labels,
         board_id,
         sort: args.sort,
-        cursor: None,
+        cursor: args.cursor,
         limit: Some(limit),
     };
 
@@ -1560,16 +1561,6 @@ pub(crate) struct TasksAttachDeleteArgs {
     pub(crate) confirm: bool,
 }
 
-fn read_task_upload_file(path: &std::path::Path) -> Result<(String, Vec<u8>), CliError> {
-    let filename = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("attachment")
-        .to_owned();
-    let data = std::fs::read(path)?;
-    Ok((filename, data))
-}
-
 async fn run_task_attach(ctx: &Ctx, cmd: TasksAttachCmd) -> Result<(), CliError> {
     match cmd {
         TasksAttachCmd::Upload(args) => run_task_attach_upload(ctx, args).await,
@@ -1581,7 +1572,7 @@ async fn run_task_attach(ctx: &Ctx, cmd: TasksAttachCmd) -> Result<(), CliError>
 
 async fn run_task_attach_upload(ctx: &Ctx, args: TasksAttachUploadArgs) -> Result<(), CliError> {
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
-    let (filename, data) = read_task_upload_file(&args.file)?;
+    let (filename, data) = read_upload_file(&args.file)?;
 
     let dto = ctx
         .client
@@ -2595,12 +2586,25 @@ mod tests {
     }
 
     #[test]
-    fn read_task_upload_file_returns_io_error_for_nonexistent_path() {
-        let err = read_task_upload_file(std::path::Path::new("/nonexistent/missing/file.bin"))
-            .unwrap_err();
-        assert!(
-            matches!(err, CliError::Io(_)),
-            "missing file must yield CliError::Io"
-        );
+    fn tasks_list_cursor_parses() {
+        let cli = Cli::try_parse_from([
+            "atlas",
+            "tasks",
+            "list",
+            "--workspace",
+            "ws",
+            "--cursor",
+            "abc",
+        ])
+        .unwrap();
+        if let crate::cli::Commands::Tasks(args) = cli.command {
+            if let TasksCmd::List(list_args) = args.command {
+                assert_eq!(list_args.cursor.as_deref(), Some("abc"));
+            } else {
+                panic!("expected List");
+            }
+        } else {
+            panic!("expected Tasks");
+        }
     }
 }

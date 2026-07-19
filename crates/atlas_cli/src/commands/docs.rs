@@ -19,6 +19,7 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use uuid::Uuid;
 
 use crate::commands::bulk;
+use crate::commands::common::{LIMIT_DEFAULT, LIMIT_MAX, LIMIT_MIN, read_upload_file};
 use crate::ctx::Ctx;
 use crate::error::CliError;
 use crate::output;
@@ -26,10 +27,6 @@ use crate::projections::{
     AttachProjection, DeleteDocProjection, DocBacklinkProjection, DocCompactProjection,
     DocFullProjection, DocHistoryProjection, DocRevisionProjection, DocSummaryProjection,
 };
-
-const LIMIT_MIN: u32 = 1;
-const LIMIT_MAX: u32 = 200;
-const LIMIT_DEFAULT: u32 = 20;
 
 // ---------------------------------------------------------------------------
 // Detail level (shared with tasks)
@@ -120,6 +117,10 @@ pub(crate) struct DocsListArgs {
     /// Maximum number of results (clamped to 1..=200; default 20).
     #[arg(long)]
     pub(crate) limit: Option<u32>,
+
+    /// Pagination cursor returned by a previous list.
+    #[arg(long)]
+    pub(crate) cursor: Option<String>,
 }
 
 async fn run_list(ctx: &Ctx, args: DocsListArgs) -> Result<(), CliError> {
@@ -137,7 +138,7 @@ async fn run_list(ctx: &Ctx, args: DocsListArgs) -> Result<(), CliError> {
 
     let page = ctx
         .client
-        .list_documents(ws, project, None, Some(limit))
+        .list_documents(ws, project, args.cursor.as_deref(), Some(limit))
         .await?;
 
     let items: Vec<DocSummaryProjection> = page
@@ -510,6 +511,10 @@ pub(crate) struct DocsBacklinksArgs {
     /// Maximum number of results (clamped to 1..=200; default 20).
     #[arg(long)]
     pub(crate) limit: Option<u32>,
+
+    /// Pagination cursor returned by a previous list.
+    #[arg(long)]
+    pub(crate) cursor: Option<String>,
 }
 
 async fn run_backlinks(ctx: &Ctx, args: DocsBacklinksArgs) -> Result<(), CliError> {
@@ -520,7 +525,7 @@ async fn run_backlinks(ctx: &Ctx, args: DocsBacklinksArgs) -> Result<(), CliErro
         .clamp(LIMIT_MIN, LIMIT_MAX);
     let page = ctx
         .client
-        .list_backlinks(ws, &args.slug, None, Some(limit))
+        .list_backlinks(ws, &args.slug, args.cursor.as_deref(), Some(limit))
         .await?;
     let projections: Vec<DocBacklinkProjection> = page
         .items
@@ -553,6 +558,10 @@ pub(crate) struct DocsHistoryArgs {
     /// Maximum number of revisions to return (clamped to 1..=200; default 20).
     #[arg(long)]
     pub(crate) limit: Option<u32>,
+
+    /// Pagination cursor returned by a previous list.
+    #[arg(long)]
+    pub(crate) cursor: Option<String>,
 }
 
 async fn run_history(ctx: &Ctx, args: DocsHistoryArgs) -> Result<(), CliError> {
@@ -563,7 +572,7 @@ async fn run_history(ctx: &Ctx, args: DocsHistoryArgs) -> Result<(), CliError> {
         .clamp(LIMIT_MIN, LIMIT_MAX);
     let page = ctx
         .client
-        .list_document_history(ws, &args.slug, None, Some(limit))
+        .list_document_history(ws, &args.slug, args.cursor.as_deref(), Some(limit))
         .await?;
     let projections: Vec<DocHistoryProjection> = page
         .items
@@ -646,20 +655,29 @@ pub(crate) struct DocsEditArgs {
     pub(crate) workspace: Option<String>,
 }
 
-/// Resolves the editor binary from the `$EDITOR` environment variable.
+/// Resolves the editor command from the `$EDITOR` environment variable.
 ///
-/// Returns `Err(CliError::Io)` when `$EDITOR` is unset or empty so the
-/// caller can report a clear error (exit 1) without touching the network.
-fn find_editor(env_editor: Option<&str>) -> Result<String, CliError> {
-    env_editor
+/// The value is split on whitespace (no shell interpretation): the first token
+/// is the program and the remaining tokens are leading arguments, so values
+/// like `code --wait` work. Returns `Err(CliError::Io)` when `$EDITOR` is
+/// unset, empty, or whitespace-only so the caller can report a clear error
+/// without touching the network.
+fn resolve_editor(env_editor: Option<&str>) -> Result<(String, Vec<String>), CliError> {
+    let missing_editor = || {
+        CliError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "$EDITOR is not set; set it to your preferred editor (e.g. export EDITOR=vim)",
+        ))
+    };
+
+    let raw = env_editor
         .filter(|s| !s.is_empty())
-        .map(str::to_owned)
-        .ok_or_else(|| {
-            CliError::Io(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "$EDITOR is not set; set it to your preferred editor (e.g. export EDITOR=vim)",
-            ))
-        })
+        .ok_or_else(missing_editor)?;
+
+    let mut tokens = raw.split_whitespace().map(str::to_owned);
+    let program = tokens.next().ok_or_else(missing_editor)?;
+
+    Ok((program, tokens.collect()))
 }
 
 /// Writes `content` to a new named temp file and returns it.
@@ -674,9 +692,15 @@ fn write_edit_tempfile(content: &str) -> Result<tempfile::NamedTempFile, CliErro
     Ok(temp)
 }
 
-/// Spawns `editor` with `path` as its only argument and waits for it to exit.
-fn spawn_editor(editor: &str, path: &std::path::Path) -> Result<(), CliError> {
+/// Spawns `editor` with its leading arguments followed by `path`, and waits
+/// for it to exit.
+fn spawn_editor(
+    editor: &str,
+    editor_args: &[String],
+    path: &std::path::Path,
+) -> Result<(), CliError> {
     let status = std::process::Command::new(editor)
+        .args(editor_args)
         .arg(path)
         .status()
         .map_err(CliError::Io)?;
@@ -699,16 +723,79 @@ fn build_update_content_request(content: String, base_revision_id: Uuid) -> Upda
     }
 }
 
-/// Writes `content` to a deterministic recovery file under the system temp
-/// directory so the user's edit survives any post-editor update failure.
+/// Resolves the user-private state directory used for edit recovery files.
 ///
-/// The file is named `atlas-edit-<slug>.md` — easy to locate and re-apply.
-/// Returns the path of the written file.
-fn preserve_edit_on_error(slug: &str, content: &str) -> std::io::Result<std::path::PathBuf> {
-    let name = format!("atlas-edit-{slug}.md");
-    let path = std::env::temp_dir().join(&name);
+/// Follows the XDG base-directory convention: `$XDG_STATE_HOME/atlas` when the
+/// variable holds an absolute path, otherwise `$HOME/.local/state/atlas`.
+/// Returns `None` when neither variable is usable. A pure function of its
+/// inputs so the resolution order is testable without mutating the process env.
+fn resolve_state_dir(
+    xdg_state_home: Option<&std::ffi::OsStr>,
+    home: Option<&std::ffi::OsStr>,
+) -> Option<std::path::PathBuf> {
+    let base = xdg_state_home
+        .map(std::path::PathBuf::from)
+        .filter(|p| p.is_absolute())
+        .or_else(|| home.map(|h| std::path::PathBuf::from(h).join(".local").join("state")))?;
+
+    Some(base.join("atlas"))
+}
+
+/// Creates `dir` (and any missing ancestors) owner-accessible only (0700 on
+/// Unix), so recovery files are not readable by other local users.
+fn create_private_dir(dir: &std::path::Path) -> std::io::Result<()> {
+    let mut builder = std::fs::DirBuilder::new();
+    builder.recursive(true);
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+
+    builder.create(dir)
+}
+
+/// Writes `content` to `atlas-edit-<slug>.md` inside `dir`, creating the
+/// directory with restrictive permissions first. Returns the file path.
+fn preserve_edit_in(
+    dir: &std::path::Path,
+    slug: &str,
+    content: &str,
+) -> std::io::Result<std::path::PathBuf> {
+    create_private_dir(dir)?;
+
+    let path = dir.join(format!("atlas-edit-{slug}.md"));
     std::fs::write(&path, content)?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
+    }
+
     Ok(path)
+}
+
+/// Writes `content` to a recovery file under the user's private state
+/// directory so the edit survives any post-editor update failure.
+///
+/// The deliberately user-owned location (instead of the shared system temp
+/// directory) prevents other local users from reading or pre-creating the
+/// predictable recovery path.
+fn preserve_edit_on_error(slug: &str, content: &str) -> std::io::Result<std::path::PathBuf> {
+    let dir = resolve_state_dir(
+        std::env::var_os("XDG_STATE_HOME").as_deref(),
+        std::env::var_os("HOME").as_deref(),
+    )
+    .ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "cannot resolve a state directory: neither $XDG_STATE_HOME nor $HOME is set",
+        )
+    })?;
+
+    preserve_edit_in(&dir, slug, content)
 }
 
 /// Applies the result of the CAS submit step for a `docs edit` session.
@@ -748,8 +835,8 @@ async fn run_edit(ctx: &Ctx, args: DocsEditArgs) -> Result<(), CliError> {
     let temp = write_edit_tempfile(&doc.content)?;
     let temp_path = temp.path().to_path_buf();
 
-    let editor = find_editor(std::env::var("EDITOR").ok().as_deref())?;
-    spawn_editor(&editor, &temp_path)?;
+    let (editor, editor_args) = resolve_editor(std::env::var("EDITOR").ok().as_deref())?;
+    spawn_editor(&editor, &editor_args, &temp_path)?;
 
     let new_content = std::fs::read_to_string(&temp_path)?;
 
@@ -885,17 +972,6 @@ pub(crate) struct DocsAttachDeleteArgs {
     /// Confirm the deletion. Required — prevents accidental non-reversible deletes.
     #[arg(long)]
     pub(crate) confirm: bool,
-}
-
-/// Reads a file for upload and derives the filename from the path.
-fn read_upload_file(path: &std::path::Path) -> Result<(String, Vec<u8>), CliError> {
-    let filename = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("attachment")
-        .to_owned();
-    let data = std::fs::read(path)?;
-    Ok((filename, data))
 }
 
 async fn run_attach(ctx: &Ctx, cmd: DocsAttachCmd) -> Result<(), CliError> {
@@ -1189,11 +1265,11 @@ mod tests {
     }
 
     #[test]
-    fn cli_error_conflict_exit_code_is_1() {
+    fn cli_error_conflict_exit_code_is_5() {
         use atlas_api::dtos::documents::ConflictProblemDto;
         let dto = ConflictProblemDto::new(Uuid::now_v7(), 3, "--- a\n+++ b".to_owned());
         let e = CliError::Conflict(Box::new(dto));
-        assert_eq!(e.exit_code(), 1);
+        assert_eq!(e.exit_code(), 5);
     }
 
     #[test]
@@ -1436,8 +1512,8 @@ mod tests {
     }
 
     #[test]
-    fn find_editor_returns_io_error_when_not_set() {
-        let err = find_editor(None).unwrap_err();
+    fn resolve_editor_returns_io_error_when_not_set() {
+        let err = resolve_editor(None).unwrap_err();
         assert!(
             matches!(err, CliError::Io(_)),
             "unset $EDITOR must yield CliError::Io"
@@ -1445,8 +1521,8 @@ mod tests {
     }
 
     #[test]
-    fn find_editor_returns_io_error_when_empty_string() {
-        let err = find_editor(Some("")).unwrap_err();
+    fn resolve_editor_returns_io_error_when_empty_string() {
+        let err = resolve_editor(Some("")).unwrap_err();
         assert!(
             matches!(err, CliError::Io(_)),
             "empty $EDITOR must yield CliError::Io"
@@ -1454,9 +1530,36 @@ mod tests {
     }
 
     #[test]
-    fn find_editor_returns_value_when_set() {
-        let editor = find_editor(Some("vim")).unwrap();
-        assert_eq!(editor, "vim");
+    fn resolve_editor_returns_io_error_when_whitespace_only() {
+        let err = resolve_editor(Some("   ")).unwrap_err();
+        assert!(
+            matches!(err, CliError::Io(_)),
+            "whitespace-only $EDITOR must yield CliError::Io"
+        );
+    }
+
+    #[test]
+    fn resolve_editor_returns_program_without_args() {
+        let (program, args) = resolve_editor(Some("vim")).unwrap();
+        assert_eq!(program, "vim");
+        assert!(args.is_empty());
+    }
+
+    #[test]
+    fn resolve_editor_splits_program_and_leading_args() {
+        let (program, args) = resolve_editor(Some("code --wait")).unwrap();
+        assert_eq!(program, "code");
+        assert_eq!(args, vec!["--wait".to_owned()]);
+    }
+
+    #[test]
+    fn resolve_editor_splits_multiple_args() {
+        let (program, args) = resolve_editor(Some("emacsclient -c -a emacs")).unwrap();
+        assert_eq!(program, "emacsclient");
+        assert_eq!(
+            args,
+            vec!["-c".to_owned(), "-a".to_owned(), "emacs".to_owned()]
+        );
     }
 
     #[test]
@@ -1470,11 +1573,11 @@ mod tests {
     }
 
     #[test]
-    fn cli_error_conflict_exit_code_is_one() {
+    fn cli_error_conflict_exit_code_is_five() {
         use atlas_api::dtos::documents::ConflictProblemDto;
         let dto = ConflictProblemDto::new(Uuid::new_v4(), 5, "--- a\n+++ b\n".to_owned());
         let e = CliError::Conflict(Box::new(dto));
-        assert_eq!(e.exit_code(), 1);
+        assert_eq!(e.exit_code(), 5);
     }
 
     // C1 fix: edit preservation on update failure
@@ -1512,11 +1615,13 @@ mod tests {
     }
 
     #[test]
-    fn preserve_edit_on_error_creates_file_with_exact_content() {
+    fn preserve_edit_in_creates_file_with_exact_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join("atlas");
         let content = "# Recovery test\n\nParagraph content.";
         let slug = "preserve-edit-test-slug";
 
-        let path = preserve_edit_on_error(slug, content).unwrap();
+        let path = preserve_edit_in(&state_dir, slug, content).unwrap();
 
         assert!(path.exists(), "recovery file must be created on disk");
 
@@ -1535,8 +1640,60 @@ mod tests {
             name.contains(slug),
             "recovery file name must embed the document slug"
         );
+    }
 
-        drop(std::fs::remove_file(&path));
+    #[cfg(unix)]
+    #[test]
+    fn preserve_edit_in_uses_restrictive_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join("atlas");
+
+        let path = preserve_edit_in(&state_dir, "perm-slug", "content").unwrap();
+
+        let dir_mode = std::fs::metadata(&state_dir).unwrap().permissions().mode() & 0o777;
+        assert_eq!(dir_mode, 0o700, "state dir must be owner-only");
+
+        let file_mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(file_mode, 0o600, "recovery file must be owner-only");
+    }
+
+    #[test]
+    fn resolve_state_dir_prefers_absolute_xdg_state_home() {
+        let dir = resolve_state_dir(
+            Some(std::ffi::OsStr::new("/custom/state")),
+            Some(std::ffi::OsStr::new("/home/user")),
+        )
+        .unwrap();
+        assert_eq!(dir, std::path::PathBuf::from("/custom/state/atlas"));
+    }
+
+    #[test]
+    fn resolve_state_dir_ignores_relative_xdg_state_home() {
+        let dir = resolve_state_dir(
+            Some(std::ffi::OsStr::new("relative/state")),
+            Some(std::ffi::OsStr::new("/home/user")),
+        )
+        .unwrap();
+        assert_eq!(
+            dir,
+            std::path::PathBuf::from("/home/user/.local/state/atlas")
+        );
+    }
+
+    #[test]
+    fn resolve_state_dir_falls_back_to_home() {
+        let dir = resolve_state_dir(None, Some(std::ffi::OsStr::new("/home/user"))).unwrap();
+        assert_eq!(
+            dir,
+            std::path::PathBuf::from("/home/user/.local/state/atlas")
+        );
+    }
+
+    #[test]
+    fn resolve_state_dir_returns_none_without_sources() {
+        assert!(resolve_state_dir(None, None).is_none());
     }
 
     // -----------------------------------------------------------------------
@@ -1643,14 +1800,75 @@ mod tests {
     }
 
     #[test]
-    fn read_upload_file_returns_io_error_for_nonexistent_path() {
-        let err = read_upload_file(std::path::Path::new(
-            "/nonexistent/definitely/missing/file.txt",
-        ))
-        .unwrap_err();
-        assert!(
-            matches!(err, CliError::Io(_)),
-            "missing file must yield CliError::Io"
-        );
+    fn docs_list_cursor_parses() {
+        let cli = Cli::try_parse_from([
+            "atlas",
+            "docs",
+            "list",
+            "--workspace",
+            "ws",
+            "--project",
+            "p",
+            "--cursor",
+            "abc",
+        ])
+        .unwrap();
+        if let crate::cli::Commands::Docs(args) = cli.command {
+            if let DocsCmd::List(list_args) = args.command {
+                assert_eq!(list_args.cursor.as_deref(), Some("abc"));
+            } else {
+                panic!("expected List");
+            }
+        } else {
+            panic!("expected Docs");
+        }
+    }
+
+    #[test]
+    fn docs_backlinks_cursor_parses() {
+        let cli = Cli::try_parse_from([
+            "atlas",
+            "docs",
+            "backlinks",
+            "my-doc",
+            "--workspace",
+            "ws",
+            "--cursor",
+            "abc",
+        ])
+        .unwrap();
+        if let crate::cli::Commands::Docs(args) = cli.command {
+            if let DocsCmd::Backlinks(bl_args) = args.command {
+                assert_eq!(bl_args.cursor.as_deref(), Some("abc"));
+            } else {
+                panic!("expected Backlinks");
+            }
+        } else {
+            panic!("expected Docs");
+        }
+    }
+
+    #[test]
+    fn docs_history_cursor_parses() {
+        let cli = Cli::try_parse_from([
+            "atlas",
+            "docs",
+            "history",
+            "my-doc",
+            "--workspace",
+            "ws",
+            "--cursor",
+            "abc",
+        ])
+        .unwrap();
+        if let crate::cli::Commands::Docs(args) = cli.command {
+            if let DocsCmd::History(h_args) = args.command {
+                assert_eq!(h_args.cursor.as_deref(), Some("abc"));
+            } else {
+                panic!("expected History");
+            }
+        } else {
+            panic!("expected Docs");
+        }
     }
 }

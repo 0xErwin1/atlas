@@ -11,14 +11,11 @@
 use clap::{Args, Parser, Subcommand};
 use uuid::Uuid;
 
+use crate::commands::common::{LIMIT_DEFAULT, LIMIT_MAX, LIMIT_MIN};
 use crate::ctx::Ctx;
 use crate::error::CliError;
 use crate::output;
 use crate::projections::FolderProjection;
-
-const LIMIT_MIN: u32 = 1;
-const LIMIT_MAX: u32 = 200;
-const LIMIT_DEFAULT: u32 = 20;
 
 // ---------------------------------------------------------------------------
 // FoldersArgs + FoldersCmd
@@ -65,6 +62,10 @@ pub(crate) struct FoldersListArgs {
     /// Maximum number of results (clamped to 1..=200; default 20).
     #[arg(long)]
     pub(crate) limit: Option<u32>,
+
+    /// Pagination cursor returned by a previous list.
+    #[arg(long)]
+    pub(crate) cursor: Option<String>,
 }
 
 async fn run_list(ctx: &Ctx, args: FoldersListArgs) -> Result<(), CliError> {
@@ -77,7 +78,7 @@ async fn run_list(ctx: &Ctx, args: FoldersListArgs) -> Result<(), CliError> {
 
     let page = ctx
         .client
-        .list_folders(ws, &args.project, None, Some(limit))
+        .list_folders(ws, &args.project, args.cursor.as_deref(), Some(limit))
         .await?;
 
     let items: Vec<FolderProjection> = page.items.into_iter().map(FolderProjection::from).collect();
@@ -174,5 +175,28 @@ mod tests {
     fn folders_list_limit_clamp_zero_becomes_one() {
         let clamped = 0u32.clamp(LIMIT_MIN, LIMIT_MAX);
         assert_eq!(clamped, 1);
+    }
+
+    #[test]
+    fn folders_list_cursor_parses() {
+        let cli = Cli::try_parse_from([
+            "atlas",
+            "folders",
+            "list",
+            "--project",
+            "atlas",
+            "--cursor",
+            "abc",
+        ])
+        .unwrap();
+        if let Commands::Folders(args) = cli.command {
+            if let FoldersCmd::List(list) = args.command {
+                assert_eq!(list.cursor.as_deref(), Some("abc"));
+            } else {
+                panic!("expected List");
+            }
+        } else {
+            panic!("expected Folders");
+        }
     }
 }

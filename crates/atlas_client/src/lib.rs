@@ -58,10 +58,33 @@ const MAX_RATE_LIMIT_RETRIES: u32 = 3;
 const MAX_RETRY_WAIT: Duration = Duration::from_secs(30);
 /// Floor applied to any retry wait so a `Retry-After: 0` still yields a pause.
 const MIN_RETRY_WAIT: Duration = Duration::from_millis(50);
+/// Total per-request timeout applied to every API call by default.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+/// Time allowed to establish a TCP/TLS connection.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+/// Relaxed total timeout for attachment uploads/downloads, whose bodies can be
+/// large enough that the default request timeout would abort a healthy transfer.
+const ATTACHMENT_TRANSFER_TIMEOUT: Duration = Duration::from_secs(600);
+
+/// Renders an RFC 9457 problem as a readable one-line message, preserving the
+/// historical `API error {status}: {title}` prefix and appending `detail` and
+/// `hint` when the server provided them.
+fn api_error_message(problem: &ProblemDetails) -> String {
+    let mut message = format!("API error {}: {}", problem.status, problem.title);
+
+    if let Some(detail) = problem.detail.as_deref() {
+        message.push_str(&format!(" — {detail}"));
+    }
+    if let Some(hint) = problem.hint.as_deref() {
+        message.push_str(&format!(" (hint: {hint})"));
+    }
+
+    message
+}
 
 #[derive(Debug, Error)]
 pub enum ClientError {
-    #[error("API error {}: {}", .0.status, .0.title)]
+    #[error("{}", api_error_message(.0))]
     Api(ProblemDetails),
     /// CAS revision conflict (HTTP 409) carrying the head revision and the patch
     /// from the client's stale base to the current content, so callers can apply
@@ -104,6 +127,12 @@ impl Req<'_> {
         self
     }
 
+    /// Overrides the client-level total timeout for this single request.
+    fn timeout(mut self, timeout: Duration) -> Self {
+        self.builder = self.builder.timeout(timeout);
+        self
+    }
+
     async fn send(self) -> Result<reqwest::Response, ClientError> {
         self.client.send_with_retry(self.builder).await
     }
@@ -131,9 +160,17 @@ pub struct AtlasClient {
 
 impl AtlasClient {
     pub fn new(base_url: impl Into<String>) -> Self {
+        // Building with timeouts can only fail on TLS/resolver misconfiguration;
+        // fall back to the default client rather than change the signature.
+        let http = reqwest::Client::builder()
+            .timeout(REQUEST_TIMEOUT)
+            .connect_timeout(CONNECT_TIMEOUT)
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+
         Self {
             base_url: base_url.into(),
-            http: reqwest::Client::new(),
+            http,
             token: None,
         }
     }
@@ -1260,6 +1297,7 @@ impl AtlasClient {
             .header("x-file-name", file_name)
             .header("content-type", content_type)
             .body(data)
+            .timeout(ATTACHMENT_TRANSFER_TIMEOUT)
             .send()
             .await?;
         self.decode_response(response, "upload_attachment").await
@@ -1290,6 +1328,7 @@ impl AtlasClient {
     ) -> Result<Vec<u8>, ClientError> {
         let response = self
             .get(&format!("/api/workspaces/{ws}/attachments/{attachment_id}"))
+            .timeout(ATTACHMENT_TRANSFER_TIMEOUT)
             .send()
             .await?;
         if !response.status().is_success() {
@@ -1359,6 +1398,7 @@ impl AtlasClient {
                 format!("multipart/form-data; boundary={boundary}"),
             )
             .body(body)
+            .timeout(ATTACHMENT_TRANSFER_TIMEOUT)
             .send()
             .await?;
         self.decode_response(response, "upload_task_attachment")
@@ -1395,6 +1435,7 @@ impl AtlasClient {
             .get(&format!(
                 "/api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}/content"
             ))
+            .timeout(ATTACHMENT_TRANSFER_TIMEOUT)
             .send()
             .await?;
 
@@ -3499,6 +3540,37 @@ mod tests {
     fn construction_stores_base_url() {
         let client = AtlasClient::new("http://localhost:8080");
         assert_eq!(client.base_url(), "http://localhost:8080");
+    }
+
+    #[test]
+    fn api_error_display_keeps_status_and_title_prefix() {
+        let problem = ProblemDetails::new("urn:atlas:error:invalid", "Invalid input", 422);
+        let message = ClientError::Api(problem).to_string();
+        assert_eq!(message, "API error 422: Invalid input");
+    }
+
+    #[test]
+    fn api_error_display_includes_detail_and_hint_when_present() {
+        let problem = ProblemDetails::new("urn:atlas:error:invalid", "Invalid input", 422)
+            .with_detail("title must not be empty")
+            .with_hint("provide a non-empty title");
+        let message = ClientError::Api(problem).to_string();
+        assert_eq!(
+            message,
+            "API error 422: Invalid input — title must not be empty \
+             (hint: provide a non-empty title)"
+        );
+    }
+
+    #[test]
+    fn api_error_display_includes_detail_without_hint() {
+        let problem = ProblemDetails::new("urn:atlas:error:invalid", "Invalid input", 422)
+            .with_detail("title must not be empty");
+        let message = ClientError::Api(problem).to_string();
+        assert_eq!(
+            message,
+            "API error 422: Invalid input — title must not be empty"
+        );
     }
 
     #[test]

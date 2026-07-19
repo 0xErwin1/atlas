@@ -501,26 +501,54 @@ pub(crate) async fn execute_attachments(
 /// 2. `vault_root / owner_dir / file_name` — relative to the owning note's directory.
 /// 3. Recursive basename search anywhere under `vault_root`.
 ///
-/// Returns `None` when the file cannot be found on disk.
+/// Every candidate must resolve (after symlinks) to a descendant of the vault
+/// root; embeds that escape it (absolute paths, `..` components, or symlinks
+/// pointing outside) are skipped with a warning so the import never reads or
+/// uploads files outside the vault. Returns `None` when no contained file is
+/// found on disk.
 pub(crate) fn resolve_attachment_path(
     vault_root: &Path,
     file_path: &Path,
     owner_rel: &Path,
 ) -> Option<PathBuf> {
     let candidate1 = vault_root.join(file_path);
-    if candidate1.is_file() {
-        return Some(candidate1);
+    if let Some(found) = contained_file(vault_root, &candidate1) {
+        return Some(found);
     }
 
     let file_name = file_path.file_name()?;
 
     let owner_dir = owner_rel.parent().unwrap_or(Path::new(""));
     let candidate2 = vault_root.join(owner_dir).join(file_name);
-    if candidate2 != candidate1 && candidate2.is_file() {
-        return Some(candidate2);
+    if candidate2 != candidate1
+        && let Some(found) = contained_file(vault_root, &candidate2)
+    {
+        return Some(found);
     }
 
-    basename_search(vault_root, file_name)
+    let found = basename_search(vault_root, file_name)?;
+    contained_file(vault_root, &found)
+}
+
+/// Returns `candidate` when it is an existing file whose canonical path stays
+/// inside the canonical vault root; warns and returns `None` when it escapes.
+fn contained_file(vault_root: &Path, candidate: &Path) -> Option<PathBuf> {
+    if !candidate.is_file() {
+        return None;
+    }
+
+    let canonical_root = vault_root.canonicalize().ok()?;
+    let canonical_candidate = candidate.canonicalize().ok()?;
+
+    if canonical_candidate.starts_with(&canonical_root) {
+        Some(candidate.to_path_buf())
+    } else {
+        eprintln!(
+            "[WARN] attachment '{}' resolves outside the vault, skipping",
+            candidate.display()
+        );
+        None
+    }
 }
 
 /// Walks `dir` recursively, returning the first path whose filename equals
@@ -998,6 +1026,60 @@ mod tests {
             Path::new("doc.md"),
         );
         assert_eq!(result, Some(vault_root.join("assets").join("chart.pdf")));
+    }
+
+    #[test]
+    fn resolve_attachment_path_absolute_embed_outside_vault_is_skipped() {
+        let outside = tempfile::TempDir::new().unwrap();
+        let outside_file = outside.path().join("secret.pem");
+        std::fs::write(&outside_file, b"secret").unwrap();
+
+        let vault = tempfile::TempDir::new().unwrap();
+
+        // An absolute embed path replaces the vault root entirely on join.
+        let result = resolve_attachment_path(vault.path(), &outside_file, Path::new("doc.md"));
+        assert!(
+            result.is_none(),
+            "absolute embed pointing outside the vault must be skipped"
+        );
+    }
+
+    #[test]
+    fn resolve_attachment_path_parent_dir_embed_is_skipped() {
+        let outer = tempfile::TempDir::new().unwrap();
+        std::fs::write(outer.path().join("outside.png"), b"data").unwrap();
+
+        let vault_root = outer.path().join("vault");
+        std::fs::create_dir(&vault_root).unwrap();
+
+        let result = resolve_attachment_path(
+            &vault_root,
+            Path::new("../outside.png"),
+            Path::new("doc.md"),
+        );
+        assert!(
+            result.is_none(),
+            "../ embed escaping the vault must be skipped"
+        );
+    }
+
+    #[test]
+    fn resolve_attachment_path_parent_dir_embed_inside_vault_is_allowed() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let vault_root = dir.path();
+        std::fs::create_dir(vault_root.join("notes")).unwrap();
+        std::fs::write(vault_root.join("chart.png"), b"data").unwrap();
+
+        // `notes/../chart.png` contains a `..` but still resolves inside the vault.
+        let result = resolve_attachment_path(
+            vault_root,
+            Path::new("notes/../chart.png"),
+            Path::new("doc.md"),
+        );
+        assert!(
+            result.is_some(),
+            "a .. embed that stays inside the vault must still resolve"
+        );
     }
 
     #[test]

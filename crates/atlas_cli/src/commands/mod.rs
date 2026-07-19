@@ -4,6 +4,7 @@ pub(crate) mod audit;
 pub(crate) mod boards;
 pub(crate) mod bulk;
 pub(crate) mod columns;
+pub(crate) mod common;
 pub(crate) mod completions;
 pub(crate) mod config;
 pub(crate) mod docs;
