@@ -63,11 +63,29 @@ struct IpcIdentity {
 #[derive(Serialize)]
 struct IpcEmpty {}
 
+/// Metadata half of a `desktop_api_request` response. The body no longer
+/// travels as a JSON number array (one text token per byte, parsed twice on the
+/// webview thread); instead the command returns a framed byte buffer
+/// (`u32` little-endian meta length ++ meta JSON ++ raw body) as a
+/// `tauri::ipc::Response`, and the adapter reconstructs the `Response` from it.
 #[derive(Serialize)]
-struct IpcHttpResponse {
+struct IpcHttpResponseMeta {
     status: u16,
     headers: Vec<(String, String)>,
-    body: Vec<u8>,
+}
+
+fn frame_ipc_http_response(meta: &IpcHttpResponseMeta, body: &[u8]) -> Result<Vec<u8>, String> {
+    let meta_json =
+        serde_json::to_vec(meta).map_err(|_| "desktop response encoding failed".to_owned())?;
+    let meta_length = u32::try_from(meta_json.len())
+        .map_err(|_| "desktop response encoding failed".to_owned())?;
+
+    let mut framed = Vec::with_capacity(4 + meta_json.len() + body.len());
+    framed.extend_from_slice(&meta_length.to_le_bytes());
+    framed.extend_from_slice(&meta_json);
+    framed.extend_from_slice(body);
+
+    Ok(framed)
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -746,7 +764,7 @@ async fn desktop_api_request<R: Runtime>(
     request: DesktopApiRequest,
     state: State<'_, DesktopState>,
     app: tauri::AppHandle<R>,
-) -> Result<IpcHttpResponse, String> {
+) -> Result<tauri::ipc::Response, String> {
     let scope = scope_for_active_identity_or_fail_closed(&state, &app).map_err(str::to_owned)?;
     let request = state
         .session
@@ -782,11 +800,13 @@ async fn desktop_api_request<R: Runtime>(
             .map_err(|_| "desktop session cleanup failed".to_owned())?;
     }
 
-    Ok(IpcHttpResponse {
+    let meta = IpcHttpResponseMeta {
         status: status.as_u16(),
         headers,
-        body,
-    })
+    };
+    let framed = frame_ipc_http_response(&meta, &body)?;
+
+    Ok(tauri::ipc::Response::new(framed))
 }
 
 #[tauri::command]
@@ -1499,6 +1519,53 @@ mod command_tests {
             .expect("the command response is JSON");
 
         assert_eq!(response["error"], "desktop session is unavailable");
+    }
+
+    fn decode_framed_http_response(framed: &[u8]) -> (serde_json::Value, Vec<u8>) {
+        let meta_length =
+            u32::from_le_bytes(framed[0..4].try_into().expect("length prefix present")) as usize;
+        let meta: serde_json::Value =
+            serde_json::from_slice(&framed[4..4 + meta_length]).expect("meta decodes as JSON");
+        let body = framed[4 + meta_length..].to_vec();
+
+        (meta, body)
+    }
+
+    #[test]
+    fn frame_ipc_http_response_round_trips_status_headers_and_body() {
+        let meta = IpcHttpResponseMeta {
+            status: 200,
+            headers: vec![
+                ("content-type".to_owned(), "application/json".to_owned()),
+                ("x-request-id".to_owned(), "request-1".to_owned()),
+            ],
+        };
+        let body = b"{\"ok\":true}".to_vec();
+
+        let framed = frame_ipc_http_response(&meta, &body).expect("framing succeeds");
+        let (decoded_meta, decoded_body) = decode_framed_http_response(&framed);
+
+        assert_eq!(decoded_meta["status"], 200);
+        assert_eq!(decoded_meta["headers"][0][0], "content-type");
+        assert_eq!(decoded_meta["headers"][0][1], "application/json");
+        assert_eq!(decoded_meta["headers"][1][0], "x-request-id");
+        assert_eq!(decoded_meta["headers"][1][1], "request-1");
+        assert_eq!(decoded_body, body);
+    }
+
+    #[test]
+    fn frame_ipc_http_response_round_trips_an_empty_body() {
+        let meta = IpcHttpResponseMeta {
+            status: 204,
+            headers: Vec::new(),
+        };
+
+        let framed = frame_ipc_http_response(&meta, &[]).expect("framing succeeds");
+        let (decoded_meta, decoded_body) = decode_framed_http_response(&framed);
+
+        assert_eq!(decoded_meta["status"], 204);
+        assert_eq!(decoded_meta["headers"], serde_json::json!([]));
+        assert!(decoded_body.is_empty());
     }
 
     #[test]
