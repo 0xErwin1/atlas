@@ -111,7 +111,12 @@ describe('live-preview first paint on large documents', () => {
     const expected = headingsBefore(state, viewportTo);
     expect(expected).toBeGreaterThan(30); // many headings live beyond the init cap
 
-    const built = buildDecorations(viewWithViewport(state, viewportTo), { onWikilinkClick: () => {} }, true, {});
+    const built = buildDecorations(
+      viewWithViewport(state, viewportTo),
+      { onWikilinkClick: () => {} },
+      true,
+      {},
+    );
     const headings = countClass(built.decorations, 'cm-atlas-h1', viewportTo);
 
     expect(headings).toBe(expected);

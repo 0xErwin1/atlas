@@ -764,7 +764,18 @@ export function buildDecorations(
   const wikilinkRanges = findWikilinkRanges(docText, blockRanges);
 
   for (const { from, to } of view.visibleRanges) {
-    decorateSyntaxTree(view, tree, from, to, activeLines, callbacks, titles, decos, blockRanges, wikilinkRanges);
+    decorateSyntaxTree(
+      view,
+      tree,
+      from,
+      to,
+      activeLines,
+      callbacks,
+      titles,
+      decos,
+      blockRanges,
+      wikilinkRanges,
+    );
   }
   for (const { from, to } of view.visibleRanges) {
     decorateInlineMath(view, from, to, activeLines, decos, blockRanges);
