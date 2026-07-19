@@ -8,6 +8,7 @@ import FormField from '@/components/ui/FormField.vue';
 import Icon from '@/components/ui/Icon.vue';
 import SegmentedControl, { type SegmentedOption } from '@/components/ui/SegmentedControl.vue';
 import { useProblem } from '@/composables/useProblem';
+import { BUILD_LABEL } from '@/lib/buildInfo';
 import { initials as nameInitials } from '@/lib/format';
 import { validateForm } from '@/lib/validation';
 import { getPlatformTransport } from '@/platform/transport';
@@ -253,6 +254,11 @@ async function signOut(): Promise<void> {
 
     <div class="atl-divider" />
 
+    <div class="atl-sec-title">App build</div>
+    <div class="atl-build-line">{{ BUILD_LABEL }}</div>
+
+    <div class="atl-divider" />
+
     <button type="button" class="atl-signout" @click="signOut">
       <Icon name="external-link" :size="14" />Sign out
     </button>
@@ -311,6 +317,13 @@ async function signOut(): Promise<void> {
   text-transform: uppercase;
   color: var(--c-muted);
   margin-bottom: 10px;
+}
+
+.atl-build-line {
+  font-size: 12.5px;
+  font-family: var(--font-mono);
+  color: var(--c-muted);
+  user-select: text;
 }
 
 .atl-divider {
