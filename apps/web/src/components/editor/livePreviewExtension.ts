@@ -650,6 +650,29 @@ class MermaidWidget extends WidgetType {
 const hideDeco = Decoration.replace({});
 
 /**
+ * Milliseconds of synchronous parse work allowed to bring the syntax tree up to
+ * the viewport before decorations are built. The markdown grammar parses
+ * incrementally and CodeMirror's initial parse only covers the first ~3 KB of the
+ * document (`Work.InitViewport`), so a larger document's viewport would otherwise
+ * be decorated against a tree that stops short of what is on screen. A viewport is
+ * bounded, so this budget is ample and effectively never exceeded in practice.
+ */
+const VIEWPORT_PARSE_BUDGET_MS = 100;
+
+/**
+ * The syntax tree that spans at least the current viewport, forcing incremental
+ * parse work up to `viewport.to` when the background parser has not reached it
+ * yet. `ensureSyntaxTree` advances the parse and RETURNS the extended tree, but it
+ * does not update the `Language` state field, so `syntaxTree(view.state)` would
+ * still report the stale, short init tree — decorations must read the returned
+ * tree instead. Falls back to the state-field tree if the budget is exceeded (the
+ * background parser then fills in the rest and triggers a rebuild).
+ */
+function viewportSyntaxTree(view: EditorView): ReturnType<typeof syntaxTree> {
+  return ensureSyntaxTree(view.state, view.viewport.to, VIEWPORT_PARSE_BUDGET_MS) ?? syntaxTree(view.state);
+}
+
+/**
  * The set of "active" (revealed) line numbers for the current selection: every
  * line any selection range touches, matching `computeActiveLines`' intersection
  * rule. Derived directly from the selection via `lineAt` — O(selection ranges),
@@ -706,12 +729,13 @@ export function isReplaceDeco(deco: Decoration): boolean {
   return (deco.spec as { class?: unknown }).class === undefined;
 }
 
-function buildDecorations(
+export function buildDecorations(
   view: EditorView,
   callbacks: LivePreviewCallbacks,
   reveal: boolean,
   titles: Record<string, string>,
 ): BuiltDecorations {
+  const tree = viewportSyntaxTree(view);
   const activeLines = activeLinesFromSelection(view.state, reveal);
   const decos: Range<Decoration>[] = [];
 
@@ -729,7 +753,7 @@ function buildDecorations(
       blockRanges.push({ from: range.from, to: range.to });
   }
 
-  syntaxTree(view.state).iterate({
+  tree.iterate({
     enter: (node) => {
       if (node.name !== 'HTMLBlock') return undefined;
       blockRanges.push({ from: node.from, to: node.to });
@@ -740,7 +764,7 @@ function buildDecorations(
   const wikilinkRanges = findWikilinkRanges(docText, blockRanges);
 
   for (const { from, to } of view.visibleRanges) {
-    decorateSyntaxTree(view, from, to, activeLines, callbacks, titles, decos, blockRanges, wikilinkRanges);
+    decorateSyntaxTree(view, tree, from, to, activeLines, callbacks, titles, decos, blockRanges, wikilinkRanges);
   }
   for (const { from, to } of view.visibleRanges) {
     decorateInlineMath(view, from, to, activeLines, decos, blockRanges);
@@ -769,6 +793,7 @@ function buildDecorations(
  */
 function decorateSyntaxTree(
   view: EditorView,
+  tree: ReturnType<typeof syntaxTree>,
   from: number,
   to: number,
   activeLines: Set<number>,
@@ -778,8 +803,6 @@ function decorateSyntaxTree(
   blockRanges: BlockRange[],
   wikilinkRanges: WikilinkRange[],
 ): void {
-  const tree = syntaxTree(view.state);
-
   tree.iterate({
     from,
     to,
@@ -1205,8 +1228,12 @@ const INLINE_ONLY_BLOCKS = new Set([
  *
  * Exported for unit testing the block-discovery walk without a DOM.
  */
-export function buildBlockDecorations(state: EditorState, reveal: boolean, ctx: InlineCtx): DecorationSet {
-  const tree = syntaxTree(state);
+export function buildBlockDecorations(
+  state: EditorState,
+  reveal: boolean,
+  ctx: InlineCtx,
+  tree: ReturnType<typeof syntaxTree> = syntaxTree(state),
+): DecorationSet {
   const doc = state.doc;
   const activeLines = activeLinesFromSelection(state, reveal);
   const decos: Range<Decoration>[] = [];
@@ -1282,8 +1309,11 @@ export function buildBlockDecorations(state: EditorState, reveal: boolean, ctx: 
 function blockDecorationsField(reveal: boolean, ctx: InlineCtx): StateField<DecorationSet> {
   return StateField.define<DecorationSet>({
     create(state) {
-      ensureSyntaxTree(state, state.doc.length, 100);
-      return buildBlockDecorations(state, reveal, ctx);
+      // Read the tree ensureSyntaxTree RETURNS: it advances the parse but leaves
+      // the Language state field on the short init tree, so syntaxTree(state)
+      // alone would miss block widgets (tables, diagrams) past the first ~3 KB.
+      const tree = ensureSyntaxTree(state, state.doc.length, VIEWPORT_PARSE_BUDGET_MS) ?? syntaxTree(state);
+      return buildBlockDecorations(state, reveal, ctx, tree);
     },
     update(value, tr) {
       if (tr.docChanged || tr.selection !== undefined || syntaxTree(tr.startState) !== syntaxTree(tr.state)) {
@@ -1311,11 +1341,10 @@ export function livePreview(callbacks: LivePreviewCallbacks, options: LivePrevie
       atomic: DecorationSet;
 
       constructor(view: EditorView) {
-        // The markdown grammar parses incrementally: on first construction the
-        // syntax tree may not yet cover the viewport, which would leave the doc
-        // rendered as raw markdown until the first interaction. Force the parse
-        // up to the viewport so the very first paint is already decorated.
-        ensureSyntaxTree(view.state, view.viewport.to, 100);
+        // buildDecorations forces the parse up to the viewport and reads the
+        // resulting tree (see viewportSyntaxTree), so the very first paint of a
+        // large document is already fully decorated instead of showing raw
+        // markdown until a background-parse transaction arrives.
         const built = buildDecorations(view, callbacks, reveal, titles);
         this.decorations = built.decorations;
         this.atomic = built.atomic;
