@@ -1686,6 +1686,38 @@ describe('ResourceCache runtime', () => {
     expect(publish).not.toHaveBeenCalled();
   });
 
+  it('accepts a derived tag whose slug contains non-ASCII letters', async () => {
+    const store = {
+      get: vi.fn(),
+      putMany: vi.fn().mockResolvedValue(true),
+      deleteMany: vi.fn().mockResolvedValue(true),
+      clear: vi.fn().mockResolvedValue(true),
+    };
+    const cache = new ResourceCache({ store });
+    const publish = vi.fn();
+
+    const unicodeTag = 'document:07-praetor-lite-modo-equipo-exploración';
+
+    cache.allow();
+    await expect(
+      cache.revalidate({
+        key: 'unicode-tag-key',
+        payloadSchema,
+        tags: ['workspace:workspace-a'],
+        deriveTags: () => [unicodeTag],
+        freshForMs: 30_000,
+        retentionForMs: 60_000,
+        load: vi.fn().mockResolvedValue({ title: 'Online' }),
+        publish,
+        isCurrent: () => true,
+      }),
+    ).resolves.toMatchObject({ published: true });
+
+    expect(store.putMany).toHaveBeenCalledWith([
+      expect.objectContaining({ tags: ['workspace:workspace-a', unicodeTag] }),
+    ]);
+  });
+
   it('keeps current active requests scheduled after an exact tag purge', async () => {
     let now = 0;
     const scheduled: Array<{ delay: number; callback: () => void }> = [];

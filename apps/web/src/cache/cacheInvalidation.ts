@@ -14,7 +14,7 @@ function eventString(data: unknown, key: string): string | undefined {
 }
 
 function validTagId(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0 && /^[A-Za-z0-9._:-]+$/.test(value);
+  return typeof value === 'string' && value.length > 0 && /^[\p{L}\p{N}._:-]+$/u.test(value);
 }
 
 function workspaceFallback(envelope: LiveEnvelope): CacheInvalidationScope | null {

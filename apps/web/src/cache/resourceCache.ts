@@ -810,7 +810,7 @@ const resourceKinds = new Set<CacheResourceKind>([
 ]);
 const excludedPayloadKey =
   /(?:authorization|cookie|credential|password|secret|token|api[_-]?key|attachment.*(?:bytes|data|content))/i;
-const CACHE_TAG_PATTERN = /^[A-Za-z0-9._:-]+$/;
+const CACHE_TAG_PATTERN = /^[\p{L}\p{N}._:-]+$/u;
 
 function areCacheTagsValid(tags: readonly string[]): boolean {
   return tags.every(
