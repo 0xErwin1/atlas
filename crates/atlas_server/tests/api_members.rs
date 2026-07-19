@@ -1635,3 +1635,35 @@ async fn add_member_sysadmin_on_root_target_returns_403() {
 
     db.teardown().await;
 }
+
+// ── R4: PATCH — root caller on a non-root target → PASS ─────────────────────
+//
+// The single-root DB invariant (`users_single_root_uq`) forbids a second root,
+// so a distinct root-caller-on-root-target case is unrepresentable (and would be
+// a self-op, which `update_member_role` already blocks). This pins the guard's
+// other half: the caller-is-root early return never blocks a root caller, so
+// normal root management of an ordinary member still succeeds.
+
+#[tokio::test]
+async fn patch_root_caller_on_non_root_target_passes() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (_owner, ws, _owner_user) =
+        login_user_with_workspace(&server, &db, "root-prot-ok-ws").await;
+
+    let target = add_member(&db, ws.id, "root-prot-ok-target", MemberRole::Member).await;
+
+    let root_client = login_break_glass_user(&server, &db, "root-prot-ok-root", true, false).await;
+
+    let result = root_client
+        .update_member_role(&ws.slug, target.id.0, "admin")
+        .await;
+
+    assert!(
+        result.is_ok(),
+        "root caller must not be blocked by the root-target guard, got: {result:?}"
+    );
+
+    db.teardown().await;
+}
