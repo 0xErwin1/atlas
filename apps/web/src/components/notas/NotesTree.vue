@@ -277,7 +277,7 @@ defineExpose({
 <template>
   <div
     ref="rootEl"
-    style="min-height: 100%;"
+    class="notes-tree-root"
     :class="{ 'root-drop-target': rootDragOver }"
     @contextmenu.prevent="onContextmenu"
     @dragover.prevent="rootDragOver = true"
@@ -285,17 +285,15 @@ defineExpose({
     @dragend="rootDragOver = false"
     @drop.prevent="onRootDrop"
   >
-    <div class="notes-tree-header">
-      <button
-        type="button"
-        class="notes-tree-add"
-        title="New page or folder"
-        aria-label="New page or folder"
-        @click.stop="onContextmenu"
-      >
-        <Icon name="more-horizontal" :size="14" />
-      </button>
-    </div>
+    <button
+      type="button"
+      class="notes-tree-add"
+      title="New page or folder"
+      aria-label="New page or folder"
+      @click.stop="onContextmenu"
+    >
+      <Icon name="more-horizontal" :size="14" />
+    </button>
 
     <p
       v-if="isEmpty && editActive === null"
@@ -432,20 +430,22 @@ defineExpose({
 </template>
 
 <style scoped>
-.notes-tree-header {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  min-height: 20px;
+.notes-tree-root {
+  position: relative;
 }
 
+/* Overlay affordance: the add button floats at the top-right of the tree and is
+   revealed on hover/focus, so no always-in-flow band sits under the SPACE header. */
 .notes-tree-add {
+  position: absolute;
+  top: 2px;
+  right: 6px;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   width: 20px;
   height: 20px;
-  margin-right: 6px;
   padding: 0;
   border: none;
   background: transparent;
@@ -455,7 +455,8 @@ defineExpose({
   opacity: 0;
 }
 
-.notes-tree-header:hover .notes-tree-add {
+.notes-tree-root:hover .notes-tree-add,
+.notes-tree-add:focus-visible {
   opacity: 1;
 }
 

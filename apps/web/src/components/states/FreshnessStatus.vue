@@ -1,9 +1,17 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import type { ResourceStatus } from '@/stores/resourceStatus';
 
-defineProps<{
-  status: ResourceStatus;
-}>();
+// `suppressRefreshing` hides the routine background-revalidation row ("Updating…")
+// so it never shifts layout in dense contexts like the sidebar tree; genuine
+// stale/offline/error signals still surface.
+const props = withDefaults(
+  defineProps<{
+    status: ResourceStatus;
+    suppressRefreshing?: boolean;
+  }>(),
+  { suppressRefreshing: false },
+);
 
 defineEmits<{
   retry: [];
@@ -16,11 +24,15 @@ const labels: Partial<Record<ResourceStatus, string>> = {
   'error-with-data': 'Showing saved data — update failed',
   'error-empty': 'Unable to load data',
 };
+
+const label = computed(() =>
+  props.suppressRefreshing && props.status === 'refreshing' ? undefined : labels[props.status],
+);
 </script>
 
 <template>
-  <div v-if="labels[status]" role="status" class="flex items-center" style="gap: 8px; color: var(--c-muted); font-size: var(--fs-sm);">
-    <span>{{ labels[status] }}</span>
+  <div v-if="label" role="status" class="flex items-center" style="gap: 8px; color: var(--c-muted); font-size: var(--fs-sm);">
+    <span>{{ label }}</span>
     <button
       v-if="status === 'offline' || status === 'error-with-data' || status === 'error-empty'"
       type="button"

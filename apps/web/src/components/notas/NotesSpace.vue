@@ -661,6 +661,7 @@ defineExpose({
       <FreshnessStatus
         v-if="hasCatalog || catalogError !== null"
         :status="catalogFreshnessStatus"
+        suppress-refreshing
         @retry="loadTree"
       />
     </template>

@@ -17,4 +17,22 @@ describe('FreshnessStatus', () => {
 
     expect(wrapper.find('[role="status"]').exists()).toBe(false);
   });
+
+  it('suppresses the routine refreshing row when asked, without hiding genuine signals', () => {
+    const refreshing = mount(FreshnessStatus, {
+      props: { status: 'refreshing', suppressRefreshing: true },
+    });
+    expect(refreshing.find('[role="status"]').exists()).toBe(false);
+
+    const offline = mount(FreshnessStatus, {
+      props: { status: 'offline', suppressRefreshing: true },
+    });
+    expect(offline.text()).toContain('Offline');
+  });
+
+  it('still shows the refreshing row by default', () => {
+    const wrapper = mount(FreshnessStatus, { props: { status: 'refreshing' } });
+
+    expect(wrapper.text()).toContain('Updating…');
+  });
 });
