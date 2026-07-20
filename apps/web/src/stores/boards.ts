@@ -329,10 +329,18 @@ export const useBoardsStore = defineStore('boards', () => {
     return boardsByProject.value.get(projectSlug) ?? [];
   }
 
-  async function createBoard(ws: string, projectSlug: string, name: string): Promise<string | null> {
+  async function createBoard(
+    ws: string,
+    projectSlug: string,
+    name: string,
+    folderId?: string | null,
+  ): Promise<string | null> {
     const { data, error: apiError } = await wrappedClient.POST(
       '/api/workspaces/{ws}/projects/{project_slug}/boards',
-      { params: { path: { ws, project_slug: projectSlug } }, body: { name } },
+      {
+        params: { path: { ws, project_slug: projectSlug } },
+        body: { name, folder_id: folderId ?? null },
+      },
     );
 
     if (apiError !== undefined || data === undefined) {

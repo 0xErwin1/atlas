@@ -36,7 +36,10 @@ async function projectMenuLabels(wrapper: ReturnType<typeof mount>): Promise<str
   if (!projectRow) throw new Error('project row not found');
   projectRow.vm.$emit('menu', { clientX: 10, clientY: 10, preventDefault() {} });
   await wrapper.vm.$nextTick();
-  const menu = wrapper.findComponent(ContextMenu);
+  // The unified VIEWS block (SidebarViews) renders its own ContextMenu, so the
+  // sidebar's own project/board menu is the last ContextMenu in tree order.
+  const menu = wrapper.findAllComponents(ContextMenu).at(-1);
+  if (menu === undefined) throw new Error('project context menu not found');
   return (menu.props('items') as Array<{ label?: string }>)
     .map((i) => i.label)
     .filter((l): l is string => typeof l === 'string');

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import SidebarViews from '@/components/notas/SidebarViews.vue';
 import ErrorState from '@/components/states/ErrorState.vue';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import ContextMenu, { type MenuItem } from '@/components/ui/ContextMenu.vue';
@@ -12,7 +13,6 @@ import { useInlineEdit } from '@/composables/useInlineEdit';
 import { useBoardsStore } from '@/stores/boards';
 import { useDocumentsStore } from '@/stores/documents';
 import { useFoldersStore } from '@/stores/folders';
-import { type TaskViewDto, useTaskViewsStore } from '@/stores/taskViews';
 import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 
@@ -23,7 +23,6 @@ const boards = useBoardsStore();
 const documents = useDocumentsStore();
 const folders = useFoldersStore();
 const ui = useUiStore();
-const taskViews = useTaskViewsStore();
 
 const activeBoardId = computed(() => {
   const id = route.params.boardId;
@@ -36,12 +35,6 @@ const activeViewId = computed(() => {
 });
 
 const ws = computed(() => workspace.activeWorkspaceSlug ?? '');
-
-const PREDEFINED_VIEWS = [
-  { viewId: 'my-tasks', label: 'My tasks', icon: 'star', agent: false },
-  { viewId: 'recently-updated', label: 'Recently updated', icon: 'clock', agent: false },
-  { viewId: 'agent-activity', label: 'Agent activity', icon: 'sparkles', agent: true },
-];
 
 const collapsed = ref<Set<string>>(new Set());
 function isExpanded(slug: string): boolean {
@@ -65,10 +58,7 @@ async function loadAll(): Promise<void> {
     await workspace.loadProjects(wsSlug);
   }
 
-  await Promise.all([
-    ...workspace.projects.map((p) => boards.loadBoardsForProject(wsSlug, p.slug)),
-    taskViews.load(wsSlug),
-  ]);
+  await Promise.all(workspace.projects.map((p) => boards.loadBoardsForProject(wsSlug, p.slug)));
 }
 
 function openBoard(boardId: string): void {
@@ -84,8 +74,7 @@ type EditCtx =
   | { kind: 'rename-board'; boardId: string; projectSlug: string }
   | { kind: 'rename-project'; slug: string }
   | { kind: 'new-doc'; projectSlug: string }
-  | { kind: 'new-folder'; projectSlug: string }
-  | { kind: 'rename-view'; viewId: string; filters: TaskViewDto['filters'] };
+  | { kind: 'new-folder'; projectSlug: string };
 
 const {
   active: editActive,
@@ -131,12 +120,6 @@ const {
     const ok = await folders.create(ws.value, ctx.projectSlug, name);
     if (ok) ui.showBanner('Folder created', 'success');
     else if (folders.error) ui.showBanner(folders.error, 'error');
-    return;
-  }
-
-  if (ctx.kind === 'rename-view') {
-    const ok = await taskViews.update(ws.value, ctx.viewId, { name, filters: ctx.filters });
-    if (!ok && taskViews.error) ui.showBanner(taskViews.error, 'error');
     return;
   }
 
@@ -264,51 +247,6 @@ function openBoardMenu(event: MouseEvent, boardId: string, name: string, project
   openAt(event);
 }
 
-// ── Custom task-view context menu (Rename / Delete) ───────────────────────────
-const {
-  open: viewMenuOpen,
-  x: viewMenuX,
-  y: viewMenuY,
-  openAt: openViewMenuAt,
-  close: closeViewMenu,
-} = useContextMenu();
-
-const viewMenuTarget = ref<TaskViewDto | null>(null);
-
-const viewMenuItems = computed<MenuItem[]>(() => {
-  const t = viewMenuTarget.value;
-  if (t === null) return [];
-  return [
-    { header: true, label: t.name },
-    {
-      label: 'Rename',
-      icon: 'pencil',
-      action: () => startEdit({ kind: 'rename-view', viewId: t.id, filters: t.filters }, t.name, true),
-    },
-    { sep: true },
-    {
-      label: 'Delete',
-      icon: 'trash-2',
-      danger: true,
-      action: () => void removeView(t.id),
-    },
-  ];
-});
-
-function openViewMenu(event: MouseEvent, v: TaskViewDto): void {
-  viewMenuTarget.value = v;
-  openViewMenuAt(event);
-}
-
-async function removeView(id: string): Promise<void> {
-  if (ws.value === '') return;
-  const ok = await taskViews.remove(ws.value, id);
-  if (!ok && taskViews.error) ui.showBanner(taskViews.error, 'error');
-  if (activeViewId.value === id) {
-    void router.push({ name: 'tasks' });
-  }
-}
-
 defineExpose({ openNewProject: () => startEdit({ kind: 'new-project' }) });
 
 onMounted(loadAll);
@@ -426,51 +364,7 @@ watch(() => workspace.activeWorkspaceSlug, loadAll);
       </template>
     </template>
 
-    <SectionLabel>Views</SectionLabel>
-    <button
-      v-for="view in PREDEFINED_VIEWS"
-      :key="view.viewId"
-      type="button"
-      class="atl-row views-row"
-      :class="{ 'views-row--active': activeViewId === view.viewId }"
-      @click="router.push({ name: 'task-view', params: { viewId: view.viewId } })"
-    >
-      <span style="width: 12px; flex: 0 0 auto;" />
-      <Icon
-        :name="view.icon"
-        :size="13"
-        :style="{ color: view.agent ? 'var(--c-agent)' : 'var(--c-muted)', flexShrink: 0 }"
-      />
-      <span class="views-label">{{ view.label }}</span>
-    </button>
-
-    <template v-for="v in taskViews.items" :key="v.id">
-      <div
-        v-if="editActive?.kind === 'rename-view' && editActive.viewId === v.id"
-        style="display: flex; align-items: center; gap: 6px; padding: 3px 8px;"
-      >
-        <Icon name="layout-list" :size="13" style="color: var(--c-muted); flex-shrink: 0;" />
-        <input
-          ref="inputRef"
-          v-model="editValue"
-          type="text"
-          placeholder="View name…"
-          class="tasks-inline-input"
-          @keydown="onEditKeydown"
-          @blur="commitEdit"
-        />
-      </div>
-      <Row
-        v-else
-        :label="v.name"
-        icon="layout-list"
-        menu
-        :active="activeViewId === v.id"
-        @click="router.push({ name: 'task-view', params: { viewId: v.id } })"
-        @menu="(event: MouseEvent) => openViewMenu(event, v)"
-        @contextmenu.prevent.stop="(event: MouseEvent) => openViewMenu(event, v)"
-      />
-    </template>
+    <SidebarViews :active-view-id="activeViewId" />
 
     <div
       v-if="editActive?.kind === 'new-project'"
@@ -509,14 +403,6 @@ watch(() => workspace.activeWorkspaceSlug, loadAll);
       :y="menuY"
       :items="activeMenuItems"
       @close="closeMenu"
-    />
-
-    <ContextMenu
-      :open="viewMenuOpen"
-      :x="viewMenuX"
-      :y="viewMenuY"
-      :items="viewMenuItems"
-      @close="closeViewMenu"
     />
 
     <ConfirmDialog
@@ -577,33 +463,5 @@ watch(() => workspace.activeWorkspaceSlug, loadAll);
   font-family: var(--font-mono);
   color: var(--c-foreground);
   outline: none;
-}
-
-.views-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  height: 24px;
-  padding: 0 8px;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  color: var(--c-foreground);
-  text-align: left;
-}
-
-.views-label {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.views-row--active {
-  background: var(--c-selection);
-  color: var(--c-primary);
 }
 </style>

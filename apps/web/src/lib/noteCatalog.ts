@@ -1,11 +1,12 @@
 import { z } from 'zod';
+import type { BoardSummaryDto } from '@/stores/boards';
 import type { useDocumentsStore } from '@/stores/documents';
 import type { useFoldersStore } from '@/stores/folders';
 
 export type NoteCatalog = {
   folders: ReturnType<typeof useFoldersStore>['folders'];
   summaries: ReturnType<typeof useDocumentsStore>['summaries'];
-  boards: Array<{ id: string; name: string; folder_id?: string | null; task_count: number }>;
+  boards: BoardSummaryDto[];
 };
 
 /**
@@ -48,6 +49,8 @@ export const noteCatalogSchema: z.ZodType<NoteCatalog> = z.object({
           name: z.string(),
           folder_id: z.string().nullable().optional(),
           task_count: z.number(),
+          created_at: z.string(),
+          updated_at: z.string(),
         })
         .passthrough(),
     )

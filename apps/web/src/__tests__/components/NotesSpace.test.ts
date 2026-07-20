@@ -1,0 +1,462 @@
+import { flushPromises, mount } from '@vue/test-utils';
+import { createPinia, setActivePinia } from 'pinia';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ZodType } from 'zod';
+import { configureResourceCacheForTest, setResourceCachePrincipal } from '@/cache/cacheRuntime';
+import {
+  type CacheEnvelope,
+  createCacheEnvelope,
+  ResourceCache,
+  type ResourceCacheStore,
+} from '@/cache/resourceCache';
+import type { LiveUpdateHandlers } from '@/composables/useLiveUpdates';
+import { EVENT_TYPE } from '@/lib/eventTypes';
+
+const { GET, PATCH } = vi.hoisted(() => ({ GET: vi.fn(), PATCH: vi.fn() }));
+
+vi.mock('vue-router', () => ({
+  useRoute: () => ({ params: {} }),
+  useRouter: () => ({ push: vi.fn() }),
+}));
+
+vi.mock('@/api/wrapper', () => ({
+  wrappedClient: {
+    GET,
+    PATCH,
+  },
+}));
+
+const { useLiveUpdates } = vi.hoisted(() => ({ useLiveUpdates: vi.fn() }));
+vi.mock('@/composables/useLiveUpdates', () => ({ useLiveUpdates }));
+
+import NotesSpace from '@/components/notas/NotesSpace.vue';
+import NotesTree from '@/components/notas/NotesTree.vue';
+import { useDocumentsStore } from '@/stores/documents';
+import { useFoldersStore } from '@/stores/folders';
+import type { ProjectSummary } from '@/stores/workspace';
+import { useWorkspaceStore } from '@/stores/workspace';
+
+const PRINCIPAL = 'user:018f4abc-1234-7abc-8def-0123456789ab';
+const WORKSPACE_ID = '018f4abc-1234-7abc-8def-0123456789ac';
+
+const SANDBOX: ProjectSummary = {
+  slug: 'sandbox',
+  name: 'Sandbox',
+  task_prefix: 'SBX',
+  workspace_id: WORKSPACE_ID,
+  visibility: 'workspace',
+};
+
+type Catalog = {
+  folders: Array<{
+    id: string;
+    name: string;
+    parent_folder_id: string | null;
+    project_id: string | null;
+    workspace_id: string;
+    created_at: string;
+    updated_at: string;
+  }>;
+  summaries: Array<{
+    id: string;
+    slug: string;
+    title: string;
+    folder_id: string | null;
+    head_seq: number;
+    updated_at: string;
+  }>;
+};
+
+class MemoryCacheStore implements ResourceCacheStore {
+  readonly entries = new Map<string, CacheEnvelope<unknown>>();
+
+  async get<T>(key: string, _payloadSchema: ZodType<T>): Promise<CacheEnvelope<T> | null> {
+    return (this.entries.get(key) as CacheEnvelope<T> | undefined) ?? null;
+  }
+
+  async putMany(entries: readonly CacheEnvelope<unknown>[]): Promise<boolean> {
+    for (const entry of entries) this.entries.set(entry.key, entry);
+    return true;
+  }
+
+  async deleteMany(keys: readonly string[]): Promise<boolean> {
+    for (const key of keys) this.entries.delete(key);
+    return true;
+  }
+
+  async deleteScope(scope: {
+    principal: string;
+    workspaceId?: string;
+    tagsAny?: readonly string[];
+  }): Promise<boolean> {
+    for (const [key, entry] of this.entries) {
+      const inWorkspace =
+        key.includes(`|p=${scope.principal}|`) &&
+        (scope.workspaceId === undefined || key.includes(`|w=${scope.workspaceId}|`));
+      const hasTag = scope.tagsAny === undefined || entry.tags.some((tag) => scope.tagsAny?.includes(tag));
+      if (inWorkspace && hasTag) this.entries.delete(key);
+    }
+    return true;
+  }
+
+  async clear(): Promise<boolean> {
+    this.entries.clear();
+    return true;
+  }
+}
+
+function catalog(folderName: string, documentTitle: string): Catalog {
+  return {
+    folders: [
+      {
+        id: `${folderName}-folder`,
+        name: folderName,
+        parent_folder_id: null,
+        project_id: 'project-id',
+        workspace_id: WORKSPACE_ID,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+    ],
+    summaries: [
+      {
+        id: `${documentTitle}-document`,
+        slug: documentTitle.toLowerCase().replaceAll(' ', '-'),
+        title: documentTitle,
+        folder_id: null,
+        head_seq: 1,
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+    ],
+  };
+}
+
+function seedCatalog(store: MemoryCacheStore, projectSlug: string, payload: Catalog): void {
+  const key = `v1|p=${PRINCIPAL}|w=${WORKSPACE_ID}|k=note-tree|r=${projectSlug}|q={}`;
+  const now = Date.now();
+  store.entries.set(
+    key,
+    createCacheEnvelope({
+      key,
+      payloadVersion: 1,
+      storedAt: now,
+      validatedAt: now,
+      lastAccessedAt: now,
+      retentionExpiresAt: now + 60_000,
+      bytes: JSON.stringify(payload).length,
+      stale: false,
+      tags: [`project:${projectSlug}`],
+      payload,
+    }),
+  );
+}
+
+function configureCatalogRuntime(store: MemoryCacheStore): void {
+  const cache = new ResourceCache({ store });
+  cache.allow();
+  configureResourceCacheForTest(cache);
+  setResourceCachePrincipal(PRINCIPAL);
+}
+
+function setupWorkspace() {
+  const workspace = useWorkspaceStore();
+  workspace.setActiveWorkspace('atlas');
+  workspace.projects = [SANDBOX];
+  vi.spyOn(workspace, 'workspaceIdForSlug').mockReturnValue(WORKSPACE_ID);
+  return workspace;
+}
+
+function mountSpace() {
+  return mount(NotesSpace, { props: { project: SANDBOX, activeSlug: null } });
+}
+
+function capturedLiveHandlers(): LiveUpdateHandlers {
+  const handlers = useLiveUpdates.mock.calls.at(-1)?.[1] as LiveUpdateHandlers | undefined;
+  if (handlers === undefined) throw new Error('Expected NotesSpace to register live update handlers');
+  return handlers;
+}
+
+describe('NotesSpace catalog', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    vi.clearAllMocks();
+    GET.mockResolvedValue({ data: { items: [] }, error: undefined });
+    PATCH.mockResolvedValue({ data: {}, error: undefined });
+    setResourceCachePrincipal(undefined);
+    try {
+      localStorage.clear();
+    } catch {
+      // jsdom always provides localStorage; ignore if absent
+    }
+  });
+
+  it.each([403, 404])('retracts cached catalog state before showing a known denial (%i)', async (status) => {
+    const store = new MemoryCacheStore();
+    seedCatalog(store, 'sandbox', catalog('Cached folder', 'Cached document'));
+    configureCatalogRuntime(store);
+    GET.mockResolvedValue({ error: Object.assign(new Error('Denied'), { status }) });
+    setupWorkspace();
+
+    const wrapper = mountSpace();
+    await flushPromises();
+
+    expect(useFoldersStore().foldersByProject).toEqual({ sandbox: [] });
+    expect(useDocumentsStore().summariesByProject).toEqual({ sandbox: [] });
+    expect(wrapper.findComponent(NotesTree).exists()).toBe(false);
+    expect(wrapper.text()).toContain('Couldn’t load notes');
+    wrapper.unmount();
+  });
+
+  it('refreshes the catalog atomically for document events and resync', async () => {
+    setupWorkspace();
+    const docs = useDocumentsStore();
+    const folders = useFoldersStore();
+    const loadSummaries = vi.spyOn(docs, 'loadSummaries').mockResolvedValue();
+    const loadFolders = vi.spyOn(folders, 'load').mockResolvedValue();
+
+    const wrapper = mountSpace();
+    await wrapper.vm.$nextTick();
+
+    loadSummaries.mockClear();
+    loadFolders.mockClear();
+
+    const handlers = capturedLiveHandlers();
+    handlers.onEvent({ type: 'document.updated', data: {}, envelope: {} as never });
+    handlers.onEvent({ type: 'task.updated', data: {}, envelope: {} as never });
+
+    expect(loadSummaries).toHaveBeenCalledTimes(1);
+    expect(loadSummaries).toHaveBeenCalledWith('atlas', 'sandbox');
+
+    handlers.onResync?.();
+    await wrapper.vm.$nextTick();
+
+    expect(loadFolders).toHaveBeenCalledWith('atlas', 'sandbox');
+    expect(loadSummaries).toHaveBeenLastCalledWith('atlas', 'sandbox');
+    wrapper.unmount();
+  });
+
+  it.each([
+    EVENT_TYPE.BOARD_CREATED,
+    EVENT_TYPE.BOARD_UPDATED,
+    EVENT_TYPE.BOARD_DELETED,
+    EVENT_TYPE.BOARD_MOVED,
+  ])('refreshes the catalog on a %s live event, mirroring document event handling', async (eventType) => {
+    setupWorkspace();
+    const docs = useDocumentsStore();
+    vi.spyOn(useFoldersStore(), 'load').mockResolvedValue();
+    const loadSummaries = vi.spyOn(docs, 'loadSummaries').mockResolvedValue();
+
+    const wrapper = mountSpace();
+    await wrapper.vm.$nextTick();
+    loadSummaries.mockClear();
+
+    const handlers = capturedLiveHandlers();
+    handlers.onEvent({ type: eventType, data: {}, envelope: {} as never });
+
+    expect(loadSummaries).toHaveBeenCalledTimes(1);
+    expect(loadSummaries).toHaveBeenCalledWith('atlas', 'sandbox');
+    wrapper.unmount();
+  });
+
+  it('hydrates cached folders and summaries together before a pending network refresh, then publishes both refresh results', async () => {
+    const store = new MemoryCacheStore();
+    const cached = catalog('Cached folder', 'Cached document');
+    const refreshed = catalog('Fresh folder', 'Fresh document');
+    seedCatalog(store, 'sandbox', cached);
+    configureCatalogRuntime(store);
+
+    let resolveFolders: (value: { data: { items: Catalog['folders']; has_more: boolean } }) => void =
+      () => {};
+    let resolveSummaries: (value: { data: { items: Catalog['summaries']; has_more: boolean } }) => void =
+      () => {};
+    GET.mockResolvedValue({ data: { items: [], has_more: false }, error: undefined });
+    GET.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveFolders = resolve;
+      }),
+    ).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveSummaries = resolve;
+      }),
+    );
+
+    setupWorkspace();
+    const wrapper = mountSpace();
+    await flushPromises();
+
+    expect(
+      useFoldersStore()
+        .foldersFor('sandbox')
+        .map((folder) => folder.name),
+    ).toEqual(['Cached folder']);
+    expect(
+      useDocumentsStore()
+        .summariesFor('sandbox')
+        .map((summary) => summary.title),
+    ).toEqual(['Cached document']);
+    expect(wrapper.text()).toContain('Cached folder');
+    expect(wrapper.text()).toContain('Cached document');
+
+    resolveFolders({ data: { items: refreshed.folders, has_more: false } });
+    resolveSummaries({ data: { items: refreshed.summaries, has_more: false } });
+    await flushPromises();
+
+    expect(
+      useFoldersStore()
+        .foldersFor('sandbox')
+        .map((folder) => folder.name),
+    ).toEqual(['Fresh folder']);
+    expect(
+      useDocumentsStore()
+        .summariesFor('sandbox')
+        .map((summary) => summary.title),
+    ).toEqual(['Fresh document']);
+    expect(wrapper.text()).toContain('Fresh folder');
+    expect(wrapper.text()).toContain('Fresh document');
+    wrapper.unmount();
+  });
+
+  it('shows the loader and starts the initial network request while an empty cache lookup is pending', async () => {
+    const store = new MemoryCacheStore();
+    let resolveCache: (() => void) | undefined;
+    vi.spyOn(store, 'get').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveCache = () => resolve(null);
+        }),
+    );
+    configureCatalogRuntime(store);
+    GET.mockReturnValue(new Promise(() => {}));
+    setupWorkspace();
+
+    const wrapper = mountSpace();
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.text()).toContain('Loading notes…');
+    expect(GET).toHaveBeenCalledWith(
+      '/api/workspaces/{ws}/projects/{project_slug}/folders',
+      expect.anything(),
+    );
+    expect(GET).toHaveBeenCalledWith(
+      '/api/workspaces/{ws}/projects/{project_slug}/documents',
+      expect.anything(),
+    );
+    expect(GET).toHaveBeenCalledWith(
+      '/api/workspaces/{ws}/projects/{project_slug}/boards',
+      expect.anything(),
+    );
+
+    resolveCache?.();
+    wrapper.unmount();
+  });
+
+  it('does not let a stale cached composite overwrite the store refresh after a successful rename', async () => {
+    const store = new MemoryCacheStore();
+    const stale = catalog('Existing folder', 'Old title');
+    const renamed = catalog('Existing folder', 'Renamed title');
+    seedCatalog(store, 'sandbox', stale);
+    configureCatalogRuntime(store);
+
+    let renamedOnServer = false;
+    PATCH.mockImplementationOnce(async () => {
+      renamedOnServer = true;
+      return { data: {}, error: undefined };
+    });
+    GET.mockImplementation(async (path: string) => ({
+      data: {
+        items: path.endsWith('/folders')
+          ? stale.folders
+          : path.endsWith('/boards')
+            ? []
+            : renamedOnServer
+              ? renamed.summaries
+              : stale.summaries,
+        has_more: false,
+      },
+      error: undefined,
+    }));
+    setupWorkspace();
+    const wrapper = mountSpace();
+    await flushPromises();
+
+    wrapper.findComponent(NotesTree).vm.$emit('rename-doc', 'old-title', 'Renamed title');
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+
+    expect(
+      useDocumentsStore()
+        .summariesFor('sandbox')
+        .map((summary) => summary.title),
+    ).toEqual(['Renamed title']);
+    GET.mockReturnValueOnce(new Promise(() => {}))
+      .mockReturnValueOnce(new Promise(() => {}))
+      .mockReturnValueOnce(new Promise(() => {}));
+    capturedLiveHandlers().onResync?.();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+
+    expect(
+      useDocumentsStore()
+        .summariesFor('sandbox')
+        .map((summary) => summary.title),
+    ).toEqual(['Renamed title']);
+    wrapper.unmount();
+  });
+
+  it('synchronously clears the prior principal catalog before loading under the next principal', async () => {
+    const priorPrincipal = PRINCIPAL;
+    const nextPrincipal = 'user:018f4abc-1234-7abc-8def-0123456789ad';
+    const store = new MemoryCacheStore();
+    seedCatalog(store, 'sandbox', catalog('Prior folder', 'Prior document'));
+    configureCatalogRuntime(store);
+    GET.mockReturnValue(new Promise(() => {}));
+    setupWorkspace();
+
+    const wrapper = mountSpace();
+    await flushPromises();
+    expect(wrapper.text()).toContain('Prior document');
+
+    setResourceCachePrincipal(nextPrincipal);
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.text()).not.toContain('Prior folder');
+    expect(wrapper.text()).not.toContain('Prior document');
+    expect(wrapper.text()).toContain('Loading notes…');
+    expect(priorPrincipal).not.toBe(nextPrincipal);
+    wrapper.unmount();
+  });
+
+  it('uses the empty loader and error lifecycle when catalog caching has no usable key', async () => {
+    vi.restoreAllMocks();
+    GET.mockReset();
+    GET.mockResolvedValue({ data: { items: [] }, error: undefined });
+    setResourceCachePrincipal(undefined);
+    setupWorkspace();
+    let resolveFolders: (value: { error: { hint: string } }) => void = () => {};
+    let resolveSummaries: (value: { error: { hint: string } }) => void = () => {};
+    GET.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveFolders = resolve;
+      }),
+    ).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveSummaries = resolve;
+      }),
+    );
+
+    const wrapper = mountSpace();
+    await wrapper.vm.$nextTick();
+    expect(wrapper.text()).toContain('Loading notes…');
+
+    resolveFolders({ error: { hint: 'folders unavailable' } });
+    resolveSummaries({ error: { hint: 'documents unavailable' } });
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+
+    expect(useFoldersStore().error).toBe('folders unavailable');
+    expect(useDocumentsStore().error).toBe('documents unavailable');
+    expect(wrapper.text()).toContain('Couldn’t load notes');
+    expect(wrapper.text()).not.toContain('Loading notes…');
+    wrapper.unmount();
+  });
+});
