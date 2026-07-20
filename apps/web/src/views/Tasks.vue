@@ -26,6 +26,7 @@ import { EVENT_TYPE, eventString, PRESENCE_UPDATED } from '@/lib/eventTypes';
 import { formatShortcut, KEYMAP_PRIORITIES } from '@/lib/keymap';
 import { useBoardsStore } from '@/stores/boards';
 import { useLastViewedStore } from '@/stores/lastViewed';
+import { useNotesTabsStore } from '@/stores/notesTabs';
 import { useTaskDetailStore } from '@/stores/taskDetail';
 import { useTasksStore } from '@/stores/tasks';
 import { useTaskViewsStore } from '@/stores/taskViews';
@@ -47,6 +48,7 @@ const uiState = useUiStateStore();
 const workspaceTasks = useWorkspaceTasksStore();
 const taskViews = useTaskViewsStore();
 const lastViewed = useLastViewedStore();
+const tabsStore = useNotesTabsStore();
 const { isMobile } = useBreakpoint();
 const commandPaletteShortcut = formatShortcut('command-palette');
 
@@ -274,6 +276,12 @@ async function loadBoard(background = false): Promise<void> {
     return;
   }
 
+  // The board loaded: open (or activate) its tab, mirroring how a document opens
+  // one on load. Board tabs carry no dirty state.
+  const boardRef = { kind: 'board' as const, id: targetBoardId };
+  tabsStore.open(targetWorkspace, boardRef, boards.board?.name ?? '');
+  tabsStore.setActive(targetWorkspace, boardRef);
+
   const savedView = uiState.boardViewFor(targetBoardId);
   ui.setTaskView(savedView ?? 'board');
 
@@ -446,6 +454,16 @@ watch(
     }
   },
   { immediate: true },
+);
+
+// Keep the open board tab's title in step with a rename that arrives after load.
+watch(
+  () => boards.board?.name,
+  (name) => {
+    if (name !== undefined && name !== '' && !isView.value && boardId.value !== null && ws.value !== '') {
+      tabsStore.setTitle(ws.value, { kind: 'board', id: boardId.value }, name);
+    }
+  },
 );
 </script>
 

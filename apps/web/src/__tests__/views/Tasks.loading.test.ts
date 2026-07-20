@@ -5,6 +5,7 @@ import { reactive } from 'vue';
 import { deferred } from '@/__tests__/deferred';
 import type { BoardDto, ColumnDto, TaskSummaryDto } from '@/stores/boards';
 import { useBoardsStore } from '@/stores/boards';
+import { useNotesTabsStore } from '@/stores/notesTabs';
 import { useTaskViewsStore } from '@/stores/taskViews';
 import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
@@ -115,6 +116,7 @@ describe('Tasks board loading', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
+    localStorage.clear();
     router.replace.mockResolvedValue(undefined);
     for (const key of Object.keys(route.params)) delete route.params[key];
     route.params.boardId = 'board-2';
@@ -386,5 +388,44 @@ describe('Tasks board loading', () => {
     handlers.onResync?.();
     await flushPromises();
     expect(boards.loadBoardContents).toHaveBeenCalledWith('ws', 'board-2', undefined, { background: true });
+  });
+
+  it('opens and activates a board tab once the board loads', async () => {
+    const workspace = useWorkspaceStore();
+    workspace.activeWorkspaceSlug = 'ws';
+    workspace.loadMembers = vi.fn().mockResolvedValue(undefined);
+
+    const boards = useBoardsStore();
+    boards.board = newBoard;
+    boards.loadBoardContents = vi.fn().mockResolvedValue(true);
+
+    const tabs = useNotesTabsStore();
+
+    const wrapper = mountTasks();
+    await flushPromises();
+
+    expect(tabs.tabs('ws')).toEqual([{ kind: 'board', id: 'board-2', title: 'New board' }]);
+    expect(tabs.activeFor('ws')).toEqual({ kind: 'board', id: 'board-2' });
+
+    wrapper.unmount();
+  });
+
+  it('does not open a tab for a saved view', async () => {
+    delete route.params.boardId;
+    route.params.viewId = 'my-tasks';
+
+    const workspace = useWorkspaceStore();
+    workspace.activeWorkspaceSlug = 'ws';
+    useWorkspaceTasksStore().load = vi.fn().mockResolvedValue(true);
+
+    const tabs = useNotesTabsStore();
+
+    const wrapper = mountTasks();
+    await flushPromises();
+
+    expect(tabs.tabs('ws')).toEqual([]);
+    expect(tabs.activeFor('ws')).toBeNull();
+
+    wrapper.unmount();
   });
 });
