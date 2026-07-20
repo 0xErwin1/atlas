@@ -25,6 +25,7 @@ import {
 } from '@/lib/livePreview';
 import { safeUrl, sanitizeMarkdownHtmlFragment } from '@/lib/sanitize';
 import { parseWikilinkInner, type WikilinkRef } from '@/lib/wikilink';
+import { documentStyleNonce } from './cspNonce';
 
 /**
  * Lezer syntax node, derived from `Tree.resolve` so we do not depend on the
@@ -444,6 +445,20 @@ function currentMermaidTheme(): 'dark' | 'default' {
   return document.documentElement.dataset.theme === 'light' ? 'default' : 'dark';
 }
 
+export function attachMermaidSvg(container: HTMLElement, svg: string): void {
+  const template = document.createElement('template');
+  template.innerHTML = svg;
+
+  const nonce = documentStyleNonce();
+  if (nonce !== '') {
+    for (const style of template.content.querySelectorAll('style')) {
+      style.setAttribute('nonce', nonce);
+    }
+  }
+
+  container.replaceChildren(template.content);
+}
+
 async function renderMermaid(container: HTMLElement, code: string): Promise<void> {
   try {
     const mermaid = await loadMermaid();
@@ -451,7 +466,7 @@ async function renderMermaid(container: HTMLElement, code: string): Promise<void
     // Theme is set per render so the diagram tracks the app's dark/light theme.
     mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: currentMermaidTheme() });
     const { svg } = await mermaid.render(`atlas-mermaid-${mermaidSeq}`, code);
-    container.innerHTML = svg;
+    attachMermaidSvg(container, svg);
     container.classList.remove('cm-atlas-mermaid-error');
   } catch {
     container.textContent = code;
