@@ -20,6 +20,7 @@ import ContextMenu, { type MenuItem } from '@/components/ui/ContextMenu.vue';
 import Row from '@/components/ui/Row.vue';
 import { useContextMenu } from '@/composables/useContextMenu';
 import { type LiveUpdateEvent, useLiveUpdates } from '@/composables/useLiveUpdates';
+import { routeAfterClose } from '@/lib/docsTabs';
 import { EVENT_TYPE, type LiveEnvelope } from '@/lib/eventTypes';
 import { type NoteCatalog, noteCatalogSchema } from '@/lib/noteCatalog';
 import { docKey, type TreeNodeRef } from '@/lib/notesTree';
@@ -342,9 +343,9 @@ async function removeDoc(slug: string): Promise<void> {
   await invalidateCatalog();
 
   const wasActive = props.activeSlug === slug;
-  const next = tabs.close(ws.value, slug);
+  const next = tabs.close(ws.value, { kind: 'doc', id: slug });
   if (wasActive) {
-    void router.push(next !== null ? { name: 'notes', params: { slug: next } } : { name: 'notes' });
+    void router.push(routeAfterClose(next));
   }
 }
 
@@ -412,7 +413,8 @@ async function removeBoard(boardId: string): Promise<void> {
   }
 
   await invalidateCatalog();
-  if (wasActive) void router.push({ name: 'tasks' });
+  const next = tabs.close(ws.value, { kind: 'board', id: boardId });
+  if (wasActive) void router.push(routeAfterClose(next));
 }
 
 async function moveNodes(nodes: TreeNodeRef[], target: string | null): Promise<void> {
