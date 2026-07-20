@@ -6,8 +6,6 @@ import Avatar from '@/components/ui/Avatar.vue';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import Icon from '@/components/ui/Icon.vue';
 import Popover from '@/components/ui/Popover.vue';
-import PromptDialog from '@/components/ui/PromptDialog.vue';
-import { useWorkspaceSwitch } from '@/composables/useWorkspaceSwitch';
 import { useAuthStore } from '@/stores/auth';
 import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
@@ -17,7 +15,6 @@ const router = useRouter();
 const auth = useAuthStore();
 const ui = useUiStore();
 const workspace = useWorkspaceStore();
-const { switchTo } = useWorkspaceSwitch();
 
 interface RailItem {
   name: string;
@@ -65,12 +62,6 @@ const activeWorkspace = computed(() =>
   workspace.workspaces.find((w) => w.slug === workspace.activeWorkspaceSlug),
 );
 
-const workspaceInitial = computed(() => {
-  const label = activeWorkspace.value?.name ?? workspace.activeWorkspaceSlug ?? '';
-  return label.length > 0 ? label.charAt(0).toUpperCase() : 'A';
-});
-
-const newWorkspaceOpen = ref(false);
 const hardRefreshOpen = ref(false);
 const hardRefreshPending = ref(false);
 
@@ -99,27 +90,6 @@ async function confirmHardRefresh(): Promise<void> {
     ui.showBanner('Could not refresh cached data. Try again.', 'error');
   } finally {
     hardRefreshPending.value = false;
-  }
-}
-
-function pickWorkspace(slug: string): Promise<void> {
-  return switchTo(slug);
-}
-
-function startNewWorkspace(): void {
-  newWorkspaceOpen.value = true;
-}
-
-async function confirmNewWorkspace(name: string): Promise<void> {
-  newWorkspaceOpen.value = false;
-  const trimmed = name.trim();
-  if (trimmed === '') return;
-
-  const slug = await workspace.createWorkspace(trimmed);
-  if (slug !== null) {
-    router.push({ name: 'notes' });
-  } else if (workspace.error !== null) {
-    ui.showBanner(workspace.error, 'error');
   }
 }
 </script>
@@ -177,60 +147,6 @@ async function confirmNewWorkspace(name: string): Promise<void> {
     <div style="flex: 1;" />
 
     <div class="flex flex-col items-center" style="gap: 8px; padding-bottom: 10px;">
-      <Popover placement="right-end">
-        <template #trigger="{ open, toggle }">
-          <button
-            type="button"
-            class="atl-ws flex items-center justify-center"
-            :title="`Workspace: ${activeWorkspace?.name ?? workspace.activeWorkspaceSlug ?? 'Atlas'}`"
-            aria-label="Switch workspace"
-            aria-haspopup="menu"
-            :aria-expanded="open"
-            style="
-              width: 26px;
-              height: 26px;
-              border-radius: var(--r-sm);
-              background: var(--c-raised);
-              border: 1px solid var(--c-border);
-              font-family: var(--font-mono);
-              font-size: 12px;
-              font-weight: var(--fw-bold);
-              color: var(--c-primary);
-              cursor: pointer;
-            "
-            @click="toggle"
-          >
-            {{ workspaceInitial }}
-          </button>
-        </template>
-
-        <template #default="{ close }">
-          <div class="atl-account-content">
-            <div class="atl-account-id">
-              <div class="atl-account-name">Workspaces</div>
-            </div>
-            <div class="atl-account-sep" aria-hidden="true" />
-            <button
-              v-for="w in workspace.workspaces"
-              :key="w.slug"
-              type="button"
-              role="menuitem"
-              class="atl-account-item"
-              :class="{ on: w.slug === workspace.activeWorkspaceSlug }"
-              @click="pickWorkspace(w.slug), close()"
-            >
-              <Icon :name="w.slug === workspace.activeWorkspaceSlug ? 'check' : 'folder'" :size="14" />
-              {{ w.name }}
-            </button>
-            <div class="atl-account-sep" aria-hidden="true" />
-            <button type="button" role="menuitem" class="atl-account-item" @click="startNewWorkspace(), close()">
-              <Icon name="plus" :size="14" />
-              New workspace
-            </button>
-          </div>
-        </template>
-      </Popover>
-
       <button
         type="button"
         title="Settings"
@@ -287,14 +203,6 @@ async function confirmNewWorkspace(name: string): Promise<void> {
       </Popover>
     </div>
 
-    <PromptDialog
-      :open="newWorkspaceOpen"
-      title="New workspace"
-      placeholder="Workspace name…"
-      confirm-label="Create"
-      @confirm="confirmNewWorkspace"
-      @cancel="newWorkspaceOpen = false"
-    />
     <ConfirmDialog
       :open="hardRefreshOpen"
       title="Refresh cached data?"

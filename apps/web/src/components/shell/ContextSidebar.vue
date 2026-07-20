@@ -1,18 +1,5 @@
 <script setup lang="ts">
-import Icon from '@/components/ui/Icon.vue';
-
-withDefaults(
-  defineProps<{
-    title?: string;
-    icon?: string;
-    collapsible?: boolean;
-  }>(),
-  {
-    title: 'Explorer',
-    icon: '',
-    collapsible: true,
-  },
-);
+import WorkspaceSwitcher from '@/components/shell/WorkspaceSwitcher.vue';
 </script>
 
 <template>
@@ -33,28 +20,15 @@ withDefaults(
       class="flex items-center"
       style="
         height: 36px;
-        padding: 0 6px 0 10px;
+        padding: 0 6px 0 6px;
         gap: 8px;
         border-bottom: 1px solid var(--c-border);
         flex-shrink: 0;
       "
     >
-      <Icon
-        v-if="icon"
-        :name="icon"
-        :size="14"
-        style="color: var(--c-foreground);"
-      />
-      <span
-        class="flex-1 truncate"
-        style="
-          font-size: var(--fs-base);
-          font-weight: var(--fw-bold);
-          color: var(--c-foreground);
-        "
-      >
-        {{ title }}
-      </span>
+      <div class="flex-1 min-w-0">
+        <WorkspaceSwitcher />
+      </div>
 
       <div class="flex items-center" style="gap: 2px;">
         <slot name="header-actions" />

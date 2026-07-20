@@ -99,7 +99,7 @@ function openSearch(): void {
   >
     <AppRail />
 
-    <ContextSidebar v-if="!ui.sidebarCollapsed" :title="workspaceTitle" icon="files">
+    <ContextSidebar v-if="!ui.sidebarCollapsed">
       <template #header-actions>
         <button type="button" class="atl-gbtn" title="Search" aria-label="Search" @click="openSearch">
           <Icon name="search" :size="14" />

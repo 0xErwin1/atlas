@@ -97,7 +97,7 @@ const showMainOnMobile = computed(() => props.mobileDetail || !hasSidebar.value)
   >
     <AppRail />
 
-    <ContextSidebar v-if="!ui.sidebarCollapsed" :title="sidebarTitle" :icon="sidebarIcon">
+    <ContextSidebar v-if="!ui.sidebarCollapsed">
       <template #header-actions>
         <slot name="sidebar-actions" />
       </template>
