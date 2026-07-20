@@ -23,16 +23,24 @@ interface RailItem {
   name: string;
   icon: string;
   routeName: string;
+  // Route names that also light up this entry — the unified Docs entry owns both
+  // the notes routes and every kept tasks route under one rail section.
+  activeRoutes?: string[];
 }
 
 const items: RailItem[] = [
-  { name: 'Notes', icon: 'notes', routeName: 'notes' },
-  { name: 'Tasks', icon: 'tasks', routeName: 'tasks' },
+  {
+    name: 'Docs',
+    icon: 'files',
+    routeName: 'notes',
+    activeRoutes: ['notes', 'tasks', 'task-view', 'task-detail'],
+  },
   { name: 'Search', icon: 'search', routeName: 'search' },
 ];
 
 function isActive(item: RailItem) {
-  return route.name === item.routeName;
+  const activeRoutes = item.activeRoutes ?? [item.routeName];
+  return typeof route.name === 'string' && activeRoutes.includes(route.name);
 }
 
 function navigate(item: RailItem) {
