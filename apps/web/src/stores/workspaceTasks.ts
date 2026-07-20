@@ -59,7 +59,7 @@ function workspaceTaskPageSchema(params: WorkspaceTaskParams): z.ZodType<Workspa
             column_id: z.string().min(1),
             column_name: z.string(),
             id: z.string().min(1),
-            priority: z.string().nullable(),
+            priority: z.string().nullable().optional(),
             readable_id: z.string(),
             subtask_count: z.number(),
             title: z.string(),

@@ -134,6 +134,21 @@ describe('useWorkspaceTasksStore', () => {
     warn.mockRestore();
   });
 
+  it('accepts a server page whose tasks omit the optional priority field', async () => {
+    const { priority: _omitted, ...priorityless } = task('a');
+    GET.mockResolvedValueOnce({
+      data: { items: [priorityless], has_more: false, next_cursor: null },
+      error: undefined,
+    });
+
+    const store = useWorkspaceTasksStore();
+    await store.load('ws', { sort: 'updated_at_desc' }, false, WORKSPACE_ID);
+
+    expect(store.error).toBeNull();
+    expect(store.tasks.map((item) => item.id)).toEqual(['a']);
+    expect(store.hasData).toBe(true);
+  });
+
   it('hydrates only the exact normalized task query before an offline refresh', async () => {
     const key = buildCacheKey({
       principal: PRINCIPAL,
