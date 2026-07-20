@@ -55,7 +55,7 @@ export function createDesktopFetch(invoke: DesktopInvoke): PlatformFetch {
 // Decodes the framed `desktop_api_request` response: a `u32` little-endian
 // length prefix, that many bytes of meta JSON, then the raw body bytes. The
 // endianness and prefix width match the Rust host exactly (`u32::to_le_bytes`).
-function decodeDesktopHttpResponse(framed: ArrayBuffer): {
+export function decodeDesktopHttpResponse(framed: ArrayBuffer): {
   meta: DesktopHttpResponseMeta;
   body: Uint8Array<ArrayBuffer>;
 } {

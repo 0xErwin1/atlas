@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { onBeforeUnmount, ref, watch } from 'vue';
+import { wrappedClient } from '@/api/wrapper';
 import Icon from '@/components/ui/Icon.vue';
 import PromptDialog from '@/components/ui/PromptDialog.vue';
 import { formatBytes } from '@/lib/format';
@@ -80,6 +81,63 @@ function contentUrl(attachmentId: string): string {
 function isImage(att: TaskAttachmentDto): boolean {
   return att.content_type.startsWith('image/');
 }
+
+/**
+ * Object URLs for image attachment previews, keyed by attachment id. The bytes are
+ * fetched through the API client so the request carries the session and, on desktop,
+ * is tunnelled through the IPC bridge; a native `<img src="/api/...">` would instead
+ * hit the webview's own asset origin, which serves no API. Object URLs are revoked
+ * when their attachment disappears and on unmount to avoid leaking blob handles.
+ */
+const previewUrls = ref<Record<string, string>>({});
+const loadedPreviewIds = new Set<string>();
+
+async function loadPreview(attachmentId: string): Promise<void> {
+  if (loadedPreviewIds.has(attachmentId)) return;
+  loadedPreviewIds.add(attachmentId);
+
+  const { data } = await wrappedClient.GET(
+    '/api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}/content',
+    {
+      params: { path: { ws: props.ws, readable_id: props.readableId, attachment_id: attachmentId } },
+      parseAs: 'blob',
+    },
+  );
+
+  if (data === undefined) {
+    loadedPreviewIds.delete(attachmentId);
+    return;
+  }
+
+  previewUrls.value = { ...previewUrls.value, [attachmentId]: URL.createObjectURL(data) };
+}
+
+function releasePreview(attachmentId: string): void {
+  const url = previewUrls.value[attachmentId];
+  if (url === undefined) return;
+
+  URL.revokeObjectURL(url);
+  const next = { ...previewUrls.value };
+  delete next[attachmentId];
+  previewUrls.value = next;
+  loadedPreviewIds.delete(attachmentId);
+}
+
+function syncPreviews(attachments: TaskAttachmentDto[]): void {
+  const images = new Set(attachments.filter(isImage).map((att) => att.id));
+
+  for (const attachmentId of Object.keys(previewUrls.value)) {
+    if (!images.has(attachmentId)) releasePreview(attachmentId);
+  }
+
+  for (const attachmentId of images) void loadPreview(attachmentId);
+}
+
+watch(() => props.attachments, syncPreviews, { immediate: true });
+
+onBeforeUnmount(() => {
+  for (const attachmentId of Object.keys(previewUrls.value)) releasePreview(attachmentId);
+});
 </script>
 
 <template>
@@ -130,14 +188,14 @@ function isImage(att: TaskAttachmentDto): boolean {
       </div>
 
       <a
-        v-if="isImage(att)"
-        :href="contentUrl(att.id)"
+        v-if="isImage(att) && previewUrls[att.id]"
+        :href="previewUrls[att.id]"
         target="_blank"
         rel="noopener"
         class="atl-att-thumb"
         :title="att.file_name"
       >
-        <img :src="contentUrl(att.id)" :alt="att.file_name" loading="lazy" />
+        <img :src="previewUrls[att.id]" :alt="att.file_name" loading="lazy" />
       </a>
     </div>
 

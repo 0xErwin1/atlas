@@ -36,6 +36,7 @@ function desktopTransport(): PlatformTransport {
     getZoom: vi.fn(),
     setZoom: vi.fn(),
     createWorkspaceEventSource: vi.fn(() => new FakeEventSource('desktop://events')),
+    readClipboardImage: vi.fn(async () => null),
   };
 }
 

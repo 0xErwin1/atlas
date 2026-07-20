@@ -44,6 +44,12 @@ export interface PlatformTransport {
   getZoom: () => Promise<PlatformResult<DesktopPreferences>>;
   setZoom: (zoomFactor: number) => Promise<PlatformResult<DesktopPreferences>>;
   createWorkspaceEventSource: (workspaceSlug: string) => WorkspaceEventSource;
+  /**
+   * Reads an image off the native clipboard, or resolves to `null` when the
+   * clipboard holds no image or the platform cannot read it. Only the desktop host
+   * implements this; the browser relies on the `ClipboardEvent` file items instead.
+   */
+  readClipboardImage: () => Promise<File | null>;
 }
 
 let platformTransport = createBrowserPlatformTransport();

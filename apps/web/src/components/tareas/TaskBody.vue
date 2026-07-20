@@ -23,6 +23,7 @@ import { useInlineEdit } from '@/composables/useInlineEdit';
 import type { AiAction } from '@/lib/aiPrompt';
 import { filesFromClipboard, filesFromDataTransfer } from '@/lib/fileTransfer';
 import { swatchById } from '@/lib/swatches';
+import { getPlatformTransport } from '@/platform/transport';
 import { useBoardsStore } from '@/stores/boards';
 import { useLabelColorsStore } from '@/stores/labelColors';
 import { useTagsStore } from '@/stores/tags';
@@ -330,10 +331,27 @@ function onDrop(event: DragEvent): void {
 // Text pastes carry no files, so normal editing is never intercepted.
 function onPaste(event: ClipboardEvent): void {
   const files = filesFromClipboard(event.clipboardData);
-  if (files.length === 0) return;
+  if (files.length > 0) {
+    event.preventDefault();
+    void uploadFiles(files);
+    return;
+  }
+
+  // WebKitGTK (the desktop webview) does not expose pasted bitmaps as clipboard
+  // file items, so `filesFromClipboard` comes back empty for an image paste. When
+  // the clipboard also carries no text, treat it as a possible image paste and read
+  // it through the desktop host. A text paste still reaches the editor untouched.
+  const transport = getPlatformTransport();
+  const text = event.clipboardData?.getData('text/plain') ?? '';
+  if (!transport.isDesktop || text !== '') return;
 
   event.preventDefault();
-  void uploadFiles(files);
+  void attachClipboardImage();
+}
+
+async function attachClipboardImage(): Promise<void> {
+  const image = await getPlatformTransport().readClipboardImage();
+  if (image !== null) await uploadFiles([image]);
 }
 
 async function onRemoveAttachment(attachmentId: string): Promise<void> {

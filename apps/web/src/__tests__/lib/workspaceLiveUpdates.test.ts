@@ -127,6 +127,7 @@ function platformTransport(
     getZoom: async () => ({ data: { window_decorations: true, zoom_factor: 1 } }),
     setZoom: async (zoomFactor) => ({ data: { window_decorations: true, zoom_factor: zoomFactor } }),
     createWorkspaceEventSource,
+    readClipboardImage: async () => null,
   };
 }
 

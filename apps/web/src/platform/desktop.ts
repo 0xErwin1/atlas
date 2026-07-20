@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { decodeDesktopHttpResponse } from './fetch';
 import type {
   DesktopConfiguration,
   DesktopPreferences,
@@ -240,6 +241,22 @@ function desktopBridge(): DesktopBridge {
   return { invoke, listen };
 }
 
+async function readDesktopClipboardImage(bridge: DesktopBridge): Promise<File | null> {
+  try {
+    const framed = await bridge.invoke<ArrayBuffer>('desktop_read_clipboard_image');
+    const { meta, body } = decodeDesktopHttpResponse(framed);
+    if (meta.status !== 200) return null;
+
+    const mime =
+      meta.headers.find(([name]) => name.toLowerCase() === 'content-type')?.[1] ?? 'image/png';
+    const extension = mime === 'image/png' ? 'png' : (mime.split('/')[1] ?? 'bin');
+
+    return new File([body], `pasted-image.${extension}`, { type: mime });
+  } catch {
+    return null;
+  }
+}
+
 export function createDesktopPlatformTransport(bridge: DesktopBridge = desktopBridge()): PlatformTransport {
   void bridge
     .listen(DESKTOP_SESSION_ACTION_EVENT_NAME, (event) => {
@@ -285,6 +302,9 @@ export function createDesktopPlatformTransport(bridge: DesktopBridge = desktopBr
     },
     createWorkspaceEventSource(workspaceSlug) {
       return new DesktopWorkspaceEventSource(bridge, workspaceSlug);
+    },
+    readClipboardImage() {
+      return readDesktopClipboardImage(bridge);
     },
   };
 }

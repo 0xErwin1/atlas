@@ -1,6 +1,11 @@
+import type { EditorView } from '@codemirror/view';
 import { describe, expect, it } from 'vitest';
 import { ImageWidget, inlineNode } from '@/components/editor/livePreviewExtension';
 import type { InlineToken } from '@/lib/livePreview';
+
+// The widget only touches the view from its load/error handlers, which never fire
+// in jsdom, so a stub that records the re-measure request is enough here.
+const stubView = { requestMeasure: () => {} } as unknown as EditorView;
 
 /**
  * Guards the stored DOM XSS fix (ATL-83): a live-preview link or image whose URL
@@ -52,20 +57,20 @@ describe('inlineNode link safety (ATL-83)', () => {
 
 describe('ImageWidget src safety (ATL-83)', () => {
   it('does not set a javascript: src and collapses to alt text', () => {
-    const el = new ImageWidget('javascript:alert(1)', 'alt').toDOM();
+    const el = new ImageWidget('javascript:alert(1)', 'alt').toDOM(stubView);
     expect(el.tagName).toBe('SPAN');
     expect(el.querySelector('img')).toBeNull();
     expect(el.textContent).toBe('alt');
   });
 
   it('does not set a data: src and collapses to alt text', () => {
-    const el = new ImageWidget('data:text/html,<script>alert(1)</script>', 'alt').toDOM();
+    const el = new ImageWidget('data:text/html,<script>alert(1)</script>', 'alt').toDOM(stubView);
     expect(el.tagName).toBe('SPAN');
     expect(el.querySelector('img')).toBeNull();
   });
 
   it('renders an http(s) image as a real <img> with the src set', () => {
-    const el = new ImageWidget('https://example.com/x.png', 'alt').toDOM() as HTMLImageElement;
+    const el = new ImageWidget('https://example.com/x.png', 'alt').toDOM(stubView) as HTMLImageElement;
     expect(el.tagName).toBe('IMG');
     expect(el.getAttribute('src')).toBe('https://example.com/x.png');
     expect(el.alt).toBe('alt');

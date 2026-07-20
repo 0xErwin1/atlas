@@ -810,6 +810,45 @@ async fn desktop_api_request<R: Runtime>(
     Ok(tauri::ipc::Response::new(framed))
 }
 
+/// Reads an image off the native clipboard and returns it as PNG, framed like
+/// `desktop_api_request` (200 with the bytes, or 204 when the clipboard holds no
+/// image). WebKitGTK does not surface pasted bitmaps through the webview's
+/// `ClipboardEvent`, so the paste-to-attach flow falls back to this host command.
+/// It runs synchronously on the GTK main thread, which is where the GDK clipboard
+/// must be touched.
+#[cfg(target_os = "linux")]
+#[tauri::command]
+fn desktop_read_clipboard_image() -> Result<tauri::ipc::Response, String> {
+    let display =
+        gtk::gdk::Display::default().ok_or_else(|| "the desktop clipboard is unavailable".to_owned())?;
+    let clipboard = gtk::Clipboard::default(&display)
+        .ok_or_else(|| "the desktop clipboard is unavailable".to_owned())?;
+
+    let Some(pixbuf) = clipboard.wait_for_image() else {
+        let meta = IpcHttpResponseMeta {
+            status: 204,
+            headers: Vec::new(),
+        };
+        return Ok(tauri::ipc::Response::new(frame_ipc_http_response(&meta, &[])?));
+    };
+
+    let png = pixbuf
+        .save_to_bufferv("png", &[])
+        .map_err(|_| "the clipboard image could not be encoded".to_owned())?;
+
+    let meta = IpcHttpResponseMeta {
+        status: 200,
+        headers: vec![("content-type".to_owned(), "image/png".to_owned())],
+    };
+    Ok(tauri::ipc::Response::new(frame_ipc_http_response(&meta, &png)?))
+}
+
+#[cfg(not(target_os = "linux"))]
+#[tauri::command]
+fn desktop_read_clipboard_image() -> Result<tauri::ipc::Response, String> {
+    Err("clipboard image reading is not supported on this platform".to_owned())
+}
+
 #[tauri::command]
 fn desktop_workspace_events_stop(
     workspace_slug: String,
@@ -1124,6 +1163,7 @@ pub(crate) fn run_with_client(client: reqwest::Client) {
             desktop_auth_me,
             desktop_auth_logout,
             desktop_api_request,
+            desktop_read_clipboard_image,
             desktop_workspace_events_subscribe,
             desktop_workspace_events_stop
         ])

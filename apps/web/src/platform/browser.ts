@@ -37,5 +37,8 @@ export function createBrowserPlatformTransport(): PlatformTransport {
     createWorkspaceEventSource(workspaceSlug) {
       return new EventSource(`/api/workspaces/${workspaceSlug}/events`);
     },
+    readClipboardImage() {
+      return Promise.resolve(null);
+    },
   };
 }

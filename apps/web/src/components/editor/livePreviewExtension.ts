@@ -322,7 +322,7 @@ export class ImageWidget extends WidgetType {
     return other.url === this.url && other.alt === this.alt;
   }
 
-  toDOM(): HTMLElement {
+  toDOM(view: EditorView): HTMLElement {
     const src = safeUrl(this.url);
 
     // A disallowed scheme (javascript:, data:, ...) is never set as `src`; the
@@ -336,8 +336,20 @@ export class ImageWidget extends WidgetType {
 
     const img = document.createElement('img');
     img.className = 'cm-atlas-img';
-    img.src = src;
     img.alt = this.alt;
+
+    // The image loads asynchronously, so its height is unknown when CodeMirror
+    // first measures the widget. Without a re-measure on load the height map keeps
+    // the collapsed placeholder height and everything below the image is mapped to
+    // the wrong vertical position. Requesting a measure once the natural size is
+    // known reconciles the height map with the rendered image.
+    const remeasure = (): void => {
+      if (img.isConnected) view.requestMeasure();
+    };
+    img.addEventListener('load', remeasure, { once: true });
+    img.addEventListener('error', remeasure, { once: true });
+
+    img.src = src;
     return img;
   }
 
