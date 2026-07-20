@@ -6,8 +6,11 @@ import ContextSidebar from '@/components/shell/ContextSidebar.vue';
 import GlobalDialogs from '@/components/shell/GlobalDialogs.vue';
 import MobileTabBar from '@/components/shell/MobileTabBar.vue';
 import Icon from '@/components/ui/Icon.vue';
+import TabStrip from '@/components/ui/TabStrip.vue';
 import { useBreakpoint } from '@/composables/useBreakpoint';
 import { provideDocsShell } from '@/composables/useDocsShell';
+import { useDocsTabs } from '@/composables/useDocsTabs';
+import { formatShortcut } from '@/lib/keymap';
 import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 // biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
@@ -27,6 +30,15 @@ const sidebarRef = ref<InstanceType<typeof NotesSidebar> | null>(null);
 // The tab strip "+" in the notes content still opens a new page in the (now
 // hoisted) sidebar tree; the content pane reaches it through this bridge.
 provideDocsShell({ openNewPage: () => sidebarRef.value?.openNewPage() });
+
+// The unified tab strip for the Docs group. It lives here so it persists across
+// the notes and tasks routes; only the nested content below it swaps.
+const { tabs: docsTabs, onSelect, onClose, onCloseOthers, onCloseRight, onCloseAll } = useDocsTabs();
+const commandPaletteShortcut = formatShortcut('command-palette');
+
+function openNewPage(): void {
+  sidebarRef.value?.openNewPage();
+}
 
 const activeWorkspace = computed(() =>
   workspace.workspaces.find((w) => w.slug === workspace.activeWorkspaceSlug),
@@ -117,7 +129,37 @@ function openSearch(): void {
       <NotesSidebar ref="sidebarRef" />
     </ContextSidebar>
 
-    <router-view />
+    <div class="flex flex-col flex-1 min-w-0">
+      <TabStrip
+        v-if="docsTabs.length > 0"
+        :tabs="docsTabs"
+        closable
+        @select="onSelect"
+        @close="onClose"
+        @close-others="onCloseOthers"
+        @close-right="onCloseRight"
+        @close-all="onCloseAll"
+      >
+        <template #right>
+          <button type="button" class="atl-gbtn" title="New page" aria-label="New page" @click="openNewPage">
+            <Icon name="plus" :size="13" />
+          </button>
+          <button
+            type="button"
+            class="atl-gbtn"
+            :title="`Command palette ${commandPaletteShortcut}`"
+            aria-label="Command palette"
+            @click="ui.openPalette()"
+          >
+            <Icon name="command" :size="13" />
+          </button>
+        </template>
+      </TabStrip>
+
+      <div class="flex flex-1 min-h-0">
+        <router-view />
+      </div>
+    </div>
 
     <GlobalDialogs />
   </div>

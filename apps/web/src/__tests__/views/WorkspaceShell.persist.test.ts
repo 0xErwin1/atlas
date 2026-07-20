@@ -17,6 +17,7 @@ const { useLiveUpdates } = vi.hoisted(() => ({ useLiveUpdates: vi.fn() }));
 vi.mock('@/composables/useLiveUpdates', () => ({ useLiveUpdates }));
 vi.mock('@/composables/useBreakpoint', () => ({ useBreakpoint: () => ({ isMobile: false }) }));
 
+import { useNotesTabsStore } from '@/stores/notesTabs';
 import { useWorkspaceStore } from '@/stores/workspace';
 import NotesSidebar from '@/views/NotesSidebar.vue';
 import WorkspaceShell from '@/views/WorkspaceShell.vue';
@@ -75,6 +76,38 @@ describe('WorkspaceShell persistent sidebar', () => {
     expect(wrapper.find('[data-test="tasks"]').exists()).toBe(true);
     const sidebarAfter = wrapper.findComponent(NotesSidebar);
     expect(sidebarAfter.element).toBe(rootBefore);
+
+    wrapper.unmount();
+  });
+
+  it('keeps the tab strip mounted across /n and /t and tracks the active tab per kind', async () => {
+    const tabs = useNotesTabsStore();
+    tabs.open('atlas', { kind: 'doc', id: 'note-a' }, 'Note A');
+    tabs.open('atlas', { kind: 'board', id: 'board-1' }, 'Board One');
+
+    const router = makeShellRouter();
+    await router.push('/n/note-a');
+    await router.isReady();
+
+    const wrapper = mount(AppRoot, { global: { plugins: [router] } });
+    await flushPromises();
+
+    const tabNames = () => wrapper.findAll('[role="tab"]').map((t) => t.attributes('title'));
+    const activeName = () =>
+      wrapper
+        .findAll('[role="tab"]')
+        .find((t) => t.attributes('aria-selected') === 'true')
+        ?.attributes('title');
+
+    expect(tabNames()).toEqual(['Note A', 'Board One']);
+    expect(activeName()).toBe('Note A');
+
+    await router.push('/t/board-1');
+    await flushPromises();
+
+    // Same two tabs remain; the active highlight follows the route into the board.
+    expect(tabNames()).toEqual(['Note A', 'Board One']);
+    expect(activeName()).toBe('Board One');
 
     wrapper.unmount();
   });

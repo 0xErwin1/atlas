@@ -193,7 +193,6 @@ import FreshnessStatus from '@/components/states/FreshnessStatus.vue';
 import LoadingState from '@/components/states/LoadingState.vue';
 import Icon from '@/components/ui/Icon.vue';
 import PresenceAvatars from '@/components/ui/PresenceAvatars.vue';
-import TabStrip, { type Tab } from '@/components/ui/TabStrip.vue';
 import { useBreakpoint } from '@/composables/useBreakpoint';
 import type { MergeSegment } from '@/composables/useCasMerge';
 import { useCasMerge } from '@/composables/useCasMerge';
@@ -205,16 +204,15 @@ import { useWikilinkSuggest } from '@/composables/useWikilinkSuggest';
 import { useWikilinkTitles } from '@/composables/useWikilinkTitles';
 import { getResourceCachePrincipal, resourceCacheEpoch, resourceCacheIsPurging } from '@/cache/cacheRuntime';
 import { EVENT_TYPE, PRESENCE_UPDATED } from '@/lib/eventTypes';
+import { routeAfterClose, routeForTab } from '@/lib/docsTabs';
 import { joinFrontmatter, splitFrontmatter } from '@/lib/frontmatter';
-import { formatShortcut } from '@/lib/keymap';
 import { type WikilinkRef, wikilinkHref } from '@/lib/wikilink';
 import { useDocumentsStore } from '@/stores/documents';
 import { useLastViewedStore } from '@/stores/lastViewed';
-import { useNotesTabsStore } from '@/stores/notesTabs';
+import { type TabRef, useNotesTabsStore } from '@/stores/notesTabs';
 import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 import { useResourceStatusStore } from '@/stores/resourceStatus';
-import { useDocsShell } from '@/composables/useDocsShell';
 import DocsContent from '@/views/DocsContent.vue';
 
 const route = useRoute();
@@ -228,7 +226,6 @@ const lastViewed = useLastViewedStore();
 const { load, save } = useMarkdownDoc();
 const { merge } = useCasMerge();
 const { isMobile } = useBreakpoint();
-const commandPaletteShortcut = formatShortcut('command-palette');
 
 function goBackToTree(): void {
   void router.push({ name: 'notes' });
@@ -253,7 +250,6 @@ async function onUploadImage(file: File): Promise<string | null> {
 
 const editorRef = ref<InstanceType<typeof NoteEditor> | null>(null);
 const suggestRef = ref<InstanceType<typeof WikiLinkSuggest> | null>(null);
-const docsShell = useDocsShell();
 // The scrollable note surface (title + properties + editor). It is not remounted
 // between notes, so its scroll offset must be reset on a switch.
 const scrollAreaRef = ref<HTMLElement | null>(null);
@@ -346,47 +342,6 @@ const breadcrumbs = computed(() => {
   return parent !== null && parent !== '' ? ['Atlas', parent, docTitle] : ['Atlas', docTitle];
 });
 
-const editorTabs = computed<Tab[]>(() =>
-  tabsStore.tabs(ws.value).map((t) => ({
-    id: t.slug,
-    name: t.title || 'Untitled',
-    icon: 'file',
-    active: t.slug === slug.value,
-    dirty: t.slug === slug.value && dirty.value,
-  })),
-);
-
-function onSelectTab(id: string): void {
-  if (id !== slug.value) void router.push({ name: 'notes', params: { slug: id } });
-}
-
-function onCloseTab(id: string): void {
-  const nextSlug = tabsStore.close(ws.value, id);
-  if (id !== slug.value) return;
-
-  void router.push(nextSlug !== null ? { name: 'notes', params: { slug: nextSlug } } : { name: 'notes' });
-}
-
-// After a bulk close, navigate only when the active note was among those closed;
-// `anchor` is the note to fall back to (null = the notes root).
-function navigateAfterClose(anchor: string | null): void {
-  if (slug.value === null) return;
-  if (tabsStore.tabs(ws.value).some((t) => t.slug === slug.value)) return;
-  void router.push(anchor !== null ? { name: 'notes', params: { slug: anchor } } : { name: 'notes' });
-}
-
-function onCloseOthers(id: string): void {
-  navigateAfterClose(tabsStore.closeOthers(ws.value, id));
-}
-
-function onCloseRight(id: string): void {
-  navigateAfterClose(tabsStore.closeRight(ws.value, id));
-}
-
-function onCloseAll(): void {
-  navigateAfterClose(tabsStore.closeAll(ws.value));
-}
-
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
 function clearDocument(): void {
@@ -425,8 +380,11 @@ function handleMissingDocument(target: NoteTarget): void {
     name: 'notes',
     params: { slug: target.slug },
   });
-  const next = tabsStore.close(target.workspaceSlug, target.slug) ?? tabsStore.tabs(target.workspaceSlug)[0]?.slug ?? null;
-  void router.replace(next !== null ? { name: 'notes', params: { slug: next } } : { name: 'notes' });
+  const next =
+    tabsStore.close(target.workspaceSlug, { kind: 'doc', id: target.slug }) ??
+    tabsStore.tabs(target.workspaceSlug)[0] ??
+    null;
+  void router.replace(routeAfterClose(next));
 }
 
 /**
@@ -537,8 +495,8 @@ async function loadDoc(target: NoteTarget | null, previousTarget: NoteTarget | n
 
   applyLoadedDocument(result, target.slug);
   resourceStatus.recordRequestSuccess(statusKey, true);
-  tabsStore.open(target.workspaceSlug, target.slug, title.value);
-  tabsStore.setActive(target.workspaceSlug, target.slug);
+  tabsStore.open(target.workspaceSlug, { kind: 'doc', id: target.slug }, title.value);
+  tabsStore.setActive(target.workspaceSlug, { kind: 'doc', id: target.slug });
 }
 
 function resetOpenNoteForCacheEpoch(preserveDirty: boolean): void {
@@ -705,15 +663,18 @@ onBeforeRouteLeave(async () => {
 });
 
 /**
- * The slug the pane should re-open on a cold start with no slug in the URL: the
+ * The tab the shell should re-open on a cold start with no slug in the URL: the
  * last active tab, else the first open tab. Guards against a stale pointer by
- * returning only a slug that is still in the persisted tab list for `ws`.
+ * returning only a tab that is still in the persisted list for `ws`. Boards
+ * restore just like documents, routing to their board view.
  */
-function restoreActiveSlug(workspaceSlug: string): string | null {
-  const candidate = tabsStore.activeFor(workspaceSlug) ?? tabsStore.tabs(workspaceSlug)[0]?.slug ?? null;
+function restoreActiveTab(workspaceSlug: string): TabRef | null {
+  const candidate = tabsStore.activeFor(workspaceSlug) ?? tabsStore.tabs(workspaceSlug)[0] ?? null;
   if (candidate === null) return null;
 
-  return tabsStore.tabs(workspaceSlug).some((t) => t.slug === candidate) ? candidate : null;
+  return tabsStore.tabs(workspaceSlug).some((t) => t.kind === candidate.kind && t.id === candidate.id)
+    ? { kind: candidate.kind, id: candidate.id }
+    : null;
 }
 
 // Fires once, on the first watch run where the workspace is resolved. It gates
@@ -732,9 +693,9 @@ watch(
     if (!bootRestoreHandled && typeof nextWorkspace === 'string' && nextWorkspace !== '') {
       bootRestoreHandled = true;
       if (target === null) {
-        const restored = restoreActiveSlug(nextWorkspace);
+        const restored = restoreActiveTab(nextWorkspace);
         if (restored !== null) {
-          void router.replace({ name: 'notes', params: { slug: restored } });
+          void router.replace(routeForTab(restored));
           return;
         }
       }
@@ -775,7 +736,20 @@ watch(slug, () => {
 });
 
 watch(title, (t) => {
-  if (slug.value !== null && ws.value !== '') tabsStore.setTitle(ws.value, slug.value, t);
+  if (slug.value !== null && ws.value !== '')
+    tabsStore.setTitle(ws.value, { kind: 'doc', id: slug.value }, t);
+});
+
+// Publish the open document's dirty state so the hoisted tab strip can show its
+// unsaved-changes dot. Only the open document can be dirty, so a clean note (or
+// none open) clears the workspace's dirty marker.
+watch([dirty, slug, ws], ([isDirty, currentSlug, currentWs]) => {
+  if (currentWs === '') return;
+  tabsStore.setDirtyDoc(currentWs, isDirty && currentSlug !== null ? currentSlug : null);
+});
+
+onBeforeRouteLeave(() => {
+  if (ws.value !== '') tabsStore.setDirtyDoc(ws.value, null);
 });
 </script>
 
@@ -838,38 +812,6 @@ watch(title, (t) => {
         <Icon name="panel-right" :size="15" />
       </button>
     </div>
-
-    <TabStrip
-      v-if="!isMobile && editorTabs.length > 0"
-      :tabs="editorTabs"
-      closable
-      @select="onSelectTab"
-      @close="onCloseTab"
-      @close-others="onCloseOthers"
-      @close-right="onCloseRight"
-      @close-all="onCloseAll"
-    >
-      <template #right>
-        <button
-          type="button"
-          class="atl-gbtn"
-          title="New page"
-          aria-label="New page"
-          @click="docsShell?.openNewPage()"
-        >
-          <Icon name="plus" :size="13" />
-        </button>
-        <button
-          type="button"
-          class="atl-gbtn"
-          :title="`Command palette ${commandPaletteShortcut}`"
-          aria-label="Command palette"
-          @click="ui.openPalette()"
-        >
-          <Icon name="command" :size="13" />
-        </button>
-      </template>
-    </TabStrip>
 
     <EditorToolbar v-if="!isMobile" :breadcrumbs="breadcrumbs" :dirty="dirty">
       <template v-if="slug && hasDocumentContent">
