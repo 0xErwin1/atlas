@@ -247,14 +247,10 @@ async function loadBoard(background = false): Promise<void> {
 
   selectedReadableId.value = null;
 
-  if (boardId.value === null) {
-    // No board is selected (e.g. a freshly entered or empty workspace). Drop any
-    // load error left over from a previous board so the empty state shows instead
-    // of a stale "Couldn't load board" panel.
-    boards.loadError = null;
-    await resolveDefaultBoard();
-    return;
-  }
+  // A boardless tasks location is redirected to notes by the `tasks` route guard,
+  // so this view never renders without a board id; the guard is purely defensive
+  // type narrowing for `loadBoardContents` below.
+  if (boardId.value === null) return;
 
   const targetWorkspace = ws.value;
   const targetBoardId = boardId.value;
@@ -287,22 +283,6 @@ async function loadBoard(background = false): Promise<void> {
 
   ensureTaskDetails();
   await openFromQuery();
-}
-
-async function resolveDefaultBoard(): Promise<void> {
-  if (workspace.projects.length === 0) {
-    await workspace.loadProjects(ws.value);
-  }
-
-  const project = workspace.projects[0];
-  if (project === undefined) return;
-
-  await boards.loadBoards(ws.value, project.slug);
-
-  const first = boards.boardSummaries[0];
-  if (first !== undefined) {
-    await router.replace({ name: 'tasks', params: { boardId: first.id } });
-  }
 }
 
 // Returning from the full-screen route in sidebar/dialog mode carries the task
