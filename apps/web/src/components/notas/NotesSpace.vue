@@ -49,6 +49,12 @@ const props = defineProps<{
   activeBoardId: string | null;
 }>();
 
+// Emitted once, when this space's first catalog load settles (ready or error),
+// so the sidebar can gate its tree behind every space's initial readiness and
+// show a single loader instead of a phased pop-in. Later background
+// revalidations never re-emit it.
+const emit = defineEmits<{ 'initial-settled': [] }>();
+
 const router = useRouter();
 const workspace = useWorkspaceStore();
 const treeRef = ref<InstanceType<typeof NotesTree> | null>(null);
@@ -561,6 +567,16 @@ function onLiveEvent(evt: LiveUpdateEvent): void {
 useLiveUpdates(ws, { onEvent: onLiveEvent, onResync: () => void loadTree() });
 
 onBeforeUnmount(clearLiveReloadTimers);
+
+// The initial load settles when `loading` first returns to false after the
+// mount fetch (the same transition for the ready and error paths).
+const initialSettledEmitted = ref(false);
+watch(loading, (now, prev) => {
+  if (!initialSettledEmitted.value && prev && !now) {
+    initialSettledEmitted.value = true;
+    emit('initial-settled');
+  }
+});
 
 onMounted(loadTree);
 watch(
