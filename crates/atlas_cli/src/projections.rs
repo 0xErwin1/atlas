@@ -2678,6 +2678,7 @@ mod tests {
             id: Uuid::now_v7(),
             name: "Dev Board".to_owned(),
             folder_id: None,
+            task_count: 0,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

@@ -18,7 +18,7 @@ use atlas_api::{
 use atlas_domain::{
     Actor, WorkspaceCtx,
     entities::boards_tasks::{Board, BoardColumn, ColumnPatch, NewBoard, PositionBetween},
-    ids::{ColumnId, FolderId},
+    ids::{BoardId, ColumnId, FolderId},
     permissions::Principal,
 };
 
@@ -206,12 +206,22 @@ pub(crate) async fn list_boards(
         None
     };
 
+    let board_ids: Vec<BoardId> = all.iter().map(|b| b.id).collect();
+    let task_counts: std::collections::HashMap<uuid::Uuid, i64> = repo
+        .count_top_level_tasks_for_boards(&ctx, &board_ids)
+        .await
+        .map_err(ApiError::Domain)?
+        .into_iter()
+        .map(|(id, count)| (id.0, count))
+        .collect();
+
     let dtos = all
         .into_iter()
         .map(|b| BoardSummaryDto {
             id: b.id.0,
             name: b.name,
             folder_id: b.folder_id.map(|id| id.0),
+            task_count: task_counts.get(&b.id.0).copied().unwrap_or(0),
             created_at: b.created_at,
             updated_at: b.updated_at,
         })

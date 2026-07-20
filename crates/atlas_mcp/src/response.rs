@@ -1971,6 +1971,7 @@ mod tests {
             id: fixed_uuid(),
             name: "Sprint Board".into(),
             folder_id: None,
+            task_count: 0,
             created_at: now(),
             updated_at: now(),
         }

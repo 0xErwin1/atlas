@@ -11,8 +11,9 @@ use atlas_api::dtos::{
     CreateProjectRequest, CreateUserApiKeyRequest, InitialGrantRequest,
     boards_tasks::{
         AddAssigneeRequest, CreateBoardRequest, CreateChecklistItemRequest, CreateColumnRequest,
-        CreateReferenceRequest, CreateTaskRequest, MoveTaskRequest, PromoteChecklistItemRequest,
-        UpdateBoardRequest, UpdateChecklistItemRequest, UpdateColumnRequest, UpdateTaskRequest,
+        CreateReferenceRequest, CreateSubtaskRequest, CreateTaskRequest, MoveTaskRequest,
+        PromoteChecklistItemRequest, UpdateBoardRequest, UpdateChecklistItemRequest,
+        UpdateColumnRequest, UpdateTaskRequest,
     },
     documents::CreateDocumentRequest,
 };
@@ -198,6 +199,125 @@ async fn list_boards_returns_created_boards() {
         .expect("list boards");
 
     assert_eq!(page.items.len(), 2, "must list 2 boards");
+    assert!(
+        page.items.iter().all(|b| b.task_count == 0),
+        "boards with no tasks must report task_count 0"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn list_boards_reports_top_level_non_deleted_task_count() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "board-count-1").await;
+
+    client
+        .create_project(&ws.slug, project_req("board-count-proj", "BC"))
+        .await
+        .expect("create project");
+
+    let board = client
+        .create_board(
+            &ws.slug,
+            "board-count-proj",
+            CreateBoardRequest {
+                folder_id: None,
+                name: "Counted".to_string(),
+            },
+        )
+        .await
+        .expect("create board");
+
+    let col = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "Todo".to_string(),
+                color: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create column");
+
+    let task_a = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: col.id,
+                title: "Top A".to_string(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create task A");
+
+    client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: col.id,
+                title: "Top B".to_string(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create task B");
+
+    let task_to_delete = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: col.id,
+                title: "Deleted".to_string(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create task to delete");
+
+    client
+        .delete_task(&ws.slug, &task_to_delete.readable_id)
+        .await
+        .expect("delete task");
+
+    client
+        .create_subtask(
+            &ws.slug,
+            &task_a.readable_id,
+            CreateSubtaskRequest {
+                title: "Sub of A".to_string(),
+            },
+        )
+        .await
+        .expect("create subtask");
+
+    let page = client
+        .list_boards(&ws.slug, "board-count-proj", None, None)
+        .await
+        .expect("list boards");
+
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(
+        page.items[0].task_count, 2,
+        "must count only top-level, non-deleted tasks"
+    );
 
     db.teardown().await;
 }

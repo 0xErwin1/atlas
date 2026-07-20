@@ -7,7 +7,10 @@ use crate::{
         TaskReference,
     },
     entities::task_views::{ActorTypeFilter, TaskViewFilters},
-    ids::{BoardId, ChecklistItemId, ColumnId, ProjectId, TaskActivityId, TaskId, TaskReferenceId},
+    ids::{
+        BoardId, ChecklistItemId, ColumnId, FolderId, ProjectId, TaskActivityId, TaskId,
+        TaskReferenceId,
+    },
 };
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -84,6 +87,45 @@ pub trait BoardRepo: Send + Sync {
         ctx: &WorkspaceCtx,
         project_id: ProjectId,
     ) -> Result<Vec<Board>, DomainError>;
+
+    /// Lists boards whose `folder_id` is `folder_id` within the workspace.
+    async fn list_boards_in_folder(
+        &self,
+        ctx: &WorkspaceCtx,
+        folder_id: FolderId,
+    ) -> Result<Vec<Board>, DomainError>;
+
+    /// Counts, for each of `board_ids`, its top-level (non-subtask) tasks
+    /// excluding soft-deleted ones, in a single query.
+    ///
+    /// Boards with zero matching tasks are absent from the result; callers
+    /// default those to 0. Used to populate `task_count` without an N+1 query.
+    async fn count_top_level_tasks_for_boards(
+        &self,
+        ctx: &WorkspaceCtx,
+        board_ids: &[BoardId],
+    ) -> Result<Vec<(BoardId, i64)>, DomainError>;
+
+    /// Moves a board into `folder` (or to its project root when `None`).
+    ///
+    /// The target folder must exist in the workspace and belong to the board's
+    /// own project: unlike documents, a board cannot change project on move
+    /// because its tasks carry project-scoped readable ids.
+    async fn move_board(
+        &self,
+        ctx: &WorkspaceCtx,
+        id: BoardId,
+        folder: Option<FolderId>,
+    ) -> Result<Board, DomainError>;
+
+    /// Creates a structural copy of `source` (board row + columns, no tasks)
+    /// inside `folder`, keeping the source's project and name.
+    async fn copy_board(
+        &self,
+        ctx: &WorkspaceCtx,
+        source: BoardId,
+        folder: Option<FolderId>,
+    ) -> Result<Board, DomainError>;
 
     async fn add_column(
         &self,

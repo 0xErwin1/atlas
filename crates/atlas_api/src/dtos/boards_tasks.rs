@@ -32,6 +32,8 @@ pub struct BoardSummaryDto {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub folder_id: Option<uuid::Uuid>,
+    /// Count of top-level (non-subtask) tasks on the board, excluding soft-deleted tasks.
+    pub task_count: i64,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }

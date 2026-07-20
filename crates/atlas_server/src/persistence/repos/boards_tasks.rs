@@ -162,6 +162,61 @@ impl BoardRepo for PgBoardRepo {
             .map_err(db_err)
     }
 
+    async fn count_top_level_tasks_for_boards(
+        &self,
+        ctx: &WorkspaceCtx,
+        board_ids: &[BoardId],
+    ) -> Result<Vec<(BoardId, i64)>, DomainError> {
+        if board_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        #[derive(FromQueryResult)]
+        struct BoardTaskCountRow {
+            board_id: uuid::Uuid,
+            task_count: i64,
+        }
+
+        let mut values: Vec<sea_orm::Value> = Vec::new();
+
+        // $1 — workspace_id
+        values.push(ctx.workspace_id.0.into());
+
+        // $2..$N — board_id IN list
+        let placeholders: String = board_ids
+            .iter()
+            .map(|id| {
+                values.push(id.0.into());
+                format!("${}", values.len())
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let sql = format!(
+            "SELECT t.board_id AS board_id, count(*) AS task_count
+             FROM tasks t
+             WHERE t.workspace_id = $1
+               AND t.board_id IN ({placeholders})
+               AND t.parent_task_id IS NULL
+               AND t.deleted_at IS NULL
+             GROUP BY t.board_id"
+        );
+
+        let rows = BoardTaskCountRow::find_by_statement(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            sql,
+            values,
+        ))
+        .all(&self.conn)
+        .await
+        .map_err(db_err)?;
+
+        Ok(rows
+            .into_iter()
+            .map(|r| (BoardId(r.board_id), r.task_count))
+            .collect())
+    }
+
     async fn move_board(
         &self,
         ctx: &WorkspaceCtx,
