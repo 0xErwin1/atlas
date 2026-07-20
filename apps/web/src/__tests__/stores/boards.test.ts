@@ -21,7 +21,7 @@ vi.mock('@/api/wrapper', () => ({
   wrappedClient: { GET },
 }));
 
-import type { BoardDto, ColumnDto, TaskSummaryDto } from '@/stores/boards';
+import type { BoardDto, BoardSummaryDto, ColumnDto, TaskSummaryDto } from '@/stores/boards';
 import { useBoardsStore } from '@/stores/boards';
 
 const PRINCIPAL = 'user:019ef171-bbcf-7b90-9be6-5dbb382afd08';
@@ -72,6 +72,15 @@ const col = (id: string, positionKey: string): ColumnDto => ({
   board_id: 'board-1',
   name: `Col ${id}`,
   position_key: positionKey,
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-01T00:00:00Z',
+});
+
+const boardSummary = (id: string, taskCount: number, folderId: string | null = null): BoardSummaryDto => ({
+  id,
+  name: `Board ${id}`,
+  folder_id: folderId,
+  task_count: taskCount,
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
 });
@@ -840,5 +849,47 @@ describe('useBoardsStore', () => {
     expect(store.tasksByColumn('c1')[1]?.id).toBe('t2');
     expect(store.tasksByColumn('c2')).toHaveLength(1);
     expect(store.tasksByColumn('c2')[0]?.id).toBe('t3');
+  });
+
+  it('loadBoardsForProject exposes task_count on the summaries returned by boardsFor', async () => {
+    GET.mockResolvedValue({
+      data: { items: [boardSummary('b1', 3), boardSummary('b2', 0)], has_more: false, next_cursor: null },
+      error: undefined,
+    });
+
+    const store = useBoardsStore();
+    await store.loadBoardsForProject('ws', 'proj-a');
+
+    const summaries = store.boardsFor('proj-a');
+    expect(summaries).toHaveLength(2);
+    expect(summaries.find((b) => b.id === 'b1')?.task_count).toBe(3);
+    expect(summaries.find((b) => b.id === 'b2')?.task_count).toBe(0);
+  });
+
+  it('loadBoardsForProject keeps each project bucket independent when loading multiple projects', async () => {
+    GET.mockImplementation((_path: string, request: { params: { path: { project_slug: string } } }) => {
+      const slug = request.params.path.project_slug;
+      const items = slug === 'proj-a' ? [boardSummary('a-1', 1)] : [boardSummary('b-1', 5)];
+      return Promise.resolve({ data: { items, has_more: false, next_cursor: null }, error: undefined });
+    });
+
+    const store = useBoardsStore();
+    await Promise.all([
+      store.loadBoardsForProject('ws', 'proj-a'),
+      store.loadBoardsForProject('ws', 'proj-b'),
+    ]);
+
+    expect(store.boardsFor('proj-a').map((b) => b.id)).toEqual(['a-1']);
+    expect(store.boardsFor('proj-b').map((b) => b.id)).toEqual(['b-1']);
+  });
+
+  it('publishForProject sets boardsFor synchronously without a network call, preserving task_count', () => {
+    const store = useBoardsStore();
+
+    store.publishForProject('proj-a', [boardSummary('b1', 7)]);
+
+    expect(GET).not.toHaveBeenCalled();
+    expect(store.boardsFor('proj-a')).toHaveLength(1);
+    expect(store.boardsFor('proj-a')[0]?.task_count).toBe(7);
   });
 });

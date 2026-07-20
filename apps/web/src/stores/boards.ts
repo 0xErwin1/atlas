@@ -295,6 +295,18 @@ export const useBoardsStore = defineStore('boards', () => {
     boardSummaries.value = items;
   }
 
+  /**
+   * Sets a project's board bucket directly, without a network call. Mirrors
+   * `useFoldersStore.publishForProject` / `useDocumentsStore.publishSummariesForProject`
+   * so the unified sidebar's cache-hydration path can seed `boardsByProject`
+   * from a cached catalog entry the same way it seeds folders and documents.
+   */
+  function publishForProject(projectSlug: string, items: BoardSummaryDto[]): void {
+    const next = new Map(boardsByProject.value);
+    next.set(projectSlug, items);
+    boardsByProject.value = next;
+  }
+
   async function loadBoardsForProject(ws: string, projectSlug: string): Promise<void> {
     const { items, error: apiError } = await collectPaged<BoardSummaryDto>((cursor) =>
       wrappedClient.GET('/api/workspaces/{ws}/projects/{project_slug}/boards', {
@@ -310,9 +322,7 @@ export const useBoardsStore = defineStore('boards', () => {
       return;
     }
 
-    const next = new Map(boardsByProject.value);
-    next.set(projectSlug, items);
-    boardsByProject.value = next;
+    publishForProject(projectSlug, items);
   }
 
   function boardsFor(projectSlug: string): BoardSummaryDto[] {
@@ -1488,6 +1498,7 @@ export const useBoardsStore = defineStore('boards', () => {
     loadBoards,
     loadBoardsForProject,
     boardsFor,
+    publishForProject,
     createBoard,
     renameBoard,
     removeBoard,
