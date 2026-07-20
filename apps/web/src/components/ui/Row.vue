@@ -15,6 +15,8 @@ const props = withDefaults(
     lock?: boolean;
     right?: string | null;
     disabled?: boolean;
+    /** Overrides the icon color; when unset the icon follows the active/muted default. */
+    iconColor?: string;
     /** Show a kebab (⋯) button on hover that emits `menu` to open a context menu. */
     menu?: boolean;
     menuIcon?: string;
@@ -32,6 +34,7 @@ const props = withDefaults(
     lock: false,
     right: null,
     disabled: false,
+    iconColor: undefined,
     menu: false,
     menuIcon: 'more-horizontal',
     menuLabel: 'More actions',
@@ -48,7 +51,7 @@ const paddingLeft = computed(() => `${8 + props.depth * 14}px`);
 
 const labelColor = computed(() => (props.muted || props.pending ? 'var(--c-muted)' : 'var(--c-foreground)'));
 
-const iconColor = computed(() => (props.active ? 'var(--c-primary)' : 'var(--c-muted)'));
+const iconColor = computed(() => props.iconColor ?? (props.active ? 'var(--c-primary)' : 'var(--c-muted)'));
 </script>
 
 <template>

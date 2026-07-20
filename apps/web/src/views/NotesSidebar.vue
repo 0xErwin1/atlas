@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 // biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
 import NotesSpace from '@/components/notas/NotesSpace.vue';
 import SidebarViews from '@/components/notas/SidebarViews.vue';
+import EmptyState from '@/components/states/EmptyState.vue';
 import ErrorState from '@/components/states/ErrorState.vue';
 import ContextMenu, { type MenuItem } from '@/components/ui/ContextMenu.vue';
 import Icon from '@/components/ui/Icon.vue';
@@ -109,12 +110,7 @@ defineExpose({ openNewPage });
       :hint="workspace.projectsError"
       @retry="loadProjects"
     />
-    <p
-      v-else
-      style="padding: 8px; font-size: var(--fs-sm); color: var(--c-muted);"
-    >
-      No projects yet.
-    </p>
+    <EmptyState v-else icon="folder" title="No projects yet." />
   </div>
 </template>
 

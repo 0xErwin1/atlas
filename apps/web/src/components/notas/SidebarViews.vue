@@ -22,9 +22,7 @@ const ui = useUiStore();
 
 const ws = computed(() => workspace.activeWorkspaceSlug ?? '');
 
-// The workspace's built-in task views. Kept identical to the legacy tasks
-// sidebar so relocating the block adds no new view types (spec: VIEWS block
-// relocates existing views only).
+// The workspace's built-in task views.
 const PREDEFINED_VIEWS = [
   { viewId: 'my-tasks', label: 'My tasks', icon: 'star', agent: false },
   { viewId: 'recently-updated', label: 'Recently updated', icon: 'clock', agent: false },
@@ -92,22 +90,15 @@ watch(ws, loadViews);
   <div>
     <SectionLabel>Views</SectionLabel>
 
-    <button
+    <Row
       v-for="view in PREDEFINED_VIEWS"
       :key="view.viewId"
-      type="button"
-      class="atl-row views-row"
-      :class="{ 'views-row--active': activeViewId === view.viewId }"
+      :label="view.label"
+      :icon="view.icon"
+      :icon-color="view.agent ? 'var(--c-agent)' : undefined"
+      :active="activeViewId === view.viewId"
       @click="openView(view.viewId)"
-    >
-      <span style="width: 12px; flex: 0 0 auto;" />
-      <Icon
-        :name="view.icon"
-        :size="13"
-        :style="{ color: view.agent ? 'var(--c-agent)' : 'var(--c-muted)', flexShrink: 0 }"
-      />
-      <span class="views-label">{{ view.label }}</span>
-    </button>
+    />
 
     <template v-for="v in taskViews.items" :key="v.id">
       <div
@@ -142,34 +133,6 @@ watch(ws, loadViews);
 </template>
 
 <style scoped>
-.views-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  height: 24px;
-  padding: 0 8px;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  color: var(--c-foreground);
-  text-align: left;
-}
-
-.views-label {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.views-row--active {
-  background: var(--c-selection);
-  color: var(--c-primary);
-}
-
 .views-inline-input {
   flex: 1;
   height: 28px;

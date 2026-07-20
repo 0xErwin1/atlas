@@ -11,7 +11,7 @@ export type NoteCatalog = {
 
 /**
  * Validates the per-project note-tree catalog cached under the `note-tree:{ws}:{project}`
- * key (see NotesSidebar.vue). `boards` defaults to an empty array so a catalog
+ * key (built and consumed by NotesSpace.vue). `boards` defaults to an empty array so a catalog
  * entry cached before boards were added to the schema still parses cleanly
  * instead of throwing and forcing a hard cache invalidation.
  */
