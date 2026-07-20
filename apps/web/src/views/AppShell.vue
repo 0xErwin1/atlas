@@ -1,26 +1,13 @@
 <script setup lang="ts">
 import { computed, useSlots } from 'vue';
-import ShareDialog, { type Visibility } from '@/components/share/ShareDialog.vue';
 import AppRail from '@/components/shell/AppRail.vue';
-import BannerToast from '@/components/shell/BannerToast.vue';
 import ContextSidebar from '@/components/shell/ContextSidebar.vue';
-import InspectorDock from '@/components/shell/InspectorDock.vue';
+import GlobalDialogs from '@/components/shell/GlobalDialogs.vue';
+import InspectorSurface from '@/components/shell/InspectorSurface.vue';
 import MobileTabBar from '@/components/shell/MobileTabBar.vue';
 import EmptyState from '@/components/states/EmptyState.vue';
-import AskAiDialog from '@/components/tareas/AskAiDialog.vue';
-import BottomSheet from '@/components/ui/BottomSheet.vue';
-import Icon from '@/components/ui/Icon.vue';
 import { useBreakpoint } from '@/composables/useBreakpoint';
-import { type InspectorTab, useUiStore } from '@/stores/ui';
-import { useWorkspaceStore } from '@/stores/workspace';
-
-const INSPECTOR_TABS: Array<{ id: InspectorTab; label: string; icon: string }> = [
-  { id: 'properties', label: 'Properties', icon: 'columns' },
-  { id: 'backlinks', label: 'Backlinks', icon: 'link' },
-  { id: 'comments', label: 'Comments', icon: 'message-square' },
-  { id: 'activity', label: 'Activity', icon: 'history' },
-  { id: 'share', label: 'Share', icon: 'user' },
-];
+import { useUiStore } from '@/stores/ui';
 
 const props = withDefaults(
   defineProps<{
@@ -38,11 +25,8 @@ const props = withDefaults(
 );
 
 const ui = useUiStore();
-const workspace = useWorkspaceStore();
 const slots = useSlots();
 const { isMobile } = useBreakpoint();
-
-const ws = computed(() => workspace.activeWorkspaceSlug ?? '');
 
 // The inspector tabs are item-scoped (properties, backlinks, …). A view that
 // provides no inspector slot — e.g. the board — has nothing to show there, so the
@@ -53,26 +37,6 @@ const hasSidebar = computed(() => Boolean(slots.sidebar));
 
 // With no sidebar (e.g. the board) the main content is always the primary pane.
 const showMainOnMobile = computed(() => props.mobileDetail || !hasSidebar.value);
-
-const shareVisibility = computed<Visibility>(() => {
-  const projectSlug = ui.shareProjectSlug;
-  if (projectSlug === null) return 'workspace';
-
-  const visibility = workspace.projects.find((project) => project.slug === projectSlug)?.visibility;
-  return visibility === 'private' || visibility === 'workspace' || visibility === 'public'
-    ? visibility
-    : 'workspace';
-});
-
-async function updateShareVisibility(visibility: Visibility): Promise<void> {
-  const projectSlug = ui.shareProjectSlug;
-  if (projectSlug === null || ws.value === '') return;
-
-  const ok = await workspace.updateProject(ws.value, projectSlug, { visibility });
-  if (!ok && workspace.error !== null) {
-    ui.showBanner(workspace.error, 'error');
-  }
-}
 </script>
 
 <template>
@@ -111,63 +75,19 @@ async function updateShareVisibility(visibility: Visibility): Promise<void> {
 
     <MobileTabBar />
 
-    <BottomSheet
-      v-if="hasInspector"
-      :open="ui.inspectorOpen"
-      title="Details"
-      @close="ui.toggleInspector()"
-    >
-      <div class="flex" style="gap: 2px; margin-bottom: 12px;">
-        <button
-          v-for="tab in INSPECTOR_TABS"
-          :key="tab.id"
-          type="button"
-          class="flex items-center justify-center flex-1"
-          :aria-selected="ui.inspectorTab === tab.id"
-          :style="`
-            gap: 6px;
-            height: 34px;
-            border: none;
-            border-radius: var(--r-md);
-            cursor: pointer;
-            background: ${ui.inspectorTab === tab.id ? 'var(--c-selection)' : 'transparent'};
-            color: ${ui.inspectorTab === tab.id ? 'var(--c-primary)' : 'var(--c-muted)'};
-            font-size: var(--fs-sm);
-          `"
-          @click="ui.setInspectorTab(tab.id)"
-        >
-          <Icon :name="tab.icon" :size="15" />
-        </button>
-      </div>
+    <InspectorSurface v-if="hasInspector">
+      <template #panel="{ tab }">
+        <slot :name="`inspector-${tab}`" :tab="tab">
+          <EmptyState
+            icon="panel-right"
+            title="Nothing to show"
+            hint="This panel has no content for the current view."
+          />
+        </slot>
+      </template>
+    </InspectorSurface>
 
-      <slot :name="`inspector-${ui.inspectorTab}`" :tab="ui.inspectorTab">
-        <EmptyState
-          icon="panel-right"
-          title="Nothing to show"
-          hint="This panel has no content for the current view."
-        />
-      </slot>
-    </BottomSheet>
-
-    <BannerToast />
-
-    <ShareDialog
-      :open="ui.shareOpen"
-      :ws="ws"
-      :project-slug="ui.shareProjectSlug ?? undefined"
-      :resource-label="ui.shareResourceLabel"
-      :visibility="shareVisibility"
-      @update:visibility="updateShareVisibility"
-      @close="ui.closeShare()"
-    />
-
-    <AskAiDialog
-      :open="ui.askAiOpen"
-      :task="ui.askAiTask"
-      :status-name="ui.askAiStatus"
-      :action="ui.askAiAction"
-      @close="ui.closeAskAi()"
-    />
+    <GlobalDialogs />
   </div>
 
   <div
@@ -194,8 +114,8 @@ async function updateShareVisibility(visibility: Visibility): Promise<void> {
       <slot />
     </main>
 
-    <InspectorDock v-if="hasInspector">
-      <template #default="{ tab }">
+    <InspectorSurface v-if="hasInspector">
+      <template #panel="{ tab }">
         <slot :name="`inspector-${tab}`" :tab="tab">
           <EmptyState
             icon="panel-right"
@@ -204,26 +124,8 @@ async function updateShareVisibility(visibility: Visibility): Promise<void> {
           />
         </slot>
       </template>
-    </InspectorDock>
+    </InspectorSurface>
 
-    <BannerToast />
-
-    <ShareDialog
-      :open="ui.shareOpen"
-      :ws="ws"
-      :project-slug="ui.shareProjectSlug ?? undefined"
-      :resource-label="ui.shareResourceLabel"
-      :visibility="shareVisibility"
-      @update:visibility="updateShareVisibility"
-      @close="ui.closeShare()"
-    />
-
-    <AskAiDialog
-      :open="ui.askAiOpen"
-      :task="ui.askAiTask"
-      :status-name="ui.askAiStatus"
-      :action="ui.askAiAction"
-      @close="ui.closeAskAi()"
-    />
+    <GlobalDialogs />
   </div>
 </template>

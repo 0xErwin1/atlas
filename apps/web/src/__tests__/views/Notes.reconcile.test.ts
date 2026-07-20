@@ -134,10 +134,9 @@ function mountNotes() {
   return mount(Notes, {
     global: {
       stubs: {
-        AppShell: {
-          template: '<div><slot name="sidebar" /><slot /><slot name="inspector-backlinks" /></div>',
+        DocsContent: {
+          template: '<div><slot /><slot name="inspector-backlinks" /></div>',
         },
-        NotesSidebar: true,
         BacklinksPanel: true,
         CasConflictView: true,
         DocumentComments: true,

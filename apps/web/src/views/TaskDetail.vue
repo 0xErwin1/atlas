@@ -21,8 +21,7 @@ import { useTaskDetailStore } from '@/stores/taskDetail';
 import { useTasksStore } from '@/stores/tasks';
 import { type TaskViewMode, useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
-import AppShell from '@/views/AppShell.vue';
-import NotesSidebar from '@/views/NotesSidebar.vue';
+import DocsContent from '@/views/DocsContent.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -197,11 +196,7 @@ watch([readableId, ws], load, { immediate: true });
 </script>
 
 <template>
-  <AppShell sidebar-title="Tasks" sidebar-icon="square-kanban" :mobile-detail="true">
-    <template #sidebar>
-      <NotesSidebar />
-    </template>
-
+  <DocsContent>
     <TaskDetailHeader
       v-if="task"
       :readable-id="task.readable_id"
@@ -253,7 +248,7 @@ watch([readableId, ws], load, { immediate: true });
       />
       <LoadingState v-else label="Loading task…" />
     </div>
-  </AppShell>
+  </DocsContent>
 </template>
 
 <style scoped>

@@ -31,12 +31,11 @@ function mountTasks() {
   return mount(Tasks, {
     global: {
       stubs: {
-        AppShell: { template: '<main><slot /></main>' },
+        DocsContent: { template: '<main><slot /></main>' },
         EditorToolbar: true,
         BoardViewMenu: true,
         Popover: true,
         PresenceAvatars: true,
-        NotesSidebar: true,
         KanbanBoard: true,
         TaskListView: true,
         TaskTableView: true,

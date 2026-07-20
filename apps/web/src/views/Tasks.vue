@@ -34,9 +34,7 @@ import { useUiStore } from '@/stores/ui';
 import { useUiStateStore } from '@/stores/uiState';
 import { useWorkspaceStore } from '@/stores/workspace';
 import { paramsForView, useWorkspaceTasksStore } from '@/stores/workspaceTasks';
-import AppShell from '@/views/AppShell.vue';
-// biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
-import NotesSidebar from '@/views/NotesSidebar.vue';
+import DocsContent from '@/views/DocsContent.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -110,8 +108,6 @@ const unregisterBoardSearch = keymap.registerShortcut({
 
 const openTaskLive = useOpenTaskLive(ws);
 const presence = useBoardPresence(ws, boardId);
-
-const sidebarRef = ref<InstanceType<typeof NotesSidebar> | null>(null);
 
 const PREDEFINED_VIEW_LABELS: Record<string, string> = {
   'my-tasks': 'My tasks',
@@ -454,38 +450,7 @@ watch(
 </script>
 
 <template>
-  <AppShell sidebar-title="Tasks" sidebar-icon="square-kanban" :mobile-detail="true">
-    <template #sidebar-actions>
-      <button type="button" class="atl-gbtn" :title="`Search ${commandPaletteShortcut}`" aria-label="Search" @click="ui.openPalette()">
-        <Icon name="search" :size="14" />
-      </button>
-      <button
-        type="button"
-        class="atl-gbtn"
-        title="Collapse sidebar"
-        aria-label="Collapse sidebar"
-        @click="ui.toggleSidebar()"
-      >
-        <Icon name="panel-left" :size="13" />
-      </button>
-    </template>
-
-    <template #sidebar>
-      <NotesSidebar ref="sidebarRef" />
-    </template>
-
-    <template #sidebar-footer>
-      <button
-        type="button"
-        class="atl-gbtn"
-        style="width: 100%; justify-content: flex-start; height: 26px; gap: 7px; color: var(--c-foreground);"
-        @click="sidebarRef?.openNewPage()"
-      >
-        <Icon name="plus" :size="14" />
-        New page
-      </button>
-    </template>
-
+  <DocsContent>
     <div
       v-if="isMobile"
       class="flex items-center"
@@ -674,7 +639,7 @@ watch(
         />
       </div>
     </template>
-  </AppShell>
+  </DocsContent>
 </template>
 
 <style scoped>

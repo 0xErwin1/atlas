@@ -57,8 +57,7 @@ function mountDetail() {
   const wrapper = mount(TaskDetail, {
     global: {
       stubs: {
-        AppShell: { template: '<main><slot name="sidebar" /><slot /></main>' },
-        NotesSidebar: true,
+        DocsContent: { template: '<main><slot /></main>' },
         TaskDetailHeader: true,
         TaskBody: { props: ['task'], template: '<article>{{ task.title }}</article>' },
         TaskInspector: true,

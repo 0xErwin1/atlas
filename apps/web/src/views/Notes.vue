@@ -214,9 +214,8 @@ import { useNotesTabsStore } from '@/stores/notesTabs';
 import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 import { useResourceStatusStore } from '@/stores/resourceStatus';
-import AppShell from '@/views/AppShell.vue';
-// biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
-import NotesSidebar from '@/views/NotesSidebar.vue';
+import { useDocsShell } from '@/composables/useDocsShell';
+import DocsContent from '@/views/DocsContent.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -254,7 +253,7 @@ async function onUploadImage(file: File): Promise<string | null> {
 
 const editorRef = ref<InstanceType<typeof NoteEditor> | null>(null);
 const suggestRef = ref<InstanceType<typeof WikiLinkSuggest> | null>(null);
-const sidebarRef = ref<InstanceType<typeof NotesSidebar> | null>(null);
+const docsShell = useDocsShell();
 // The scrollable note surface (title + properties + editor). It is not remounted
 // between notes, so its scroll offset must be reset on a switch.
 const scrollAreaRef = ref<HTMLElement | null>(null);
@@ -781,38 +780,7 @@ watch(title, (t) => {
 </script>
 
 <template>
-  <AppShell sidebar-title="Notes" sidebar-icon="file-text" :mobile-detail="slug !== null">
-    <template #sidebar-actions>
-      <button type="button" class="atl-gbtn" :title="`Search ${commandPaletteShortcut}`" aria-label="Search" @click="ui.openPalette()">
-        <Icon name="search" :size="14" />
-      </button>
-      <button
-        type="button"
-        class="atl-gbtn"
-        title="Collapse sidebar"
-        aria-label="Collapse sidebar"
-        @click="ui.toggleSidebar()"
-      >
-        <Icon name="panel-left" :size="13" />
-      </button>
-    </template>
-
-    <template #sidebar>
-      <NotesSidebar ref="sidebarRef" />
-    </template>
-
-    <template #sidebar-footer>
-      <button
-        type="button"
-        class="atl-gbtn"
-        style="width: 100%; justify-content: flex-start; height: 26px; gap: 7px; color: var(--c-foreground);"
-        @click="sidebarRef?.openNewPage()"
-      >
-        <Icon name="plus" :size="14" />
-        New page
-      </button>
-    </template>
-
+  <DocsContent>
     <div
       v-if="isMobile && slug && hasDocumentContent"
       class="flex items-center"
@@ -887,7 +855,7 @@ watch(title, (t) => {
           class="atl-gbtn"
           title="New page"
           aria-label="New page"
-          @click="sidebarRef?.openNewPage()"
+          @click="docsShell?.openNewPage()"
         >
           <Icon name="plus" :size="13" />
         </button>
@@ -1078,5 +1046,5 @@ watch(title, (t) => {
       @resolve="onConflictResolve"
       @cancel="onConflictCancel"
     />
-  </AppShell>
+  </DocsContent>
 </template>

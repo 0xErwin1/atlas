@@ -55,10 +55,7 @@ function mountTasks() {
     attachTo: document.body,
     global: {
       stubs: {
-        AppShell: {
-          template:
-            '<main><slot name="sidebar-actions" /><slot name="sidebar" /><slot name="sidebar-footer" /><slot /></main>',
-        },
+        DocsContent: { template: '<main><slot /></main>' },
         EditorToolbar: { template: '<section><slot name="lead" /><slot /></section>' },
         BoardViewMenu: true,
         Popover: {
@@ -66,7 +63,6 @@ function mountTasks() {
             '<div><slot name="trigger" :open="false" :toggle="() => {}" /><slot :close="() => {}" /></div>',
         },
         PresenceAvatars: true,
-        NotesSidebar: true,
         KanbanBoard: true,
         TaskListView: true,
         TaskTableView: true,
