@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { buildNotesTree, docKey, flattenVisible, folderAncestors, folderKey } from '@/lib/notesTree';
+import {
+  boardKey,
+  buildNotesTree,
+  docKey,
+  flattenVisible,
+  folderAncestors,
+  folderKey,
+} from '@/lib/notesTree';
 
 describe('folderAncestors', () => {
   const folders = [
@@ -119,5 +126,57 @@ describe('buildNotesTree', () => {
     const tree = buildNotesTree([], [{ id: 'd1', title: 'Untitled', slug: null, folder_id: null }]);
 
     expect(tree.docs[0]?.slug).toBeNull();
+  });
+
+  it('nests boards inside their folder by folder_id, carrying task_count', () => {
+    const tree = buildNotesTree(
+      [{ id: 'f1', name: 'Sprint', parent_folder_id: null }],
+      [],
+      [{ id: 'b1', name: 'Backlog', folder_id: 'f1', task_count: 4 }],
+    );
+
+    expect(tree.folders[0]?.boards).toHaveLength(1);
+    expect(tree.folders[0]?.boards[0]?.id).toBe('b1');
+    expect(tree.folders[0]?.boards[0]?.taskCount).toBe(4);
+    expect(tree.boards).toHaveLength(0);
+  });
+
+  it('places a board with no folder_id at project root', () => {
+    const tree = buildNotesTree([], [], [{ id: 'b1', name: 'Roadmap', folder_id: null, task_count: 0 }]);
+
+    expect(tree.boards).toHaveLength(1);
+    expect(tree.boards[0]?.id).toBe('b1');
+    expect(tree.boards[0]?.taskCount).toBe(0);
+  });
+
+  it('reparents a board to root when its folder is absent from the input', () => {
+    const tree = buildNotesTree([], [], [{ id: 'b1', name: 'Orphan', folder_id: 'missing', task_count: 1 }]);
+
+    expect(tree.boards.map((b) => b.id)).toContain('b1');
+  });
+
+  it('sorts boards case-insensitively by name', () => {
+    const tree = buildNotesTree(
+      [],
+      [],
+      [
+        { id: 'b2', name: 'zeta', folder_id: null, task_count: 0 },
+        { id: 'b1', name: 'Alpha', folder_id: null, task_count: 0 },
+      ],
+    );
+
+    expect(tree.boards.map((b) => b.id)).toEqual(['b1', 'b2']);
+  });
+});
+
+describe('buildNotesTree with mixed children', () => {
+  it('orders flattened root children as folders, then docs, then boards', () => {
+    const tree = buildNotesTree(
+      [{ id: 'f1', name: 'Alpha', parent_folder_id: null }],
+      [{ id: 'd1', title: 'Doc', slug: 'doc', folder_id: null }],
+      [{ id: 'b1', name: 'Board', folder_id: null, task_count: 2 }],
+    );
+
+    expect(flattenVisible(tree, () => false)).toEqual([folderKey('f1'), docKey('doc'), boardKey('b1')]);
   });
 });

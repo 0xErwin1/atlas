@@ -20,6 +20,7 @@ function folder(): TreeFolder {
     name: 'Specs',
     folders: [],
     docs: [{ kind: 'doc', id: 'd1', slug: 'readme', title: 'Readme' }],
+    boards: [],
   };
 }
 
