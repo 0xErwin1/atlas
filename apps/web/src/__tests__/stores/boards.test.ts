@@ -15,10 +15,10 @@ import {
   type ResourceCacheStore,
 } from '@/cache/resourceCache';
 
-const { GET } = vi.hoisted(() => ({ GET: vi.fn() }));
+const { GET, PATCH } = vi.hoisted(() => ({ GET: vi.fn(), PATCH: vi.fn() }));
 
 vi.mock('@/api/wrapper', () => ({
-  wrappedClient: { GET },
+  wrappedClient: { GET, PATCH },
 }));
 
 import type { BoardDto, BoardSummaryDto, ColumnDto, TaskSummaryDto } from '@/stores/boards';
@@ -881,6 +881,56 @@ describe('useBoardsStore', () => {
 
     expect(store.boardsFor('proj-a').map((b) => b.id)).toEqual(['a-1']);
     expect(store.boardsFor('proj-b').map((b) => b.id)).toEqual(['b-1']);
+  });
+
+  it('moveBoard PATCHes the move endpoint with the target folder then refreshes the project bucket', async () => {
+    PATCH.mockResolvedValue({ data: board('b1'), error: undefined });
+    GET.mockResolvedValue({
+      data: { items: [boardSummary('b1', 2, 'folder-x')], has_more: false, next_cursor: null },
+      error: undefined,
+    });
+
+    const store = useBoardsStore();
+    const ok = await store.moveBoard('ws', 'proj-a', 'b1', 'folder-x');
+
+    expect(ok).toBe(true);
+    expect(PATCH).toHaveBeenCalledWith(
+      '/api/workspaces/{ws}/boards/{board_id}/move',
+      expect.objectContaining({
+        params: { path: { ws: 'ws', board_id: 'b1' } },
+        body: { folder_id: 'folder-x' },
+      }),
+    );
+    expect(store.boardsFor('proj-a')[0]?.folder_id).toBe('folder-x');
+  });
+
+  it('moveBoard sends a null folder_id when moving a board to the project root', async () => {
+    PATCH.mockResolvedValue({ data: board('b1'), error: undefined });
+    GET.mockResolvedValue({
+      data: { items: [boardSummary('b1', 0, null)], has_more: false, next_cursor: null },
+      error: undefined,
+    });
+
+    const store = useBoardsStore();
+    await store.moveBoard('ws', 'proj-a', 'b1', null);
+
+    expect(PATCH).toHaveBeenCalledWith(
+      '/api/workspaces/{ws}/boards/{board_id}/move',
+      expect.objectContaining({ body: { folder_id: null } }),
+    );
+  });
+
+  it('moveBoard surfaces an error and leaves the bucket untouched on failure', async () => {
+    PATCH.mockResolvedValue({ data: undefined, error: { hint: 'cross-project move rejected' } });
+
+    const store = useBoardsStore();
+    store.publishForProject('proj-a', [boardSummary('b1', 1, null)]);
+    const ok = await store.moveBoard('ws', 'proj-a', 'b1', 'other-project-folder');
+
+    expect(ok).toBe(false);
+    expect(store.error).toBe('cross-project move rejected');
+    expect(GET).not.toHaveBeenCalled();
+    expect(store.boardsFor('proj-a')[0]?.folder_id).toBeNull();
   });
 
   it('publishForProject sets boardsFor synchronously without a network call, preserving task_count', () => {

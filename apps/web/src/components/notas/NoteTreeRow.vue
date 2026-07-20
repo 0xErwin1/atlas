@@ -5,15 +5,26 @@ import Icon from '@/components/ui/Icon.vue';
 import Row from '@/components/ui/Row.vue';
 import { useContextMenu } from '@/composables/useContextMenu';
 import { useInlineEdit } from '@/composables/useInlineEdit';
-import { docKey, folderKey, parseNodeKey, type TreeFolder, type TreeNodeRef } from '@/lib/notesTree';
+import {
+  boardKey,
+  docKey,
+  folderKey,
+  parseNodeKey,
+  type TreeFolder,
+  type TreeNodeRef,
+} from '@/lib/notesTree';
 import { useTreeSelection } from '@/stores/treeSelection';
 import { useUiStateStore } from '@/stores/uiState';
 
-const props = defineProps<{
-  folder: TreeFolder;
-  depth: number;
-  activeSlug: string | null;
-}>();
+const props = withDefaults(
+  defineProps<{
+    folder: TreeFolder;
+    depth: number;
+    activeSlug: string | null;
+    activeBoardId?: string | null;
+  }>(),
+  { activeBoardId: null },
+);
 
 const emit = defineEmits<{
   'select-doc': [slug: string];
@@ -23,6 +34,10 @@ const emit = defineEmits<{
   'create-folder': [name: string, parentFolderId?: string];
   'rename-folder': [folderId: string, name: string];
   'remove-folder': [folderId: string];
+  'select-board': [boardId: string];
+  'create-board': [name: string, folderId?: string];
+  'rename-board': [boardId: string, name: string];
+  'remove-board': [boardId: string];
   'move-nodes': [nodes: TreeNodeRef[], targetFolderId: string | null];
   'request-move': [nodes: TreeNodeRef[]];
   'request-copy': [nodes: TreeNodeRef[]];
@@ -51,6 +66,13 @@ function onDocClick(event: MouseEvent, slug: string): void {
   const mods = { shift: event.shiftKey, meta: event.metaKey || event.ctrlKey };
   if (selection.activate(docKey(slug), mods) === 'default') {
     emit('select-doc', slug);
+  }
+}
+
+function onBoardClick(event: MouseEvent, boardId: string): void {
+  const mods = { shift: event.shiftKey, meta: event.metaKey || event.ctrlKey };
+  if (selection.activate(boardKey(boardId), mods) === 'default') {
+    emit('select-board', boardId);
   }
 }
 
@@ -99,14 +121,19 @@ function onFolderDrop(event: DragEvent): void {
 // Shared sidebar context-menu + inline-edit logic (same composables as the tasks sidebar).
 const { open: menuOpen, x: menuX, y: menuY, openAt, close: closeMenu } = useContextMenu();
 
-type ContextState = { kind: 'folder-root' } | { kind: 'doc'; slug: string; currentTitle: string };
+type ContextState =
+  | { kind: 'folder-root' }
+  | { kind: 'doc'; slug: string; currentTitle: string }
+  | { kind: 'board'; boardId: string; currentName: string };
 const contextState = ref<ContextState>({ kind: 'folder-root' });
 
 type EditCtx =
   | { kind: 'new-doc' }
   | { kind: 'new-folder' }
+  | { kind: 'new-board' }
   | { kind: 'rename-folder' }
-  | { kind: 'rename-doc'; slug: string };
+  | { kind: 'rename-doc'; slug: string }
+  | { kind: 'rename-board'; boardId: string };
 
 const {
   active: editActive,
@@ -118,12 +145,14 @@ const {
 } = useInlineEdit<EditCtx>((name, ctx) => {
   if (ctx.kind === 'new-doc') emit('create-doc', name, props.folder.id);
   else if (ctx.kind === 'new-folder') emit('create-folder', name, props.folder.id);
+  else if (ctx.kind === 'new-board') emit('create-board', name, props.folder.id);
   else if (ctx.kind === 'rename-folder') emit('rename-folder', props.folder.id, name);
+  else if (ctx.kind === 'rename-board') emit('rename-board', ctx.boardId, name);
   else emit('rename-doc', ctx.slug, name);
 });
 
 // Creating inside a folder: expand it first so the input and the new item show.
-function startCreate(kind: 'new-doc' | 'new-folder'): void {
+function startCreate(kind: 'new-doc' | 'new-folder' | 'new-board'): void {
   uiState.setFolderCollapsed(props.folder.id, false);
   startEdit({ kind });
 }
@@ -133,6 +162,7 @@ const folderMenuItems = computed<MenuItem[]>(() => {
   return [
     { header: true, label: props.folder.name },
     { label: 'New page', icon: 'file-plus', action: () => startCreate('new-doc') },
+    { label: 'New board', icon: 'columns-3', action: () => startCreate('new-board') },
     { label: 'New folder', icon: 'folder-plus', action: () => startCreate('new-folder') },
     { sep: true },
     {
@@ -189,9 +219,42 @@ const docMenuItems = computed<MenuItem[]>(() => {
   ];
 });
 
-const activeMenuItems = computed<MenuItem[]>(() =>
-  contextState.value.kind === 'doc' ? docMenuItems.value : folderMenuItems.value,
-);
+const boardMenuItems = computed<MenuItem[]>(() => {
+  const state = contextState.value;
+  if (state.kind !== 'board') return [];
+
+  const { boardId, currentName } = state;
+  return [
+    { header: true, label: currentName },
+    { label: 'Open', icon: 'external-link', kbd: ['↵'], action: () => emit('select-board', boardId) },
+    { sep: true },
+    {
+      label: 'Rename',
+      icon: 'pencil',
+      kbd: ['F2'],
+      action: () => startEdit({ kind: 'rename-board', boardId }, currentName, true),
+    },
+    {
+      label: 'Move to…',
+      icon: 'arrow-right',
+      action: () => emit('request-move', dragPayload({ type: 'board', id: boardId })),
+    },
+    { sep: true },
+    {
+      label: 'Delete',
+      icon: 'trash',
+      kbd: ['⌫'],
+      danger: true,
+      action: () => emit('remove-board', boardId),
+    },
+  ];
+});
+
+const activeMenuItems = computed<MenuItem[]>(() => {
+  if (contextState.value.kind === 'doc') return docMenuItems.value;
+  if (contextState.value.kind === 'board') return boardMenuItems.value;
+  return folderMenuItems.value;
+});
 
 function openFolderMenu(event: MouseEvent): void {
   contextState.value = { kind: 'folder-root' };
@@ -200,6 +263,11 @@ function openFolderMenu(event: MouseEvent): void {
 
 function openDocMenu(event: MouseEvent, slug: string, title: string): void {
   contextState.value = { kind: 'doc', slug, currentTitle: title };
+  openAt(event);
+}
+
+function openBoardMenu(event: MouseEvent, boardId: string, name: string): void {
+  contextState.value = { kind: 'board', boardId, currentName: name };
   openAt(event);
 }
 
@@ -260,6 +328,7 @@ const inlinePaddingLeft = computed(() => `${8 + (props.depth + 1) * 14}px`);
         :folder="child"
         :depth="depth + 1"
         :active-slug="activeSlug"
+        :active-board-id="activeBoardId"
         @select-doc="emit('select-doc', $event)"
         @create-doc="(title, folderId) => emit('create-doc', title, folderId)"
         @rename-doc="(slug, title) => emit('rename-doc', slug, title)"
@@ -267,6 +336,10 @@ const inlinePaddingLeft = computed(() => `${8 + (props.depth + 1) * 14}px`);
         @create-folder="(name, parentId) => emit('create-folder', name, parentId)"
         @rename-folder="(folderId, name) => emit('rename-folder', folderId, name)"
         @remove-folder="(folderId) => emit('remove-folder', folderId)"
+        @select-board="(boardId) => emit('select-board', boardId)"
+        @create-board="(name, folderId) => emit('create-board', name, folderId)"
+        @rename-board="(boardId, name) => emit('rename-board', boardId, name)"
+        @remove-board="(boardId) => emit('remove-board', boardId)"
         @move-nodes="(nodes, target) => emit('move-nodes', nodes, target)"
         @request-move="(nodes) => emit('request-move', nodes)"
         @request-copy="(nodes) => emit('request-copy', nodes)"
@@ -311,13 +384,52 @@ const inlinePaddingLeft = computed(() => `${8 + (props.depth + 1) * 14}px`);
         </div>
       </template>
 
+      <template v-for="board in folder.boards" :key="board.id">
+        <div
+          v-if="editActive?.kind === 'rename-board' && editActive.boardId === board.id"
+          style="display: flex; align-items: center; gap: 6px;"
+          :style="{ paddingLeft: inlinePaddingLeft, paddingRight: '8px' }"
+        >
+          <Icon name="columns-3" :size="13" style="color: var(--c-muted); flex-shrink: 0;" />
+          <input
+            ref="inputRef"
+            v-model="editValue"
+            type="text"
+            placeholder="Board name…"
+            class="note-inline-input"
+            @keydown="onEditKeydown"
+            @blur="commitEdit"
+          />
+        </div>
+
+        <div
+          v-else
+          class="tree-dnd"
+          :class="{ selected: selection.isSelected(boardKey(board.id)) }"
+          draggable="true"
+          @dragstart.stop="onDragStart({ type: 'board', id: board.id }, $event)"
+        >
+          <Row
+            :label="board.name"
+            icon="columns-3"
+            :depth="depth + 1"
+            :active="activeBoardId !== null && board.id === activeBoardId"
+            :right="String(board.taskCount)"
+            menu
+            @click="(event: MouseEvent) => onBoardClick(event, board.id)"
+            @menu="(event: MouseEvent) => openBoardMenu(event, board.id, board.name)"
+            @contextmenu.prevent.stop="(event: MouseEvent) => openBoardMenu(event, board.id, board.name)"
+          />
+        </div>
+      </template>
+
       <div
-        v-if="editActive?.kind === 'new-doc' || editActive?.kind === 'new-folder'"
+        v-if="editActive?.kind === 'new-doc' || editActive?.kind === 'new-folder' || editActive?.kind === 'new-board'"
         style="display: flex; align-items: center; gap: 6px;"
         :style="{ paddingLeft: inlinePaddingLeft, paddingRight: '8px' }"
       >
         <Icon
-          :name="editActive.kind === 'new-doc' ? 'file' : 'folder'"
+          :name="editActive.kind === 'new-doc' ? 'file' : editActive.kind === 'new-board' ? 'columns-3' : 'folder'"
           :size="13"
           style="color: var(--c-muted); flex-shrink: 0;"
         />
@@ -325,7 +437,7 @@ const inlinePaddingLeft = computed(() => `${8 + (props.depth + 1) * 14}px`);
           ref="inputRef"
           v-model="editValue"
           type="text"
-          :placeholder="editActive.kind === 'new-doc' ? 'Page name…' : 'Folder name…'"
+          :placeholder="editActive.kind === 'new-doc' ? 'Page name…' : editActive.kind === 'new-board' ? 'Board name…' : 'Folder name…'"
           class="note-inline-input"
           @keydown="onEditKeydown"
           @blur="commitEdit"

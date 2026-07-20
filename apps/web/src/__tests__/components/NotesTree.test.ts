@@ -64,6 +64,51 @@ describe('NotesTree', () => {
     expect(docButton?.attributes('disabled')).toBeDefined();
   });
 
+  it('renders a board row with its task counter and navigates on click (Acta counter)', async () => {
+    const wrapper = mount(NotesTree, {
+      props: {
+        projectName: 'Atlas',
+        folders: [],
+        docs: [],
+        boards: [{ id: 'b1', name: 'Roadmap', folder_id: null, task_count: 23 }],
+        activeSlug: null,
+      },
+    });
+
+    expect(wrapper.text()).toContain('Roadmap');
+    expect(wrapper.text()).toContain('23');
+
+    const boardButton = wrapper.findAll('button').find((b) => b.text().includes('Roadmap'));
+    await boardButton?.trigger('click');
+
+    expect(wrapper.emitted('select-board')?.[0]).toEqual(['b1']);
+  });
+
+  it('writes a board drag payload so a board can be dropped into a folder', async () => {
+    const wrapper = mount(NotesTree, {
+      props: {
+        projectName: 'Atlas',
+        folders: [],
+        docs: [],
+        boards: [{ id: 'b1', name: 'Roadmap', folder_id: null, task_count: 0 }],
+        activeSlug: null,
+      },
+    });
+
+    const boardDnd = wrapper.findAll('.tree-dnd').find((el) => el.text().includes('Roadmap'));
+    let stored = '';
+    await boardDnd?.trigger('dragstart', {
+      dataTransfer: {
+        setData: (_type: string, val: string) => {
+          stored = val;
+        },
+        effectAllowed: '',
+      },
+    });
+
+    expect(JSON.parse(stored)).toEqual({ nodes: [{ type: 'board', id: 'b1' }] });
+  });
+
   it('ctrl-click selects a doc without opening it', async () => {
     const wrapper = mount(NotesTree, {
       props: {

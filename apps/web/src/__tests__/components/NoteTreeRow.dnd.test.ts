@@ -24,6 +24,17 @@ function folder(): TreeFolder {
   };
 }
 
+function folderWithBoard(): TreeFolder {
+  return {
+    kind: 'folder',
+    id: 'folder-1',
+    name: 'Specs',
+    folders: [],
+    docs: [],
+    boards: [{ kind: 'board', id: 'b1', name: 'Roadmap', taskCount: 12 }],
+  };
+}
+
 function dropWith(...nodes: unknown[]) {
   return { dataTransfer: { getData: () => JSON.stringify({ nodes }) } };
 }
@@ -119,6 +130,34 @@ describe('NoteTreeRow drag-and-drop', () => {
     await dropTarget.trigger('dragstart', { dataTransfer });
 
     expect(JSON.parse(stored)).toEqual({ nodes: [{ type: 'folder', id: 'folder-1' }] });
+  });
+
+  it('renders a nested board row with its counter and emits select-board on click', async () => {
+    const wrapper = mount(NoteTreeRow, {
+      props: { folder: folderWithBoard(), depth: 0, activeSlug: null },
+    });
+    await wrapper.get('.atl-row').trigger('click');
+
+    expect(wrapper.text()).toContain('Roadmap');
+    expect(wrapper.text()).toContain('12');
+
+    const boardButton = wrapper.findAll('button').find((b) => b.text().includes('Roadmap'));
+    await boardButton?.trigger('click');
+
+    expect(wrapper.emitted('select-board')?.[0]).toEqual(['b1']);
+    wrapper.unmount();
+  });
+
+  it('drops a board node onto a sibling folder to trigger its move', async () => {
+    const wrapper = mount(NoteTreeRow, {
+      props: { folder: folderWithBoard(), depth: 0, activeSlug: null },
+    });
+    const dropTarget = wrapper.findAll('.tree-dnd')[0];
+
+    await dropTarget?.trigger('drop', dropWith({ type: 'board', id: 'other-board' }));
+
+    expect(wrapper.emitted('move-nodes')).toEqual([[[{ type: 'board', id: 'other-board' }], 'folder-1']]);
+    wrapper.unmount();
   });
 
   it('dragging a selected item carries the whole selection', async () => {

@@ -364,6 +364,32 @@ export const useBoardsStore = defineStore('boards', () => {
     return true;
   }
 
+  /**
+   * Moves a board into a folder within the same project, or to the project root
+   * when `folderId` is null. Mirrors `useFoldersStore.move` / document move: on
+   * success the project's board bucket is re-fetched so the tree reflects the new
+   * parent. Cross-project moves are rejected server-side.
+   */
+  async function moveBoard(
+    ws: string,
+    projectSlug: string,
+    boardId: string,
+    folderId: string | null,
+  ): Promise<boolean> {
+    const { error: apiError } = await wrappedClient.PATCH('/api/workspaces/{ws}/boards/{board_id}/move', {
+      params: { path: { ws, board_id: boardId } },
+      body: { folder_id: folderId },
+    });
+
+    if (apiError !== undefined) {
+      error.value = errorHint(apiError, 'Failed to move board');
+      return false;
+    }
+
+    await loadBoardsForProject(ws, projectSlug);
+    return true;
+  }
+
   async function removeBoard(ws: string, projectSlug: string, boardId: string): Promise<boolean> {
     const { error: apiError } = await wrappedClient.DELETE('/api/workspaces/{ws}/boards/{board_id}', {
       params: { path: { ws, board_id: boardId } },
@@ -1501,6 +1527,7 @@ export const useBoardsStore = defineStore('boards', () => {
     publishForProject,
     createBoard,
     renameBoard,
+    moveBoard,
     removeBoard,
     createTask,
     loadBoard,
