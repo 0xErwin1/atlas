@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { wrappedClient } from '@/api/wrapper';
 import {
@@ -20,7 +20,7 @@ import ContextMenu, { type MenuItem } from '@/components/ui/ContextMenu.vue';
 import Row from '@/components/ui/Row.vue';
 import { useContextMenu } from '@/composables/useContextMenu';
 import { type LiveUpdateEvent, useLiveUpdates } from '@/composables/useLiveUpdates';
-import { EVENT_TYPE } from '@/lib/eventTypes';
+import { EVENT_TYPE, type LiveEnvelope } from '@/lib/eventTypes';
 import { type NoteCatalog, noteCatalogSchema } from '@/lib/noteCatalog';
 import { docKey, type TreeNodeRef } from '@/lib/notesTree';
 import { collectPaged } from '@/lib/pagination';
@@ -35,6 +35,13 @@ import type { ProjectSummary } from '@/stores/workspace';
 import { useWorkspaceStore } from '@/stores/workspace';
 
 const CATALOG_RETENTION_MS = 24 * 60 * 60 * 1000;
+
+// Live events arrive in bursts (an SSE dispatch invalidates the cache for every
+// event, and a single user action can emit several). Each event is coalesced into
+// a single trailing catalog reload so a burst of M events triggers one reload,
+// not M. The max-wait bounds the delay when events keep arriving back-to-back.
+const LIVE_RELOAD_DEBOUNCE_MS = 250;
+const LIVE_RELOAD_MAX_WAIT_MS = 1000;
 
 const props = defineProps<{
   project: ProjectSummary;
@@ -85,6 +92,15 @@ function clearCatalog(): void {
   boards.publishForProject(props.project.slug, []);
 }
 
+interface CatalogLoadContext {
+  sequence: number;
+  wsSlug: string;
+  project: ProjectSummary;
+  target: string;
+  statusKey: string;
+  isCurrent: () => boolean;
+}
+
 async function loadTree(): Promise<void> {
   const sequence = ++catalogSequence;
   const wsSlug = workspace.activeWorkspaceSlug;
@@ -107,7 +123,15 @@ async function loadTree(): Promise<void> {
   }
 
   const workspaceId = workspace.workspaceIdForSlug(wsSlug);
-  const isCurrent = () => sequence === catalogSequence && workspace.activeWorkspaceSlug === wsSlug;
+  const context: CatalogLoadContext = {
+    sequence,
+    wsSlug,
+    project,
+    target,
+    statusKey: `note-tree:${wsSlug}:${project.slug}`,
+    isCurrent: () => sequence === catalogSequence && workspace.activeWorkspaceSlug === wsSlug,
+  };
+
   const key = catalogCacheUnavailable.value
     ? null
     : buildCacheKey({
@@ -118,39 +142,61 @@ async function loadTree(): Promise<void> {
       });
 
   if (key === null || !resourceCache.isAvailable()) {
-    loading.value = true;
-    catalogError.value = null;
-    const statusKey = `note-tree:${wsSlug}:${project.slug}`;
-    const onlineHint = typeof navigator === 'undefined' || navigator.onLine;
-    resourceStatus.beginRequest(statusKey, onlineHint);
-
-    await Promise.all([
-      folders.load(wsSlug, project.slug),
-      documents.loadSummaries(wsSlug, project.slug),
-      boards.loadBoardsForProject(wsSlug, project.slug),
-    ]);
-    if (isCurrent()) {
-      if (folders.error !== null || documents.error !== null) {
-        catalogError.value = folders.error ?? documents.error ?? 'Failed to load notes';
-        resourceStatus.recordRequestFailure(statusKey, onlineHint);
-      } else {
-        catalogTarget.value = target;
-        resourceStatus.recordRequestSuccess(statusKey, true);
-      }
-    }
-    if (sequence === catalogSequence) loading.value = false;
+    await loadCatalogDegraded(context);
     return;
   }
 
+  await loadCatalogCached(context, key);
+}
+
+// Degraded path: the resource cache is unavailable, so each of folders,
+// documents and boards is fetched directly and the catalog only publishes when
+// all three succeed. Boards are gated on their dedicated load-error signal
+// (never the shared `boards.error` action channel, which an unrelated mutation
+// may have set) so a boards-only failure surfaces the error state instead of
+// silently publishing a catalog with stale or missing boards.
+async function loadCatalogDegraded(ctx: CatalogLoadContext): Promise<void> {
+  loading.value = true;
+  catalogError.value = null;
+  const onlineHint = typeof navigator === 'undefined' || navigator.onLine;
+  resourceStatus.beginRequest(ctx.statusKey, onlineHint);
+
+  const [, , boardsError] = await Promise.all([
+    folders.load(ctx.wsSlug, ctx.project.slug),
+    documents.loadSummaries(ctx.wsSlug, ctx.project.slug),
+    boards.loadBoardsForProject(ctx.wsSlug, ctx.project.slug),
+  ]);
+
+  if (ctx.isCurrent()) {
+    const failure = folders.error ?? documents.error ?? boardsError;
+    if (failure !== null) {
+      catalogError.value = failure;
+      resourceStatus.recordRequestFailure(ctx.statusKey, onlineHint);
+    } else {
+      catalogTarget.value = ctx.target;
+      resourceStatus.recordRequestSuccess(ctx.statusKey, true);
+    }
+  }
+
+  if (ctx.sequence === catalogSequence) loading.value = false;
+}
+
+// Cached path: hydrate synchronously from the resource cache when present, then
+// revalidate over the network. `publish` swaps folders, documents and boards in
+// atomically so the tree never shows a half-updated catalog.
+async function loadCatalogCached(ctx: CatalogLoadContext, key: string): Promise<void> {
+  const { wsSlug, project } = ctx;
+
   const publish = (payload: NoteCatalog): void => {
-    if (!isCurrent()) return;
+    if (!ctx.isCurrent()) return;
 
     folders.publishForProject(project.slug, payload.folders);
     documents.publishSummariesForProject(project.slug, payload.summaries);
     boards.publishForProject(project.slug, payload.boards);
-    catalogTarget.value = target;
-    resourceStatus.recordRequestSuccess(`note-tree:${wsSlug}:${project.slug}`, true);
+    catalogTarget.value = ctx.target;
+    resourceStatus.recordRequestSuccess(ctx.statusKey, true);
   };
+
   let catalogDenied = false;
   const load = async (): Promise<NoteCatalog> => {
     const [folderPage, summaryPage, boardPage] = await Promise.all([
@@ -190,6 +236,7 @@ async function loadTree(): Promise<void> {
 
     return { folders: folderPage.items, summaries: summaryPage.items, boards: boardPage.items };
   };
+
   const request = {
     key,
     payloadSchema: noteCatalogSchema,
@@ -199,32 +246,31 @@ async function loadTree(): Promise<void> {
     retentionForMs: CATALOG_RETENTION_MS,
     load,
     publish,
-    isCurrent,
+    isCurrent: ctx.isCurrent,
   };
 
   loading.value = true;
   catalogError.value = null;
-  const statusKey = `note-tree:${wsSlug}:${project.slug}`;
   const onlineHint = typeof navigator === 'undefined' || navigator.onLine;
-  resourceStatus.beginRequest(statusKey, onlineHint);
+  resourceStatus.beginRequest(ctx.statusKey, onlineHint);
   const operation = hydrateAndRevalidateResource(request);
   void operation.hydration.then((hydrated) => {
-    if (hydrated !== null && isCurrent()) resourceStatus.setRefreshing(statusKey);
+    if (hydrated !== null && ctx.isCurrent()) resourceStatus.setRefreshing(ctx.statusKey);
   });
   try {
     await operation.completion;
   } catch (error) {
-    if (isCurrent()) {
+    if (ctx.isCurrent()) {
       const status = (error as { status?: number } | undefined)?.status;
       if (catalogDenied || status === 403 || status === 404) {
         clearCatalog();
         loading.value = false;
       }
       catalogError.value = 'Failed to load notes';
-      resourceStatus.recordRequestFailure(statusKey, onlineHint);
+      resourceStatus.recordRequestFailure(ctx.statusKey, onlineHint);
     }
   } finally {
-    if (sequence === catalogSequence) loading.value = false;
+    if (ctx.sequence === catalogSequence) loading.value = false;
   }
 }
 
@@ -439,11 +485,59 @@ async function onPickFolder(target: string | null): Promise<void> {
 }
 
 // Refreshes this project's catalog silently when another actor mutates a
-// document or board somewhere in the workspace. Every space revalidates its own
-// cache entry; the freshness window dedups redundant refetches.
-function reloadNotesLive(): void {
+// document or board in this project. Each relevant live event is coalesced into
+// one trailing reload (see the debounce constants) so a burst of events triggers
+// a single catalog refetch, not one per event. Cross-project events are filtered
+// out entirely: with N spaces mounted, only the space whose project the event
+// targets reloads, instead of every space refetching on every workspace event.
+let liveReloadTrailingTimer: ReturnType<typeof setTimeout> | null = null;
+let liveReloadMaxWaitTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearLiveReloadTimers(): void {
+  if (liveReloadTrailingTimer !== null) {
+    clearTimeout(liveReloadTrailingTimer);
+    liveReloadTrailingTimer = null;
+  }
+  if (liveReloadMaxWaitTimer !== null) {
+    clearTimeout(liveReloadMaxWaitTimer);
+    liveReloadMaxWaitTimer = null;
+  }
+}
+
+function flushLiveReload(): void {
+  clearLiveReloadTimers();
   if (ws.value === '') return;
   void loadTree();
+}
+
+function scheduleLiveReload(): void {
+  if (ws.value === '') return;
+
+  if (liveReloadTrailingTimer !== null) clearTimeout(liveReloadTrailingTimer);
+  liveReloadTrailingTimer = setTimeout(flushLiveReload, LIVE_RELOAD_DEBOUNCE_MS);
+
+  if (liveReloadMaxWaitTimer === null) {
+    liveReloadMaxWaitTimer = setTimeout(flushLiveReload, LIVE_RELOAD_MAX_WAIT_MS);
+  }
+}
+
+// Whether a live event concerns this space's project. Filtering only kicks in
+// when both the event's `project_id` and this project's id are known; a missing
+// id falls back to reloading so a payload without routing metadata is never
+// silently dropped.
+function eventTargetsThisProject(envelope: LiveEnvelope): boolean {
+  const eventProjectId = envelope.project_id;
+  const ownProjectId = props.project.id;
+  if (
+    typeof eventProjectId !== 'string' ||
+    eventProjectId === '' ||
+    ownProjectId === undefined ||
+    ownProjectId === ''
+  ) {
+    return true;
+  }
+
+  return eventProjectId === ownProjectId;
 }
 
 function onLiveEvent(evt: LiveUpdateEvent): void {
@@ -456,7 +550,7 @@ function onLiveEvent(evt: LiveUpdateEvent): void {
     case EVENT_TYPE.BOARD_UPDATED:
     case EVENT_TYPE.BOARD_DELETED:
     case EVENT_TYPE.BOARD_MOVED:
-      reloadNotesLive();
+      if (eventTargetsThisProject(evt.envelope)) scheduleLiveReload();
       break;
 
     default:
@@ -465,6 +559,8 @@ function onLiveEvent(evt: LiveUpdateEvent): void {
 }
 
 useLiveUpdates(ws, { onEvent: onLiveEvent, onResync: () => void loadTree() });
+
+onBeforeUnmount(clearLiveReloadTimers);
 
 onMounted(loadTree);
 watch(

@@ -15,6 +15,10 @@ export type PrincipalDto = components['schemas']['PrincipalDto'];
 export type UserDto = components['schemas']['UserDto'];
 
 export interface ProjectSummary {
+  // The project's stable UUID. Optional because callers can construct a summary
+  // from a slug alone (e.g. tests); production loads always carry it from the
+  // `ProjectDto`, which lets live-event consumers match `envelope.project_id`.
+  id?: string;
   slug: string;
   name: string;
   task_prefix: string;
@@ -345,6 +349,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
     projectsError.value = null;
     projects.value = items.map((p) => ({
+      id: p.id,
       slug: p.slug,
       name: p.name,
       task_prefix: p.task_prefix,

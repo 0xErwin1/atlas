@@ -307,7 +307,14 @@ export const useBoardsStore = defineStore('boards', () => {
     boardsByProject.value = next;
   }
 
-  async function loadBoardsForProject(ws: string, projectSlug: string): Promise<void> {
+  /**
+   * Loads a project's boards into its bucket. Returns the load error message, or
+   * `null` on success, so a catalog loader can gate on this project's own board
+   * load without consulting the shared `error` action channel — which any
+   * unrelated mutation (assign, move, delete) may have set. The shared channel is
+   * still populated for existing toast callers.
+   */
+  async function loadBoardsForProject(ws: string, projectSlug: string): Promise<string | null> {
     const { items, error: apiError } = await collectPaged<BoardSummaryDto>((cursor) =>
       wrappedClient.GET('/api/workspaces/{ws}/projects/{project_slug}/boards', {
         params: {
@@ -318,11 +325,13 @@ export const useBoardsStore = defineStore('boards', () => {
     );
 
     if (apiError !== undefined) {
-      error.value = errorHint(apiError, 'Failed to load boards');
-      return;
+      const message = errorHint(apiError, 'Failed to load boards');
+      error.value = message;
+      return message;
     }
 
     publishForProject(projectSlug, items);
+    return null;
   }
 
   function boardsFor(projectSlug: string): BoardSummaryDto[] {

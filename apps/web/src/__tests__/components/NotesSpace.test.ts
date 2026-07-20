@@ -31,6 +31,7 @@ vi.mock('@/composables/useLiveUpdates', () => ({ useLiveUpdates }));
 
 import NotesSpace from '@/components/notas/NotesSpace.vue';
 import NotesTree from '@/components/notas/NotesTree.vue';
+import { useBoardsStore } from '@/stores/boards';
 import { useDocumentsStore } from '@/stores/documents';
 import { useFoldersStore } from '@/stores/folders';
 import type { ProjectSummary } from '@/stores/workspace';
@@ -38,8 +39,10 @@ import { useWorkspaceStore } from '@/stores/workspace';
 
 const PRINCIPAL = 'user:018f4abc-1234-7abc-8def-0123456789ab';
 const WORKSPACE_ID = '018f4abc-1234-7abc-8def-0123456789ac';
+const SANDBOX_PROJECT_ID = '018f4abc-1234-7abc-8def-0123456789ae';
 
 const SANDBOX: ProjectSummary = {
+  id: SANDBOX_PROJECT_ID,
   slug: 'sandbox',
   name: 'Sandbox',
   task_prefix: 'SBX',
@@ -221,8 +224,11 @@ describe('NotesSpace catalog', () => {
     loadFolders.mockClear();
 
     const handlers = capturedLiveHandlers();
+    vi.useFakeTimers();
     handlers.onEvent({ type: 'document.updated', data: {}, envelope: {} as never });
     handlers.onEvent({ type: 'task.updated', data: {}, envelope: {} as never });
+    await vi.advanceTimersByTimeAsync(2000);
+    vi.useRealTimers();
 
     expect(loadSummaries).toHaveBeenCalledTimes(1);
     expect(loadSummaries).toHaveBeenCalledWith('atlas', 'sandbox');
@@ -251,10 +257,83 @@ describe('NotesSpace catalog', () => {
     loadSummaries.mockClear();
 
     const handlers = capturedLiveHandlers();
+    vi.useFakeTimers();
     handlers.onEvent({ type: eventType, data: {}, envelope: {} as never });
+    await vi.advanceTimersByTimeAsync(2000);
+    vi.useRealTimers();
 
     expect(loadSummaries).toHaveBeenCalledTimes(1);
     expect(loadSummaries).toHaveBeenCalledWith('atlas', 'sandbox');
+    wrapper.unmount();
+  });
+
+  it('coalesces a burst of live events into a single catalog reload', async () => {
+    setupWorkspace();
+    vi.spyOn(useFoldersStore(), 'load').mockResolvedValue();
+    const loadSummaries = vi.spyOn(useDocumentsStore(), 'loadSummaries').mockResolvedValue();
+    vi.spyOn(useBoardsStore(), 'loadBoardsForProject').mockResolvedValue(null);
+
+    const wrapper = mountSpace();
+    await wrapper.vm.$nextTick();
+    loadSummaries.mockClear();
+
+    vi.useFakeTimers();
+    const handlers = capturedLiveHandlers();
+    for (let i = 0; i < 10; i += 1) {
+      handlers.onEvent({ type: EVENT_TYPE.DOCUMENT_UPDATED, data: {}, envelope: {} as never });
+    }
+    await vi.advanceTimersByTimeAsync(2000);
+    vi.useRealTimers();
+
+    expect(loadSummaries).toHaveBeenCalledTimes(1);
+    wrapper.unmount();
+  });
+
+  it("reloads only for live events targeting this space's project", async () => {
+    setupWorkspace();
+    vi.spyOn(useFoldersStore(), 'load').mockResolvedValue();
+    const loadSummaries = vi.spyOn(useDocumentsStore(), 'loadSummaries').mockResolvedValue();
+    vi.spyOn(useBoardsStore(), 'loadBoardsForProject').mockResolvedValue(null);
+
+    const wrapper = mountSpace();
+    await wrapper.vm.$nextTick();
+    loadSummaries.mockClear();
+
+    const handlers = capturedLiveHandlers();
+    vi.useFakeTimers();
+
+    handlers.onEvent({
+      type: EVENT_TYPE.DOCUMENT_UPDATED,
+      data: {},
+      envelope: { project_id: 'a-different-project' } as never,
+    });
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(loadSummaries).not.toHaveBeenCalled();
+
+    handlers.onEvent({
+      type: EVENT_TYPE.DOCUMENT_UPDATED,
+      data: {},
+      envelope: { project_id: SANDBOX_PROJECT_ID } as never,
+    });
+    await vi.advanceTimersByTimeAsync(2000);
+    vi.useRealTimers();
+
+    expect(loadSummaries).toHaveBeenCalledTimes(1);
+    wrapper.unmount();
+  });
+
+  it('surfaces the error state when only the boards load fails in the degraded branch', async () => {
+    setResourceCachePrincipal(undefined);
+    setupWorkspace();
+    vi.spyOn(useFoldersStore(), 'load').mockResolvedValue();
+    vi.spyOn(useDocumentsStore(), 'loadSummaries').mockResolvedValue();
+    vi.spyOn(useBoardsStore(), 'loadBoardsForProject').mockResolvedValue('Failed to load boards');
+
+    const wrapper = mountSpace();
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Couldn’t load notes');
+    expect(wrapper.findComponent(NotesTree).exists()).toBe(false);
     wrapper.unmount();
   });
 
