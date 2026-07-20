@@ -646,6 +646,9 @@
           },
           "403": {
             "description": "API keys cannot change a user password"
+          },
+          "422": {
+            "description": "New password too short"
           }
         },
         "security": [
@@ -950,6 +953,9 @@
           },
           "403": {
             "description": "API keys cannot update a user profile"
+          },
+          "422": {
+            "description": "Invalid display_name or email"
           }
         },
         "security": [
@@ -1067,7 +1073,7 @@
             "description": "Unauthenticated"
           },
           "403": {
-            "description": "Not a root/admin user"
+            "description": "Not a root/admin user, or target is protected"
           }
         },
         "security": [
@@ -1163,6 +1169,9 @@
           },
           "403": {
             "description": "Not a root/admin user, or target is protected"
+          },
+          "422": {
+            "description": "New password too short"
           }
         },
         "security": [
@@ -2472,6 +2481,73 @@
           },
           "409": {
             "description": "Position exhausted during reorder — retry"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/api/workspaces/{ws}/boards/{board_id}/move": {
+      "patch": {
+        "tags": [
+          "boards"
+        ],
+        "operationId": "move_board",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "board_id",
+            "in": "path",
+            "description": "Board UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveBoardRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Board moved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoardDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          },
+          "404": {
+            "description": "Board not found"
+          },
+          "422": {
+            "description": "Invalid destination folder"
           }
         },
         "security": [
@@ -11493,6 +11569,13 @@
           "created_by": {
             "$ref": "#/components/schemas/ActorDto"
           },
+          "folder_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
           "id": {
             "type": "string",
             "format": "uuid"
@@ -11535,6 +11618,7 @@
         "required": [
           "id",
           "name",
+          "task_count",
           "created_at",
           "updated_at"
         ],
@@ -11543,12 +11627,24 @@
             "type": "string",
             "format": "date-time"
           },
+          "folder_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
           "id": {
             "type": "string",
             "format": "uuid"
           },
           "name": {
             "type": "string"
+          },
+          "task_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Count of top-level (non-subtask) tasks on the board, excluding soft-deleted tasks."
           },
           "updated_at": {
             "type": "string",
@@ -12077,6 +12173,13 @@
           "name"
         ],
         "properties": {
+          "folder_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
           "name": {
             "type": "string"
           }
@@ -13113,6 +13216,19 @@
           }
         }
       },
+      "MoveBoardRequest": {
+        "type": "object",
+        "description": "Request body for `PATCH /api/workspaces/{ws}/boards/{board_id}/move`.",
+        "properties": {
+          "folder_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
       "MoveDocumentRequest": {
         "type": "object",
         "description": "Request body for `PATCH /api/workspaces/{ws}/documents/{slug}/move`.",
@@ -13543,6 +13659,7 @@
               "required": [
                 "id",
                 "name",
+                "task_count",
                 "created_at",
                 "updated_at"
               ],
@@ -13551,12 +13668,24 @@
                   "type": "string",
                   "format": "date-time"
                 },
+                "folder_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                },
                 "id": {
                   "type": "string",
                   "format": "uuid"
                 },
                 "name": {
                   "type": "string"
+                },
+                "task_count": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "Count of top-level (non-subtask) tasks on the board, excluding soft-deleted tasks."
                 },
                 "updated_at": {
                   "type": "string",
