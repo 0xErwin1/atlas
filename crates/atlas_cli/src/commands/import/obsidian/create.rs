@@ -306,6 +306,7 @@ pub(crate) async fn execute_boards_and_tasks(
                         project,
                         CreateBoardRequest {
                             name: op.name.clone(),
+                            folder_id: None,
                         },
                     )
                     .await?;

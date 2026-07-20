@@ -52,6 +52,7 @@ async fn seed_project_board_column(
         .create_board(
             ctx,
             NewBoard {
+                folder_id: None,
                 project_id: project.id,
                 name: "Main".into(),
             },

@@ -1970,6 +1970,7 @@ mod tests {
         BoardSummaryDto {
             id: fixed_uuid(),
             name: "Sprint Board".into(),
+            folder_id: None,
             created_at: now(),
             updated_at: now(),
         }

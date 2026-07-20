@@ -11,21 +11,21 @@ use serde::Deserialize;
 use atlas_api::{
     dtos::boards_tasks::{
         BoardDto, BoardSummaryDto, ColumnDto, CreateBoardRequest, CreateColumnRequest,
-        UpdateBoardRequest, UpdateColumnRequest,
+        MoveBoardRequest, UpdateBoardRequest, UpdateColumnRequest,
     },
     pagination::{Cursor, Page},
 };
 use atlas_domain::{
     Actor, WorkspaceCtx,
     entities::boards_tasks::{Board, BoardColumn, ColumnPatch, NewBoard, PositionBetween},
-    ids::ColumnId,
+    ids::{ColumnId, FolderId},
     permissions::Principal,
 };
 
 use crate::{
     authz::{
         Authorized, BoardRes, BoardsCreate, BoardsDelete, BoardsRead, BoardsUpdate, EditorMin,
-        ProjectRes, ViewerMin,
+        MinRole, ProjectRes, ViewerMin, authorize_folder_destination, resolve_folder_ancestry,
     },
     error::ApiError,
     persistence::repos::{BoardRepo, PgBoardRepo},
@@ -65,6 +65,7 @@ fn board_to_dto(b: Board) -> BoardDto {
         id: b.id.0,
         workspace_id: b.workspace_id.0,
         project_id: b.project_id.0,
+        folder_id: b.folder_id.map(|id| id.0),
         name: b.name,
         created_by: atlas_api::dtos::documents::ActorDto {
             r#type: actor_type,
@@ -120,13 +121,28 @@ pub(crate) async fn create_board(
 
     let actor = principal_to_actor(&auth.principal);
     let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
+    let project_id = auth.resource.0.id;
+
+    if let Some(folder_uuid) = body.folder_id {
+        let ancestry =
+            resolve_folder_ancestry(&state.db, auth.workspace.id, FolderId(folder_uuid)).await?;
+
+        let folder_project = ancestry.last().and_then(|f| f.project_id);
+        if folder_project != Some(project_id) {
+            return Err(ApiError::InvalidInput {
+                message: "target folder does not exist in this workspace".to_string(),
+            });
+        }
+    }
+
     let repo = PgBoardRepo::new((*state.db).clone());
 
     let board = repo
         .create_board(
             &ctx,
             NewBoard {
-                project_id: auth.resource.0.id,
+                project_id,
+                folder_id: body.folder_id.map(FolderId),
                 name: body.name,
             },
         )
@@ -195,6 +211,7 @@ pub(crate) async fn list_boards(
         .map(|b| BoardSummaryDto {
             id: b.id.0,
             name: b.name,
+            folder_id: b.folder_id.map(|id| id.0),
             created_at: b.created_at,
             updated_at: b.updated_at,
         })
@@ -270,6 +287,58 @@ pub(crate) async fn update_board(
     } else {
         auth.resource.0
     };
+
+    Ok(Json(board_to_dto(board)))
+}
+
+// ---------------------------------------------------------------------------
+// PATCH /api/workspaces/{ws}/boards/{board_id}/move
+// ---------------------------------------------------------------------------
+
+#[utoipa::path(
+    patch,
+    path = "/api/workspaces/{ws}/boards/{board_id}/move",
+    tag = "boards",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+        ("board_id" = String, Path, description = "Board UUID"),
+    ),
+    request_body = MoveBoardRequest,
+    responses(
+        (status = 200, description = "Board moved", body = BoardDto),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Insufficient permissions"),
+        (status = 404, description = "Board not found"),
+        (status = 422, description = "Invalid destination folder"),
+    )
+)]
+pub(crate) async fn move_board(
+    auth: Authorized<BoardRes, EditorMin, BoardsUpdate>,
+    State(state): State<AppState>,
+    Json(body): Json<MoveBoardRequest>,
+) -> Result<Json<BoardDto>, ApiError> {
+    let actor = principal_to_actor(&auth.principal);
+    let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
+
+    if let Some(fid) = body.folder_id {
+        authorize_folder_destination(
+            &state.db,
+            &auth.principal,
+            auth.membership.clone(),
+            &auth.workspace,
+            FolderId(fid),
+            EditorMin::ROLE,
+        )
+        .await?;
+    }
+
+    let repo = PgBoardRepo::new((*state.db).clone());
+
+    let board = repo
+        .move_board(&ctx, auth.resource.0.id, body.folder_id.map(FolderId))
+        .await
+        .map_err(ApiError::Domain)?;
 
     Ok(Json(board_to_dto(board)))
 }

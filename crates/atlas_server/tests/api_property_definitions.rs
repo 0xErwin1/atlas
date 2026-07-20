@@ -33,7 +33,10 @@ async fn seed_board_column(client: &AtlasClient, ws_slug: &str) -> (uuid::Uuid, 
         .create_board(
             ws_slug,
             &project.slug,
-            CreateBoardRequest { name: "B".into() },
+            CreateBoardRequest {
+                folder_id: None,
+                name: "B".into(),
+            },
         )
         .await
         .expect("create board");

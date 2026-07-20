@@ -220,7 +220,10 @@ async fn rename_tag_updates_name_and_backfills_task_labels() {
         .create_board(
             &ws.slug,
             &project.slug,
-            CreateBoardRequest { name: "B".into() },
+            CreateBoardRequest {
+                folder_id: None,
+                name: "B".into(),
+            },
         )
         .await
         .expect("create board");
@@ -359,7 +362,10 @@ async fn rename_tag_dedup_when_new_name_already_present_in_task() {
         .create_board(
             &ws.slug,
             &project.slug,
-            CreateBoardRequest { name: "B".into() },
+            CreateBoardRequest {
+                folder_id: None,
+                name: "B".into(),
+            },
         )
         .await
         .expect("create board");
@@ -498,7 +504,10 @@ async fn recolor_tag_sets_color_without_backfill() {
         .create_board(
             &ws.slug,
             &project.slug,
-            CreateBoardRequest { name: "B".into() },
+            CreateBoardRequest {
+                folder_id: None,
+                name: "B".into(),
+            },
         )
         .await
         .expect("create board");
@@ -606,7 +615,10 @@ async fn soft_delete_tag_removes_it_from_list_but_keeps_task_labels() {
         .create_board(
             &ws.slug,
             &project.slug,
-            CreateBoardRequest { name: "B".into() },
+            CreateBoardRequest {
+                folder_id: None,
+                name: "B".into(),
+            },
         )
         .await
         .expect("create board");
@@ -961,7 +973,10 @@ async fn list_used_labels_returns_distinct_labels_across_tasks() {
         .create_board(
             &ws.slug,
             &project.slug,
-            CreateBoardRequest { name: "B".into() },
+            CreateBoardRequest {
+                folder_id: None,
+                name: "B".into(),
+            },
         )
         .await
         .expect("create board");
@@ -1060,7 +1075,10 @@ async fn list_used_labels_excludes_soft_deleted_task_labels() {
         .create_board(
             &ws.slug,
             &project.slug,
-            CreateBoardRequest { name: "B".into() },
+            CreateBoardRequest {
+                folder_id: None,
+                name: "B".into(),
+            },
         )
         .await
         .expect("create board");
@@ -1187,7 +1205,10 @@ async fn list_used_labels_isolated_per_workspace() {
         .create_board(
             &ws_a.slug,
             &project_a.slug,
-            CreateBoardRequest { name: "B".into() },
+            CreateBoardRequest {
+                folder_id: None,
+                name: "B".into(),
+            },
         )
         .await
         .expect("create board in A");

@@ -53,6 +53,7 @@ async fn list_boards_is_scoped_to_project() {
     repo.create_board(
         &ctx,
         NewBoard {
+            folder_id: None,
             project_id: proj_a.id,
             name: "Board A1".into(),
         },
@@ -62,6 +63,7 @@ async fn list_boards_is_scoped_to_project() {
     repo.create_board(
         &ctx,
         NewBoard {
+            folder_id: None,
             project_id: proj_a.id,
             name: "Board A2".into(),
         },
@@ -71,6 +73,7 @@ async fn list_boards_is_scoped_to_project() {
     repo.create_board(
         &ctx,
         NewBoard {
+            folder_id: None,
             project_id: proj_b.id,
             name: "Board B1".into(),
         },
@@ -114,6 +117,7 @@ async fn resequence_column_reorders_existing_keys() {
         .create_board(
             &ctx,
             NewBoard {
+                folder_id: None,
                 project_id: proj.id,
                 name: "B".into(),
             },
@@ -198,6 +202,7 @@ async fn add_column_returns_position_exhausted_when_anchors_are_equal() {
         .create_board(
             &ctx,
             NewBoard {
+                folder_id: None,
                 project_id: proj.id,
                 name: "Exhaustion Board".into(),
             },
@@ -264,6 +269,7 @@ async fn add_column_recovers_after_resequence() {
         .create_board(
             &ctx,
             NewBoard {
+                folder_id: None,
                 project_id: proj.id,
                 name: "Recover Board".into(),
             },

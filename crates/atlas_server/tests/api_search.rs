@@ -632,6 +632,7 @@ async fn seed_doc_and_task(db: &support::TestDb, ctx: &WorkspaceCtx, unique: &st
         .create_board(
             ctx,
             NewBoard {
+                folder_id: None,
                 project_id: project.id,
                 name: "Board".to_string(),
             },

@@ -2677,6 +2677,7 @@ mod tests {
         BoardSummaryDto {
             id: Uuid::now_v7(),
             name: "Dev Board".to_owned(),
+            folder_id: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

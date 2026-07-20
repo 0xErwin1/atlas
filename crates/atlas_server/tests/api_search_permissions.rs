@@ -262,6 +262,7 @@ async fn seed_task_with_board(
         .create_board(
             ctx,
             NewBoard {
+                folder_id: None,
                 project_id: project.id,
                 name: "Board".to_string(),
             },

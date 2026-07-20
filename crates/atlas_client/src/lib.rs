@@ -15,11 +15,11 @@ use atlas_api::{
             ActivityEntryDto, AddAssigneeRequest, AssigneeDto, BoardDto, BoardSummaryDto,
             ChecklistItemDto, ColumnDto, CommentDto, CommentFeedEntryDto, CreateBoardRequest,
             CreateChecklistItemRequest, CreateColumnRequest, CreateCommentRequest,
-            CreateReferenceRequest, CreateSubtaskRequest, CreateTaskRequest, MoveTaskRequest,
-            PromoteChecklistItemRequest, PromotionDto, ReferenceDto, RenameTaskAttachmentRequest,
-            TaskAttachmentDto, TaskBacklinkDto, TaskDto, TaskSummaryDto, UnifiedReferenceDto,
-            UpdateBoardRequest, UpdateChecklistItemRequest, UpdateColumnRequest,
-            UpdateCommentRequest, UpdateTaskRequest, WorkspaceTaskQueryParams,
+            CreateReferenceRequest, CreateSubtaskRequest, CreateTaskRequest, MoveBoardRequest,
+            MoveTaskRequest, PromoteChecklistItemRequest, PromotionDto, ReferenceDto,
+            RenameTaskAttachmentRequest, TaskAttachmentDto, TaskBacklinkDto, TaskDto,
+            TaskSummaryDto, UnifiedReferenceDto, UpdateBoardRequest, UpdateChecklistItemRequest,
+            UpdateColumnRequest, UpdateCommentRequest, UpdateTaskRequest, WorkspaceTaskQueryParams,
         },
         documents::{
             AttachmentDto, BacklinkDto, CommentAttachmentDto, CommentDraftDto, ConflictProblemDto,
@@ -1699,6 +1699,22 @@ impl AtlasClient {
             .send()
             .await?;
         self.decode_response(response, "update_board").await
+    }
+
+    /// `PATCH /api/workspaces/{ws}/boards/{board_id}/move`
+    pub async fn move_board(
+        &self,
+        ws: &str,
+        board_id: uuid::Uuid,
+        body: MoveBoardRequest,
+    ) -> Result<BoardDto, ClientError> {
+        let response = self
+            .patch(&format!("/api/workspaces/{ws}/boards/{board_id}/move"))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "move_board").await
     }
 
     /// `DELETE /api/workspaces/{ws}/boards/{board_id}`

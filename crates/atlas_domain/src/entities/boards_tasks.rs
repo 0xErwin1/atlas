@@ -1,7 +1,7 @@
 use crate::actor::Actor;
 use crate::ids::{
-    BoardId, ChecklistItemId, ColumnId, DocumentId, ProjectId, TaskId, TaskReferenceId, UserId,
-    WorkspaceId,
+    BoardId, ChecklistItemId, ColumnId, DocumentId, FolderId, ProjectId, TaskId, TaskReferenceId,
+    UserId, WorkspaceId,
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -11,6 +11,7 @@ pub struct Board {
     pub id: BoardId,
     pub workspace_id: WorkspaceId,
     pub project_id: ProjectId,
+    pub folder_id: Option<FolderId>,
     pub name: String,
     pub created_by: Actor,
     pub created_at: DateTime<Utc>,
@@ -21,6 +22,7 @@ pub struct Board {
 #[derive(Debug, Clone)]
 pub struct NewBoard {
     pub project_id: ProjectId,
+    pub folder_id: Option<FolderId>,
     pub name: String,
 }
 

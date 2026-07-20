@@ -45,6 +45,7 @@ async fn task_attachment_upload_list_download_delete_roundtrip() {
             &ws.slug,
             "attach-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -295,6 +296,7 @@ async fn task_attachment_upload_list_download_delete_roundtrip() {
             &other_ws.slug,
             "other-attach-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Other board".to_string(),
             },
         )
@@ -449,6 +451,7 @@ async fn task_attachment_rename_respects_configured_extension_allowlist() {
             &ws.slug,
             "allowlist-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )

@@ -41,6 +41,7 @@ pub mod m20260705_000038_apikey_scopes;
 pub mod m20260708_000039_search_embeddings;
 pub mod m20260713_000040_comment_freedom;
 pub mod m20260715_000041_comment_attachment_drafts;
+pub mod m20260720_000042_board_folder;
 
 use sea_orm_migration::prelude::*;
 
@@ -91,6 +92,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260708_000039_search_embeddings::Migration),
             Box::new(m20260713_000040_comment_freedom::Migration),
             Box::new(m20260715_000041_comment_attachment_drafts::Migration),
+            Box::new(m20260720_000042_board_folder::Migration),
         ]
     }
 }
@@ -105,16 +107,13 @@ mod tests {
     }
 
     #[test]
-    fn comment_attachment_drafts_migration_is_registered_after_comment_freedom() {
+    fn board_folder_migration_is_registered_last() {
         let migrations = Migrator::migrations();
         let names: Vec<_> = migrations
             .iter()
             .map(|migration| migration.name())
             .collect();
 
-        assert_eq!(
-            names.last(),
-            Some(&"m20260715_000041_comment_attachment_drafts")
-        );
+        assert_eq!(names.last(), Some(&"m20260720_000042_board_folder"));
     }
 }

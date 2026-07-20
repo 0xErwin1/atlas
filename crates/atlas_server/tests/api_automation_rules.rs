@@ -115,6 +115,7 @@ async fn admin_creates_automation_rule_returns_201() {
         .create_board(
             &ctx,
             NewBoard {
+                folder_id: None,
                 name: "B".to_string(),
                 project_id: project.id,
             },
@@ -427,6 +428,7 @@ async fn non_admin_rejected_on_automation_rule_endpoints() {
         .create_board(
             &ctx,
             NewBoard {
+                folder_id: None,
                 name: "B".to_string(),
                 project_id: project.id,
             },
@@ -556,6 +558,7 @@ async fn automation_rule_crud() {
         .create_board(
             &ctx,
             NewBoard {
+                folder_id: None,
                 name: "B".to_string(),
                 project_id: project.id,
             },

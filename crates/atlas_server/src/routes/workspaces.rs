@@ -165,6 +165,7 @@ async fn seed_default_content(
             &ctx,
             NewBoard {
                 project_id: project.id,
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )

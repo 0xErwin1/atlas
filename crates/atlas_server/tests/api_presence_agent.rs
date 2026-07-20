@@ -178,6 +178,7 @@ async fn seed_project_and_board(
         .create_board(
             ctx,
             NewBoard {
+                folder_id: None,
                 project_id: project.id,
                 name: "Board".to_string(),
             },
@@ -294,6 +295,7 @@ async fn seed_board_via_client(
             ws_slug,
             &project.slug,
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )

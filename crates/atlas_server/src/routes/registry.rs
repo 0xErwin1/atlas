@@ -667,6 +667,13 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         capability: Some("boards:delete"),
     },
     RouteEntry {
+        method: "PATCH",
+        path_template: "/api/workspaces/{ws}/boards/00000000-0000-0000-0000-000000000001/move",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/api/workspaces/{ws}/boards/{board_id}/move"),
+        capability: Some("boards:update"),
+    },
+    RouteEntry {
         method: "POST",
         path_template: "/api/workspaces/{ws}/boards/00000000-0000-0000-0000-000000000001/columns",
         kind: RouteKind::WorkspaceMember,

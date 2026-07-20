@@ -12,7 +12,10 @@ use atlas_domain::{
         DomainEvent,
     },
     entities::task_views::{ActorTypeFilter, AssigneeFilter, TaskSort, TaskViewFilters},
-    ids::{BoardId, ChecklistItemId, ColumnId, ProjectId, TaskActivityId, TaskId, TaskReferenceId},
+    ids::{
+        BoardId, ChecklistItemId, ColumnId, FolderId, ProjectId, TaskActivityId, TaskId,
+        TaskReferenceId,
+    },
     ports::boards_tasks::{
         TaskListCursor, WorkspaceActivityFilters, WorkspaceActivityRow, WorkspaceActivityScope,
     },
@@ -59,6 +62,7 @@ impl BoardRepo for PgBoardRepo {
             id: Set(BoardId::new().0),
             workspace_id: Set(ctx.workspace_id.0),
             project_id: Set(new.project_id.0),
+            folder_id: Set(new.folder_id.map(|id| id.0)),
             name: Set(new.name),
             created_by_user_id: Set(by_user),
             created_by_api_key_id: Set(by_key),
@@ -141,6 +145,149 @@ impl BoardRepo for PgBoardRepo {
             .await
             .map(|rows| rows.into_iter().map(board_from).collect())
             .map_err(db_err)
+    }
+
+    async fn list_boards_in_folder(
+        &self,
+        ctx: &WorkspaceCtx,
+        folder_id: FolderId,
+    ) -> Result<Vec<Board>, DomainError> {
+        board::Entity::find()
+            .filter(board::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(board::Column::FolderId.eq(folder_id.0))
+            .filter(board::Column::DeletedAt.is_null())
+            .all(&self.conn)
+            .await
+            .map(|rows| rows.into_iter().map(board_from).collect())
+            .map_err(db_err)
+    }
+
+    async fn move_board(
+        &self,
+        ctx: &WorkspaceCtx,
+        id: BoardId,
+        folder: Option<FolderId>,
+    ) -> Result<Board, DomainError> {
+        use crate::persistence::entities::workspace_core::folder as folder_entity;
+
+        let row = board::Entity::find_by_id(id.0)
+            .filter(board::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(board::Column::DeletedAt.is_null())
+            .one(&self.conn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "board",
+                id: id.0,
+            })?;
+
+        if let Some(folder_id) = folder {
+            let folder_row = folder_entity::Entity::find_by_id(folder_id.0)
+                .filter(folder_entity::Column::WorkspaceId.eq(ctx.workspace_id.0))
+                .filter(folder_entity::Column::DeletedAt.is_null())
+                .one(&self.conn)
+                .await
+                .map_err(db_err)?
+                .ok_or(DomainError::InvalidInput {
+                    message: "target folder does not exist in this workspace".to_string(),
+                })?;
+
+            if folder_row.project_id != Some(row.project_id) {
+                return Err(DomainError::InvalidInput {
+                    message: "target folder does not belong to this board's project".to_string(),
+                });
+            }
+        }
+
+        let mut active = row.into_active_model();
+        active.folder_id = Set(folder.map(|id| id.0));
+        active.updated_at = Set(Utc::now());
+        active
+            .update(&self.conn)
+            .await
+            .map(board_from)
+            .map_err(db_err)
+    }
+
+    async fn copy_board(
+        &self,
+        ctx: &WorkspaceCtx,
+        source: BoardId,
+        folder: Option<FolderId>,
+    ) -> Result<Board, DomainError> {
+        let txn = self.conn.begin().await.map_err(db_err)?;
+
+        let source_row = board::Entity::find_by_id(source.0)
+            .filter(board::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(board::Column::DeletedAt.is_null())
+            .one(&txn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "board",
+                id: source.0,
+            })?;
+
+        let source_columns = board_column::Entity::find()
+            .filter(board_column::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(board_column::Column::BoardId.eq(source.0))
+            .filter(board_column::Column::DeletedAt.is_null())
+            .order_by_asc(board_column::Column::PositionKey)
+            .all(&txn)
+            .await
+            .map_err(db_err)?;
+
+        let (by_user, by_key) = actor_columns(&ctx.actor);
+        let board_project_id = ProjectId(source_row.project_id);
+        let board_name = source_row.name.clone();
+
+        let board_model = board::ActiveModel {
+            id: Set(BoardId::new().0),
+            workspace_id: Set(ctx.workspace_id.0),
+            project_id: Set(source_row.project_id),
+            folder_id: Set(folder.map(|id| id.0)),
+            name: Set(source_row.name),
+            created_by_user_id: Set(by_user),
+            created_by_api_key_id: Set(by_key),
+            created_at: Set(Utc::now()),
+            updated_at: Set(Utc::now()),
+            deleted_at: Set(None),
+        };
+        let inserted_board = board_model.insert(&txn).await.map_err(db_err)?;
+        let board_id = BoardId(inserted_board.id);
+
+        for col in source_columns {
+            let col_model = board_column::ActiveModel {
+                id: Set(ColumnId::new().0),
+                workspace_id: Set(ctx.workspace_id.0),
+                board_id: Set(board_id.0),
+                name: Set(col.name),
+                position_key: Set(col.position_key),
+                color: Set(col.color),
+                created_by_user_id: Set(by_user),
+                created_by_api_key_id: Set(by_key),
+                created_at: Set(Utc::now()),
+                updated_at: Set(Utc::now()),
+                deleted_at: Set(None),
+            };
+            col_model.insert(&txn).await.map_err(db_err)?;
+        }
+
+        PgOutboxRepo::insert_in(
+            &txn,
+            ctx,
+            Some(board_project_id),
+            Some(board_id),
+            DomainEvent::BoardCreated(BoardCreatedPayload {
+                board_id,
+                project_id: board_project_id,
+                name: board_name,
+            }),
+        )
+        .await?;
+
+        txn.commit().await.map_err(db_err)?;
+        Ok(board_from(inserted_board))
     }
 
     async fn add_column(

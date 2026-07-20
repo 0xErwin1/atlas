@@ -95,6 +95,7 @@ async fn task_repo_workspace_isolation() {
         .create_board(
             &ctx_b,
             NewBoard {
+                folder_id: None,
                 project_id: proj_b.id,
                 name: "Main".into(),
             },
@@ -291,6 +292,7 @@ async fn board_repo_workspace_isolation() {
         .create_board(
             &ctx_b,
             NewBoard {
+                folder_id: None,
                 project_id: proj_b.id,
                 name: "Bob Board".into(),
             },
@@ -345,6 +347,7 @@ async fn task_reference_repo_workspace_isolation() {
         .create_board(
             &ctx_b,
             NewBoard {
+                folder_id: None,
                 project_id: proj_b.id,
                 name: "Main".into(),
             },

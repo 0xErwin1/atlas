@@ -26,7 +26,9 @@ use crate::{
         resolve_folder_ancestry,
     },
     error::ApiError,
-    persistence::repos::{DocumentRepo, FolderRepo, PgDocumentRepo, PgFolderRepo},
+    persistence::repos::{
+        BoardRepo, DocumentRepo, FolderRepo, PgBoardRepo, PgDocumentRepo, PgFolderRepo,
+    },
     routes::{documents::copy_document_into, validation::validate_name},
     services::DocumentService,
     state::AppState,
@@ -397,6 +399,7 @@ pub(crate) async fn copy_folder(
         conn: (*state.db).clone(),
     };
     let doc_repo = PgDocumentRepo::new((*state.db).clone(), state.anchor_interval);
+    let board_repo = PgBoardRepo::new((*state.db).clone());
     let doc_svc = state.document_service();
 
     let top_name = format!("{} (copy)", source.name);
@@ -418,6 +421,7 @@ pub(crate) async fn copy_folder(
         ctx: &ctx,
         folder_repo: &folder_repo,
         doc_repo: &doc_repo,
+        board_repo: &board_repo,
         doc_svc: &doc_svc,
     };
     copy_folder_subtree(&copy_deps, &source, &new_top, 0).await?;
@@ -425,19 +429,23 @@ pub(crate) async fn copy_folder(
     Ok((StatusCode::CREATED, Json(folder_to_dto(new_top))))
 }
 
-/// Recursively recreates the documents and subfolders of `source` underneath the
-/// already-created `dest` folder.
+/// Recursively recreates the documents, boards, and subfolders of `source`
+/// underneath the already-created `dest` folder.
 ///
-/// Descendant subfolders and documents preserve their original names verbatim
-/// (only the top-level copy carries the " (copy)" suffix, applied by the caller).
-/// Every created entity gets a fresh id and, for documents, a fresh slug and
-/// first revision. Bounded by `MAX_COPY_DEPTH` to guard against cyclic trees.
+/// Descendant subfolders, documents, and boards preserve their original names
+/// verbatim (only the top-level copy carries the " (copy)" suffix, applied by
+/// the caller). Every created entity gets a fresh id and, for documents, a
+/// fresh slug and first revision. Boards are copied structurally (board +
+/// columns); their tasks are not duplicated, because tasks are identity-bearing
+/// entities (readable ids, comments, attachments, references). Bounded by
+/// `MAX_COPY_DEPTH` to guard against cyclic trees.
 /// Borrowed handles threaded through the recursive folder copy.
 struct CopyDeps<'a> {
     state: &'a AppState,
     ctx: &'a WorkspaceCtx,
     folder_repo: &'a PgFolderRepo,
     doc_repo: &'a PgDocumentRepo,
+    board_repo: &'a PgBoardRepo,
     doc_svc: &'a DocumentService,
 }
 
@@ -469,6 +477,19 @@ async fn copy_folder_subtree(
             dest.project_id,
         )
         .await?;
+    }
+
+    let boards = deps
+        .board_repo
+        .list_boards_in_folder(deps.ctx, source.id)
+        .await
+        .map_err(ApiError::Domain)?;
+
+    for board in &boards {
+        deps.board_repo
+            .copy_board(deps.ctx, board.id, Some(dest.id))
+            .await
+            .map_err(ApiError::Domain)?;
     }
 
     let children = deps

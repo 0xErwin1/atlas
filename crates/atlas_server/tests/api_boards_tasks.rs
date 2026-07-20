@@ -137,6 +137,7 @@ async fn create_and_get_board_returns_201_and_board_data() {
             &ws.slug,
             "board-proj-1",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Sprint 1".to_string(),
             },
         )
@@ -173,6 +174,7 @@ async fn list_boards_returns_created_boards() {
             &ws.slug,
             "board-list-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "A".to_string(),
             },
         )
@@ -183,6 +185,7 @@ async fn list_boards_returns_created_boards() {
             &ws.slug,
             "board-list-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "B".to_string(),
             },
         )
@@ -215,6 +218,7 @@ async fn update_board_renames_it() {
             &ws.slug,
             "board-upd-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Old".to_string(),
             },
         )
@@ -253,6 +257,7 @@ async fn delete_board_makes_it_invisible() {
             &ws.slug,
             "board-del-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Del".to_string(),
             },
         )
@@ -294,6 +299,7 @@ async fn create_and_list_columns() {
             &ws.slug,
             "col-proj-1",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -343,6 +349,7 @@ async fn update_column_renames_it() {
             &ws.slug,
             "col-upd-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -399,6 +406,7 @@ async fn delete_column_removes_it_from_list() {
             &ws.slug,
             "col-del-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -453,6 +461,7 @@ async fn delete_column_with_live_task_is_rejected() {
             &ws.slug,
             "col-busy-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -538,6 +547,7 @@ async fn get_task_returns_board_name_and_column_name() {
             &ws.slug,
             "task-names-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "My Board".to_string(),
             },
         )
@@ -607,6 +617,7 @@ async fn create_and_get_task_returns_201_and_task_data() {
             &ws.slug,
             "task-proj-1",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -676,6 +687,7 @@ async fn list_tasks_returns_tasks_for_board() {
             &ws.slug,
             "task-list-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -769,6 +781,7 @@ async fn list_tasks_includes_labels() {
             &ws.slug,
             "task-labels-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -840,6 +853,7 @@ async fn list_tasks_includes_assignees_with_names() {
             &ws.slug,
             "task-asg-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -926,6 +940,7 @@ async fn update_task_changes_title() {
             &ws.slug,
             "task-upd-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -1000,6 +1015,7 @@ async fn delete_task_returns_404_on_subsequent_get() {
             &ws.slug,
             "task-del-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -1067,6 +1083,7 @@ async fn move_task_changes_column() {
             &ws.slug,
             "task-move-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -1156,6 +1173,7 @@ async fn move_task_with_task_id_anchor_succeeds() {
             &ws.slug,
             "anchor-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -1236,6 +1254,7 @@ async fn move_task_across_boards_succeeds() {
             &ws.slug,
             "proj-a",
             CreateBoardRequest {
+                folder_id: None,
                 name: "A".to_string(),
             },
         )
@@ -1246,6 +1265,7 @@ async fn move_task_across_boards_succeeds() {
             &ws.slug,
             "proj-b",
             CreateBoardRequest {
+                folder_id: None,
                 name: "B".to_string(),
             },
         )
@@ -1351,6 +1371,7 @@ async fn add_and_list_assignees() {
             &ws.slug,
             "assign-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -1438,6 +1459,7 @@ async fn add_duplicate_assignee_returns_409() {
             &ws.slug,
             "dup-assign-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -1522,6 +1544,7 @@ async fn remove_assignee_unassigns_user() {
             &ws.slug,
             "rm-assign-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -1605,6 +1628,7 @@ async fn create_and_list_references() {
             &ws.slug,
             "ref-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -1710,6 +1734,7 @@ async fn list_references_merges_manual_and_wikilink_origins() {
             &ws.slug,
             "unified-ref-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".into(),
             },
         )
@@ -1829,6 +1854,7 @@ async fn list_references_returns_three_distinct_resolved_wikilinks_exactly_once(
             &ws.slug,
             "three-wikilinks-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".into(),
             },
         )
@@ -1908,6 +1934,7 @@ async fn reference_read_and_delete_enforce_viewer_and_editor_boundaries() {
             &ws.slug,
             "reference-roles-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".into(),
             },
         )
@@ -2044,6 +2071,7 @@ async fn backlinks_surface_pending_references() {
             &ws.slug,
             "backlink-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -2144,6 +2172,7 @@ async fn create_and_list_checklist_items() {
             &ws.slug,
             "checklist-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -2223,6 +2252,7 @@ async fn promote_checklist_item_returns_409_on_second_promote() {
             &ws.slug,
             "promote-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -2325,6 +2355,7 @@ async fn promote_checklist_item_always_persists_parent_reference() {
             &ws.slug,
             "promref-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -2459,6 +2490,7 @@ async fn task_description_wikilink_persists_resolved_link() {
             &ws.slug,
             "wiki-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -2536,6 +2568,7 @@ async fn task_description_id_bound_wikilink_resolves_by_id() {
             &ws.slug,
             "wiki-id-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -2600,6 +2633,7 @@ async fn task_description_wikilink_to_missing_doc_is_pending() {
             &ws.slug,
             "wiki2-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -2690,6 +2724,7 @@ async fn task_description_patch_replaces_wikilinks() {
             &ws.slug,
             "wiki3-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -2772,6 +2807,7 @@ async fn activity_is_recorded_on_task_create() {
             &ws.slug,
             "activity-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -2838,6 +2874,7 @@ async fn description_edits_are_suppressed_and_other_fields_coalesce() {
             &ws.slug,
             "coalesce-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -2989,6 +3026,7 @@ async fn cross_tenant_board_access_returns_404() {
             &ws_a.slug,
             "ct-proj-a",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board A".to_string(),
             },
         )
@@ -3025,6 +3063,7 @@ async fn cross_tenant_task_access_returns_404() {
             &ws_a.slug,
             "ct-task-proj-a",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -3110,6 +3149,7 @@ async fn viewer_cannot_create_board() {
             &ws.slug,
             "board-authz-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Unauthorized".to_string(),
             },
         )
@@ -3148,6 +3188,7 @@ async fn viewer_cannot_create_task() {
             &ws.slug,
             "task-authz-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -3214,6 +3255,7 @@ async fn create_task_with_invalid_priority_returns_422() {
             &ws.slug,
             "task-422-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -3279,6 +3321,7 @@ async fn create_task_with_negative_estimate_returns_422() {
             &ws.slug,
             "task-neg-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -3415,6 +3458,7 @@ async fn setup_idor(
                     &ws.slug,
                     &proj_slug,
                     CreateBoardRequest {
+                        folder_id: None,
                         name: name.to_string(),
                     },
                 )
@@ -3846,6 +3890,7 @@ async fn board_scoped_grant_is_honored_by_resolution() {
             &ws.slug,
             "bgrant-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -3923,6 +3968,7 @@ async fn board_scoped_grant_grants_task_access() {
             &ws.slug,
             "bgrant-task-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -4033,6 +4079,7 @@ async fn no_board_grant_remains_denied() {
             &ws.slug,
             "no-bgrant-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -4074,7 +4121,10 @@ async fn duplicate_reference_returns_409() {
         .create_board(
             &ws.slug,
             "dup-ref-proj",
-            CreateBoardRequest { name: "B".into() },
+            CreateBoardRequest {
+                folder_id: None,
+                name: "B".into(),
+            },
         )
         .await
         .expect("board");
@@ -4181,7 +4231,10 @@ async fn delete_blocks_reference_records_correct_kind_in_activity() {
         .create_board(
             &ws.slug,
             "del-ref-proj",
-            CreateBoardRequest { name: "B".into() },
+            CreateBoardRequest {
+                folder_id: None,
+                name: "B".into(),
+            },
         )
         .await
         .expect("board");
@@ -4297,7 +4350,10 @@ async fn create_reference_without_target_returns_422() {
         .create_board(
             &ws.slug,
             "ref-notarget-proj",
-            CreateBoardRequest { name: "B".into() },
+            CreateBoardRequest {
+                folder_id: None,
+                name: "B".into(),
+            },
         )
         .await
         .expect("board");
@@ -4368,7 +4424,10 @@ async fn create_reference_with_both_targets_returns_422() {
         .create_board(
             &ws.slug,
             "ref-bothtarget-proj",
-            CreateBoardRequest { name: "B".into() },
+            CreateBoardRequest {
+                folder_id: None,
+                name: "B".into(),
+            },
         )
         .await
         .expect("board");
@@ -4470,7 +4529,10 @@ async fn create_reference_unknown_task_target_returns_404_and_no_row() {
         .create_board(
             &ws.slug,
             "ref-notask-proj",
-            CreateBoardRequest { name: "B".into() },
+            CreateBoardRequest {
+                folder_id: None,
+                name: "B".into(),
+            },
         )
         .await
         .expect("board");
@@ -4567,7 +4629,10 @@ async fn create_reference_cross_tenant_document_target_returns_404() {
         .create_board(
             &ws_a.slug,
             "ref-ctdoc-proj-a",
-            CreateBoardRequest { name: "B".into() },
+            CreateBoardRequest {
+                folder_id: None,
+                name: "B".into(),
+            },
         )
         .await
         .expect("board A");
@@ -4675,7 +4740,10 @@ async fn add_unknown_assignee_returns_404() {
         .create_board(
             &ws.slug,
             "assignee-404-proj",
-            CreateBoardRequest { name: "B".into() },
+            CreateBoardRequest {
+                folder_id: None,
+                name: "B".into(),
+            },
         )
         .await
         .expect("board");
@@ -4749,7 +4817,10 @@ async fn add_duplicate_assignee_returns_409_explicit() {
         .create_board(
             &ws.slug,
             "dup-assign-expl-proj",
-            CreateBoardRequest { name: "B".into() },
+            CreateBoardRequest {
+                folder_id: None,
+                name: "B".into(),
+            },
         )
         .await
         .expect("board");
@@ -4837,7 +4908,10 @@ async fn unassign_non_existent_returns_404_and_no_activity() {
         .create_board(
             &ws.slug,
             "unassign-404-proj",
-            CreateBoardRequest { name: "B".into() },
+            CreateBoardRequest {
+                folder_id: None,
+                name: "B".into(),
+            },
         )
         .await
         .expect("board");
@@ -4988,7 +5062,10 @@ async fn reference_target_resolved_false_after_target_task_soft_deleted() {
         .create_board(
             &ws.slug,
             "ref-res-proj",
-            CreateBoardRequest { name: "B".into() },
+            CreateBoardRequest {
+                folder_id: None,
+                name: "B".into(),
+            },
         )
         .await
         .expect("board");
@@ -5137,7 +5214,10 @@ async fn assign_non_member_principal_returns_404() {
         .create_board(
             &ws_a.slug,
             "assign-nm-proj",
-            CreateBoardRequest { name: "B".into() },
+            CreateBoardRequest {
+                folder_id: None,
+                name: "B".into(),
+            },
         )
         .await
         .expect("board");
@@ -5234,6 +5314,7 @@ async fn create_task_with_title_over_200_chars_returns_422() {
             &ws.slug,
             "cap-proj-1",
             CreateBoardRequest {
+                folder_id: None,
                 name: "B".to_string(),
             },
         )
@@ -5295,6 +5376,7 @@ async fn create_task_with_empty_title_returns_422() {
             &ws.slug,
             "cap-empty-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "B".to_string(),
             },
         )
@@ -5357,6 +5439,7 @@ async fn create_task_with_too_many_labels_returns_422() {
             &ws.slug,
             "cap-labels-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "B".to_string(),
             },
         )
@@ -5453,6 +5536,7 @@ async fn update_task_clears_estimate_with_explicit_null() {
             &ws.slug,
             "task-clr-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -5535,6 +5619,7 @@ async fn create_column_with_valid_color_returns_color_in_response_and_listing() 
             &ws.slug,
             "col-color-proj-1",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -5590,6 +5675,7 @@ async fn create_column_without_color_omits_color_field() {
             &ws.slug,
             "col-color-proj-2",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -5632,6 +5718,7 @@ async fn patch_column_sets_color() {
             &ws.slug,
             "col-color-proj-3",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -5706,6 +5793,7 @@ async fn patch_column_clears_color_with_explicit_null() {
             &ws.slug,
             "col-color-proj-4",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -5775,6 +5863,7 @@ async fn patch_column_absent_color_leaves_color_unchanged() {
             &ws.slug,
             "col-color-proj-5",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -5837,6 +5926,7 @@ async fn create_column_with_invalid_swatch_id_returns_422() {
             &ws.slug,
             "col-color-proj-6",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -5881,6 +5971,7 @@ async fn patch_column_with_invalid_swatch_id_returns_422() {
             &ws.slug,
             "col-color-proj-7",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -5945,7 +6036,10 @@ async fn revoked_api_key_assignee_is_hidden_after_revoke() {
         .create_board(
             &ws.slug,
             "rvk-proj",
-            CreateBoardRequest { name: "B".into() },
+            CreateBoardRequest {
+                folder_id: None,
+                name: "B".into(),
+            },
         )
         .await
         .expect("board");

@@ -100,6 +100,7 @@ async fn seed_task(
             ws_slug,
             slug,
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -1967,6 +1968,7 @@ async fn viewer_cannot_create_comment() {
             &ws.slug,
             "comment-authz-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )

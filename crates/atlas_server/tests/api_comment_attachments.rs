@@ -556,6 +556,7 @@ async fn task_comment_attachment_routes_round_trip_raw_bytes() {
             &ws.slug,
             "comment-attachment",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".into(),
             },
         )
@@ -814,6 +815,7 @@ async fn task_comment_draft_create_returns_reserved_comment_identity() {
             &ws.slug,
             "comment-draft",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".into(),
             },
         )
@@ -1017,6 +1019,7 @@ async fn task_draft_upload_conceals_missing_or_mismatched_drafts_without_residue
             &ws.slug,
             "task-draft-upload-concealment",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".into(),
             },
         )
@@ -1111,6 +1114,7 @@ async fn task_draft_upload_conceals_missing_or_mismatched_drafts_without_residue
             &other_workspace.slug,
             "task-draft-upload-concealment-other-workspace",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Other board".into(),
             },
         )
@@ -1384,6 +1388,7 @@ async fn task_comment_finalization_transfers_draft_attachments_and_replays() {
             &ws.slug,
             "comment-finalization",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".into(),
             },
         )
@@ -2124,6 +2129,7 @@ async fn task_draft_upload_losing_to_finalization_is_conflict_without_residue() 
             &ws.slug,
             "task-draft-upload-finalize-race",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".into(),
             },
         )
@@ -2374,6 +2380,7 @@ async fn task_canonical_draft_operations_losing_to_finalization_are_conflicts() 
             &ws.slug,
             "task-canonical-finalization-races",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".into(),
             },
         )

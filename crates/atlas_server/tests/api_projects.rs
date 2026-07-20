@@ -279,7 +279,10 @@ async fn update_project_task_prefix_new_tasks_use_new_prefix() {
         .create_board(
             &ws.slug,
             &project.slug,
-            CreateBoardRequest { name: "B".into() },
+            CreateBoardRequest {
+                folder_id: None,
+                name: "B".into(),
+            },
         )
         .await
         .expect("create board");

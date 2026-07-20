@@ -49,6 +49,7 @@ async fn seed_target_task(db: &support::TestDb, ctx: &WorkspaceCtx) -> TaskId {
         .create_board(
             ctx,
             NewBoard {
+                folder_id: None,
                 project_id: project.id,
                 name: "Board".into(),
             },

@@ -325,6 +325,7 @@ async fn board_create_with_templates_seeds_matching_columns() {
             &ws.slug,
             &project.slug,
             CreateBoardRequest {
+                folder_id: None,
                 name: "Seeded Board".to_string(),
             },
         )
@@ -368,6 +369,7 @@ async fn board_create_without_templates_stays_empty() {
             &ws.slug,
             &project.slug,
             CreateBoardRequest {
+                folder_id: None,
                 name: "Empty Board".to_string(),
             },
         )
@@ -427,6 +429,7 @@ async fn apply_status_templates_adds_missing_columns() {
             &ws2.slug,
             &proj2.slug,
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board2".to_string(),
             },
         )
@@ -468,6 +471,7 @@ async fn apply_status_templates_adds_missing_columns() {
             &ws3.slug,
             &proj3.slug,
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board3".to_string(),
             },
         )
@@ -523,6 +527,7 @@ async fn apply_status_templates_is_idempotent() {
             &ws.slug,
             &project.slug,
             CreateBoardRequest {
+                folder_id: None,
                 name: "Idem Board".to_string(),
             },
         )
@@ -566,6 +571,7 @@ async fn apply_status_templates_case_insensitive_matching() {
             &ws.slug,
             &project.slug,
             CreateBoardRequest {
+                folder_id: None,
                 name: "Case Board".to_string(),
             },
         )
@@ -608,6 +614,7 @@ async fn apply_keeps_existing_columns_with_tasks_intact() {
             &ws.slug,
             &project.slug,
             CreateBoardRequest {
+                folder_id: None,
                 name: "Tasks Board".to_string(),
             },
         )
@@ -678,6 +685,7 @@ async fn template_edit_does_not_change_board_columns() {
             &ws.slug,
             &project.slug,
             CreateBoardRequest {
+                folder_id: None,
                 name: "Copy Board".to_string(),
             },
         )

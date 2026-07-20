@@ -55,6 +55,7 @@ async fn seed_task(
             ws,
             project,
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )
@@ -640,6 +641,7 @@ async fn board_summary_marks_disabled_assignee_deactivated() {
             &ws.slug,
             "acst-t08-proj",
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board T08".to_string(),
             },
         )

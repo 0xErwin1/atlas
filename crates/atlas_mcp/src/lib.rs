@@ -3056,7 +3056,10 @@ response — do NOT create those columns again; only add columns for statuses th
     ) -> Result<String, String> {
         let client = self.resolve_client(&ctx)?;
 
-        let body = CreateBoardRequest { name: params.name };
+        let body = CreateBoardRequest {
+            name: params.name,
+            folder_id: None,
+        };
 
         let board = client
             .create_board(&params.workspace, &params.project, body)

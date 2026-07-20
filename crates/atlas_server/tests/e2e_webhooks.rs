@@ -135,6 +135,7 @@ async fn e2e_webhook_dispatched_on_task_creation() {
         .create_board(
             &ctx,
             NewBoard {
+                folder_id: None,
                 project_id: project.id,
                 name: "E2E Board".into(),
             },

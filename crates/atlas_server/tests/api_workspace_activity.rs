@@ -91,6 +91,7 @@ async fn seed_board(
             ws,
             project_slug,
             CreateBoardRequest {
+                folder_id: None,
                 name: name.to_string(),
             },
         )

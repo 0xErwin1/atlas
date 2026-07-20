@@ -378,6 +378,10 @@ pub fn app(state: AppState) -> Router {
                 .delete(routes::boards::delete_board),
         )
         .route(
+            "/api/workspaces/{ws}/boards/{board_id}/move",
+            axum::routing::patch(routes::boards::move_board),
+        )
+        .route(
             "/api/workspaces/{ws}/boards/{board_id}/columns",
             axum::routing::post(routes::boards::create_column).get(routes::boards::list_columns),
         )

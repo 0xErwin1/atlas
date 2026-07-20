@@ -808,6 +808,7 @@ async fn ingest_filter_match_creates_task() {
         .create_board(
             &ctx,
             NewBoard {
+                folder_id: None,
                 name: "Test Board".to_string(),
                 project_id: project.id,
             },
@@ -955,6 +956,7 @@ async fn ingest_filter_no_match_no_task() {
         .create_board(
             &ctx,
             NewBoard {
+                folder_id: None,
                 name: "Test Board".to_string(),
                 project_id: project.id,
             },

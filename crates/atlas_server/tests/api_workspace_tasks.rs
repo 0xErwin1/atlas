@@ -88,6 +88,7 @@ async fn seed_workspace(
             &ws.slug,
             &project.slug,
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board 1".to_string(),
             },
         )
@@ -99,6 +100,7 @@ async fn seed_workspace(
             &ws.slug,
             &project.slug,
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board 2".to_string(),
             },
         )

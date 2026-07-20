@@ -35,9 +35,10 @@ use atlas_api::{
         boards_tasks::{
             AddAssigneeRequest, CreateBoardRequest, CreateChecklistItemRequest,
             CreateColumnRequest, CreateCommentRequest, CreateReferenceRequest,
-            CreateSubtaskRequest, CreateTaskRequest, MoveTaskRequest, PromoteChecklistItemRequest,
-            RenameTaskAttachmentRequest, UpdateBoardRequest, UpdateChecklistItemRequest,
-            UpdateColumnRequest, UpdateCommentRequest, UpdateTaskRequest, WorkspaceTaskQueryParams,
+            CreateSubtaskRequest, CreateTaskRequest, MoveBoardRequest, MoveTaskRequest,
+            PromoteChecklistItemRequest, RenameTaskAttachmentRequest, UpdateBoardRequest,
+            UpdateChecklistItemRequest, UpdateColumnRequest, UpdateCommentRequest,
+            UpdateTaskRequest, WorkspaceTaskQueryParams,
         },
         documents::{
             CreateDocumentRequest, MoveDocumentRequest, UpdateContentRequest, UpdateDocumentRequest,
@@ -99,6 +100,7 @@ async fn seed_fixtures(
             ws_slug,
             &project.slug,
             CreateBoardRequest {
+                folder_id: None,
                 name: "Sweep Board".into(),
             },
         )
@@ -359,11 +361,12 @@ enum Case {
     DeleteDocumentCommentAttachment,
     DocumentHeartbeat,
     DocumentLeave,
-    // ---- boards (12) ----
+    // ---- boards (13) ----
     CreateBoard,
     ListBoards,
     GetBoard,
     UpdateBoard,
+    MoveBoard,
     DeleteBoard,
     CreateColumn,
     ListColumns,
@@ -498,6 +501,7 @@ impl Case {
         Case::ListBoards,
         Case::GetBoard,
         Case::UpdateBoard,
+        Case::MoveBoard,
         Case::DeleteBoard,
         Case::CreateColumn,
         Case::ListColumns,
@@ -629,6 +633,7 @@ impl Case {
             Case::ListBoards => ("GET", "boards:read"),
             Case::GetBoard => ("GET", "boards:read"),
             Case::UpdateBoard => ("PATCH", "boards:update"),
+            Case::MoveBoard => ("PATCH", "boards:update"),
             Case::DeleteBoard => ("DELETE", "boards:delete"),
             Case::CreateColumn => ("POST", "boards:update"),
             Case::ListColumns => ("GET", "boards:read"),
@@ -1176,7 +1181,10 @@ async fn invoke(
             .create_board(
                 ws,
                 &fx.project_slug,
-                CreateBoardRequest { name: "x".into() },
+                CreateBoardRequest {
+                    folder_id: None,
+                    name: "x".into(),
+                },
             )
             .await
             .map(|_| ()),
@@ -1187,6 +1195,10 @@ async fn invoke(
         Case::GetBoard => client.get_board(ws, fx.board_id).await.map(|_| ()),
         Case::UpdateBoard => client
             .update_board(ws, fx.board_id, UpdateBoardRequest::default())
+            .await
+            .map(|_| ()),
+        Case::MoveBoard => client
+            .move_board(ws, fx.board_id, MoveBoardRequest::default())
             .await
             .map(|_| ()),
         Case::DeleteBoard => client.delete_board(ws, fx.board_id).await,

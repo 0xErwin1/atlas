@@ -44,6 +44,7 @@ async fn setup_parent(
             ws_slug,
             proj,
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )

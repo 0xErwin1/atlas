@@ -4,7 +4,7 @@ use atlas_domain::entities::boards_tasks::{
     TaskChecklistItem, TaskReference,
 };
 use atlas_domain::ids::{
-    ApiKeyId, BoardId, ChecklistItemId, ColumnId, ProjectId, TaskActivityId, TaskId,
+    ApiKeyId, BoardId, ChecklistItemId, ColumnId, FolderId, ProjectId, TaskActivityId, TaskId,
     TaskReferenceId, UserId, WorkspaceId,
 };
 use chrono::{DateTime, Utc};
@@ -20,6 +20,7 @@ pub mod board {
         pub id: Uuid,
         pub workspace_id: Uuid,
         pub project_id: Uuid,
+        pub folder_id: Option<Uuid>,
         pub name: String,
         pub created_by_user_id: Option<Uuid>,
         pub created_by_api_key_id: Option<Uuid>,
@@ -209,6 +210,7 @@ pub fn board_from(m: board::Model) -> Board {
         id: BoardId(m.id),
         workspace_id: WorkspaceId(m.workspace_id),
         project_id: ProjectId(m.project_id),
+        folder_id: m.folder_id.map(FolderId),
         name: m.name,
         created_by: actor_from_columns(m.created_by_user_id, m.created_by_api_key_id),
         created_at: m.created_at,

@@ -88,6 +88,7 @@ async fn seed_board_with_task(
             ws_slug,
             &project.slug,
             CreateBoardRequest {
+                folder_id: None,
                 name: "Board".to_string(),
             },
         )

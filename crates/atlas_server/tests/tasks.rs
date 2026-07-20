@@ -50,6 +50,7 @@ async fn seed_board(
     repo.create_board(
         ctx,
         NewBoard {
+            folder_id: None,
             project_id,
             name: name.into(),
         },

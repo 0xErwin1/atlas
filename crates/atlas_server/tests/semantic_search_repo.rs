@@ -103,6 +103,7 @@ async fn seed_private_project_doc_and_task(
         .create_board(
             owner_ctx,
             NewBoard {
+                folder_id: None,
                 project_id: project.id,
                 name: "Board".to_owned(),
             },
@@ -283,6 +284,7 @@ async fn semantic_search_returns_task_from_inherited_visible_task_text()
         .create_board(
             &owner_ctx,
             NewBoard {
+                folder_id: None,
                 project_id: project.id,
                 name: "Board".to_owned(),
             },

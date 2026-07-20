@@ -212,6 +212,7 @@ async fn semantic_search_api_key_scope_filters_hit_families() {
         .create_board(
             &ctx,
             NewBoard {
+                folder_id: None,
                 project_id,
                 name: "Scope Board".to_owned(),
             },

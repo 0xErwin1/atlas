@@ -16,6 +16,8 @@ pub struct BoardDto {
     pub id: uuid::Uuid,
     pub workspace_id: uuid::Uuid,
     pub project_id: uuid::Uuid,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub folder_id: Option<uuid::Uuid>,
     pub name: String,
     pub created_by: ActorDto,
     pub created_at: chrono::DateTime<chrono::Utc>,
@@ -28,6 +30,8 @@ pub struct BoardDto {
 pub struct BoardSummaryDto {
     pub id: uuid::Uuid,
     pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub folder_id: Option<uuid::Uuid>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
@@ -453,6 +457,14 @@ pub struct UpdateCommentRequest {
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct CreateBoardRequest {
     pub name: String,
+    pub folder_id: Option<uuid::Uuid>,
+}
+
+/// Request body for `PATCH /api/workspaces/{ws}/boards/{board_id}/move`.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct MoveBoardRequest {
+    pub folder_id: Option<uuid::Uuid>,
 }
 
 /// Request body for `PATCH /api/workspaces/{ws}/boards/{board_id}`.

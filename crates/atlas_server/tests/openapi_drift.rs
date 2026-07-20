@@ -62,6 +62,7 @@ const EXPECTED_SCHEMAS: &[&str] = &[
     "ColumnDto",
     "CreateBoardRequest",
     "UpdateBoardRequest",
+    "MoveBoardRequest",
     "CreateColumnRequest",
     "UpdateColumnRequest",
     "TaskDto",

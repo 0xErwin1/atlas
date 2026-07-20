@@ -9,6 +9,7 @@ mod support;
 
 use atlas_api::dtos::{
     CreateProjectRequest,
+    boards_tasks::{CreateBoardRequest, MoveBoardRequest},
     folders::{CreateFolderRequest, MoveFolderRequest, RenameFolderRequest},
 };
 use atlas_client::ClientError;
@@ -1025,4 +1026,343 @@ fn folder_routes_wired_in_registry_and_router() {
             .any(|e| e.method == *method && e.openapi_path == Some(openapi_path));
         assert!(found, "registry missing {method} {openapi_path}");
     }
+}
+
+// ---- Boards in folders ----------------------------------------------------------
+
+#[tokio::test]
+async fn create_board_in_folder_sets_folder_id() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "board-folder-1").await;
+
+    let project = client
+        .create_project(
+            &ws.slug,
+            project_req("BoardFolderProj", "board-folder-proj-1"),
+        )
+        .await
+        .expect("create project");
+
+    let folder = client
+        .create_folder(
+            &ws.slug,
+            &project.slug,
+            CreateFolderRequest {
+                name: "Boards Here".to_string(),
+                parent_folder_id: None,
+            },
+        )
+        .await
+        .expect("create folder");
+
+    let board = client
+        .create_board(
+            &ws.slug,
+            &project.slug,
+            CreateBoardRequest {
+                name: "Foldered Board".to_string(),
+                folder_id: Some(folder.id),
+            },
+        )
+        .await
+        .expect("create board");
+
+    assert_eq!(board.folder_id, Some(folder.id));
+
+    let listed = client
+        .list_boards(&ws.slug, &project.slug, None, None)
+        .await
+        .expect("list boards");
+    let summary = listed
+        .items
+        .iter()
+        .find(|b| b.id == board.id)
+        .expect("board in list");
+
+    assert_eq!(summary.folder_id, Some(folder.id));
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn create_board_in_foreign_project_folder_returns_422() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "board-folder-2").await;
+
+    let project_a = client
+        .create_project(&ws.slug, project_req("BoardFolderA", "bf-alpha-2"))
+        .await
+        .expect("create project a");
+    let project_b = client
+        .create_project(&ws.slug, project_req("BoardFolderB", "bf-beta-2"))
+        .await
+        .expect("create project b");
+
+    let folder_b = client
+        .create_folder(
+            &ws.slug,
+            &project_b.slug,
+            CreateFolderRequest {
+                name: "Other Project Folder".to_string(),
+                parent_folder_id: None,
+            },
+        )
+        .await
+        .expect("create folder");
+
+    let err = client
+        .create_board(
+            &ws.slug,
+            &project_a.slug,
+            CreateBoardRequest {
+                name: "Misplaced Board".to_string(),
+                folder_id: Some(folder_b.id),
+            },
+        )
+        .await
+        .expect_err("cross-project folder must be rejected");
+
+    match err {
+        ClientError::Api(p) => assert_eq!(p.status, 422, "expected 422, got {}", p.status),
+        other => panic!("unexpected error: {other:?}"),
+    }
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn move_board_into_folder_and_back_to_root() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "board-move-1").await;
+
+    let project = client
+        .create_project(&ws.slug, project_req("BoardMoveProj", "board-move-proj-1"))
+        .await
+        .expect("create project");
+
+    let folder = client
+        .create_folder(
+            &ws.slug,
+            &project.slug,
+            CreateFolderRequest {
+                name: "Destination".to_string(),
+                parent_folder_id: None,
+            },
+        )
+        .await
+        .expect("create folder");
+
+    let board = client
+        .create_board(
+            &ws.slug,
+            &project.slug,
+            CreateBoardRequest {
+                name: "Movable Board".to_string(),
+                folder_id: None,
+            },
+        )
+        .await
+        .expect("create board");
+    assert_eq!(board.folder_id, None);
+
+    let moved = client
+        .move_board(
+            &ws.slug,
+            board.id,
+            MoveBoardRequest {
+                folder_id: Some(folder.id),
+            },
+        )
+        .await
+        .expect("move board into folder");
+    assert_eq!(moved.folder_id, Some(folder.id));
+
+    let back = client
+        .move_board(&ws.slug, board.id, MoveBoardRequest { folder_id: None })
+        .await
+        .expect("move board back to root");
+    assert_eq!(back.folder_id, None);
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn move_board_to_folder_in_other_project_returns_422() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "board-move-2").await;
+
+    let project_a = client
+        .create_project(&ws.slug, project_req("BoardMoveA", "bm-alpha-2"))
+        .await
+        .expect("create project a");
+    let project_b = client
+        .create_project(&ws.slug, project_req("BoardMoveB", "bm-beta-2"))
+        .await
+        .expect("create project b");
+
+    let folder_b = client
+        .create_folder(
+            &ws.slug,
+            &project_b.slug,
+            CreateFolderRequest {
+                name: "Foreign Folder".to_string(),
+                parent_folder_id: None,
+            },
+        )
+        .await
+        .expect("create folder");
+
+    let board = client
+        .create_board(
+            &ws.slug,
+            &project_a.slug,
+            CreateBoardRequest {
+                name: "Stationary Board".to_string(),
+                folder_id: None,
+            },
+        )
+        .await
+        .expect("create board");
+
+    let err = client
+        .move_board(
+            &ws.slug,
+            board.id,
+            MoveBoardRequest {
+                folder_id: Some(folder_b.id),
+            },
+        )
+        .await
+        .expect_err("cross-project board move must be rejected");
+
+    match err {
+        ClientError::Api(p) => assert_eq!(p.status, 422, "expected 422, got {}", p.status),
+        other => panic!("unexpected error: {other:?}"),
+    }
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn delete_folder_leaves_contained_board_accessible() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "board-del-1").await;
+
+    let project = client
+        .create_project(&ws.slug, project_req("BoardDelProj", "board-del-proj-1"))
+        .await
+        .expect("create project");
+
+    let folder = client
+        .create_folder(
+            &ws.slug,
+            &project.slug,
+            CreateFolderRequest {
+                name: "Doomed".to_string(),
+                parent_folder_id: None,
+            },
+        )
+        .await
+        .expect("create folder");
+
+    let board = client
+        .create_board(
+            &ws.slug,
+            &project.slug,
+            CreateBoardRequest {
+                name: "Survivor Board".to_string(),
+                folder_id: Some(folder.id),
+            },
+        )
+        .await
+        .expect("create board");
+
+    client
+        .delete_folder(&ws.slug, folder.id)
+        .await
+        .expect("delete folder");
+
+    let survivor = client
+        .get_board(&ws.slug, board.id)
+        .await
+        .expect("board survives folder deletion");
+    assert_eq!(survivor.id, board.id);
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn copy_folder_copies_boards_with_columns() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "board-copy-1").await;
+
+    let project = client
+        .create_project(&ws.slug, project_req("BoardCopyProj", "board-copy-proj-1"))
+        .await
+        .expect("create project");
+
+    let folder = client
+        .create_folder(
+            &ws.slug,
+            &project.slug,
+            CreateFolderRequest {
+                name: "Original".to_string(),
+                parent_folder_id: None,
+            },
+        )
+        .await
+        .expect("create folder");
+
+    let board = client
+        .create_board(
+            &ws.slug,
+            &project.slug,
+            CreateBoardRequest {
+                name: "Copied Board".to_string(),
+                folder_id: Some(folder.id),
+            },
+        )
+        .await
+        .expect("create board");
+
+    let source_columns = client
+        .list_columns(&ws.slug, board.id)
+        .await
+        .expect("list source columns");
+
+    let copy = client
+        .copy_folder(&ws.slug, folder.id, None)
+        .await
+        .expect("copy folder");
+    assert_eq!(copy.name, "Original (copy)");
+
+    let listed = client
+        .list_boards(&ws.slug, &project.slug, None, None)
+        .await
+        .expect("list boards");
+    let cloned = listed
+        .items
+        .iter()
+        .find(|b| b.folder_id == Some(copy.id))
+        .expect("copied board inside copied folder");
+
+    assert_ne!(cloned.id, board.id);
+    assert_eq!(cloned.name, "Copied Board");
+
+    let cloned_columns = client
+        .list_columns(&ws.slug, cloned.id)
+        .await
+        .expect("list cloned columns");
+
+    let source_names: Vec<&str> = source_columns.iter().map(|c| c.name.as_str()).collect();
+    let cloned_names: Vec<&str> = cloned_columns.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(cloned_names, source_names);
+
+    db.teardown().await;
 }

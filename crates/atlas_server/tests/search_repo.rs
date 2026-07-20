@@ -153,6 +153,7 @@ async fn seed_project_and_board(
         .create_board(
             ctx,
             NewBoard {
+                folder_id: None,
                 project_id: project.id,
                 name: "Board".to_string(),
             },
@@ -687,6 +688,7 @@ async fn plain_member_task_visibility_follows_project() {
         .create_board(
             &ctx_owner,
             NewBoard {
+                folder_id: None,
                 project_id: private_project,
                 name: "Board".to_string(),
             },
