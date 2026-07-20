@@ -251,7 +251,9 @@ describe('NotesSidebar project selector', () => {
 
   it.each([
     EVENT_TYPE.BOARD_CREATED,
+    EVENT_TYPE.BOARD_UPDATED,
     EVENT_TYPE.BOARD_DELETED,
+    EVENT_TYPE.BOARD_MOVED,
   ])('refreshes the catalog on a %s live event, mirroring document event handling', async (eventType) => {
     const { loadSummaries } = setup();
     const wrapper = mount(NotesSidebar);

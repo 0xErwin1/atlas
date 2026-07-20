@@ -28,7 +28,9 @@ pub mod version {
     pub const DOCUMENT_MOVED: i32 = 1;
     pub const DOCUMENT_DELETED: i32 = 1;
     pub const BOARD_CREATED: i32 = 1;
+    pub const BOARD_UPDATED: i32 = 1;
     pub const BOARD_DELETED: i32 = 1;
+    pub const BOARD_MOVED: i32 = 1;
     pub const COLUMN_CREATED: i32 = 1;
     pub const COLUMN_DELETED: i32 = 1;
     pub const FOLDER_CREATED: i32 = 1;
@@ -172,10 +174,29 @@ pub struct BoardCreatedPayload {
     pub name: String,
 }
 
+/// `changed_fields` mirrors `TaskUpdatedPayload`'s shape so the payload never
+/// structurally collides with `BoardCreatedPayload`/`BoardDeletedPayload`
+/// during untagged deserialization.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BoardUpdatedPayload {
+    pub board_id: BoardId,
+    pub changed_fields: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BoardDeletedPayload {
     pub board_id: BoardId,
+    pub project_id: ProjectId,
+}
+
+/// Mirrors `DocumentMovedPayload`. `project_id` is required (not optional)
+/// because a board always belongs to a project, unlike a document.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BoardMovedPayload {
+    pub board_id: BoardId,
+    pub from_folder_id: Option<FolderId>,
+    pub to_folder_id: Option<FolderId>,
     pub project_id: ProjectId,
 }
 
@@ -235,7 +256,9 @@ pub enum DomainEvent {
     DocumentMoved(DocumentMovedPayload),
     // Board events
     BoardCreated(BoardCreatedPayload),
+    BoardUpdated(BoardUpdatedPayload),
     BoardDeleted(BoardDeletedPayload),
+    BoardMoved(BoardMovedPayload),
     // Column events
     ColumnCreated(ColumnCreatedPayload),
     ColumnDeleted(ColumnDeletedPayload),
@@ -257,7 +280,9 @@ impl DomainEvent {
             DomainEvent::DocumentMoved(_) => "document.moved",
             DomainEvent::DocumentDeleted(_) => "document.deleted",
             DomainEvent::BoardCreated(_) => "board.created",
+            DomainEvent::BoardUpdated(_) => "board.updated",
             DomainEvent::BoardDeleted(_) => "board.deleted",
+            DomainEvent::BoardMoved(_) => "board.moved",
             DomainEvent::ColumnCreated(_) => "column.created",
             DomainEvent::ColumnDeleted(_) => "column.deleted",
             DomainEvent::FolderCreated(_) => "folder.created",
@@ -277,7 +302,9 @@ impl DomainEvent {
             DomainEvent::DocumentMoved(_) => version::DOCUMENT_MOVED,
             DomainEvent::DocumentDeleted(_) => version::DOCUMENT_DELETED,
             DomainEvent::BoardCreated(_) => version::BOARD_CREATED,
+            DomainEvent::BoardUpdated(_) => version::BOARD_UPDATED,
             DomainEvent::BoardDeleted(_) => version::BOARD_DELETED,
+            DomainEvent::BoardMoved(_) => version::BOARD_MOVED,
             DomainEvent::ColumnCreated(_) => version::COLUMN_CREATED,
             DomainEvent::ColumnDeleted(_) => version::COLUMN_DELETED,
             DomainEvent::FolderCreated(_) => version::FOLDER_CREATED,
@@ -296,7 +323,10 @@ impl DomainEvent {
             | DomainEvent::DocumentUpdated(_)
             | DomainEvent::DocumentMoved(_)
             | DomainEvent::DocumentDeleted(_) => "document",
-            DomainEvent::BoardCreated(_) | DomainEvent::BoardDeleted(_) => "board",
+            DomainEvent::BoardCreated(_)
+            | DomainEvent::BoardUpdated(_)
+            | DomainEvent::BoardDeleted(_)
+            | DomainEvent::BoardMoved(_) => "board",
             DomainEvent::ColumnCreated(_) | DomainEvent::ColumnDeleted(_) => "column",
             DomainEvent::FolderCreated(_) | DomainEvent::FolderDeleted(_) => "folder",
         }
@@ -314,7 +344,9 @@ impl DomainEvent {
             DomainEvent::DocumentMoved(p) => p.document_id.0,
             DomainEvent::DocumentDeleted(p) => p.document_id.0,
             DomainEvent::BoardCreated(p) => p.board_id.0,
+            DomainEvent::BoardUpdated(p) => p.board_id.0,
             DomainEvent::BoardDeleted(p) => p.board_id.0,
+            DomainEvent::BoardMoved(p) => p.board_id.0,
             DomainEvent::ColumnCreated(p) => p.column_id.0,
             DomainEvent::ColumnDeleted(p) => p.column_id.0,
             DomainEvent::FolderCreated(p) => p.folder_id.0,
@@ -512,9 +544,27 @@ mod tests {
     }
 
     #[test]
+    fn test_board_updated_roundtrip() {
+        roundtrip(&DomainEvent::BoardUpdated(BoardUpdatedPayload {
+            board_id: BoardId(nil_uuid()),
+            changed_fields: vec!["name".to_string()],
+        }));
+    }
+
+    #[test]
     fn test_board_deleted_roundtrip() {
         roundtrip(&DomainEvent::BoardDeleted(BoardDeletedPayload {
             board_id: BoardId(nil_uuid()),
+            project_id: ProjectId(nil_uuid()),
+        }));
+    }
+
+    #[test]
+    fn test_board_moved_roundtrip() {
+        roundtrip(&DomainEvent::BoardMoved(BoardMovedPayload {
+            board_id: BoardId(nil_uuid()),
+            from_folder_id: Some(FolderId(nil_uuid())),
+            to_folder_id: None,
             project_id: ProjectId(nil_uuid()),
         }));
     }
@@ -613,6 +663,22 @@ mod tests {
                     board_id: BoardId(nil_uuid()),
                     project_id: ProjectId(nil_uuid()),
                     name: "b".to_string(),
+                }),
+            ),
+            (
+                "board.updated",
+                DomainEvent::BoardUpdated(BoardUpdatedPayload {
+                    board_id: BoardId(nil_uuid()),
+                    changed_fields: vec!["name".to_string()],
+                }),
+            ),
+            (
+                "board.moved",
+                DomainEvent::BoardMoved(BoardMovedPayload {
+                    board_id: BoardId(nil_uuid()),
+                    from_folder_id: None,
+                    to_folder_id: None,
+                    project_id: ProjectId(nil_uuid()),
                 }),
             ),
         ];
@@ -796,6 +862,19 @@ mod tests {
     }
 
     #[test]
+    fn test_board_updated_json_shape() {
+        let payload = BoardUpdatedPayload {
+            board_id: BoardId(nil_uuid()),
+            changed_fields: vec!["name".to_string()],
+        };
+        let json: serde_json::Value = serde_json::to_value(&payload).unwrap();
+
+        assert!(json["board_id"].is_string());
+        assert!(json["changed_fields"].is_array());
+        assert_eq!(json["changed_fields"][0], "name");
+    }
+
+    #[test]
     fn test_board_deleted_json_shape() {
         let payload = BoardDeletedPayload {
             board_id: BoardId(nil_uuid()),
@@ -804,6 +883,22 @@ mod tests {
         let json: serde_json::Value = serde_json::to_value(&payload).unwrap();
 
         assert!(json["board_id"].is_string());
+        assert!(json["project_id"].is_string());
+    }
+
+    #[test]
+    fn test_board_moved_json_shape() {
+        let payload = BoardMovedPayload {
+            board_id: BoardId(nil_uuid()),
+            from_folder_id: Some(FolderId(nil_uuid())),
+            to_folder_id: None,
+            project_id: ProjectId(nil_uuid()),
+        };
+        let json: serde_json::Value = serde_json::to_value(&payload).unwrap();
+
+        assert!(json["board_id"].is_string());
+        assert!(json["from_folder_id"].is_string());
+        assert!(json["to_folder_id"].is_null());
         assert!(json["project_id"].is_string());
     }
 
@@ -885,7 +980,9 @@ mod tests {
         assert_eq!(DOCUMENT_MOVED, 1);
         assert_eq!(DOCUMENT_DELETED, 1);
         assert_eq!(BOARD_CREATED, 1);
+        assert_eq!(BOARD_UPDATED, 1);
         assert_eq!(BOARD_DELETED, 1);
+        assert_eq!(BOARD_MOVED, 1);
         assert_eq!(COLUMN_CREATED, 1);
         assert_eq!(COLUMN_DELETED, 1);
         assert_eq!(FOLDER_CREATED, 1);

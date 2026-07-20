@@ -407,10 +407,11 @@ mod tests {
     use std::sync::Arc;
 
     use atlas_domain::entities::events::{
-        BoardCreatedPayload, BoardDeletedPayload, ColumnCreatedPayload, ColumnDeletedPayload,
-        DocumentCreatedPayload, DocumentDeletedPayload, DocumentMovedPayload,
-        DocumentUpdatedPayload, DomainEvent, FolderCreatedPayload, FolderDeletedPayload,
-        TaskCreatedPayload, TaskDeletedPayload, TaskMovedPayload, TaskUpdatedPayload,
+        BoardCreatedPayload, BoardDeletedPayload, BoardMovedPayload, BoardUpdatedPayload,
+        ColumnCreatedPayload, ColumnDeletedPayload, DocumentCreatedPayload, DocumentDeletedPayload,
+        DocumentMovedPayload, DocumentUpdatedPayload, DomainEvent, FolderCreatedPayload,
+        FolderDeletedPayload, TaskCreatedPayload, TaskDeletedPayload, TaskMovedPayload,
+        TaskUpdatedPayload,
     };
     use atlas_domain::ids::{
         BoardId, ColumnId, DocumentId, FolderId, ProjectId, RevisionId, TaskId,
@@ -472,8 +473,18 @@ mod tests {
                 project_id: ProjectId(nid()),
                 name: "b".into(),
             }),
+            DomainEvent::BoardUpdated(BoardUpdatedPayload {
+                board_id: BoardId(nid()),
+                changed_fields: vec!["name".into()],
+            }),
             DomainEvent::BoardDeleted(BoardDeletedPayload {
                 board_id: BoardId(nid()),
+                project_id: ProjectId(nid()),
+            }),
+            DomainEvent::BoardMoved(BoardMovedPayload {
+                board_id: BoardId(nid()),
+                from_folder_id: None,
+                to_folder_id: None,
                 project_id: ProjectId(nid()),
             }),
             DomainEvent::ColumnCreated(ColumnCreatedPayload {
@@ -512,7 +523,9 @@ mod tests {
             | DomainEvent::DocumentMoved(_)
             | DomainEvent::DocumentDeleted(_) => CapabilityFamily::Docs,
             DomainEvent::BoardCreated(_)
+            | DomainEvent::BoardUpdated(_)
             | DomainEvent::BoardDeleted(_)
+            | DomainEvent::BoardMoved(_)
             | DomainEvent::ColumnCreated(_)
             | DomainEvent::ColumnDeleted(_) => CapabilityFamily::Boards,
             DomainEvent::FolderCreated(_) | DomainEvent::FolderDeleted(_) => {

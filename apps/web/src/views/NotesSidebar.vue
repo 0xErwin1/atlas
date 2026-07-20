@@ -469,11 +469,10 @@ function onLiveEvent(evt: LiveUpdateEvent): void {
     case EVENT_TYPE.DOCUMENT_UPDATED:
     case EVENT_TYPE.DOCUMENT_MOVED:
     case EVENT_TYPE.DOCUMENT_DELETED:
-    // The server does not yet emit board.updated/board.moved events (rename and
-    // move — including the new folder-move endpoint — publish nothing), so only
-    // the two board events that actually exist are wired here.
     case EVENT_TYPE.BOARD_CREATED:
+    case EVENT_TYPE.BOARD_UPDATED:
     case EVENT_TYPE.BOARD_DELETED:
+    case EVENT_TYPE.BOARD_MOVED:
       reloadNotesLive();
       break;
 

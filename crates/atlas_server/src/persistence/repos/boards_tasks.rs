@@ -8,8 +8,8 @@ use atlas_domain::{
         TaskReference,
     },
     entities::events::{
-        BoardCreatedPayload, BoardDeletedPayload, ColumnCreatedPayload, ColumnDeletedPayload,
-        DomainEvent,
+        BoardCreatedPayload, BoardDeletedPayload, BoardMovedPayload, BoardUpdatedPayload,
+        ColumnCreatedPayload, ColumnDeletedPayload, DomainEvent,
     },
     entities::task_views::{ActorTypeFilter, AssigneeFilter, TaskSort, TaskViewFilters},
     ids::{
@@ -225,10 +225,12 @@ impl BoardRepo for PgBoardRepo {
     ) -> Result<Board, DomainError> {
         use crate::persistence::entities::workspace_core::folder as folder_entity;
 
+        let txn = self.conn.begin().await.map_err(db_err)?;
+
         let row = board::Entity::find_by_id(id.0)
             .filter(board::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(board::Column::DeletedAt.is_null())
-            .one(&self.conn)
+            .one(&txn)
             .await
             .map_err(db_err)?
             .ok_or(DomainError::NotFound {
@@ -240,7 +242,7 @@ impl BoardRepo for PgBoardRepo {
             let folder_row = folder_entity::Entity::find_by_id(folder_id.0)
                 .filter(folder_entity::Column::WorkspaceId.eq(ctx.workspace_id.0))
                 .filter(folder_entity::Column::DeletedAt.is_null())
-                .one(&self.conn)
+                .one(&txn)
                 .await
                 .map_err(db_err)?
                 .ok_or(DomainError::InvalidInput {
@@ -254,14 +256,30 @@ impl BoardRepo for PgBoardRepo {
             }
         }
 
+        let from_folder_id = row.folder_id.map(FolderId);
+        let project_id = ProjectId(row.project_id);
+
         let mut active = row.into_active_model();
         active.folder_id = Set(folder.map(|id| id.0));
         active.updated_at = Set(Utc::now());
-        active
-            .update(&self.conn)
-            .await
-            .map(board_from)
-            .map_err(db_err)
+        let updated = active.update(&txn).await.map_err(db_err)?;
+
+        PgOutboxRepo::insert_in(
+            &txn,
+            ctx,
+            Some(project_id),
+            Some(id),
+            DomainEvent::BoardMoved(BoardMovedPayload {
+                board_id: id,
+                from_folder_id,
+                to_folder_id: folder,
+                project_id,
+            }),
+        )
+        .await?;
+
+        txn.commit().await.map_err(db_err)?;
+        Ok(board_from(updated))
     }
 
     async fn copy_board(
@@ -494,10 +512,12 @@ impl BoardRepo for PgBoardRepo {
         id: BoardId,
         name: String,
     ) -> Result<Board, DomainError> {
+        let txn = self.conn.begin().await.map_err(db_err)?;
+
         let row = board::Entity::find_by_id(id.0)
             .filter(board::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(board::Column::DeletedAt.is_null())
-            .one(&self.conn)
+            .one(&txn)
             .await
             .map_err(db_err)?
             .ok_or(DomainError::NotFound {
@@ -505,14 +525,27 @@ impl BoardRepo for PgBoardRepo {
                 id: id.0,
             })?;
 
+        let project_id = ProjectId(row.project_id);
+
         let mut active = row.into_active_model();
         active.name = Set(name);
         active.updated_at = Set(Utc::now());
-        active
-            .update(&self.conn)
-            .await
-            .map(board_from)
-            .map_err(db_err)
+        let updated = active.update(&txn).await.map_err(db_err)?;
+
+        PgOutboxRepo::insert_in(
+            &txn,
+            ctx,
+            Some(project_id),
+            Some(id),
+            DomainEvent::BoardUpdated(BoardUpdatedPayload {
+                board_id: id,
+                changed_fields: vec!["name".to_string()],
+            }),
+        )
+        .await?;
+
+        txn.commit().await.map_err(db_err)?;
+        Ok(board_from(updated))
     }
 
     async fn patch_column(

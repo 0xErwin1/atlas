@@ -9,13 +9,18 @@ mod support;
 
 use atlas_domain::{
     entities::boards_tasks::{NewBoard, PositionBetween},
-    entities::workspace_core::NewProject,
+    entities::events::DomainEvent,
+    entities::workspace_core::{NewFolder, NewProject},
     permissions::{Visibility, VisibilityRole},
 };
-use atlas_server::persistence::repos::{
-    BoardRepo, PgBoardRepo, PgProjectRepo, ProjectRepo, resequence_column,
+use atlas_server::persistence::{
+    entities::events_outbox::event_outbox,
+    repos::{
+        BoardRepo, FolderRepo, PgBoardRepo, PgFolderRepo, PgProjectRepo, ProjectRepo,
+        resequence_column,
+    },
 };
-use sea_orm::TransactionTrait;
+use sea_orm::{EntityTrait, TransactionTrait};
 
 async fn make_project(
     db: &support::TestDb,
@@ -351,6 +356,148 @@ async fn add_column_recovers_after_resequence() {
         "inserted column ({}) must land strictly between left ({left_key}) and right ({right_key})",
         inserted.position_key
     );
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
+// patch_board publishes a board.updated event
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn patch_board_publishes_board_updated_event() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "board-patch-event-user").await;
+    let ctx = support::ctx(&ws, &user);
+
+    let proj = make_project(&db, &ctx, "board-patch-event-proj", "BPE").await;
+    let repo = PgBoardRepo::new(db.conn().clone());
+
+    let board = repo
+        .create_board(
+            &ctx,
+            NewBoard {
+                folder_id: None,
+                project_id: proj.id,
+                name: "Original Name".into(),
+            },
+        )
+        .await
+        .expect("create board");
+
+    repo.patch_board(&ctx, board.id, "Renamed Board".into())
+        .await
+        .expect("patch board");
+
+    let rows = event_outbox::Entity::find()
+        .all(db.conn())
+        .await
+        .expect("find outbox rows");
+
+    let updated_rows: Vec<_> = rows
+        .iter()
+        .filter(|r| r.event_type == "board.updated")
+        .collect();
+
+    assert_eq!(
+        updated_rows.len(),
+        1,
+        "renaming a board must publish exactly one board.updated event"
+    );
+    assert_eq!(updated_rows[0].aggregate_type, "board");
+    assert_eq!(updated_rows[0].aggregate_id, board.id.0);
+    assert_eq!(updated_rows[0].project_id, Some(proj.id.0));
+    assert_eq!(updated_rows[0].board_id, Some(board.id.0));
+
+    let event: DomainEvent =
+        serde_json::from_value(updated_rows[0].payload["data"].clone()).expect("decode payload");
+    match event {
+        DomainEvent::BoardUpdated(payload) => {
+            assert_eq!(payload.board_id, board.id);
+            assert_eq!(payload.changed_fields, vec!["name".to_string()]);
+        }
+        other => panic!("expected BoardUpdated, got {other:?}"),
+    }
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
+// move_board publishes a board.moved event
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn move_board_publishes_board_moved_event() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "board-move-event-user").await;
+    let ctx = support::ctx(&ws, &user);
+
+    let proj = make_project(&db, &ctx, "board-move-event-proj", "BME").await;
+    let board_repo = PgBoardRepo::new(db.conn().clone());
+    let folder_repo = PgFolderRepo {
+        conn: db.conn().clone(),
+    };
+
+    let folder = folder_repo
+        .create(
+            &ctx,
+            NewFolder {
+                project_id: Some(proj.id),
+                parent_folder_id: None,
+                name: "Target Folder".into(),
+            },
+        )
+        .await
+        .expect("create folder");
+
+    let board = board_repo
+        .create_board(
+            &ctx,
+            NewBoard {
+                folder_id: None,
+                project_id: proj.id,
+                name: "Movable Board".into(),
+            },
+        )
+        .await
+        .expect("create board");
+
+    board_repo
+        .move_board(&ctx, board.id, Some(folder.id))
+        .await
+        .expect("move board");
+
+    let rows = event_outbox::Entity::find()
+        .all(db.conn())
+        .await
+        .expect("find outbox rows");
+
+    let moved_rows: Vec<_> = rows
+        .iter()
+        .filter(|r| r.event_type == "board.moved")
+        .collect();
+
+    assert_eq!(
+        moved_rows.len(),
+        1,
+        "moving a board must publish exactly one board.moved event"
+    );
+    assert_eq!(moved_rows[0].aggregate_type, "board");
+    assert_eq!(moved_rows[0].aggregate_id, board.id.0);
+    assert_eq!(moved_rows[0].project_id, Some(proj.id.0));
+    assert_eq!(moved_rows[0].board_id, Some(board.id.0));
+
+    let event: DomainEvent =
+        serde_json::from_value(moved_rows[0].payload["data"].clone()).expect("decode payload");
+    match event {
+        DomainEvent::BoardMoved(payload) => {
+            assert_eq!(payload.board_id, board.id);
+            assert_eq!(payload.from_folder_id, None);
+            assert_eq!(payload.to_folder_id, Some(folder.id));
+            assert_eq!(payload.project_id, proj.id);
+        }
+        other => panic!("expected BoardMoved, got {other:?}"),
+    }
 
     db.teardown().await;
 }
