@@ -402,6 +402,22 @@ async fn create_token_reuse_across_parents_conflicts() {
     db.teardown().await;
 }
 
+/// Number of rollback steps that reach the comment attachment drafts
+/// migration, however many migrations have been registered after it.
+///
+/// `Migrator::down` only counts steps from the end of the registry, so a
+/// hardcoded step count silently retargets the rollback assertions at
+/// whatever migration happens to be last.
+fn steps_through_draft_migration() -> u32 {
+    let migrations = Migrator::migrations();
+    let position = migrations
+        .iter()
+        .position(|migration| migration.name() == "m20260715_000041_comment_attachment_drafts")
+        .expect("comment attachment drafts migration is registered");
+
+    u32::try_from(migrations.len() - position).expect("migration count fits in u32")
+}
+
 #[tokio::test]
 async fn migration_enforces_digest_sizes_and_allows_drained_rollback() {
     let db = TestDb::create().await.expect("test database");
@@ -522,7 +538,7 @@ async fn migration_enforces_digest_sizes_and_allows_drained_rollback() {
             "02".repeat(32),
         ))
         .await;
-    let guarded_rollback = Migrator::down(db.conn(), Some(1)).await;
+    let guarded_rollback = Migrator::down(db.conn(), Some(steps_through_draft_migration())).await;
 
     assert!(
         live_upload_without_attachment.is_err(),
@@ -589,6 +605,8 @@ async fn migration_enforces_digest_sizes_and_allows_drained_rollback() {
         .await
         .expect("drain finalized comment");
 
+    // The guarded attempt already rolled back every migration registered after
+    // the draft one before failing on it, so a single step now targets it.
     let drained_rollback = Migrator::down(db.conn(), Some(1)).await;
     assert!(
         drained_rollback.is_ok(),
