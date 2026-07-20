@@ -51,7 +51,7 @@ function mountDetail() {
     global: {
       stubs: {
         AppShell: { template: '<main><slot name="sidebar" /><slot /></main>' },
-        TasksSidebar: true,
+        NotesSidebar: true,
         TaskDetailHeader: {
           emits: ['back'],
           template: '<button type="button" data-test="header-back" @click="$emit(\'back\')">Back</button>',

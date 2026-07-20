@@ -22,7 +22,7 @@ import { useTasksStore } from '@/stores/tasks';
 import { type TaskViewMode, useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 import AppShell from '@/views/AppShell.vue';
-import TasksSidebar from '@/views/TasksSidebar.vue';
+import NotesSidebar from '@/views/NotesSidebar.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -199,7 +199,7 @@ watch([readableId, ws], load, { immediate: true });
 <template>
   <AppShell sidebar-title="Tasks" sidebar-icon="square-kanban" :mobile-detail="true">
     <template #sidebar>
-      <TasksSidebar />
+      <NotesSidebar />
     </template>
 
     <TaskDetailHeader

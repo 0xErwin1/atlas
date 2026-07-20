@@ -36,7 +36,7 @@ function mountTasks() {
         BoardViewMenu: true,
         Popover: true,
         PresenceAvatars: true,
-        TasksSidebar: true,
+        NotesSidebar: true,
         KanbanBoard: true,
         TaskListView: true,
         TaskTableView: true,

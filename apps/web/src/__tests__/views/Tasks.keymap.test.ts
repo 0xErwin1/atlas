@@ -66,7 +66,7 @@ function mountTasks() {
             '<div><slot name="trigger" :open="false" :toggle="() => {}" /><slot :close="() => {}" /></div>',
         },
         PresenceAvatars: true,
-        TasksSidebar: true,
+        NotesSidebar: true,
         KanbanBoard: true,
         TaskListView: true,
         TaskTableView: true,

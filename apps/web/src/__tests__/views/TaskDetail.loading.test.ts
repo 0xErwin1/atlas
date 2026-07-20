@@ -58,7 +58,7 @@ function mountDetail() {
     global: {
       stubs: {
         AppShell: { template: '<main><slot name="sidebar" /><slot /></main>' },
-        TasksSidebar: true,
+        NotesSidebar: true,
         TaskDetailHeader: true,
         TaskBody: { props: ['task'], template: '<article>{{ task.title }}</article>' },
         TaskInspector: true,

@@ -36,7 +36,7 @@ import { useWorkspaceStore } from '@/stores/workspace';
 import { paramsForView, useWorkspaceTasksStore } from '@/stores/workspaceTasks';
 import AppShell from '@/views/AppShell.vue';
 // biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
-import TasksSidebar from '@/views/TasksSidebar.vue';
+import NotesSidebar from '@/views/NotesSidebar.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -111,7 +111,7 @@ const unregisterBoardSearch = keymap.registerShortcut({
 const openTaskLive = useOpenTaskLive(ws);
 const presence = useBoardPresence(ws, boardId);
 
-const sidebarRef = ref<InstanceType<typeof TasksSidebar> | null>(null);
+const sidebarRef = ref<InstanceType<typeof NotesSidebar> | null>(null);
 
 const PREDEFINED_VIEW_LABELS: Record<string, string> = {
   'my-tasks': 'My tasks',
@@ -491,7 +491,7 @@ watch(
     </template>
 
     <template #sidebar>
-      <TasksSidebar ref="sidebarRef" />
+      <NotesSidebar ref="sidebarRef" />
     </template>
 
     <template #sidebar-footer>
@@ -499,10 +499,10 @@ watch(
         type="button"
         class="atl-gbtn"
         style="width: 100%; justify-content: flex-start; height: 26px; gap: 7px; color: var(--c-foreground);"
-        @click="sidebarRef?.openNewProject()"
+        @click="sidebarRef?.openNewPage()"
       >
         <Icon name="plus" :size="14" />
-        New project
+        New page
       </button>
     </template>
 

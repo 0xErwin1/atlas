@@ -85,7 +85,7 @@ function mountTasks() {
         BoardViewMenu: true,
         Popover: true,
         PresenceAvatars: true,
-        TasksSidebar: true,
+        NotesSidebar: true,
         KanbanBoard: { template: '<div data-test="board-content">Board content</div>' },
         TaskListView: true,
         TaskTableView: true,
