@@ -375,17 +375,50 @@ impl ResolvedResource for TaskRes {
     }
 }
 
-/// Builds the `board → project → workspace` permission chain for a board-scoped resource.
+/// Builds the `board → folder ancestry → project → workspace` permission chain for a
+/// board-scoped resource.
 ///
-/// Chain order is most-specific-first: Board → Project → Workspace. The Board segment
-/// enables explicit board-level grants (`permission_grants.board_id`) to be resolved by
-/// the permission engine and the grant-loader SQL.
+/// Chain order is most-specific-first: Board → Folder(s) → Project → Workspace. The Board
+/// segment enables explicit board-level grants (`permission_grants.board_id`) to be resolved
+/// by the permission engine and the grant-loader SQL. The Folder segments mirror
+/// `build_document_chain`, so a folder-scoped grant reaches boards filed under that folder
+/// exactly like it already reaches documents.
 pub async fn build_board_chain(
     db: &sea_orm::DatabaseConnection,
     ws: &Workspace,
     board_id: atlas_domain::ids::BoardId,
     project_id: atlas_domain::ids::ProjectId,
 ) -> Result<ResourceChain, ApiError> {
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+
+    let mut segments = Vec::new();
+
+    segments.push(ChainSegment {
+        resource: ResourceRef::Board(board_id),
+        visibility: None,
+    });
+
+    let board_row = board::Entity::find_by_id(board_id.0)
+        .filter(board::Column::WorkspaceId.eq(ws.id.0))
+        .one(db)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?;
+
+    let board_folder_id = board_row.and_then(|row| row.folder_id).map(FolderId);
+
+    if let Some(leaf_folder_id) = board_folder_id {
+        let folder_ancestors = resolve_folder_ancestry(db, ws.id, leaf_folder_id).await?;
+
+        for f in folder_ancestors {
+            segments.push(ChainSegment {
+                resource: ResourceRef::Folder(f.id),
+                visibility: None,
+            });
+        }
+    }
+
     let repo = PgProjectRepo { conn: db.clone() };
     let ctx = atlas_domain::WorkspaceCtx::new(ws.id, atlas_domain::Actor::User(UserId::new()));
     let project = repo
@@ -394,13 +427,6 @@ pub async fn build_board_chain(
         .map_err(|e| ApiError::Internal {
             message: e.to_string(),
         })?;
-
-    let mut segments = Vec::new();
-
-    segments.push(ChainSegment {
-        resource: ResourceRef::Board(board_id),
-        visibility: None,
-    });
 
     if let Some(p) = project {
         segments.push(ChainSegment {
