@@ -10,6 +10,7 @@ import {
   type ResourceCacheStore,
 } from '@/cache/resourceCache';
 import type { LiveUpdateHandlers } from '@/composables/useLiveUpdates';
+import { EVENT_TYPE } from '@/lib/eventTypes';
 
 const { GET, PATCH } = vi.hoisted(() => ({ GET: vi.fn(), PATCH: vi.fn() }));
 
@@ -246,6 +247,24 @@ describe('NotesSidebar project selector', () => {
 
     expect(loadFolders).toHaveBeenCalledWith('atlas', 'sandbox');
     expect(loadSummaries).toHaveBeenLastCalledWith('atlas', 'sandbox');
+  });
+
+  it.each([
+    EVENT_TYPE.BOARD_CREATED,
+    EVENT_TYPE.BOARD_DELETED,
+  ])('refreshes the catalog on a %s live event, mirroring document event handling', async (eventType) => {
+    const { loadSummaries } = setup();
+    const wrapper = mount(NotesSidebar);
+    await wrapper.vm.$nextTick();
+
+    loadSummaries.mockClear();
+
+    const handlers = capturedLiveHandlers();
+    handlers.onEvent({ type: eventType, data: {}, envelope: {} as never });
+
+    expect(loadSummaries).toHaveBeenCalledTimes(1);
+    expect(loadSummaries).toHaveBeenCalledWith('atlas', 'sandbox');
+    wrapper.unmount();
   });
 
   it('hydrates cached folders and summaries together before a pending network refresh, then publishes both refresh results', async () => {

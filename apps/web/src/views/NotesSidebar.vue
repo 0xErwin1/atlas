@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { z } from 'zod';
 import { wrappedClient } from '@/api/wrapper';
 import {
   getResourceCachePrincipal,
@@ -20,6 +19,7 @@ import LoadingState from '@/components/states/LoadingState.vue';
 import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
 import { type LiveUpdateEvent, useLiveUpdates } from '@/composables/useLiveUpdates';
 import { EVENT_TYPE } from '@/lib/eventTypes';
+import { type NoteCatalog, noteCatalogSchema } from '@/lib/noteCatalog';
 import { docKey, type TreeNodeRef } from '@/lib/notesTree';
 import { collectPaged } from '@/lib/pagination';
 import { useDocumentsStore } from '@/stores/documents';
@@ -32,39 +32,6 @@ import { useWorkspaceStore } from '@/stores/workspace';
 
 const PROJECT_STORAGE_KEY = 'atlas:notes-project';
 const CATALOG_RETENTION_MS = 24 * 60 * 60 * 1000;
-
-type NoteCatalog = {
-  folders: ReturnType<typeof useFoldersStore>['folders'];
-  summaries: ReturnType<typeof useDocumentsStore>['summaries'];
-};
-
-const noteCatalogSchema: z.ZodType<NoteCatalog> = z.object({
-  folders: z.array(
-    z
-      .object({
-        id: z.string(),
-        name: z.string(),
-        parent_folder_id: z.string().nullable().optional(),
-        project_id: z.string().nullable().optional(),
-        workspace_id: z.string(),
-        created_at: z.string(),
-        updated_at: z.string(),
-      })
-      .passthrough(),
-  ),
-  summaries: z.array(
-    z
-      .object({
-        id: z.string(),
-        slug: z.string().nullable().optional(),
-        title: z.string(),
-        folder_id: z.string().nullable().optional(),
-        head_seq: z.number(),
-        updated_at: z.string(),
-      })
-      .passthrough(),
-  ),
-}) as z.ZodType<NoteCatalog>;
 
 function loadStoredProject(): string | null {
   try {
@@ -268,7 +235,10 @@ async function loadTree(): Promise<void> {
       throw error;
     }
 
-    return { folders: folderPage.items, summaries: summaryPage.items };
+    // Board rows join the catalog once the unified-sidebar rewrite loads them
+    // per project; until then the catalog schema carries an empty array so
+    // cached entries validate the same way before and after that rewrite lands.
+    return { folders: folderPage.items, summaries: summaryPage.items, boards: [] };
   };
   const request = {
     key,
@@ -499,6 +469,11 @@ function onLiveEvent(evt: LiveUpdateEvent): void {
     case EVENT_TYPE.DOCUMENT_UPDATED:
     case EVENT_TYPE.DOCUMENT_MOVED:
     case EVENT_TYPE.DOCUMENT_DELETED:
+    // The server does not yet emit board.updated/board.moved events (rename and
+    // move — including the new folder-move endpoint — publish nothing), so only
+    // the two board events that actually exist are wired here.
+    case EVENT_TYPE.BOARD_CREATED:
+    case EVENT_TYPE.BOARD_DELETED:
       reloadNotesLive();
       break;
 
