@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { useRouter } from 'vue-router';
 import { wrappedClient } from '@/api/wrapper';
 import {
   getResourceCachePrincipal,
@@ -39,9 +39,9 @@ const CATALOG_RETENTION_MS = 24 * 60 * 60 * 1000;
 const props = defineProps<{
   project: ProjectSummary;
   activeSlug: string | null;
+  activeBoardId: string | null;
 }>();
 
-const route = useRoute();
 const router = useRouter();
 const workspace = useWorkspaceStore();
 const treeRef = ref<InstanceType<typeof NotesTree> | null>(null);
@@ -54,11 +54,6 @@ const ui = useUiStore();
 const resourceStatus = useResourceStatusStore();
 
 const expanded = ref(true);
-
-const activeBoardId = computed(() => {
-  const id = route.params.boardId;
-  return typeof id === 'string' && id.length > 0 ? id : null;
-});
 
 const ws = computed(() => workspace.activeWorkspaceSlug ?? '');
 const catalogTarget = ref<string | null>(null);
@@ -357,7 +352,7 @@ async function renameBoard(boardId: string, name: string): Promise<void> {
 async function removeBoard(boardId: string): Promise<void> {
   if (ws.value === '') return;
 
-  const wasActive = activeBoardId.value === boardId;
+  const wasActive = props.activeBoardId === boardId;
   const ok = await boards.removeBoard(ws.value, props.project.slug, boardId);
   if (!ok) {
     if (boards.error) ui.showBanner(boards.error, 'error');

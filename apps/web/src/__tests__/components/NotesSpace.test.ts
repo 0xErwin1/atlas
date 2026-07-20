@@ -167,7 +167,7 @@ function setupWorkspace() {
 }
 
 function mountSpace() {
-  return mount(NotesSpace, { props: { project: SANDBOX, activeSlug: null } });
+  return mount(NotesSpace, { props: { project: SANDBOX, activeSlug: null, activeBoardId: null } });
 }
 
 function capturedLiveHandlers(): LiveUpdateHandlers {

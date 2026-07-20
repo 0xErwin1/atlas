@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
-import { useRoute } from 'vue-router';
 // biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
 import NotesSpace from '@/components/notas/NotesSpace.vue';
 import SidebarViews from '@/components/notas/SidebarViews.vue';
@@ -8,26 +7,18 @@ import ErrorState from '@/components/states/ErrorState.vue';
 import ContextMenu, { type MenuItem } from '@/components/ui/ContextMenu.vue';
 import Icon from '@/components/ui/Icon.vue';
 import SectionLabel from '@/components/ui/SectionLabel.vue';
+import { useActiveSidebarNode } from '@/composables/useActiveSidebarNode';
 import { useContextMenu } from '@/composables/useContextMenu';
 import { docKey } from '@/lib/notesTree';
 import { useTreeSelection } from '@/stores/treeSelection';
 import { useWorkspaceStore } from '@/stores/workspace';
 
-const route = useRoute();
 const workspace = useWorkspaceStore();
 const selection = useTreeSelection();
 
 const spaceRefs = ref<Array<InstanceType<typeof NotesSpace> | null>>([]);
 
-const activeSlug = computed(() => {
-  const slug = route.params.slug;
-  return typeof slug === 'string' && slug.length > 0 ? slug : null;
-});
-
-const activeViewId = computed(() => {
-  const id = route.params.viewId;
-  return typeof id === 'string' && id.length > 0 ? id : null;
-});
+const { activeSlug, activeBoardId, activeViewId } = useActiveSidebarNode();
 
 // Keep the tree's persistent selection in step with the open document: the
 // selection store outlives this view (Pinia), so without this a doc selected
@@ -87,6 +78,7 @@ defineExpose({ openNewPage });
         :ref="(el) => (spaceRefs[index] = el as InstanceType<typeof NotesSpace> | null)"
         :project="project"
         :active-slug="activeSlug"
+        :active-board-id="activeBoardId"
       />
 
       <SidebarViews :active-view-id="activeViewId" />

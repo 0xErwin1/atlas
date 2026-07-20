@@ -30,6 +30,15 @@ export const routes: RouteRecordRaw[] = [
     path: '/t/:boardId?',
     name: 'tasks',
     component: () => import('@/views/Tasks.vue'),
+    // Notes and Tasks share one rail entry now: a boardless tasks location — the
+    // bare `/t` URL or a `{ name: 'tasks' }` navigation with no board — has no
+    // standalone landing page, so it redirects into the unified `/n` entry. Deep
+    // board links (`/t/:boardId`) still resolve to the board view.
+    beforeEnter: (to) => {
+      const boardId = to.params.boardId;
+      const hasBoard = typeof boardId === 'string' && boardId.length > 0;
+      return hasBoard ? true : { name: 'notes' };
+    },
   },
   {
     path: '/t/task/:readableId',
