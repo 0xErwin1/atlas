@@ -247,8 +247,7 @@ async function readDesktopClipboardImage(bridge: DesktopBridge): Promise<File | 
     const { meta, body } = decodeDesktopHttpResponse(framed);
     if (meta.status !== 200) return null;
 
-    const mime =
-      meta.headers.find(([name]) => name.toLowerCase() === 'content-type')?.[1] ?? 'image/png';
+    const mime = meta.headers.find(([name]) => name.toLowerCase() === 'content-type')?.[1] ?? 'image/png';
     const extension = mime === 'image/png' ? 'png' : (mime.split('/')[1] ?? 'bin');
 
     return new File([body], `pasted-image.${extension}`, { type: mime });

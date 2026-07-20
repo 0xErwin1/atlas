@@ -819,8 +819,8 @@ async fn desktop_api_request<R: Runtime>(
 #[cfg(target_os = "linux")]
 #[tauri::command]
 fn desktop_read_clipboard_image() -> Result<tauri::ipc::Response, String> {
-    let display =
-        gtk::gdk::Display::default().ok_or_else(|| "the desktop clipboard is unavailable".to_owned())?;
+    let display = gtk::gdk::Display::default()
+        .ok_or_else(|| "the desktop clipboard is unavailable".to_owned())?;
     let clipboard = gtk::Clipboard::default(&display)
         .ok_or_else(|| "the desktop clipboard is unavailable".to_owned())?;
 
@@ -829,7 +829,10 @@ fn desktop_read_clipboard_image() -> Result<tauri::ipc::Response, String> {
             status: 204,
             headers: Vec::new(),
         };
-        return Ok(tauri::ipc::Response::new(frame_ipc_http_response(&meta, &[])?));
+        return Ok(tauri::ipc::Response::new(frame_ipc_http_response(
+            &meta,
+            &[],
+        )?));
     };
 
     let png = pixbuf
@@ -840,7 +843,9 @@ fn desktop_read_clipboard_image() -> Result<tauri::ipc::Response, String> {
         status: 200,
         headers: vec![("content-type".to_owned(), "image/png".to_owned())],
     };
-    Ok(tauri::ipc::Response::new(frame_ipc_http_response(&meta, &png)?))
+    Ok(tauri::ipc::Response::new(frame_ipc_http_response(
+        &meta, &png,
+    )?))
 }
 
 #[cfg(not(target_os = "linux"))]
