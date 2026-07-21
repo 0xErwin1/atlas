@@ -101,6 +101,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
   >();
   let membersLoadRequest: object | null = null;
+  let assignableUsersLoadRequest: object | null = null;
   let workspaceLoadGeneration = 0;
   let projectsLoadGeneration = 0;
 
@@ -125,7 +126,9 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   function setActiveWorkspace(slug: string | null) {
     if (slug !== activeWorkspaceSlug.value) {
       membersLoadRequest = null;
+      assignableUsersLoadRequest = null;
       members.value = [];
+      assignableUsers.value = [];
     }
     activeWorkspaceSlug.value = slug;
     if (slug !== null) committedSlug.value = slug;
@@ -653,10 +656,15 @@ export const useWorkspaceStore = defineStore('workspace', () => {
    * add-member picker never shows stale candidates.
    */
   async function loadAssignableUsers(ws: string): Promise<void> {
+    const request = {};
+    assignableUsersLoadRequest = request;
     const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/assignable-users', {
       params: { path: { ws } },
     });
 
+    if (assignableUsersLoadRequest !== request || activeWorkspaceSlug.value !== ws) return;
+
+    assignableUsersLoadRequest = null;
     if (apiError !== undefined || data === undefined) {
       assignableUsers.value = [];
       return;

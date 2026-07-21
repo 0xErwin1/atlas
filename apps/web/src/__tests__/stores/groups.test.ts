@@ -1,5 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { deferred } from '@/__tests__/deferred';
 
 const { GET, POST, DELETE } = vi.hoisted(() => ({
   GET: vi.fn(),
@@ -140,5 +141,30 @@ describe('useGroupsStore', () => {
     });
     expect(store.members).toHaveLength(1);
     expect(store.members[0]?.user_id).toBe('u2');
+  });
+
+  it('does not publish stale groups or expanded members after the workspace resets', async () => {
+    const groupsA = deferred<{ data: ReturnType<typeof group>[]; error: undefined }>();
+    const membersA = deferred<{ data: ReturnType<typeof groupMember>[]; error: undefined }>();
+    GET.mockReturnValueOnce(groupsA.promise).mockReturnValueOnce(membersA.promise);
+    GET.mockResolvedValueOnce({
+      data: [group('g-b', 'Destination')],
+      error: undefined,
+    }).mockResolvedValueOnce({ data: [groupMember('g-b', 'u-b')], error: undefined });
+
+    const store = useGroupsStore();
+    const loadingGroupsA = store.load('workspace-a');
+    const loadingMembersA = store.loadMembers('workspace-a', 'g-a');
+
+    store.resetWorkspace();
+    await store.load('workspace-b');
+    await store.loadMembers('workspace-b', 'g-b');
+
+    groupsA.resolve({ data: [group('g-a', 'Stale')], error: undefined });
+    membersA.resolve({ data: [groupMember('g-a', 'u-a')], error: undefined });
+    await Promise.all([loadingGroupsA, loadingMembersA]);
+
+    expect(store.groups.map((item) => item.id)).toEqual(['g-b']);
+    expect(store.members.map((item) => item.group_id)).toEqual(['g-b']);
   });
 });

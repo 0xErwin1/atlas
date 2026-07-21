@@ -1,5 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { deferred } from '@/__tests__/deferred';
 
 const { GET } = vi.hoisted(() => ({
   GET: vi.fn(),
@@ -105,6 +106,21 @@ describe('useAuditStore — workspace feed', () => {
     expect(store.error).toBe('nope');
     expect(store.entries).toHaveLength(0);
   });
+
+  it('keeps the destination workspace audit page when a stale page settles after reset', async () => {
+    const pageA = deferred<ReturnType<typeof page>>();
+    GET.mockReturnValueOnce(pageA.promise).mockResolvedValueOnce(page([entry('b1')], null, false));
+
+    const store = useAuditStore();
+    const loadingA = store.loadWorkspace('workspace-a');
+    store.resetWorkspace();
+    await store.loadWorkspace('workspace-b');
+
+    pageA.resolve(page([entry('a1')], null, false));
+    await loadingA;
+
+    expect(store.entries.map((item) => item.id)).toEqual(['b1']);
+  });
 });
 
 describe('useAuditStore — platform feed', () => {
@@ -144,5 +160,15 @@ describe('useAuditStore — platform feed', () => {
     await store.loadPlatform();
 
     expect(store.error).toBe('Failed to load the platform audit log');
+  });
+
+  it('keeps platform audit independent from a workspace reset', async () => {
+    GET.mockResolvedValueOnce(page([entry('p1', 'user.disabled')], null, false));
+
+    const store = useAuditStore();
+    store.resetWorkspace();
+    await store.loadPlatform();
+
+    expect(store.entries.map((item) => item.id)).toEqual(['p1']);
   });
 });

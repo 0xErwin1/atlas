@@ -1,5 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { deferred } from '@/__tests__/deferred';
 
 vi.mock('@/api/wrapper', () => ({
   wrappedClient: {
@@ -116,5 +117,29 @@ describe('useTagsStore', () => {
       body: { name: 'urgent', color: 'amber' },
     });
     expect(store.tags.at(0)?.name).toBe('urgent');
+  });
+
+  it('keeps destination tag and used-label data when an earlier workspace response settles late', async () => {
+    const tagsA = deferred<{ data: ReturnType<typeof tag>[]; error: undefined }>();
+    const usedA = deferred<{ data: string[]; error: undefined }>();
+    mockGet.mockReturnValueOnce(tagsA.promise).mockReturnValueOnce(usedA.promise);
+    mockGet
+      .mockResolvedValueOnce({ data: [tag('b', 'destination')], error: undefined })
+      .mockResolvedValueOnce({ data: ['destination-label'], error: undefined });
+
+    const store = useTagsStore();
+    const loadingTagsA = store.load('workspace-a');
+    const loadingUsedA = store.loadUsed('workspace-a');
+
+    store.resetWorkspace();
+    await store.load('workspace-b');
+    await store.loadUsed('workspace-b');
+
+    tagsA.resolve({ data: [tag('a', 'stale')], error: undefined });
+    usedA.resolve({ data: ['stale-label'], error: undefined });
+    await Promise.all([loadingTagsA, loadingUsedA]);
+
+    expect(store.tags.map((item) => item.name)).toEqual(['destination']);
+    expect(store.usedLabels).toEqual(['destination-label']);
   });
 });

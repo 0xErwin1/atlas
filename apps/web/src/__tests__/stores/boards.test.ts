@@ -883,6 +883,30 @@ describe('useBoardsStore', () => {
     expect(store.boardsFor('proj-b').map((b) => b.id)).toEqual(['b-1']);
   });
 
+  it('does not publish a same-slug project catalog from a workspace reset earlier', async () => {
+    const first = deferred<{
+      data: { items: BoardSummaryDto[]; has_more: false; next_cursor: null };
+      error: undefined;
+    }>();
+    GET.mockReturnValueOnce(first.promise).mockResolvedValueOnce({
+      data: { items: [boardSummary('b-destination', 1)], has_more: false, next_cursor: null },
+      error: undefined,
+    });
+
+    const store = useBoardsStore();
+    const loadingA = store.loadBoardsForProject('workspace-a', 'shared-project');
+    store.reset();
+    await store.loadBoardsForProject('workspace-b', 'shared-project');
+
+    first.resolve({
+      data: { items: [boardSummary('b-stale', 9)], has_more: false, next_cursor: null },
+      error: undefined,
+    });
+    await loadingA;
+
+    expect(store.boardsFor('shared-project').map((item) => item.id)).toEqual(['b-destination']);
+  });
+
   it('moveBoard PATCHes the move endpoint with the target folder then refreshes the project bucket', async () => {
     PATCH.mockResolvedValue({ data: board('b1'), error: undefined });
     GET.mockResolvedValue({

@@ -1,5 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { deferred } from '@/__tests__/deferred';
 
 const { GET } = vi.hoisted(() => ({
   GET: vi.fn(),
@@ -99,5 +100,22 @@ describe('useActivityStore', () => {
 
     expect(store.error).toBe('nope');
     expect(store.entries).toHaveLength(0);
+  });
+
+  it('ignores a stale workspace pagination response after reset and destination load', async () => {
+    const nextA = deferred<ReturnType<typeof page>>();
+    const store = useActivityStore();
+    store._setForTest({ entries: [entry('a1')], cursor: 'a-cursor', hasMore: true });
+    GET.mockReturnValueOnce(nextA.promise).mockResolvedValueOnce(page([entry('b1')], null, false));
+
+    const loadingMoreA = store.loadMore('workspace-a');
+    store.resetWorkspace();
+    await store.load('workspace-b');
+
+    nextA.resolve(page([entry('a2')], null, false));
+    await loadingMoreA;
+
+    expect(store.entries.map((item) => item.id)).toEqual(['b1']);
+    expect(store.cursor).toBeNull();
   });
 });

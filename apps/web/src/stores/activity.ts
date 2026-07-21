@@ -32,6 +32,8 @@ export const useActivityStore = defineStore('activity', () => {
   const loading = ref(false);
   const loadingMore = ref(false);
   const error = ref<string | null>(null);
+  let workspaceGeneration = 0;
+  let boundWorkspace: string | null = null;
 
   const actor = ref<ActorFilter>(null);
   const from = ref<string | null>(null);
@@ -53,6 +55,24 @@ export const useActivityStore = defineStore('activity', () => {
     error.value = null;
   }
 
+  function resetWorkspace(): void {
+    workspaceGeneration += 1;
+    boundWorkspace = null;
+    reset();
+    loading.value = false;
+    loadingMore.value = false;
+  }
+
+  function bindWorkspace(ws: string): number {
+    if (boundWorkspace !== null && boundWorkspace !== ws) resetWorkspace();
+    boundWorkspace = ws;
+    return workspaceGeneration;
+  }
+
+  function isCurrentWorkspace(ws: string, generation: number): boolean {
+    return boundWorkspace === ws && workspaceGeneration === generation;
+  }
+
   function buildQuery(pageCursor?: string): Record<string, string> {
     const query: Record<string, string> = {};
     if (actor.value !== null) query.actor = actor.value;
@@ -62,7 +82,10 @@ export const useActivityStore = defineStore('activity', () => {
     return query;
   }
 
-  async function fetchPage(ws: string, pageCursor?: string): Promise<ActivityPage | null> {
+  async function fetchPage(
+    ws: string,
+    pageCursor?: string,
+  ): Promise<{ page: ActivityPage | null; error: string | null }> {
     const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/activity', {
       params: {
         path: { ws },
@@ -71,11 +94,10 @@ export const useActivityStore = defineStore('activity', () => {
     });
 
     if (apiError !== undefined || data === undefined) {
-      error.value = errorHint(apiError, 'Failed to load activity');
-      return null;
+      return { page: null, error: errorHint(apiError, 'Failed to load activity') };
     }
 
-    return data as ActivityPage;
+    return { page: data as ActivityPage, error: null };
   }
 
   /**
@@ -88,12 +110,18 @@ export const useActivityStore = defineStore('activity', () => {
       return;
     }
 
+    const generation = bindWorkspace(ws);
     loading.value = true;
     error.value = null;
 
-    const page = await fetchPage(ws);
+    const result = await fetchPage(ws);
+
+    if (!isCurrentWorkspace(ws, generation)) return;
 
     loading.value = false;
+
+    if (result.error !== null) error.value = result.error;
+    const { page } = result;
 
     if (page === null) {
       entries.value = [];
@@ -117,12 +145,19 @@ export const useActivityStore = defineStore('activity', () => {
       return;
     }
 
+    const pageCursor = cursor.value;
+    const generation = bindWorkspace(ws);
     loadingMore.value = true;
     error.value = null;
 
-    const page = await fetchPage(ws, cursor.value);
+    const result = await fetchPage(ws, pageCursor);
+
+    if (!isCurrentWorkspace(ws, generation)) return;
 
     loadingMore.value = false;
+
+    if (result.error !== null) error.value = result.error;
+    const { page } = result;
 
     if (page === null) return;
 
@@ -154,6 +189,7 @@ export const useActivityStore = defineStore('activity', () => {
     setActor,
     setRange,
     reset,
+    resetWorkspace,
     load,
     loadMore,
     _setForTest,

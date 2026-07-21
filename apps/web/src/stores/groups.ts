@@ -17,8 +17,30 @@ export const useGroupsStore = defineStore('groups', () => {
   const members = ref<GroupMemberDto[]>([]);
   const loading = ref(false);
   const error = ref<string | null>(null);
+  let workspaceGeneration = 0;
+  let boundWorkspace: string | null = null;
+
+  function resetWorkspace(): void {
+    workspaceGeneration += 1;
+    boundWorkspace = null;
+    groups.value = [];
+    members.value = [];
+    loading.value = false;
+    error.value = null;
+  }
+
+  function bindWorkspace(ws: string): number {
+    if (boundWorkspace !== null && boundWorkspace !== ws) resetWorkspace();
+    boundWorkspace = ws;
+    return workspaceGeneration;
+  }
+
+  function isCurrentWorkspace(ws: string, generation: number): boolean {
+    return boundWorkspace === ws && workspaceGeneration === generation;
+  }
 
   async function load(ws: string): Promise<void> {
+    const generation = bindWorkspace(ws);
     loading.value = true;
     error.value = null;
 
@@ -26,6 +48,7 @@ export const useGroupsStore = defineStore('groups', () => {
       params: { path: { ws } },
     });
 
+    if (!isCurrentWorkspace(ws, generation)) return;
     loading.value = false;
 
     if (apiError !== undefined || data === undefined) {
@@ -37,6 +60,7 @@ export const useGroupsStore = defineStore('groups', () => {
   }
 
   async function create(ws: string, name: string): Promise<boolean> {
+    const generation = bindWorkspace(ws);
     error.value = null;
 
     const { error: apiError } = await wrappedClient.POST('/api/workspaces/{ws}/groups', {
@@ -44,6 +68,7 @@ export const useGroupsStore = defineStore('groups', () => {
       body: { name },
     });
 
+    if (!isCurrentWorkspace(ws, generation)) return apiError === undefined;
     if (apiError !== undefined) {
       error.value = errorHint(apiError, 'Failed to create group');
       return false;
@@ -54,12 +79,14 @@ export const useGroupsStore = defineStore('groups', () => {
   }
 
   async function remove(ws: string, groupId: string): Promise<boolean> {
+    const generation = bindWorkspace(ws);
     error.value = null;
 
     const { error: apiError } = await wrappedClient.DELETE('/api/workspaces/{ws}/groups/{group_id}', {
       params: { path: { ws, group_id: groupId } },
     });
 
+    if (!isCurrentWorkspace(ws, generation)) return apiError === undefined;
     if (apiError !== undefined) {
       error.value = errorHint(apiError, 'Failed to delete group');
       return false;
@@ -70,6 +97,7 @@ export const useGroupsStore = defineStore('groups', () => {
   }
 
   async function loadMembers(ws: string, groupId: string): Promise<void> {
+    const generation = bindWorkspace(ws);
     error.value = null;
 
     const { data, error: apiError } = await wrappedClient.GET(
@@ -77,6 +105,7 @@ export const useGroupsStore = defineStore('groups', () => {
       { params: { path: { ws, group_id: groupId } } },
     );
 
+    if (!isCurrentWorkspace(ws, generation)) return;
     if (apiError !== undefined || data === undefined) {
       error.value = errorHint(apiError, 'Failed to load group members');
       members.value = [];
@@ -87,6 +116,7 @@ export const useGroupsStore = defineStore('groups', () => {
   }
 
   async function addMember(ws: string, groupId: string, userId: string): Promise<boolean> {
+    const generation = bindWorkspace(ws);
     error.value = null;
 
     const { error: apiError } = await wrappedClient.POST('/api/workspaces/{ws}/groups/{group_id}/members', {
@@ -94,6 +124,7 @@ export const useGroupsStore = defineStore('groups', () => {
       body: { user_id: userId },
     });
 
+    if (!isCurrentWorkspace(ws, generation)) return apiError === undefined;
     if (apiError !== undefined) {
       error.value = errorHint(apiError, 'Failed to add member');
       return false;
@@ -104,6 +135,7 @@ export const useGroupsStore = defineStore('groups', () => {
   }
 
   async function removeMember(ws: string, groupId: string, userId: string): Promise<boolean> {
+    const generation = bindWorkspace(ws);
     error.value = null;
 
     const { error: apiError } = await wrappedClient.DELETE(
@@ -111,6 +143,7 @@ export const useGroupsStore = defineStore('groups', () => {
       { params: { path: { ws, group_id: groupId, user_id: userId } } },
     );
 
+    if (!isCurrentWorkspace(ws, generation)) return apiError === undefined;
     if (apiError !== undefined) {
       error.value = errorHint(apiError, 'Failed to remove member');
       return false;
@@ -125,6 +158,7 @@ export const useGroupsStore = defineStore('groups', () => {
     members,
     loading,
     error,
+    resetWorkspace,
     load,
     create,
     remove,

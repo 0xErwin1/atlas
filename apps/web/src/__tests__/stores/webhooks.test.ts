@@ -1,5 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { deferred } from '@/__tests__/deferred';
 
 const { GET, POST, PATCH, DELETE } = vi.hoisted(() => ({
   GET: vi.fn(),
@@ -231,5 +232,60 @@ describe('useWebhooksStore', () => {
 
     expect(ok).toBe(false);
     expect(store.error).toBe('nope');
+  });
+
+  it('does not publish stale webhook integrations, deliveries, or mutations after reset', async () => {
+    const webhooksA = deferred<{
+      data: { items: WebhookDto[]; has_more: false; next_cursor: null };
+      error: undefined;
+    }>();
+    const integrationsA = deferred<{ data: IntegrationConfigDto[]; error: undefined }>();
+    const deliveriesA = deferred<{
+      data: { items: []; has_more: false; next_cursor: null };
+      error: undefined;
+    }>();
+    const createA = deferred<{ data: ReturnType<typeof webhook> & { secret: string }; error: undefined }>();
+    GET.mockReturnValueOnce(webhooksA.promise)
+      .mockReturnValueOnce(integrationsA.promise)
+      .mockReturnValueOnce(deliveriesA.promise);
+    POST.mockReturnValueOnce(createA.promise);
+    GET.mockResolvedValueOnce({
+      data: { items: [webhook({ id: 'wh-b' })], has_more: false, next_cursor: null },
+      error: undefined,
+    })
+      .mockResolvedValueOnce({ data: [integration({ id: 'ic-b' })], error: undefined })
+      .mockResolvedValueOnce({ data: { items: [], has_more: false, next_cursor: null }, error: undefined });
+
+    const store = useWebhooksStore();
+    const loadingA = Promise.all([
+      store.loadWebhooks('workspace-a'),
+      store.loadIntegrations('workspace-a'),
+      store.loadDeliveries('workspace-a', 'wh-a'),
+      store.createWebhook('workspace-a', {
+        target_url: 'https://a.example/hook',
+        event_types: [],
+        scope_type: 'workspace',
+      }),
+    ]);
+
+    store.resetWorkspace();
+    await Promise.all([
+      store.loadWebhooks('workspace-b'),
+      store.loadIntegrations('workspace-b'),
+      store.loadDeliveries('workspace-b', 'wh-b'),
+    ]);
+
+    webhooksA.resolve({
+      data: { items: [webhook({ id: 'wh-a' })], has_more: false, next_cursor: null },
+      error: undefined,
+    });
+    integrationsA.resolve({ data: [integration({ id: 'ic-a' })], error: undefined });
+    deliveriesA.resolve({ data: { items: [], has_more: false, next_cursor: null }, error: undefined });
+    createA.resolve({ data: { ...webhook({ id: 'wh-created-a' }), secret: 'whsec_a' }, error: undefined });
+    await loadingA;
+
+    expect(store.webhooks.map((item) => item.id)).toEqual(['wh-b']);
+    expect(store.integrations.map((item) => item.id)).toEqual(['ic-b']);
+    expect(store.deliveries).toEqual([]);
   });
 });

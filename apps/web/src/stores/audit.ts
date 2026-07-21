@@ -33,6 +33,8 @@ export const useAuditStore = defineStore('audit', () => {
   const loading = ref(false);
   const loadingMore = ref(false);
   const error = ref<string | null>(null);
+  let workspaceGeneration = 0;
+  let boundWorkspace: string | null = null;
 
   const actor = ref<AuditActorFilter>(null);
   const action = ref<string | null>(null);
@@ -59,6 +61,24 @@ export const useAuditStore = defineStore('audit', () => {
     error.value = null;
   }
 
+  function resetWorkspace(): void {
+    workspaceGeneration += 1;
+    boundWorkspace = null;
+    reset();
+    loading.value = false;
+    loadingMore.value = false;
+  }
+
+  function bindWorkspace(ws: string): number {
+    if (boundWorkspace !== null && boundWorkspace !== ws) resetWorkspace();
+    boundWorkspace = ws;
+    return workspaceGeneration;
+  }
+
+  function isCurrentWorkspace(ws: string, generation: number): boolean {
+    return boundWorkspace === ws && workspaceGeneration === generation;
+  }
+
   function buildQuery(pageCursor?: string): Record<string, string> {
     const query: Record<string, string> = {};
     if (actor.value !== null) query.actor = actor.value;
@@ -69,7 +89,10 @@ export const useAuditStore = defineStore('audit', () => {
     return query;
   }
 
-  async function fetchWorkspacePage(ws: string, pageCursor?: string): Promise<AuditPage | null> {
+  async function fetchWorkspacePage(
+    ws: string,
+    pageCursor?: string,
+  ): Promise<{ page: AuditPage | null; error: string | null }> {
     const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/audit', {
       params: {
         path: { ws },
@@ -78,14 +101,15 @@ export const useAuditStore = defineStore('audit', () => {
     });
 
     if (apiError !== undefined || data === undefined) {
-      error.value = errorHint(apiError, 'Failed to load the security log');
-      return null;
+      return { page: null, error: errorHint(apiError, 'Failed to load the security log') };
     }
 
-    return data as AuditPage;
+    return { page: data as AuditPage, error: null };
   }
 
-  async function fetchPlatformPage(pageCursor?: string): Promise<AuditPage | null> {
+  async function fetchPlatformPage(
+    pageCursor?: string,
+  ): Promise<{ page: AuditPage | null; error: string | null }> {
     const { data, error: apiError } = await wrappedClient.GET('/api/admin/audit', {
       params: {
         query: buildQuery(pageCursor),
@@ -93,11 +117,10 @@ export const useAuditStore = defineStore('audit', () => {
     });
 
     if (apiError !== undefined || data === undefined) {
-      error.value = errorHint(apiError, 'Failed to load the platform audit log');
-      return null;
+      return { page: null, error: errorHint(apiError, 'Failed to load the platform audit log') };
     }
 
-    return data as AuditPage;
+    return { page: data as AuditPage, error: null };
   }
 
   function applyFirstPage(page: AuditPage | null): void {
@@ -128,13 +151,17 @@ export const useAuditStore = defineStore('audit', () => {
       return;
     }
 
+    const generation = bindWorkspace(ws);
     loading.value = true;
     error.value = null;
 
-    const page = await fetchWorkspacePage(ws);
+    const result = await fetchWorkspacePage(ws);
+
+    if (!isCurrentWorkspace(ws, generation)) return;
 
     loading.value = false;
-    applyFirstPage(page);
+    if (result.error !== null) error.value = result.error;
+    applyFirstPage(result.page);
   }
 
   /** Append the next workspace page using the stored cursor. */
@@ -143,13 +170,18 @@ export const useAuditStore = defineStore('audit', () => {
       return;
     }
 
+    const pageCursor = cursor.value;
+    const generation = bindWorkspace(ws);
     loadingMore.value = true;
     error.value = null;
 
-    const page = await fetchWorkspacePage(ws, cursor.value);
+    const result = await fetchWorkspacePage(ws, pageCursor);
+
+    if (!isCurrentWorkspace(ws, generation)) return;
 
     loadingMore.value = false;
-    applyNextPage(page);
+    if (result.error !== null) error.value = result.error;
+    applyNextPage(result.page);
   }
 
   /** Load the first page of the platform audit log for the current filters. */
@@ -157,10 +189,11 @@ export const useAuditStore = defineStore('audit', () => {
     loading.value = true;
     error.value = null;
 
-    const page = await fetchPlatformPage();
+    const result = await fetchPlatformPage();
 
     loading.value = false;
-    applyFirstPage(page);
+    if (result.error !== null) error.value = result.error;
+    applyFirstPage(result.page);
   }
 
   /** Append the next platform page using the stored cursor. */
@@ -172,10 +205,11 @@ export const useAuditStore = defineStore('audit', () => {
     loadingMore.value = true;
     error.value = null;
 
-    const page = await fetchPlatformPage(cursor.value);
+    const result = await fetchPlatformPage(cursor.value);
 
     loadingMore.value = false;
-    applyNextPage(page);
+    if (result.error !== null) error.value = result.error;
+    applyNextPage(result.page);
   }
 
   function _setForTest(state: {
@@ -203,6 +237,7 @@ export const useAuditStore = defineStore('audit', () => {
     setAction,
     setRange,
     reset,
+    resetWorkspace,
     loadWorkspace,
     loadMoreWorkspace,
     loadPlatform,

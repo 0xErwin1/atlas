@@ -39,14 +39,37 @@ export const useWebhooksStore = defineStore('webhooks', () => {
   const integrations = ref<IntegrationConfigDto[]>([]);
   const deliveries = ref<WebhookDeliveryDto[]>([]);
   const error = ref<string | null>(null);
+  let workspaceGeneration = 0;
+  let boundWorkspace: string | null = null;
+
+  function resetWorkspace(): void {
+    workspaceGeneration += 1;
+    boundWorkspace = null;
+    webhooks.value = [];
+    integrations.value = [];
+    deliveries.value = [];
+    error.value = null;
+  }
+
+  function bindWorkspace(ws: string): number {
+    if (boundWorkspace !== ws) resetWorkspace();
+    boundWorkspace = ws;
+    return workspaceGeneration;
+  }
+
+  function isCurrentWorkspace(ws: string, generation: number): boolean {
+    return boundWorkspace === ws && workspaceGeneration === generation;
+  }
 
   async function loadWebhooks(ws: string): Promise<void> {
+    const generation = bindWorkspace(ws);
     error.value = null;
 
     const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/webhooks', {
       params: { path: { ws } },
     });
 
+    if (!isCurrentWorkspace(ws, generation)) return;
     if (apiError !== undefined || data === undefined) {
       error.value = errorHint(apiError, 'Failed to load webhooks');
       return;
@@ -56,6 +79,7 @@ export const useWebhooksStore = defineStore('webhooks', () => {
   }
 
   async function createWebhook(ws: string, body: CreateWebhookRequest): Promise<WebhookCreatedDto | null> {
+    const generation = bindWorkspace(ws);
     error.value = null;
 
     const { data, error: apiError } = await wrappedClient.POST('/api/workspaces/{ws}/webhooks', {
@@ -63,6 +87,7 @@ export const useWebhooksStore = defineStore('webhooks', () => {
       body,
     });
 
+    if (!isCurrentWorkspace(ws, generation)) return data ?? null;
     if (apiError !== undefined || data === undefined) {
       error.value = errorHint(apiError, 'Failed to create webhook');
       return null;
@@ -73,6 +98,7 @@ export const useWebhooksStore = defineStore('webhooks', () => {
   }
 
   async function updateWebhook(ws: string, id: string, patch: WebhookPatch): Promise<boolean> {
+    const generation = bindWorkspace(ws);
     error.value = null;
 
     const { data, error: apiError } = await wrappedClient.PATCH(
@@ -83,6 +109,7 @@ export const useWebhooksStore = defineStore('webhooks', () => {
       },
     );
 
+    if (!isCurrentWorkspace(ws, generation)) return apiError === undefined && data !== undefined;
     if (apiError !== undefined || data === undefined) {
       error.value = errorHint(apiError, 'Failed to update webhook');
       return false;
@@ -93,12 +120,14 @@ export const useWebhooksStore = defineStore('webhooks', () => {
   }
 
   async function deleteWebhook(ws: string, id: string): Promise<boolean> {
+    const generation = bindWorkspace(ws);
     error.value = null;
 
     const { error: apiError } = await wrappedClient.DELETE('/api/workspaces/{ws}/webhooks/{webhook_id}', {
       params: { path: { ws, webhook_id: id } },
     });
 
+    if (!isCurrentWorkspace(ws, generation)) return apiError === undefined;
     if (apiError !== undefined) {
       error.value = errorHint(apiError, 'Failed to delete webhook');
       return false;
@@ -109,6 +138,7 @@ export const useWebhooksStore = defineStore('webhooks', () => {
   }
 
   async function loadDeliveries(ws: string, id: string): Promise<void> {
+    const generation = bindWorkspace(ws);
     error.value = null;
 
     const { data, error: apiError } = await wrappedClient.GET(
@@ -116,6 +146,7 @@ export const useWebhooksStore = defineStore('webhooks', () => {
       { params: { path: { ws, webhook_id: id } } },
     );
 
+    if (!isCurrentWorkspace(ws, generation)) return;
     if (apiError !== undefined || data === undefined) {
       error.value = errorHint(apiError, 'Failed to load deliveries');
       return;
@@ -125,12 +156,14 @@ export const useWebhooksStore = defineStore('webhooks', () => {
   }
 
   async function loadIntegrations(ws: string): Promise<void> {
+    const generation = bindWorkspace(ws);
     error.value = null;
 
     const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/integration-configs', {
       params: { path: { ws } },
     });
 
+    if (!isCurrentWorkspace(ws, generation)) return;
     if (apiError !== undefined || data === undefined) {
       error.value = errorHint(apiError, 'Failed to load integrations');
       return;
@@ -143,6 +176,7 @@ export const useWebhooksStore = defineStore('webhooks', () => {
     ws: string,
     integration: string,
   ): Promise<IntegrationConfigCreatedDto | null> {
+    const generation = bindWorkspace(ws);
     error.value = null;
 
     const { data, error: apiError } = await wrappedClient.POST('/api/workspaces/{ws}/integration-configs', {
@@ -150,6 +184,7 @@ export const useWebhooksStore = defineStore('webhooks', () => {
       body: { integration },
     });
 
+    if (!isCurrentWorkspace(ws, generation)) return data ?? null;
     if (apiError !== undefined || data === undefined) {
       error.value = errorHint(apiError, 'Failed to create integration');
       return null;
@@ -160,6 +195,7 @@ export const useWebhooksStore = defineStore('webhooks', () => {
   }
 
   async function setIntegrationActive(ws: string, id: string, isActive: boolean): Promise<boolean> {
+    const generation = bindWorkspace(ws);
     error.value = null;
 
     const { data, error: apiError } = await wrappedClient.PATCH(
@@ -170,6 +206,7 @@ export const useWebhooksStore = defineStore('webhooks', () => {
       },
     );
 
+    if (!isCurrentWorkspace(ws, generation)) return apiError === undefined && data !== undefined;
     if (apiError !== undefined || data === undefined) {
       error.value = errorHint(apiError, 'Failed to update integration');
       return false;
@@ -180,6 +217,7 @@ export const useWebhooksStore = defineStore('webhooks', () => {
   }
 
   async function deleteIntegration(ws: string, id: string): Promise<boolean> {
+    const generation = bindWorkspace(ws);
     error.value = null;
 
     const { error: apiError } = await wrappedClient.DELETE(
@@ -187,6 +225,7 @@ export const useWebhooksStore = defineStore('webhooks', () => {
       { params: { path: { ws, config_id: id } } },
     );
 
+    if (!isCurrentWorkspace(ws, generation)) return apiError === undefined;
     if (apiError !== undefined) {
       error.value = errorHint(apiError, 'Failed to delete integration');
       return false;
@@ -201,6 +240,7 @@ export const useWebhooksStore = defineStore('webhooks', () => {
     integrations,
     deliveries,
     error,
+    resetWorkspace,
     loadWebhooks,
     createWebhook,
     updateWebhook,

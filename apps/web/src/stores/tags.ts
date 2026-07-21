@@ -19,6 +19,8 @@ export const useTagsStore = defineStore('tags', () => {
   const error = ref<string | null>(null);
   let loadedWs: string | null = null;
   let loadedUsedWs: string | null = null;
+  let workspaceGeneration = 0;
+  let boundWorkspace: string | null = null;
 
   const names = computed(() => tags.value.map((t) => t.name));
 
@@ -44,13 +46,35 @@ export const useTagsStore = defineStore('tags', () => {
     return byLowerName.value.get(lower)?.color ?? defaultSwatchId(`tag:${lower}`);
   }
 
+  function resetWorkspace(): void {
+    workspaceGeneration += 1;
+    boundWorkspace = null;
+    loadedWs = null;
+    loadedUsedWs = null;
+    tags.value = [];
+    usedLabels.value = [];
+    error.value = null;
+  }
+
+  function bindWorkspace(ws: string): number {
+    if (boundWorkspace !== ws) resetWorkspace();
+    boundWorkspace = ws;
+    return workspaceGeneration;
+  }
+
+  function isCurrentWorkspace(ws: string, generation: number): boolean {
+    return boundWorkspace === ws && workspaceGeneration === generation;
+  }
+
   async function load(ws: string, force = false): Promise<void> {
+    const generation = bindWorkspace(ws);
     if (!force && loadedWs === ws) return;
 
     const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/tags', {
       params: { path: { ws } },
     });
 
+    if (!isCurrentWorkspace(ws, generation)) return;
     if (apiError !== undefined || data === undefined) {
       error.value = errorHint(apiError, 'Failed to load tags');
       return;
@@ -66,12 +90,14 @@ export const useTagsStore = defineStore('tags', () => {
    * needs the raw usage list.
    */
   async function loadUsed(ws: string, force = false): Promise<void> {
+    const generation = bindWorkspace(ws);
     if (!force && loadedUsedWs === ws) return;
 
     const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/tags/used', {
       params: { path: { ws } },
     });
 
+    if (!isCurrentWorkspace(ws, generation)) return;
     if (apiError !== undefined || data === undefined) {
       error.value = errorHint(apiError, 'Failed to load used labels');
       return;
@@ -87,6 +113,7 @@ export const useTagsStore = defineStore('tags', () => {
    * null on failure.
    */
   async function ensure(ws: string, name: string): Promise<TagDto | null> {
+    const generation = bindWorkspace(ws);
     const trimmed = name.trim();
     if (trimmed === '') return null;
 
@@ -98,6 +125,7 @@ export const useTagsStore = defineStore('tags', () => {
       body: { name: trimmed },
     });
 
+    if (!isCurrentWorkspace(ws, generation)) return data ?? null;
     if (apiError !== undefined || data === undefined) {
       error.value = errorHint(apiError, 'Failed to create tag');
       return null;
@@ -116,6 +144,7 @@ export const useTagsStore = defineStore('tags', () => {
    * duplicate name returns the existing tag). Returns the tag, or null on failure.
    */
   async function create(ws: string, name: string, color?: string | null): Promise<TagDto | null> {
+    const generation = bindWorkspace(ws);
     const trimmed = name.trim();
     if (trimmed === '') return null;
 
@@ -127,6 +156,7 @@ export const useTagsStore = defineStore('tags', () => {
       body,
     });
 
+    if (!isCurrentWorkspace(ws, generation)) return data ?? null;
     if (apiError !== undefined || data === undefined) {
       error.value = errorHint(apiError, 'Failed to create tag');
       return null;
@@ -149,11 +179,13 @@ export const useTagsStore = defineStore('tags', () => {
     id: string,
     patch: { name?: string; color?: string | null },
   ): Promise<boolean> {
+    const generation = bindWorkspace(ws);
     const { data, error: apiError } = await wrappedClient.PATCH('/api/workspaces/{ws}/tags/{tag_id}', {
       params: { path: { ws, tag_id: id } },
       body: patch,
     });
 
+    if (!isCurrentWorkspace(ws, generation)) return apiError === undefined && data !== undefined;
     if (apiError !== undefined || data === undefined) {
       error.value = errorHint(apiError, 'Failed to update tag');
       return false;
@@ -165,10 +197,12 @@ export const useTagsStore = defineStore('tags', () => {
 
   /** Deletes a tag and drops it from the cache. Returns true on success. */
   async function remove(ws: string, id: string): Promise<boolean> {
+    const generation = bindWorkspace(ws);
     const { error: apiError } = await wrappedClient.DELETE('/api/workspaces/{ws}/tags/{tag_id}', {
       params: { path: { ws, tag_id: id } },
     });
 
+    if (!isCurrentWorkspace(ws, generation)) return apiError === undefined;
     if (apiError !== undefined) {
       error.value = errorHint(apiError, 'Failed to delete tag');
       return false;
@@ -184,6 +218,7 @@ export const useTagsStore = defineStore('tags', () => {
     unregisteredLabels,
     names,
     error,
+    resetWorkspace,
     load,
     loadUsed,
     ensure,

@@ -185,6 +185,9 @@ export const useBoardsStore = defineStore('boards', () => {
   let activeTaskDetailsRequest: object | null = null;
   let activeBoardCacheKey: string | null = null;
   let activeBoardCacheScope: { boardId: string; workspaceId: string } | null = null;
+  let catalogGeneration = 0;
+  const catalogRequests = new Map<string, object>();
+  let boardSummaryRequest: object | null = null;
 
   // Stable empty-array reference per column. Returning a fresh `[]` for an empty
   // column on every call makes the kanban draggable's bound list change identity
@@ -278,6 +281,9 @@ export const useBoardsStore = defineStore('boards', () => {
   }
 
   async function loadBoards(ws: string, projectSlug: string): Promise<void> {
+    const request = {};
+    const generation = catalogGeneration;
+    boardSummaryRequest = request;
     const { items, error: apiError } = await collectPaged<BoardSummaryDto>((cursor) =>
       wrappedClient.GET('/api/workspaces/{ws}/projects/{project_slug}/boards', {
         params: {
@@ -287,6 +293,7 @@ export const useBoardsStore = defineStore('boards', () => {
       }),
     );
 
+    if (boardSummaryRequest !== request || generation !== catalogGeneration) return;
     if (apiError !== undefined) {
       error.value = errorHint(apiError, 'Failed to load boards');
       return;
@@ -315,6 +322,9 @@ export const useBoardsStore = defineStore('boards', () => {
    * still populated for existing toast callers.
    */
   async function loadBoardsForProject(ws: string, projectSlug: string): Promise<string | null> {
+    const request = {};
+    const generation = catalogGeneration;
+    catalogRequests.set(projectSlug, request);
     const { items, error: apiError } = await collectPaged<BoardSummaryDto>((cursor) =>
       wrappedClient.GET('/api/workspaces/{ws}/projects/{project_slug}/boards', {
         params: {
@@ -324,6 +334,7 @@ export const useBoardsStore = defineStore('boards', () => {
       }),
     );
 
+    if (catalogGeneration !== generation || catalogRequests.get(projectSlug) !== request) return null;
     if (apiError !== undefined) {
       const message = errorHint(apiError, 'Failed to load boards');
       error.value = message;
@@ -1509,6 +1520,9 @@ export const useBoardsStore = defineStore('boards', () => {
    * survive the switch.
    */
   function reset(): void {
+    catalogGeneration += 1;
+    catalogRequests.clear();
+    boardSummaryRequest = null;
     cancelBoardLoad();
     board.value = null;
     boardSummaries.value = [];

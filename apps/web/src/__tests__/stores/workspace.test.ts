@@ -502,6 +502,21 @@ describe('useWorkspaceStore', () => {
     expect(store.myWorkspaceRole).toBeNull();
   });
 
+  it('clears and ignores stale assignable users when the active workspace changes', async () => {
+    const response = deferred<{ data: { id: string; username: string }[]; error: undefined }>();
+    mockGet.mockReturnValueOnce(response.promise);
+
+    const store = useWorkspaceStore();
+    store.setActiveWorkspace('workspace-a');
+    const loading = store.loadAssignableUsers('workspace-a');
+
+    store.switchWorkspace('workspace-b');
+    response.resolve({ data: [{ id: 'user-a', username: 'stale' }], error: undefined });
+    await loading;
+
+    expect(store.assignableUsers).toEqual([]);
+  });
+
   it('settles member transport failures and publishes an error', async () => {
     mockGet.mockRejectedValueOnce(new Error('network unavailable'));
 
