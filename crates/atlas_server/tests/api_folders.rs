@@ -9,7 +9,8 @@ mod support;
 
 use atlas_api::dtos::{
     CreateProjectRequest,
-    boards_tasks::{CreateBoardRequest, MoveBoardRequest},
+    boards_tasks::{CreateBoardRequest, CreateColumnRequest, CreateTaskRequest, MoveBoardRequest},
+    documents::CreateDocumentRequest,
     folders::{CreateFolderRequest, MoveFolderRequest, RenameFolderRequest},
 };
 use atlas_client::ClientError;
@@ -1248,13 +1249,14 @@ async fn move_board_to_folder_in_other_project_returns_422() {
 }
 
 #[tokio::test]
-async fn delete_folder_leaves_contained_board_accessible() {
+async fn deleted_project_hides_folder_document_board_and_task_direct_lookups() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;
-    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "board-del-1").await;
+    let (client, ws, _) =
+        support::login_user_with_workspace(&server, &db, "project-ancestor-http").await;
 
     let project = client
-        .create_project(&ws.slug, project_req("BoardDelProj", "board-del-proj-1"))
+        .create_project(&ws.slug, project_req("ProjectAncestor", "project-ancestor"))
         .await
         .expect("create project");
 
@@ -1263,7 +1265,7 @@ async fn delete_folder_leaves_contained_board_accessible() {
             &ws.slug,
             &project.slug,
             CreateFolderRequest {
-                name: "Doomed".to_string(),
+                name: "Live Folder".to_string(),
                 parent_folder_id: None,
             },
         )
@@ -1275,23 +1277,199 @@ async fn delete_folder_leaves_contained_board_accessible() {
             &ws.slug,
             &project.slug,
             CreateBoardRequest {
-                name: "Survivor Board".to_string(),
+                name: "Live Board".to_string(),
                 folder_id: Some(folder.id),
             },
         )
         .await
         .expect("create board");
 
-    client
-        .delete_folder(&ws.slug, folder.id)
+    let document = client
+        .create_document(
+            &ws.slug,
+            &project.slug,
+            CreateDocumentRequest {
+                title: "Concealed Document".to_string(),
+                folder_id: Some(folder.id),
+                content: None,
+            },
+        )
         .await
-        .expect("delete folder");
+        .expect("create document");
 
-    let survivor = client
-        .get_board(&ws.slug, board.id)
+    let column = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "Todo".to_string(),
+                color: None,
+                before: None,
+                after: None,
+            },
+        )
         .await
-        .expect("board survives folder deletion");
-    assert_eq!(survivor.id, board.id);
+        .expect("create column");
+
+    let task = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: column.id,
+                title: "Concealed Task".to_string(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create task");
+
+    client
+        .delete_project(&ws.slug, &project.slug)
+        .await
+        .expect("delete project");
+
+    let document_slug = document.slug.expect("document slug");
+
+    for result in [
+        client.get_folder(&ws.slug, folder.id).await.map(|_| ()),
+        client
+            .get_document(&ws.slug, &document_slug)
+            .await
+            .map(|_| ()),
+        client.get_board(&ws.slug, board.id).await.map(|_| ()),
+        client
+            .get_task(&ws.slug, &task.readable_id)
+            .await
+            .map(|_| ()),
+    ] {
+        assert!(
+            matches!(result, Err(ClientError::Api(ref problem)) if problem.status == 404),
+            "deleted project descendants must be concealed, got: {result:?}"
+        );
+    }
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn deleted_folder_hides_folder_document_board_and_task_direct_lookups() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) =
+        support::login_user_with_workspace(&server, &db, "folder-ancestor-http").await;
+
+    let project = client
+        .create_project(&ws.slug, project_req("FolderAncestor", "folder-ancestor"))
+        .await
+        .expect("create project");
+
+    let parent = client
+        .create_folder(
+            &ws.slug,
+            &project.slug,
+            CreateFolderRequest {
+                name: "Deleted Parent".to_string(),
+                parent_folder_id: None,
+            },
+        )
+        .await
+        .expect("create parent folder");
+
+    let folder = client
+        .create_folder(
+            &ws.slug,
+            &project.slug,
+            CreateFolderRequest {
+                name: "Live Child".to_string(),
+                parent_folder_id: Some(parent.id),
+            },
+        )
+        .await
+        .expect("create child folder");
+
+    let board = client
+        .create_board(
+            &ws.slug,
+            &project.slug,
+            CreateBoardRequest {
+                name: "Live Board".to_string(),
+                folder_id: Some(folder.id),
+            },
+        )
+        .await
+        .expect("create board");
+
+    let document = client
+        .create_document(
+            &ws.slug,
+            &project.slug,
+            CreateDocumentRequest {
+                title: "Concealed Document".to_string(),
+                folder_id: Some(folder.id),
+                content: None,
+            },
+        )
+        .await
+        .expect("create document");
+
+    let column = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "Todo".to_string(),
+                color: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create column");
+
+    let task = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: column.id,
+                title: "Concealed Task".to_string(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create task");
+
+    client
+        .delete_folder(&ws.slug, parent.id)
+        .await
+        .expect("delete parent folder");
+
+    let document_slug = document.slug.expect("document slug");
+
+    for result in [
+        client.get_folder(&ws.slug, folder.id).await.map(|_| ()),
+        client
+            .get_document(&ws.slug, &document_slug)
+            .await
+            .map(|_| ()),
+        client.get_board(&ws.slug, board.id).await.map(|_| ()),
+        client
+            .get_task(&ws.slug, &task.readable_id)
+            .await
+            .map(|_| ()),
+    ] {
+        assert!(
+            matches!(result, Err(ClientError::Api(ref problem)) if problem.status == 404),
+            "deleted folder descendants must be concealed, got: {result:?}"
+        );
+    }
 
     db.teardown().await;
 }

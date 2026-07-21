@@ -31,6 +31,7 @@ use crate::{
             documents::{document, document_from},
             workspace_core::folder,
         },
+        live_ancestors::{live_board_chain, live_folder_chain, live_project},
         repos::{
             ApiKeyRepo, MembershipRepo, PermissionGrantRepo, PgApiKeyRepo, PgMembershipRepo,
             PgPermissionGrantRepo, PgProjectRepo, PgUserRepo, PgWorkspaceRepo, ProjectRepo,
@@ -246,6 +247,8 @@ impl ResolvedResource for FolderRes {
         let row = folder::Entity::find_by_id(folder_uuid)
             .filter(folder::Column::WorkspaceId.eq(ws.id.0))
             .filter(folder::Column::DeletedAt.is_null())
+            .filter(live_project("folders.project_id"))
+            .filter(live_folder_chain("folders.id"))
             .one(db)
             .await
             .map_err(|e| ApiError::Internal {
@@ -333,6 +336,8 @@ impl ResolvedResource for BoardRes {
         let row = board::Entity::find_by_id(board_uuid)
             .filter(board::Column::WorkspaceId.eq(ws.id.0))
             .filter(board::Column::DeletedAt.is_null())
+            .filter(live_project("boards.project_id"))
+            .filter(live_folder_chain("boards.folder_id"))
             .one(db)
             .await
             .map_err(|e| ApiError::Internal {
@@ -362,6 +367,7 @@ impl ResolvedResource for TaskRes {
             .filter(task::Column::WorkspaceId.eq(ws.id.0))
             .filter(task::Column::ReadableId.eq(readable_id.as_str()))
             .filter(task::Column::DeletedAt.is_null())
+            .filter(live_board_chain("tasks.board_id"))
             .one(db)
             .await
             .map_err(|e| ApiError::Internal {
@@ -471,6 +477,8 @@ impl ResolvedResource for DocumentRes {
         let row = document::Entity::find_by_id(doc_uuid)
             .filter(document::Column::WorkspaceId.eq(ws.id.0))
             .filter(document::Column::DeletedAt.is_null())
+            .filter(live_project("documents.project_id"))
+            .filter(live_folder_chain("documents.folder_id"))
             .one(db)
             .await
             .map_err(|e| ApiError::Internal {
@@ -502,7 +510,9 @@ impl ResolvedResource for DocumentSlugRes {
         // human-readable slug. UUID is the canonical identity; slug is sugar.
         let base = document::Entity::find()
             .filter(document::Column::WorkspaceId.eq(ws.id.0))
-            .filter(document::Column::DeletedAt.is_null());
+            .filter(document::Column::DeletedAt.is_null())
+            .filter(live_project("documents.project_id"))
+            .filter(live_folder_chain("documents.folder_id"));
 
         let query = match ident.parse::<uuid::Uuid>() {
             Ok(uuid) => base.filter(document::Column::Id.eq(uuid)),
