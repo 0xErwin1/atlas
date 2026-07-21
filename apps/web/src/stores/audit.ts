@@ -23,8 +23,8 @@ interface AuditPage {
  *
  * Two fetch entry points share one filter/pagination state: `loadWorkspace`
  * targets `/api/workspaces/{ws}/audit`, `loadPlatform` targets `/api/admin/audit`.
- * A panel uses exactly one of them and never switches scope mid-life, so they
- * can share the same backing refs. Changing any filter resets and re-fetches.
+ * The active scope/request token prevents a delayed response from the other
+ * feed from replacing the current panel's entries.
  */
 export const useAuditStore = defineStore('audit', () => {
   const entries = ref<AuditEntryDto[]>([]);
@@ -35,6 +35,8 @@ export const useAuditStore = defineStore('audit', () => {
   const error = ref<string | null>(null);
   let workspaceGeneration = 0;
   let boundWorkspace: string | null = null;
+  let requestGeneration = 0;
+  let activeScope: 'workspace' | 'platform' | null = null;
 
   const actor = ref<AuditActorFilter>(null);
   const action = ref<string | null>(null);
@@ -77,6 +79,16 @@ export const useAuditStore = defineStore('audit', () => {
 
   function isCurrentWorkspace(ws: string, generation: number): boolean {
     return boundWorkspace === ws && workspaceGeneration === generation;
+  }
+
+  function startRequest(scope: 'workspace' | 'platform'): number {
+    requestGeneration += 1;
+    activeScope = scope;
+    return requestGeneration;
+  }
+
+  function isCurrentRequest(scope: 'workspace' | 'platform', generation: number): boolean {
+    return activeScope === scope && requestGeneration === generation;
   }
 
   function buildQuery(pageCursor?: string): Record<string, string> {
@@ -152,12 +164,13 @@ export const useAuditStore = defineStore('audit', () => {
     }
 
     const generation = bindWorkspace(ws);
+    const request = startRequest('workspace');
     loading.value = true;
     error.value = null;
 
     const result = await fetchWorkspacePage(ws);
 
-    if (!isCurrentWorkspace(ws, generation)) return;
+    if (!isCurrentWorkspace(ws, generation) || !isCurrentRequest('workspace', request)) return;
 
     loading.value = false;
     if (result.error !== null) error.value = result.error;
@@ -172,12 +185,13 @@ export const useAuditStore = defineStore('audit', () => {
 
     const pageCursor = cursor.value;
     const generation = bindWorkspace(ws);
+    const request = startRequest('workspace');
     loadingMore.value = true;
     error.value = null;
 
     const result = await fetchWorkspacePage(ws, pageCursor);
 
-    if (!isCurrentWorkspace(ws, generation)) return;
+    if (!isCurrentWorkspace(ws, generation) || !isCurrentRequest('workspace', request)) return;
 
     loadingMore.value = false;
     if (result.error !== null) error.value = result.error;
@@ -186,10 +200,13 @@ export const useAuditStore = defineStore('audit', () => {
 
   /** Load the first page of the platform audit log for the current filters. */
   async function loadPlatform(): Promise<void> {
+    const request = startRequest('platform');
     loading.value = true;
     error.value = null;
 
     const result = await fetchPlatformPage();
+
+    if (!isCurrentRequest('platform', request)) return;
 
     loading.value = false;
     if (result.error !== null) error.value = result.error;
@@ -202,10 +219,13 @@ export const useAuditStore = defineStore('audit', () => {
       return;
     }
 
+    const request = startRequest('platform');
     loadingMore.value = true;
     error.value = null;
 
     const result = await fetchPlatformPage(cursor.value);
+
+    if (!isCurrentRequest('platform', request)) return;
 
     loadingMore.value = false;
     if (result.error !== null) error.value = result.error;

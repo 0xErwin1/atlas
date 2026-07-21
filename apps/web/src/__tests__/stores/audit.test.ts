@@ -121,6 +121,24 @@ describe('useAuditStore — workspace feed', () => {
 
     expect(store.entries.map((item) => item.id)).toEqual(['b1']);
   });
+
+  it('keeps workspace audit entries when an older platform request settles last', async () => {
+    const platformPage = deferred<ReturnType<typeof page>>();
+    const workspacePage = deferred<ReturnType<typeof page>>();
+    GET.mockReturnValueOnce(platformPage.promise).mockReturnValueOnce(workspacePage.promise);
+
+    const store = useAuditStore();
+    const loadingPlatform = store.loadPlatform();
+    const loadingWorkspace = store.loadWorkspace('workspace-a');
+
+    workspacePage.resolve(page([entry('workspace-1')], null, false));
+    await loadingWorkspace;
+
+    platformPage.resolve(page([entry('platform-1', 'user.disabled')], null, false));
+    await loadingPlatform;
+
+    expect(store.entries.map((item) => item.id)).toEqual(['workspace-1']);
+  });
 });
 
 describe('useAuditStore — platform feed', () => {
@@ -170,5 +188,23 @@ describe('useAuditStore — platform feed', () => {
     await store.loadPlatform();
 
     expect(store.entries.map((item) => item.id)).toEqual(['p1']);
+  });
+
+  it('keeps platform audit entries when an older workspace request settles last', async () => {
+    const workspacePage = deferred<ReturnType<typeof page>>();
+    const platformPage = deferred<ReturnType<typeof page>>();
+    GET.mockReturnValueOnce(workspacePage.promise).mockReturnValueOnce(platformPage.promise);
+
+    const store = useAuditStore();
+    const loadingWorkspace = store.loadWorkspace('workspace-a');
+    const loadingPlatform = store.loadPlatform();
+
+    platformPage.resolve(page([entry('platform-1', 'user.disabled')], null, false));
+    await loadingPlatform;
+
+    workspacePage.resolve(page([entry('workspace-1')], null, false));
+    await loadingWorkspace;
+
+    expect(store.entries.map((item) => item.id)).toEqual(['platform-1']);
   });
 });
