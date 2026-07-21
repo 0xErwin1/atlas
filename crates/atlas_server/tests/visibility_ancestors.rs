@@ -3,16 +3,19 @@
 mod support;
 
 use atlas_domain::{
+    Actor, WorkspaceCtx,
     entities::task_views::TaskViewFilters,
     entities::{
         boards_tasks::{NewBoard, NewTask, PositionBetween},
-        documents::NewDocument,
+        comments::{CommentOwner, NewComment},
+        documents::{AttachmentOwner, NewAttachment, NewDocument},
         workspace_core::{NewFolder, NewProject},
     },
     permissions::{Principal, Visibility, VisibilityRole},
 };
 use atlas_server::persistence::repos::{
-    BoardRepo, DocumentRepo, FolderRepo, ProjectRepo, TaskRepo,
+    AttachmentRepo, BoardRepo, CommentRepo, DocumentRepo, FolderRepo, PgAttachmentRepo,
+    PgCommentRepo, ProjectRepo, TaskRepo,
 };
 use sea_orm::{ConnectionTrait, Statement};
 
@@ -354,6 +357,353 @@ async fn direct_list_visibility() {
             .is_empty()
     );
     assert_descendants_remain_live(&db, child.id.0, document.id.0, board.id.0, task.id.0).await;
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn owner_chain_visibility() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "owner-chain-visibility").await;
+    let ctx = support::ctx(&ws, &user);
+
+    let (project, _parent, _child, document, _board, task) =
+        seed_project_tree(&db, &ctx, "project").await;
+
+    let comment_repo = PgCommentRepo::new(db.conn().clone());
+    let task_comment = comment_repo
+        .create(
+            &ctx,
+            NewComment {
+                owner: CommentOwner::Task(task.id),
+                body: "Task comment below deleted project".into(),
+            },
+        )
+        .await
+        .expect("create task comment");
+    let document_comment = comment_repo
+        .create(
+            &ctx,
+            NewComment {
+                owner: CommentOwner::Document(document.id),
+                body: "Document comment below deleted project".into(),
+            },
+        )
+        .await
+        .expect("create document comment");
+
+    let attachment_repo = PgAttachmentRepo {
+        conn: db.conn().clone(),
+    };
+    let document_attachment = attachment_repo
+        .record(
+            &ctx,
+            NewAttachment {
+                document_id: Some(document.id),
+                task_id: None,
+                comment_id: None,
+                file_name: "document.txt".into(),
+                content_type: "text/plain".into(),
+                size_bytes: 1,
+                sha256: "document-digest".into(),
+            },
+        )
+        .await
+        .expect("record document attachment");
+    let task_attachment = attachment_repo
+        .record(
+            &ctx,
+            NewAttachment {
+                document_id: None,
+                task_id: Some(task.id),
+                comment_id: None,
+                file_name: "task.txt".into(),
+                content_type: "text/plain".into(),
+                size_bytes: 1,
+                sha256: "task-digest".into(),
+            },
+        )
+        .await
+        .expect("record task attachment");
+    let comment_attachment = attachment_repo
+        .record(
+            &ctx,
+            NewAttachment {
+                document_id: None,
+                task_id: None,
+                comment_id: Some(task_comment.id),
+                file_name: "comment.txt".into(),
+                content_type: "text/plain".into(),
+                size_bytes: 1,
+                sha256: "comment-digest".into(),
+            },
+        )
+        .await
+        .expect("record comment attachment");
+
+    db.project_repo()
+        .soft_delete(&ctx, project.id)
+        .await
+        .expect("delete project");
+
+    assert!(
+        comment_repo
+            .get_for_owner(&ctx, CommentOwner::Task(task.id), task_comment.id)
+            .await
+            .is_err()
+    );
+    assert!(
+        comment_repo
+            .get_for_owner(
+                &ctx,
+                CommentOwner::Document(document.id),
+                document_comment.id,
+            )
+            .await
+            .is_err()
+    );
+    assert!(
+        comment_repo
+            .list_for_owner(&ctx, CommentOwner::Task(task.id), None, 50)
+            .await
+            .expect("list task comments")
+            .is_empty()
+    );
+    assert!(
+        comment_repo
+            .list_for_owner(&ctx, CommentOwner::Document(document.id), None, 50)
+            .await
+            .expect("list document comments")
+            .is_empty()
+    );
+    assert!(
+        attachment_repo
+            .find(&ctx, document_attachment.id)
+            .await
+            .expect("find document attachment")
+            .is_none()
+    );
+    assert!(
+        attachment_repo
+            .find(&ctx, task_attachment.id)
+            .await
+            .expect("find task attachment")
+            .is_none()
+    );
+    assert!(
+        attachment_repo
+            .find(&ctx, comment_attachment.id)
+            .await
+            .expect("find comment attachment")
+            .is_none()
+    );
+    assert!(
+        attachment_repo
+            .list_for_owner(&ctx, AttachmentOwner::Document(document.id))
+            .await
+            .expect("list document attachments")
+            .is_empty()
+    );
+    assert!(
+        attachment_repo
+            .list_for_owner(&ctx, AttachmentOwner::Task(task.id))
+            .await
+            .expect("list task attachments")
+            .is_empty()
+    );
+    assert!(
+        attachment_repo
+            .list_for_owner(&ctx, AttachmentOwner::Comment(task_comment.id))
+            .await
+            .expect("list comment attachments")
+            .is_empty()
+    );
+    assert!(db.doc_repo().history(&ctx, document.id).await.is_err());
+    assert!(
+        db.doc_repo()
+            .content_at(&ctx, document.id, 1)
+            .await
+            .is_err()
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn owner_chain_visibility_hides_folder_descendants() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "owner-chain-folder-visibility").await;
+    let ctx = support::ctx(&ws, &user);
+
+    let (_project, parent, _child, document, _board, task) =
+        seed_project_tree(&db, &ctx, "folder").await;
+
+    let comment_repo = PgCommentRepo::new(db.conn().clone());
+    let task_comment = comment_repo
+        .create(
+            &ctx,
+            NewComment {
+                owner: CommentOwner::Task(task.id),
+                body: "Task comment below deleted folder".into(),
+            },
+        )
+        .await
+        .expect("create task comment");
+    let attachment_repo = PgAttachmentRepo {
+        conn: db.conn().clone(),
+    };
+    let comment_attachment = attachment_repo
+        .record(
+            &ctx,
+            NewAttachment {
+                document_id: None,
+                task_id: None,
+                comment_id: Some(task_comment.id),
+                file_name: "comment.txt".into(),
+                content_type: "text/plain".into(),
+                size_bytes: 1,
+                sha256: "folder-comment-digest".into(),
+            },
+        )
+        .await
+        .expect("record comment attachment");
+
+    db.folder_repo()
+        .soft_delete(&ctx, parent.id)
+        .await
+        .expect("delete parent folder");
+
+    assert!(
+        comment_repo
+            .get_for_owner(&ctx, CommentOwner::Task(task.id), task_comment.id)
+            .await
+            .is_err()
+    );
+    assert!(
+        attachment_repo
+            .find(&ctx, comment_attachment.id)
+            .await
+            .expect("find comment attachment")
+            .is_none()
+    );
+    assert!(db.doc_repo().history(&ctx, document.id).await.is_err());
+    assert!(
+        db.doc_repo()
+            .content_at(&ctx, document.id, 1)
+            .await
+            .is_err()
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn owner_chain_download_visibility() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, user) =
+        support::login_user_with_workspace(&server, &db, "owner-chain-download").await;
+    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let (project, _parent, _child, document, _board, task) =
+        seed_project_tree(&db, &ctx, "project").await;
+
+    let comment_repo = PgCommentRepo::new(db.conn().clone());
+    let comment = comment_repo
+        .create(
+            &ctx,
+            NewComment {
+                owner: CommentOwner::Task(task.id),
+                body: "Comment attachment below deleted project".into(),
+            },
+        )
+        .await
+        .expect("create task comment");
+    let attachment_repo = PgAttachmentRepo {
+        conn: db.conn().clone(),
+    };
+    let document_attachment = attachment_repo
+        .record(
+            &ctx,
+            NewAttachment {
+                document_id: Some(document.id),
+                task_id: None,
+                comment_id: None,
+                file_name: "document.txt".into(),
+                content_type: "text/plain".into(),
+                size_bytes: 1,
+                sha256: "download-document-digest".into(),
+            },
+        )
+        .await
+        .expect("record document attachment");
+    let task_attachment = attachment_repo
+        .record(
+            &ctx,
+            NewAttachment {
+                document_id: None,
+                task_id: Some(task.id),
+                comment_id: None,
+                file_name: "task.txt".into(),
+                content_type: "text/plain".into(),
+                size_bytes: 1,
+                sha256: "download-task-digest".into(),
+            },
+        )
+        .await
+        .expect("record task attachment");
+    let comment_attachment = attachment_repo
+        .record(
+            &ctx,
+            NewAttachment {
+                document_id: None,
+                task_id: None,
+                comment_id: Some(comment.id),
+                file_name: "comment.txt".into(),
+                content_type: "text/plain".into(),
+                size_bytes: 1,
+                sha256: "download-comment-digest".into(),
+            },
+        )
+        .await
+        .expect("record comment attachment");
+
+    db.project_repo()
+        .soft_delete(&ctx, project.id)
+        .await
+        .expect("delete project");
+
+    for url in [
+        format!(
+            "{}/api/workspaces/{}/attachments/{}",
+            server.base_url(),
+            ws.slug,
+            document_attachment.id.0
+        ),
+        format!(
+            "{}/api/workspaces/{}/tasks/{}/attachments/{}/content",
+            server.base_url(),
+            ws.slug,
+            task.readable_id,
+            task_attachment.id.0
+        ),
+        format!(
+            "{}/api/workspaces/{}/tasks/{}/comments/{}/attachments/{}/content",
+            server.base_url(),
+            ws.slug,
+            task.readable_id,
+            comment.id.0,
+            comment_attachment.id.0
+        ),
+    ] {
+        let response = client
+            .http_client()
+            .get(url)
+            .bearer_auth(client.token().expect("authenticated token"))
+            .send()
+            .await
+            .expect("download concealed attachment");
+        assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);
+    }
 
     db.teardown().await;
 }

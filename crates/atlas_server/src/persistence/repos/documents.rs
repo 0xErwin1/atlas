@@ -33,7 +33,8 @@ use crate::persistence::entities::documents::{
     document_from, document_link, document_link_from, document_revision, revision_meta_from,
 };
 use crate::persistence::live_ancestors::{
-    folder_chain_is_live_sql, live_folder_chain, live_project, project_is_live_sql,
+    folder_chain_is_live_sql, live_comment_chain, live_document_chain, live_folder_chain,
+    live_project, live_task_chain, project_is_live_sql,
 };
 use crate::persistence::repos::comment_attachment_drafts::{
     lock_active_draft_for_upload, record_upload_or_replay_in,
@@ -435,6 +436,8 @@ impl DocumentRepo for PgDocumentRepo {
         let _ = document::Entity::find_by_id(id.0)
             .filter(document::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(document::Column::DeletedAt.is_null())
+            .filter(live_project("documents.project_id"))
+            .filter(live_folder_chain("documents.folder_id"))
             .one(&self.conn)
             .await
             .map_err(db_err)?
@@ -463,6 +466,8 @@ impl DocumentRepo for PgDocumentRepo {
         let _ = document::Entity::find_by_id(id.0)
             .filter(document::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(document::Column::DeletedAt.is_null())
+            .filter(live_project("documents.project_id"))
+            .filter(live_folder_chain("documents.folder_id"))
             .one(&self.conn)
             .await
             .map_err(db_err)?
@@ -1043,7 +1048,10 @@ impl PgAttachmentRepo {
     ) -> Result<Attachment, DomainError> {
         let query = attachment::Entity::find_by_id(id.0)
             .filter(attachment::Column::WorkspaceId.eq(ctx.workspace_id.0))
-            .filter(attachment::Column::DeletedAt.is_null());
+            .filter(attachment::Column::DeletedAt.is_null())
+            .filter(live_document_chain("attachments.document_id"))
+            .filter(live_task_chain("attachments.task_id"))
+            .filter(live_comment_chain("attachments.comment_id"));
 
         let query = match owner {
             AttachmentOwner::Document(document_id) => {
@@ -1120,6 +1128,9 @@ impl AttachmentRepo for PgAttachmentRepo {
         attachment::Entity::find_by_id(id.0)
             .filter(attachment::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(attachment::Column::DeletedAt.is_null())
+            .filter(live_document_chain("attachments.document_id"))
+            .filter(live_task_chain("attachments.task_id"))
+            .filter(live_comment_chain("attachments.comment_id"))
             .one(&self.conn)
             .await
             .map(|opt| opt.map(attachment_from))
@@ -1133,7 +1144,10 @@ impl AttachmentRepo for PgAttachmentRepo {
     ) -> Result<Vec<Attachment>, DomainError> {
         let q = attachment::Entity::find()
             .filter(attachment::Column::WorkspaceId.eq(ctx.workspace_id.0))
-            .filter(attachment::Column::DeletedAt.is_null());
+            .filter(attachment::Column::DeletedAt.is_null())
+            .filter(live_document_chain("attachments.document_id"))
+            .filter(live_task_chain("attachments.task_id"))
+            .filter(live_comment_chain("attachments.comment_id"));
 
         let rows = match owner {
             AttachmentOwner::Document(doc_id) => q

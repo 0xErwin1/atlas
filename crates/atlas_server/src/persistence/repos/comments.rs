@@ -12,6 +12,7 @@ use sea_orm::{
 };
 
 use crate::persistence::entities::comments::{comment, comment_from};
+use crate::persistence::live_ancestors::{live_document_chain, live_task_chain};
 
 pub use atlas_domain::ports::comments::CommentRepo;
 
@@ -165,6 +166,8 @@ impl CommentRepo for PgCommentRepo {
             .filter(comment::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(owner_condition(owner))
             .filter(comment::Column::DeletedAt.is_null())
+            .filter(live_task_chain("comments.task_id"))
+            .filter(live_document_chain("comments.document_id"))
             .order_by_asc(comment::Column::Id)
             .limit(limit);
 
@@ -198,6 +201,8 @@ async fn find_scoped(
         .filter(comment::Column::WorkspaceId.eq(ctx.workspace_id.0))
         .filter(owner_condition(owner))
         .filter(comment::Column::DeletedAt.is_null())
+        .filter(live_task_chain("comments.task_id"))
+        .filter(live_document_chain("comments.document_id"))
         .one(conn)
         .await
         .map_err(db_err)?
