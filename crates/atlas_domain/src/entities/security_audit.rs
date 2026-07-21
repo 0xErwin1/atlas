@@ -31,6 +31,9 @@ pub enum SecurityAction {
     GroupDeleted,
     GroupMemberAdded,
     GroupMemberRemoved,
+    ResourceDeleted,
+    ResourceRestored,
+    ResourcePurgeCommitted,
 }
 
 impl SecurityAction {
@@ -57,6 +60,9 @@ impl SecurityAction {
             SecurityAction::GroupDeleted => "group.deleted",
             SecurityAction::GroupMemberAdded => "group.member_added",
             SecurityAction::GroupMemberRemoved => "group.member_removed",
+            SecurityAction::ResourceDeleted => "resource.deleted",
+            SecurityAction::ResourceRestored => "resource.restored",
+            SecurityAction::ResourcePurgeCommitted => "resource.purge_committed",
         }
     }
 }
@@ -111,6 +117,30 @@ mod tests {
     use super::*;
 
     #[test]
+    fn lifecycle_kinds_are_limited_to_restorable_resources() {
+        use crate::entities::lifecycle::TrashKind;
+
+        let cases = [
+            (TrashKind::Project, "project"),
+            (TrashKind::Folder, "folder"),
+            (TrashKind::Document, "document"),
+            (TrashKind::Comment, "comment"),
+            (TrashKind::Attachment, "attachment"),
+        ];
+
+        assert_eq!(TrashKind::ALL.len(), cases.len());
+
+        for (kind, value) in cases {
+            assert_eq!(kind.as_str(), value);
+            assert_eq!(value.parse::<TrashKind>(), Ok(kind));
+        }
+
+        for descendant in ["board", "column", "task", "subtask", "revision"] {
+            assert!(descendant.parse::<TrashKind>().is_err());
+        }
+    }
+
+    #[test]
     fn security_action_as_str_round_trips() {
         let cases = [
             (SecurityAction::MembershipAdded, "membership.added"),
@@ -146,6 +176,12 @@ mod tests {
             (SecurityAction::GroupDeleted, "group.deleted"),
             (SecurityAction::GroupMemberAdded, "group.member_added"),
             (SecurityAction::GroupMemberRemoved, "group.member_removed"),
+            (SecurityAction::ResourceDeleted, "resource.deleted"),
+            (SecurityAction::ResourceRestored, "resource.restored"),
+            (
+                SecurityAction::ResourcePurgeCommitted,
+                "resource.purge_committed",
+            ),
         ];
 
         for (action, expected) in cases {

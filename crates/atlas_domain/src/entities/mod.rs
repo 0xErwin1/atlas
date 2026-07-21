@@ -4,6 +4,7 @@ pub mod documents;
 pub mod events;
 pub mod groups;
 pub mod identity;
+pub mod lifecycle;
 pub mod permissions;
 pub mod saved_searches;
 pub mod security_audit;

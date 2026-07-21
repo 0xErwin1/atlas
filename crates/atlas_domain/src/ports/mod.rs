@@ -4,6 +4,7 @@ pub mod comments;
 pub mod documents;
 pub mod group_repo;
 pub mod identity;
+pub mod lifecycle;
 pub mod permission_grant_repo;
 pub mod saved_searches;
 pub mod search;

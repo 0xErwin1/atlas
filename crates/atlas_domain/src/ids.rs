@@ -63,6 +63,7 @@ define_id!(TaskViewId);
 define_id!(StatusTemplateId);
 define_id!(ActivationTokenId);
 define_id!(SecurityAuditId);
+define_id!(PurgeOperationId);
 define_id!(GroupId);
 
 #[cfg(test)]

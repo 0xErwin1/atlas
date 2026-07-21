@@ -42,6 +42,7 @@ pub mod m20260708_000039_search_embeddings;
 pub mod m20260713_000040_comment_freedom;
 pub mod m20260715_000041_comment_attachment_drafts;
 pub mod m20260720_000042_board_folder;
+pub mod m20260721_000043_recoverable_deletion;
 
 use sea_orm_migration::prelude::*;
 
@@ -93,6 +94,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260713_000040_comment_freedom::Migration),
             Box::new(m20260715_000041_comment_attachment_drafts::Migration),
             Box::new(m20260720_000042_board_folder::Migration),
+            Box::new(m20260721_000043_recoverable_deletion::Migration),
         ]
     }
 }
@@ -107,13 +109,13 @@ mod tests {
     }
 
     #[test]
-    fn board_folder_migration_is_registered_last() {
+    fn recoverable_deletion_migration_is_registered_last() {
         let migrations = Migrator::migrations();
         let names: Vec<_> = migrations
             .iter()
             .map(|migration| migration.name())
             .collect();
 
-        assert_eq!(names.last(), Some(&"m20260720_000042_board_folder"));
+        assert_eq!(names.last(), Some(&"m20260721_000043_recoverable_deletion"));
     }
 }

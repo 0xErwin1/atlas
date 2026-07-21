@@ -17,6 +17,8 @@ mod identity;
 #[allow(unreachable_pub)]
 mod integration_config;
 #[allow(unreachable_pub)]
+mod lifecycle;
+#[allow(unreachable_pub)]
 pub(crate) mod outbox;
 #[allow(unreachable_pub)]
 mod permissions;
@@ -91,3 +93,4 @@ pub use status_templates::{
 
 pub use automation_rule::{AutomationRulePatch, PgAutomationRuleRepo};
 pub use integration_config::PgIntegrationConfigRepo;
+pub use lifecycle::{NewPurgeOperation, PgPurgeOperationRepo};

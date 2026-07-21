@@ -5,6 +5,7 @@ pub mod documents;
 pub mod events_outbox;
 pub mod identity;
 pub mod integration_config;
+pub mod lifecycle;
 pub mod permissions;
 pub mod saved_searches;
 pub mod security_audit;

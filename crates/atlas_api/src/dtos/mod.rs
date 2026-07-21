@@ -5,6 +5,7 @@ pub mod documents;
 pub mod folders;
 pub mod groups;
 pub mod integrations;
+pub mod lifecycle;
 pub mod property_definitions;
 pub mod saved_searches;
 pub mod search;
@@ -584,6 +585,25 @@ pub struct ApiKeyGrantDto {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lifecycle_statuses_are_closed_wire_values() {
+        use crate::dtos::lifecycle::{PurgeStatusDto, TrashKindDto};
+
+        let kind =
+            serde_json::to_value(TrashKindDto::Attachment).expect("trash kind must serialize");
+        assert_eq!(kind, serde_json::Value::String("attachment".to_string()));
+
+        let status = serde_json::to_value(PurgeStatusDto::CleanupFailed)
+            .expect("purge status must serialize");
+        assert_eq!(
+            status,
+            serde_json::Value::String("cleanup_failed".to_string())
+        );
+
+        let rejected: Result<TrashKindDto, _> = serde_json::from_str("\"task\"");
+        assert!(rejected.is_err(), "descendant kinds must not be accepted");
+    }
 
     #[test]
     fn webhooks_scopes_round_trip_through_serde_rename() {
