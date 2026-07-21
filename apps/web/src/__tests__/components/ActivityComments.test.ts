@@ -1,6 +1,6 @@
-import { type DOMWrapper, flushPromises, mount, type VueWrapper } from '@vue/test-utils';
+import { type DOMWrapper, enableAutoUnmount, flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { nextTick, ref } from 'vue';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import CommentCard from '@/components/comments/CommentCard.vue';
@@ -183,6 +183,8 @@ function signInAs(id: string, role: 'member' | 'admin' = 'member'): void {
     { id, display: id, principal_type: 'user', role, account_status: 'active', key_type: null },
   ];
 }
+
+enableAutoUnmount(afterEach);
 
 beforeEach(() => {
   setActivePinia(createPinia());

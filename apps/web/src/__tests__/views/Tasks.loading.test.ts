@@ -1,6 +1,6 @@
-import { flushPromises, mount } from '@vue/test-utils';
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { reactive } from 'vue';
 import { deferred } from '@/__tests__/deferred';
 import type { BoardDto, ColumnDto, TaskSummaryDto } from '@/stores/boards';
@@ -113,6 +113,8 @@ function capturedLiveHandlers(): {
 }
 
 describe('Tasks board loading', () => {
+  enableAutoUnmount(afterEach);
+
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
