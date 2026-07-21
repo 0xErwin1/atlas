@@ -1043,6 +1043,32 @@ pub struct PgAttachmentRepo {
 }
 
 impl PgAttachmentRepo {
+    /// Restores one attachment only when it still has the expected lifecycle tombstone.
+    pub async fn restore_at_in(
+        conn: &impl ConnectionTrait,
+        ctx: &WorkspaceCtx,
+        id: AttachmentId,
+        deleted_at: DateTime<Utc>,
+    ) -> Result<(), DomainError> {
+        let row = attachment::Entity::find_by_id(id.0)
+            .filter(attachment::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(attachment::Column::DeletedAt.eq(deleted_at))
+            .lock_exclusive()
+            .one(conn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "attachment",
+                id: id.0,
+            })?;
+
+        let mut active = row.into_active_model();
+        active.deleted_at = Set(None);
+        active.updated_at = Set(Utc::now());
+        active.update(conn).await.map_err(db_err)?;
+        Ok(())
+    }
+
     /// Renames an attachment only when it belongs to the supplied workspace and owner.
     ///
     /// Owner mismatches are concealed as not-found, matching attachment read/delete
@@ -1302,15 +1328,24 @@ impl PgAttachmentLifecycle {
         draft_id: CommentDraftId,
         attachment_id: AttachmentId,
     ) -> Result<bool, DomainError> {
-        comment_attachment_draft_upload::Entity::find()
+        let upload = comment_attachment_draft_upload::Entity::find()
             .filter(comment_attachment_draft_upload::Column::DraftId.eq(draft_id.0))
             .filter(
                 comment_attachment_draft_upload::Column::OriginalAttachmentId.eq(attachment_id.0),
             )
-            .filter(comment_attachment_draft_upload::Column::DeletedAt.is_not_null())
             .one(conn)
             .await
-            .map(|upload| upload.is_some())
+            .map_err(db_err)?;
+
+        let Some(upload) = upload else {
+            return Ok(false);
+        };
+
+        attachment::Entity::find_by_id(attachment_id.0)
+            .filter(attachment::Column::DeletedAt.is_not_null())
+            .one(conn)
+            .await
+            .map(|attachment| upload.deleted_at.is_some() || attachment.is_some())
             .map_err(db_err)
     }
 
@@ -1500,13 +1535,13 @@ impl PgAttachmentLifecycle {
         ctx: &WorkspaceCtx,
         comment_id: atlas_domain::ids::CommentId,
         attachment_id: AttachmentId,
-        store: &dyn AttachmentStore,
     ) -> Result<(), DomainError> {
         let txn = conn.begin().await.map_err(db_err)?;
         let attachment = attachment::Entity::find_by_id(attachment_id.0)
             .filter(attachment::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(attachment::Column::CommentId.eq(comment_id.0))
             .filter(attachment::Column::DeletedAt.is_null())
+            .lock_exclusive()
             .one(&txn)
             .await
             .map_err(db_err)?;
@@ -1515,42 +1550,21 @@ impl PgAttachmentLifecycle {
             return Ok(());
         };
 
-        txn.execute_raw(Statement::from_sql_and_values(
-            sea_orm::DatabaseBackend::Postgres,
-            "INSERT INTO attachment_write_intents (id, digest, created_at) VALUES ($1, $2, now()) ON CONFLICT (digest) DO NOTHING",
-            [Uuid::now_v7().into(), attachment.sha256.clone().into()],
-        ))
-        .await
-        .map_err(db_err)?;
-        let digest = attachment.sha256.clone();
-        let upload = comment_attachment_draft_upload::Entity::find()
-            .filter(comment_attachment_draft_upload::Column::OriginalAttachmentId.eq(attachment.id))
-            .one(&txn)
-            .await
-            .map_err(db_err)?;
+        let deleted_at = Utc::now();
+        let mut attachment = attachment.into_active_model();
+        attachment.deleted_at = Set(Some(deleted_at));
+        attachment.updated_at = Set(deleted_at);
+        attachment.update(&txn).await.map_err(db_err)?;
 
-        if let Some(upload) = upload {
-            let mut upload = upload.into_active_model();
-            upload.attachment_id = Set(None);
-            upload.deleted_at = Set(Some(Utc::now()));
-            upload.updated_at = Set(Utc::now());
-            upload.update(&txn).await.map_err(db_err)?;
+        PgSecurityAuditRepo::append_resource_deleted_in(
+            &txn,
+            ctx,
+            TrashKind::Attachment,
+            attachment_id.0,
+        )
+        .await?;
 
-            let mut attachment = attachment.into_active_model();
-            attachment.deleted_at = Set(Some(Utc::now()));
-            attachment.updated_at = Set(Utc::now());
-            attachment.update(&txn).await.map_err(db_err)?;
-        } else {
-            attachment::Entity::delete_by_id(attachment.id)
-                .exec(&txn)
-                .await
-                .map_err(db_err)?;
-        }
         txn.commit().await.map_err(db_err)?;
-
-        if let Err(error) = Self::finish_purge_digest(conn, store, &digest).await {
-            tracing::warn!(%error, %digest, "comment attachment cleanup will be retried");
-        }
 
         Ok(())
     }

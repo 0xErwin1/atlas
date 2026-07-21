@@ -663,7 +663,7 @@ async fn task_comment_attachment_routes_round_trip_raw_bytes() {
     assert_eq!(delete_response.status(), reqwest::StatusCode::NO_CONTENT);
     let repeated_delete = delete(&client, format!("{attachment_url}/{attachment_id}")).await;
     assert_eq!(repeated_delete.status(), reqwest::StatusCode::NO_CONTENT);
-    assert_attachment_row_removed(&db, attachment_id).await;
+    assert_attachment_row_tombstoned_without_cleanup_intent(&db, attachment_id).await;
     let listed_after_delete = get(&client, attachment_url).await;
     assert_eq!(listed_after_delete.status(), reqwest::StatusCode::OK);
     assert!(
@@ -765,7 +765,7 @@ async fn document_comment_attachment_routes_round_trip_raw_bytes() {
     assert_eq!(delete_response.status(), reqwest::StatusCode::NO_CONTENT);
     let repeated_delete = delete(&client, format!("{attachment_url}/{attachment_id}")).await;
     assert_eq!(repeated_delete.status(), reqwest::StatusCode::NO_CONTENT);
-    assert_attachment_row_removed(&db, attachment_id).await;
+    assert_attachment_row_tombstoned_without_cleanup_intent(&db, attachment_id).await;
     let list_response = get(&client, attachment_url).await;
     assert_eq!(list_response.status(), reqwest::StatusCode::OK);
     assert!(
@@ -779,24 +779,78 @@ async fn document_comment_attachment_routes_round_trip_raw_bytes() {
     db.teardown().await;
 }
 
-async fn assert_attachment_row_removed(db: &support::TestDb, attachment_id: uuid::Uuid) {
-    let count: i64 = db
+async fn assert_attachment_row_tombstoned_without_cleanup_intent(
+    db: &support::TestDb,
+    attachment_id: uuid::Uuid,
+) {
+    let deleted_at: Option<chrono::DateTime<chrono::Utc>> = db
         .conn()
         .query_one_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT count(*) AS count FROM attachments WHERE id = $1",
+            "SELECT deleted_at FROM attachments WHERE id = $1",
             [attachment_id.into()],
         ))
         .await
-        .expect("count attachment rows")
-        .expect("attachment count row")
+        .expect("load attachment row")
+        .expect("attachment row")
+        .try_get("", "deleted_at")
+        .expect("attachment tombstone");
+
+    assert!(
+        deleted_at.is_some(),
+        "explicit deletion must retain a tombstone"
+    );
+
+    let intent_count: i64 = db
+        .conn()
+        .query_one_raw(Statement::from_string(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT count(*) AS count FROM attachment_write_intents",
+        ))
+        .await
+        .expect("count cleanup intents")
+        .expect("cleanup intent count row")
         .try_get("", "count")
-        .expect("attachment count");
+        .expect("cleanup intent count");
 
     assert_eq!(
-        count, 0,
-        "explicit deletion must permanently remove the row"
+        intent_count, 0,
+        "ordinary deletion must not create cleanup intent"
     );
+}
+
+async fn assert_finalized_upload_identity_is_retained(
+    db: &support::TestDb,
+    draft_id: &str,
+    attachment_id: uuid::Uuid,
+) {
+    let draft_id = draft_id.parse::<uuid::Uuid>().expect("draft UUID");
+    let upload = db
+        .conn()
+        .query_one_raw(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT attachment_id, deleted_at FROM comment_attachment_draft_uploads \
+             WHERE draft_id = $1 AND original_attachment_id = $2",
+            [draft_id.into(), attachment_id.into()],
+        ))
+        .await
+        .expect("load finalized upload identity")
+        .expect("finalized upload row");
+
+    assert_eq!(
+        upload
+            .try_get::<Option<uuid::Uuid>>("", "attachment_id")
+            .expect("upload attachment identity"),
+        Some(attachment_id)
+    );
+    assert!(
+        upload
+            .try_get::<Option<chrono::DateTime<chrono::Utc>>>("", "deleted_at")
+            .expect("upload tombstone")
+            .is_none(),
+        "ordinary deletion must preserve finalized upload identity"
+    );
+    assert_attachment_row_tombstoned_without_cleanup_intent(db, attachment_id).await;
 }
 
 #[tokio::test]
@@ -1576,6 +1630,12 @@ async fn task_comment_finalization_transfers_draft_attachments_and_replays() {
 
     let deleted = delete(&client, format!("{attachments_url}/{attachment_id}")).await;
     assert_eq!(deleted.status(), reqwest::StatusCode::NO_CONTENT);
+    assert_finalized_upload_identity_is_retained(
+        &db,
+        draft_id,
+        attachment_id.parse().expect("attachment UUID"),
+    )
+    .await;
 
     let deleted_download = get(
         &client,
@@ -1971,6 +2031,12 @@ async fn document_comment_finalization_transfers_draft_attachments_and_replays()
 
     let deleted = delete(&client, format!("{attachments_url}/{attachment_id}")).await;
     assert_eq!(deleted.status(), reqwest::StatusCode::NO_CONTENT);
+    assert_finalized_upload_identity_is_retained(
+        &db,
+        draft_id,
+        attachment_id.parse().expect("attachment UUID"),
+    )
+    .await;
 
     let deleted_download = get(&client, format!("{attachments_url}/{attachment_id}")).await;
     assert_eq!(deleted_download.status(), reqwest::StatusCode::GONE);

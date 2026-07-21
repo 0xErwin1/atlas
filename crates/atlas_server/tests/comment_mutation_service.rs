@@ -818,7 +818,7 @@ async fn task_comment_delete_tombstones_rows_without_cleanup_or_duplicate_audit(
 }
 
 #[tokio::test]
-async fn explicit_attachment_delete_keeps_retry_state_after_object_cleanup_failure() {
+async fn explicit_attachment_delete_retains_object_without_cleanup_intent() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let (workspace, user) = support::seed_workspace(&db, "attachment-delete-retry").await;
     let ctx = support::ctx(&workspace, &user);
@@ -857,15 +857,9 @@ async fn explicit_attachment_delete_keeps_retry_state_after_object_cleanup_failu
         .await
         .expect("record comment attachment");
 
-    PgAttachmentLifecycle::delete_comment_attachment(
-        db.conn(),
-        &ctx,
-        comment.id,
-        attachment.id,
-        &store,
-    )
-    .await
-    .expect("delete commits despite object cleanup failure");
+    PgAttachmentLifecycle::delete_comment_attachment(db.conn(), &ctx, comment.id, attachment.id)
+        .await
+        .expect("delete attachment recoverably");
 
     assert!(
         attachments
@@ -879,20 +873,26 @@ async fn explicit_attachment_delete_keeps_retry_state_after_object_cleanup_failu
         store
             .exists(&digest)
             .await
-            .expect("object remains for retry")
-    );
-    assert!(digest_has_cleanup_intent(&db, &digest).await);
-
-    PgAttachmentLifecycle::finish_purge_digest(db.conn(), &store, &digest)
-        .await
-        .expect("retry cleanup");
-    assert!(
-        !store
-            .exists(&digest)
-            .await
-            .expect("object removed on retry")
+            .expect("object remains for recovery")
     );
     assert!(!digest_has_cleanup_intent(&db, &digest).await);
+    assert_resource_deleted_audit(
+        &db,
+        workspace.id.0,
+        user.id.0,
+        "attachment",
+        attachment.id.0,
+    )
+    .await;
+
+    PgAttachmentLifecycle::delete_comment_attachment(db.conn(), &ctx, comment.id, attachment.id)
+        .await
+        .expect("repeat delete remains idempotent");
+    assert_eq!(
+        resource_deleted_audit_count(&db, "attachment", attachment.id.0).await,
+        1,
+        "repeat delete must not append a second lifecycle audit row"
+    );
 
     std::fs::remove_dir_all(store_root).expect("remove attachment store");
     db.teardown().await;
@@ -959,15 +959,9 @@ async fn explicit_attachment_delete_preserves_a_digest_referenced_in_another_wor
         .await
         .expect("record comment attachment");
 
-    PgAttachmentLifecycle::delete_comment_attachment(
-        db.conn(),
-        &ctx,
-        comment.id,
-        attachment.id,
-        &store,
-    )
-    .await
-    .expect("delete shared attachment row");
+    PgAttachmentLifecycle::delete_comment_attachment(db.conn(), &ctx, comment.id, attachment.id)
+        .await
+        .expect("delete shared attachment row");
 
     assert!(store.exists(&digest).await.expect("shared object remains"));
     assert!(!digest_has_cleanup_intent(&db, &digest).await);

@@ -1224,6 +1224,39 @@ async fn delete_attachment_removes_it_from_list() {
         .await
         .expect("delete attachment");
 
+    let deleted_at: Option<chrono::DateTime<chrono::Utc>> = db
+        .conn()
+        .query_one_raw(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT deleted_at FROM attachments WHERE id = $1",
+            [att.id.into()],
+        ))
+        .await
+        .expect("load deleted attachment")
+        .expect("deleted attachment row")
+        .try_get("", "deleted_at")
+        .expect("attachment tombstone");
+    assert!(
+        deleted_at.is_some(),
+        "delete must retain the attachment row"
+    );
+
+    let cleanup_intents: i64 = db
+        .conn()
+        .query_one_raw(Statement::from_string(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT COUNT(*) AS count FROM attachment_write_intents",
+        ))
+        .await
+        .expect("count cleanup intents")
+        .expect("cleanup intent count row")
+        .try_get("", "count")
+        .expect("cleanup intent count");
+    assert_eq!(
+        cleanup_intents, 0,
+        "ordinary delete must not schedule blob cleanup"
+    );
+
     let result = client.download_attachment(&ws.slug, att.id).await;
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),

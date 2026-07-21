@@ -21,8 +21,8 @@ use atlas_domain::{
 use atlas_server::persistence::entities::comments::comment_attachment_draft;
 use atlas_server::persistence::repos::{
     AttachmentWriteIntentRepo, BoardRepo, CommentRepo, DiskAttachmentStore, PgAttachmentLifecycle,
-    PgAttachmentWriteIntentRepo, PgBoardRepo, PgCommentLinkRepo, PgCommentRepo, PgProjectRepo,
-    PgTaskRepo, ProjectRepo, TaskRepo,
+    PgAttachmentRepo, PgAttachmentWriteIntentRepo, PgBoardRepo, PgCommentLinkRepo, PgCommentRepo,
+    PgProjectRepo, PgTaskRepo, ProjectRepo, TaskRepo,
 };
 use atlas_server::services::CommentService;
 use chrono::{Duration, Utc};
@@ -1563,17 +1563,11 @@ async fn finalized_origin_individual_delete_rolls_back_its_tombstone_on_database
         ))
         .await
         .expect("seed finalized origin with failing trigger");
-    let tempdir = TempDir::new().expect("tempdir");
-    let store = DiskAttachmentStore::new(tempdir.path())
-        .await
-        .expect("attachment store");
-
     let result = PgAttachmentLifecycle::delete_comment_attachment(
         &db.conn().clone(),
         &ctx,
         comment.id,
         atlas_domain::AttachmentId(attachment_id),
-        &store,
     )
     .await;
     assert!(matches!(result, Err(DomainError::Internal { .. })));
@@ -1599,6 +1593,107 @@ async fn finalized_origin_individual_delete_rolls_back_its_tombstone_on_database
             .expect("read upload tombstone")
             .is_none()
     );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn direct_attachment_restore_only_clears_the_matching_tombstone() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (workspace, user) = support::seed_workspace(&db, "attachment-restore-scope").await;
+    let ctx = support::ctx(&workspace, &user);
+    let (project, board, column) =
+        seed_project_board_column(&db, &ctx, "attachment-restore-scope", "ARS").await;
+    let task = seed_task(
+        &db,
+        &ctx,
+        project.id,
+        board.id,
+        column.id,
+        "Attachment owner",
+    )
+    .await;
+    let attachment_id = atlas_domain::AttachmentId(uuid::Uuid::now_v7());
+    let independent_attachment_id = atlas_domain::AttachmentId(uuid::Uuid::now_v7());
+    let deleted_at = Utc::now();
+    let independently_deleted_at = deleted_at + Duration::microseconds(1);
+
+    db.conn()
+        .execute_unprepared(&format!(
+            "INSERT INTO attachments \
+             (id, workspace_id, task_id, file_name, content_type, size_bytes, sha256, created_by_user_id, deleted_at) \
+             VALUES ('{}', '{}', '{}', 'restore.txt', 'text/plain', 1, 'restore', '{}', '{}'), \
+                    ('{}', '{}', '{}', 'independent.txt', 'text/plain', 1, 'independent', '{}', '{}')",
+            attachment_id.0,
+            workspace.id.0,
+            task.id.0,
+            user.id.0,
+            deleted_at.to_rfc3339(),
+            independent_attachment_id.0,
+            workspace.id.0,
+            task.id.0,
+            user.id.0,
+            independently_deleted_at.to_rfc3339(),
+        ))
+        .await
+        .expect("seed direct attachment tombstones");
+
+    let persisted_deleted_at: chrono::DateTime<Utc> = db
+        .conn()
+        .query_one_raw(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT deleted_at FROM attachments WHERE id = $1",
+            [attachment_id.0.into()],
+        ))
+        .await
+        .expect("load direct attachment tombstone")
+        .expect("direct attachment row")
+        .try_get("", "deleted_at")
+        .expect("direct attachment tombstone");
+    let persisted_independently_deleted_at: chrono::DateTime<Utc> = db
+        .conn()
+        .query_one_raw(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT deleted_at FROM attachments WHERE id = $1",
+            [independent_attachment_id.0.into()],
+        ))
+        .await
+        .expect("load independent attachment tombstone")
+        .expect("independent attachment row")
+        .try_get("", "deleted_at")
+        .expect("independent attachment tombstone");
+
+    PgAttachmentRepo::restore_at_in(db.conn(), &ctx, attachment_id, persisted_deleted_at)
+        .await
+        .expect("restore matching direct attachment tombstone");
+
+    let restored_at: Option<chrono::DateTime<Utc>> = db
+        .conn()
+        .query_one_raw(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT deleted_at FROM attachments WHERE id = $1",
+            [attachment_id.0.into()],
+        ))
+        .await
+        .expect("load restored attachment")
+        .expect("restored attachment row")
+        .try_get("", "deleted_at")
+        .expect("restored attachment tombstone");
+    let independent_at: Option<chrono::DateTime<Utc>> = db
+        .conn()
+        .query_one_raw(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT deleted_at FROM attachments WHERE id = $1",
+            [independent_attachment_id.0.into()],
+        ))
+        .await
+        .expect("load independent attachment")
+        .expect("independent attachment row")
+        .try_get("", "deleted_at")
+        .expect("independent attachment tombstone");
+
+    assert!(restored_at.is_none());
+    assert_eq!(independent_at, Some(persisted_independently_deleted_at));
 
     db.teardown().await;
 }

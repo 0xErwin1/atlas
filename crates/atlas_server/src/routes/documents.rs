@@ -1411,7 +1411,6 @@ pub(crate) async fn delete_comment_attachment(
         &ctx,
         comment_id,
         attachment_id,
-        state.attachments.as_ref(),
     )
     .await
     .map_err(ApiError::Domain)?;
