@@ -29,21 +29,20 @@ export function useWorkspaceSwitch() {
   }
 
   /**
-   * Switches the active workspace, restoring the resource last viewed in the
-   * destination (falling back to the current section's root). The active slug is
-   * briefly nulled during navigation so the router guards can tell the transient
-   * switch apart from a cold start.
+   * Switches the active workspace, preserving a Settings section or restoring the
+   * destination's last-viewed resource. The active slug is briefly nulled during
+   * navigation so the router guards can tell the transient switch apart from a
+   * cold start.
    */
   async function switchTo(slug: string): Promise<void> {
     if (slug === workspace.activeWorkspaceSlug) return;
 
-    const restored = lastViewed.forWorkspace(slug);
     const section = sectionAfterSwitch();
-    const target =
-      restored ??
-      (section === 'settings' && typeof route.params.section === 'string'
+    const settingsTarget =
+      section === 'settings' && typeof route.params.section === 'string'
         ? { name: 'settings', params: { section: route.params.section } }
-        : { name: section });
+        : undefined;
+    const target = settingsTarget ?? lastViewed.forWorkspace(slug) ?? { name: section };
 
     const token = workspace.beginSwitch();
     workspace.setActiveWorkspace(null);

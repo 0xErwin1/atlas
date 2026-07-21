@@ -68,6 +68,19 @@ describe('useWorkspaceSwitch', () => {
     expect(push).toHaveBeenCalledWith({ name: 'settings', params: { section: 'audit' } });
   });
 
+  it('preserves the current Settings section over destination history', async () => {
+    routeState.name = 'settings';
+    routeState.params = { section: 'audit' };
+    const workspace = useWorkspaceStore();
+    workspace.setActiveWorkspace('atlas');
+    useLastViewedStore().record('personal', { name: 'notes', params: { pageId: 'p1' } });
+
+    const { switchTo } = useWorkspaceSwitch();
+    await switchTo('personal');
+
+    expect(push).toHaveBeenCalledWith({ name: 'settings', params: { section: 'audit' } });
+  });
+
   it('is a no-op when switching to the already-active workspace', async () => {
     const workspace = useWorkspaceStore();
     workspace.setActiveWorkspace('atlas');
