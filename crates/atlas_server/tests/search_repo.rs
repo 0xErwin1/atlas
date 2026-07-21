@@ -811,14 +811,12 @@ async fn snippet_carries_mark_highlight() {
 }
 
 // ---------------------------------------------------------------------------
-// Soft-deleted project consistency: a live task whose project was soft-deleted
-// must still surface for an Owner, with a NULL project_slug. The tasks arm uses
-// a LEFT JOIN on projects (matching the documents arm and the task-list
-// endpoint, which never drops a task when its project is soft-deleted).
+// A task under a deleted project is concealed even from its Owner. This keeps
+// search aligned with the ancestor-aware visibility contract.
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn task_of_soft_deleted_project_still_surfaces_for_owner() {
+async fn task_of_soft_deleted_project_is_hidden_for_owner() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let (ws, owner) = support::seed_workspace(&db, "srch-softdel-owner").await;
     let ctx_owner = support::ctx(&ws, &owner);
@@ -840,17 +838,37 @@ async fn task_of_soft_deleted_project_still_surfaces_for_owner() {
     let project_repo = PgProjectRepo {
         conn: db.conn().clone(),
     };
+
+    let repo = PgSearchRepo::new(db.conn().clone());
+    let query = make_task_only_query("uniquetoken_softdel");
+    let visible_hits = repo
+        .search(
+            &ctx_owner,
+            &Principal::User(owner.id),
+            &query,
+            50,
+            None,
+            false,
+            true,
+            true,
+        )
+        .await
+        .expect("owner search before deletion");
+    assert!(
+        visible_hits.iter().any(|hit| hit.id == task_id.0),
+        "owner must see the live task before its project is deleted; got: {visible_hits:?}"
+    );
+
     project_repo
         .soft_delete(&ctx_owner, project.id)
         .await
         .expect("soft delete project");
 
-    let repo = PgSearchRepo::new(db.conn().clone());
     let hits = repo
         .search(
             &ctx_owner,
             &Principal::User(owner.id),
-            &make_task_only_query("uniquetoken_softdel"),
+            &query,
             50,
             None,
             false,
@@ -860,14 +878,9 @@ async fn task_of_soft_deleted_project_still_surfaces_for_owner() {
         .await
         .expect("owner search");
 
-    let hit = hits
-        .iter()
-        .find(|h| h.id == task_id.0)
-        .expect("task of a soft-deleted project must still surface");
     assert!(
-        hit.project_slug.is_none(),
-        "a task whose project was soft-deleted must carry a NULL project_slug; got: {:?}",
-        hit.project_slug
+        !hits.iter().any(|hit| hit.id == task_id.0),
+        "owner must not see a task below a deleted project; got: {hits:?}"
     );
 
     db.teardown().await;

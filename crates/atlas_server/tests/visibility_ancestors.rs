@@ -751,6 +751,30 @@ async fn derived_path_visibility() {
     let (project, _parent, _child, document, _board, task) =
         seed_project_tree(&db, &ctx, "project").await;
 
+    let source_task = db
+        .task_repo()
+        .create(
+            &ctx,
+            NewTask {
+                project_id: project.id,
+                board_id: task.board_id,
+                column_id: task.column_id,
+                title: "Hidden reference source".into(),
+                description: String::new(),
+                priority: None,
+                due_date: None,
+                estimate: None,
+                labels: Vec::new(),
+                properties: None,
+                position: PositionBetween {
+                    before: None,
+                    after: None,
+                },
+            },
+        )
+        .await
+        .expect("create reference source task");
+
     let link_repo = PgDocumentLinkRepo {
         conn: db.conn().clone(),
     };
@@ -790,6 +814,18 @@ async fn derived_path_visibility() {
         )
         .await
         .expect("store task reference");
+    reference_repo
+        .create(
+            &ctx,
+            NewTaskReference {
+                source_task_id: source_task.id,
+                kind: ReferenceKind::Relates,
+                target_task_id: Some(task.id),
+                target_document_id: None,
+            },
+        )
+        .await
+        .expect("store inbound task reference");
 
     let activity_repo = PgTaskActivityRepo::new(db.conn().clone());
     activity_repo
@@ -831,11 +867,6 @@ async fn derived_path_visibility() {
         .await
         .expect("index hidden resources");
 
-    db.project_repo()
-        .soft_delete(&ctx, project.id)
-        .await
-        .expect("delete project");
-
     let query = SearchQuery {
         text: "hidden".into(),
         filters: vec![],
@@ -844,6 +875,97 @@ async fn derived_path_visibility() {
         warnings: vec![],
         prefix: false,
     };
+    assert!(
+        !PgSearchRepo::new(db.conn().clone())
+            .search(
+                &ctx,
+                &Principal::User(user.id),
+                &query,
+                50,
+                None,
+                false,
+                true,
+                true
+            )
+            .await
+            .expect("lexical search before deletion")
+            .is_empty()
+    );
+    assert!(
+        !PgSemanticSearchRepo::new(db.conn().clone(), provider.clone())
+            .search(&SemanticSearchQuery::new(
+                ws.id,
+                Principal::User(user.id),
+                "hidden".into(),
+                SemanticSearchTypeFilter::all(),
+                50,
+                None,
+                false,
+                true,
+                true,
+            ))
+            .await
+            .expect("semantic search before deletion")
+            .is_empty()
+    );
+    assert!(
+        !link_repo
+            .backlinks(&ctx, document.id)
+            .await
+            .expect("backlinks before deletion")
+            .is_empty()
+    );
+    assert!(
+        link_repo
+            .outgoing_for_task(&ctx, task.id)
+            .await
+            .expect("outgoing links before deletion")
+            .is_some()
+    );
+    assert!(
+        !reference_repo
+            .list_for_task(&ctx, task.id)
+            .await
+            .expect("outbound references before deletion")
+            .is_empty()
+    );
+    assert!(
+        !reference_repo
+            .list_inbound(&ctx, task.id)
+            .await
+            .expect("inbound references before deletion")
+            .is_empty()
+    );
+    assert!(
+        !activity_repo
+            .list_for_task(&ctx, task.id, None, 50)
+            .await
+            .expect("task activity before deletion")
+            .is_empty()
+    );
+    assert!(
+        !activity_repo
+            .list_for_workspace(
+                &ctx,
+                WorkspaceActivityScope {
+                    is_admin: true,
+                    project_ids: vec![],
+                    board_ids: vec![],
+                },
+                WorkspaceActivityFilters::default(),
+                None,
+                50,
+            )
+            .await
+            .expect("workspace activity before deletion")
+            .is_empty()
+    );
+
+    db.project_repo()
+        .soft_delete(&ctx, project.id)
+        .await
+        .expect("delete project");
+
     assert!(
         PgSearchRepo::new(db.conn().clone())
             .search(
@@ -899,6 +1021,13 @@ async fn derived_path_visibility() {
             .is_empty()
     );
     assert!(
+        reference_repo
+            .list_inbound(&ctx, task.id)
+            .await
+            .expect("inbound references")
+            .is_empty()
+    );
+    assert!(
         activity_repo
             .list_for_task(&ctx, task.id, None, 50)
             .await
@@ -920,6 +1049,318 @@ async fn derived_path_visibility() {
             )
             .await
             .expect("workspace activity")
+            .is_empty()
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn derived_path_visibility_hides_folder_descendants() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "derived-folder-visibility").await;
+    let ctx = support::ctx(&ws, &user);
+    let (_project, parent, _child, document, _board, task) =
+        seed_project_tree(&db, &ctx, "folder").await;
+
+    let source_task = db
+        .task_repo()
+        .create(
+            &ctx,
+            NewTask {
+                project_id: task.project_id,
+                board_id: task.board_id,
+                column_id: task.column_id,
+                title: "Folder reference source".into(),
+                description: String::new(),
+                priority: None,
+                due_date: None,
+                estimate: None,
+                labels: Vec::new(),
+                properties: None,
+                position: PositionBetween {
+                    before: None,
+                    after: None,
+                },
+            },
+        )
+        .await
+        .expect("create folder reference source task");
+
+    let link_repo = PgDocumentLinkRepo {
+        conn: db.conn().clone(),
+    };
+    link_repo
+        .replace_for_source(
+            &ctx,
+            document.id,
+            vec![ExtractedLink {
+                target_title: document.title.clone(),
+                target_document_id: Some(document.id),
+            }],
+        )
+        .await
+        .expect("store folder document link");
+    link_repo
+        .replace_for_task_source(
+            &ctx,
+            task.id,
+            vec![ExtractedLink {
+                target_title: document.title.clone(),
+                target_document_id: Some(document.id),
+            }],
+        )
+        .await
+        .expect("store folder task link");
+
+    let reference_repo = PgTaskReferenceRepo::new(db.conn().clone());
+    reference_repo
+        .create(
+            &ctx,
+            NewTaskReference {
+                source_task_id: task.id,
+                kind: ReferenceKind::Spec,
+                target_task_id: None,
+                target_document_id: Some(document.id),
+            },
+        )
+        .await
+        .expect("store folder document reference");
+    reference_repo
+        .create(
+            &ctx,
+            NewTaskReference {
+                source_task_id: source_task.id,
+                kind: ReferenceKind::Relates,
+                target_task_id: Some(task.id),
+                target_document_id: None,
+            },
+        )
+        .await
+        .expect("store folder inbound task reference");
+
+    let activity_repo = PgTaskActivityRepo::new(db.conn().clone());
+    activity_repo
+        .append(
+            &ctx,
+            NewTaskActivity {
+                task_id: task.id,
+                kind: ActivityKind::Created,
+                payload: ActivityPayload::Created,
+            },
+        )
+        .await
+        .expect("append folder task activity");
+
+    let provider = Arc::new(VisibilityEmbeddingProvider);
+    PgSemanticIndexWriter::new(db.conn().clone(), provider.clone())
+        .index_chunks(&[
+            SemanticIndexChunk {
+                workspace_id: ws.id,
+                kind: ResourceKind::Document,
+                resource_id: document.id.0,
+                source: SemanticSearchSource::Aggregate,
+                chunk_ordinal: 0,
+                content_hash: "folder-hidden-document".into(),
+                text: "hidden".into(),
+                excerpt: "hidden".into(),
+            },
+            SemanticIndexChunk {
+                workspace_id: ws.id,
+                kind: ResourceKind::Task,
+                resource_id: task.id.0,
+                source: SemanticSearchSource::Aggregate,
+                chunk_ordinal: 0,
+                content_hash: "folder-hidden-task".into(),
+                text: "hidden".into(),
+                excerpt: "hidden".into(),
+            },
+        ])
+        .await
+        .expect("index folder-hidden resources");
+
+    let query = SearchQuery {
+        text: "hidden".into(),
+        filters: vec![],
+        sort: SearchSort::Relevance,
+        type_filter: TypeSet::all(),
+        warnings: vec![],
+        prefix: false,
+    };
+    assert!(
+        !PgSearchRepo::new(db.conn().clone())
+            .search(
+                &ctx,
+                &Principal::User(user.id),
+                &query,
+                50,
+                None,
+                false,
+                true,
+                true
+            )
+            .await
+            .expect("folder lexical search before deletion")
+            .is_empty()
+    );
+    assert!(
+        !PgSemanticSearchRepo::new(db.conn().clone(), provider.clone())
+            .search(&SemanticSearchQuery::new(
+                ws.id,
+                Principal::User(user.id),
+                "hidden".into(),
+                SemanticSearchTypeFilter::all(),
+                50,
+                None,
+                false,
+                true,
+                true,
+            ))
+            .await
+            .expect("folder semantic search before deletion")
+            .is_empty()
+    );
+    assert!(
+        !link_repo
+            .backlinks(&ctx, document.id)
+            .await
+            .expect("folder backlinks before deletion")
+            .is_empty()
+    );
+    assert!(
+        link_repo
+            .outgoing_for_task(&ctx, task.id)
+            .await
+            .expect("folder outgoing links before deletion")
+            .is_some()
+    );
+    assert!(
+        !reference_repo
+            .list_for_task(&ctx, task.id)
+            .await
+            .expect("folder outbound references before deletion")
+            .is_empty()
+    );
+    assert!(
+        !reference_repo
+            .list_inbound(&ctx, task.id)
+            .await
+            .expect("folder inbound references before deletion")
+            .is_empty()
+    );
+    assert!(
+        !activity_repo
+            .list_for_task(&ctx, task.id, None, 50)
+            .await
+            .expect("folder task activity before deletion")
+            .is_empty()
+    );
+    assert!(
+        !activity_repo
+            .list_for_workspace(
+                &ctx,
+                WorkspaceActivityScope {
+                    is_admin: true,
+                    project_ids: vec![],
+                    board_ids: vec![],
+                },
+                WorkspaceActivityFilters::default(),
+                None,
+                50,
+            )
+            .await
+            .expect("folder workspace activity before deletion")
+            .is_empty()
+    );
+
+    db.folder_repo()
+        .soft_delete(&ctx, parent.id)
+        .await
+        .expect("delete parent folder");
+
+    assert!(
+        PgSearchRepo::new(db.conn().clone())
+            .search(
+                &ctx,
+                &Principal::User(user.id),
+                &query,
+                50,
+                None,
+                false,
+                true,
+                true
+            )
+            .await
+            .expect("folder lexical search")
+            .is_empty()
+    );
+    assert!(
+        PgSemanticSearchRepo::new(db.conn().clone(), provider)
+            .search(&SemanticSearchQuery::new(
+                ws.id,
+                Principal::User(user.id),
+                "hidden".into(),
+                SemanticSearchTypeFilter::all(),
+                50,
+                None,
+                false,
+                true,
+                true,
+            ))
+            .await
+            .expect("folder semantic search")
+            .is_empty()
+    );
+    assert!(
+        link_repo
+            .backlinks(&ctx, document.id)
+            .await
+            .expect("folder backlinks")
+            .is_empty()
+    );
+    assert!(
+        link_repo
+            .outgoing_for_task(&ctx, task.id)
+            .await
+            .expect("folder outgoing links")
+            .is_none()
+    );
+    assert!(
+        reference_repo
+            .list_for_task(&ctx, task.id)
+            .await
+            .expect("folder outbound references")
+            .is_empty()
+    );
+    assert!(
+        reference_repo
+            .list_inbound(&ctx, task.id)
+            .await
+            .expect("folder inbound references")
+            .is_empty()
+    );
+    assert!(
+        activity_repo
+            .list_for_task(&ctx, task.id, None, 50)
+            .await
+            .expect("folder task activity")
+            .is_empty()
+    );
+    assert!(
+        activity_repo
+            .list_for_workspace(
+                &ctx,
+                WorkspaceActivityScope {
+                    is_admin: true,
+                    project_ids: vec![],
+                    board_ids: vec![],
+                },
+                WorkspaceActivityFilters::default(),
+                None,
+                50,
+            )
+            .await
+            .expect("folder workspace activity")
             .is_empty()
     );
 
