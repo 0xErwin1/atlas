@@ -11,6 +11,10 @@ use sea_orm::{ConnectionTrait, DatabaseConnection, FromQueryResult, Statement};
 use std::sync::Arc;
 use uuid::Uuid;
 
+use crate::persistence::live_ancestors::{
+    board_chain_is_live_sql, folder_chain_is_live_sql, project_is_live_sql,
+};
+
 pub struct PgSemanticIndexWriter {
     conn: DatabaseConnection,
     provider: Arc<dyn EmbeddingProvider>,
@@ -257,6 +261,9 @@ impl SemanticSearchRepo for PgSemanticSearchRepo {
         };
 
         let limit = query.limit as i64;
+        let document_live_project = project_is_live_sql("d.project_id");
+        let document_live_folder = folder_chain_is_live_sql("d.folder_id");
+        let task_live_board = board_chain_is_live_sql("t.board_id");
         let sql = format!(
             r#"WITH nearest AS (
                    SELECT se.resource_kind,
@@ -290,7 +297,9 @@ impl SemanticSearchRepo for PgSemanticSearchRepo {
                FROM ranked
                JOIN documents d ON d.id = ranked.resource_id
                    AND d.workspace_id = $1
-                   AND d.deleted_at IS NULL
+                    AND d.deleted_at IS NULL
+                    AND ({document_live_project})
+                    AND ({document_live_folder})
                    AND ranked.resource_kind = 'document'
                LEFT JOIN projects p ON p.id = d.project_id AND p.workspace_id = $1 AND p.deleted_at IS NULL
                WHERE ranked.resource_rank = 1
@@ -310,7 +319,8 @@ impl SemanticSearchRepo for PgSemanticSearchRepo {
                FROM ranked
                JOIN tasks t ON t.id = ranked.resource_id
                    AND t.workspace_id = $1
-                   AND t.deleted_at IS NULL
+                    AND t.deleted_at IS NULL
+                    AND ({task_live_board})
                    AND ranked.resource_kind = 'task'
                LEFT JOIN projects p ON p.id = t.project_id AND p.workspace_id = $1 AND p.deleted_at IS NULL
                LEFT JOIN board_columns bc ON bc.id = t.column_id AND bc.workspace_id = $1 AND bc.deleted_at IS NULL

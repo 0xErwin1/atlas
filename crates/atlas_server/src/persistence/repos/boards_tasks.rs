@@ -35,7 +35,8 @@ use crate::persistence::entities::boards_tasks::{
 };
 use crate::persistence::entities::status_templates::status_template;
 use crate::persistence::live_ancestors::{
-    board_chain_is_live_sql, live_board_chain, live_folder_chain, live_project,
+    board_chain_is_live_sql, live_board_chain, live_document_chain, live_folder_chain,
+    live_project, live_task_chain,
 };
 use crate::persistence::repos::PgOutboxRepo;
 
@@ -1443,6 +1444,9 @@ impl TaskReferenceRepo for PgTaskReferenceRepo {
         let rows = task_reference::Entity::find()
             .filter(task_reference::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(task_reference::Column::SourceTaskId.eq(task_id.0))
+            .filter(live_task_chain("task_references.source_task_id"))
+            .filter(live_task_chain("task_references.target_task_id"))
+            .filter(live_document_chain("task_references.target_document_id"))
             .order_by_asc(task_reference::Column::CreatedAt)
             .order_by_asc(task_reference::Column::Id)
             .all(&self.conn)
@@ -1462,6 +1466,8 @@ impl TaskReferenceRepo for PgTaskReferenceRepo {
         let rows = task_reference::Entity::find()
             .filter(task_reference::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(task_reference::Column::TargetTaskId.eq(task_id.0))
+            .filter(live_task_chain("task_references.source_task_id"))
+            .filter(live_task_chain("task_references.target_task_id"))
             .all(&self.conn)
             .await
             .map_err(db_err)?;
@@ -2131,6 +2137,7 @@ impl TaskActivityRepo for PgTaskActivityRepo {
         let mut q = task_activity::Entity::find()
             .filter(task_activity::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(task_activity::Column::TaskId.eq(task_id.0))
+            .filter(live_task_chain("task_activity.task_id"))
             .order_by_desc(task_activity::Column::CreatedAt)
             .order_by_desc(task_activity::Column::Id)
             .limit(limit);
@@ -2278,9 +2285,10 @@ impl TaskActivityRepo for PgTaskActivityRepo {
                 a.created_at,
                 t.readable_id AS task_readable_id
             FROM task_activity a
-            JOIN tasks t ON t.id = a.task_id AND t.workspace_id = a.workspace_id
-            WHERE a.workspace_id = ${ws_param}
-              AND t.deleted_at IS NULL
+             JOIN tasks t ON t.id = a.task_id AND t.workspace_id = a.workspace_id
+             WHERE a.workspace_id = ${ws_param}
+               AND t.deleted_at IS NULL
+               AND ({})
               {scope_cond}
               {actor_cond}
               {from_cond}
@@ -2289,6 +2297,7 @@ impl TaskActivityRepo for PgTaskActivityRepo {
             ORDER BY a.created_at DESC, a.id DESC
             LIMIT ${limit_param}
             "#,
+            board_chain_is_live_sql("t.board_id"),
         );
 
         let rows = Row::find_by_statement(sea_orm::Statement::from_sql_and_values(

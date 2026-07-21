@@ -8,6 +8,10 @@ use atlas_domain::{
 use chrono::{DateTime, TimeZone, Utc};
 use sea_orm::{DatabaseConnection, FromQueryResult};
 
+use crate::persistence::live_ancestors::{
+    board_chain_is_live_sql, folder_chain_is_live_sql, project_is_live_sql,
+};
+
 pub struct PgSearchRepo {
     pub conn: DatabaseConnection,
 }
@@ -413,6 +417,8 @@ fn build_doc_arm(
     let project_filter_subquery = ctx.project_filter_subquery;
     let updated_after_cond = ctx.updated_after_cond;
     let updated_before_cond = ctx.updated_before_cond;
+    let live_project = project_is_live_sql("d.project_id");
+    let live_folder = folder_chain_is_live_sql("d.folder_id");
 
     format!(
         r#"SELECT
@@ -428,7 +434,9 @@ fn build_doc_arm(
         FROM documents d
         LEFT JOIN projects p ON p.id = d.project_id AND p.workspace_id = $1 AND p.deleted_at IS NULL
         WHERE d.workspace_id = $1
-          AND d.deleted_at IS NULL
+           AND d.deleted_at IS NULL
+           AND ({live_project})
+           AND ({live_folder})
           {fts_where}
           AND ({perm})
           {project_filter_subquery}
@@ -594,6 +602,7 @@ fn build_task_arm(
     let project_filter_subquery = ctx.project_filter_subquery;
     let updated_after_cond = ctx.updated_after_cond;
     let updated_before_cond = ctx.updated_before_cond;
+    let live_board = board_chain_is_live_sql("t.board_id");
 
     format!(
         r#"SELECT
@@ -610,7 +619,8 @@ fn build_task_arm(
         LEFT JOIN projects p ON p.id = t.project_id AND p.workspace_id = $1 AND p.deleted_at IS NULL
         LEFT JOIN board_columns bc ON bc.id = t.column_id AND bc.workspace_id = $1 AND bc.deleted_at IS NULL
         WHERE t.workspace_id = $1
-          AND t.deleted_at IS NULL
+           AND t.deleted_at IS NULL
+           AND ({live_board})
           {fts_where}
           AND ({perm})
           {project_filter_subquery}

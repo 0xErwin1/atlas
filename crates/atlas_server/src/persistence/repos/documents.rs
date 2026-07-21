@@ -34,7 +34,7 @@ use crate::persistence::entities::documents::{
 };
 use crate::persistence::live_ancestors::{
     folder_chain_is_live_sql, live_comment_chain, live_document_chain, live_folder_chain,
-    live_project, live_task_chain, project_is_live_sql,
+    live_project, live_task_chain, project_is_live_sql, task_chain_is_live_sql,
 };
 use crate::persistence::repos::comment_attachment_drafts::{
     lock_active_draft_for_upload, record_upload_or_replay_in,
@@ -988,14 +988,17 @@ impl DocumentLinkRepo for PgDocumentLinkRepo {
             .conn
             .query_all_raw(Statement::from_sql_and_values(
                 sea_orm::DatabaseBackend::Postgres,
-                "SELECT t.description, dl.id AS link_id, dl.workspace_id AS link_workspace_id, \
-                 dl.source_document_id AS link_source_document_id, dl.source_task_id AS link_source_task_id, \
-                 dl.target_document_id AS link_target_document_id, dl.target_title AS link_target_title, \
-                 dl.created_at AS link_created_at \
-                 FROM tasks t \
-                 LEFT JOIN document_links dl ON dl.workspace_id = t.workspace_id AND dl.source_task_id = t.id \
-                 WHERE t.id = $1 AND t.workspace_id = $2 AND t.deleted_at IS NULL \
-                 ORDER BY dl.created_at ASC NULLS LAST, dl.id ASC NULLS LAST",
+                format!("SELECT t.description, dl.id AS link_id, dl.workspace_id AS link_workspace_id, \
+                  dl.source_document_id AS link_source_document_id, dl.source_task_id AS link_source_task_id, \
+                  dl.target_document_id AS link_target_document_id, dl.target_title AS link_target_title, \
+                  dl.created_at AS link_created_at \
+                  FROM tasks t \
+                  LEFT JOIN document_links dl ON dl.workspace_id = t.workspace_id AND dl.source_task_id = t.id \
+                  WHERE t.id = $1 AND t.workspace_id = $2 AND t.deleted_at IS NULL \
+                    AND ({}) \
+                  ORDER BY dl.created_at ASC NULLS LAST, dl.id ASC NULLS LAST",
+                task_chain_is_live_sql("t.id"),
+                ),
                 [source.0.into(), ctx.workspace_id.0.into()],
             ))
             .await
@@ -1022,6 +1025,9 @@ impl DocumentLinkRepo for PgDocumentLinkRepo {
         document_link::Entity::find()
             .filter(document_link::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(document_link::Column::TargetDocumentId.eq(target.0))
+            .filter(live_document_chain("document_links.source_document_id"))
+            .filter(live_task_chain("document_links.source_task_id"))
+            .filter(live_document_chain("document_links.target_document_id"))
             .all(&self.conn)
             .await
             .map(|rows| rows.into_iter().map(document_link_from).collect())

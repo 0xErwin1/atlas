@@ -2,22 +2,57 @@
 
 mod support;
 
+use async_trait::async_trait;
 use atlas_domain::{
-    Actor, WorkspaceCtx,
+    Actor, DomainError, WorkspaceCtx,
     entities::task_views::TaskViewFilters,
     entities::{
-        boards_tasks::{NewBoard, NewTask, PositionBetween},
+        boards_tasks::{
+            ActivityKind, ActivityPayload, NewBoard, NewTask, NewTaskActivity, NewTaskReference,
+            PositionBetween, ReferenceKind,
+        },
         comments::{CommentOwner, NewComment},
-        documents::{AttachmentOwner, NewAttachment, NewDocument},
+        documents::{AttachmentOwner, ExtractedLink, NewAttachment, NewDocument},
         workspace_core::{NewFolder, NewProject},
     },
     permissions::{Principal, Visibility, VisibilityRole},
+    ports::{
+        boards_tasks::{
+            TaskActivityRepo, TaskReferenceRepo, WorkspaceActivityFilters, WorkspaceActivityScope,
+        },
+        documents::DocumentLinkRepo,
+        search::SearchRepo,
+    },
+    search::{SearchQuery, SearchSort, TypeSet},
+    semantic_search::{
+        EmbeddingInput, EmbeddingProvider, ResourceKind, SemanticIndexChunk, SemanticSearchQuery,
+        SemanticSearchRepo, SemanticSearchSource, SemanticSearchTypeFilter,
+    },
 };
 use atlas_server::persistence::repos::{
     AttachmentRepo, BoardRepo, CommentRepo, DocumentRepo, FolderRepo, PgAttachmentRepo,
-    PgCommentRepo, ProjectRepo, TaskRepo,
+    PgCommentRepo, PgDocumentLinkRepo, PgSearchRepo, PgSemanticIndexWriter, PgSemanticSearchRepo,
+    PgTaskActivityRepo, PgTaskReferenceRepo, ProjectRepo, TaskRepo,
 };
 use sea_orm::{ConnectionTrait, Statement};
+use std::sync::Arc;
+
+struct VisibilityEmbeddingProvider;
+
+#[async_trait]
+impl EmbeddingProvider for VisibilityEmbeddingProvider {
+    async fn embed(&self, inputs: &[EmbeddingInput]) -> Result<Vec<Vec<f32>>, DomainError> {
+        Ok(inputs.iter().map(|_| vec![1.0; 1536]).collect())
+    }
+
+    fn model(&self) -> &str {
+        "visibility-ancestors"
+    }
+
+    fn dimensions(&self) -> usize {
+        1536
+    }
+}
 
 async fn seed_project_tree(
     db: &support::TestDb,
@@ -704,6 +739,189 @@ async fn owner_chain_download_visibility() {
             .expect("download concealed attachment");
         assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);
     }
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn derived_path_visibility() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "derived-path-visibility").await;
+    let ctx = support::ctx(&ws, &user);
+    let (project, _parent, _child, document, _board, task) =
+        seed_project_tree(&db, &ctx, "project").await;
+
+    let link_repo = PgDocumentLinkRepo {
+        conn: db.conn().clone(),
+    };
+    link_repo
+        .replace_for_source(
+            &ctx,
+            document.id,
+            vec![ExtractedLink {
+                target_title: document.title.clone(),
+                target_document_id: Some(document.id),
+            }],
+        )
+        .await
+        .expect("store document link");
+    link_repo
+        .replace_for_task_source(
+            &ctx,
+            task.id,
+            vec![ExtractedLink {
+                target_title: document.title.clone(),
+                target_document_id: Some(document.id),
+            }],
+        )
+        .await
+        .expect("store task link");
+
+    let reference_repo = PgTaskReferenceRepo::new(db.conn().clone());
+    reference_repo
+        .create(
+            &ctx,
+            NewTaskReference {
+                source_task_id: task.id,
+                kind: ReferenceKind::Spec,
+                target_task_id: None,
+                target_document_id: Some(document.id),
+            },
+        )
+        .await
+        .expect("store task reference");
+
+    let activity_repo = PgTaskActivityRepo::new(db.conn().clone());
+    activity_repo
+        .append(
+            &ctx,
+            NewTaskActivity {
+                task_id: task.id,
+                kind: ActivityKind::Created,
+                payload: ActivityPayload::Created,
+            },
+        )
+        .await
+        .expect("append task activity");
+
+    let provider = Arc::new(VisibilityEmbeddingProvider);
+    PgSemanticIndexWriter::new(db.conn().clone(), provider.clone())
+        .index_chunks(&[
+            SemanticIndexChunk {
+                workspace_id: ws.id,
+                kind: ResourceKind::Document,
+                resource_id: document.id.0,
+                source: SemanticSearchSource::Aggregate,
+                chunk_ordinal: 0,
+                content_hash: "hidden-document".into(),
+                text: "hidden".into(),
+                excerpt: "hidden".into(),
+            },
+            SemanticIndexChunk {
+                workspace_id: ws.id,
+                kind: ResourceKind::Task,
+                resource_id: task.id.0,
+                source: SemanticSearchSource::Aggregate,
+                chunk_ordinal: 0,
+                content_hash: "hidden-task".into(),
+                text: "hidden".into(),
+                excerpt: "hidden".into(),
+            },
+        ])
+        .await
+        .expect("index hidden resources");
+
+    db.project_repo()
+        .soft_delete(&ctx, project.id)
+        .await
+        .expect("delete project");
+
+    let query = SearchQuery {
+        text: "hidden".into(),
+        filters: vec![],
+        sort: SearchSort::Relevance,
+        type_filter: TypeSet::all(),
+        warnings: vec![],
+        prefix: false,
+    };
+    assert!(
+        PgSearchRepo::new(db.conn().clone())
+            .search(
+                &ctx,
+                &Principal::User(user.id),
+                &query,
+                50,
+                None,
+                false,
+                true,
+                true
+            )
+            .await
+            .expect("lexical search")
+            .is_empty()
+    );
+    assert!(
+        PgSemanticSearchRepo::new(db.conn().clone(), provider)
+            .search(&SemanticSearchQuery::new(
+                ws.id,
+                Principal::User(user.id),
+                "hidden".into(),
+                SemanticSearchTypeFilter::all(),
+                50,
+                None,
+                false,
+                true,
+                true,
+            ))
+            .await
+            .expect("semantic search")
+            .is_empty()
+    );
+    assert!(
+        link_repo
+            .backlinks(&ctx, document.id)
+            .await
+            .expect("backlinks")
+            .is_empty()
+    );
+    assert!(
+        link_repo
+            .outgoing_for_task(&ctx, task.id)
+            .await
+            .expect("outgoing links")
+            .is_none()
+    );
+    assert!(
+        reference_repo
+            .list_for_task(&ctx, task.id)
+            .await
+            .expect("outbound references")
+            .is_empty()
+    );
+    assert!(
+        activity_repo
+            .list_for_task(&ctx, task.id, None, 50)
+            .await
+            .expect("task activity")
+            .is_empty()
+    );
+    assert!(
+        activity_repo
+            .list_for_workspace(
+                &ctx,
+                WorkspaceActivityScope {
+                    is_admin: true,
+                    project_ids: vec![],
+                    board_ids: vec![],
+                },
+                WorkspaceActivityFilters::default(),
+                None,
+                50,
+            )
+            .await
+            .expect("workspace activity")
+            .is_empty()
+    );
 
     db.teardown().await;
 }
