@@ -11,7 +11,10 @@ use sea_orm::{
     sea_query::Expr,
 };
 
-use crate::persistence::entities::comments::{comment, comment_from};
+use crate::persistence::entities::{
+    comments::{comment, comment_from},
+    documents::attachment,
+};
 use crate::persistence::live_ancestors::{live_document_chain, live_task_chain};
 
 pub use atlas_domain::ports::comments::CommentRepo;
@@ -73,6 +76,18 @@ impl PgCommentRepo {
         find_scoped(conn, ctx, owner, id).await.map(comment_from)
     }
 
+    /// Fetches a live comment while holding its row lock for a lifecycle mutation.
+    pub async fn get_for_owner_for_update_in(
+        conn: &impl ConnectionTrait,
+        ctx: &WorkspaceCtx,
+        owner: CommentOwner,
+        id: CommentId,
+    ) -> Result<Comment, DomainError> {
+        find_scoped_for_update(conn, ctx, owner, id)
+            .await
+            .map(comment_from)
+    }
+
     /// Updates a comment's body and `updated_at` inside an existing transaction,
     /// given the caller's already-loaded copy of the row (typically from
     /// `get_for_owner_in`), returning the updated row.
@@ -131,6 +146,77 @@ impl PgCommentRepo {
         active.deleted_at = Set(Some(Utc::now()));
         active.updated_at = Set(Utc::now());
         active.update(conn).await.map_err(db_err)?;
+        Ok(())
+    }
+
+    /// Tombstones a locked live comment at the supplied lifecycle timestamp.
+    pub async fn soft_delete_at_in(
+        conn: &impl ConnectionTrait,
+        ctx: &WorkspaceCtx,
+        owner: CommentOwner,
+        id: CommentId,
+        deleted_at: chrono::DateTime<Utc>,
+    ) -> Result<(), DomainError> {
+        let result = comment::Entity::update_many()
+            .col_expr(comment::Column::DeletedAt, Expr::value(deleted_at))
+            .col_expr(comment::Column::UpdatedAt, Expr::value(deleted_at))
+            .filter(comment::Column::Id.eq(id.0))
+            .filter(comment::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(owner_condition(owner))
+            .filter(comment::Column::DeletedAt.is_null())
+            .exec(conn)
+            .await
+            .map_err(db_err)?;
+
+        if result.rows_affected == 0 {
+            return Err(DomainError::NotFound {
+                entity: "comment",
+                id: id.0,
+            });
+        }
+
+        Ok(())
+    }
+
+    /// Restores a comment and only attachments tombstoned by the same delete operation.
+    pub async fn restore_at_in(
+        conn: &impl ConnectionTrait,
+        ctx: &WorkspaceCtx,
+        owner: CommentOwner,
+        id: CommentId,
+        deleted_at: chrono::DateTime<Utc>,
+    ) -> Result<(), DomainError> {
+        let row = comment::Entity::find_by_id(id.0)
+            .filter(comment::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(owner_condition(owner))
+            .filter(comment::Column::DeletedAt.eq(deleted_at))
+            .lock_exclusive()
+            .one(conn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "comment",
+                id: id.0,
+            })?;
+
+        let mut active = row.into_active_model();
+        active.deleted_at = Set(None);
+        active.updated_at = Set(Utc::now());
+        active.update(conn).await.map_err(db_err)?;
+
+        attachment::Entity::update_many()
+            .col_expr(
+                attachment::Column::DeletedAt,
+                Expr::value(None::<chrono::DateTime<Utc>>),
+            )
+            .col_expr(attachment::Column::UpdatedAt, Expr::value(Utc::now()))
+            .filter(attachment::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(attachment::Column::CommentId.eq(id.0))
+            .filter(attachment::Column::DeletedAt.eq(deleted_at))
+            .exec(conn)
+            .await
+            .map_err(db_err)?;
+
         Ok(())
     }
 }
@@ -203,6 +289,28 @@ async fn find_scoped(
         .filter(comment::Column::DeletedAt.is_null())
         .filter(live_task_chain("comments.task_id"))
         .filter(live_document_chain("comments.document_id"))
+        .one(conn)
+        .await
+        .map_err(db_err)?
+        .ok_or(DomainError::NotFound {
+            entity: "comment",
+            id: id.0,
+        })
+}
+
+async fn find_scoped_for_update(
+    conn: &impl ConnectionTrait,
+    ctx: &WorkspaceCtx,
+    owner: CommentOwner,
+    id: CommentId,
+) -> Result<comment::Model, DomainError> {
+    comment::Entity::find_by_id(id.0)
+        .filter(comment::Column::WorkspaceId.eq(ctx.workspace_id.0))
+        .filter(owner_condition(owner))
+        .filter(comment::Column::DeletedAt.is_null())
+        .filter(live_task_chain("comments.task_id"))
+        .filter(live_document_chain("comments.document_id"))
+        .lock_exclusive()
         .one(conn)
         .await
         .map_err(db_err)?

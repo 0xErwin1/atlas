@@ -1,8 +1,3 @@
-use std::{
-    collections::{BTreeSet, HashSet},
-    sync::Arc,
-};
-
 use atlas_domain::{
     AttachmentStore, DomainError, WorkspaceCtx,
     entities::comments::{Comment, CommentOwner, NewComment, comment_draft_finalize_digest_input},
@@ -11,16 +6,13 @@ use atlas_domain::{
 };
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection,
-    EntityTrait, IntoActiveModel, QueryFilter, QuerySelect, Statement, TransactionTrait,
+    EntityTrait, IntoActiveModel, QueryFilter, QuerySelect, TransactionTrait,
 };
 use sha2::{Digest, Sha256};
 
 use crate::persistence::{
-    entities::{
-        comments::{comment_attachment_draft, comment_attachment_draft_upload},
-        documents::attachment,
-    },
-    repos::{PgAttachmentLifecycle, PgCommentLinkRepo, PgCommentRepo},
+    entities::{comments::comment_attachment_draft, documents::attachment},
+    repos::{PgCommentLinkRepo, PgCommentRepo, PgSecurityAuditRepo},
 };
 
 /// Internal test seam for proving comment mutations commit as one transaction.
@@ -36,7 +28,6 @@ pub enum CommentMutationFault {
 #[derive(Clone)]
 pub struct CommentService {
     conn: DatabaseConnection,
-    attachments: Option<Arc<dyn AttachmentStore>>,
     #[cfg(debug_assertions)]
     fault: Option<CommentMutationFault>,
 }
@@ -50,7 +41,6 @@ impl CommentService {
     pub fn new(conn: DatabaseConnection) -> Self {
         Self {
             conn,
-            attachments: None,
             #[cfg(debug_assertions)]
             fault: None,
         }
@@ -58,11 +48,10 @@ impl CommentService {
 
     pub fn with_attachment_store(
         conn: DatabaseConnection,
-        attachments: Arc<dyn AttachmentStore>,
+        _attachments: std::sync::Arc<dyn AttachmentStore>,
     ) -> Self {
         Self {
             conn,
-            attachments: Some(attachments),
             #[cfg(debug_assertions)]
             fault: None,
         }
@@ -73,7 +62,6 @@ impl CommentService {
     pub fn with_fault_injection(conn: DatabaseConnection, fault: CommentMutationFault) -> Self {
         Self {
             conn,
-            attachments: None,
             fault: Some(fault),
         }
     }
@@ -243,7 +231,8 @@ impl CommentService {
         can_moderate: bool,
     ) -> Result<(), DomainError> {
         let txn = self.conn.begin().await.map_err(db_err)?;
-        let comment = PgCommentRepo::get_for_owner_in(&txn, ctx, owner, comment_id).await?;
+        let comment =
+            PgCommentRepo::get_for_owner_for_update_in(&txn, ctx, owner, comment_id).await?;
 
         if comment.created_by != ctx.actor && !can_moderate {
             return Err(DomainError::Forbidden {
@@ -252,23 +241,33 @@ impl CommentService {
             });
         }
 
-        let purge = prepare_comment_purge_in(&txn, ctx, comment_id).await?;
+        let deleted_at = chrono::Utc::now();
+        let attachment_ids = live_comment_attachment_ids_in(&txn, ctx, comment_id).await?;
+
         PgCommentLinkRepo::remove_for_comment_in(&txn, ctx, comment_id).await?;
         PgCommentLinkRepo::record_comment_deleted_in(&txn, ctx, comment_id).await?;
-        PgCommentRepo::soft_delete_in(&txn, ctx, owner, comment_id).await?;
+        PgCommentRepo::soft_delete_at_in(&txn, ctx, owner, comment_id, deleted_at).await?;
+
+        tombstone_comment_attachments_in(&txn, ctx, comment_id, deleted_at).await?;
+        PgSecurityAuditRepo::append_resource_deleted_in(
+            &txn,
+            ctx,
+            atlas_domain::entities::lifecycle::TrashKind::Comment,
+            comment_id.0,
+        )
+        .await?;
+
+        for attachment_id in attachment_ids {
+            PgSecurityAuditRepo::append_resource_deleted_in(
+                &txn,
+                ctx,
+                atlas_domain::entities::lifecycle::TrashKind::Attachment,
+                attachment_id,
+            )
+            .await?;
+        }
 
         txn.commit().await.map_err(db_err)?;
-
-        if let Some(store) = &self.attachments {
-            for digest in purge {
-                if let Err(error) =
-                    PgAttachmentLifecycle::finish_purge_digest(&self.conn, store.as_ref(), &digest)
-                        .await
-                {
-                    tracing::warn!(%error, %digest, "comment attachment cleanup will be retried");
-                }
-            }
-        }
 
         Ok(())
     }
@@ -326,133 +325,50 @@ async fn find_draft_for_finalize(
         })
 }
 
-async fn prepare_comment_purge_in(
+async fn live_comment_attachment_ids_in(
     conn: &impl ConnectionTrait,
     ctx: &WorkspaceCtx,
     comment_id: CommentId,
-) -> Result<Vec<String>, DomainError> {
-    let attachments = attachment::Entity::find()
+) -> Result<Vec<uuid::Uuid>, DomainError> {
+    attachment::Entity::find()
         .filter(attachment::Column::WorkspaceId.eq(ctx.workspace_id.0))
         .filter(attachment::Column::CommentId.eq(comment_id.0))
         .filter(attachment::Column::DeletedAt.is_null())
+        .lock_exclusive()
         .all(conn)
         .await
-        .map_err(db_err)?;
-    let digests = attachments
-        .iter()
-        .map(|attachment| attachment.sha256.clone())
-        .collect::<BTreeSet<_>>();
+        .map(|attachments| {
+            attachments
+                .into_iter()
+                .map(|attachment| attachment.id)
+                .collect()
+        })
+        .map_err(db_err)
+}
 
-    for digest in &digests {
-        conn.execute_raw(Statement::from_sql_and_values(
-            sea_orm::DatabaseBackend::Postgres,
-            "INSERT INTO attachment_write_intents (id, digest, created_at) VALUES ($1, $2, now()) ON CONFLICT (digest) DO NOTHING",
-            [uuid::Uuid::now_v7().into(), digest.clone().into()],
-        ))
-        .await
-        .map_err(db_err)?;
-    }
-
-    let attachment_ids = attachments
-        .iter()
-        .map(|attachment| attachment.id)
-        .collect::<Vec<_>>();
-    let origin_attachment_ids = finalized_origin_attachment_ids_in(conn, &attachment_ids).await?;
-
-    if !origin_attachment_ids.is_empty() {
-        comment_attachment_draft_upload::Entity::update_many()
-            .col_expr(
-                comment_attachment_draft_upload::Column::AttachmentId,
-                sea_orm::sea_query::Expr::value(None::<uuid::Uuid>),
-            )
-            .col_expr(
-                comment_attachment_draft_upload::Column::DeletedAt,
-                sea_orm::sea_query::Expr::current_timestamp(),
-            )
-            .col_expr(
-                comment_attachment_draft_upload::Column::UpdatedAt,
-                sea_orm::sea_query::Expr::current_timestamp(),
-            )
-            .filter(
-                comment_attachment_draft_upload::Column::OriginalAttachmentId
-                    .is_in(origin_attachment_ids.iter().copied()),
-            )
-            .exec(conn)
-            .await
-            .map_err(db_err)?;
-
-        attachment::Entity::update_many()
-            .col_expr(
-                attachment::Column::DeletedAt,
-                sea_orm::sea_query::Expr::current_timestamp(),
-            )
-            .col_expr(
-                attachment::Column::UpdatedAt,
-                sea_orm::sea_query::Expr::current_timestamp(),
-            )
-            .filter(attachment::Column::Id.is_in(origin_attachment_ids.iter().copied()))
-            .exec(conn)
-            .await
-            .map_err(db_err)?;
-    }
-
-    let ordinary_attachment_ids = attachment_ids
-        .into_iter()
-        .filter(|id| !origin_attachment_ids.contains(id))
-        .collect::<Vec<_>>();
-    if !ordinary_attachment_ids.is_empty() {
-        attachment::Entity::delete_many()
-            .filter(attachment::Column::Id.is_in(ordinary_attachment_ids))
-            .exec(conn)
-            .await
-            .map_err(db_err)?;
-    }
-
-    comment_attachment_draft::Entity::update_many()
+async fn tombstone_comment_attachments_in(
+    conn: &impl ConnectionTrait,
+    ctx: &WorkspaceCtx,
+    comment_id: CommentId,
+    deleted_at: chrono::DateTime<chrono::Utc>,
+) -> Result<(), DomainError> {
+    attachment::Entity::update_many()
         .col_expr(
-            comment_attachment_draft::Column::State,
-            sea_orm::sea_query::Expr::value("deleted_finalized"),
+            attachment::Column::DeletedAt,
+            sea_orm::sea_query::Expr::value(deleted_at),
         )
         .col_expr(
-            comment_attachment_draft::Column::TerminalAt,
-            sea_orm::sea_query::Expr::current_timestamp(),
+            attachment::Column::UpdatedAt,
+            sea_orm::sea_query::Expr::value(deleted_at),
         )
-        .col_expr(
-            comment_attachment_draft::Column::UpdatedAt,
-            sea_orm::sea_query::Expr::current_timestamp(),
-        )
-        .filter(comment_attachment_draft::Column::WorkspaceId.eq(ctx.workspace_id.0))
-        .filter(comment_attachment_draft::Column::FinalizedCommentId.eq(comment_id.0))
-        .filter(comment_attachment_draft::Column::State.eq("finalized"))
+        .filter(attachment::Column::WorkspaceId.eq(ctx.workspace_id.0))
+        .filter(attachment::Column::CommentId.eq(comment_id.0))
+        .filter(attachment::Column::DeletedAt.is_null())
         .exec(conn)
         .await
         .map_err(db_err)?;
 
-    Ok(digests.into_iter().collect())
-}
-
-async fn finalized_origin_attachment_ids_in(
-    conn: &impl ConnectionTrait,
-    attachment_ids: &[uuid::Uuid],
-) -> Result<HashSet<uuid::Uuid>, DomainError> {
-    if attachment_ids.is_empty() {
-        return Ok(HashSet::new());
-    }
-
-    comment_attachment_draft_upload::Entity::find()
-        .filter(
-            comment_attachment_draft_upload::Column::OriginalAttachmentId
-                .is_in(attachment_ids.iter().copied()),
-        )
-        .all(conn)
-        .await
-        .map(|uploads| {
-            uploads
-                .into_iter()
-                .map(|upload| upload.original_attachment_id)
-                .collect()
-        })
-        .map_err(db_err)
+    Ok(())
 }
 
 fn db_err(error: sea_orm::DbErr) -> DomainError {

@@ -1604,7 +1604,7 @@ async fn finalized_origin_individual_delete_rolls_back_its_tombstone_on_database
 }
 
 #[tokio::test]
-async fn deleting_a_finalized_comment_tombstones_its_origin_attachment_and_retains_replay_data() {
+async fn deleting_a_finalized_comment_retains_its_replay_data_and_blob() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let (workspace, user) = support::seed_workspace(&db, "finalized-comment-delete").await;
     let ctx = support::ctx(&workspace, &user);
@@ -1685,23 +1685,23 @@ async fn deleting_a_finalized_comment_tombstones_its_origin_attachment_and_retai
         .await
         .expect("load upload")
         .expect("upload row");
-    let attachment_deleted: bool = db
+    let attachment_deleted_at: Option<chrono::DateTime<Utc>> = db
         .conn()
         .query_one_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT deleted_at IS NOT NULL AS deleted FROM attachments WHERE id = $1",
+            "SELECT deleted_at FROM attachments WHERE id = $1",
             [attachment_id.into()],
         ))
         .await
         .expect("load attachment")
         .expect("attachment row")
-        .try_get("", "deleted")
+        .try_get("", "deleted_at")
         .expect("read attachment tombstone");
 
-    assert_eq!(draft.state, "deleted_finalized");
+    assert_eq!(draft.state, "finalized");
     assert!(
-        draft.terminal_at.is_some(),
-        "terminal retention starts on deletion"
+        draft.terminal_at.is_none(),
+        "ordinary deletion must not transition a finalized draft to terminal cleanup"
     );
     assert_eq!(draft.finalized_comment_id, Some(comment.id.0));
     assert_eq!(draft.final_body_digest, Some(vec![1; 32]));
@@ -1710,21 +1710,107 @@ async fn deleting_a_finalized_comment_tombstones_its_origin_attachment_and_retai
         upload
             .try_get::<Option<uuid::Uuid>>("", "attachment_id")
             .expect("read live attachment"),
-        None,
+        Some(attachment_id),
     );
     assert!(
         upload
             .try_get::<Option<chrono::DateTime<Utc>>>("", "deleted_at")
             .expect("read upload tombstone")
-            .is_some(),
+            .is_none(),
     );
     assert!(
-        attachment_deleted,
-        "the finalized-origin attachment is soft deleted"
+        attachment_deleted_at.is_some(),
+        "the finalized-origin attachment must be recoverably tombstoned"
     );
     assert!(
-        !store.exists(&digest).await.expect("object existence"),
-        "post-commit cleanup purges the finalized-origin object"
+        store.exists(&digest).await.expect("object existence"),
+        "ordinary deletion must retain the finalized-origin object"
+    );
+
+    let comment_deleted_at: chrono::DateTime<Utc> = db
+        .conn()
+        .query_one_raw(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT deleted_at FROM comments WHERE id = $1",
+            [comment.id.0.into()],
+        ))
+        .await
+        .expect("load comment tombstone")
+        .expect("comment row")
+        .try_get("", "deleted_at")
+        .expect("comment delete timestamp");
+    assert_eq!(attachment_deleted_at, Some(comment_deleted_at));
+
+    let matching_attachment_id = uuid::Uuid::now_v7();
+    let independent_deleted_at = comment_deleted_at + Duration::microseconds(1);
+    db.conn()
+        .execute_unprepared(&format!(
+            "INSERT INTO attachments \
+             (id, workspace_id, comment_id, file_name, content_type, size_bytes, sha256, created_by_user_id, deleted_at) \
+             VALUES ('{matching_attachment_id}', '{}', '{}', 'matching.txt', 'text/plain', 1, 'matching', '{}', '{}'); \
+             UPDATE attachments SET deleted_at = '{}' WHERE id = '{}'",
+            workspace.id.0,
+            comment.id.0,
+            user.id.0,
+            comment_deleted_at.to_rfc3339(),
+            independent_deleted_at.to_rfc3339(),
+            attachment_id,
+        ))
+        .await
+        .expect("seed matching and independent attachment tombstones");
+
+    PgCommentRepo::restore_at_in(
+        db.conn(),
+        &ctx,
+        CommentOwner::Task(task.id),
+        comment.id,
+        comment_deleted_at,
+    )
+    .await
+    .expect("restore comment and matching attachment tombstones");
+
+    let restored_comment: Option<chrono::DateTime<Utc>> = db
+        .conn()
+        .query_one_raw(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT deleted_at FROM comments WHERE id = $1",
+            [comment.id.0.into()],
+        ))
+        .await
+        .expect("load restored comment")
+        .expect("restored comment row")
+        .try_get("", "deleted_at")
+        .expect("restored comment tombstone");
+    let matching_attachment_deleted_at: Option<chrono::DateTime<Utc>> = db
+        .conn()
+        .query_one_raw(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT deleted_at FROM attachments WHERE id = $1",
+            [matching_attachment_id.into()],
+        ))
+        .await
+        .expect("load matching attachment")
+        .expect("matching attachment row")
+        .try_get("", "deleted_at")
+        .expect("matching attachment tombstone");
+    let independently_deleted_attachment_at: Option<chrono::DateTime<Utc>> = db
+        .conn()
+        .query_one_raw(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT deleted_at FROM attachments WHERE id = $1",
+            [attachment_id.into()],
+        ))
+        .await
+        .expect("load independently deleted attachment")
+        .expect("independently deleted attachment row")
+        .try_get("", "deleted_at")
+        .expect("independently deleted attachment tombstone");
+
+    assert!(restored_comment.is_none());
+    assert!(matching_attachment_deleted_at.is_none());
+    assert_eq!(
+        independently_deleted_attachment_at,
+        Some(independent_deleted_at)
     );
 
     db.teardown().await;

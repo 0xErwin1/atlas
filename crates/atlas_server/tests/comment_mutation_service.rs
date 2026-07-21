@@ -101,7 +101,7 @@ async fn seed_task(
 }
 
 #[tokio::test]
-async fn document_comment_delete_retains_events_and_preserves_shared_digest_for_retry() {
+async fn document_comment_delete_tombstones_attachment_rows_without_purge_cleanup() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let (workspace, user) = support::seed_workspace(&db, "comment-mutation-document").await;
     let ctx = support::ctx(&workspace, &user);
@@ -184,7 +184,11 @@ async fn document_comment_delete_retains_events_and_preserves_shared_digest_for_
             .await
             .expect("list removed comment attachments")
             .is_empty(),
-        "comment-owned attachment rows must be hard-deleted before the comment is hidden"
+        "comment-owned attachment rows must be hidden with their deleted comment"
+    );
+    assert!(
+        attachment_is_tombstoned(&db, comment.id).await,
+        "the directly-owned attachment row must remain recoverable"
     );
     assert!(
         PgCommentLinkRepo::new(db.conn().clone())
@@ -214,12 +218,34 @@ async fn document_comment_delete_retains_events_and_preserves_shared_digest_for_
         ]
     );
 
-    PgAttachmentLifecycle::finish_purge_digest(db.conn(), &store, &digest)
-        .await
-        .expect("retry durable cleanup");
     assert!(
         store.exists(&digest).await.expect("check shared object"),
-        "a live attachment sharing the digest must prevent purge"
+        "ordinary comment deletion must retain blob bytes"
+    );
+    assert!(
+        !digest_has_cleanup_intent(&db, &digest).await,
+        "ordinary comment deletion must not enqueue cleanup"
+    );
+    assert_resource_deleted_audit(&db, workspace.id.0, user.id.0, "comment", comment.id.0).await;
+    assert_resource_deleted_audit(
+        &db,
+        workspace.id.0,
+        user.id.0,
+        "attachment",
+        comment_attachment_id(&db, comment.id).await,
+    )
+    .await;
+
+    assert!(
+        service
+            .remove(&ctx, CommentOwner::Document(parent.id), comment.id, false)
+            .await
+            .is_err(),
+        "a deleted comment retry must remain concealed"
+    );
+    assert_eq!(
+        resource_deleted_audit_count(&db, "comment", comment.id.0).await,
+        1
     );
 
     std::fs::remove_dir_all(store_root).expect("remove attachment store");
@@ -692,7 +718,7 @@ async fn comment_update_faults_preserve_existing_task_and_document_state() {
 }
 
 #[tokio::test]
-async fn task_comment_delete_keeps_rows_unreachable_when_post_commit_object_cleanup_fails() {
+async fn task_comment_delete_tombstones_rows_without_cleanup_or_duplicate_audit() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let (workspace, user) = support::seed_workspace(&db, "comment-delete-retry").await;
     let ctx = support::ctx(&workspace, &user);
@@ -700,8 +726,10 @@ async fn task_comment_delete_keeps_rows_unreachable_when_post_commit_object_clea
     let target = seed_task(&db, &ctx, "Task target").await;
     let store_root =
         std::env::temp_dir().join(format!("atlas-comment-retry-{}", uuid::Uuid::now_v7()));
-    let store = FailOnceDeleteStore::new(&store_root).await;
-    let service = CommentService::with_attachment_store(db.conn().clone(), Arc::new(store.clone()));
+    let store = DiskAttachmentStore::new(&store_root)
+        .await
+        .expect("create attachment store");
+    let service = CommentService::new(db.conn().clone());
     let comment = service
         .create(
             &ctx,
@@ -754,26 +782,36 @@ async fn task_comment_delete_keeps_rows_unreachable_when_post_commit_object_clea
         .expect("list deleted attachment")
         .is_empty()
     );
+    assert!(attachment_is_tombstoned(&db, comment.id).await);
     assert!(
         store
             .exists(&digest)
             .await
-            .expect("object remains for retry")
+            .expect("object remains for recovery")
     );
-    assert!(digest_has_cleanup_intent(&db, &digest).await);
+    assert!(!digest_has_cleanup_intent(&db, &digest).await);
+    assert_resource_deleted_audit(&db, workspace.id.0, user.id.0, "comment", comment.id.0).await;
+    assert_resource_deleted_audit(
+        &db,
+        workspace.id.0,
+        user.id.0,
+        "attachment",
+        comment_attachment_id(&db, comment.id).await,
+    )
+    .await;
     assert_eq!(typed_reference_count(&db).await, 0);
     assert_eq!(document_link_count(&db).await, 0);
 
-    PgAttachmentLifecycle::finish_purge_digest(db.conn(), &store, &digest)
-        .await
-        .expect("durable retry succeeds");
     assert!(
-        !store
-            .exists(&digest)
+        service
+            .remove(&ctx, CommentOwner::Task(parent.id), comment.id, false)
             .await
-            .expect("object removed by retry")
+            .is_err()
     );
-    assert!(!digest_has_cleanup_intent(&db, &digest).await);
+    assert_eq!(
+        resource_deleted_audit_count(&db, "comment", comment.id.0).await,
+        1
+    );
 
     std::fs::remove_dir_all(store_root).expect("remove attachment store");
     db.teardown().await;
@@ -1033,6 +1071,96 @@ async fn digest_has_cleanup_intent(db: &support::TestDb, digest: &str) -> bool {
         .expect("cleanup intent row")
         .try_get("", "exists")
         .expect("cleanup intent state")
+}
+
+async fn attachment_is_tombstoned(
+    db: &support::TestDb,
+    comment_id: atlas_domain::CommentId,
+) -> bool {
+    db.conn()
+        .query_one_raw(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT count(*) = 1 AND bool_and(deleted_at IS NOT NULL) AS deleted \
+             FROM attachments WHERE comment_id = $1",
+            [comment_id.0.into()],
+        ))
+        .await
+        .expect("load attachment tombstones")
+        .expect("attachment tombstone row")
+        .try_get("", "deleted")
+        .expect("attachment tombstone state")
+}
+
+async fn comment_attachment_id(
+    db: &support::TestDb,
+    comment_id: atlas_domain::CommentId,
+) -> uuid::Uuid {
+    db.conn()
+        .query_one_raw(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT id FROM attachments WHERE comment_id = $1",
+            [comment_id.0.into()],
+        ))
+        .await
+        .expect("load comment attachment")
+        .expect("comment attachment row")
+        .try_get("", "id")
+        .expect("comment attachment id")
+}
+
+async fn resource_deleted_audit_count(
+    db: &support::TestDb,
+    target_type: &str,
+    target_id: uuid::Uuid,
+) -> i64 {
+    db.conn()
+        .query_one_raw(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT count(*) AS count FROM security_audit_log \
+             WHERE action = 'resource.deleted' AND target_type = $1 AND target_id = $2",
+            [target_type.into(), target_id.into()],
+        ))
+        .await
+        .expect("count lifecycle audit rows")
+        .expect("lifecycle audit count row")
+        .try_get("", "count")
+        .expect("lifecycle audit count")
+}
+
+async fn assert_resource_deleted_audit(
+    db: &support::TestDb,
+    workspace_id: uuid::Uuid,
+    actor_user_id: uuid::Uuid,
+    target_type: &str,
+    target_id: uuid::Uuid,
+) {
+    let row = db
+        .conn()
+        .query_one_raw(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT workspace_id, actor_user_id, metadata FROM security_audit_log \
+             WHERE action = 'resource.deleted' AND target_type = $1 AND target_id = $2",
+            [target_type.into(), target_id.into()],
+        ))
+        .await
+        .expect("load lifecycle audit row")
+        .expect("one lifecycle audit row");
+
+    assert_eq!(
+        row.try_get::<Option<uuid::Uuid>>("", "workspace_id")
+            .expect("audit workspace"),
+        Some(workspace_id)
+    );
+    assert_eq!(
+        row.try_get::<Option<uuid::Uuid>>("", "actor_user_id")
+            .expect("audit actor"),
+        Some(actor_user_id)
+    );
+    assert_eq!(
+        row.try_get::<serde_json::Value>("", "metadata")
+            .expect("audit metadata"),
+        serde_json::json!({ "kind": target_type, "outcome": "deleted" })
+    );
 }
 
 #[derive(Clone)]
