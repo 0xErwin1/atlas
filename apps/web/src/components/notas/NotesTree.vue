@@ -57,6 +57,8 @@ const selection = useTreeSelection();
 const uiState = useUiStateStore();
 
 const rootEl = ref<HTMLElement | null>(null);
+const treeDepthStep = 20;
+const rootPaddingLeft = `${8 + treeDepthStep}px`;
 
 // Navigating to a document (e.g. via a wikilink) reveals it in the tree: expand
 // every ancestor folder, then scroll the active row into view.
@@ -331,8 +333,10 @@ defineExpose({
       <template v-for="doc in tree.docs" :key="doc.id">
         <div
           v-if="editActive?.kind === 'rename-doc' && editActive.slug === doc.slug"
-          style="display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px 20px;"
+          class="notes-inline-edit"
+          :style="{ padding: '3px 8px', paddingLeft: rootPaddingLeft }"
         >
+          <span class="notes-inline-spacer" aria-hidden="true" style="width: 12px; flex-shrink: 0;" />
           <Icon name="file" :size="13" style="color: var(--c-muted); flex-shrink: 0;" />
           <input
             ref="inputRef"
@@ -357,6 +361,8 @@ defineExpose({
           <Row
             :label="doc.title"
             icon="file"
+            :depth="1"
+            :depth-step="treeDepthStep"
             :active="activeSlug !== null && doc.slug === activeSlug"
             :disabled="doc.slug === null"
             :menu="doc.slug !== null"
@@ -370,8 +376,10 @@ defineExpose({
       <template v-for="board in tree.boards" :key="board.id">
         <div
           v-if="editActive?.kind === 'rename-board' && editActive.boardId === board.id"
-          style="display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px 20px;"
+          class="notes-inline-edit"
+          :style="{ padding: '3px 8px', paddingLeft: rootPaddingLeft }"
         >
+          <span class="notes-inline-spacer" aria-hidden="true" style="width: 12px; flex-shrink: 0;" />
           <Icon name="columns-3" :size="13" style="color: var(--c-muted); flex-shrink: 0;" />
           <input
             ref="inputRef"
@@ -396,6 +404,8 @@ defineExpose({
           <Row
             :label="board.name"
             icon="columns-3"
+            :depth="1"
+            :depth-step="treeDepthStep"
             :active="activeBoardId !== null && board.id === activeBoardId"
             :right="String(board.taskCount)"
             menu
@@ -409,8 +419,10 @@ defineExpose({
 
     <div
       v-if="editActive?.kind === 'new-doc' || editActive?.kind === 'new-folder' || editActive?.kind === 'new-board'"
-      style="display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px 20px;"
+      class="notes-inline-edit"
+      :style="{ padding: '3px 8px', paddingLeft: rootPaddingLeft }"
     >
+      <span class="notes-inline-spacer" aria-hidden="true" style="width: 12px; flex-shrink: 0;" />
       <Icon
         :name="editActive.kind === 'new-doc' ? 'file' : editActive.kind === 'new-board' ? 'columns-3' : 'folder'"
         :size="13"

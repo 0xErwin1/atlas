@@ -193,6 +193,13 @@ describe('NotesSpace catalog', () => {
     }
   });
 
+  it('keeps the project row at the shared root padding', () => {
+    const wrapper = mountSpace();
+
+    expect(wrapper.get('.atl-row').attributes('style')).toContain('padding-left: 8px');
+    wrapper.unmount();
+  });
+
   it.each([403, 404])('retracts cached catalog state before showing a known denial (%i)', async (status) => {
     const store = new MemoryCacheStore();
     seedCatalog(store, 'sandbox', catalog('Cached folder', 'Cached document'));

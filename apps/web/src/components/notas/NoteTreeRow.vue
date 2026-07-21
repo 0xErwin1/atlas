@@ -272,16 +272,20 @@ function openBoardMenu(event: MouseEvent, boardId: string, name: string): void {
 }
 
 const isRenamingFolder = computed(() => editActive.value?.kind === 'rename-folder');
-const inlinePaddingLeft = computed(() => `${8 + (props.depth + 1) * 14}px`);
+const treeDepthStep = 20;
+const folderPaddingLeft = computed(() => `${8 + (props.depth + 1) * treeDepthStep}px`);
+const inlinePaddingLeft = computed(() => `${8 + (props.depth + 2) * treeDepthStep}px`);
 </script>
 
 <template>
   <div>
     <div
       v-if="isRenamingFolder"
+      class="note-inline-edit"
       style="display: flex; align-items: center; gap: 6px;"
-      :style="{ paddingLeft: `${8 + depth * 14}px`, paddingRight: '8px' }"
+      :style="{ paddingLeft: folderPaddingLeft, paddingRight: '8px' }"
     >
+      <span class="note-inline-spacer" aria-hidden="true" style="width: 12px; flex-shrink: 0;" />
       <Icon name="folder" :size="13" style="color: var(--c-muted); flex-shrink: 0;" />
       <input
         ref="inputRef"
@@ -311,13 +315,11 @@ const inlinePaddingLeft = computed(() => `${8 + (props.depth + 1) * 14}px`);
       <Row
         :label="folder.name"
         :icon="expanded ? 'folder-open' : 'folder'"
-        :depth="depth"
+        :depth="depth + 1"
+        :depth-step="treeDepthStep"
         chevron
         :open="expanded"
         menu
-        menu-icon="plus"
-        menu-label="Add page or folder"
-        menu-always-visible
         @click="onFolderClick"
         @menu="openFolderMenu"
         @contextmenu.prevent.stop="openFolderMenu"
@@ -351,9 +353,11 @@ const inlinePaddingLeft = computed(() => `${8 + (props.depth + 1) * 14}px`);
       <template v-for="doc in folder.docs" :key="doc.id">
         <div
           v-if="editActive?.kind === 'rename-doc' && editActive.slug === doc.slug"
+          class="note-inline-edit"
           style="display: flex; align-items: center; gap: 6px;"
           :style="{ paddingLeft: inlinePaddingLeft, paddingRight: '8px' }"
         >
+          <span class="note-inline-spacer" aria-hidden="true" style="width: 12px; flex-shrink: 0;" />
           <Icon name="file" :size="13" style="color: var(--c-muted); flex-shrink: 0;" />
           <input
             ref="inputRef"
@@ -379,7 +383,8 @@ const inlinePaddingLeft = computed(() => `${8 + (props.depth + 1) * 14}px`);
           <Row
             :label="doc.title"
             icon="file"
-            :depth="depth + 1"
+            :depth="depth + 2"
+            :depth-step="treeDepthStep"
             :active="activeSlug !== null && doc.slug === activeSlug"
             :disabled="doc.slug === null"
             :menu="doc.slug !== null"
@@ -393,9 +398,11 @@ const inlinePaddingLeft = computed(() => `${8 + (props.depth + 1) * 14}px`);
       <template v-for="board in folder.boards" :key="board.id">
         <div
           v-if="editActive?.kind === 'rename-board' && editActive.boardId === board.id"
+          class="note-inline-edit"
           style="display: flex; align-items: center; gap: 6px;"
           :style="{ paddingLeft: inlinePaddingLeft, paddingRight: '8px' }"
         >
+          <span class="note-inline-spacer" aria-hidden="true" style="width: 12px; flex-shrink: 0;" />
           <Icon name="columns-3" :size="13" style="color: var(--c-muted); flex-shrink: 0;" />
           <input
             ref="inputRef"
@@ -421,7 +428,8 @@ const inlinePaddingLeft = computed(() => `${8 + (props.depth + 1) * 14}px`);
           <Row
             :label="board.name"
             icon="columns-3"
-            :depth="depth + 1"
+            :depth="depth + 2"
+            :depth-step="treeDepthStep"
             :active="activeBoardId !== null && board.id === activeBoardId"
             :right="String(board.taskCount)"
             menu
@@ -434,9 +442,11 @@ const inlinePaddingLeft = computed(() => `${8 + (props.depth + 1) * 14}px`);
 
       <div
         v-if="editActive?.kind === 'new-doc' || editActive?.kind === 'new-folder' || editActive?.kind === 'new-board'"
+        class="note-inline-edit"
         style="display: flex; align-items: center; gap: 6px;"
         :style="{ paddingLeft: inlinePaddingLeft, paddingRight: '8px' }"
       >
+        <span class="note-inline-spacer" aria-hidden="true" style="width: 12px; flex-shrink: 0;" />
         <Icon
           :name="editActive.kind === 'new-doc' ? 'file' : editActive.kind === 'new-board' ? 'columns-3' : 'folder'"
           :size="13"

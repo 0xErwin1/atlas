@@ -103,6 +103,63 @@ describe('NotesTree', () => {
     expect(wrapper.get('[role="treeitem"][aria-label="Board: Roadmap"]').attributes('aria-level')).toBe('1');
   });
 
+  it('keeps logical hierarchy while giving every project child a 20px visual step', async () => {
+    const wrapper = mount(NotesTree, {
+      props: {
+        projectName: 'Atlas',
+        folders: [
+          { id: 'f1', name: 'Root', parent_folder_id: null },
+          { id: 'f2', name: 'Nested', parent_folder_id: 'f1' },
+          { id: 'f3', name: 'Deep', parent_folder_id: 'f2' },
+          { id: 'orphan', name: 'Orphan', parent_folder_id: 'missing' },
+        ],
+        docs: [
+          { id: 'd1', title: 'Root page', slug: 'root-page', folder_id: null },
+          { id: 'd2', title: 'Nested page', slug: 'nested-page', folder_id: 'f1' },
+        ],
+        boards: [
+          { id: 'b1', name: 'Root board', folder_id: null, task_count: 1 },
+          { id: 'b2', name: 'Nested board', folder_id: 'f1', task_count: 2 },
+        ],
+        activeSlug: null,
+      },
+    });
+
+    const rowStyle = (label: string) =>
+      wrapper.get(`[role="treeitem"][aria-label="${label}"] .atl-row`).attributes('style');
+
+    expect(rowStyle('Folder: Root')).toContain('padding-left: 28px');
+    await wrapper.get('[role="treeitem"][aria-label="Folder: Root"] .atl-row').trigger('click');
+    expect(rowStyle('Folder: Nested')).toContain('padding-left: 48px');
+    await wrapper.get('[role="treeitem"][aria-label="Folder: Nested"] .atl-row').trigger('click');
+    expect(rowStyle('Folder: Deep')).toContain('padding-left: 68px');
+    expect(rowStyle('Folder: Orphan')).toContain('padding-left: 28px');
+    expect(rowStyle('Page: Root page')).toContain('padding-left: 28px');
+    expect(rowStyle('Board: Root board')).toContain('padding-left: 28px');
+    expect(rowStyle('Page: Nested page')).toContain('padding-left: 48px');
+    expect(rowStyle('Board: Nested board')).toContain('padding-left: 48px');
+    expect(wrapper.get('[role="treeitem"][aria-label="Folder: Root"]').attributes('aria-level')).toBe('1');
+    expect(wrapper.get('[role="treeitem"][aria-label="Folder: Nested"]').attributes('aria-level')).toBe('2');
+    expect(wrapper.get('[role="treeitem"][aria-label="Folder: Deep"]').attributes('aria-level')).toBe('3');
+    expect(wrapper.get('[role="treeitem"][aria-label="Folder: Orphan"]').attributes('aria-level')).toBe('1');
+  });
+
+  it('aligns root inline creation with root display rows', async () => {
+    const wrapper = mount(NotesTree, {
+      props: { projectName: 'Atlas', folders: [], docs: [], boards: [], activeSlug: null },
+    });
+
+    await wrapper.get('button[aria-label="New page or folder"]').trigger('click');
+    const createPage = [...document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) =>
+      item.textContent?.includes('New page'),
+    );
+    await createPage?.click();
+
+    expect((wrapper.get('.notes-inline-edit').element as HTMLElement).style.paddingLeft).toBe('28px');
+    expect(wrapper.get('.notes-inline-spacer').attributes('style')).toContain('width: 12px');
+    wrapper.unmount();
+  });
+
   it('writes a board drag payload so a board can be dropped into a folder', async () => {
     const wrapper = mount(NotesTree, {
       props: {

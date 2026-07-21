@@ -52,20 +52,40 @@ function dropTargetOf(wrapper: ReturnType<typeof mountRow>) {
 }
 
 describe('NoteTreeRow drag-and-drop', () => {
-  it('opens the create menu from the folder add trigger', async () => {
+  it('reveals the complete folder menu through the overflow trigger on keyboard focus', async () => {
     const wrapper = mountRow();
-    const folderTrigger = wrapper.get('button[aria-label="Add page or folder"]');
+    const folderTrigger = wrapper.get('button[aria-label="More actions"]');
 
-    expect(folderTrigger.find('.lucide-plus').exists()).toBe(true);
-    await wrapper.get('.atl-row').trigger('click');
-    expect(wrapper.get('button[aria-label="More actions"]')).toBeTruthy();
+    expect(folderTrigger.find('.lucide-plus').exists()).toBe(false);
+    expect(folderTrigger.classes()).not.toContain('always-visible');
 
+    await folderTrigger.trigger('focus');
+    expect(getComputedStyle(folderTrigger.element).opacity).toBe('1');
     await folderTrigger.trigger('click');
 
     const menu = document.body.querySelector('[role="menu"]');
     expect(menu?.textContent).toContain('New page');
+    expect(menu?.textContent).toContain('New board');
     expect(menu?.textContent).toContain('New folder');
+    expect(menu?.textContent).toContain('Rename');
+    expect(menu?.textContent).toContain('Move to…');
+    expect(menu?.textContent).toContain('Copy to…');
+    expect(menu?.textContent).toContain('Delete folder');
 
+    wrapper.unmount();
+  });
+
+  it('aligns a folder rename input with its visual row depth', async () => {
+    const wrapper = mountRow();
+
+    await wrapper.get('button[aria-label="More actions"]').trigger('click');
+    const rename = [...document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) =>
+      item.textContent?.includes('Rename'),
+    );
+    await rename?.click();
+
+    expect(wrapper.get('.note-inline-edit').attributes('style')).toContain('padding-left: 28px');
+    expect(wrapper.get('.note-inline-spacer').attributes('style')).toContain('width: 12px');
     wrapper.unmount();
   });
 

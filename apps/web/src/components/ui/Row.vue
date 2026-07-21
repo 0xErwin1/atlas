@@ -7,6 +7,7 @@ const props = withDefaults(
     label: string;
     icon?: string;
     depth?: number;
+    depthStep?: number;
     active?: boolean;
     chevron?: boolean;
     open?: boolean;
@@ -26,6 +27,7 @@ const props = withDefaults(
   {
     icon: '',
     depth: 0,
+    depthStep: 14,
     active: false,
     chevron: false,
     open: false,
@@ -47,7 +49,7 @@ defineEmits<{
   menu: [event: MouseEvent];
 }>();
 
-const paddingLeft = computed(() => `${8 + props.depth * 14}px`);
+const paddingLeft = computed(() => `${8 + props.depth * props.depthStep}px`);
 
 const labelColor = computed(() => (props.muted || props.pending ? 'var(--c-muted)' : 'var(--c-foreground)'));
 
@@ -163,6 +165,10 @@ const iconColor = computed(() => props.iconColor ?? (props.active ? 'var(--c-pri
 }
 
 .atl-row-wrap:hover .atl-row-kebab {
+  opacity: 1;
+}
+
+.atl-row-wrap:focus-within .atl-row-kebab {
   opacity: 1;
 }
 
