@@ -24,6 +24,7 @@ export function useWorkspaceSwitch() {
     const name = typeof route.name === 'string' ? route.name : '';
     if (TASK_ROUTES.has(name)) return 'tasks';
     if (name === 'search') return 'search';
+    if (name === 'settings' && typeof route.params.section === 'string') return 'settings';
     return 'notes';
   }
 
@@ -37,7 +38,12 @@ export function useWorkspaceSwitch() {
     if (slug === workspace.activeWorkspaceSlug) return;
 
     const restored = lastViewed.forWorkspace(slug);
-    const target = restored ?? { name: sectionAfterSwitch() };
+    const section = sectionAfterSwitch();
+    const target =
+      restored ??
+      (section === 'settings' && typeof route.params.section === 'string'
+        ? { name: 'settings', params: { section: route.params.section } }
+        : { name: section });
 
     const token = workspace.beginSwitch();
     workspace.setActiveWorkspace(null);

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import AboutPanel from '@/components/settings/AboutPanel.vue';
 import AccountPanel from '@/components/settings/AccountPanel.vue';
@@ -47,12 +47,37 @@ export type SettingsSection =
   | 'app';
 
 const DEFAULT_SECTION: SettingsSection = 'account';
+const SETTINGS_SECTIONS = new Set<SettingsSection>([
+  'account',
+  'keys',
+  'general',
+  'statuses',
+  'default-statuses',
+  'tags',
+  'projects',
+  'members',
+  'groups',
+  'activity',
+  'audit',
+  'users',
+  'workspaces',
+  'webhooks',
+  'platform-audit',
+  'about',
+  'app',
+]);
+const MEMBERSHIP_GATED_SECTIONS = new Set<SettingsSection>(['groups', 'audit']);
 
 const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
 const wsStore = useWorkspaceStore();
 const transport = getPlatformTransport();
+const readyWorkspaceSlug = ref(
+  wsStore.activeWorkspaceSlug !== null && wsStore.members.length > 0 ? wsStore.activeWorkspaceSlug : null,
+);
+let membershipRequestGeneration = 0;
+let isFirstMembershipCheck = true;
 
 interface NavEntry {
   section: SettingsSection;
@@ -152,10 +177,18 @@ const rawSection = computed(() => {
   return typeof value === 'string' ? value : '';
 });
 
+const isWorkspaceReady = computed(
+  () => readyWorkspaceSlug.value !== null && readyWorkspaceSlug.value === wsStore.activeWorkspaceSlug,
+);
+
 // Resolve the URL section to a section the current user is allowed to see.
 // Unknown, missing, or root-only-for-a-non-root section -> default (account).
 const activeSection = computed<SettingsSection>(() => {
   const candidate = rawSection.value as SettingsSection;
+
+  if (!SETTINGS_SECTIONS.has(candidate)) return DEFAULT_SECTION;
+  if (MEMBERSHIP_GATED_SECTIONS.has(candidate) && !isWorkspaceReady.value) return candidate;
+
   return visibleSections.value.has(candidate) ? candidate : DEFAULT_SECTION;
 });
 
@@ -163,13 +196,24 @@ function selectSection(section: SettingsSection): void {
   router.push({ name: 'settings', params: { section } });
 }
 
-// The audit gate reads the caller's workspace role from the member list; load it
-// once so the Security log entry is decided correctly even when no other view
-// has populated members yet. A global admin is already covered by isAdmin.
-onMounted(() => {
-  const ws = wsStore.activeWorkspaceSlug;
-  if (ws !== null && wsStore.members.length === 0) void wsStore.loadMembers(ws);
-});
+watch(
+  () => wsStore.activeWorkspaceSlug,
+  async (workspaceSlug) => {
+    const preserveInitialReadyState = isFirstMembershipCheck && wsStore.members.length > 0;
+    isFirstMembershipCheck = false;
+    if (preserveInitialReadyState) return;
+
+    const requestGeneration = ++membershipRequestGeneration;
+    readyWorkspaceSlug.value = null;
+    if (workspaceSlug === null) return;
+
+    await wsStore.loadMembers(workspaceSlug);
+    if (requestGeneration === membershipRequestGeneration && wsStore.activeWorkspaceSlug === workspaceSlug) {
+      readyWorkspaceSlug.value = workspaceSlug;
+    }
+  },
+  { immediate: true },
+);
 
 // Keep the URL honest: a missing or unresolved section is normalised to the
 // section actually rendered, so /settings and /settings/<unknown> land on
@@ -215,19 +259,19 @@ watch(
     <div class="atl-settings-content">
       <AccountPanel v-if="activeSection === 'account'" />
       <ApiKeysPanel v-else-if="activeSection === 'keys'" />
-      <WorkspaceGeneralPanel v-else-if="activeSection === 'general'" />
-      <StatusesPanel v-else-if="activeSection === 'statuses'" />
-      <StatusTemplatesPanel v-else-if="activeSection === 'default-statuses'" />
-      <TagsPanel v-else-if="activeSection === 'tags'" />
-      <ProjectsPanel v-else-if="activeSection === 'projects'" />
-      <MembersPanel v-else-if="activeSection === 'members'" />
-      <GroupsPanel v-else-if="activeSection === 'groups'" />
-      <ActivityPanel v-else-if="activeSection === 'activity'" />
-      <WorkspaceAuditPanel v-else-if="activeSection === 'audit'" />
+      <WorkspaceGeneralPanel v-else-if="isWorkspaceReady && activeSection === 'general'" />
+      <StatusesPanel v-else-if="isWorkspaceReady && activeSection === 'statuses'" />
+      <StatusTemplatesPanel v-else-if="isWorkspaceReady && activeSection === 'default-statuses'" />
+      <TagsPanel v-else-if="isWorkspaceReady && activeSection === 'tags'" />
+      <ProjectsPanel v-else-if="isWorkspaceReady && activeSection === 'projects'" />
+      <MembersPanel v-else-if="isWorkspaceReady && activeSection === 'members'" />
+      <GroupsPanel v-else-if="isWorkspaceReady && activeSection === 'groups'" />
+      <ActivityPanel v-else-if="isWorkspaceReady && activeSection === 'activity'" />
+      <WorkspaceAuditPanel v-else-if="isWorkspaceReady && activeSection === 'audit'" />
       <UsersPanel v-else-if="activeSection === 'users'" />
       <AdminWorkspacesPanel v-else-if="activeSection === 'workspaces'" />
       <PlatformAuditPanel v-else-if="activeSection === 'platform-audit'" />
-      <WebhooksPanel v-else-if="activeSection === 'webhooks'" />
+      <WebhooksPanel v-else-if="isWorkspaceReady && activeSection === 'webhooks'" />
       <AboutPanel v-else-if="activeSection === 'about'" />
       <AppSettingsPanel v-else-if="activeSection === 'app'" />
     </div>

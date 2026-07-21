@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { isNavigationFailure, NavigationFailureType, routeState, push } = vi.hoisted(() => ({
   isNavigationFailure: vi.fn((_result: unknown, _type?: number) => false),
   NavigationFailureType: { redirected: 2, aborted: 4, cancelled: 8, duplicated: 16 },
-  routeState: { name: 'notes' as string },
+  routeState: { name: 'notes' as string, params: {} as Record<string, string> },
   push: vi.fn(),
 }));
 
@@ -54,6 +54,18 @@ describe('useWorkspaceSwitch', () => {
     await switchTo('personal');
 
     expect(push).toHaveBeenCalledWith({ name: 'search' });
+  });
+
+  it('preserves the current Settings section when the destination has no history', async () => {
+    routeState.name = 'settings';
+    routeState.params = { section: 'audit' };
+    const workspace = useWorkspaceStore();
+    workspace.setActiveWorkspace('atlas');
+
+    const { switchTo } = useWorkspaceSwitch();
+    await switchTo('personal');
+
+    expect(push).toHaveBeenCalledWith({ name: 'settings', params: { section: 'audit' } });
   });
 
   it('is a no-op when switching to the already-active workspace', async () => {

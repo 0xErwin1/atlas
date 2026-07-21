@@ -1,6 +1,7 @@
 import { mount } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { nextTick } from 'vue';
 
 const { isDesktop, push, replace, routeParams } = vi.hoisted(() => ({
   isDesktop: { value: false },
@@ -31,6 +32,7 @@ const stubs = {
   UsersPanel: { template: '<div data-stub="users" />' },
   AboutPanel: { template: '<div data-stub="about" />' },
   AppSettingsPanel: { template: '<div data-stub="app" />' },
+  WorkspaceAuditPanel: { template: '<div data-stub="audit" />' },
 };
 
 const SELF_ID = '00000000-0000-0000-0000-000000000001';
@@ -162,6 +164,104 @@ describe('SettingsView routing', () => {
 
     expect(wrapper.find('[data-settings-row="audit"]').exists()).toBe(false);
     expect(replace).toHaveBeenCalledWith({ name: 'settings', params: { section: 'account' } });
+  });
+
+  it('keeps a membership-gated section in the URL and hides its panel until the destination membership settles', async () => {
+    const workspace = useWorkspaceStore();
+    seedMembership('owner');
+    let settleDestination: (() => void) | undefined;
+    vi.spyOn(workspace, 'loadMembers').mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          settleDestination = () => {
+            workspace.members = [
+              { id: SELF_ID, display: 'u', principal_type: 'user', role: 'owner' } as PrincipalDto,
+            ];
+            resolve();
+          };
+        }),
+    );
+
+    const wrapper = mountView('audit');
+    expect(wrapper.find('[data-stub="audit"]').exists()).toBe(true);
+
+    workspace.setActiveWorkspace(null);
+    await nextTick();
+    expect(wrapper.find('[data-stub="audit"]').exists()).toBe(false);
+    expect(replace).not.toHaveBeenCalled();
+
+    workspace.setActiveWorkspace('bravo');
+    await nextTick();
+    expect(workspace.loadMembers).toHaveBeenCalledWith('bravo');
+    expect(wrapper.find('[data-stub="audit"]').exists()).toBe(false);
+    expect(replace).not.toHaveBeenCalled();
+
+    settleDestination?.();
+    await vi.waitFor(() => expect(wrapper.find('[data-stub="audit"]').exists()).toBe(true));
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it('applies the existing fallback only after the latest destination membership settles', async () => {
+    const workspace = useWorkspaceStore();
+    seedMembership('owner');
+    let settleDestination: (() => void) | undefined;
+    vi.spyOn(workspace, 'loadMembers').mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          settleDestination = () => resolve();
+        }),
+    );
+
+    const wrapper = mountView('audit');
+    workspace.setActiveWorkspace(null);
+    await nextTick();
+    workspace.setActiveWorkspace('bravo');
+    await nextTick();
+
+    expect(wrapper.find('[data-stub="account"]').exists()).toBe(false);
+    expect(replace).not.toHaveBeenCalled();
+
+    settleDestination?.();
+    await vi.waitFor(() =>
+      expect(replace).toHaveBeenCalledWith({ name: 'settings', params: { section: 'account' } }),
+    );
+    expect(wrapper.find('[data-stub="account"]').exists()).toBe(true);
+  });
+
+  it('ignores an older membership completion after a newer destination begins loading', async () => {
+    const workspace = useWorkspaceStore();
+    seedMembership('owner');
+    const settleByWorkspace = new Map<string, () => void>();
+    vi.spyOn(workspace, 'loadMembers').mockImplementation(
+      (workspaceSlug) =>
+        new Promise<void>((resolve) => {
+          settleByWorkspace.set(workspaceSlug, () => {
+            if (workspaceSlug === 'charlie') {
+              workspace.members = [
+                { id: SELF_ID, display: 'u', principal_type: 'user', role: 'owner' } as PrincipalDto,
+              ];
+            }
+            resolve();
+          });
+        }),
+    );
+
+    const wrapper = mountView('audit');
+    workspace.setActiveWorkspace(null);
+    await nextTick();
+    workspace.setActiveWorkspace('bravo');
+    await nextTick();
+    workspace.setActiveWorkspace('charlie');
+    await nextTick();
+
+    settleByWorkspace.get('bravo')?.();
+    await nextTick();
+    expect(wrapper.find('[data-stub="audit"]').exists()).toBe(false);
+    expect(replace).not.toHaveBeenCalled();
+
+    settleByWorkspace.get('charlie')?.();
+    await vi.waitFor(() => expect(wrapper.find('[data-stub="audit"]').exists()).toBe(true));
+    expect(replace).not.toHaveBeenCalled();
   });
 
   it('hides the app settings section on the web build', () => {
