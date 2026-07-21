@@ -3,10 +3,13 @@ import { computed, onMounted, ref, watch } from 'vue';
 import PanelHeader from '@/components/settings/PanelHeader.vue';
 import RowAction from '@/components/settings/RowAction.vue';
 import Btn from '@/components/ui/Btn.vue';
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import FormField from '@/components/ui/FormField.vue';
 import Icon from '@/components/ui/Icon.vue';
+import PromptDialog from '@/components/ui/PromptDialog.vue';
+import { useLoadingMap } from '@/composables/useLoadingMap';
 import { useUiStore } from '@/stores/ui';
-import { useWorkspaceStore } from '@/stores/workspace';
+import { type ProjectSummary, useWorkspaceStore } from '@/stores/workspace';
 
 /**
  * Workspace > Projects. Lists every project in the active workspace and lets
@@ -30,6 +33,12 @@ const draftPrefix = ref('');
 const nameError = ref<string | null>(null);
 const prefixError = ref<string | null>(null);
 const saving = ref(false);
+
+const createOpen = ref(false);
+const createError = ref('');
+const creating = ref(false);
+const deleteTarget = ref<ProjectSummary | null>(null);
+const rowBusy = useLoadingMap();
 
 watch(ws, (slug) => {
   if (slug !== null) void workspace.loadProjects(slug);
@@ -116,14 +125,72 @@ async function saveEdit(slug: string): Promise<void> {
     ui.showBanner(workspace.error, 'error');
   }
 }
+
+function openCreate(): void {
+  createError.value = '';
+  createOpen.value = true;
+}
+
+function cancelCreate(): void {
+  createOpen.value = false;
+  createError.value = '';
+}
+
+async function submitCreate(name: string): Promise<void> {
+  const wsSlug = ws.value;
+  if (wsSlug === null) return;
+
+  const trimmed = name.trim();
+  if (trimmed === '') {
+    createError.value = 'Project name is required';
+    return;
+  }
+
+  creating.value = true;
+  const slug = await workspace.createProject(wsSlug, trimmed);
+  creating.value = false;
+
+  if (slug !== null) {
+    createOpen.value = false;
+    createError.value = '';
+    ui.showBanner('Project created', 'success');
+  } else {
+    createError.value = workspace.error ?? 'Failed to create project';
+  }
+}
+
+async function confirmDelete(): Promise<void> {
+  const wsSlug = ws.value;
+  const target = deleteTarget.value;
+  if (wsSlug === null || target === null) return;
+
+  deleteTarget.value = null;
+  rowBusy.set(target.slug, true);
+
+  const ok = await workspace.deleteProject(wsSlug, target.slug);
+  rowBusy.set(target.slug, false);
+
+  if (ok) {
+    ui.showBanner(`Project "${target.name}" deleted`, 'success');
+  } else if (workspace.error !== null) {
+    ui.showBanner(workspace.error, 'error');
+  }
+}
 </script>
 
 <template>
   <div>
     <PanelHeader
       title="Projects"
-      subtitle="Rename a project or change the prefix used when generating task IDs"
-    />
+      subtitle="Create a project, rename it, or change the prefix used when generating task IDs"
+    >
+      <template #actions>
+        <Btn variant="primary" :disabled="creating" @click="openCreate">
+          <Icon name="plus" :size="14" />
+          New project
+        </Btn>
+      </template>
+    </PanelHeader>
 
     <div v-if="workspace.projects.length === 0" class="atl-proj-empty">
       No projects in this workspace yet.
@@ -173,15 +240,49 @@ async function saveEdit(slug: string): Promise<void> {
             <span class="atl-proj-name">{{ project.name }}</span>
             <code class="atl-proj-prefix">{{ project.task_prefix }}</code>
           </div>
-          <RowAction
-            title="Edit project"
-            @click="startEdit(project.slug)"
-          >
-            <Icon name="pencil" :size="13" />
-          </RowAction>
+          <div class="atl-proj-actions">
+            <RowAction
+              title="Edit project"
+              :disabled="rowBusy.isLoading(project.slug)"
+              @click="startEdit(project.slug)"
+            >
+              <Icon name="pencil" :size="13" />
+            </RowAction>
+            <RowAction
+              title="Delete project"
+              tone="danger"
+              :disabled="rowBusy.isLoading(project.slug)"
+              @click="deleteTarget = project"
+            >
+              <Icon name="trash-2" :size="13" />
+            </RowAction>
+          </div>
         </template>
       </div>
     </div>
+
+    <PromptDialog
+      :open="createOpen"
+      title="New project"
+      placeholder="Project name"
+      confirm-label="Create"
+      :error="createError"
+      @confirm="submitCreate"
+      @cancel="cancelCreate"
+    />
+
+    <ConfirmDialog
+      :open="deleteTarget !== null"
+      tone="danger"
+      title="Delete project?"
+      message="The project and everything inside it — boards, folders, and documents — will be permanently deleted. This cannot be undone."
+      :detail="deleteTarget?.name"
+      detail-icon="folder"
+      confirm-label="Delete project"
+      confirm-icon="trash-2"
+      @confirm="confirmDelete"
+      @cancel="deleteTarget = null"
+    />
   </div>
 </template>
 
@@ -221,6 +322,13 @@ async function saveEdit(slug: string): Promise<void> {
   gap: 10px;
   flex: 1;
   min-width: 0;
+}
+
+.atl-proj-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
 }
 
 .atl-proj-name {

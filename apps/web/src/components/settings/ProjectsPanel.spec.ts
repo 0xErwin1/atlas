@@ -2,6 +2,7 @@ import { mount } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ProjectsPanel from '@/components/settings/ProjectsPanel.vue';
+import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 
 function setupStore() {
@@ -114,5 +115,141 @@ describe('ProjectsPanel — edit flow', () => {
 
     expect(update).not.toHaveBeenCalled();
     expect(vm.prefixError).not.toBeNull();
+  });
+});
+
+interface CreateVm {
+  createOpen: boolean;
+  createError: string;
+  submitCreate: (name: string) => Promise<void>;
+}
+
+interface DeleteVm {
+  deleteTarget: { slug: string; name: string } | null;
+  confirmDelete: () => Promise<void>;
+}
+
+describe('ProjectsPanel — create flow', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+  });
+
+  it('opens the create dialog from the New project button', async () => {
+    setupStore();
+
+    const wrapper = mount(ProjectsPanel);
+    await wrapper.vm.$nextTick();
+
+    expect((wrapper.vm as unknown as CreateVm).createOpen).toBe(false);
+
+    await wrapper.find('.atl-panel-head-actions button').trigger('click');
+
+    expect((wrapper.vm as unknown as CreateVm).createOpen).toBe(true);
+  });
+
+  it('calls createProject and closes the dialog on success', async () => {
+    const workspace = setupStore();
+    const create = vi.spyOn(workspace, 'createProject').mockResolvedValue('marketing');
+
+    const wrapper = mount(ProjectsPanel);
+    await wrapper.vm.$nextTick();
+
+    const vm = wrapper.vm as unknown as CreateVm;
+    await vm.submitCreate('Marketing');
+
+    expect(create).toHaveBeenCalledWith('acme', 'Marketing');
+    expect(vm.createOpen).toBe(false);
+  });
+
+  it('blocks an empty name without calling the store', async () => {
+    const workspace = setupStore();
+    const create = vi.spyOn(workspace, 'createProject').mockResolvedValue('x');
+
+    const wrapper = mount(ProjectsPanel);
+    await wrapper.vm.$nextTick();
+
+    const vm = wrapper.vm as unknown as CreateVm;
+    await vm.submitCreate('   ');
+
+    expect(create).not.toHaveBeenCalled();
+    expect(vm.createError).not.toBe('');
+  });
+
+  it('surfaces a store error in the dialog on failure', async () => {
+    const workspace = setupStore();
+    vi.spyOn(workspace, 'createProject').mockImplementation(async () => {
+      workspace.error = 'Prefix already in use';
+      return null;
+    });
+
+    const wrapper = mount(ProjectsPanel);
+    await wrapper.vm.$nextTick();
+
+    const vm = wrapper.vm as unknown as CreateVm;
+    vm.createOpen = true;
+    await vm.submitCreate('Marketing');
+
+    expect(vm.createError).toBe('Prefix already in use');
+    expect(vm.createOpen).toBe(true);
+  });
+});
+
+describe('ProjectsPanel — delete flow', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+  });
+
+  it('renders a delete action per project row', async () => {
+    setupStore();
+
+    const wrapper = mount(ProjectsPanel);
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.findAll('.atl-rowact--danger')).toHaveLength(2);
+  });
+
+  it('opens the confirm dialog for the targeted project', async () => {
+    setupStore();
+
+    const wrapper = mount(ProjectsPanel);
+    await wrapper.vm.$nextTick();
+
+    const firstDelete = wrapper.findAll('.atl-rowact--danger')[0];
+    await firstDelete?.trigger('click');
+
+    expect((wrapper.vm as unknown as DeleteVm).deleteTarget?.slug).toBe('atlas');
+  });
+
+  it('calls deleteProject after confirmation and clears the target', async () => {
+    const workspace = setupStore();
+    const del = vi.spyOn(workspace, 'deleteProject').mockResolvedValue(true);
+
+    const wrapper = mount(ProjectsPanel);
+    await wrapper.vm.$nextTick();
+
+    const vm = wrapper.vm as unknown as DeleteVm;
+    vm.deleteTarget = { slug: 'atlas', name: 'Atlas' };
+    await vm.confirmDelete();
+
+    expect(del).toHaveBeenCalledWith('acme', 'atlas');
+    expect(vm.deleteTarget).toBeNull();
+  });
+
+  it('surfaces a store error when the delete fails', async () => {
+    const workspace = setupStore();
+    vi.spyOn(workspace, 'deleteProject').mockImplementation(async () => {
+      workspace.error = 'Not permitted';
+      return false;
+    });
+    const banner = vi.spyOn(useUiStore(), 'showBanner');
+
+    const wrapper = mount(ProjectsPanel);
+    await wrapper.vm.$nextTick();
+
+    const vm = wrapper.vm as unknown as DeleteVm;
+    vm.deleteTarget = { slug: 'atlas', name: 'Atlas' };
+    await vm.confirmDelete();
+
+    expect(banner).toHaveBeenCalledWith('Not permitted', 'error');
   });
 });
