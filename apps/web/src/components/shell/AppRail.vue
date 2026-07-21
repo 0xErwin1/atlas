@@ -20,19 +20,18 @@ interface RailItem {
   name: string;
   icon: string;
   routeName: string;
-  // Route names that also light up this entry — the unified Docs entry owns both
+  // Route names that also light up this entry — the unified Acta entry owns both
   // the notes routes and every kept tasks route under one rail section.
   activeRoutes?: string[];
 }
 
 const items: RailItem[] = [
   {
-    name: 'Docs',
+    name: 'Acta',
     icon: 'files',
     routeName: 'notes',
     activeRoutes: ['notes', 'tasks', 'task-view', 'task-detail'],
   },
-  { name: 'Search', icon: 'search', routeName: 'search' },
 ];
 
 function isActive(item: RailItem) {

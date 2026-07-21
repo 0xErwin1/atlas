@@ -34,6 +34,9 @@ describe('NotesTree', () => {
     expect(wrapper.text()).toContain('Drafts');
     expect(wrapper.text()).toContain('PRD');
     expect(wrapper.text()).toContain('Root note');
+    expect(wrapper.get('[role="treeitem"][aria-label="Folder: Specs"]').attributes('aria-level')).toBe('1');
+    expect(wrapper.get('[role="treeitem"][aria-label="Folder: Drafts"]').attributes('aria-level')).toBe('2');
+    expect(wrapper.get('[role="treeitem"][aria-label="Page: PRD"]').attributes('aria-level')).toBe('2');
 
     const docButton = wrapper.findAll('button').find((b) => b.text().includes('Root note'));
     expect(docButton).toBeDefined();
@@ -82,6 +85,22 @@ describe('NotesTree', () => {
     await boardButton?.trigger('click');
 
     expect(wrapper.emitted('select-board')?.[0]).toEqual(['b1']);
+  });
+
+  it('exposes root pages and boards as distinct hierarchy items', () => {
+    const wrapper = mount(NotesTree, {
+      props: {
+        projectName: 'Atlas',
+        folders: [],
+        docs: [{ id: 'd1', title: 'Planning', slug: 'planning', folder_id: null }],
+        boards: [{ id: 'b1', name: 'Roadmap', folder_id: null, task_count: 23 }],
+        activeSlug: null,
+      },
+    });
+
+    expect(wrapper.get('[role="tree"]').attributes('aria-label')).toBe('Atlas hierarchy');
+    expect(wrapper.get('[role="treeitem"][aria-label="Page: Planning"]').attributes('aria-level')).toBe('1');
+    expect(wrapper.get('[role="treeitem"][aria-label="Board: Roadmap"]').attributes('aria-level')).toBe('1');
   });
 
   it('writes a board drag payload so a board can be dropped into a folder', async () => {

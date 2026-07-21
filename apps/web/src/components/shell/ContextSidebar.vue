@@ -35,10 +35,7 @@ import WorkspaceSwitcher from '@/components/shell/WorkspaceSwitcher.vue';
       </div>
     </div>
 
-    <div
-      class="flex-1 overflow-y-auto overflow-x-hidden"
-      style="padding-bottom: 4px;"
-    >
+    <div class="flex-1 min-h-0 overflow-hidden">
       <slot />
     </div>
 

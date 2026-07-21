@@ -40,11 +40,11 @@ describe('AppRail unified navigation', () => {
     seed();
   });
 
-  it('collapses Notes and Tasks into a single rail entry', () => {
+  it('labels the unified entry as Acta and keeps search out of the rail', () => {
     const wrapper = mount(AppRail);
 
-    expect(wrapper.find('[aria-label="Docs"]').exists()).toBe(true);
-    expect(wrapper.find('[aria-label="Search"]').exists()).toBe(true);
+    expect(wrapper.find('[aria-label="Acta"]').exists()).toBe(true);
+    expect(wrapper.find('[aria-label="Search"]').exists()).toBe(false);
     expect(wrapper.find('[aria-label="Notes"]').exists()).toBe(false);
     expect(wrapper.find('[aria-label="Tasks"]').exists()).toBe(false);
   });
@@ -52,7 +52,7 @@ describe('AppRail unified navigation', () => {
   it('navigates the unified entry to the notes route', async () => {
     const wrapper = mount(AppRail);
 
-    await wrapper.get('[aria-label="Docs"]').trigger('click');
+    await wrapper.get('[aria-label="Acta"]').trigger('click');
 
     expect(push).toHaveBeenCalledWith({ name: 'notes' });
   });
@@ -66,15 +66,6 @@ describe('AppRail unified navigation', () => {
     routeState.name = routeName;
     const wrapper = mount(AppRail);
 
-    expect(wrapper.get('[aria-label="Docs"]').attributes('aria-current')).toBe('page');
-    expect(wrapper.get('[aria-label="Search"]').attributes('aria-current')).toBeUndefined();
-  });
-
-  it('marks Search active on the search route', () => {
-    routeState.name = 'search';
-    const wrapper = mount(AppRail);
-
-    expect(wrapper.get('[aria-label="Search"]').attributes('aria-current')).toBe('page');
-    expect(wrapper.get('[aria-label="Docs"]').attributes('aria-current')).toBeUndefined();
+    expect(wrapper.get('[aria-label="Acta"]').attributes('aria-current')).toBe('page');
   });
 });

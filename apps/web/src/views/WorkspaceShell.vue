@@ -94,7 +94,7 @@ function openSearch(): void {
             </button>
           </div>
         </div>
-        <div class="flex-1 overflow-y-auto overflow-x-hidden">
+        <div class="flex-1 min-h-0 overflow-hidden">
           <NotesSidebar ref="sidebarRef" />
         </div>
       </div>

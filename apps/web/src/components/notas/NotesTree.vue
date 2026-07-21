@@ -278,6 +278,8 @@ defineExpose({
   <div
     ref="rootEl"
     class="notes-tree-root"
+    role="tree"
+    :aria-label="`${projectName} hierarchy`"
     :class="{ 'root-drop-target': rootDragOver }"
     @contextmenu.prevent="onContextmenu"
     @dragover.prevent="rootDragOver = true"
@@ -345,6 +347,9 @@ defineExpose({
         <div
           v-else
           class="tree-dnd"
+          role="treeitem"
+          :aria-label="`Page: ${doc.title}`"
+          aria-level="1"
           :class="{ selected: doc.slug !== null && selection.isSelected(docKey(doc.slug)) }"
           :draggable="doc.slug !== null"
           @dragstart.stop="doc.slug !== null && onDragStart({ type: 'doc', id: doc.slug }, $event)"
@@ -381,6 +386,9 @@ defineExpose({
         <div
           v-else
           class="tree-dnd"
+          role="treeitem"
+          :aria-label="`Board: ${board.name}`"
+          aria-level="1"
           :class="{ selected: selection.isSelected(boardKey(board.id)) }"
           draggable="true"
           @dragstart.stop="onDragStart({ type: 'board', id: board.id }, $event)"

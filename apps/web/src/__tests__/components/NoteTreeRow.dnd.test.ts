@@ -132,6 +132,24 @@ describe('NoteTreeRow drag-and-drop', () => {
     expect(JSON.parse(stored)).toEqual({ nodes: [{ type: 'folder', id: 'folder-1' }] });
   });
 
+  it('keeps the folder drag payload while exposing its hierarchy level', async () => {
+    const wrapper = mountRow();
+    const dropTarget = dropTargetOf(wrapper);
+    let stored = '';
+
+    await dropTarget.trigger('dragstart', {
+      dataTransfer: {
+        setData: (_type: string, val: string) => {
+          stored = val;
+        },
+        effectAllowed: '',
+      },
+    });
+
+    expect(wrapper.get('[role="treeitem"][aria-label="Folder: Specs"]').attributes('aria-level')).toBe('1');
+    expect(JSON.parse(stored)).toEqual({ nodes: [{ type: 'folder', id: 'folder-1' }] });
+  });
+
   it('renders a nested board row with its counter and emits select-board on click', async () => {
     const wrapper = mount(NoteTreeRow, {
       props: { folder: folderWithBoard(), depth: 0, activeSlug: null },

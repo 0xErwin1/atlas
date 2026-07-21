@@ -104,6 +104,20 @@ describe('NotesSidebar unified all-projects container', () => {
     wrapper.unmount();
   });
 
+  it('keeps views and creation outside the scrollable sidebar content', async () => {
+    setupProjects();
+    const wrapper = mount(NotesSidebar);
+    await flushPromises();
+
+    const content = wrapper.get('[role="region"][aria-label="Sidebar content"]');
+    const footer = wrapper.get('footer[aria-label="Sidebar actions"]');
+
+    expect(content.text()).toContain('Spaces');
+    expect(footer.text()).toContain('Views');
+    expect(footer.get('button[aria-label="New page or board"]').text()).toContain('New page or board');
+    wrapper.unmount();
+  });
+
   it('shows an empty message when the workspace has no projects', async () => {
     const workspace = useWorkspaceStore();
     workspace.setActiveWorkspace('atlas');

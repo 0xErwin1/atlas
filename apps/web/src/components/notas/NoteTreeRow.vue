@@ -298,6 +298,9 @@ const inlinePaddingLeft = computed(() => `${8 + (props.depth + 1) * 14}px`);
       v-else
       draggable="true"
       class="tree-dnd"
+      role="treeitem"
+      :aria-label="`Folder: ${folder.name}`"
+      :aria-level="depth + 1"
       :class="{ 'drop-target': dragOver, selected: selection.isSelected(folderKey(folder.id)) }"
       @dragstart.stop="onDragStart({ type: 'folder', id: folder.id }, $event)"
       @dragover.prevent="dragOver = true"
@@ -321,7 +324,7 @@ const inlinePaddingLeft = computed(() => `${8 + (props.depth + 1) * 14}px`);
       />
     </div>
 
-    <template v-if="expanded">
+    <div v-if="expanded" role="group">
       <NoteTreeRow
         v-for="child in folder.folders"
         :key="child.id"
@@ -366,6 +369,9 @@ const inlinePaddingLeft = computed(() => `${8 + (props.depth + 1) * 14}px`);
         <div
           v-else
           class="tree-dnd"
+          role="treeitem"
+          :aria-label="`Page: ${doc.title}`"
+          :aria-level="depth + 2"
           :class="{ selected: doc.slug !== null && selection.isSelected(docKey(doc.slug)) }"
           :draggable="doc.slug !== null"
           @dragstart.stop="doc.slug !== null && onDragStart({ type: 'doc', id: doc.slug }, $event)"
@@ -405,6 +411,9 @@ const inlinePaddingLeft = computed(() => `${8 + (props.depth + 1) * 14}px`);
         <div
           v-else
           class="tree-dnd"
+          role="treeitem"
+          :aria-label="`Board: ${board.name}`"
+          :aria-level="depth + 2"
           :class="{ selected: selection.isSelected(boardKey(board.id)) }"
           draggable="true"
           @dragstart.stop="onDragStart({ type: 'board', id: board.id }, $event)"
@@ -443,7 +452,7 @@ const inlinePaddingLeft = computed(() => `${8 + (props.depth + 1) * 14}px`);
           @blur="commitEdit"
         />
       </div>
-    </template>
+    </div>
 
     <ContextMenu
       :open="menuOpen"
