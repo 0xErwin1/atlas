@@ -32,6 +32,9 @@ use crate::persistence::entities::documents::{
     attachment, attachment_from, attachment_write_intent, attachment_write_intent_from, document,
     document_from, document_link, document_link_from, document_revision, revision_meta_from,
 };
+use crate::persistence::live_ancestors::{
+    folder_chain_is_live_sql, live_folder_chain, live_project, project_is_live_sql,
+};
 use crate::persistence::repos::comment_attachment_drafts::{
     lock_active_draft_for_upload, record_upload_or_replay_in,
 };
@@ -116,6 +119,8 @@ impl DocumentRepo for PgDocumentRepo {
         document::Entity::find_by_id(id.0)
             .filter(document::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(document::Column::DeletedAt.is_null())
+            .filter(live_project("documents.project_id"))
+            .filter(live_folder_chain("documents.folder_id"))
             .one(&self.conn)
             .await
             .map_err(db_err)?
@@ -210,6 +215,8 @@ impl DocumentRepo for PgDocumentRepo {
             FROM documents d
             WHERE d.workspace_id = $1
               AND d.deleted_at IS NULL
+              AND {project_live}
+              AND {folder_live}
               AND (
                     {membership_clause}
                     OR EXISTS (
@@ -270,6 +277,8 @@ impl DocumentRepo for PgDocumentRepo {
             ORDER BY d.id
             LIMIT {limit}
             "#,
+            project_live = project_is_live_sql("d.project_id"),
+            folder_live = folder_chain_is_live_sql("d.folder_id"),
         );
 
         let rows = Row::find_by_statement(sea_orm::Statement::from_sql_and_values(
@@ -316,6 +325,8 @@ impl DocumentRepo for PgDocumentRepo {
             .filter(document::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(document::Column::Slug.eq(slug))
             .filter(document::Column::DeletedAt.is_null())
+            .filter(live_project("documents.project_id"))
+            .filter(live_folder_chain("documents.folder_id"))
             .one(&self.conn)
             .await
             .map_err(db_err)?
@@ -333,6 +344,8 @@ impl DocumentRepo for PgDocumentRepo {
             .filter(document::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(document::Column::FolderId.eq(folder.0))
             .filter(document::Column::DeletedAt.is_null())
+            .filter(live_project("documents.project_id"))
+            .filter(live_folder_chain("documents.folder_id"))
             .all(&self.conn)
             .await
             .map_err(db_err)?

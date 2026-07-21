@@ -19,6 +19,7 @@ use crate::persistence::entities::workspace_core::{
     folder, folder_from, project, project_from, property_definition, property_definition_from,
     visibility_from_cols,
 };
+use crate::persistence::live_ancestors::{live_folder_chain, live_project};
 use crate::persistence::repos::PgOutboxRepo;
 
 pub use atlas_domain::ports::workspace_core::{FolderRepo, ProjectRepo, PropertyDefinitionRepo};
@@ -485,6 +486,8 @@ impl FolderRepo for PgFolderRepo {
         folder::Entity::find_by_id(id.0)
             .filter(folder::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(folder::Column::DeletedAt.is_null())
+            .filter(live_project("folders.project_id"))
+            .filter(live_folder_chain("folders.id"))
             .one(&self.conn)
             .await
             .map(|opt| opt.map(folder_from))
@@ -498,7 +501,9 @@ impl FolderRepo for PgFolderRepo {
     ) -> Result<Vec<Folder>, DomainError> {
         let mut q = folder::Entity::find()
             .filter(folder::Column::WorkspaceId.eq(ctx.workspace_id.0))
-            .filter(folder::Column::DeletedAt.is_null());
+            .filter(folder::Column::DeletedAt.is_null())
+            .filter(live_project("folders.project_id"))
+            .filter(live_folder_chain("folders.id"));
 
         q = match parent {
             Some(pid) => q.filter(folder::Column::ParentFolderId.eq(pid.0)),
@@ -515,6 +520,8 @@ impl FolderRepo for PgFolderRepo {
         folder::Entity::find()
             .filter(folder::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(folder::Column::DeletedAt.is_null())
+            .filter(live_project("folders.project_id"))
+            .filter(live_folder_chain("folders.id"))
             .all(&self.conn)
             .await
             .map(|rows| rows.into_iter().map(folder_from).collect())
@@ -531,7 +538,9 @@ impl FolderRepo for PgFolderRepo {
         let mut q = folder::Entity::find()
             .filter(folder::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(folder::Column::ProjectId.eq(project_id.0))
-            .filter(folder::Column::DeletedAt.is_null());
+            .filter(folder::Column::DeletedAt.is_null())
+            .filter(live_project("folders.project_id"))
+            .filter(live_folder_chain("folders.id"));
 
         if let Some(after) = after_id {
             q = q.filter(folder::Column::Id.gt(after.0));

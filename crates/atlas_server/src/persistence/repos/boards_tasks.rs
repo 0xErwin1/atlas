@@ -34,6 +34,9 @@ use crate::persistence::entities::boards_tasks::{
     task_checklist_item_from, task_from, task_reference, task_reference_from,
 };
 use crate::persistence::entities::status_templates::status_template;
+use crate::persistence::live_ancestors::{
+    board_chain_is_live_sql, live_board_chain, live_folder_chain, live_project,
+};
 use crate::persistence::repos::PgOutboxRepo;
 
 pub use atlas_domain::ports::boards_tasks::{
@@ -126,6 +129,8 @@ impl BoardRepo for PgBoardRepo {
         board::Entity::find_by_id(id.0)
             .filter(board::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(board::Column::DeletedAt.is_null())
+            .filter(live_project("boards.project_id"))
+            .filter(live_folder_chain("boards.folder_id"))
             .one(&self.conn)
             .await
             .map(|opt| opt.map(board_from))
@@ -141,6 +146,8 @@ impl BoardRepo for PgBoardRepo {
             .filter(board::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(board::Column::ProjectId.eq(project_id.0))
             .filter(board::Column::DeletedAt.is_null())
+            .filter(live_project("boards.project_id"))
+            .filter(live_folder_chain("boards.folder_id"))
             .all(&self.conn)
             .await
             .map(|rows| rows.into_iter().map(board_from).collect())
@@ -156,6 +163,8 @@ impl BoardRepo for PgBoardRepo {
             .filter(board::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(board::Column::FolderId.eq(folder_id.0))
             .filter(board::Column::DeletedAt.is_null())
+            .filter(live_project("boards.project_id"))
+            .filter(live_folder_chain("boards.folder_id"))
             .all(&self.conn)
             .await
             .map(|rows| rows.into_iter().map(board_from).collect())
@@ -196,10 +205,12 @@ impl BoardRepo for PgBoardRepo {
             "SELECT t.board_id AS board_id, count(*) AS task_count
              FROM tasks t
              WHERE t.workspace_id = $1
-               AND t.board_id IN ({placeholders})
-               AND t.parent_task_id IS NULL
-               AND t.deleted_at IS NULL
-             GROUP BY t.board_id"
+                AND t.board_id IN ({placeholders})
+                AND t.parent_task_id IS NULL
+                AND t.deleted_at IS NULL
+                AND {task_board_live}
+              GROUP BY t.board_id",
+            task_board_live = board_chain_is_live_sql("t.board_id"),
         );
 
         let rows = BoardTaskCountRow::find_by_statement(Statement::from_sql_and_values(
@@ -451,6 +462,7 @@ impl BoardRepo for PgBoardRepo {
             .filter(board_column::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(board_column::Column::BoardId.eq(board_id.0))
             .filter(board_column::Column::DeletedAt.is_null())
+            .filter(live_board_chain("board_columns.board_id"))
             .order_by_asc(board_column::Column::PositionKey)
             .all(&self.conn)
             .await
@@ -697,6 +709,8 @@ impl PgBoardRepo {
             .filter(board::Column::WorkspaceId.eq(workspace_id))
             .filter(board::Column::Id.is_in(ids.to_vec()))
             .filter(board::Column::DeletedAt.is_null())
+            .filter(live_project("boards.project_id"))
+            .filter(live_folder_chain("boards.folder_id"))
             .all(&self.conn)
             .await
             .map(|rows| rows.into_iter().map(board_from).collect())
@@ -719,6 +733,7 @@ impl PgBoardRepo {
             .filter(board_column::Column::WorkspaceId.eq(workspace_id))
             .filter(board_column::Column::Id.is_in(ids.to_vec()))
             .filter(board_column::Column::DeletedAt.is_null())
+            .filter(live_board_chain("board_columns.board_id"))
             .all(&self.conn)
             .await
             .map(|rows| rows.into_iter().map(board_column_from).collect())
@@ -950,6 +965,7 @@ impl TaskRepo for PgTaskRepo {
         task::Entity::find_by_id(id.0)
             .filter(task::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(task::Column::DeletedAt.is_null())
+            .filter(live_board_chain("tasks.board_id"))
             .one(&self.conn)
             .await
             .map(|opt| opt.map(task_from))
@@ -965,6 +981,7 @@ impl TaskRepo for PgTaskRepo {
             .filter(task::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(task::Column::ReadableId.eq(readable_id))
             .filter(task::Column::DeletedAt.is_null())
+            .filter(live_board_chain("tasks.board_id"))
             .one(&self.conn)
             .await
             .map(|opt| opt.map(task_from))
@@ -981,6 +998,7 @@ impl TaskRepo for PgTaskRepo {
             .filter(task::Column::BoardId.eq(board_id.0))
             .filter(task::Column::ParentTaskId.is_null())
             .filter(task::Column::DeletedAt.is_null())
+            .filter(live_board_chain("tasks.board_id"))
             .order_by_asc(task::Column::PositionKey)
             .all(&self.conn)
             .await
@@ -998,6 +1016,7 @@ impl TaskRepo for PgTaskRepo {
             .filter(task::Column::ColumnId.eq(column_id.0))
             .filter(task::Column::ParentTaskId.is_null())
             .filter(task::Column::DeletedAt.is_null())
+            .filter(live_board_chain("tasks.board_id"))
             .order_by_asc(task::Column::PositionKey)
             .all(&self.conn)
             .await
@@ -1014,6 +1033,7 @@ impl TaskRepo for PgTaskRepo {
             .filter(task::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(task::Column::ParentTaskId.eq(parent_task_id.0))
             .filter(task::Column::DeletedAt.is_null())
+            .filter(live_board_chain("tasks.board_id"))
             .order_by_asc(task::Column::PositionKey)
             .all(&self.conn)
             .await
@@ -1055,9 +1075,11 @@ impl TaskRepo for PgTaskRepo {
             "SELECT t.parent_task_id AS parent_task_id, count(*) AS child_count
              FROM tasks t
              WHERE t.workspace_id = $1
-               AND t.parent_task_id IN ({placeholders})
-               AND t.deleted_at IS NULL
-             GROUP BY t.parent_task_id"
+                AND t.parent_task_id IN ({placeholders})
+                AND t.deleted_at IS NULL
+                AND {task_board_live}
+              GROUP BY t.parent_task_id",
+            task_board_live = board_chain_is_live_sql("t.board_id"),
         );
 
         let rows = ChildCountRow::find_by_statement(Statement::from_sql_and_values(
@@ -1308,11 +1330,13 @@ impl TaskRepo for PgTaskRepo {
             WHERE t.workspace_id = $1
               AND t.parent_task_id IS NULL
               AND t.deleted_at IS NULL
+              AND {task_board_live}
               {extra_where}
               {cursor_cond}
             {order_clause}
             LIMIT ${limit_param}
-            "#
+            "#,
+            task_board_live = board_chain_is_live_sql("t.board_id"),
         );
 
         task::Model::find_by_statement(Statement::from_sql_and_values(
