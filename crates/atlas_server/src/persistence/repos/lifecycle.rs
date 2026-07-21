@@ -1,6 +1,8 @@
 use atlas_domain::{
     DomainError,
-    entities::lifecycle::{PurgeDigest, PurgeOperation, PurgeStatus, RestoreTarget, TrashKind},
+    entities::lifecycle::{
+        PurgeDigest, PurgeExecutor, PurgeOperation, PurgeStatus, RestoreTarget, TrashKind,
+    },
     ids::{PurgeOperationId, SecurityAuditId, UserId, WorkspaceId},
 };
 use chrono::Utc;
@@ -38,8 +40,8 @@ impl PgPurgeOperationRepo {
             commit_audit_id: Set(operation.commit_audit_id.0),
             status: Set(PurgeStatus::DbCommitted.as_str().into()),
             attempts: Set(0),
-            last_action: Set("resource.purge_committed".into()),
-            last_executor_type: Set("user".into()),
+            last_action: Set(PurgeStatus::DbCommitted.security_action().as_str().into()),
+            last_executor_type: Set(PurgeExecutor::User.as_str().into()),
             last_executor_id: Set(Some(operation.original_actor_user_id.0)),
             last_error: Set(None),
             last_attempt_at: Set(None),
@@ -59,8 +61,7 @@ impl PgPurgeOperationRepo {
         conn: &impl ConnectionTrait,
         operation_id: PurgeOperationId,
         status: PurgeStatus,
-        action: &str,
-        executor_type: &str,
+        executor: PurgeExecutor,
         error: Option<String>,
     ) -> Result<PurgeOperation, DomainError> {
         let model = purge_operation::Entity::find_by_id(operation_id.0)
@@ -82,8 +83,8 @@ impl PgPurgeOperationRepo {
         let updated = purge_operation::ActiveModel {
             status: Set(status.as_str().into()),
             attempts: Set(attempts),
-            last_action: Set(action.into()),
-            last_executor_type: Set(executor_type.into()),
+            last_action: Set(status.security_action().as_str().into()),
+            last_executor_type: Set(executor.as_str().into()),
             last_executor_id: Set(None),
             last_error: Set(error),
             last_attempt_at: Set(Some(now)),
@@ -174,6 +175,20 @@ fn purge_operation_from(model: purge_operation::Model) -> Result<PurgeOperation,
         .map_err(|message| DomainError::Internal {
             message: format!("invalid stored purge status: {message}"),
         })?;
+    let expected_action = status.security_action();
+
+    if model.last_action != expected_action.as_str() {
+        return Err(DomainError::Internal {
+            message: "stored purge status and action do not match".into(),
+        });
+    }
+
+    let executor = model
+        .last_executor_type
+        .parse::<PurgeExecutor>()
+        .map_err(|message| DomainError::Internal {
+            message: format!("invalid stored purge executor: {message}"),
+        })?;
     let attempts = u32::try_from(model.attempts).map_err(|_| DomainError::Internal {
         message: "stored purge attempts must not be negative".into(),
     })?;
@@ -189,8 +204,8 @@ fn purge_operation_from(model: purge_operation::Model) -> Result<PurgeOperation,
         commit_audit_id: SecurityAuditId(model.commit_audit_id),
         status,
         attempts,
-        last_action: model.last_action,
-        last_executor: model.last_executor_type,
+        last_action: expected_action,
+        last_executor: executor,
         last_error: model.last_error,
         created_at: model.created_at,
         updated_at: model.updated_at,

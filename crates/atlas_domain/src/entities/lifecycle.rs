@@ -7,6 +7,7 @@ use uuid::Uuid;
 use crate::{
     DomainError,
     actor::WorkspaceCtx,
+    entities::security_audit::SecurityAction,
     ids::{PurgeOperationId, SecurityAuditId, UserId, WorkspaceId},
 };
 
@@ -75,6 +76,15 @@ impl PurgeStatus {
             Self::Complete => "complete",
         }
     }
+
+    pub const fn security_action(self) -> SecurityAction {
+        match self {
+            Self::DbCommitted => SecurityAction::ResourcePurgeCommitted,
+            Self::CleanupPending => SecurityAction::ResourcePurgeCleanupPending,
+            Self::CleanupFailed => SecurityAction::ResourcePurgeCleanupFailed,
+            Self::Complete => SecurityAction::ResourcePurgeCompleted,
+        }
+    }
 }
 
 impl FromStr for PurgeStatus {
@@ -87,6 +97,33 @@ impl FromStr for PurgeStatus {
             "cleanup_failed" => Ok(Self::CleanupFailed),
             "complete" => Ok(Self::Complete),
             _ => Err("unsupported purge status"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PurgeExecutor {
+    User,
+    System,
+}
+
+impl PurgeExecutor {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::User => "user",
+            Self::System => "system",
+        }
+    }
+}
+
+impl FromStr for PurgeExecutor {
+    type Err = &'static str;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "user" => Ok(Self::User),
+            "system" => Ok(Self::System),
+            _ => Err("unsupported purge executor"),
         }
     }
 }
@@ -114,8 +151,8 @@ pub struct PurgeOperation {
     pub commit_audit_id: SecurityAuditId,
     pub status: PurgeStatus,
     pub attempts: u32,
-    pub last_action: String,
-    pub last_executor: String,
+    pub last_action: SecurityAction,
+    pub last_executor: PurgeExecutor,
     pub last_error: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,

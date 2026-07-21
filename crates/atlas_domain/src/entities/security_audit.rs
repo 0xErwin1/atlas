@@ -34,6 +34,9 @@ pub enum SecurityAction {
     ResourceDeleted,
     ResourceRestored,
     ResourcePurgeCommitted,
+    ResourcePurgeCleanupPending,
+    ResourcePurgeCleanupFailed,
+    ResourcePurgeCompleted,
 }
 
 impl SecurityAction {
@@ -63,6 +66,9 @@ impl SecurityAction {
             SecurityAction::ResourceDeleted => "resource.deleted",
             SecurityAction::ResourceRestored => "resource.restored",
             SecurityAction::ResourcePurgeCommitted => "resource.purge_committed",
+            SecurityAction::ResourcePurgeCleanupPending => "resource.purge_cleanup_pending",
+            SecurityAction::ResourcePurgeCleanupFailed => "resource.purge_cleanup_failed",
+            SecurityAction::ResourcePurgeCompleted => "resource.purge_completed",
         }
     }
 }
@@ -182,6 +188,18 @@ mod tests {
                 SecurityAction::ResourcePurgeCommitted,
                 "resource.purge_committed",
             ),
+            (
+                SecurityAction::ResourcePurgeCleanupPending,
+                "resource.purge_cleanup_pending",
+            ),
+            (
+                SecurityAction::ResourcePurgeCleanupFailed,
+                "resource.purge_cleanup_failed",
+            ),
+            (
+                SecurityAction::ResourcePurgeCompleted,
+                "resource.purge_completed",
+            ),
         ];
 
         for (action, expected) in cases {
@@ -190,6 +208,25 @@ mod tests {
                 expected,
                 "action {action:?} as_str mismatch"
             );
+        }
+    }
+
+    #[test]
+    fn purge_statuses_have_closed_audit_actions() {
+        use crate::entities::lifecycle::PurgeStatus;
+
+        let cases = [
+            (PurgeStatus::DbCommitted, "resource.purge_committed"),
+            (
+                PurgeStatus::CleanupPending,
+                "resource.purge_cleanup_pending",
+            ),
+            (PurgeStatus::CleanupFailed, "resource.purge_cleanup_failed"),
+            (PurgeStatus::Complete, "resource.purge_completed"),
+        ];
+
+        for (status, action) in cases {
+            assert_eq!(status.security_action().as_str(), action);
         }
     }
 

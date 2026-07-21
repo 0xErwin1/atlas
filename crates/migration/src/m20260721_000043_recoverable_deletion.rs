@@ -24,8 +24,13 @@ impl MigrationTrait for Migration {
                     commit_audit_id UUID NOT NULL REFERENCES security_audit_log(id) ON DELETE RESTRICT,
                     status TEXT NOT NULL CHECK (status IN ('db_committed', 'cleanup_pending', 'cleanup_failed', 'complete')),
                     attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
-                    last_action TEXT NOT NULL,
-                    last_executor_type TEXT NOT NULL,
+                    last_action TEXT NOT NULL CHECK (
+                        (status = 'db_committed' AND last_action = 'resource.purge_committed') OR
+                        (status = 'cleanup_pending' AND last_action = 'resource.purge_cleanup_pending') OR
+                        (status = 'cleanup_failed' AND last_action = 'resource.purge_cleanup_failed') OR
+                        (status = 'complete' AND last_action = 'resource.purge_completed')
+                    ),
+                    last_executor_type TEXT NOT NULL CHECK (last_executor_type IN ('user', 'system')),
                     last_executor_id UUID,
                     last_error TEXT,
                     last_attempt_at TIMESTAMPTZ,
