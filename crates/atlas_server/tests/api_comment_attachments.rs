@@ -315,7 +315,7 @@ async fn install_finalization_gate(
     draft_id: &str,
 ) -> (sea_orm::DatabaseTransaction, i32) {
     let lock_key = (u32::from_be_bytes(
-        uuid::Uuid::now_v7().as_bytes()[..4]
+        uuid::Uuid::new_v4().as_bytes()[..4]
             .try_into()
             .expect("four UUID bytes"),
     ) & 0x7fff_ffff) as i32;
@@ -450,7 +450,7 @@ async fn assert_canonical_operation_loses_to_finalization(
     let attachment_id = attachment["id"].as_str().expect("attachment id");
     let attachment_url = format!("{comment_url}/{draft_id}/attachments/{attachment_id}");
     let (gate, lock_key) = install_finalization_gate(db, &draft_id).await;
-    let http = client.http_client().clone();
+    let http = reqwest::Client::new();
     let token = client.token().expect("authenticated token").to_owned();
     let finalizer_url = comment_url.to_owned();
     let finalization_draft_id = draft_id.clone();
@@ -2187,7 +2187,7 @@ async fn task_draft_upload_losing_to_finalization_is_conflict_without_residue() 
     let draft: Value = draft.json().await.expect("decode draft");
     let draft_id = draft["id"].as_str().expect("draft id").to_owned();
     let (gate, lock_key) = install_finalization_gate(&db, &draft_id).await;
-    let http = client.http_client().clone();
+    let http = reqwest::Client::new();
     let token = client.token().expect("authenticated token").to_owned();
     let finalization_request = serde_json::json!({ "body": "finalized", "draft_id": draft_id });
     let finalizer_url = comment_url.clone();
@@ -2304,7 +2304,7 @@ async fn document_draft_upload_losing_to_finalization_is_conflict_without_residu
     let draft: Value = draft.json().await.expect("decode draft");
     let draft_id = draft["id"].as_str().expect("draft id").to_owned();
     let (gate, lock_key) = install_finalization_gate(&db, &draft_id).await;
-    let http = client.http_client().clone();
+    let http = reqwest::Client::new();
     let token = client.token().expect("authenticated token").to_owned();
     let finalization_request = serde_json::json!({ "body": "finalized", "draft_id": draft_id });
     let finalizer_url = comment_url.clone();
