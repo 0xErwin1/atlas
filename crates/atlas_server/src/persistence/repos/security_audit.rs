@@ -1,8 +1,9 @@
 use async_trait::async_trait;
 use atlas_domain::{
-    Actor, DomainError, SecurityAuditId,
+    Actor, DomainError, SecurityAuditId, WorkspaceCtx,
+    entities::lifecycle::TrashKind,
     entities::security_audit::{
-        AuditCursor, AuditFilters, NewSecurityAuditEvent, SecurityAuditEvent,
+        AuditCursor, AuditFilters, NewSecurityAuditEvent, SecurityAction, SecurityAuditEvent,
     },
     entities::task_views::ActorTypeFilter,
     ids::WorkspaceId,
@@ -52,6 +53,30 @@ impl PgSecurityAuditRepo {
         model.insert(conn).await.map_err(db_err)?;
 
         Ok(())
+    }
+
+    /// Appends the safe, normalized audit row for a committed lifecycle tombstone.
+    pub async fn append_resource_deleted_in<C: ConnectionTrait>(
+        conn: &C,
+        ctx: &WorkspaceCtx,
+        kind: TrashKind,
+        target_id: uuid::Uuid,
+    ) -> Result<(), DomainError> {
+        Self::append_in(
+            conn,
+            NewSecurityAuditEvent {
+                workspace_id: Some(ctx.workspace_id),
+                actor: ctx.actor,
+                action: SecurityAction::ResourceDeleted,
+                target_type: kind.as_str().to_string(),
+                target_id: Some(target_id),
+                metadata: serde_json::json!({
+                    "kind": kind.as_str(),
+                    "outcome": "deleted",
+                }),
+            },
+        )
+        .await
     }
 }
 

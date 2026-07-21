@@ -6,14 +6,15 @@ use atlas_domain::{
         DocumentCreatedPayload, DocumentDeletedPayload, DocumentMovedPayload,
         DocumentUpdatedPayload, DomainEvent,
     },
+    entities::lifecycle::TrashKind,
     ids::{CommentDraftId, CommentId, DocumentId, FolderId, ProjectId, RevisionId},
 };
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, TransactionTrait};
 
 use crate::persistence::entities::{comments::comment_attachment_draft, documents::document};
 use crate::persistence::repos::{
-    CommentRepo, PgCommentRepo, PgOutboxRepo, doc_create_in, doc_move_to_in, doc_rename_in,
-    doc_soft_delete_in, doc_update_content_in,
+    CommentRepo, PgCommentRepo, PgOutboxRepo, PgSecurityAuditRepo, doc_create_in, doc_move_to_in,
+    doc_rename_in, doc_soft_delete_in, doc_update_content_in,
 };
 
 /// Coordinates document mutations with transactional outbox emission.
@@ -196,6 +197,8 @@ impl DocumentService {
 
         let event = DomainEvent::DocumentDeleted(DocumentDeletedPayload { document_id: id });
         PgOutboxRepo::insert_in(&txn, ctx, pre_project_id, None, event).await?;
+        PgSecurityAuditRepo::append_resource_deleted_in(&txn, ctx, TrashKind::Document, id.0)
+            .await?;
 
         txn.commit().await.map_err(db_err)?;
         Ok(())

@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use atlas_domain::{
     Actor, DomainError, WorkspaceCtx,
     entities::events::{DomainEvent, FolderCreatedPayload, FolderDeletedPayload},
+    entities::lifecycle::TrashKind,
     entities::workspace_core::{
         Folder, NewFolder, NewProject, NewPropertyDefinition, Project, PropertyDefinition,
         UpdateProject,
@@ -20,7 +21,7 @@ use crate::persistence::entities::workspace_core::{
     visibility_from_cols,
 };
 use crate::persistence::live_ancestors::{live_folder_chain, live_project};
-use crate::persistence::repos::PgOutboxRepo;
+use crate::persistence::repos::{PgOutboxRepo, PgSecurityAuditRepo};
 
 pub use atlas_domain::ports::workspace_core::{FolderRepo, ProjectRepo, PropertyDefinitionRepo};
 
@@ -418,10 +419,13 @@ impl ProjectRepo for PgProjectRepo {
     }
 
     async fn soft_delete(&self, ctx: &WorkspaceCtx, id: ProjectId) -> Result<(), DomainError> {
+        let txn = self.conn.begin().await.map_err(db_err)?;
+
         let row = project::Entity::find_by_id(id.0)
             .filter(project::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(project::Column::DeletedAt.is_null())
-            .one(&self.conn)
+            .lock_exclusive()
+            .one(&txn)
             .await
             .map_err(db_err)?
             .ok_or(DomainError::NotFound {
@@ -432,7 +436,12 @@ impl ProjectRepo for PgProjectRepo {
         let mut active = row.into_active_model();
         active.deleted_at = Set(Some(Utc::now()));
         active.updated_at = Set(Utc::now());
-        active.update(&self.conn).await.map_err(db_err)?;
+        active.update(&txn).await.map_err(db_err)?;
+
+        PgSecurityAuditRepo::append_resource_deleted_in(&txn, ctx, TrashKind::Project, id.0)
+            .await?;
+
+        txn.commit().await.map_err(db_err)?;
         Ok(())
     }
 }
@@ -608,6 +617,7 @@ impl FolderRepo for PgFolderRepo {
         let row = folder::Entity::find_by_id(id.0)
             .filter(folder::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(folder::Column::DeletedAt.is_null())
+            .lock_exclusive()
             .one(&txn)
             .await
             .map_err(db_err)?
@@ -634,6 +644,8 @@ impl FolderRepo for PgFolderRepo {
             }),
         )
         .await?;
+
+        PgSecurityAuditRepo::append_resource_deleted_in(&txn, ctx, TrashKind::Folder, id.0).await?;
 
         txn.commit().await.map_err(db_err)?;
         Ok(())

@@ -7,6 +7,7 @@ use atlas_domain::{
         DocumentSummary, ExtractedLink, NewAttachment, NewDocument, RevisionMeta,
         TaskDescriptionLinks,
     },
+    entities::lifecycle::TrashKind,
     ids::{
         AttachmentId, CommentDraftId, DocumentId, FolderId, ProjectId, RevisionId, TaskId,
         WorkspaceId,
@@ -36,6 +37,7 @@ use crate::persistence::live_ancestors::{
     folder_chain_is_live_sql, live_comment_chain, live_document_chain, live_folder_chain,
     live_project, live_task_chain, project_is_live_sql, task_chain_is_live_sql,
 };
+use crate::persistence::repos::PgSecurityAuditRepo;
 use crate::persistence::repos::comment_attachment_drafts::{
     lock_active_draft_for_upload, record_upload_or_replay_in,
 };
@@ -740,6 +742,7 @@ pub async fn soft_delete_in(
     let row = document::Entity::find_by_id(id.0)
         .filter(document::Column::WorkspaceId.eq(ctx.workspace_id.0))
         .filter(document::Column::DeletedAt.is_null())
+        .lock_exclusive()
         .one(conn)
         .await
         .map_err(db_err)?
@@ -1182,10 +1185,13 @@ impl AttachmentRepo for PgAttachmentRepo {
     }
 
     async fn soft_delete(&self, ctx: &WorkspaceCtx, id: AttachmentId) -> Result<(), DomainError> {
+        let txn = self.conn.begin().await.map_err(db_err)?;
+
         let row = attachment::Entity::find_by_id(id.0)
             .filter(attachment::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(attachment::Column::DeletedAt.is_null())
-            .one(&self.conn)
+            .lock_exclusive()
+            .one(&txn)
             .await
             .map_err(db_err)?
             .ok_or(DomainError::NotFound {
@@ -1196,7 +1202,12 @@ impl AttachmentRepo for PgAttachmentRepo {
         let mut active = row.into_active_model();
         active.deleted_at = Set(Some(Utc::now()));
         active.updated_at = Set(Utc::now());
-        active.update(&self.conn).await.map_err(db_err)?;
+        active.update(&txn).await.map_err(db_err)?;
+
+        PgSecurityAuditRepo::append_resource_deleted_in(&txn, ctx, TrashKind::Attachment, id.0)
+            .await?;
+
+        txn.commit().await.map_err(db_err)?;
         Ok(())
     }
 }
