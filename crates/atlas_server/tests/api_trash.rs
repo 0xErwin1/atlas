@@ -120,6 +120,20 @@ async fn purge(
         .expect("purge request")
 }
 
+async fn purge_operation_id(db: &support::TestDb, target_id: uuid::Uuid) -> uuid::Uuid {
+    db.conn()
+        .query_one_raw(sea_orm::Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT id FROM purge_operations WHERE target_id = $1",
+            [target_id.into()],
+        ))
+        .await
+        .expect("load purge operation")
+        .expect("purge operation")
+        .try_get("", "id")
+        .expect("decode purge operation id")
+}
+
 async fn list_trash(
     client: &atlas_client::AtlasClient,
     server: &support::TestServer,
@@ -968,7 +982,7 @@ async fn trash_allows_only_root_and_system_admin_humans() {
         )
         .await
         .status(),
-        reqwest::StatusCode::ACCEPTED
+        reqwest::StatusCode::NO_CONTENT
     );
     assert_eq!(
         purge(&member, &server, "document", member_purge_document_id, true)
@@ -1422,21 +1436,14 @@ async fn confirmed_purge_removes_the_five_kinds_and_reuses_its_pending_operation
         ("attachment", attachment.id.0),
     ] {
         let response = purge(&admin, &server, kind, target_id, true).await;
-        assert_eq!(response.status(), reqwest::StatusCode::ACCEPTED, "{kind}");
-        let body: Value = response.json().await.expect("decode purge status");
-        assert_eq!(body["kind"], kind);
-        assert_eq!(body["target_id"], target_id.to_string());
-        assert_eq!(body["status"], "complete");
-        assert!(body["operation_id"].is_string());
+        assert_eq!(response.status(), reqwest::StatusCode::NO_CONTENT, "{kind}");
 
+        let operation_id = purge_operation_id(&db, target_id).await;
         let status = trash_response(
             &admin,
             &server,
             reqwest::Method::GET,
-            &format!(
-                "/api/admin/trash/purges/{}",
-                body["operation_id"].as_str().expect("operation id")
-            ),
+            &format!("/api/admin/trash/purges/{operation_id}"),
         )
         .await;
         assert_eq!(status.status(), reqwest::StatusCode::OK, "{kind} status");
@@ -1568,13 +1575,8 @@ async fn purge_removes_active_draft_dependencies_and_retains_all_closure_digests
         .expect("tombstone document for purge");
 
     let purge_response = purge(&admin, &server, "document", document.id.0, true).await;
-    assert_eq!(purge_response.status(), reqwest::StatusCode::ACCEPTED);
-    let purge_status: Value = purge_response.json().await.expect("decode purge status");
-    let operation_id = purge_status["operation_id"]
-        .as_str()
-        .expect("operation id")
-        .parse::<uuid::Uuid>()
-        .expect("operation UUID");
+    assert_eq!(purge_response.status(), reqwest::StatusCode::NO_CONTENT);
+    let operation_id = purge_operation_id(&db, document.id.0).await;
 
     drop(server);
     let restarted_server = support::TestServer::spawn(&db).await;
@@ -1882,13 +1884,8 @@ async fn project_purge_correlates_each_descendant_digest_once_and_removes_every_
         .await
         .expect("delete project");
     let response = purge(&admin, &server, "project", project.id.0, true).await;
-    assert_eq!(response.status(), reqwest::StatusCode::ACCEPTED);
-    let operation: Value = response.json().await.expect("decode purge operation");
-    let operation_id = operation["operation_id"]
-        .as_str()
-        .expect("operation id")
-        .parse::<uuid::Uuid>()
-        .expect("operation UUID");
+    assert_eq!(response.status(), reqwest::StatusCode::NO_CONTENT);
+    let operation_id = purge_operation_id(&db, project.id.0).await;
 
     let digest_rows = db
         .conn()
@@ -2069,6 +2066,37 @@ async fn purge_cleanup_keeps_a_shared_live_digest_and_deletes_it_after_its_last_
         atlas_domain::entities::lifecycle::PurgeStatus::Complete
     );
     assert_eq!(retry.attempts, second_complete.attempts);
+
+    let stale_attempt = atlas_server::persistence::repos::PgPurgeOperationRepo
+        .record_attempt_in(
+            db.conn(),
+            second_operation.id,
+            atlas_domain::entities::lifecycle::PurgeStatus::CleanupPending,
+            atlas_domain::entities::lifecycle::PurgeExecutor::System,
+            None,
+        )
+        .await
+        .expect("ignore stale cleanup attempt after blob deletion");
+    assert_eq!(
+        stale_attempt.status,
+        atlas_domain::entities::lifecycle::PurgeStatus::Complete
+    );
+    assert_eq!(stale_attempt.attempts, second_complete.attempts);
+
+    let stale_digest_attempt = atlas_server::persistence::repos::PgPurgeOperationRepo
+        .record_digest_attempt_in(
+            db.conn(),
+            second_operation.id,
+            &digest,
+            atlas_domain::entities::lifecycle::PurgeStatus::CleanupFailed,
+            Some("stale cleanup failure".into()),
+        )
+        .await
+        .expect("ignore stale digest failure after blob deletion");
+    assert_eq!(
+        stale_digest_attempt.status,
+        atlas_domain::entities::lifecycle::PurgeStatus::Complete
+    );
 
     db.teardown().await;
 }

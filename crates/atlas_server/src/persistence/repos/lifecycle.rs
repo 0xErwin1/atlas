@@ -119,6 +119,10 @@ impl PgPurgeOperationRepo {
                 id: operation_id.0,
             })?;
 
+        if model.status == PurgeStatus::Complete.as_str() {
+            return purge_operation_from(model);
+        }
+
         let attempts = model
             .attempts
             .checked_add(1)
@@ -187,6 +191,10 @@ impl PgPurgeOperationRepo {
                 entity: "purge_operation_digest",
                 id: operation_id.0,
             })?;
+
+        if model.status == PurgeStatus::Complete.as_str() {
+            return purge_digest_from(model);
+        }
 
         let attempts = model
             .attempts

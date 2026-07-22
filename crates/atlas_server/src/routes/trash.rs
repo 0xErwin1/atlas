@@ -87,14 +87,12 @@ pub(crate) async fn purge_trash(
         .purge(admin.user.id, from_dto(request.kind), request.target_id)
         .await
         .map_err(ApiError::Domain)?;
-    let already_complete =
-        operation.status == atlas_domain::entities::lifecycle::PurgeStatus::Complete;
     let operation = service
         .cleanup(operation.id, state.attachments.as_ref())
         .await
         .map_err(ApiError::Domain)?;
 
-    if already_complete {
+    if operation.status == atlas_domain::entities::lifecycle::PurgeStatus::Complete {
         return Ok(StatusCode::NO_CONTENT.into_response());
     }
 
