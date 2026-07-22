@@ -24,6 +24,12 @@ pub enum DomainError {
     #[error("already exists: {message}")]
     AlreadyExists { message: String },
 
+    #[error("restore is blocked by a deleted parent")]
+    RestoreParentDeleted { kind: &'static str },
+
+    #[error("restore is blocked by a live conflicting identity")]
+    RestoreIdentityConflict { kind: &'static str },
+
     #[error("internal error: {message}")]
     Internal { message: String },
 

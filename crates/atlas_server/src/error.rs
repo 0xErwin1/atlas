@@ -223,6 +223,30 @@ fn domain_error_response(err: DomainError) -> Response {
                 .with_hint("An item with this name already exists here — choose a different name.")
                 .with_detail(message),
         ),
+        DomainError::RestoreParentDeleted { kind } => (
+            StatusCode::CONFLICT,
+            ProblemDetails::new(
+                "urn:atlas:error:restore-parent-deleted",
+                "Restore Blocked",
+                409,
+            )
+            .with_hint("Restore the deleted parent before restoring this item.")
+            .with_detail(format!(
+                "restore is blocked because the {kind}'s parent is deleted"
+            )),
+        ),
+        DomainError::RestoreIdentityConflict { kind } => (
+            StatusCode::CONFLICT,
+            ProblemDetails::new(
+                "urn:atlas:error:restore-identity-conflict",
+                "Restore Blocked",
+                409,
+            )
+            .with_hint("Resolve the live conflicting identity before restoring this item.")
+            .with_detail(format!(
+                "restore is blocked because a live {kind} has the same identity"
+            )),
+        ),
         DomainError::CommentDraftConflict { reason } => (
             StatusCode::CONFLICT,
             ProblemDetails::new(
