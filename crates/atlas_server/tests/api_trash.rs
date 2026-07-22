@@ -3,6 +3,7 @@
 mod support;
 
 use atlas_domain::{
+    AttachmentStore,
     entities::{
         boards_tasks::{NewBoard, NewTask, PositionBetween},
         comments::CommentOwner,
@@ -22,12 +23,48 @@ use atlas_domain::{
 use atlas_server::routes::registry::ROUTE_REGISTRY;
 use atlas_server::{
     persistence::repos::{
-        MembershipRepo, NewUser, PgAttachmentRepo, PgSecurityAuditRepo, UserRepo,
+        DiskAttachmentStore, MembershipRepo, NewUser, PgAttachmentRepo, PgSecurityAuditRepo,
+        UserRepo,
     },
-    services::{CommentService, DocumentService},
+    services::{CommentService, DocumentService, TrashService},
 };
+use bytes::Bytes;
 use sea_orm::ConnectionTrait;
 use serde_json::{Value, json};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+
+struct FailOnceDeleteStore {
+    inner: DiskAttachmentStore,
+    fail_next_delete: AtomicBool,
+}
+
+#[async_trait::async_trait]
+impl AttachmentStore for FailOnceDeleteStore {
+    async fn put(&self, data: &[u8]) -> Result<String, atlas_domain::DomainError> {
+        self.inner.put(data).await
+    }
+
+    async fn get(&self, digest: &str) -> Result<Bytes, atlas_domain::DomainError> {
+        self.inner.get(digest).await
+    }
+
+    async fn exists(&self, digest: &str) -> Result<bool, atlas_domain::DomainError> {
+        self.inner.exists(digest).await
+    }
+
+    async fn delete(&self, digest: &str) -> Result<(), atlas_domain::DomainError> {
+        if self.fail_next_delete.swap(false, Ordering::SeqCst) {
+            return Err(atlas_domain::DomainError::Internal {
+                message: "simulated object-store deletion failure".into(),
+            });
+        }
+
+        self.inner.delete(digest).await
+    }
+}
 
 #[test]
 fn trash_routes_are_registered_for_openapi_and_protection_sweeps() {
@@ -1389,7 +1426,7 @@ async fn confirmed_purge_removes_the_five_kinds_and_reuses_its_pending_operation
         let body: Value = response.json().await.expect("decode purge status");
         assert_eq!(body["kind"], kind);
         assert_eq!(body["target_id"], target_id.to_string());
-        assert_eq!(body["status"], "cleanup_pending");
+        assert_eq!(body["status"], "complete");
         assert!(body["operation_id"].is_string());
 
         let status = trash_response(
@@ -1405,18 +1442,14 @@ async fn confirmed_purge_removes_the_five_kinds_and_reuses_its_pending_operation
         assert_eq!(status.status(), reqwest::StatusCode::OK, "{kind} status");
         assert_eq!(
             status.json::<Value>().await.expect("decode purge status")["status"],
-            "cleanup_pending"
+            "complete"
         );
 
         let retry = purge(&admin, &server, kind, target_id, true).await;
         assert_eq!(
             retry.status(),
-            reqwest::StatusCode::ACCEPTED,
+            reqwest::StatusCode::NO_CONTENT,
             "{kind} retry"
-        );
-        assert_eq!(
-            retry.json::<Value>().await.expect("decode retry")["operation_id"],
-            body["operation_id"]
         );
     }
 
@@ -1558,7 +1591,7 @@ async fn purge_removes_active_draft_dependencies_and_retains_all_closure_digests
             .json::<Value>()
             .await
             .expect("decode restarted status")["status"],
-        "cleanup_pending"
+        "complete"
     );
 
     let row = db
@@ -1915,6 +1948,224 @@ async fn project_purge_correlates_each_descendant_digest_once_and_removes_every_
             "{column} must be removed by the project purge closure"
         );
     }
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn purge_cleanup_keeps_a_shared_live_digest_and_deletes_it_after_its_last_purge() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (workspace, owner) = support::seed_workspace(&db, "trash-purge-cleanup").await;
+    let ctx = support::ctx(&workspace, &owner);
+    let attachments = PgAttachmentRepo {
+        conn: db.conn().clone(),
+    };
+    let store_root = tempfile::tempdir().expect("attachment store tempdir");
+    let store = DiskAttachmentStore::new(store_root.path())
+        .await
+        .expect("attachment store");
+    let digest = store
+        .put(b"shared purge cleanup")
+        .await
+        .expect("store blob");
+    let document = db
+        .doc_repo()
+        .create(
+            &ctx,
+            NewDocument {
+                title: "Shared cleanup attachment owner".into(),
+                slug: Some("trash-purge-cleanup-owner".into()),
+                content: "body".into(),
+                folder_id: None,
+                project_id: None,
+                frontmatter: None,
+            },
+        )
+        .await
+        .expect("create attachment owner");
+
+    let first = attachments
+        .record(
+            &ctx,
+            NewAttachment {
+                document_id: Some(document.id),
+                task_id: None,
+                comment_id: None,
+                file_name: "first.txt".into(),
+                content_type: "text/plain".into(),
+                size_bytes: 20,
+                sha256: digest.clone(),
+            },
+        )
+        .await
+        .expect("create first attachment");
+    let second = attachments
+        .record(
+            &ctx,
+            NewAttachment {
+                document_id: Some(document.id),
+                task_id: None,
+                comment_id: None,
+                file_name: "second.txt".into(),
+                content_type: "text/plain".into(),
+                size_bytes: 20,
+                sha256: digest.clone(),
+            },
+        )
+        .await
+        .expect("create second attachment");
+
+    attachments
+        .soft_delete(&ctx, first.id)
+        .await
+        .expect("tombstone first attachment");
+    let service = TrashService::new(db.conn().clone());
+    let first_operation = service
+        .purge(
+            owner.id,
+            atlas_domain::entities::lifecycle::TrashKind::Attachment,
+            first.id.0,
+        )
+        .await
+        .expect("commit first purge");
+    let first_complete = service
+        .cleanup(first_operation.id, &store)
+        .await
+        .expect("complete protected cleanup");
+    assert_eq!(
+        first_complete.status,
+        atlas_domain::entities::lifecycle::PurgeStatus::Complete
+    );
+    assert!(store.exists(&digest).await.expect("shared blob remains"));
+
+    attachments
+        .soft_delete(&ctx, second.id)
+        .await
+        .expect("tombstone second attachment");
+    let second_operation = service
+        .purge(
+            owner.id,
+            atlas_domain::entities::lifecycle::TrashKind::Attachment,
+            second.id.0,
+        )
+        .await
+        .expect("commit second purge");
+    let second_complete = service
+        .cleanup(second_operation.id, &store)
+        .await
+        .expect("complete final cleanup");
+    assert_eq!(
+        second_complete.status,
+        atlas_domain::entities::lifecycle::PurgeStatus::Complete
+    );
+    assert!(!store.exists(&digest).await.expect("final blob removal"));
+
+    let retry = service
+        .cleanup(second_operation.id, &store)
+        .await
+        .expect("idempotent cleanup retry");
+    assert_eq!(
+        retry.status,
+        atlas_domain::entities::lifecycle::PurgeStatus::Complete
+    );
+    assert_eq!(retry.attempts, second_complete.attempts);
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn purge_cleanup_records_a_retryable_system_failure_before_completing() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (workspace, owner) = support::seed_workspace(&db, "trash-purge-cleanup-retry").await;
+    let ctx = support::ctx(&workspace, &owner);
+    let store_root = tempfile::tempdir().expect("attachment store tempdir");
+    let store = Arc::new(FailOnceDeleteStore {
+        inner: DiskAttachmentStore::new(store_root.path())
+            .await
+            .expect("attachment store"),
+        fail_next_delete: AtomicBool::new(true),
+    });
+    let digest = store.put(b"retry purge cleanup").await.expect("store blob");
+    let document = db
+        .doc_repo()
+        .create(
+            &ctx,
+            NewDocument {
+                title: "Retry cleanup attachment owner".into(),
+                slug: Some("trash-purge-cleanup-retry-owner".into()),
+                content: "body".into(),
+                folder_id: None,
+                project_id: None,
+                frontmatter: None,
+            },
+        )
+        .await
+        .expect("create attachment owner");
+    let attachment = PgAttachmentRepo {
+        conn: db.conn().clone(),
+    }
+    .record(
+        &ctx,
+        NewAttachment {
+            document_id: Some(document.id),
+            task_id: None,
+            comment_id: None,
+            file_name: "retry.txt".into(),
+            content_type: "text/plain".into(),
+            size_bytes: 19,
+            sha256: digest.clone(),
+        },
+    )
+    .await
+    .expect("create attachment");
+    PgAttachmentRepo {
+        conn: db.conn().clone(),
+    }
+    .soft_delete(&ctx, attachment.id)
+    .await
+    .expect("tombstone attachment");
+
+    let service = TrashService::new(db.conn().clone());
+    let operation = service
+        .purge(
+            owner.id,
+            atlas_domain::entities::lifecycle::TrashKind::Attachment,
+            attachment.id.0,
+        )
+        .await
+        .expect("commit purge");
+    let failed = service
+        .cleanup(operation.id, store.as_ref())
+        .await
+        .expect("record cleanup failure");
+    assert_eq!(
+        failed.status,
+        atlas_domain::entities::lifecycle::PurgeStatus::CleanupFailed
+    );
+    assert_eq!(
+        failed.last_executor,
+        atlas_domain::entities::lifecycle::PurgeExecutor::System
+    );
+    assert_eq!(
+        failed.last_error.as_deref(),
+        Some("attachment cleanup failed")
+    );
+    assert!(
+        failed.attempts >= 3,
+        "commit, pending, and failure are durable"
+    );
+    assert!(store.exists(&digest).await.expect("failed blob remains"));
+
+    let complete = service
+        .cleanup(operation.id, store.as_ref())
+        .await
+        .expect("retry cleanup");
+    assert_eq!(
+        complete.status,
+        atlas_domain::entities::lifecycle::PurgeStatus::Complete
+    );
+    assert!(complete.attempts > failed.attempts);
+    assert!(!store.exists(&digest).await.expect("retried blob removal"));
 
     db.teardown().await;
 }

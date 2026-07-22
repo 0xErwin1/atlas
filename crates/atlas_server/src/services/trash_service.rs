@@ -1,5 +1,5 @@
 use atlas_domain::{
-    Actor, DomainError, WorkspaceCtx,
+    Actor, AttachmentStore, DomainError, WorkspaceCtx,
     entities::lifecycle::{
         PurgeExecutor, PurgeOperation, PurgeStatus, RestoreTarget, TrashItem, TrashKind,
     },
@@ -11,7 +11,9 @@ use sea_orm::{
 };
 use uuid::Uuid;
 
-use crate::persistence::repos::{NewPurgeOperation, PgPurgeOperationRepo, PgSecurityAuditRepo};
+use crate::persistence::repos::{
+    NewPurgeOperation, PgAttachmentLifecycle, PgPurgeOperationRepo, PgSecurityAuditRepo,
+};
 
 pub struct TrashService {
     conn: DatabaseConnection,
@@ -233,6 +235,135 @@ impl TrashService {
             .await?;
         txn.commit().await.map_err(db_err)?;
         Ok(pending)
+    }
+
+    /// Runs one durable cleanup pass for a committed purge operation.
+    ///
+    /// Database state is recorded before and after every object-store call. A
+    /// process crash after deletion therefore retries an idempotent delete rather
+    /// than falsely declaring the operation complete.
+    pub async fn cleanup(
+        &self,
+        operation_id: atlas_domain::ids::PurgeOperationId,
+        store: &dyn AttachmentStore,
+    ) -> Result<PurgeOperation, DomainError> {
+        let operations = PgPurgeOperationRepo;
+        let operation = operations
+            .find_by_id_in(&self.conn, operation_id)
+            .await?
+            .ok_or(DomainError::NotFound {
+                entity: "purge_operation",
+                id: operation_id.0,
+            })?;
+        if operation.status == PurgeStatus::Complete {
+            return Ok(operation);
+        }
+
+        self.record_operation_attempt(operation_id, PurgeStatus::CleanupPending, None)
+            .await?;
+        let digests = operations.list_digests_in(&self.conn, operation_id).await?;
+        let mut failed = false;
+
+        for digest in digests
+            .iter()
+            .filter(|digest| digest.status != PurgeStatus::Complete)
+        {
+            self.record_digest_attempt(
+                operation_id,
+                &digest.digest,
+                PurgeStatus::CleanupPending,
+                None,
+            )
+            .await?;
+
+            match PgAttachmentLifecycle::cleanup_committed_purge_digest(
+                &self.conn,
+                store,
+                &digest.digest,
+            )
+            .await
+            {
+                Ok(_) => {
+                    self.record_digest_attempt(
+                        operation_id,
+                        &digest.digest,
+                        PurgeStatus::Complete,
+                        None,
+                    )
+                    .await?;
+                }
+                Err(_) => {
+                    failed = true;
+                    self.record_digest_attempt(
+                        operation_id,
+                        &digest.digest,
+                        PurgeStatus::CleanupFailed,
+                        Some("attachment cleanup failed".into()),
+                    )
+                    .await?;
+                }
+            }
+        }
+
+        let all_complete = operations
+            .list_digests_in(&self.conn, operation_id)
+            .await?
+            .iter()
+            .all(|digest| digest.status == PurgeStatus::Complete);
+        let status = if all_complete {
+            PurgeStatus::Complete
+        } else if failed {
+            PurgeStatus::CleanupFailed
+        } else {
+            PurgeStatus::CleanupPending
+        };
+        self.record_operation_attempt(
+            operation_id,
+            status,
+            (status == PurgeStatus::CleanupFailed).then(|| "attachment cleanup failed".into()),
+        )
+        .await
+    }
+
+    pub async fn reconcile(&self, store: &dyn AttachmentStore) -> Result<(), DomainError> {
+        let operations = PgPurgeOperationRepo;
+        for operation in operations
+            .list_cleanup_candidates_in(&self.conn, 100)
+            .await?
+        {
+            if let Err(error) = self.cleanup(operation.id, store).await {
+                tracing::warn!(%error, operation_id = %operation.id.0, "purge cleanup reconciliation failed");
+            }
+        }
+        Ok(())
+    }
+
+    async fn record_operation_attempt(
+        &self,
+        operation_id: atlas_domain::ids::PurgeOperationId,
+        status: PurgeStatus,
+        error: Option<String>,
+    ) -> Result<PurgeOperation, DomainError> {
+        let txn = self.conn.begin().await.map_err(db_err)?;
+        let operation = PgPurgeOperationRepo
+            .record_attempt_in(&txn, operation_id, status, PurgeExecutor::System, error)
+            .await?;
+        txn.commit().await.map_err(db_err)?;
+        Ok(operation)
+    }
+
+    async fn record_digest_attempt(
+        &self,
+        operation_id: atlas_domain::ids::PurgeOperationId,
+        digest: &str,
+        status: PurgeStatus,
+        error: Option<String>,
+    ) -> Result<(), DomainError> {
+        let txn = self.conn.begin().await.map_err(db_err)?;
+        PgPurgeOperationRepo
+            .record_digest_attempt_in(&txn, operation_id, digest, status, error)
+            .await?;
+        txn.commit().await.map_err(db_err)
     }
 
     async fn collect_purge_digests(

@@ -82,12 +82,19 @@ pub(crate) async fn purge_trash(
         });
     }
 
-    let operation = TrashService::new((*state.db).clone())
+    let service = TrashService::new((*state.db).clone());
+    let operation = service
         .purge(admin.user.id, from_dto(request.kind), request.target_id)
         .await
         .map_err(ApiError::Domain)?;
+    let already_complete =
+        operation.status == atlas_domain::entities::lifecycle::PurgeStatus::Complete;
+    let operation = service
+        .cleanup(operation.id, state.attachments.as_ref())
+        .await
+        .map_err(ApiError::Domain)?;
 
-    if operation.status == atlas_domain::entities::lifecycle::PurgeStatus::Complete {
+    if already_complete {
         return Ok(StatusCode::NO_CONTENT.into_response());
     }
 

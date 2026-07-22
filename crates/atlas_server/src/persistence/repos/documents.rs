@@ -1613,6 +1613,32 @@ impl PgAttachmentLifecycle {
         unlock
     }
 
+    /// Deletes a blob only after the purge closure removed every recoverable
+    /// reference to its digest. The advisory lock keeps concurrent writes and
+    /// cleanup attempts from racing this check with a content-addressed write.
+    pub async fn cleanup_committed_purge_digest(
+        conn: &DatabaseConnection,
+        store: &dyn AttachmentStore,
+        digest: &str,
+    ) -> Result<bool, DomainError> {
+        let lock = DigestSessionLock::acquire(conn, digest).await?;
+        let result = async {
+            let protected = digest_has_recoverable_reference(conn, digest).await?;
+            if protected {
+                return Ok(false);
+            }
+
+            bounded_store_delete(store, digest).await?;
+            Ok(true)
+        }
+        .await;
+        let unlock = lock.release().await;
+
+        let deleted = result?;
+        unlock?;
+        Ok(deleted)
+    }
+
     pub async fn run_reconciler(
         conn: DatabaseConnection,
         store: std::sync::Arc<dyn AttachmentStore>,
@@ -1656,6 +1682,12 @@ impl PgAttachmentLifecycle {
                             DraftReconciliationReport::default()
                         }
                     };
+                    if let Err(error) = crate::services::TrashService::new(conn.clone())
+                        .reconcile(store.as_ref())
+                        .await
+                    {
+                        tracing::warn!(%error, "purge cleanup reconciliation failed");
+                    }
                     let older_than = Utc::now() - stale_after;
                     tokio::select! {
                         biased;
@@ -2192,6 +2224,36 @@ async fn bounded_store_put(
     tokio::time::timeout(ATTACHMENT_STORE_IO_TIMEOUT, store.put(data))
         .await
         .map_err(|_| attachment_store_timeout("put"))?
+}
+
+async fn digest_has_recoverable_reference(
+    conn: &DatabaseConnection,
+    digest: &str,
+) -> Result<bool, DomainError> {
+    use sea_orm::FromQueryResult;
+
+    #[derive(sea_orm::FromQueryResult)]
+    struct Exists {
+        exists: bool,
+    }
+
+    let row = Exists::find_by_statement(Statement::from_sql_and_values(
+        sea_orm::DatabaseBackend::Postgres,
+        "SELECT EXISTS (\
+            SELECT 1 FROM attachments WHERE sha256 = $1 \
+            UNION ALL \
+            SELECT 1 FROM comment_attachment_draft_uploads u \
+            JOIN attachments a ON a.id = u.original_attachment_id \
+            JOIN comment_attachment_drafts d ON d.id = u.draft_id \
+            WHERE a.sha256 = $1 AND d.state IN ('active', 'finalized')\
+        ) AS exists",
+        [digest.into()],
+    ))
+    .one(conn)
+    .await
+    .map_err(db_err)?;
+
+    Ok(row.is_some_and(|row| row.exists))
 }
 
 async fn bounded_store_delete(

@@ -8,7 +8,7 @@ use atlas_domain::{
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel,
-    QueryFilter,
+    QueryFilter, QueryOrder, QuerySelect,
 };
 
 use crate::persistence::entities::lifecycle::{purge_operation, purge_operation_digest};
@@ -110,6 +110,7 @@ impl PgPurgeOperationRepo {
         error: Option<String>,
     ) -> Result<PurgeOperation, DomainError> {
         let model = purge_operation::Entity::find_by_id(operation_id.0)
+            .lock_exclusive()
             .one(conn)
             .await
             .map_err(db_err)?
@@ -178,6 +179,7 @@ impl PgPurgeOperationRepo {
         let model = purge_operation_digest::Entity::find()
             .filter(purge_operation_digest::Column::OperationId.eq(operation_id.0))
             .filter(purge_operation_digest::Column::Digest.eq(digest))
+            .lock_exclusive()
             .one(conn)
             .await
             .map_err(db_err)?
@@ -204,6 +206,42 @@ impl PgPurgeOperationRepo {
         .map_err(db_err)?;
 
         purge_digest_from(updated)
+    }
+
+    pub async fn list_digests_in(
+        &self,
+        conn: &impl ConnectionTrait,
+        operation_id: PurgeOperationId,
+    ) -> Result<Vec<PurgeDigest>, DomainError> {
+        purge_operation_digest::Entity::find()
+            .filter(purge_operation_digest::Column::OperationId.eq(operation_id.0))
+            .all(conn)
+            .await
+            .map_err(db_err)?
+            .into_iter()
+            .map(purge_digest_from)
+            .collect()
+    }
+
+    pub async fn list_cleanup_candidates_in(
+        &self,
+        conn: &impl ConnectionTrait,
+        limit: u64,
+    ) -> Result<Vec<PurgeOperation>, DomainError> {
+        purge_operation::Entity::find()
+            .filter(purge_operation::Column::Status.is_in([
+                PurgeStatus::DbCommitted.as_str(),
+                PurgeStatus::CleanupPending.as_str(),
+                PurgeStatus::CleanupFailed.as_str(),
+            ]))
+            .order_by_asc(purge_operation::Column::UpdatedAt)
+            .limit(limit)
+            .all(conn)
+            .await
+            .map_err(db_err)?
+            .into_iter()
+            .map(purge_operation_from)
+            .collect()
     }
 }
 
