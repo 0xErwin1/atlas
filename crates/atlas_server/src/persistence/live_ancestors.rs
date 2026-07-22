@@ -16,6 +16,10 @@ pub(crate) fn live_task_chain(task_id: &str) -> SimpleExpr {
     Expr::cust(task_chain_is_live_sql(task_id))
 }
 
+pub(crate) fn live_task_ancestor_chain(task_id: &str) -> SimpleExpr {
+    Expr::cust(task_ancestor_chain_is_live_sql(task_id))
+}
+
 pub(crate) fn live_document_chain(document_id: &str) -> SimpleExpr {
     Expr::cust(document_chain_is_live_sql(document_id))
 }
@@ -65,6 +69,17 @@ pub(crate) fn task_chain_is_live_sql(task_id: &str) -> String {
                     live_task.deleted_at IS NOT NULL \
                     OR NOT ({board_live})\
               )\
+        )",
+        board_live = board_chain_is_live_sql("live_task.board_id"),
+    )
+}
+
+pub(crate) fn task_ancestor_chain_is_live_sql(task_id: &str) -> String {
+    format!(
+        "NOT EXISTS (\
+            SELECT 1 FROM tasks live_task \
+            WHERE live_task.id = {task_id} \
+              AND NOT ({board_live})\
         )",
         board_live = board_chain_is_live_sql("live_task.board_id"),
     )

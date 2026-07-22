@@ -36,7 +36,7 @@ use crate::persistence::entities::boards_tasks::{
 use crate::persistence::entities::status_templates::status_template;
 use crate::persistence::live_ancestors::{
     board_chain_is_live_sql, live_board_chain, live_document_chain, live_folder_chain,
-    live_project, live_task_chain,
+    live_project, live_task_ancestor_chain, live_task_chain,
 };
 use crate::persistence::repos::PgOutboxRepo;
 
@@ -2136,7 +2136,7 @@ impl TaskActivityRepo for PgTaskActivityRepo {
         let mut q = task_activity::Entity::find()
             .filter(task_activity::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(task_activity::Column::TaskId.eq(task_id.0))
-            .filter(live_task_chain("task_activity.task_id"))
+            .filter(live_task_ancestor_chain("task_activity.task_id"))
             .order_by_desc(task_activity::Column::CreatedAt)
             .order_by_desc(task_activity::Column::Id)
             .limit(limit);

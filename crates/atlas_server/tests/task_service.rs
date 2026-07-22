@@ -459,6 +459,20 @@ async fn task_service_delete_task_emits_deleted_activity() {
     assert_eq!(entries.len(), 2, "created + deleted");
     assert_eq!(entries[0].kind, ActivityKind::Deleted, "newest is Deleted");
 
+    PgProjectRepo {
+        conn: db.conn().clone(),
+    }
+    .soft_delete(&ctx, proj.id)
+    .await
+    .expect("delete project");
+
+    let entries = activity_repo
+        .list_for_task(&ctx, task.id, None, 50)
+        .await
+        .expect("list activity after ancestor deletion");
+
+    assert!(entries.is_empty(), "deleted project conceals task activity");
+
     db.teardown().await;
 }
 
