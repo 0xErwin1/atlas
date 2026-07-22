@@ -158,6 +158,40 @@ async fn attachment_is_deleted(db: &support::TestDb, attachment_id: uuid::Uuid) 
         .expect("decode deleted flag")
 }
 
+async fn document_is_deleted(db: &support::TestDb, document_id: uuid::Uuid) -> bool {
+    db.conn()
+        .query_one_raw(sea_orm::Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT deleted_at IS NOT NULL AS deleted FROM documents WHERE id = $1",
+            [document_id.into()],
+        ))
+        .await
+        .expect("query document")
+        .expect("document row")
+        .try_get("", "deleted")
+        .expect("decode deleted flag")
+}
+
+async fn count_purge_side_effects(db: &support::TestDb, target_id: uuid::Uuid) -> (i64, i64) {
+    let row = db
+        .conn()
+        .query_one_raw(sea_orm::Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT \
+                (SELECT count(*)::bigint FROM purge_operations WHERE target_id = $1) AS operations, \
+                (SELECT count(*)::bigint FROM security_audit_log WHERE target_id = $1 AND action = 'resource.purge_committed') AS audits",
+            [target_id.into()],
+        ))
+        .await
+        .expect("count purge side effects")
+        .expect("purge side effects row");
+
+    (
+        row.try_get("", "operations").expect("operation count"),
+        row.try_get("", "audits").expect("audit count"),
+    )
+}
+
 #[tokio::test]
 async fn root_lists_and_restores_each_first_class_trash_kind() {
     let db = support::TestDb::create().await.expect("TestDb::create");
@@ -1264,6 +1298,8 @@ async fn confirmed_purge_removes_the_five_kinds_and_reuses_its_pending_operation
     let rejected = purge(&admin, &server, "document", document.id.0, false).await;
     assert_eq!(rejected.status(), reqwest::StatusCode::BAD_REQUEST);
     assert!(attachment_is_deleted(&db, attachment.id.0).await);
+    assert!(document_is_deleted(&db, document.id.0).await);
+    assert_eq!(count_purge_side_effects(&db, document.id.0).await, (0, 0));
 
     for (kind, target_id) in [
         ("project", project.id.0),
@@ -1338,6 +1374,148 @@ async fn confirmed_purge_removes_the_five_kinds_and_reuses_its_pending_operation
         .filter(|event| event.action == "resource.purge_committed")
         .count();
     assert_eq!(audit_count, 5);
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn purge_removes_active_draft_dependencies_and_retains_all_closure_digests_after_restart() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let admin = support::login_root_user(&server, &db).await;
+    let (owner_client, workspace, owner) =
+        support::login_user_with_workspace(&server, &db, "trash-purge-active-draft").await;
+    let ctx = support::ctx(&workspace, &owner);
+    let document = db
+        .doc_repo()
+        .create(
+            &ctx,
+            NewDocument {
+                title: "Draft purge document".into(),
+                slug: Some("trash-purge-active-draft".into()),
+                content: "body".into(),
+                folder_id: None,
+                project_id: None,
+                frontmatter: None,
+            },
+        )
+        .await
+        .expect("create document");
+    let slug = document.slug.expect("document slug");
+    let draft_url = format!(
+        "{}/api/workspaces/{}/documents/{slug}/comment-drafts",
+        server.base_url(),
+        workspace.slug
+    );
+    let draft_response = owner_client
+        .http_client()
+        .post(&draft_url)
+        .bearer_auth(owner_client.token().expect("owner token"))
+        .header("x-create-token", uuid::Uuid::now_v7().to_string())
+        .send()
+        .await
+        .expect("create draft");
+    assert_eq!(draft_response.status(), reqwest::StatusCode::CREATED);
+    let draft: Value = draft_response.json().await.expect("decode draft");
+    let draft_id = draft["id"].as_str().expect("draft id");
+    let draft_attachment = owner_client
+        .http_client()
+        .post(format!("{draft_url}/{draft_id}/attachments"))
+        .bearer_auth(owner_client.token().expect("owner token"))
+        .header("x-upload-token", uuid::Uuid::now_v7().to_string())
+        .header("x-file-name", "draft.txt")
+        .header("content-type", "text/plain")
+        .body("draft attachment")
+        .send()
+        .await
+        .expect("upload draft attachment");
+    assert_eq!(draft_attachment.status(), reqwest::StatusCode::CREATED);
+    let draft_attachment: Value = draft_attachment.json().await.expect("decode attachment");
+    let draft_attachment_id = draft_attachment["id"]
+        .as_str()
+        .expect("attachment id")
+        .parse::<uuid::Uuid>()
+        .expect("attachment UUID");
+    let digest = db
+        .conn()
+        .query_one_raw(sea_orm::Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT sha256 FROM attachments WHERE id = $1",
+            [draft_attachment_id.into()],
+        ))
+        .await
+        .expect("query draft attachment digest")
+        .expect("draft attachment row")
+        .try_get::<String>("", "sha256")
+        .expect("decode draft attachment digest");
+
+    db.conn()
+        .execute_raw(sea_orm::Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "UPDATE documents SET deleted_at = now() WHERE id = $1",
+            [document.id.0.into()],
+        ))
+        .await
+        .expect("tombstone document for purge");
+
+    let purge_response = purge(&admin, &server, "document", document.id.0, true).await;
+    assert_eq!(purge_response.status(), reqwest::StatusCode::ACCEPTED);
+    let purge_status: Value = purge_response.json().await.expect("decode purge status");
+    let operation_id = purge_status["operation_id"]
+        .as_str()
+        .expect("operation id")
+        .parse::<uuid::Uuid>()
+        .expect("operation UUID");
+
+    drop(server);
+    let restarted_server = support::TestServer::spawn(&db).await;
+    let status = trash_response(
+        &admin,
+        &restarted_server,
+        reqwest::Method::GET,
+        &format!("/api/admin/trash/purges/{operation_id}"),
+    )
+    .await;
+    assert_eq!(status.status(), reqwest::StatusCode::OK);
+    assert_eq!(
+        status
+            .json::<Value>()
+            .await
+            .expect("decode restarted status")["status"],
+        "cleanup_pending"
+    );
+
+    let row = db
+        .conn()
+        .query_one_raw(sea_orm::Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT \
+                (SELECT count(*)::bigint FROM comment_attachment_drafts WHERE id = $1) AS drafts, \
+                (SELECT count(*)::bigint FROM attachments WHERE id = $2) AS attachments, \
+                (SELECT count(*)::bigint FROM comment_attachment_draft_uploads WHERE draft_id = $1) AS uploads, \
+                (SELECT count(*)::bigint FROM purge_operation_digests WHERE operation_id = $3 AND digest = $4) AS digests",
+            [
+                draft_id.parse::<uuid::Uuid>().expect("draft UUID").into(),
+                draft_attachment_id.into(),
+                operation_id.into(),
+                digest.into(),
+            ],
+        ))
+        .await
+        .expect("query purged draft closure")
+        .expect("purged draft closure row");
+    for column in ["drafts", "attachments", "uploads"] {
+        assert_eq!(
+            row.try_get::<i64>("", column).expect("closure count"),
+            0,
+            "{column} must be removed by the purge closure"
+        );
+    }
+    assert_eq!(
+        row.try_get::<i64>("", "digests").expect("digest count"),
+        1,
+        "the operation must retain the draft attachment digest"
+    );
 
     db.teardown().await;
 }

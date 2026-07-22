@@ -167,6 +167,9 @@ const EXPECTED_SCHEMAS: &[&str] = &[
     "TrashItemDto",
     "RestoreTrashItemRequest",
     "Page_TrashItemDto",
+    "PurgeStatusDto",
+    "PurgeTrashItemRequest",
+    "PurgeStatusDtoResponse",
 ];
 
 #[test]

@@ -336,13 +336,17 @@ impl TrashService {
 fn attachment_scope(kind: TrashKind) -> &'static str {
     match kind {
         TrashKind::Project => {
-            "document_id IN (SELECT id FROM documents WHERE project_id = $1 OR folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM folders WHERE project_id = $1 UNION ALL SELECT f.id FROM folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)) OR task_id IN (SELECT id FROM tasks WHERE project_id = $1)"
+            "document_id IN (SELECT id FROM documents WHERE project_id = $1 OR folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM folders WHERE project_id = $1 UNION ALL SELECT f.id FROM folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)) OR task_id IN (SELECT id FROM tasks WHERE project_id = $1) OR comment_id IN (SELECT id FROM comments WHERE document_id IN (SELECT id FROM documents WHERE project_id = $1 OR folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM folders WHERE project_id = $1 UNION ALL SELECT f.id FROM folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)) OR task_id IN (SELECT id FROM tasks WHERE project_id = $1)) OR draft_id IN (SELECT id FROM comment_attachment_drafts WHERE document_id IN (SELECT id FROM documents WHERE project_id = $1 OR folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM folders WHERE project_id = $1 UNION ALL SELECT f.id FROM folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)) OR task_id IN (SELECT id FROM tasks WHERE project_id = $1))"
         }
         TrashKind::Folder => {
-            "document_id IN (SELECT id FROM documents WHERE folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM folders WHERE id = $1 UNION ALL SELECT f.id FROM folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)) OR task_id IN (SELECT t.id FROM tasks t JOIN boards b ON b.id = t.board_id WHERE b.folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM folders WHERE id = $1 UNION ALL SELECT f.id FROM folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure))"
+            "document_id IN (SELECT id FROM documents WHERE folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM folders WHERE id = $1 UNION ALL SELECT f.id FROM folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)) OR task_id IN (SELECT t.id FROM tasks t JOIN boards b ON b.id = t.board_id WHERE b.folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM folders WHERE id = $1 UNION ALL SELECT f.id FROM folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)) OR comment_id IN (SELECT id FROM comments WHERE document_id IN (SELECT id FROM documents WHERE folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM folders WHERE id = $1 UNION ALL SELECT f.id FROM folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)) OR task_id IN (SELECT t.id FROM tasks t JOIN boards b ON b.id = t.board_id WHERE b.folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM folders WHERE id = $1 UNION ALL SELECT f.id FROM folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure))) OR draft_id IN (SELECT id FROM comment_attachment_drafts WHERE document_id IN (SELECT id FROM documents WHERE folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM folders WHERE id = $1 UNION ALL SELECT f.id FROM folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)) OR task_id IN (SELECT t.id FROM tasks t JOIN boards b ON b.id = t.board_id WHERE b.folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM folders WHERE id = $1 UNION ALL SELECT f.id FROM folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)))"
         }
-        TrashKind::Document => "document_id = $1",
-        TrashKind::Comment => "comment_id = $1",
+        TrashKind::Document => {
+            "document_id = $1 OR comment_id IN (SELECT id FROM comments WHERE document_id = $1) OR draft_id IN (SELECT id FROM comment_attachment_drafts WHERE document_id = $1)"
+        }
+        TrashKind::Comment => {
+            "comment_id = $1 OR draft_id IN (SELECT id FROM comment_attachment_drafts WHERE finalized_comment_id = $1)"
+        }
         TrashKind::Attachment => "id = $1",
     }
 }
@@ -380,17 +384,15 @@ async fn purge_comments_in(
     scope: &str,
     id: Uuid,
 ) -> Result<(), DomainError> {
-    purge_attachments_in(
+    purge_drafts_in(
         conn,
-        &format!("comment_id IN (SELECT id FROM comments WHERE {scope})"),
+        &format!("finalized_comment_id IN (SELECT id FROM comments WHERE {scope})"),
         id,
     )
     .await?;
-    execute(
+    purge_attachments_in(
         conn,
-        &format!(
-            "DELETE FROM comment_attachment_drafts WHERE finalized_comment_id IN (SELECT id FROM comments WHERE {scope})"
-        ),
+        &format!("comment_id IN (SELECT id FROM comments WHERE {scope})"),
         id,
     )
     .await?;
@@ -415,11 +417,9 @@ async fn purge_documents_in(
         id,
     )
     .await?;
-    execute(
+    purge_drafts_in(
         conn,
-        &format!(
-            "DELETE FROM comment_attachment_drafts WHERE document_id IN (SELECT id FROM documents WHERE {scope})"
-        ),
+        &format!("document_id IN (SELECT id FROM documents WHERE {scope})"),
         id,
     )
     .await?;
@@ -444,11 +444,9 @@ async fn purge_tasks_in(
         id,
     )
     .await?;
-    execute(
+    purge_drafts_in(
         conn,
-        &format!(
-            "DELETE FROM comment_attachment_drafts WHERE task_id IN (SELECT id FROM tasks WHERE {scope})"
-        ),
+        &format!("task_id IN (SELECT id FROM tasks WHERE {scope})"),
         id,
     )
     .await?;
@@ -461,6 +459,31 @@ async fn purge_tasks_in(
     )
     .await?;
     execute(conn, &format!("DELETE FROM tasks WHERE {scope}"), id).await?;
+    Ok(())
+}
+
+async fn purge_drafts_in(
+    conn: &impl ConnectionTrait,
+    scope: &str,
+    id: Uuid,
+) -> Result<(), DomainError> {
+    let draft_scope =
+        format!("draft_id IN (SELECT id FROM comment_attachment_drafts WHERE {scope})");
+    purge_attachments_in(conn, &draft_scope, id).await?;
+    execute(
+        conn,
+        &format!(
+            "DELETE FROM comment_attachment_draft_uploads WHERE draft_id IN (SELECT id FROM comment_attachment_drafts WHERE {scope})"
+        ),
+        id,
+    )
+    .await?;
+    execute(
+        conn,
+        &format!("DELETE FROM comment_attachment_drafts WHERE {scope}"),
+        id,
+    )
+    .await?;
     Ok(())
 }
 
