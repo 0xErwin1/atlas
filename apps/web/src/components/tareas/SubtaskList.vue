@@ -148,8 +148,15 @@ function submitDraft(): void {
       <input
         v-model="draft"
         type="text"
+        name="atlas-subtask-title"
+        autocomplete="off"
+        data-form-type="other"
+        data-1p-ignore
+        data-lpignore="true"
+        data-bwignore
         placeholder="Add a sub-task…"
         class="atl-sub-add"
+        aria-label="New sub-task title"
         @keydown.enter.prevent="submitDraft"
         @blur="submitDraft"
       />

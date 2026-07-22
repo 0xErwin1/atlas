@@ -233,8 +233,15 @@ function onSortableMove(event: DragAutoScrollMoveEvent, originalEvent: Event): v
         ref="inputRef"
         v-model="addValue"
         type="text"
+        name="atlas-task-title"
+        autocomplete="off"
+        data-form-type="other"
+        data-1p-ignore
+        data-lpignore="true"
+        data-bwignore
         placeholder="Task title…"
         class="atl-quick-add"
+        aria-label="New task title"
         @keydown="onAddKeydown"
         @blur="commitAdd"
       />

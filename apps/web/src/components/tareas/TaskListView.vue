@@ -586,6 +586,12 @@ const rowHandlers = {
               ref="inputRef"
               v-model="addValue"
               type="text"
+              name="atlas-task-title"
+              autocomplete="off"
+              data-form-type="other"
+              data-1p-ignore
+              data-lpignore="true"
+              data-bwignore
               placeholder="Task title…"
               class="atl-tl-add-input"
               aria-label="New task title"

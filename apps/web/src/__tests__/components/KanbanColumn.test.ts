@@ -120,6 +120,20 @@ describe('KanbanColumn editing', () => {
     expect(wrapper.emitted('create')).toBeUndefined();
   });
 
+  it('marks the quick-add title field so password managers ignore it (ATL-140)', async () => {
+    const wrapper = mountColumn();
+
+    await wrapper.find('[aria-label="Add task"]').trigger('click');
+    const input = wrapper.find('input.atl-quick-add');
+    expect(input.exists()).toBe(true);
+    expect(input.attributes('autocomplete')).toBe('off');
+    expect(input.attributes('name')).toBe('atlas-task-title');
+    expect(input.attributes('data-form-type')).toBe('other');
+    expect(input.attributes('data-bwignore')).toBeDefined();
+    expect(input.attributes('data-lpignore')).toBe('true');
+    expect(input.attributes('data-1p-ignore')).toBeDefined();
+  });
+
   it('scrolls the kanban container when dragging near an edge', () => {
     const wrapper = mountColumn();
     const scrollContainer = wrapper.element as HTMLElement;
