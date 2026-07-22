@@ -29,6 +29,7 @@ import { collectPaged } from '@/lib/pagination';
 import { useBoardsStore } from '@/stores/boards';
 import { useDocumentsStore } from '@/stores/documents';
 import { useFoldersStore } from '@/stores/folders';
+import { useLastViewedStore } from '@/stores/lastViewed';
 import { useNotesTabsStore } from '@/stores/notesTabs';
 import { useResourceStatusStore } from '@/stores/resourceStatus';
 import { useTreeSelection } from '@/stores/treeSelection';
@@ -418,6 +419,55 @@ async function removeBoard(boardId: string): Promise<void> {
   if (wasActive) void router.push(routeAfterClose(next));
 }
 
+async function deleteProject(): Promise<void> {
+  if (ws.value === '' || deletingProject.value) return;
+
+  const documentSlugs = new Set(
+    treeSummaries.value
+      .map((document) => document.slug)
+      .filter((slug): slug is string => typeof slug === 'string'),
+  );
+  const dirtyDocument = [...documentSlugs].find((slug) => tabs.isDirtyDoc(ws.value, slug));
+  if (dirtyDocument !== undefined) {
+    ui.showBanner('Save or discard the unsaved document before deleting this project.', 'error');
+    return;
+  }
+
+  const boardIds = new Set(treeBoards.value.map((board) => board.id));
+  const activeDocumentDeleted = props.activeSlug !== null && documentSlugs.has(props.activeSlug);
+  const activeBoardDeleted = props.activeBoardId !== null && boardIds.has(props.activeBoardId);
+  const workspaceId = workspace.workspaceIdForSlug(ws.value);
+
+  deletingProject.value = true;
+  const ok = await workspace.deleteProject(ws.value, props.project.slug);
+  deletingProject.value = false;
+  if (!ok) {
+    if (workspace.error) ui.showBanner(workspace.error, 'error');
+    return;
+  }
+
+  if (workspaceId !== null) {
+    await resourceCache.purgeTags(
+      [`project:${props.project.slug}`],
+      getResourceCachePrincipal(),
+      workspaceId,
+    );
+  }
+
+  for (const tab of tabs.tabs(ws.value)) {
+    if ((tab.kind === 'doc' && documentSlugs.has(tab.id)) || (tab.kind === 'board' && boardIds.has(tab.id))) {
+      tabs.close(ws.value, tab);
+    }
+  }
+
+  if (activeDocumentDeleted || activeBoardDeleted) {
+    useLastViewedStore().clear(ws.value);
+    void router.push(routeAfterClose(null));
+  }
+
+  deleteProjectOpen.value = false;
+}
+
 async function moveNodes(nodes: TreeNodeRef[], target: string | null): Promise<void> {
   if (ws.value === '') return;
 
@@ -600,6 +650,7 @@ watch(
 
 const { open: menuOpen, x: menuX, y: menuY, openAt, close: closeMenu } = useContextMenu();
 const deleteProjectOpen = ref(false);
+const deletingProject = ref(false);
 
 // Creation from the space header: expand the space, then open the tree's inline
 // input so the new item is typed in this project's context.
@@ -696,7 +747,7 @@ defineExpose({
       detail-icon="layers"
       confirm-label="Delete project"
       confirm-icon="trash-2"
-      @confirm="workspace.deleteProject(ws, project.slug); deleteProjectOpen = false"
+       @confirm="deleteProject"
       @cancel="deleteProjectOpen = false"
     />
 

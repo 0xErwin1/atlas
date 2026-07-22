@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import ExpandableRow from '@/components/settings/ExpandableRow.vue';
 import PanelHeader from '@/components/settings/PanelHeader.vue';
+import RowAction from '@/components/settings/RowAction.vue';
+import SettingsTable from '@/components/settings/SettingsTable.vue';
+import EmptyState from '@/components/states/EmptyState.vue';
+import Btn from '@/components/ui/Btn.vue';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import Icon from '@/components/ui/Icon.vue';
 import { formatDate } from '@/lib/format';
@@ -12,6 +17,7 @@ const workspace = useWorkspaceStore();
 const selectedWorkspace = ref('');
 const selectedKind = ref<TrashKind | ''>('');
 const purgeTarget = ref<TrashItem | null>(null);
+const expandedTarget = ref<string | null>(null);
 const operation = ref<ReturnType<typeof trash.purge> extends Promise<infer T> ? T : null>(null);
 let pollTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -40,7 +46,10 @@ async function refresh(): Promise<void> {
 }
 
 async function restore(item: TrashItem): Promise<void> {
-  await trash.restore(item);
+  if (await trash.restore(item)) {
+    const activeWorkspace = workspace.activeWorkspaceSlug;
+    if (activeWorkspace !== null) await workspace.loadProjects(activeWorkspace);
+  }
 }
 
 async function confirmPurge(): Promise<void> {
@@ -54,7 +63,8 @@ async function confirmPurge(): Promise<void> {
 async function poll(): Promise<void> {
   const current = operation.value;
   if (current === null || current.status === 'complete') return;
-  operation.value = await trash.poll(current.operation_id);
+  const next = await trash.poll(current.operation_id);
+  if (next !== null) operation.value = next;
   schedulePoll();
 }
 
@@ -79,9 +89,9 @@ onMounted(() => {
   <div>
     <PanelHeader title="Trash" subtitle="Recover deleted resources or permanently purge them">
       <template #actions>
-        <button type="button" class="atl-trash-refresh" :disabled="trash.loading" @click="refresh">
+        <Btn :disabled="trash.loading" @click="refresh">
           <Icon name="refresh-cw" :size="14" /> Refresh
-        </button>
+        </Btn>
       </template>
     </PanelHeader>
 
@@ -95,22 +105,47 @@ onMounted(() => {
       </select>
     </div>
 
-    <p v-if="trash.error" role="alert" class="atl-trash-error">{{ trash.error }}</p>
-    <p v-else-if="operation" class="atl-trash-status" role="status">
+    <p v-if="trash.error" role="alert" class="atl-trash-message atl-trash-message--error">{{ trash.error }}</p>
+    <p v-else-if="operation" class="atl-trash-message" role="status">
       Purge {{ operation.status.replace('_', ' ') }} (attempt {{ operation.attempts }})
-      <button v-if="operation.status !== 'complete'" type="button" @click="poll">Check status</button>
+      <Btn v-if="operation.status !== 'complete'" @click="poll">Check status</Btn>
     </p>
 
-    <div v-if="trash.items.length > 0" class="atl-trash-list">
-      <div v-for="item in trash.items" :key="`${item.kind}:${item.target_id}`" class="atl-trash-row">
-        <Icon name="trash-2" :size="15" />
-        <div class="atl-trash-item"><strong>{{ item.kind }}</strong><code>{{ item.target_id }}</code><span>{{ formatDate(item.deleted_at) }}</span></div>
-        <button type="button" @click="restore(item)">Restore</button>
-        <button type="button" class="danger" @click="purgeTarget = item">Purge</button>
-      </div>
-    </div>
-    <p v-else-if="!trash.loading" class="atl-trash-empty">No deleted resources match these filters.</p>
-    <button v-if="trash.hasMore" type="button" class="atl-trash-more" @click="trash.loadMore">Load more</button>
+    <SettingsTable v-if="trash.items.length > 0">
+      <template #head>
+        <div style="flex: 0 0 110px;">Type</div>
+        <div style="flex: 1;">Resource</div>
+        <div style="flex: 0 0 132px;">Deleted</div>
+        <div style="flex: 0 0 150px;"></div>
+      </template>
+      <ExpandableRow
+        v-for="item in trash.items"
+        :key="`${item.kind}:${item.target_id}`"
+        :expanded="expandedTarget === `${item.kind}:${item.target_id}`"
+        style="--erow-actions-basis: 150px; min-height: 46px;"
+        @toggle="expandedTarget = expandedTarget === `${item.kind}:${item.target_id}` ? null : `${item.kind}:${item.target_id}`"
+      >
+        <template #summary>
+          <div style="display: flex; flex: 0 0 110px; align-items: center; gap: 6px;"><Icon name="trash-2" :size="14" />{{ item.kind }}</div>
+          <code class="atl-trash-target">{{ item.target_id }}</code>
+          <span style="flex: 0 0 132px; font-size: var(--fs-sm); color: var(--c-muted);">{{ formatDate(item.deleted_at) }}</span>
+        </template>
+        <template #actions>
+          <RowAction title="Restore" @click="restore(item)"><Icon name="rotate-ccw" :size="13" /></RowAction>
+          <RowAction title="Purge permanently" @click="purgeTarget = item"><Icon name="trash-2" :size="13" /></RowAction>
+        </template>
+        <template #panel>
+          <code class="atl-trash-target">{{ item.target_id }}</code>
+        </template>
+      </ExpandableRow>
+    </SettingsTable>
+    <EmptyState
+      v-else-if="!trash.loading"
+      compact
+      icon="trash-2"
+      title="No deleted resources match these filters."
+    />
+    <Btn v-if="trash.hasMore" style="margin-top: 10px;" @click="trash.loadMore">Load more</Btn>
 
     <ConfirmDialog
       :open="purgeTarget !== null"
@@ -128,13 +163,9 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.atl-trash-filters,.atl-trash-row { display:flex; align-items:center; gap:8px; }
-.atl-trash-filters { margin-bottom:16px; }
-.atl-trash-list { border:1px solid var(--c-border); border-radius:var(--r-sm); }
-.atl-trash-row { padding:10px; border-top:1px solid var(--c-border); }
-.atl-trash-row:first-child { border-top:0; }
-.atl-trash-item { display:flex; flex:1; min-width:0; flex-direction:column; gap:2px; }
-.atl-trash-item code { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--c-muted); }
-.atl-trash-item span,.atl-trash-empty,.atl-trash-error,.atl-trash-status { font-size:var(--fs-sm); color:var(--c-muted); }
-.atl-trash-error { color:var(--c-danger); }.danger { color:var(--c-danger); }.atl-trash-more { margin-top:10px; }
+  .atl-trash-filters { display:flex; align-items:center; gap:8px; }
+  .atl-trash-filters { margin-bottom:16px; }
+  .atl-trash-target { flex: 1; min-width: 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--c-muted); }
+  .atl-trash-message { display:flex; align-items:center; gap:8px; font-size:var(--fs-sm); color:var(--c-muted); }
+  .atl-trash-message--error { color:var(--c-danger); }
 </style>

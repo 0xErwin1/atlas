@@ -94,4 +94,38 @@ describe('NotesSidebar whole-sidebar loading gate', () => {
 
     wrapper.unmount();
   });
+
+  it('preserves settled projects when a later project refresh adds another space', async () => {
+    const workspace = setupProjects();
+    GET.mockResolvedValue({ data: { items: [] }, error: undefined });
+    const wrapper = mount(NotesSidebar);
+    await flushPromises();
+
+    let releaseGet: () => void = () => {};
+    const pending = new Promise<void>((resolve) => {
+      releaseGet = resolve;
+    });
+    GET.mockReturnValueOnce(pending.then(() => ({ data: { items: [] }, error: undefined })));
+    GET.mockReturnValueOnce(pending.then(() => ({ data: { items: [] }, error: undefined })));
+    GET.mockReturnValueOnce(pending.then(() => ({ data: { items: [] }, error: undefined })));
+    workspace.projects = [
+      ...workspace.projects,
+      {
+        slug: 'new-space',
+        name: 'New space',
+        task_prefix: 'NEW',
+        workspace_id: 'w1',
+        visibility: 'workspace',
+      },
+    ];
+    await flushPromises();
+
+    expect(wrapper.findComponent(LoadingState).exists()).toBe(true);
+    releaseGet();
+    await flushPromises();
+
+    expect(wrapper.findComponent(LoadingState).exists()).toBe(false);
+    expect(wrapper.find('.notes-sidebar-body').attributes('style') ?? '').not.toContain('display: none');
+    wrapper.unmount();
+  });
 });

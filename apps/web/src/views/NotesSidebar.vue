@@ -71,8 +71,9 @@ const allSpacesReady = computed(
 
 watch(
   () => projectSlugs.value.join('\0'),
-  () => {
-    settledSlugs.value = new Set();
+  (nextSlugs) => {
+    const next = new Set(nextSlugs === '' ? [] : nextSlugs.split('\0'));
+    settledSlugs.value = new Set([...settledSlugs.value].filter((slug) => next.has(slug)));
   },
 );
 
@@ -97,11 +98,8 @@ function openNewPage(): void {
 
 function openBackgroundMenu(event: MouseEvent): void {
   const target = event.target as HTMLElement;
-  if (
-    target !== event.currentTarget ||
-    target.closest('input,textarea,button,a,[contenteditable="true"]') !== null
-  )
-    return;
+  if (target.closest('input,textarea,button,a,[contenteditable="true"]') !== null) return;
+
   event.preventDefault();
   openAt(event);
 }
@@ -132,31 +130,19 @@ defineExpose({ openNewPage });
 
         <footer class="notes-sidebar-actions" aria-label="Sidebar actions">
           <SidebarViews :active-view-id="activeViewId" />
-        <button
-          type="button"
-          class="notes-sidebar-footer"
-          title="New project"
-          aria-label="New project"
-          @click="openFooterMenu"
-        >
-          <Icon name="plus" :size="14" />
-          <span>New project</span>
-        </button>
+          <button
+            type="button"
+            class="notes-sidebar-footer"
+            title="New project"
+            aria-label="New project"
+            @click="openFooterMenu"
+          >
+            <Icon name="plus" :size="14" />
+            <span>New project</span>
+          </button>
         </footer>
       </div>
 
-      <ContextMenu
-        :open="menuOpen"
-        :x="menuX"
-        :y="menuY"
-        :items="footerMenuItems"
-        @close="closeMenu"
-      />
-      <ProjectCreateDialog
-        :open="createProjectOpen"
-        @created="createProjectOpen = false"
-        @cancel="createProjectOpen = false"
-      />
     </template>
 
     <ErrorState
@@ -166,6 +152,18 @@ defineExpose({ openNewPage });
       @retry="loadProjects"
     />
     <EmptyState v-else icon="folder" title="No projects yet." />
+    <ContextMenu
+      :open="menuOpen"
+      :x="menuX"
+      :y="menuY"
+      :items="footerMenuItems"
+      @close="closeMenu"
+    />
+    <ProjectCreateDialog
+      :open="createProjectOpen"
+      @created="createProjectOpen = false"
+      @cancel="createProjectOpen = false"
+    />
   </div>
 </template>
 

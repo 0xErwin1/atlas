@@ -81,4 +81,39 @@ describe('trash store', () => {
       body: { kind: item.kind, target_id: item.target_id, confirm: true },
     });
   });
+
+  it('clears stale rows immediately and ignores a late response for a previous filter', async () => {
+    let resolveProjects:
+      | ((value: { data: { items: (typeof item)[]; has_more: boolean; next_cursor: null } }) => void)
+      | undefined;
+    const projects = new Promise<{ data: { items: (typeof item)[]; has_more: boolean; next_cursor: null } }>(
+      (resolve) => {
+        resolveProjects = resolve;
+      },
+    );
+    GET.mockReturnValueOnce(projects);
+    GET.mockResolvedValueOnce({ data: { items: [], has_more: false, next_cursor: null } });
+    const store = useTrashStore();
+
+    const first = store.load({ kind: 'project' });
+    expect(store.items).toEqual([]);
+
+    await store.load({ kind: 'folder' });
+    if (resolveProjects === undefined) throw new Error('Expected initial Trash request');
+    resolveProjects({ data: { items: [item], has_more: false, next_cursor: null } });
+    await first;
+
+    expect(store.filter).toEqual({ kind: 'folder' });
+    expect(store.items).toEqual([]);
+  });
+
+  it('keeps a failed poll retryable without publishing stale purge state', async () => {
+    GET.mockResolvedValueOnce({ error: { hint: 'Retry later' } });
+    const store = useTrashStore();
+
+    const status = await store.poll('018f4abc-1234-7abc-8def-0123456789ad');
+
+    expect(status).toBeNull();
+    expect(store.error).toBe('Retry later');
+  });
 });

@@ -22,8 +22,19 @@ export const useTrashStore = defineStore('trash', () => {
   const loading = ref(false);
   const error = ref<string | null>(null);
   const filter = ref<TrashFilter>({});
+  let requestGeneration = 0;
 
   async function load(nextFilter: TrashFilter = {}, cursor?: string): Promise<void> {
+    const generation = ++requestGeneration;
+    const replace = cursor === undefined;
+
+    filter.value = nextFilter;
+    if (replace) {
+      items.value = [];
+      nextCursor.value = null;
+      hasMore.value = false;
+    }
+
     loading.value = true;
     error.value = null;
 
@@ -35,14 +46,15 @@ export const useTrashStore = defineStore('trash', () => {
     };
     const { data, error: apiError } = await wrappedClient.GET('/api/admin/trash', { params: { query } });
 
+    if (generation !== requestGeneration) return;
+
     loading.value = false;
     if (apiError !== undefined || data === undefined) {
       error.value = errorHint(apiError, 'Failed to load Trash');
       return;
     }
 
-    filter.value = nextFilter;
-    items.value = cursor === undefined ? data.items : [...items.value, ...data.items];
+    items.value = replace ? data.items : [...items.value, ...data.items];
     nextCursor.value = data.next_cursor ?? null;
     hasMore.value = data.has_more;
   }
