@@ -96,11 +96,14 @@ describe('NotesSidebar unified all-projects container', () => {
     expect(footer.text()).toContain('New project');
 
     await footer.trigger('click');
-    const labels = (wrapper.findComponent(ContextMenu).props('items') as Array<{ label?: string }>).map(
-      (i) => i.label,
-    );
-    expect(labels).toContain('New page');
-    expect(labels).toContain('New board');
+    const footerMenu = wrapper.findAllComponents(ContextMenu).find((menu) => {
+      const labels = (menu.props('items') as Array<{ label?: string }>).map((item) => item.label);
+      return labels.includes('New project');
+    });
+    expect(footerMenu).toBeDefined();
+    expect(footerMenu?.props('items')).toEqual([
+      { label: 'New project', icon: 'folder-plus', action: expect.any(Function) },
+    ]);
     wrapper.unmount();
   });
 
@@ -127,6 +130,52 @@ describe('NotesSidebar unified all-projects container', () => {
 
     expect(wrapper.findAllComponents(NotesSpace)).toHaveLength(0);
     expect(wrapper.text()).toContain('No projects yet.');
+    wrapper.unmount();
+  });
+
+  it('opens the shared project-create menu from empty background', async () => {
+    const workspace = useWorkspaceStore();
+    workspace.setActiveWorkspace('atlas');
+    workspace.projects = [];
+    const wrapper = mount(NotesSidebar);
+    await flushPromises();
+
+    const backgroundEvent = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    wrapper.element.dispatchEvent(backgroundEvent);
+    await wrapper.vm.$nextTick();
+
+    const menu = wrapper.findAllComponents(ContextMenu).find((candidate) => candidate.props('open') === true);
+    expect(menu?.props('items')).toEqual([
+      { label: 'New project', icon: 'folder-plus', action: expect.any(Function) },
+    ]);
+    expect(backgroundEvent.defaultPrevented).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('preserves native context menus for sidebar rows and interactive targets', async () => {
+    setupProjects();
+    const wrapper = mount(NotesSidebar);
+    await flushPromises();
+
+    const targets = [
+      Object.assign(document.createElement('button'), { className: 'atl-row' }),
+      document.createElement('input'),
+      document.createElement('textarea'),
+      (() => {
+        const editor = document.createElement('span');
+        editor.setAttribute('contenteditable', 'true');
+        return editor;
+      })(),
+      document.createElement('button'),
+      Object.assign(document.createElement('a'), { href: '#' }),
+    ];
+    for (const target of targets) {
+      wrapper.element.append(target);
+      const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+      target.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(false);
+      target.remove();
+    }
     wrapper.unmount();
   });
 });

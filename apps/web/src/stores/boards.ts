@@ -349,6 +349,19 @@ export const useBoardsStore = defineStore('boards', () => {
     return boardsByProject.value.get(projectSlug) ?? [];
   }
 
+  /** Removes one project's board catalog without invalidating other project spaces. */
+  function clearProject(projectSlug: string, projectId?: string): void {
+    catalogRequests.delete(projectSlug);
+    const next = new Map(boardsByProject.value);
+    next.delete(projectSlug);
+    boardsByProject.value = next;
+
+    if (projectId !== undefined && board.value?.project_id === projectId) {
+      cancelBoardLoad();
+      clearBoardComposite();
+    }
+  }
+
   async function createBoard(
     ws: string,
     projectSlug: string,
@@ -1546,6 +1559,7 @@ export const useBoardsStore = defineStore('boards', () => {
     loadError,
     loadErrorStatus,
     reset,
+    clearProject,
     taskDetails,
     detailsLoading,
     taskDetail,

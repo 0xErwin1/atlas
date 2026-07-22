@@ -32,6 +32,7 @@ const stubs = {
   UsersPanel: { template: '<div data-stub="users" />' },
   AboutPanel: { template: '<div data-stub="about" />' },
   AppSettingsPanel: { template: '<div data-stub="app" />' },
+  TrashPanel: { template: '<div data-stub="trash" />' },
   WorkspaceAuditPanel: { template: '<div data-stub="audit" />' },
 };
 
@@ -115,6 +116,17 @@ describe('SettingsView routing', () => {
     expect(wrapper.find('[data-stub="users"]').exists()).toBe(true);
   });
 
+  it.each([
+    { isRoot: true },
+    { isSystemAdmin: true },
+  ])('renders Trash for a global admin direct route', (flags) => {
+    const wrapper = mountView('trash', flags);
+
+    expect(wrapper.find('[data-settings-row="trash"]').exists()).toBe(true);
+    expect(wrapper.find('[data-stub="trash"]').exists()).toBe(true);
+    expect(replace).not.toHaveBeenCalled();
+  });
+
   it('hides administration sections from a non-admin user', () => {
     const wrapper = mountView('account', {});
 
@@ -127,6 +139,14 @@ describe('SettingsView routing', () => {
     const wrapper = mountView('users', {});
 
     expect(wrapper.find('[data-stub="users"]').exists()).toBe(false);
+    expect(wrapper.find('[data-stub="account"]').exists()).toBe(true);
+    expect(replace).toHaveBeenCalledWith({ name: 'settings', params: { section: 'account' } });
+  });
+
+  it('blocks a non-admin user from reaching Trash via the direct URL', () => {
+    const wrapper = mountView('trash', {});
+
+    expect(wrapper.find('[data-stub="trash"]').exists()).toBe(false);
     expect(wrapper.find('[data-stub="account"]').exists()).toBe(true);
     expect(replace).toHaveBeenCalledWith({ name: 'settings', params: { section: 'account' } });
   });

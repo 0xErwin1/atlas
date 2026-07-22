@@ -8,6 +8,8 @@ export interface DocsTab {
   kind: TabKind;
   id: string;
   title: string;
+  /** Project ownership lets lifecycle actions close related tabs without catalog lookups. */
+  projectSlug?: string;
 }
 
 /** The identity of a tab, independent of its title. */
@@ -47,7 +49,10 @@ function migrateTab(entry: unknown): DocsTab | null {
 
   if (record.kind === 'board' || record.kind === 'doc') {
     const id = typeof record.id === 'string' ? record.id : null;
-    return id === null ? null : { kind: record.kind, id, title };
+    const projectSlug = typeof record.projectSlug === 'string' ? record.projectSlug : undefined;
+    return id === null
+      ? null
+      : { kind: record.kind, id, title, ...(projectSlug === undefined ? {} : { projectSlug }) };
   }
 
   const slug = typeof record.slug === 'string' ? record.slug : null;
@@ -175,14 +180,23 @@ export const useNotesTabsStore = defineStore('notesTabs', () => {
   }
 
   /** Adds the tab if missing, otherwise refreshes its title. */
-  function open(ws: string, ref: TabRef, title: string): void {
+  function open(ws: string, ref: TabRef, title: string, projectSlug?: string): void {
     const list = byWorkspace.value[ws] ?? [];
     const existing = list.find((t) => sameRef(t, ref));
 
     if (existing) {
       if (title !== '') existing.title = title;
+      if (projectSlug !== undefined) existing.projectSlug = projectSlug;
     } else {
-      byWorkspace.value[ws] = [...list, { kind: ref.kind, id: ref.id, title: title === '' ? ref.id : title }];
+      byWorkspace.value[ws] = [
+        ...list,
+        {
+          kind: ref.kind,
+          id: ref.id,
+          title: title === '' ? ref.id : title,
+          ...(projectSlug === undefined ? {} : { projectSlug }),
+        },
+      ];
     }
 
     persist();
@@ -260,6 +274,42 @@ export const useNotesTabsStore = defineStore('notesTabs', () => {
     return dirtyDocByWorkspace.value[ws] === id;
   }
 
+  function isProjectTab(tab: DocsTab, projectSlug: string, legacyRefs: readonly TabRef[]): boolean {
+    return tab.projectSlug === projectSlug || legacyRefs.some((ref) => sameRef(tab, ref));
+  }
+
+  /** True when the project owns the document with unsaved editor changes. */
+  function hasDirtyProjectDocument(
+    ws: string,
+    projectSlug: string,
+    legacyRefs: readonly TabRef[] = [],
+  ): boolean {
+    const dirtyId = dirtyDocByWorkspace.value[ws];
+    if (dirtyId === undefined) return false;
+
+    return (byWorkspace.value[ws] ?? []).some(
+      (tab) => tab.kind === 'doc' && tab.id === dirtyId && isProjectTab(tab, projectSlug, legacyRefs),
+    );
+  }
+
+  /** Closes every project-owned tab and returns the refs that were removed. */
+  function closeProject(ws: string, projectSlug: string, legacyRefs: readonly TabRef[] = []): TabRef[] {
+    const owned = (byWorkspace.value[ws] ?? []).filter((tab) => isProjectTab(tab, projectSlug, legacyRefs));
+    if (owned.length === 0) return [];
+
+    byWorkspace.value[ws] = (byWorkspace.value[ws] ?? []).filter(
+      (tab) => !isProjectTab(tab, projectSlug, legacyRefs),
+    );
+    persist();
+
+    const active = activeByWorkspace.value[ws];
+    if (active !== undefined && owned.some((tab) => sameRef(tab, active))) {
+      reconcileActive(ws, byWorkspace.value[ws][0] ?? null);
+    }
+
+    return owned.map(({ kind, id }) => ({ kind, id }));
+  }
+
   return {
     byWorkspace,
     tabs,
@@ -274,5 +324,7 @@ export const useNotesTabsStore = defineStore('notesTabs', () => {
     clearActive,
     setDirtyDoc,
     isDirtyDoc,
+    hasDirtyProjectDocument,
+    closeProject,
   };
 });

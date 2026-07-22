@@ -495,7 +495,10 @@ async function loadDoc(target: NoteTarget | null, previousTarget: NoteTarget | n
 
   applyLoadedDocument(result, target.slug);
   resourceStatus.recordRequestSuccess(statusKey, true);
-  tabsStore.open(target.workspaceSlug, { kind: 'doc', id: target.slug }, title.value);
+  const projectSlug = Object.entries(documents.summariesByProject).find(([, summaries]) =>
+    summaries.some((summary) => summary.slug === target.slug),
+  )?.[0];
+  tabsStore.open(target.workspaceSlug, { kind: 'doc', id: target.slug }, title.value, projectSlug);
   tabsStore.setActive(target.workspaceSlug, { kind: 'doc', id: target.slug });
 }
 

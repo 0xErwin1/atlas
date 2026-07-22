@@ -1,8 +1,19 @@
 import { mount } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const { push, currentRoute } = vi.hoisted(() => ({
+  push: vi.fn(),
+  currentRoute: { value: { name: 'settings', params: {} } },
+}));
+
+vi.mock('vue-router', () => ({
+  useRouter: () => ({ push, currentRoute }),
+}));
+
 import ProjectCreateDialog from '@/components/projects/ProjectCreateDialog.vue';
 import ProjectsPanel from '@/components/settings/ProjectsPanel.vue';
+import { useNotesTabsStore } from '@/stores/notesTabs';
 import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 
@@ -228,6 +239,27 @@ describe('ProjectsPanel — delete flow', () => {
 
     expect(del).toHaveBeenCalledWith('acme', 'atlas');
     expect(vm.deleteTarget).toBeNull();
+  });
+
+  it('blocks Settings deletion when the shared lifecycle finds a dirty project tab', async () => {
+    const workspace = setupStore();
+    const del = vi.spyOn(workspace, 'deleteProject').mockResolvedValue(true);
+    const tabs = useNotesTabsStore();
+    tabs.open('acme', { kind: 'doc', id: 'doc-1' }, 'Document', 'atlas');
+    tabs.setDirtyDoc('acme', 'doc-1');
+    const banner = vi.spyOn(useUiStore(), 'showBanner');
+
+    const wrapper = mount(ProjectsPanel);
+    await wrapper.vm.$nextTick();
+    const vm = wrapper.vm as unknown as DeleteVm;
+    vm.deleteTarget = { slug: 'atlas', name: 'Atlas' };
+    await vm.confirmDelete();
+
+    expect(del).not.toHaveBeenCalled();
+    expect(banner).toHaveBeenCalledWith(
+      'Save or discard the unsaved document before deleting this project.',
+      'error',
+    );
   });
 
   it('surfaces a store error when the delete fails', async () => {

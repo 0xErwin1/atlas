@@ -108,6 +108,20 @@ export const useDocumentsStore = defineStore('documents', () => {
     }
   }
 
+  /** Removes one project's catalog without disturbing other mounted project spaces. */
+  function clearProject(projectSlug: string): void {
+    summariesLoadSeqByProject.set(projectSlug, (summariesLoadSeqByProject.get(projectSlug) ?? 0) + 1);
+    const next = { ...summariesByProject.value };
+    delete next[projectSlug];
+    summariesByProject.value = next;
+
+    if (summariesDisplayProjectSlug === projectSlug) {
+      summariesDisplayProjectSlug = null;
+      summaries.value = [];
+      loading.value = false;
+    }
+  }
+
   function isSecondaryTarget(ws: string, slug: string): boolean {
     return secondaryTarget?.workspaceSlug === ws && secondaryTarget.slug === slug;
   }
@@ -600,6 +614,7 @@ export const useDocumentsStore = defineStore('documents', () => {
     summariesFor,
     isProjectLoading,
     clearProjectBuckets,
+    clearProject,
     publishSummariesForProject,
     resetSecondaryTarget,
     clearSecondaryTarget,

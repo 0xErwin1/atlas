@@ -21,6 +21,7 @@ import ContextMenu, { type MenuItem } from '@/components/ui/ContextMenu.vue';
 import Row from '@/components/ui/Row.vue';
 import { useContextMenu } from '@/composables/useContextMenu';
 import { type LiveUpdateEvent, useLiveUpdates } from '@/composables/useLiveUpdates';
+import { useProjectDeletion } from '@/composables/useProjectDeletion';
 import { routeAfterClose } from '@/lib/docsTabs';
 import { EVENT_TYPE, type LiveEnvelope } from '@/lib/eventTypes';
 import { type NoteCatalog, noteCatalogSchema } from '@/lib/noteCatalog';
@@ -66,6 +67,7 @@ const documents = useDocumentsStore();
 const boards = useBoardsStore();
 const selection = useTreeSelection();
 const tabs = useNotesTabsStore();
+const { deleteProject: runProjectDeletion } = useProjectDeletion();
 const ui = useUiStore();
 const resourceStatus = useResourceStatusStore();
 
@@ -422,50 +424,10 @@ async function removeBoard(boardId: string): Promise<void> {
 async function deleteProject(): Promise<void> {
   if (ws.value === '' || deletingProject.value) return;
 
-  const documentSlugs = new Set(
-    treeSummaries.value
-      .map((document) => document.slug)
-      .filter((slug): slug is string => typeof slug === 'string'),
-  );
-  const dirtyDocument = [...documentSlugs].find((slug) => tabs.isDirtyDoc(ws.value, slug));
-  if (dirtyDocument !== undefined) {
-    ui.showBanner('Save or discard the unsaved document before deleting this project.', 'error');
-    return;
-  }
-
-  const boardIds = new Set(treeBoards.value.map((board) => board.id));
-  const activeDocumentDeleted = props.activeSlug !== null && documentSlugs.has(props.activeSlug);
-  const activeBoardDeleted = props.activeBoardId !== null && boardIds.has(props.activeBoardId);
-  const workspaceId = workspace.workspaceIdForSlug(ws.value);
-
   deletingProject.value = true;
-  const ok = await workspace.deleteProject(ws.value, props.project.slug);
+  const ok = await runProjectDeletion(props.project);
   deletingProject.value = false;
-  if (!ok) {
-    if (workspace.error) ui.showBanner(workspace.error, 'error');
-    return;
-  }
-
-  if (workspaceId !== null) {
-    await resourceCache.purgeTags(
-      [`project:${props.project.slug}`],
-      getResourceCachePrincipal(),
-      workspaceId,
-    );
-  }
-
-  for (const tab of tabs.tabs(ws.value)) {
-    if ((tab.kind === 'doc' && documentSlugs.has(tab.id)) || (tab.kind === 'board' && boardIds.has(tab.id))) {
-      tabs.close(ws.value, tab);
-    }
-  }
-
-  if (activeDocumentDeleted || activeBoardDeleted) {
-    useLastViewedStore().clear(ws.value);
-    void router.push(routeAfterClose(null));
-  }
-
-  deleteProjectOpen.value = false;
+  if (ok) deleteProjectOpen.value = false;
 }
 
 async function moveNodes(nodes: TreeNodeRef[], target: string | null): Promise<void> {

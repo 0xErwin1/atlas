@@ -187,6 +187,21 @@ describe('useNotesTabsStore dirty document tracking', () => {
     store.setDirtyDoc('ws', null);
     expect(store.isDirtyDoc('ws', 'a')).toBe(false);
   });
+
+  it("keeps project identity and closes only that project's tabs", () => {
+    const store = useNotesTabsStore();
+    store.open('ws', doc('a'), 'A', 'atlas');
+    store.open('ws', board('b'), 'B', 'atlas');
+    store.open('ws', doc('c'), 'C', 'other');
+    store.setDirtyDoc('ws', 'a');
+
+    expect(store.hasDirtyProjectDocument('ws', 'atlas')).toBe(true);
+    expect(store.closeProject('ws', 'atlas')).toEqual([
+      { kind: 'doc', id: 'a' },
+      { kind: 'board', id: 'b' },
+    ]);
+    expect(store.tabs('ws')).toEqual([{ kind: 'doc', id: 'c', title: 'C', projectSlug: 'other' }]);
+  });
 });
 
 describe('useNotesTabsStore legacy migration', () => {
@@ -211,6 +226,25 @@ describe('useNotesTabsStore legacy migration', () => {
     expect(store.tabs('ws')).toEqual([
       { kind: 'doc', id: 'a', title: 'A' },
       { kind: 'doc', id: 'b', title: 'B' },
+    ]);
+  });
+
+  it('preserves project identity from persisted tabs while tolerating older tabs without it', () => {
+    localStorage.setItem(
+      'atlas:notes-tabs',
+      JSON.stringify({
+        ws: [
+          { kind: 'doc', id: 'a', title: 'A', projectSlug: 'atlas' },
+          { kind: 'board', id: 'b', title: 'B' },
+        ],
+      }),
+    );
+
+    setActivePinia(createPinia());
+    const store = useNotesTabsStore();
+    expect(store.tabs('ws')).toEqual([
+      { kind: 'doc', id: 'a', title: 'A', projectSlug: 'atlas' },
+      { kind: 'board', id: 'b', title: 'B' },
     ]);
   });
 

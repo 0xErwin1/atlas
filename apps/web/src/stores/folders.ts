@@ -48,6 +48,20 @@ export const useFoldersStore = defineStore('folders', () => {
     if (displayProjectSlug === null || displayProjectSlug === projectSlug) folders.value = items;
   }
 
+  /** Removes one project's folder catalog without clearing other project spaces. */
+  function clearProject(projectSlug: string): void {
+    loadSeqByProject.set(projectSlug, (loadSeqByProject.get(projectSlug) ?? 0) + 1);
+    const next = { ...foldersByProject.value };
+    delete next[projectSlug];
+    foldersByProject.value = next;
+
+    if (displayProjectSlug === projectSlug) {
+      displayProjectSlug = null;
+      folders.value = [];
+      loading.value = false;
+    }
+  }
+
   async function load(ws: string, projectSlug: string, opts: { silent?: boolean } = {}): Promise<void> {
     const seq = (loadSeqByProject.get(projectSlug) ?? 0) + 1;
     loadSeqByProject.set(projectSlug, seq);
@@ -194,6 +208,7 @@ export const useFoldersStore = defineStore('folders', () => {
     foldersFor,
     isProjectLoading,
     clearProjectBuckets,
+    clearProject,
     publishForProject,
     load,
     create,

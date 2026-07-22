@@ -13,10 +13,14 @@ import type { LiveUpdateHandlers } from '@/composables/useLiveUpdates';
 import { EVENT_TYPE } from '@/lib/eventTypes';
 
 const { GET, PATCH } = vi.hoisted(() => ({ GET: vi.fn(), PATCH: vi.fn() }));
+const { routerCurrentRoute, routerPush } = vi.hoisted(() => ({
+  routerCurrentRoute: { value: { name: 'notes', params: { slug: 'doc-1' } } },
+  routerPush: vi.fn(),
+}));
 
 vi.mock('vue-router', () => ({
   useRoute: () => ({ params: {} }),
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ currentRoute: routerCurrentRoute, push: routerPush }),
 }));
 
 vi.mock('@/api/wrapper', () => ({
@@ -34,6 +38,8 @@ import NotesTree from '@/components/notas/NotesTree.vue';
 import { useBoardsStore } from '@/stores/boards';
 import { useDocumentsStore } from '@/stores/documents';
 import { useFoldersStore } from '@/stores/folders';
+import { useLastViewedStore } from '@/stores/lastViewed';
+import { useNotesTabsStore } from '@/stores/notesTabs';
 import type { ProjectSummary } from '@/stores/workspace';
 import { useWorkspaceStore } from '@/stores/workspace';
 
@@ -543,6 +549,26 @@ describe('NotesSpace catalog', () => {
     expect(useDocumentsStore().error).toBe('documents unavailable');
     expect(wrapper.text()).toContain('Couldn’t load notes');
     expect(wrapper.text()).not.toContain('Loading notes…');
+    wrapper.unmount();
+  });
+
+  it('routes sidebar project deletion through the shared lifecycle reconciliation', async () => {
+    const store = new MemoryCacheStore();
+    configureCatalogRuntime(store);
+    const workspace = setupWorkspace();
+    vi.spyOn(workspace, 'deleteProject').mockResolvedValue(true);
+    const tabs = useNotesTabsStore();
+    tabs.open('atlas', { kind: 'doc', id: 'doc-1' }, 'Document', 'sandbox');
+    tabs.open('atlas', { kind: 'board', id: 'board-1' }, 'Board', 'sandbox');
+    useLastViewedStore().record('atlas', { name: 'notes', params: { slug: 'doc-1' } });
+
+    const wrapper = mountSpace();
+    const vm = wrapper.vm as unknown as { deleteProject: () => Promise<void> };
+    await vm.deleteProject();
+
+    expect(workspace.deleteProject).toHaveBeenCalledWith('atlas', 'sandbox');
+    expect(tabs.tabs('atlas')).toEqual([]);
+    expect(useLastViewedStore().forWorkspace('atlas')).toBeNull();
     wrapper.unmount();
   });
 });

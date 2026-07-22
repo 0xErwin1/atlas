@@ -279,7 +279,8 @@ async function loadBoard(background = false): Promise<void> {
   // The board loaded: open (or activate) its tab, mirroring how a document opens
   // one on load. Board tabs carry no dirty state.
   const boardRef = { kind: 'board' as const, id: targetBoardId };
-  tabsStore.open(targetWorkspace, boardRef, boards.board?.name ?? '');
+  const projectSlug = workspace.projects.find((project) => project.id === boards.board?.project_id)?.slug;
+  tabsStore.open(targetWorkspace, boardRef, boards.board?.name ?? '', projectSlug);
   tabsStore.setActive(targetWorkspace, boardRef);
 
   const savedView = uiState.boardViewFor(targetBoardId);

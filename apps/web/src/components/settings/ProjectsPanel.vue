@@ -8,6 +8,7 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import FormField from '@/components/ui/FormField.vue';
 import Icon from '@/components/ui/Icon.vue';
 import { useLoadingMap } from '@/composables/useLoadingMap';
+import { useProjectDeletion } from '@/composables/useProjectDeletion';
 import { useUiStore } from '@/stores/ui';
 import { type ProjectSummary, useWorkspaceStore } from '@/stores/workspace';
 
@@ -24,6 +25,7 @@ const TASK_PREFIX_RE = /^[A-Z][A-Z0-9]{1,9}$/;
 
 const workspace = useWorkspaceStore();
 const ui = useUiStore();
+const { deleteProject } = useProjectDeletion();
 
 const ws = computed(() => workspace.activeWorkspaceSlug);
 
@@ -135,20 +137,17 @@ function onCreated(): void {
 }
 
 async function confirmDelete(): Promise<void> {
-  const wsSlug = ws.value;
   const target = deleteTarget.value;
-  if (wsSlug === null || target === null) return;
+  if (ws.value === null || target === null) return;
 
   deleteTarget.value = null;
   rowBusy.set(target.slug, true);
 
-  const ok = await workspace.deleteProject(wsSlug, target.slug);
+  const ok = await deleteProject(target);
   rowBusy.set(target.slug, false);
 
   if (ok) {
     ui.showBanner(`Project "${target.name}" deleted`, 'success');
-  } else if (workspace.error !== null) {
-    ui.showBanner(workspace.error, 'error');
   }
 }
 </script>

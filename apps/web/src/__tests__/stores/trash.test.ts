@@ -107,6 +107,32 @@ describe('trash store', () => {
     expect(store.items).toEqual([]);
   });
 
+  it('ignores a late pagination response after a replacement filter request', async () => {
+    let resolveMore:
+      | ((value: { data: { items: (typeof item)[]; has_more: boolean; next_cursor: null } }) => void)
+      | undefined;
+    const more = new Promise<{ data: { items: (typeof item)[]; has_more: boolean; next_cursor: null } }>(
+      (resolve) => {
+        resolveMore = resolve;
+      },
+    );
+    GET.mockResolvedValueOnce({ data: { items: [item], has_more: true, next_cursor: 'next' } });
+    GET.mockReturnValueOnce(more);
+    GET.mockResolvedValueOnce({ data: { items: [], has_more: false, next_cursor: null } });
+    const store = useTrashStore();
+
+    await store.load({ kind: 'project' });
+    const loadMore = store.loadMore();
+    await store.load({ kind: 'folder' });
+    if (resolveMore === undefined) throw new Error('Expected pagination request');
+    resolveMore({ data: { items: [item], has_more: false, next_cursor: null } });
+    await loadMore;
+
+    expect(store.filter).toEqual({ kind: 'folder' });
+    expect(store.items).toEqual([]);
+    expect(store.hasMore).toBe(false);
+  });
+
   it('keeps a failed poll retryable without publishing stale purge state', async () => {
     GET.mockResolvedValueOnce({ error: { hint: 'Retry later' } });
     const store = useTrashStore();

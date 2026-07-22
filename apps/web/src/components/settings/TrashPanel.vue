@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { getResourceCachePrincipal, resourceCache } from '@/cache/cacheRuntime';
 import ExpandableRow from '@/components/settings/ExpandableRow.vue';
 import PanelHeader from '@/components/settings/PanelHeader.vue';
 import RowAction from '@/components/settings/RowAction.vue';
@@ -46,9 +47,39 @@ async function refresh(): Promise<void> {
 }
 
 async function restore(item: TrashItem): Promise<void> {
-  if (await trash.restore(item)) {
-    const activeWorkspace = workspace.activeWorkspaceSlug;
-    if (activeWorkspace !== null) await workspace.loadProjects(activeWorkspace);
+  if (!(await trash.restore(item))) return;
+
+  const activeWorkspace = workspace.activeWorkspaceSlug;
+  if (activeWorkspace === null) return;
+
+  await workspace.loadProjects(activeWorkspace);
+  if (workspace.projectsError !== null) {
+    trash.error = workspace.projectsError;
+    return;
+  }
+
+  const workspaceId = workspace.workspaceIdForSlug(activeWorkspace);
+  if (workspaceId === null) return;
+
+  const restoredProject =
+    item.kind === 'project' ? workspace.projects.find((project) => project.id === item.target_id) : undefined;
+  try {
+    const invalidated = await resourceCache.purgeTags(
+      [
+        `workspace:${workspaceId}`,
+        ...workspace.projects.map((project) => `project:${project.slug}`),
+        ...(restoredProject === undefined ? [] : [`project:${restoredProject.slug}`]),
+        ...(item.kind === 'document' ? [`document:${item.target_id}`] : []),
+        ...(item.kind === 'comment' ? [`comment:${item.target_id}`] : []),
+        ...(item.kind === 'attachment' ? [`attachment:${item.target_id}`] : []),
+        ...(item.kind === 'folder' ? [`folder:${item.target_id}`] : []),
+      ],
+      getResourceCachePrincipal(),
+      workspaceId,
+    );
+    if (!invalidated) trash.error = 'Restored resource, but cached resources could not be refreshed.';
+  } catch {
+    trash.error = 'Restored resource, but cached resources could not be refreshed.';
   }
 }
 
