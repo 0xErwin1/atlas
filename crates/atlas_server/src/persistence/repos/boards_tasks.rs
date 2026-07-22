@@ -1445,7 +1445,6 @@ impl TaskReferenceRepo for PgTaskReferenceRepo {
             .filter(task_reference::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(task_reference::Column::SourceTaskId.eq(task_id.0))
             .filter(live_task_chain("task_references.source_task_id"))
-            .filter(live_task_chain("task_references.target_task_id"))
             .filter(live_document_chain("task_references.target_document_id"))
             .order_by_asc(task_reference::Column::CreatedAt)
             .order_by_asc(task_reference::Column::Id)

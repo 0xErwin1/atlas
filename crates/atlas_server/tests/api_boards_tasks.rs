@@ -5299,6 +5299,19 @@ async fn reference_target_resolved_false_after_target_task_soft_deleted() {
         r_after.target_resolved
     );
 
+    client
+        .delete_project(&ws.slug, "ref-res-proj")
+        .await
+        .expect("delete source project");
+
+    assert!(
+        client
+            .list_references(&ws.slug, &source.readable_id)
+            .await
+            .is_err(),
+        "references owned by a task under a deleted project must remain concealed"
+    );
+
     db.teardown().await;
 }
 
