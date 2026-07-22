@@ -420,6 +420,102 @@ async fn restore_reports_live_identity_with_an_identity_specific_problem() {
 }
 
 #[tokio::test]
+async fn restore_reports_project_and_folder_identity_conflicts_with_actionable_problems() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let admin = support::login_root_user(&server, &db).await;
+    let (workspace, owner) = support::seed_workspace(&db, "trash-project-folder-conflicts").await;
+    let ctx = support::ctx(&workspace, &owner);
+
+    let deleted_project = db
+        .project_repo()
+        .create(
+            &ctx,
+            NewProject {
+                name: "Deleted project".into(),
+                slug: "trash-project-identity".into(),
+                task_prefix: "TPI".into(),
+                visibility: Visibility::Workspace(VisibilityRole::Editor),
+            },
+        )
+        .await
+        .expect("create deleted project");
+    db.project_repo()
+        .soft_delete(&ctx, deleted_project.id)
+        .await
+        .expect("delete project");
+    db.project_repo()
+        .create(
+            &ctx,
+            NewProject {
+                name: "Live project".into(),
+                slug: "trash-project-identity".into(),
+                task_prefix: "TPI".into(),
+                visibility: Visibility::Workspace(VisibilityRole::Editor),
+            },
+        )
+        .await
+        .expect("reuse deleted project identity");
+
+    let project_response = restore(&admin, &server, "project", deleted_project.id.0).await;
+    assert_eq!(project_response.status(), reqwest::StatusCode::CONFLICT);
+    let project_problem: Value = project_response
+        .json()
+        .await
+        .expect("decode project problem");
+    assert_eq!(
+        project_problem["detail"],
+        "restore is blocked because a live project has the same identity"
+    );
+    assert_eq!(
+        project_problem["hint"],
+        "Resolve the live conflicting identity before restoring this item."
+    );
+
+    let deleted_folder = db
+        .folder_repo()
+        .create(
+            &ctx,
+            NewFolder {
+                project_id: None,
+                parent_folder_id: None,
+                name: "Trash folder identity".into(),
+            },
+        )
+        .await
+        .expect("create deleted folder");
+    db.folder_repo()
+        .soft_delete(&ctx, deleted_folder.id)
+        .await
+        .expect("delete folder");
+    db.folder_repo()
+        .create(
+            &ctx,
+            NewFolder {
+                project_id: None,
+                parent_folder_id: None,
+                name: "Trash folder identity".into(),
+            },
+        )
+        .await
+        .expect("reuse deleted folder identity");
+
+    let folder_response = restore(&admin, &server, "folder", deleted_folder.id.0).await;
+    assert_eq!(folder_response.status(), reqwest::StatusCode::CONFLICT);
+    let folder_problem: Value = folder_response.json().await.expect("decode folder problem");
+    assert_eq!(
+        folder_problem["detail"],
+        "restore is blocked because a live folder has the same identity"
+    );
+    assert_eq!(
+        folder_problem["hint"],
+        "Resolve the live conflicting identity before restoring this item."
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
 async fn trash_filters_and_tied_timestamp_pages_are_complete_without_duplicates() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;
@@ -479,16 +575,115 @@ async fn trash_filters_and_tied_timestamp_pages_are_complete_without_duplicates(
             .collect::<std::collections::BTreeSet<_>>()
     );
 
+    let project = db
+        .project_repo()
+        .create(
+            &ctx_a,
+            NewProject {
+                name: "Mixed page project".into(),
+                slug: "trash-mixed-page-project".into(),
+                task_prefix: "TMP".into(),
+                visibility: Visibility::Workspace(VisibilityRole::Editor),
+            },
+        )
+        .await
+        .expect("create mixed page project");
+    let folder = db
+        .folder_repo()
+        .create(
+            &ctx_a,
+            NewFolder {
+                project_id: None,
+                parent_folder_id: None,
+                name: "Mixed page folder".into(),
+            },
+        )
+        .await
+        .expect("create mixed page folder");
+    let comment_parent = db
+        .doc_repo()
+        .create(
+            &ctx_a,
+            NewDocument {
+                title: "Mixed page comment parent".into(),
+                slug: Some("trash-mixed-page-comment-parent".into()),
+                content: "body".into(),
+                folder_id: None,
+                project_id: None,
+                frontmatter: None,
+            },
+        )
+        .await
+        .expect("create mixed page comment parent");
+    let comment = CommentService::new(db.conn().clone())
+        .create(
+            &ctx_a,
+            CommentOwner::Document(comment_parent.id),
+            "mixed page comment".into(),
+        )
+        .await
+        .expect("create mixed page comment");
+    let attachments = PgAttachmentRepo {
+        conn: db.conn().clone(),
+    };
+    let attachment = attachments
+        .record(
+            &ctx_a,
+            NewAttachment {
+                document_id: Some(comment_parent.id),
+                task_id: None,
+                comment_id: None,
+                file_name: "mixed-page.txt".into(),
+                content_type: "text/plain".into(),
+                size_bytes: 1,
+                sha256: "e".repeat(64),
+            },
+        )
+        .await
+        .expect("create mixed page attachment");
+    db.project_repo()
+        .soft_delete(&ctx_a, project.id)
+        .await
+        .expect("delete mixed page project");
+    db.folder_repo()
+        .soft_delete(&ctx_a, folder.id)
+        .await
+        .expect("delete mixed page folder");
+    CommentService::new(db.conn().clone())
+        .remove(
+            &ctx_a,
+            CommentOwner::Document(comment_parent.id),
+            comment.id,
+            false,
+        )
+        .await
+        .expect("delete mixed page comment");
+    attachments
+        .soft_delete(&ctx_a, attachment.id)
+        .await
+        .expect("delete mixed page attachment");
+    for table in ["projects", "folders", "comments", "attachments"] {
+        db.conn()
+            .execute_unprepared(&format!(
+                "UPDATE {table} SET deleted_at = '2026-07-21T00:00:00Z' WHERE deleted_at IS NOT NULL"
+            ))
+            .await
+            .expect("tie mixed deletion timestamps");
+    }
+
     let mut seen = std::collections::BTreeSet::new();
     let mut cursor = None;
     loop {
         let query = cursor
             .as_deref()
-            .map(|value| format!("?kind=document&limit=1&cursor={value}"))
-            .unwrap_or_else(|| "?kind=document&limit=1".into());
+            .map(|value| format!("?limit=1&cursor={value}"))
+            .unwrap_or_else(|| "?limit=1".into());
         let page = list_trash(&admin, &server, &query).await;
         for item in page["items"].as_array().expect("page items") {
-            seen.insert(item["target_id"].as_str().expect("target id").to_string());
+            assert!(
+                seen.insert(item["target_id"].as_str().expect("target id").to_string()),
+                "a cursor page must not repeat an item"
+            );
         }
         cursor = page["next_cursor"].as_str().map(str::to_string);
         if !page["has_more"].as_bool().expect("has more") {
@@ -501,6 +696,12 @@ async fn trash_filters_and_tied_timestamp_pages_are_complete_without_duplicates(
         document_ids
             .iter()
             .map(uuid::Uuid::to_string)
+            .chain([
+                project.id.0.to_string(),
+                folder.id.0.to_string(),
+                comment.id.0.to_string(),
+                attachment.id.0.to_string(),
+            ])
             .collect::<std::collections::BTreeSet<_>>()
     );
 
@@ -539,6 +740,50 @@ async fn trash_allows_only_root_and_system_admin_humans() {
     let mut key_client = server.client();
     key_client.set_token(api_key.secret);
 
+    let ctx = support::ctx(&workspace, &owner);
+    let create_deleted_document = |title: &str, slug: &str| NewDocument {
+        title: title.into(),
+        slug: Some(slug.into()),
+        content: "body".into(),
+        folder_id: None,
+        project_id: None,
+        frontmatter: None,
+    };
+    let root_document = db
+        .doc_repo()
+        .create(
+            &ctx,
+            create_deleted_document("Root restore", "trash-root-restore"),
+        )
+        .await
+        .expect("create root restore document");
+    let system_admin_document = db
+        .doc_repo()
+        .create(
+            &ctx,
+            create_deleted_document("System restore", "trash-system-restore"),
+        )
+        .await
+        .expect("create system restore document");
+    let denied_document = db
+        .doc_repo()
+        .create(
+            &ctx,
+            create_deleted_document("Denied restore", "trash-denied-restore"),
+        )
+        .await
+        .expect("create denied restore document");
+    let root_document_id = root_document.id.0;
+    let system_admin_document_id = system_admin_document.id.0;
+    let denied_document_id = denied_document.id.0;
+    let document_service = DocumentService::new(db.conn().clone(), 25);
+    for document in [root_document, system_admin_document, denied_document] {
+        document_service
+            .soft_delete(&ctx, document.id)
+            .await
+            .expect("delete restore authorization document");
+    }
+
     for client in [&root, &system_admin] {
         assert_eq!(
             trash_response(client, &server, reqwest::Method::GET, "/api/admin/trash")
@@ -547,14 +792,32 @@ async fn trash_allows_only_root_and_system_admin_humans() {
             reqwest::StatusCode::OK
         );
     }
+    assert_eq!(
+        restore(&root, &server, "document", root_document_id)
+            .await
+            .status(),
+        reqwest::StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        restore(&system_admin, &server, "document", system_admin_document_id,)
+            .await
+            .status(),
+        reqwest::StatusCode::NO_CONTENT
+    );
     for client in [&workspace_admin, &member, &key_client] {
         assert_eq!(
-            trash_response(client, &server, reqwest::Method::GET, "/api/admin/trash")
+            restore(client, &server, "document", denied_document_id)
                 .await
                 .status(),
             reqwest::StatusCode::FORBIDDEN
         );
     }
+    assert_eq!(
+        restore(&root, &server, "document", denied_document_id)
+            .await
+            .status(),
+        reqwest::StatusCode::NO_CONTENT
+    );
 
     db.teardown().await;
 }
