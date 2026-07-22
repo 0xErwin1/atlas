@@ -203,6 +203,7 @@ import { useMarkdownDoc } from '@/composables/useMarkdownDoc';
 import { useWikilinkSuggest } from '@/composables/useWikilinkSuggest';
 import { useWikilinkTitles } from '@/composables/useWikilinkTitles';
 import { getResourceCachePrincipal, resourceCacheEpoch, resourceCacheIsPurging } from '@/cache/cacheRuntime';
+import { createBodySyncScheduler } from '@/lib/editorBodySync';
 import { EVENT_TYPE, PRESENCE_UPDATED } from '@/lib/eventTypes';
 import { routeAfterClose, routeForTab } from '@/lib/docsTabs';
 import { joinFrontmatter, splitFrontmatter } from '@/lib/frontmatter';
@@ -344,7 +345,15 @@ const breadcrumbs = computed(() => {
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
+// Debounced mirror of the editor document for reactive dependents (wikilink
+// titles). The CodeMirror doc is the source of truth while typing; save paths
+// always read via currentMarkdown().
+const bodySync = createBodySyncScheduler((markdown) => {
+  body.value = markdown;
+});
+
 function clearDocument(): void {
+  bodySync.cancel();
   body.value = '';
   title.value = '';
   meta.value = {};
@@ -361,6 +370,7 @@ function clearDocument(): void {
  * (`baseContent`/`headRevisionId`) through the exact same assignments.
  */
 function applyLoadedDocument(result: LoadResult, fallbackTitle: string): void {
+  bodySync.cancel();
   body.value = result.body;
   meta.value = result.meta;
   headRevisionId.value = result.headRevisionId;
@@ -562,6 +572,7 @@ async function resave(content: string, baseRevisionId: string, autoMerged: boole
   const result = await save(ws.value, slug.value, resolvedBody, resolvedMeta, baseRevisionId);
 
   if (result.kind === 'ok') {
+    bodySync.cancel();
     meta.value = resolvedMeta;
     body.value = resolvedBody;
     title.value = typeof resolvedMeta.title === 'string' ? resolvedMeta.title : title.value;
@@ -612,8 +623,8 @@ function onConflictCancel(): void {
 }
 
 function onChange(markdown: string): void {
-  body.value = markdown;
   dirty.value = true;
+  bodySync.schedule(markdown);
 
   if (saveTimer !== null) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => void persist(), 800);

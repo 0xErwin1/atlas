@@ -441,6 +441,8 @@ function onAssigneePick(task: TaskSummaryDto, value: string): void {
   background: transparent;
   text-align: left;
   cursor: pointer;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 38px;
 }
 
 .atl-tl-row:hover {

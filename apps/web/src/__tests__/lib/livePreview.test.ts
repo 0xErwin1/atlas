@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildDocRangeCache,
   computeActiveLines,
   fenceLanguage,
   findMathRanges,
@@ -12,6 +13,7 @@ import {
   parseTable,
   partitionMarkers,
   type SelectionRange,
+  shouldRefreshDocRangeCache,
   taskMarkerChecked,
   tokenizeInline,
 } from '@/lib/livePreview';
@@ -169,6 +171,33 @@ describe('findWikilinkRanges', () => {
   it('ignores wikilinks inside inline code and fenced code', () => {
     const doc = 'Use `[[literal]]` here\n\n```md\n[[fenced]]\n```\nThen [[Real]]';
     expect(findWikilinkRanges(doc)).toEqual([{ from: 50, to: 58, inner: 'Real' }]);
+  });
+});
+
+/**
+ * Selection/viewport moves must reuse the full-doc math/wikilink scan. Refreshing
+ * only when the document or syntax tree identity changes keeps caret motion cheap.
+ */
+describe('doc range cache policy', () => {
+  it('does not refresh on selection- or viewport-only updates', () => {
+    expect(shouldRefreshDocRangeCache({ docChanged: false, syntaxTreeChanged: false })).toBe(false);
+  });
+
+  it('refreshes when the document changes', () => {
+    expect(shouldRefreshDocRangeCache({ docChanged: true, syntaxTreeChanged: false })).toBe(true);
+  });
+
+  it('refreshes when the syntax tree identity changes', () => {
+    expect(shouldRefreshDocRangeCache({ docChanged: false, syntaxTreeChanged: true })).toBe(true);
+  });
+
+  it('precomputes math and wikilink ranges from a single doc string', () => {
+    const doc = 'see [[Target]] and $x$';
+    const cache = buildDocRangeCache(doc);
+
+    expect(cache.docText).toBe(doc);
+    expect(cache.mathRanges).toEqual(findMathRanges(doc));
+    expect(cache.wikilinkRanges).toEqual(findWikilinkRanges(doc));
   });
 });
 

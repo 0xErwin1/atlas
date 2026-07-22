@@ -6,6 +6,7 @@ import type { Decoration, DecorationSet, EditorView } from '@codemirror/view';
 import { GFM } from '@lezer/markdown';
 import { describe, expect, it } from 'vitest';
 import { buildBlockDecorations, buildDecorations } from '@/components/editor/livePreviewExtension';
+import { buildDocRangeCache } from '@/lib/livePreview';
 
 /**
  * Regression guard for the large-document first-paint bug: the live-preview
@@ -139,5 +140,23 @@ describe('live-preview first paint on large documents', () => {
     // Handed a tree that spans the document, the table renders as a block widget.
     const fullTree = ensureSyntaxTree(state, state.doc.length, 5000) ?? syntaxTree(state);
     expect(buildBlockDecorations(state, true, ctx, fullTree).size).toBe(1);
+  });
+
+  it('uses a provided DocRangeCache for math ranges instead of re-scanning the doc', () => {
+    // Cursor stays on line 1; inline math on line 3 is inactive and becomes a widget.
+    const doc = 'cursor here\n\nbefore $x+y$ after';
+    const state = markdownState(doc);
+    const view = viewWithViewport(state, state.doc.length);
+    const callbacks = { onWikilinkClick: () => {} };
+
+    // Empty math cache must suppress inline math widgets even though the doc has math.
+    const emptyCache = { docText: doc, mathRanges: [], wikilinkRanges: [] };
+    const suppressed = buildDecorations(view, callbacks, true, {}, emptyCache);
+    expect(suppressed.atomic.size).toBe(0);
+
+    const realCache = buildDocRangeCache(doc);
+    expect(realCache.mathRanges.length).toBeGreaterThan(0);
+    const rendered = buildDecorations(view, callbacks, true, {}, realCache);
+    expect(rendered.atomic.size).toBeGreaterThan(0);
   });
 });

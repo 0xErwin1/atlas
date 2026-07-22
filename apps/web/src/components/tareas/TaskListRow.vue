@@ -183,6 +183,8 @@ const labelColors = useLabelColorsStore();
   background: transparent;
   text-align: left;
   cursor: pointer;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 38px;
 }
 
 .atl-tl-row:hover {

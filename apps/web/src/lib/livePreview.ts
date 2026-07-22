@@ -379,6 +379,37 @@ export function findWikilinkRanges(doc: string, excluded: ExcludedRange[] = []):
   return ranges;
 }
 
+/**
+ * Full-document math + wikilink range discovery reused across selection/viewport
+ * rebuilds. Selection-dependent filtering (active lines, block replace ranges)
+ * stays outside this cache.
+ */
+export interface DocRangeCache {
+  docText: string;
+  mathRanges: MathRange[];
+  wikilinkRanges: WikilinkRange[];
+}
+
+/** Scan a document once for math and wikilink ranges. */
+export function buildDocRangeCache(docText: string): DocRangeCache {
+  return {
+    docText,
+    mathRanges: findMathRanges(docText),
+    wikilinkRanges: findWikilinkRanges(docText),
+  };
+}
+
+/**
+ * Whether the ViewPlugin must re-run full-document range discovery. Selection
+ * and viewport-only updates reuse the previous cache.
+ */
+export function shouldRefreshDocRangeCache(flags: {
+  docChanged: boolean;
+  syntaxTreeChanged: boolean;
+}): boolean {
+  return flags.docChanged || flags.syntaxTreeChanged;
+}
+
 /** Per-column horizontal alignment from a GFM table delimiter row. */
 export type ColumnAlign = 'left' | 'center' | 'right' | null;
 

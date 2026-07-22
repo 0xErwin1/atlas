@@ -10,6 +10,8 @@ import {
 } from '@codemirror/view';
 import katex from 'katex';
 import {
+  buildDocRangeCache,
+  type DocRangeCache,
   fenceLanguage,
   findMathRanges,
   findWikilinkRanges,
@@ -19,6 +21,7 @@ import {
   type ParsedTable,
   parseImage,
   parseTable,
+  shouldRefreshDocRangeCache,
   taskMarkerChecked,
   tokenizeInline,
   type WikilinkRange,
@@ -761,6 +764,11 @@ export function buildDecorations(
   callbacks: LivePreviewCallbacks,
   reveal: boolean,
   titles: Record<string, string>,
+  /**
+   * Optional full-document math/wikilink scan. When provided (ViewPlugin cache),
+   * selection/viewport rebuilds skip `doc.toString()` and range re-discovery.
+   */
+  rangeCache?: DocRangeCache,
 ): BuiltDecorations {
   const tree = viewportSyntaxTree(view);
   const activeLines = activeLinesFromSelection(view.state, reveal);
@@ -771,8 +779,10 @@ export function buildDecorations(
   // overlap and break the RangeSet. Collect them in a full first pass so every
   // block range is known before any wikilink is added.
   const blockRanges: BlockRange[] = [];
-  const docText = view.state.doc.toString();
-  for (const range of findMathRanges(docText)) {
+  const docText = rangeCache?.docText ?? view.state.doc.toString();
+  const mathRanges = rangeCache?.mathRanges ?? findMathRanges(docText);
+
+  for (const range of mathRanges) {
     if (range.kind !== 'block') continue;
     const firstLine = view.state.doc.lineAt(range.from).number;
     const lastLine = view.state.doc.lineAt(range.to).number;
@@ -788,7 +798,9 @@ export function buildDecorations(
     },
   });
 
-  const wikilinkRanges = findWikilinkRanges(docText, blockRanges);
+  // Cached wikilink ranges omit block exclusions; decorateWikilinks filters via
+  // isInsideBlock. Without a cache, exclude block ranges during the scan.
+  const wikilinkRanges = rangeCache?.wikilinkRanges ?? findWikilinkRanges(docText, blockRanges);
 
   for (const { from, to } of view.visibleRanges) {
     decorateSyntaxTree(
@@ -805,7 +817,7 @@ export function buildDecorations(
     );
   }
   for (const { from, to } of view.visibleRanges) {
-    decorateInlineMath(view, from, to, activeLines, decos, blockRanges);
+    decorateInlineMath(view, from, to, activeLines, decos, blockRanges, mathRanges);
   }
   for (const { from, to } of view.visibleRanges) {
     decorateWikilinks(view, from, to, activeLines, callbacks, titles, decos, blockRanges, wikilinkRanges);
@@ -1108,11 +1120,11 @@ function decorateInlineMath(
   activeLines: Set<number>,
   decos: Range<Decoration>[],
   blockRanges: BlockRange[],
+  mathRanges: MathRange[],
 ): void {
   const doc = view.state.doc;
-  const ranges = findMathRanges(doc.toString(), blockRanges);
 
-  for (const range of ranges) {
+  for (const range of mathRanges) {
     if (range.kind !== 'inline' || range.to <= from || range.from >= to) continue;
     if (isInsideBlock(range.from, blockRanges)) continue;
 
@@ -1271,6 +1283,8 @@ export function buildBlockDecorations(
   reveal: boolean,
   ctx: InlineCtx,
   tree: ReturnType<typeof syntaxTree> = syntaxTree(state),
+  /** Precomputed math ranges; when omitted, scans `state.doc` once. */
+  mathRanges?: MathRange[],
 ): DecorationSet {
   const doc = state.doc;
   const activeLines = activeLinesFromSelection(state, reveal);
@@ -1284,7 +1298,8 @@ export function buildBlockDecorations(
     decos.push(Decoration.replace({ widget, block: true }).range(range.from, range.to));
   };
 
-  for (const range of findMathRanges(doc.toString())) {
+  const ranges = mathRanges ?? findMathRanges(doc.toString());
+  for (const range of ranges) {
     if (range.kind !== 'block') continue;
     const firstLine = doc.lineAt(range.from).number;
     const lastLine = doc.lineAt(range.to).number;
@@ -1341,25 +1356,61 @@ export function buildBlockDecorations(
 }
 
 /**
+ * Block-decoration field state: decorations plus a cached full-doc math scan so
+ * pure selection moves rebuild widgets without re-stringifying the document.
+ */
+interface BlockFieldState {
+  decorations: DecorationSet;
+  mathRanges: MathRange[];
+}
+
+/**
  * StateField that provides the block decorations. Recomputed on every doc or
  * selection change so a table re-renders (or reveals raw) as the cursor moves.
+ *
+ * Full-document `ensureSyntaxTree` runs only on create and when the doc or
+ * syntax-tree identity changes. Selection-only updates reuse `syntaxTree(state)`
+ * and the cached math ranges.
  */
-function blockDecorationsField(reveal: boolean, ctx: InlineCtx): StateField<DecorationSet> {
-  return StateField.define<DecorationSet>({
+function blockDecorationsField(reveal: boolean, ctx: InlineCtx): StateField<BlockFieldState> {
+  return StateField.define<BlockFieldState>({
     create(state) {
       // Read the tree ensureSyntaxTree RETURNS: it advances the parse but leaves
       // the Language state field on the short init tree, so syntaxTree(state)
       // alone would miss block widgets (tables, diagrams) past the first ~3 KB.
       const tree = ensureSyntaxTree(state, state.doc.length, VIEWPORT_PARSE_BUDGET_MS) ?? syntaxTree(state);
-      return buildBlockDecorations(state, reveal, ctx, tree);
+      const mathRanges = findMathRanges(state.doc.toString());
+      return {
+        decorations: buildBlockDecorations(state, reveal, ctx, tree, mathRanges),
+        mathRanges,
+      };
     },
     update(value, tr) {
-      if (tr.docChanged || tr.selection !== undefined || syntaxTree(tr.startState) !== syntaxTree(tr.state)) {
-        return buildBlockDecorations(tr.state, reveal, ctx);
+      const treeChanged = syntaxTree(tr.startState) !== syntaxTree(tr.state);
+
+      if (tr.docChanged || treeChanged) {
+        const tree =
+          ensureSyntaxTree(tr.state, tr.state.doc.length, VIEWPORT_PARSE_BUDGET_MS) ?? syntaxTree(tr.state);
+        const mathRanges = tr.docChanged ? findMathRanges(tr.state.doc.toString()) : value.mathRanges;
+        return {
+          decorations: buildBlockDecorations(tr.state, reveal, ctx, tree, mathRanges),
+          mathRanges,
+        };
       }
-      return value.map(tr.changes);
+
+      if (tr.selection !== undefined) {
+        return {
+          decorations: buildBlockDecorations(tr.state, reveal, ctx, syntaxTree(tr.state), value.mathRanges),
+          mathRanges: value.mathRanges,
+        };
+      }
+
+      return {
+        decorations: value.decorations.map(tr.changes),
+        mathRanges: value.mathRanges,
+      };
     },
-    provide: (field) => EditorView.decorations.from(field),
+    provide: (field) => EditorView.decorations.from(field, (v) => v.decorations),
   });
 }
 
@@ -1377,13 +1428,15 @@ export function livePreview(callbacks: LivePreviewCallbacks, options: LivePrevie
     class {
       decorations: DecorationSet;
       atomic: DecorationSet;
+      private rangeCache: DocRangeCache;
 
       constructor(view: EditorView) {
         // buildDecorations forces the parse up to the viewport and reads the
         // resulting tree (see viewportSyntaxTree), so the very first paint of a
         // large document is already fully decorated instead of showing raw
         // markdown until a background-parse transaction arrives.
-        const built = buildDecorations(view, callbacks, reveal, titles);
+        this.rangeCache = buildDocRangeCache(view.state.doc.toString());
+        const built = buildDecorations(view, callbacks, reveal, titles, this.rangeCache);
         this.decorations = built.decorations;
         this.atomic = built.atomic;
       }
@@ -1393,13 +1446,18 @@ export function livePreview(callbacks: LivePreviewCallbacks, options: LivePrevie
         // the parser dispatches tree-progress transactions that carry none of the
         // doc/selection/viewport flags, and skipping them is what made decorations
         // appear only after the first click.
-        if (
-          update.docChanged ||
-          update.selectionSet ||
-          update.viewportChanged ||
-          syntaxTree(update.startState) !== syntaxTree(update.state)
-        ) {
-          const built = buildDecorations(update.view, callbacks, reveal, titles);
+        const treeChanged = syntaxTree(update.startState) !== syntaxTree(update.state);
+        if (update.docChanged || update.selectionSet || update.viewportChanged || treeChanged) {
+          if (
+            shouldRefreshDocRangeCache({
+              docChanged: update.docChanged,
+              syntaxTreeChanged: treeChanged,
+            })
+          ) {
+            this.rangeCache = buildDocRangeCache(update.state.doc.toString());
+          }
+
+          const built = buildDecorations(update.view, callbacks, reveal, titles, this.rangeCache);
           this.decorations = built.decorations;
           this.atomic = built.atomic;
         }

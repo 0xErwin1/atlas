@@ -78,6 +78,12 @@ defineEmits<{
 </template>
 
 <style scoped>
+.atl-task-card {
+  /* Offscreen cards skip paint/layout while scrolling long columns. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 100px;
+}
+
 .atl-task-card:active {
   cursor: grabbing;
 }
