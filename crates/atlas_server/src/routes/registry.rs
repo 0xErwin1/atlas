@@ -42,6 +42,20 @@ pub struct RouteEntry {
 }
 
 pub static ROUTE_REGISTRY: &[RouteEntry] = &[
+    RouteEntry {
+        method: "GET",
+        path_template: "/api/admin/trash",
+        kind: RouteKind::AuthnRequired,
+        openapi_path: Some("/api/admin/trash"),
+        capability: None,
+    },
+    RouteEntry {
+        method: "POST",
+        path_template: "/api/admin/trash/restore",
+        kind: RouteKind::AuthnRequired,
+        openapi_path: Some("/api/admin/trash/restore"),
+        capability: None,
+    },
     // ---- Public routes ----
     RouteEntry {
         method: "GET",

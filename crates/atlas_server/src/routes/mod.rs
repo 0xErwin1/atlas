@@ -26,6 +26,7 @@ pub(crate) mod status_templates;
 pub(crate) mod tags;
 pub(crate) mod task_views;
 pub(crate) mod tasks;
+pub(crate) mod trash;
 pub(crate) mod ui_state;
 pub(crate) mod users;
 pub(crate) mod validation;

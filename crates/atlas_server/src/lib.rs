@@ -171,6 +171,8 @@ pub fn app(state: AppState) -> Router {
         )
         // Server metadata (any authenticated principal)
         .route("/api/meta", get(routes::health::meta))
+        .route("/api/admin/trash", get(routes::trash::list_trash))
+        .route("/api/admin/trash/restore", axum::routing::post(routes::trash::restore_trash))
         // Users (root-only)
         .route(
             "/api/users",

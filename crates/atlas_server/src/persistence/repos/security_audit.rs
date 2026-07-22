@@ -78,6 +78,26 @@ impl PgSecurityAuditRepo {
         )
         .await
     }
+
+    pub async fn append_resource_restored_in<C: ConnectionTrait>(
+        conn: &C,
+        ctx: &WorkspaceCtx,
+        kind: TrashKind,
+        target_id: uuid::Uuid,
+    ) -> Result<(), DomainError> {
+        Self::append_in(
+            conn,
+            NewSecurityAuditEvent {
+                workspace_id: Some(ctx.workspace_id),
+                actor: ctx.actor,
+                action: SecurityAction::ResourceRestored,
+                target_type: kind.as_str().to_string(),
+                target_id: Some(target_id),
+                metadata: serde_json::json!({"kind": kind.as_str(), "outcome": "restored"}),
+            },
+        )
+        .await
+    }
 }
 
 #[async_trait]

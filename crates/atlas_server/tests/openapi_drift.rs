@@ -163,6 +163,10 @@ const EXPECTED_SCHEMAS: &[&str] = &[
     "PatchAutomationRuleRequest",
     "AutomationRuleDto",
     "Page_AutomationRuleDto",
+    "TrashKindDto",
+    "TrashItemDto",
+    "RestoreTrashItemRequest",
+    "Page_TrashItemDto",
 ];
 
 #[test]
