@@ -422,6 +422,7 @@ use atlas_api::{
         (name = "webhooks", description = "Outgoing webhook subscription management (admin-only)"),
         (name = "integrations", description = "External integration config management and event ingestion (admin-only)"),
         (name = "automation-rules", description = "Automation rule CRUD (admin-only)"),
+        (name = "trash", description = "Root/system-admin human Trash lifecycle administration"),
     )
 )]
 pub(crate) struct ApiDoc;

@@ -247,6 +247,39 @@ fn openapi_document_has_correct_info() {
 }
 
 #[test]
+fn trash_operations_document_lifecycle_statuses_and_admin_scope() {
+    let document = serde_json::to_value(openapi()).expect("serialize OpenAPI document");
+
+    assert!(
+        document
+            .pointer("/tags")
+            .and_then(Value::as_array)
+            .is_some_and(|tags| tags.iter().any(|tag| tag["name"] == "trash")),
+        "OpenAPI must describe the root/system-admin Trash tag"
+    );
+
+    assert_operation_statuses(&document, "/api/admin/trash", "get", &[200, 400, 401, 403]);
+    assert_operation_statuses(
+        &document,
+        "/api/admin/trash/restore",
+        "post",
+        &[204, 401, 403, 404, 409],
+    );
+    assert_operation_statuses(
+        &document,
+        "/api/admin/trash/purge",
+        "post",
+        &[202, 204, 400, 401, 403, 404],
+    );
+    assert_operation_statuses(
+        &document,
+        "/api/admin/trash/purges/{operation_id}",
+        "get",
+        &[200, 401, 403, 404],
+    );
+}
+
+#[test]
 fn task_attachment_rename_operation_documents_typed_contract() {
     let document = serde_json::to_value(openapi()).expect("serialize OpenAPI document");
     let path = "/api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}";

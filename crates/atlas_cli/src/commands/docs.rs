@@ -470,7 +470,7 @@ pub(crate) struct DocsDeleteArgs {
     #[arg(long)]
     pub(crate) workspace: Option<String>,
 
-    /// Confirm the deletion. Required — prevents accidental non-reversible deletes.
+    /// Confirm the recoverable deletion. Permanent removal is managed through Trash.
     #[arg(long)]
     pub(crate) confirm: bool,
 }
@@ -478,7 +478,7 @@ pub(crate) struct DocsDeleteArgs {
 async fn run_delete(ctx: &Ctx, args: DocsDeleteArgs) -> Result<(), CliError> {
     if !args.confirm {
         return Err(CliError::Validation(
-            "pass --confirm to delete (this is a non-reversible operation)".to_owned(),
+            "pass --confirm to recoverably delete the document".to_owned(),
         ));
     }
 

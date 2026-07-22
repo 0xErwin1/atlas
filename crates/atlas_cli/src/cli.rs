@@ -23,6 +23,7 @@ use crate::commands::status_templates::StatusTemplatesArgs;
 use crate::commands::tags::TagsArgs;
 use crate::commands::task_views::TaskViewsArgs;
 use crate::commands::tasks::TasksArgs;
+use crate::commands::trash::TrashArgs;
 use crate::commands::users::UsersArgs;
 use crate::commands::workspaces::WorkspacesArgs;
 
@@ -69,6 +70,8 @@ pub(crate) enum Commands {
     Search(SearchArgs),
     /// Manage tasks (create, list, get, update, move, delete).
     Tasks(TasksArgs),
+    /// Manage recoverable resources in the root/system-admin human Trash.
+    Trash(TrashArgs),
     /// Manage documents (list, get, create, update-metadata, update-content, delete).
     Docs(DocsArgs),
     /// Inspect workspaces (list, get).
@@ -254,5 +257,35 @@ mod tests {
         } else {
             panic!("expected Search");
         }
+    }
+
+    #[test]
+    fn trash_subcommands_parse_with_explicit_purge_confirmation() {
+        assert!(Cli::try_parse_from(["atlas", "trash", "list", "--kind", "document"]).is_ok());
+        assert!(
+            Cli::try_parse_from([
+                "atlas",
+                "trash",
+                "purge",
+                "--kind",
+                "document",
+                "--target-id",
+                "00000000-0000-0000-0000-000000000001",
+                "--confirm",
+            ])
+            .is_ok()
+        );
+        assert!(
+            Cli::try_parse_from([
+                "atlas",
+                "trash",
+                "purge",
+                "--kind",
+                "document",
+                "--target-id",
+                "00000000-0000-0000-0000-000000000001",
+            ])
+            .is_err()
+        );
     }
 }

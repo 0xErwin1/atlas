@@ -22,6 +22,7 @@ pub(crate) mod status_templates;
 pub(crate) mod tags;
 pub(crate) mod task_views;
 pub(crate) mod tasks;
+pub(crate) mod trash;
 pub(crate) mod users;
 pub(crate) mod workspaces;
 
@@ -38,6 +39,7 @@ pub(crate) async fn dispatch(ctx: &Ctx, cmd: Commands) -> Result<(), CliError> {
         }
         Commands::Search(args) => search::run(ctx, args).await,
         Commands::Tasks(args) => tasks::run(ctx, args.command).await,
+        Commands::Trash(args) => trash::run(ctx, args.command).await,
         Commands::Docs(args) => docs::run(ctx, args.command).await,
         Commands::Workspaces(args) => workspaces::run(ctx, args.command).await,
         Commands::Projects(args) => projects::run(ctx, args.command).await,

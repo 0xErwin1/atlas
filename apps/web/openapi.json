@@ -192,6 +192,212 @@
         ]
       }
     },
+    "/api/admin/trash": {
+      "get": {
+        "tags": [
+          "trash"
+        ],
+        "operationId": "list_trash",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_TrashItemDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": ""
+          },
+          "401": {
+            "description": ""
+          },
+          "403": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/trash/purge": {
+      "post": {
+        "tags": [
+          "trash"
+        ],
+        "operationId": "purge_trash",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PurgeTrashItemRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Database purge committed; cleanup is pending",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PurgeStatusDtoResponse"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "Purge cleanup already complete"
+          },
+          "400": {
+            "description": ""
+          },
+          "401": {
+            "description": ""
+          },
+          "403": {
+            "description": ""
+          },
+          "404": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/trash/purges/{operation_id}": {
+      "get": {
+        "tags": [
+          "trash"
+        ],
+        "operationId": "get_purge_status",
+        "parameters": [
+          {
+            "name": "operation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PurgeStatusDtoResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": ""
+          },
+          "403": {
+            "description": ""
+          },
+          "404": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/trash/restore": {
+      "post": {
+        "tags": [
+          "trash"
+        ],
+        "operationId": "restore_trash",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RestoreTrashItemRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Restored or already live"
+          },
+          "401": {
+            "description": ""
+          },
+          "403": {
+            "description": ""
+          },
+          "404": {
+            "description": ""
+          },
+          "409": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/api/admin/workspaces": {
       "get": {
         "tags": [
@@ -14283,6 +14489,58 @@
           }
         }
       },
+      "Page_TrashItemDto": {
+        "type": "object",
+        "description": "Paginated response envelope.",
+        "required": [
+          "items",
+          "has_more"
+        ],
+        "properties": {
+          "has_more": {
+            "type": "boolean"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "workspace_id",
+                "kind",
+                "target_id",
+                "deleted_at"
+              ],
+              "properties": {
+                "deleted_at": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "UTC timestamp of the recoverable deletion."
+                },
+                "kind": {
+                  "$ref": "#/components/schemas/TrashKindDto",
+                  "description": "One of the five independently recoverable resource kinds."
+                },
+                "target_id": {
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "UUID of the deleted resource."
+                },
+                "workspace_id": {
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "Workspace that owns the deleted resource."
+                }
+              }
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "Page_WebhookDeliveryDto": {
         "type": "object",
         "description": "Paginated response envelope.",
@@ -14708,6 +14966,75 @@
           }
         }
       },
+      "PurgeStatusDto": {
+        "type": "string",
+        "description": "Durable progress of a confirmed purge request.",
+        "enum": [
+          "db_committed",
+          "cleanup_pending",
+          "cleanup_failed",
+          "complete"
+        ]
+      },
+      "PurgeStatusDtoResponse": {
+        "type": "object",
+        "required": [
+          "operation_id",
+          "kind",
+          "target_id",
+          "status",
+          "attempts"
+        ],
+        "properties": {
+          "attempts": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Number of durable cleanup attempts.",
+            "minimum": 0
+          },
+          "kind": {
+            "$ref": "#/components/schemas/TrashKindDto",
+            "description": "Kind of resource being purged."
+          },
+          "operation_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Durable operation identifier for status polling."
+          },
+          "status": {
+            "$ref": "#/components/schemas/PurgeStatusDto",
+            "description": "Current durable database and cleanup progress."
+          },
+          "target_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID of the purged resource."
+          }
+        }
+      },
+      "PurgeTrashItemRequest": {
+        "type": "object",
+        "required": [
+          "kind",
+          "target_id",
+          "confirm"
+        ],
+        "properties": {
+          "confirm": {
+            "type": "boolean",
+            "description": "Must be true before a permanent purge is attempted."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/TrashKindDto",
+            "description": "Kind of resource to purge permanently."
+          },
+          "target_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID of the deleted resource to purge permanently."
+          }
+        }
+      },
       "ReferenceDto": {
         "type": "object",
         "description": "A typed outbound reference from a task to another task or document.",
@@ -14820,6 +15147,24 @@
         "properties": {
           "new_password": {
             "type": "string"
+          }
+        }
+      },
+      "RestoreTrashItemRequest": {
+        "type": "object",
+        "required": [
+          "kind",
+          "target_id"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/TrashKindDto",
+            "description": "Kind of resource to restore."
+          },
+          "target_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID of the deleted resource to restore."
           }
         }
       },
@@ -15577,6 +15922,47 @@
             "description": "Sort order. Valid values: updated_at_desc, updated_at_asc, created_at_desc,\ncreated_at_asc, priority_desc, title_asc."
           }
         }
+      },
+      "TrashItemDto": {
+        "type": "object",
+        "required": [
+          "workspace_id",
+          "kind",
+          "target_id",
+          "deleted_at"
+        ],
+        "properties": {
+          "deleted_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp of the recoverable deletion."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/TrashKindDto",
+            "description": "One of the five independently recoverable resource kinds."
+          },
+          "target_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID of the deleted resource."
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Workspace that owns the deleted resource."
+          }
+        }
+      },
+      "TrashKindDto": {
+        "type": "string",
+        "description": "Resource kinds with independent Trash, restore, and purge contracts.",
+        "enum": [
+          "project",
+          "folder",
+          "document",
+          "comment",
+          "attachment"
+        ]
       },
       "UiStateDto": {
         "type": "object",
@@ -16449,6 +16835,10 @@
     {
       "name": "automation-rules",
       "description": "Automation rule CRUD (admin-only)"
+    },
+    {
+      "name": "trash",
+      "description": "Root/system-admin human Trash lifecycle administration"
     }
   ]
 }

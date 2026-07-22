@@ -32,6 +32,10 @@ use atlas_api::{
             RenameFolderRequest,
         },
         groups::{AddGroupMemberRequest, CreateGroupRequest, GroupDto, GroupMemberDto},
+        lifecycle::{
+            PurgeStatusDtoResponse, PurgeTrashItemRequest, RestoreTrashItemRequest, TrashItemDto,
+            TrashKindDto,
+        },
         property_definitions::{CreatePropertyDefinitionRequest, PropertyDefinitionDto},
         saved_searches::{CreateSavedSearchRequest, RenameSavedSearchRequest, SavedSearchDto},
         search::SearchHitDto,
@@ -98,6 +102,15 @@ pub enum ClientError {
         context: &'static str,
         source: serde_json::Error,
     },
+}
+
+/// Result of a confirmed Trash purge request.
+#[derive(Debug, Clone)]
+pub enum PurgeTrashResult {
+    /// The purge and any required cleanup are complete.
+    Complete,
+    /// Database deletion committed, while cleanup is still pending or retryable.
+    Pending(PurgeStatusDtoResponse),
 }
 
 /// A pending request built through one of the verb helpers.
@@ -1531,6 +1544,84 @@ impl AtlasClient {
             .send()
             .await?;
         self.decode_response(response, "copy_document").await
+    }
+
+    // ---- Admin Trash -----------------------------------------------------------
+
+    /// `GET /api/admin/trash`
+    ///
+    /// This root/system-admin human-only endpoint lists the five recoverable
+    /// resource kinds. API keys are rejected by the server.
+    pub async fn list_trash(
+        &self,
+        workspace_id: Option<uuid::Uuid>,
+        kind: Option<TrashKindDto>,
+        cursor: Option<&str>,
+        limit: Option<u32>,
+    ) -> Result<Page<TrashItemDto>, ClientError> {
+        let path = build_trash_list_path(workspace_id, kind, cursor, limit);
+        let response = self.get(&path).send().await?;
+        self.decode_response(response, "list_trash").await
+    }
+
+    /// `POST /api/admin/trash/restore`
+    ///
+    /// Restores one recoverably deleted resource. This requires a root or
+    /// system-admin human session; API keys are rejected by the server.
+    pub async fn restore_trash(
+        &self,
+        kind: TrashKindDto,
+        target_id: uuid::Uuid,
+    ) -> Result<(), ClientError> {
+        let response = self
+            .post("/api/admin/trash/restore")
+            .header("x-atlas-csrf", "1")
+            .json(&RestoreTrashItemRequest { kind, target_id })
+            .send()
+            .await?;
+        decode_empty_response(response).await
+    }
+
+    /// `POST /api/admin/trash/purge`
+    ///
+    /// Permanently purges a recoverably deleted resource only when `confirm` is
+    /// true. A 204 becomes [`PurgeTrashResult::Complete`]; a 202 carries the
+    /// durable pending cleanup status.
+    pub async fn purge_trash(
+        &self,
+        kind: TrashKindDto,
+        target_id: uuid::Uuid,
+        confirm: bool,
+    ) -> Result<PurgeTrashResult, ClientError> {
+        let response = self
+            .post("/api/admin/trash/purge")
+            .header("x-atlas-csrf", "1")
+            .json(&PurgeTrashItemRequest {
+                kind,
+                target_id,
+                confirm,
+            })
+            .send()
+            .await?;
+
+        if response.status() == reqwest::StatusCode::NO_CONTENT {
+            return Ok(PurgeTrashResult::Complete);
+        }
+
+        let status = self.decode_response(response, "purge_trash").await?;
+        Ok(PurgeTrashResult::Pending(status))
+    }
+
+    /// `GET /api/admin/trash/purges/{operation_id}`
+    pub async fn get_purge_status(
+        &self,
+        operation_id: uuid::Uuid,
+    ) -> Result<PurgeStatusDtoResponse, ClientError> {
+        let response = self
+            .get(&format!("/api/admin/trash/purges/{operation_id}"))
+            .send()
+            .await?;
+        self.decode_response(response, "get_purge_status").await
     }
 
     // ---- Webhooks --------------------------------------------------------------
@@ -3457,6 +3548,44 @@ fn build_paginated_path(base: &str, cursor: Option<&str>, limit: Option<u32>) ->
     }
 }
 
+fn build_trash_list_path(
+    workspace_id: Option<uuid::Uuid>,
+    kind: Option<TrashKindDto>,
+    cursor: Option<&str>,
+    limit: Option<u32>,
+) -> String {
+    let mut params = Vec::new();
+
+    if let Some(workspace_id) = workspace_id {
+        params.push(format!("workspace_id={workspace_id}"));
+    }
+    if let Some(kind) = kind {
+        params.push(format!("kind={}", trash_kind_query(kind)));
+    }
+    if let Some(cursor) = cursor {
+        params.push(format!("cursor={}", encode_query_value(cursor)));
+    }
+    if let Some(limit) = limit {
+        params.push(format!("limit={limit}"));
+    }
+
+    if params.is_empty() {
+        "/api/admin/trash".to_string()
+    } else {
+        format!("/api/admin/trash?{}", params.join("&"))
+    }
+}
+
+fn trash_kind_query(kind: TrashKindDto) -> &'static str {
+    match kind {
+        TrashKindDto::Project => "project",
+        TrashKindDto::Folder => "folder",
+        TrashKindDto::Document => "document",
+        TrashKindDto::Comment => "comment",
+        TrashKindDto::Attachment => "attachment",
+    }
+}
+
 fn build_comment_feed_path(base: &str, cursor: Option<&str>, limit: Option<u32>) -> String {
     let mut params = vec!["feed=full".to_string()];
     if let Some(cursor) = cursor {
@@ -3551,6 +3680,7 @@ fn build_webhook_deliveries_path(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use atlas_api::dtos::lifecycle::PurgeStatusDto;
 
     #[test]
     fn construction_stores_base_url() {
@@ -4089,6 +4219,86 @@ mod tests {
                 .delete_document_comment_attachment("ws", "note", COMMENT_ID, ATTACHMENT_ID)
                 .await,
             Err(ClientError::Transport(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn trash_lifecycle_methods_use_typed_admin_routes_and_status_mapping() {
+        const TARGET_ID: uuid::Uuid = uuid::uuid!("00000000-0000-0000-0000-000000000001");
+        const OPERATION_ID: uuid::Uuid = uuid::uuid!("00000000-0000-0000-0000-000000000002");
+        const PAGE: &str = r#"{"items":[{"workspace_id":"00000000-0000-0000-0000-000000000003","kind":"document","target_id":"00000000-0000-0000-0000-000000000001","deleted_at":"2026-07-22T00:00:00Z"}],"next_cursor":"next","has_more":true}"#;
+        const STATUS: &str = r#"{"operation_id":"00000000-0000-0000-0000-000000000002","kind":"document","target_id":"00000000-0000-0000-0000-000000000001","status":"cleanup_pending","attempts":2}"#;
+
+        let (base_url, requests) = serve_once_observing("200 OK", PAGE);
+        let client = AtlasClient::new(base_url);
+        let page = assert_comment_attachment_request(
+            requests,
+            "GET /api/admin/trash?workspace_id=00000000-0000-0000-0000-000000000003&kind=document&cursor=next&limit=20 ",
+            client.list_trash(
+                Some(uuid::uuid!("00000000-0000-0000-0000-000000000003")),
+                Some(TrashKindDto::Document),
+                Some("next"),
+                Some(20),
+            ),
+        )
+        .await;
+        assert_eq!(
+            page.items.first().map(|item| item.target_id),
+            Some(TARGET_ID)
+        );
+
+        let (base_url, requests) = serve_once_observing("204 No Content", "");
+        let client = AtlasClient::new(base_url);
+        assert_comment_attachment_request(
+            requests,
+            "POST /api/admin/trash/restore ",
+            client.restore_trash(TrashKindDto::Document, TARGET_ID),
+        )
+        .await;
+
+        let (base_url, requests) = serve_once_observing("202 Accepted", STATUS);
+        let client = AtlasClient::new(base_url);
+        let response = assert_comment_attachment_request(
+            requests,
+            "POST /api/admin/trash/purge ",
+            client.purge_trash(TrashKindDto::Document, TARGET_ID, true),
+        )
+        .await;
+        assert!(matches!(
+            response,
+            PurgeTrashResult::Pending(PurgeStatusDtoResponse {
+                status: PurgeStatusDto::CleanupPending,
+                ..
+            })
+        ));
+
+        let (base_url, requests) = serve_once_observing("200 OK", STATUS);
+        let client = AtlasClient::new(base_url);
+        let status = assert_comment_attachment_request(
+            requests,
+            "GET /api/admin/trash/purges/00000000-0000-0000-0000-000000000002 ",
+            client.get_purge_status(OPERATION_ID),
+        )
+        .await;
+        assert_eq!(status.operation_id, OPERATION_ID);
+
+        let (base_url, requests) = serve_once_observing("204 No Content", "");
+        let client = AtlasClient::new(base_url);
+        let complete = assert_comment_attachment_request(
+            requests,
+            "POST /api/admin/trash/purge ",
+            client.purge_trash(TrashKindDto::Document, TARGET_ID, true),
+        )
+        .await;
+        assert!(matches!(complete, PurgeTrashResult::Complete));
+
+        let denied = AtlasClient::new(serve_once(
+            "403 Forbidden",
+            r#"{"type":"urn:atlas:error:forbidden","title":"Forbidden","status":403}"#,
+        ));
+        assert!(matches!(
+            denied.restore_trash(TrashKindDto::Document, TARGET_ID).await,
+            Err(ClientError::Api(problem)) if problem.status == 403
         ));
     }
 }

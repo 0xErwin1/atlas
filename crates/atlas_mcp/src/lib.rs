@@ -81,7 +81,7 @@ valid options.\n\
 - List responses are paginated as {items, next_cursor, has_more}; reads are compact by \
 default — pass detail=full for heavy fields (document content, task description).\n\
 - PATCH updates are partial: omit a field to leave it unchanged, pass null to clear it.\n\
-- Destructive deletes (task, document, folder, board, column, project) require confirm: true.\n\
+- Resource deletion is recoverable for projects, folders, documents, comments, and attachments; permanent removal is a separate Trash purge workflow.\n\
 - Editing document content is compare-and-swap: read with `get_document detail=full` to get \
 head_revision_id and content, edit locally, then call `update_document_content` with \
 base_revision_id = head_revision_id; on a revision_conflict, apply the returned \
@@ -118,6 +118,8 @@ Tools by area (see each tool's own description for parameters):\n\
 `get_webhook`, `list_webhook_deliveries`, `create_webhook` (returns the one-time whsec_ \
 signing secret), `update_webhook`, `delete_webhook`. These manage workspace webhook \
 subscriptions; they do NOT change the calling key's own capability scopes.\n\
+\n\
+Trash is a root/system-admin human-session workflow. This MCP server authenticates API keys, so it intentionally exposes no Trash list, restore, purge, or purge-status tools; API-key calls to the REST Trash routes receive 403.\n\
 \n\
 Capability gating (agent keys): the tag tools (`list_tags`, `create_tag`, `update_tag`, \
 `delete_tag`) require the matching `config:*` capability; the saved-search tools \
@@ -2839,8 +2841,8 @@ impl AtlasMcp {
     }
 
     #[tool(
-        description = "Delete a document permanently. Requires confirm: true. \
-                       This operation is not auto-reversible."
+        description = "Recoverably delete a document. Requires confirm: true. \
+                       Permanent removal is available only through root/system-admin human Trash purge."
     )]
     async fn delete_document(
         &self,
@@ -3016,8 +3018,8 @@ impl AtlasMcp {
     }
 
     #[tool(
-        description = "Delete a folder. Requires confirm: true. Documents inside keep \
-                       their folder_id and may be orphaned from navigation after deletion."
+        description = "Recoverably delete a folder. Requires confirm: true. Documents inside keep \
+                       their folder_id and are hidden until the folder is restored."
     )]
     async fn delete_folder(
         &self,
@@ -3898,9 +3900,9 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "Delete a project. Requires confirm: true. \
-        Soft-deletes only the project row; boards, tasks, and documents inside \
-        are not cascaded but become unreachable from project listings.")]
+    #[tool(description = "Recoverably delete a project. Requires confirm: true. \
+        Descendants are hidden until the project is restored; permanent removal is a separate \
+        root/system-admin human Trash purge workflow.")]
     async fn delete_project(
         &self,
         Parameters(params): Parameters<DeleteProjectParams>,
@@ -6148,6 +6150,15 @@ mod tests {
             instructions.contains("`delete_task_view`"),
             "instructions must mention delete_task_view"
         );
+    }
+
+    #[test]
+    fn instructions_make_api_key_trash_rejection_explicit() {
+        let server = AtlasMcp::new("http://localhost:8080", "atlas_test").unwrap();
+        let instructions = server.get_info().instructions.unwrap_or_default();
+
+        assert!(instructions.contains("intentionally exposes no Trash"));
+        assert!(instructions.contains("receive 403"));
     }
 
     // --- parse_bearer_atlas_token ---
