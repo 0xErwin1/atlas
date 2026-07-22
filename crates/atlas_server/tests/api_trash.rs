@@ -4,6 +4,7 @@ mod support;
 
 use atlas_domain::{
     entities::{
+        boards_tasks::{NewBoard, NewTask, PositionBetween},
         comments::CommentOwner,
         documents::{NewAttachment, NewDocument},
         identity::MemberRole,
@@ -12,6 +13,7 @@ use atlas_domain::{
     },
     permissions::{Visibility, VisibilityRole},
     ports::{
+        boards_tasks::{BoardRepo, TaskRepo},
         documents::{AttachmentRepo, DocumentRepo},
         security_audit::SecurityAuditRepo,
         workspace_core::{FolderRepo, ProjectRepo},
@@ -834,11 +836,45 @@ async fn trash_allows_only_root_and_system_admin_humans() {
         )
         .await
         .expect("create denied restore document");
+    let system_purge_document = db
+        .doc_repo()
+        .create(
+            &ctx,
+            create_deleted_document("System purge", "trash-system-purge"),
+        )
+        .await
+        .expect("create system purge document");
+    let member_purge_document = db
+        .doc_repo()
+        .create(
+            &ctx,
+            create_deleted_document("Member purge", "trash-member-purge"),
+        )
+        .await
+        .expect("create member purge document");
+    let api_key_purge_document = db
+        .doc_repo()
+        .create(
+            &ctx,
+            create_deleted_document("API key purge", "trash-api-key-purge"),
+        )
+        .await
+        .expect("create API key purge document");
     let root_document_id = root_document.id.0;
     let system_admin_document_id = system_admin_document.id.0;
     let denied_document_id = denied_document.id.0;
+    let system_purge_document_id = system_purge_document.id.0;
+    let member_purge_document_id = member_purge_document.id.0;
+    let api_key_purge_document_id = api_key_purge_document.id.0;
     let document_service = DocumentService::new(db.conn().clone(), 25);
-    for document in [root_document, system_admin_document, denied_document] {
+    for document in [
+        root_document,
+        system_admin_document,
+        denied_document,
+        system_purge_document,
+        member_purge_document,
+        api_key_purge_document,
+    ] {
         document_service
             .soft_delete(&ctx, document.id)
             .await
@@ -884,6 +920,46 @@ async fn trash_allows_only_root_and_system_admin_humans() {
         .await
         .status(),
         reqwest::StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        purge(
+            &system_admin,
+            &server,
+            "document",
+            system_purge_document_id,
+            true,
+        )
+        .await
+        .status(),
+        reqwest::StatusCode::ACCEPTED
+    );
+    assert_eq!(
+        purge(&member, &server, "document", member_purge_document_id, true)
+            .await
+            .status(),
+        reqwest::StatusCode::FORBIDDEN
+    );
+    assert!(document_is_deleted(&db, member_purge_document_id).await);
+    assert_eq!(
+        count_purge_side_effects(&db, member_purge_document_id).await,
+        (0, 0)
+    );
+    assert_eq!(
+        purge(
+            &key_client,
+            &server,
+            "document",
+            api_key_purge_document_id,
+            true
+        )
+        .await
+        .status(),
+        reqwest::StatusCode::FORBIDDEN
+    );
+    assert!(document_is_deleted(&db, api_key_purge_document_id).await);
+    assert_eq!(
+        count_purge_side_effects(&db, api_key_purge_document_id).await,
+        (0, 0)
     );
     assert_eq!(
         restore(&root, &server, "document", denied_document_id)
@@ -1516,6 +1592,329 @@ async fn purge_removes_active_draft_dependencies_and_retains_all_closure_digests
         1,
         "the operation must retain the draft attachment digest"
     );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn project_purge_correlates_each_descendant_digest_once_and_removes_every_dependency() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let admin = support::login_root_user(&server, &db).await;
+    let (workspace, owner) = support::seed_workspace(&db, "trash-purge-digest-matrix").await;
+    let ctx = support::ctx(&workspace, &owner);
+    let attachments = PgAttachmentRepo {
+        conn: db.conn().clone(),
+    };
+
+    let project = db
+        .project_repo()
+        .create(
+            &ctx,
+            NewProject {
+                name: "Digest matrix project".into(),
+                slug: "trash-purge-digest-matrix".into(),
+                task_prefix: "TDM".into(),
+                visibility: Visibility::Workspace(VisibilityRole::Editor),
+            },
+        )
+        .await
+        .expect("create project");
+    let parent_folder = db
+        .folder_repo()
+        .create(
+            &ctx,
+            NewFolder {
+                project_id: Some(project.id),
+                parent_folder_id: None,
+                name: "Parent folder".into(),
+            },
+        )
+        .await
+        .expect("create parent folder");
+    let nested_folder = db
+        .folder_repo()
+        .create(
+            &ctx,
+            NewFolder {
+                project_id: Some(project.id),
+                parent_folder_id: Some(parent_folder.id),
+                name: "Nested folder".into(),
+            },
+        )
+        .await
+        .expect("create nested folder");
+    let document = db
+        .doc_repo()
+        .create(
+            &ctx,
+            NewDocument {
+                title: "Digest matrix document".into(),
+                slug: Some("trash-purge-digest-matrix-document".into()),
+                content: "body".into(),
+                folder_id: Some(nested_folder.id),
+                project_id: Some(project.id),
+                frontmatter: None,
+            },
+        )
+        .await
+        .expect("create document");
+    let board = db
+        .board_repo()
+        .create_board(
+            &ctx,
+            NewBoard {
+                project_id: project.id,
+                folder_id: Some(nested_folder.id),
+                name: "Digest matrix board".into(),
+            },
+        )
+        .await
+        .expect("create board");
+    let column = db
+        .board_repo()
+        .add_column(
+            &ctx,
+            board.id,
+            "Todo".into(),
+            None,
+            PositionBetween {
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create column");
+    let task = db
+        .task_repo()
+        .create(
+            &ctx,
+            NewTask {
+                project_id: project.id,
+                board_id: board.id,
+                column_id: column.id,
+                title: "Digest matrix task".into(),
+                description: String::new(),
+                priority: None,
+                due_date: None,
+                estimate: None,
+                labels: Vec::new(),
+                properties: None,
+                position: PositionBetween {
+                    before: None,
+                    after: None,
+                },
+            },
+        )
+        .await
+        .expect("create task");
+    let document_comment = CommentService::new(db.conn().clone())
+        .create(
+            &ctx,
+            CommentOwner::Document(document.id),
+            "document comment".into(),
+        )
+        .await
+        .expect("create document comment");
+    let task_comment = CommentService::new(db.conn().clone())
+        .create(&ctx, CommentOwner::Task(task.id), "task comment".into())
+        .await
+        .expect("create task comment");
+
+    let direct_document_digest = "1".repeat(64);
+    let direct_task_digest = "2".repeat(64);
+    let document_comment_digest = "3".repeat(64);
+    let task_comment_digest = "4".repeat(64);
+    let active_draft_digest = "5".repeat(64);
+    let finalized_draft_digest = "6".repeat(64);
+    let shared_digest = "7".repeat(64);
+    let expected_digests = std::collections::BTreeSet::from([
+        direct_document_digest.clone(),
+        direct_task_digest.clone(),
+        document_comment_digest.clone(),
+        task_comment_digest.clone(),
+        active_draft_digest.clone(),
+        finalized_draft_digest.clone(),
+        shared_digest.clone(),
+    ]);
+
+    for (document_id, task_id, comment_id, file_name, sha256) in [
+        (
+            Some(document.id),
+            None,
+            None,
+            "direct-document.txt",
+            direct_document_digest,
+        ),
+        (
+            None,
+            Some(task.id),
+            None,
+            "direct-task.txt",
+            direct_task_digest,
+        ),
+        (
+            None,
+            None,
+            Some(document_comment.id),
+            "document-comment.txt",
+            document_comment_digest,
+        ),
+        (
+            None,
+            None,
+            Some(task_comment.id),
+            "task-comment.txt",
+            task_comment_digest,
+        ),
+        (
+            Some(document.id),
+            None,
+            None,
+            "shared-document.txt",
+            shared_digest.clone(),
+        ),
+        (
+            None,
+            None,
+            Some(task_comment.id),
+            "shared-comment.txt",
+            shared_digest,
+        ),
+    ] {
+        attachments
+            .record(
+                &ctx,
+                NewAttachment {
+                    document_id,
+                    task_id,
+                    comment_id,
+                    file_name: file_name.into(),
+                    content_type: "text/plain".into(),
+                    size_bytes: 1,
+                    sha256,
+                },
+            )
+            .await
+            .expect("create descendant attachment");
+    }
+
+    let active_draft_id = uuid::Uuid::now_v7();
+    let active_attachment_id = uuid::Uuid::now_v7();
+    let finalized_draft_id = uuid::Uuid::now_v7();
+    let finalized_attachment_id = uuid::Uuid::now_v7();
+    db.conn()
+        .execute_unprepared(&format!(
+            "INSERT INTO comment_attachment_drafts \
+             (id, workspace_id, document_id, created_by_user_id, create_token, create_digest, state, expires_at) \
+             VALUES ('{active_draft_id}', '{}', '{}', '{}', '{active_draft_id}', '\\x{}', 'active', '2999-01-01T00:00:00Z'); \
+             INSERT INTO attachments (id, workspace_id, draft_id, file_name, content_type, size_bytes, sha256, created_by_user_id) \
+             VALUES ('{active_attachment_id}', '{}', '{active_draft_id}', 'active-draft.txt', 'text/plain', 1, '{active_draft_digest}', '{}'); \
+             INSERT INTO comment_attachment_draft_uploads \
+             (draft_id, upload_token, original_attachment_id, attachment_id, request_digest, payload_digest, file_name, content_type, size_bytes) \
+             VALUES ('{active_draft_id}', 'active-upload', '{active_attachment_id}', '{active_attachment_id}', '\\x{}', '\\x{}', 'active-draft.txt', 'text/plain', 1); \
+             INSERT INTO comment_attachment_drafts \
+             (id, workspace_id, task_id, created_by_user_id, create_token, create_digest, state, expires_at, finalized_comment_id, final_body_digest, final_request_digest) \
+             VALUES ('{finalized_draft_id}', '{}', '{}', '{}', '{finalized_draft_id}', '\\x{}', 'finalized', '2999-01-01T00:00:00Z', '{}', '\\x{}', '\\x{}'); \
+             INSERT INTO attachments (id, workspace_id, draft_id, file_name, content_type, size_bytes, sha256, created_by_user_id) \
+             VALUES ('{finalized_attachment_id}', '{}', '{finalized_draft_id}', 'finalized-draft.txt', 'text/plain', 1, '{finalized_draft_digest}', '{}'); \
+             INSERT INTO comment_attachment_draft_uploads \
+             (draft_id, upload_token, original_attachment_id, attachment_id, request_digest, payload_digest, file_name, content_type, size_bytes) \
+             VALUES ('{finalized_draft_id}', 'finalized-upload', '{finalized_attachment_id}', '{finalized_attachment_id}', '\\x{}', '\\x{}', 'finalized-draft.txt', 'text/plain', 1)",
+            workspace.id.0,
+            document.id.0,
+            owner.id.0,
+            "01".repeat(32),
+            workspace.id.0,
+            owner.id.0,
+            "02".repeat(32),
+            "03".repeat(32),
+            workspace.id.0,
+            task.id.0,
+            owner.id.0,
+            "04".repeat(32),
+            task_comment.id.0,
+            "05".repeat(32),
+            "06".repeat(32),
+            workspace.id.0,
+            owner.id.0,
+            "07".repeat(32),
+            "08".repeat(32),
+        ))
+        .await
+        .expect("seed active and finalized draft dependencies");
+
+    db.project_repo()
+        .soft_delete(&ctx, project.id)
+        .await
+        .expect("delete project");
+    let response = purge(&admin, &server, "project", project.id.0, true).await;
+    assert_eq!(response.status(), reqwest::StatusCode::ACCEPTED);
+    let operation: Value = response.json().await.expect("decode purge operation");
+    let operation_id = operation["operation_id"]
+        .as_str()
+        .expect("operation id")
+        .parse::<uuid::Uuid>()
+        .expect("operation UUID");
+
+    let digest_rows = db
+        .conn()
+        .query_all_raw(sea_orm::Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT digest, count(*)::bigint AS occurrences FROM purge_operation_digests WHERE operation_id = $1 GROUP BY digest",
+            [operation_id.into()],
+        ))
+        .await
+        .expect("load correlated purge digests");
+    let actual_digests = digest_rows
+        .iter()
+        .map(|row| {
+            let digest = row.try_get::<String>("", "digest").expect("digest");
+            let occurrences = row
+                .try_get::<i64>("", "occurrences")
+                .expect("digest occurrences");
+            assert_eq!(occurrences, 1, "{digest} must be correlated exactly once");
+            digest
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(actual_digests, expected_digests);
+
+    let remaining = db
+        .conn()
+        .query_one_raw(sea_orm::Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT \
+                (SELECT count(*)::bigint FROM projects WHERE workspace_id = $1) AS projects, \
+                (SELECT count(*)::bigint FROM folders WHERE workspace_id = $1) AS folders, \
+                (SELECT count(*)::bigint FROM documents WHERE workspace_id = $1) AS documents, \
+                (SELECT count(*)::bigint FROM boards WHERE workspace_id = $1) AS boards, \
+                (SELECT count(*)::bigint FROM tasks WHERE workspace_id = $1) AS tasks, \
+                (SELECT count(*)::bigint FROM comments WHERE workspace_id = $1) AS comments, \
+                (SELECT count(*)::bigint FROM attachments WHERE workspace_id = $1) AS attachments, \
+                (SELECT count(*)::bigint FROM comment_attachment_drafts WHERE workspace_id = $1) AS drafts, \
+                (SELECT count(*)::bigint FROM comment_attachment_draft_uploads WHERE draft_id IN ($2, $3)) AS uploads",
+            [workspace.id.0.into(), active_draft_id.into(), finalized_draft_id.into()],
+        ))
+        .await
+        .expect("load remaining closure rows")
+        .expect("closure count row");
+    for column in [
+        "projects",
+        "folders",
+        "documents",
+        "boards",
+        "tasks",
+        "comments",
+        "attachments",
+        "drafts",
+        "uploads",
+    ] {
+        assert_eq!(
+            remaining.try_get::<i64>("", column).expect("closure count"),
+            0,
+            "{column} must be removed by the project purge closure"
+        );
+    }
 
     db.teardown().await;
 }
