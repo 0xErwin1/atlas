@@ -44,6 +44,14 @@ pub struct RestoreTrashItemRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct PurgeTrashItemRequest {
+    pub kind: TrashKindDto,
+    pub target_id: uuid::Uuid,
+    pub confirm: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct PurgeStatusDtoResponse {
     pub operation_id: uuid::Uuid,
     pub kind: TrashKindDto,

@@ -1,7 +1,9 @@
 use atlas_domain::{
     Actor, DomainError, WorkspaceCtx,
-    entities::lifecycle::{TrashItem, TrashKind},
-    ids::WorkspaceId,
+    entities::lifecycle::{
+        PurgeExecutor, PurgeOperation, PurgeStatus, RestoreTarget, TrashItem, TrashKind,
+    },
+    ids::{UserId, WorkspaceId},
 };
 use chrono::{DateTime, Utc};
 use sea_orm::{
@@ -9,7 +11,7 @@ use sea_orm::{
 };
 use uuid::Uuid;
 
-use crate::persistence::repos::PgSecurityAuditRepo;
+use crate::persistence::repos::{NewPurgeOperation, PgPurgeOperationRepo, PgSecurityAuditRepo};
 
 pub struct TrashService {
     conn: DatabaseConnection,
@@ -145,6 +147,143 @@ impl TrashService {
         Ok(true)
     }
 
+    pub async fn purge(
+        &self,
+        actor: UserId,
+        kind: TrashKind,
+        target_id: Uuid,
+    ) -> Result<PurgeOperation, DomainError> {
+        let txn = self.conn.begin().await.map_err(db_err)?;
+        let target = RestoreTarget { kind, target_id };
+        let table = table_for(kind);
+        let operations = PgPurgeOperationRepo;
+
+        if let Some(operation) = operations.find_any_target_in(&txn, &target).await? {
+            txn.commit().await.map_err(db_err)?;
+            return Ok(operation);
+        }
+
+        #[derive(FromQueryResult)]
+        struct TargetRow {
+            workspace_id: Uuid,
+            deleted_at: Option<DateTime<Utc>>,
+        }
+
+        let row = TargetRow::find_by_statement(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            format!("SELECT workspace_id, deleted_at FROM {table} WHERE id = $1 FOR UPDATE"),
+            [target_id.into()],
+        ))
+        .one(&txn)
+        .await
+        .map_err(db_err)?;
+
+        let Some(row) = row else {
+            return Err(DomainError::NotFound {
+                entity: kind.as_str(),
+                id: target_id,
+            });
+        };
+        if row.deleted_at.is_none() {
+            return Err(DomainError::InvalidInput {
+                message: "only a deleted resource can be purged".into(),
+            });
+        }
+
+        let ctx = WorkspaceCtx::new(WorkspaceId(row.workspace_id), Actor::User(actor));
+        if let Some(operation) = operations
+            .find_by_target_in(&txn, ctx.workspace_id, &target)
+            .await?
+        {
+            txn.commit().await.map_err(db_err)?;
+            return Ok(operation);
+        }
+
+        let digests = self.collect_purge_digests(&txn, kind, target_id).await?;
+        let audit_id =
+            PgSecurityAuditRepo::append_resource_purge_committed_in(&txn, &ctx, kind, target_id)
+                .await?;
+        let operation = operations
+            .create_in(
+                &txn,
+                NewPurgeOperation {
+                    workspace_id: ctx.workspace_id,
+                    target: target.clone(),
+                    original_actor_user_id: actor,
+                    commit_audit_id: audit_id,
+                },
+            )
+            .await?;
+
+        for digest in digests {
+            operations
+                .create_digest_in(&txn, operation.id, digest)
+                .await?;
+        }
+
+        self.delete_purge_closure(&txn, kind, target_id).await?;
+        let pending = operations
+            .record_attempt_in(
+                &txn,
+                operation.id,
+                PurgeStatus::CleanupPending,
+                PurgeExecutor::System,
+                None,
+            )
+            .await?;
+        txn.commit().await.map_err(db_err)?;
+        Ok(pending)
+    }
+
+    async fn collect_purge_digests(
+        &self,
+        conn: &impl ConnectionTrait,
+        kind: TrashKind,
+        id: Uuid,
+    ) -> Result<Vec<String>, DomainError> {
+        #[derive(FromQueryResult)]
+        struct DigestRow {
+            sha256: String,
+        }
+        let scope = attachment_scope(kind);
+        DigestRow::find_by_statement(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            format!("SELECT DISTINCT sha256 FROM attachments WHERE {scope}"),
+            [id.into()],
+        ))
+        .all(conn)
+        .await
+        .map_err(db_err)
+        .map(|rows| rows.into_iter().map(|row| row.sha256).collect())
+    }
+
+    async fn delete_purge_closure(
+        &self,
+        conn: &impl ConnectionTrait,
+        kind: TrashKind,
+        id: Uuid,
+    ) -> Result<(), DomainError> {
+        match kind {
+            TrashKind::Project => {
+                purge_documents_in(conn, "project_id = $1 OR folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM folders WHERE project_id = $1 UNION ALL SELECT f.id FROM folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)", id).await?;
+                purge_tasks_in(conn, "project_id = $1", id).await?;
+                execute(conn, "DELETE FROM boards WHERE project_id = $1", id).await?;
+                delete_folders_leaf_first(conn, "project_id = $1", id).await?;
+                execute(conn, "DELETE FROM projects WHERE id = $1", id).await?;
+            }
+            TrashKind::Folder => {
+                purge_documents_in(conn, "folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM folders WHERE id = $1 UNION ALL SELECT f.id FROM folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)", id).await?;
+                purge_tasks_in(conn, "board_id IN (SELECT id FROM boards WHERE folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM folders WHERE id = $1 UNION ALL SELECT f.id FROM folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure))", id).await?;
+                execute(conn, "DELETE FROM boards WHERE folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM folders WHERE id = $1 UNION ALL SELECT f.id FROM folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)", id).await?;
+                delete_folders_leaf_first(conn, "id = $1", id).await?;
+            }
+            TrashKind::Document => purge_documents_in(conn, "id = $1", id).await?,
+            TrashKind::Comment => purge_comments_in(conn, "id = $1", id).await?,
+            TrashKind::Attachment => purge_attachments_in(conn, "id = $1", id).await?,
+        }
+        Ok(())
+    }
+
     async fn ensure_restore_safe(
         &self,
         conn: &impl ConnectionTrait,
@@ -192,6 +331,158 @@ impl TrashService {
         }
         Ok(())
     }
+}
+
+fn attachment_scope(kind: TrashKind) -> &'static str {
+    match kind {
+        TrashKind::Project => {
+            "document_id IN (SELECT id FROM documents WHERE project_id = $1 OR folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM folders WHERE project_id = $1 UNION ALL SELECT f.id FROM folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)) OR task_id IN (SELECT id FROM tasks WHERE project_id = $1)"
+        }
+        TrashKind::Folder => {
+            "document_id IN (SELECT id FROM documents WHERE folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM folders WHERE id = $1 UNION ALL SELECT f.id FROM folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)) OR task_id IN (SELECT t.id FROM tasks t JOIN boards b ON b.id = t.board_id WHERE b.folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM folders WHERE id = $1 UNION ALL SELECT f.id FROM folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure))"
+        }
+        TrashKind::Document => "document_id = $1",
+        TrashKind::Comment => "comment_id = $1",
+        TrashKind::Attachment => "id = $1",
+    }
+}
+
+async fn execute(conn: &impl ConnectionTrait, sql: &str, id: Uuid) -> Result<u64, DomainError> {
+    conn.execute_raw(Statement::from_sql_and_values(
+        sea_orm::DatabaseBackend::Postgres,
+        sql,
+        [id.into()],
+    ))
+    .await
+    .map(|result| result.rows_affected())
+    .map_err(db_err)
+}
+
+async fn purge_attachments_in(
+    conn: &impl ConnectionTrait,
+    scope: &str,
+    id: Uuid,
+) -> Result<(), DomainError> {
+    execute(
+        conn,
+        &format!(
+            "DELETE FROM comment_attachment_draft_uploads WHERE original_attachment_id IN (SELECT id FROM attachments WHERE {scope}) OR attachment_id IN (SELECT id FROM attachments WHERE {scope})"
+        ),
+        id,
+    )
+    .await?;
+    execute(conn, &format!("DELETE FROM attachments WHERE {scope}"), id).await?;
+    Ok(())
+}
+
+async fn purge_comments_in(
+    conn: &impl ConnectionTrait,
+    scope: &str,
+    id: Uuid,
+) -> Result<(), DomainError> {
+    purge_attachments_in(
+        conn,
+        &format!("comment_id IN (SELECT id FROM comments WHERE {scope})"),
+        id,
+    )
+    .await?;
+    execute(
+        conn,
+        &format!(
+            "DELETE FROM comment_attachment_drafts WHERE finalized_comment_id IN (SELECT id FROM comments WHERE {scope})"
+        ),
+        id,
+    )
+    .await?;
+    execute(conn, &format!("DELETE FROM comments WHERE {scope}"), id).await?;
+    Ok(())
+}
+
+async fn purge_documents_in(
+    conn: &impl ConnectionTrait,
+    scope: &str,
+    id: Uuid,
+) -> Result<(), DomainError> {
+    purge_comments_in(
+        conn,
+        &format!("document_id IN (SELECT id FROM documents WHERE {scope})"),
+        id,
+    )
+    .await?;
+    purge_attachments_in(
+        conn,
+        &format!("document_id IN (SELECT id FROM documents WHERE {scope})"),
+        id,
+    )
+    .await?;
+    execute(
+        conn,
+        &format!(
+            "DELETE FROM comment_attachment_drafts WHERE document_id IN (SELECT id FROM documents WHERE {scope})"
+        ),
+        id,
+    )
+    .await?;
+    execute(conn, &format!("DELETE FROM documents WHERE {scope}"), id).await?;
+    Ok(())
+}
+
+async fn purge_tasks_in(
+    conn: &impl ConnectionTrait,
+    scope: &str,
+    id: Uuid,
+) -> Result<(), DomainError> {
+    purge_comments_in(
+        conn,
+        &format!("task_id IN (SELECT id FROM tasks WHERE {scope})"),
+        id,
+    )
+    .await?;
+    purge_attachments_in(
+        conn,
+        &format!("task_id IN (SELECT id FROM tasks WHERE {scope})"),
+        id,
+    )
+    .await?;
+    execute(
+        conn,
+        &format!(
+            "DELETE FROM comment_attachment_drafts WHERE task_id IN (SELECT id FROM tasks WHERE {scope})"
+        ),
+        id,
+    )
+    .await?;
+    execute(
+        conn,
+        &format!(
+            "DELETE FROM task_references WHERE source_task_id IN (SELECT id FROM tasks WHERE {scope}) OR target_task_id IN (SELECT id FROM tasks WHERE {scope})"
+        ),
+        id,
+    )
+    .await?;
+    execute(conn, &format!("DELETE FROM tasks WHERE {scope}"), id).await?;
+    Ok(())
+}
+
+async fn delete_folders_leaf_first(
+    conn: &impl ConnectionTrait,
+    roots: &str,
+    id: Uuid,
+) -> Result<(), DomainError> {
+    loop {
+        let deleted = execute(
+            conn,
+            &format!(
+                "WITH RECURSIVE closure AS (SELECT id FROM folders WHERE {roots} UNION ALL SELECT child.id FROM folders child JOIN closure parent ON child.parent_folder_id = parent.id) DELETE FROM folders f WHERE f.id IN (SELECT id FROM closure) AND NOT EXISTS (SELECT 1 FROM folders child WHERE child.parent_folder_id = f.id AND child.id IN (SELECT id FROM closure))"
+            ),
+            id,
+        )
+        .await?;
+        if deleted == 0 {
+            break;
+        }
+    }
+    Ok(())
 }
 
 async fn restore_exists(

@@ -173,6 +173,8 @@ pub fn app(state: AppState) -> Router {
         .route("/api/meta", get(routes::health::meta))
         .route("/api/admin/trash", get(routes::trash::list_trash))
         .route("/api/admin/trash/restore", axum::routing::post(routes::trash::restore_trash))
+        .route("/api/admin/trash/purge", axum::routing::post(routes::trash::purge_trash))
+        .route("/api/admin/trash/purges/{operation_id}", get(routes::trash::get_purge_status))
         // Users (root-only)
         .route(
             "/api/users",

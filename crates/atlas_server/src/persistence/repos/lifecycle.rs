@@ -23,6 +23,51 @@ pub struct NewPurgeOperation {
 pub struct PgPurgeOperationRepo;
 
 impl PgPurgeOperationRepo {
+    pub async fn find_any_target_in(
+        &self,
+        conn: &impl ConnectionTrait,
+        target: &RestoreTarget,
+    ) -> Result<Option<PurgeOperation>, DomainError> {
+        purge_operation::Entity::find()
+            .filter(purge_operation::Column::TargetKind.eq(target.kind.as_str()))
+            .filter(purge_operation::Column::TargetId.eq(target.target_id))
+            .one(conn)
+            .await
+            .map_err(db_err)?
+            .map(purge_operation_from)
+            .transpose()
+    }
+
+    pub async fn find_by_id_in(
+        &self,
+        conn: &impl ConnectionTrait,
+        operation_id: PurgeOperationId,
+    ) -> Result<Option<PurgeOperation>, DomainError> {
+        purge_operation::Entity::find_by_id(operation_id.0)
+            .one(conn)
+            .await
+            .map_err(db_err)?
+            .map(purge_operation_from)
+            .transpose()
+    }
+
+    pub async fn find_by_target_in(
+        &self,
+        conn: &impl ConnectionTrait,
+        workspace_id: WorkspaceId,
+        target: &RestoreTarget,
+    ) -> Result<Option<PurgeOperation>, DomainError> {
+        purge_operation::Entity::find()
+            .filter(purge_operation::Column::WorkspaceId.eq(workspace_id.0))
+            .filter(purge_operation::Column::TargetKind.eq(target.kind.as_str()))
+            .filter(purge_operation::Column::TargetId.eq(target.target_id))
+            .one(conn)
+            .await
+            .map_err(db_err)?
+            .map(purge_operation_from)
+            .transpose()
+    }
+
     /// Creates the durable database-commit record before object cleanup begins.
     pub async fn create_in(
         &self,

@@ -1,16 +1,23 @@
 use atlas_api::{
-    dtos::lifecycle::{RestoreTrashItemRequest, TrashItemDto, TrashKindDto},
+    dtos::lifecycle::{
+        PurgeStatusDto, PurgeStatusDtoResponse, PurgeTrashItemRequest, RestoreTrashItemRequest,
+        TrashItemDto, TrashKindDto,
+    },
     pagination::{Page, SearchCursor, SortKey},
 };
 use atlas_domain::{entities::lifecycle::TrashKind, ids::WorkspaceId};
 use axum::{
     Json,
-    extract::{Query, State},
+    extract::{Path, Query, State},
     http::StatusCode,
+    response::{IntoResponse, Response},
 };
 use serde::Deserialize;
 
-use crate::{authz::RequireUserAdmin, error::ApiError, services::TrashService, state::AppState};
+use crate::{
+    authz::RequireUserAdmin, error::ApiError, persistence::repos::PgPurgeOperationRepo,
+    services::TrashService, state::AppState,
+};
 
 #[derive(Deserialize)]
 pub(crate) struct TrashQuery {
@@ -63,6 +70,50 @@ pub(crate) async fn restore_trash(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[utoipa::path(post, path = "/api/admin/trash/purge", tag = "trash", security(("bearer_auth" = [])), request_body = PurgeTrashItemRequest, responses((status = 202, body = PurgeStatusDtoResponse, description = "Database purge committed; cleanup is pending"), (status = 204, description = "Purge cleanup already complete"), (status = 400), (status = 401), (status = 403), (status = 404)))]
+pub(crate) async fn purge_trash(
+    admin: RequireUserAdmin,
+    State(state): State<AppState>,
+    Json(request): Json<PurgeTrashItemRequest>,
+) -> Result<Response, ApiError> {
+    if !request.confirm {
+        return Err(ApiError::BadRequest {
+            message: "purge requires confirm: true".into(),
+        });
+    }
+
+    let operation = TrashService::new((*state.db).clone())
+        .purge(admin.user.id, from_dto(request.kind), request.target_id)
+        .await
+        .map_err(ApiError::Domain)?;
+
+    if operation.status == atlas_domain::entities::lifecycle::PurgeStatus::Complete {
+        return Ok(StatusCode::NO_CONTENT.into_response());
+    }
+
+    Ok((StatusCode::ACCEPTED, Json(to_purge_dto(operation))).into_response())
+}
+
+#[utoipa::path(get, path = "/api/admin/trash/purges/{operation_id}", tag = "trash", security(("bearer_auth" = [])), params(("operation_id" = uuid::Uuid, Path)), responses((status = 200, body = PurgeStatusDtoResponse), (status = 401), (status = 403), (status = 404)))]
+pub(crate) async fn get_purge_status(
+    _admin: RequireUserAdmin,
+    State(state): State<AppState>,
+    Path(operation_id): Path<uuid::Uuid>,
+) -> Result<Json<PurgeStatusDtoResponse>, ApiError> {
+    let operation = PgPurgeOperationRepo
+        .find_by_id_in(
+            state.db.as_ref(),
+            atlas_domain::ids::PurgeOperationId(operation_id),
+        )
+        .await
+        .map_err(ApiError::Domain)?
+        .ok_or(ApiError::Domain(atlas_domain::DomainError::NotFound {
+            entity: "purge_operation",
+            id: operation_id,
+        }))?;
+    Ok(Json(to_purge_dto(operation)))
+}
+
 fn parse_kind(value: Option<&str>) -> Result<Option<TrashKind>, ApiError> {
     value
         .map(|value| {
@@ -108,5 +159,34 @@ fn to_dto(item: atlas_domain::entities::lifecycle::TrashItem) -> TrashItemDto {
         },
         target_id: item.target_id,
         deleted_at: item.deleted_at,
+    }
+}
+
+fn to_purge_dto(
+    operation: atlas_domain::entities::lifecycle::PurgeOperation,
+) -> PurgeStatusDtoResponse {
+    PurgeStatusDtoResponse {
+        operation_id: operation.id.0,
+        kind: match operation.target.kind {
+            TrashKind::Project => TrashKindDto::Project,
+            TrashKind::Folder => TrashKindDto::Folder,
+            TrashKind::Document => TrashKindDto::Document,
+            TrashKind::Comment => TrashKindDto::Comment,
+            TrashKind::Attachment => TrashKindDto::Attachment,
+        },
+        target_id: operation.target.target_id,
+        status: match operation.status {
+            atlas_domain::entities::lifecycle::PurgeStatus::DbCommitted => {
+                PurgeStatusDto::DbCommitted
+            }
+            atlas_domain::entities::lifecycle::PurgeStatus::CleanupPending => {
+                PurgeStatusDto::CleanupPending
+            }
+            atlas_domain::entities::lifecycle::PurgeStatus::CleanupFailed => {
+                PurgeStatusDto::CleanupFailed
+            }
+            atlas_domain::entities::lifecycle::PurgeStatus::Complete => PurgeStatusDto::Complete,
+        },
+        attempts: operation.attempts,
     }
 }

@@ -102,6 +102,8 @@ use atlas_api::{
         crate::routes::audit::list_platform_audit,
         crate::routes::trash::list_trash,
         crate::routes::trash::restore_trash,
+        crate::routes::trash::purge_trash,
+        crate::routes::trash::get_purge_status,
         crate::routes::api_keys::create_user_api_key,
         crate::routes::api_keys::list_user_api_keys,
         crate::routes::api_keys::revoke_user_api_key,

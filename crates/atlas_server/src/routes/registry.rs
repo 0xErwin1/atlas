@@ -56,6 +56,20 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         openapi_path: Some("/api/admin/trash/restore"),
         capability: None,
     },
+    RouteEntry {
+        method: "POST",
+        path_template: "/api/admin/trash/purge",
+        kind: RouteKind::AuthnRequired,
+        openapi_path: Some("/api/admin/trash/purge"),
+        capability: None,
+    },
+    RouteEntry {
+        method: "GET",
+        path_template: "/api/admin/trash/purges/00000000-0000-0000-0000-000000000001",
+        kind: RouteKind::AuthnRequired,
+        openapi_path: Some("/api/admin/trash/purges/{operation_id}"),
+        capability: None,
+    },
     // ---- Public routes ----
     RouteEntry {
         method: "GET",

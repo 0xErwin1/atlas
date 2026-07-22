@@ -98,6 +98,35 @@ impl PgSecurityAuditRepo {
         )
         .await
     }
+
+    pub async fn append_resource_purge_committed_in<C: ConnectionTrait>(
+        conn: &C,
+        ctx: &WorkspaceCtx,
+        kind: TrashKind,
+        target_id: uuid::Uuid,
+    ) -> Result<SecurityAuditId, DomainError> {
+        let id = SecurityAuditId::new();
+        let model = security_audit_log::ActiveModel {
+            id: Set(id.0),
+            workspace_id: Set(Some(ctx.workspace_id.0)),
+            actor_user_id: Set(match ctx.actor {
+                Actor::User(user_id) => Some(user_id.0),
+                Actor::ApiKey(_) => None,
+            }),
+            actor_api_key_id: Set(None),
+            action: Set(SecurityAction::ResourcePurgeCommitted.as_str().to_string()),
+            target_type: Set(kind.as_str().to_string()),
+            target_id: Set(Some(target_id)),
+            metadata: Set(serde_json::json!({
+                "kind": kind.as_str(),
+                "outcome": "db_committed",
+            })),
+            created_at: Set(Utc::now()),
+        };
+
+        model.insert(conn).await.map_err(db_err)?;
+        Ok(id)
+    }
 }
 
 #[async_trait]

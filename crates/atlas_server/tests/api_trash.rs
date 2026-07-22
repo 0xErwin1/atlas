@@ -37,6 +37,13 @@ fn trash_routes_are_registered_for_openapi_and_protection_sweeps() {
     assert!(ROUTE_REGISTRY.iter().any(|entry| {
         entry.method == "POST" && entry.openapi_path == Some("/api/admin/trash/restore")
     }));
+    assert!(ROUTE_REGISTRY.iter().any(|entry| {
+        entry.method == "POST" && entry.openapi_path == Some("/api/admin/trash/purge")
+    }));
+    assert!(ROUTE_REGISTRY.iter().any(|entry| {
+        entry.method == "GET"
+            && entry.openapi_path == Some("/api/admin/trash/purges/{operation_id}")
+    }));
 }
 
 async fn restore(
@@ -52,6 +59,26 @@ async fn restore(
         .send()
         .await
         .expect("restore request")
+}
+
+async fn purge(
+    client: &atlas_client::AtlasClient,
+    server: &support::TestServer,
+    kind: &str,
+    target_id: uuid::Uuid,
+    confirm: bool,
+) -> reqwest::Response {
+    reqwest::Client::new()
+        .post(format!("{}/api/admin/trash/purge", server.base_url()))
+        .bearer_auth(client.token().expect("authenticated client token"))
+        .json(&json!({
+            "kind": kind,
+            "target_id": target_id,
+            "confirm": confirm,
+        }))
+        .send()
+        .await
+        .expect("purge request")
 }
 
 async fn list_trash(
@@ -813,6 +840,18 @@ async fn trash_allows_only_root_and_system_admin_humans() {
         );
     }
     assert_eq!(
+        purge(
+            &workspace_admin,
+            &server,
+            "document",
+            denied_document_id,
+            true,
+        )
+        .await
+        .status(),
+        reqwest::StatusCode::FORBIDDEN
+    );
+    assert_eq!(
         restore(&root, &server, "document", denied_document_id)
             .await
             .status(),
@@ -1059,6 +1098,246 @@ async fn restoring_one_document_restores_its_normal_route_without_reviving_anoth
             expected
         );
     }
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn confirmed_purge_removes_the_five_kinds_and_reuses_its_pending_operation() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let admin = support::login_root_user(&server, &db).await;
+    let (workspace, owner) = support::seed_workspace(&db, "trash-purge-five-kinds").await;
+    let ctx = support::ctx(&workspace, &owner);
+    let attachments = PgAttachmentRepo {
+        conn: db.conn().clone(),
+    };
+
+    let project = db
+        .project_repo()
+        .create(
+            &ctx,
+            NewProject {
+                name: "Purge project".into(),
+                slug: "trash-purge-project".into(),
+                task_prefix: "TPG".into(),
+                visibility: Visibility::Workspace(VisibilityRole::Editor),
+            },
+        )
+        .await
+        .expect("create project");
+    let project_folder = db
+        .folder_repo()
+        .create(
+            &ctx,
+            NewFolder {
+                project_id: Some(project.id),
+                parent_folder_id: None,
+                name: "project child".into(),
+            },
+        )
+        .await
+        .expect("create project folder");
+    let project_document = db
+        .doc_repo()
+        .create(
+            &ctx,
+            NewDocument {
+                title: "project child".into(),
+                slug: Some("trash-purge-project-child".into()),
+                content: "body".into(),
+                folder_id: Some(project_folder.id),
+                project_id: Some(project.id),
+                frontmatter: None,
+            },
+        )
+        .await
+        .expect("create project document");
+    let folder = db
+        .folder_repo()
+        .create(
+            &ctx,
+            NewFolder {
+                project_id: None,
+                parent_folder_id: None,
+                name: "Purge folder".into(),
+            },
+        )
+        .await
+        .expect("create folder");
+    let folder_document = db
+        .doc_repo()
+        .create(
+            &ctx,
+            NewDocument {
+                title: "folder child".into(),
+                slug: Some("trash-purge-folder-child".into()),
+                content: "body".into(),
+                folder_id: Some(folder.id),
+                project_id: None,
+                frontmatter: None,
+            },
+        )
+        .await
+        .expect("create folder document");
+    let document = db
+        .doc_repo()
+        .create(
+            &ctx,
+            NewDocument {
+                title: "Purge document".into(),
+                slug: Some("trash-purge-document".into()),
+                content: "body".into(),
+                folder_id: None,
+                project_id: None,
+                frontmatter: None,
+            },
+        )
+        .await
+        .expect("create document");
+    let comment_parent = db
+        .doc_repo()
+        .create(
+            &ctx,
+            NewDocument {
+                title: "Purge comment parent".into(),
+                slug: Some("trash-purge-comment-parent".into()),
+                content: "body".into(),
+                folder_id: None,
+                project_id: None,
+                frontmatter: None,
+            },
+        )
+        .await
+        .expect("create comment parent");
+    let comment = CommentService::new(db.conn().clone())
+        .create(
+            &ctx,
+            CommentOwner::Document(comment_parent.id),
+            "Purge comment".into(),
+        )
+        .await
+        .expect("create comment");
+    let attachment = attachments
+        .record(
+            &ctx,
+            NewAttachment {
+                document_id: Some(comment_parent.id),
+                task_id: None,
+                comment_id: None,
+                file_name: "purge.txt".into(),
+                content_type: "text/plain".into(),
+                size_bytes: 1,
+                sha256: "f".repeat(64),
+            },
+        )
+        .await
+        .expect("create attachment");
+
+    db.project_repo()
+        .soft_delete(&ctx, project.id)
+        .await
+        .expect("delete project");
+    db.folder_repo()
+        .soft_delete(&ctx, folder.id)
+        .await
+        .expect("delete folder");
+    let document_service = DocumentService::new(db.conn().clone(), 25);
+    document_service
+        .soft_delete(&ctx, document.id)
+        .await
+        .expect("delete document");
+    CommentService::new(db.conn().clone())
+        .remove(
+            &ctx,
+            CommentOwner::Document(comment_parent.id),
+            comment.id,
+            false,
+        )
+        .await
+        .expect("delete comment");
+    attachments
+        .soft_delete(&ctx, attachment.id)
+        .await
+        .expect("delete attachment");
+
+    let rejected = purge(&admin, &server, "document", document.id.0, false).await;
+    assert_eq!(rejected.status(), reqwest::StatusCode::BAD_REQUEST);
+    assert!(attachment_is_deleted(&db, attachment.id.0).await);
+
+    for (kind, target_id) in [
+        ("project", project.id.0),
+        ("folder", folder.id.0),
+        ("document", document.id.0),
+        ("comment", comment.id.0),
+        ("attachment", attachment.id.0),
+    ] {
+        let response = purge(&admin, &server, kind, target_id, true).await;
+        assert_eq!(response.status(), reqwest::StatusCode::ACCEPTED, "{kind}");
+        let body: Value = response.json().await.expect("decode purge status");
+        assert_eq!(body["kind"], kind);
+        assert_eq!(body["target_id"], target_id.to_string());
+        assert_eq!(body["status"], "cleanup_pending");
+        assert!(body["operation_id"].is_string());
+
+        let status = trash_response(
+            &admin,
+            &server,
+            reqwest::Method::GET,
+            &format!(
+                "/api/admin/trash/purges/{}",
+                body["operation_id"].as_str().expect("operation id")
+            ),
+        )
+        .await;
+        assert_eq!(status.status(), reqwest::StatusCode::OK, "{kind} status");
+        assert_eq!(
+            status.json::<Value>().await.expect("decode purge status")["status"],
+            "cleanup_pending"
+        );
+
+        let retry = purge(&admin, &server, kind, target_id, true).await;
+        assert_eq!(
+            retry.status(),
+            reqwest::StatusCode::ACCEPTED,
+            "{kind} retry"
+        );
+        assert_eq!(
+            retry.json::<Value>().await.expect("decode retry")["operation_id"],
+            body["operation_id"]
+        );
+    }
+
+    for (table, id) in [
+        ("projects", project.id.0),
+        ("folders", folder.id.0),
+        ("documents", document.id.0),
+        ("comments", comment.id.0),
+        ("attachments", attachment.id.0),
+        ("folders", project_folder.id.0),
+        ("documents", project_document.id.0),
+        ("documents", folder_document.id.0),
+    ] {
+        let row = db
+            .conn()
+            .query_one_raw(sea_orm::Statement::from_sql_and_values(
+                sea_orm::DatabaseBackend::Postgres,
+                format!("SELECT id FROM {table} WHERE id = $1"),
+                [id.into()],
+            ))
+            .await
+            .expect("query purged row");
+        assert!(row.is_none(), "{table} row must be purged");
+    }
+
+    let audit_count = PgSecurityAuditRepo::new(db.conn().clone())
+        .list_for_workspace(workspace.id, &AuditFilters::default(), None, 100)
+        .await
+        .expect("list audit")
+        .into_iter()
+        .filter(|event| event.action == "resource.purge_committed")
+        .count();
+    assert_eq!(audit_count, 5);
 
     db.teardown().await;
 }
