@@ -16,6 +16,7 @@ import NotesTree from '@/components/notas/NotesTree.vue';
 import ErrorState from '@/components/states/ErrorState.vue';
 import FreshnessStatus from '@/components/states/FreshnessStatus.vue';
 import LoadingState from '@/components/states/LoadingState.vue';
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import ContextMenu, { type MenuItem } from '@/components/ui/ContextMenu.vue';
 import Row from '@/components/ui/Row.vue';
 import { useContextMenu } from '@/composables/useContextMenu';
@@ -598,6 +599,7 @@ watch(
 );
 
 const { open: menuOpen, x: menuX, y: menuY, openAt, close: closeMenu } = useContextMenu();
+const deleteProjectOpen = ref(false);
 
 // Creation from the space header: expand the space, then open the tree's inline
 // input so the new item is typed in this project's context.
@@ -614,6 +616,8 @@ const headerMenuItems = computed<MenuItem[]>(() => [
   { label: 'New page', icon: 'file-plus', action: () => void startCreate('page') },
   { label: 'New board', icon: 'columns-3', action: () => void startCreate('board') },
   { label: 'New folder', icon: 'folder-plus', action: () => void startCreate('folder') },
+  { sep: true },
+  { label: 'Delete project', icon: 'trash-2', danger: true, action: () => (deleteProjectOpen.value = true) },
 ]);
 
 function openHeaderMenu(event: MouseEvent): void {
@@ -635,7 +639,7 @@ defineExpose({
   <div>
     <Row
       :label="project.name"
-      :icon="expanded ? 'folder-open' : 'folder'"
+       :icon="expanded ? 'layers-3' : 'layers'"
       chevron
       :open="expanded"
       menu
@@ -683,6 +687,18 @@ defineExpose({
         @retry="loadTree"
       />
     </template>
+    <ConfirmDialog
+      :open="deleteProjectOpen"
+      tone="danger"
+      title="Delete project?"
+      message="This moves the project and its contents to Trash. It can be restored by an administrator."
+      :detail="project.name"
+      detail-icon="layers"
+      confirm-label="Delete project"
+      confirm-icon="trash-2"
+      @confirm="workspace.deleteProject(ws, project.slug); deleteProjectOpen = false"
+      @cancel="deleteProjectOpen = false"
+    />
 
     <FolderPickerDialog
       :open="pendingOp !== null"

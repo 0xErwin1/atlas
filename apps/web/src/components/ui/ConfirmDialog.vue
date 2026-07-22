@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 import type { BtnVariant } from '@/components/ui/Btn.vue';
 import Btn from '@/components/ui/Btn.vue';
 import Icon from '@/components/ui/Icon.vue';
@@ -29,6 +29,7 @@ const props = withDefaults(
     cancelLabel?: string;
     confirmIcon?: string;
     icon?: string;
+    confirmationText?: string;
     tone?: ConfirmTone;
     /** @deprecated prefer `tone="danger"`; kept for existing call sites. */
     danger?: boolean;
@@ -83,6 +84,17 @@ const TONE: Record<ConfirmTone, ToneStyle> = {
 const tone = computed<ConfirmTone>(() => props.tone ?? (props.danger ? 'danger' : 'primary'));
 const toneStyle = computed<ToneStyle>(() => TONE[tone.value]);
 const badgeIcon = computed(() => props.icon ?? toneStyle.value.icon);
+const confirmationValue = ref('');
+const confirmationMatches = computed(
+  () => props.confirmationText === undefined || confirmationValue.value === props.confirmationText,
+);
+
+watch(
+  () => props.open,
+  (open) => {
+    if (open) confirmationValue.value = '';
+  },
+);
 
 useOverlayEscape(
   () => props.open,
@@ -162,6 +174,15 @@ useOverlayEscape(
           <span style="flex: 1; overflow: hidden; text-overflow: ellipsis;">{{ detail }}</span>
         </div>
 
+        <label
+          v-if="confirmationText"
+          class="flex flex-col"
+          style="gap: 6px; margin: 12px 16px 0; font-size: var(--fs-sm); color: var(--c-muted);"
+        >
+          Type <code style="color: var(--c-foreground);">{{ confirmationText }}</code> to confirm
+          <input v-model="confirmationValue" class="atl-confirm-input" autocomplete="off" />
+        </label>
+
         <div
           v-if="note"
           data-test="note"
@@ -174,7 +195,7 @@ useOverlayEscape(
 
         <div class="flex justify-end" style="gap: 8px; padding: 18px 16px 16px;">
           <Btn variant="secondary" data-test="cancel" @click="emit('cancel')">{{ cancelLabel }}</Btn>
-          <Btn :variant="toneStyle.variant" data-test="confirm" @click="emit('confirm')">
+          <Btn :variant="toneStyle.variant" data-test="confirm" :disabled="!confirmationMatches" @click="emit('confirm')">
             <Icon v-if="confirmIcon" :name="confirmIcon" :size="14" />
             {{ confirmLabel }}
           </Btn>
@@ -183,3 +204,14 @@ useOverlayEscape(
     </div>
   </Teleport>
 </template>
+
+<style scoped>
+.atl-confirm-input {
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-background);
+  color: var(--c-foreground);
+}
+</style>

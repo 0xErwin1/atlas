@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
+import ProjectCreateDialog from '@/components/projects/ProjectCreateDialog.vue';
 import PanelHeader from '@/components/settings/PanelHeader.vue';
 import RowAction from '@/components/settings/RowAction.vue';
 import Btn from '@/components/ui/Btn.vue';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import FormField from '@/components/ui/FormField.vue';
 import Icon from '@/components/ui/Icon.vue';
-import PromptDialog from '@/components/ui/PromptDialog.vue';
 import { useLoadingMap } from '@/composables/useLoadingMap';
 import { useUiStore } from '@/stores/ui';
 import { type ProjectSummary, useWorkspaceStore } from '@/stores/workspace';
@@ -35,7 +35,6 @@ const prefixError = ref<string | null>(null);
 const saving = ref(false);
 
 const createOpen = ref(false);
-const createError = ref('');
 const creating = ref(false);
 const deleteTarget = ref<ProjectSummary | null>(null);
 const rowBusy = useLoadingMap();
@@ -127,36 +126,12 @@ async function saveEdit(slug: string): Promise<void> {
 }
 
 function openCreate(): void {
-  createError.value = '';
   createOpen.value = true;
 }
 
-function cancelCreate(): void {
+function onCreated(): void {
   createOpen.value = false;
-  createError.value = '';
-}
-
-async function submitCreate(name: string): Promise<void> {
-  const wsSlug = ws.value;
-  if (wsSlug === null) return;
-
-  const trimmed = name.trim();
-  if (trimmed === '') {
-    createError.value = 'Project name is required';
-    return;
-  }
-
-  creating.value = true;
-  const slug = await workspace.createProject(wsSlug, trimmed);
-  creating.value = false;
-
-  if (slug !== null) {
-    createOpen.value = false;
-    createError.value = '';
-    ui.showBanner('Project created', 'success');
-  } else {
-    createError.value = workspace.error ?? 'Failed to create project';
-  }
+  ui.showBanner('Project created', 'success');
 }
 
 async function confirmDelete(): Promise<void> {
@@ -261,21 +236,17 @@ async function confirmDelete(): Promise<void> {
       </div>
     </div>
 
-    <PromptDialog
+    <ProjectCreateDialog
       :open="createOpen"
-      title="New project"
-      placeholder="Project name"
-      confirm-label="Create"
-      :error="createError"
-      @confirm="submitCreate"
-      @cancel="cancelCreate"
+      @created="onCreated"
+      @cancel="createOpen = false"
     />
 
     <ConfirmDialog
       :open="deleteTarget !== null"
       tone="danger"
       title="Delete project?"
-      message="The project and everything inside it — boards, folders, and documents — will be permanently deleted. This cannot be undone."
+      message="The project and everything inside it — boards, folders, and documents — will move to Trash and can be restored by an administrator."
       :detail="deleteTarget?.name"
       detail-icon="folder"
       confirm-label="Delete project"

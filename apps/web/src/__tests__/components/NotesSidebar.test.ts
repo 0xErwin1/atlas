@@ -86,14 +86,14 @@ describe('NotesSidebar unified all-projects container', () => {
     wrapper.unmount();
   });
 
-  it('renders a "New page or board" create footer', async () => {
+  it('renders a "New project" create footer', async () => {
     setupProjects();
     const wrapper = mount(NotesSidebar);
     await flushPromises();
 
-    const footer = wrapper.find('button[aria-label="New page or board"]');
+    const footer = wrapper.find('button[aria-label="New project"]');
     expect(footer.exists()).toBe(true);
-    expect(footer.text()).toContain('New page or board');
+    expect(footer.text()).toContain('New project');
 
     await footer.trigger('click');
     const labels = (wrapper.findComponent(ContextMenu).props('items') as Array<{ label?: string }>).map(
@@ -114,7 +114,7 @@ describe('NotesSidebar unified all-projects container', () => {
 
     expect(content.text()).toContain('Spaces');
     expect(footer.text()).toContain('Views');
-    expect(footer.get('button[aria-label="New page or board"]').text()).toContain('New page or board');
+    expect(footer.get('button[aria-label="New project"]').text()).toContain('New project');
     wrapper.unmount();
   });
 

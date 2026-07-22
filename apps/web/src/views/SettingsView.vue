@@ -14,6 +14,7 @@ import ProjectsPanel from '@/components/settings/ProjectsPanel.vue';
 import StatusesPanel from '@/components/settings/StatusesPanel.vue';
 import StatusTemplatesPanel from '@/components/settings/StatusTemplatesPanel.vue';
 import TagsPanel from '@/components/settings/TagsPanel.vue';
+import TrashPanel from '@/components/settings/TrashPanel.vue';
 import UsersPanel from '@/components/settings/UsersPanel.vue';
 import WebhooksPanel from '@/components/settings/WebhooksPanel.vue';
 import WorkspaceAuditPanel from '@/components/settings/WorkspaceAuditPanel.vue';
@@ -43,6 +44,7 @@ export type SettingsSection =
   | 'workspaces'
   | 'webhooks'
   | 'platform-audit'
+  | 'trash'
   | 'about'
   | 'app';
 
@@ -63,6 +65,7 @@ const SETTINGS_SECTIONS = new Set<SettingsSection>([
   'workspaces',
   'webhooks',
   'platform-audit',
+  'trash',
   'about',
   'app',
 ]);
@@ -152,6 +155,7 @@ const navGroups = computed<NavGroup[]>(() => {
         { section: 'webhooks', icon: 'webhook', label: 'Webhooks & Events', rootOnly: true },
         { section: 'users', icon: 'users', label: 'Users', rootOnly: true },
         { section: 'workspaces', icon: 'layers', label: 'Workspaces', rootOnly: true },
+        { section: 'trash', icon: 'trash-2', label: 'Trash', rootOnly: true },
         { section: 'platform-audit', icon: 'shield-alert', label: 'Platform audit', rootOnly: true },
         { section: 'about', icon: 'info', label: 'About', rootOnly: true },
       ],
@@ -270,7 +274,8 @@ watch(
       <WorkspaceAuditPanel v-else-if="isWorkspaceReady && activeSection === 'audit'" />
       <UsersPanel v-else-if="activeSection === 'users'" />
       <AdminWorkspacesPanel v-else-if="activeSection === 'workspaces'" />
-      <PlatformAuditPanel v-else-if="activeSection === 'platform-audit'" />
+       <PlatformAuditPanel v-else-if="activeSection === 'platform-audit'" />
+       <TrashPanel v-else-if="activeSection === 'trash'" />
       <WebhooksPanel v-else-if="isWorkspaceReady && activeSection === 'webhooks'" />
       <AboutPanel v-else-if="activeSection === 'about'" />
       <AppSettingsPanel v-else-if="activeSection === 'app'" />

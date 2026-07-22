@@ -1,6 +1,7 @@
 import { mount } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import ProjectCreateDialog from '@/components/projects/ProjectCreateDialog.vue';
 import ProjectsPanel from '@/components/settings/ProjectsPanel.vue';
 import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
@@ -118,12 +119,6 @@ describe('ProjectsPanel — edit flow', () => {
   });
 });
 
-interface CreateVm {
-  createOpen: boolean;
-  createError: string;
-  submitCreate: (name: string) => Promise<void>;
-}
-
 interface DeleteVm {
   deleteTarget: { slug: string; name: string } | null;
   confirmDelete: () => Promise<void>;
@@ -140,11 +135,11 @@ describe('ProjectsPanel — create flow', () => {
     const wrapper = mount(ProjectsPanel);
     await wrapper.vm.$nextTick();
 
-    expect((wrapper.vm as unknown as CreateVm).createOpen).toBe(false);
+    expect((wrapper.vm as unknown as { createOpen: boolean }).createOpen).toBe(false);
 
     await wrapper.find('.atl-panel-head-actions button').trigger('click');
 
-    expect((wrapper.vm as unknown as CreateVm).createOpen).toBe(true);
+    expect((wrapper.vm as unknown as { createOpen: boolean }).createOpen).toBe(true);
   });
 
   it('calls createProject and closes the dialog on success', async () => {
@@ -154,11 +149,11 @@ describe('ProjectsPanel — create flow', () => {
     const wrapper = mount(ProjectsPanel);
     await wrapper.vm.$nextTick();
 
-    const vm = wrapper.vm as unknown as CreateVm;
-    await vm.submitCreate('Marketing');
+    const dialog = wrapper.findComponent(ProjectCreateDialog);
+    await (dialog.vm as unknown as { submit: (name: string) => Promise<void> }).submit('Marketing');
 
     expect(create).toHaveBeenCalledWith('acme', 'Marketing');
-    expect(vm.createOpen).toBe(false);
+    expect((wrapper.vm as unknown as { createOpen: boolean }).createOpen).toBe(false);
   });
 
   it('blocks an empty name without calling the store', async () => {
@@ -168,11 +163,11 @@ describe('ProjectsPanel — create flow', () => {
     const wrapper = mount(ProjectsPanel);
     await wrapper.vm.$nextTick();
 
-    const vm = wrapper.vm as unknown as CreateVm;
-    await vm.submitCreate('   ');
+    const dialog = wrapper.findComponent(ProjectCreateDialog);
+    await (dialog.vm as unknown as { submit: (name: string) => Promise<void> }).submit('   ');
 
     expect(create).not.toHaveBeenCalled();
-    expect(vm.createError).not.toBe('');
+    expect((dialog.vm as unknown as { error: string }).error).not.toBe('');
   });
 
   it('surfaces a store error in the dialog on failure', async () => {
@@ -185,12 +180,12 @@ describe('ProjectsPanel — create flow', () => {
     const wrapper = mount(ProjectsPanel);
     await wrapper.vm.$nextTick();
 
-    const vm = wrapper.vm as unknown as CreateVm;
-    vm.createOpen = true;
-    await vm.submitCreate('Marketing');
+    const dialog = wrapper.findComponent(ProjectCreateDialog);
+    (wrapper.vm as unknown as { createOpen: boolean }).createOpen = true;
+    await (dialog.vm as unknown as { submit: (name: string) => Promise<void> }).submit('Marketing');
 
-    expect(vm.createError).toBe('Prefix already in use');
-    expect(vm.createOpen).toBe(true);
+    expect((dialog.vm as unknown as { error: string }).error).toBe('Prefix already in use');
+    expect((wrapper.vm as unknown as { createOpen: boolean }).createOpen).toBe(true);
   });
 });
 
