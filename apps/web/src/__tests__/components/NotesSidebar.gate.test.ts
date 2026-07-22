@@ -62,13 +62,13 @@ describe('NotesSidebar whole-sidebar loading gate', () => {
 
     // Gate closed: the sidebar's own loader is present and the tree is hidden.
     expect(wrapper.findComponent(LoadingState).exists()).toBe(true);
-    expect(wrapper.find('.notes-sidebar-tree').attributes('style')).toContain('display: none');
+    expect(wrapper.find('.notes-sidebar-body').attributes('style')).toContain('display: none');
 
     releaseGet();
     await flushPromises();
 
     // Gate open: the tree is revealed and the single gate loader is gone.
-    const tree = wrapper.find('.notes-sidebar-tree');
+    const tree = wrapper.find('.notes-sidebar-body');
     expect(tree.attributes('style') ?? '').not.toContain('display: none');
     expect(wrapper.findComponent(LoadingState).exists()).toBe(false);
     expect(wrapper.findAllComponents(NotesSpace)).toHaveLength(2);
@@ -83,13 +83,13 @@ describe('NotesSidebar whole-sidebar loading gate', () => {
     const wrapper = mount(NotesSidebar);
     await flushPromises();
 
-    expect(wrapper.find('.notes-sidebar-tree').attributes('style') ?? '').not.toContain('display: none');
+    expect(wrapper.find('.notes-sidebar-body').attributes('style') ?? '').not.toContain('display: none');
 
     // A background revalidation re-announcing readiness must not close the gate.
     wrapper.findAllComponents(NotesSpace)[0]?.vm.$emit('initial-settled');
     await flushPromises();
 
-    expect(wrapper.find('.notes-sidebar-tree').attributes('style') ?? '').not.toContain('display: none');
+    expect(wrapper.find('.notes-sidebar-body').attributes('style') ?? '').not.toContain('display: none');
     expect(wrapper.findComponent(LoadingState).exists()).toBe(false);
 
     wrapper.unmount();
