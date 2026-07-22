@@ -1556,7 +1556,7 @@ pub(crate) struct TasksAttachDeleteArgs {
     #[arg(long)]
     pub(crate) attachment_id: Uuid,
 
-    /// Confirm the deletion. Required — prevents accidental non-reversible deletes.
+    /// Confirm the recoverable deletion. Permanent removal is managed through Trash.
     #[arg(long)]
     pub(crate) confirm: bool,
 }
@@ -1615,7 +1615,7 @@ async fn run_task_attach_download(
 async fn run_task_attach_delete(ctx: &Ctx, args: TasksAttachDeleteArgs) -> Result<(), CliError> {
     if !args.confirm {
         return Err(CliError::Validation(
-            "pass --confirm to delete (this is a non-reversible operation)".to_owned(),
+            "pass --confirm to recoverably delete the attachment".to_owned(),
         ));
     }
 
@@ -1636,6 +1636,7 @@ async fn run_task_attach_delete(ctx: &Ctx, args: TasksAttachDeleteArgs) -> Resul
 mod tests {
     use super::*;
     use crate::cli::Cli;
+    use clap::CommandFactory;
 
     // -----------------------------------------------------------------------
     // T29: Parse tasks list
@@ -2583,6 +2584,17 @@ mod tests {
             !args.confirm,
             "confirm must be false, which triggers the Validation guard"
         );
+    }
+
+    #[test]
+    fn tasks_attach_delete_help_describes_recoverable_lifecycle() {
+        let help = TasksAttachDeleteArgs::command()
+            .term_width(usize::MAX)
+            .render_long_help()
+            .to_string();
+
+        assert!(help.contains("Confirm the recoverable deletion."));
+        assert!(!help.contains("non-reversible"));
     }
 
     #[test]

@@ -22,18 +22,18 @@ use crate::{
 #[derive(Deserialize)]
 pub(crate) struct TrashQuery {
     workspace_id: Option<uuid::Uuid>,
-    kind: Option<String>,
+    kind: Option<TrashKindDto>,
     cursor: Option<String>,
     limit: Option<u32>,
 }
 
-#[utoipa::path(get, path = "/api/admin/trash", tag = "trash", security(("bearer_auth" = [])), params(("workspace_id" = Option<uuid::Uuid>, Query), ("kind" = Option<String>, Query), ("cursor" = Option<String>, Query), ("limit" = Option<u32>, Query)), responses((status = 200, body = Page<TrashItemDto>), (status = 400), (status = 401), (status = 403)))]
+#[utoipa::path(get, path = "/api/admin/trash", tag = "trash", security(("bearer_auth" = [])), params(("workspace_id" = Option<uuid::Uuid>, Query), ("kind" = Option<TrashKindDto>, Query), ("cursor" = Option<String>, Query), ("limit" = Option<u32>, Query)), responses((status = 200, body = Page<TrashItemDto>), (status = 400), (status = 401), (status = 403)))]
 pub(crate) async fn list_trash(
     _admin: RequireUserAdmin,
     State(state): State<AppState>,
     Query(query): Query<TrashQuery>,
 ) -> Result<Json<Page<TrashItemDto>>, ApiError> {
-    let kind = parse_kind(query.kind.as_deref())?;
+    let kind = query.kind.map(from_dto);
     let cursor = query.cursor.as_deref().map(decode_cursor).transpose()?;
     let limit = query.limit.unwrap_or(50).clamp(1, 200) as u64;
     let service = TrashService::new((*state.db).clone());
@@ -119,15 +119,6 @@ pub(crate) async fn get_purge_status(
     Ok(Json(to_purge_dto(operation)))
 }
 
-fn parse_kind(value: Option<&str>) -> Result<Option<TrashKind>, ApiError> {
-    value
-        .map(|value| {
-            value.parse().map_err(|_| ApiError::BadRequest {
-                message: "kind must be project, folder, document, comment, or attachment".into(),
-            })
-        })
-        .transpose()
-}
 fn decode_cursor(value: &str) -> Result<(chrono::DateTime<chrono::Utc>, uuid::Uuid), ApiError> {
     let cursor = SearchCursor::decode(value).ok_or_else(|| ApiError::BadRequest {
         message: "invalid trash cursor".into(),

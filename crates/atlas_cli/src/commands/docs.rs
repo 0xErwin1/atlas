@@ -969,7 +969,7 @@ pub(crate) struct DocsAttachDeleteArgs {
     #[arg(long)]
     pub(crate) attachment_id: Uuid,
 
-    /// Confirm the deletion. Required — prevents accidental non-reversible deletes.
+    /// Confirm the recoverable deletion. Permanent removal is managed through Trash.
     #[arg(long)]
     pub(crate) confirm: bool,
 }
@@ -1029,7 +1029,7 @@ async fn run_attach_download(ctx: &Ctx, args: DocsAttachDownloadArgs) -> Result<
 async fn run_attach_delete(ctx: &Ctx, args: DocsAttachDeleteArgs) -> Result<(), CliError> {
     if !args.confirm {
         return Err(CliError::Validation(
-            "pass --confirm to delete (this is a non-reversible operation)".to_owned(),
+            "pass --confirm to recoverably delete the attachment".to_owned(),
         ));
     }
 
@@ -1048,6 +1048,7 @@ async fn run_attach_delete(ctx: &Ctx, args: DocsAttachDeleteArgs) -> Result<(), 
 mod tests {
     use super::*;
     use crate::cli::Cli;
+    use clap::CommandFactory;
 
     // -----------------------------------------------------------------------
     // T37: Parse tests (WU-15)
@@ -1797,6 +1798,17 @@ mod tests {
             !args.confirm,
             "confirm must be false, which triggers the Validation guard"
         );
+    }
+
+    #[test]
+    fn docs_attach_delete_help_describes_recoverable_lifecycle() {
+        let help = DocsAttachDeleteArgs::command()
+            .term_width(usize::MAX)
+            .render_long_help()
+            .to_string();
+
+        assert!(help.contains("Confirm the recoverable deletion."));
+        assert!(!help.contains("non-reversible"));
     }
 
     #[test]

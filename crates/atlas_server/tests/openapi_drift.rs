@@ -259,6 +259,22 @@ fn trash_operations_document_lifecycle_statuses_and_admin_scope() {
     );
 
     assert_operation_statuses(&document, "/api/admin/trash", "get", &[200, 400, 401, 403]);
+    let list = operation(&document, "/api/admin/trash", "get");
+    let kind_parameter = list
+        .get("parameters")
+        .and_then(Value::as_array)
+        .and_then(|parameters| {
+            parameters
+                .iter()
+                .find(|parameter| parameter["name"] == "kind" && parameter["in"] == "query")
+        });
+    assert_eq!(
+        kind_parameter.and_then(|parameter| parameter.pointer("/schema/$ref")),
+        Some(&Value::String(
+            "#/components/schemas/TrashKindDto".to_string()
+        )),
+        "the Trash kind filter must use the closed lifecycle enum"
+    );
     assert_operation_statuses(
         &document,
         "/api/admin/trash/restore",
