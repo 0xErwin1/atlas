@@ -908,6 +908,8 @@ fn desktop_workspace_events_stop(
         Ok(scope) => scope,
         Err(error) => return IpcResult::error(error),
     };
+    tracing::debug!(generation, "desktop workspace event stream stop requested");
+
     match cancel_workspace_transport(&state, &scope, &workspace_slug, generation) {
         Ok(()) => IpcResult::data(IpcEmpty {}),
         Err(error) => IpcResult::error(error),
@@ -942,6 +944,7 @@ fn desktop_workspace_events_subscribe(
         Ok(generation) => generation,
         Err(error) => return IpcResult::error(error),
     };
+    tracing::info!(generation, "desktop workspace event stream subscribed");
     let key = (scope_transport_key(&scope), workspace_slug.clone());
     let session = Arc::clone(&state.session);
     let client = state.client.clone();
@@ -1076,21 +1079,41 @@ async fn run_workspace_stream_connection<R: Runtime>(
     workspace_slug: &str,
     is_reconnect: bool,
 ) -> WorkspaceStreamAttempt {
-    let Ok(response) = client.execute(request).await else {
-        return WorkspaceStreamAttempt {
-            termination: StreamTermination::Reconnect,
-            healthy: false,
-        };
+    tracing::debug!(
+        reconnect = is_reconnect,
+        "desktop workspace event stream connecting"
+    );
+
+    let response = match client.execute(request).await {
+        Ok(response) => response,
+        Err(_) => {
+            tracing::warn!("desktop workspace event stream connection failed");
+            return WorkspaceStreamAttempt {
+                termination: StreamTermination::Reconnect,
+                healthy: false,
+            };
+        }
     };
 
     if !response.status().is_success() {
+        tracing::warn!(
+            status = response.status().as_u16(),
+            "desktop workspace event stream rejected"
+        );
         return WorkspaceStreamAttempt {
             termination: classify_workspace_stream_terminal(Some(response.status().as_u16())),
             healthy: false,
         };
     }
 
+    tracing::info!(
+        status = response.status().as_u16(),
+        reconnect = is_reconnect,
+        "desktop workspace event stream connected"
+    );
+
     if is_reconnect && emit_workspace_resync(app, workspace_slug).is_err() {
+        tracing::warn!("desktop workspace resync delivery failed");
         return WorkspaceStreamAttempt {
             termination: StreamTermination::Terminal,
             healthy: false,
@@ -1102,18 +1125,30 @@ async fn run_workspace_stream_connection<R: Runtime>(
     let mut pending = String::new();
 
     while let Some(chunk) = stream.next().await {
-        let Ok(chunk) = chunk else {
-            break;
+        let chunk = match chunk {
+            Ok(chunk) => chunk,
+            Err(_) => {
+                tracing::warn!("desktop workspace event stream read failed");
+                break;
+            }
         };
 
-        if process_workspace_sse_chunk(&mut pending, &chunk, |frame| {
-            emit_workspace_frame(app, workspace_slug, frame)
-        })
-        .is_err()
-        {
+        let processed = process_workspace_sse_chunk(&mut pending, &chunk, |frame| {
+            let emitted = emit_workspace_frame(app, workspace_slug, frame);
+            if emitted.is_ok() {
+                tracing::debug!("desktop workspace event frame delivered");
+            } else {
+                tracing::warn!("desktop workspace event frame delivery failed");
+            }
+            emitted
+        });
+        if processed.is_err() {
+            tracing::warn!("desktop workspace event stream parsing failed");
             break;
         }
     }
+
+    tracing::info!("desktop workspace event stream ended; reconnecting");
 
     WorkspaceStreamAttempt {
         termination: StreamTermination::Reconnect,
