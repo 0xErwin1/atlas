@@ -235,10 +235,12 @@ class DesktopWorkspaceEventSource implements WorkspaceEventSource {
 
     const generation = this.generation;
     this.generation = null;
-    void this.bridge.invoke<PlatformResult<unknown>>('desktop_workspace_events_stop', {
-      workspaceSlug: this.workspaceSlug,
-      generation,
-    });
+    if (typeof generation === 'number') {
+      void this.bridge.invoke<PlatformResult<unknown>>('desktop_workspace_events_stop', {
+        workspaceSlug: this.workspaceSlug,
+        generation,
+      });
+    }
   }
 
   private dispatch(payload: NormalizedDesktopEvent): void {

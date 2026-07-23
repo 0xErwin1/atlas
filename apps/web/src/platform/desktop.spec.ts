@@ -5,7 +5,7 @@ import { createDesktopPlatformTransport, type DesktopBridge } from '@/platform/d
 const SESSION_ACTION_EVENT = 'atlas://session-action';
 
 describe('DesktopWorkspaceEventSource', () => {
-  it('stops the Rust workspace stream exactly once when listener registration fails', async () => {
+  it('does not stop the Rust workspace stream when listener registration fails before subscribe', async () => {
     const invoke = vi.fn(
       (_command: string, _args?: Record<string, unknown>): Promise<unknown> => Promise.resolve(undefined),
     );
@@ -25,8 +25,7 @@ describe('DesktopWorkspaceEventSource', () => {
     await flushPromises();
 
     const stopCalls = invoke.mock.calls.filter(([command]) => command === 'desktop_workspace_events_stop');
-    expect(stopCalls).toHaveLength(1);
-    expect(stopCalls[0]?.[1]).toEqual({ workspaceSlug: 'acme', generation: null });
+    expect(stopCalls).toHaveLength(0);
   });
 
   it('fails the source when subscribe returns an application error without rejecting', async () => {
@@ -117,5 +116,71 @@ describe('DesktopWorkspaceEventSource', () => {
 
     const stopCalls = invoke.mock.calls.filter(([command]) => command === 'desktop_workspace_events_stop');
     expect(stopCalls.at(-1)?.[1]).toEqual({ workspaceSlug: 'acme', generation: 7 });
+  });
+
+  it('does not let stale cleanup stop a replacement workspace stream', async () => {
+    let resolveFirstSubscribe: ((result: unknown) => void) | undefined;
+    const firstSubscribe = new Promise<unknown>((resolve) => {
+      resolveFirstSubscribe = resolve;
+    });
+    let releaseWildcardStop: (() => void) | undefined;
+    const wildcardStop = new Promise<void>((resolve) => {
+      releaseWildcardStop = resolve;
+    });
+    let subscribeCount = 0;
+    let currentNativeGeneration: number | null = null;
+    const invoke = vi.fn((command: string, args?: Record<string, unknown>): Promise<unknown> => {
+      if (command === 'desktop_workspace_events_subscribe') {
+        subscribeCount += 1;
+        if (subscribeCount === 1) return firstSubscribe;
+
+        currentNativeGeneration = 2;
+        return Promise.resolve({ data: { generation: 2 }, error: null });
+      }
+      if (command === 'desktop_workspace_events_stop') {
+        return wildcardStop.then(() => {
+          const generation = args?.generation;
+          if (generation === null || generation === currentNativeGeneration) {
+            currentNativeGeneration = null;
+          }
+          return {};
+        });
+      }
+      return Promise.resolve({});
+    });
+    const listen = vi.fn(async (): Promise<() => void> => () => {});
+    const bridge: DesktopBridge = {
+      invoke: invoke as DesktopBridge['invoke'],
+      listen: listen as DesktopBridge['listen'],
+    };
+    const transport = createDesktopPlatformTransport(bridge);
+
+    const sourceA = transport.createWorkspaceEventSource('acme');
+    await flushPromises();
+    await flushPromises();
+    expect(subscribeCount).toBe(1);
+
+    sourceA.close();
+    const sourceB = transport.createWorkspaceEventSource('acme');
+    await flushPromises();
+    await flushPromises();
+    expect(sourceB.readyState).toBe(1);
+    expect(currentNativeGeneration).toBe(2);
+
+    if (releaseWildcardStop === undefined) throw new Error('wildcard stop gate was not initialized');
+    releaseWildcardStop();
+    await flushPromises();
+    expect(sourceB.readyState).toBe(1);
+    expect(currentNativeGeneration).toBe(2);
+
+    if (resolveFirstSubscribe === undefined) throw new Error('first subscribe was not started');
+    resolveFirstSubscribe({ data: { generation: 1 }, error: null });
+    await flushPromises();
+    await flushPromises();
+
+    const stopCalls = invoke.mock.calls.filter(([command]) => command === 'desktop_workspace_events_stop');
+    expect(stopCalls).toHaveLength(1);
+    expect(stopCalls[0]?.[1]).toEqual({ workspaceSlug: 'acme', generation: 1 });
+    expect(currentNativeGeneration).toBe(2);
   });
 });
