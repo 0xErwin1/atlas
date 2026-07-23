@@ -32,6 +32,19 @@ function workspaceProbeResponse(status: number): WorkspaceProbeResponse {
   };
 }
 
+/** Desktop invoke mock that returns a stream generation for subscribe. */
+function desktopInvoke(
+  impl?: (command: string, args?: Record<string, unknown>) => Promise<unknown> | unknown,
+): DesktopBridge['invoke'] {
+  return vi.fn(async (command: string, args?: Record<string, unknown>): Promise<unknown> => {
+    if (impl !== undefined) return impl(command, args);
+    if (command === 'desktop_workspace_events_subscribe') {
+      return { data: { generation: 1 } };
+    }
+    return {};
+  }) as DesktopBridge['invoke'];
+}
+
 class FakeEventSource {
   static instances: FakeEventSource[] = [];
 
@@ -202,7 +215,7 @@ describe('workspace live updates broker', () => {
   it('dispatches one normalized desktop event through the existing broker exactly once', async () => {
     let receive: ((event: { payload: unknown }) => void) | undefined;
     const bridge: DesktopBridge = {
-      invoke: vi.fn(async (command: string) => command === 'desktop_workspace_events_subscribe' ? { data: { generation: 1 } } : {}),
+      invoke: desktopInvoke(),
       listen: async (eventName, handler) => {
         if (eventName === 'atlas://workspace-event') {
           receive = handler as (event: { payload: unknown }) => void;
@@ -233,7 +246,7 @@ describe('workspace live updates broker', () => {
   it('observes one non-sensitive desktop event after the broker consumes it', async () => {
     let receive: ((event: { payload: unknown }) => void) | undefined;
     const bridge: DesktopBridge = {
-      invoke: vi.fn(async (command: string) => command === 'desktop_workspace_events_subscribe' ? { data: { generation: 1 } } : {}),
+      invoke: desktopInvoke(),
       listen: async (eventName, handler) => {
         if (eventName === 'atlas://workspace-event') {
           receive = handler as (event: { payload: unknown }) => void;
@@ -271,7 +284,7 @@ describe('workspace live updates broker', () => {
     let receiveClosed: ((event: { payload: unknown }) => void) | undefined;
     let generation = 0;
     const bridge: DesktopBridge = {
-      invoke: vi.fn(async (command: string) => {
+      invoke: desktopInvoke(async (command) => {
         if (command === 'desktop_workspace_events_subscribe') {
           generation += 1;
           return { data: { generation } };
@@ -315,7 +328,7 @@ describe('workspace live updates broker', () => {
     let receiveClosed: ((event: { payload: unknown }) => void) | undefined;
     let generation = 0;
     const bridge: DesktopBridge = {
-      invoke: vi.fn(async (command: string) => {
+      invoke: desktopInvoke(async (command) => {
         if (command === 'desktop_workspace_events_subscribe') {
           generation += 1;
           return { data: { generation } };
@@ -350,9 +363,7 @@ describe('workspace live updates broker', () => {
   it('delivers a Rust server-resync signal once through the desktop source', async () => {
     let receiveResync: ((event: { payload: unknown }) => void) | undefined;
     const bridge: DesktopBridge = {
-      invoke: vi.fn(async (command: string) =>
-        command === 'desktop_workspace_events_subscribe' ? { data: { generation: 1 } } : {},
-      ),
+      invoke: desktopInvoke(),
       listen: async (eventName, handler) => {
         if (eventName === 'atlas://workspace-resync') {
           receiveResync = handler as (event: { payload: unknown }) => void;

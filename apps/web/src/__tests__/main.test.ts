@@ -211,12 +211,14 @@ describe('platform transport bootstrap', () => {
   });
 
   it('dispatches desktop commands and normalized realtime events without exposing a token', async () => {
-    const invoke = vi.fn(async (command: string) => {
-      if (command === 'desktop_workspace_events_subscribe') {
-        return { data: { generation: 1 }, error: undefined };
-      }
-      return { data: { username: 'alice' }, error: undefined };
-    });
+    const invoke = vi.fn(
+      async (command: string, _args?: Record<string, unknown>): Promise<unknown> => {
+        if (command === 'desktop_workspace_events_subscribe') {
+          return { data: { generation: 1 }, error: undefined };
+        }
+        return { data: { username: 'alice' }, error: undefined };
+      },
+    ) as DesktopBridge['invoke'];
     let receive: ((event: { payload: unknown }) => void) | undefined;
     const listen: DesktopBridge['listen'] = async (eventName, handler) => {
       if (eventName === 'atlas://workspace-event') {
@@ -240,16 +242,18 @@ describe('platform transport bootstrap', () => {
         data: JSON.stringify({ event_type: 'task.created', data: { task_id: 'task-1' } }),
       }),
     );
-    expect(JSON.stringify(invoke.mock.calls)).not.toContain('token');
+    expect(JSON.stringify(vi.mocked(invoke).mock.calls)).not.toContain('token');
   });
 
   it('cancels the Rust workspace transport when a desktop source closes', async () => {
-    const invoke = vi.fn(async (command: string) => {
-      if (command === 'desktop_workspace_events_subscribe') {
-        return { data: { generation: 4 }, error: undefined };
-      }
-      return {};
-    });
+    const invoke = vi.fn(
+      async (command: string, _args?: Record<string, unknown>): Promise<unknown> => {
+        if (command === 'desktop_workspace_events_subscribe') {
+          return { data: { generation: 4 }, error: undefined };
+        }
+        return {};
+      },
+    ) as DesktopBridge['invoke'];
     const transport = createDesktopPlatformTransport({
       invoke,
       listen: async () => () => {},
