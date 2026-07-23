@@ -60,6 +60,7 @@ const userInitials = computed(() => {
 const activeWorkspace = computed(() =>
   workspace.workspaces.find((w) => w.slug === workspace.activeWorkspaceSlug),
 );
+const sidebarToggleLabel = computed(() => (ui.sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'));
 
 const hardRefreshOpen = ref(false);
 const hardRefreshPending = ref(false);
@@ -117,6 +118,24 @@ async function confirmHardRefresh(): Promise<void> {
       aria-hidden="true"
       style="width: 24px; height: 1px; background: var(--c-border); margin-bottom: 6px;"
     />
+
+    <button
+      type="button"
+      :title="sidebarToggleLabel"
+      :aria-label="sidebarToggleLabel"
+      class="atl-railitem flex items-center justify-center"
+      style="
+        width: 48px;
+        height: 32px;
+        border: none;
+        cursor: pointer;
+        background: transparent;
+        color: var(--c-muted);
+      "
+      @click="ui.toggleSidebar()"
+    >
+      <Icon name="panel-left" :size="14" />
+    </button>
 
     <div class="flex flex-col" style="width: 100%;">
       <button

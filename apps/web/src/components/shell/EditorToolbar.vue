@@ -36,17 +36,6 @@ function openShare() {
       border-bottom: 1px solid var(--c-border);
     "
   >
-    <button
-      v-if="ui.sidebarCollapsed"
-      type="button"
-      class="atl-gbtn"
-      title="Expand sidebar"
-      aria-label="Expand sidebar"
-      @click="ui.toggleSidebar()"
-    >
-      <Icon name="panel-left" :size="14" />
-    </button>
-
     <Crumb :parts="breadcrumbs" />
 
     <slot name="lead" />

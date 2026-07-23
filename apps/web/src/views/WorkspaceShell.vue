@@ -116,15 +116,6 @@ function openSearch(): void {
         <button type="button" class="atl-gbtn" title="Search" aria-label="Search" @click="openSearch">
           <Icon name="search" :size="14" />
         </button>
-        <button
-          type="button"
-          class="atl-gbtn"
-          title="Collapse sidebar"
-          aria-label="Collapse sidebar"
-          @click="ui.toggleSidebar()"
-        >
-          <Icon name="panel-left" :size="13" />
-        </button>
       </template>
       <NotesSidebar ref="sidebarRef" />
     </ContextSidebar>

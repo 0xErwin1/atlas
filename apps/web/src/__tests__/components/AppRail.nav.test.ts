@@ -16,6 +16,7 @@ vi.mock('vue-router', () => ({
 
 import { configureResourceCacheForTest } from '@/cache/cacheRuntime';
 import AppRail from '@/components/shell/AppRail.vue';
+import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 
 function seed() {
@@ -55,6 +56,21 @@ describe('AppRail unified navigation', () => {
     await wrapper.get('[aria-label="Acta"]').trigger('click');
 
     expect(push).toHaveBeenCalledWith({ name: 'notes' });
+  });
+
+  it('restores a persisted collapsed sidebar from the persistent rail control', async () => {
+    const ui = useUiStore();
+    ui.sidebarCollapsed = true;
+    const wrapper = mount(AppRail);
+
+    const toggle = wrapper.get('[aria-label="Expand sidebar"]');
+    expect(toggle.attributes('title')).toBe('Expand sidebar');
+    expect(toggle.attributes('disabled')).toBeUndefined();
+
+    await toggle.trigger('click');
+
+    expect(ui.sidebarCollapsed).toBe(false);
+    expect(wrapper.get('[aria-label="Collapse sidebar"]').attributes('title')).toBe('Collapse sidebar');
   });
 
   it.each([
