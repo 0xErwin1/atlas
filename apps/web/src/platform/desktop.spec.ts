@@ -30,14 +30,12 @@ describe('DesktopWorkspaceEventSource', () => {
   });
 
   it('fails the source when subscribe returns an application error without rejecting', async () => {
-    const invoke = vi.fn(
-      async (command: string, _args?: Record<string, unknown>): Promise<unknown> => {
-        if (command === 'desktop_workspace_events_subscribe') {
-          return { error: 'desktop session is unavailable' };
-        }
-        return {};
-      },
-    );
+    const invoke = vi.fn(async (command: string, _args?: Record<string, unknown>): Promise<unknown> => {
+      if (command === 'desktop_workspace_events_subscribe') {
+        return { error: 'desktop session is unavailable' };
+      }
+      return {};
+    });
     const listen = vi.fn(async (): Promise<() => void> => () => {});
     const bridge: DesktopBridge = {
       invoke: invoke as DesktopBridge['invoke'],
@@ -57,15 +55,13 @@ describe('DesktopWorkspaceEventSource', () => {
 
   it('subscribes only after listeners are registered and keeps the generation for stop', async () => {
     const order: string[] = [];
-    const invoke = vi.fn(
-      async (command: string, _args?: Record<string, unknown>): Promise<unknown> => {
-        order.push(command);
-        if (command === 'desktop_workspace_events_subscribe') {
-          return { data: { generation: 7 } };
-        }
-        return {};
-      },
-    );
+    const invoke = vi.fn(async (command: string, _args?: Record<string, unknown>): Promise<unknown> => {
+      order.push(command);
+      if (command === 'desktop_workspace_events_subscribe') {
+        return { data: { generation: 7 } };
+      }
+      return {};
+    });
     const listen = vi.fn(async (event: string): Promise<() => void> => {
       order.push(`listen:${event}`);
       return () => {};

@@ -162,9 +162,8 @@ class DesktopWorkspaceEventSource implements WorkspaceEventSource {
    */
   private async start(): Promise<void> {
     try {
-      const unlistenEvent = await this.bridge.listen<NormalizedDesktopEvent>(
-        DESKTOP_EVENT_NAME,
-        (event) => this.dispatch(event.payload),
+      const unlistenEvent = await this.bridge.listen<NormalizedDesktopEvent>(DESKTOP_EVENT_NAME, (event) =>
+        this.dispatch(event.payload),
       );
       if (this.readyState === CLOSED) {
         unlistenEvent();

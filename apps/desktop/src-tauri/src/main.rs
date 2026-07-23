@@ -196,9 +196,7 @@ fn cancel_workspace_transport(
         (_, None) => false,
     };
 
-    if should_abort
-        && let Some(entry) = transports.remove(&key)
-    {
+    if should_abort && let Some(entry) = transports.remove(&key) {
         entry.handle.abort();
     }
 
@@ -963,13 +961,7 @@ fn desktop_workspace_events_subscribe(
     });
     match state.transports.lock() {
         Ok(mut transports) => {
-            if let Some(previous) = transports.insert(
-                key,
-                TransportEntry {
-                    generation,
-                    handle,
-                },
-            ) {
+            if let Some(previous) = transports.insert(key, TransportEntry { generation, handle }) {
                 previous.handle.abort();
             }
             IpcResult::data(IpcWorkspaceStream { generation })
