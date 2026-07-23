@@ -22,7 +22,11 @@ mod support;
 use std::sync::Arc;
 use std::time::Duration;
 
-use atlas_api::dtos::{CreateProjectRequest, documents::CreateDocumentRequest};
+use atlas_api::dtos::{
+    CreateProjectRequest,
+    boards_tasks::{CreateColumnRequest, CreateTaskRequest, MoveTaskRequest},
+    documents::CreateDocumentRequest,
+};
 use atlas_domain::{
     Actor, WorkspaceCtx,
     entities::{
@@ -45,6 +49,7 @@ use atlas_server::{
     },
     state::AppState,
 };
+use tokio::sync::watch;
 use uuid::Uuid;
 
 // ---------------------------------------------------------------------------
@@ -906,5 +911,117 @@ async fn unknown_event_type_dropped_for_scoped_agent_only() {
 
     drop(agent_resp);
     drop(owner_resp);
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn task_move_reaches_authenticated_sse_through_outbox_listener() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let state = AppState::for_test(db.conn().clone())
+        .await
+        .expect("AppState::for_test");
+    let pool = db.conn().get_postgres_connection_pool().clone();
+    let hub = state.live.clone();
+    let server = support::TestServer::spawn_with_state(state).await;
+
+    let (client, ws, user) =
+        support::login_user_with_workspace(&server, &db, "sse-task-move-chain").await;
+    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let token = client.token().expect("token").to_string();
+
+    let (_project_id, board_id) = seed_project_and_board(
+        &db,
+        &ctx,
+        "sse-task-move-chain-proj",
+        "SMC",
+        Visibility::Workspace(VisibilityRole::Editor),
+    )
+    .await;
+
+    let from_column = client
+        .create_column(
+            &ws.slug,
+            board_id.0,
+            CreateColumnRequest {
+                name: "Todo".to_string(),
+                before: None,
+                after: None,
+                color: None,
+            },
+        )
+        .await
+        .expect("create source column");
+    let to_column = client
+        .create_column(
+            &ws.slug,
+            board_id.0,
+            CreateColumnRequest {
+                name: "Done".to_string(),
+                before: Some(from_column.position_key.clone()),
+                after: None,
+                color: None,
+            },
+        )
+        .await
+        .expect("create target column");
+    let task = client
+        .create_task(
+            &ws.slug,
+            board_id.0,
+            CreateTaskRequest {
+                column_id: from_column.id,
+                title: "Move through live chain".to_string(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create task");
+
+    let (shutdown_tx, shutdown_rx) = watch::channel(false);
+    let listener = tokio::spawn(atlas_server::live::run_listener(pool, hub, shutdown_rx));
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    let mut resp = open_stream(server.base_url(), &ws.slug, &token).await;
+    let mut buf = String::new();
+
+    client
+        .move_task(
+            &ws.slug,
+            &task.readable_id,
+            MoveTaskRequest {
+                column_id: to_column.id,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("move task through API");
+
+    let (event_name, data) = next_sse_event(&mut resp, &mut buf, Duration::from_secs(5))
+        .await
+        .expect("task move must reach SSE through the outbox listener");
+    assert_eq!(event_name, "task.moved");
+
+    let envelope: serde_json::Value = serde_json::from_str(&data).expect("task.moved envelope");
+    assert_eq!(envelope["event_type"], "task.moved");
+    assert_eq!(envelope["data"]["task_id"], task.id.to_string());
+    assert_eq!(
+        envelope["data"]["from_column_id"],
+        from_column.id.to_string()
+    );
+    assert_eq!(envelope["data"]["to_column_id"], to_column.id.to_string());
+    assert_eq!(envelope["actor"]["type"], "user");
+    assert_eq!(envelope["actor"]["id"], user.id.0.to_string());
+
+    drop(resp);
+    shutdown_tx.send(true).expect("signal listener shutdown");
+    tokio::time::timeout(Duration::from_secs(5), listener)
+        .await
+        .expect("listener must stop within timeout")
+        .expect("listener task must finish cleanly");
+    drop(server);
     db.teardown().await;
 }
