@@ -1,3 +1,4 @@
+import { flushPromises } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { invalidateLiveResourceCache, resourceCacheEpoch } = vi.hoisted(() => ({
@@ -201,7 +202,7 @@ describe('workspace live updates broker', () => {
   it('dispatches one normalized desktop event through the existing broker exactly once', async () => {
     let receive: ((event: { payload: unknown }) => void) | undefined;
     const bridge: DesktopBridge = {
-      invoke: vi.fn().mockResolvedValue(undefined),
+      invoke: vi.fn(async (command: string) => command === 'desktop_workspace_events_subscribe' ? { data: { generation: 1 } } : {}),
       listen: async (eventName, handler) => {
         if (eventName === 'atlas://workspace-event') {
           receive = handler as (event: { payload: unknown }) => void;
@@ -232,7 +233,7 @@ describe('workspace live updates broker', () => {
   it('observes one non-sensitive desktop event after the broker consumes it', async () => {
     let receive: ((event: { payload: unknown }) => void) | undefined;
     const bridge: DesktopBridge = {
-      invoke: vi.fn().mockResolvedValue(undefined),
+      invoke: vi.fn(async (command: string) => command === 'desktop_workspace_events_subscribe' ? { data: { generation: 1 } } : {}),
       listen: async (eventName, handler) => {
         if (eventName === 'atlas://workspace-event') {
           receive = handler as (event: { payload: unknown }) => void;
@@ -268,8 +269,15 @@ describe('workspace live updates broker', () => {
 
   it('observes reconnect and resync status without incrementing the event count', async () => {
     let receiveClosed: ((event: { payload: unknown }) => void) | undefined;
+    let generation = 0;
     const bridge: DesktopBridge = {
-      invoke: vi.fn().mockResolvedValue(undefined),
+      invoke: vi.fn(async (command: string) => {
+        if (command === 'desktop_workspace_events_subscribe') {
+          generation += 1;
+          return { data: { generation } };
+        }
+        return {};
+      }),
       listen: async (eventName, handler) => {
         if (eventName === 'atlas://workspace-closed') {
           receiveClosed = handler as (event: { payload: unknown }) => void;
@@ -285,10 +293,11 @@ describe('workspace live updates broker', () => {
     const broker = createWorkspaceLiveUpdatesBroker({ desktopGateObserver: observer });
     const subscription = broker.acquire('acme', handlers());
 
-    await Promise.resolve();
+    await flushPromises();
+    expect(receiveClosed).toBeTypeOf('function');
     receiveClosed?.({ payload: { workspace_slug: 'acme' } });
     vi.advanceTimersByTime(500);
-    await Promise.resolve();
+    await flushPromises();
 
     expect(observer.snapshot()).toEqual({ count: 0, status: 'resync' });
     expect(observed).toHaveBeenNthCalledWith(1, { count: 0, status: 'reconnecting' });
@@ -304,8 +313,15 @@ describe('workspace live updates broker', () => {
 
   it('reconnects when the Rust desktop transport reports a late stream closure', async () => {
     let receiveClosed: ((event: { payload: unknown }) => void) | undefined;
+    let generation = 0;
     const bridge: DesktopBridge = {
-      invoke: vi.fn().mockResolvedValue(undefined),
+      invoke: vi.fn(async (command: string) => {
+        if (command === 'desktop_workspace_events_subscribe') {
+          generation += 1;
+          return { data: { generation } };
+        }
+        return {};
+      }),
       listen: async (eventName, handler) => {
         if (eventName === 'atlas://workspace-closed') {
           receiveClosed = handler as (event: { payload: unknown }) => void;
@@ -318,9 +334,11 @@ describe('workspace live updates broker', () => {
     const broker = createWorkspaceLiveUpdatesBroker();
     const subscription = broker.acquire('acme', handlers());
 
-    await Promise.resolve();
+    await flushPromises();
+    expect(receiveClosed).toBeTypeOf('function');
     receiveClosed?.({ payload: { workspace_slug: 'acme' } });
     vi.advanceTimersByTime(30_000);
+    await flushPromises();
 
     expect(bridge.invoke).toHaveBeenCalledWith('desktop_workspace_events_subscribe', {
       workspaceSlug: 'acme',
@@ -332,7 +350,9 @@ describe('workspace live updates broker', () => {
   it('delivers a Rust server-resync signal once through the desktop source', async () => {
     let receiveResync: ((event: { payload: unknown }) => void) | undefined;
     const bridge: DesktopBridge = {
-      invoke: vi.fn().mockResolvedValue(undefined),
+      invoke: vi.fn(async (command: string) =>
+        command === 'desktop_workspace_events_subscribe' ? { data: { generation: 1 } } : {},
+      ),
       listen: async (eventName, handler) => {
         if (eventName === 'atlas://workspace-resync') {
           receiveResync = handler as (event: { payload: unknown }) => void;
@@ -344,7 +364,8 @@ describe('workspace live updates broker', () => {
     const onResync = vi.fn();
     source.addEventListener('resync', onResync);
 
-    await Promise.resolve();
+    await flushPromises();
+    expect(receiveResync).toBeTypeOf('function');
     receiveResync?.({ payload: { workspace_slug: 'acme' } });
 
     expect(onResync).toHaveBeenCalledExactlyOnceWith(expect.any(Event));

@@ -133,55 +133,13 @@ class DesktopWorkspaceEventSource implements WorkspaceEventSource {
   private unlistenResync: (() => void) | null = null;
   private readonly bridge: DesktopBridge;
   private readonly workspaceSlug: string;
+  /** Generation returned by subscribe; late stops for an older generation are ignored. */
+  private generation: number | null = null;
 
   constructor(bridge: DesktopBridge, workspaceSlug: string) {
     this.bridge = bridge;
     this.workspaceSlug = workspaceSlug;
-    void bridge
-      .listen<NormalizedDesktopEvent>(DESKTOP_EVENT_NAME, (event) => this.dispatch(event.payload))
-      .then((unlisten) => {
-        if (this.readyState === CLOSED) {
-          unlisten();
-          return;
-        }
-
-        this.unlisten = unlisten;
-        this.readyState = OPEN;
-        this.onopen?.(new Event('open'));
-      })
-      .catch(() => this.fail());
-
-    void bridge
-      .listen<DesktopWorkspaceClosed>(DESKTOP_CLOSED_EVENT_NAME, (event) => {
-        if (event.payload.workspace_slug === workspaceSlug) this.fail();
-      })
-      .then((unlisten) => {
-        if (this.readyState === CLOSED) {
-          unlisten();
-          return;
-        }
-
-        this.unlistenClosed = unlisten;
-      })
-      .catch(() => this.fail());
-
-    void bridge
-      .listen<DesktopWorkspaceClosed>(DESKTOP_RESYNC_EVENT_NAME, (event) => {
-        if (event.payload.workspace_slug === workspaceSlug) this.dispatchResync();
-      })
-      .then((unlisten) => {
-        if (this.readyState === CLOSED) {
-          unlisten();
-          return;
-        }
-
-        this.unlistenResync = unlisten;
-      })
-      .catch(() => this.fail());
-
-    void bridge.invoke<void>('desktop_workspace_events_subscribe', { workspaceSlug }).catch(() => {
-      this.fail();
-    });
+    void this.start();
   }
 
   addEventListener(type: string, listener: (event: Event) => void): void {
@@ -196,6 +154,76 @@ class DesktopWorkspaceEventSource implements WorkspaceEventSource {
     this.detachAndStop();
   }
 
+  /**
+   * Registers Tauri listeners first, then subscribes to the Rust SSE proxy.
+   * Ordering matters: subscribe before listen can lose the first frames, and a
+   * subscribe that returns `IpcResult.error` must fail the source (invoke does
+   * not reject on application errors).
+   */
+  private async start(): Promise<void> {
+    try {
+      const unlistenEvent = await this.bridge.listen<NormalizedDesktopEvent>(
+        DESKTOP_EVENT_NAME,
+        (event) => this.dispatch(event.payload),
+      );
+      if (this.readyState === CLOSED) {
+        unlistenEvent();
+        return;
+      }
+      this.unlisten = unlistenEvent;
+
+      const unlistenClosed = await this.bridge.listen<DesktopWorkspaceClosed>(
+        DESKTOP_CLOSED_EVENT_NAME,
+        (event) => {
+          if (event.payload.workspace_slug === this.workspaceSlug) this.fail();
+        },
+      );
+      if (this.readyState === CLOSED) {
+        unlistenClosed();
+        return;
+      }
+      this.unlistenClosed = unlistenClosed;
+
+      const unlistenResync = await this.bridge.listen<DesktopWorkspaceClosed>(
+        DESKTOP_RESYNC_EVENT_NAME,
+        (event) => {
+          if (event.payload.workspace_slug === this.workspaceSlug) this.dispatchResync();
+        },
+      );
+      if (this.readyState === CLOSED) {
+        unlistenResync();
+        return;
+      }
+      this.unlistenResync = unlistenResync;
+
+      const result = await this.bridge.invoke<PlatformResult<{ generation: number }>>(
+        'desktop_workspace_events_subscribe',
+        { workspaceSlug: this.workspaceSlug },
+      );
+      if (this.readyState === CLOSED) {
+        const generation = result.data?.generation;
+        if (typeof generation === 'number') {
+          void this.bridge.invoke<PlatformResult<unknown>>('desktop_workspace_events_stop', {
+            workspaceSlug: this.workspaceSlug,
+            generation,
+          });
+        }
+        return;
+      }
+
+      if (result.error !== undefined || typeof result.data?.generation !== 'number') {
+        this.fail();
+        return;
+      }
+
+      this.generation = result.data.generation;
+      this.readyState = OPEN;
+      this.onopen?.(new Event('open'));
+    } catch {
+      this.fail();
+    }
+  }
+
   private detachAndStop(): void {
     this.unlisten?.();
     this.unlisten = null;
@@ -203,7 +231,13 @@ class DesktopWorkspaceEventSource implements WorkspaceEventSource {
     this.unlistenClosed = null;
     this.unlistenResync?.();
     this.unlistenResync = null;
-    void this.bridge.invoke<void>('desktop_workspace_events_stop', { workspaceSlug: this.workspaceSlug });
+
+    const generation = this.generation;
+    this.generation = null;
+    void this.bridge.invoke<PlatformResult<unknown>>('desktop_workspace_events_stop', {
+      workspaceSlug: this.workspaceSlug,
+      generation,
+    });
   }
 
   private dispatch(payload: NormalizedDesktopEvent): void {

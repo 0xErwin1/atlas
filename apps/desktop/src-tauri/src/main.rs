@@ -22,12 +22,25 @@ use tauri::{Emitter, Manager, Runtime, State};
 /// workspace can never cancel a newer subscription for another.
 type TransportKey = (String, String);
 
+/// One live SSE task plus the generation that owns it.
+///
+/// Generations make stop/subscribe races safe: the webview may still deliver a
+/// late `desktop_workspace_events_stop` for generation N after generation N+1
+/// has already replaced it. Without the generation check that stop would abort
+/// the newer stream and leave the SPA believing live updates are connected.
+struct TransportEntry {
+    generation: u64,
+    handle: tauri::async_runtime::JoinHandle<()>,
+}
+
 struct DesktopState {
     origin: Mutex<String>,
     configuration_directory: PathBuf,
     client: reqwest::Client,
     session: Arc<Mutex<DesktopSession<SecretServiceStore>>>,
-    transports: Arc<Mutex<HashMap<TransportKey, tauri::async_runtime::JoinHandle<()>>>>,
+    transports: Arc<Mutex<HashMap<TransportKey, TransportEntry>>>,
+    /// Monotonic id assigned to each `desktop_workspace_events_subscribe` call.
+    transport_generation: Mutex<u64>,
 }
 
 const DEFAULT_DESKTOP_ORIGIN: &str = "https://atlas.iperez.dev";
@@ -63,6 +76,13 @@ struct IpcIdentity {
 
 #[derive(Serialize)]
 struct IpcEmpty {}
+
+/// Returned by `desktop_workspace_events_subscribe` so a later stop can target
+/// exactly this stream generation.
+#[derive(Serialize)]
+struct IpcWorkspaceStream {
+    generation: u64,
+}
 
 /// Metadata half of a `desktop_api_request` response. The body no longer
 /// travels as a JSON number array (one text token per byte, parsed twice on the
@@ -143,30 +163,43 @@ fn cancel_transport(state: &DesktopState, scope: &SessionScope) -> Result<(), &'
         .map_err(|_| "desktop transport state is unavailable")?;
     let existing = std::mem::take(&mut *transports);
 
-    for (key, handle) in existing {
+    for (key, entry) in existing {
         if key.0 == scope_key {
-            handle.abort();
+            entry.handle.abort();
         } else {
-            transports.insert(key, handle);
+            transports.insert(key, entry);
         }
     }
 
     Ok(())
 }
 
+/// Stops the workspace stream. When `generation` is `Some`, only aborts if that
+/// generation is still the active entry — a late stop for a replaced stream is a
+/// no-op. When `generation` is `None`, aborts whatever is currently registered
+/// (logout / scope teardown paths).
 fn cancel_workspace_transport(
     state: &DesktopState,
     scope: &SessionScope,
     workspace_slug: &str,
+    generation: Option<u64>,
 ) -> Result<(), &'static str> {
-    let handle = state
+    let key = (scope_transport_key(scope), workspace_slug.to_owned());
+    let mut transports = state
         .transports
         .lock()
-        .map_err(|_| "desktop transport state is unavailable")?
-        .remove(&(scope_transport_key(scope), workspace_slug.to_owned()));
+        .map_err(|_| "desktop transport state is unavailable")?;
 
-    if let Some(handle) = handle {
-        handle.abort();
+    let should_abort = match (generation, transports.get(&key)) {
+        (Some(expected), Some(entry)) => entry.generation == expected,
+        (None, Some(_)) => true,
+        (_, None) => false,
+    };
+
+    if should_abort
+        && let Some(entry) = transports.remove(&key)
+    {
+        entry.handle.abort();
     }
 
     Ok(())
@@ -180,15 +213,24 @@ fn cancel_transports_for_origin(state: &DesktopState) -> Result<(), &'static str
         .map_err(|_| "desktop transport state is unavailable")?;
     let existing = std::mem::take(&mut *transports);
 
-    for (key, handle) in existing {
+    for (key, entry) in existing {
         if key.0.starts_with(&prefix) {
-            handle.abort();
+            entry.handle.abort();
         } else {
-            transports.insert(key, handle);
+            transports.insert(key, entry);
         }
     }
 
     Ok(())
+}
+
+fn next_transport_generation(state: &DesktopState) -> Result<u64, &'static str> {
+    let mut generation = state
+        .transport_generation
+        .lock()
+        .map_err(|_| "desktop transport state is unavailable")?;
+    *generation = generation.wrapping_add(1);
+    Ok(*generation)
 }
 
 fn emit_action<R: Runtime>(
@@ -857,6 +899,7 @@ fn desktop_read_clipboard_image() -> Result<tauri::ipc::Response, String> {
 #[tauri::command]
 fn desktop_workspace_events_stop(
     workspace_slug: String,
+    generation: Option<u64>,
     state: State<'_, DesktopState>,
     app: tauri::AppHandle,
 ) -> IpcResult<IpcEmpty> {
@@ -867,7 +910,7 @@ fn desktop_workspace_events_stop(
         Ok(scope) => scope,
         Err(error) => return IpcResult::error(error),
     };
-    match cancel_workspace_transport(&state, &scope, &workspace_slug) {
+    match cancel_workspace_transport(&state, &scope, &workspace_slug, generation) {
         Ok(()) => IpcResult::data(IpcEmpty {}),
         Err(error) => IpcResult::error(error),
     }
@@ -878,7 +921,7 @@ fn desktop_workspace_events_subscribe(
     workspace_slug: String,
     state: State<'_, DesktopState>,
     app: tauri::AppHandle,
-) -> IpcResult<IpcEmpty> {
+) -> IpcResult<IpcWorkspaceStream> {
     let scope = match scope_for_active_identity_or_fail_closed(&state, &app) {
         Ok(scope) => scope,
         Err(error) => return IpcResult::error(error),
@@ -896,6 +939,10 @@ fn desktop_workspace_events_subscribe(
             }
             return IpcResult::error("desktop session is unavailable");
         }
+    };
+    let generation = match next_transport_generation(&state) {
+        Ok(generation) => generation,
+        Err(error) => return IpcResult::error(error),
     };
     let key = (scope_transport_key(&scope), workspace_slug.clone());
     let session = Arc::clone(&state.session);
@@ -916,10 +963,16 @@ fn desktop_workspace_events_subscribe(
     });
     match state.transports.lock() {
         Ok(mut transports) => {
-            if let Some(previous) = transports.insert(key, handle) {
-                previous.abort();
+            if let Some(previous) = transports.insert(
+                key,
+                TransportEntry {
+                    generation,
+                    handle,
+                },
+            ) {
+                previous.handle.abort();
             }
-            IpcResult::data(IpcEmpty {})
+            IpcResult::data(IpcWorkspaceStream { generation })
         }
         Err(_) => {
             handle.abort();
@@ -1142,6 +1195,7 @@ pub(crate) fn run_with_client(client: reqwest::Client) {
             client,
             session: Arc::new(Mutex::new(DesktopSession::new(SecretServiceStore))),
             transports: Arc::new(Mutex::new(HashMap::new())),
+            transport_generation: Mutex::new(0),
         })
         .setup(move |app| {
             let window = app
@@ -1285,6 +1339,14 @@ mod command_tests {
             client: reqwest::Client::new(),
             session: Arc::new(Mutex::new(DesktopSession::new(SecretServiceStore))),
             transports: Arc::new(Mutex::new(HashMap::new())),
+            transport_generation: Mutex::new(0),
+        }
+    }
+
+    fn pending_transport(generation: u64) -> TransportEntry {
+        TransportEntry {
+            generation,
+            handle: tauri::async_runtime::spawn(std::future::pending::<()>()),
         }
     }
 
@@ -1585,13 +1647,14 @@ mod command_tests {
             SessionScope::new("https://other.example.test", "user-2").expect("other scope");
         let matching_key = (scope_transport_key(&matching_scope), "ws-a".to_owned());
         let other_key = (scope_transport_key(&other_scope), "ws-b".to_owned());
-        let matching = tauri::async_runtime::spawn(std::future::pending::<()>());
-        let other = tauri::async_runtime::spawn(std::future::pending::<()>());
         state
             .transports
             .lock()
             .expect("transport map available")
-            .extend([(matching_key.clone(), matching), (other_key.clone(), other)]);
+            .extend([
+                (matching_key.clone(), pending_transport(1)),
+                (other_key.clone(), pending_transport(1)),
+            ]);
         let mut actions = Vec::new();
 
         let result = scope_for_active_identity_or_fail_closed_with(
@@ -1629,21 +1692,52 @@ mod command_tests {
             .lock()
             .expect("transport map available")
             .extend([
-                (
-                    previous_key.clone(),
-                    tauri::async_runtime::spawn(std::future::pending::<()>()),
-                ),
-                (
-                    replacing_key.clone(),
-                    tauri::async_runtime::spawn(std::future::pending::<()>()),
-                ),
+                (previous_key.clone(), pending_transport(1)),
+                (replacing_key.clone(), pending_transport(1)),
             ]);
 
-        cancel_workspace_transport(&state, &scope, "ws-previous").expect("stop cancels");
+        cancel_workspace_transport(&state, &scope, "ws-previous", None).expect("stop cancels");
 
         let transports = state.transports.lock().expect("transport map available");
         assert!(!transports.contains_key(&previous_key));
         assert!(transports.contains_key(&replacing_key));
+    }
+
+    #[tokio::test]
+    async fn a_late_stop_for_an_old_generation_preserves_the_replacing_stream() {
+        let state = test_state();
+        let scope = SessionScope::new("https://atlas.example.test", "user-1").expect("scope");
+        let key = (scope_transport_key(&scope), "ws-a".to_owned());
+        state
+            .transports
+            .lock()
+            .expect("transport map available")
+            .insert(key.clone(), pending_transport(2));
+
+        cancel_workspace_transport(&state, &scope, "ws-a", Some(1)).expect("stale stop is ignored");
+
+        let transports = state.transports.lock().expect("transport map available");
+        let entry = transports
+            .get(&key)
+            .expect("generation-2 stream must remain registered");
+        assert_eq!(entry.generation, 2);
+    }
+
+    #[tokio::test]
+    async fn a_matching_generation_stop_removes_the_stream() {
+        let state = test_state();
+        let scope = SessionScope::new("https://atlas.example.test", "user-1").expect("scope");
+        let key = (scope_transport_key(&scope), "ws-a".to_owned());
+        state
+            .transports
+            .lock()
+            .expect("transport map available")
+            .insert(key.clone(), pending_transport(3));
+
+        cancel_workspace_transport(&state, &scope, "ws-a", Some(3)).expect("matching stop cancels");
+
+        let transports = state.transports.lock().expect("transport map available");
+        assert!(!transports.contains_key(&key));
     }
 
     #[tokio::test]
@@ -1660,18 +1754,9 @@ mod command_tests {
             .lock()
             .expect("transport map available")
             .extend([
-                (
-                    first_key.clone(),
-                    tauri::async_runtime::spawn(std::future::pending::<()>()),
-                ),
-                (
-                    second_key.clone(),
-                    tauri::async_runtime::spawn(std::future::pending::<()>()),
-                ),
-                (
-                    other_key.clone(),
-                    tauri::async_runtime::spawn(std::future::pending::<()>()),
-                ),
+                (first_key.clone(), pending_transport(1)),
+                (second_key.clone(), pending_transport(1)),
+                (other_key.clone(), pending_transport(1)),
             ]);
 
         cancel_transport(&state, &scope).expect("scope cancel");
@@ -1809,10 +1894,7 @@ mod command_tests {
             .transports
             .lock()
             .expect("transport map available")
-            .insert(
-                key.clone(),
-                tauri::async_runtime::spawn(std::future::pending::<()>()),
-            );
+            .insert(key.clone(), pending_transport(1));
         let received = Arc::new(Mutex::new(Vec::new()));
         let sink = Arc::clone(&received);
         app.listen("atlas://session-action", move |event| {
@@ -1979,14 +2061,8 @@ mod command_tests {
             .lock()
             .expect("transport map available")
             .extend([
-                (
-                    failed_key.clone(),
-                    tauri::async_runtime::spawn(std::future::pending::<()>()),
-                ),
-                (
-                    surviving_key.clone(),
-                    tauri::async_runtime::spawn(std::future::pending::<()>()),
-                ),
+                (failed_key.clone(), pending_transport(1)),
+                (surviving_key.clone(), pending_transport(1)),
             ]);
         let attempts = std::cell::Cell::new([0_u8; 3]);
 

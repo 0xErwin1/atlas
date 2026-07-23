@@ -1,3 +1,4 @@
+import { flushPromises } from '@vue/test-utils';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ComponentPublicInstance } from 'vue';
 
@@ -160,7 +161,12 @@ describe('platform transport bootstrap', () => {
   });
 
   it('uses the official Tauri API modules when the global bridge is disabled', async () => {
-    tauriInvoke.mockResolvedValue({ data: {}, error: undefined });
+    tauriInvoke.mockImplementation(async (command: string) => {
+      if (command === 'desktop_workspace_events_subscribe') {
+        return { data: { generation: 1 }, error: undefined };
+      }
+      return { data: {}, error: undefined };
+    });
     tauriListen.mockResolvedValue(() => {});
     vi.stubGlobal('__TAURI__', undefined);
 
@@ -171,22 +177,24 @@ describe('platform transport bootstrap', () => {
     await transport.me();
     await transport.resume();
     await transport.logout();
+    await flushPromises();
 
-    expect(tauriInvoke).toHaveBeenNthCalledWith(1, 'desktop_workspace_events_subscribe', {
+    expect(tauriListen).toHaveBeenCalledWith('atlas://session-action', expect.any(Function));
+    expect(tauriListen).toHaveBeenCalledWith('atlas://workspace-event', expect.any(Function));
+    expect(tauriListen).toHaveBeenCalledWith('atlas://workspace-closed', expect.any(Function));
+    expect(tauriListen).toHaveBeenCalledWith('atlas://workspace-resync', expect.any(Function));
+    expect(tauriInvoke).toHaveBeenCalledWith('desktop_workspace_events_subscribe', {
       workspaceSlug: 'acme',
     });
-    expect(tauriInvoke).toHaveBeenNthCalledWith(2, 'desktop_auth_login', {
+    expect(tauriInvoke).toHaveBeenCalledWith('desktop_auth_login', {
       credentials: {
         username: 'alice',
         password: 'pass',
       },
     });
-    expect(tauriInvoke).toHaveBeenNthCalledWith(3, 'desktop_auth_me');
-    expect(tauriInvoke).toHaveBeenNthCalledWith(4, 'desktop_auth_resume');
-    expect(tauriInvoke).toHaveBeenNthCalledWith(5, 'desktop_auth_logout');
-    expect(tauriListen).toHaveBeenNthCalledWith(1, 'atlas://session-action', expect.any(Function));
-    expect(tauriListen).toHaveBeenNthCalledWith(2, 'atlas://workspace-event', expect.any(Function));
-    expect(tauriListen).toHaveBeenNthCalledWith(3, 'atlas://workspace-closed', expect.any(Function));
+    expect(tauriInvoke).toHaveBeenCalledWith('desktop_auth_me');
+    expect(tauriInvoke).toHaveBeenCalledWith('desktop_auth_resume');
+    expect(tauriInvoke).toHaveBeenCalledWith('desktop_auth_logout');
     expect(source.readyState).toBe(1);
     vi.unstubAllGlobals();
   });
@@ -203,7 +211,12 @@ describe('platform transport bootstrap', () => {
   });
 
   it('dispatches desktop commands and normalized realtime events without exposing a token', async () => {
-    const invoke = vi.fn().mockResolvedValue({ data: { username: 'alice' }, error: undefined });
+    const invoke = vi.fn(async (command: string) => {
+      if (command === 'desktop_workspace_events_subscribe') {
+        return { data: { generation: 1 }, error: undefined };
+      }
+      return { data: { username: 'alice' }, error: undefined };
+    });
     let receive: ((event: { payload: unknown }) => void) | undefined;
     const listen: DesktopBridge['listen'] = async (eventName, handler) => {
       if (eventName === 'atlas://workspace-event') {
@@ -217,6 +230,7 @@ describe('platform transport bootstrap', () => {
     source.addEventListener('task.created', onTaskCreated);
 
     await transport.me();
+    await flushPromises();
     receive?.({ payload: { event_type: 'task.created', data: { task_id: 'task-1' } } });
     await Promise.resolve();
 
@@ -230,17 +244,26 @@ describe('platform transport bootstrap', () => {
   });
 
   it('cancels the Rust workspace transport when a desktop source closes', async () => {
-    const invoke = vi.fn().mockResolvedValue(undefined);
+    const invoke = vi.fn(async (command: string) => {
+      if (command === 'desktop_workspace_events_subscribe') {
+        return { data: { generation: 4 }, error: undefined };
+      }
+      return {};
+    });
     const transport = createDesktopPlatformTransport({
       invoke,
       listen: async () => () => {},
     });
     const source = transport.createWorkspaceEventSource('acme');
 
+    await flushPromises();
     source.close();
-    await Promise.resolve();
+    await flushPromises();
 
-    expect(invoke).toHaveBeenCalledWith('desktop_workspace_events_stop', { workspaceSlug: 'acme' });
+    expect(invoke).toHaveBeenCalledWith('desktop_workspace_events_stop', {
+      workspaceSlug: 'acme',
+      generation: 4,
+    });
   });
 
   it('chooses the adapter once at bootstrap rather than in components', () => {

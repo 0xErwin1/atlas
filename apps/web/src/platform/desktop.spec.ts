@@ -26,6 +26,68 @@ describe('DesktopWorkspaceEventSource', () => {
 
     const stopCalls = invoke.mock.calls.filter(([command]) => command === 'desktop_workspace_events_stop');
     expect(stopCalls).toHaveLength(1);
-    expect(stopCalls[0]?.[1]).toEqual({ workspaceSlug: 'acme' });
+    expect(stopCalls[0]?.[1]).toEqual({ workspaceSlug: 'acme', generation: null });
+  });
+
+  it('fails the source when subscribe returns an application error without rejecting', async () => {
+    const invoke = vi.fn(async (command: string) => {
+      if (command === 'desktop_workspace_events_subscribe') {
+        return { error: 'desktop session is unavailable' };
+      }
+      return {};
+    });
+    const listen = vi.fn(async () => () => {});
+    const bridge: DesktopBridge = {
+      invoke: invoke as DesktopBridge['invoke'],
+      listen: listen as DesktopBridge['listen'],
+    };
+
+    const source = createDesktopPlatformTransport(bridge).createWorkspaceEventSource('acme');
+    const onerror = vi.fn();
+    source.onerror = onerror;
+
+    await flushPromises();
+    await flushPromises();
+
+    expect(onerror).toHaveBeenCalledOnce();
+    expect(source.readyState).toBe(2);
+  });
+
+  it('subscribes only after listeners are registered and keeps the generation for stop', async () => {
+    const order: string[] = [];
+    const invoke = vi.fn(async (command: string) => {
+      order.push(command);
+      if (command === 'desktop_workspace_events_subscribe') {
+        return { data: { generation: 7 } };
+      }
+      return {};
+    });
+    const listen = vi.fn(async (event: string) => {
+      order.push(`listen:${event}`);
+      return () => {};
+    });
+    const bridge: DesktopBridge = {
+      invoke: invoke as DesktopBridge['invoke'],
+      listen: listen as DesktopBridge['listen'],
+    };
+
+    const source = createDesktopPlatformTransport(bridge).createWorkspaceEventSource('acme');
+    const onopen = vi.fn();
+    source.onopen = onopen;
+
+    await flushPromises();
+    await flushPromises();
+
+    expect(onopen).toHaveBeenCalledOnce();
+    expect(source.readyState).toBe(1);
+    expect(order.indexOf('listen:atlas://workspace-event')).toBeLessThan(
+      order.indexOf('desktop_workspace_events_subscribe'),
+    );
+
+    source.close();
+    await flushPromises();
+
+    const stopCalls = invoke.mock.calls.filter(([command]) => command === 'desktop_workspace_events_stop');
+    expect(stopCalls.at(-1)?.[1]).toEqual({ workspaceSlug: 'acme', generation: 7 });
   });
 });
