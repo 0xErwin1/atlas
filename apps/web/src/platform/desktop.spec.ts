@@ -53,12 +53,40 @@ describe('DesktopWorkspaceEventSource', () => {
     expect(source.readyState).toBe(2);
   });
 
+  it('treats a successful IpcResult with error: null as open (Rust wire shape)', async () => {
+    const invoke = vi.fn(async (command: string, _args?: Record<string, unknown>): Promise<unknown> => {
+      if (command === 'desktop_workspace_events_subscribe') {
+        // Matches serde Option::None → JSON null on the desktop host.
+        return { data: { generation: 3 }, error: null };
+      }
+      return {};
+    });
+    const listen = vi.fn(async (): Promise<() => void> => () => {});
+    const bridge: DesktopBridge = {
+      invoke: invoke as DesktopBridge['invoke'],
+      listen: listen as DesktopBridge['listen'],
+    };
+
+    const source = createDesktopPlatformTransport(bridge).createWorkspaceEventSource('acme');
+    const onopen = vi.fn();
+    const onerror = vi.fn();
+    source.onopen = onopen;
+    source.onerror = onerror;
+
+    await flushPromises();
+    await flushPromises();
+
+    expect(onopen).toHaveBeenCalledOnce();
+    expect(onerror).not.toHaveBeenCalled();
+    expect(source.readyState).toBe(1);
+  });
+
   it('subscribes only after listeners are registered and keeps the generation for stop', async () => {
     const order: string[] = [];
     const invoke = vi.fn(async (command: string, _args?: Record<string, unknown>): Promise<unknown> => {
       order.push(command);
       if (command === 'desktop_workspace_events_subscribe') {
-        return { data: { generation: 7 } };
+        return { data: { generation: 7 }, error: null };
       }
       return {};
     });

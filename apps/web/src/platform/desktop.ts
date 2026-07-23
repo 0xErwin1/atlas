@@ -210,7 +210,9 @@ class DesktopWorkspaceEventSource implements WorkspaceEventSource {
         return;
       }
 
-      if (result.error !== undefined || typeof result.data?.generation !== 'number') {
+      // Rust serializes `IpcResult.error: None` as JSON `null`, not omitting the
+      // field. Treat only non-null errors as failure.
+      if (result.error != null || typeof result.data?.generation !== 'number') {
         this.fail();
         return;
       }
