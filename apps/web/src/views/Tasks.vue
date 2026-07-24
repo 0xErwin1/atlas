@@ -574,15 +574,6 @@ watch(
           <TaskFilterPanel />
         </template>
       </Popover>
-      <button
-        type="button"
-        class="atl-gbtn"
-        :title="`Command palette ${commandPaletteShortcut}`"
-        aria-label="Command palette"
-        @click="ui.openPalette()"
-      >
-        <Icon name="command" :size="14" />
-      </button>
     </EditorToolbar>
 
     <template v-if="isView">

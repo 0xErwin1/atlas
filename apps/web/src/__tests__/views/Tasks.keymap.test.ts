@@ -126,6 +126,13 @@ describe('Tasks keymap wiring', () => {
     resetKeymapForTests();
   });
 
+  it('leaves the desktop command-palette trigger to the persistent workspace shell', async () => {
+    const wrapper = mountTasks();
+    await flushPromises();
+
+    expect(wrapper.findAll('button[aria-label="Command palette"]')).toHaveLength(0);
+  });
+
   it('focuses board search via the board-search shortcut', async () => {
     const wrapper = mountTasks();
     await flushPromises();
