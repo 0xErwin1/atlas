@@ -111,4 +111,53 @@ describe('useUiStateStore', () => {
     expect(store.boardViewFor('b1')).toBe('calendar');
     expect(store.boardViewFor('b2')).toBe('table');
   });
+
+  it('load reads the pinned default board view from the server state', async () => {
+    GET.mockResolvedValue({ data: { state: { defaultBoardView: 'timeline' } } });
+
+    const store = useUiStateStore();
+    await store.load();
+
+    expect(store.defaultBoardView()).toBe('timeline');
+  });
+
+  it('treats an empty or unknown default board view as no preference', async () => {
+    GET.mockResolvedValue({ data: { state: { defaultBoardView: 'gantt' } } });
+
+    const store = useUiStateStore();
+    await store.load();
+
+    expect(store.defaultBoardView()).toBeNull();
+  });
+
+  it('setDefaultBoardView persists the pinned layout', () => {
+    const store = useUiStateStore();
+
+    store.setDefaultBoardView('list');
+    expect(store.defaultBoardView()).toBe('list');
+
+    vi.advanceTimersByTime(600);
+
+    expect(PUT).toHaveBeenCalledTimes(1);
+    expect(PUT).toHaveBeenCalledWith('/api/me/ui-state', {
+      body: { state: { defaultBoardView: 'list' } },
+    });
+  });
+
+  it('setDefaultBoardView(null) clears the preference without touching per-board views', () => {
+    const store = useUiStateStore();
+
+    store.setBoardView('b1', 'table');
+    store.setDefaultBoardView('list');
+    store.setDefaultBoardView(null);
+
+    expect(store.defaultBoardView()).toBeNull();
+    expect(store.boardViewFor('b1')).toBe('table');
+
+    vi.advanceTimersByTime(600);
+
+    expect(PUT).toHaveBeenCalledWith('/api/me/ui-state', {
+      body: { state: { boardViews: { b1: 'table' } } },
+    });
+  });
 });

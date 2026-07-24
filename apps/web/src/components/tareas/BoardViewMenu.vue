@@ -4,9 +4,10 @@ import { useRouter } from 'vue-router';
 import NewViewDialog from '@/components/tareas/NewViewDialog.vue';
 import Icon from '@/components/ui/Icon.vue';
 import Popover from '@/components/ui/Popover.vue';
+import { BOARD_VIEWS, type BoardViewOption, DEFAULT_BOARD_VIEW } from '@/lib/boardViews';
 import { useBoardsStore } from '@/stores/boards';
 import { type TaskViewFiltersDto, useTaskViewsStore } from '@/stores/taskViews';
-import { type TaskBoardView, useUiStore } from '@/stores/ui';
+import { useUiStore } from '@/stores/ui';
 import { useUiStateStore } from '@/stores/uiState';
 import { useWorkspaceStore } from '@/stores/workspace';
 
@@ -16,22 +17,6 @@ import { useWorkspaceStore } from '@/stores/workspace';
  * floating surface and its open/dismiss behavior come from the shared Popover.
  */
 
-interface ViewOption {
-  id: TaskBoardView;
-  label: string;
-  icon: string;
-}
-
-const DEFAULT_VIEW: ViewOption = { id: 'board', label: 'Board', icon: 'columns-3' };
-
-const VIEWS: ViewOption[] = [
-  DEFAULT_VIEW,
-  { id: 'list', label: 'List', icon: 'tasks' },
-  { id: 'table', label: 'Table', icon: 'dashboard' },
-  { id: 'calendar', label: 'Calendar', icon: 'calendar' },
-  { id: 'timeline', label: 'Timeline', icon: 'clock' },
-];
-
 const router = useRouter();
 const ui = useUiStore();
 const uiState = useUiStateStore();
@@ -40,13 +25,13 @@ const workspace = useWorkspaceStore();
 const boards = useBoardsStore();
 
 const activeId = computed(() => ui.taskView);
-const activeView = computed(() => VIEWS.find((v) => v.id === activeId.value) ?? DEFAULT_VIEW);
+const activeView = computed(() => BOARD_VIEWS.find((v) => v.id === activeId.value) ?? DEFAULT_BOARD_VIEW);
 
 function activeLabel(): string {
   return activeView.value.label;
 }
 
-function pick(view: ViewOption): void {
+function pick(view: BoardViewOption): void {
   ui.setTaskView(view.id);
 
   const boardId = boards.board?.id;
@@ -105,7 +90,7 @@ async function onSubmitView(payload: { name: string; filters: TaskViewFiltersDto
         </div>
 
         <div
-          v-for="view in VIEWS"
+          v-for="view in BOARD_VIEWS"
           :key="view.id"
           class="atl-vmi"
           :class="{ on: view.id === activeId }"

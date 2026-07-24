@@ -22,6 +22,7 @@ import { useBreakpoint } from '@/composables/useBreakpoint';
 import { installKeymapListener, useKeymap } from '@/composables/useKeymap';
 import { type LiveUpdateEvent, useLiveUpdates } from '@/composables/useLiveUpdates';
 import { useOpenTaskLive } from '@/composables/useOpenTaskLive';
+import { DEFAULT_BOARD_VIEW } from '@/lib/boardViews';
 import { EVENT_TYPE, eventString, PRESENCE_UPDATED } from '@/lib/eventTypes';
 import { formatShortcut, KEYMAP_PRIORITIES } from '@/lib/keymap';
 import { useBoardsStore } from '@/stores/boards';
@@ -283,8 +284,10 @@ async function loadBoard(background = false): Promise<void> {
   tabsStore.open(targetWorkspace, boardRef, boards.board?.name ?? '', projectSlug);
   tabsStore.setActive(targetWorkspace, boardRef);
 
-  const savedView = uiState.boardViewFor(targetBoardId);
-  ui.setTaskView(savedView ?? 'board');
+  // A layout pinned in settings wins over the board's own remembered layout, so
+  // "always open boards as X" holds for boards the user has already switched.
+  const preferredView = uiState.defaultBoardView() ?? uiState.boardViewFor(targetBoardId);
+  ui.setTaskView(preferredView ?? DEFAULT_BOARD_VIEW.id);
 
   ensureTaskDetails();
   await openFromQuery();
