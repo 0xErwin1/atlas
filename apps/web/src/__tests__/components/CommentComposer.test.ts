@@ -219,6 +219,35 @@ describe('CommentComposer', () => {
     expect(wrapper.find('[aria-label="Comment draft attachments"]').exists()).toBe(false);
   });
 
+  it('gives every secondary control the shared comment-thread button treatment', async () => {
+    post
+      .mockResolvedValueOnce({ data: { id: 'draft-6', expires_at: '2026-07-17T00:00:00Z' } })
+      .mockResolvedValueOnce({ data: { id: 'file-6', url: '/file-6', markdown: '[file](/file-6)' } });
+    const wrapper = mount(CommentComposer, {
+      props: {
+        target: { kind: 'task', ws: 'acme', readableId: 'ATL-1' },
+        onSubmit: vi.fn().mockResolvedValue(true),
+      },
+      global: { stubs: { MarkdownEditor: MarkdownEditorStub } },
+    });
+
+    const attach = wrapper.get('button[aria-label="Add comment attachments"]');
+    expect(attach.classes()).toContain('atl-comment-btn');
+    expect(attach.element.parentElement?.getAttribute('style')).toContain('gap: 8px');
+
+    const picker = wrapper.get('input[type="file"]');
+    Object.defineProperty(picker.element, 'files', {
+      configurable: true,
+      value: [new File(['file'], 'file.txt', { type: 'text/plain' })],
+    });
+
+    await picker.trigger('change');
+    await flushPromises();
+
+    expect(wrapper.get('[aria-label="Discard comment draft"]').classes()).toContain('atl-comment-btn');
+    expect(wrapper.get('[aria-label="Remove file.txt"]').classes()).toContain('atl-comment-btn');
+  });
+
   it.each([
     { target: { kind: 'task' as const, ws: 'acme', readableId: 'ATL-1' }, draftId: 'task-draft' },
     { target: { kind: 'document' as const, ws: 'acme', slug: 'note' }, draftId: 'document-draft' },

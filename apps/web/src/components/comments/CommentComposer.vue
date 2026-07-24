@@ -118,7 +118,12 @@ defineExpose({ focus });
       @change="onFilesSelected"
     />
     <div v-if="attachments.length > 0" aria-label="Comment draft attachments">
-      <div v-for="attachment in attachments" :key="attachment.clientId" class="flex" style="gap: 8px;">
+      <div
+        v-for="attachment in attachments"
+        :key="attachment.clientId"
+        class="flex items-center"
+        style="gap: 8px; margin-top: 6px;"
+      >
         <span>{{ attachment.file.name }}</span>
         <span v-if="attachment.status === 'uploading'" role="status">Uploading {{ attachment.progress ?? 0 }}%</span>
         <span v-else-if="attachment.status === 'queued'" role="status">Queued</span>
@@ -128,23 +133,30 @@ defineExpose({ focus });
         <button
           v-if="attachment.status === 'error'"
           type="button"
+          class="atl-comment-btn"
           :aria-label="attachment.attachment === null ? `Retry ${attachment.file.name}` : `Retry removal of ${attachment.file.name}`"
           @click.stop="attachment.attachment === null ? draftAttachments.retry(attachment.clientId) : draftAttachments.remove(attachment.clientId)"
         >
           Retry
         </button>
-        <button type="button" :aria-label="`Remove ${attachment.file.name}`" @click.stop="draftAttachments.remove(attachment.clientId)">
+        <button
+          type="button"
+          class="atl-comment-btn"
+          :aria-label="`Remove ${attachment.file.name}`"
+          @click.stop="draftAttachments.remove(attachment.clientId)"
+        >
           Remove
         </button>
       </div>
     </div>
     <p v-if="draftError" role="alert">{{ draftError }}</p>
-    <div class="flex justify-end" style="margin-top: 8px;">
+    <div class="flex justify-end items-center" style="gap: 8px; margin-top: 8px;">
       <p v-if="submissionFailed" role="alert" style="margin-right: auto;">
         Could not post comment. Your text is still here; try again.
       </p>
       <button
         type="button"
+        class="atl-comment-btn"
         aria-label="Add comment attachments"
         @click.stop="selectFiles"
       >
@@ -153,6 +165,7 @@ defineExpose({ focus });
       <button
         v-if="draftId !== null || attachments.length > 0"
         type="button"
+        class="atl-comment-btn"
         aria-label="Discard comment draft"
         @click.stop="discard"
       >
