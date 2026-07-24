@@ -166,7 +166,13 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function logout(): Promise<void> {
-    await clearUser();
+    try {
+      await clearUser();
+    } catch {
+      // A cache-purge failure must never abort sign-out: local auth state is
+      // already cleared synchronously, so the server session still has to be
+      // revoked below and the caller still has to navigate away from the app.
+    }
 
     try {
       await getPlatformTransport().logout();

@@ -404,6 +404,20 @@ describe('useAuthStore', () => {
     expect(useAuthStore().isAuthenticated).toBe(false);
   });
 
+  it('completes sign-out and still revokes the session when the cache purge rejects', async () => {
+    mockGet.mockReturnValueOnce(meOk('alice'));
+    await useAuthStore().fetchMe();
+
+    vi.mocked(blockAndPurgeResourceCache).mockRejectedValueOnce(new Error('purge failed'));
+
+    const store = useAuthStore();
+    await expect(store.logout()).resolves.toBeUndefined();
+
+    expect(platformTransport.logout).toHaveBeenCalledOnce();
+    expect(store.isAuthenticated).toBe(false);
+    expect(store.user).toBeNull();
+  });
+
   it('login returns ok on 200', async () => {
     mockPost.mockReturnValueOnce(postOk());
     mockGet.mockReturnValueOnce(meOk('bob'));
