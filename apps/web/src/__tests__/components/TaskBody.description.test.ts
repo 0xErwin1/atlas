@@ -7,6 +7,7 @@ const source = readFileSync(resolve(process.cwd(), 'src/components/tareas/TaskBo
 describe('TaskBody description editor', () => {
   it('does not clamp the editable description behind a show-more control', () => {
     expect(source).not.toContain('<CollapsibleText :collapsed-height="88">');
-    expect(source).toContain('<TaskDescription :markdown="task.description"');
+    expect(source).toContain('<TaskDescription');
+    expect(source).toContain(':markdown="task.description"');
   });
 });

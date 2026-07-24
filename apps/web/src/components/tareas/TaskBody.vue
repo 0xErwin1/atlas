@@ -11,6 +11,7 @@ import CustomFieldsSection from '@/components/tareas/CustomFieldsSection.vue';
 import ReferenceAdd from '@/components/tareas/ReferenceAdd.vue';
 import ReferenceList from '@/components/tareas/ReferenceList.vue';
 import SubtaskList from '@/components/tareas/SubtaskList.vue';
+// biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
 import TaskDescription from '@/components/tareas/TaskDescription.vue';
 import Chip from '@/components/ui/Chip.vue';
 import DatePicker from '@/components/ui/DatePicker.vue';
@@ -283,6 +284,7 @@ function openAskAi(action: AiAction): void {
 }
 
 const fileInput = ref<HTMLInputElement | null>(null);
+const descriptionRef = ref<InstanceType<typeof TaskDescription> | null>(null);
 const uploading = ref(false);
 const dragActive = ref(false);
 
@@ -357,6 +359,10 @@ async function attachClipboardImage(): Promise<void> {
 async function onRemoveAttachment(attachmentId: string): Promise<void> {
   const ok = await detail.removeAttachment(props.ws, props.task.readable_id, attachmentId);
   if (!ok) fail(detail.error);
+}
+
+function onReferenceAttachment(markdown: string): void {
+  descriptionRef.value?.insertMarkdown(markdown);
 }
 
 async function onChecklistToggle(itemId: string): Promise<void> {
@@ -588,7 +594,12 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
     <div class="atl-tv-divider" />
 
     <div class="atl-tv-section-label">Description</div>
-    <TaskDescription :markdown="task.description" :ws="ws" :readable-id="task.readable_id" />
+    <TaskDescription
+      ref="descriptionRef"
+      :markdown="task.description"
+      :ws="ws"
+      :readable-id="task.readable_id"
+    />
 
     <div style="margin-top: 22px;">
       <LoadingState
@@ -669,6 +680,7 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
         :ws="ws"
         :readable-id="task.readable_id"
         @remove="onRemoveAttachment"
+        @insert="onReferenceAttachment"
       />
     </div>
 

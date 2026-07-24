@@ -1,3 +1,5 @@
+import { blockInsertion } from '@/lib/markdownInsert';
+
 export type ImageUploadResult = string | { url: string; markdown?: string } | null;
 
 export function imageUploadInsertion(
@@ -11,7 +13,7 @@ export function imageUploadInsertion(
 
   const url = typeof result === 'string' ? result : result.url;
   const alt = imageAlt(fileName);
-  return `${atLineStart ? '' : '\n'}![${alt}](${url})\n`;
+  return blockInsertion(`![${alt}](${url})`, atLineStart);
 }
 
 function imageAlt(fileName: string): string {

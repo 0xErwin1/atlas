@@ -3,6 +3,7 @@ import { onBeforeUnmount, ref, watch } from 'vue';
 import { wrappedClient } from '@/api/wrapper';
 import Icon from '@/components/ui/Icon.vue';
 import PromptDialog from '@/components/ui/PromptDialog.vue';
+import { attachmentMarkdown, taskAttachmentContentUrl } from '@/lib/attachments';
 import { formatBytes } from '@/lib/format';
 import { type TaskAttachmentDto, useTaskDetailStore } from '@/stores/taskDetail';
 import { useUiStore } from '@/stores/ui';
@@ -15,6 +16,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   remove: [attachmentId: string];
+  /** Markdown referencing the attachment, for the host to place in the description. */
+  insert: [markdown: string];
 }>();
 
 const detail = useTaskDetailStore();
@@ -75,11 +78,15 @@ async function submitRename(fileName: string): Promise<void> {
  * the endpoint sets Content-Disposition so the browser saves rather than navigates.
  */
 function contentUrl(attachmentId: string): string {
-  return `/api/workspaces/${props.ws}/tasks/${props.readableId}/attachments/${attachmentId}/content`;
+  return taskAttachmentContentUrl(props.ws, props.readableId, attachmentId);
 }
 
 function isImage(att: TaskAttachmentDto): boolean {
   return att.content_type.startsWith('image/');
+}
+
+function reference(att: TaskAttachmentDto): void {
+  emit('insert', attachmentMarkdown(att.file_name, att.content_type, contentUrl(att.id)));
 }
 
 /**
@@ -166,6 +173,16 @@ onBeforeUnmount(() => {
           class="inline-flex items-center opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
           style="gap: 4px;"
         >
+          <button
+            type="button"
+            data-test="attachment-reference"
+            :aria-label="`Reference ${att.file_name} in the description`"
+            class="inline-flex items-center justify-center cursor-pointer"
+            style="width: 24px; height: 24px; border: none; background: transparent; color: var(--c-muted); padding: 0;"
+            @click="reference(att)"
+          >
+            <Icon name="text-cursor-input" :size="12" />
+          </button>
           <button
             type="button"
             :aria-label="`Rename attachment ${att.file_name}`"

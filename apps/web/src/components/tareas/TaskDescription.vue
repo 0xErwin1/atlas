@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router';
 import MarkdownEditor from '@/components/editor/MarkdownEditor.vue';
 // biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
 import WikiLinkSuggest from '@/components/notas/WikiLinkSuggest.vue';
+import { useApiImageSrc } from '@/composables/useApiImageSrc';
 import { useWikilinkSuggest } from '@/composables/useWikilinkSuggest';
 import { useWikilinkTitles } from '@/composables/useWikilinkTitles';
 import { type WikilinkRef, wikilinkHref } from '@/lib/wikilink';
@@ -21,6 +22,9 @@ const props = defineProps<{
 
 const router = useRouter();
 const tasks = useTasksStore();
+
+// Attachment references point at the API, which the webview cannot load directly.
+const resolveImageSrc = useApiImageSrc();
 
 const wikilinkTitles = useWikilinkTitles(toRef(props, 'ws'), toRef(props, 'markdown'));
 
@@ -73,6 +77,20 @@ onBeforeUnmount(flushSave);
 function onNavigateWikilink(ref: WikilinkRef): void {
   void router.push(wikilinkHref(ref));
 }
+
+/**
+ * Places host-supplied markdown (an attachment reference) at the caret and saves
+ * it on the same debounce as a keystroke, so the insertion persists on its own.
+ */
+function insertMarkdown(markdown: string): void {
+  const editor = editorRef.value;
+  if (editor === null) return;
+
+  editor.insertAtCaret(markdown);
+  onChange(editor.currentMarkdown());
+}
+
+defineExpose({ insertMarkdown });
 </script>
 
 <template>
@@ -83,6 +101,7 @@ function onNavigateWikilink(ref: WikilinkRef): void {
       :wikilink-titles="wikilinkTitles"
       :editable="true"
       :width-toggle="false"
+      :resolve-image-src="resolveImageSrc"
       min-height="2.5rem"
       placeholder="Add a description…"
       @change="onChange"

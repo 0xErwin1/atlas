@@ -135,6 +135,11 @@ function appendInline(parent: HTMLElement, text: string, ctx: InlineCtx): void {
 export interface LivePreviewCallbacks {
   /** Called when a rendered (collapsed) wikilink is clicked. */
   onWikilinkClick: (ref: WikilinkRef) => void;
+  /**
+   * Optional hook to translate a rendered image's source before it is applied.
+   * Hosts whose images live behind the Atlas API supply one; see `ImageWidget`.
+   */
+  resolveImageSrc?: (url: string) => Promise<string | null>;
 }
 
 export interface LivePreviewOptions {
@@ -312,17 +317,22 @@ class LangBadgeWidget extends WidgetType {
  * Widget that renders a markdown image `![alt](url)` as an actual `<img>` in place
  * of the raw markdown, off the active line. The source markdown is restored when
  * the cursor enters the line, keeping it editable.
+ *
+ * `resolveSrc` lets a host substitute the source before it reaches the `<img>`,
+ * which is how images hosted by the Atlas API are loaded: the webview cannot
+ * request them itself (see `useApiImageSrc`). Without it the URL is used verbatim.
  */
 export class ImageWidget extends WidgetType {
   constructor(
     private readonly url: string,
     private readonly alt: string,
+    private readonly resolveSrc?: (url: string) => Promise<string | null>,
   ) {
     super();
   }
 
   eq(other: ImageWidget): boolean {
-    return other.url === this.url && other.alt === this.alt;
+    return other.url === this.url && other.alt === this.alt && other.resolveSrc === this.resolveSrc;
   }
 
   toDOM(view: EditorView): HTMLElement {
@@ -352,7 +362,18 @@ export class ImageWidget extends WidgetType {
     img.addEventListener('load', remeasure, { once: true });
     img.addEventListener('error', remeasure, { once: true });
 
-    img.src = src;
+    if (this.resolveSrc === undefined) {
+      img.src = src;
+      return img;
+    }
+
+    // An unresolvable source leaves `src` unset on purpose: the browser then shows
+    // the alt text rather than a broken-image icon.
+    void this.resolveSrc(src).then((resolved) => {
+      if (resolved !== null) img.src = resolved;
+      remeasure();
+    });
+
     return img;
   }
 
@@ -906,10 +927,9 @@ function decorateSyntaxTree(
           const parsed = parseImage(view.state.doc.sliceString(node.from, node.to));
           if (parsed !== null) {
             decos.push(
-              Decoration.replace({ widget: new ImageWidget(parsed.url, parsed.alt) }).range(
-                node.from,
-                node.to,
-              ),
+              Decoration.replace({
+                widget: new ImageWidget(parsed.url, parsed.alt, callbacks.resolveImageSrc),
+              }).range(node.from, node.to),
             );
           }
         }

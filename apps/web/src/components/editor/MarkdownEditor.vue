@@ -10,6 +10,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import Icon from '@/components/ui/Icon.vue';
 import { restoreSelection, snapshotSelection } from '@/lib/editorSelection';
 import { filesFromClipboard, filesFromDataTransfer, isImageFile } from '@/lib/fileTransfer';
+import { blockInsertion } from '@/lib/markdownInsert';
 import {
   detectWikilinkTrigger,
   formatWikilink,
@@ -65,6 +66,10 @@ const props = withDefaults(
      * long-form surfaces (note body, task description); off for compact fixed
      * editors (the comment composer/edit box) that never outgrow their host. */
     followCaret?: boolean;
+    /** Optional translation of a rendered image's source. Hosts whose images are
+     * served by the Atlas API supply one so the bytes travel the platform
+     * transport instead of the webview's own origin; see `useApiImageSrc`. */
+    resolveImageSrc?: (url: string) => Promise<string | null>;
   }>(),
   {
     placeholder: '',
@@ -229,7 +234,10 @@ function keepCaretInView(): void {
 
 function liveExtension(reveal: boolean) {
   return livePreview(
-    { onWikilinkClick: (ref) => emit('navigate-wikilink', ref) },
+    {
+      onWikilinkClick: (ref) => emit('navigate-wikilink', ref),
+      resolveImageSrc: props.resolveImageSrc,
+    },
     { reveal, titles: props.wikilinkTitles },
   );
 }
@@ -356,6 +364,24 @@ function focus(): void {
 }
 
 /**
+ * Inserts host-supplied markdown at the caret as its own block, breaking the
+ * current line first so a reference never lands in the middle of a sentence.
+ * Used by the task attachment list to reference a file from the description.
+ */
+function insertAtCaret(text: string): void {
+  if (view === null || !effectiveEditable()) return;
+
+  const at = view.state.selection.main.head;
+  const insert = blockInsertion(text, at === view.state.doc.lineAt(at).from);
+
+  view.dispatch({
+    changes: { from: at, to: at, insert },
+    selection: { anchor: at + insert.length },
+  });
+  view.focus();
+}
+
+/**
  * Handles image files arriving by paste or drop when the host supplies an
  * `uploadImage` callback. Returns true when it takes over the event (images
  * present and a handler set), so CodeMirror's default paste/drop is suppressed;
@@ -408,7 +434,7 @@ async function uploadAndInsertImages(images: File[], pos: number | null, generat
   view?.focus();
 }
 
-defineExpose({ currentMarkdown, insertWikilink, focus });
+defineExpose({ currentMarkdown, insertWikilink, insertAtCaret, focus });
 
 onMounted(() => {
   if (host.value === null) return;
