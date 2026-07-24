@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { components } from '@/api/types';
 import { wrappedClient } from '@/api/wrapper';
+import { isBoardView } from '@/lib/boardViews';
 import type { TaskBoardView } from '@/stores/ui';
 
 // The server models `state` as an opaque JSON object, so the generated type is
@@ -79,6 +80,23 @@ export const useUiStateStore = defineStore('uiState', () => {
     scheduleSave();
   }
 
+  // A layout pinned from settings, applied to every board the user opens. Absence
+  // means no preference, so each board falls back to its own remembered layout.
+  function defaultBoardView(): TaskBoardView | null {
+    const v = data.value.defaultBoardView;
+    return isBoardView(v) ? v : null;
+  }
+
+  function setDefaultBoardView(view: TaskBoardView | null): void {
+    const next = { ...data.value };
+
+    if (view === null) delete next.defaultBoardView;
+    else next.defaultBoardView = view;
+
+    data.value = next;
+    scheduleSave();
+  }
+
   return {
     data,
     loaded,
@@ -87,5 +105,7 @@ export const useUiStateStore = defineStore('uiState', () => {
     setFolderCollapsed,
     boardViewFor,
     setBoardView,
+    defaultBoardView,
+    setDefaultBoardView,
   };
 });

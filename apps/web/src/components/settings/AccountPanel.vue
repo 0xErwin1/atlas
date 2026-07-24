@@ -4,19 +4,23 @@ import { useRouter } from 'vue-router';
 import { z } from 'zod';
 import Avatar from '@/components/ui/Avatar.vue';
 import Btn from '@/components/ui/Btn.vue';
+import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
 import FormField from '@/components/ui/FormField.vue';
 import Icon from '@/components/ui/Icon.vue';
 import SegmentedControl, { type SegmentedOption } from '@/components/ui/SegmentedControl.vue';
 import { useProblem } from '@/composables/useProblem';
+import { BOARD_VIEWS, isBoardView } from '@/lib/boardViews';
 import { BUILD_LABEL } from '@/lib/buildInfo';
 import { initials as nameInitials } from '@/lib/format';
 import { validateForm } from '@/lib/validation';
 import { getPlatformTransport } from '@/platform/transport';
 import { type Problem, useAuthStore } from '@/stores/auth';
 import { type Theme, useUiStore } from '@/stores/ui';
+import { useUiStateStore } from '@/stores/uiState';
 
 const auth = useAuthStore();
 const ui = useUiStore();
+const uiState = useUiStateStore();
 const router = useRouter();
 const transport = getPlatformTransport();
 
@@ -150,6 +154,22 @@ function selectTheme(value: string): void {
   if (option !== undefined) ui.setTheme(option.value);
 }
 
+// ── Board layout ───────────────────────────────────────────────────
+// Sentinel for "no pinned layout": every board reopens in whatever layout it was
+// last left in, which is the behavior when the preference is unset.
+const LAST_USED = 'last-used';
+
+const BOARD_VIEW_OPTIONS: DropdownOption[] = [
+  { value: LAST_USED, label: 'Last used', icon: 'history' },
+  ...BOARD_VIEWS.map((view) => ({ value: view.id, label: view.label, icon: view.icon })),
+];
+
+const boardView = computed(() => uiState.defaultBoardView() ?? LAST_USED);
+
+function selectBoardView(value: string): void {
+  uiState.setDefaultBoardView(isBoardView(value) ? value : null);
+}
+
 // ── Sign out ───────────────────────────────────────────────────────
 async function signOut(): Promise<void> {
   await auth.logout();
@@ -250,6 +270,20 @@ async function signOut(): Promise<void> {
         @update:model-value="selectTheme"
       />
       <span style="font-size: 12px; color: var(--c-muted);">Ayu Dark · default</span>
+    </div>
+
+    <div class="atl-divider" />
+
+    <div class="atl-sec-title">Board layout</div>
+    <div class="flex items-center" style="gap: 14px;" data-board-layout>
+      <Dropdown
+        :model-value="boardView"
+        :options="BOARD_VIEW_OPTIONS"
+        @update:model-value="selectBoardView"
+      />
+      <span style="font-size: 12px; color: var(--c-muted);">
+        Layout every board opens in
+      </span>
     </div>
 
     <div class="atl-divider" />
