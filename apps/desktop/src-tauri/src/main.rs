@@ -16,6 +16,8 @@ use std::{
     time::{Duration, Instant},
 };
 use tauri::{Emitter, Manager, Runtime, State};
+#[cfg(target_os = "linux")]
+use webkit2gtk::{SettingsExt, WebViewExt};
 
 /// Registry key for a running workspace stream: the session scope
 /// (`origin:identity`) plus the workspace slug, so a late stop for one
@@ -1198,6 +1200,22 @@ fn revoke_from_transport<R: Runtime>(
     Ok(())
 }
 
+#[cfg(target_os = "linux")]
+fn disable_webkit_smooth_scrolling<R: Runtime>(
+    window: &tauri::WebviewWindow<R>,
+) -> tauri::Result<()> {
+    window.with_webview(|webview| {
+        let Some(settings) = webview.inner().settings() else {
+            tracing::warn!(
+                "WebKit settings are unavailable; smooth scrolling could not be disabled"
+            );
+            return;
+        };
+
+        settings.set_enable_smooth_scrolling(false);
+    })
+}
+
 pub(crate) fn run_with_client(client: reqwest::Client) {
     let configuration_directory = match desktop_configuration_directory() {
         Ok(directory) => directory,
@@ -1230,6 +1248,10 @@ pub(crate) fn run_with_client(client: reqwest::Client) {
                 .ok_or("the main window is unavailable")?;
             let preferences = DesktopPreferences::load(&preferences_directory);
 
+            #[cfg(target_os = "linux")]
+            if let Err(error) = disable_webkit_smooth_scrolling(&window) {
+                tracing::warn!(%error, "WebKit smooth scrolling could not be disabled");
+            }
             window.set_decorations(preferences.window_decorations())?;
             if let Err(error) = window.set_zoom(preferences.zoom_factor()) {
                 tracing::warn!(%error, "the persisted zoom factor could not be applied at startup");

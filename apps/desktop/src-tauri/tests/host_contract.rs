@@ -325,6 +325,34 @@ fn desktop_preferences_resolve_to_on_when_no_file_is_stored() {
     assert_eq!(loaded, DesktopPreferences::with_window_decorations(true));
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_startup_disables_webkit_smooth_scrolling_without_replacing_dpi_or_zoom() {
+    let source = include_str!("../src/main.rs");
+    let dpi_initialization = source
+        .find("ensure_valid_screen_resolution();")
+        .expect("Linux startup keeps DPI initialization");
+    let desktop_start = source
+        .find("run_with_client(client);")
+        .expect("desktop startup remains wired");
+    let setup = source
+        .find(".setup(move |app| {")
+        .expect("desktop startup keeps its setup hook");
+    let setup_source = source
+        .get(setup..)
+        .expect("setup starts within the desktop host source");
+    let smooth_scrolling = setup_source
+        .find("disable_webkit_smooth_scrolling(&window)")
+        .expect("Linux setup disables WebKit smooth scrolling");
+    let persisted_zoom = setup_source
+        .find("window.set_zoom(preferences.zoom_factor())")
+        .expect("startup keeps persisted zoom application");
+
+    assert!(dpi_initialization < desktop_start);
+    assert!(smooth_scrolling < persisted_zoom);
+    assert!(source.contains("settings.set_enable_smooth_scrolling(false);"));
+}
+
 #[test]
 fn session_revalidation_and_realtime_use_the_scoped_workspace_endpoint() {
     let scope = SessionScope::new("https://atlas.example.test:8443", "user-1")

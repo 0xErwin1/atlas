@@ -646,6 +646,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "webkit2gtk",
  "zeroize",
 ]
 
