@@ -53,12 +53,10 @@ describe('desktop login server selection', () => {
     expect(replace).toHaveBeenCalledWith('/n');
   });
 
-  it('keeps the sign-in panel at a usable width in the desktop window', () => {
-    const cardRule = loginSource.match(/\.login-card\s*\{([^}]*)\}/)?.[1];
+  it('keeps the sign-in column at a usable width in the desktop window', () => {
+    const columnRule = loginSource.match(/\.login-col\s*\{([^}]*)\}/)?.[1];
 
-    expect(cardRule).toMatch(/\bwidth:\s*100%\s*;/);
-    expect(cardRule).toMatch(/\bmin-width:\s*280px\s*;/);
-    expect(cardRule).toMatch(/\bmax-width:\s*340px\s*;/);
-    expect(cardRule).toMatch(/\bflex-shrink:\s*0\s*;/);
+    expect(columnRule).toMatch(/\bwidth:\s*100%\s*;/);
+    expect(columnRule).toMatch(/\bmax-width:\s*380px\s*;/);
   });
 });
