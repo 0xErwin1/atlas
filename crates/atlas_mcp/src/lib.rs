@@ -353,6 +353,31 @@ fn require_comment_attachment_limit(
         })
 }
 
+/// Upper bound on the size of a text attachment returned inline by `get_task_attachment`.
+///
+/// Text attachments are decoded into the MCP response as UTF-8 and sent back to the caller
+/// verbatim, so an unbounded size would let a single large file (for example an exported
+/// HTML design) overwhelm the caller's context. Larger files must be downloaded through the
+/// web app instead.
+const MAX_INLINE_TEXT_ATTACHMENT_BYTES: usize = 256 * 1024;
+
+/// Whether a MIME essence (the type without any parameters) identifies textual content that
+/// can be returned to the MCP client as decoded UTF-8 rather than a binary blob.
+fn is_textual_mime(essence: &str) -> bool {
+    essence.starts_with("text/")
+        || essence.ends_with("+json")
+        || essence.ends_with("+xml")
+        || matches!(
+            essence,
+            "application/json"
+                | "application/xml"
+                | "application/javascript"
+                | "application/yaml"
+                | "application/x-yaml"
+                | "application/toml"
+        )
+}
+
 // ---------------------------------------------------------------------------
 // Parameter structs
 // ---------------------------------------------------------------------------
@@ -2497,9 +2522,10 @@ impl AtlasMcp {
     }
 
     #[tool(
-        description = "Retrieve a task's IMAGE attachment as viewable content (e.g. a screenshot). \
-                       Pass the attachment UUID from `list_task_attachments`. Non-image attachments \
-                       are rejected."
+        description = "Retrieve a task attachment as viewable content. Image attachments are \
+                       returned as an image; textual attachments (text/*, JSON, XML, YAML, TOML) \
+                       are returned as text. Other binary types are rejected. Pass the attachment \
+                       UUID from `list_task_attachments`."
     )]
     async fn get_task_attachment(
         &self,
@@ -2516,16 +2542,42 @@ impl AtlasMcp {
             .map_err(|e| enrich_client_error(e, "get_task_attachment"))?;
 
         let mime = content_type.unwrap_or_else(|| "application/octet-stream".to_string());
-        if !mime.starts_with("image/") {
-            return Err(format!(
-                "attachment '{attachment_id}' is not an image (content type '{mime}'); \
-                 this tool only retrieves image attachments for viewing"
-            ));
+        let essence = mime
+            .split(';')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_ascii_lowercase();
+
+        if essence.starts_with("image/") {
+            use base64::Engine as _;
+            let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
+            return Ok(Content::image(encoded, mime));
         }
 
-        use base64::Engine as _;
-        let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
-        Ok(Content::image(encoded, mime))
+        if is_textual_mime(&essence) {
+            if bytes.len() > MAX_INLINE_TEXT_ATTACHMENT_BYTES {
+                return Err(format!(
+                    "attachment '{attachment_id}' is {} bytes, larger than the \
+                     {MAX_INLINE_TEXT_ATTACHMENT_BYTES} byte limit for inline text retrieval; \
+                     download it from the web app instead",
+                    bytes.len()
+                ));
+            }
+
+            let text = String::from_utf8(bytes).map_err(|_| {
+                format!(
+                    "attachment '{attachment_id}' (content type '{mime}') is not valid UTF-8 text"
+                )
+            })?;
+
+            return Ok(Content::text(text));
+        }
+
+        Err(format!(
+            "attachment '{attachment_id}' has content type '{mime}', which this tool cannot \
+             return inline; only image and textual attachments are supported"
+        ))
     }
 
     #[tool(description = "Create a task on a board. Board and column are resolved by name.")]
@@ -4513,6 +4565,20 @@ mod tests {
         ClientHandler, ServiceExt,
         model::{CallToolRequestParams, ClientInfo},
     };
+
+    #[test]
+    fn textual_mime_detection() {
+        assert!(is_textual_mime("text/plain"));
+        assert!(is_textual_mime("text/html"));
+        assert!(is_textual_mime("application/json"));
+        assert!(is_textual_mime("application/ld+json"));
+        assert!(is_textual_mime("application/xml"));
+        assert!(is_textual_mime("application/yaml"));
+
+        assert!(!is_textual_mime("image/png"));
+        assert!(!is_textual_mime("application/pdf"));
+        assert!(!is_textual_mime("application/octet-stream"));
+    }
 
     const COMMENT_ID: uuid::Uuid = uuid::uuid!("00000000-0000-0000-0000-000000000001");
     const ATTACHMENT_ID: uuid::Uuid = uuid::uuid!("00000000-0000-0000-0000-000000000002");
