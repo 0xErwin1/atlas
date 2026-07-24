@@ -6,7 +6,7 @@ on:
   workflow_call:
 
 jobs:
-  test:
+  compile-tests:
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -43,5 +43,69 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest
-      - run: cargo nextest run --workspace --locked
+      - run: cargo nextest archive --workspace --locked --archive-file nextest-tests.tar.zst
       - run: cargo test --doc --workspace --locked
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nextest-tests
+          path: nextest-tests.tar.zst
+          if-no-files-found: error
+          retention-days: 1
+
+  test-shard:
+    needs: compile-tests
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        partition: [1, 2, 3, 4]
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: atlas
+          POSTGRES_PASSWORD: atlas
+          POSTGRES_DB: atlas_dev
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U atlas -d atlas_dev"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      ATLAS_TEST_DATABASE_URL: postgres://atlas:atlas@localhost:5432/atlas_dev
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.96'
+      - name: Install workspace system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            mold libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev \
+            libsoup-3.0-dev libssl-dev libdbus-1-dev
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      - uses: actions/download-artifact@v4
+        with:
+          name: nextest-tests
+      - run: >-
+          cargo nextest run
+          --archive-file nextest-tests.tar.zst
+          --partition hash:${{ matrix.partition }}/4
+
+  test:
+    if: ${{ always() }}
+    needs: [compile-tests, test-shard]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check test results
+        env:
+          COMPILE_RESULT: ${{ needs.compile-tests.result }}
+          SHARD_RESULT: ${{ needs.test-shard.result }}
+        run: |
+          test "$COMPILE_RESULT" = success
+          test "$SHARD_RESULT" = success
