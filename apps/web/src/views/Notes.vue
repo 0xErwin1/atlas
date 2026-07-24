@@ -531,7 +531,14 @@ async function persist(): Promise<void> {
   if (slug.value === null || ws.value === '') return;
 
   const currentBody = editorRef.value?.currentMarkdown() ?? body.value;
-  const result = await save(ws.value, slug.value, currentBody, meta.value, headRevisionId.value);
+  const result = await save(
+    ws.value,
+    slug.value,
+    currentBody,
+    meta.value,
+    headRevisionId.value,
+    workspace.workspaceIdForSlug(ws.value) ?? undefined,
+  );
 
   if (result.kind === 'ok') {
     onSaved(joinFrontmatter(meta.value, currentBody), result.headRevisionId);
@@ -569,7 +576,14 @@ async function resave(content: string, baseRevisionId: string, autoMerged: boole
   if (slug.value === null || ws.value === '') return;
 
   const { body: resolvedBody, meta: resolvedMeta } = splitFrontmatter(content);
-  const result = await save(ws.value, slug.value, resolvedBody, resolvedMeta, baseRevisionId);
+  const result = await save(
+    ws.value,
+    slug.value,
+    resolvedBody,
+    resolvedMeta,
+    baseRevisionId,
+    workspace.workspaceIdForSlug(ws.value) ?? undefined,
+  );
 
   if (result.kind === 'ok') {
     bodySync.cancel();
@@ -650,7 +664,14 @@ async function flushPendingSave(target: NoteTarget | null = null): Promise<void>
   if (saveTarget === null) return;
 
   const currentBody = editorRef.value?.currentMarkdown() ?? body.value;
-  await save(saveTarget.workspaceSlug, saveTarget.slug, currentBody, meta.value, headRevisionId.value);
+  await save(
+    saveTarget.workspaceSlug,
+    saveTarget.slug,
+    currentBody,
+    meta.value,
+    headRevisionId.value,
+    workspace.workspaceIdForSlug(saveTarget.workspaceSlug) ?? undefined,
+  );
 }
 
 function onMetaChange(newMeta: Record<string, unknown>): void {

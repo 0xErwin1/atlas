@@ -2,7 +2,11 @@ import { z } from 'zod';
 import type { AtlasProblem, ConflictProblem } from '@/api/problem';
 import { isConflictProblem } from '@/api/problem';
 import { wrappedClient } from '@/api/wrapper';
-import { getResourceCachePrincipal, hydrateAndRevalidateResource } from '@/cache/cacheRuntime';
+import {
+  getResourceCachePrincipal,
+  hydrateAndRevalidateResource,
+  invalidateResourceCache,
+} from '@/cache/cacheRuntime';
 import { buildCacheKey, CACHE_CADENCE } from '@/cache/resourceCache';
 import { joinFrontmatter, splitFrontmatter } from '@/lib/frontmatter';
 
@@ -95,6 +99,7 @@ export function useMarkdownDoc() {
       key,
       payloadSchema: loadResultSchema,
       tags: [`document:${slug}`],
+      reuseFresh: true,
       freshForMs: CACHE_CADENCE.primary.freshForMs,
       activeForMs: CACHE_CADENCE.primary.activeForMs,
       retentionForMs: 24 * 60 * 60 * 1000,
@@ -119,6 +124,7 @@ export function useMarkdownDoc() {
     body: string,
     meta: Record<string, unknown>,
     baseRevisionId: string,
+    workspaceId?: string,
   ): Promise<SaveResult> {
     const content = joinFrontmatter(meta, body);
 
@@ -128,6 +134,10 @@ export function useMarkdownDoc() {
     });
 
     if (error === undefined) {
+      if (workspaceId !== undefined) {
+        await invalidateResourceCache('resource', workspaceId, [`document:${slug}`]);
+      }
+
       return { kind: 'ok', headRevisionId: data?.head_revision_id ?? '' };
     }
 

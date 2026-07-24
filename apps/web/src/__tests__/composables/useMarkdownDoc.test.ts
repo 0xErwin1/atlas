@@ -46,6 +46,17 @@ function cacheStore(entries: Map<string, CacheEnvelope<unknown>>): ResourceCache
       for (const key of keys) entries.delete(key);
       return true;
     },
+    async deleteScope(scope) {
+      for (const [key, entry] of entries) {
+        const matchesPrincipal = key.includes(`|p=${scope.principal}|`);
+        const matchesWorkspace = scope.workspaceId === undefined || key.includes(`|w=${scope.workspaceId}|`);
+        const matchesTags =
+          scope.tagsAny === undefined || entry.tags.some((tag) => scope.tagsAny?.includes(tag));
+
+        if (matchesPrincipal && matchesWorkspace && matchesTags) entries.delete(key);
+      }
+      return true;
+    },
     async clear() {
       return true;
     },
@@ -98,7 +109,7 @@ describe('useMarkdownDoc', () => {
     expect(result.headRevisionId).toBe('rev-xyz');
   });
 
-  it('load: publishes an exact cached body before its matching network refresh resolves', async () => {
+  it('load: publishes an exact stale cached body before its matching network refresh resolves', async () => {
     const key = buildCacheKey({
       principal: PRINCIPAL,
       workspaceId: WORKSPACE_ID,
@@ -116,7 +127,7 @@ describe('useMarkdownDoc', () => {
           key,
           payloadVersion: 1,
           storedAt: now,
-          validatedAt: now,
+          validatedAt: now - 120_000,
           lastAccessedAt: now,
           retentionExpiresAt: now + 60_000,
           bytes: 128,
@@ -186,6 +197,26 @@ describe('useMarkdownDoc', () => {
     expect(mockGet).toHaveBeenCalledOnce();
   });
 
+  it('load: reuses a fresh cached body when revisiting a document', async () => {
+    mockGet
+      .mockResolvedValueOnce({
+        data: { id: 'doc-1', slug: SLUG, content: 'Document A', head_revision_id: 'revision-a' },
+        error: undefined,
+      })
+      .mockResolvedValueOnce({
+        data: { id: 'doc-2', slug: 'other-doc', content: 'Document B', head_revision_id: 'revision-b' },
+        error: undefined,
+      });
+    const { load } = useMarkdownDoc();
+
+    await load(WS, SLUG, { workspaceId: WORKSPACE_ID, onCached: vi.fn() });
+    await load(WS, 'other-doc', { workspaceId: WORKSPACE_ID, onCached: vi.fn() });
+    const revisited = await load(WS, SLUG, { workspaceId: WORKSPACE_ID, onCached: vi.fn() });
+
+    expect(revisited).toMatchObject({ body: 'Document A', headRevisionId: 'revision-a' });
+    expect(mockGet).toHaveBeenCalledTimes(2);
+  });
+
   it('load: keeps a cached body eligible for an active recovery retry after its refresh fails', async () => {
     const key = buildCacheKey({
       principal: PRINCIPAL,
@@ -204,7 +235,7 @@ describe('useMarkdownDoc', () => {
           key,
           payloadVersion: 1,
           storedAt: now,
-          validatedAt: now,
+          validatedAt: now - 120_000,
           lastAccessedAt: now,
           retentionExpiresAt: now + 60_000,
           bytes: 128,
@@ -351,6 +382,30 @@ describe('useMarkdownDoc', () => {
     if (result.kind === 'ok') {
       expect(result.headRevisionId).toBe('rev-def');
     }
+  });
+
+  it('save: invalidates the cached body before a subsequent load', async () => {
+    mockGet
+      .mockResolvedValueOnce({
+        data: { id: 'doc-1', slug: SLUG, content: 'Before save', head_revision_id: 'revision-a' },
+        error: undefined,
+      })
+      .mockResolvedValueOnce({
+        data: { id: 'doc-1', slug: SLUG, content: 'After save', head_revision_id: 'revision-b' },
+        error: undefined,
+      });
+    mockPut.mockResolvedValue({ data: { head_revision_id: 'revision-b' }, error: undefined });
+    const { load, save } = useMarkdownDoc();
+
+    await load(WS, SLUG, { workspaceId: WORKSPACE_ID, onCached: vi.fn() });
+    await expect(save(WS, SLUG, 'After save', {}, 'revision-a', WORKSPACE_ID)).resolves.toEqual({
+      kind: 'ok',
+      headRevisionId: 'revision-b',
+    });
+    const reloaded = await load(WS, SLUG, { workspaceId: WORKSPACE_ID, onCached: vi.fn() });
+
+    expect(reloaded).toMatchObject({ body: 'After save', headRevisionId: 'revision-b' });
+    expect(mockGet).toHaveBeenCalledTimes(2);
   });
 
   it('save: returns conflict when PUT returns 409', async () => {

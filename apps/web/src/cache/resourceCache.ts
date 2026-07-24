@@ -98,6 +98,7 @@ export interface ResourceCacheRequest<T> {
   payloadSchema: ZodType<T>;
   tags: string[];
   deriveTags?: (payload: T) => readonly string[];
+  reuseFresh?: boolean;
   freshForMs: number;
   activeForMs?: number;
   retentionForMs: number;
@@ -123,6 +124,9 @@ export interface ResourceCacheLoader {
     request: Pick<ResourceCacheRequest<T>, 'key' | 'payloadSchema' | 'publish' | 'isCurrent'>,
   ): Promise<T | null>;
   revalidate<T>(request: ResourceCacheRequest<T>): Promise<ResourceCacheRevalidationResult>;
+  readFresh?<T>(
+    request: Pick<ResourceCacheRequest<T>, 'key' | 'payloadSchema' | 'freshForMs' | 'publish' | 'isCurrent'>,
+  ): T | null;
   activate<T>(request: ResourceCacheRequest<T>): void;
   isAvailable(): boolean;
 }
@@ -155,20 +159,26 @@ export function startHydrationAndRevalidation<T>(
 ): ResourceCacheLoad<T> {
   let authoritativeSettled = false;
   let publishedPayload: T | undefined;
-  const hydration = cache.hydrate({
-    ...request,
-    publish: (payload) => {
-      if (!authoritativeSettled) request.publish(payload);
-    },
-  });
-  const revalidation = cache.revalidate({
-    ...request,
-    publish: (payload) => {
-      authoritativeSettled = true;
-      publishedPayload = payload;
-      request.publish(payload);
-    },
-  });
+  const publishHydration = (payload: T): void => {
+    if (!authoritativeSettled) request.publish(payload);
+  };
+  const publishRevalidation = (payload: T): void => {
+    authoritativeSettled = true;
+    publishedPayload = payload;
+    request.publish(payload);
+  };
+  const freshPayload =
+    request.reuseFresh === true
+      ? (cache.readFresh?.({ ...request, publish: publishHydration }) ?? null)
+      : null;
+  const hydration =
+    freshPayload === null
+      ? cache.hydrate({ ...request, publish: publishHydration })
+      : Promise.resolve(freshPayload);
+  const revalidation: Promise<ResourceCacheRevalidationResult> =
+    freshPayload === null
+      ? cache.revalidate({ ...request, publish: publishRevalidation })
+      : Promise.resolve({ published: true, payload: freshPayload });
   const completion = (async () => {
     try {
       const result = await revalidation;
@@ -371,6 +381,31 @@ export class ResourceCache {
 
     this.inflight.set(request.key, revalidation);
     return revalidation;
+  }
+
+  readFresh<T>(
+    request: Pick<ResourceCacheRequest<T>, 'key' | 'payloadSchema' | 'freshForMs' | 'publish' | 'isCurrent'>,
+  ): T | null {
+    const now = this.clock.now();
+    if (!this.policy.enabled || this.isSuspended() || this.authorizationLeaseExpiresAt <= now) return null;
+
+    const entry = this.hot.get(request.key);
+    if (
+      entry === undefined ||
+      entry.stale ||
+      entry.retentionExpiresAt <= now ||
+      entry.validatedAt + request.freshForMs <= now ||
+      !request.isCurrent()
+    ) {
+      return null;
+    }
+
+    const payload = request.payloadSchema.safeParse(entry.payload);
+    if (!payload.success) return null;
+
+    this.remember(entry);
+    request.publish(payload.data);
+    return payload.data;
   }
 
   activate<T>(request: ResourceCacheRequest<T>): void;
