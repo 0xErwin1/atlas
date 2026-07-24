@@ -78,29 +78,14 @@ async function onSubmitView(payload: { name: string; filters: TaskViewFiltersDto
     <template #trigger="{ open, toggle }">
       <button
         type="button"
-        class="atl-dd"
+        class="atl-gbtn"
         :title="`View: ${activeLabel()}`"
         aria-haspopup="menu"
         :aria-expanded="open"
-        style="
-          display: inline-flex;
-          align-items: center;
-          gap: 7px;
-          height: 28px;
-          padding: 0 9px;
-          font-size: var(--fs-sm);
-          color: var(--c-foreground);
-          background: var(--c-secondary);
-          border: 1px solid var(--c-border);
-          border-radius: var(--r-sm);
-          cursor: pointer;
-        "
-        :style="{ borderColor: open ? 'var(--c-primary)' : 'var(--c-border)' }"
         @click="toggle"
       >
-        <Icon :name="activeView.icon" :size="13" style="color: var(--c-muted); flex: 0 0 auto;" />
-        <span style="white-space: nowrap;">{{ activeLabel() }}</span>
-        <Icon name="chevron-down" :size="12" style="color: var(--c-muted); flex: 0 0 auto;" />
+        <Icon :name="activeView.icon" :size="14" />
+        {{ activeLabel() }}
       </button>
     </template>
 
