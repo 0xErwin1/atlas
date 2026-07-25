@@ -10,6 +10,7 @@ import AppSettingsPanel from '@/components/settings/AppSettingsPanel.vue';
 import GroupsPanel from '@/components/settings/GroupsPanel.vue';
 import MembersPanel from '@/components/settings/MembersPanel.vue';
 import PlatformAuditPanel from '@/components/settings/PlatformAuditPanel.vue';
+import PlatformStatusTemplatesPanel from '@/components/settings/PlatformStatusTemplatesPanel.vue';
 import ProjectsPanel from '@/components/settings/ProjectsPanel.vue';
 import StatusesPanel from '@/components/settings/StatusesPanel.vue';
 import StatusTemplatesPanel from '@/components/settings/StatusTemplatesPanel.vue';
@@ -44,6 +45,7 @@ export type SettingsSection =
   | 'workspaces'
   | 'webhooks'
   | 'platform-audit'
+  | 'platform-statuses'
   | 'trash'
   | 'about'
   | 'app';
@@ -65,6 +67,7 @@ const SETTINGS_SECTIONS = new Set<SettingsSection>([
   'workspaces',
   'webhooks',
   'platform-audit',
+  'platform-statuses',
   'trash',
   'about',
   'app',
@@ -155,6 +158,7 @@ const navGroups = computed<NavGroup[]>(() => {
         { section: 'webhooks', icon: 'webhook', label: 'Webhooks & Events', rootOnly: true },
         { section: 'users', icon: 'users', label: 'Users', rootOnly: true },
         { section: 'workspaces', icon: 'layers', label: 'Workspaces', rootOnly: true },
+        { section: 'platform-statuses', icon: 'kanban', label: 'Default statuses', rootOnly: true },
         { section: 'trash', icon: 'trash-2', label: 'Trash', rootOnly: true },
         { section: 'platform-audit', icon: 'shield-alert', label: 'Platform audit', rootOnly: true },
         { section: 'about', icon: 'info', label: 'About', rootOnly: true },
@@ -274,6 +278,7 @@ watch(
       <WorkspaceAuditPanel v-else-if="isWorkspaceReady && activeSection === 'audit'" />
       <UsersPanel v-else-if="activeSection === 'users'" />
       <AdminWorkspacesPanel v-else-if="activeSection === 'workspaces'" />
+      <PlatformStatusTemplatesPanel v-else-if="activeSection === 'platform-statuses'" />
        <PlatformAuditPanel v-else-if="activeSection === 'platform-audit'" />
        <TrashPanel v-else-if="activeSection === 'trash'" />
       <WebhooksPanel v-else-if="isWorkspaceReady && activeSection === 'webhooks'" />

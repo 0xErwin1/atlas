@@ -34,12 +34,24 @@ function setup() {
   return { workspace, store };
 }
 
+/** Opens the edit row for the template at `index` and returns its rename input. */
+async function startEditing(wrapper: ReturnType<typeof mount>, index: number) {
+  const row = wrapper.findAll('.atl-status-row')[index];
+  if (row === undefined) throw new Error(`missing row ${index}`);
+
+  const editAction = row.findAll('button').find((b) => b.attributes('title') === 'Edit name & color');
+  if (editAction === undefined) throw new Error('missing edit action');
+  await editAction.trigger('click');
+
+  return wrapper.find('.atl-status-row.editing .atl-status-rename');
+}
+
 describe('StatusTemplatesPanel', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
   });
 
-  it('renders one row per template with its name and no board picker', async () => {
+  it('renders one row per template with its name', async () => {
     setup();
 
     const wrapper = mount(StatusTemplatesPanel);
@@ -58,23 +70,9 @@ describe('StatusTemplatesPanel', () => {
     const wrapper = mount(StatusTemplatesPanel);
     await wrapper.vm.$nextTick();
 
-    const vm = wrapper.vm as unknown as {
-      startEdit: (t: { id: string; name: string; color?: string | null; position_key: string }) => void;
-      draftName: string;
-      saveEdit: (t: {
-        id: string;
-        name: string;
-        color?: string | null;
-        position_key: string;
-      }) => Promise<void>;
-    };
-
-    const target = store.templates[0];
-    if (target === undefined) throw new Error('missing template fixture');
-
-    vm.startEdit(target);
-    vm.draftName = 'Backlog';
-    await vm.saveEdit(target);
+    const nameInput = await startEditing(wrapper, 0);
+    await nameInput.setValue('Backlog');
+    await nameInput.trigger('keydown.enter');
 
     expect(update).toHaveBeenCalledWith('acme', 't1', { name: 'Backlog' });
   });
@@ -86,37 +84,33 @@ describe('StatusTemplatesPanel', () => {
     const wrapper = mount(StatusTemplatesPanel);
     await wrapper.vm.$nextTick();
 
-    const vm = wrapper.vm as unknown as {
-      startEdit: (t: { id: string; name: string; color?: string | null; position_key: string }) => void;
-      draftColor: string;
-      editingId: string | null;
-      saveEdit: (t: {
-        id: string;
-        name: string;
-        color?: string | null;
-        position_key: string;
-      }) => Promise<void>;
-    };
+    const nameInput = await startEditing(wrapper, 0);
 
-    const target = store.templates[0];
-    if (target === undefined) throw new Error('missing template fixture');
-
-    vm.startEdit(target);
-    await wrapper.vm.$nextTick();
-
-    expect(wrapper.find('.atl-status-row.editing').exists()).toBe(true);
     expect(wrapper.find('.atl-color-trigger').exists()).toBe(false);
     expect(wrapper.find('.atl-edit-picker').classes()).toContain('color-picker');
 
     const hexInput = wrapper.find('.atl-edit-picker .hex-text');
     await hexInput.setValue('#0A0B0C');
-
-    expect(vm.draftColor).toBe('#0A0B0C');
-    expect(vm.editingId).toBe('t1');
-
-    await vm.saveEdit(target);
+    await nameInput.trigger('keydown.enter');
 
     expect(update).toHaveBeenCalledWith('acme', 't1', { color: '#0A0B0C' });
+  });
+
+  it('moving a row down asks the store for the position after its next sibling', async () => {
+    const { store } = setup();
+    const move = vi.spyOn(store, 'move').mockResolvedValue(true);
+
+    const wrapper = mount(StatusTemplatesPanel);
+    await wrapper.vm.$nextTick();
+
+    const firstRow = wrapper.findAll('.atl-status-row')[0];
+    if (firstRow === undefined) throw new Error('missing first row');
+
+    const moveDown = firstRow.findAll('button').find((b) => b.attributes('title') === 'Move down');
+    if (moveDown === undefined) throw new Error('missing move-down action');
+    await moveDown.trigger('click');
+
+    expect(move).toHaveBeenCalledWith('acme', 't1', { before: 'b', after: null });
   });
 
   it('applying to the selected board calls applyToBoard', async () => {
