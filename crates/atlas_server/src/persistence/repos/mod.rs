@@ -90,6 +90,10 @@ mod status_templates;
 pub use status_templates::{
     PgStatusTemplateRepo, StatusTemplateRepo, list_templates_for_workspace,
 };
+#[allow(unreachable_pub)]
+mod platform_status_templates;
+
+pub use platform_status_templates::{PgPlatformStatusTemplateRepo, PlatformStatusTemplateRepo};
 
 pub use automation_rule::{AutomationRulePatch, PgAutomationRuleRepo};
 pub use integration_config::PgIntegrationConfigRepo;

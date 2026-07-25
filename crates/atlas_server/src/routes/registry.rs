@@ -286,6 +286,34 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         openapi_path: Some("/api/admin/audit"),
         capability: None,
     },
+    RouteEntry {
+        method: "GET",
+        path_template: "/api/admin/status-templates",
+        kind: RouteKind::AuthnRequired,
+        openapi_path: Some("/api/admin/status-templates"),
+        capability: None,
+    },
+    RouteEntry {
+        method: "POST",
+        path_template: "/api/admin/status-templates",
+        kind: RouteKind::AuthnRequired,
+        openapi_path: Some("/api/admin/status-templates"),
+        capability: None,
+    },
+    RouteEntry {
+        method: "PATCH",
+        path_template: "/api/admin/status-templates/00000000-0000-0000-0000-000000000001",
+        kind: RouteKind::AuthnRequired,
+        openapi_path: Some("/api/admin/status-templates/{template_id}"),
+        capability: None,
+    },
+    RouteEntry {
+        method: "DELETE",
+        path_template: "/api/admin/status-templates/00000000-0000-0000-0000-000000000001",
+        kind: RouteKind::AuthnRequired,
+        openapi_path: Some("/api/admin/status-templates/{template_id}"),
+        capability: None,
+    },
     // ---- Top-level API key routes (user-owned, workspace-independent; human-only) ----
     RouteEntry {
         method: "POST",

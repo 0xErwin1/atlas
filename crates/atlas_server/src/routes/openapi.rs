@@ -48,7 +48,8 @@ use atlas_api::{
         search::{SearchHitDto, SearchKindDto},
         semantic_search::{SemanticSearchHitDto, SemanticSearchKindDto, SemanticSearchSourceDto},
         status_templates::{
-            CreateStatusTemplateRequest, StatusTemplateDto, UpdateStatusTemplateRequest,
+            CreateStatusTemplateRequest, PlatformStatusTemplateDto, StatusTemplateDto,
+            UpdateStatusTemplateRequest,
         },
         tags::{CreateTagRequest, TagDto, UpdateTagRequest},
         task_views::{
@@ -232,6 +233,10 @@ use atlas_api::{
         crate::routes::status_templates::update_status_template,
         crate::routes::status_templates::delete_status_template,
         crate::routes::status_templates::apply_status_templates,
+        crate::routes::platform_status_templates::list_platform_status_templates,
+        crate::routes::platform_status_templates::create_platform_status_template,
+        crate::routes::platform_status_templates::update_platform_status_template,
+        crate::routes::platform_status_templates::delete_platform_status_template,
         crate::routes::property_definitions::list_property_definitions,
         crate::routes::property_definitions::create_property_definition,
         crate::routes::property_definitions::delete_property_definition,
@@ -373,6 +378,7 @@ use atlas_api::{
         CreateTagRequest,
         UpdateTagRequest,
         StatusTemplateDto,
+        PlatformStatusTemplateDto,
         CreateStatusTemplateRequest,
         UpdateStatusTemplateRequest,
         PropertyDefinitionDto,

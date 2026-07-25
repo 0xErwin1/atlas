@@ -61,6 +61,7 @@ define_id!(TagId);
 define_id!(SavedSearchId);
 define_id!(TaskViewId);
 define_id!(StatusTemplateId);
+define_id!(PlatformStatusTemplateId);
 define_id!(ActivationTokenId);
 define_id!(SecurityAuditId);
 define_id!(PurgeOperationId);

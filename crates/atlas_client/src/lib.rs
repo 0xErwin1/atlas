@@ -41,7 +41,8 @@ use atlas_api::{
         search::SearchHitDto,
         semantic_search::SemanticSearchHitDto,
         status_templates::{
-            CreateStatusTemplateRequest, StatusTemplateDto, UpdateStatusTemplateRequest,
+            CreateStatusTemplateRequest, PlatformStatusTemplateDto, StatusTemplateDto,
+            UpdateStatusTemplateRequest,
         },
         tags::{CreateTagRequest, TagDto, UpdateTagRequest},
         task_views::{CreateTaskViewRequest, TaskViewDto, UpdateTaskViewRequest},
@@ -2170,6 +2171,68 @@ impl AtlasClient {
             .delete(&format!(
                 "/api/workspaces/{ws}/status-templates/{template_id}"
             ))
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        if response.status().is_success() {
+            return Ok(());
+        }
+        let problem: ProblemDetails = response
+            .json()
+            .await
+            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
+        Err(ClientError::Api(problem))
+    }
+
+    // ---- Platform status templates (Atlas-wide defaults, admin-only) -------------
+
+    /// `GET /api/admin/status-templates`
+    pub async fn list_platform_status_templates(
+        &self,
+    ) -> Result<Vec<PlatformStatusTemplateDto>, ClientError> {
+        let response = self.get("/api/admin/status-templates").send().await?;
+        self.decode_response(response, "list_platform_status_templates")
+            .await
+    }
+
+    /// `POST /api/admin/status-templates`
+    pub async fn create_platform_status_template(
+        &self,
+        body: CreateStatusTemplateRequest,
+    ) -> Result<PlatformStatusTemplateDto, ClientError> {
+        let response = self
+            .post("/api/admin/status-templates")
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "create_platform_status_template")
+            .await
+    }
+
+    /// `PATCH /api/admin/status-templates/{template_id}`
+    pub async fn update_platform_status_template(
+        &self,
+        template_id: uuid::Uuid,
+        body: UpdateStatusTemplateRequest,
+    ) -> Result<PlatformStatusTemplateDto, ClientError> {
+        let response = self
+            .patch(&format!("/api/admin/status-templates/{template_id}"))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "update_platform_status_template")
+            .await
+    }
+
+    /// `DELETE /api/admin/status-templates/{template_id}`
+    pub async fn delete_platform_status_template(
+        &self,
+        template_id: uuid::Uuid,
+    ) -> Result<(), ClientError> {
+        let response = self
+            .delete(&format!("/api/admin/status-templates/{template_id}"))
             .header("x-atlas-csrf", "1")
             .send()
             .await?;

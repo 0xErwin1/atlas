@@ -223,8 +223,12 @@ async fn resequence_templates(
 
 /// Translates stale anchor keys to their post-resequence equivalents.
 ///
-/// Mirrors the `remap_anchors` helper in `boards_tasks.rs`.
-fn remap_anchors(original: &PositionBetween, remap: &[(String, String)]) -> PositionBetween {
+/// Mirrors the `remap_anchors` helper in `boards_tasks.rs`, and is shared with
+/// the platform-level template repo so the reorder semantics stay identical.
+pub(crate) fn remap_anchors(
+    original: &PositionBetween,
+    remap: &[(String, String)],
+) -> PositionBetween {
     let lookup = |old: &str| -> Vec<&String> {
         remap
             .iter()

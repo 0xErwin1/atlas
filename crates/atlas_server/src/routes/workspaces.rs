@@ -25,16 +25,19 @@ use crate::{
     error::ApiError,
     persistence::repos::{
         ApiKeyRepo, BoardRepo, MembershipRepo, PgApiKeyRepo, PgBoardRepo, PgMembershipRepo,
-        PgProjectRepo, PgStatusTemplateRepo, PgUserRepo, PgWorkspaceRepo, ProjectRepo,
-        StatusTemplateRepo, UserRepo, WorkspaceRepo,
+        PgPlatformStatusTemplateRepo, PgProjectRepo, PgStatusTemplateRepo, PgUserRepo,
+        PgWorkspaceRepo, PlatformStatusTemplateRepo, ProjectRepo, StatusTemplateRepo, UserRepo,
+        WorkspaceRepo,
     },
     routes::validation::{validate_name, validate_slug},
     state::AppState,
 };
 
-/// Status columns every new workspace starts with, in board order. The default
-/// board derives its columns from these, so a freshly created workspace has a
-/// usable kanban out of the box instead of an empty, column-less board.
+/// Fallback status columns for a new workspace, in board order, used when the
+/// Atlas-wide defaults (`/api/admin/status-templates`) are empty. The default
+/// board derives its columns from the seeded templates, so a freshly created
+/// workspace has a usable kanban out of the box instead of an empty,
+/// column-less board.
 const DEFAULT_STATUSES: &[(&str, &str)] = &[
     ("To Do", "neutral"),
     ("In Progress", "blue"),
@@ -142,23 +145,7 @@ async fn seed_default_content(
     .await
     .map_err(ApiError::Domain)?;
 
-    let template_repo = PgStatusTemplateRepo::new((*state.db).clone());
-    let mut prev_key: Option<String> = None;
-    for (name, color) in DEFAULT_STATUSES {
-        let position_key = position::between(prev_key.as_deref(), None);
-        template_repo
-            .create(
-                &ctx,
-                NewStatusTemplate {
-                    name: (*name).to_string(),
-                    color: Some((*color).to_string()),
-                    position_key: position_key.clone(),
-                },
-            )
-            .await
-            .map_err(ApiError::Domain)?;
-        prev_key = Some(position_key);
-    }
+    seed_status_templates(state, &ctx).await?;
 
     PgBoardRepo::new((*state.db).clone())
         .create_board(
@@ -171,6 +158,52 @@ async fn seed_default_content(
         )
         .await
         .map_err(ApiError::Domain)?;
+
+    Ok(())
+}
+
+/// Copies the Atlas-wide default statuses into the new workspace's own status
+/// templates, preserving their order.
+///
+/// The platform list is a seed source, not a live link: later edits to it never
+/// reach a workspace that was already created. When an admin has emptied it, the
+/// compiled `DEFAULT_STATUSES` fallback keeps every new workspace usable.
+async fn seed_status_templates(state: &AppState, ctx: &WorkspaceCtx) -> Result<(), ApiError> {
+    let platform_defaults = PgPlatformStatusTemplateRepo::new((*state.db).clone())
+        .list()
+        .await
+        .map_err(ApiError::Domain)?;
+
+    let statuses: Vec<(String, Option<String>)> = if platform_defaults.is_empty() {
+        DEFAULT_STATUSES
+            .iter()
+            .map(|(name, color)| ((*name).to_string(), Some((*color).to_string())))
+            .collect()
+    } else {
+        platform_defaults
+            .into_iter()
+            .map(|template| (template.name, template.color))
+            .collect()
+    };
+
+    let template_repo = PgStatusTemplateRepo::new((*state.db).clone());
+    let mut prev_key: Option<String> = None;
+
+    for (name, color) in statuses {
+        let position_key = position::between(prev_key.as_deref(), None);
+        template_repo
+            .create(
+                ctx,
+                NewStatusTemplate {
+                    name,
+                    color,
+                    position_key: position_key.clone(),
+                },
+            )
+            .await
+            .map_err(ApiError::Domain)?;
+        prev_key = Some(position_key);
+    }
 
     Ok(())
 }

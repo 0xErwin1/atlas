@@ -192,6 +192,183 @@
         ]
       }
     },
+    "/api/admin/status-templates": {
+      "get": {
+        "tags": [
+          "status-templates"
+        ],
+        "summary": "Lists the Atlas-wide default statuses new workspaces are seeded from.",
+        "operationId": "list_platform_status_templates",
+        "responses": {
+          "200": {
+            "description": "Atlas default statuses ordered by position",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PlatformStatusTemplateDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Admin access required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "status-templates"
+        ],
+        "summary": "Appends an Atlas-wide default status after the current last one.",
+        "description": "The `before`/`after` anchors of the shared request body are ignored here:\ncreation always appends, and reordering is a PATCH.",
+        "operationId": "create_platform_status_template",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateStatusTemplateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Atlas default status created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformStatusTemplateDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "422": {
+            "description": "Invalid input"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/status-templates/{template_id}": {
+      "delete": {
+        "tags": [
+          "status-templates"
+        ],
+        "summary": "Soft-deletes one Atlas-wide default status. Existing workspaces keep the\nstatus templates they were seeded with.",
+        "operationId": "delete_platform_status_template",
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "description": "Template ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Atlas default status soft-deleted"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "Template not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "status-templates"
+        ],
+        "summary": "Renames, recolors, and/or reorders one Atlas-wide default status.",
+        "operationId": "update_platform_status_template",
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "description": "Template ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateStatusTemplateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Atlas default status updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformStatusTemplateDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "Template not found"
+          },
+          "422": {
+            "description": "Invalid input"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/api/admin/trash": {
       "get": {
         "tags": [
@@ -12654,7 +12831,7 @@
       },
       "CreateStatusTemplateRequest": {
         "type": "object",
-        "description": "Request body for `POST /api/workspaces/{ws}/status-templates`.",
+        "description": "Request body for `POST /api/workspaces/{ws}/status-templates` and\n`POST /api/admin/status-templates`.",
         "required": [
           "name"
         ],
@@ -14734,6 +14911,43 @@
           }
         }
       },
+      "PlatformStatusTemplateDto": {
+        "type": "object",
+        "description": "Atlas-wide default status representation, returned by the\n`/api/admin/status-templates` surface. Same shape as [`StatusTemplateDto`]\nminus `workspace_id`: these rows belong to the instance, not to a tenant.",
+        "required": [
+          "id",
+          "name",
+          "position_key",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "position_key": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "PrincipalDto": {
         "type": "object",
         "description": "A principal (workspace member or agent) that a grant can be addressed to.\n\nReturned by `GET /api/workspaces/{ws}/members` so the share dialog can resolve\na human-readable name to the principal id required by a grant request.",
@@ -16275,7 +16489,7 @@
       },
       "UpdateStatusTemplateRequest": {
         "type": "object",
-        "description": "Request body for `PATCH /api/workspaces/{ws}/status-templates/{id}`.\n\n`name`: `None` = leave unchanged; `Some(v)` = rename.\n`color`: absent = leave unchanged; explicit `null` = clear; string = set.\n`before`/`after`: position anchors for reorder.",
+        "description": "Request body for `PATCH /api/workspaces/{ws}/status-templates/{id}` and\n`PATCH /api/admin/status-templates/{id}`.\n\n`name`: `None` = leave unchanged; `Some(v)` = rename.\n`color`: absent = leave unchanged; explicit `null` = clear; string = set.\n`before`/`after`: position anchors for reorder.",
         "properties": {
           "after": {
             "type": [

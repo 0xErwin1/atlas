@@ -226,6 +226,19 @@ pub fn app(state: AppState) -> Router {
         )
         // Admin security audit log (root/system_admin only)
         .route("/api/admin/audit", get(routes::audit::list_platform_audit))
+        // Atlas-wide default statuses (seed source for new workspaces)
+        .route(
+            "/api/admin/status-templates",
+            get(routes::platform_status_templates::list_platform_status_templates)
+                .post(routes::platform_status_templates::create_platform_status_template),
+        )
+        .route(
+            "/api/admin/status-templates/{template_id}",
+            axum::routing::patch(
+                routes::platform_status_templates::update_platform_status_template,
+            )
+            .delete(routes::platform_status_templates::delete_platform_status_template),
+        )
         // API keys — top-level (user-owned, workspace-independent)
         .route(
             "/api/api-keys",

@@ -17,7 +17,23 @@ pub struct StatusTemplateDto {
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
-/// Request body for `POST /api/workspaces/{ws}/status-templates`.
+/// Atlas-wide default status representation, returned by the
+/// `/api/admin/status-templates` surface. Same shape as [`StatusTemplateDto`]
+/// minus `workspace_id`: these rows belong to the instance, not to a tenant.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct PlatformStatusTemplateDto {
+    pub id: uuid::Uuid,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    pub position_key: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// Request body for `POST /api/workspaces/{ws}/status-templates` and
+/// `POST /api/admin/status-templates`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct CreateStatusTemplateRequest {
@@ -37,7 +53,8 @@ where
     serde_json::Value::deserialize(de).map(Some)
 }
 
-/// Request body for `PATCH /api/workspaces/{ws}/status-templates/{id}`.
+/// Request body for `PATCH /api/workspaces/{ws}/status-templates/{id}` and
+/// `PATCH /api/admin/status-templates/{id}`.
 ///
 /// `name`: `None` = leave unchanged; `Some(v)` = rename.
 /// `color`: absent = leave unchanged; explicit `null` = clear; string = set.
