@@ -6,6 +6,7 @@ import {
   resetPlatformTransportForTest,
   setPlatformTransport,
 } from '@/platform/transport';
+import { createBrowserPlatformTransport } from '@/platform/browser';
 
 class FakeEventSource {
   readyState = 0;
@@ -35,6 +36,10 @@ function desktopTransport(): PlatformTransport {
     setWindowDecorations: vi.fn(),
     getZoom: vi.fn(),
     setZoom: vi.fn(),
+    getStartOnLogin: vi.fn(),
+    setStartOnLogin: vi.fn(),
+    getSystemTray: vi.fn(),
+    setSystemTray: vi.fn(),
     createWorkspaceEventSource: vi.fn(() => new FakeEventSource('desktop://events')),
     readClipboardImage: vi.fn(async () => null),
     saveDownload: () => Promise.resolve({ data: { path: '/downloads/file' } }),
@@ -69,5 +74,16 @@ describe('platform transport', () => {
 
     expect(browserSource).toBeInstanceOf(FakeEventSource);
     expect((browserSource as FakeEventSource).url).toBe('/api/workspaces/acme/events');
+  });
+
+  it('returns explicit desktop-unavailable failures for desktop-only preferences in the browser', async () => {
+    const transport = createBrowserPlatformTransport();
+
+    await expect(transport.getStartOnLogin()).resolves.toEqual({
+      error: 'Start on login is available in Atlas Desktop',
+    });
+    await expect(transport.setSystemTray(true)).resolves.toEqual({
+      error: 'System tray settings are available in Atlas Desktop',
+    });
   });
 });

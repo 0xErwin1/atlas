@@ -1,11 +1,24 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getWindowDecorations, setWindowDecorations, getZoom, setZoom } = vi.hoisted(() => ({
+const {
+  getWindowDecorations,
+  setWindowDecorations,
+  getZoom,
+  setZoom,
+  getStartOnLogin,
+  setStartOnLogin,
+  getSystemTray,
+  setSystemTray,
+} = vi.hoisted(() => ({
   getWindowDecorations: vi.fn(),
   setWindowDecorations: vi.fn(),
   getZoom: vi.fn(),
   setZoom: vi.fn(),
+  getStartOnLogin: vi.fn(),
+  setStartOnLogin: vi.fn(),
+  getSystemTray: vi.fn(),
+  setSystemTray: vi.fn(),
 }));
 
 vi.mock('@/platform/transport', () => ({
@@ -19,6 +32,10 @@ vi.mock('@/platform/transport', () => ({
     setWindowDecorations,
     getZoom,
     setZoom,
+    getStartOnLogin,
+    setStartOnLogin,
+    getSystemTray,
+    setSystemTray,
   }),
 }));
 
@@ -40,10 +57,18 @@ describe('AppSettingsPanel', () => {
     setWindowDecorations.mockReset();
     getZoom.mockReset();
     setZoom.mockReset();
+    getStartOnLogin.mockReset();
+    setStartOnLogin.mockReset();
+    getSystemTray.mockReset();
+    setSystemTray.mockReset();
     getWindowDecorations.mockResolvedValue({ data: { window_decorations: true } });
     setWindowDecorations.mockResolvedValue({ data: { window_decorations: false } });
     getZoom.mockResolvedValue({ data: { window_decorations: true, zoom_factor: 1 } });
     setZoom.mockResolvedValue({ data: { window_decorations: true, zoom_factor: 1.1 } });
+    getStartOnLogin.mockResolvedValue({ data: { start_on_login: false } });
+    setStartOnLogin.mockResolvedValue({ data: { start_on_login: true } });
+    getSystemTray.mockResolvedValue({ data: { system_tray: true } });
+    setSystemTray.mockResolvedValue({ data: { system_tray: false } });
   });
 
   it('reads the stored preference on mount and marks the matching option active', async () => {
@@ -126,6 +151,61 @@ describe('AppSettingsPanel', () => {
     await flushPromises();
 
     expect(activeOptionLabel(wrapper)).toBe('Off');
+  });
+
+  it('uses the host-returned autostart and tray preferences', async () => {
+    getStartOnLogin.mockResolvedValue({ data: { start_on_login: true } });
+    getSystemTray.mockResolvedValue({ data: { system_tray: false } });
+
+    const wrapper = await mountPanel();
+
+    expect(wrapper.get('input[aria-label="Start on login"]').element.checked).toBe(true);
+    expect(wrapper.get('input[aria-label="Show system tray icon"]').element.checked).toBe(false);
+  });
+
+  it('keeps the autostart checkbox checked and shows the host error when writing fails', async () => {
+    getStartOnLogin.mockResolvedValue({ data: { start_on_login: true } });
+    setStartOnLogin.mockResolvedValue({ error: 'Unable to disable login launch' });
+
+    const wrapper = await mountPanel();
+    await wrapper.get('input[aria-label="Start on login"]').setChecked(false);
+    await flushPromises();
+
+    expect(wrapper.get('input[aria-label="Start on login"]').element.checked).toBe(true);
+    expect(wrapper.text()).toContain('Unable to disable login launch');
+  });
+
+  it('disables desktop preference controls while a write is pending', async () => {
+    let resolveWrite: ((value: { data: { start_on_login: boolean } }) => void) | undefined;
+    setStartOnLogin.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveWrite = resolve;
+        }),
+    );
+
+    const wrapper = await mountPanel();
+    await wrapper.get('input[aria-label="Start on login"]').setChecked(true);
+
+    expect(wrapper.get('input[aria-label="Start on login"]').attributes('disabled')).toBeDefined();
+    expect(wrapper.get('input[aria-label="Show system tray icon"]').attributes('disabled')).toBeDefined();
+
+    resolveWrite?.({ data: { start_on_login: true } });
+    await flushPromises();
+
+    expect(wrapper.get('input[aria-label="Start on login"]').attributes('disabled')).toBeUndefined();
+  });
+
+  it('uses the host-returned tray value and explains that restarting is required', async () => {
+    setSystemTray.mockResolvedValue({ data: { system_tray: true } });
+
+    const wrapper = await mountPanel();
+    await wrapper.get('input[aria-label="Show system tray icon"]').setChecked(false);
+    await flushPromises();
+
+    expect(setSystemTray).toHaveBeenCalledWith(false);
+    expect(wrapper.get('input[aria-label="Show system tray icon"]').element.checked).toBe(true);
+    expect(wrapper.text()).toContain('Restart Atlas Desktop to apply this change.');
   });
 
   it('reflects the stored zoom factor on mount', async () => {

@@ -10,6 +10,8 @@ export interface DesktopConfiguration {
 export interface DesktopPreferences {
   window_decorations: boolean;
   zoom_factor: number;
+  start_on_login: boolean;
+  system_tray: boolean;
 }
 
 export const DEFAULT_ZOOM_FACTOR = 1.0;
@@ -43,6 +45,10 @@ export interface PlatformTransport {
   setWindowDecorations: (decorations: boolean) => Promise<PlatformResult<DesktopPreferences>>;
   getZoom: () => Promise<PlatformResult<DesktopPreferences>>;
   setZoom: (zoomFactor: number) => Promise<PlatformResult<DesktopPreferences>>;
+  getStartOnLogin: () => Promise<PlatformResult<DesktopPreferences>>;
+  setStartOnLogin: (startOnLogin: boolean) => Promise<PlatformResult<DesktopPreferences>>;
+  getSystemTray: () => Promise<PlatformResult<DesktopPreferences>>;
+  setSystemTray: (systemTray: boolean) => Promise<PlatformResult<DesktopPreferences>>;
   createWorkspaceEventSource: (workspaceSlug: string) => WorkspaceEventSource;
   /**
    * Reads an image off the native clipboard, or resolves to `null` when the

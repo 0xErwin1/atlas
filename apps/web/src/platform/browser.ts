@@ -34,6 +34,18 @@ export function createBrowserPlatformTransport(): PlatformTransport {
     setZoom() {
       return Promise.resolve({ error: 'Zoom is available in Atlas Desktop' });
     },
+    getStartOnLogin() {
+      return Promise.resolve({ error: 'Start on login is available in Atlas Desktop' });
+    },
+    setStartOnLogin() {
+      return Promise.resolve({ error: 'Start on login is available in Atlas Desktop' });
+    },
+    getSystemTray() {
+      return Promise.resolve({ error: 'System tray settings are available in Atlas Desktop' });
+    },
+    setSystemTray() {
+      return Promise.resolve({ error: 'System tray settings are available in Atlas Desktop' });
+    },
     createWorkspaceEventSource(workspaceSlug) {
       return new EventSource(`/api/workspaces/${workspaceSlug}/events`);
     },

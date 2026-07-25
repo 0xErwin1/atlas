@@ -134,12 +134,30 @@ function platformTransport(
     logout: async () => ({}),
     getOrigin: async () => ({ data: { origin: 'https://atlas.test' } }),
     setOrigin: async (origin) => ({ data: { origin } }),
-    getWindowDecorations: async () => ({ data: { window_decorations: true, zoom_factor: 1 } }),
-    setWindowDecorations: async (decorations) => ({
-      data: { window_decorations: decorations, zoom_factor: 1 },
+    getWindowDecorations: async () => ({
+      data: { window_decorations: true, zoom_factor: 1, start_on_login: false, system_tray: true },
     }),
-    getZoom: async () => ({ data: { window_decorations: true, zoom_factor: 1 } }),
-    setZoom: async (zoomFactor) => ({ data: { window_decorations: true, zoom_factor: zoomFactor } }),
+    setWindowDecorations: async (decorations) => ({
+      data: { window_decorations: decorations, zoom_factor: 1, start_on_login: false, system_tray: true },
+    }),
+    getZoom: async () => ({
+      data: { window_decorations: true, zoom_factor: 1, start_on_login: false, system_tray: true },
+    }),
+    setZoom: async (zoomFactor) => ({
+      data: { window_decorations: true, zoom_factor: zoomFactor, start_on_login: false, system_tray: true },
+    }),
+    getStartOnLogin: async () => ({
+      data: { window_decorations: true, zoom_factor: 1, start_on_login: false, system_tray: true },
+    }),
+    setStartOnLogin: async (startOnLogin) => ({
+      data: { window_decorations: true, zoom_factor: 1, start_on_login: startOnLogin, system_tray: true },
+    }),
+    getSystemTray: async () => ({
+      data: { window_decorations: true, zoom_factor: 1, start_on_login: false, system_tray: true },
+    }),
+    setSystemTray: async (systemTray) => ({
+      data: { window_decorations: true, zoom_factor: 1, start_on_login: false, system_tray: systemTray },
+    }),
     createWorkspaceEventSource,
     readClipboardImage: async () => null,
     saveDownload: () => Promise.resolve({ data: { path: '/downloads/file' } }),

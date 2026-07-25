@@ -336,6 +336,20 @@ export function createDesktopPlatformTransport(bridge: DesktopBridge = desktopBr
     setZoom(zoomFactor) {
       return bridge.invoke<PlatformResult<DesktopPreferences>>('desktop_set_zoom', { zoomFactor });
     },
+    getStartOnLogin() {
+      return bridge.invoke<PlatformResult<DesktopPreferences>>('desktop_get_start_on_login');
+    },
+    setStartOnLogin(startOnLogin) {
+      return bridge.invoke<PlatformResult<DesktopPreferences>>('desktop_set_start_on_login', {
+        startOnLogin,
+      });
+    },
+    getSystemTray() {
+      return bridge.invoke<PlatformResult<DesktopPreferences>>('desktop_get_system_tray');
+    },
+    setSystemTray(systemTray) {
+      return bridge.invoke<PlatformResult<DesktopPreferences>>('desktop_set_system_tray', { systemTray });
+    },
     createWorkspaceEventSource(workspaceSlug) {
       return new DesktopWorkspaceEventSource(bridge, workspaceSlug);
     },

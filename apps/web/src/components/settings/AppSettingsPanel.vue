@@ -13,10 +13,9 @@ import {
 } from '@/platform/transport';
 
 /**
- * Desktop > App settings. Exposes the machine-local window-decorations and zoom
- * preferences. The stored value is the source of truth: each control only ever
- * reflects what the host reported back, so a rejected change leaves the window
- * and the control in agreement.
+ * Desktop > App settings. The stored value is the source of truth: each control
+ * only reflects what the host reported back, so a rejected change leaves the
+ * control in agreement with the host.
  */
 
 const DECORATIONS_ON = 'on';
@@ -31,8 +30,11 @@ const transport = getPlatformTransport();
 
 const decorations = ref(true);
 const zoom = ref(DEFAULT_ZOOM_FACTOR);
+const startOnLogin = ref(false);
+const systemTray = ref(true);
 const error = ref<string | null>(null);
 const saving = ref(false);
+const trayRestartRequired = ref(false);
 
 const selected = computed(() => (decorations.value ? DECORATIONS_ON : DECORATIONS_OFF));
 
@@ -43,6 +45,8 @@ const canResetZoom = computed(() => zoom.value !== DEFAULT_ZOOM_FACTOR);
 
 const FALLBACK_ERROR = 'Unable to change the window decorations';
 const ZOOM_FALLBACK_ERROR = 'Unable to change the zoom level';
+const START_ON_LOGIN_FALLBACK_ERROR = 'Unable to change the start on login setting';
+const SYSTEM_TRAY_FALLBACK_ERROR = 'Unable to change the system tray setting';
 
 void transport
   .getWindowDecorations()
@@ -60,6 +64,24 @@ void transport
   })
   .catch(() => {
     zoom.value = DEFAULT_ZOOM_FACTOR;
+  });
+
+void transport
+  .getStartOnLogin()
+  .then((result) => {
+    if (result.data !== undefined) startOnLogin.value = result.data.start_on_login;
+  })
+  .catch(() => {
+    startOnLogin.value = false;
+  });
+
+void transport
+  .getSystemTray()
+  .then((result) => {
+    if (result.data !== undefined) systemTray.value = result.data.system_tray;
+  })
+  .catch(() => {
+    systemTray.value = true;
   });
 
 async function selectDecorations(value: string): Promise<void> {
@@ -123,6 +145,63 @@ function zoomOut(): void {
 function resetZoom(): void {
   void applyZoom(DEFAULT_ZOOM_FACTOR);
 }
+
+function checked(event: Event): boolean | null {
+  return event.target instanceof HTMLInputElement ? event.target.checked : null;
+}
+
+function restoreChecked(event: Event, value: boolean): void {
+  if (event.target instanceof HTMLInputElement) event.target.checked = value;
+}
+
+async function updateStartOnLogin(event: Event): Promise<void> {
+  const next = checked(event);
+  if (next === null || next === startOnLogin.value || saving.value) return;
+
+  error.value = null;
+  saving.value = true;
+
+  try {
+    const result = await transport.setStartOnLogin(next);
+
+    if (result.error || result.data === undefined) {
+      error.value = typeof result.error === 'string' ? result.error : START_ON_LOGIN_FALLBACK_ERROR;
+      return;
+    }
+
+    startOnLogin.value = result.data.start_on_login;
+  } catch {
+    error.value = START_ON_LOGIN_FALLBACK_ERROR;
+  } finally {
+    restoreChecked(event, startOnLogin.value);
+    saving.value = false;
+  }
+}
+
+async function updateSystemTray(event: Event): Promise<void> {
+  const next = checked(event);
+  if (next === null || next === systemTray.value || saving.value) return;
+
+  error.value = null;
+  saving.value = true;
+
+  try {
+    const result = await transport.setSystemTray(next);
+
+    if (result.error || result.data === undefined) {
+      error.value = typeof result.error === 'string' ? result.error : SYSTEM_TRAY_FALLBACK_ERROR;
+      return;
+    }
+
+    systemTray.value = result.data.system_tray;
+    trayRestartRequired.value = true;
+  } catch {
+    error.value = SYSTEM_TRAY_FALLBACK_ERROR;
+  } finally {
+    restoreChecked(event, systemTray.value);
+    saving.value = false;
+  }
+}
 </script>
 
 <template>
@@ -143,6 +222,35 @@ function resetZoom(): void {
         :model-value="selected"
         :options="DECORATION_OPTIONS"
         @update:model-value="selectDecorations"
+      />
+    </div>
+
+    <div class="atl-pref-row">
+      <div class="atl-pref-text">
+        <div class="atl-pref-label">Start on login</div>
+        <div class="atl-pref-hint">Launch Atlas Desktop when you sign in to this machine.</div>
+      </div>
+      <input
+        aria-label="Start on login"
+        type="checkbox"
+        :checked="startOnLogin"
+        :disabled="saving"
+        @change="updateStartOnLogin"
+      />
+    </div>
+
+    <div class="atl-pref-row">
+      <div class="atl-pref-text">
+        <div class="atl-pref-label">Show system tray icon</div>
+        <div class="atl-pref-hint">Keep Atlas Desktop available from the system tray.</div>
+        <div v-if="trayRestartRequired" class="atl-pref-hint">Restart Atlas Desktop to apply this change.</div>
+      </div>
+      <input
+        aria-label="Show system tray icon"
+        type="checkbox"
+        :checked="systemTray"
+        :disabled="saving"
+        @change="updateSystemTray"
       />
     </div>
 

@@ -184,3 +184,25 @@ describe('DesktopWorkspaceEventSource', () => {
     expect(currentNativeGeneration).toBe(2);
   });
 });
+
+describe('desktop preference transport', () => {
+  it('uses the desktop preference command names and camel-case argument keys', async () => {
+    const invoke = vi.fn(async (): Promise<unknown> => ({ data: {} }));
+    const listen = vi.fn(async (): Promise<() => void> => () => {});
+    const bridge: DesktopBridge = {
+      invoke: invoke as DesktopBridge['invoke'],
+      listen: listen as DesktopBridge['listen'],
+    };
+    const transport = createDesktopPlatformTransport(bridge);
+
+    await transport.getStartOnLogin();
+    await transport.setStartOnLogin(true);
+    await transport.getSystemTray();
+    await transport.setSystemTray(false);
+
+    expect(invoke).toHaveBeenCalledWith('desktop_get_start_on_login');
+    expect(invoke).toHaveBeenCalledWith('desktop_set_start_on_login', { startOnLogin: true });
+    expect(invoke).toHaveBeenCalledWith('desktop_get_system_tray');
+    expect(invoke).toHaveBeenCalledWith('desktop_set_system_tray', { systemTray: false });
+  });
+});

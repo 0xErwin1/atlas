@@ -3,7 +3,8 @@ import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { nextTick } from 'vue';
 
-const { isDesktop, push, replace, routeParams } = vi.hoisted(() => ({
+const { getStartOnLogin, isDesktop, push, replace, routeParams } = vi.hoisted(() => ({
+  getStartOnLogin: vi.fn(),
   isDesktop: { value: false },
   push: vi.fn(),
   replace: vi.fn(),
@@ -16,7 +17,7 @@ vi.mock('vue-router', () => ({
 }));
 
 vi.mock('@/platform/transport', () => ({
-  getPlatformTransport: () => ({ isDesktop: isDesktop.value }),
+  getPlatformTransport: () => ({ isDesktop: isDesktop.value, getStartOnLogin }),
 }));
 
 import { type MeResponse, useAuthStore } from '@/stores/auth';
@@ -71,6 +72,7 @@ describe('SettingsView routing', () => {
     isDesktop.value = false;
     push.mockClear();
     replace.mockClear();
+    getStartOnLogin.mockClear();
   });
 
   it('renders the Account panel for the account section', () => {
@@ -289,6 +291,7 @@ describe('SettingsView routing', () => {
 
     expect(wrapper.find('[data-settings-row="app"]').exists()).toBe(false);
     expect(wrapper.find('[data-stub="app"]').exists()).toBe(false);
+    expect(getStartOnLogin).not.toHaveBeenCalled();
   });
 
   it('redirects the web build away from the app settings section reached via URL', () => {
