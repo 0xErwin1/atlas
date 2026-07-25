@@ -3,9 +3,10 @@ use atlas_desktop::{
     DesktopApiRequest, DesktopConfiguration, DesktopError, DesktopPreferences, DesktopSession,
     LifecycleAction, ReqwestTransportFactory, SecretServiceStore, SessionScope, StreamFrame,
     StreamTermination, SurfaceableWindow, TransportFactory, TransportKind,
-    classify_workspace_stream_terminal, clear_active_identity, close_behavior,
-    load_active_identity, process_workspace_sse_chunk, sanitize_download_file_name,
-    store_active_identity, surface_existing_window, unique_download_path,
+    classify_workspace_stream_terminal, clear_active_identity, close_behavior, default_log_filter,
+    desktop_state_directory_from, install_file_logging, load_active_identity,
+    process_workspace_sse_chunk, sanitize_download_file_name, store_active_identity,
+    surface_existing_window, unique_download_path,
 };
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -1504,6 +1505,15 @@ fn load_desktop_origin(directory: &std::path::Path) -> Result<String, DesktopErr
     }
 }
 
+/// The XDG state directory for desktop logs, or `None` when neither
+/// `XDG_STATE_HOME` nor `HOME` is set.
+fn desktop_state_directory() -> Option<PathBuf> {
+    desktop_state_directory_from(
+        env::var_os("XDG_STATE_HOME").as_deref(),
+        env::var_os("HOME").as_deref(),
+    )
+}
+
 fn desktop_configuration_directory() -> Result<PathBuf, DesktopError> {
     if let Some(directory) = env::var_os("XDG_CONFIG_HOME") {
         return Ok(PathBuf::from(directory).join("atlas-desktop"));
@@ -1546,13 +1556,19 @@ fn ensure_valid_screen_resolution() {
 
 #[allow(dead_code)]
 fn main() {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info,atlas_desktop=debug".into()),
-        )
-        .with_target(true)
-        .init();
+    // Held for the life of the process: dropping the guard stops the appender's
+    // worker thread and the file logs end silently.
+    let _log_guard = desktop_state_directory()
+        .as_deref()
+        .and_then(install_file_logging);
+
+    if _log_guard.is_none() {
+        tracing_subscriber::fmt()
+            .with_env_filter(default_log_filter())
+            .with_target(true)
+            .init();
+        tracing::warn!("desktop logs could not be written to a file; using stderr only");
+    }
 
     #[cfg(target_os = "linux")]
     ensure_valid_screen_resolution();

@@ -1382,3 +1382,83 @@ pub fn close_behavior(tray_available: bool) -> CloseBehavior {
         CloseBehavior::Exit
     }
 }
+
+/// The subscriber filter, honouring `RUST_LOG` and falling back to the level the
+/// host has always used.
+pub fn default_log_filter() -> tracing_subscriber::EnvFilter {
+    tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| "info,atlas_desktop=debug".into())
+}
+
+/// Days of rotated logs kept on disk. Enough to cover a report of "it broke over
+/// the weekend" without letting a chatty install grow without bound.
+pub const LOG_RETENTION_DAYS: usize = 7;
+
+/// Resolves the XDG state directory for desktop logs. The environment values are
+/// passed in rather than read here so the resolution is testable without mutating
+/// the process environment.
+pub fn desktop_state_directory_from(
+    xdg_state_home: Option<&std::ffi::OsStr>,
+    home: Option<&std::ffi::OsStr>,
+) -> Option<std::path::PathBuf> {
+    if let Some(directory) = xdg_state_home {
+        return Some(std::path::PathBuf::from(directory).join("atlas-desktop"));
+    }
+
+    home.map(|home| {
+        std::path::PathBuf::from(home)
+            .join(".local")
+            .join("state")
+            .join("atlas-desktop")
+    })
+}
+
+/// Starts writing logs to a rotating file in `directory`, returning the worker
+/// guard that must stay alive for the life of the process.
+///
+/// A GUI launched from a desktop menu has no stderr, which left production
+/// failures undiagnosable. The directory is created private to the user: log
+/// lines carry request paths and workspace slugs, which are not secrets but are
+/// nobody else's business on a shared machine.
+///
+/// Returns `None` when the directory cannot be prepared, leaving the process to
+/// run with stderr logging only rather than refusing to start.
+pub fn install_file_logging(
+    directory: &Path,
+) -> Option<tracing_appender::non_blocking::WorkerGuard> {
+    fs::create_dir_all(directory).ok()?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(directory, fs::Permissions::from_mode(0o700));
+    }
+
+    let appender = tracing_appender::rolling::Builder::new()
+        .rotation(tracing_appender::rolling::Rotation::DAILY)
+        .filename_prefix("atlas-desktop.log")
+        .max_log_files(LOG_RETENTION_DAYS)
+        .build(directory)
+        .ok()?;
+
+    let (writer, guard) = tracing_appender::non_blocking(appender);
+
+    use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::util::SubscriberInitExt;
+
+    // The stderr layer is kept alongside the file: it costs nothing when the
+    // process has no terminal and stays useful when run from a shell in dev.
+    tracing_subscriber::registry()
+        .with(default_log_filter())
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_target(true)
+                .with_writer(writer)
+                .with_ansi(false),
+        )
+        .with(tracing_subscriber::fmt::layer().with_target(true))
+        .try_init()
+        .ok();
+
+    Some(guard)
+}

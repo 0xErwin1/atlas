@@ -100,7 +100,7 @@ http = "1"
 tempfile           = "3"
 url                = "2"
 tracing            = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "registry"] }
 anyhow             = "1"
 async-trait        = "0.1"
 schemars           = "0.8"

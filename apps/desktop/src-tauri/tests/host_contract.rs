@@ -5,8 +5,9 @@ use atlas_desktop::{
     InMemorySecretStore, Lifecycle, LifecycleAction, SecretStore, SessionScope, SessionState,
     StreamFrame, StreamTermination, SurfaceableWindow, TransportKind, WorkspaceEvent,
     build_authenticated_api_request, build_authenticated_request,
-    classify_workspace_stream_terminal, close_behavior, process_workspace_sse_chunk,
-    sanitize_download_file_name, surface_existing_window, unique_download_path,
+    classify_workspace_stream_terminal, close_behavior, desktop_state_directory_from,
+    install_file_logging, process_workspace_sse_chunk, sanitize_download_file_name,
+    surface_existing_window, unique_download_path,
 };
 use std::{
     fs,
@@ -977,4 +978,68 @@ fn the_tray_and_autostart_are_wired_into_startup() {
     assert!(source.contains("tauri_plugin_autostart::init("));
     assert!(source.contains("TrayIconBuilder::"));
     assert!(source.contains("close_behavior("));
+}
+
+#[test]
+fn the_state_directory_prefers_xdg_state_home_over_the_home_fallback() {
+    assert_eq!(
+        desktop_state_directory_from(Some("/xdg/state".as_ref()), Some("/home/u".as_ref())),
+        Some(std::path::PathBuf::from("/xdg/state/atlas-desktop"))
+    );
+    assert_eq!(
+        desktop_state_directory_from(None, Some("/home/u".as_ref())),
+        Some(std::path::PathBuf::from(
+            "/home/u/.local/state/atlas-desktop"
+        ))
+    );
+    assert_eq!(desktop_state_directory_from(None, None), None);
+}
+
+#[test]
+fn logs_land_in_the_state_directory_which_only_the_user_can_read() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let directory = std::env::temp_dir().join(format!("atlas-log-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&directory);
+
+    let guard = install_file_logging(&directory).expect("file logging is installed");
+    tracing::info!("desktop log line");
+    drop(guard);
+
+    let mode = fs::metadata(&directory)
+        .expect("the state directory exists")
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(mode, 0o700, "the log directory must not be world readable");
+
+    let logs: Vec<_> = fs::read_dir(&directory)
+        .expect("the state directory is readable")
+        .filter_map(Result::ok)
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(logs.len(), 1, "one rotating log file, found {logs:?}");
+    assert!(
+        logs.first()
+            .is_some_and(|name| name.starts_with("atlas-desktop.log")),
+        "unexpected log name {logs:?}"
+    );
+
+    fs::remove_dir_all(&directory).expect("the temporary state directory is removed");
+}
+
+#[test]
+fn file_logging_is_installed_before_the_host_can_fail() {
+    let source = include_str!("../src/main.rs");
+    let install = source
+        .find("install_file_logging")
+        .expect("startup installs file logging");
+    let start = source
+        .find("run_with_client(client);")
+        .expect("desktop startup remains wired");
+
+    assert!(install < start);
+    // The appender writes from a worker thread; dropping its guard silently stops
+    // the file logs, so startup must hold it for the life of the process.
+    assert!(source.contains("let _log_guard ="));
 }
