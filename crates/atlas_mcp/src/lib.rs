@@ -55,15 +55,15 @@ use response::{
     project_assignee, project_attachment, project_audit_entry, project_backlink,
     project_board_summary, project_checklist_item, project_column, project_comment,
     project_comment_attachment, project_comment_feed_entry, project_document_compact,
-    project_document_full, project_document_summary, project_folder, project_principal,
-    project_project, project_promotion, project_reference, project_revision_content,
-    project_revision_meta, project_saved_search, project_search_hit, project_semantic_search_hit,
-    project_status_template, project_tag, project_task_attachment, project_task_backlink,
-    project_task_compact, project_task_full, project_task_row, project_task_view, project_webhook,
-    project_webhook_created, project_webhook_delivery, project_workspace,
-    project_workspace_activity_entry, require_confirm, resolve_column_id_on_board,
-    validate_assignee_type, validate_estimate, validate_estimate_value, validate_priority,
-    validate_reference_kind, validate_single_target, wrap_vec,
+    project_document_full, project_document_summary, project_folder,
+    project_platform_status_template, project_principal, project_project, project_promotion,
+    project_reference, project_revision_content, project_revision_meta, project_saved_search,
+    project_search_hit, project_semantic_search_hit, project_status_template, project_tag,
+    project_task_attachment, project_task_backlink, project_task_compact, project_task_full,
+    project_task_row, project_task_view, project_webhook, project_webhook_created,
+    project_webhook_delivery, project_workspace, project_workspace_activity_entry, require_confirm,
+    resolve_column_id_on_board, validate_assignee_type, validate_estimate, validate_estimate_value,
+    validate_priority, validate_reference_kind, validate_single_target, wrap_vec,
 };
 
 const ATLAS_INSTRUCTIONS: &str = "\
@@ -98,6 +98,10 @@ Tools by area (see each tool's own description for parameters):\n\
 `list_workspace_activity`, `list_document_history`, `get_document_revision`, \
 `list_attachments`, `list_task_attachments`, `get_task_attachment`.\n\
 - Security audit (owner/admin only): `get_workspace_audit`, `get_platform_audit`.\n\
+- Atlas-wide default statuses (root/system-admin session only; API keys receive 403): \
+`list_platform_status_templates`, `create_platform_status_template`, \
+`update_platform_status_template`, `delete_platform_status_template`. These seed newly \
+created workspaces; existing workspaces are never retro-updated.\n\
 - Task writes: `create_task`, `update_task`, `move_task`, `delete_task`, \
 `add_task_assignee`, `remove_task_assignee`, `add_comment`, `update_comment`, \
 `delete_comment`.\n\
@@ -1553,6 +1557,42 @@ pub struct DeleteStatusTemplateParams {
     /// Workspace slug.
     pub workspace: String,
     /// UUID of the status template to delete.
+    pub id: String,
+}
+
+/// Parameters accepted by the `create_platform_status_template` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CreatePlatformStatusTemplateParams {
+    /// Default status name.
+    pub name: String,
+    /// Optional color swatch identifier.
+    #[serde(default)]
+    pub color: Option<String>,
+}
+
+/// Parameters accepted by the `update_platform_status_template` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct UpdatePlatformStatusTemplateParams {
+    /// UUID of the default status to update.
+    pub id: String,
+    /// New name. Omit to leave unchanged.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// Color swatch. Omit to leave unchanged. Pass JSON null to clear.
+    #[serde(default, deserialize_with = "present_value")]
+    pub color: Option<serde_json::Value>,
+    /// Reorder: insert before this position key.
+    #[serde(default)]
+    pub before: Option<String>,
+    /// Reorder: insert after this position key.
+    #[serde(default)]
+    pub after: Option<String>,
+}
+
+/// Parameters accepted by the `delete_platform_status_template` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DeletePlatformStatusTemplateParams {
+    /// UUID of the default status to delete.
     pub id: String,
 }
 
@@ -4061,6 +4101,120 @@ response — do NOT create those columns again; only add columns for statuses th
     }
 
     // -----------------------------------------------------------------------
+    // Platform status template CRUD (Atlas-wide defaults, admin session only)
+    // -----------------------------------------------------------------------
+
+    #[tool(
+        description = "List the Atlas-wide default statuses new workspaces are seeded from. \
+        Requires a root/system-admin session token; API keys receive 403."
+    )]
+    async fn list_platform_status_templates(
+        &self,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
+        let templates = client
+            .list_platform_status_templates()
+            .await
+            .map_err(|e| enrich_client_error(e, "list_platform_status_templates"))?;
+
+        let result: Vec<_> = templates
+            .into_iter()
+            .map(project_platform_status_template)
+            .collect();
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "Create an Atlas-wide default status, appended last. \
+        Affects workspaces created afterwards, never existing ones. \
+        Requires a root/system-admin session token; API keys receive 403.")]
+    async fn create_platform_status_template(
+        &self,
+        Parameters(params): Parameters<CreatePlatformStatusTemplateParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
+        let body = CreateStatusTemplateRequest {
+            name: params.name,
+            color: params.color,
+            before: None,
+            after: None,
+        };
+
+        let template = client
+            .create_platform_status_template(body)
+            .await
+            .map_err(|e| enrich_client_error(e, "create_platform_status_template"))?;
+
+        let result = project_platform_status_template(template);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Update an Atlas-wide default status (rename, recolor, reorder). \
+        color accepts null to clear. \
+        Requires a root/system-admin session token; API keys receive 403."
+    )]
+    async fn update_platform_status_template(
+        &self,
+        Parameters(params): Parameters<UpdatePlatformStatusTemplateParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
+        let id: uuid::Uuid = params
+            .id
+            .parse()
+            .map_err(|_| format!("invalid UUID for id: '{}'", params.id))?;
+
+        let color = map_present_value(params.color.as_ref(), None)?;
+
+        let body = UpdateStatusTemplateRequest {
+            name: params.name,
+            color,
+            before: params.before,
+            after: params.after,
+        };
+
+        let template = client
+            .update_platform_status_template(id, body)
+            .await
+            .map_err(|e| enrich_client_error(e, "update_platform_status_template"))?;
+
+        let result = project_platform_status_template(template);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Delete an Atlas-wide default status. Plain delete, no confirm required. \
+        Existing workspaces keep the statuses they were seeded with. \
+        Requires a root/system-admin session token; API keys receive 403. \
+        Returns {deleted: true, id}."
+    )]
+    async fn delete_platform_status_template(
+        &self,
+        Parameters(params): Parameters<DeletePlatformStatusTemplateParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
+        let id: uuid::Uuid = params
+            .id
+            .parse()
+            .map_err(|_| format!("invalid UUID for id: '{}'", params.id))?;
+
+        client
+            .delete_platform_status_template(id)
+            .await
+            .map_err(|e| enrich_client_error(e, "delete_platform_status_template"))?;
+
+        let result = serde_json::json!({ "deleted": true, "id": id });
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    // -----------------------------------------------------------------------
     // Saved search CRUD
     //
     // Gated server-side by the `saved_searches:{read,create,update,delete}`
@@ -4935,6 +5089,22 @@ mod tests {
     }
 
     #[test]
+    fn platform_status_template_tools_are_registered() {
+        let router = AtlasMcp::tool_router();
+        for name in [
+            "list_platform_status_templates",
+            "create_platform_status_template",
+            "update_platform_status_template",
+            "delete_platform_status_template",
+        ] {
+            assert!(
+                router.has_route(name),
+                "expected MCP tool `{name}` to be registered"
+            );
+        }
+    }
+
+    #[test]
     fn semantic_search_tool_is_registered() {
         let router = AtlasMcp::tool_router();
         assert!(
@@ -5535,6 +5705,10 @@ mod tests {
             "instructions must mention get_platform_audit"
         );
         assert!(
+            instructions.contains("`list_platform_status_templates`"),
+            "instructions must mention list_platform_status_templates"
+        );
+        assert!(
             instructions.contains("`list_comments`"),
             "instructions must mention list_comments"
         );
@@ -6124,6 +6298,42 @@ mod tests {
     fn delete_status_template_params_deserializes() {
         let json = r#"{"workspace":"acme","id":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234"}"#;
         let params: DeleteStatusTemplateParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.id, "018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234");
+    }
+
+    #[test]
+    fn create_platform_status_template_params_need_no_workspace() {
+        let json = r#"{"name":"Blocked","color":"red"}"#;
+        let params: CreatePlatformStatusTemplateParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.name, "Blocked");
+        assert_eq!(params.color.as_deref(), Some("red"));
+    }
+
+    #[test]
+    fn update_platform_status_template_color_null_clears() {
+        let json = r#"{"id":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234","color":null}"#;
+        let params: UpdatePlatformStatusTemplateParams = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            params.color,
+            Some(serde_json::Value::Null),
+            "explicit null must be Some(Null) to signal clear"
+        );
+    }
+
+    #[test]
+    fn update_platform_status_template_color_absent_is_none() {
+        let json = r#"{"id":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234","name":"Done"}"#;
+        let params: UpdatePlatformStatusTemplateParams = serde_json::from_str(json).unwrap();
+        assert!(
+            params.color.is_none(),
+            "absent color must be None (leave unchanged)"
+        );
+    }
+
+    #[test]
+    fn delete_platform_status_template_params_deserializes() {
+        let json = r#"{"id":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234"}"#;
+        let params: DeletePlatformStatusTemplateParams = serde_json::from_str(json).unwrap();
         assert_eq!(params.id, "018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234");
     }
 

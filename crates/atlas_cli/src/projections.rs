@@ -23,7 +23,7 @@ use atlas_api::dtos::groups::{GroupDto, GroupMemberDto};
 use atlas_api::dtos::property_definitions::PropertyDefinitionDto;
 use atlas_api::dtos::saved_searches::SavedSearchDto;
 use atlas_api::dtos::search::{SearchHitDto, SearchKindDto};
-use atlas_api::dtos::status_templates::StatusTemplateDto;
+use atlas_api::dtos::status_templates::{PlatformStatusTemplateDto, StatusTemplateDto};
 use atlas_api::dtos::tags::TagDto;
 use atlas_api::dtos::task_views::{TaskViewDto, TaskViewFiltersDto};
 use atlas_api::dtos::{
@@ -1876,6 +1876,46 @@ impl From<StatusTemplateDto> for StatusTemplateProjection {
 }
 
 impl TableRow for StatusTemplateProjection {
+    fn headers() -> &'static [&'static str] {
+        &["ID", "Name", "Color", "Position", "Updated At"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        vec![
+            self.id.to_string(),
+            self.name.clone(),
+            self.color.clone().unwrap_or_default(),
+            self.position_key.clone(),
+            self.updated_at.format("%Y-%m-%d").to_string(),
+        ]
+    }
+}
+
+/// Atlas-wide default status projection, mirroring `StatusTemplateProjection`
+/// (the wire DTO simply has no `workspace_id` to drop).
+#[derive(Debug, Serialize)]
+pub(crate) struct PlatformStatusTemplateProjection {
+    pub(crate) id: Uuid,
+    pub(crate) name: String,
+    pub(crate) position_key: String,
+    pub(crate) updated_at: DateTime<Utc>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) color: Option<String>,
+}
+
+impl From<PlatformStatusTemplateDto> for PlatformStatusTemplateProjection {
+    fn from(t: PlatformStatusTemplateDto) -> Self {
+        Self {
+            id: t.id,
+            name: t.name,
+            position_key: t.position_key,
+            updated_at: t.updated_at,
+            color: t.color,
+        }
+    }
+}
+
+impl TableRow for PlatformStatusTemplateProjection {
     fn headers() -> &'static [&'static str] {
         &["ID", "Name", "Color", "Position", "Updated At"]
     }

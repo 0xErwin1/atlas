@@ -16,6 +16,7 @@ use crate::commands::grants::GrantsArgs;
 use crate::commands::groups::GroupsArgs;
 use crate::commands::import::ImportArgs;
 use crate::commands::members::MembersArgs;
+use crate::commands::platform_status_templates::PlatformStatusTemplatesArgs;
 use crate::commands::projects::ProjectsArgs;
 use crate::commands::property_definitions::PropertyDefinitionsArgs;
 use crate::commands::saved_searches::SavedSearchesArgs;
@@ -98,6 +99,8 @@ pub(crate) enum Commands {
     Groups(GroupsArgs),
     /// Manage workspace status templates (list, create, update, delete, apply).
     StatusTemplates(StatusTemplatesArgs),
+    /// Manage the Atlas-wide default statuses new workspaces are seeded from (admin; list, create, update, delete).
+    PlatformStatusTemplates(PlatformStatusTemplatesArgs),
     /// Manage workspace saved searches (list, create, rename, delete).
     SavedSearches(SavedSearchesArgs),
     /// Manage workspace task views (list, get, create, update, delete).

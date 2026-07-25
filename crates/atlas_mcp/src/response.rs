@@ -20,7 +20,7 @@ use atlas_api::{
         saved_searches::SavedSearchDto,
         search::SearchHitDto,
         semantic_search::SemanticSearchHitDto,
-        status_templates::StatusTemplateDto,
+        status_templates::{PlatformStatusTemplateDto, StatusTemplateDto},
         tags::TagDto,
         task_views::TaskViewDto,
         webhooks::{WebhookCreatedDto, WebhookDeliveryDto, WebhookDto},
@@ -553,13 +553,31 @@ pub(crate) fn project_task_view(v: TaskViewDto) -> Value {
 /// `position_key` is retained so callers can use `before`/`after` anchors on
 /// subsequent create/update calls.
 pub(crate) fn project_status_template(t: StatusTemplateDto) -> Value {
-    let mut map = serde_json::Map::new();
-    map.insert("id".into(), json!(t.id));
-    map.insert("name".into(), json!(t.name));
-    map.insert("position_key".into(), json!(t.position_key));
-    map.insert("updated_at".into(), json!(t.updated_at));
+    project_status_fields(t.id, t.name, t.color, t.position_key, t.updated_at)
+}
 
-    if let Some(color) = t.color {
+/// Compact projection of an Atlas-wide default status.
+///
+/// Identical shape to [`project_status_template`]: the platform DTO simply has no
+/// `workspace_id` to drop.
+pub(crate) fn project_platform_status_template(t: PlatformStatusTemplateDto) -> Value {
+    project_status_fields(t.id, t.name, t.color, t.position_key, t.updated_at)
+}
+
+fn project_status_fields(
+    id: uuid::Uuid,
+    name: String,
+    color: Option<String>,
+    position_key: String,
+    updated_at: chrono::DateTime<chrono::Utc>,
+) -> Value {
+    let mut map = serde_json::Map::new();
+    map.insert("id".into(), json!(id));
+    map.insert("name".into(), json!(name));
+    map.insert("position_key".into(), json!(position_key));
+    map.insert("updated_at".into(), json!(updated_at));
+
+    if let Some(color) = color {
         map.insert("color".into(), json!(color));
     }
 

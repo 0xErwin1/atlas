@@ -14,6 +14,7 @@ pub(crate) mod grants;
 pub(crate) mod groups;
 pub(crate) mod import;
 pub(crate) mod members;
+pub(crate) mod platform_status_templates;
 pub(crate) mod projects;
 pub(crate) mod property_definitions;
 pub(crate) mod saved_searches;
@@ -53,6 +54,9 @@ pub(crate) async fn dispatch(ctx: &Ctx, cmd: Commands) -> Result<(), CliError> {
         Commands::ApiKeys(args) => api_keys::run(ctx, args.command).await,
         Commands::Groups(args) => groups::run(ctx, args.command).await,
         Commands::StatusTemplates(args) => status_templates::run(ctx, args.command).await,
+        Commands::PlatformStatusTemplates(args) => {
+            platform_status_templates::run(ctx, args.command).await
+        }
         Commands::SavedSearches(args) => saved_searches::run(ctx, args.command).await,
         Commands::TaskViews(args) => task_views::run(ctx, args.command).await,
         Commands::PropertyDefinitions(args) => property_definitions::run(ctx, args.command).await,
