@@ -22,11 +22,7 @@ const isTask = computed(() => props.hit.kind === 'task');
 const kindLabel = computed(() => (isTask.value ? 'TASK' : 'NOTE'));
 const iconName = computed(() => (isTask.value ? 'square-check-big' : 'file-text'));
 
-const crumbParts = computed(() => {
-  const parts = ['Atlas'];
-  if (props.hit.project_slug) parts.push(props.hit.project_slug);
-  return parts;
-});
+const crumbParts = computed(() => (props.hit.project_slug ? [props.hit.project_slug] : []));
 
 const safeSnippet = computed(() => (props.hit.snippet ? sanitizeSnippet(props.hit.snippet) : null));
 

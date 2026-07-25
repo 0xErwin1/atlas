@@ -340,7 +340,7 @@ const breadcrumbs = computed(() => {
         ? meta.value.folder
         : null;
 
-  return parent !== null && parent !== '' ? ['Atlas', parent, docTitle] : ['Atlas', docTitle];
+  return parent !== null && parent !== '' ? [parent, docTitle] : [docTitle];
 });
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;

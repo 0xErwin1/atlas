@@ -123,13 +123,15 @@ function viewLabel(id: string): string {
   return taskViews.items.find((v) => v.id === id)?.name ?? 'View';
 }
 
+// Just what the toolbar cannot already tell the user: the view menu beside it
+// names the current layout, so a trailing "Board" only contradicted it.
 const breadcrumbs = computed(() => {
   if (isView.value && viewId.value !== null) {
-    return ['Atlas', viewLabel(viewId.value), 'View'];
+    return [viewLabel(viewId.value)];
   }
 
   const name = boards.board?.name;
-  return name !== undefined ? ['Atlas', name, 'Board'] : ['Atlas', 'Board'];
+  return name !== undefined ? [name] : [];
 });
 
 // The task opened on the board, shown through TaskDetailPane in the persisted

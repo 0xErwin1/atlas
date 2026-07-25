@@ -78,11 +78,7 @@ const { width: inspectorWidth, startResize } = useResizablePanel({
   initial: 400,
 });
 
-const breadcrumbs = computed(() => [
-  'Atlas',
-  boards.board?.name ?? 'Tasks',
-  task.value?.readable_id ?? 'Task',
-]);
+const breadcrumbs = computed(() => [boards.board?.name ?? 'Tasks', task.value?.readable_id ?? 'Task']);
 
 const shareLabel = computed(() => `${task.value?.readable_id ?? 'Task'} · task`);
 
