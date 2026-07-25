@@ -1,4 +1,4 @@
-import { flushPromises, mount } from '@vue/test-utils';
+import { type DOMWrapper, flushPromises, mount } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
@@ -43,6 +43,13 @@ import AppSettingsPanel from '@/components/settings/AppSettingsPanel.vue';
 
 function activeOptionLabel(wrapper: ReturnType<typeof mount>): string | undefined {
   return wrapper.find('button.atl-seg-opt.on').text();
+}
+
+function checkbox(
+  wrapper: ReturnType<typeof mount>,
+  label: string,
+): Omit<DOMWrapper<HTMLInputElement>, 'exists'> {
+  return wrapper.get<HTMLInputElement>(`input[aria-label="${label}"]`);
 }
 
 async function mountPanel() {
@@ -159,8 +166,8 @@ describe('AppSettingsPanel', () => {
 
     const wrapper = await mountPanel();
 
-    expect(wrapper.get('input[aria-label="Start on login"]').element.checked).toBe(true);
-    expect(wrapper.get('input[aria-label="Show system tray icon"]').element.checked).toBe(false);
+    expect(checkbox(wrapper, 'Start on login').element.checked).toBe(true);
+    expect(checkbox(wrapper, 'Show system tray icon').element.checked).toBe(false);
   });
 
   it('shows the host error and retains the known autostart value when reading fails', async () => {
@@ -168,7 +175,7 @@ describe('AppSettingsPanel', () => {
 
     const wrapper = await mountPanel();
 
-    expect(wrapper.get('input[aria-label="Start on login"]').element.checked).toBe(false);
+    expect(checkbox(wrapper, 'Start on login').element.checked).toBe(false);
     expect(wrapper.text()).toContain('Autostart preference is unavailable');
   });
 
@@ -177,7 +184,7 @@ describe('AppSettingsPanel', () => {
 
     const wrapper = await mountPanel();
 
-    expect(wrapper.get('input[aria-label="Show system tray icon"]').element.checked).toBe(true);
+    expect(checkbox(wrapper, 'Show system tray icon').element.checked).toBe(true);
     expect(wrapper.text()).toContain('System tray preference is unavailable');
   });
 
@@ -186,7 +193,7 @@ describe('AppSettingsPanel', () => {
 
     const wrapper = await mountPanel();
 
-    expect(wrapper.get('input[aria-label="Start on login"]').element.checked).toBe(false);
+    expect(checkbox(wrapper, 'Start on login').element.checked).toBe(false);
     expect(wrapper.text()).toContain('Unable to read the start on login setting');
   });
 
@@ -195,7 +202,7 @@ describe('AppSettingsPanel', () => {
 
     const wrapper = await mountPanel();
 
-    expect(wrapper.get('input[aria-label="Show system tray icon"]').element.checked).toBe(true);
+    expect(checkbox(wrapper, 'Show system tray icon').element.checked).toBe(true);
     expect(wrapper.text()).toContain('Unable to read the system tray setting');
   });
 
@@ -204,10 +211,10 @@ describe('AppSettingsPanel', () => {
     setStartOnLogin.mockResolvedValue({ error: 'Unable to disable login launch' });
 
     const wrapper = await mountPanel();
-    await wrapper.get('input[aria-label="Start on login"]').setChecked(false);
+    await checkbox(wrapper, 'Start on login').setValue(false);
     await flushPromises();
 
-    expect(wrapper.get('input[aria-label="Start on login"]').element.checked).toBe(true);
+    expect(checkbox(wrapper, 'Start on login').element.checked).toBe(true);
     expect(wrapper.text()).toContain('Unable to disable login launch');
   });
 
@@ -221,7 +228,7 @@ describe('AppSettingsPanel', () => {
     );
 
     const wrapper = await mountPanel();
-    await wrapper.get('input[aria-label="Start on login"]').setChecked(true);
+    await checkbox(wrapper, 'Start on login').setValue(true);
 
     expect(wrapper.get('input[aria-label="Start on login"]').attributes('disabled')).toBeDefined();
     expect(wrapper.get('input[aria-label="Show system tray icon"]').attributes('disabled')).toBeDefined();
@@ -236,11 +243,11 @@ describe('AppSettingsPanel', () => {
     setSystemTray.mockResolvedValue({ data: { system_tray: true } });
 
     const wrapper = await mountPanel();
-    await wrapper.get('input[aria-label="Show system tray icon"]').setChecked(false);
+    await checkbox(wrapper, 'Show system tray icon').setValue(false);
     await flushPromises();
 
     expect(setSystemTray).toHaveBeenCalledWith(false);
-    expect(wrapper.get('input[aria-label="Show system tray icon"]').element.checked).toBe(true);
+    expect(checkbox(wrapper, 'Show system tray icon').element.checked).toBe(true);
     expect(wrapper.text()).toContain('Restart Atlas Desktop to apply this change.');
   });
 

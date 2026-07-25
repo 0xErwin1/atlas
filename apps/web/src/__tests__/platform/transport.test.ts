@@ -1,12 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-
+import { createBrowserPlatformTransport } from '@/platform/browser';
 import {
   getPlatformTransport,
   type PlatformTransport,
   resetPlatformTransportForTest,
   setPlatformTransport,
 } from '@/platform/transport';
-import { createBrowserPlatformTransport } from '@/platform/browser';
 
 class FakeEventSource {
   readyState = 0;

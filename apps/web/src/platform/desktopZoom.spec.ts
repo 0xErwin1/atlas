@@ -2,11 +2,18 @@ import { flushPromises } from '@vue/test-utils';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { installDesktopZoom } from '@/platform/desktopZoom';
 
+function desktopPreferences(zoomFactor: number) {
+  return {
+    window_decorations: true,
+    zoom_factor: zoomFactor,
+    start_on_login: false,
+    system_tray: true,
+  };
+}
+
 function makeTransport(initialZoom: number) {
-  const getZoom = vi.fn().mockResolvedValue({ data: { window_decorations: true, zoom_factor: initialZoom } });
-  const setZoom = vi.fn((zoomFactor: number) =>
-    Promise.resolve({ data: { window_decorations: true, zoom_factor: zoomFactor } }),
-  );
+  const getZoom = vi.fn().mockResolvedValue({ data: desktopPreferences(initialZoom) });
+  const setZoom = vi.fn((zoomFactor: number) => Promise.resolve({ data: desktopPreferences(zoomFactor) }));
   return { getZoom, setZoom };
 }
 
@@ -71,16 +78,14 @@ describe('installDesktopZoom', () => {
   });
 
   it('applies a hotkey pressed before the initial sync relative to the fetched zoom', async () => {
-    let resolveGetZoom!: (result: { data: { window_decorations: boolean; zoom_factor: number } }) => void;
+    let resolveGetZoom!: (result: { data: ReturnType<typeof desktopPreferences> }) => void;
     const getZoom = vi.fn(
       () =>
-        new Promise<{ data: { window_decorations: boolean; zoom_factor: number } }>((resolve) => {
+        new Promise<{ data: ReturnType<typeof desktopPreferences> }>((resolve) => {
           resolveGetZoom = resolve;
         }),
     );
-    const setZoom = vi.fn((zoomFactor: number) =>
-      Promise.resolve({ data: { window_decorations: true, zoom_factor: zoomFactor } }),
-    );
+    const setZoom = vi.fn((zoomFactor: number) => Promise.resolve({ data: desktopPreferences(zoomFactor) }));
     teardown = installDesktopZoom({ getZoom, setZoom });
 
     const event = new KeyboardEvent('keydown', { cancelable: true, key: '=', ctrlKey: true });
@@ -89,7 +94,7 @@ describe('installDesktopZoom', () => {
     expect(event.defaultPrevented).toBe(true);
     expect(setZoom).not.toHaveBeenCalled();
 
-    resolveGetZoom({ data: { window_decorations: true, zoom_factor: 1.5 } });
+    resolveGetZoom({ data: desktopPreferences(1.5) });
     await flushPromises();
 
     expect(setZoom).toHaveBeenCalledTimes(1);
