@@ -1,9 +1,9 @@
 use atlas_desktop::{
     DesktopApiRequest, DesktopConfiguration, DesktopError, DesktopPreferences, DesktopSession,
     LifecycleAction, ReqwestTransportFactory, SecretServiceStore, SessionScope, StreamFrame,
-    StreamTermination, TransportFactory, TransportKind, classify_workspace_stream_terminal,
-    clear_active_identity, load_active_identity, process_workspace_sse_chunk,
-    store_active_identity,
+    StreamTermination, SurfaceableWindow, TransportFactory, TransportKind,
+    classify_workspace_stream_terminal, clear_active_identity, load_active_identity,
+    process_workspace_sse_chunk, store_active_identity, surface_existing_window,
 };
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -1216,6 +1216,25 @@ fn disable_webkit_smooth_scrolling<R: Runtime>(
     })
 }
 
+/// Adapts a Tauri window to the host-side surfacing contract. A newtype rather
+/// than a direct impl because both the trait and the window type are foreign to
+/// this binary, and it keeps `atlas_desktop` free of the Tauri runtime types.
+struct HostWindow<'a, R: Runtime>(&'a tauri::WebviewWindow<R>);
+
+impl<R: Runtime> SurfaceableWindow for HostWindow<'_, R> {
+    fn unminimize(&self) -> Result<(), String> {
+        self.0.unminimize().map_err(|error| error.to_string())
+    }
+
+    fn show(&self) -> Result<(), String> {
+        self.0.show().map_err(|error| error.to_string())
+    }
+
+    fn set_focus(&self) -> Result<(), String> {
+        self.0.set_focus().map_err(|error| error.to_string())
+    }
+}
+
 pub(crate) fn run_with_client(client: reqwest::Client) {
     let configuration_directory = match desktop_configuration_directory() {
         Ok(directory) => directory,
@@ -1234,6 +1253,18 @@ pub(crate) fn run_with_client(client: reqwest::Client) {
     let preferences_directory = configuration_directory.clone();
 
     tauri::Builder::default()
+        // Registered first so a second launch is rejected before it can race the
+        // running instance for the keyring session or open a duplicate SSE stream.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) else {
+                tracing::warn!("a second launch found no main window to surface");
+                return;
+            };
+
+            if let Err(error) = surface_existing_window(&HostWindow(&window)) {
+                tracing::warn!(%error, "the running window could not be surfaced");
+            }
+        }))
         .manage(DesktopState {
             origin: Mutex::new(origin),
             configuration_directory,

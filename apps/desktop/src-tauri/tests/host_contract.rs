@@ -3,8 +3,9 @@
 use atlas_desktop::{
     DesktopApiRequest, DesktopConfiguration, DesktopPreferences, DesktopSession,
     InMemorySecretStore, Lifecycle, LifecycleAction, SecretStore, SessionScope, SessionState,
-    StreamFrame, StreamTermination, TransportKind, WorkspaceEvent, build_authenticated_api_request,
-    build_authenticated_request, classify_workspace_stream_terminal, process_workspace_sse_chunk,
+    StreamFrame, StreamTermination, SurfaceableWindow, TransportKind, WorkspaceEvent,
+    build_authenticated_api_request, build_authenticated_request,
+    classify_workspace_stream_terminal, process_workspace_sse_chunk, surface_existing_window,
 };
 use std::{
     fs,
@@ -801,4 +802,73 @@ fn lifecycle_purge_action_is_scoped_to_the_expired_identity() {
         Some(LifecycleAction::CancelTransportAndPurgeScopedCache(first))
     );
     assert_eq!(store.load(&second), Ok("other-bearer-material".to_owned()));
+}
+
+#[derive(Default)]
+struct RecordingWindow {
+    steps: std::cell::RefCell<Vec<&'static str>>,
+    failing: Option<&'static str>,
+}
+
+impl RecordingWindow {
+    fn failing(step: &'static str) -> Self {
+        Self {
+            steps: std::cell::RefCell::new(Vec::new()),
+            failing: Some(step),
+        }
+    }
+
+    fn record(&self, step: &'static str) -> Result<(), String> {
+        self.steps.borrow_mut().push(step);
+        if self.failing == Some(step) {
+            return Err(format!("{step} failed"));
+        }
+        Ok(())
+    }
+
+    fn steps(&self) -> Vec<&'static str> {
+        self.steps.borrow().clone()
+    }
+}
+
+impl SurfaceableWindow for RecordingWindow {
+    fn unminimize(&self) -> Result<(), String> {
+        self.record("unminimize")
+    }
+
+    fn show(&self) -> Result<(), String> {
+        self.record("show")
+    }
+
+    fn set_focus(&self) -> Result<(), String> {
+        self.record("focus")
+    }
+}
+
+#[test]
+fn a_second_launch_restores_shows_and_focuses_the_running_window() {
+    let window = RecordingWindow::default();
+
+    assert_eq!(surface_existing_window(&window), Ok(()));
+    assert_eq!(window.steps(), vec!["unminimize", "show", "focus"]);
+}
+
+#[test]
+fn surfacing_the_window_attempts_every_step_even_after_one_fails() {
+    // A window can be hidden but not minimized, so an early failure must not skip
+    // the steps that actually bring it back; the user is left without a window.
+    let window = RecordingWindow::failing("unminimize");
+
+    let outcome = surface_existing_window(&window);
+
+    assert_eq!(window.steps(), vec!["unminimize", "show", "focus"]);
+    assert_eq!(outcome, Err("unminimize failed".to_owned()));
+}
+
+#[test]
+fn a_second_launch_is_wired_to_surface_the_running_window() {
+    let source = include_str!("../src/main.rs");
+
+    assert!(source.contains("tauri_plugin_single_instance::init("));
+    assert!(source.contains("surface_existing_window(&HostWindow(&window))"));
 }

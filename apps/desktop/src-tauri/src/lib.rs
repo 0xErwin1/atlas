@@ -1268,3 +1268,27 @@ pub enum DesktopError {
     #[error("desktop configuration is unavailable")]
     ConfigurationUnavailable,
 }
+
+/// The window operations a second launch performs to surface the running instance.
+/// Abstracted so the ordering and failure handling are testable without a runtime.
+pub trait SurfaceableWindow {
+    fn unminimize(&self) -> Result<(), String>;
+    fn show(&self) -> Result<(), String>;
+    fn set_focus(&self) -> Result<(), String>;
+}
+
+/// Brings the already-running window forward when a second launch is rejected.
+///
+/// Every step is attempted even after one fails: the window states are
+/// independent (it can be hidden without being minimized, or focused while
+/// hidden), so stopping at the first error can leave the user staring at a
+/// desktop with no window despite having asked for one. The first error is
+/// reported for logging once the window has been given every chance to appear.
+pub fn surface_existing_window<W: SurfaceableWindow + ?Sized>(window: &W) -> Result<(), String> {
+    let outcomes = [window.unminimize(), window.show(), window.set_focus()];
+
+    outcomes
+        .into_iter()
+        .find_map(Result::err)
+        .map_or(Ok(()), Err)
+}
