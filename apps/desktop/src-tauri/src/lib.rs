@@ -121,12 +121,16 @@ pub struct DesktopPreferences {
     window_decorations: bool,
     #[serde(default = "default_zoom_factor")]
     zoom_factor: f64,
+    /// Defaulted so preferences written before the tray landed still load.
+    #[serde(default)]
+    start_on_login: bool,
 }
 
 impl DesktopPreferences {
     const DECORATIONS_ON: Self = Self {
         window_decorations: true,
         zoom_factor: DEFAULT_ZOOM_FACTOR,
+        start_on_login: false,
     };
 
     /// Resolves stored preference bytes to the effective value, falling back to the safe
@@ -138,6 +142,7 @@ impl DesktopPreferences {
             .map(|preferences| Self {
                 window_decorations: preferences.window_decorations,
                 zoom_factor: clamp_zoom(preferences.zoom_factor),
+                start_on_login: preferences.start_on_login,
             })
             .unwrap_or(Self::DECORATIONS_ON)
     }
@@ -146,6 +151,7 @@ impl DesktopPreferences {
         Self {
             window_decorations,
             zoom_factor: DEFAULT_ZOOM_FACTOR,
+            start_on_login: false,
         }
     }
 
@@ -157,12 +163,25 @@ impl DesktopPreferences {
         self.zoom_factor
     }
 
+    pub fn start_on_login(&self) -> bool {
+        self.start_on_login
+    }
+
+    /// Returns a copy with the start-on-login preference replaced, preserving the
+    /// window and zoom preferences.
+    pub fn set_start_on_login(self, start_on_login: bool) -> Self {
+        Self {
+            start_on_login,
+            ..self
+        }
+    }
+
     /// Returns a copy with the zoom factor clamped into range, preserving the window
     /// decorations preference.
     pub fn set_zoom_factor(self, zoom_factor: f64) -> Self {
         Self {
-            window_decorations: self.window_decorations,
             zoom_factor: clamp_zoom(zoom_factor),
+            ..self
         }
     }
 
@@ -171,7 +190,7 @@ impl DesktopPreferences {
     pub fn set_window_decorations_value(self, window_decorations: bool) -> Self {
         Self {
             window_decorations,
-            zoom_factor: self.zoom_factor,
+            ..self
         }
     }
 
@@ -1340,4 +1359,26 @@ pub fn unique_download_path(
         .map(|index| directory.join(format!("{stem} ({index}){extension}")))
         .find(|candidate| !exists(candidate))
         .unwrap_or(candidate)
+}
+
+/// What closing the main window should do.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CloseBehavior {
+    /// Keep the process alive behind the tray icon, which can restore the window.
+    HideToTray,
+    /// Let the close proceed and end the process.
+    Exit,
+}
+
+/// Decides what a window close means.
+///
+/// Hiding is only safe while a tray icon exists to bring the window back: several
+/// Linux desktops ship without a system tray, and hiding there would leave a
+/// running process the user can neither see nor quit.
+pub fn close_behavior(tray_available: bool) -> CloseBehavior {
+    if tray_available {
+        CloseBehavior::HideToTray
+    } else {
+        CloseBehavior::Exit
+    }
 }

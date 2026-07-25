@@ -1,12 +1,12 @@
 #![allow(clippy::expect_used)]
 
 use atlas_desktop::{
-    DesktopApiRequest, DesktopConfiguration, DesktopPreferences, DesktopSession,
+    CloseBehavior, DesktopApiRequest, DesktopConfiguration, DesktopPreferences, DesktopSession,
     InMemorySecretStore, Lifecycle, LifecycleAction, SecretStore, SessionScope, SessionState,
     StreamFrame, StreamTermination, SurfaceableWindow, TransportKind, WorkspaceEvent,
     build_authenticated_api_request, build_authenticated_request,
-    classify_workspace_stream_terminal, process_workspace_sse_chunk, sanitize_download_file_name,
-    surface_existing_window, unique_download_path,
+    classify_workspace_stream_terminal, close_behavior, process_workspace_sse_chunk,
+    sanitize_download_file_name, surface_existing_window, unique_download_path,
 };
 use std::{
     fs,
@@ -307,7 +307,7 @@ fn desktop_preferences_round_trip_persists_the_saved_value_as_exact_bytes() {
 
     assert_eq!(
         persisted,
-        "{\"window_decorations\":true,\"zoom_factor\":1.0}\n"
+        "{\"window_decorations\":true,\"zoom_factor\":1.0,\"start_on_login\":false}\n"
     );
     assert_eq!(loaded, preferences);
     assert!(!persisted.contains("bearer"));
@@ -933,4 +933,48 @@ fn a_numbered_extensionless_download_keeps_its_whole_name() {
         unique_download_path(std::path::Path::new("/downloads"), "LICENSE", exists),
         std::path::PathBuf::from("/downloads/LICENSE (1)")
     );
+}
+
+#[test]
+fn start_on_login_defaults_off_and_survives_a_round_trip() {
+    assert!(!DesktopPreferences::resolve(None).start_on_login());
+
+    // Preferences written before this option existed must still load.
+    let legacy = "{\"window_decorations\":true,\"zoom_factor\":1.0}";
+    assert!(!DesktopPreferences::resolve(Some(legacy)).start_on_login());
+
+    let enabled = DesktopPreferences::resolve(None).set_start_on_login(true);
+    let stored = serde_json::to_string(&enabled).expect("preferences serialize");
+
+    assert_eq!(DesktopPreferences::resolve(Some(&stored)), enabled);
+    assert!(enabled.start_on_login());
+}
+
+#[test]
+fn toggling_start_on_login_preserves_the_other_preferences() {
+    let preferences = DesktopPreferences::with_window_decorations(false)
+        .set_zoom_factor(1.25)
+        .set_start_on_login(true);
+
+    assert!(!preferences.window_decorations());
+    assert_eq!(preferences.zoom_factor(), 1.25);
+    assert!(preferences.start_on_login());
+}
+
+#[test]
+fn closing_the_window_hides_it_only_while_a_tray_can_bring_it_back() {
+    assert_eq!(close_behavior(true), CloseBehavior::HideToTray);
+
+    // Without a tray icon there is no way back, so closing must keep its ordinary
+    // meaning rather than stranding the user with an invisible running app.
+    assert_eq!(close_behavior(false), CloseBehavior::Exit);
+}
+
+#[test]
+fn the_tray_and_autostart_are_wired_into_startup() {
+    let source = include_str!("../src/main.rs");
+
+    assert!(source.contains("tauri_plugin_autostart::init("));
+    assert!(source.contains("TrayIconBuilder::"));
+    assert!(source.contains("close_behavior("));
 }

@@ -1,10 +1,11 @@
+use atlas_desktop::CloseBehavior;
 use atlas_desktop::{
     DesktopApiRequest, DesktopConfiguration, DesktopError, DesktopPreferences, DesktopSession,
     LifecycleAction, ReqwestTransportFactory, SecretServiceStore, SessionScope, StreamFrame,
     StreamTermination, SurfaceableWindow, TransportFactory, TransportKind,
-    classify_workspace_stream_terminal, clear_active_identity, load_active_identity,
-    process_workspace_sse_chunk, sanitize_download_file_name, store_active_identity,
-    surface_existing_window, unique_download_path,
+    classify_workspace_stream_terminal, clear_active_identity, close_behavior,
+    load_active_identity, process_workspace_sse_chunk, sanitize_download_file_name,
+    store_active_identity, surface_existing_window, unique_download_path,
 };
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -16,7 +17,12 @@ use std::{
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
-use tauri::{Emitter, Manager, Runtime, State};
+use tauri::{
+    Emitter, Manager, Runtime, State,
+    menu::{CheckMenuItem, Menu, MenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+};
+use tauri_plugin_autostart::ManagerExt;
 #[cfg(target_os = "linux")]
 use webkit2gtk::{SettingsExt, WebViewExt};
 
@@ -1276,6 +1282,112 @@ impl<R: Runtime> SurfaceableWindow for HostWindow<'_, R> {
     }
 }
 
+const TRAY_SHOW_ITEM: &str = "tray-show";
+const TRAY_AUTOSTART_ITEM: &str = "tray-autostart";
+const TRAY_QUIT_ITEM: &str = "tray-quit";
+
+/// Builds the tray icon that keeps Atlas reachable once its window is closed.
+///
+/// Returns false when the tray could not be created — several Linux desktops ship
+/// without one — which downgrades closing the window back to quitting, so the app
+/// can never become a process the user cannot see or stop.
+fn install_tray<R: Runtime>(app: &tauri::AppHandle<R>, start_on_login: bool) -> bool {
+    let Some(icon) = app.default_window_icon().cloned() else {
+        tracing::warn!("the tray icon image is unavailable; closing the window will quit");
+        return false;
+    };
+
+    let build = || -> tauri::Result<()> {
+        let show = MenuItem::with_id(app, TRAY_SHOW_ITEM, "Show Atlas", true, None::<&str>)?;
+        let autostart = CheckMenuItem::with_id(
+            app,
+            TRAY_AUTOSTART_ITEM,
+            "Start on login",
+            true,
+            start_on_login,
+            None::<&str>,
+        )?;
+        let quit = MenuItem::with_id(app, TRAY_QUIT_ITEM, "Quit Atlas", true, None::<&str>)?;
+        let menu = Menu::with_items(app, &[&show, &autostart, &quit])?;
+
+        TrayIconBuilder::with_id("atlas-tray")
+            .icon(icon.clone())
+            .tooltip("Atlas")
+            .menu(&menu)
+            .show_menu_on_left_click(false)
+            .on_menu_event(|app, event| on_tray_menu_event(app, event.id.as_ref()))
+            .on_tray_icon_event(|tray, event| {
+                if matches!(
+                    event,
+                    TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    }
+                ) {
+                    show_main_window(tray.app_handle());
+                }
+            })
+            .build(app)?;
+        Ok(())
+    };
+
+    match build() {
+        Ok(()) => true,
+        Err(error) => {
+            tracing::warn!(%error, "the system tray is unavailable; closing the window will quit");
+            false
+        }
+    }
+}
+
+fn show_main_window<R: Runtime>(app: &tauri::AppHandle<R>) {
+    let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) else {
+        return;
+    };
+
+    if let Err(error) = surface_existing_window(&HostWindow(&window)) {
+        tracing::warn!(%error, "the window could not be surfaced from the tray");
+    }
+}
+
+fn on_tray_menu_event<R: Runtime>(app: &tauri::AppHandle<R>, id: &str) {
+    match id {
+        TRAY_SHOW_ITEM => show_main_window(app),
+        TRAY_AUTOSTART_ITEM => toggle_start_on_login(app),
+        TRAY_QUIT_ITEM => app.exit(0),
+        _ => {}
+    }
+}
+
+/// Flips the start-on-login preference and applies it to the OS autostart entry.
+/// The preference is only persisted once the OS accepted the change, so a stored
+/// `true` never disagrees with an entry that was never registered.
+fn toggle_start_on_login<R: Runtime>(app: &tauri::AppHandle<R>) {
+    let Some(directory) = desktop_configuration_directory().ok() else {
+        tracing::warn!("start-on-login could not be resolved without a configuration directory");
+        return;
+    };
+
+    let preferences = DesktopPreferences::load(&directory);
+    let enable = !preferences.start_on_login();
+    let manager = app.autolaunch();
+
+    let applied = if enable {
+        manager.enable()
+    } else {
+        manager.disable()
+    };
+    if let Err(error) = applied {
+        tracing::warn!(%error, "the start-on-login entry could not be updated");
+        return;
+    }
+
+    if let Err(error) = preferences.set_start_on_login(enable).save(&directory) {
+        tracing::warn!(%error, "the start-on-login preference could not be persisted");
+    }
+}
+
 pub(crate) fn run_with_client(client: reqwest::Client) {
     let configuration_directory = match desktop_configuration_directory() {
         Ok(directory) => directory,
@@ -1306,6 +1418,10 @@ pub(crate) fn run_with_client(client: reqwest::Client) {
                 tracing::warn!(%error, "the running window could not be surfaced");
             }
         }))
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .manage(DesktopState {
             origin: Mutex::new(origin),
             configuration_directory,
@@ -1324,6 +1440,19 @@ pub(crate) fn run_with_client(client: reqwest::Client) {
             if let Err(error) = disable_webkit_smooth_scrolling(&window) {
                 tracing::warn!(%error, "WebKit smooth scrolling could not be disabled");
             }
+            let tray_available = install_tray(app.handle(), preferences.start_on_login());
+            if close_behavior(tray_available) == CloseBehavior::HideToTray {
+                let close_target = window.clone();
+                window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        if let Err(error) = close_target.hide() {
+                            tracing::warn!(%error, "the window could not be hidden to the tray");
+                        }
+                    }
+                });
+            }
+
             window.set_decorations(preferences.window_decorations())?;
             if let Err(error) = window.set_zoom(preferences.zoom_factor()) {
                 tracing::warn!(%error, "the persisted zoom factor could not be applied at startup");
@@ -1597,7 +1726,7 @@ mod command_tests {
             .expect("preferences are persisted");
         assert_eq!(
             persisted,
-            "{\"window_decorations\":false,\"zoom_factor\":1.0}\n"
+            "{\"window_decorations\":false,\"zoom_factor\":1.0,\"start_on_login\":false}\n"
         );
 
         std::fs::remove_dir_all(&directory).expect("temporary preferences are removed");
@@ -1693,7 +1822,7 @@ mod command_tests {
             .expect("preferences are persisted");
         assert_eq!(
             persisted,
-            "{\"window_decorations\":true,\"zoom_factor\":1.5}\n"
+            "{\"window_decorations\":true,\"zoom_factor\":1.5,\"start_on_login\":false}\n"
         );
 
         std::fs::remove_dir_all(&directory).expect("temporary preferences are removed");
