@@ -2,6 +2,7 @@
 import { ref } from 'vue';
 // biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
 import MarkdownEditor from '@/components/editor/MarkdownEditor.vue';
+import { useApiImageSrc } from '@/composables/useApiImageSrc';
 import type { WikilinkRef } from '@/lib/wikilink';
 
 /**
@@ -38,6 +39,10 @@ defineEmits<{
 const mode = defineModel<'live' | 'source'>('mode', { default: 'live' });
 const reading = defineModel<boolean>('reading', { default: false });
 
+// Inline images are stored as `/api/…` attachments, which the webview cannot load
+// directly.
+const resolveImageSrc = useApiImageSrc();
+
 const editorRef = ref<InstanceType<typeof MarkdownEditor> | null>(null);
 
 function currentMarkdown(): string {
@@ -59,6 +64,7 @@ defineExpose({ currentMarkdown, insertWikilink });
     :body="body"
     :wikilink-titles="props.wikilinkTitles"
     :upload-image="props.uploadImage"
+    :resolve-image-src="resolveImageSrc"
     :embedded-controls="false"
     autofocus
     placeholder="Start writing…"

@@ -234,8 +234,8 @@ function goBackToTree(): void {
 
 /**
  * Uploads a pasted/dropped image as an attachment of the open note and returns
- * the same-origin URL to embed. The URL authenticates via the session cookie, so
- * the inserted `![](…)` renders directly in the live preview with no blob step.
+ * the same-origin URL to embed. The webview cannot request that URL itself, so
+ * the editor loads it through the platform transport (see `useApiImageSrc`).
  */
 async function onUploadImage(file: File): Promise<string | null> {
   if (ws.value === '' || slug.value === null) return null;

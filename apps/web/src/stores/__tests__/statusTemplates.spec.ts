@@ -27,6 +27,18 @@ function tpl(over: Record<string, unknown> = {}) {
   };
 }
 
+/**
+ * Seeds the cache through a load, the way the app does. Every action binds the
+ * store to its workspace and resets the cache when it sees a different one, so a
+ * directly assigned cache is wiped by the next action instead of being read.
+ */
+async function seeded(templates: object[]) {
+  GET.mockResolvedValueOnce({ data: templates, error: undefined });
+  const store = useStatusTemplatesStore();
+  await store.load('acme');
+  return store;
+}
+
 describe('useStatusTemplatesStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
@@ -52,8 +64,7 @@ describe('useStatusTemplatesStore', () => {
   });
 
   it('create posts the name appended after the last template and caches the result', async () => {
-    const store = useStatusTemplatesStore();
-    store.templates = [tpl({ id: 't1', position_key: 'a' })] as never;
+    const store = await seeded([tpl({ id: 't1', position_key: 'a' })]);
 
     POST.mockResolvedValueOnce({
       data: tpl({ id: 't2', name: 'Doing', position_key: 'b' }),
@@ -71,8 +82,7 @@ describe('useStatusTemplatesStore', () => {
   });
 
   it('update patches name and color and replaces the cached template', async () => {
-    const store = useStatusTemplatesStore();
-    store.templates = [tpl({ id: 't1', name: 'Todo', position_key: 'a' })] as never;
+    const store = await seeded([tpl({ id: 't1', name: 'Todo', position_key: 'a' })]);
 
     PATCH.mockResolvedValueOnce({
       data: tpl({ id: 't1', name: 'Backlog', color: '#1A2B3C', position_key: 'a' }),
@@ -90,8 +100,7 @@ describe('useStatusTemplatesStore', () => {
   });
 
   it('move patches before/after anchors and re-sorts', async () => {
-    const store = useStatusTemplatesStore();
-    store.templates = [tpl({ id: 't1', position_key: 'a' }), tpl({ id: 't2', position_key: 'b' })] as never;
+    const store = await seeded([tpl({ id: 't1', position_key: 'a' }), tpl({ id: 't2', position_key: 'b' })]);
 
     PATCH.mockResolvedValueOnce({
       data: tpl({ id: 't1', position_key: 'c' }),
@@ -109,8 +118,7 @@ describe('useStatusTemplatesStore', () => {
   });
 
   it('remove deletes the template and drops it from the cache', async () => {
-    const store = useStatusTemplatesStore();
-    store.templates = [tpl({ id: 't1' }), tpl({ id: 't2' })] as never;
+    const store = await seeded([tpl({ id: 't1' }), tpl({ id: 't2', position_key: 'b' })]);
 
     DELETE.mockResolvedValueOnce({ error: undefined });
 

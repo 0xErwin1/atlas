@@ -44,8 +44,11 @@ describe('useTagsStore — used labels', () => {
       error: undefined,
     });
 
+    // Seeded through a load: `create` binds the store to its workspace, and a
+    // directly assigned cache is reset by that bind before it can be read.
+    GET.mockResolvedValueOnce({ data: ['backend', 'frontend'], error: undefined });
     const store = useTagsStore();
-    store.usedLabels = ['backend', 'frontend'];
+    await store.loadUsed('ws');
 
     expect(store.unregisteredLabels).toEqual(['backend', 'frontend']);
 

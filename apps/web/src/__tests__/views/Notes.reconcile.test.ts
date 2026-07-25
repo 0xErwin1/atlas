@@ -9,6 +9,7 @@ import {
   setResourceCachePrincipal,
 } from '@/cache/cacheRuntime';
 import { buildCacheKey, type CacheEnvelope, ResourceCache } from '@/cache/resourceCache';
+import { EDITOR_BODY_SYNC_MS } from '@/lib/editorBodySync';
 import { EVENT_TYPE } from '@/lib/eventTypes';
 import { useDocumentsStore } from '@/stores/documents';
 import { useWorkspaceStore } from '@/stores/workspace';
@@ -181,6 +182,20 @@ async function settle(): Promise<void> {
   await nextTick();
 }
 
+/**
+ * Emits a local edit and waits for it to reach the reactive body. The editor owns
+ * its document while typing and mirrors it into `body` only after a debounce, so
+ * asserting the rendered text right after the event reads the pre-edit value.
+ */
+async function edit(
+  editor: { vm: { $emit: (event: string, payload: string) => unknown } },
+  markdown: string,
+) {
+  editor.vm.$emit('change', markdown);
+  await vi.advanceTimersByTimeAsync(EDITOR_BODY_SYNC_MS);
+  await nextTick();
+}
+
 describe('Notes.vue open-note reconcile wiring', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
@@ -275,7 +290,7 @@ describe('Notes.vue open-note reconcile wiring', () => {
     await settle();
 
     const editor = wrapper.findComponent<typeof NoteEditorStub>('[data-test="note-editor"]');
-    await editor.vm.$emit('change', 'My unsaved edit');
+    await edit(editor, 'My unsaved edit');
     await settle();
 
     expect(wrapper.get('[data-test="note-editor"]').text()).toBe('My unsaved edit');
@@ -357,7 +372,7 @@ describe('Notes.vue open-note reconcile wiring', () => {
     await settle();
     const editor = wrapper.findComponent<typeof NoteEditorStub>('[data-test="note-editor"]');
     expect(editor.text()).toBe('Cached body');
-    await editor.vm.$emit('change', 'My unsaved edit');
+    await edit(editor, 'My unsaved edit');
     await settle();
 
     networkResolvers[0]?.({
@@ -457,7 +472,7 @@ describe('Notes.vue open-note reconcile wiring', () => {
     const wrapper = mountNotes();
     await settle();
     const editor = wrapper.findComponent<typeof NoteEditorStub>('[data-test="note-editor"]');
-    await editor.vm.$emit('change', 'My same-principal edit');
+    await edit(editor, 'My same-principal edit');
     await settle();
 
     resourceCacheEpoch.value += 1;

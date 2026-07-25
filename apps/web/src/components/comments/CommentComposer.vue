@@ -8,6 +8,7 @@
 import { computed, ref } from 'vue';
 import MarkdownEditor from '@/components/editor/MarkdownEditor.vue';
 import Icon from '@/components/ui/Icon.vue';
+import { useApiImageSrc } from '@/composables/useApiImageSrc';
 import { useCommentDraftAttachments } from '@/composables/useCommentDraftAttachments';
 import type { CommentParentTarget } from '@/composables/useCommentFeed';
 
@@ -21,6 +22,9 @@ const props = withDefaults(
     placeholder: 'Write a comment…',
   },
 );
+
+// Attachment images are served by the API, which the webview cannot request.
+const resolveImageSrc = useApiImageSrc();
 
 const draft = ref('');
 const submitting = ref(false);
@@ -107,6 +111,7 @@ defineExpose({ focus });
       min-height="1.75rem"
       :placeholder="placeholder"
       :upload-image="draftAttachments.uploadImage"
+      :resolve-image-src="resolveImageSrc"
       @change="onDraftChange"
     />
     <input

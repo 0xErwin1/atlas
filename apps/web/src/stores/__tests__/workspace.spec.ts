@@ -209,6 +209,7 @@ describe('useWorkspaceStore — loadAssignableUsers', () => {
     });
 
     const store = useWorkspaceStore();
+    store.setActiveWorkspace('ws1');
     await store.loadAssignableUsers('ws1');
 
     expect(GET).toHaveBeenCalledWith('/api/workspaces/{ws}/assignable-users', {
@@ -221,7 +222,10 @@ describe('useWorkspaceStore — loadAssignableUsers', () => {
   it('clears assignableUsers when the API returns an error', async () => {
     GET.mockResolvedValueOnce({ data: undefined, error: { hint: 'forbidden' } });
 
+    // The response is only applied while the requested workspace is still active;
+    // without this the guard discards it and the stale list would survive.
     const store = useWorkspaceStore();
+    store.setActiveWorkspace('ws1');
     store.assignableUsers = [
       { id: 'u9', username: 'stale', display_name: 'Stale', activated_at: null } as never,
     ];

@@ -14,6 +14,7 @@ import Avatar from '@/components/ui/Avatar.vue';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import ContextMenu, { type MenuItem } from '@/components/ui/ContextMenu.vue';
 import Icon from '@/components/ui/Icon.vue';
+import { useApiImageSrc } from '@/composables/useApiImageSrc';
 import { useContextMenu } from '@/composables/useContextMenu';
 import { actorName, isAgent } from '@/lib/actor';
 import { formatDate } from '@/lib/format';
@@ -68,6 +69,8 @@ const emit = defineEmits<{
 }>();
 
 const menu = useContextMenu();
+// Attachment images are served by the API, which the webview cannot request.
+const resolveImageSrc = useApiImageSrc();
 const pendingDelete = ref(false);
 const pendingAttachmentDelete = ref<CommentAttachment | null>(null);
 
@@ -263,6 +266,7 @@ async function confirmDelete(): Promise<void> {
           :width-toggle="false"
           :follow-caret="false"
           :upload-image="imageUpload"
+          :resolve-image-src="resolveImageSrc"
           min-height="2.5rem"
           @change="onEditChange"
         />
@@ -296,6 +300,7 @@ async function confirmDelete(): Promise<void> {
         :reading="true"
         :embedded-controls="false"
         :width-toggle="false"
+        :resolve-image-src="resolveImageSrc"
         min-height="1rem"
       />
 
