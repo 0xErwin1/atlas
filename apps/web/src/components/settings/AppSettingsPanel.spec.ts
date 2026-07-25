@@ -163,6 +163,42 @@ describe('AppSettingsPanel', () => {
     expect(wrapper.get('input[aria-label="Show system tray icon"]').element.checked).toBe(false);
   });
 
+  it('shows the host error and retains the known autostart value when reading fails', async () => {
+    getStartOnLogin.mockResolvedValue({ error: 'Autostart preference is unavailable' });
+
+    const wrapper = await mountPanel();
+
+    expect(wrapper.get('input[aria-label="Start on login"]').element.checked).toBe(false);
+    expect(wrapper.text()).toContain('Autostart preference is unavailable');
+  });
+
+  it('shows the host error and retains the known tray value when reading fails', async () => {
+    getSystemTray.mockResolvedValue({ error: 'System tray preference is unavailable' });
+
+    const wrapper = await mountPanel();
+
+    expect(wrapper.get('input[aria-label="Show system tray icon"]').element.checked).toBe(true);
+    expect(wrapper.text()).toContain('System tray preference is unavailable');
+  });
+
+  it('shows an actionable fallback and retains the known autostart value when the read rejects', async () => {
+    getStartOnLogin.mockRejectedValue(new Error('ipc channel closed'));
+
+    const wrapper = await mountPanel();
+
+    expect(wrapper.get('input[aria-label="Start on login"]').element.checked).toBe(false);
+    expect(wrapper.text()).toContain('Unable to read the start on login setting');
+  });
+
+  it('shows an actionable fallback and retains the known tray value when the read rejects', async () => {
+    getSystemTray.mockRejectedValue(new Error('ipc channel closed'));
+
+    const wrapper = await mountPanel();
+
+    expect(wrapper.get('input[aria-label="Show system tray icon"]').element.checked).toBe(true);
+    expect(wrapper.text()).toContain('Unable to read the system tray setting');
+  });
+
   it('keeps the autostart checkbox checked and shows the host error when writing fails', async () => {
     getStartOnLogin.mockResolvedValue({ data: { start_on_login: true } });
     setStartOnLogin.mockResolvedValue({ error: 'Unable to disable login launch' });

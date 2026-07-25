@@ -45,7 +45,9 @@ const canResetZoom = computed(() => zoom.value !== DEFAULT_ZOOM_FACTOR);
 
 const FALLBACK_ERROR = 'Unable to change the window decorations';
 const ZOOM_FALLBACK_ERROR = 'Unable to change the zoom level';
+const START_ON_LOGIN_READ_FALLBACK_ERROR = 'Unable to read the start on login setting';
 const START_ON_LOGIN_FALLBACK_ERROR = 'Unable to change the start on login setting';
+const SYSTEM_TRAY_READ_FALLBACK_ERROR = 'Unable to read the system tray setting';
 const SYSTEM_TRAY_FALLBACK_ERROR = 'Unable to change the system tray setting';
 
 void transport
@@ -69,19 +71,29 @@ void transport
 void transport
   .getStartOnLogin()
   .then((result) => {
-    if (result.data !== undefined) startOnLogin.value = result.data.start_on_login;
+    if (result.error || result.data === undefined) {
+      error.value = typeof result.error === 'string' ? result.error : START_ON_LOGIN_READ_FALLBACK_ERROR;
+      return;
+    }
+
+    startOnLogin.value = result.data.start_on_login;
   })
   .catch(() => {
-    startOnLogin.value = false;
+    error.value = START_ON_LOGIN_READ_FALLBACK_ERROR;
   });
 
 void transport
   .getSystemTray()
   .then((result) => {
-    if (result.data !== undefined) systemTray.value = result.data.system_tray;
+    if (result.error || result.data === undefined) {
+      error.value = typeof result.error === 'string' ? result.error : SYSTEM_TRAY_READ_FALLBACK_ERROR;
+      return;
+    }
+
+    systemTray.value = result.data.system_tray;
   })
   .catch(() => {
-    systemTray.value = true;
+    error.value = SYSTEM_TRAY_READ_FALLBACK_ERROR;
   });
 
 async function selectDecorations(value: string): Promise<void> {
