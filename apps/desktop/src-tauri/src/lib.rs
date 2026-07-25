@@ -1292,3 +1292,52 @@ pub fn surface_existing_window<W: SurfaceableWindow + ?Sized>(window: &W) -> Res
         .find_map(Result::err)
         .map_or(Ok(()), Err)
 }
+
+/// Reduces an attachment name to a single, safe file name for the downloads
+/// directory.
+///
+/// The name is server data that any workspace member can choose, so it is treated
+/// as untrusted: path separators, parent references and control characters are
+/// stripped rather than escaped, leaving a name that cannot steer the write out of
+/// the target directory. A name that carries no usable characters falls back to
+/// `download`.
+pub fn sanitize_download_file_name(raw: &str) -> String {
+    const FALLBACK: &str = "download";
+
+    let last_segment = raw
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .replace(|character: char| character.is_control(), "");
+
+    if last_segment.is_empty() || last_segment.chars().all(|character| character == '.') {
+        return FALLBACK.to_owned();
+    }
+
+    last_segment
+}
+
+/// Picks a free path for `file_name` inside `directory`, numbering the name when
+/// it is taken so a download never overwrites an existing file. `exists` is
+/// injected so the numbering is testable without touching a filesystem.
+pub fn unique_download_path(
+    directory: &Path,
+    file_name: &str,
+    exists: impl Fn(&Path) -> bool,
+) -> std::path::PathBuf {
+    let candidate = directory.join(file_name);
+    if !exists(&candidate) {
+        return candidate;
+    }
+
+    let (stem, extension) = match file_name.rsplit_once('.') {
+        Some((stem, extension)) if !stem.is_empty() => (stem, format!(".{extension}")),
+        _ => (file_name, String::new()),
+    };
+
+    (1..)
+        .map(|index| directory.join(format!("{stem} ({index}){extension}")))
+        .find(|candidate| !exists(candidate))
+        .unwrap_or(candidate)
+}

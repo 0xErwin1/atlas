@@ -40,5 +40,9 @@ export function createBrowserPlatformTransport(): PlatformTransport {
     readClipboardImage() {
       return Promise.resolve(null);
     },
+    // The browser saves through an object-URL anchor instead; see `saveDownload`.
+    saveDownload() {
+      return Promise.resolve({ error: 'downloads are saved by the browser' });
+    },
   };
 }

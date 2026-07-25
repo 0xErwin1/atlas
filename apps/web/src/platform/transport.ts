@@ -50,6 +50,8 @@ export interface PlatformTransport {
    * implements this; the browser relies on the `ClipboardEvent` file items instead.
    */
   readClipboardImage: () => Promise<File | null>;
+  /** Writes downloaded bytes to the user's downloads directory (desktop only). */
+  saveDownload: (fileName: string, bytes: Uint8Array) => Promise<PlatformResult<{ path: string }>>;
 }
 
 let platformTransport = createBrowserPlatformTransport();

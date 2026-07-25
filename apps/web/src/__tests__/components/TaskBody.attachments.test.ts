@@ -151,10 +151,7 @@ describe('TaskBody attachment picker', () => {
       },
     );
     expect(wrapper.get('.atl-att-name').text()).toBe('renamed.txt');
-    expect(wrapper.get('.atl-att-name').attributes()).toMatchObject({
-      download: 'renamed.txt',
-      href: '/api/workspaces/ws/tasks/ATL-1/attachments/attachment-1/content',
-    });
+    expect(wrapper.get('.atl-att-name').attributes('aria-label')).toBe('Download renamed.txt');
 
     await wrapper.get('button[aria-label="Remove attachment renamed.txt"]').trigger('click');
     expect(wrapper.emitted('remove')).toEqual([['attachment-1']]);

@@ -142,6 +142,7 @@ function platformTransport(
     setZoom: async (zoomFactor) => ({ data: { window_decorations: true, zoom_factor: zoomFactor } }),
     createWorkspaceEventSource,
     readClipboardImage: async () => null,
+    saveDownload: () => Promise.resolve({ data: { path: '/downloads/file' } }),
   };
 }
 

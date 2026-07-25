@@ -342,5 +342,11 @@ export function createDesktopPlatformTransport(bridge: DesktopBridge = desktopBr
     readClipboardImage() {
       return readDesktopClipboardImage(bridge);
     },
+    saveDownload(fileName, bytes) {
+      return bridge.invoke<PlatformResult<{ path: string }>>('desktop_save_download', {
+        fileName,
+        bytes: Array.from(bytes),
+      });
+    },
   };
 }

@@ -9,6 +9,7 @@ import {
 import type { CommentParentTarget } from '@/composables/useCommentFeed';
 import { useLoadingMap } from '@/composables/useLoadingMap';
 import { errorHint } from '@/lib/apiError';
+import { saveDownload } from '@/lib/download';
 
 type CommentAttachment = Omit<components['schemas']['CommentAttachmentDto'], 'sha256'>;
 type CommentEntry = { type: string; comment?: { id: string } };
@@ -209,13 +210,14 @@ export function useCommentAttachments(target: Ref<CommentParentTarget>, entries:
         return null;
       }
 
-      const objectUrl = URL.createObjectURL(response.data);
-      const anchor = document.createElement('a');
-      anchor.href = objectUrl;
-      anchor.download =
+      const fileName =
         items.value[commentId]?.find((item) => item.id === attachmentId)?.file_name ?? 'attachment';
-      anchor.click();
-      URL.revokeObjectURL(objectUrl);
+
+      if (!(await saveDownload(response.data, fileName))) {
+        setError(commentId, 'Failed to save comment attachment');
+        return null;
+      }
+
       return response.data;
     } catch (cause) {
       if (isCurrent(requestTarget, requestGeneration)) {

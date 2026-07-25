@@ -37,6 +37,7 @@ function desktopTransport(): PlatformTransport {
     setZoom: vi.fn(),
     createWorkspaceEventSource: vi.fn(() => new FakeEventSource('desktop://events')),
     readClipboardImage: vi.fn(async () => null),
+    saveDownload: () => Promise.resolve({ data: { path: '/downloads/file' } }),
   };
 }
 

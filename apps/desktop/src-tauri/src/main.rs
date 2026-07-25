@@ -3,13 +3,14 @@ use atlas_desktop::{
     LifecycleAction, ReqwestTransportFactory, SecretServiceStore, SessionScope, StreamFrame,
     StreamTermination, SurfaceableWindow, TransportFactory, TransportKind,
     classify_workspace_stream_terminal, clear_active_identity, load_active_identity,
-    process_workspace_sse_chunk, store_active_identity, surface_existing_window,
+    process_workspace_sse_chunk, sanitize_download_file_name, store_active_identity,
+    surface_existing_window, unique_download_path,
 };
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
-    env,
+    env, fs,
     path::PathBuf,
     process,
     sync::{Arc, Mutex},
@@ -748,6 +749,46 @@ async fn resume_desktop_authentication<R: Runtime>(
     }
 }
 
+#[derive(Debug, Serialize)]
+struct IpcSavedDownload {
+    path: String,
+}
+
+/// Writes downloaded bytes into the user's downloads directory.
+///
+/// The webview cannot save a file itself: a link to the API origin is not served
+/// by the app, and an object-URL download depends on webview behaviour Atlas does
+/// not control. The renderer therefore fetches the bytes over the existing IPC
+/// transport and hands them here, where the file name is reduced to a safe leaf
+/// and numbered so an existing download is never overwritten.
+#[tauri::command]
+fn desktop_save_download<R: Runtime>(
+    app: tauri::AppHandle<R>,
+    file_name: String,
+    bytes: Vec<u8>,
+) -> IpcResult<IpcSavedDownload> {
+    let Ok(directory) = app.path().download_dir() else {
+        return IpcResult::error("the downloads directory is unavailable");
+    };
+    if let Err(error) = fs::create_dir_all(&directory) {
+        tracing::warn!(%error, "the downloads directory could not be created");
+        return IpcResult::error("the downloads directory is unavailable");
+    }
+
+    let safe_name = sanitize_download_file_name(&file_name);
+    let path = unique_download_path(&directory, &safe_name, |candidate| candidate.exists());
+
+    match fs::write(&path, bytes) {
+        Ok(()) => IpcResult::data(IpcSavedDownload {
+            path: path.to_string_lossy().into_owned(),
+        }),
+        Err(error) => {
+            tracing::warn!(%error, "the download could not be written");
+            IpcResult::error("the download could not be saved")
+        }
+    }
+}
+
 #[tauri::command]
 async fn desktop_auth_resume<R: Runtime>(app: tauri::AppHandle<R>) -> IpcResult<IpcIdentity> {
     resume_desktop_authentication(app).await
@@ -1303,6 +1344,7 @@ pub(crate) fn run_with_client(client: reqwest::Client) {
             desktop_auth_logout,
             desktop_api_request,
             desktop_read_clipboard_image,
+            desktop_save_download,
             desktop_workspace_events_subscribe,
             desktop_workspace_events_stop
         ])

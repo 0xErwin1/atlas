@@ -4,6 +4,7 @@ import { wrappedClient } from '@/api/wrapper';
 import Icon from '@/components/ui/Icon.vue';
 import PromptDialog from '@/components/ui/PromptDialog.vue';
 import { attachmentMarkdown, taskAttachmentContentUrl } from '@/lib/attachments';
+import { saveDownload } from '@/lib/download';
 import { formatBytes } from '@/lib/format';
 import { type TaskAttachmentDto, useTaskDetailStore } from '@/stores/taskDetail';
 import { useUiStore } from '@/stores/ui';
@@ -25,6 +26,7 @@ const ui = useUiStore();
 const renameTarget = ref<TaskAttachmentDto | null>(null);
 const pendingRenameGeneration = ref<number | null>(null);
 const renameError = ref('');
+const downloading = ref<Set<string>>(new Set());
 let renameGeneration = 0;
 
 function startRename(attachment: TaskAttachmentDto): void {
@@ -73,12 +75,36 @@ async function submitRename(fileName: string): Promise<void> {
   else if (detail.error) ui.showBanner(detail.error, 'error');
 }
 
-/**
- * The download streams through the API (cookie-authenticated, same origin), and
- * the endpoint sets Content-Disposition so the browser saves rather than navigates.
- */
 function contentUrl(attachmentId: string): string {
   return taskAttachmentContentUrl(props.ws, props.readableId, attachmentId);
+}
+
+/**
+ * Downloads through the API client rather than a plain link: on desktop the
+ * webview would resolve a `/api/…` href against its own asset origin, which
+ * serves no API and carries no session, so the link silently produced nothing.
+ */
+async function download(att: TaskAttachmentDto): Promise<void> {
+  if (downloading.value.has(att.id)) return;
+
+  downloading.value = new Set(downloading.value).add(att.id);
+  try {
+    const { data } = await wrappedClient.GET(
+      '/api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}/content',
+      {
+        params: { path: { ws: props.ws, readable_id: props.readableId, attachment_id: att.id } },
+        parseAs: 'blob',
+      },
+    );
+
+    if (data === undefined || !(await saveDownload(data, att.file_name))) {
+      ui.showBanner(`Could not download ${att.file_name}`, 'error');
+    }
+  } finally {
+    const next = new Set(downloading.value);
+    next.delete(att.id);
+    downloading.value = next;
+  }
 }
 
 function isImage(att: TaskAttachmentDto): boolean {
@@ -158,14 +184,16 @@ onBeforeUnmount(() => {
     >
       <div class="group flex items-center" style="gap: 8px;">
         <Icon name="paperclip" :size="14" style="color: var(--c-muted); flex: 0 0 auto;" />
-        <a
-          :href="contentUrl(att.id)"
-          :download="att.file_name"
+        <button
+          type="button"
           class="flex-1 min-w-0 truncate atl-att-name"
+          :aria-label="`Download ${att.file_name}`"
+          :aria-busy="downloading.has(att.id)"
           :title="`Download ${att.file_name}`"
+          @click="download(att)"
         >
           {{ att.file_name }}
-        </a>
+        </button>
         <span style="flex: 0 0 auto; font-size: var(--fs-xs); color: var(--c-muted);">
           {{ formatBytes(att.size_bytes) }}
         </span>
@@ -233,6 +261,12 @@ onBeforeUnmount(() => {
 .atl-att-name {
   font-size: var(--fs-sm);
   color: var(--c-foreground);
+  text-align: left;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
 }
 
 .atl-att-name:hover {

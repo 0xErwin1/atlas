@@ -5,7 +5,8 @@ use atlas_desktop::{
     InMemorySecretStore, Lifecycle, LifecycleAction, SecretStore, SessionScope, SessionState,
     StreamFrame, StreamTermination, SurfaceableWindow, TransportKind, WorkspaceEvent,
     build_authenticated_api_request, build_authenticated_request,
-    classify_workspace_stream_terminal, process_workspace_sse_chunk, surface_existing_window,
+    classify_workspace_stream_terminal, process_workspace_sse_chunk, sanitize_download_file_name,
+    surface_existing_window, unique_download_path,
 };
 use std::{
     fs,
@@ -871,4 +872,65 @@ fn a_second_launch_is_wired_to_surface_the_running_window() {
 
     assert!(source.contains("tauri_plugin_single_instance::init("));
     assert!(source.contains("surface_existing_window(&HostWindow(&window))"));
+}
+
+#[test]
+fn download_names_are_reduced_to_a_bare_file_name() {
+    // The name comes from server data that any workspace member can set, so it is
+    // never allowed to steer the write outside the downloads directory.
+    for (raw, expected) in [
+        ("report.pdf", "report.pdf"),
+        ("../../etc/passwd", "passwd"),
+        ("/etc/passwd", "passwd"),
+        ("dir/nested/shot.png", "shot.png"),
+        ("..", "download"),
+        (".", "download"),
+        ("", "download"),
+        ("   ", "download"),
+        ("a\0b.txt", "ab.txt"),
+        ("with\nnewline.txt", "withnewline.txt"),
+    ] {
+        assert_eq!(sanitize_download_file_name(raw), expected, "input {raw:?}");
+    }
+}
+
+#[test]
+fn windows_style_separators_cannot_escape_the_downloads_directory() {
+    assert_eq!(sanitize_download_file_name("..\\..\\evil.exe"), "evil.exe");
+}
+
+#[test]
+fn an_existing_download_is_kept_and_the_new_file_is_numbered() {
+    let taken = ["report.pdf", "report (1).pdf"];
+    let exists = |path: &std::path::Path| {
+        taken.contains(
+            &path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or_default(),
+        )
+    };
+
+    assert_eq!(
+        unique_download_path(std::path::Path::new("/downloads"), "report.pdf", exists),
+        std::path::PathBuf::from("/downloads/report (2).pdf")
+    );
+}
+
+#[test]
+fn a_free_download_name_is_used_verbatim() {
+    assert_eq!(
+        unique_download_path(std::path::Path::new("/downloads"), "report.pdf", |_| false),
+        std::path::PathBuf::from("/downloads/report.pdf")
+    );
+}
+
+#[test]
+fn a_numbered_extensionless_download_keeps_its_whole_name() {
+    let exists = |path: &std::path::Path| path.file_name().is_some_and(|name| name == "LICENSE");
+
+    assert_eq!(
+        unique_download_path(std::path::Path::new("/downloads"), "LICENSE", exists),
+        std::path::PathBuf::from("/downloads/LICENSE (1)")
+    );
 }
