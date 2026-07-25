@@ -74,8 +74,12 @@ describe('useWikilinkSuggest', () => {
     expect(suggest.confirmActive).toHaveBeenCalledTimes(1);
 
     onQuery('x', { left: 0, top: 0 });
-    onKeydown(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
+    const dismiss = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true });
+    onKeydown(dismiss);
     expect(query.value).toBeNull();
     expect(caret.value).toBeNull();
+    // Dismissing the list claims the key, so the surrounding overlay (the task
+    // pane) does not close on the same press.
+    expect(dismiss.defaultPrevented).toBe(true);
   });
 });

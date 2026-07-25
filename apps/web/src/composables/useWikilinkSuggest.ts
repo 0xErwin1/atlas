@@ -63,6 +63,9 @@ export function useWikilinkSuggest(editor: () => EditorTarget | null, suggest: (
       event.preventDefault();
       list.confirmActive();
     } else if (event.key === 'Escape') {
+      // Claim the key like the other list keys do, so dismissing the suggestions
+      // does not also close the overlay hosting the editor.
+      event.preventDefault();
       reset();
     }
   }

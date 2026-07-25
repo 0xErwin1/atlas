@@ -215,6 +215,11 @@ const unregisterTaskEscape = keymap.registerShortcut({
   id: 'escape',
   enabled: paneVisible,
   priority: KEYMAP_PRIORITIES.task,
+  // The pane is mostly used while typing in it (title, description, comments), so
+  // Escape has to reach it from text surfaces too. Anything nested that handles
+  // Escape itself — an open autocomplete, an inline edit, a popover — claims the
+  // key by preventing the default, which keeps the pane open.
+  allowInText: true,
   handler: () => {
     closePane();
   },

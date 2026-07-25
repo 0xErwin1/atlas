@@ -172,7 +172,10 @@ describe('Tasks keymap wiring', () => {
     expect(wrapper.find('[data-test="task-pane"]').exists()).toBe(false);
   });
 
-  it('does not close the board-hosted task detail when Escape starts in text entry', async () => {
+  // Escape has to reach the pane from inside its own text surfaces: the title,
+  // the description editor and the comment box are where the user spends most of
+  // the time the pane is open, and pending edits are flushed on unmount.
+  it('closes the board-hosted task detail when Escape starts in text entry', async () => {
     const wrapper = mountTasks();
     await flushPromises();
     await (wrapper.vm as unknown as { onSelect: (readableId: string) => Promise<void> }).onSelect('ATL-48');
@@ -184,7 +187,22 @@ describe('Tasks keymap wiring', () => {
     text.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
     await nextTick();
 
-    expect(wrapper.find('[data-test="task-pane"]').exists()).toBe(true);
+    expect(wrapper.find('[data-test="task-pane"]').exists()).toBe(false);
     text.remove();
+  });
+
+  it('leaves the task detail open when an inner control already consumed Escape', async () => {
+    const wrapper = mountTasks();
+    await flushPromises();
+    await (wrapper.vm as unknown as { onSelect: (readableId: string) => Promise<void> }).onSelect('ATL-48');
+    await flushPromises();
+
+    // What an open autocomplete or an inline edit does when it claims the key.
+    const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    event.preventDefault();
+    window.dispatchEvent(event);
+    await nextTick();
+
+    expect(wrapper.find('[data-test="task-pane"]').exists()).toBe(true);
   });
 });
