@@ -12,7 +12,7 @@ import Icon from '@/components/ui/Icon.vue';
 import SectionLabel from '@/components/ui/SectionLabel.vue';
 import { useActiveSidebarNode } from '@/composables/useActiveSidebarNode';
 import { useContextMenu } from '@/composables/useContextMenu';
-import { docKey } from '@/lib/notesTree';
+import { boardKey, docKey } from '@/lib/notesTree';
 import { useTreeSelection } from '@/stores/treeSelection';
 import { useWorkspaceStore } from '@/stores/workspace';
 
@@ -23,14 +23,17 @@ const spaceRefs = ref<Array<InstanceType<typeof NotesSpace> | null>>([]);
 
 const { activeSlug, activeBoardId, activeViewId } = useActiveSidebarNode();
 
-// Keep the tree's persistent selection in step with the open document: the
-// selection store outlives this view (Pinia), so without this a doc selected
-// before switching apps would stay highlighted on return even with nothing open.
+// Keep the tree's persistent selection in step with whatever is open, document
+// or board: the selection store outlives this view (Pinia), and the selected and
+// active row styles are both a filled background, so a stale selection reads as
+// a second open row. Only navigation moves the active node, so a multi-selection
+// made inside the tree (shift/ctrl-click, which never navigates) survives.
 watch(
-  activeSlug,
-  (slug) => {
-    if (slug === null) selection.clear();
-    else selection.selectOnly(docKey(slug));
+  [activeSlug, activeBoardId],
+  ([slug, boardId]) => {
+    if (slug !== null) selection.selectOnly(docKey(slug));
+    else if (boardId !== null) selection.selectOnly(boardKey(boardId));
+    else selection.clear();
   },
   { immediate: true },
 );
