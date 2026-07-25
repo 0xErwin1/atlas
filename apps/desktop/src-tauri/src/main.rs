@@ -584,6 +584,85 @@ fn desktop_get_zoom(state: State<'_, DesktopState>) -> IpcResult<DesktopPreferen
     stored_desktop_preferences(&state)
 }
 
+fn apply_start_on_login<E, A, S>(
+    preferences: DesktopPreferences,
+    start_on_login: bool,
+    apply_native: A,
+    save: S,
+) -> Result<DesktopPreferences, E>
+where
+    A: FnOnce(bool) -> Result<(), E>,
+    S: FnOnce(&DesktopPreferences) -> Result<(), E>,
+{
+    apply_native(start_on_login)?;
+
+    let updated = preferences.set_start_on_login(start_on_login);
+    save(&updated)?;
+
+    Ok(updated)
+}
+
+fn apply_native_start_on_login<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    start_on_login: bool,
+) -> Result<(), &'static str> {
+    let manager = app.autolaunch();
+    let result = if start_on_login {
+        manager.enable()
+    } else {
+        manager.disable()
+    };
+
+    result.map_err(|_| "desktop start-on-login is unavailable")
+}
+
+#[tauri::command]
+fn desktop_get_start_on_login(state: State<'_, DesktopState>) -> IpcResult<DesktopPreferences> {
+    stored_desktop_preferences(&state)
+}
+
+#[tauri::command]
+fn desktop_set_start_on_login<R: Runtime>(
+    start_on_login: bool,
+    state: State<'_, DesktopState>,
+    app: tauri::AppHandle<R>,
+) -> IpcResult<DesktopPreferences> {
+    let preferences = DesktopPreferences::load(&state.configuration_directory);
+
+    match apply_start_on_login(
+        preferences,
+        start_on_login,
+        |enabled| apply_native_start_on_login(&app, enabled),
+        |updated| {
+            updated
+                .save(&state.configuration_directory)
+                .map_err(|_| "desktop configuration is unavailable")
+        },
+    ) {
+        Ok(updated) => IpcResult::data(updated),
+        Err(error) => IpcResult::error(error),
+    }
+}
+
+#[tauri::command]
+fn desktop_get_system_tray(state: State<'_, DesktopState>) -> IpcResult<DesktopPreferences> {
+    stored_desktop_preferences(&state)
+}
+
+#[tauri::command]
+fn desktop_set_system_tray(
+    system_tray: bool,
+    state: State<'_, DesktopState>,
+) -> IpcResult<DesktopPreferences> {
+    let preferences =
+        DesktopPreferences::load(&state.configuration_directory).set_system_tray(system_tray);
+    if preferences.save(&state.configuration_directory).is_err() {
+        return IpcResult::error("desktop configuration is unavailable");
+    }
+
+    IpcResult::data(preferences)
+}
+
 #[tauri::command]
 fn desktop_set_zoom<R: Runtime>(
     zoom_factor: f64,
@@ -1371,21 +1450,19 @@ fn toggle_start_on_login<R: Runtime>(app: &tauri::AppHandle<R>) {
     };
 
     let preferences = DesktopPreferences::load(&directory);
-    let enable = !preferences.start_on_login();
-    let manager = app.autolaunch();
+    let start_on_login = !preferences.start_on_login();
 
-    let applied = if enable {
-        manager.enable()
-    } else {
-        manager.disable()
-    };
-    if let Err(error) = applied {
-        tracing::warn!(%error, "the start-on-login entry could not be updated");
-        return;
-    }
-
-    if let Err(error) = preferences.set_start_on_login(enable).save(&directory) {
-        tracing::warn!(%error, "the start-on-login preference could not be persisted");
+    if let Err(error) = apply_start_on_login(
+        preferences,
+        start_on_login,
+        |enabled| apply_native_start_on_login(app, enabled),
+        |updated| {
+            updated
+                .save(&directory)
+                .map_err(|_| "desktop configuration is unavailable")
+        },
+    ) {
+        tracing::warn!(%error, "the start-on-login preference could not be updated");
     }
 }
 
@@ -1441,7 +1518,16 @@ pub(crate) fn run_with_client(client: reqwest::Client) {
             if let Err(error) = disable_webkit_smooth_scrolling(&window) {
                 tracing::warn!(%error, "WebKit smooth scrolling could not be disabled");
             }
-            let tray_available = install_tray(app.handle(), preferences.start_on_login());
+            if let Err(error) =
+                apply_native_start_on_login(app.handle(), preferences.start_on_login())
+            {
+                tracing::warn!(%error, "the persisted start-on-login preference could not be applied");
+            }
+            let tray_available = if preferences.system_tray() {
+                install_tray(app.handle(), preferences.start_on_login())
+            } else {
+                false
+            };
             if close_behavior(tray_available) == CloseBehavior::HideToTray {
                 let close_target = window.clone();
                 window.on_window_event(move |event| {
@@ -1468,6 +1554,10 @@ pub(crate) fn run_with_client(client: reqwest::Client) {
             desktop_set_window_decorations,
             desktop_get_zoom,
             desktop_set_zoom,
+            desktop_get_start_on_login,
+            desktop_set_start_on_login,
+            desktop_get_system_tray,
+            desktop_set_system_tray,
             desktop_auth_login,
             desktop_auth_resume,
             desktop_auth_me,
@@ -1625,6 +1715,102 @@ mod command_tests {
     }
 
     #[test]
+    fn applying_start_on_login_calls_native_before_persisting() {
+        let steps = std::cell::RefCell::new(Vec::new());
+        let preferences = DesktopPreferences::with_window_decorations(false);
+
+        let updated = apply_start_on_login(
+            preferences,
+            true,
+            |enabled| {
+                steps.borrow_mut().push(("native", enabled));
+                Ok::<(), &'static str>(())
+            },
+            |saved| {
+                steps.borrow_mut().push(("save", saved.start_on_login()));
+                Ok::<(), &'static str>(())
+            },
+        )
+        .expect("native success persists the requested preference");
+
+        assert!(updated.start_on_login());
+        assert_eq!(*steps.borrow(), vec![("native", true), ("save", true)]);
+    }
+
+    #[test]
+    fn applying_start_on_login_does_not_persist_after_a_native_failure() {
+        let preferences =
+            DesktopPreferences::with_window_decorations(true).set_start_on_login(true);
+        let mut saved = false;
+
+        let result = apply_start_on_login(
+            preferences,
+            false,
+            |_| Err::<(), _>("native failure"),
+            |_| {
+                saved = true;
+                Ok::<(), &'static str>(())
+            },
+        );
+
+        assert_eq!(result, Err("native failure"));
+        assert!(!saved);
+    }
+
+    #[test]
+    fn desktop_start_on_login_and_tray_commands_use_the_tauri_ipc_payloads() {
+        let directory = preferences_test_directory("app-settings");
+        let app = mock_builder()
+            .manage(test_state_with_directory(directory.clone()))
+            .invoke_handler(tauri::generate_handler![
+                desktop_get_start_on_login,
+                desktop_set_system_tray
+            ])
+            .build(mock_context(noop_assets()))
+            .expect("the command test app builds");
+        let webview = WebviewWindowBuilder::new(&app, MAIN_WINDOW_LABEL, Default::default())
+            .build()
+            .expect("the command test webview builds");
+
+        let initial = get_ipc_response(
+            &webview,
+            InvokeRequest {
+                cmd: "desktop_get_start_on_login".into(),
+                callback: CallbackFn(0),
+                error: CallbackFn(1),
+                url: "tauri://localhost".parse().expect("valid test URL"),
+                body: tauri::ipc::InvokeBody::Json(serde_json::json!({})),
+                headers: Default::default(),
+                invoke_key: INVOKE_KEY.to_owned(),
+            },
+        )
+        .expect("the getter invokes through Tauri IPC")
+        .deserialize::<serde_json::Value>()
+        .expect("the getter response is JSON");
+
+        let updated = get_ipc_response(
+            &webview,
+            InvokeRequest {
+                cmd: "desktop_set_system_tray".into(),
+                callback: CallbackFn(0),
+                error: CallbackFn(1),
+                url: "tauri://localhost".parse().expect("valid test URL"),
+                body: tauri::ipc::InvokeBody::Json(serde_json::json!({ "systemTray": false })),
+                headers: Default::default(),
+                invoke_key: INVOKE_KEY.to_owned(),
+            },
+        )
+        .expect("the setter invokes through Tauri IPC")
+        .deserialize::<serde_json::Value>()
+        .expect("the setter response is JSON");
+
+        assert_eq!(initial["data"]["start_on_login"], false);
+        assert_eq!(updated["data"]["system_tray"], false);
+
+        std::fs::remove_dir_all(&directory).expect("temporary preferences are removed");
+    }
+
+    #[test]
     fn desktop_auth_login_deserializes_the_exact_vue_credentials_payload() {
         let app = mock_builder()
             .manage(test_state())
@@ -1742,7 +1928,7 @@ mod command_tests {
             .expect("preferences are persisted");
         assert_eq!(
             persisted,
-            "{\"window_decorations\":false,\"zoom_factor\":1.0,\"start_on_login\":false}\n"
+            "{\"window_decorations\":false,\"zoom_factor\":1.0,\"start_on_login\":false,\"system_tray\":true}\n"
         );
 
         std::fs::remove_dir_all(&directory).expect("temporary preferences are removed");
@@ -1838,7 +2024,7 @@ mod command_tests {
             .expect("preferences are persisted");
         assert_eq!(
             persisted,
-            "{\"window_decorations\":true,\"zoom_factor\":1.5,\"start_on_login\":false}\n"
+            "{\"window_decorations\":true,\"zoom_factor\":1.5,\"start_on_login\":false,\"system_tray\":true}\n"
         );
 
         std::fs::remove_dir_all(&directory).expect("temporary preferences are removed");

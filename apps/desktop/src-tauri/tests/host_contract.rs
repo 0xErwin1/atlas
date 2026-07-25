@@ -1008,6 +1008,31 @@ fn the_tray_and_autostart_are_wired_into_startup() {
 }
 
 #[test]
+fn app_settings_host_wiring_applies_autostart_and_gates_the_tray_at_startup() {
+    let source = include_str!("../src/main.rs");
+
+    assert!(source.contains("fn apply_start_on_login"));
+    assert!(source.contains("desktop_get_start_on_login"));
+    assert!(source.contains("desktop_set_start_on_login"));
+    assert!(source.contains("desktop_get_system_tray"));
+    assert!(source.contains("desktop_set_system_tray"));
+    assert!(
+        source.contains("apply_native_start_on_login(app.handle(), preferences.start_on_login())")
+    );
+    assert!(source.contains("if preferences.system_tray()"));
+    assert!(source.contains("install_tray(app.handle(), preferences.start_on_login())"));
+}
+
+#[test]
+fn startup_continues_when_autostart_or_tray_setup_is_unavailable() {
+    let source = include_str!("../src/main.rs");
+
+    assert!(source.contains("the persisted start-on-login preference could not be applied"));
+    assert!(source.contains("the system tray is unavailable; closing the window will quit"));
+    assert!(source.contains("close_behavior(tray_available) == CloseBehavior::HideToTray"));
+}
+
+#[test]
 fn the_state_directory_prefers_xdg_state_home_over_the_home_fallback() {
     assert_eq!(
         desktop_state_directory_from(Some("/xdg/state".as_ref()), Some("/home/u".as_ref())),
