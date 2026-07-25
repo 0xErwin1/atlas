@@ -100,6 +100,10 @@ fn default_zoom_factor() -> f64 {
     DEFAULT_ZOOM_FACTOR
 }
 
+fn default_system_tray() -> bool {
+    true
+}
+
 /// Normalizes a stored or requested zoom factor into the supported range, mapping any
 /// non-finite value (NaN, infinities) back to the default rather than propagating it.
 ///
@@ -121,9 +125,11 @@ pub struct DesktopPreferences {
     window_decorations: bool,
     #[serde(default = "default_zoom_factor")]
     zoom_factor: f64,
-    /// Defaulted so preferences written before the tray landed still load.
+    /// Defaulted so preferences written before start-on-login landed still load.
     #[serde(default)]
     start_on_login: bool,
+    #[serde(default = "default_system_tray")]
+    system_tray: bool,
 }
 
 impl DesktopPreferences {
@@ -131,6 +137,7 @@ impl DesktopPreferences {
         window_decorations: true,
         zoom_factor: DEFAULT_ZOOM_FACTOR,
         start_on_login: false,
+        system_tray: true,
     };
 
     /// Resolves stored preference bytes to the effective value, falling back to the safe
@@ -143,6 +150,7 @@ impl DesktopPreferences {
                 window_decorations: preferences.window_decorations,
                 zoom_factor: clamp_zoom(preferences.zoom_factor),
                 start_on_login: preferences.start_on_login,
+                system_tray: preferences.system_tray,
             })
             .unwrap_or(Self::DECORATIONS_ON)
     }
@@ -152,6 +160,7 @@ impl DesktopPreferences {
             window_decorations,
             zoom_factor: DEFAULT_ZOOM_FACTOR,
             start_on_login: false,
+            system_tray: true,
         }
     }
 
@@ -167,11 +176,22 @@ impl DesktopPreferences {
         self.start_on_login
     }
 
+    pub fn system_tray(&self) -> bool {
+        self.system_tray
+    }
+
     /// Returns a copy with the start-on-login preference replaced, preserving the
     /// window and zoom preferences.
     pub fn set_start_on_login(self, start_on_login: bool) -> Self {
         Self {
             start_on_login,
+            ..self
+        }
+    }
+
+    pub fn set_system_tray(self, system_tray: bool) -> Self {
+        Self {
+            system_tray,
             ..self
         }
     }
@@ -1155,10 +1175,11 @@ mod desktop_preferences_tests {
 
     #[test]
     fn resolves_to_on_when_no_preference_is_stored() {
-        assert_eq!(
-            DesktopPreferences::resolve(None),
-            DesktopPreferences::DECORATIONS_ON
-        );
+        let preferences = DesktopPreferences::resolve(None);
+
+        assert_eq!(preferences, DesktopPreferences::DECORATIONS_ON);
+        assert!(!preferences.start_on_login());
+        assert!(preferences.system_tray());
     }
 
     #[test]
@@ -1180,10 +1201,14 @@ mod desktop_preferences_tests {
 
     #[test]
     fn honors_a_stored_off_preference() {
-        assert_eq!(
-            DesktopPreferences::resolve(Some("{\"window_decorations\":false}")),
-            DesktopPreferences::with_window_decorations(false)
-        );
+        let preferences = DesktopPreferences::resolve(Some(
+            "{\"window_decorations\":false,\"zoom_factor\":1.25,\"start_on_login\":true}",
+        ));
+
+        assert!(!preferences.window_decorations());
+        assert_eq!(preferences.zoom_factor(), 1.25);
+        assert!(preferences.start_on_login());
+        assert!(preferences.system_tray());
     }
 
     #[test]
@@ -1231,6 +1256,19 @@ mod desktop_preferences_tests {
         let toggled = zoomed.set_window_decorations_value(true);
         assert!(toggled.window_decorations());
         assert_eq!(toggled.zoom_factor(), 1.5);
+    }
+
+    #[test]
+    fn system_tray_setter_preserves_every_other_preference() {
+        let preferences = DesktopPreferences::with_window_decorations(false)
+            .set_zoom_factor(1.25)
+            .set_start_on_login(true)
+            .set_system_tray(false);
+
+        assert!(!preferences.window_decorations());
+        assert_eq!(preferences.zoom_factor(), 1.25);
+        assert!(preferences.start_on_login());
+        assert!(!preferences.system_tray());
     }
 
     #[test]

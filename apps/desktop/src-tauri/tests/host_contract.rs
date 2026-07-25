@@ -308,7 +308,7 @@ fn desktop_preferences_round_trip_persists_the_saved_value_as_exact_bytes() {
 
     assert_eq!(
         persisted,
-        "{\"window_decorations\":true,\"zoom_factor\":1.0,\"start_on_login\":false}\n"
+        "{\"window_decorations\":true,\"zoom_factor\":1.0,\"start_on_login\":false,\"system_tray\":true}\n"
     );
     assert_eq!(loaded, preferences);
     assert!(!persisted.contains("bearer"));
@@ -952,14 +952,41 @@ fn start_on_login_defaults_off_and_survives_a_round_trip() {
 }
 
 #[test]
-fn toggling_start_on_login_preserves_the_other_preferences() {
-    let preferences = DesktopPreferences::with_window_decorations(false)
-        .set_zoom_factor(1.25)
-        .set_start_on_login(true);
+fn tray_defaults_on_for_absent_malformed_and_legacy_preferences() {
+    for stored in [
+        None,
+        Some("not json"),
+        Some("{\"window_decorations\":false}"),
+    ] {
+        assert!(DesktopPreferences::resolve(stored).system_tray());
+    }
+
+    let legacy = "{\"window_decorations\":false,\"zoom_factor\":1.25,\"start_on_login\":true}";
+    let preferences = DesktopPreferences::resolve(Some(legacy));
 
     assert!(!preferences.window_decorations());
     assert_eq!(preferences.zoom_factor(), 1.25);
     assert!(preferences.start_on_login());
+    assert!(preferences.system_tray());
+}
+
+#[test]
+fn toggling_autostart_and_tray_preserves_the_other_preferences() {
+    let preferences = DesktopPreferences::with_window_decorations(false)
+        .set_zoom_factor(1.25)
+        .set_start_on_login(true)
+        .set_system_tray(false);
+
+    assert!(!preferences.window_decorations());
+    assert_eq!(preferences.zoom_factor(), 1.25);
+    assert!(preferences.start_on_login());
+    assert!(!preferences.system_tray());
+
+    let tray_enabled = preferences.set_system_tray(true);
+    assert!(!tray_enabled.window_decorations());
+    assert_eq!(tray_enabled.zoom_factor(), 1.25);
+    assert!(tray_enabled.start_on_login());
+    assert!(tray_enabled.system_tray());
 }
 
 #[test]
