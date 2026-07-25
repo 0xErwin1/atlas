@@ -1459,4 +1459,35 @@ describe('useTaskDetailStore', () => {
     const [, opts] = DELETE.mock.calls[0] as [string, { params: { path: { comment_id: string } } }];
     expect(opts.params.path.comment_id).toBe('cm1');
   });
+
+  // The created record is returned, not just a success flag, so a caller that
+  // embeds the upload (the description image path) can address it immediately.
+  it('uploadAttachment returns the created attachment and appends it', async () => {
+    const store = useTaskDetailStore();
+    const created = {
+      id: 'att-1',
+      file_name: 'shot.png',
+      content_type: 'image/png',
+      size_bytes: 4,
+      created_by: { id: 'u1', type: 'user', display_name: 'Ann' },
+      created_at: '2026-01-01T00:00:00Z',
+    };
+    POST.mockResolvedValueOnce({ data: created, error: undefined });
+
+    const result = await store.uploadAttachment('ws', 'ATL-1', new File(['png'], 'shot.png'));
+
+    expect(result).toEqual(created);
+    expect(store.attachments).toEqual([created]);
+  });
+
+  it('uploadAttachment reports a failure as null and leaves the list untouched', async () => {
+    const store = useTaskDetailStore();
+    POST.mockResolvedValueOnce({ data: undefined, error: { status: 413, detail: 'Too large' } });
+
+    const result = await store.uploadAttachment('ws', 'ATL-1', new File(['png'], 'shot.png'));
+
+    expect(result).toBeNull();
+    expect(store.attachments).toEqual([]);
+    expect(store.error).not.toBeNull();
+  });
 });

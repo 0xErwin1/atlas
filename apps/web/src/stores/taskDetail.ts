@@ -1153,9 +1153,18 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     return true;
   }
 
-  async function uploadAttachment(ws: string, readableId: string, file: File): Promise<boolean> {
+  /**
+   * Uploads a file as a task attachment and returns the created record, so a
+   * caller that embeds it (the description image path) can address it right away.
+   * Null signals failure, with the reason in `error`.
+   */
+  async function uploadAttachment(
+    ws: string,
+    readableId: string,
+    file: File,
+  ): Promise<TaskAttachmentDto | null> {
     const operation = beginOperation(ws, readableId);
-    if (!isOperationCurrent(operation)) return false;
+    if (!isOperationCurrent(operation)) return null;
     error.value = null;
 
     const { data, error: apiError } = await wrappedClient.POST(
@@ -1175,13 +1184,13 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
 
     if (apiError !== undefined || data === undefined) {
       publishOperationError(operation, errorHint(apiError, 'Failed to upload attachment'));
-      return false;
+      return null;
     }
 
-    if (!isOperationCurrent(operation)) return false;
+    if (!isOperationCurrent(operation)) return null;
     attachments.value = [...attachments.value, data];
     await invalidateCurrentTaskCache(readableId);
-    return true;
+    return data;
   }
 
   async function renameAttachment(

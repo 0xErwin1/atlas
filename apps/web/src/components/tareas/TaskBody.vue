@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import type { components } from '@/api/types.d.ts';
+import type { ImageUploadResult } from '@/components/editor/imageUpload';
 import ErrorState from '@/components/states/ErrorState.vue';
 import LoadingState from '@/components/states/LoadingState.vue';
 import ActivityComments from '@/components/tareas/ActivityComments.vue';
@@ -22,6 +23,7 @@ import PromptDialog from '@/components/ui/PromptDialog.vue';
 import TagInput from '@/components/ui/TagInput.vue';
 import { useInlineEdit } from '@/composables/useInlineEdit';
 import type { AiAction } from '@/lib/aiPrompt';
+import { taskAttachmentContentUrl } from '@/lib/attachments';
 import { filesFromClipboard, filesFromDataTransfer } from '@/lib/fileTransfer';
 import { swatchById } from '@/lib/swatches';
 import { getPlatformTransport } from '@/platform/transport';
@@ -312,8 +314,8 @@ async function uploadFiles(files: File[]): Promise<void> {
 
   let uploaded = 0;
   for (const file of files) {
-    const ok = await detail.uploadAttachment(props.ws, props.task.readable_id, file);
-    if (ok) uploaded += 1;
+    const attachment = await detail.uploadAttachment(props.ws, props.task.readable_id, file);
+    if (attachment !== null) uploaded += 1;
     else fail(detail.error);
   }
 
@@ -363,6 +365,21 @@ async function onRemoveAttachment(attachmentId: string): Promise<void> {
 
 function onReferenceAttachment(markdown: string): void {
   descriptionRef.value?.insertMarkdown(markdown);
+}
+
+/**
+ * Attaches an image pasted or dropped into the description, so it lands in the
+ * attachment list and inline in the body at once. Returning the URL alone lets
+ * the editor derive the alt text and place the embed on its own line.
+ */
+async function onUploadDescriptionImage(file: File): Promise<ImageUploadResult> {
+  const attachment = await detail.uploadAttachment(props.ws, props.task.readable_id, file);
+  if (attachment === null) {
+    fail(detail.error);
+    return null;
+  }
+
+  return { url: taskAttachmentContentUrl(props.ws, props.task.readable_id, attachment.id) };
 }
 
 async function onChecklistToggle(itemId: string): Promise<void> {
@@ -599,6 +616,7 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
       :markdown="task.description"
       :ws="ws"
       :readable-id="task.readable_id"
+      :upload-image="onUploadDescriptionImage"
     />
 
     <div style="margin-top: 22px;">

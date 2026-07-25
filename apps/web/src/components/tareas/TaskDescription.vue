@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, toRef } from 'vue';
 import { useRouter } from 'vue-router';
+import type { ImageUploadResult } from '@/components/editor/imageUpload';
 // biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
 import MarkdownEditor from '@/components/editor/MarkdownEditor.vue';
 // biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
@@ -18,6 +19,8 @@ const props = defineProps<{
   ws: string;
   /** Human-readable task ID, required for the auto-save PATCH. */
   readableId: string;
+  /** Uploads an image pasted or dropped into the body as a task attachment. */
+  uploadImage?: (file: File) => Promise<ImageUploadResult>;
 }>();
 
 const router = useRouter();
@@ -102,6 +105,7 @@ defineExpose({ insertMarkdown });
       :editable="true"
       :width-toggle="false"
       :resolve-image-src="resolveImageSrc"
+      :upload-image="uploadImage"
       min-height="2.5rem"
       placeholder="Add a description…"
       @change="onChange"

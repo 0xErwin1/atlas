@@ -68,10 +68,17 @@ describe('TaskBody attachment picker', () => {
 
         if (file.name === 'broken.txt') {
           detail.error = 'Upload failed';
-          return false;
+          return null;
         }
 
-        return true;
+        return {
+          id: `att-${file.name}`,
+          file_name: file.name,
+          content_type: 'text/plain',
+          size_bytes: file.size,
+          created_by: task.created_by,
+          created_at: '2026-01-01T00:00:00Z',
+        };
       });
     vi.spyOn(tags, 'load').mockResolvedValue();
     const showBanner = vi.spyOn(ui, 'showBanner');

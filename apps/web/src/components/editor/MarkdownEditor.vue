@@ -288,7 +288,7 @@ function buildExtensions() {
     atlasMarkdownTheme,
     editStateCompartment.of(editStateExtension(effectiveEditable())),
     EditorView.domEventHandlers({
-      paste: (event) => handleImageFiles(filesFromClipboard(event.clipboardData), null),
+      paste: (event) => takeOver(event, handleImageFiles(filesFromClipboard(event.clipboardData), null)),
       drop: (event, v) => {
         if (props.uploadImage === undefined) return false;
 
@@ -297,7 +297,7 @@ function buildExtensions() {
 
         event.preventDefault();
         const pos = v.posAtCoords({ x: event.clientX, y: event.clientY });
-        return handleImageFiles(files, pos);
+        return takeOver(event, handleImageFiles(files, pos));
       },
     }),
     EditorView.updateListener.of((update) => {
@@ -379,6 +379,16 @@ function insertAtCaret(text: string): void {
     selection: { anchor: at + insert.length },
   });
   view.focus();
+}
+
+/**
+ * Stops a paste/drop the editor has taken over from also reaching an outer
+ * dropzone. The task detail attaches files dropped or pasted anywhere on the
+ * body, so without this an image dropped on the description would upload twice.
+ */
+function takeOver(event: Event, handled: boolean): boolean {
+  if (handled) event.stopPropagation();
+  return handled;
 }
 
 /**
