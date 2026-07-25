@@ -602,10 +602,22 @@ where
     Ok(updated)
 }
 
+#[cfg(target_os = "linux")]
+fn ensure_linux_autostart_parent_directory(home: &std::path::Path) -> std::io::Result<()> {
+    fs::create_dir_all(home.join(".config"))
+}
+
 fn apply_native_start_on_login<R: Runtime>(
     app: &tauri::AppHandle<R>,
     start_on_login: bool,
 ) -> Result<(), &'static str> {
+    #[cfg(target_os = "linux")]
+    if start_on_login {
+        let home = env::var_os("HOME").ok_or("desktop start-on-login is unavailable")?;
+        ensure_linux_autostart_parent_directory(&PathBuf::from(home))
+            .map_err(|_| "desktop start-on-login is unavailable")?;
+    }
+
     let manager = app.autolaunch();
     let result = if start_on_login {
         manager.enable()
@@ -1755,6 +1767,22 @@ mod command_tests {
 
         assert_eq!(result, Err("native failure"));
         assert!(!saved);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_autostart_preparation_creates_the_parent_for_the_plugin_entry() {
+        let home = preferences_test_directory("autostart-parent");
+        if home.exists() {
+            fs::remove_dir_all(&home).expect("previous temporary autostart home is removed");
+        }
+
+        ensure_linux_autostart_parent_directory(&home)
+            .expect("the plugin requires the user configuration parent");
+
+        assert!(home.join(".config").is_dir());
+
+        fs::remove_dir_all(home).expect("temporary autostart home is removed");
     }
 
     #[test]

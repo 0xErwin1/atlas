@@ -1033,6 +1033,18 @@ fn startup_continues_when_autostart_or_tray_setup_is_unavailable() {
 }
 
 #[test]
+fn supported_nix_package_provides_the_dynamic_tray_backend_and_autostart_parent() {
+    let desktop_derivation = include_str!("../../../../nix/atlas-desktop.nix");
+    let host_source = include_str!("../src/main.rs");
+
+    assert!(desktop_derivation.contains("libayatana-appindicator"));
+    assert!(desktop_derivation.contains("patchelf --add-rpath"));
+    assert!(desktop_derivation.contains(".atlas_desktop-wrapped"));
+    assert!(!desktop_derivation.contains("wrapProgram"));
+    assert!(host_source.contains("ensure_linux_autostart_parent_directory"));
+}
+
+#[test]
 fn the_state_directory_prefers_xdg_state_home_over_the_home_fallback() {
     assert_eq!(
         desktop_state_directory_from(Some("/xdg/state".as_ref()), Some("/home/u".as_ref())),

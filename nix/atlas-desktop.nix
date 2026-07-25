@@ -2,9 +2,11 @@
 , rustPlatform
 , pkg-config
 , mold
+, patchelf
 , wrapGAppsHook3
 , copyDesktopItems
 , makeDesktopItem
+, libayatana-appindicator
 , webkitgtk_4_1
 , glib-networking
 , dbus
@@ -53,6 +55,7 @@ rustPlatform.buildRustPackage {
   nativeBuildInputs = [
     pkg-config
     mold
+    patchelf
     wrapGAppsHook3
     copyDesktopItems
   ];
@@ -63,6 +66,7 @@ rustPlatform.buildRustPackage {
     dbus
     openssl
     gnome-keyring
+    libayatana-appindicator
   ];
 
   desktopItems = [ desktopItem ];
@@ -78,5 +82,11 @@ rustPlatform.buildRustPackage {
   postInstall = ''
     install -Dm644 apps/desktop/src-tauri/icons/atlas-icon.svg \
       "$out/share/icons/hicolor/scalable/apps/atlas-desktop.svg"
+  '';
+
+  postFixup = ''
+    for binary in "$out/bin/atlas_desktop" "$out/bin/.atlas_desktop-wrapped"; do
+      patchelf --add-rpath "${lib.makeLibraryPath [ libayatana-appindicator ]}" "$binary"
+    done
   '';
 }
