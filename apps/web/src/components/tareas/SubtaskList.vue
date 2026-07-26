@@ -3,6 +3,7 @@ import { computed, ref } from 'vue';
 import Avatar from '@/components/ui/Avatar.vue';
 import Chip from '@/components/ui/Chip.vue';
 import Icon from '@/components/ui/Icon.vue';
+import SquareCheckbox from '@/components/ui/SquareCheckbox.vue';
 import { useLabelColorsStore } from '@/stores/labelColors';
 import type { SubtaskDto } from '@/stores/taskDetail';
 
@@ -79,16 +80,13 @@ function submitDraft(): void {
     <div class="atl-sub-head">Sub-tasks · {{ doneCount }} / {{ subtasks.length }}</div>
 
     <div v-for="sub in subtasks" :key="sub.id" class="group atl-sub-row" :data-subtask="sub.id">
-      <button
-        type="button"
-        class="atl-sub-check"
-        :class="{ done: isDone(sub) }"
+      <SquareCheckbox
+        :model-value="isDone(sub)"
+        :label="isDone(sub) ? `Mark ${sub.title} not done` : `Mark ${sub.title} done`"
+        tone="success"
         :title="isDone(sub) ? 'Mark not done' : 'Mark done'"
-        :aria-pressed="isDone(sub)"
-        @click="toggleDone(sub)"
-      >
-        <Icon v-if="isDone(sub)" name="check" :size="12" :stroke-width="2.4" />
-      </button>
+        @update:model-value="toggleDone(sub)"
+      />
 
       <button
         type="button"
@@ -185,26 +183,6 @@ function submitDraft(): void {
 
 .atl-sub-row:hover {
   background: rgba(179, 177, 173, 0.05);
-}
-
-.atl-sub-check {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 14px;
-  height: 14px;
-  flex: 0 0 auto;
-  padding: 0;
-  border: 1.5px solid var(--c-muted);
-  border-radius: 3px;
-  background: transparent;
-  cursor: pointer;
-}
-
-.atl-sub-check.done {
-  border-color: var(--c-success);
-  background: var(--c-success);
-  color: var(--c-background);
 }
 
 .atl-sub-title {

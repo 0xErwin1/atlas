@@ -58,6 +58,16 @@ describe('SubtaskList', () => {
     expect(wrapper.emitted('promote')).toEqual([['ATL-2']]);
   });
 
+  it('emits the done column when the completion checkbox is requested', async () => {
+    const wrapper = mountList([subtask('t1', 'ATL-2', 'Write tests', 'col-todo')]);
+    const checkbox = wrapper.get<HTMLInputElement>('input[aria-label="Mark Write tests done"]');
+
+    await checkbox.setValue(true);
+
+    expect(wrapper.emitted('setColumn')).toEqual([['ATL-2', 'col-done']]);
+    expect(checkbox.element.checked).toBe(false);
+  });
+
   it('emits add with the trimmed title on enter and clears the input', async () => {
     const wrapper = mountList([]);
 

@@ -6,6 +6,7 @@ import DatePicker from '@/components/ui/DatePicker.vue';
 import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
 import Icon from '@/components/ui/Icon.vue';
 import MultiSelect, { type MultiSelectOption } from '@/components/ui/MultiSelect.vue';
+import SquareCheckbox from '@/components/ui/SquareCheckbox.vue';
 import { useBoardsStore } from '@/stores/boards';
 import { type PropertyDefinitionDto, usePropertyDefinitionsStore } from '@/stores/propertyDefinitions';
 import { useTasksStore } from '@/stores/tasks';
@@ -219,12 +220,11 @@ async function doDelete(): Promise<void> {
             :value="numberValue(def)"
             @change="onNumberInput(def, ($event.target as HTMLInputElement).value)"
           />
-          <input
+          <SquareCheckbox
             v-else-if="def.kind === 'boolean'"
-            type="checkbox"
-            class="atl-cf-checkbox"
-            :checked="boolValue(def)"
-            @change="setValue(def, ($event.target as HTMLInputElement).checked)"
+            :model-value="boolValue(def)"
+            :label="`${def.name} custom field`"
+            @update:model-value="(value: boolean) => setValue(def, value)"
           />
           <DatePicker
             v-else-if="def.kind === 'date'"
@@ -369,13 +369,6 @@ async function doDelete(): Promise<void> {
 
 .atl-cf-input:focus {
   border-color: var(--c-primary);
-}
-
-.atl-cf-checkbox {
-  width: 15px;
-  height: 15px;
-  accent-color: var(--c-primary);
-  cursor: pointer;
 }
 
 .atl-cf-del {

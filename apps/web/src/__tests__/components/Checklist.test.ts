@@ -37,9 +37,11 @@ describe('Checklist (REQ-W22)', () => {
   it('emits toggle with the item id when the checkbox is clicked', async () => {
     const wrapper = mount(Checklist, { props: { items: [item('a', 'One', false)], columns } });
 
-    await wrapper.get('button[aria-label="Check item"]').trigger('click');
+    const checkbox = wrapper.get<HTMLInputElement>('input[aria-label="Check One"]');
+    await checkbox.setValue(true);
 
     expect(wrapper.emitted('toggle')).toEqual([['a']]);
+    expect(checkbox.element.checked).toBe(false);
   });
 
   it('opens a column picker when the promote button is clicked', async () => {

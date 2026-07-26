@@ -3,6 +3,7 @@ import { computed, ref } from 'vue';
 import { RouterLink } from 'vue-router';
 import Icon from '@/components/ui/Icon.vue';
 import Popover from '@/components/ui/Popover.vue';
+import SquareCheckbox from '@/components/ui/SquareCheckbox.vue';
 import type { ChecklistItemDto } from '@/stores/taskDetail';
 
 interface ColumnRef {
@@ -99,24 +100,12 @@ function pickColumn(itemId: string, columnId: string): void {
       style="gap: 8px; padding: 4px 0; font-size: var(--fs-base);"
       :data-checklist-item="item.id"
     >
-      <button
-        type="button"
-        :aria-pressed="item.checked"
-        :aria-label="item.checked ? 'Uncheck item' : 'Check item'"
-        class="flex items-center justify-center shrink-0 cursor-pointer"
-        :style="{
-          width: '15px',
-          height: '15px',
-          borderRadius: 'var(--r-sm)',
-          border: item.checked ? 'none' : '1px solid var(--c-muted)',
-          backgroundColor: item.checked ? 'var(--c-success)' : 'transparent',
-          color: 'var(--c-background)',
-          padding: 0,
-        }"
-        @click="emit('toggle', item.id)"
-      >
-        <Icon v-if="item.checked" name="check" :size="12" />
-      </button>
+      <SquareCheckbox
+        :model-value="item.checked"
+        :label="item.checked ? `Uncheck ${item.title}` : `Check ${item.title}`"
+        tone="success"
+        @update:model-value="emit('toggle', item.id)"
+      />
 
       <input
         v-if="editingId === item.id"

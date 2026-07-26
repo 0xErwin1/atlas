@@ -230,6 +230,7 @@ describe('AppSettingsPanel', () => {
     const wrapper = await mountPanel();
     await checkbox(wrapper, 'Start on login').setValue(true);
 
+    expect(checkbox(wrapper, 'Start on login').element.checked).toBe(false);
     expect(wrapper.get('input[aria-label="Start on login"]').attributes('disabled')).toBeDefined();
     expect(wrapper.get('input[aria-label="Show system tray icon"]').attributes('disabled')).toBeDefined();
 

@@ -4,6 +4,7 @@ import PanelHeader from '@/components/settings/PanelHeader.vue';
 import Btn from '@/components/ui/Btn.vue';
 import Icon from '@/components/ui/Icon.vue';
 import SegmentedControl, { type SegmentedOption } from '@/components/ui/SegmentedControl.vue';
+import SquareCheckbox from '@/components/ui/SquareCheckbox.vue';
 import {
   DEFAULT_ZOOM_FACTOR,
   getPlatformTransport,
@@ -158,17 +159,8 @@ function resetZoom(): void {
   void applyZoom(DEFAULT_ZOOM_FACTOR);
 }
 
-function checked(event: Event): boolean | null {
-  return event.target instanceof HTMLInputElement ? event.target.checked : null;
-}
-
-function restoreChecked(event: Event, value: boolean): void {
-  if (event.target instanceof HTMLInputElement) event.target.checked = value;
-}
-
-async function updateStartOnLogin(event: Event): Promise<void> {
-  const next = checked(event);
-  if (next === null || next === startOnLogin.value || saving.value) return;
+async function updateStartOnLogin(next: boolean): Promise<void> {
+  if (next === startOnLogin.value || saving.value) return;
 
   error.value = null;
   saving.value = true;
@@ -185,14 +177,12 @@ async function updateStartOnLogin(event: Event): Promise<void> {
   } catch {
     error.value = START_ON_LOGIN_FALLBACK_ERROR;
   } finally {
-    restoreChecked(event, startOnLogin.value);
     saving.value = false;
   }
 }
 
-async function updateSystemTray(event: Event): Promise<void> {
-  const next = checked(event);
-  if (next === null || next === systemTray.value || saving.value) return;
+async function updateSystemTray(next: boolean): Promise<void> {
+  if (next === systemTray.value || saving.value) return;
 
   error.value = null;
   saving.value = true;
@@ -210,7 +200,6 @@ async function updateSystemTray(event: Event): Promise<void> {
   } catch {
     error.value = SYSTEM_TRAY_FALLBACK_ERROR;
   } finally {
-    restoreChecked(event, systemTray.value);
     saving.value = false;
   }
 }
@@ -242,12 +231,11 @@ async function updateSystemTray(event: Event): Promise<void> {
         <div class="atl-pref-label">Start on login</div>
         <div class="atl-pref-hint">Launch Atlas Desktop when you sign in to this machine.</div>
       </div>
-      <input
-        aria-label="Start on login"
-        type="checkbox"
-        :checked="startOnLogin"
+      <SquareCheckbox
+        label="Start on login"
+        :model-value="startOnLogin"
         :disabled="saving"
-        @change="updateStartOnLogin"
+        @update:model-value="updateStartOnLogin"
       />
     </div>
 
@@ -257,12 +245,11 @@ async function updateSystemTray(event: Event): Promise<void> {
         <div class="atl-pref-hint">Keep Atlas Desktop available from the system tray.</div>
         <div v-if="trayRestartRequired" class="atl-pref-hint">Restart Atlas Desktop to apply this change.</div>
       </div>
-      <input
-        aria-label="Show system tray icon"
-        type="checkbox"
-        :checked="systemTray"
+      <SquareCheckbox
+        label="Show system tray icon"
+        :model-value="systemTray"
         :disabled="saving"
-        @change="updateSystemTray"
+        @update:model-value="updateSystemTray"
       />
     </div>
 

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import SquareCheckbox from '@/components/ui/SquareCheckbox.vue';
 import type { ApiKeyScope } from '@/stores/apiKeys';
 
 const ACTIONS = ['read', 'create', 'update', 'delete'] as const;
@@ -89,7 +90,9 @@ const SCOPE_GRID: readonly ScopeRow[] = [
   },
 ];
 
-const props = defineProps<{ modelValue: ApiKeyScope[] }>();
+const props = withDefaults(defineProps<{ modelValue: ApiKeyScope[]; disabled?: boolean }>(), {
+  disabled: false,
+});
 
 const emit = defineEmits<{ 'update:modelValue': [value: ApiKeyScope[]] }>();
 
@@ -106,7 +109,7 @@ const rows = computed(() =>
     label: row.label ?? row.family,
     columns: ACTIONS.map((action) => {
       const scope = row.cells[action];
-      return scope ? { scope } : null;
+      return scope ? { scope, action } : null;
     }),
   })),
 );
@@ -120,6 +123,8 @@ function isChecked(scope: ApiKeyScope): boolean {
  * is deterministic regardless of the order cells were toggled in.
  */
 function toggle(scope: ApiKeyScope): void {
+  if (props.disabled) return;
+
   const next = new Set(selected.value);
 
   if (next.has(scope)) next.delete(scope);
@@ -148,12 +153,12 @@ function toggle(scope: ApiKeyScope): void {
       <div class="atl-scope-family">{{ row.label }}</div>
       <template v-for="(col, i) in row.columns" :key="i">
         <label v-if="col" class="atl-scope-cell">
-          <input
-            type="checkbox"
-            class="atl-scope-box"
+          <SquareCheckbox
             :data-scope="col.scope"
-            :checked="isChecked(col.scope)"
-            @change="toggle(col.scope)"
+            :model-value="isChecked(col.scope)"
+            :label="`${row.label}: ${col.action} capability`"
+            :disabled="disabled"
+            @update:model-value="toggle(col.scope)"
           />
         </label>
         <div v-else class="atl-scope-cell atl-scope-cell--empty" aria-hidden="true"></div>
@@ -226,10 +231,4 @@ function toggle(scope: ApiKeyScope): void {
   cursor: default;
 }
 
-.atl-scope-box {
-  width: 15px;
-  height: 15px;
-  cursor: pointer;
-  accent-color: var(--c-primary);
-}
 </style>
