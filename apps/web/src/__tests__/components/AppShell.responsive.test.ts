@@ -8,6 +8,7 @@ vi.mock('vue-router', () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));
 
+import ContextSidebar from '@/components/shell/ContextSidebar.vue';
 import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 import AppShell from '@/views/AppShell.vue';
@@ -32,14 +33,22 @@ const stubs = {
   EmptyState: { template: '<div data-stub="empty" />' },
 };
 
-function mountShell(props: Record<string, unknown> = {}, withSidebar = true) {
+function mountShell(props: Record<string, unknown> = {}, withSidebar = true, withRealSidebar = false) {
   return mount(AppShell, {
     props,
     slots: {
       default: () => h('div', { 'data-test': 'main' }, 'MAIN'),
       ...(withSidebar ? { sidebar: () => h('div', { 'data-test': 'tree' }, 'TREE') } : {}),
+      ...(withRealSidebar
+        ? { 'sidebar-footer': () => h('div', { 'data-test': 'sidebar-footer' }, 'FOOTER') }
+        : {}),
     },
-    global: { stubs },
+    global: {
+      stubs: {
+        ...stubs,
+        ...(withRealSidebar ? { ContextSidebar, WorkspaceSwitcher: true } : {}),
+      },
+    },
   });
 }
 
@@ -117,6 +126,34 @@ describe('AppShell responsive layout', () => {
 
     expect(wrapper.find('[data-test="main"]').exists()).toBe(true);
     expect(wrapper.find('[data-test="tree"]').exists()).toBe(true);
+  });
+
+  it('omits the real resize separator when the desktop sidebar is collapsed or mobile shell is active', () => {
+    setViewportWidth(1280);
+    const ui = useUiStore();
+    ui.sidebarCollapsed = true;
+
+    const collapsed = mountShell({}, true, true);
+    expect(collapsed.find('[role="separator"]').exists()).toBe(false);
+    collapsed.unmount();
+
+    ui.sidebarCollapsed = false;
+    setViewportWidth(390);
+    const mobile = mountShell({}, true, true);
+    expect(mobile.find('[role="separator"]').exists()).toBe(false);
+    mobile.unmount();
+  });
+
+  it('keeps the footer and shrinkable main pane when the real sidebar reaches its 480px maximum', async () => {
+    setViewportWidth(1280);
+    const wrapper = mountShell({}, true, true);
+    wrapper.element.style.width = '600px';
+
+    await wrapper.get('[role="separator"]').trigger('keydown', { key: 'End' });
+
+    expect(wrapper.get('aside').attributes('style')).toContain('width: 480px');
+    expect(wrapper.find('[data-test="sidebar-footer"]').exists()).toBe(true);
+    expect(wrapper.get('main').classes()).toContain('min-w-0');
   });
 
   function mountWithInspector() {

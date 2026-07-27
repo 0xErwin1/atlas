@@ -1,21 +1,79 @@
-import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { mount } from '@vue/test-utils';
+import { createPinia, setActivePinia } from 'pinia';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import TaskCard from '@/components/tareas/TaskCard.vue';
+import TaskTableView from '@/components/tareas/TaskTableView.vue';
+import TaskTimelineView from '@/components/tareas/TaskTimelineView.vue';
+import TaskViewListView from '@/components/tareas/TaskViewListView.vue';
+import { type ColumnDto, type TaskDto, type TaskSummaryDto, useBoardsStore } from '@/stores/boards';
 
-const componentSource = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8');
+vi.mock('vue-router', () => ({
+  useRouter: () => ({ resolve: () => ({ href: '/tasks/ATL-96' }) }),
+}));
+
+const task: TaskSummaryDto = {
+  id: 'task-96',
+  readable_id: 'ATL-96',
+  board_id: 'board-1',
+  column_id: 'column-1',
+  board_name: 'Readability',
+  column_name: 'In Progress',
+  title: 'A complete task title that remains available when the visible label truncates',
+  priority: null,
+  subtask_count: 0,
+  labels: [],
+  assignees: [],
+  updated_at: '2026-07-27T00:00:00Z',
+};
+
+const column: ColumnDto = {
+  id: 'column-1',
+  board_id: 'board-1',
+  name: 'In Progress',
+  position_key: 'a0',
+  color: 'blue',
+  created_at: '2026-07-27T00:00:00Z',
+  updated_at: '2026-07-27T00:00:00Z',
+};
+
+function mountTaskView(component: typeof TaskTableView | typeof TaskTimelineView) {
+  return mount(component, {
+    props: { ws: 'atlas', selectedReadableId: null },
+    shallow: true,
+  });
+}
 
 describe('truncated title contracts', () => {
-  it('binds the complete title on every remaining confirmed task title surface', () => {
-    const contracts = [
-      [
-        '../../components/tareas/TaskViewListView.vue',
-        'class="atl-tl-title" :class="{ muted: isDone(task) }" :title="task.title"',
-      ],
-      ['../../components/tareas/TaskTableView.vue', 'class="atl-tt-title" :title="row.task.title"'],
-      ['../../components/tareas/TaskTimelineView.vue', 'class="atl-tm-title" :title="bar.task.title"'],
-    ] as const;
+  beforeEach(() => {
+    setActivePinia(createPinia());
 
-    for (const [path, binding] of contracts) {
-      expect(componentSource(path)).toContain(binding);
-    }
+    const boards = useBoardsStore();
+    boards.columns = [column];
+    boards._setTasksForTest({ [column.id]: [task] });
+    vi.spyOn(boards, 'taskDetail').mockReturnValue({ due_date: '2026-07-27T00:00:00Z' } as TaskDto);
+  });
+
+  it('renders the complete task title on each confirmed ellipsized task view surface', () => {
+    const list = mount(TaskViewListView, {
+      props: { ws: 'atlas', tasks: [task], selectedReadableId: null },
+      shallow: true,
+    });
+    const table = mountTaskView(TaskTableView);
+    const timeline = mountTaskView(TaskTimelineView);
+
+    expect(list.get('.atl-tl-title').text()).toBe(task.title);
+    expect(list.get('.atl-tl-title').attributes('title')).toBe(task.title);
+    expect(table.get('.atl-tt-title').text()).toBe(task.title);
+    expect(table.get('.atl-tt-title').attributes('title')).toBe(task.title);
+    expect(timeline.get('.atl-tm-title').text()).toBe(task.title);
+    expect(timeline.get('.atl-tm-title').attributes('title')).toBe(task.title);
+  });
+
+  it('leaves a representative excluded non-ellipsized task title without a title attribute', () => {
+    const card = mount(TaskCard, { props: { task }, shallow: true });
+    const title = card.get('.atl-task-card > span');
+
+    expect(title.text()).toBe(task.title);
+    expect(title.attributes('title')).toBeUndefined();
   });
 });
