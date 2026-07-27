@@ -336,6 +336,7 @@ enum Case {
     ListDocuments,
     GetDocument,
     GetDocumentCompact,
+    GetDocumentRange,
     UpdateDocument,
     DeleteDocument,
     UpdateContent,
@@ -473,6 +474,7 @@ impl Case {
         Case::ListDocuments,
         Case::GetDocument,
         Case::GetDocumentCompact,
+        Case::GetDocumentRange,
         Case::UpdateDocument,
         Case::DeleteDocument,
         Case::UpdateContent,
@@ -605,6 +607,7 @@ impl Case {
             Case::ListDocuments => ("GET", "docs:read"),
             Case::GetDocument => ("GET", "docs:read"),
             Case::GetDocumentCompact => ("GET", "docs:read"),
+            Case::GetDocumentRange => ("GET", "docs:read"),
             Case::UpdateDocument => ("PATCH", "docs:update"),
             Case::DeleteDocument => ("DELETE", "docs:delete"),
             Case::UpdateContent => ("PUT", "docs:update"),
@@ -1012,6 +1015,19 @@ async fn invoke(
                 token,
                 "GET",
                 &format!("/api/workspaces/{ws}/documents/{}/compact", fx.document_ref),
+            )
+            .await
+        }
+        Case::GetDocumentRange => {
+            raw_call(
+                http,
+                base_url,
+                token,
+                "GET",
+                &format!(
+                    "/api/workspaces/{ws}/documents/{}/content/range",
+                    fx.document_ref
+                ),
             )
             .await
         }

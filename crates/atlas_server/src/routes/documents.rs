@@ -7,9 +7,10 @@ use axum::{
     http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Response},
 };
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use bytes::Bytes;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sha2::Digest;
 
 use atlas_api::{
@@ -19,7 +20,8 @@ use atlas_api::{
     dtos::documents::{
         ActorDto, AttachmentDto, BacklinkDto, CommentAttachmentDto, CommentBacklinkParentDto,
         CommentBacklinkSourceDto, CommentDraftDto, CopyDocumentRequest, CreateDocumentRequest,
-        DocumentCompactDto, DocumentDto, DocumentSummaryDto, FrontmatterDto, MoveDocumentRequest,
+        DocumentCompactDto, DocumentContentRangeDto, DocumentContentRangeQuery, DocumentDto,
+        DocumentLineDto, DocumentSummaryDto, FrontmatterDto, MoveDocumentRequest,
         RevisionContentDto, RevisionMetaDto, UpdateContentRequest, UpdateDocumentRequest,
     },
     pagination::{Cursor, Page},
@@ -83,6 +85,17 @@ pub(crate) struct AttachmentPath {
     #[allow(dead_code)]
     ws: String,
     attachment_id: uuid::Uuid,
+}
+
+#[derive(Serialize, Deserialize)]
+struct RangeContinuation {
+    revision_id: uuid::Uuid,
+    start_line: u64,
+    end_line: u64,
+    line_limit: u32,
+    byte_limit: u32,
+    next_line: u64,
+    next_byte: u64,
 }
 
 // ---------------------------------------------------------------------------
@@ -315,6 +328,234 @@ pub(crate) async fn get_document_compact(
         created_at: document.created_at,
         updated_at: document.updated_at,
     }))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/workspaces/{ws}/documents/{slug}/content/range",
+    tag = "documents",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path), ("slug" = String, Path),
+        ("start_line" = Option<u64>, Query), ("end_line" = Option<u64>, Query),
+        ("line_limit" = Option<u32>, Query), ("byte_limit" = Option<u32>, Query),
+        ("continuation" = Option<String>, Query),
+    ),
+    responses((status = 200, body = DocumentContentRangeDto), (status = 400), (status = 401), (status = 403), (status = 404), (status = 409), (status = 422))
+)]
+pub(crate) async fn get_content_range(
+    auth: Authorized<DocumentSlugRes, ViewerMin, DocsRead>,
+    State(state): State<AppState>,
+    Query(query): Query<DocumentContentRangeQuery>,
+) -> Result<Json<DocumentContentRangeDto>, ApiError> {
+    query.validate().map_err(range_validation_error)?;
+    let document = auth.resource.0;
+    let continuation = resolve_range_continuation(&state, &query, &document)?;
+    let (lines, byte_count, next_line, next_byte) =
+        bounded_range(&document.content, &continuation)?;
+    let has_more = range_has_more(
+        &document.content,
+        next_line,
+        next_byte,
+        continuation.end_line,
+    );
+    let continuation = has_more
+        .then(|| {
+            encode_range_continuation(
+                &state,
+                RangeContinuation {
+                    next_line,
+                    next_byte,
+                    ..continuation
+                },
+            )
+        })
+        .transpose()?;
+
+    Ok(Json(DocumentContentRangeDto {
+        head_revision_id: document.current_revision_id.0,
+        head_seq: document.current_revision_seq,
+        lines,
+        byte_count,
+        has_more,
+        continuation,
+    }))
+}
+
+fn range_validation_error(
+    error: atlas_api::dtos::documents::DocumentRangeValidationError,
+) -> ApiError {
+    ApiError::InvalidInput {
+        message: format!("invalid content range: {error:?}"),
+    }
+}
+
+fn resolve_range_continuation(
+    state: &AppState,
+    query: &DocumentContentRangeQuery,
+    document: &atlas_domain::entities::documents::Document,
+) -> Result<RangeContinuation, ApiError> {
+    let Some(token) = query.continuation.as_deref() else {
+        return Ok(RangeContinuation {
+            revision_id: document.current_revision_id.0,
+            start_line: query.start_line.unwrap_or(1),
+            end_line: query.end_line.unwrap_or(u64::MAX),
+            line_limit: query.effective_line_limit(),
+            byte_limit: query.effective_byte_limit(),
+            next_line: query.start_line.unwrap_or(1),
+            next_byte: 0,
+        });
+    };
+    let continuation = decode_range_continuation(state, token)?;
+    let token_query = DocumentContentRangeQuery {
+        start_line: Some(continuation.start_line),
+        end_line: Some(continuation.end_line),
+        line_limit: Some(continuation.line_limit),
+        byte_limit: Some(continuation.byte_limit),
+        continuation: None,
+    };
+    token_query.validate().map_err(range_validation_error)?;
+    if continuation.revision_id != document.current_revision_id.0 {
+        return Err(ApiError::Conflict);
+    }
+    if query
+        .start_line
+        .is_some_and(|value| value != continuation.start_line)
+        || query
+            .end_line
+            .is_some_and(|value| value != continuation.end_line)
+        || query
+            .line_limit
+            .is_some_and(|value| value != continuation.line_limit)
+        || query
+            .byte_limit
+            .is_some_and(|value| value != continuation.byte_limit)
+        || continuation.next_line < continuation.start_line
+        || continuation.next_line > continuation.end_line
+    {
+        return Err(ApiError::BadRequest {
+            message: "invalid document range continuation".into(),
+        });
+    }
+    Ok(continuation)
+}
+
+fn bounded_range(
+    content: &str,
+    continuation: &RangeContinuation,
+) -> Result<(Vec<DocumentLineDto>, u64, u64, u64), ApiError> {
+    let mut lines = Vec::new();
+    let mut byte_count = 0_u64;
+    let mut next_line = continuation.next_line;
+    let mut next_byte = continuation.next_byte;
+    for (line_number, text) in atlas_domain::document_lines::document_lines(content) {
+        let line_number = line_number as u64;
+        if line_number < next_line || line_number > continuation.end_line {
+            continue;
+        }
+        if lines.len() >= continuation.line_limit as usize
+            || byte_count >= u64::from(continuation.byte_limit)
+        {
+            break;
+        }
+        let start = if line_number == next_line {
+            next_byte as usize
+        } else {
+            0
+        };
+        if start > text.len() || !text.is_char_boundary(start) {
+            return Err(ApiError::BadRequest {
+                message: "invalid document range continuation".into(),
+            });
+        }
+        let remaining =
+            usize::try_from(u64::from(continuation.byte_limit) - byte_count).unwrap_or(usize::MAX);
+        let end = bounded_utf8_end(text, start, remaining);
+        if end == start && start < text.len() {
+            return Err(ApiError::InvalidInput {
+                message: "byte_limit is too small to encode the next UTF-8 scalar; retry with a larger byte_limit".into(),
+            });
+        }
+        let fragment = &text[start..end];
+        byte_count += fragment.len() as u64;
+        lines.push(DocumentLineDto {
+            line_number,
+            text: fragment.into(),
+        });
+        if end < text.len() {
+            next_line = line_number;
+            next_byte = end as u64;
+            break;
+        }
+        next_line = line_number.saturating_add(1);
+        next_byte = 0;
+    }
+    Ok((lines, byte_count, next_line, next_byte))
+}
+
+fn bounded_utf8_end(text: &str, start: usize, remaining: usize) -> usize {
+    let mut end = (start + remaining).min(text.len());
+    while end > start && !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    end
+}
+
+fn range_has_more(content: &str, next_line: u64, next_byte: u64, end_line: u64) -> bool {
+    atlas_domain::document_lines::document_lines(content).any(|(line_number, text)| {
+        let line_number = line_number as u64;
+        line_number <= end_line
+            && (line_number > next_line
+                || (line_number == next_line && (next_byte == 0 || next_byte < text.len() as u64)))
+    })
+}
+
+fn encode_range_continuation(
+    state: &AppState,
+    continuation: RangeContinuation,
+) -> Result<String, ApiError> {
+    let payload = serde_json::to_vec(&continuation).map_err(|_| ApiError::Internal {
+        message: "serialize document range continuation".into(),
+    })?;
+    let (ciphertext, nonce) =
+        state
+            .webhook_crypto
+            .encrypt(&payload)
+            .map_err(|_| ApiError::Internal {
+                message: "encrypt document range continuation".into(),
+            })?;
+    Ok(format!(
+        "{}.{}",
+        URL_SAFE_NO_PAD.encode(nonce),
+        URL_SAFE_NO_PAD.encode(ciphertext)
+    ))
+}
+
+fn decode_range_continuation(state: &AppState, token: &str) -> Result<RangeContinuation, ApiError> {
+    let Some((nonce, ciphertext)) = token.split_once('.') else {
+        return Err(ApiError::BadRequest {
+            message: "invalid document range continuation".into(),
+        });
+    };
+    let nonce = URL_SAFE_NO_PAD
+        .decode(nonce)
+        .map_err(|_| ApiError::BadRequest {
+            message: "invalid document range continuation".into(),
+        })?;
+    let ciphertext = URL_SAFE_NO_PAD
+        .decode(ciphertext)
+        .map_err(|_| ApiError::BadRequest {
+            message: "invalid document range continuation".into(),
+        })?;
+    let payload = state
+        .webhook_crypto
+        .decrypt(&ciphertext, &nonce)
+        .map_err(|_| ApiError::BadRequest {
+            message: "invalid document range continuation".into(),
+        })?;
+    serde_json::from_slice(&payload).map_err(|_| ApiError::BadRequest {
+        message: "invalid document range continuation".into(),
+    })
 }
 
 // ---------------------------------------------------------------------------

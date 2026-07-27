@@ -12,7 +12,8 @@ use sea_orm::{ConnectionTrait, Statement};
 use atlas_api::dtos::{
     ApiKeyScope, CreateUserApiKeyRequest,
     documents::{
-        CreateDocumentRequest, MoveDocumentRequest, UpdateContentRequest, UpdateDocumentRequest,
+        CreateDocumentRequest, DocumentContentRangeDto, MoveDocumentRequest, UpdateContentRequest,
+        UpdateDocumentRequest,
     },
 };
 use atlas_client::ClientError;
@@ -228,6 +229,116 @@ async fn compact_document_read_omits_content_and_does_not_leak_across_workspaces
         .await
         .expect("cross-workspace compact request");
     assert_eq!(hidden.status(), reqwest::StatusCode::NOT_FOUND);
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn range_read_pages_losslessly_and_rejects_too_small_or_stale_continuations() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-range-read").await;
+    let project = client
+        .create_project(
+            &ws.slug,
+            atlas_api::dtos::CreateProjectRequest {
+                name: "Proj".into(),
+                slug: "proj-range-read".into(),
+                task_prefix: "PRR".into(),
+                visibility: None,
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create project");
+    let doc = client
+        .create_document(
+            &ws.slug,
+            &project.slug,
+            CreateDocumentRequest {
+                title: "Bounded read".into(),
+                folder_id: None,
+                content: Some(format!("one\r\ntwo\n{}\n😀", "é".repeat(40))),
+            },
+        )
+        .await
+        .expect("create document");
+    let slug = doc.slug.as_deref().expect("slug");
+    let token = client.token().expect("authenticated token");
+    let url = format!(
+        "{}/api/workspaces/{}/documents/{slug}/content/range",
+        server.base_url(),
+        ws.slug
+    );
+    let http = reqwest::Client::new();
+
+    for (line, byte_limit) in [(3, 1), (4, 3)] {
+        let response = http
+            .get(format!(
+                "{url}?start_line={line}&end_line={line}&byte_limit={byte_limit}"
+            ))
+            .bearer_auth(token)
+            .send()
+            .await
+            .expect("too-small UTF-8 range request");
+        assert_eq!(response.status(), reqwest::StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    let first = http
+        .get(format!(
+            "{url}?start_line=1&end_line=4&line_limit=2&byte_limit=64"
+        ))
+        .bearer_auth(token)
+        .send()
+        .await
+        .expect("first range request");
+    let first: DocumentContentRangeDto = first.json().await.expect("first range response");
+    assert_eq!(
+        first
+            .lines
+            .iter()
+            .map(|line| (line.line_number, line.text.as_str()))
+            .collect::<Vec<_>>(),
+        [(1, "one"), (2, "two")]
+    );
+    let continuation = first.continuation.expect("continuation after line limit");
+
+    let stale = continuation.clone();
+    let mut continuation = Some(continuation);
+    let mut long_line = String::new();
+    while let Some(cursor) = continuation.take() {
+        let response = http
+            .get(format!("{url}?continuation={cursor}"))
+            .bearer_auth(client.token().expect("authenticated token"))
+            .send()
+            .await
+            .expect("continued range request");
+        let page: DocumentContentRangeDto = response.json().await.expect("range response");
+        for line in page.lines.iter().filter(|line| line.line_number == 3) {
+            long_line.push_str(&line.text);
+        }
+        continuation = page.continuation;
+    }
+    assert_eq!(long_line, "é".repeat(40));
+
+    client
+        .update_content(
+            &ws.slug,
+            slug,
+            UpdateContentRequest {
+                content: "changed".into(),
+                base_revision_id: doc.head_revision_id,
+            },
+        )
+        .await
+        .expect("change document head");
+    let stale = http
+        .get(format!("{url}?continuation={stale}"))
+        .bearer_auth(client.token().expect("authenticated token"))
+        .send()
+        .await
+        .expect("stale continuation request");
+    assert_eq!(stale.status(), reqwest::StatusCode::CONFLICT);
 
     db.teardown().await;
 }

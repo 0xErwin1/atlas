@@ -565,6 +565,10 @@ pub fn app(state: AppState) -> Router {
             get(routes::documents::get_document_compact),
         )
         .route(
+            "/api/workspaces/{ws}/documents/{slug}/content/range",
+            get(routes::documents::get_content_range),
+        )
+        .route(
             "/api/workspaces/{ws}/documents/{slug}/history",
             get(routes::documents::list_history),
         )
