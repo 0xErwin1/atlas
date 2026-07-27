@@ -19,8 +19,8 @@ use atlas_api::{
     dtos::documents::{
         ActorDto, AttachmentDto, BacklinkDto, CommentAttachmentDto, CommentBacklinkParentDto,
         CommentBacklinkSourceDto, CommentDraftDto, CopyDocumentRequest, CreateDocumentRequest,
-        DocumentDto, DocumentSummaryDto, FrontmatterDto, MoveDocumentRequest, RevisionContentDto,
-        RevisionMetaDto, UpdateContentRequest, UpdateDocumentRequest,
+        DocumentCompactDto, DocumentDto, DocumentSummaryDto, FrontmatterDto, MoveDocumentRequest,
+        RevisionContentDto, RevisionMetaDto, UpdateContentRequest, UpdateDocumentRequest,
     },
     pagination::{Cursor, Page},
 };
@@ -42,7 +42,7 @@ use crate::{
     authz::{
         Authorized, DocsCreate, DocsDelete, DocsRead, DocsUpdate, EditorMin, MinRole, ViewerMin,
         WorkspaceMember, authorize_folder_destination,
-        authorized::{DocumentSlugRes, ProjectRes},
+        authorized::{DocumentCompactRes, DocumentSlugRes, ProjectRes},
         batch_authorization::{
             BatchAuthorizationService, PgBatchAuthorizationSource, ProjectionSubject,
         },
@@ -287,6 +287,34 @@ pub(crate) async fn get_document(
     State(_state): State<AppState>,
 ) -> Result<Json<DocumentDto>, ApiError> {
     Ok(Json(document_to_dto(auth.resource.0)))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/workspaces/{ws}/documents/{slug}/compact",
+    tag = "documents",
+    security(("bearer_auth" = [])),
+    params(("ws" = String, Path), ("slug" = String, Path)),
+    responses((status = 200, body = DocumentCompactDto), (status = 401), (status = 403), (status = 404))
+)]
+pub(crate) async fn get_document_compact(
+    auth: Authorized<DocumentCompactRes, ViewerMin, DocsRead>,
+) -> Result<Json<DocumentCompactDto>, ApiError> {
+    let document = auth.resource;
+
+    Ok(Json(DocumentCompactDto {
+        id: document.id,
+        workspace_id: document.workspace_id,
+        project_id: document.project_id,
+        folder_id: document.folder_id,
+        slug: document.slug,
+        title: document.title,
+        head_revision_id: document.head_revision_id,
+        head_seq: document.head_seq,
+        frontmatter: document.frontmatter,
+        created_at: document.created_at,
+        updated_at: document.updated_at,
+    }))
 }
 
 // ---------------------------------------------------------------------------

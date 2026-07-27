@@ -538,6 +538,13 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
     },
     RouteEntry {
         method: "GET",
+        path_template: "/api/workspaces/{ws}/documents/nonexistent-slug/compact",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/api/workspaces/{ws}/documents/{slug}/compact"),
+        capability: Some("docs:read"),
+    },
+    RouteEntry {
+        method: "GET",
         path_template: "/api/workspaces/{ws}/documents/nonexistent-slug/history",
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/api/workspaces/{ws}/documents/{slug}/history"),

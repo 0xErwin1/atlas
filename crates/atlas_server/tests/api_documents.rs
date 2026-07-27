@@ -162,6 +162,77 @@ async fn get_unknown_document_returns_404() {
 }
 
 #[tokio::test]
+async fn compact_document_read_omits_content_and_does_not_leak_across_workspaces() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) =
+        support::login_user_with_workspace(&server, &db, "doc-compact-read").await;
+
+    let project = client
+        .create_project(
+            &ws.slug,
+            atlas_api::dtos::CreateProjectRequest {
+                name: "Proj".to_string(),
+                slug: "proj-compact-read".to_string(),
+                task_prefix: "PCR".to_string(),
+                visibility: None,
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create project");
+    let doc = client
+        .create_document(
+            &ws.slug,
+            &project.slug,
+            CreateDocumentRequest {
+                title: "Compact read".to_string(),
+                folder_id: None,
+                content: Some("content that must not be transferred".repeat(1024)),
+            },
+        )
+        .await
+        .expect("create document");
+    let slug = doc.slug.as_deref().expect("slug");
+    let token = client.token().expect("authenticated token");
+    let http = reqwest::Client::new();
+
+    let compact = http
+        .get(format!(
+            "{}/api/workspaces/{}/documents/{slug}/compact",
+            server.base_url(),
+            ws.slug
+        ))
+        .bearer_auth(token)
+        .send()
+        .await
+        .expect("compact request");
+    assert_eq!(compact.status(), reqwest::StatusCode::OK);
+    let compact = compact
+        .json::<serde_json::Value>()
+        .await
+        .expect("compact response");
+    assert_eq!(compact["title"], "Compact read");
+    assert!(compact.get("content").is_none());
+
+    let (_other_client, other_ws, _) =
+        support::login_user_with_workspace(&server, &db, "doc-compact-other").await;
+    let hidden = http
+        .get(format!(
+            "{}/api/workspaces/{}/documents/{slug}/compact",
+            server.base_url(),
+            other_ws.slug
+        ))
+        .bearer_auth(client.token().expect("authenticated token"))
+        .send()
+        .await
+        .expect("cross-workspace compact request");
+    assert_eq!(hidden.status(), reqwest::StatusCode::NOT_FOUND);
+
+    db.teardown().await;
+}
+
+#[tokio::test]
 async fn list_documents_returns_created_document() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;

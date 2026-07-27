@@ -561,6 +561,10 @@ pub fn app(state: AppState) -> Router {
             axum::routing::put(routes::documents::update_content),
         )
         .route(
+            "/api/workspaces/{ws}/documents/{slug}/compact",
+            get(routes::documents::get_document_compact),
+        )
+        .route(
             "/api/workspaces/{ws}/documents/{slug}/history",
             get(routes::documents::list_history),
         )

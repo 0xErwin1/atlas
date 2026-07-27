@@ -43,6 +43,7 @@ const EXPECTED_SCHEMAS: &[&str] = &[
     "MoveDocumentRequest",
     "CopyDocumentRequest",
     "DocumentDto",
+    "DocumentCompactDto",
     "DocumentSummaryDto",
     "RevisionMetaDto",
     "RevisionContentDto",
@@ -314,6 +315,29 @@ fn task_attachment_rename_operation_documents_typed_contract() {
         Some(&Value::String(
             "#/components/schemas/TaskAttachmentDto".to_string()
         ))
+    );
+}
+
+#[test]
+fn compact_document_operation_documents_the_metadata_only_contract() {
+    let document = serde_json::to_value(openapi()).expect("serialize OpenAPI document");
+    let compact = operation(
+        &document,
+        "/api/workspaces/{ws}/documents/{slug}/compact",
+        "get",
+    );
+
+    assert_eq!(
+        compact.pointer("/responses/200/content/application~1json/schema/$ref"),
+        Some(&Value::String(
+            "#/components/schemas/DocumentCompactDto".into()
+        ))
+    );
+    assert!(
+        document
+            .pointer("/components/schemas/DocumentCompactDto/properties/content")
+            .is_none(),
+        "the compact schema must not expose content"
     );
 }
 

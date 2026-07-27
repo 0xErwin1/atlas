@@ -13,7 +13,7 @@ use atlas_domain::{
     entities::documents::Document,
     entities::identity::{ApiKey, MemberRole, Workspace},
     entities::workspace_core::Project,
-    ids::{ApiKeyId, FolderId, UserId},
+    ids::{ApiKeyId, DocumentId, FolderId, ProjectId, UserId},
     permissions::{
         Capability, CapabilityAction, CapabilityFamily, ChainSegment, Principal, ResolutionInput,
         ResourceChain, ResourceRef, ResourceRole, Visibility,
@@ -459,6 +459,20 @@ pub struct DocumentRes(pub Document);
 /// `DocumentRes`; only the path param name differs.
 pub struct DocumentSlugRes(pub Document);
 
+pub struct DocumentCompactRes {
+    pub id: uuid::Uuid,
+    pub workspace_id: uuid::Uuid,
+    pub project_id: Option<uuid::Uuid>,
+    pub folder_id: Option<uuid::Uuid>,
+    pub slug: Option<String>,
+    pub title: String,
+    pub head_revision_id: uuid::Uuid,
+    pub head_seq: i64,
+    pub frontmatter: serde_json::Value,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
 impl ResolvedResource for DocumentRes {
     type PathParams = HashMap<String, String>;
 
@@ -534,6 +548,94 @@ impl ResolvedResource for DocumentSlugRes {
     }
 }
 
+impl ResolvedResource for DocumentCompactRes {
+    type PathParams = HashMap<String, String>;
+
+    async fn resolve(
+        db: &sea_orm::DatabaseConnection,
+        ws: &Workspace,
+        params: Self::PathParams,
+    ) -> Result<(Self, ResourceChain), ApiError> {
+        use sea_orm::{ColumnTrait, EntityTrait, FromQueryResult, QueryFilter, QuerySelect};
+
+        #[derive(FromQueryResult)]
+        struct Row {
+            id: uuid::Uuid,
+            workspace_id: uuid::Uuid,
+            project_id: Option<uuid::Uuid>,
+            folder_id: Option<uuid::Uuid>,
+            slug: Option<String>,
+            title: String,
+            current_revision_id: uuid::Uuid,
+            current_revision_seq: i64,
+            frontmatter: serde_json::Value,
+            created_at: chrono::DateTime<chrono::Utc>,
+            updated_at: chrono::DateTime<chrono::Utc>,
+        }
+
+        let ident = params.get("slug").ok_or(ApiError::NotFound)?;
+        let base = document::Entity::find()
+            .select_only()
+            .columns([
+                document::Column::Id,
+                document::Column::WorkspaceId,
+                document::Column::ProjectId,
+                document::Column::FolderId,
+                document::Column::Slug,
+                document::Column::Title,
+                document::Column::CurrentRevisionId,
+                document::Column::CurrentRevisionSeq,
+                document::Column::Frontmatter,
+                document::Column::CreatedAt,
+                document::Column::UpdatedAt,
+            ])
+            .filter(document::Column::WorkspaceId.eq(ws.id.0))
+            .filter(document::Column::DeletedAt.is_null())
+            .filter(live_project("documents.project_id"))
+            .filter(live_folder_chain("documents.folder_id"));
+
+        let query = match ident.parse::<uuid::Uuid>() {
+            Ok(uuid) => base.filter(document::Column::Id.eq(uuid)),
+            Err(_) => base.filter(document::Column::Slug.eq(ident.as_str())),
+        };
+
+        let row = query
+            .into_model::<Row>()
+            .one(db)
+            .await
+            .map_err(|e| ApiError::Internal {
+                message: e.to_string(),
+            })?
+            .ok_or(ApiError::NotFound)?;
+
+        let chain = build_document_chain_from_parts(
+            db,
+            ws,
+            DocumentId(row.id),
+            row.folder_id.map(FolderId),
+            row.project_id.map(ProjectId),
+        )
+        .await?;
+
+        Ok((
+            DocumentCompactRes {
+                id: row.id,
+                workspace_id: row.workspace_id,
+                project_id: row.project_id,
+                folder_id: row.folder_id,
+                slug: row.slug,
+                title: row.title,
+                head_revision_id: row.current_revision_id,
+                head_seq: row.current_revision_seq,
+                frontmatter: row.frontmatter,
+                created_at: row.created_at,
+                updated_at: row.updated_at,
+            },
+            chain,
+        ))
+    }
+}
+
 /// Builds the full `document → folder ancestry → project → workspace` permission
 /// chain for a resolved document. Shared by `DocumentRes`, `DocumentSlugRes`, and
 /// the attachment routes, which authorize against the attachment's owning document.
@@ -542,16 +644,26 @@ pub async fn build_document_chain(
     ws: &Workspace,
     doc: &Document,
 ) -> Result<ResourceChain, ApiError> {
+    build_document_chain_from_parts(db, ws, doc.id, doc.folder_id, doc.project_id).await
+}
+
+async fn build_document_chain_from_parts(
+    db: &sea_orm::DatabaseConnection,
+    ws: &Workspace,
+    document_id: DocumentId,
+    folder_id: Option<FolderId>,
+    project_id: Option<ProjectId>,
+) -> Result<ResourceChain, ApiError> {
     let mut segments = Vec::new();
 
     segments.push(ChainSegment {
-        resource: ResourceRef::Document(doc.id),
+        resource: ResourceRef::Document(document_id),
         visibility: None,
     });
 
     // Walk folder ancestry most-specific-first, bounded to guard against cycles.
     let mut inherited_project_id = None;
-    if let Some(leaf_folder_id) = doc.folder_id {
+    if let Some(leaf_folder_id) = folder_id {
         let folder_ancestors = resolve_folder_ancestry(db, ws.id, leaf_folder_id).await?;
 
         // The last folder in the ancestry list carries the project_id that should
@@ -568,7 +680,7 @@ pub async fn build_document_chain(
         }
     }
 
-    let effective_project_id = doc.project_id.or(inherited_project_id);
+    let effective_project_id = project_id.or(inherited_project_id);
     if let Some(project_id) = effective_project_id {
         let repo = PgProjectRepo { conn: db.clone() };
         let ctx = atlas_domain::WorkspaceCtx::new(ws.id, atlas_domain::Actor::User(UserId::new()));
