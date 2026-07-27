@@ -108,6 +108,200 @@ pub struct DocumentDto {
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
+/// Compact document metadata that deliberately excludes the full content body.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct DocumentCompactDto {
+    pub id: uuid::Uuid,
+    pub workspace_id: uuid::Uuid,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<uuid::Uuid>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub folder_id: Option<uuid::Uuid>,
+    pub slug: Option<String>,
+    pub title: String,
+    pub head_revision_id: uuid::Uuid,
+    pub head_seq: i64,
+    pub frontmatter: serde_json::Value,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+pub const DEFAULT_DOCUMENT_RANGE_LINE_LIMIT: u32 = 200;
+pub const MAX_DOCUMENT_RANGE_LINE_LIMIT: u32 = 200;
+pub const DEFAULT_DOCUMENT_RANGE_BYTE_LIMIT: u32 = 64 * 1024;
+pub const MAX_DOCUMENT_RANGE_BYTE_LIMIT: u32 = 64 * 1024;
+
+/// Query parameters for a bounded, inclusive, 1-based document line read.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct DocumentContentRangeQuery {
+    pub start_line: Option<u64>,
+    pub end_line: Option<u64>,
+    pub line_limit: Option<u32>,
+    pub byte_limit: Option<u32>,
+    pub continuation: Option<String>,
+}
+
+impl DocumentContentRangeQuery {
+    pub fn validate(&self) -> Result<(), DocumentRangeValidationError> {
+        validate_line_bounds(self.start_line, self.end_line)?;
+        validate_limit(self.line_limit, MAX_DOCUMENT_RANGE_LINE_LIMIT)
+            .map_err(|()| DocumentRangeValidationError::LineLimitOutOfRange)?;
+        validate_limit(self.byte_limit, MAX_DOCUMENT_RANGE_BYTE_LIMIT)
+            .map_err(|()| DocumentRangeValidationError::ByteLimitOutOfRange)
+    }
+
+    pub fn effective_line_limit(&self) -> u32 {
+        self.line_limit.unwrap_or(DEFAULT_DOCUMENT_RANGE_LINE_LIMIT)
+    }
+
+    pub fn effective_byte_limit(&self) -> u32 {
+        self.byte_limit.unwrap_or(DEFAULT_DOCUMENT_RANGE_BYTE_LIMIT)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DocumentRangeValidationError {
+    LineNumbersMustBePositive,
+    StartAfterEnd,
+    LineLimitOutOfRange,
+    ByteLimitOutOfRange,
+}
+
+/// One numbered line returned by a bounded document read.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct DocumentLineDto {
+    pub line_number: u64,
+    pub text: String,
+}
+
+/// Bounded document line-read response with continuation metadata.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct DocumentContentRangeDto {
+    pub head_revision_id: uuid::Uuid,
+    pub head_seq: i64,
+    pub lines: Vec<DocumentLineDto>,
+    pub byte_count: u64,
+    pub has_more: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub continuation: Option<String>,
+}
+
+pub const DEFAULT_DOCUMENT_SEARCH_MATCH_LIMIT: u32 = 50;
+pub const MAX_DOCUMENT_SEARCH_MATCH_LIMIT: u32 = 100;
+pub const DEFAULT_DOCUMENT_SEARCH_BYTE_LIMIT: u32 = 64 * 1024;
+pub const MAX_DOCUMENT_SEARCH_BYTE_LIMIT: u32 = 64 * 1024;
+
+/// Search mode for bounded document content search.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub enum DocumentSearchMode {
+    #[default]
+    Literal,
+    Pattern,
+}
+
+/// Request body for a bounded, range-scoped document content search.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct DocumentContentSearchRequest {
+    pub start_line: Option<u64>,
+    pub end_line: Option<u64>,
+    pub query: String,
+    pub mode: Option<DocumentSearchMode>,
+    pub match_limit: Option<u32>,
+    pub byte_limit: Option<u32>,
+    pub continuation: Option<String>,
+}
+
+impl DocumentContentSearchRequest {
+    pub fn validate(&self) -> Result<(), DocumentSearchValidationError> {
+        if self.query.is_empty() {
+            return Err(DocumentSearchValidationError::QueryMustNotBeEmpty);
+        }
+
+        validate_line_bounds(self.start_line, self.end_line)
+            .map_err(DocumentSearchValidationError::InvalidRange)?;
+        validate_limit(self.match_limit, MAX_DOCUMENT_SEARCH_MATCH_LIMIT)
+            .map_err(|()| DocumentSearchValidationError::MatchLimitOutOfRange)?;
+        validate_limit(self.byte_limit, MAX_DOCUMENT_SEARCH_BYTE_LIMIT)
+            .map_err(|()| DocumentSearchValidationError::ByteLimitOutOfRange)
+    }
+
+    pub fn effective_mode(&self) -> DocumentSearchMode {
+        self.mode.unwrap_or_default()
+    }
+
+    pub fn effective_match_limit(&self) -> u32 {
+        self.match_limit
+            .unwrap_or(DEFAULT_DOCUMENT_SEARCH_MATCH_LIMIT)
+    }
+
+    pub fn effective_byte_limit(&self) -> u32 {
+        self.byte_limit
+            .unwrap_or(DEFAULT_DOCUMENT_SEARCH_BYTE_LIMIT)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DocumentSearchValidationError {
+    QueryMustNotBeEmpty,
+    InvalidRange(DocumentRangeValidationError),
+    MatchLimitOutOfRange,
+    ByteLimitOutOfRange,
+}
+
+/// One matching line returned by a bounded document content search.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct DocumentSearchMatchDto {
+    pub line_number: u64,
+    pub preview: String,
+}
+
+/// Bounded document content-search response with continuation metadata.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct DocumentContentSearchDto {
+    pub head_revision_id: uuid::Uuid,
+    pub head_seq: i64,
+    pub matches: Vec<DocumentSearchMatchDto>,
+    pub byte_count: u64,
+    pub has_more: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub continuation: Option<String>,
+}
+
+fn validate_line_bounds(
+    start_line: Option<u64>,
+    end_line: Option<u64>,
+) -> Result<(), DocumentRangeValidationError> {
+    if start_line == Some(0) || end_line == Some(0) {
+        return Err(DocumentRangeValidationError::LineNumbersMustBePositive);
+    }
+
+    if start_line
+        .zip(end_line)
+        .is_some_and(|(start, end)| start > end)
+    {
+        return Err(DocumentRangeValidationError::StartAfterEnd);
+    }
+
+    Ok(())
+}
+
+fn validate_limit(limit: Option<u32>, max: u32) -> Result<(), ()> {
+    if limit.is_some_and(|value| value == 0 || value > max) {
+        return Err(());
+    }
+
+    Ok(())
+}
+
 /// Lightweight document summary for list endpoints.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
@@ -183,8 +377,114 @@ pub enum CommentBacklinkParentDto {
 }
 
 #[cfg(test)]
-mod backlink_tests {
+mod contract_tests {
     use super::*;
+
+    #[test]
+    fn compact_document_omits_full_content_from_the_wire_contract() {
+        let compact = DocumentCompactDto {
+            id: uuid::Uuid::nil(),
+            workspace_id: uuid::Uuid::from_u128(1),
+            project_id: None,
+            folder_id: None,
+            slug: Some("guide".into()),
+            title: "Guide".into(),
+            head_revision_id: uuid::Uuid::from_u128(2),
+            head_seq: 3,
+            frontmatter: serde_json::json!({"kind": "guide"}),
+            created_at: chrono::DateTime::UNIX_EPOCH,
+            updated_at: chrono::DateTime::UNIX_EPOCH,
+        };
+
+        let json = serde_json::to_value(compact).expect("serialize compact document");
+
+        assert_eq!(
+            json["head_revision_id"],
+            uuid::Uuid::from_u128(2).to_string()
+        );
+        assert!(json.get("content").is_none());
+    }
+
+    #[test]
+    fn range_query_rejects_invalid_bounds_and_limits() {
+        let invalid_start = DocumentContentRangeQuery {
+            start_line: Some(0),
+            ..Default::default()
+        };
+        let inverted_range = DocumentContentRangeQuery {
+            start_line: Some(3),
+            end_line: Some(2),
+            ..Default::default()
+        };
+        let oversized_limit = DocumentContentRangeQuery {
+            line_limit: Some(MAX_DOCUMENT_RANGE_LINE_LIMIT + 1),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            invalid_start.validate(),
+            Err(DocumentRangeValidationError::LineNumbersMustBePositive)
+        );
+        assert_eq!(
+            inverted_range.validate(),
+            Err(DocumentRangeValidationError::StartAfterEnd)
+        );
+        assert_eq!(
+            oversized_limit.validate(),
+            Err(DocumentRangeValidationError::LineLimitOutOfRange)
+        );
+    }
+
+    #[test]
+    fn range_query_applies_documented_defaults_to_a_valid_range() {
+        let query = DocumentContentRangeQuery {
+            start_line: Some(2),
+            end_line: Some(4),
+            ..Default::default()
+        };
+
+        assert_eq!(query.validate(), Ok(()));
+        assert_eq!(
+            query.effective_line_limit(),
+            DEFAULT_DOCUMENT_RANGE_LINE_LIMIT
+        );
+        assert_eq!(
+            query.effective_byte_limit(),
+            DEFAULT_DOCUMENT_RANGE_BYTE_LIMIT
+        );
+    }
+
+    #[test]
+    fn search_contract_supports_pattern_mode_and_rejects_empty_queries() {
+        let request = DocumentContentSearchRequest {
+            query: "^Atlas".into(),
+            mode: Some(DocumentSearchMode::Pattern),
+            match_limit: Some(MAX_DOCUMENT_SEARCH_MATCH_LIMIT),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            serde_json::to_value(&request).expect("serialize search request")["mode"],
+            "pattern"
+        );
+        assert_eq!(request.validate(), Ok(()));
+
+        let empty_query = DocumentContentSearchRequest {
+            query: String::new(),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            empty_query.validate(),
+            Err(DocumentSearchValidationError::QueryMustNotBeEmpty)
+        );
+
+        let unknown_mode: Result<DocumentSearchMode, _> = serde_json::from_str("\"glob\"");
+        assert!(
+            unknown_mode.is_err(),
+            "unknown search modes must be rejected"
+        );
+    }
 
     #[test]
     fn comment_backlink_source_serializes_only_comment_and_parent_navigation() {
