@@ -9,6 +9,7 @@
 )]
 
 pub mod actor;
+pub mod document_lines;
 pub mod entities;
 pub mod error;
 pub mod frontmatter;
