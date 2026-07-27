@@ -3,6 +3,12 @@ import { describe, expect, it } from 'vitest';
 import Row from '@/components/ui/Row.vue';
 
 describe('Row', () => {
+  it('exposes the complete navigation label through its native title', () => {
+    const wrapper = mount(Row, { props: { label: 'A deeply nested project folder name' } });
+
+    expect(wrapper.get('.truncate').attributes('title')).toBe('A deeply nested project folder name');
+  });
+
   it('keeps the default 14px indentation step', () => {
     const wrapper = mount(Row, { props: { label: 'Nested', depth: 1 } });
 

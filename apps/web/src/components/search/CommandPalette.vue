@@ -203,7 +203,7 @@ watch(
                 :style="{ color: i === activeIndex ? 'var(--c-primary)' : 'var(--c-muted)', flex: '0 0 auto' }"
               />
               <span class="flex-1 min-w-0">
-                <span class="block truncate" :style="{ fontSize: 'var(--fs-base)', color: 'var(--c-foreground)' }">{{ entry.hit.title }}</span>
+                <span class="block truncate" :title="entry.hit.title" :style="{ fontSize: 'var(--fs-base)', color: 'var(--c-foreground)' }">{{ entry.hit.title }}</span>
                 <!-- eslint-disable-next-line vue/no-v-html -- sanitizeSnippet allows only <mark> (REQ-W25) -->
                 <span
                   v-if="entry.hit.snippet"

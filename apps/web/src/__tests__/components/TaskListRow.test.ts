@@ -53,6 +53,12 @@ function mountRow(props: Partial<InstanceType<typeof TaskListRow>['$props']> = {
 }
 
 describe('TaskListRow', () => {
+  it('exposes the complete task title through its native title', () => {
+    const wrapper = mountRow({ task: makeTask({ title: 'A long task title for the list view' }) });
+
+    expect(wrapper.get('.atl-tl-title').attributes('title')).toBe('A long task title for the list view');
+  });
+
   it('renders the title and readable id', () => {
     const wrapper = mountRow();
 

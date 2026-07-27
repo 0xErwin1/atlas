@@ -63,6 +63,7 @@ describe('CommandPalette (REQ-W23/W24)', () => {
 
     expect(GET).toHaveBeenCalledTimes(1);
     expect(wrapper.text()).toContain('Shell doc');
+    expect(wrapper.get('.truncate').attributes('title')).toBe('Shell doc');
   });
 
   it('navigates entries with arrow keys and selects with enter', async () => {

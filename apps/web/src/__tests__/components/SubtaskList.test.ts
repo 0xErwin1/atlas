@@ -32,6 +32,14 @@ function mountList(subtasks: ReturnType<typeof subtask>[]) {
 }
 
 describe('SubtaskList', () => {
+  it('preserves the open action hint while exposing the complete sub-task title', () => {
+    const wrapper = mountList([subtask('t1', 'ATL-2', 'A long sub-task title', 'col-todo')]);
+
+    const button = wrapper.get('[data-subtask-open="t1"]');
+    expect(button.attributes('title')).toBe('Open ATL-2');
+    expect(button.get('span').attributes('title')).toBe('A long sub-task title');
+  });
+
   it('renders each sub-task with its title, status and estimate', () => {
     const wrapper = mountList([subtask('t1', 'ATL-2', 'Write tests', 'col-todo', 5)]);
 

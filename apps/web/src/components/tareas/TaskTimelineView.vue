@@ -208,7 +208,7 @@ const offWindowCount = computed(() => {
         >
           <div class="atl-tm-name" :style="{ width: `${NAME_W}px`, flex: `0 0 ${NAME_W}px` }">
             <span class="atl-tm-dot" :style="{ background: bar.swatch.fg }" />
-            <span class="atl-tm-title">{{ bar.task.title }}</span>
+            <span class="atl-tm-title" :title="bar.task.title">{{ bar.task.title }}</span>
             <span class="atl-tm-id">{{ bar.task.readable_id }}</span>
           </div>
           <div class="atl-tm-track">

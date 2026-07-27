@@ -96,7 +96,7 @@ function submitDraft(): void {
         :title="`Open ${sub.readable_id}`"
         @click="emit('open', sub.readable_id)"
       >
-        {{ sub.title }}
+        <span :title="sub.title">{{ sub.title }}</span>
       </button>
 
       <Chip

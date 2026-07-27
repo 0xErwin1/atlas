@@ -95,7 +95,7 @@ const labelColors = useLabelColorsStore();
       </span>
       <span v-else-if="indent > 0" class="atl-tl-expand-spacer" />
 
-      <span class="atl-tl-title" :class="{ muted: done }">{{ task.title }}</span>
+      <span class="atl-tl-title" :class="{ muted: done }" :title="task.title">{{ task.title }}</span>
       <span v-if="(task.labels ?? []).length > 0" class="atl-tl-labels">
         <Chip
           v-for="label in task.labels ?? []"

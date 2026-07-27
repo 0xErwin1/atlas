@@ -23,6 +23,12 @@ const taskHit = (extra: Partial<SearchHitDto> = {}): SearchHitDto => ({
 });
 
 describe('ResultRow (REQ-W25)', () => {
+  it('exposes the complete result title through its native title', () => {
+    const wrapper = mount(ResultRow, { props: { hit: docHit({ title: 'A long search result title' }) } });
+
+    expect(wrapper.get('.truncate').attributes('title')).toBe('A long search result title');
+  });
+
   it('renders a NOTE badge for documents and a TASK badge for tasks', () => {
     expect(mount(ResultRow, { props: { hit: docHit() } }).text()).toContain('NOTE');
     expect(mount(ResultRow, { props: { hit: taskHit() } }).text()).toContain('TASK');

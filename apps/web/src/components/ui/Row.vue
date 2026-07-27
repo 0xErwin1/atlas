@@ -98,6 +98,7 @@ const iconColor = computed(() => props.iconColor ?? (props.active ? 'var(--c-pri
 
     <span
       class="flex-1 truncate"
+      :title="label"
       :style="`text-decoration: ${pending ? 'line-through' : 'none'};`"
     >
       {{ label }}

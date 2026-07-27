@@ -58,4 +58,12 @@ describe('ReferenceAdd', () => {
 
     expect(wrapper.findAll('.atl-refadd-result')).toHaveLength(2);
   });
+
+  it('exposes each result title through its native title', async () => {
+    const wrapper = mountAdd();
+
+    await search(wrapper, 'task');
+
+    expect(wrapper.get('.atl-refadd-title').attributes('title')).toBe('The current task');
+  });
 });

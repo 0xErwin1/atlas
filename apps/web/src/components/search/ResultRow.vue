@@ -67,6 +67,7 @@ const authorInitials = computed(() => props.hit.title);
     <span class="flex-1 min-w-0">
       <span
         class="block truncate"
+        :title="hit.title"
         :style="{
           fontSize: 'var(--fs-lg)',
           fontWeight: 'var(--fw-semibold)',

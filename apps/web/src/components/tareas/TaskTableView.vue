@@ -177,7 +177,7 @@ function dueLabel(readableId: string): string {
             <Icon name="square-kanban" :size="13" style="color: var(--c-primary);" />
           </td>
           <td class="atl-tt-task">
-            <span class="atl-tt-title">{{ row.task.title }}</span>
+            <span class="atl-tt-title" :title="row.task.title">{{ row.task.title }}</span>
           </td>
           <td class="atl-tt-status">
             <span

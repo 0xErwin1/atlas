@@ -131,7 +131,7 @@ function pick(hit: SearchHitDto): void {
           :size="large ? 15 : 13"
           style="color: var(--c-muted); flex: 0 0 auto;"
         />
-        <span class="atl-refadd-title" :class="{ lg: large }">{{ hit.title }}</span>
+        <span class="atl-refadd-title" :class="{ lg: large }" :title="hit.title">{{ hit.title }}</span>
         <span v-if="hit.readable_id" class="atl-refadd-id">{{ hit.readable_id }}</span>
       </button>
     </div>

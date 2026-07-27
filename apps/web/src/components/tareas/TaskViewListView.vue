@@ -268,7 +268,7 @@ function onAssigneePick(task: TaskSummaryDto, value: string): void {
         </TaskRowPicker>
 
         <span class="atl-tl-name">
-          <span class="atl-tl-title" :class="{ muted: isDone(task) }">{{ task.title }}</span>
+          <span class="atl-tl-title" :class="{ muted: isDone(task) }" :title="task.title">{{ task.title }}</span>
           <span v-if="(task.labels ?? []).length > 0" class="atl-tl-labels">
             <Chip
               v-for="label in task.labels ?? []"
