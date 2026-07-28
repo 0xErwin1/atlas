@@ -23,9 +23,11 @@ use atlas_api::{
         },
         documents::{
             AttachmentDto, BacklinkDto, CommentAttachmentDto, CommentDraftDto, ConflictProblemDto,
-            CopyDocumentRequest, CreateDocumentRequest, DocumentDto, DocumentSummaryDto,
-            FrontmatterDto, MoveDocumentRequest, RevisionContentDto, RevisionMetaDto,
-            UpdateContentRequest, UpdateDocumentRequest,
+            CopyDocumentRequest, CreateDocumentRequest, DocumentCompactDto,
+            DocumentContentRangeDto, DocumentContentRangeQuery, DocumentContentSearchDto,
+            DocumentContentSearchRequest, DocumentDto, DocumentSummaryDto, FrontmatterDto,
+            MoveDocumentRequest, RevisionContentDto, RevisionMetaDto, UpdateContentRequest,
+            UpdateDocumentRequest,
         },
         folders::{
             CopyFolderRequest, CreateFolderRequest, FolderDto, MoveFolderRequest,
@@ -1163,6 +1165,50 @@ impl AtlasClient {
             .send()
             .await?;
         self.decode_response(response, "get_document").await
+    }
+
+    /// `GET /api/workspaces/{ws}/documents/{slug}/compact`
+    pub async fn get_document_compact(
+        &self,
+        ws: &str,
+        slug: &str,
+    ) -> Result<DocumentCompactDto, ClientError> {
+        let response = self
+            .get(&format!("/api/workspaces/{ws}/documents/{slug}/compact"))
+            .send()
+            .await?;
+        self.decode_response(response, "get_document_compact").await
+    }
+
+    /// `GET /api/workspaces/{ws}/documents/{slug}/content/range`
+    pub async fn get_document_content_range(
+        &self,
+        ws: &str,
+        slug: &str,
+        query: DocumentContentRangeQuery,
+    ) -> Result<DocumentContentRangeDto, ClientError> {
+        let path = build_document_range_path(ws, slug, &query);
+        let response = self.get(&path).send().await?;
+        self.decode_response(response, "get_document_content_range")
+            .await
+    }
+
+    /// `POST /api/workspaces/{ws}/documents/{slug}/content/search`
+    pub async fn search_document_content(
+        &self,
+        ws: &str,
+        slug: &str,
+        body: DocumentContentSearchRequest,
+    ) -> Result<DocumentContentSearchDto, ClientError> {
+        let response = self
+            .post(&format!(
+                "/api/workspaces/{ws}/documents/{slug}/content/search"
+            ))
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "search_document_content")
+            .await
     }
 
     /// `PATCH /api/workspaces/{ws}/documents/{slug}`
@@ -3432,6 +3478,33 @@ fn build_search_path(
     format!("/api/workspaces/{ws}/search?{}", params.join("&"))
 }
 
+fn build_document_range_path(ws: &str, slug: &str, query: &DocumentContentRangeQuery) -> String {
+    let base = format!("/api/workspaces/{ws}/documents/{slug}/content/range");
+    let mut params = Vec::new();
+
+    if let Some(start_line) = query.start_line {
+        params.push(format!("start_line={start_line}"));
+    }
+    if let Some(end_line) = query.end_line {
+        params.push(format!("end_line={end_line}"));
+    }
+    if let Some(line_limit) = query.line_limit {
+        params.push(format!("line_limit={line_limit}"));
+    }
+    if let Some(byte_limit) = query.byte_limit {
+        params.push(format!("byte_limit={byte_limit}"));
+    }
+    if let Some(continuation) = query.continuation.as_deref() {
+        params.push(format!("continuation={}", encode_query_value(continuation)));
+    }
+
+    if params.is_empty() {
+        base
+    } else {
+        format!("{}?{}", base, params.join("&"))
+    }
+}
+
 fn build_semantic_search_path(
     ws: &str,
     q: &str,
@@ -4363,5 +4436,102 @@ mod tests {
             denied.restore_trash(TrashKindDto::Document, TARGET_ID).await,
             Err(ClientError::Api(problem)) if problem.status == 403
         ));
+    }
+
+    #[tokio::test]
+    async fn bounded_document_methods_serialize_requests_and_decode_continuations() {
+        const COMPACT: &str = r#"{"id":"00000000-0000-0000-0000-000000000001","workspace_id":"00000000-0000-0000-0000-000000000002","project_id":null,"folder_id":null,"slug":"note","title":"Note","head_revision_id":"00000000-0000-0000-0000-000000000003","head_seq":4,"frontmatter":{},"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}"#;
+        const RANGE: &str = r#"{"head_revision_id":"00000000-0000-0000-0000-000000000003","head_seq":4,"lines":[{"line_number":3,"text":"third"}],"byte_count":5,"has_more":true,"continuation":"range-next"}"#;
+        const SEARCH: &str = r#"{"head_revision_id":"00000000-0000-0000-0000-000000000003","head_seq":4,"matches":[{"line_number":5,"preview":"needle"}],"byte_count":6,"has_more":true,"continuation":"search-next"}"#;
+
+        let (base_url, requests) = serve_once_observing("200 OK", COMPACT);
+        let compact = AtlasClient::new(base_url)
+            .get_document_compact("ws", "note")
+            .await
+            .expect("compact document request succeeds");
+        assert_eq!(compact.title, "Note");
+        assert_eq!(compact.head_seq, 4);
+        assert!(
+            requests
+                .recv()
+                .expect("mock server received compact request")
+                .starts_with("GET /api/workspaces/ws/documents/note/compact ")
+        );
+
+        let (base_url, requests) = serve_once_observing("200 OK", RANGE);
+        let range = AtlasClient::new(base_url)
+            .get_document_content_range(
+                "ws",
+                "note",
+                DocumentContentRangeQuery {
+                    start_line: Some(3),
+                    end_line: Some(8),
+                    line_limit: Some(2),
+                    byte_limit: Some(64),
+                    continuation: Some("range token".into()),
+                },
+            )
+            .await
+            .expect("bounded range request succeeds");
+        assert_eq!(range.lines.first().map(|line| line.line_number), Some(3));
+        assert_eq!(range.continuation.as_deref(), Some("range-next"));
+        let range_request = requests.recv().expect("mock server received range request");
+        assert!(range_request.starts_with(
+            "GET /api/workspaces/ws/documents/note/content/range?start_line=3&end_line=8&line_limit=2&byte_limit=64&continuation=range%20token "
+        ));
+
+        let (base_url, requests) = serve_once_observing("200 OK", SEARCH);
+        let search = AtlasClient::new(base_url)
+            .search_document_content(
+                "ws",
+                "note",
+                DocumentContentSearchRequest {
+                    start_line: Some(2),
+                    end_line: Some(9),
+                    query: "a+b".into(),
+                    mode: Some(atlas_api::dtos::documents::DocumentSearchMode::Pattern),
+                    match_limit: Some(3),
+                    byte_limit: Some(128),
+                    continuation: Some("search-next".into()),
+                },
+            )
+            .await
+            .expect("bounded search request succeeds");
+        assert_eq!(
+            search
+                .matches
+                .first()
+                .map(|matched| matched.preview.as_str()),
+            Some("needle")
+        );
+        assert_eq!(search.continuation.as_deref(), Some("search-next"));
+        let search_request = requests
+            .recv()
+            .expect("mock server received search request");
+        assert!(
+            search_request.starts_with("POST /api/workspaces/ws/documents/note/content/search ")
+        );
+        assert!(search_request.contains("\"query\":\"a+b\""));
+        assert!(search_request.contains("\"mode\":\"pattern\""));
+        assert!(search_request.contains("\"continuation\":\"search-next\""));
+    }
+
+    #[tokio::test]
+    async fn bounded_document_range_omits_absent_query_fields_and_preserves_api_errors() {
+        let (base_url, requests) = serve_once_observing(
+            "409 Conflict",
+            r#"{"type":"urn:atlas:error:conflict","title":"Conflict","status":409,"hint":"restart the range read"}"#,
+        );
+        let error = AtlasClient::new(base_url)
+            .get_document_content_range("ws", "note", DocumentContentRangeQuery::default())
+            .await
+            .expect_err("stale continuation response is an API error");
+        assert!(matches!(error, ClientError::Api(problem) if problem.status == 409));
+        assert!(
+            requests
+                .recv()
+                .expect("mock server received range request")
+                .starts_with("GET /api/workspaces/ws/documents/note/content/range ")
+        );
     }
 }
