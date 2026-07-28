@@ -626,6 +626,9 @@ pub struct ListDocumentsParams {
     /// Page size (default 20, max 200).
     #[serde(default)]
     pub limit: Option<u32>,
+    /// Filter documents by folder assignment: omit for any, true for unfiled, false for filed.
+    #[serde(default)]
+    pub unfiled: Option<bool>,
 }
 
 /// Parameters accepted by the `list_folders` tool.
@@ -2171,7 +2174,9 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "List documents in a project within an Atlas workspace")]
+    #[tool(
+        description = "List documents in a project within an Atlas workspace. Omit `unfiled` for any document, pass true for unfiled documents, or false for filed documents."
+    )]
     async fn list_documents(
         &self,
         Parameters(params): Parameters<ListDocumentsParams>,
@@ -2181,11 +2186,12 @@ impl AtlasMcp {
         let limit = params.limit.unwrap_or(20).clamp(1, 200);
 
         let page = client
-            .list_documents(
+            .list_documents_with_unfiled_filter(
                 &params.workspace,
                 &params.project,
                 params.cursor.as_deref(),
                 Some(limit),
+                params.unfiled,
             )
             .await
             .map_err(|e| enrich_client_error(e, "list_documents"))?;
@@ -5972,6 +5978,7 @@ mod tests {
         assert_eq!(params.project, "my-proj");
         assert!(params.cursor.is_none());
         assert!(params.limit.is_none());
+        assert!(params.unfiled.is_none());
     }
 
     #[test]
@@ -5980,6 +5987,17 @@ mod tests {
         let params: ListDocumentsParams = serde_json::from_str(json).unwrap();
         assert_eq!(params.cursor.as_deref(), Some("tok"));
         assert_eq!(params.limit, Some(50));
+    }
+
+    #[test]
+    fn list_documents_params_accepts_explicit_unfiled_states() {
+        let unfiled: ListDocumentsParams =
+            serde_json::from_str(r#"{"workspace":"ws","project":"p","unfiled":true}"#).unwrap();
+        let filed: ListDocumentsParams =
+            serde_json::from_str(r#"{"workspace":"ws","project":"p","unfiled":false}"#).unwrap();
+
+        assert_eq!(unfiled.unfiled, Some(true));
+        assert_eq!(filed.unfiled, Some(false));
     }
 
     #[test]
@@ -6555,6 +6573,23 @@ mod tests {
         let json = r##"{"workspace":"ws","board":"b","column":"col","color":"#FF5733"}"##;
         let params: UpdateColumnParams = serde_json::from_str(json).unwrap();
         assert_eq!(params.color, Some(serde_json::json!("#FF5733")));
+    }
+
+    #[test]
+    fn update_column_params_accept_reorder_anchors() {
+        let before: UpdateColumnParams = serde_json::from_str(
+            r#"{"workspace":"ws","board":"b","column":"col","before":"before-key"}"#,
+        )
+        .unwrap();
+        let after: UpdateColumnParams = serde_json::from_str(
+            r#"{"workspace":"ws","board":"b","column":"col","after":"after-key"}"#,
+        )
+        .unwrap();
+
+        assert_eq!(before.before.as_deref(), Some("before-key"));
+        assert!(before.after.is_none());
+        assert_eq!(after.after.as_deref(), Some("after-key"));
+        assert!(after.before.is_none());
     }
 
     #[test]

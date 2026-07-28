@@ -7,8 +7,11 @@
 
 mod support;
 
-use atlas_api::dtos::status_templates::{
-    CreateStatusTemplateRequest, PlatformStatusTemplateDto, UpdateStatusTemplateRequest,
+use atlas_api::dtos::{
+    CreateUserApiKeyRequest,
+    status_templates::{
+        CreateStatusTemplateRequest, PlatformStatusTemplateDto, UpdateStatusTemplateRequest,
+    },
 };
 use atlas_client::{AtlasClient, ClientError};
 
@@ -200,6 +203,37 @@ async fn a_plain_user_cannot_read_or_write_platform_defaults() {
     assert!(
         matches!(write_err, ClientError::Api(ref p) if p.status == 403),
         "expected 403 on write, got {write_err:?}"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn an_api_key_cannot_list_platform_defaults() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (owner, _ws, _user) =
+        support::login_user_with_workspace(&server, &db, "pstpl-agent-forbidden").await;
+    let api_key = owner
+        .create_user_api_key(CreateUserApiKeyRequest {
+            name: "platform-defaults-agent".to_string(),
+            r#type: None,
+            expires_at: None,
+            initial_grant: None,
+            scopes: None,
+        })
+        .await
+        .expect("create API key");
+    let agent = AtlasClient::new(server.base_url()).with_token(api_key.secret);
+
+    let err = agent
+        .list_platform_status_templates()
+        .await
+        .expect_err("API keys must not list platform defaults");
+
+    assert!(
+        matches!(err, ClientError::Api(ref problem) if problem.status == 403),
+        "expected 403, got {err:?}"
     );
 
     db.teardown().await;

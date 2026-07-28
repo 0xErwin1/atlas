@@ -1149,10 +1149,27 @@ impl AtlasClient {
         cursor: Option<&str>,
         limit: Option<u32>,
     ) -> Result<Page<DocumentSummaryDto>, ClientError> {
-        let path = build_paginated_path(
+        self.list_documents_with_unfiled_filter(ws, project_slug, cursor, limit, None)
+            .await
+    }
+
+    /// `GET /api/workspaces/{ws}/projects/{project_slug}/documents?unfiled={bool}`
+    ///
+    /// `None` lists all documents, `Some(true)` only unfiled documents, and
+    /// `Some(false)` only filed documents.
+    pub async fn list_documents_with_unfiled_filter(
+        &self,
+        ws: &str,
+        project_slug: &str,
+        cursor: Option<&str>,
+        limit: Option<u32>,
+        unfiled: Option<bool>,
+    ) -> Result<Page<DocumentSummaryDto>, ClientError> {
+        let path = build_document_list_path(
             &format!("/api/workspaces/{ws}/projects/{project_slug}/documents"),
             cursor,
             limit,
+            unfiled,
         );
         let response = self.get(&path).send().await?;
         self.decode_response(response, "list_documents").await
@@ -3714,6 +3731,21 @@ fn build_paginated_path(base: &str, cursor: Option<&str>, limit: Option<u32>) ->
     }
 }
 
+fn build_document_list_path(
+    base: &str,
+    cursor: Option<&str>,
+    limit: Option<u32>,
+    unfiled: Option<bool>,
+) -> String {
+    let path = build_paginated_path(base, cursor, limit);
+
+    match unfiled {
+        Some(value) if path.contains('?') => format!("{path}&unfiled={value}"),
+        Some(value) => format!("{path}?unfiled={value}"),
+        None => path,
+    }
+}
+
 fn build_trash_list_path(
     workspace_id: Option<uuid::Uuid>,
     kind: Option<TrashKindDto>,
@@ -3931,6 +3963,21 @@ mod tests {
         assert!(!path.contains("sort="));
         assert!(!path.contains("cursor="));
         assert!(!path.contains("limit="));
+    }
+
+    #[test]
+    fn build_document_list_path_omits_unfiled_when_filter_is_any() {
+        let path = build_document_list_path("/documents", Some("cursor"), Some(20), None);
+        assert_eq!(path, "/documents?cursor=cursor&limit=20");
+    }
+
+    #[test]
+    fn build_document_list_path_keeps_true_and_false_unfiled_states() {
+        let unfiled = build_document_list_path("/documents", None, None, Some(true));
+        let filed = build_document_list_path("/documents", None, None, Some(false));
+
+        assert_eq!(unfiled, "/documents?unfiled=true");
+        assert_eq!(filed, "/documents?unfiled=false");
     }
 
     #[test]

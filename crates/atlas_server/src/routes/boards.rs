@@ -541,8 +541,8 @@ pub(crate) async fn update_column(
             board_id,
             col_id,
             PositionBetween {
-                before: body.before,
-                after: body.after,
+                before: body.after,
+                after: body.before,
             },
         )
         .await

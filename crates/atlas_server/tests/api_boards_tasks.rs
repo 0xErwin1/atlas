@@ -17,6 +17,7 @@ use atlas_api::dtos::{
     },
     documents::CreateDocumentRequest,
 };
+use atlas_api::problem::ProblemDetails;
 use atlas_client::ClientError;
 use atlas_domain::{
     Actor, WorkspaceCtx, entities::identity::MemberRole, entities::permissions::NewPermissionGrant,
@@ -34,6 +35,22 @@ fn project_req(slug: &str, prefix: &str) -> CreateProjectRequest {
         visibility: None,
         visibility_role: None,
     }
+}
+
+fn not_found_problem(error: ClientError) -> ProblemDetails {
+    match error {
+        ClientError::Api(problem) if problem.status == 404 => problem,
+        other => panic!("expected a 404 problem, got: {other:?}"),
+    }
+}
+
+fn assert_same_not_found_problem(expected: &ProblemDetails, actual: &ProblemDetails) {
+    assert_eq!(actual.r#type, expected.r#type);
+    assert_eq!(actual.title, expected.title);
+    assert_eq!(actual.status, expected.status);
+    assert_eq!(actual.detail, expected.detail);
+    assert_eq!(actual.instance, expected.instance);
+    assert_eq!(actual.hint, expected.hint);
 }
 
 /// Creates and logs in a second user with the given membership role in `ws`.
@@ -1275,6 +1292,136 @@ async fn move_task_changes_column() {
     db.teardown().await;
 }
 
+#[tokio::test]
+async fn patch_column_reorders_populated_columns_without_moving_tasks() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) =
+        support::login_user_with_workspace(&server, &db, "column-reorder-populated").await;
+
+    client
+        .create_project(&ws.slug, project_req("column-reorder-project", "CRP"))
+        .await
+        .expect("create project");
+
+    let board = client
+        .create_board(
+            &ws.slug,
+            "column-reorder-project",
+            CreateBoardRequest {
+                folder_id: None,
+                name: "Board".to_string(),
+            },
+        )
+        .await
+        .expect("create board");
+
+    let first = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "First".to_string(),
+                color: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create first column");
+    let second = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "Second".to_string(),
+                color: None,
+                before: Some(first.position_key.clone()),
+                after: None,
+            },
+        )
+        .await
+        .expect("create second column");
+
+    let task = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: first.id,
+                title: "Stationary task".to_string(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create task");
+
+    client
+        .update_column(
+            &ws.slug,
+            board.id,
+            second.id,
+            UpdateColumnRequest {
+                name: None,
+                color: None,
+                before: Some(first.position_key.clone()),
+                after: None,
+            },
+        )
+        .await
+        .expect("reorder populated column");
+
+    let columns = client
+        .list_columns(&ws.slug, board.id)
+        .await
+        .expect("list reordered columns");
+    assert_eq!(
+        columns.iter().map(|column| column.id).collect::<Vec<_>>(),
+        vec![second.id, first.id],
+        "the reordered list follows the updated position keys"
+    );
+    assert_ne!(columns[0].position_key, columns[1].position_key);
+
+    client
+        .update_column(
+            &ws.slug,
+            board.id,
+            first.id,
+            UpdateColumnRequest {
+                name: None,
+                color: None,
+                before: None,
+                after: Some(columns[0].position_key.clone()),
+            },
+        )
+        .await
+        .expect("place column after anchor");
+
+    let after_columns = client
+        .list_columns(&ws.slug, board.id)
+        .await
+        .expect("list columns after after-anchor reorder");
+    assert_eq!(
+        after_columns
+            .iter()
+            .map(|column| column.id)
+            .collect::<Vec<_>>(),
+        vec![second.id, first.id],
+        "after anchors preserve the requested relative order"
+    );
+
+    let unchanged_task = client
+        .get_task(&ws.slug, &task.readable_id)
+        .await
+        .expect("get task after column reorder");
+    assert_eq!(unchanged_task.column_id, first.id);
+
+    db.teardown().await;
+}
+
 // A move anchored to a neighbour TASK ID (what clients send — they never see the
 // internal fractional keys) must resolve and succeed, not fail as an invalid key.
 #[tokio::test]
@@ -1915,6 +2062,11 @@ async fn list_references_merges_manual_and_wikilink_origins() {
     );
     assert_eq!(refs[0].origins.len(), 2);
     assert!(refs[0].target_resolved);
+    assert_eq!(
+        refs[0].target_title.as_deref(),
+        Some("Linked document"),
+        "resolved references expose the target's current title"
+    );
     assert_eq!(refs[1].manual_reference_id, None);
     assert!(!refs[1].target_resolved);
     assert_eq!(refs[1].target_title.as_deref(), Some("Missing document"));
@@ -5168,6 +5320,370 @@ async fn promote_into_foreign_board_same_workspace_is_rejected_and_writes_no_tas
 /// populate target_readable_id. After soft-deleting the target task,
 /// list_references must return target_resolved=false for that reference.
 #[tokio::test]
+async fn inaccessible_reference_targets_do_not_disclose_titles() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (owner, ws, _) =
+        support::login_user_with_workspace(&server, &db, "reference-title-owner").await;
+
+    owner
+        .create_project(
+            &ws.slug,
+            CreateProjectRequest {
+                name: "Private references".to_string(),
+                slug: "private-references".to_string(),
+                task_prefix: "PRV".to_string(),
+                visibility: Some("private".to_string()),
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create private project");
+
+    let source_board = owner
+        .create_board(
+            &ws.slug,
+            "private-references",
+            CreateBoardRequest {
+                folder_id: None,
+                name: "Source board".to_string(),
+            },
+        )
+        .await
+        .expect("create source board");
+    let target_board = owner
+        .create_board(
+            &ws.slug,
+            "private-references",
+            CreateBoardRequest {
+                folder_id: None,
+                name: "Target board".to_string(),
+            },
+        )
+        .await
+        .expect("create target board");
+
+    let source_column = owner
+        .create_column(
+            &ws.slug,
+            source_board.id,
+            CreateColumnRequest {
+                name: "Source column".to_string(),
+                before: None,
+                after: None,
+                color: None,
+            },
+        )
+        .await
+        .expect("create source column");
+    let target_column = owner
+        .create_column(
+            &ws.slug,
+            target_board.id,
+            CreateColumnRequest {
+                name: "Target column".to_string(),
+                before: None,
+                after: None,
+                color: None,
+            },
+        )
+        .await
+        .expect("create target column");
+
+    let source = owner
+        .create_task(
+            &ws.slug,
+            source_board.id,
+            CreateTaskRequest {
+                column_id: source_column.id,
+                title: "Visible source".to_string(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create source task");
+    let private_task = owner
+        .create_task(
+            &ws.slug,
+            target_board.id,
+            CreateTaskRequest {
+                column_id: target_column.id,
+                title: "Private task title".to_string(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create private task");
+    let private_document = owner
+        .create_document(
+            &ws.slug,
+            "private-references",
+            CreateDocumentRequest {
+                title: "Private document title".to_string(),
+                folder_id: None,
+                content: Some("private".to_string()),
+            },
+        )
+        .await
+        .expect("create private document");
+
+    let (attacker, attacker_user) = add_member(
+        &db,
+        &server,
+        ws.id,
+        "reference-title-attacker",
+        MemberRole::Member,
+    )
+    .await;
+    grant_board_editor(&db, ws.id, attacker_user.id, source_board.id).await;
+
+    let inaccessible_task_create = attacker
+        .create_reference(
+            &ws.slug,
+            &source.readable_id,
+            CreateReferenceRequest {
+                kind: "relates".to_string(),
+                target_task_readable_id: Some(private_task.readable_id.clone()),
+                target_document_id: None,
+            },
+        )
+        .await;
+    assert!(
+        is_404(&inaccessible_task_create),
+        "inaccessible task target must be non-leaking on create, got: {inaccessible_task_create:?}"
+    );
+
+    let inaccessible_document_create = attacker
+        .create_reference(
+            &ws.slug,
+            &source.readable_id,
+            CreateReferenceRequest {
+                kind: "docs".to_string(),
+                target_task_readable_id: None,
+                target_document_id: Some(private_document.id),
+            },
+        )
+        .await;
+    let inaccessible_document_problem = not_found_problem(
+        inaccessible_document_create.expect_err("inaccessible document target must be rejected"),
+    );
+
+    let missing_document_problem = not_found_problem(
+        attacker
+            .create_reference(
+                &ws.slug,
+                &source.readable_id,
+                CreateReferenceRequest {
+                    kind: "docs".to_string(),
+                    target_task_readable_id: None,
+                    target_document_id: Some(uuid::Uuid::now_v7()),
+                },
+            )
+            .await
+            .expect_err("missing document target must be rejected"),
+    );
+
+    let deleted_document = owner
+        .create_document(
+            &ws.slug,
+            "private-references",
+            CreateDocumentRequest {
+                title: "Deleted document title".to_string(),
+                folder_id: None,
+                content: Some("deleted".to_string()),
+            },
+        )
+        .await
+        .expect("create deleted document target");
+    owner
+        .delete_document(
+            &ws.slug,
+            deleted_document
+                .slug
+                .as_deref()
+                .expect("created document has a slug"),
+        )
+        .await
+        .expect("delete document target");
+    let deleted_document_problem = not_found_problem(
+        attacker
+            .create_reference(
+                &ws.slug,
+                &source.readable_id,
+                CreateReferenceRequest {
+                    kind: "docs".to_string(),
+                    target_task_readable_id: None,
+                    target_document_id: Some(deleted_document.id),
+                },
+            )
+            .await
+            .expect_err("deleted document target must be rejected"),
+    );
+
+    let (foreign_owner, foreign_workspace, _) =
+        support::login_user_with_workspace(&server, &db, "reference-foreign-owner").await;
+    foreign_owner
+        .create_project(
+            &foreign_workspace.slug,
+            project_req("private-references", "FR"),
+        )
+        .await
+        .expect("create foreign project");
+    let foreign_document = foreign_owner
+        .create_document(
+            &foreign_workspace.slug,
+            "private-references",
+            CreateDocumentRequest {
+                title: "Foreign document title".to_string(),
+                folder_id: None,
+                content: Some("foreign".to_string()),
+            },
+        )
+        .await
+        .expect("create foreign document target");
+    let cross_tenant_document_problem = not_found_problem(
+        attacker
+            .create_reference(
+                &ws.slug,
+                &source.readable_id,
+                CreateReferenceRequest {
+                    kind: "docs".to_string(),
+                    target_task_readable_id: None,
+                    target_document_id: Some(foreign_document.id),
+                },
+            )
+            .await
+            .expect_err("cross-tenant document target must be rejected"),
+    );
+
+    assert_same_not_found_problem(&missing_document_problem, &inaccessible_document_problem);
+    assert_same_not_found_problem(&missing_document_problem, &deleted_document_problem);
+    assert_same_not_found_problem(&missing_document_problem, &cross_tenant_document_problem);
+
+    let wikilink_source = owner
+        .create_task(
+            &ws.slug,
+            source_board.id,
+            CreateTaskRequest {
+                column_id: source_column.id,
+                title: "Visible wikilink source".to_string(),
+                description: Some(format!(
+                    "[[{}|Private wikilink alias]]",
+                    private_document.id
+                )),
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create wikilink source task");
+
+    let owner_wikilink_references = owner
+        .list_references(&ws.slug, &wikilink_source.readable_id)
+        .await
+        .expect("owner lists resolved wikilink");
+    assert!(
+        owner_wikilink_references.iter().any(|reference| {
+            reference.target_document_id == Some(private_document.id)
+                && reference.target_resolved
+                && reference.target_title.as_deref() == Some("Private document title")
+        }),
+        "authorized caller must receive the private wikilink document title"
+    );
+
+    let attacker_wikilink_references = attacker
+        .list_references(&ws.slug, &wikilink_source.readable_id)
+        .await
+        .expect("attacker lists source-visible wikilink");
+    assert!(
+        attacker_wikilink_references.iter().any(|reference| {
+            reference.target_document_id == Some(private_document.id)
+                && !reference.target_resolved
+                && reference.target_title.is_none()
+                && reference.target_readable_id.is_none()
+        }),
+        "inaccessible wikilink target must not disclose its title, slug, or resolved existence"
+    );
+
+    owner
+        .create_reference(
+            &ws.slug,
+            &source.readable_id,
+            CreateReferenceRequest {
+                kind: "relates".to_string(),
+                target_task_readable_id: Some(private_task.readable_id.clone()),
+                target_document_id: None,
+            },
+        )
+        .await
+        .expect("owner creates task reference");
+    owner
+        .create_reference(
+            &ws.slug,
+            &source.readable_id,
+            CreateReferenceRequest {
+                kind: "docs".to_string(),
+                target_task_readable_id: None,
+                target_document_id: Some(private_document.id),
+            },
+        )
+        .await
+        .expect("owner creates document reference");
+
+    let owner_references = owner
+        .list_references(&ws.slug, &source.readable_id)
+        .await
+        .expect("owner lists resolved references");
+    assert!(
+        owner_references.iter().any(|reference| {
+            reference.target_task_id == Some(private_task.id)
+                && reference.target_resolved
+                && reference.target_title.as_deref() == Some("Private task title")
+        }),
+        "authorized caller must receive the private task title"
+    );
+    assert!(
+        owner_references.iter().any(|reference| {
+            reference.target_document_id == Some(private_document.id)
+                && reference.target_resolved
+                && reference.target_title.as_deref() == Some("Private document title")
+        }),
+        "authorized caller must receive the private document title"
+    );
+
+    let attacker_references = attacker
+        .list_references(&ws.slug, &source.readable_id)
+        .await
+        .expect("attacker lists source references");
+    assert!(
+        attacker_references.iter().any(|reference| {
+            reference.target_task_id == Some(private_task.id)
+                && !reference.target_resolved
+                && reference.target_title.is_none()
+                && reference.target_readable_id.is_none()
+        }),
+        "inaccessible task target must remain unresolved without title"
+    );
+    assert!(
+        attacker_references.iter().any(|reference| {
+            reference.target_document_id == Some(private_document.id)
+                && !reference.target_resolved
+                && reference.target_title.is_none()
+        }),
+        "inaccessible document target must remain unresolved without title"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
 async fn reference_target_resolved_false_after_target_task_soft_deleted() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;
@@ -5259,6 +5775,28 @@ async fn reference_target_resolved_false_after_target_task_soft_deleted() {
         Some(target.readable_id.as_str()),
         "create_reference must populate target_readable_id with the live target's readable_id"
     );
+    assert_eq!(
+        created_ref.target_title.as_deref(),
+        Some("Target"),
+        "create_reference must populate target_title with the live target's current title"
+    );
+
+    client
+        .update_task(
+            &ws.slug,
+            &target.readable_id,
+            UpdateTaskRequest {
+                title: Some("Renamed target".into()),
+                description: None,
+                priority: None,
+                due_date: None,
+                estimate: None,
+                labels: None,
+                properties: None,
+            },
+        )
+        .await
+        .expect("rename target task");
 
     let refs_before = client
         .list_references(&ws.slug, &source.readable_id)
@@ -5277,6 +5815,11 @@ async fn reference_target_resolved_false_after_target_task_soft_deleted() {
         r.target_readable_id.as_deref(),
         Some(target.readable_id.as_str()),
         "list_references must populate target_readable_id for a live task target"
+    );
+    assert_eq!(
+        r.target_title.as_deref(),
+        Some("Renamed target"),
+        "list_references must populate target_title for a live task target"
     );
 
     client
@@ -5297,6 +5840,10 @@ async fn reference_target_resolved_false_after_target_task_soft_deleted() {
         !r_after.target_resolved,
         "list_references must return target_resolved=false after target task is soft-deleted, got: {}",
         r_after.target_resolved
+    );
+    assert!(
+        r_after.target_title.is_none(),
+        "list_references must not fabricate a title for a soft-deleted target"
     );
 
     client

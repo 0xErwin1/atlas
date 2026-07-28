@@ -133,11 +133,12 @@ impl DocumentRepo for PgDocumentRepo {
             .map_err(internal_err)
     }
 
-    async fn list_visible(
+    async fn list_visible_with_folder_presence(
         &self,
         ctx: &WorkspaceCtx,
         principal: &Principal,
         project_filter: Option<ProjectId>,
+        folder_presence: atlas_domain::ports::documents::FolderPresence,
         after_id: Option<uuid::Uuid>,
         limit: u64,
     ) -> Result<Vec<DocumentSummary>, DomainError> {
@@ -211,6 +212,16 @@ impl DocumentRepo for PgDocumentRepo {
             String::new()
         };
 
+        let folder_presence_cond = match folder_presence {
+            atlas_domain::ports::documents::FolderPresence::Any => String::new(),
+            atlas_domain::ports::documents::FolderPresence::Unfiled => {
+                "AND d.folder_id IS NULL".to_string()
+            }
+            atlas_domain::ports::documents::FolderPresence::Filed => {
+                "AND d.folder_id IS NOT NULL".to_string()
+            }
+        };
+
         let sql = format!(
             r#"
             SELECT d.id, d.workspace_id, d.project_id, d.folder_id, d.title, d.slug,
@@ -275,9 +286,10 @@ impl DocumentRepo for PgDocumentRepo {
                                 )
                           )
                     )
-              )
-              {project_cond}
-              {cursor_cond}
+               )
+               {project_cond}
+               {folder_presence_cond}
+               {cursor_cond}
             ORDER BY d.id
             LIMIT {limit}
             "#,

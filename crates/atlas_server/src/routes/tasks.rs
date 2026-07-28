@@ -50,7 +50,7 @@ use atlas_domain::{
     },
     permissions::{
         Capability, CapabilityAction, CapabilityFamily, ChainSegment, Principal, ResolutionInput,
-        ResourceChain, ResourceRef,
+        ResourceChain, ResourceRef, ResourceRole,
     },
     ports::{
         boards_tasks::{WorkspaceActivityFilters, WorkspaceActivityScope},
@@ -66,7 +66,7 @@ use crate::{
         batch_authorization::{
             BatchAuthorizationService, PgBatchAuthorizationSource, ProjectionSubject,
         },
-        enforce_api_key_scope,
+        build_board_chain, build_document_chain, enforce_api_key_scope, resolve_effective_role,
     },
     error::ApiError,
     persistence::entities::boards_tasks::task,
@@ -392,8 +392,22 @@ fn manual_reference_to_unified_dto(
     }
 }
 
+async fn can_view_reference_target(
+    state: &AppState,
+    principal: &Principal,
+    membership: Option<MemberRole>,
+    workspace: &atlas_domain::entities::identity::Workspace,
+    chain: &ResourceChain,
+) -> Result<bool, ApiError> {
+    Ok(matches!(
+        resolve_effective_role(&state.db, principal, membership, workspace, chain).await?,
+        Some(role) if role >= ResourceRole::Viewer
+    ))
+}
+
 fn wikilink_to_unified_dto(
     link: RankedTaskDescriptionLink,
+    target_resolved: bool,
     target_title: Option<String>,
 ) -> UnifiedReferenceDto {
     let target_document_id = link.link.target_document_id.map(|id| id.0);
@@ -407,8 +421,12 @@ fn wikilink_to_unified_dto(
         target_task_id: None,
         target_readable_id: None,
         target_document_id,
-        target_title: target_title.or(Some(link.link.target_title)),
-        target_resolved: target_document_id.is_some(),
+        target_title: target_title.or_else(|| {
+            target_document_id
+                .is_none()
+                .then_some(link.link.target_title)
+        }),
+        target_resolved,
         manual_created_by: None,
         manual_created_at: None,
     }
@@ -1535,17 +1553,40 @@ pub(crate) async fn list_references(
         .into_iter()
         .collect();
 
-    let mut live_task_readable: HashMap<TaskId, String> = HashMap::new();
+    let mut live_task_targets: HashMap<TaskId, (String, String)> = HashMap::new();
     for tid in target_task_ids {
         if let Some(t) = task_repo.find(&ctx, tid).await.map_err(ApiError::Domain)? {
-            live_task_readable.insert(tid, t.readable_id);
+            let chain =
+                build_board_chain(&state.db, &auth.workspace, t.board_id, t.project_id).await?;
+            if can_view_reference_target(
+                &state,
+                &auth.principal,
+                auth.membership.clone(),
+                &auth.workspace,
+                &chain,
+            )
+            .await?
+            {
+                live_task_targets.insert(tid, (t.readable_id, t.title));
+            }
         }
     }
 
     let mut live_doc_titles: HashMap<DocumentId, String> = HashMap::new();
     for did in target_doc_ids {
         if let Some(doc) = doc_repo.get(&ctx, did).await.map_err(ApiError::Domain)? {
-            live_doc_titles.insert(did, doc.title);
+            let chain = build_document_chain(&state.db, &auth.workspace, &doc).await?;
+            if can_view_reference_target(
+                &state,
+                &auth.principal,
+                auth.membership.clone(),
+                &auth.workspace,
+                &chain,
+            )
+            .await?
+            {
+                live_doc_titles.insert(did, doc.title);
+            }
         }
     }
 
@@ -1555,8 +1596,10 @@ pub(crate) async fn list_references(
             let (target_resolved, target_readable_id, target_title) =
                 match (r.target_task_id, r.target_document_id) {
                     (Some(tid), _) => {
-                        let readable = live_task_readable.get(&tid).cloned();
-                        (readable.is_some(), readable, None)
+                        let target = live_task_targets.get(&tid);
+                        let target_readable_id = target.map(|(readable_id, _)| readable_id.clone());
+                        let target_title = target.map(|(_, title)| title.clone());
+                        (target.is_some(), target_readable_id, target_title)
                     }
                     (_, Some(did)) => {
                         let title = live_doc_titles.get(&did).cloned();
@@ -1591,16 +1634,31 @@ pub(crate) async fn list_references(
                 continue;
             }
 
-            let target_title = match target_document_id {
-                Some(document_id) => doc_repo
+            let (target_resolved, target_title) = match target_document_id {
+                Some(document_id) => match doc_repo
                     .get(&ctx, document_id)
                     .await
                     .map_err(ApiError::Domain)?
-                    .map(|document| document.title),
-                None => None,
+                {
+                    Some(document) => {
+                        let chain =
+                            build_document_chain(&state.db, &auth.workspace, &document).await?;
+                        let visible = can_view_reference_target(
+                            &state,
+                            &auth.principal,
+                            auth.membership.clone(),
+                            &auth.workspace,
+                            &chain,
+                        )
+                        .await?;
+                        (visible, visible.then_some(document.title))
+                    }
+                    None => (false, None),
+                },
+                None => (false, None),
             };
 
-            dtos.push(wikilink_to_unified_dto(link, target_title));
+            dtos.push(wikilink_to_unified_dto(link, target_resolved, target_title));
         }
     }
 
@@ -1680,6 +1738,7 @@ pub(crate) async fn create_reference(
     }
 
     let mut target_readable_id: Option<String> = None;
+    let mut target_title: Option<String> = None;
 
     let target_task_id = if let Some(rid) = body.target_task_readable_id {
         let repo = PgTaskRepo::new((*state.db).clone());
@@ -1690,7 +1749,22 @@ pub(crate) async fn create_reference(
 
         match found {
             Some(t) => {
+                let chain =
+                    build_board_chain(&state.db, &auth.workspace, t.board_id, t.project_id).await?;
+                if !can_view_reference_target(
+                    &state,
+                    &auth.principal,
+                    auth.membership.clone(),
+                    &auth.workspace,
+                    &chain,
+                )
+                .await?
+                {
+                    return Err(ApiError::NotFound);
+                }
+
                 target_readable_id = Some(t.readable_id.clone());
+                target_title = Some(t.title);
                 Some(t.id)
             }
             None => return Err(ApiError::NotFound),
@@ -1699,8 +1773,6 @@ pub(crate) async fn create_reference(
         None
     };
 
-    let mut target_title: Option<String> = None;
-
     let target_document_id = if let Some(raw_id) = body.target_document_id {
         let doc_id = DocumentId(raw_id);
         let doc_repo = PgDocumentRepo::new((*state.db).clone(), 0);
@@ -1708,15 +1780,23 @@ pub(crate) async fn create_reference(
 
         match found {
             Some(doc) => {
+                let chain = build_document_chain(&state.db, &auth.workspace, &doc).await?;
+                if !can_view_reference_target(
+                    &state,
+                    &auth.principal,
+                    auth.membership.clone(),
+                    &auth.workspace,
+                    &chain,
+                )
+                .await?
+                {
+                    return Err(ApiError::NotFound);
+                }
+
                 target_title = Some(doc.title);
                 Some(doc_id)
             }
-            None => {
-                return Err(ApiError::Domain(atlas_domain::DomainError::NotFound {
-                    entity: "document",
-                    id: raw_id,
-                }));
-            }
+            None => return Err(ApiError::NotFound),
         }
     } else {
         None

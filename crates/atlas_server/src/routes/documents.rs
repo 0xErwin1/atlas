@@ -40,7 +40,10 @@ use atlas_domain::{
     entities::identity::MemberRole,
     ids::{AttachmentId, CommentDraftId, CommentId, DocumentId, FolderId, RevisionId, UserId},
     permissions::{Capability, CapabilityAction, CapabilityFamily, Principal},
-    ports::comments::{CommentAttachmentDraftRepo, CommentLinkRepo, CommentRepo},
+    ports::{
+        comments::{CommentAttachmentDraftRepo, CommentLinkRepo, CommentRepo},
+        documents::FolderPresence,
+    },
     resolve_collision, slugify,
 };
 
@@ -73,6 +76,7 @@ pub(crate) struct PaginationQuery {
     cursor: Option<String>,
     limit: Option<u32>,
     feed: Option<String>,
+    unfiled: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -241,6 +245,7 @@ async fn persist_new_document(
         ("project_slug" = String, Path, description = "Project slug"),
         ("cursor" = Option<String>, Query, description = "Pagination cursor"),
         ("limit" = Option<u32>, Query, description = "Page size (max 200)"),
+        ("unfiled" = Option<bool>, Query, description = "Filter by folder assignment: true for unfiled, false for filed, omitted for any"),
     ),
     responses(
         (status = 200, description = "Paginated document list", body = Page<DocumentSummaryDto>),
@@ -259,11 +264,23 @@ pub(crate) async fn list_documents(
     let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
 
     let project_id = auth.resource.0.id;
+    let folder_presence = match q.unfiled {
+        None => FolderPresence::Any,
+        Some(true) => FolderPresence::Unfiled,
+        Some(false) => FolderPresence::Filed,
+    };
 
     let doc_repo = PgDocumentRepo::new((*state.db).clone(), state.anchor_interval);
 
     let mut items = doc_repo
-        .list_visible(&ctx, &auth.principal, Some(project_id), after_id, limit + 1)
+        .list_visible_with_folder_presence(
+            &ctx,
+            &auth.principal,
+            Some(project_id),
+            folder_presence,
+            after_id,
+            limit + 1,
+        )
         .await
         .map_err(ApiError::Domain)?;
 

@@ -510,6 +510,117 @@ async fn list_documents_returns_created_document() {
 }
 
 #[tokio::test]
+async fn list_documents_distinguishes_unfiled_from_filed_documents() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) =
+        support::login_user_with_workspace(&server, &db, "doc-list-folder-filter").await;
+
+    let project = client
+        .create_project(
+            &ws.slug,
+            atlas_api::dtos::CreateProjectRequest {
+                name: "Project".to_string(),
+                slug: "doc-list-folder-filter".to_string(),
+                task_prefix: "DLF".to_string(),
+                visibility: None,
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create project");
+
+    client
+        .create_document(&ws.slug, &project.slug, doc_req("Unfiled"))
+        .await
+        .expect("create unfiled document");
+
+    let folder = client
+        .create_folder(
+            &ws.slug,
+            &project.slug,
+            atlas_api::dtos::folders::CreateFolderRequest {
+                name: "Folder".to_string(),
+                parent_folder_id: None,
+            },
+        )
+        .await
+        .expect("create folder");
+
+    client
+        .create_document(
+            &ws.slug,
+            &project.slug,
+            CreateDocumentRequest {
+                title: "Filed".to_string(),
+                folder_id: Some(folder.id),
+                content: None,
+            },
+        )
+        .await
+        .expect("create filed document");
+
+    let base_url = server.base_url().to_string();
+    let workspace_slug = ws.slug.clone();
+    let project_slug = project.slug.clone();
+    let token = client.token().expect("authenticated token").to_string();
+    let list = |unfiled: Option<bool>| {
+        let base_url = base_url.clone();
+        let workspace_slug = workspace_slug.clone();
+        let project_slug = project_slug.clone();
+        let token = token.clone();
+
+        async move {
+            let suffix = match unfiled {
+                Some(value) => format!("?unfiled={value}"),
+                None => String::new(),
+            };
+            let response = reqwest::Client::new()
+                .get(format!(
+                    "{base_url}/api/workspaces/{workspace_slug}/projects/{project_slug}/documents{suffix}",
+                ))
+                .bearer_auth(token)
+                .send()
+                .await
+                .expect("list documents");
+
+            assert_eq!(response.status(), reqwest::StatusCode::OK);
+            response
+                .json::<serde_json::Value>()
+                .await
+                .expect("document list response")
+        }
+    };
+
+    let any_titles = list(None).await["items"]
+        .as_array()
+        .expect("items array")
+        .iter()
+        .map(|document| document["title"].as_str().expect("title").to_string())
+        .collect::<Vec<_>>();
+    assert!(any_titles.contains(&"Unfiled".to_string()));
+    assert!(any_titles.contains(&"Filed".to_string()));
+
+    let unfiled_titles = list(Some(true)).await["items"]
+        .as_array()
+        .expect("items array")
+        .iter()
+        .map(|document| document["title"].as_str().expect("title").to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(unfiled_titles, vec!["Unfiled"]);
+
+    let filed_titles = list(Some(false)).await["items"]
+        .as_array()
+        .expect("items array")
+        .iter()
+        .map(|document| document["title"].as_str().expect("title").to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(filed_titles, vec!["Filed"]);
+
+    db.teardown().await;
+}
+
+#[tokio::test]
 async fn root_user_lists_documents_in_workspace_without_membership() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;

@@ -11,6 +11,15 @@ use crate::{
 use async_trait::async_trait;
 use uuid::Uuid;
 
+/// Restricts document listings by whether documents are assigned to a folder.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum FolderPresence {
+    #[default]
+    Any,
+    Unfiled,
+    Filed,
+}
+
 #[async_trait]
 pub trait DocumentRepo: Send + Sync {
     async fn create(&self, ctx: &WorkspaceCtx, new: NewDocument) -> Result<Document, DomainError>;
@@ -33,6 +42,27 @@ pub trait DocumentRepo: Send + Sync {
         ctx: &WorkspaceCtx,
         principal: &Principal,
         project_filter: Option<ProjectId>,
+        after_id: Option<Uuid>,
+        limit: u64,
+    ) -> Result<Vec<DocumentSummary>, DomainError> {
+        self.list_visible_with_folder_presence(
+            ctx,
+            principal,
+            project_filter,
+            FolderPresence::Any,
+            after_id,
+            limit,
+        )
+        .await
+    }
+
+    /// Lists visible documents with an optional folder-presence restriction.
+    async fn list_visible_with_folder_presence(
+        &self,
+        ctx: &WorkspaceCtx,
+        principal: &Principal,
+        project_filter: Option<ProjectId>,
+        folder_presence: FolderPresence,
         after_id: Option<Uuid>,
         limit: u64,
     ) -> Result<Vec<DocumentSummary>, DomainError>;

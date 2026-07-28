@@ -428,13 +428,15 @@ pub(crate) fn project_board_summary(board: BoardSummaryDto) -> Value {
 
 /// Compact projection of a board column.
 ///
-/// `board_id`, `position_key`, and timestamps are dropped. `color` is omitted
-/// when absent. The `id` + `name` pair is the primary value: `id` is passed
-/// to status filters and `name` is the human-readable label.
+/// `board_id` and timestamps are dropped. `color` is omitted when absent. The
+/// `id` + `name` pair is the primary value: `id` is passed to status filters
+/// and `name` is the human-readable label. `position_key` is preserved as the
+/// stable anchor for column reordering.
 pub(crate) fn project_column(col: ColumnDto) -> Value {
     let mut map = serde_json::Map::new();
     map.insert("id".into(), json!(col.id));
     map.insert("name".into(), json!(col.name));
+    map.insert("position_key".into(), json!(col.position_key));
 
     if let Some(color) = col.color {
         map.insert("color".into(), json!(color));
@@ -2106,10 +2108,10 @@ mod tests {
     }
 
     #[test]
-    fn column_projection_drops_board_id_and_timestamps() {
+    fn column_projection_keeps_position_key_but_drops_board_id_and_timestamps() {
         let val = project_column(make_column_dto(None));
         assert!(val.get("board_id").is_none());
-        assert!(val.get("position_key").is_none());
+        assert_eq!(val["position_key"], "a0");
         assert!(val.get("created_at").is_none());
         assert!(val.get("updated_at").is_none());
     }
