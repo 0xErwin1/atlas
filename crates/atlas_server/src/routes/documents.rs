@@ -900,13 +900,13 @@ pub(crate) async fn update_content(
     security(("bearer_auth" = [])),
     params(("ws" = String, Path), ("slug" = String, Path)),
     request_body = DocumentContentEditRequest,
-    responses((status = 200, body = DocumentDto), (status = 401), (status = 403), (status = 404), (status = 409), (status = 422))
+    responses((status = 200, body = DocumentCompactDto), (status = 401), (status = 403), (status = 404), (status = 409), (status = 422))
 )]
 pub(crate) async fn edit_content_range(
     auth: Authorized<DocumentSlugRes, EditorMin, DocsUpdate>,
     State(state): State<AppState>,
     Json(body): Json<DocumentContentEditRequest>,
-) -> Result<Json<DocumentDto>, ApiError> {
+) -> Result<Json<DocumentCompactDto>, ApiError> {
     let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
     let edit = match body.edit {
         DocumentLineEditRequest::Insert { position, content } => {
@@ -944,7 +944,7 @@ pub(crate) async fn edit_content_range(
         update_document_links(&ctx, &doc_repo, &link_repo, updated.id, &updated.content).await?;
     }
 
-    Ok(Json(document_to_dto(updated)))
+    Ok(Json(document_to_compact_dto(updated)))
 }
 
 // ---------------------------------------------------------------------------
@@ -2762,6 +2762,22 @@ fn document_to_dto(doc: atlas_domain::entities::documents::Document) -> Document
         slug: doc.slug,
         title: doc.title,
         content: doc.content,
+        head_revision_id: doc.current_revision_id.0,
+        head_seq: doc.current_revision_seq,
+        frontmatter: doc.frontmatter,
+        created_at: doc.created_at,
+        updated_at: doc.updated_at,
+    }
+}
+
+fn document_to_compact_dto(doc: atlas_domain::entities::documents::Document) -> DocumentCompactDto {
+    DocumentCompactDto {
+        id: doc.id.0,
+        workspace_id: doc.workspace_id.0,
+        project_id: doc.project_id.map(|project| project.0),
+        folder_id: doc.folder_id.map(|folder| folder.0),
+        slug: doc.slug,
+        title: doc.title,
         head_revision_id: doc.current_revision_id.0,
         head_seq: doc.current_revision_seq,
         frontmatter: doc.frontmatter,

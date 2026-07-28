@@ -12,8 +12,8 @@ use sea_orm::{ConnectionTrait, Statement};
 use atlas_api::dtos::{
     ApiKeyScope, CreateUserApiKeyRequest,
     documents::{
-        CreateDocumentRequest, DocumentContentEditRequest, DocumentContentRangeDto,
-        DocumentContentSearchDto, DocumentContentSearchRequest, DocumentDto,
+        CreateDocumentRequest, DocumentCompactDto, DocumentContentEditRequest,
+        DocumentContentRangeDto, DocumentContentSearchDto, DocumentContentSearchRequest,
         DocumentLineEditRequest, DocumentSearchMode, MoveDocumentRequest, UpdateContentRequest,
         UpdateDocumentRequest,
     },
@@ -975,7 +975,13 @@ async fn edit_content_range_updates_content_and_returns_a_new_revision() {
             content: "inserted".into()
         },
     );
-    let updated: DocumentDto = response.json().await.expect("partial edit response");
+    let updated: serde_json::Value = response.json().await.expect("partial edit response");
+    assert!(updated.get("content").is_none());
+    assert_eq!(updated["frontmatter"], serde_json::json!({"kind": "guide"}));
+    let updated = client
+        .get_document(&ws.slug, slug)
+        .await
+        .expect("read edited document");
     assert_eq!(
         updated.content,
         "---\nkind: guide\n---\nfirst\r\ninserted\nsecond [[Edit target]]"
@@ -1019,7 +1025,12 @@ async fn edit_content_range_updates_content_and_returns_a_new_revision() {
         guard_doc.head_revision_id,
         DocumentLineEditRequest::Delete { start: 3, end: 2 },
     );
-    let no_op: DocumentDto = no_op.json().await.expect("no-op response");
+    let no_op: serde_json::Value = no_op.json().await.expect("no-op response");
+    assert!(no_op.get("content").is_none());
+    let no_op = client
+        .get_document(&ws.slug, slug)
+        .await
+        .expect("read no-op document");
     assert_eq!(no_op.content, "first\nsecond [[Edit target]]");
     assert_eq!(no_op.head_revision_id, guard_doc.head_revision_id);
     assert_eq!(no_op.head_seq, guard_doc.head_seq);
@@ -1040,7 +1051,12 @@ async fn edit_content_range_updates_content_and_returns_a_new_revision() {
             content: "changed".into()
         },
     );
-    let changed: DocumentDto = changed.json().await.expect("replace response");
+    let changed: serde_json::Value = changed.json().await.expect("replace response");
+    assert!(changed.get("content").is_none());
+    let changed = client
+        .get_document(&ws.slug, slug)
+        .await
+        .expect("read replaced document");
     assert_eq!(changed.content, "first\nchanged");
     let stale = edit_content_range!(
         &server,
@@ -1068,7 +1084,12 @@ async fn edit_content_range_updates_content_and_returns_a_new_revision() {
         changed.head_revision_id,
         DocumentLineEditRequest::Delete { start: 2, end: 2 },
     );
-    let deleted: DocumentDto = deleted.json().await.expect("delete response");
+    let deleted: serde_json::Value = deleted.json().await.expect("delete response");
+    assert!(deleted.get("content").is_none());
+    let deleted = client
+        .get_document(&ws.slug, slug)
+        .await
+        .expect("read deleted document");
     assert_eq!(deleted.content, "first\n");
     db.teardown().await;
 }
@@ -1158,8 +1179,12 @@ async fn edit_content_range_requires_editor_access_without_leaking_other_workspa
         edit,
     );
     assert_eq!(editor_response.status(), reqwest::StatusCode::OK);
-    let edited: DocumentDto = editor_response.json().await.expect("editor response");
-    assert_eq!(edited.content, "changed");
+    let edited: DocumentCompactDto = editor_response.json().await.expect("editor response");
+    let editor_document = editor
+        .get_document(&ws.slug, slug)
+        .await
+        .expect("editor reads changed document");
+    assert_eq!(editor_document.content, "changed");
 
     let inaccessible = edit_content_range!(
         &server,

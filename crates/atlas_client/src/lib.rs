@@ -24,10 +24,10 @@ use atlas_api::{
         documents::{
             AttachmentDto, BacklinkDto, CommentAttachmentDto, CommentDraftDto, ConflictProblemDto,
             CopyDocumentRequest, CreateDocumentRequest, DocumentCompactDto,
-            DocumentContentRangeDto, DocumentContentRangeQuery, DocumentContentSearchDto,
-            DocumentContentSearchRequest, DocumentDto, DocumentSummaryDto, FrontmatterDto,
-            MoveDocumentRequest, RevisionContentDto, RevisionMetaDto, UpdateContentRequest,
-            UpdateDocumentRequest,
+            DocumentContentEditRequest, DocumentContentRangeDto, DocumentContentRangeQuery,
+            DocumentContentSearchDto, DocumentContentSearchRequest, DocumentDto,
+            DocumentSummaryDto, FrontmatterDto, MoveDocumentRequest, RevisionContentDto,
+            RevisionMetaDto, UpdateContentRequest, UpdateDocumentRequest,
         },
         folders::{
             CopyFolderRequest, CreateFolderRequest, FolderDto, MoveFolderRequest,
@@ -1208,6 +1208,36 @@ impl AtlasClient {
             .send()
             .await?;
         self.decode_response(response, "search_document_content")
+            .await
+    }
+
+    /// `PATCH /api/workspaces/{ws}/documents/{slug}/content/range`
+    pub async fn edit_document_content_range(
+        &self,
+        ws: &str,
+        slug: &str,
+        body: DocumentContentEditRequest,
+    ) -> Result<DocumentCompactDto, ClientError> {
+        let response = self
+            .patch(&format!(
+                "/api/workspaces/{ws}/documents/{slug}/content/range"
+            ))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+
+        if response.status() == reqwest::StatusCode::CONFLICT {
+            let bytes = response.bytes().await?;
+            let conflict: ConflictProblemDto =
+                serde_json::from_slice(&bytes).map_err(|source| ClientError::Decode {
+                    context: "edit_document_content_range_conflict",
+                    source,
+                })?;
+            return Err(ClientError::Conflict(conflict));
+        }
+
+        self.decode_response(response, "edit_document_content_range")
             .await
     }
 
@@ -4533,5 +4563,154 @@ mod tests {
                 .expect("mock server received range request")
                 .starts_with("GET /api/workspaces/ws/documents/note/content/range ")
         );
+    }
+
+    #[tokio::test]
+    async fn document_line_edit_serializes_tagged_request_and_preserves_conflicts() {
+        const DOCUMENT: &str = r#"{"id":"00000000-0000-0000-0000-000000000001","workspace_id":"00000000-0000-0000-0000-000000000002","project_id":null,"folder_id":null,"slug":"note","title":"Note","head_revision_id":"00000000-0000-0000-0000-000000000003","head_seq":5,"frontmatter":{},"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}"#;
+        let request = atlas_api::dtos::documents::DocumentContentEditRequest {
+            base_revision_id: "00000000-0000-0000-0000-000000000003"
+                .parse()
+                .expect("test revision UUID is valid"),
+            edit: atlas_api::dtos::documents::DocumentLineEditRequest::Replace {
+                start: 2,
+                end: 2,
+                content: "updated".into(),
+            },
+        };
+
+        let (base_url, requests) = serve_once_observing("200 OK", DOCUMENT);
+        let document = AtlasClient::new(base_url)
+            .edit_document_content_range("ws", "note", request.clone())
+            .await
+            .expect("line edit succeeds");
+        assert_eq!(document.head_seq, 5);
+        assert_eq!(
+            document.head_revision_id.to_string(),
+            "00000000-0000-0000-0000-000000000003"
+        );
+
+        let sent = requests.recv().expect("mock server received edit request");
+        assert!(sent.starts_with("PATCH /api/workspaces/ws/documents/note/content/range "));
+        assert!(sent.contains("\"base_revision_id\":\"00000000-0000-0000-0000-000000000003\""));
+        assert!(sent.contains("\"operation\":\"replace\""));
+        assert!(sent.contains("\"start\":2"));
+        assert!(sent.contains("\"end\":2"));
+        assert!(sent.contains("\"content\":\"updated\""));
+
+        let conflict = AtlasClient::new(serve_once(
+            "409 Conflict",
+            r#"{"type":"urn:atlas:error:conflict","title":"Conflict","status":409,"current_revision_id":"00000000-0000-0000-0000-000000000004","current_seq":6,"base_to_current_patch":"@@ -1 +1 @@"}"#,
+        ))
+        .edit_document_content_range("ws", "note", request)
+        .await
+        .expect_err("stale line edit returns a typed conflict");
+        assert!(matches!(conflict, ClientError::Conflict(problem)
+            if problem.current_seq == 6
+                && problem.base_to_current_patch == "@@ -1 +1 @@"));
+    }
+
+    #[tokio::test]
+    async fn document_line_edit_serializes_exact_insert_and_delete_request_bodies() {
+        const DOCUMENT: &str = r#"{"id":"00000000-0000-0000-0000-000000000001","workspace_id":"00000000-0000-0000-0000-000000000002","project_id":null,"folder_id":null,"slug":"note","title":"Note","head_revision_id":"00000000-0000-0000-0000-000000000003","head_seq":5,"frontmatter":{},"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}"#;
+        let base_revision_id = "00000000-0000-0000-0000-000000000003"
+            .parse()
+            .expect("test revision UUID is valid");
+
+        let (base_url, requests) = serve_once_observing("200 OK", DOCUMENT);
+        AtlasClient::new(base_url)
+            .edit_document_content_range(
+                "ws",
+                "note",
+                atlas_api::dtos::documents::DocumentContentEditRequest {
+                    base_revision_id,
+                    edit: atlas_api::dtos::documents::DocumentLineEditRequest::Insert {
+                        position: 3,
+                        content: "new line".into(),
+                    },
+                },
+            )
+            .await
+            .expect("insert succeeds");
+        let insert: serde_json::Value = serde_json::from_str(
+            requests
+                .recv()
+                .expect("mock server received insert request")
+                .split("\r\n\r\n")
+                .nth(1)
+                .expect("request includes a JSON body"),
+        )
+        .expect("insert body is JSON");
+        assert_eq!(
+            insert,
+            serde_json::json!({
+                "base_revision_id": "00000000-0000-0000-0000-000000000003",
+                "operation": "insert",
+                "position": 3,
+                "content": "new line",
+            })
+        );
+
+        let (base_url, requests) = serve_once_observing("200 OK", DOCUMENT);
+        AtlasClient::new(base_url)
+            .edit_document_content_range(
+                "ws",
+                "note",
+                atlas_api::dtos::documents::DocumentContentEditRequest {
+                    base_revision_id,
+                    edit: atlas_api::dtos::documents::DocumentLineEditRequest::Delete {
+                        start: 2,
+                        end: 4,
+                    },
+                },
+            )
+            .await
+            .expect("delete succeeds");
+        let delete: serde_json::Value = serde_json::from_str(
+            requests
+                .recv()
+                .expect("mock server received delete request")
+                .split("\r\n\r\n")
+                .nth(1)
+                .expect("request includes a JSON body"),
+        )
+        .expect("delete body is JSON");
+        assert_eq!(
+            delete,
+            serde_json::json!({
+                "base_revision_id": "00000000-0000-0000-0000-000000000003",
+                "operation": "delete",
+                "start": 2,
+                "end": 4,
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn document_line_edit_preserves_validation_hints() {
+        let request = atlas_api::dtos::documents::DocumentContentEditRequest {
+            base_revision_id: "00000000-0000-0000-0000-000000000003"
+                .parse()
+                .expect("test revision UUID is valid"),
+            edit: atlas_api::dtos::documents::DocumentLineEditRequest::Insert {
+                position: 1,
+                content: "new first line".into(),
+            },
+        };
+        let error = AtlasClient::new(serve_once(
+            "422 Unprocessable Content",
+            r#"{"type":"urn:atlas:error:validation","title":"Validation failed","status":422,"hint":"position must be within the document line range"}"#,
+        ))
+        .edit_document_content_range("ws", "note", request)
+        .await
+        .expect_err("invalid line edit returns the server validation problem");
+
+        assert!(matches!(
+            error,
+            ClientError::Api(problem)
+                if problem.status == 422
+                    && problem.hint.as_deref()
+                        == Some("position must be within the document line range")
+        ));
     }
 }

@@ -41,7 +41,7 @@ use atlas_api::{
             UpdateTaskRequest, WorkspaceTaskQueryParams,
         },
         documents::{
-            CreateDocumentRequest, DocumentContentEditRequest, DocumentDto,
+            CreateDocumentRequest, DocumentCompactDto, DocumentContentEditRequest,
             DocumentLineEditRequest, MoveDocumentRequest, UpdateContentRequest,
             UpdateDocumentRequest,
         },
@@ -1923,8 +1923,8 @@ async fn partial_document_edit_requires_docs_update_capability() {
         .await
         .expect("docs:update partial edit request");
     assert_eq!(update_response.status(), reqwest::StatusCode::OK);
-    let updated: DocumentDto = update_response.json().await.expect("partial edit response");
-    assert_eq!(updated.content, "hello\nupdated");
+    let updated: DocumentCompactDto = update_response.json().await.expect("partial edit response");
+    assert_ne!(updated.head_revision_id, fx.document_head_revision_id);
 
     let wrong_token = create_scoped_agent(
         &db,

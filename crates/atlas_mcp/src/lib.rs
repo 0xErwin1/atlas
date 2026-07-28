@@ -10,8 +10,9 @@ use atlas_api::dtos::boards_tasks::{
     WorkspaceTaskQueryParams,
 };
 use atlas_api::dtos::documents::{
-    CreateDocumentRequest, DocumentContentRangeQuery, DocumentContentSearchRequest,
-    DocumentSearchMode, MoveDocumentRequest, UpdateContentRequest, UpdateDocumentRequest,
+    CreateDocumentRequest, DocumentContentEditRequest, DocumentContentRangeQuery,
+    DocumentContentSearchRequest, DocumentLineEditRequest, DocumentSearchMode, MoveDocumentRequest,
+    UpdateContentRequest, UpdateDocumentRequest,
 };
 use atlas_api::dtos::folders::{CreateFolderRequest, MoveFolderRequest, RenameFolderRequest};
 use atlas_api::dtos::saved_searches::{CreateSavedSearchRequest, RenameSavedSearchRequest};
@@ -285,6 +286,81 @@ fn parse_uuid_param(field: &str, raw: &str) -> Result<uuid::Uuid, String> {
 /// Absent (`None`) yields `Ok(None)`; a present value must be a valid UUID.
 fn parse_optional_uuid_param(field: &str, raw: Option<&str>) -> Result<Option<uuid::Uuid>, String> {
     raw.map(|s| parse_uuid_param(field, s)).transpose()
+}
+
+fn require_edit_field<T: Copy>(field: Option<T>, operation: &str, name: &str) -> Result<T, String> {
+    field.ok_or_else(|| format!("{operation} operation requires {name}"))
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum DocumentLineEditOperation {
+    Insert,
+    Replace,
+    Delete,
+}
+
+impl DocumentLineEditOperation {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Insert => "insert",
+            Self::Replace => "replace",
+            Self::Delete => "delete",
+        }
+    }
+}
+
+fn build_document_line_edit_request(
+    params: &EditDocumentLinesParams,
+) -> Result<DocumentContentEditRequest, String> {
+    let base_revision_id = parse_uuid_param("base_revision_id", &params.base_revision_id)?;
+
+    let operation = params.operation.as_str();
+    let edit = match params.operation {
+        DocumentLineEditOperation::Insert => {
+            if params.start.is_some() || params.end.is_some() {
+                return Err("insert operation only accepts position and content".to_string());
+            }
+            let position = require_edit_field(params.position, operation, "position")?;
+            let content = params
+                .content
+                .clone()
+                .ok_or_else(|| "insert operation requires content".to_string())?;
+            DocumentLineEditRequest::Insert { position, content }
+        }
+        DocumentLineEditOperation::Replace => {
+            if params.position.is_some() {
+                return Err("replace operation only accepts start, end, and content".to_string());
+            }
+            let start = require_edit_field(params.start, operation, "start")?;
+            let end = require_edit_field(params.end, operation, "end")?;
+            let content = params
+                .content
+                .clone()
+                .ok_or_else(|| "replace operation requires content".to_string())?;
+            DocumentLineEditRequest::Replace {
+                start,
+                end,
+                content,
+            }
+        }
+        DocumentLineEditOperation::Delete => {
+            if params.position.is_some() {
+                return Err("delete operation only accepts start and end".to_string());
+            }
+            if params.content.is_some() {
+                return Err("delete operation does not accept content".to_string());
+            }
+            let start = require_edit_field(params.start, operation, "start")?;
+            let end = require_edit_field(params.end, operation, "end")?;
+            DocumentLineEditRequest::Delete { start, end }
+        }
+    };
+
+    Ok(DocumentContentEditRequest {
+        base_revision_id,
+        edit,
+    })
 }
 
 /// Parses a required `webhook_id` tool parameter into a UUID.
@@ -1011,6 +1087,31 @@ pub struct UpdateDocumentContentParams {
     /// The `head_revision_id` UUID string from a previous `get_document` call. Must match
     /// the current server-side head or the request returns a revision_conflict error.
     pub base_revision_id: String,
+}
+
+/// Parameters accepted by the `edit_document_lines` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct EditDocumentLinesParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Document slug or UUID.
+    pub slug: String,
+    /// The `head_revision_id` UUID from a prior document read.
+    pub base_revision_id: String,
+    /// Tagged line edit: `insert`, `replace`, or `delete`.
+    pub operation: DocumentLineEditOperation,
+    /// 1-based insertion position. Required only for `insert`.
+    #[serde(default)]
+    pub position: Option<i64>,
+    /// Inclusive 1-based first line. Required for `replace` and `delete`.
+    #[serde(default)]
+    pub start: Option<i64>,
+    /// Inclusive 1-based last line. Required for `replace` and `delete`.
+    #[serde(default)]
+    pub end: Option<i64>,
+    /// LF-delimited replacement lines. Required for `insert` and `replace`.
+    #[serde(default)]
+    pub content: Option<String>,
 }
 
 /// Parameters accepted by the `delete_document` tool.
@@ -3056,6 +3157,24 @@ impl AtlasMcp {
     }
 
     #[tool(
+        description = "Apply a CAS-protected insert, replace, or delete to document lines. Read a document first and pass its head_revision_id as base_revision_id. Insert requires position and content; replace requires start, end, and content; delete requires start and end. On revision_conflict, apply base_to_current_patch and retry with current_revision_id."
+    )]
+    async fn edit_document_lines(
+        &self,
+        Parameters(params): Parameters<EditDocumentLinesParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        let body = build_document_line_edit_request(&params)?;
+        let client = self.resolve_client(&ctx)?;
+        let doc = client
+            .edit_document_content_range(&params.workspace, &params.slug, body)
+            .await
+            .map_err(|e| enrich_client_error(e, "edit_document_lines"))?;
+
+        serde_json::to_string(&project_document_metadata(doc)).map_err(|e| e.to_string())
+    }
+
+    #[tool(
         description = "Recoverably delete a document. Requires confirm: true. \
                        Permanent removal is available only through root/system-admin human Trash purge."
     )]
@@ -5082,10 +5201,12 @@ mod tests {
         let compact = r#"{"id":"00000000-0000-0000-0000-000000000010","workspace_id":"00000000-0000-0000-0000-000000000011","slug":"note","title":"Note","head_revision_id":"00000000-0000-0000-0000-000000000012","head_seq":3,"frontmatter":{"secret":"hidden"},"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}"#;
         let range = r#"{"head_revision_id":"00000000-0000-0000-0000-000000000012","head_seq":3,"lines":[{"line_number":4,"text":"line"}],"byte_count":4,"has_more":true,"continuation":"range-next"}"#;
         let search = r#"{"head_revision_id":"00000000-0000-0000-0000-000000000012","head_seq":3,"matches":[{"line_number":5,"preview":"match"}],"byte_count":5,"has_more":false}"#;
+        let edited = r#"{"id":"00000000-0000-0000-0000-000000000010","workspace_id":"00000000-0000-0000-0000-000000000011","slug":"note","title":"Note","head_revision_id":"00000000-0000-0000-0000-000000000013","head_seq":4,"frontmatter":{"secret":"hidden"},"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}"#;
         let (base_url, requests) = serve_recording_atlas(vec![
             ("200 OK", compact.to_string()),
             ("200 OK", range.to_string()),
             ("200 OK", search.to_string()),
+            ("200 OK", edited.to_string()),
         ]);
         let client =
             start_mcp_client(AtlasMcp::new(base_url, "atlas_test").expect("server config")).await;
@@ -5125,13 +5246,95 @@ mod tests {
         assert_eq!(search["matches"][0]["line_number"], 5);
         assert_eq!(search["has_more"], false);
 
-        let requests: Vec<_> = (0..3)
+        let edit_result = client
+            .call_tool(call_tool_params(
+                "edit_document_lines",
+                serde_json::json!({"workspace":"ws","slug":"note","base_revision_id":"00000000-0000-0000-0000-000000000012","operation":"replace","start":2,"end":2,"content":"updated"}),
+            ))
+            .await
+            .expect("line edit MCP call succeeds");
+        let edit: serde_json::Value = serde_json::from_str(tool_text(&edit_result)).unwrap();
+        assert_eq!(
+            edit["head_revision_id"],
+            "00000000-0000-0000-0000-000000000013"
+        );
+        assert_eq!(edit["head_seq"], 4);
+        assert!(edit.get("content").is_none());
+        assert!(edit.get("frontmatter").is_none());
+
+        let requests: Vec<_> = (0..4)
             .map(|_| requests.recv().expect("Atlas received request"))
             .collect();
         assert!(requests[0].starts_with("GET /api/workspaces/ws/documents/note/compact "));
         assert!(requests[1].starts_with("GET /api/workspaces/ws/documents/note/content/range?start_line=4&end_line=8&line_limit=2&byte_limit=32 "));
         assert!(requests[2].starts_with("POST /api/workspaces/ws/documents/note/content/search "));
         assert!(requests[2].contains("\"mode\":\"pattern\""));
+        assert!(requests[3].starts_with("PATCH /api/workspaces/ws/documents/note/content/range "));
+        assert!(requests[3].contains("\"operation\":\"replace\""));
+        assert!(requests[3].contains("\"content\":\"updated\""));
+    }
+
+    #[tokio::test]
+    async fn document_line_edit_surfaces_server_validation_hints() {
+        let (base_url, requests) = serve_recording_atlas(vec![(
+            "422 Unprocessable Content",
+            r#"{"type":"urn:atlas:error:validation","title":"Validation failed","status":422,"hint":"start must be positive"}"#.to_string(),
+        )]);
+        let client =
+            start_mcp_client(AtlasMcp::new(base_url, "atlas_test").expect("server config")).await;
+
+        let result = client
+            .call_tool(call_tool_params(
+                "edit_document_lines",
+                serde_json::json!({"workspace":"ws","slug":"note","base_revision_id":"00000000-0000-0000-0000-000000000012","operation":"delete","start":0,"end":1}),
+            ))
+            .await
+            .expect("MCP call completes with a tool error");
+
+        assert!(result.is_error.unwrap_or(false));
+        assert!(tool_text(&result).contains("Validation failed: 422"));
+        assert!(tool_text(&result).contains("hint: start must be positive"));
+        assert!(
+            requests
+                .recv()
+                .expect("Atlas received edit request")
+                .starts_with("PATCH /api/workspaces/ws/documents/note/content/range ")
+        );
+    }
+
+    #[tokio::test]
+    #[allow(clippy::indexing_slicing)]
+    async fn document_line_edit_surfaces_structured_revision_conflicts() {
+        let (base_url, requests) = serve_recording_atlas(vec![(
+            "409 Conflict",
+            r#"{"type":"urn:atlas:error:conflict","title":"Conflict","status":409,"current_revision_id":"00000000-0000-0000-0000-000000000014","current_seq":5,"base_to_current_patch":"@@ -1 +1 @@"}"#.to_string(),
+        )]);
+        let client =
+            start_mcp_client(AtlasMcp::new(base_url, "atlas_test").expect("server config")).await;
+
+        let result = client
+            .call_tool(call_tool_params(
+                "edit_document_lines",
+                serde_json::json!({"workspace":"ws","slug":"note","base_revision_id":"00000000-0000-0000-0000-000000000012","operation":"delete","start":1,"end":1}),
+            ))
+            .await
+            .expect("MCP call completes with a tool error");
+
+        assert!(result.is_error.unwrap_or(false));
+        let conflict: serde_json::Value = serde_json::from_str(tool_text(&result)).unwrap();
+        assert_eq!(conflict["error"], "revision_conflict");
+        assert_eq!(conflict["current_seq"], 5);
+        assert_eq!(
+            conflict["current_revision_id"],
+            "00000000-0000-0000-0000-000000000014"
+        );
+        assert_eq!(conflict["base_to_current_patch"], "@@ -1 +1 @@");
+        assert!(
+            requests
+                .recv()
+                .expect("Atlas received edit request")
+                .starts_with("PATCH /api/workspaces/ws/documents/note/content/range ")
+        );
     }
 
     #[tokio::test]
@@ -5297,7 +5500,11 @@ mod tests {
     #[test]
     fn bounded_document_tools_are_registered() {
         let router = AtlasMcp::tool_router();
-        for name in ["read_document_lines", "search_document_content"] {
+        for name in [
+            "read_document_lines",
+            "search_document_content",
+            "edit_document_lines",
+        ] {
             assert!(
                 router.has_route(name),
                 "expected MCP tool `{name}` to be registered"
@@ -5532,6 +5739,202 @@ mod tests {
         assert_eq!(lines.continuation.as_deref(), Some("next"));
         assert_eq!(search.mode.as_deref(), Some("pattern"));
         assert_eq!(search.match_limit, Some(4));
+    }
+
+    #[test]
+    fn document_line_edit_params_deserialize_tagged_operations() {
+        let insert: EditDocumentLinesParams = serde_json::from_str(
+            r#"{"workspace":"ws","slug":"doc","base_revision_id":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234","operation":"insert","position":2,"content":"new line"}"#,
+        )
+        .unwrap();
+        let delete: EditDocumentLinesParams = serde_json::from_str(
+            r#"{"workspace":"ws","slug":"doc","base_revision_id":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234","operation":"delete","start":2,"end":4}"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            insert.operation,
+            DocumentLineEditOperation::Insert
+        ));
+        assert_eq!(insert.position, Some(2));
+        assert_eq!(insert.content.as_deref(), Some("new line"));
+        assert!(matches!(
+            delete.operation,
+            DocumentLineEditOperation::Delete
+        ));
+        assert_eq!(delete.start, Some(2));
+        assert_eq!(delete.end, Some(4));
+        assert!(delete.content.is_none());
+    }
+
+    #[test]
+    fn document_line_edit_schema_requires_a_base_revision_and_enumerates_operations() {
+        let schema = serde_json::to_value(schemars::schema_for!(EditDocumentLinesParams))
+            .expect("generated MCP parameter schema serializes");
+        let required = schema
+            .get("required")
+            .expect("MCP parameter schema defines required fields")
+            .as_array()
+            .expect("MCP parameter schema has required fields");
+
+        assert!(required.iter().any(|field| field == "base_revision_id"));
+        assert_eq!(
+            schema
+                .get("$defs")
+                .and_then(|definitions| definitions.get("DocumentLineEditOperation"))
+                .and_then(|operation| operation.get("enum")),
+            Some(&serde_json::json!(["insert", "replace", "delete"]))
+        );
+    }
+
+    #[test]
+    fn document_line_edit_validation_covers_operation_field_matrix() {
+        let base = "018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234".to_string();
+        let params = |operation, position, start, end, content| EditDocumentLinesParams {
+            workspace: "ws".into(),
+            slug: "doc".into(),
+            base_revision_id: base.clone(),
+            operation,
+            position,
+            start,
+            end,
+            content,
+        };
+        let cases = [
+            (
+                params(
+                    DocumentLineEditOperation::Insert,
+                    None,
+                    None,
+                    None,
+                    Some("text".into()),
+                ),
+                "insert operation requires position",
+            ),
+            (
+                params(DocumentLineEditOperation::Insert, Some(1), None, None, None),
+                "insert operation requires content",
+            ),
+            (
+                params(
+                    DocumentLineEditOperation::Insert,
+                    Some(1),
+                    Some(1),
+                    None,
+                    Some("text".into()),
+                ),
+                "insert operation only accepts position and content",
+            ),
+            (
+                params(
+                    DocumentLineEditOperation::Insert,
+                    Some(1),
+                    None,
+                    Some(1),
+                    Some("text".into()),
+                ),
+                "insert operation only accepts position and content",
+            ),
+            (
+                params(
+                    DocumentLineEditOperation::Replace,
+                    None,
+                    None,
+                    Some(1),
+                    Some("text".into()),
+                ),
+                "replace operation requires start",
+            ),
+            (
+                params(
+                    DocumentLineEditOperation::Replace,
+                    None,
+                    Some(1),
+                    None,
+                    Some("text".into()),
+                ),
+                "replace operation requires end",
+            ),
+            (
+                params(
+                    DocumentLineEditOperation::Replace,
+                    None,
+                    Some(1),
+                    Some(1),
+                    None,
+                ),
+                "replace operation requires content",
+            ),
+            (
+                params(
+                    DocumentLineEditOperation::Replace,
+                    Some(1),
+                    Some(1),
+                    Some(1),
+                    Some("text".into()),
+                ),
+                "replace operation only accepts start, end, and content",
+            ),
+            (
+                params(DocumentLineEditOperation::Delete, None, None, Some(1), None),
+                "delete operation requires start",
+            ),
+            (
+                params(DocumentLineEditOperation::Delete, None, Some(1), None, None),
+                "delete operation requires end",
+            ),
+            (
+                params(
+                    DocumentLineEditOperation::Delete,
+                    Some(1),
+                    Some(1),
+                    Some(1),
+                    None,
+                ),
+                "delete operation only accepts start and end",
+            ),
+            (
+                params(
+                    DocumentLineEditOperation::Delete,
+                    None,
+                    Some(1),
+                    Some(1),
+                    Some("text".into()),
+                ),
+                "delete operation does not accept content",
+            ),
+            (
+                EditDocumentLinesParams {
+                    workspace: "ws".into(),
+                    slug: "doc".into(),
+                    base_revision_id: "not-a-uuid".into(),
+                    operation: DocumentLineEditOperation::Delete,
+                    position: None,
+                    start: Some(1),
+                    end: Some(1),
+                    content: None,
+                },
+                "base_revision_id 'not-a-uuid' is not a valid UUID",
+            ),
+        ];
+
+        for (params, expected) in cases {
+            assert_eq!(
+                build_document_line_edit_request(&params).unwrap_err(),
+                expected
+            );
+        }
+
+        assert!(
+            serde_json::from_str::<EditDocumentLinesParams>(
+                r#"{"workspace":"ws","slug":"doc","operation":"delete","start":1,"end":1}"#,
+            )
+            .is_err()
+        );
+        assert!(serde_json::from_str::<EditDocumentLinesParams>(
+            r#"{"workspace":"ws","slug":"doc","base_revision_id":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234","operation":"archive"}"#,
+        )
+        .is_err());
     }
 
     #[test]
