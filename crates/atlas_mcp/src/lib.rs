@@ -10,7 +10,8 @@ use atlas_api::dtos::boards_tasks::{
     WorkspaceTaskQueryParams,
 };
 use atlas_api::dtos::documents::{
-    CreateDocumentRequest, MoveDocumentRequest, UpdateContentRequest, UpdateDocumentRequest,
+    CreateDocumentRequest, DocumentContentRangeQuery, DocumentContentSearchRequest,
+    DocumentSearchMode, MoveDocumentRequest, UpdateContentRequest, UpdateDocumentRequest,
 };
 use atlas_api::dtos::folders::{CreateFolderRequest, MoveFolderRequest, RenameFolderRequest};
 use atlas_api::dtos::saved_searches::{CreateSavedSearchRequest, RenameSavedSearchRequest};
@@ -55,7 +56,8 @@ use response::{
     project_assignee, project_attachment, project_audit_entry, project_backlink,
     project_board_summary, project_checklist_item, project_column, project_comment,
     project_comment_attachment, project_comment_feed_entry, project_document_compact,
-    project_document_full, project_document_summary, project_folder,
+    project_document_content_range, project_document_content_search, project_document_full,
+    project_document_metadata, project_document_summary, project_folder,
     project_platform_status_template, project_principal, project_project, project_promotion,
     project_reference, project_revision_content, project_revision_meta, project_saved_search,
     project_search_hit, project_semantic_search_hit, project_status_template, project_tag,
@@ -88,7 +90,7 @@ base_revision_id = head_revision_id; on a revision_conflict, apply the returned 
 base_to_current_patch and retry with current_revision_id.\n\
 \n\
 Tools by area (see each tool's own description for parameters):\n\
-- Read: `search`, `get_document`, `list_tasks`, `get_task`.\n\
+- Read: `search`, `get_document`, `read_document_lines`, `search_document_content`, `list_tasks`, `get_task`.\n\
 - Structure: `list_documents`, `list_folders`, `list_boards`, `list_columns`.\n\
 - Workspace context: `list_workspaces`, `list_projects`, `list_members`, `list_tags`, \
 `list_used_labels`, `list_saved_searches`, `list_task_views`.\n\
@@ -435,6 +437,59 @@ pub struct GetDocumentParams {
     /// `compact` (default) = metadata only; `full` = include markdown content + frontmatter.
     #[serde(default)]
     pub detail: Option<String>,
+}
+
+/// Parameters accepted by the `read_document_lines` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ReadDocumentLinesParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Document slug or UUID.
+    pub slug: String,
+    /// Inclusive 1-based first line.
+    #[serde(default)]
+    pub start_line: Option<u64>,
+    /// Inclusive 1-based last line.
+    #[serde(default)]
+    pub end_line: Option<u64>,
+    /// Maximum lines to return (default/max 200).
+    #[serde(default)]
+    pub line_limit: Option<u32>,
+    /// Maximum UTF-8 bytes to return (default/max 64 KiB).
+    #[serde(default)]
+    pub byte_limit: Option<u32>,
+    /// Opaque continuation from the previous response.
+    #[serde(default)]
+    pub continuation: Option<String>,
+}
+
+/// Parameters accepted by the `search_document_content` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SearchDocumentContentParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Document slug or UUID.
+    pub slug: String,
+    /// Text or Rust-regex pattern to match.
+    pub query: String,
+    /// `literal` (default) or `pattern`.
+    #[serde(default)]
+    pub mode: Option<String>,
+    /// Inclusive 1-based first line.
+    #[serde(default)]
+    pub start_line: Option<u64>,
+    /// Inclusive 1-based last line.
+    #[serde(default)]
+    pub end_line: Option<u64>,
+    /// Maximum matches to return (default 50, max 100).
+    #[serde(default)]
+    pub match_limit: Option<u32>,
+    /// Maximum UTF-8 bytes to return (default/max 64 KiB).
+    #[serde(default)]
+    pub byte_limit: Option<u32>,
+    /// Opaque continuation from the previous response.
+    #[serde(default)]
+    pub continuation: Option<String>,
 }
 
 /// Parameters accepted by the `list_tasks` tool.
@@ -1831,17 +1886,85 @@ impl AtlasMcp {
         ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
         let client = self.resolve_client(&ctx)?;
-        let doc = client
-            .get_document(&params.workspace, &params.slug)
-            .await
-            .map_err(|e| enrich_client_error(e, "get_document"))?;
-
         let result = match parse_detail(params.detail.as_deref()) {
-            Detail::Compact => project_document_compact(doc),
-            Detail::Full => project_document_full(doc),
+            Detail::Compact => {
+                let doc = client
+                    .get_document_compact(&params.workspace, &params.slug)
+                    .await
+                    .map_err(|e| enrich_client_error(e, "get_document_compact"))?;
+                project_document_metadata(doc)
+            }
+            Detail::Full => {
+                let doc = client
+                    .get_document(&params.workspace, &params.slug)
+                    .await
+                    .map_err(|e| enrich_client_error(e, "get_document"))?;
+                project_document_full(doc)
+            }
         };
 
         serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "Read a bounded inclusive range of numbered document lines")]
+    async fn read_document_lines(
+        &self,
+        Parameters(params): Parameters<ReadDocumentLinesParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+        let result = client
+            .get_document_content_range(
+                &params.workspace,
+                &params.slug,
+                DocumentContentRangeQuery {
+                    start_line: params.start_line,
+                    end_line: params.end_line,
+                    line_limit: params.line_limit,
+                    byte_limit: params.byte_limit,
+                    continuation: params.continuation,
+                },
+            )
+            .await
+            .map_err(|e| enrich_client_error(e, "read_document_lines"))?;
+
+        serde_json::to_string(&project_document_content_range(result)).map_err(|e| e.to_string())
+    }
+
+    #[tool(description = "Search a bounded document line range using literal text or a Rust regex")]
+    async fn search_document_content(
+        &self,
+        Parameters(params): Parameters<SearchDocumentContentParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        let mode = match params.mode.as_deref() {
+            None | Some("literal") => None,
+            Some("pattern") => Some(DocumentSearchMode::Pattern),
+            Some(value) => {
+                return Err(format!(
+                    "invalid search mode `{value}`; use `literal` or `pattern`"
+                ));
+            }
+        };
+        let client = self.resolve_client(&ctx)?;
+        let result = client
+            .search_document_content(
+                &params.workspace,
+                &params.slug,
+                DocumentContentSearchRequest {
+                    start_line: params.start_line,
+                    end_line: params.end_line,
+                    query: params.query,
+                    mode,
+                    match_limit: params.match_limit,
+                    byte_limit: params.byte_limit,
+                    continuation: params.continuation,
+                },
+            )
+            .await
+            .map_err(|e| enrich_client_error(e, "search_document_content"))?;
+
+        serde_json::to_string(&project_document_content_search(result)).map_err(|e| e.to_string())
     }
 
     #[tool(description = "List tasks across an Atlas workspace with optional filters")]
@@ -4954,6 +5077,64 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::indexing_slicing)]
+    async fn public_mcp_bounded_document_tools_use_compact_and_bounded_routes() {
+        let compact = r#"{"id":"00000000-0000-0000-0000-000000000010","workspace_id":"00000000-0000-0000-0000-000000000011","slug":"note","title":"Note","head_revision_id":"00000000-0000-0000-0000-000000000012","head_seq":3,"frontmatter":{"secret":"hidden"},"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}"#;
+        let range = r#"{"head_revision_id":"00000000-0000-0000-0000-000000000012","head_seq":3,"lines":[{"line_number":4,"text":"line"}],"byte_count":4,"has_more":true,"continuation":"range-next"}"#;
+        let search = r#"{"head_revision_id":"00000000-0000-0000-0000-000000000012","head_seq":3,"matches":[{"line_number":5,"preview":"match"}],"byte_count":5,"has_more":false}"#;
+        let (base_url, requests) = serve_recording_atlas(vec![
+            ("200 OK", compact.to_string()),
+            ("200 OK", range.to_string()),
+            ("200 OK", search.to_string()),
+        ]);
+        let client =
+            start_mcp_client(AtlasMcp::new(base_url, "atlas_test").expect("server config")).await;
+
+        let compact_result = client
+            .call_tool(call_tool_params(
+                "get_document",
+                serde_json::json!({"workspace":"ws","slug":"note"}),
+            ))
+            .await
+            .expect("compact MCP call succeeds");
+        let compact: serde_json::Value = serde_json::from_str(tool_text(&compact_result)).unwrap();
+        assert_eq!(compact["title"], "Note");
+        assert!(compact.get("frontmatter").is_none());
+        assert!(compact.get("content").is_none());
+
+        let range_result = client
+            .call_tool(call_tool_params(
+                "read_document_lines",
+                serde_json::json!({"workspace":"ws","slug":"note","start_line":4,"end_line":8,"line_limit":2,"byte_limit":32}),
+            ))
+            .await
+            .expect("range MCP call succeeds");
+        let range: serde_json::Value = serde_json::from_str(tool_text(&range_result)).unwrap();
+        assert_eq!(range["lines"][0]["line_number"], 4);
+        assert_eq!(range["byte_count"], 4);
+        assert_eq!(range["continuation"], "range-next");
+
+        let search_result = client
+            .call_tool(call_tool_params(
+                "search_document_content",
+                serde_json::json!({"workspace":"ws","slug":"note","query":"ma.*","mode":"pattern","match_limit":2,"byte_limit":32}),
+            ))
+            .await
+            .expect("search MCP call succeeds");
+        let search: serde_json::Value = serde_json::from_str(tool_text(&search_result)).unwrap();
+        assert_eq!(search["matches"][0]["line_number"], 5);
+        assert_eq!(search["has_more"], false);
+
+        let requests: Vec<_> = (0..3)
+            .map(|_| requests.recv().expect("Atlas received request"))
+            .collect();
+        assert!(requests[0].starts_with("GET /api/workspaces/ws/documents/note/compact "));
+        assert!(requests[1].starts_with("GET /api/workspaces/ws/documents/note/content/range?start_line=4&end_line=8&line_limit=2&byte_limit=32 "));
+        assert!(requests[2].starts_with("POST /api/workspaces/ws/documents/note/content/search "));
+        assert!(requests[2].contains("\"mode\":\"pattern\""));
+    }
+
+    #[tokio::test]
     async fn public_mcp_upload_fails_closed_when_metadata_discovery_cannot_supply_a_limit() {
         for body in [
             r#"{"version":"1","build":null,"url":null}"#,
@@ -5111,6 +5292,17 @@ mod tests {
             router.has_route("semantic_search"),
             "expected MCP semantic_search tool to be registered"
         );
+    }
+
+    #[test]
+    fn bounded_document_tools_are_registered() {
+        let router = AtlasMcp::tool_router();
+        for name in ["read_document_lines", "search_document_content"] {
+            assert!(
+                router.has_route(name),
+                "expected MCP tool `{name}` to be registered"
+            );
+        }
     }
 
     #[test]
@@ -5323,6 +5515,23 @@ mod tests {
         let params: GetDocumentParams = serde_json::from_str(json).unwrap();
         assert_eq!(params.slug, "my-doc");
         assert_eq!(params.detail.as_deref(), Some("full"));
+    }
+
+    #[test]
+    fn bounded_document_read_params_deserialize() {
+        let lines: ReadDocumentLinesParams = serde_json::from_str(
+            r#"{"workspace":"ws","slug":"doc","start_line":4,"end_line":8,"line_limit":3,"byte_limit":512,"continuation":"next"}"#,
+        )
+        .unwrap();
+        let search: SearchDocumentContentParams = serde_json::from_str(
+            r#"{"workspace":"ws","slug":"doc","query":"TODO","mode":"pattern","match_limit":4,"byte_limit":256,"continuation":"next"}"#,
+        )
+        .unwrap();
+
+        assert_eq!(lines.start_line, Some(4));
+        assert_eq!(lines.continuation.as_deref(), Some("next"));
+        assert_eq!(search.mode.as_deref(), Some("pattern"));
+        assert_eq!(search.match_limit, Some(4));
     }
 
     #[test]

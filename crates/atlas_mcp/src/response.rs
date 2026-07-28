@@ -13,8 +13,9 @@ use atlas_api::{
             TaskBacklinkDto, TaskDto, TaskSummaryDto, UnifiedReferenceDto,
         },
         documents::{
-            ActorDto, AttachmentDto, BacklinkDto, CommentAttachmentDto, DocumentDto,
-            DocumentSummaryDto, RevisionContentDto, RevisionMetaDto,
+            ActorDto, AttachmentDto, BacklinkDto, CommentAttachmentDto, DocumentCompactDto,
+            DocumentContentRangeDto, DocumentContentSearchDto, DocumentDto, DocumentSummaryDto,
+            RevisionContentDto, RevisionMetaDto,
         },
         folders::FolderDto,
         saved_searches::SavedSearchDto,
@@ -180,6 +181,44 @@ pub(crate) fn project_document_compact(doc: DocumentDto) -> Value {
         "updated_at": doc.updated_at,
         "folder_id": doc.folder_id,
         "project_id": doc.project_id,
+    })
+}
+
+/// Compact projection of a metadata-only document transport response.
+pub(crate) fn project_document_metadata(doc: DocumentCompactDto) -> Value {
+    json!({
+        "id": doc.id,
+        "slug": doc.slug,
+        "title": doc.title,
+        "head_revision_id": doc.head_revision_id,
+        "head_seq": doc.head_seq,
+        "updated_at": doc.updated_at,
+        "folder_id": doc.folder_id,
+        "project_id": doc.project_id,
+    })
+}
+
+/// Projection of a bounded, numbered document-line page.
+pub(crate) fn project_document_content_range(range: DocumentContentRangeDto) -> Value {
+    json!({
+        "head_revision_id": range.head_revision_id,
+        "head_seq": range.head_seq,
+        "lines": range.lines,
+        "byte_count": range.byte_count,
+        "has_more": range.has_more,
+        "continuation": range.continuation,
+    })
+}
+
+/// Projection of a bounded document-content search page.
+pub(crate) fn project_document_content_search(search: DocumentContentSearchDto) -> Value {
+    json!({
+        "head_revision_id": search.head_revision_id,
+        "head_seq": search.head_seq,
+        "matches": search.matches,
+        "byte_count": search.byte_count,
+        "has_more": search.has_more,
+        "continuation": search.continuation,
     })
 }
 
@@ -1269,8 +1308,9 @@ mod tests {
             TaskSummaryDto,
         },
         documents::{
-            ActorDto, AttachmentDto, DocumentDto, DocumentSummaryDto, RevisionContentDto,
-            RevisionMetaDto,
+            ActorDto, AttachmentDto, DocumentContentRangeDto, DocumentContentSearchDto,
+            DocumentDto, DocumentLineDto, DocumentSearchMatchDto, DocumentSummaryDto,
+            RevisionContentDto, RevisionMetaDto,
         },
         folders::FolderDto,
         saved_searches::SavedSearchDto,
@@ -1741,6 +1781,39 @@ mod tests {
         assert_eq!(val["title"], "My Doc");
         assert_eq!(val["head_seq"], 3);
         assert!(!val["folder_id"].is_null());
+    }
+
+    #[test]
+    fn bounded_document_projections_include_page_metadata() {
+        let range = project_document_content_range(DocumentContentRangeDto {
+            head_revision_id: fixed_uuid(),
+            head_seq: 4,
+            lines: vec![DocumentLineDto {
+                line_number: 7,
+                text: "line text".into(),
+            }],
+            byte_count: 9,
+            has_more: true,
+            continuation: Some("range-next".into()),
+        });
+        let search = project_document_content_search(DocumentContentSearchDto {
+            head_revision_id: fixed_uuid(),
+            head_seq: 4,
+            matches: vec![DocumentSearchMatchDto {
+                line_number: 8,
+                preview: "matching text".into(),
+            }],
+            byte_count: 13,
+            has_more: true,
+            continuation: Some("search-next".into()),
+        });
+
+        assert_eq!(range["lines"][0]["line_number"], 7);
+        assert_eq!(range["byte_count"], 9);
+        assert_eq!(range["continuation"], "range-next");
+        assert_eq!(search["matches"][0]["preview"], "matching text");
+        assert_eq!(search["has_more"], true);
+        assert_eq!(search["continuation"], "search-next");
     }
 
     // -----------------------------------------------------------------------
