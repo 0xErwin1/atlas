@@ -15,9 +15,10 @@ use atlas_api::{
             ActivityEntryDto, AddAssigneeRequest, AssigneeDto, BoardDto, BoardSummaryDto,
             ChecklistItemDto, ColumnDto, CommentDto, CommentFeedEntryDto, CreateBoardRequest,
             CreateChecklistItemRequest, CreateColumnRequest, CreateCommentRequest,
-            CreateReferenceRequest, CreateSubtaskRequest, CreateTaskRequest, CreateTaskResponseDto,
-            MoveBoardRequest, MoveTaskRequest, PromoteChecklistItemRequest, PromotionDto,
-            ReferenceDto, RenameTaskAttachmentRequest, TaskAttachmentDto, TaskBacklinkDto, TaskDto,
+            CreateReferenceBatchRequest, CreateReferenceBatchResultDto, CreateReferenceRequest,
+            CreateSubtaskRequest, CreateTaskRequest, CreateTaskResponseDto, MoveBoardRequest,
+            MoveTaskRequest, PromoteChecklistItemRequest, PromotionDto, ReferenceDto,
+            RenameTaskAttachmentRequest, TaskAttachmentDto, TaskBacklinkDto, TaskDto,
             TaskSummaryDto, UnifiedReferenceDto, UpdateBoardRequest, UpdateChecklistItemRequest,
             UpdateColumnRequest, UpdateCommentRequest, UpdateTaskRequest, WorkspaceTaskQueryParams,
         },
@@ -2408,14 +2409,26 @@ impl AtlasClient {
         board_id: uuid::Uuid,
         body: CreateTaskRequest,
     ) -> Result<TaskDto, ClientError> {
+        Ok(self
+            .create_task_with_references(ws, board_id, body)
+            .await?
+            .task)
+    }
+
+    /// `POST /api/workspaces/{ws}/boards/{board_id}/tasks`
+    pub async fn create_task_with_references(
+        &self,
+        ws: &str,
+        board_id: uuid::Uuid,
+        body: CreateTaskRequest,
+    ) -> Result<CreateTaskResponseDto, ClientError> {
         let response = self
             .post(&format!("/api/workspaces/{ws}/boards/{board_id}/tasks"))
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
             .await?;
-        let created: CreateTaskResponseDto = self.decode_response(response, "create_task").await?;
-        Ok(created.task)
+        self.decode_response(response, "create_task").await
     }
 
     /// `GET /api/workspaces/{ws}/boards/{board_id}/tasks`
@@ -2592,6 +2605,25 @@ impl AtlasClient {
             .send()
             .await?;
         self.decode_response(response, "create_reference").await
+    }
+
+    /// `POST /api/workspaces/{ws}/tasks/{readable_id}/references/batch`
+    pub async fn create_reference_batch(
+        &self,
+        ws: &str,
+        readable_id: &str,
+        body: CreateReferenceBatchRequest,
+    ) -> Result<Vec<CreateReferenceBatchResultDto>, ClientError> {
+        let response = self
+            .post(&format!(
+                "/api/workspaces/{ws}/tasks/{readable_id}/references/batch"
+            ))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "create_reference_batch")
+            .await
     }
 
     /// `DELETE /api/workspaces/{ws}/tasks/{readable_id}/references/{reference_id}`
@@ -4215,6 +4247,72 @@ mod tests {
             transport.server_meta().await,
             Err(ClientError::Transport(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn task_creation_methods_decode_reference_envelopes_and_preserve_task_compatibility() {
+        const BOARD_ID: uuid::Uuid = uuid::uuid!("00000000-0000-0000-0000-000000000010");
+        const DOCUMENT_ID: uuid::Uuid = uuid::uuid!("00000000-0000-0000-0000-000000000020");
+        const RESPONSE: &str = r#"{"task":{"id":"00000000-0000-0000-0000-000000000001","workspace_id":"00000000-0000-0000-0000-000000000002","project_id":"00000000-0000-0000-0000-000000000003","board_id":"00000000-0000-0000-0000-000000000010","column_id":"00000000-0000-0000-0000-000000000004","readable_id":"ATL-1","title":"Source","description":"","labels":[],"created_by":{"type":"api_key","id":"00000000-0000-0000-0000-000000000005","display_name":"Agent","key_type":"agent"},"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z","board_name":"Board","column_name":"Todo"},"references":[{"id":"00000000-0000-0000-0000-000000000006","kind":"relates","target_readable_id":"ATL-2","target_title":"Current target task","target_resolved":true,"created_by":{"type":"api_key","id":"00000000-0000-0000-0000-000000000005","display_name":"Agent","key_type":"agent"},"created_at":"2026-01-01T00:00:00Z"},{"id":"00000000-0000-0000-0000-000000000007","kind":"spec","target_document_id":"00000000-0000-0000-0000-000000000020","target_title":"Current target document","target_resolved":true,"created_by":{"type":"api_key","id":"00000000-0000-0000-0000-000000000005","display_name":"Agent","key_type":"agent"},"created_at":"2026-01-01T00:00:00Z"}]}"#;
+
+        let request = CreateTaskRequest {
+            column_id: uuid::uuid!("00000000-0000-0000-0000-000000000004"),
+            title: "Source".into(),
+            description: None,
+            properties: None,
+            before: None,
+            after: None,
+            references: vec![
+                CreateReferenceRequest {
+                    kind: "relates".into(),
+                    target_task_readable_id: Some("ATL-2".into()),
+                    target_document_id: None,
+                },
+                CreateReferenceRequest {
+                    kind: "spec".into(),
+                    target_task_readable_id: None,
+                    target_document_id: Some(DOCUMENT_ID),
+                },
+            ],
+        };
+
+        let (base_url, requests) = serve_once_observing("201 Created", RESPONSE);
+        let created = AtlasClient::new(base_url)
+            .create_task_with_references("ws", BOARD_ID, request.clone())
+            .await
+            .expect("reference-aware task creation succeeds");
+
+        assert_eq!(created.task.readable_id, "ATL-1");
+        assert_eq!(created.references.len(), 2);
+        assert_eq!(
+            created
+                .references
+                .first()
+                .and_then(|reference| reference.target_title.as_deref()),
+            Some("Current target task")
+        );
+        assert_eq!(
+            created
+                .references
+                .last()
+                .and_then(|reference| reference.target_title.as_deref()),
+            Some("Current target document")
+        );
+
+        let raw = requests.recv().expect("mock server received request");
+        assert!(raw.starts_with(
+            "POST /api/workspaces/ws/boards/00000000-0000-0000-0000-000000000010/tasks "
+        ));
+        assert!(raw.contains("\"target_task_readable_id\":\"ATL-2\""));
+        assert!(raw.contains("\"target_document_id\":\"00000000-0000-0000-0000-000000000020\""));
+
+        let task = AtlasClient::new(serve_once("201 Created", RESPONSE))
+            .create_task("ws", BOARD_ID, request)
+            .await
+            .expect("task-only compatibility method succeeds");
+
+        assert_eq!(task.readable_id, "ATL-1");
+        assert_eq!(task.title, "Source");
     }
 
     #[tokio::test]

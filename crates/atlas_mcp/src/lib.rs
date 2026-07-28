@@ -4,10 +4,10 @@ mod response;
 
 use atlas_api::dtos::boards_tasks::{
     AddAssigneeRequest, CreateBoardRequest, CreateChecklistItemRequest, CreateColumnRequest,
-    CreateCommentRequest, CreateReferenceRequest, CreateSubtaskRequest, CreateTaskRequest,
-    MoveTaskRequest, PromoteChecklistItemRequest, TaskPropertiesDto, UpdateBoardRequest,
-    UpdateChecklistItemRequest, UpdateColumnRequest, UpdateCommentRequest, UpdateTaskRequest,
-    WorkspaceTaskQueryParams,
+    CreateCommentRequest, CreateReferenceBatchRequest, CreateReferenceBatchResultDto,
+    CreateReferenceRequest, CreateSubtaskRequest, CreateTaskRequest, MoveTaskRequest,
+    PromoteChecklistItemRequest, TaskPropertiesDto, UpdateBoardRequest, UpdateChecklistItemRequest,
+    UpdateColumnRequest, UpdateCommentRequest, UpdateTaskRequest, WorkspaceTaskQueryParams,
 };
 use atlas_api::dtos::documents::{
     CreateDocumentRequest, DocumentContentEditRequest, DocumentContentRangeQuery,
@@ -114,7 +114,7 @@ created workspaces; existing workspaces are never retro-updated.\n\
 `create_folder`, `rename_folder`, `move_folder`, `copy_folder`, `delete_folder`.\n\
 - Board, column and tag writes: `create_board`, `update_board`, `delete_board`, \
 `create_column`, `update_column`, `delete_column`, `create_tag`, `update_tag`, `delete_tag`.\n\
-- Graph writes: `add_task_reference`, `remove_task_reference`, `add_checklist_item`, \
+- Graph writes: `add_task_reference`, `add_task_references_batch`, `remove_task_reference`, `add_checklist_item`, \
 `update_checklist_item`, `delete_checklist_item`, `promote_checklist_item`, \
 `create_subtask`, `promote_subtask`.\n\
 - Workspace-settings writes: `create_project`, `update_project`, `delete_project`, \
@@ -959,6 +959,10 @@ pub struct CreateTaskParams {
     /// Due date in RFC 3339 format (e.g. `2024-12-31T23:59:59Z`).
     #[serde(default)]
     pub due_date: Option<String>,
+    /// Typed references created atomically with the task. At most 100 are accepted.
+    #[serde(default)]
+    #[schemars(length(max = 100))]
+    pub references: Vec<ReferenceInputParams>,
 }
 
 /// Parameters accepted by the `update_task` tool.
@@ -1351,6 +1355,31 @@ pub struct DeleteTagParams {
 // ---------------------------------------------------------------------------
 // Graph write param structs — references, checklist, subtasks
 // ---------------------------------------------------------------------------
+
+/// A task or document reference target.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ReferenceInputParams {
+    /// Reference kind. Must be one of: relates, blocks, parent, spec.
+    pub kind: String,
+    /// Readable ID of the target task. Supply exactly one target.
+    #[serde(default)]
+    pub target_task_readable_id: Option<String>,
+    /// UUID string of the target document. Supply exactly one target.
+    #[serde(default)]
+    pub target_document_id: Option<String>,
+}
+
+/// Parameters accepted by the `add_task_references_batch` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct BatchAddTaskReferencesParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Readable ID of the source task.
+    pub readable_id: String,
+    /// Ordered references to add. At most 100 are accepted.
+    #[schemars(length(max = 100))]
+    pub references: Vec<ReferenceInputParams>,
+}
 
 /// Parameters accepted by the `add_task_reference` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -2856,6 +2885,10 @@ impl AtlasMcp {
         Parameters(params): Parameters<CreateTaskParams>,
         ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        if params.references.len() > 100 {
+            return Err("references may contain at most 100 items".to_string());
+        }
+
         let client = self.resolve_client(&ctx)?;
 
         let board_uuid = resolve_board_uuid(&client, &params.workspace, &params.board).await?;
@@ -2900,6 +2933,30 @@ impl AtlasMcp {
             None
         };
 
+        let references = params
+            .references
+            .into_iter()
+            .map(|reference| {
+                validate_reference_kind(&reference.kind)?;
+
+                let target_document_id = parse_optional_uuid_param(
+                    "target_document_id",
+                    reference.target_document_id.as_deref(),
+                )?;
+
+                validate_single_target(
+                    reference.target_task_readable_id.as_deref(),
+                    target_document_id.as_ref(),
+                )?;
+
+                Ok(CreateReferenceRequest {
+                    kind: reference.kind,
+                    target_task_readable_id: reference.target_task_readable_id,
+                    target_document_id,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+
         let body = CreateTaskRequest {
             column_id,
             title: params.title,
@@ -2907,15 +2964,28 @@ impl AtlasMcp {
             properties,
             before: None,
             after: None,
-            references: vec![],
+            references,
         };
 
-        let task = client
-            .create_task(&params.workspace, board_uuid, body)
+        let created = client
+            .create_task_with_references(&params.workspace, board_uuid, body)
             .await
             .map_err(|e| enrich_client_error(e, "create_task"))?;
 
-        let result = project_task_compact(&task);
+        let mut result = project_task_compact(&created.task);
+        let task = result
+            .as_object_mut()
+            .ok_or_else(|| "create_task result must be an object".to_string())?;
+        task.insert(
+            "references".to_string(),
+            serde_json::Value::Array(
+                created
+                    .references
+                    .into_iter()
+                    .map(response::project_manual_reference)
+                    .collect(),
+            ),
+        );
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
@@ -3698,6 +3768,79 @@ response — do NOT create those columns again; only add columns for statuses th
 
         let result = response::project_manual_reference(reference);
         serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Add up to 100 typed references to a task. Results remain ordered by input \
+                       and each item is either a created reference or a structured problem."
+    )]
+    async fn add_task_references_batch(
+        &self,
+        Parameters(params): Parameters<BatchAddTaskReferencesParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        if params.references.len() > 100 {
+            return Err("references may contain at most 100 items".to_string());
+        }
+
+        let client = self.resolve_client(&ctx)?;
+        let references = params
+            .references
+            .into_iter()
+            .map(|reference| {
+                validate_reference_kind(&reference.kind)?;
+
+                let target_document_id = parse_optional_uuid_param(
+                    "target_document_id",
+                    reference.target_document_id.as_deref(),
+                )?;
+
+                validate_single_target(
+                    reference.target_task_readable_id.as_deref(),
+                    target_document_id.as_ref(),
+                )?;
+
+                Ok(CreateReferenceRequest {
+                    kind: reference.kind,
+                    target_task_readable_id: reference.target_task_readable_id,
+                    target_document_id,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+
+        let results = client
+            .create_reference_batch(
+                &params.workspace,
+                &params.readable_id,
+                CreateReferenceBatchRequest { references },
+            )
+            .await
+            .map_err(|e| enrich_client_error(e, "add_task_references_batch"))?
+            .into_iter()
+            .map(|result| match result {
+                CreateReferenceBatchResultDto::Success { index, reference } => json!({
+                    "index": index,
+                    "outcome": "success",
+                    "reference": response::project_manual_reference(reference),
+                }),
+                CreateReferenceBatchResultDto::Problem {
+                    index,
+                    status,
+                    r#type,
+                    title,
+                    hint,
+                } => json!({
+                    "index": index,
+                    "outcome": "problem",
+                    "status": status,
+                    "type": r#type,
+                    "title": title,
+                    "hint": hint,
+                }),
+            })
+            .collect::<Vec<_>>();
+
+        serde_json::to_string(&results).map_err(|e| e.to_string())
     }
 
     #[tool(description = "Remove an outbound reference from a task. \
@@ -6704,6 +6847,227 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::indexing_slicing)]
+    fn create_task_params_deserialize_initial_references() {
+        let json = r#"{"workspace":"ws","board":"Board","column":"Todo","title":"Source","references":[{"kind":"relates","target_task_readable_id":"ATL-2"}]}"#;
+        let params: CreateTaskParams = serde_json::from_str(json).unwrap();
+
+        assert_eq!(params.references.len(), 1);
+        assert_eq!(params.references[0].kind, "relates");
+        assert_eq!(
+            params.references[0].target_task_readable_id.as_deref(),
+            Some("ATL-2")
+        );
+        assert!(params.references[0].target_document_id.is_none());
+    }
+
+    #[test]
+    #[allow(clippy::indexing_slicing)]
+    fn batch_add_task_references_params_deserialize_ordered_targets() {
+        let json = r#"{"workspace":"ws","readable_id":"ATL-1","references":[{"kind":"relates","target_task_readable_id":"ATL-2"},{"kind":"spec","target_document_id":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234"}]}"#;
+        let params: BatchAddTaskReferencesParams = serde_json::from_str(json).unwrap();
+
+        assert_eq!(params.references.len(), 2);
+        assert_eq!(params.references[0].kind, "relates");
+        assert_eq!(params.references[1].kind, "spec");
+        assert_eq!(
+            params.references[1].target_document_id.as_deref(),
+            Some("018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234")
+        );
+    }
+
+    #[test]
+    #[allow(clippy::indexing_slicing)]
+    fn reference_mutation_schemas_bound_reference_lists_to_one_hundred_items() {
+        for schema in [
+            serde_json::to_value(schemars::schema_for!(CreateTaskParams)).unwrap(),
+            serde_json::to_value(schemars::schema_for!(BatchAddTaskReferencesParams)).unwrap(),
+        ] {
+            assert_eq!(
+                schema["properties"]["references"]["maxItems"],
+                serde_json::json!(100)
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[allow(clippy::indexing_slicing)]
+    async fn create_task_projects_initial_reference_titles_and_exact_request() {
+        const BOARD_ID: &str = "00000000-0000-0000-0000-000000000010";
+        const COLUMN_ID: &str = "00000000-0000-0000-0000-000000000011";
+        const DOCUMENT_ID: &str = "00000000-0000-0000-0000-000000000020";
+        let columns = format!(
+            r#"[{{"id":"{COLUMN_ID}","board_id":"{BOARD_ID}","name":"Todo","position_key":"a0","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}}]"#
+        );
+        let created = format!(
+            r#"{{"task":{{"id":"00000000-0000-0000-0000-000000000001","workspace_id":"00000000-0000-0000-0000-000000000002","project_id":"00000000-0000-0000-0000-000000000003","board_id":"{BOARD_ID}","column_id":"{COLUMN_ID}","readable_id":"ATL-1","title":"Source","description":"","labels":[],"created_by":{{"type":"api_key","id":"00000000-0000-0000-0000-000000000005","display_name":"Agent","key_type":"agent"}},"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z","board_name":"Board","column_name":"Todo"}},"references":[{{"id":"00000000-0000-0000-0000-000000000006","kind":"relates","target_readable_id":"ATL-2","target_title":"Current target task","target_resolved":true,"created_by":{{"type":"api_key","id":"00000000-0000-0000-0000-000000000005","display_name":"Agent","key_type":"agent"}},"created_at":"2026-01-01T00:00:00Z"}},{{"id":"00000000-0000-0000-0000-000000000007","kind":"spec","target_document_id":"{DOCUMENT_ID}","target_title":"Current target document","target_resolved":true,"created_by":{{"type":"api_key","id":"00000000-0000-0000-0000-000000000005","display_name":"Agent","key_type":"agent"}},"created_at":"2026-01-01T00:00:00Z"}}]}}"#
+        );
+        let (base_url, requests) =
+            serve_recording_atlas(vec![("200 OK", columns), ("201 Created", created)]);
+        let client =
+            start_mcp_client(AtlasMcp::new(base_url, "atlas_test").expect("server config")).await;
+
+        let result = client
+            .call_tool(call_tool_params(
+                "create_task",
+                serde_json::json!({
+                    "workspace": "ws",
+                    "board": BOARD_ID,
+                    "column": "Todo",
+                    "title": "Source",
+                    "references": [
+                        {"kind": "relates", "target_task_readable_id": "ATL-2"},
+                        {"kind": "spec", "target_document_id": DOCUMENT_ID}
+                    ]
+                }),
+            ))
+            .await
+            .expect("create task MCP call succeeds");
+        let output: serde_json::Value = serde_json::from_str(tool_text(&result)).unwrap();
+
+        assert_eq!(output["readable_id"], "ATL-1");
+        assert_eq!(
+            output["references"][0]["target_title"],
+            "Current target task"
+        );
+        assert_eq!(
+            output["references"][1]["target_title"],
+            "Current target document"
+        );
+
+        let columns_request = requests.recv().expect("Atlas received columns request");
+        assert!(columns_request.starts_with(&format!(
+            "GET /api/workspaces/ws/boards/{BOARD_ID}/columns "
+        )));
+
+        let create_request = requests
+            .recv()
+            .expect("Atlas received task creation request");
+        assert!(
+            create_request
+                .starts_with(&format!("POST /api/workspaces/ws/boards/{BOARD_ID}/tasks "))
+        );
+        assert!(create_request.contains(&format!("\"column_id\":\"{COLUMN_ID}\"")));
+        assert!(create_request.contains("\"target_task_readable_id\":\"ATL-2\""));
+        assert!(create_request.contains(&format!("\"target_document_id\":\"{DOCUMENT_ID}\"")));
+    }
+
+    #[tokio::test]
+    #[allow(clippy::indexing_slicing)]
+    async fn batch_add_task_references_preserves_order_titles_and_problem_non_disclosure() {
+        let (base_url, requests) = serve_recording_atlas(vec![(
+            "200 OK",
+            r#"[{"outcome":"success","index":0,"reference":{"id":"00000000-0000-0000-0000-000000000006","kind":"relates","target_readable_id":"ATL-2","target_title":"Current target task","target_resolved":true,"created_by":{"type":"api_key","id":"00000000-0000-0000-0000-000000000005","display_name":"Agent","key_type":"agent"},"created_at":"2026-01-01T00:00:00Z"}},{"outcome":"problem","index":1,"status":404,"type":"urn:atlas:error:not-found","title":"Not found","hint":"target is unavailable"},{"outcome":"success","index":2,"reference":{"id":"00000000-0000-0000-0000-000000000007","kind":"spec","target_document_id":"00000000-0000-0000-0000-000000000020","target_title":"Current target document","target_resolved":true,"created_by":{"type":"api_key","id":"00000000-0000-0000-0000-000000000005","display_name":"Agent","key_type":"agent"},"created_at":"2026-01-01T00:00:00Z"}}]"#.to_string(),
+        )]);
+        let client =
+            start_mcp_client(AtlasMcp::new(base_url, "atlas_test").expect("server config")).await;
+
+        let result = client
+            .call_tool(call_tool_params(
+                "add_task_references_batch",
+                serde_json::json!({
+                    "workspace": "ws",
+                    "readable_id": "ATL-1",
+                    "references": [
+                        {"kind": "relates", "target_task_readable_id": "ATL-2"},
+                        {"kind": "relates", "target_task_readable_id": "ATL-3"},
+                        {"kind": "spec", "target_document_id": "00000000-0000-0000-0000-000000000020"}
+                    ]
+                }),
+            ))
+            .await
+            .expect("batch reference MCP call succeeds");
+        let output: serde_json::Value = serde_json::from_str(tool_text(&result)).unwrap();
+
+        assert_eq!(output[0]["index"], 0);
+        assert_eq!(output[0]["outcome"], "success");
+        assert_eq!(
+            output[0]["reference"]["target_title"],
+            "Current target task"
+        );
+        assert_eq!(output[1]["index"], 1);
+        assert_eq!(output[1]["outcome"], "problem");
+        assert_eq!(output[1]["status"], 404);
+        assert_eq!(output[1]["hint"], "target is unavailable");
+        assert!(output[1].get("reference").is_none());
+        assert!(output[1].get("target_task_readable_id").is_none());
+        assert_eq!(output[2]["index"], 2);
+        assert_eq!(output[2]["outcome"], "success");
+        assert_eq!(
+            output[2]["reference"]["target_title"],
+            "Current target document"
+        );
+
+        let request = requests.recv().expect("Atlas received batch request");
+        assert!(request.starts_with("POST /api/workspaces/ws/tasks/ATL-1/references/batch "));
+        assert!(request.contains("\"target_task_readable_id\":\"ATL-2\""));
+        assert!(request.contains("\"target_task_readable_id\":\"ATL-3\""));
+        assert!(
+            request.contains("\"target_document_id\":\"00000000-0000-0000-0000-000000000020\"")
+        );
+    }
+
+    #[tokio::test]
+    async fn batch_add_task_references_rejects_more_than_one_hundred_items_before_dispatch() {
+        let client = start_mcp_client(
+            AtlasMcp::new("http://127.0.0.1:9", "atlas_test").expect("server config"),
+        )
+        .await;
+        let references = (0..101)
+            .map(|index| serde_json::json!({"kind": "relates", "target_task_readable_id": format!("ATL-{index}")}))
+            .collect::<Vec<_>>();
+
+        let result = client
+            .call_tool(call_tool_params(
+                "add_task_references_batch",
+                serde_json::json!({
+                    "workspace": "ws",
+                    "readable_id": "ATL-1",
+                    "references": references,
+                }),
+            ))
+            .await
+            .expect("MCP tool call completes with a tool error");
+
+        assert!(result.is_error.unwrap_or(false));
+        assert_eq!(
+            tool_text(&result),
+            "references may contain at most 100 items"
+        );
+    }
+
+    #[tokio::test]
+    async fn create_task_rejects_more_than_one_hundred_initial_references_before_lookup() {
+        let client = start_mcp_client(
+            AtlasMcp::new("http://127.0.0.1:9", "atlas_test").expect("server config"),
+        )
+        .await;
+        let references = (0..101)
+            .map(|index| serde_json::json!({"kind": "relates", "target_task_readable_id": format!("ATL-{index}")}))
+            .collect::<Vec<_>>();
+
+        let result = client
+            .call_tool(call_tool_params(
+                "create_task",
+                serde_json::json!({
+                    "workspace": "ws",
+                    "board": "Board",
+                    "column": "Todo",
+                    "title": "Source",
+                    "references": references,
+                }),
+            ))
+            .await
+            .expect("MCP tool call completes with a tool error");
+
+        assert!(result.is_error.unwrap_or(false));
+        assert_eq!(
+            tool_text(&result),
+            "references may contain at most 100 items"
+        );
+    }
+
+    #[test]
     fn remove_task_reference_params_deserializes() {
         let json = r#"{"workspace":"ws","readable_id":"ATL-1","reference_id":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234"}"#;
         let params: RemoveTaskReferenceParams = serde_json::from_str(json).unwrap();
@@ -6837,6 +7201,10 @@ mod tests {
         assert!(
             instructions.contains("`add_task_reference`"),
             "instructions must mention add_task_reference"
+        );
+        assert!(
+            instructions.contains("`add_task_references_batch`"),
+            "instructions must mention add_task_references_batch"
         );
         assert!(
             instructions.contains("`remove_task_reference`"),
