@@ -12,9 +12,10 @@ use sea_orm::{ConnectionTrait, Statement};
 use atlas_api::dtos::{
     ApiKeyScope, CreateUserApiKeyRequest,
     documents::{
-        CreateDocumentRequest, DocumentContentRangeDto, DocumentContentSearchDto,
-        DocumentContentSearchRequest, DocumentSearchMode, MoveDocumentRequest,
-        UpdateContentRequest, UpdateDocumentRequest,
+        CreateDocumentRequest, DocumentContentEditRequest, DocumentContentRangeDto,
+        DocumentContentSearchDto, DocumentContentSearchRequest, DocumentDto,
+        DocumentLineEditRequest, DocumentSearchMode, MoveDocumentRequest, UpdateContentRequest,
+        UpdateDocumentRequest,
     },
 };
 use atlas_client::ClientError;
@@ -30,7 +31,25 @@ fn doc_req(title: &str) -> CreateDocumentRequest {
         content: None,
     }
 }
-
+macro_rules! edit_content_range {
+    ($server:expr, $client:expr, $workspace:expr, $slug:expr, $base:expr, $edit:expr $(,)?) => {
+        reqwest::Client::new()
+            .patch(format!(
+                "{}/api/workspaces/{}/documents/{}/content/range",
+                $server.base_url(),
+                $workspace,
+                $slug
+            ))
+            .bearer_auth($client.token().expect("authenticated token"))
+            .json(&DocumentContentEditRequest {
+                base_revision_id: $base,
+                edit: $edit,
+            })
+            .send()
+            .await
+            .expect("partial edit request")
+    };
+}
 // ---- CRUD ------------------------------------------------------------------
 
 #[tokio::test]
@@ -842,7 +861,6 @@ async fn update_content_unknown_base_revision_is_rejected_not_conflict() {
         .expect("create document");
 
     let slug = doc.slug.as_deref().expect("slug");
-
     let result = client
         .update_content(
             &ws.slug,
@@ -907,6 +925,267 @@ async fn update_content_empty_string_is_valid() {
         .expect("empty content must be accepted");
 
     assert_eq!(updated.content, "");
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn edit_content_range_updates_content_and_returns_a_new_revision() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-edit-range").await;
+    let project = client
+        .create_project(
+            &ws.slug,
+            atlas_api::dtos::CreateProjectRequest {
+                name: "Proj".into(),
+                slug: "proj-edit-range".into(),
+                task_prefix: "PER".into(),
+                visibility: None,
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create project");
+    let target = client
+        .create_document(&ws.slug, &project.slug, doc_req("Edit target"))
+        .await
+        .expect("create target");
+    let doc = client
+        .create_document(
+            &ws.slug,
+            &project.slug,
+            CreateDocumentRequest {
+                title: "Partial edit".into(),
+                folder_id: None,
+                content: Some("---\nkind: guide\n---\nfirst\r\nsecond [[Edit target]]".into()),
+            },
+        )
+        .await
+        .expect("create document");
+    let slug = doc.slug.as_deref().expect("slug");
+    let response = edit_content_range!(
+        &server,
+        &client,
+        &ws.slug,
+        slug,
+        doc.head_revision_id,
+        DocumentLineEditRequest::Insert {
+            position: 5,
+            content: "inserted".into()
+        },
+    );
+    let updated: DocumentDto = response.json().await.expect("partial edit response");
+    assert_eq!(
+        updated.content,
+        "---\nkind: guide\n---\nfirst\r\ninserted\nsecond [[Edit target]]"
+    );
+    assert_eq!(updated.frontmatter, serde_json::json!({"kind": "guide"}));
+    assert_ne!(updated.head_revision_id, doc.head_revision_id);
+    let backlinks = client
+        .list_backlinks(
+            &ws.slug,
+            target.slug.as_deref().expect("target slug"),
+            None,
+            None,
+        )
+        .await
+        .expect("list backlinks");
+    assert!(
+        backlinks
+            .items
+            .iter()
+            .any(|backlink| backlink.source_document_id == doc.id)
+    );
+    let guard_doc = client
+        .create_document(
+            &ws.slug,
+            &project.slug,
+            CreateDocumentRequest {
+                title: "Edit guards".into(),
+                folder_id: None,
+                content: Some("first\nsecond [[Edit target]]".into()),
+            },
+        )
+        .await
+        .expect("create document");
+    let slug = guard_doc.slug.as_deref().expect("slug");
+    let links_before = document_source_link_identity_rows(&db, guard_doc.id).await;
+    let no_op = edit_content_range!(
+        &server,
+        &client,
+        &ws.slug,
+        slug,
+        guard_doc.head_revision_id,
+        DocumentLineEditRequest::Delete { start: 3, end: 2 },
+    );
+    let no_op: DocumentDto = no_op.json().await.expect("no-op response");
+    assert_eq!(no_op.content, "first\nsecond [[Edit target]]");
+    assert_eq!(no_op.head_revision_id, guard_doc.head_revision_id);
+    assert_eq!(no_op.head_seq, guard_doc.head_seq);
+    assert_eq!(no_op.updated_at, guard_doc.updated_at);
+    assert_eq!(
+        document_source_link_identity_rows(&db, guard_doc.id).await,
+        links_before
+    );
+    let changed = edit_content_range!(
+        &server,
+        &client,
+        &ws.slug,
+        slug,
+        guard_doc.head_revision_id,
+        DocumentLineEditRequest::Replace {
+            start: 2,
+            end: 2,
+            content: "changed".into()
+        },
+    );
+    let changed: DocumentDto = changed.json().await.expect("replace response");
+    assert_eq!(changed.content, "first\nchanged");
+    let stale = edit_content_range!(
+        &server,
+        &client,
+        &ws.slug,
+        slug,
+        guard_doc.head_revision_id,
+        DocumentLineEditRequest::Insert {
+            position: 0,
+            content: "invalid".into()
+        },
+    );
+    let stale: serde_json::Value = stale.json().await.expect("stale response");
+    assert_eq!(stale["status"], 409);
+    assert_eq!(
+        stale["current_revision_id"],
+        changed.head_revision_id.to_string()
+    );
+    assert!(stale["base_to_current_patch"].is_string());
+    let deleted = edit_content_range!(
+        &server,
+        &client,
+        &ws.slug,
+        slug,
+        changed.head_revision_id,
+        DocumentLineEditRequest::Delete { start: 2, end: 2 },
+    );
+    let deleted: DocumentDto = deleted.json().await.expect("delete response");
+    assert_eq!(deleted.content, "first\n");
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn edit_content_range_requires_editor_access_without_leaking_other_workspaces() {
+    use atlas_domain::{ids::ProjectId, permissions::ResourceRole};
+
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (owner, ws, _) = support::login_user_with_workspace(&server, &db, "doc-edit-auth").await;
+    let project = owner
+        .create_project(
+            &ws.slug,
+            atlas_api::dtos::CreateProjectRequest {
+                name: "Private project".into(),
+                slug: "doc-edit-auth-project".into(),
+                task_prefix: "DEA".into(),
+                visibility: Some("private".into()),
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create private project");
+    let document = owner
+        .create_document(
+            &ws.slug,
+            &project.slug,
+            CreateDocumentRequest {
+                title: "Restricted edit".into(),
+                folder_id: None,
+                content: Some("first".into()),
+            },
+        )
+        .await
+        .expect("create restricted document");
+    let slug = document.slug.as_deref().expect("slug");
+    let viewer = member_client_with_optional_project_grant(
+        &server,
+        &db,
+        &ws,
+        "doc-edit-viewer",
+        Some(ProjectId(project.id)),
+        Some(ResourceRole::Viewer),
+    )
+    .await;
+    let editor = member_client_with_optional_project_grant(
+        &server,
+        &db,
+        &ws,
+        "doc-edit-editor",
+        Some(ProjectId(project.id)),
+        Some(ResourceRole::Editor),
+    )
+    .await;
+    let outsider = member_client_with_optional_project_grant(
+        &server,
+        &db,
+        &ws,
+        "doc-edit-outsider",
+        None,
+        None,
+    )
+    .await;
+    let edit = DocumentLineEditRequest::Replace {
+        start: 1,
+        end: 1,
+        content: "changed".into(),
+    };
+
+    let viewer_response = edit_content_range!(
+        &server,
+        &viewer,
+        &ws.slug,
+        slug,
+        document.head_revision_id,
+        edit.clone(),
+    );
+    assert_eq!(viewer_response.status(), reqwest::StatusCode::FORBIDDEN);
+
+    let editor_response = edit_content_range!(
+        &server,
+        &editor,
+        &ws.slug,
+        slug,
+        document.head_revision_id,
+        edit,
+    );
+    assert_eq!(editor_response.status(), reqwest::StatusCode::OK);
+    let edited: DocumentDto = editor_response.json().await.expect("editor response");
+    assert_eq!(edited.content, "changed");
+
+    let inaccessible = edit_content_range!(
+        &server,
+        &outsider,
+        &ws.slug,
+        slug,
+        edited.head_revision_id,
+        DocumentLineEditRequest::Delete { start: 1, end: 1 },
+    );
+    assert_eq!(
+        inaccessible.status(),
+        reqwest::StatusCode::NOT_FOUND,
+        "inaccessible private document must not reveal whether it exists"
+    );
+
+    let (_other_client, other_ws, _) =
+        support::login_user_with_workspace(&server, &db, "doc-edit-other-workspace").await;
+    let cross_workspace = edit_content_range!(
+        &server,
+        &owner,
+        &other_ws.slug,
+        slug,
+        edited.head_revision_id,
+        DocumentLineEditRequest::Delete { start: 1, end: 1 },
+    );
+    assert_eq!(cross_workspace.status(), reqwest::StatusCode::NOT_FOUND);
 
     db.teardown().await;
 }
@@ -1157,6 +1436,34 @@ async fn document_source_links(
                 .try_get("", "target_document_id")
                 .expect("target_document_id");
             (title, doc)
+        })
+        .collect()
+}
+
+async fn document_source_link_identity_rows(
+    db: &support::TestDb,
+    source_document_id: uuid::Uuid,
+) -> Vec<(uuid::Uuid, String, Option<uuid::Uuid>)> {
+    let sql = format!(
+        "SELECT id, target_title, target_document_id FROM document_links WHERE source_document_id = '{source_document_id}' ORDER BY id"
+    );
+    let rows = db
+        .conn()
+        .query_all_raw(Statement::from_string(
+            sea_orm::DatabaseBackend::Postgres,
+            sql,
+        ))
+        .await
+        .expect("query document_links");
+
+    rows.into_iter()
+        .map(|row| {
+            (
+                row.try_get("", "id").expect("id"),
+                row.try_get("", "target_title").expect("target_title"),
+                row.try_get("", "target_document_id")
+                    .expect("target_document_id"),
+            )
         })
         .collect()
 }

@@ -21,16 +21,17 @@ use atlas_api::{
     dtos::documents::{
         ActorDto, AttachmentDto, BacklinkDto, CommentAttachmentDto, CommentBacklinkParentDto,
         CommentBacklinkSourceDto, CommentDraftDto, CopyDocumentRequest, CreateDocumentRequest,
-        DocumentCompactDto, DocumentContentRangeDto, DocumentContentRangeQuery,
-        DocumentContentSearchDto, DocumentContentSearchRequest, DocumentDto, DocumentLineDto,
-        DocumentSearchMatchDto, DocumentSearchMode, DocumentSummaryDto, FrontmatterDto,
-        MoveDocumentRequest, RevisionContentDto, RevisionMetaDto, UpdateContentRequest,
-        UpdateDocumentRequest,
+        DocumentCompactDto, DocumentContentEditRequest, DocumentContentRangeDto,
+        DocumentContentRangeQuery, DocumentContentSearchDto, DocumentContentSearchRequest,
+        DocumentDto, DocumentLineDto, DocumentLineEditRequest, DocumentSearchMatchDto,
+        DocumentSearchMode, DocumentSummaryDto, FrontmatterDto, MoveDocumentRequest,
+        RevisionContentDto, RevisionMetaDto, UpdateContentRequest, UpdateDocumentRequest,
     },
     pagination::{Cursor, Page},
 };
 use atlas_domain::{
     Actor, WorkspaceCtx,
+    document_lines::DocumentLineEdit,
     entities::comments::{
         CommentDraftMetadata, CommentLinkTarget, CommentOwner, NewCommentAttachmentDraftUpload,
         comment_draft_upload_digest_input,
@@ -888,6 +889,60 @@ pub(crate) async fn update_content(
         conn: (*state.db).clone(),
     };
     update_document_links(&ctx, &doc_repo, &link_repo, updated.id, &updated.content).await?;
+
+    Ok(Json(document_to_dto(updated)))
+}
+
+#[utoipa::path(
+    patch,
+    path = "/api/workspaces/{ws}/documents/{slug}/content/range",
+    tag = "documents",
+    security(("bearer_auth" = [])),
+    params(("ws" = String, Path), ("slug" = String, Path)),
+    request_body = DocumentContentEditRequest,
+    responses((status = 200, body = DocumentDto), (status = 401), (status = 403), (status = 404), (status = 409), (status = 422))
+)]
+pub(crate) async fn edit_content_range(
+    auth: Authorized<DocumentSlugRes, EditorMin, DocsUpdate>,
+    State(state): State<AppState>,
+    Json(body): Json<DocumentContentEditRequest>,
+) -> Result<Json<DocumentDto>, ApiError> {
+    let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
+    let edit = match body.edit {
+        DocumentLineEditRequest::Insert { position, content } => {
+            DocumentLineEdit::Insert { position, content }
+        }
+        DocumentLineEditRequest::Replace {
+            start,
+            end,
+            content,
+        } => DocumentLineEdit::Replace {
+            start,
+            end,
+            content,
+        },
+        DocumentLineEditRequest::Delete { start, end } => DocumentLineEdit::Delete { start, end },
+    };
+    let updated = state
+        .document_service()
+        .edit_content(
+            &ctx,
+            auth.resource.0.id,
+            RevisionId(body.base_revision_id),
+            edit,
+        )
+        .await
+        .map_err(|error| match error {
+            atlas_domain::DomainError::Conflict(conflict) => ApiError::RevisionConflict(conflict),
+            other => ApiError::Domain(other),
+        })?;
+    if updated.current_revision_id.0 != body.base_revision_id {
+        let doc_repo = PgDocumentRepo::new((*state.db).clone(), state.anchor_interval);
+        let link_repo = PgDocumentLinkRepo {
+            conn: (*state.db).clone(),
+        };
+        update_document_links(&ctx, &doc_repo, &link_repo, updated.id, &updated.content).await?;
+    }
 
     Ok(Json(document_to_dto(updated)))
 }

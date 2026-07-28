@@ -41,7 +41,9 @@ use atlas_api::{
             UpdateTaskRequest, WorkspaceTaskQueryParams,
         },
         documents::{
-            CreateDocumentRequest, MoveDocumentRequest, UpdateContentRequest, UpdateDocumentRequest,
+            CreateDocumentRequest, DocumentContentEditRequest, DocumentDto,
+            DocumentLineEditRequest, MoveDocumentRequest, UpdateContentRequest,
+            UpdateDocumentRequest,
         },
         folders::{CreateFolderRequest, MoveFolderRequest, RenameFolderRequest},
         saved_searches::{CreateSavedSearchRequest, RenameSavedSearchRequest},
@@ -65,6 +67,7 @@ struct Fixtures {
     board_id: uuid::Uuid,
     task_readable_id: String,
     document_ref: String,
+    document_head_revision_id: uuid::Uuid,
     folder_id: uuid::Uuid,
     doc_attachment_id: uuid::Uuid,
     task_comment_id: uuid::Uuid,
@@ -244,6 +247,7 @@ async fn seed_fixtures(
         board_id: board.id,
         task_readable_id: task.readable_id,
         document_ref: document.id.to_string(),
+        document_head_revision_id: document.head_revision_id,
         folder_id: folder.id,
         doc_attachment_id: attachment.id,
         task_comment_id: task_comment.id,
@@ -339,6 +343,7 @@ enum Case {
     GetDocumentRange,
     SearchDocumentContent,
     UpdateDocument,
+    EditDocumentContent,
     DeleteDocument,
     UpdateContent,
     ListDocumentHistory,
@@ -478,6 +483,7 @@ impl Case {
         Case::GetDocumentRange,
         Case::SearchDocumentContent,
         Case::UpdateDocument,
+        Case::EditDocumentContent,
         Case::DeleteDocument,
         Case::UpdateContent,
         Case::ListDocumentHistory,
@@ -612,6 +618,7 @@ impl Case {
             Case::GetDocumentRange => ("GET", "docs:read"),
             Case::SearchDocumentContent => ("POST", "docs:read"),
             Case::UpdateDocument => ("PATCH", "docs:update"),
+            Case::EditDocumentContent => ("PATCH", "docs:update"),
             Case::DeleteDocument => ("DELETE", "docs:delete"),
             Case::UpdateContent => ("PUT", "docs:update"),
             Case::ListDocumentHistory => ("GET", "docs:read"),
@@ -1051,6 +1058,19 @@ async fn invoke(
             .update_document(ws, &fx.document_ref, UpdateDocumentRequest::default())
             .await
             .map(|_| ()),
+        Case::EditDocumentContent => {
+            raw_call(
+                http,
+                base_url,
+                token,
+                "PATCH",
+                &format!(
+                    "/api/workspaces/{ws}/documents/{}/content/range",
+                    fx.document_ref
+                ),
+            )
+            .await
+        }
         Case::DeleteDocument => client.delete_document(ws, &fx.document_ref).await,
         Case::UpdateContent => client
             .update_content(
@@ -1857,6 +1877,87 @@ async fn each_capability_gate_admits_its_own_scope_and_rejects_a_wrong_one() {
             );
         }
     }
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn partial_document_edit_requires_docs_update_capability() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner, ws, owner_user) =
+        login_user_with_workspace(&server, &db, "cap-edit-content-owner").await;
+    let fx = seed_fixtures(&owner, &db, &ws.slug, ws.id.0, owner_user.id).await;
+    let request = DocumentContentEditRequest {
+        base_revision_id: fx.document_head_revision_id,
+        edit: DocumentLineEditRequest::Insert {
+            position: 2,
+            content: "updated".into(),
+        },
+    };
+    let http = reqwest::Client::new();
+
+    let update_token = create_scoped_agent(
+        &db,
+        owner_user.id,
+        "cap-edit-content-update",
+        vec![
+            Capability::ALL
+                .into_iter()
+                .find(|capability| capability.as_str() == "docs:update")
+                .expect("docs:update capability"),
+        ],
+    )
+    .await;
+    let update_response = http
+        .patch(format!(
+            "{}/api/workspaces/{}/documents/{}/content/range",
+            server.base_url(),
+            fx.ws_slug,
+            fx.document_ref
+        ))
+        .bearer_auth(&update_token)
+        .json(&request)
+        .send()
+        .await
+        .expect("docs:update partial edit request");
+    assert_eq!(update_response.status(), reqwest::StatusCode::OK);
+    let updated: DocumentDto = update_response.json().await.expect("partial edit response");
+    assert_eq!(updated.content, "hello\nupdated");
+
+    let wrong_token = create_scoped_agent(
+        &db,
+        owner_user.id,
+        "cap-edit-content-wrong",
+        vec![
+            Capability::ALL
+                .into_iter()
+                .find(|capability| capability.as_str() == "docs:read")
+                .expect("docs:read capability"),
+        ],
+    )
+    .await;
+    let wrong_response = http
+        .patch(format!(
+            "{}/api/workspaces/{}/documents/{}/content/range",
+            server.base_url(),
+            fx.ws_slug,
+            fx.document_ref
+        ))
+        .bearer_auth(&wrong_token)
+        .json(&request)
+        .send()
+        .await
+        .expect("wrong-scope partial edit request");
+    assert_eq!(wrong_response.status(), reqwest::StatusCode::FORBIDDEN);
+    let problem: ProblemDetails = wrong_response.json().await.expect("scope denial problem");
+    assert!(
+        problem
+            .detail
+            .as_deref()
+            .is_some_and(|detail| detail.contains("lacks required scope: docs:update"))
+    );
 
     db.teardown().await;
 }

@@ -38,6 +38,35 @@ pub struct UpdateContentRequest {
     pub base_revision_id: uuid::Uuid,
 }
 
+/// Request body for `PATCH /api/workspaces/{ws}/documents/{slug}/content/range`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct DocumentContentEditRequest {
+    pub base_revision_id: uuid::Uuid,
+    #[serde(flatten)]
+    pub edit: DocumentLineEditRequest,
+}
+
+/// A one-based partial document-content edit.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "operation", rename_all = "snake_case")]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub enum DocumentLineEditRequest {
+    Insert {
+        position: i64,
+        content: String,
+    },
+    Replace {
+        start: i64,
+        end: i64,
+        content: String,
+    },
+    Delete {
+        start: i64,
+        end: i64,
+    },
+}
+
 /// Request body for `PATCH /api/workspaces/{ws}/documents/{slug}/move`.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]

@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use atlas_domain::{
     Actor, AttachmentStore, DomainError, RevisionConflict, WorkspaceCtx,
+    document_lines::{DocumentLineEdit, apply_document_line_edit},
     entities::comments::{CommentOwner, NewCommentAttachmentDraftUpload},
     entities::documents::{
         Attachment, AttachmentOwner, AttachmentWriteIntent, Document, DocumentLink,
@@ -616,6 +617,84 @@ pub async fn update_content_in(
             id: id.0,
         })?;
 
+    update_locked_content_in(
+        conn,
+        ctx,
+        doc,
+        id,
+        expected_revision,
+        new_content,
+        anchor_interval,
+    )
+    .await
+}
+
+/// Applies a line edit after locking the document and appends its resulting revision.
+pub async fn edit_content_in(
+    conn: &impl ConnectionTrait,
+    ctx: &WorkspaceCtx,
+    id: DocumentId,
+    expected_revision: RevisionId,
+    edit: DocumentLineEdit,
+    anchor_interval: u32,
+) -> Result<Document, DomainError> {
+    let doc = document::Entity::find_by_id(id.0)
+        .filter(document::Column::WorkspaceId.eq(ctx.workspace_id.0))
+        .filter(document::Column::DeletedAt.is_null())
+        .lock_exclusive()
+        .one(conn)
+        .await
+        .map_err(db_err)?
+        .ok_or(DomainError::NotFound {
+            entity: "document",
+            id: id.0,
+        })?;
+
+    if doc.current_revision_id != Some(expected_revision.0) {
+        let content = doc.content.clone();
+        return update_locked_content_in(
+            conn,
+            ctx,
+            doc,
+            id,
+            expected_revision,
+            &content,
+            anchor_interval,
+        )
+        .await;
+    }
+
+    let new_content = apply_document_line_edit(&doc.content, edit).map_err(|error| {
+        DomainError::InvalidInput {
+            message: format!("invalid document line edit: {error:?}"),
+        }
+    })?;
+
+    if new_content == doc.content {
+        return document_from(doc).map_err(internal_err);
+    }
+
+    update_locked_content_in(
+        conn,
+        ctx,
+        doc,
+        id,
+        expected_revision,
+        &new_content,
+        anchor_interval,
+    )
+    .await
+}
+
+async fn update_locked_content_in(
+    conn: &impl ConnectionTrait,
+    ctx: &WorkspaceCtx,
+    doc: document::Model,
+    id: DocumentId,
+    expected_revision: RevisionId,
+    new_content: &str,
+    anchor_interval: u32,
+) -> Result<Document, DomainError> {
     let current_rev_uuid = doc.current_revision_id.ok_or(DomainError::NotFound {
         entity: "document.current_revision_id",
         id: id.0,

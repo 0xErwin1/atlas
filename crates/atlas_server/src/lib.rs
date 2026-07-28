@@ -566,7 +566,7 @@ pub fn app(state: AppState) -> Router {
         )
         .route(
             "/api/workspaces/{ws}/documents/{slug}/content/range",
-            get(routes::documents::get_content_range),
+            get(routes::documents::get_content_range).patch(routes::documents::edit_content_range),
         )
         .route(
             "/api/workspaces/{ws}/documents/{slug}/content/search",

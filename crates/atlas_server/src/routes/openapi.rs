@@ -195,6 +195,7 @@ use atlas_api::{
         crate::routes::documents::get_document,
         crate::routes::documents::get_document_compact,
         crate::routes::documents::get_content_range,
+        crate::routes::documents::edit_content_range,
         crate::routes::documents::search_content,
         crate::routes::documents::update_document,
         crate::routes::documents::delete_document,

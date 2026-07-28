@@ -1,5 +1,6 @@
 use atlas_domain::{
     DomainError, WorkspaceCtx,
+    document_lines::DocumentLineEdit,
     entities::comments::{Comment, CommentOwner},
     entities::documents::{Document, NewDocument},
     entities::events::{
@@ -13,8 +14,8 @@ use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Transac
 
 use crate::persistence::entities::{comments::comment_attachment_draft, documents::document};
 use crate::persistence::repos::{
-    CommentRepo, PgCommentRepo, PgOutboxRepo, PgSecurityAuditRepo, doc_create_in, doc_move_to_in,
-    doc_rename_in, doc_soft_delete_in, doc_update_content_in,
+    CommentRepo, PgCommentRepo, PgOutboxRepo, PgSecurityAuditRepo, doc_create_in,
+    doc_edit_content_in, doc_move_to_in, doc_rename_in, doc_soft_delete_in, doc_update_content_in,
 };
 
 /// Coordinates document mutations with transactional outbox emission.
@@ -107,6 +108,31 @@ impl DocumentService {
             seq: doc.current_revision_seq,
         });
         PgOutboxRepo::insert_in(&txn, ctx, doc.project_id, None, event).await?;
+
+        txn.commit().await.map_err(db_err)?;
+        Ok(doc)
+    }
+
+    /// Applies one line edit under the same locked CAS transaction as full updates.
+    pub async fn edit_content(
+        &self,
+        ctx: &WorkspaceCtx,
+        id: DocumentId,
+        expected_revision: RevisionId,
+        edit: DocumentLineEdit,
+    ) -> Result<Document, DomainError> {
+        let txn = self.conn.begin().await.map_err(db_err)?;
+        let doc = doc_edit_content_in(&txn, ctx, id, expected_revision, edit, self.anchor_interval)
+            .await?;
+
+        if doc.current_revision_id != expected_revision {
+            let event = DomainEvent::DocumentUpdated(DocumentUpdatedPayload {
+                document_id: doc.id,
+                revision_id: doc.current_revision_id,
+                seq: doc.current_revision_seq,
+            });
+            PgOutboxRepo::insert_in(&txn, ctx, doc.project_id, None, event).await?;
+        }
 
         txn.commit().await.map_err(db_err)?;
         Ok(doc)
