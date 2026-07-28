@@ -551,6 +551,13 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         capability: Some("docs:read"),
     },
     RouteEntry {
+        method: "POST",
+        path_template: "/api/workspaces/{ws}/documents/nonexistent-slug/content/search",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/api/workspaces/{ws}/documents/{slug}/content/search"),
+        capability: Some("docs:read"),
+    },
+    RouteEntry {
         method: "GET",
         path_template: "/api/workspaces/{ws}/documents/nonexistent-slug/history",
         kind: RouteKind::WorkspaceMember,

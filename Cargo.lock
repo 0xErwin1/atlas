@@ -735,6 +735,7 @@ dependencies = [
  "migration",
  "object_store",
  "rand 0.8.6",
+ "regex",
  "reqwest 0.13.4",
  "sea-orm",
  "sea-orm-migration",

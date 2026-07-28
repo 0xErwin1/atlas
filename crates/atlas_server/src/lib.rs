@@ -569,6 +569,10 @@ pub fn app(state: AppState) -> Router {
             get(routes::documents::get_content_range),
         )
         .route(
+            "/api/workspaces/{ws}/documents/{slug}/content/search",
+            axum::routing::post(routes::documents::search_content),
+        )
+        .route(
             "/api/workspaces/{ws}/documents/{slug}/history",
             get(routes::documents::list_history),
         )

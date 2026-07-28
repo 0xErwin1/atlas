@@ -73,6 +73,7 @@ rand              = "0.8"
 fractional_index  = "2.0"
 diffy-imara       = "0.3"
 base64            = "0.22"
+regex             = "1"
 time              = "0.3"
 
 # Client layer

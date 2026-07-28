@@ -337,6 +337,7 @@ enum Case {
     GetDocument,
     GetDocumentCompact,
     GetDocumentRange,
+    SearchDocumentContent,
     UpdateDocument,
     DeleteDocument,
     UpdateContent,
@@ -475,6 +476,7 @@ impl Case {
         Case::GetDocument,
         Case::GetDocumentCompact,
         Case::GetDocumentRange,
+        Case::SearchDocumentContent,
         Case::UpdateDocument,
         Case::DeleteDocument,
         Case::UpdateContent,
@@ -608,6 +610,7 @@ impl Case {
             Case::GetDocument => ("GET", "docs:read"),
             Case::GetDocumentCompact => ("GET", "docs:read"),
             Case::GetDocumentRange => ("GET", "docs:read"),
+            Case::SearchDocumentContent => ("POST", "docs:read"),
             Case::UpdateDocument => ("PATCH", "docs:update"),
             Case::DeleteDocument => ("DELETE", "docs:delete"),
             Case::UpdateContent => ("PUT", "docs:update"),
@@ -1026,6 +1029,19 @@ async fn invoke(
                 "GET",
                 &format!(
                     "/api/workspaces/{ws}/documents/{}/content/range",
+                    fx.document_ref
+                ),
+            )
+            .await
+        }
+        Case::SearchDocumentContent => {
+            raw_call(
+                http,
+                base_url,
+                token,
+                "POST",
+                &format!(
+                    "/api/workspaces/{ws}/documents/{}/content/search",
                     fx.document_ref
                 ),
             )
@@ -1617,6 +1633,11 @@ async fn raw_call(
         "PATCH" => http.patch(&url),
         "DELETE" => http.delete(&url),
         _ => http.get(&url),
+    };
+    let builder = if path.ends_with("/content/search") {
+        builder.json(&serde_json::json!({"query": "x"}))
+    } else {
+        builder
     };
     let response = builder
         .bearer_auth(token)

@@ -49,6 +49,7 @@ object_store.workspace = true
 infer.workspace = true
 rand.workspace = true
 base64.workspace = true
+regex.workspace = true
 time.workspace = true
 fractional_index.workspace = true
 reqwest.workspace = true

@@ -12,8 +12,9 @@ use sea_orm::{ConnectionTrait, Statement};
 use atlas_api::dtos::{
     ApiKeyScope, CreateUserApiKeyRequest,
     documents::{
-        CreateDocumentRequest, DocumentContentRangeDto, MoveDocumentRequest, UpdateContentRequest,
-        UpdateDocumentRequest,
+        CreateDocumentRequest, DocumentContentRangeDto, DocumentContentSearchDto,
+        DocumentContentSearchRequest, DocumentSearchMode, MoveDocumentRequest,
+        UpdateContentRequest, UpdateDocumentRequest,
     },
 };
 use atlas_client::ClientError;
@@ -340,6 +341,114 @@ async fn range_read_pages_losslessly_and_rejects_too_small_or_stale_continuation
         .expect("stale continuation request");
     assert_eq!(stale.status(), reqwest::StatusCode::CONFLICT);
 
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn content_search_enforces_scan_and_utf8_page_boundaries() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-search").await;
+    let project = client
+        .create_project(
+            &ws.slug,
+            atlas_api::dtos::CreateProjectRequest {
+                name: "Proj".into(),
+                slug: "proj-search".into(),
+                task_prefix: "PSR".into(),
+                visibility: None,
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create project");
+    let doc = client
+        .create_document(
+            &ws.slug,
+            &project.slug,
+            CreateDocumentRequest {
+                title: "Search".into(),
+                folder_id: None,
+                content: Some(format!("{}match", "skip\n".repeat(209_716))),
+            },
+        )
+        .await
+        .expect("create document");
+    let slug = doc.slug.as_deref().expect("slug");
+    let url = format!(
+        "{}/api/workspaces/{}/documents/{slug}/content/search",
+        server.base_url(),
+        ws.slug
+    );
+    let http = reqwest::Client::new();
+    let first = http
+        .post(&url)
+        .bearer_auth(client.token().expect("authenticated token"))
+        .json(&DocumentContentSearchRequest {
+            query: "match".into(),
+            ..Default::default()
+        })
+        .send()
+        .await
+        .expect("scan-capped search");
+    let first: DocumentContentSearchDto = first.json().await.expect("scan-cap page");
+    assert!(first.matches.is_empty());
+    let continuation = first.continuation.expect("scan-cap continuation");
+    let resumed = http
+        .post(&url)
+        .bearer_auth(client.token().expect("authenticated token"))
+        .json(&DocumentContentSearchRequest {
+            query: "match".into(),
+            continuation: Some(continuation),
+            ..Default::default()
+        })
+        .send()
+        .await
+        .expect("resumed scan-capped search");
+    let resumed: DocumentContentSearchDto = resumed.json().await.expect("resumed scan-cap page");
+    assert_eq!(resumed.matches.len(), 1);
+    assert_eq!(resumed.matches[0].line_number, 209_717);
+    assert_eq!(resumed.matches[0].preview, "match");
+    assert!(resumed.continuation.is_none());
+    client
+        .update_content(
+            &ws.slug,
+            slug,
+            UpdateContentRequest {
+                content: "a\né".into(),
+                base_revision_id: doc.head_revision_id,
+            },
+        )
+        .await
+        .expect("replace content for UTF-8 boundary");
+    let first = http
+        .post(&url)
+        .bearer_auth(client.token().expect("authenticated token"))
+        .json(&DocumentContentSearchRequest {
+            query: ".".into(),
+            mode: Some(DocumentSearchMode::Pattern),
+            byte_limit: Some(1),
+            ..Default::default()
+        })
+        .send()
+        .await
+        .expect("UTF-8 boundary search");
+    let first: DocumentContentSearchDto = first.json().await.expect("UTF-8 boundary response");
+    assert_eq!(first.matches.len(), 1);
+    assert_eq!(first.matches[0].preview, "a");
+    let continuation = first.continuation.expect("continuation at UTF-8 boundary");
+    let blocked = http
+        .post(&url)
+        .bearer_auth(client.token().expect("authenticated token"))
+        .json(&DocumentContentSearchRequest {
+            query: ".".into(),
+            continuation: Some(continuation),
+            ..Default::default()
+        })
+        .send()
+        .await
+        .expect("non-progress guard search");
+    assert_eq!(blocked.status(), reqwest::StatusCode::UNPROCESSABLE_ENTITY);
     db.teardown().await;
 }
 
