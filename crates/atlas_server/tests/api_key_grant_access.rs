@@ -116,6 +116,7 @@ async fn seed_board_with_task(
             ws_slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Test task".to_string(),
                 description: None,
@@ -691,6 +692,7 @@ async fn global_agent_reaches_creators_workspaces_not_others_and_is_reversible()
             &w1.slug,
             board_id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col_id,
                 title: "agent task".to_string(),
                 description: None,

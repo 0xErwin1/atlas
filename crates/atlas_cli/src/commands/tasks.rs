@@ -424,6 +424,7 @@ async fn run_create_single(ctx: &Ctx, args: TasksCreateArgs) -> Result<(), CliEr
         properties,
         before: None,
         after: None,
+        references: vec![],
     };
 
     let task = ctx.client.create_task(ws, board_uuid, body).await?;

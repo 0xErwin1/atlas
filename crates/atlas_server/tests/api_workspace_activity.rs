@@ -68,6 +68,7 @@ async fn seed_task(
             ws,
             board_id,
             CreateTaskRequest {
+                references: vec![],
                 column_id,
                 title: title.to_string(),
                 description: None,

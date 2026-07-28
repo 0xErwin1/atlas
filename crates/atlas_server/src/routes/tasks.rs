@@ -15,7 +15,8 @@ use atlas_api::{
     dtos::boards_tasks::{
         ActivityEntryDto, AddAssigneeRequest, AssigneeDto, ChecklistItemDto, CommentDto,
         CommentListResponseDto, CreateChecklistItemRequest, CreateCommentRequest,
-        CreateReferenceRequest, CreateSubtaskRequest, CreateTaskRequest, MoveTaskRequest,
+        CreateReferenceBatchRequest, CreateReferenceBatchResultDto, CreateReferenceRequest,
+        CreateSubtaskRequest, CreateTaskRequest, CreateTaskResponseDto, MoveTaskRequest,
         PromoteChecklistItemRequest, PromotionDto, ReferenceDto, ReferenceOriginDto,
         RenameTaskAttachmentRequest, TaskAttachmentDto, TaskBacklinkDto, TaskDto, TaskSummaryDto,
         UnifiedReferenceDto, UpdateChecklistItemRequest, UpdateCommentRequest, UpdateTaskRequest,
@@ -30,9 +31,9 @@ use atlas_api::{
 use atlas_domain::{
     Actor, DomainError, WorkspaceCtx,
     entities::boards_tasks::{
-        AssigneeRef, Board, BoardColumn, NewTask, NewTaskChecklistItem, NewTaskReference,
-        PositionBetween, Priority, Task, TaskActivity, TaskAssignee, TaskChecklistItem, TaskPatch,
-        TaskReference,
+        AssigneeRef, Board, BoardColumn, InitialTaskReference, NewTask, NewTaskChecklistItem,
+        NewTaskReference, PositionBetween, Priority, Task, TaskActivity, TaskAssignee,
+        TaskChecklistItem, TaskPatch, TaskReference,
     },
     entities::comments::{
         CommentDraftMetadata, CommentLinkTarget, CommentOwner, NewCommentAttachmentDraftUpload,
@@ -41,7 +42,7 @@ use atlas_domain::{
     entities::documents::{
         AttachmentOwner, NewAttachment, RankedTaskDescriptionLink, rank_task_description_links,
     },
-    entities::identity::MemberRole,
+    entities::identity::{MemberRole, Workspace},
     entities::task_views::{ActorTypeFilter, AssigneeFilter, TaskSort, TaskViewFilters},
     entities::workspace_core::{AppliesTo, PropertyDefinition},
     ids::{
@@ -979,7 +980,7 @@ fn parse_due_date(
     ),
     request_body = CreateTaskRequest,
     responses(
-        (status = 201, description = "Task created", body = TaskDto),
+        (status = 201, description = "Task created", body = CreateTaskResponseDto),
         (status = 401, description = "Unauthenticated"),
         (status = 403, description = "Insufficient permissions"),
         (status = 404, description = "Board not found"),
@@ -1021,15 +1022,35 @@ pub(crate) async fn create_task(
 
     validate_labels(&props.labels)?;
 
+    if body.references.len() > 100 {
+        return Err(ApiError::InvalidInput {
+            message: "references must contain at most 100 items".into(),
+        });
+    }
+
     if let Some(ref custom) = props.custom {
         validate_custom_entry_count(custom)?;
         let definitions = task_property_definitions(&state, &ctx).await?;
         validate_custom_properties(custom, &definitions)?;
     }
 
-    let task = state
+    let mut resolved_references = Vec::with_capacity(body.references.len());
+    for reference in &body.references {
+        resolved_references.push(
+            resolve_reference_target(
+                &state,
+                &auth.principal,
+                auth.membership.clone(),
+                &auth.workspace,
+                reference,
+            )
+            .await?,
+        );
+    }
+
+    let created = state
         .task_service()
-        .create(
+        .create_with_references(
             &ctx,
             NewTask {
                 project_id: board.project_id,
@@ -1047,13 +1068,36 @@ pub(crate) async fn create_task(
                     after: body.after,
                 },
             },
+            resolved_references
+                .iter()
+                .map(|reference| InitialTaskReference {
+                    kind: reference.kind.clone(),
+                    target_task_id: reference.target_task_id,
+                    target_document_id: reference.target_document_id,
+                })
+                .collect(),
         )
         .await
         .map_err(ApiError::Domain)?;
 
     Ok((
         StatusCode::CREATED,
-        Json(task_to_dto(task, String::new(), String::new())),
+        Json(CreateTaskResponseDto {
+            task: task_to_dto(created.task, String::new(), String::new()),
+            references: created
+                .references
+                .into_iter()
+                .zip(resolved_references)
+                .map(|(reference, resolved)| {
+                    reference_to_dto(
+                        reference,
+                        true,
+                        resolved.target_readable_id,
+                        resolved.target_title,
+                    )
+                })
+                .collect(),
+        }),
     ))
 }
 
@@ -1669,6 +1713,90 @@ pub(crate) async fn list_references(
 // POST /api/workspaces/{ws}/tasks/{readable_id}/references
 // ---------------------------------------------------------------------------
 
+struct ResolvedReferenceTarget {
+    kind: atlas_domain::entities::boards_tasks::ReferenceKind,
+    target_task_id: Option<TaskId>,
+    target_document_id: Option<DocumentId>,
+    target_readable_id: Option<String>,
+    target_title: Option<String>,
+}
+
+async fn resolve_reference_target(
+    state: &AppState,
+    principal: &Principal,
+    membership: Option<MemberRole>,
+    workspace: &Workspace,
+    body: &CreateReferenceRequest,
+) -> Result<ResolvedReferenceTarget, ApiError> {
+    use atlas_domain::entities::boards_tasks::ReferenceKind;
+
+    let kind = match body.kind.as_str() {
+        "relates" => ReferenceKind::Relates,
+        "blocks" => ReferenceKind::Blocks,
+        "parent" => ReferenceKind::Parent,
+        "spec" => ReferenceKind::Spec,
+        "docs" => ReferenceKind::Docs,
+        other => {
+            return Err(ApiError::InvalidInput {
+                message: format!(
+                    "unknown reference kind: {other}; must be relates|blocks|parent|spec|docs"
+                ),
+            });
+        }
+    };
+
+    let has_task_target = body.target_task_readable_id.is_some();
+    let has_document_target = body.target_document_id.is_some();
+    if has_task_target == has_document_target {
+        return Err(ApiError::InvalidInput {
+            message:
+                "exactly one of target_task_readable_id or target_document_id must be provided"
+                    .into(),
+        });
+    }
+
+    let ctx = WorkspaceCtx::new(workspace.id, principal_to_actor(principal));
+    if let Some(readable_id) = &body.target_task_readable_id {
+        let target = PgTaskRepo::new((*state.db).clone())
+            .find_by_readable_id(&ctx, readable_id)
+            .await
+            .map_err(ApiError::Domain)?
+            .ok_or(ApiError::NotFound)?;
+        let chain =
+            build_board_chain(&state.db, workspace, target.board_id, target.project_id).await?;
+        if !can_view_reference_target(state, principal, membership, workspace, &chain).await? {
+            return Err(ApiError::NotFound);
+        }
+
+        return Ok(ResolvedReferenceTarget {
+            kind,
+            target_task_id: Some(target.id),
+            target_document_id: None,
+            target_readable_id: Some(target.readable_id),
+            target_title: Some(target.title),
+        });
+    }
+
+    let document_id = DocumentId(body.target_document_id.ok_or(ApiError::NotFound)?);
+    let target = PgDocumentRepo::new((*state.db).clone(), 0)
+        .get(&ctx, document_id)
+        .await
+        .map_err(ApiError::Domain)?
+        .ok_or(ApiError::NotFound)?;
+    let chain = build_document_chain(&state.db, workspace, &target).await?;
+    if !can_view_reference_target(state, principal, membership, workspace, &chain).await? {
+        return Err(ApiError::NotFound);
+    }
+
+    Ok(ResolvedReferenceTarget {
+        kind,
+        target_task_id: None,
+        target_document_id: Some(document_id),
+        target_readable_id: None,
+        target_title: Some(target.title),
+    })
+}
+
 #[utoipa::path(
     post,
     path = "/api/workspaces/{ws}/tasks/{readable_id}/references",
@@ -1828,6 +1956,125 @@ pub(crate) async fn create_reference(
             target_title,
         )),
     ))
+}
+
+fn reference_batch_problem(index: usize, error: ApiError) -> CreateReferenceBatchResultDto {
+    let (status, r#type, title, hint) = match error {
+        ApiError::NotFound => (
+            404,
+            "urn:atlas:error:not-found".into(),
+            "Not Found".into(),
+            Some("Check the identifier — it may not exist or you may not have access.".into()),
+        ),
+        ApiError::InvalidInput { .. } | ApiError::Domain(DomainError::InvalidInput { .. }) => (
+            422,
+            "urn:atlas:error:invalid-input".into(),
+            "Invalid Input".into(),
+            None,
+        ),
+        ApiError::Conflict | ApiError::Domain(DomainError::AlreadyExists { .. }) => (
+            409,
+            "urn:atlas:error:already-exists".into(),
+            "Already Exists".into(),
+            Some("An item with this name already exists here — choose a different name.".into()),
+        ),
+        ApiError::Domain(DomainError::NotFound { .. }) => (
+            404,
+            "urn:atlas:error:not-found".into(),
+            "Not Found".into(),
+            Some("Check the identifier — it may not exist or you may not have access.".into()),
+        ),
+        _ => (
+            500,
+            "urn:atlas:error:internal".into(),
+            "Internal Server Error".into(),
+            None,
+        ),
+    };
+
+    CreateReferenceBatchResultDto::Problem {
+        index,
+        status,
+        r#type,
+        title,
+        hint,
+    }
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/workspaces/{ws}/tasks/{readable_id}/references/batch",
+    tag = "tasks",
+    security(("bearer_auth" = [])),
+    request_body = CreateReferenceBatchRequest,
+    responses(
+        (status = 200, body = Vec<CreateReferenceBatchResultDto>),
+        (status = 413),
+        (status = 422),
+    )
+)]
+pub(crate) async fn create_references_batch(
+    auth: Authorized<TaskRes, EditorMin, TasksUpdate>,
+    State(state): State<AppState>,
+    Json(body): Json<CreateReferenceBatchRequest>,
+) -> Result<Json<Vec<CreateReferenceBatchResultDto>>, ApiError> {
+    if body.references.len() > 100 {
+        return Err(ApiError::InvalidInput {
+            message: "references must contain at most 100 items".into(),
+        });
+    }
+
+    let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
+    let mut results = Vec::with_capacity(body.references.len());
+
+    for (index, request) in body.references.iter().enumerate() {
+        let resolved = match resolve_reference_target(
+            &state,
+            &auth.principal,
+            auth.membership.clone(),
+            &auth.workspace,
+            request,
+        )
+        .await
+        {
+            Ok(resolved) => resolved,
+            Err(error) => {
+                results.push(reference_batch_problem(index, error));
+                continue;
+            }
+        };
+
+        let result = state
+            .task_service()
+            .add_reference(
+                &ctx,
+                NewTaskReference {
+                    source_task_id: auth.resource.0.id,
+                    kind: resolved.kind,
+                    target_task_id: resolved.target_task_id,
+                    target_document_id: resolved.target_document_id,
+                },
+            )
+            .await;
+
+        match result {
+            Ok(reference) => results.push(CreateReferenceBatchResultDto::Success {
+                index,
+                reference: reference_to_dto(
+                    reference,
+                    true,
+                    resolved.target_readable_id,
+                    resolved.target_title,
+                ),
+            }),
+            Err(DomainError::Forbidden { .. }) => {
+                results.push(reference_batch_problem(index, ApiError::Conflict));
+            }
+            Err(error) => results.push(reference_batch_problem(index, ApiError::Domain(error))),
+        }
+    }
+
+    Ok(Json(results))
 }
 
 // ---------------------------------------------------------------------------

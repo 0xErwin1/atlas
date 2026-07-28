@@ -333,6 +333,7 @@ async fn agent_create_task(
             ws_slug,
             board_id,
             CreateTaskRequest {
+                references: vec![],
                 column_id,
                 title: title.to_string(),
                 description: None,

@@ -306,6 +306,7 @@ async fn update_project_task_prefix_new_tasks_use_new_prefix() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Before rename".into(),
                 description: None,
@@ -336,6 +337,7 @@ async fn update_project_task_prefix_new_tasks_use_new_prefix() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "After rename".into(),
                 description: None,

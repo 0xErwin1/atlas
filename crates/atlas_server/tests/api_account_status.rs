@@ -81,6 +81,7 @@ async fn seed_task(
             ws,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: name.to_string(),
                 description: None,
@@ -667,6 +668,7 @@ async fn board_summary_marks_disabled_assignee_deactivated() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Task T08".to_string(),
                 description: None,

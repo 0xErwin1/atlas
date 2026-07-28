@@ -204,7 +204,10 @@ describe('boards store — task context-menu actions', () => {
       },
       error: undefined,
     });
-    POST.mockResolvedValueOnce({ data: { readable_id: 'AB-9' }, error: undefined });
+    POST.mockResolvedValueOnce({
+      data: { task: { readable_id: 'AB-9' }, references: [] },
+      error: undefined,
+    });
     GET.mockResolvedValueOnce({ data: { items: [] }, error: undefined });
 
     const created = await store.duplicateTask('ws', 'board-1', 'AB-1');
@@ -219,7 +222,10 @@ describe('boards store — task context-menu actions', () => {
   it('createTask posts the column and title, reloads, and returns the readable id', async () => {
     const store = useBoardsStore();
 
-    POST.mockResolvedValueOnce({ data: { readable_id: 'AB-7' }, error: undefined });
+    POST.mockResolvedValueOnce({
+      data: { task: { readable_id: 'AB-7' }, references: [] },
+      error: undefined,
+    });
     GET.mockResolvedValueOnce({ data: { items: [] }, error: undefined });
 
     const created = await store.createTask('ws', 'board-1', 'col-2', 'New task');

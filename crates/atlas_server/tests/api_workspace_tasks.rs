@@ -159,6 +159,7 @@ async fn seed_workspace(
             &ws.slug,
             board1.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col1_id,
                 title: "User task 1".to_string(),
                 description: None,
@@ -179,6 +180,7 @@ async fn seed_workspace(
             &ws.slug,
             board1.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col2_id,
                 title: "User task 2".to_string(),
                 description: None,
@@ -200,6 +202,7 @@ async fn seed_workspace(
             &ws.slug,
             board2.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col3_id,
                 title: "Agent task 1".to_string(),
                 description: None,
@@ -220,6 +223,7 @@ async fn seed_workspace(
             &ws.slug,
             board2.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col3_id,
                 title: "Agent task 2".to_string(),
                 description: None,

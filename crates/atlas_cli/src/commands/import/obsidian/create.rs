@@ -362,6 +362,7 @@ pub(crate) async fn execute_boards_and_tasks(
                     properties: None,
                     before: None,
                     after: None,
+                    references: vec![],
                 },
             )
             .await?;

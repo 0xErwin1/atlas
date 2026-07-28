@@ -2907,6 +2907,7 @@ impl AtlasMcp {
             properties,
             before: None,
             after: None,
+            references: vec![],
         };
 
         let task = client

@@ -1,9 +1,10 @@
 use atlas_domain::{
     DomainError, WorkspaceCtx,
     entities::boards_tasks::{
-        ActivityKind, ActivityPayload, AssigneeRef, NewTask, NewTaskActivity, NewTaskAssignee,
-        NewTaskChecklistItem, NewTaskReference, PositionBetween, ReferenceKind, Task, TaskActivity,
-        TaskAssignee, TaskChecklistItem, TaskChecklistItemPatch, TaskPatch, TaskReference,
+        ActivityKind, ActivityPayload, AssigneeRef, InitialTaskReference, NewTask, NewTaskActivity,
+        NewTaskAssignee, NewTaskChecklistItem, NewTaskReference, PositionBetween, ReferenceKind,
+        Task, TaskActivity, TaskAssignee, TaskChecklistItem, TaskChecklistItemPatch, TaskPatch,
+        TaskReference,
     },
     entities::comments::{Comment, CommentOwner},
     entities::events::{
@@ -41,6 +42,12 @@ pub struct PromotionResult {
     pub checklist_item: TaskChecklistItem,
 }
 
+/// The task and references created in a single task-creation transaction.
+pub struct CreateTaskWithReferencesResult {
+    pub task: Task,
+    pub references: Vec<TaskReference>,
+}
+
 /// Coordinates multi-table transactions for task mutations.
 ///
 /// Every state-changing method opens one `DatabaseTransaction`, runs the core
@@ -70,6 +77,19 @@ impl TaskService {
 
     /// Creates a task and appends a `Created` activity in the same transaction.
     pub async fn create(&self, ctx: &WorkspaceCtx, new: NewTask) -> Result<Task, DomainError> {
+        Ok(self
+            .create_with_references(ctx, new, Vec::new())
+            .await?
+            .task)
+    }
+
+    /// Creates a task and its pre-validated initial references atomically.
+    pub async fn create_with_references(
+        &self,
+        ctx: &WorkspaceCtx,
+        new: NewTask,
+        initial_references: Vec<InitialTaskReference>,
+    ) -> Result<CreateTaskWithReferencesResult, DomainError> {
         let txn = self.conn.begin().await.map_err(db_err)?;
 
         let target_board_id = new.board_id;
@@ -85,6 +105,23 @@ impl TaskService {
         .await?;
 
         let task = PgTaskRepo::create_in(&txn, ctx, new, None).await?;
+
+        let mut references = Vec::with_capacity(initial_references.len());
+        for reference in initial_references {
+            references.push(
+                PgTaskReferenceRepo::create_in(
+                    &txn,
+                    ctx,
+                    NewTaskReference {
+                        source_task_id: task.id,
+                        kind: reference.kind,
+                        target_task_id: reference.target_task_id,
+                        target_document_id: reference.target_document_id,
+                    },
+                )
+                .await?,
+            );
+        }
 
         sync_task_description_links(&txn, ctx, task.id, &task.description).await?;
 
@@ -115,7 +152,7 @@ impl TaskService {
         .await?;
 
         txn.commit().await.map_err(db_err)?;
-        Ok(task)
+        Ok(CreateTaskWithReferencesResult { task, references })
     }
 
     /// Creates a sub-task under `parent`, inheriting the parent's board and column,

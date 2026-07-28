@@ -251,6 +251,7 @@ async fn task_custom_values_validated_on_create_and_update() {
             &ws.slug,
             board_id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col_id,
                 title: "Has custom values".into(),
                 description: None,
@@ -337,6 +338,7 @@ async fn task_custom_values_validated_on_create_and_update() {
             &ws.slug,
             board_id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col_id,
                 title: "Bad".into(),
                 description: None,

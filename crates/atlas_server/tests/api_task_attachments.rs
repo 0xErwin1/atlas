@@ -71,6 +71,7 @@ async fn task_attachment_upload_list_download_delete_roundtrip() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Task with attachment".to_string(),
                 description: None,
@@ -243,6 +244,7 @@ async fn task_attachment_upload_list_download_delete_roundtrip() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Other task".to_string(),
                 description: None,
@@ -320,6 +322,7 @@ async fn task_attachment_upload_list_download_delete_roundtrip() {
             &other_ws.slug,
             other_board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: other_column.id,
                 title: "Other workspace task".to_string(),
                 description: None,
@@ -508,6 +511,7 @@ async fn task_attachment_rename_respects_configured_extension_allowlist() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: column.id,
                 title: "Allowlist rename".to_string(),
                 description: None,

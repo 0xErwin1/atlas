@@ -257,6 +257,7 @@ async fn rename_tag_updates_name_and_backfills_task_labels() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Task 1".into(),
                 description: None,
@@ -276,6 +277,7 @@ async fn rename_tag_updates_name_and_backfills_task_labels() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Task 2".into(),
                 description: None,
@@ -394,6 +396,7 @@ async fn rename_tag_dedup_when_new_name_already_present_in_task() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Task with both labels".into(),
                 description: None,
@@ -541,6 +544,7 @@ async fn recolor_tag_sets_color_without_backfill() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Task".into(),
                 description: None,
@@ -652,6 +656,7 @@ async fn soft_delete_tag_removes_it_from_list_but_keeps_task_labels() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Task".into(),
                 description: None,
@@ -1000,6 +1005,7 @@ async fn list_used_labels_returns_distinct_labels_across_tasks() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "T1".into(),
                 description: None,
@@ -1019,6 +1025,7 @@ async fn list_used_labels_returns_distinct_labels_across_tasks() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "T2".into(),
                 description: None,
@@ -1102,6 +1109,7 @@ async fn list_used_labels_excludes_soft_deleted_task_labels() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Live".into(),
                 description: None,
@@ -1121,6 +1129,7 @@ async fn list_used_labels_excludes_soft_deleted_task_labels() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "ToDelete".into(),
                 description: None,
@@ -1232,6 +1241,7 @@ async fn list_used_labels_isolated_per_workspace() {
             &ws_a.slug,
             board_a.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col_a.id,
                 title: "Task in A".into(),
                 description: None,

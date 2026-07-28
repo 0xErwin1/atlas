@@ -15,9 +15,9 @@ use atlas_api::{
             ActivityEntryDto, AddAssigneeRequest, AssigneeDto, BoardDto, BoardSummaryDto,
             ChecklistItemDto, ColumnDto, CommentDto, CommentFeedEntryDto, CreateBoardRequest,
             CreateChecklistItemRequest, CreateColumnRequest, CreateCommentRequest,
-            CreateReferenceRequest, CreateSubtaskRequest, CreateTaskRequest, MoveBoardRequest,
-            MoveTaskRequest, PromoteChecklistItemRequest, PromotionDto, ReferenceDto,
-            RenameTaskAttachmentRequest, TaskAttachmentDto, TaskBacklinkDto, TaskDto,
+            CreateReferenceRequest, CreateSubtaskRequest, CreateTaskRequest, CreateTaskResponseDto,
+            MoveBoardRequest, MoveTaskRequest, PromoteChecklistItemRequest, PromotionDto,
+            ReferenceDto, RenameTaskAttachmentRequest, TaskAttachmentDto, TaskBacklinkDto, TaskDto,
             TaskSummaryDto, UnifiedReferenceDto, UpdateBoardRequest, UpdateChecklistItemRequest,
             UpdateColumnRequest, UpdateCommentRequest, UpdateTaskRequest, WorkspaceTaskQueryParams,
         },
@@ -2414,7 +2414,8 @@ impl AtlasClient {
             .json(&body)
             .send()
             .await?;
-        self.decode_response(response, "create_task").await
+        let created: CreateTaskResponseDto = self.decode_response(response, "create_task").await?;
+        Ok(created.task)
     }
 
     /// `GET /api/workspaces/{ws}/boards/{board_id}/tasks`

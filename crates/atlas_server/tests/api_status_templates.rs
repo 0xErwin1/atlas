@@ -631,6 +631,7 @@ async fn apply_keeps_existing_columns_with_tasks_intact() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: existing_col.id,
                 title: "Task 1".to_string(),
                 description: None,

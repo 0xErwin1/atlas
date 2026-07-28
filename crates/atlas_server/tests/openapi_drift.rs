@@ -79,6 +79,7 @@ const EXPECTED_SCHEMAS: &[&str] = &[
     "TaskSummaryDto",
     "TaskPropertiesDto",
     "CreateTaskRequest",
+    "CreateTaskResponseDto",
     "UpdateTaskRequest",
     "MoveTaskRequest",
     "AssigneeDto",
@@ -90,6 +91,8 @@ const EXPECTED_SCHEMAS: &[&str] = &[
     "RenameTaskAttachmentRequest",
     "TaskBacklinkDto",
     "CreateReferenceRequest",
+    "CreateReferenceBatchRequest",
+    "CreateReferenceBatchResultDto",
     "ChecklistItemDto",
     "CreateChecklistItemRequest",
     "CreateSubtaskRequest",
@@ -347,6 +350,35 @@ fn compact_document_operation_documents_the_metadata_only_contract() {
             .pointer("/components/schemas/DocumentCompactDto/properties/content")
             .is_none(),
         "the compact schema must not expose content"
+    );
+}
+
+#[test]
+fn reference_batch_operation_documents_its_bounded_result_contract() {
+    let document = serde_json::to_value(openapi()).expect("serialize OpenAPI document");
+    let batch = operation(
+        &document,
+        "/api/workspaces/{ws}/tasks/{readable_id}/references/batch",
+        "post",
+    );
+
+    assert_operation_statuses(
+        &document,
+        "/api/workspaces/{ws}/tasks/{readable_id}/references/batch",
+        "post",
+        &[200, 413, 422],
+    );
+    assert_eq!(
+        batch.pointer("/requestBody/content/application~1json/schema/$ref"),
+        Some(&Value::String(
+            "#/components/schemas/CreateReferenceBatchRequest".into()
+        ))
+    );
+    assert!(
+        batch
+            .pointer("/responses/200/content/application~1json/schema/items/$ref")
+            .is_some_and(|schema| schema == "#/components/schemas/CreateReferenceBatchResultDto"),
+        "the batch success response must expose one typed result per input item"
     );
 }
 

@@ -451,6 +451,11 @@ pub fn app(state: AppState) -> Router {
                 .post(routes::tasks::create_reference),
         )
         .route(
+            "/api/workspaces/{ws}/tasks/{readable_id}/references/batch",
+            axum::routing::post(routes::tasks::create_references_batch)
+                .layer(axum::extract::DefaultBodyLimit::max(1024 * 1024)),
+        )
+        .route(
             "/api/workspaces/{ws}/tasks/{readable_id}/references/{reference_id}",
             axum::routing::delete(routes::tasks::delete_reference),
         )

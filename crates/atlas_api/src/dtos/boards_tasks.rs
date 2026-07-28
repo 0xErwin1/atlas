@@ -522,6 +522,50 @@ pub struct CreateTaskRequest {
     pub before: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub after: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub references: Vec<CreateReferenceRequest>,
+}
+
+/// The task and its initial references created atomically.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct CreateTaskResponseDto {
+    pub task: TaskDto,
+    pub references: Vec<ReferenceDto>,
+}
+
+#[cfg(test)]
+mod create_task_request_tests {
+    use super::*;
+
+    #[test]
+    fn initial_references_are_serialized_with_task_creation() {
+        let request = CreateTaskRequest {
+            column_id: uuid::Uuid::nil(),
+            title: "Source".into(),
+            description: None,
+            properties: None,
+            before: None,
+            after: None,
+            references: vec![CreateReferenceRequest {
+                kind: "relates".into(),
+                target_task_readable_id: Some("ATL-2".into()),
+                target_document_id: None,
+            }],
+        };
+
+        assert_eq!(
+            serde_json::to_value(request).expect("serialize task request"),
+            serde_json::json!({
+                "column_id": uuid::Uuid::nil(),
+                "title": "Source",
+                "references": [{
+                    "kind": "relates",
+                    "target_task_readable_id": "ATL-2"
+                }]
+            })
+        );
+    }
 }
 
 /// Captures field presence for nullable patch fields: an absent field stays
@@ -593,6 +637,31 @@ pub struct CreateReferenceRequest {
     pub target_task_readable_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target_document_id: Option<uuid::Uuid>,
+}
+
+/// Request body for `POST .../references/batch`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct CreateReferenceBatchRequest {
+    pub references: Vec<CreateReferenceRequest>,
+}
+
+/// One ordered result from a task-reference batch request.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "outcome", rename_all = "snake_case")]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub enum CreateReferenceBatchResultDto {
+    Success {
+        index: usize,
+        reference: ReferenceDto,
+    },
+    Problem {
+        index: usize,
+        status: u16,
+        r#type: String,
+        title: String,
+        hint: Option<String>,
+    },
 }
 
 /// Request body for `POST /api/workspaces/{ws}/tasks/{readable_id}/subtasks`.

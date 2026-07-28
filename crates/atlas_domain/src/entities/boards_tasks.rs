@@ -190,6 +190,14 @@ pub struct NewTaskReference {
     pub target_document_id: Option<DocumentId>,
 }
 
+/// A validated reference target supplied while creating a task.
+#[derive(Debug, Clone)]
+pub struct InitialTaskReference {
+    pub kind: ReferenceKind,
+    pub target_task_id: Option<TaskId>,
+    pub target_document_id: Option<DocumentId>,
+}
+
 /// Who is assigned: a user or an api key acting as an agent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "type", content = "id")]

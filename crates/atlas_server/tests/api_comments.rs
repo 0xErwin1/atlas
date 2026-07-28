@@ -126,6 +126,7 @@ async fn seed_task(
             ws_slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Task with comments".to_string(),
                 description: None,
@@ -1023,6 +1024,7 @@ async fn full_feeds_redact_deleted_targets_for_human_and_api_key_viewers() {
                 .items[0]
                 .id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: owner
                     .list_columns(
                         &ws.slug,
@@ -1994,6 +1996,7 @@ async fn viewer_cannot_create_comment() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Viewer target".to_string(),
                 description: None,

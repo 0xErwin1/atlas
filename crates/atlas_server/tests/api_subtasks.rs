@@ -70,6 +70,7 @@ async fn setup_parent(
             ws_slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Parent".to_string(),
                 description: None,

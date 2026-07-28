@@ -129,6 +129,7 @@ async fn seed_fixtures(
             ws_slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: column.id,
                 title: "Sweep task".into(),
                 description: None,
@@ -308,6 +309,7 @@ enum Case {
     RemoveAssignee,
     ListReferences,
     CreateReference,
+    CreateReferencesBatch,
     DeleteReference,
     UploadTaskAttachment,
     ListTaskAttachments,
@@ -449,6 +451,7 @@ impl Case {
         Case::RemoveAssignee,
         Case::ListReferences,
         Case::CreateReference,
+        Case::CreateReferencesBatch,
         Case::DeleteReference,
         Case::UploadTaskAttachment,
         Case::ListTaskAttachments,
@@ -583,6 +586,7 @@ impl Case {
             Case::RemoveAssignee => ("DELETE", "tasks:update"),
             Case::ListReferences => ("GET", "tasks:read"),
             Case::CreateReference => ("POST", "tasks:update"),
+            Case::CreateReferencesBatch => ("POST", "tasks:update"),
             Case::DeleteReference => ("DELETE", "tasks:update"),
             Case::UploadTaskAttachment => ("POST", "tasks:update"),
             Case::ListTaskAttachments => ("GET", "tasks:read"),
@@ -732,6 +736,7 @@ async fn invoke(
                 ws,
                 fx.board_id,
                 CreateTaskRequest {
+                    references: vec![],
                     column_id: nil,
                     title: "x".into(),
                     description: None,
@@ -804,6 +809,19 @@ async fn invoke(
             )
             .await
             .map(|_| ()),
+        Case::CreateReferencesBatch => {
+            raw_call(
+                http,
+                base_url,
+                token,
+                "POST",
+                &format!(
+                    "/api/workspaces/{ws}/tasks/{}/references/batch",
+                    fx.task_readable_id
+                ),
+            )
+            .await
+        }
         Case::DeleteReference => client.delete_reference(ws, &fx.task_readable_id, nil).await,
         Case::UploadTaskAttachment => client
             .upload_task_attachment(
@@ -1957,6 +1975,96 @@ async fn partial_document_edit_requires_docs_update_capability() {
             .detail
             .as_deref()
             .is_some_and(|detail| detail.contains("lacks required scope: docs:update"))
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn reference_batch_requires_tasks_update_capability() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner, ws, owner_user) =
+        login_user_with_workspace(&server, &db, "cap-reference-batch-owner").await;
+    let fx = seed_fixtures(&owner, &db, &ws.slug, ws.id.0, owner_user.id).await;
+    let http = reqwest::Client::new();
+    let body = serde_json::json!({
+        "references": [{
+            "kind": "docs",
+            "target_task_readable_id": null,
+            "target_document_id": fx.document_ref,
+        }]
+    });
+
+    let update_token = create_scoped_agent(
+        &db,
+        owner_user.id,
+        "cap-reference-batch-update",
+        vec![
+            Capability::ALL
+                .into_iter()
+                .find(|capability| capability.as_str() == "tasks:update")
+                .expect("tasks:update capability"),
+        ],
+    )
+    .await;
+    let update_response = http
+        .post(format!(
+            "{}/api/workspaces/{}/tasks/{}/references/batch",
+            server.base_url(),
+            fx.ws_slug,
+            fx.task_readable_id
+        ))
+        .bearer_auth(&update_token)
+        .json(&body)
+        .send()
+        .await
+        .expect("tasks:update batch request");
+    assert_eq!(update_response.status(), reqwest::StatusCode::OK);
+    let result: Vec<atlas_api::dtos::boards_tasks::CreateReferenceBatchResultDto> = update_response
+        .json()
+        .await
+        .expect("decode tasks:update batch result");
+    assert!(matches!(
+        result.as_slice(),
+        [atlas_api::dtos::boards_tasks::CreateReferenceBatchResultDto::Success { index: 0, .. }]
+    ));
+
+    let wrong_token = create_scoped_agent(
+        &db,
+        owner_user.id,
+        "cap-reference-batch-wrong",
+        vec![
+            Capability::ALL
+                .into_iter()
+                .find(|capability| capability.as_str() == "tasks:read")
+                .expect("tasks:read capability"),
+        ],
+    )
+    .await;
+    let wrong_response = http
+        .post(format!(
+            "{}/api/workspaces/{}/tasks/{}/references/batch",
+            server.base_url(),
+            fx.ws_slug,
+            fx.task_readable_id
+        ))
+        .bearer_auth(&wrong_token)
+        .json(&body)
+        .send()
+        .await
+        .expect("wrong-scope batch request");
+    assert_eq!(wrong_response.status(), reqwest::StatusCode::FORBIDDEN);
+    let problem: ProblemDetails = wrong_response
+        .json()
+        .await
+        .expect("wrong-scope batch problem");
+    assert!(
+        problem
+            .detail
+            .as_deref()
+            .is_some_and(|detail| detail.contains("lacks required scope: tasks:update"))
     );
 
     db.teardown().await;

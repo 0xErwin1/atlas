@@ -580,6 +580,7 @@ async fn task_comment_attachment_routes_round_trip_raw_bytes() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: column.id,
                 title: "Comment attachment task".into(),
                 description: None,
@@ -893,6 +894,7 @@ async fn task_comment_draft_create_returns_reserved_comment_identity() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: column.id,
                 title: "Comment draft task".into(),
                 description: None,
@@ -1097,6 +1099,7 @@ async fn task_draft_upload_conceals_missing_or_mismatched_drafts_without_residue
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: column.id,
                 title: "Draft owner task".into(),
                 description: None,
@@ -1112,6 +1115,7 @@ async fn task_draft_upload_conceals_missing_or_mismatched_drafts_without_residue
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: column.id,
                 title: "Wrong parent task".into(),
                 description: None,
@@ -1192,6 +1196,7 @@ async fn task_draft_upload_conceals_missing_or_mismatched_drafts_without_residue
             &other_workspace.slug,
             other_board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: other_column.id,
                 title: "Other workspace task".into(),
                 description: None,
@@ -1466,6 +1471,7 @@ async fn task_comment_finalization_transfers_draft_attachments_and_replays() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: column.id,
                 title: "Finalization task".into(),
                 description: None,
@@ -1482,6 +1488,7 @@ async fn task_comment_finalization_transfers_draft_attachments_and_replays() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: column.id,
                 title: "Finalization link target".into(),
                 description: None,
@@ -2219,6 +2226,7 @@ async fn task_draft_upload_losing_to_finalization_is_conflict_without_residue() 
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: column.id,
                 title: "Finalization race task".into(),
                 description: None,
@@ -2470,6 +2478,7 @@ async fn task_canonical_draft_operations_losing_to_finalization_are_conflicts() 
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: column.id,
                 title: "Canonical finalization race task".into(),
                 description: None,

@@ -463,8 +463,8 @@ export const useBoardsStore = defineStore('boards', () => {
 
     await loadTasks(ws, boardId);
     await evictActiveBoardCache(boardId);
-    if (data.readable_id !== undefined) await invalidateTaskCaches(ws, data.readable_id, boardId);
-    return data.readable_id ?? null;
+    await invalidateTaskCaches(ws, data.task.readable_id, boardId);
+    return data.task.readable_id;
   }
 
   function fetchBoard(ws: string, boardId: string) {
@@ -1390,15 +1390,15 @@ export const useBoardsStore = defineStore('boards', () => {
 
     if (source.priority !== undefined && source.priority !== null) {
       await wrappedClient.PATCH('/api/workspaces/{ws}/tasks/{readable_id}', {
-        params: { path: { ws, readable_id: created.readable_id } },
+        params: { path: { ws, readable_id: created.task.readable_id } },
         body: { priority: source.priority },
       });
     }
 
     await loadTasks(ws, boardId);
     await evictActiveBoardCache(boardId);
-    if (created.readable_id !== undefined) await invalidateTaskCaches(ws, created.readable_id, boardId);
-    return created.readable_id ?? null;
+    await invalidateTaskCaches(ws, created.task.readable_id, boardId);
+    return created.task.readable_id;
   }
 
   /**

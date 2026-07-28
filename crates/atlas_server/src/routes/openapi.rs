@@ -162,6 +162,7 @@ use atlas_api::{
         crate::routes::tasks::remove_assignee,
         crate::routes::tasks::list_references,
         crate::routes::tasks::create_reference,
+        crate::routes::tasks::create_references_batch,
         crate::routes::tasks::delete_reference,
         crate::routes::tasks::upload_attachment,
         crate::routes::tasks::list_attachments,

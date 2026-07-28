@@ -1316,6 +1316,7 @@ async fn deleted_project_hides_folder_document_board_and_task_direct_lookups() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: column.id,
                 title: "Concealed Task".to_string(),
                 description: None,
@@ -1435,6 +1436,7 @@ async fn deleted_folder_hides_folder_document_board_and_task_direct_lookups() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: column.id,
                 title: "Concealed Task".to_string(),
                 description: None,

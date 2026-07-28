@@ -969,6 +969,7 @@ async fn task_move_reaches_authenticated_sse_through_outbox_listener() {
             &ws.slug,
             board_id.0,
             CreateTaskRequest {
+                references: vec![],
                 column_id: from_column.id,
                 title: "Move through live chain".to_string(),
                 description: None,

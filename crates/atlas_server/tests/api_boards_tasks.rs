@@ -11,9 +11,9 @@ use atlas_api::dtos::{
     CreateProjectRequest, CreateUserApiKeyRequest, InitialGrantRequest,
     boards_tasks::{
         AddAssigneeRequest, CreateBoardRequest, CreateChecklistItemRequest, CreateColumnRequest,
-        CreateReferenceRequest, CreateSubtaskRequest, CreateTaskRequest, MoveTaskRequest,
-        PromoteChecklistItemRequest, UpdateBoardRequest, UpdateChecklistItemRequest,
-        UpdateColumnRequest, UpdateTaskRequest,
+        CreateReferenceBatchResultDto, CreateReferenceRequest, CreateSubtaskRequest,
+        CreateTaskRequest, MoveTaskRequest, PromoteChecklistItemRequest, UpdateBoardRequest,
+        UpdateChecklistItemRequest, UpdateColumnRequest, UpdateTaskRequest,
     },
     documents::CreateDocumentRequest,
 };
@@ -51,6 +51,22 @@ fn assert_same_not_found_problem(expected: &ProblemDetails, actual: &ProblemDeta
     assert_eq!(actual.detail, expected.detail);
     assert_eq!(actual.instance, expected.instance);
     assert_eq!(actual.hint, expected.hint);
+}
+
+async fn task_reference_count(db: &support::TestDb) -> i64 {
+    use sea_orm::{ConnectionTrait, Statement};
+
+    let row = db
+        .conn()
+        .query_one_raw(Statement::from_string(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT COUNT(*) AS cnt FROM task_references".to_string(),
+        ))
+        .await
+        .expect("query task reference count")
+        .expect("task reference count row");
+
+    row.try_get("", "cnt").expect("task reference count")
 }
 
 /// Creates and logs in a second user with the given membership role in `ws`.
@@ -177,6 +193,927 @@ async fn create_and_get_board_returns_201_and_board_data() {
 }
 
 #[tokio::test]
+async fn task_creation_initial_references_are_atomic_and_legacy_requests_remain_compatible() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "initial-refs").await;
+
+    client
+        .create_project(
+            &ws.slug,
+            CreateProjectRequest {
+                name: "Initial references".into(),
+                slug: "initial-refs".into(),
+                task_prefix: "IR".into(),
+                visibility: Some("private".into()),
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create project");
+    let board = client
+        .create_board(
+            &ws.slug,
+            "initial-refs",
+            CreateBoardRequest {
+                folder_id: None,
+                name: "Board".into(),
+            },
+        )
+        .await
+        .expect("create board");
+    let column = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "Todo".into(),
+                color: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create column");
+
+    let target = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: column.id,
+                title: "Target".into(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+                references: vec![],
+            },
+        )
+        .await
+        .expect("create target");
+
+    let source = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: column.id,
+                title: "Source".into(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+                references: vec![CreateReferenceRequest {
+                    kind: "relates".into(),
+                    target_task_readable_id: Some(target.readable_id.clone()),
+                    target_document_id: None,
+                }],
+            },
+        )
+        .await
+        .expect("create source with initial reference");
+    let references = client
+        .list_references(&ws.slug, &source.readable_id)
+        .await
+        .expect("list initial reference");
+    assert_eq!(references.len(), 1);
+    assert_eq!(
+        references[0].target_readable_id.as_deref(),
+        Some(target.readable_id.as_str())
+    );
+    assert_eq!(references[0].target_title.as_deref(), Some("Target"));
+
+    let rejected = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: column.id,
+                title: "Rejected".into(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+                references: vec![CreateReferenceRequest {
+                    kind: "relates".into(),
+                    target_task_readable_id: Some("IR-999".into()),
+                    target_document_id: None,
+                }],
+            },
+        )
+        .await;
+    assert!(matches!(rejected, Err(ClientError::Api(problem)) if problem.status == 404));
+
+    let tasks = client
+        .list_tasks(&ws.slug, board.id, None, None)
+        .await
+        .expect("list tasks after rejected initial reference");
+    assert_eq!(
+        tasks.items.len(),
+        2,
+        "rejected task creation must roll back"
+    );
+    assert_eq!(
+        task_reference_count(&db).await,
+        1,
+        "rejected task creation must not write any reference rows"
+    );
+
+    let mixed_rejected = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: column.id,
+                title: "Mixed rejected".into(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+                references: vec![
+                    CreateReferenceRequest {
+                        kind: "relates".into(),
+                        target_task_readable_id: Some(target.readable_id.clone()),
+                        target_document_id: None,
+                    },
+                    CreateReferenceRequest {
+                        kind: "relates".into(),
+                        target_task_readable_id: Some("IR-999".into()),
+                        target_document_id: None,
+                    },
+                ],
+            },
+        )
+        .await;
+    assert!(matches!(mixed_rejected, Err(ClientError::Api(problem)) if problem.status == 404));
+
+    let private_board = client
+        .create_board(
+            &ws.slug,
+            "initial-refs",
+            CreateBoardRequest {
+                folder_id: None,
+                name: "Private board".into(),
+            },
+        )
+        .await
+        .expect("create private board");
+    let private_column = client
+        .create_column(
+            &ws.slug,
+            private_board.id,
+            CreateColumnRequest {
+                name: "Private todo".into(),
+                color: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create private column");
+    let private_target = client
+        .create_task(
+            &ws.slug,
+            private_board.id,
+            CreateTaskRequest {
+                column_id: private_column.id,
+                title: "Private target".into(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+                references: vec![],
+            },
+        )
+        .await
+        .expect("create private target");
+    let (member, member_user) = add_member(
+        &db,
+        &server,
+        ws.id,
+        "initial-refs-member",
+        MemberRole::Member,
+    )
+    .await;
+    grant_board_editor(&db, ws.id, member_user.id, board.id).await;
+
+    let unauthorized_rejected = member
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: column.id,
+                title: "Unauthorized rejected".into(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+                references: vec![CreateReferenceRequest {
+                    kind: "relates".into(),
+                    target_task_readable_id: Some(private_target.readable_id),
+                    target_document_id: None,
+                }],
+            },
+        )
+        .await;
+    assert!(
+        matches!(unauthorized_rejected, Err(ClientError::Api(ref problem)) if problem.status == 404),
+        "inaccessible same-workspace target must be non-leaking, got: {unauthorized_rejected:?}"
+    );
+
+    let (foreign_client, foreign_ws, _) =
+        support::login_user_with_workspace(&server, &db, "initial-refs-foreign").await;
+    foreign_client
+        .create_project(&foreign_ws.slug, project_req("initial-refs-foreign", "IRF"))
+        .await
+        .expect("create foreign project");
+    let foreign_board = foreign_client
+        .create_board(
+            &foreign_ws.slug,
+            "initial-refs-foreign",
+            CreateBoardRequest {
+                folder_id: None,
+                name: "Foreign board".into(),
+            },
+        )
+        .await
+        .expect("create foreign board");
+    let foreign_column = foreign_client
+        .create_column(
+            &foreign_ws.slug,
+            foreign_board.id,
+            CreateColumnRequest {
+                name: "Foreign todo".into(),
+                color: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create foreign column");
+    let foreign_target = foreign_client
+        .create_task(
+            &foreign_ws.slug,
+            foreign_board.id,
+            CreateTaskRequest {
+                column_id: foreign_column.id,
+                title: "Foreign target".into(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+                references: vec![],
+            },
+        )
+        .await
+        .expect("create foreign target");
+
+    let cross_tenant_rejected = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: column.id,
+                title: "Cross-tenant rejected".into(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+                references: vec![CreateReferenceRequest {
+                    kind: "relates".into(),
+                    target_task_readable_id: Some(foreign_target.readable_id),
+                    target_document_id: None,
+                }],
+            },
+        )
+        .await;
+    assert!(
+        matches!(cross_tenant_rejected, Err(ClientError::Api(problem)) if problem.status == 404)
+    );
+
+    let tasks_after_rejections = client
+        .list_tasks(&ws.slug, board.id, None, None)
+        .await
+        .expect("list tasks after all rejected initial references");
+    assert_eq!(
+        tasks_after_rejections.items.len(),
+        2,
+        "every rejected initial-reference request must leave the source board unchanged"
+    );
+    assert_eq!(
+        task_reference_count(&db).await,
+        1,
+        "every rejected initial-reference request must leave reference rows unchanged"
+    );
+
+    let legacy = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: column.id,
+                title: "Legacy".into(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+                references: vec![],
+            },
+        )
+        .await
+        .expect("create task without initial references");
+    assert_eq!(legacy.title, "Legacy");
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn reference_batch_rejects_oversized_envelopes_before_processing_items() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "batch-limits").await;
+
+    client
+        .create_project(&ws.slug, project_req("batch-limits", "BLM"))
+        .await
+        .expect("create project");
+    let board = client
+        .create_board(
+            &ws.slug,
+            "batch-limits",
+            CreateBoardRequest {
+                folder_id: None,
+                name: "Board".into(),
+            },
+        )
+        .await
+        .expect("create board");
+    let column = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "Todo".into(),
+                color: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create column");
+    let source = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: column.id,
+                title: "Source".into(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+                references: vec![],
+            },
+        )
+        .await
+        .expect("create source");
+    let target = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: column.id,
+                title: "Target".into(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+                references: vec![],
+            },
+        )
+        .await
+        .expect("create target");
+
+    let endpoint = format!(
+        "{}/api/workspaces/{}/tasks/{}/references/batch",
+        server.base_url(),
+        ws.slug,
+        source.readable_id
+    );
+    let token = client.token().expect("session token");
+    let valid_reference = serde_json::json!({
+        "kind": "relates",
+        "target_task_readable_id": target.readable_id,
+        "target_document_id": null,
+    });
+    let too_many = reqwest::Client::new()
+        .post(&endpoint)
+        .bearer_auth(token)
+        .json(&serde_json::json!({ "references": vec![valid_reference.clone(); 101] }))
+        .send()
+        .await
+        .expect("submit 101-item batch");
+    assert_eq!(too_many.status(), reqwest::StatusCode::UNPROCESSABLE_ENTITY);
+
+    let references = client
+        .list_references(&ws.slug, &source.readable_id)
+        .await
+        .expect("list references after 101-item rejection");
+    assert!(
+        references.is_empty(),
+        "oversized item-count batch must not process items"
+    );
+
+    let encoded_too_large = serde_json::to_string(&serde_json::json!({
+        "references": [valid_reference],
+        "padding": "x".repeat(1_048_576),
+    }))
+    .expect("serialize oversized request");
+    let too_large = reqwest::Client::new()
+        .post(endpoint)
+        .bearer_auth(client.token().expect("session token"))
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .body(encoded_too_large)
+        .send()
+        .await
+        .expect("submit oversized body");
+    assert_eq!(too_large.status(), reqwest::StatusCode::PAYLOAD_TOO_LARGE);
+
+    let references = client
+        .list_references(&ws.slug, &source.readable_id)
+        .await
+        .expect("list references after body rejection");
+    assert!(
+        references.is_empty(),
+        "oversized encoded body must not process items"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn reference_batch_preserves_input_order_failures_and_current_target_titles() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "batch-results").await;
+
+    client
+        .create_project(&ws.slug, project_req("batch-results", "BRS"))
+        .await
+        .expect("create project");
+    let board = client
+        .create_board(
+            &ws.slug,
+            "batch-results",
+            CreateBoardRequest {
+                folder_id: None,
+                name: "Board".into(),
+            },
+        )
+        .await
+        .expect("create board");
+    let column = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "Todo".into(),
+                color: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create column");
+    let source = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: column.id,
+                title: "Source".into(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+                references: vec![],
+            },
+        )
+        .await
+        .expect("create source");
+    let task_target = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                column_id: column.id,
+                title: "Current task title".into(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+                references: vec![],
+            },
+        )
+        .await
+        .expect("create task target");
+    let document_target = client
+        .create_document(
+            &ws.slug,
+            "batch-results",
+            CreateDocumentRequest {
+                title: "Current document title".into(),
+                folder_id: None,
+                content: None,
+            },
+        )
+        .await
+        .expect("create document target");
+
+    let response = reqwest::Client::new()
+        .post(format!(
+            "{}/api/workspaces/{}/tasks/{}/references/batch",
+            server.base_url(),
+            ws.slug,
+            source.readable_id
+        ))
+        .bearer_auth(client.token().expect("session token"))
+        .json(&serde_json::json!({
+            "references": [
+                {
+                    "kind": "relates",
+                    "target_task_readable_id": task_target.readable_id,
+                    "target_document_id": null,
+                },
+                {
+                    "kind": "relates",
+                    "target_task_readable_id": "BRS-999",
+                    "target_document_id": null,
+                },
+                {
+                    "kind": "docs",
+                    "target_task_readable_id": null,
+                    "target_document_id": document_target.id,
+                }
+            ]
+        }))
+        .send()
+        .await
+        .expect("submit mixed reference batch");
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let results: Vec<CreateReferenceBatchResultDto> = response
+        .json()
+        .await
+        .expect("decode reference batch results");
+
+    assert_eq!(results.len(), 3);
+    match &results[0] {
+        CreateReferenceBatchResultDto::Success { index, reference } => {
+            assert_eq!(*index, 0);
+            assert_eq!(
+                reference.target_title.as_deref(),
+                Some("Current task title")
+            );
+        }
+        other => panic!("first item must succeed, got {other:?}"),
+    }
+    match &results[1] {
+        CreateReferenceBatchResultDto::Problem { index, status, .. } => {
+            assert_eq!(*index, 1);
+            assert_eq!(*status, 404);
+        }
+        other => panic!("second item must fail, got {other:?}"),
+    }
+    match &results[2] {
+        CreateReferenceBatchResultDto::Success { index, reference } => {
+            assert_eq!(*index, 2);
+            assert_eq!(
+                reference.target_title.as_deref(),
+                Some("Current document title")
+            );
+        }
+        other => panic!("third item must succeed, got {other:?}"),
+    }
+
+    let references = client
+        .list_references(&ws.slug, &source.readable_id)
+        .await
+        .expect("list persisted references");
+    assert_eq!(
+        references.len(),
+        2,
+        "failed items must not roll back prior successes"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn reference_batch_conceals_inaccessible_and_cross_tenant_targets() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (owner, ws, _) =
+        support::login_user_with_workspace(&server, &db, "batch-reference-owner").await;
+
+    owner
+        .create_project(
+            &ws.slug,
+            CreateProjectRequest {
+                name: "Private references".into(),
+                slug: "batch-private-references".into(),
+                task_prefix: "BPR".into(),
+                visibility: Some("private".into()),
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create private project");
+
+    let source_board = owner
+        .create_board(
+            &ws.slug,
+            "batch-private-references",
+            CreateBoardRequest {
+                folder_id: None,
+                name: "Source board".into(),
+            },
+        )
+        .await
+        .expect("create source board");
+    let target_board = owner
+        .create_board(
+            &ws.slug,
+            "batch-private-references",
+            CreateBoardRequest {
+                folder_id: None,
+                name: "Target board".into(),
+            },
+        )
+        .await
+        .expect("create target board");
+    let source_column = owner
+        .create_column(
+            &ws.slug,
+            source_board.id,
+            CreateColumnRequest {
+                name: "Source column".into(),
+                color: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create source column");
+    let target_column = owner
+        .create_column(
+            &ws.slug,
+            target_board.id,
+            CreateColumnRequest {
+                name: "Target column".into(),
+                color: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create target column");
+    let source = owner
+        .create_task(
+            &ws.slug,
+            source_board.id,
+            CreateTaskRequest {
+                column_id: source_column.id,
+                title: "Visible source".into(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+                references: vec![],
+            },
+        )
+        .await
+        .expect("create source task");
+    let private_task = owner
+        .create_task(
+            &ws.slug,
+            target_board.id,
+            CreateTaskRequest {
+                column_id: target_column.id,
+                title: "Private task title".into(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+                references: vec![],
+            },
+        )
+        .await
+        .expect("create private task");
+    let private_document = owner
+        .create_document(
+            &ws.slug,
+            "batch-private-references",
+            CreateDocumentRequest {
+                title: "Private document title".into(),
+                folder_id: None,
+                content: None,
+            },
+        )
+        .await
+        .expect("create private document");
+
+    let (editor, editor_user) = add_member(
+        &db,
+        &server,
+        ws.id,
+        "batch-reference-editor",
+        MemberRole::Member,
+    )
+    .await;
+    grant_board_editor(&db, ws.id, editor_user.id, source_board.id).await;
+
+    let (foreign_owner, foreign_ws, _) =
+        support::login_user_with_workspace(&server, &db, "batch-reference-foreign").await;
+    foreign_owner
+        .create_project(
+            &foreign_ws.slug,
+            project_req("batch-reference-foreign", "BRF"),
+        )
+        .await
+        .expect("create foreign project");
+    let foreign_board = foreign_owner
+        .create_board(
+            &foreign_ws.slug,
+            "batch-reference-foreign",
+            CreateBoardRequest {
+                folder_id: None,
+                name: "Foreign board".into(),
+            },
+        )
+        .await
+        .expect("create foreign board");
+    let foreign_column = foreign_owner
+        .create_column(
+            &foreign_ws.slug,
+            foreign_board.id,
+            CreateColumnRequest {
+                name: "Foreign column".into(),
+                color: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create foreign column");
+    let foreign_task = foreign_owner
+        .create_task(
+            &foreign_ws.slug,
+            foreign_board.id,
+            CreateTaskRequest {
+                column_id: foreign_column.id,
+                title: "Foreign task title".into(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+                references: vec![],
+            },
+        )
+        .await
+        .expect("create foreign task");
+    let foreign_document = foreign_owner
+        .create_document(
+            &foreign_ws.slug,
+            "batch-reference-foreign",
+            CreateDocumentRequest {
+                title: "Foreign document title".into(),
+                folder_id: None,
+                content: None,
+            },
+        )
+        .await
+        .expect("create foreign document");
+
+    let response = reqwest::Client::new()
+        .post(format!(
+            "{}/api/workspaces/{}/tasks/{}/references/batch",
+            server.base_url(),
+            ws.slug,
+            source.readable_id
+        ))
+        .bearer_auth(editor.token().expect("editor token"))
+        .json(&serde_json::json!({
+            "references": [
+                { "kind": "relates", "target_task_readable_id": private_task.readable_id, "target_document_id": null },
+                { "kind": "docs", "target_task_readable_id": null, "target_document_id": private_document.id },
+                { "kind": "relates", "target_task_readable_id": foreign_task.readable_id, "target_document_id": null },
+                { "kind": "docs", "target_task_readable_id": null, "target_document_id": foreign_document.id },
+                { "kind": "relates", "target_task_readable_id": "BPR-999", "target_document_id": null }
+            ]
+        }))
+        .send()
+        .await
+        .expect("submit target-isolation batch");
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let results: Vec<CreateReferenceBatchResultDto> = response
+        .json()
+        .await
+        .expect("decode target-isolation results");
+
+    assert_eq!(results.len(), 5);
+    let baseline = match &results[4] {
+        CreateReferenceBatchResultDto::Problem {
+            index,
+            status,
+            r#type,
+            title,
+            hint,
+        } => {
+            assert_eq!(*index, 4);
+            (*status, r#type.clone(), title.clone(), hint.clone())
+        }
+        other => panic!("missing target must be a problem, got {other:?}"),
+    };
+    for (index, result) in results[..4].iter().enumerate() {
+        match result {
+            CreateReferenceBatchResultDto::Problem {
+                index: item_index,
+                status,
+                r#type,
+                title,
+                hint,
+            } => {
+                assert_eq!(*item_index, index);
+                assert_eq!(
+                    (*status, r#type.clone(), title.clone(), hint.clone()),
+                    baseline,
+                    "inaccessible and cross-tenant targets must be indistinguishable from missing targets"
+                );
+            }
+            other => panic!("item {index} must not disclose an inaccessible target: {other:?}"),
+        }
+    }
+    let payload = serde_json::to_string(&results).expect("serialize results");
+    for secret in [
+        "Private task title",
+        "Private document title",
+        "Foreign task title",
+        "Foreign document title",
+        foreign_task.readable_id.as_str(),
+    ] {
+        assert!(
+            !payload.contains(secret),
+            "batch problem payload must not disclose {secret}"
+        );
+    }
+
+    let (viewer, viewer_user) = add_member(
+        &db,
+        &server,
+        ws.id,
+        "batch-reference-viewer",
+        MemberRole::Member,
+    )
+    .await;
+    PgPermissionGrantRepo {
+        conn: db.conn().clone(),
+    }
+    .upsert(NewPermissionGrant {
+        workspace_id: ws.id,
+        user_id: Some(viewer_user.id),
+        api_key_id: None,
+        group_id: None,
+        project_id: None,
+        folder_id: None,
+        document_id: None,
+        board_id: Some(BoardId(source_board.id)),
+        role: ResourceRole::Viewer,
+        created_by_user_id: None,
+        created_by_api_key_id: None,
+    })
+    .await
+    .expect("grant viewer source-board access");
+    let viewer_response = reqwest::Client::new()
+        .post(format!(
+            "{}/api/workspaces/{}/tasks/{}/references/batch",
+            server.base_url(),
+            ws.slug,
+            source.readable_id
+        ))
+        .bearer_auth(viewer.token().expect("viewer token"))
+        .json(&serde_json::json!({
+            "references": [{ "kind": "relates", "target_task_readable_id": source.readable_id, "target_document_id": null }]
+        }))
+        .send()
+        .await
+        .expect("submit viewer batch");
+    assert_eq!(viewer_response.status(), reqwest::StatusCode::FORBIDDEN);
+
+    db.teardown().await;
+}
+
+#[tokio::test]
 async fn list_boards_returns_created_boards() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;
@@ -266,6 +1203,7 @@ async fn list_boards_reports_top_level_non_deleted_task_count() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Top A".to_string(),
                 description: None,
@@ -282,6 +1220,7 @@ async fn list_boards_reports_top_level_non_deleted_task_count() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Top B".to_string(),
                 description: None,
@@ -298,6 +1237,7 @@ async fn list_boards_reports_top_level_non_deleted_task_count() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Deleted".to_string(),
                 description: None,
@@ -624,6 +1564,7 @@ async fn delete_column_with_live_task_is_rejected() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: busy_col.id,
                 title: "Pinned Task".to_string(),
                 description: None,
@@ -710,6 +1651,7 @@ async fn get_task_returns_board_name_and_column_name() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Named Task".to_string(),
                 description: None,
@@ -780,6 +1722,7 @@ async fn create_and_get_task_returns_201_and_task_data() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "First Task".to_string(),
                 description: None,
@@ -850,6 +1793,7 @@ async fn list_tasks_returns_tasks_for_board() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "T1".to_string(),
                 description: None,
@@ -866,6 +1810,7 @@ async fn list_tasks_returns_tasks_for_board() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "T2".to_string(),
                 description: None,
@@ -944,6 +1889,7 @@ async fn list_tasks_includes_labels() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Labeled".to_string(),
                 description: None,
@@ -1016,6 +1962,7 @@ async fn list_tasks_includes_assignees_with_names() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Assigned".to_string(),
                 description: None,
@@ -1103,6 +2050,7 @@ async fn update_task_changes_title() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Original".to_string(),
                 description: None,
@@ -1178,6 +2126,7 @@ async fn delete_task_returns_404_on_subsequent_get() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Delete Me".to_string(),
                 description: None,
@@ -1260,6 +2209,7 @@ async fn move_task_changes_column() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col_a.id,
                 title: "Move Me".to_string(),
                 description: None,
@@ -1348,6 +2298,7 @@ async fn patch_column_reorders_populated_columns_without_moving_tasks() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: first.id,
                 title: "Stationary task".to_string(),
                 description: None,
@@ -1462,6 +2413,7 @@ async fn move_task_with_task_id_anchor_succeeds() {
         .expect("create column");
 
     let make = |title: &str| CreateTaskRequest {
+        references: vec![],
         column_id: col.id,
         title: title.to_string(),
         description: None,
@@ -1571,6 +2523,7 @@ async fn move_task_across_boards_succeeds() {
             &ws.slug,
             board_a.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col_a.id,
                 title: "Cross".to_string(),
                 description: None,
@@ -1664,6 +2617,7 @@ async fn add_and_list_assignees() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Assign Me".to_string(),
                 description: None,
@@ -1752,6 +2706,7 @@ async fn add_duplicate_assignee_returns_409() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Dup Task".to_string(),
                 description: None,
@@ -1837,6 +2792,7 @@ async fn remove_assignee_unassigns_user() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Remove Assignee".to_string(),
                 description: None,
@@ -1921,6 +2877,7 @@ async fn create_and_list_references() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Source".to_string(),
                 description: None,
@@ -1937,6 +2894,7 @@ async fn create_and_list_references() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Target".to_string(),
                 description: None,
@@ -2025,6 +2983,7 @@ async fn list_references_merges_manual_and_wikilink_origins() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: column.id,
                 title: "Source".into(),
                 description: Some("[[Linked document]] [[Missing document]]".into()),
@@ -2150,6 +3109,7 @@ async fn list_references_returns_three_distinct_resolved_wikilinks_exactly_once(
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: column.id,
                 title: "Source".into(),
                 description: Some("[[First]] [[Second]] [[Third]]".into()),
@@ -2230,6 +3190,7 @@ async fn reference_read_and_delete_enforce_viewer_and_editor_boundaries() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: column.id,
                 title: "Source".into(),
                 description: None,
@@ -2245,6 +3206,7 @@ async fn reference_read_and_delete_enforce_viewer_and_editor_boundaries() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: column.id,
                 title: "Target".into(),
                 description: None,
@@ -2369,6 +3331,7 @@ async fn backlinks_surface_pending_references() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Source".to_string(),
                 description: None,
@@ -2385,6 +3348,7 @@ async fn backlinks_surface_pending_references() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Target".to_string(),
                 description: None,
@@ -2470,6 +3434,7 @@ async fn create_and_list_checklist_items() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Checklist Task".to_string(),
                 description: None,
@@ -2550,6 +3515,7 @@ async fn promote_checklist_item_returns_409_on_second_promote() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Parent".to_string(),
                 description: None,
@@ -2653,6 +3619,7 @@ async fn promote_checklist_item_always_persists_parent_reference() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Parent".to_string(),
                 description: None,
@@ -2788,6 +3755,7 @@ async fn task_description_wikilink_persists_resolved_link() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Task".to_string(),
                 description: Some("see [[Existing Doc]] for context".to_string()),
@@ -2866,6 +3834,7 @@ async fn task_description_id_bound_wikilink_resolves_by_id() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Task".to_string(),
                 description: Some(format!("see [[{}|Renamed Label]] for context", doc.id)),
@@ -2931,6 +3900,7 @@ async fn task_description_wikilink_to_missing_doc_is_pending() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Task".to_string(),
                 description: Some("links to [[Nonexistent]]".to_string()),
@@ -3022,6 +3992,7 @@ async fn task_description_patch_replaces_wikilinks() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Task".to_string(),
                 description: Some("[[Alpha]]".to_string()),
@@ -3105,6 +4076,7 @@ async fn activity_is_recorded_on_task_create() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Tracked".to_string(),
                 description: None,
@@ -3170,6 +4142,7 @@ async fn description_edits_are_suppressed_and_other_fields_coalesce() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Tracked".to_string(),
                 description: None,
@@ -3361,6 +4334,7 @@ async fn cross_tenant_task_access_returns_404() {
             &ws_a.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Secret".to_string(),
                 description: None,
@@ -3489,6 +4463,7 @@ async fn viewer_cannot_create_task() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Unauthorized".to_string(),
                 description: None,
@@ -3553,6 +4528,7 @@ async fn create_task_with_invalid_priority_returns_422() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Bad Priority".to_string(),
                 description: None,
@@ -3619,6 +4595,7 @@ async fn create_task_with_negative_estimate_returns_422() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Neg Estimate".to_string(),
                 description: None,
@@ -3754,6 +4731,7 @@ async fn setup_idor(
                     &ws.slug,
                     board.id,
                     CreateTaskRequest {
+                        references: vec![],
                         column_id: col.id,
                         title: format!("{name} Task"),
                         description: None,
@@ -3781,6 +4759,7 @@ async fn setup_idor(
                     &ws.slug,
                     board.id,
                     CreateTaskRequest {
+                        references: vec![],
                         column_id: col.id,
                         title: format!("{name} Other Task"),
                         description: None,
@@ -4030,6 +5009,7 @@ async fn idor_create_task_into_foreign_column_is_rejected() {
             &f.ws.slug,
             f.board_a,
             CreateTaskRequest {
+                references: vec![],
                 column_id: f.col_b,
                 title: "smuggled".to_string(),
                 description: None,
@@ -4266,6 +5246,7 @@ async fn board_scoped_grant_grants_task_access() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Task".to_string(),
                 description: None,
@@ -4420,6 +5401,7 @@ async fn duplicate_reference_returns_409() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "A".into(),
                 description: None,
@@ -4436,6 +5418,7 @@ async fn duplicate_reference_returns_409() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "B".into(),
                 description: None,
@@ -4530,6 +5513,7 @@ async fn delete_blocks_reference_records_correct_kind_in_activity() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "A".into(),
                 description: None,
@@ -4546,6 +5530,7 @@ async fn delete_blocks_reference_records_correct_kind_in_activity() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "B".into(),
                 description: None,
@@ -4649,6 +5634,7 @@ async fn create_reference_without_target_returns_422() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "T".into(),
                 description: None,
@@ -4723,6 +5709,7 @@ async fn create_reference_with_both_targets_returns_422() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "A".into(),
                 description: None,
@@ -4739,6 +5726,7 @@ async fn create_reference_with_both_targets_returns_422() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "B".into(),
                 description: None,
@@ -4828,6 +5816,7 @@ async fn create_reference_unknown_task_target_returns_404_and_no_row() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Source".into(),
                 description: None,
@@ -4928,6 +5917,7 @@ async fn create_reference_cross_tenant_document_target_returns_404() {
             &ws_a.slug,
             board_a.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col_a.id,
                 title: "Source".into(),
                 description: None,
@@ -5039,6 +6029,7 @@ async fn add_unknown_assignee_returns_404() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "T".into(),
                 description: None,
@@ -5116,6 +6107,7 @@ async fn add_duplicate_assignee_returns_409_explicit() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "T".into(),
                 description: None,
@@ -5207,6 +6199,7 @@ async fn unassign_non_existent_returns_404_and_no_activity() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "T".into(),
                 description: None,
@@ -5395,6 +6388,7 @@ async fn inaccessible_reference_targets_do_not_disclose_titles() {
             &ws.slug,
             source_board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: source_column.id,
                 title: "Visible source".to_string(),
                 description: None,
@@ -5410,6 +6404,7 @@ async fn inaccessible_reference_targets_do_not_disclose_titles() {
             &ws.slug,
             target_board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: target_column.id,
                 title: "Private task title".to_string(),
                 description: None,
@@ -5571,6 +6566,7 @@ async fn inaccessible_reference_targets_do_not_disclose_titles() {
             &ws.slug,
             source_board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: source_column.id,
                 title: "Visible wikilink source".to_string(),
                 description: Some(format!(
@@ -5725,6 +6721,7 @@ async fn reference_target_resolved_false_after_target_task_soft_deleted() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Source".into(),
                 description: None,
@@ -5741,6 +6738,7 @@ async fn reference_target_resolved_false_after_target_task_soft_deleted() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Target".into(),
                 description: None,
@@ -5921,6 +6919,7 @@ async fn assign_non_member_principal_returns_404() {
             &ws_a.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "T".into(),
                 description: None,
@@ -6021,6 +7020,7 @@ async fn create_task_with_title_over_200_chars_returns_422() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: long_title,
                 description: None,
@@ -6082,6 +7082,7 @@ async fn create_task_with_empty_title_returns_422() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "   ".to_string(),
                 description: None,
@@ -6146,6 +7147,7 @@ async fn create_task_with_too_many_labels_returns_422() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Task".to_string(),
                 description: None,
@@ -6242,6 +7244,7 @@ async fn update_task_clears_estimate_with_explicit_null() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Has estimate".to_string(),
                 description: None,
@@ -6743,6 +7746,7 @@ async fn revoked_api_key_assignee_is_hidden_after_revoke() {
             &ws.slug,
             board.id,
             CreateTaskRequest {
+                references: vec![],
                 column_id: col.id,
                 title: "Task with api key assignee".into(),
                 description: None,
