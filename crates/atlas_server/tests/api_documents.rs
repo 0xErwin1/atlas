@@ -282,6 +282,159 @@ async fn compact_document_read_omits_content_and_does_not_leak_across_workspaces
 }
 
 #[tokio::test]
+async fn compact_document_read_previews_the_body_without_frontmatter() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) =
+        support::login_user_with_workspace(&server, &db, "doc-compact-preview").await;
+
+    let project = client
+        .create_project(
+            &ws.slug,
+            atlas_api::dtos::CreateProjectRequest {
+                name: "Proj".to_string(),
+                slug: "proj-compact-preview".to_string(),
+                task_prefix: "PCP".to_string(),
+                visibility: None,
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create project");
+
+    let long = client
+        .create_document(
+            &ws.slug,
+            &project.slug,
+            CreateDocumentRequest {
+                title: "Long".to_string(),
+                folder_id: None,
+                content: Some(format!(
+                    "---\ntitle: Long\nowner: platform\n---\n\n{}",
+                    "a".repeat(500)
+                )),
+            },
+        )
+        .await
+        .expect("create long document");
+    let multi_byte = client
+        .create_document(
+            &ws.slug,
+            &project.slug,
+            CreateDocumentRequest {
+                title: "Multi byte".to_string(),
+                folder_id: None,
+                content: Some("héllo wörld ☃️".repeat(60)),
+            },
+        )
+        .await
+        .expect("create multi-byte document");
+    let empty = client
+        .create_document(&ws.slug, &project.slug, doc_req("Empty"))
+        .await
+        .expect("create empty document");
+
+    let long_compact = client
+        .get_document_compact(&ws.slug, long.slug.as_deref().expect("slug"))
+        .await
+        .expect("compact long document");
+    let long_preview = long_compact.preview.expect("preview for long document");
+    assert_eq!(long_preview, "a".repeat(200));
+
+    let multi_byte_compact = client
+        .get_document_compact(&ws.slug, multi_byte.slug.as_deref().expect("slug"))
+        .await
+        .expect("compact multi-byte document");
+    let multi_byte_preview = multi_byte_compact
+        .preview
+        .expect("preview for multi-byte document");
+    assert_eq!(multi_byte_preview.chars().count(), 200);
+    assert!(multi_byte_preview.len() > 200, "preview must be multi-byte");
+    assert!(multi_byte.content.starts_with(&multi_byte_preview));
+
+    let empty_slug = empty.slug.as_deref().expect("slug");
+    let empty_compact = reqwest::Client::new()
+        .get(format!(
+            "{}/api/workspaces/{}/documents/{empty_slug}/compact",
+            server.base_url(),
+            ws.slug
+        ))
+        .bearer_auth(client.token().expect("authenticated token"))
+        .send()
+        .await
+        .expect("compact empty document request")
+        .json::<serde_json::Value>()
+        .await
+        .expect("compact empty document response");
+    assert!(
+        empty_compact.get("preview").is_none(),
+        "an empty body must not produce a preview"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn list_documents_returns_previews_only_when_requested() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) =
+        support::login_user_with_workspace(&server, &db, "doc-list-preview").await;
+
+    let project = client
+        .create_project(
+            &ws.slug,
+            atlas_api::dtos::CreateProjectRequest {
+                name: "Proj".to_string(),
+                slug: "proj-list-preview".to_string(),
+                task_prefix: "PLP".to_string(),
+                visibility: None,
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create project");
+
+    client
+        .create_document(
+            &ws.slug,
+            &project.slug,
+            CreateDocumentRequest {
+                title: "Listed".to_string(),
+                folder_id: None,
+                content: Some("---\nowner: platform\n---\n\nBody signal".to_string()),
+            },
+        )
+        .await
+        .expect("create document");
+
+    let without_preview = client
+        .list_documents(&ws.slug, &project.slug, None, None)
+        .await
+        .expect("list documents");
+    assert!(
+        without_preview
+            .items
+            .iter()
+            .all(|document| document.preview.is_none()),
+        "listings must stay cheap unless preview is requested"
+    );
+
+    let with_preview = client
+        .list_documents_with_options(&ws.slug, &project.slug, None, None, None, true)
+        .await
+        .expect("list documents with preview");
+    let listed = with_preview
+        .items
+        .iter()
+        .find(|document| document.title == "Listed")
+        .expect("listed document");
+    assert_eq!(listed.preview.as_deref(), Some("Body signal"));
+
+    db.teardown().await;
+}
+
+#[tokio::test]
 async fn range_read_pages_losslessly_and_rejects_too_small_or_stale_continuations() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;

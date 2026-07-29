@@ -1167,11 +1167,29 @@ impl AtlasClient {
         limit: Option<u32>,
         unfiled: Option<bool>,
     ) -> Result<Page<DocumentSummaryDto>, ClientError> {
+        self.list_documents_with_options(ws, project_slug, cursor, limit, unfiled, false)
+            .await
+    }
+
+    /// `GET /api/workspaces/{ws}/projects/{project_slug}/documents?unfiled={bool}&preview={bool}`
+    ///
+    /// `preview` opts every row into a body preview; listings default to omitting
+    /// it so bulk reads stay cheap.
+    pub async fn list_documents_with_options(
+        &self,
+        ws: &str,
+        project_slug: &str,
+        cursor: Option<&str>,
+        limit: Option<u32>,
+        unfiled: Option<bool>,
+        preview: bool,
+    ) -> Result<Page<DocumentSummaryDto>, ClientError> {
         let path = build_document_list_path(
             &format!("/api/workspaces/{ws}/projects/{project_slug}/documents"),
             cursor,
             limit,
             unfiled,
+            preview,
         );
         let response = self.get(&path).send().await?;
         self.decode_response(response, "list_documents").await
@@ -3785,14 +3803,24 @@ fn build_document_list_path(
     cursor: Option<&str>,
     limit: Option<u32>,
     unfiled: Option<bool>,
+    preview: bool,
 ) -> String {
-    let path = build_paginated_path(base, cursor, limit);
+    let mut path = build_paginated_path(base, cursor, limit);
 
-    match unfiled {
-        Some(value) if path.contains('?') => format!("{path}&unfiled={value}"),
-        Some(value) => format!("{path}?unfiled={value}"),
-        None => path,
+    if let Some(value) = unfiled {
+        path = append_query_flag(path, "unfiled", value);
     }
+    if preview {
+        path = append_query_flag(path, "preview", true);
+    }
+
+    path
+}
+
+fn append_query_flag(path: String, name: &str, value: bool) -> String {
+    let separator = if path.contains('?') { '&' } else { '?' };
+
+    format!("{path}{separator}{name}={value}")
 }
 
 fn build_trash_list_path(
@@ -4016,17 +4044,28 @@ mod tests {
 
     #[test]
     fn build_document_list_path_omits_unfiled_when_filter_is_any() {
-        let path = build_document_list_path("/documents", Some("cursor"), Some(20), None);
+        let path = build_document_list_path("/documents", Some("cursor"), Some(20), None, false);
         assert_eq!(path, "/documents?cursor=cursor&limit=20");
     }
 
     #[test]
     fn build_document_list_path_keeps_true_and_false_unfiled_states() {
-        let unfiled = build_document_list_path("/documents", None, None, Some(true));
-        let filed = build_document_list_path("/documents", None, None, Some(false));
+        let unfiled = build_document_list_path("/documents", None, None, Some(true), false);
+        let filed = build_document_list_path("/documents", None, None, Some(false), false);
 
         assert_eq!(unfiled, "/documents?unfiled=true");
         assert_eq!(filed, "/documents?unfiled=false");
+    }
+
+    #[test]
+    fn build_document_list_path_appends_preview_only_when_opted_in() {
+        let without = build_document_list_path("/documents", None, None, None, false);
+        let with = build_document_list_path("/documents", None, None, None, true);
+        let combined = build_document_list_path("/documents", None, Some(10), Some(true), true);
+
+        assert_eq!(without, "/documents");
+        assert_eq!(with, "/documents?preview=true");
+        assert_eq!(combined, "/documents?limit=10&unfiled=true&preview=true");
     }
 
     #[test]

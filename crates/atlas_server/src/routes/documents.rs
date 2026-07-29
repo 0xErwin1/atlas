@@ -22,12 +22,12 @@ use atlas_api::{
     dtos::documents::{
         ActorDto, AttachmentDto, BacklinkDto, CommentAttachmentDto, CommentBacklinkParentDto,
         CommentBacklinkSourceDto, CommentDraftDto, CopyDocumentRequest, CreateDocumentRequest,
-        DocumentCompactDto, DocumentContentEditRequest, DocumentContentRangeDto,
-        DocumentContentRangeQuery, DocumentContentSearchDto, DocumentContentSearchRequest,
-        DocumentDto, DocumentLineDto, DocumentLineEditRequest, DocumentMoveBatchRequest,
-        DocumentMoveBatchResultDto, DocumentSearchMatchDto, DocumentSearchMode, DocumentSummaryDto,
-        FrontmatterDto, MoveDocumentRequest, RevisionContentDto, RevisionMetaDto,
-        UpdateContentRequest, UpdateDocumentRequest,
+        DOCUMENT_PREVIEW_CHAR_LIMIT, DocumentCompactDto, DocumentContentEditRequest,
+        DocumentContentRangeDto, DocumentContentRangeQuery, DocumentContentSearchDto,
+        DocumentContentSearchRequest, DocumentDto, DocumentLineDto, DocumentLineEditRequest,
+        DocumentMoveBatchRequest, DocumentMoveBatchResultDto, DocumentSearchMatchDto,
+        DocumentSearchMode, DocumentSummaryDto, FrontmatterDto, MoveDocumentRequest,
+        RevisionContentDto, RevisionMetaDto, UpdateContentRequest, UpdateDocumentRequest,
     },
     pagination::{Cursor, Page},
 };
@@ -83,6 +83,7 @@ pub(crate) struct PaginationQuery {
     limit: Option<u32>,
     feed: Option<String>,
     unfiled: Option<bool>,
+    preview: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -252,6 +253,7 @@ async fn persist_new_document(
         ("cursor" = Option<String>, Query, description = "Pagination cursor"),
         ("limit" = Option<u32>, Query, description = "Page size (max 200)"),
         ("unfiled" = Option<bool>, Query, description = "Filter by folder assignment: true for unfiled, false for filed, omitted for any"),
+        ("preview" = Option<bool>, Query, description = "Include a body preview on every row (opt-in; omitted keeps the listing cheap)"),
     ),
     responses(
         (status = 200, description = "Paginated document list", body = Page<DocumentSummaryDto>),
@@ -301,6 +303,13 @@ pub(crate) async fn list_documents(
         None
     };
 
+    let previews = if q.preview.unwrap_or(false) {
+        let ids: Vec<DocumentId> = items.iter().map(|d| d.id).collect();
+        document_previews(&doc_repo, &ctx, &ids).await?
+    } else {
+        HashMap::new()
+    };
+
     let dtos: Vec<DocumentSummaryDto> = items
         .into_iter()
         .map(|d| DocumentSummaryDto {
@@ -309,6 +318,7 @@ pub(crate) async fn list_documents(
             title: d.title,
             folder_id: d.folder_id.map(|f| f.0),
             head_seq: d.current_revision_seq,
+            preview: previews.get(&d.id.0).cloned(),
             updated_at: d.updated_at,
         })
         .collect();
@@ -354,8 +364,16 @@ pub(crate) async fn get_document(
 )]
 pub(crate) async fn get_document_compact(
     auth: Authorized<DocumentCompactRes, ViewerMin, DocsRead>,
+    State(state): State<AppState>,
 ) -> Result<Json<DocumentCompactDto>, ApiError> {
     let document = auth.resource;
+
+    let ctx = WorkspaceCtx::new(auth.workspace.id, principal_to_actor(&auth.principal));
+    let doc_repo = PgDocumentRepo::new((*state.db).clone(), state.anchor_interval);
+    let document_id = DocumentId(document.id);
+    let preview = document_previews(&doc_repo, &ctx, &[document_id])
+        .await?
+        .remove(&document.id);
 
     Ok(Json(DocumentCompactDto {
         id: document.id,
@@ -367,6 +385,7 @@ pub(crate) async fn get_document_compact(
         head_revision_id: document.head_revision_id,
         head_seq: document.head_seq,
         frontmatter: document.frontmatter,
+        preview,
         created_at: document.created_at,
         updated_at: document.updated_at,
     }))
@@ -2979,6 +2998,8 @@ fn document_to_dto(doc: atlas_domain::entities::documents::Document) -> Document
 }
 
 fn document_to_compact_dto(doc: atlas_domain::entities::documents::Document) -> DocumentCompactDto {
+    let preview = document_preview(&doc.content);
+
     DocumentCompactDto {
         id: doc.id.0,
         workspace_id: doc.workspace_id.0,
@@ -2989,9 +3010,54 @@ fn document_to_compact_dto(doc: atlas_domain::entities::documents::Document) -> 
         head_revision_id: doc.current_revision_id.0,
         head_seq: doc.current_revision_seq,
         frontmatter: doc.frontmatter,
+        preview,
         created_at: doc.created_at,
         updated_at: doc.updated_at,
     }
+}
+
+/// Characters read from the head of a stored document to derive its preview.
+///
+/// The preview must skip the YAML frontmatter block, which is part of the raw
+/// content, so the window has to cover that block plus the preview itself. A
+/// frontmatter block longer than this window is not recognized in the truncated
+/// head, and the preview then shows the frontmatter text instead of the body.
+const DOCUMENT_PREVIEW_SOURCE_CHARS: u32 = 4096;
+
+/// Reads a bounded head of each document and turns it into a body preview,
+/// keyed by document id. Documents whose body is empty are absent from the map.
+async fn document_previews(
+    doc_repo: &PgDocumentRepo,
+    ctx: &WorkspaceCtx,
+    ids: &[DocumentId],
+) -> Result<HashMap<uuid::Uuid, String>, ApiError> {
+    let heads = doc_repo
+        .content_heads(ctx, ids, DOCUMENT_PREVIEW_SOURCE_CHARS)
+        .await
+        .map_err(ApiError::Domain)?;
+
+    Ok(heads
+        .into_iter()
+        .filter_map(|(id, head)| document_preview(&head).map(|preview| (id, preview)))
+        .collect())
+}
+
+/// Builds the body signal exposed by compact document reads: the leading
+/// `DOCUMENT_PREVIEW_CHAR_LIMIT` characters of the content with the frontmatter
+/// block and surrounding blank space removed. Returns `None` for an empty body.
+///
+/// `head` may be a prefix of the content; truncation happens on a character
+/// boundary, never inside a UTF-8 scalar.
+fn document_preview(head: &str) -> Option<String> {
+    let (_, body) = atlas_domain::frontmatter::strip_frontmatter(head);
+    let body = body.trim_start();
+
+    let end = body
+        .char_indices()
+        .nth(DOCUMENT_PREVIEW_CHAR_LIMIT)
+        .map_or(body.len(), |(offset, _)| offset);
+
+    (end > 0).then(|| body[..end].to_string())
 }
 
 fn attachment_to_dto(a: atlas_domain::entities::documents::Attachment) -> AttachmentDto {
@@ -3215,6 +3281,25 @@ mod tests {
             header.contains("%0D%0A"),
             "control bytes must be percent-encoded in filename*: {header}"
         );
+    }
+
+    #[test]
+    fn document_preview_skips_frontmatter_and_truncates_on_a_char_boundary() {
+        let preview = document_preview(&format!(
+            "---\ntitle: Tasks\n---\n\n{}",
+            "é".repeat(DOCUMENT_PREVIEW_CHAR_LIMIT + 50)
+        ))
+        .expect("preview");
+
+        assert_eq!(preview.chars().count(), DOCUMENT_PREVIEW_CHAR_LIMIT);
+        assert_eq!(preview.len(), DOCUMENT_PREVIEW_CHAR_LIMIT * 2);
+    }
+
+    #[test]
+    fn document_preview_is_absent_for_a_body_that_is_only_frontmatter_or_blank() {
+        assert_eq!(document_preview(""), None);
+        assert_eq!(document_preview("   \n\n"), None);
+        assert_eq!(document_preview("---\ntitle: Tasks\n---\n"), None);
     }
 
     #[test]

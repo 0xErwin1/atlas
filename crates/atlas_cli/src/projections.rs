@@ -2559,6 +2559,7 @@ mod tests {
             title: "Summary Doc".to_owned(),
             folder_id: None,
             head_seq: 3,
+            preview: None,
             updated_at: Utc::now(),
         }
     }

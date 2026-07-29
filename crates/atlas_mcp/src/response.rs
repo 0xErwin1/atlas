@@ -186,7 +186,7 @@ pub(crate) fn project_document_compact(doc: DocumentDto) -> Value {
 
 /// Compact projection of a metadata-only document transport response.
 pub(crate) fn project_document_metadata(doc: DocumentCompactDto) -> Value {
-    json!({
+    let mut value = json!({
         "id": doc.id,
         "slug": doc.slug,
         "title": doc.title,
@@ -195,7 +195,15 @@ pub(crate) fn project_document_metadata(doc: DocumentCompactDto) -> Value {
         "updated_at": doc.updated_at,
         "folder_id": doc.folder_id,
         "project_id": doc.project_id,
-    })
+    });
+
+    if let Some(preview) = doc.preview
+        && let Some(map) = value.as_object_mut()
+    {
+        map.insert("preview".into(), json!(preview));
+    }
+
+    value
 }
 
 /// Projection of a bounded, numbered document-line page.
@@ -379,6 +387,9 @@ pub(crate) fn project_document_summary(doc: DocumentSummaryDto) -> Value {
     }
     if let Some(folder_id) = doc.folder_id {
         map.insert("folder_id".into(), json!(folder_id));
+    }
+    if let Some(preview) = doc.preview {
+        map.insert("preview".into(), json!(preview));
     }
 
     Value::Object(map)
@@ -1970,6 +1981,7 @@ mod tests {
             folder_id,
             head_seq: 7,
             updated_at: now(),
+            preview: None,
         }
     }
 
@@ -1980,6 +1992,51 @@ mod tests {
         assert_eq!(val["head_seq"], 7);
         assert!(!val["id"].is_null());
         assert!(!val["updated_at"].is_null());
+    }
+
+    fn make_doc_compact(preview: Option<&str>) -> DocumentCompactDto {
+        DocumentCompactDto {
+            id: fixed_uuid(),
+            workspace_id: fixed_uuid(),
+            project_id: Some(fixed_uuid()),
+            folder_id: None,
+            slug: Some("my-note".into()),
+            title: "My Note".into(),
+            head_revision_id: fixed_uuid(),
+            head_seq: 7,
+            frontmatter: json!({}),
+            preview: preview.map(String::from),
+            created_at: now(),
+            updated_at: now(),
+        }
+    }
+
+    #[test]
+    fn document_metadata_includes_preview_when_present() {
+        let val = project_document_metadata(make_doc_compact(Some("Body signal")));
+        assert_eq!(val["preview"], "Body signal");
+        assert_eq!(val["head_seq"], 7);
+    }
+
+    #[test]
+    fn document_metadata_omits_preview_when_body_is_empty() {
+        let val = project_document_metadata(make_doc_compact(None));
+        assert!(val.get("preview").is_none());
+    }
+
+    #[test]
+    fn document_summary_includes_preview_when_present() {
+        let mut doc = make_doc_summary(Some("my-note"), None);
+        doc.preview = Some("Body signal".into());
+
+        let val = project_document_summary(doc);
+        assert_eq!(val["preview"], "Body signal");
+    }
+
+    #[test]
+    fn document_summary_omits_preview_when_absent() {
+        let val = project_document_summary(make_doc_summary(Some("my-note"), None));
+        assert!(val.get("preview").is_none());
     }
 
     #[test]

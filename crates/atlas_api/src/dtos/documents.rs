@@ -187,9 +187,16 @@ pub struct DocumentCompactDto {
     pub head_revision_id: uuid::Uuid,
     pub head_seq: i64,
     pub frontmatter: serde_json::Value,
+    /// The first `DOCUMENT_PREVIEW_CHAR_LIMIT` characters of the document body,
+    /// frontmatter excluded. Absent when the body is empty.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preview: Option<String>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
+
+/// Characters of document body exposed by a compact read's `preview`.
+pub const DOCUMENT_PREVIEW_CHAR_LIMIT: usize = 200;
 
 pub const DEFAULT_DOCUMENT_RANGE_LINE_LIMIT: u32 = 200;
 pub const MAX_DOCUMENT_RANGE_LINE_LIMIT: u32 = 200;
@@ -376,6 +383,10 @@ pub struct DocumentSummaryDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub folder_id: Option<uuid::Uuid>,
     pub head_seq: i64,
+    /// Same body preview as `DocumentCompactDto::preview`, populated only when
+    /// the listing was requested with `preview=true`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preview: Option<String>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
@@ -456,6 +467,7 @@ mod contract_tests {
             head_revision_id: uuid::Uuid::from_u128(2),
             head_seq: 3,
             frontmatter: serde_json::json!({"kind": "guide"}),
+            preview: Some("A short body signal.".into()),
             created_at: chrono::DateTime::UNIX_EPOCH,
             updated_at: chrono::DateTime::UNIX_EPOCH,
         };
@@ -466,7 +478,30 @@ mod contract_tests {
             json["head_revision_id"],
             uuid::Uuid::from_u128(2).to_string()
         );
+        assert_eq!(json["preview"], "A short body signal.");
         assert!(json.get("content").is_none());
+    }
+
+    #[test]
+    fn compact_document_omits_preview_when_the_body_is_empty() {
+        let compact = DocumentCompactDto {
+            id: uuid::Uuid::nil(),
+            workspace_id: uuid::Uuid::from_u128(1),
+            project_id: None,
+            folder_id: None,
+            slug: Some("empty".into()),
+            title: "Empty".into(),
+            head_revision_id: uuid::Uuid::from_u128(2),
+            head_seq: 1,
+            frontmatter: serde_json::json!({}),
+            preview: None,
+            created_at: chrono::DateTime::UNIX_EPOCH,
+            updated_at: chrono::DateTime::UNIX_EPOCH,
+        };
+
+        let json = serde_json::to_value(compact).expect("serialize compact document");
+
+        assert!(json.get("preview").is_none());
     }
 
     #[test]

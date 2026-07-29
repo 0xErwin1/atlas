@@ -6912,6 +6912,15 @@
             "schema": {
               "type": "boolean"
             }
+          },
+          {
+            "name": "preview",
+            "in": "query",
+            "description": "Include a body preview on every row (opt-in; omitted keeps the listing cheap)",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -13632,6 +13641,13 @@
             "type": "string",
             "format": "uuid"
           },
+          "preview": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The first `DOCUMENT_PREVIEW_CHAR_LIMIT` characters of the document body,\nfrontmatter excluded. Absent when the body is empty."
+          },
           "project_id": {
             "type": [
               "string",
@@ -14203,6 +14219,13 @@
           "id": {
             "type": "string",
             "format": "uuid"
+          },
+          "preview": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Same body preview as `DocumentCompactDto::preview`, populated only when\nthe listing was requested with `preview=true`."
           },
           "slug": {
             "type": [
@@ -15293,6 +15316,13 @@
                 "id": {
                   "type": "string",
                   "format": "uuid"
+                },
+                "preview": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Same body preview as `DocumentCompactDto::preview`, populated only when\nthe listing was requested with `preview=true`."
                 },
                 "slug": {
                   "type": [

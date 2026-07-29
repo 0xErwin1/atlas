@@ -104,6 +104,63 @@ impl PgDocumentRepo {
             anchor_interval,
         }
     }
+
+    /// Reads the leading `max_chars` characters of each requested document's raw
+    /// content, keyed by document id. Documents outside `ctx`'s workspace, deleted
+    /// documents, and ids without a row are simply absent from the result.
+    ///
+    /// Callers must have already authorized every id: this is a projection helper
+    /// for previews, not an access-controlled listing.
+    pub async fn content_heads(
+        &self,
+        ctx: &WorkspaceCtx,
+        ids: &[DocumentId],
+        max_chars: u32,
+    ) -> Result<std::collections::HashMap<Uuid, String>, DomainError> {
+        use sea_orm::FromQueryResult;
+
+        #[derive(Debug, FromQueryResult)]
+        struct Row {
+            id: Uuid,
+            head: String,
+        }
+
+        if ids.is_empty() {
+            return Ok(std::collections::HashMap::new());
+        }
+
+        let mut values: Vec<sea_orm::Value> =
+            vec![ctx.workspace_id.0.into(), (max_chars as i32).into()];
+        let placeholders = ids
+            .iter()
+            .map(|id| {
+                values.push(id.0.into());
+                format!("${}", values.len())
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let sql = format!(
+            r#"
+            SELECT d.id, left(d.content, $2) AS head
+            FROM documents d
+            WHERE d.workspace_id = $1
+              AND d.deleted_at IS NULL
+              AND d.id IN ({placeholders})
+            "#
+        );
+
+        let rows = Row::find_by_statement(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            sql,
+            values,
+        ))
+        .all(&self.conn)
+        .await
+        .map_err(db_err)?;
+
+        Ok(rows.into_iter().map(|row| (row.id, row.head)).collect())
+    }
 }
 
 #[async_trait]
